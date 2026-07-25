@@ -211,4 +211,104 @@ describe('LaunchScreen', () => {
         await waitFor(() => expect(mocks.importDroppedLaunchFiles).toHaveBeenCalledWith({ files: [audioFile] }));
         expect(mocks.notifyUser).not.toHaveBeenCalled();
     });
+
+    // ── Import / recent failure paths ─────────────────────────────────────────────
+
+    it('does not enter the loading view when the DAWproject import is cancelled', async () => {
+        mocks.pickAndImportDawProject.mockResolvedValue(false);
+        render(<LaunchScreen exiting={false} />);
+        fireEvent.click(screen.getByRole('button', { name: /Import \.dawproject/ }));
+
+        await waitFor(() => expect(mocks.pickAndImportDawProject).toHaveBeenCalledTimes(1));
+        // Stays on home (New Project button still present), no loading name set.
+        expect(screen.getByRole('button', { name: /New Project/ })).toBeInTheDocument();
+    });
+
+    it('refreshes the recent-projects list and restores home when a recent project fails to load', async () => {
+        const refreshed = [{ key: 'r2', name: 'Newer Mix', updatedAt: Date.now() }];
+        mocks.getRecentProjects
+            .mockReturnValueOnce([{ key: 'recent-1', name: 'Recent Mix', updatedAt: Date.now() }])
+            .mockReturnValueOnce(refreshed);
+        mocks.loadRecentProject.mockResolvedValue('failed');
+
+        render(<LaunchScreen exiting={false} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Open recent project Recent Mix' }));
+
+        await waitFor(() => {
+            expect(mocks.notifyUser).toHaveBeenCalledWith('Failed to open "Recent Mix"', 'error');
+            expect(screen.getByRole('button', { name: /New Project/ })).toBeInTheDocument();
+        });
+    });
+
+    // ── Category filtering ────────────────────────────────────────────────────────
+
+    it('switches the active category in the grid and filters the template list', () => {
+        mocks.getTemplates.mockReturnValue([
+            { id: 'basic-band', name: 'Basic Band', description: 'A band', category: 'music' },
+            { id: 'podcast-1', name: 'Podcast One', description: 'A podcast', category: 'podcast' },
+        ]);
+
+        render(<LaunchScreen exiting={false} />);
+        fireEvent.click(screen.getByRole('button', { name: /Templates/ }));
+
+        // Both visible under "All"
+        expect(screen.getByRole('button', { name: /Basic Band/ })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Podcast One/ })).toBeInTheDocument();
+
+        // Switch to Podcast category
+        fireEvent.click(screen.getByRole('button', { name: /^Podcast$/ }));
+        expect(screen.queryByRole('button', { name: /Basic Band/ })).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Podcast One/ })).toBeInTheDocument();
+    });
+
+    it('navigates back from the grid to home', () => {
+        mocks.getTemplates.mockReturnValue([
+            { id: 'basic-band', name: 'Basic Band', description: 'A band', category: 'music' },
+        ]);
+        render(<LaunchScreen exiting={false} />);
+        fireEvent.click(screen.getByRole('button', { name: /Templates/ }));
+        expect(screen.getByRole('button', { name: /Basic Band/ })).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: /Back to home/ }));
+        expect(screen.queryByRole('button', { name: /Basic Band/ })).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /New Project/ })).toBeInTheDocument();
+    });
+
+    // ── Drag-and-drop visual feedback ─────────────────────────────────────────────
+
+    it('toggles the drag-over state on dragOver and clears it on dragLeave', () => {
+        render(<LaunchScreen exiting={false} />);
+        const dialog = screen.getByRole('dialog', { name: /Sourdaw — start a project/ });
+
+        // dragOver sets isDragOver=true, swapping the drop zone to the orange style.
+        fireEvent.dragOver(dialog, { dataTransfer: { dropEffect: 'none' } });
+        const dropZone = screen.getByText('Drop audio or MIDI to start instantly').parentElement!;
+        expect(dropZone.className).toContain('--color-accent-orange');
+
+        // dragLeave with a relatedTarget outside the dialog clears the state.
+        fireEvent.dragLeave(dialog, { relatedTarget: document.body });
+        expect(dropZone.className).not.toContain('bg-[var(--color-accent-orange)]/10');
+    });
+
+    it('formats recent-project timestamps as relative time (just now / Xm ago / Xh ago / Xd ago)', () => {
+        const now = Date.now();
+        mocks.getRecentProjects.mockReturnValue([
+            { key: 'r1', name: 'Just Now', updatedAt: now - 5_000 },
+            { key: 'r2', name: 'Minutes Ago', updatedAt: now - 5 * 60_000 },
+            { key: 'r3', name: 'Hours Ago', updatedAt: now - 3 * 3_600_000 },
+            { key: 'r4', name: 'Days Ago', updatedAt: now - 3 * 86_400_000 },
+        ]);
+
+        render(<LaunchScreen exiting={false} />);
+        expect(screen.getByText('just now')).toBeInTheDocument();
+        expect(screen.getByText('5m ago')).toBeInTheDocument();
+        expect(screen.getByText('3h ago')).toBeInTheDocument();
+        expect(screen.getByText('3d ago')).toBeInTheDocument();
+    });
+
+    it('hides the recent-projects section when there are no recent projects', () => {
+        mocks.getRecentProjects.mockReturnValue([]);
+        render(<LaunchScreen exiting={false} />);
+        expect(screen.queryByRole('list', { name: /Recent projects/ })).not.toBeInTheDocument();
+    });
 });

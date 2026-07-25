@@ -56,5 +56,23 @@ describe('AdditiveSection', () => {
             fireEvent.keyDown(tiltSlider, { key: 'ArrowUp' });
             expect(onParam).toHaveBeenCalledWith('additiveTilt', expect.any(Number));
         });
+
+        it('emits additiveOdd when the Odd slider is incremented', () => {
+            const onParam = vi.fn();
+            render(<AdditiveSection {...defaultProps({ onParam })} />);
+            const oddSlider = screen.getAllByRole('slider')[2]!;
+            oddSlider.focus();
+            fireEvent.keyDown(oddSlider, { key: 'ArrowUp' });
+            expect(onParam).toHaveBeenCalledWith('additiveOdd', expect.any(Number));
+        });
+
+        it('emits additiveInharm when the Inharm slider is incremented', () => {
+            const onParam = vi.fn();
+            render(<AdditiveSection {...defaultProps({ onParam })} />);
+            const inharmSlider = screen.getAllByRole('slider')[3]!;
+            inharmSlider.focus();
+            fireEvent.keyDown(inharmSlider, { key: 'ArrowUp' });
+            expect(onParam).toHaveBeenCalledWith('additiveInharm', expect.any(Number));
+        });
     });
 });

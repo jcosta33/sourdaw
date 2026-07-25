@@ -30,6 +30,8 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: vi.fn(),
 }));
 
+import { notifyUser } from '#/utils/Notification/notifyUser';
+
 describe('Workspace Project Handlers', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -63,5 +65,47 @@ describe('Workspace Project Handlers', () => {
     it('handleExportProject should delegate to exportProjectFile', () => {
         void handleExportProject.execute({ type: 'exportProject' });
         expect(exportProjectFile).toHaveBeenCalled();
+    });
+
+    it('handleImportAudioFile does not import when the file dialog is cancelled (null)', async () => {
+        vi.mocked(pickFiles).mockResolvedValueOnce(null);
+        await handleImportAudioFile.execute({ type: 'importAudioFile' });
+        // No import attempted when pickFiles returns null.
+        expect(importAudioFile).not.toHaveBeenCalled();
+    });
+
+    it('handleImportAudioFile imports every picked file when multiple are returned', async () => {
+        const a = new File([], 'a.wav');
+        const b = new File([], 'b.wav');
+        vi.mocked(pickFiles).mockResolvedValueOnce([a, b]);
+        await handleImportAudioFile.execute({ type: 'importAudioFile' });
+        expect(importAudioFile).toHaveBeenCalledTimes(2);
+        expect(importAudioFile).toHaveBeenNthCalledWith(1, a);
+        expect(importAudioFile).toHaveBeenNthCalledWith(2, b);
+    });
+
+    it('handleImportAudioFile notifies on error when the dialog rejects', async () => {
+        vi.mocked(pickFiles).mockRejectedValueOnce(new Error('dialog closed'));
+        // execute() does not await the promise chain — flush microtasks.
+        handleImportAudioFile.execute({ type: 'importAudioFile' });
+        await vi.waitFor(() => {
+            expect(notifyUser).toHaveBeenCalledWith('Failed to open file dialog', 'error');
+        });
+        expect(importAudioFile).not.toHaveBeenCalled();
+    });
+
+    it('handleImportMidiFile does not import when the file dialog is cancelled (null)', async () => {
+        vi.mocked(pickFiles).mockResolvedValueOnce(null);
+        await handleImportMidiFile.execute({ type: 'importMidiFile' });
+        expect(importMidiFile).not.toHaveBeenCalled();
+    });
+
+    it('handleImportMidiFile notifies on error when the dialog rejects', async () => {
+        vi.mocked(pickFiles).mockRejectedValueOnce(new Error('dialog closed'));
+        handleImportMidiFile.execute({ type: 'importMidiFile' });
+        await vi.waitFor(() => {
+            expect(notifyUser).toHaveBeenCalledWith('Failed to open file dialog', 'error');
+        });
+        expect(importMidiFile).not.toHaveBeenCalled();
     });
 });

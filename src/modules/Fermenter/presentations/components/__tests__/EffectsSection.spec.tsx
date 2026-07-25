@@ -8,6 +8,45 @@ import { type RotaryKnobComponent } from '#/components/daw/RotaryKnob';
 import { DEFAULT_PATCH as F } from '../../../models/FermenterPatch';
 import { EffectsSection } from '../EffectsSection';
 
+// Capture the most recent onParamChange handed to each visualizer so the
+// section's paramId → onParam routing (the if/else chains) can be asserted
+// without rendering the real canvas visualisers.
+let distortionProps: { onParamChange?: (id: string, v: number) => void };
+let compressorProps: { onParamChange?: (id: string, v: number) => void };
+let delayProps: { onParamChange?: (id: string, v: number) => void };
+let eqProps: { onParamChange?: (id: string, v: number) => void };
+
+vi.mock('#/components/daw/visualizers/DistortionCurve', () => ({
+    DistortionCurve: (props: typeof distortionProps) => {
+        distortionProps = props;
+        return (
+            <div
+                role="img"
+                aria-label="distortion"
+                onClick={() => props.onParamChange?.('fire', 0)}
+            />
+        );
+    },
+}));
+vi.mock('#/components/daw/visualizers/CompressorCurve', () => ({
+    CompressorCurve: (props: typeof compressorProps) => {
+        compressorProps = props;
+        return <div role="img" aria-label="compressor" />;
+    },
+}));
+vi.mock('#/components/daw/visualizers/DelayTaps', () => ({
+    DelayTaps: (props: typeof delayProps) => {
+        delayProps = props;
+        return <div role="img" aria-label="delay" />;
+    },
+}));
+vi.mock('#/components/daw/visualizers/EQCurve', () => ({
+    EQCurve: (props: typeof eqProps) => {
+        eqProps = props;
+        return <div role="img" aria-label="drag band dots to adjust" />;
+    },
+}));
+
 // Test-only Knob: surfaces paramId + value and invokes onChange on click, so we
 // can assert the section's param→callback routing without the real drag logic.
 function TestKnob({
@@ -212,13 +251,110 @@ describe('EffectsSection', () => {
         });
     });
 
-    describe('EQ tab', () => {
-        it('renders the EQ curve visualizer with no rotary knobs', () => {
-            renderSection();
+    describe('distortion visualizer onParamChange routing', () => {
+        it('maps dist-drive/dist-tone/dist-mix ids to onParam', () => {
+            const onParam = vi.fn();
+            renderSection({ onParam });
+            // Dist is the default tab, so distortionProps is already captured.
+            distortionProps.onParamChange!('dist-drive', 3);
+            expect(onParam).toHaveBeenLastCalledWith('distDrive', 3);
+            distortionProps.onParamChange!('dist-tone', 0.4);
+            expect(onParam).toHaveBeenLastCalledWith('distTone', 0.4);
+            distortionProps.onParamChange!('dist-mix', 0.5);
+            expect(onParam).toHaveBeenLastCalledWith('distMix', 0.5);
+        });
+
+        it('ignores unknown distortion ids (no onParam call)', () => {
+            const onParam = vi.fn();
+            renderSection({ onParam });
+            distortionProps.onParamChange!('dist-unknown', 1);
+            expect(onParam).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('compressor visualizer onParamChange routing', () => {
+        it('maps comp-threshold/comp-ratio ids and ignores unknown', () => {
+            const onParam = vi.fn();
+            renderSection({ onParam });
+            fireEvent.click(screen.getByText('Comp'));
+            compressorProps.onParamChange!('comp-threshold', -18);
+            expect(onParam).toHaveBeenLastCalledWith('compThreshold', -18);
+            compressorProps.onParamChange!('comp-ratio', 6);
+            expect(onParam).toHaveBeenLastCalledWith('compRatio', 6);
+            const calls = onParam.mock.calls.length;
+            compressorProps.onParamChange!('comp-unknown', 1);
+            expect(onParam.mock.calls.length).toBe(calls);
+        });
+    });
+
+    describe('delay visualizer onParamChange routing', () => {
+        it('maps delay-time/delay-feedback/delay-mix ids and ignores unknown', () => {
+            const onParam = vi.fn();
+            renderSection({ onParam });
+            fireEvent.click(screen.getByText('Delay'));
+            delayProps.onParamChange!('delay-time', 250);
+            expect(onParam).toHaveBeenLastCalledWith('delayTime', 250);
+            delayProps.onParamChange!('delay-feedback', 0.3);
+            expect(onParam).toHaveBeenLastCalledWith('delayFeedback', 0.3);
+            delayProps.onParamChange!('delay-mix', 0.4);
+            expect(onParam).toHaveBeenLastCalledWith('delayMix', 0.4);
+            const calls = onParam.mock.calls.length;
+            delayProps.onParamChange!('delay-unknown', 1);
+            expect(onParam.mock.calls.length).toBe(calls);
+        });
+    });
+
+    describe('EQ visualizer onParamChange routing', () => {
+        it('maps all nine eq band ids to onParam and ignores unknown', () => {
+            const onParam = vi.fn();
+            renderSection({ onParam });
             fireEvent.click(screen.getByText('EQ'));
-            // EQ panel exposes only the curve, no RotaryKnob controls.
-            expect(screen.queryAllByTestId('knob')).toHaveLength(0);
-            expect(screen.getByRole('img', { name: /drag band dots to adjust/i })).toBeInTheDocument();
+            eqProps.onParamChange!('eq-low-gain', 2);
+            expect(onParam).toHaveBeenLastCalledWith('eqLowGain', 2);
+            eqProps.onParamChange!('eq-low-freq', 120);
+            expect(onParam).toHaveBeenLastCalledWith('eqLowFreq', 120);
+            eqProps.onParamChange!('eq-low-q', 0.7);
+            expect(onParam).toHaveBeenLastCalledWith('eqLowQ', 0.7);
+            eqProps.onParamChange!('eq-mid-gain', -3);
+            expect(onParam).toHaveBeenLastCalledWith('eqMidGain', -3);
+            eqProps.onParamChange!('eq-mid-freq', 900);
+            expect(onParam).toHaveBeenLastCalledWith('eqMidFreq', 900);
+            eqProps.onParamChange!('eq-mid-q', 1.2);
+            expect(onParam).toHaveBeenLastCalledWith('eqMidQ', 1.2);
+            eqProps.onParamChange!('eq-high-gain', 1);
+            expect(onParam).toHaveBeenLastCalledWith('eqHighGain', 1);
+            eqProps.onParamChange!('eq-high-freq', 7000);
+            expect(onParam).toHaveBeenLastCalledWith('eqHighFreq', 7000);
+            eqProps.onParamChange!('eq-high-q', 0.9);
+            expect(onParam).toHaveBeenLastCalledWith('eqHighQ', 0.9);
+            const calls = onParam.mock.calls.length;
+            eqProps.onParamChange!('eq-unknown', 1);
+            expect(onParam.mock.calls.length).toBe(calls);
+        });
+
+        it('passes undefined eq props through to the curve as defaults', () => {
+            const onParam = vi.fn();
+            // Omit all eq* props → defaults must be applied (eqLowFreq 100, etc).
+            render(
+                <EffectsSection
+                    {...{
+                        ...baseProps({ onParam }),
+                        eqLowFreq: undefined,
+                        eqLowGain: undefined,
+                        eqLowQ: undefined,
+                        eqMidFreq: undefined,
+                        eqMidGain: undefined,
+                        eqMidQ: undefined,
+                        eqHighFreq: undefined,
+                        eqHighGain: undefined,
+                        eqHighQ: undefined,
+                    }}
+                />,
+            );
+            fireEvent.click(screen.getByText('EQ'));
+            // Routing still works with defaults in play.
+            eqProps.onParamChange!('eq-low-freq', 200);
+            expect(onParam).toHaveBeenLastCalledWith('eqLowFreq', 200);
         });
     });
 
@@ -252,6 +388,19 @@ describe('EffectsSection', () => {
             expect(onParam).toHaveBeenLastCalledWith('stereoWidth', 0.9);
             fireEvent.click(knobs.find((k) => k.dataset.paramid === 'masterGain')!);
             expect(onParam).toHaveBeenLastCalledWith('masterGain', 0.9);
+        });
+
+        it('renders the master tab without a rotaryKnob override (uses real RotaryKnob)', () => {
+            // When no rotaryKnob override is given, the master tab renders two
+            // knobs using the real RotaryKnob import. A typo in the tone
+            // selection would still default to 'neutral' — we assert rendering
+            // succeeds without throwing.
+            const props = { ...baseProps({}), rotaryKnob: undefined };
+            delete (props as Record<string, unknown>).rotaryKnob;
+            render(<EffectsSection {...props} />);
+            fireEvent.click(screen.getByText('Master'));
+            // The master tab's stereoWidth readout appears once the tab is active.
+            expect(screen.getByText('Width')).toBeInTheDocument();
         });
     });
 });

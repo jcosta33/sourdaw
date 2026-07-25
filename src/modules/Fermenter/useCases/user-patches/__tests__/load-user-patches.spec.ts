@@ -335,5 +335,219 @@ describe('loadUserPatches', () => {
             const mapping = loadUserPatches()[0]!.patch.macroMappings![0]!.targets[0]!;
             expect(mapping.curve).toBe('exponential');
         });
+
+        it('rejects a macro target that is not an object (string, number, null, array)', () => {
+            for (const badTarget of ['string', 42, null, ['array']]) {
+                window.localStorage.setItem(
+                    STORAGE_KEY,
+                    JSON.stringify([
+                        {
+                            id: 'r',
+                            name: 'n',
+                            patch: {
+                                macroMappings: [
+                                    { targets: [badTarget] },
+                                    ...Array.from({ length: 7 }, () => ({ targets: [] })),
+                                ],
+                            },
+                        },
+                    ])
+                );
+                expect(loadUserPatches()[0]!.patch.macroMappings).toEqual(DEFAULT_PATCH.macroMappings);
+            }
+        });
+
+        it('rejects a macro target whose target field is not a string', () => {
+            window.localStorage.setItem(
+                STORAGE_KEY,
+                JSON.stringify([
+                    {
+                        id: 'r',
+                        name: 'n',
+                        patch: {
+                            macroMappings: [
+                                { targets: [{ target: 42, center: 0, depth: 1, min: 0, max: 1, curve: 'linear' }] },
+                                ...Array.from({ length: 7 }, () => ({ targets: [] })),
+                            ],
+                        },
+                    },
+                ])
+            );
+            expect(loadUserPatches()[0]!.patch.macroMappings).toEqual(DEFAULT_PATCH.macroMappings);
+        });
+
+        it('rejects a macro target whose center is not a number (string)', () => {
+            window.localStorage.setItem(
+                STORAGE_KEY,
+                JSON.stringify([
+                    {
+                        id: 'r',
+                        name: 'n',
+                        patch: {
+                            macroMappings: [
+                                {
+                                    targets: [
+                                        {
+                                            target: 'filterCutoff',
+                                            center: 'bright',
+                                            depth: 1,
+                                            min: 0,
+                                            max: 1,
+                                            curve: 'linear',
+                                        },
+                                    ],
+                                },
+                                ...Array.from({ length: 7 }, () => ({ targets: [] })),
+                            ],
+                        },
+                    },
+                ])
+            );
+            expect(loadUserPatches()[0]!.patch.macroMappings).toEqual(DEFAULT_PATCH.macroMappings);
+        });
+
+        it('rejects a macro target whose depth is not a number (boolean)', () => {
+            window.localStorage.setItem(
+                STORAGE_KEY,
+                JSON.stringify([
+                    {
+                        id: 'r',
+                        name: 'n',
+                        patch: {
+                            macroMappings: [
+                                {
+                                    targets: [
+                                        {
+                                            target: 'filterCutoff',
+                                            center: 0,
+                                            depth: true,
+                                            min: 0,
+                                            max: 1,
+                                            curve: 'linear',
+                                        },
+                                    ],
+                                },
+                                ...Array.from({ length: 7 }, () => ({ targets: [] })),
+                            ],
+                        },
+                    },
+                ])
+            );
+            expect(loadUserPatches()[0]!.patch.macroMappings).toEqual(DEFAULT_PATCH.macroMappings);
+        });
+
+        it('rejects a macro target whose min is not a number (string)', () => {
+            window.localStorage.setItem(
+                STORAGE_KEY,
+                JSON.stringify([
+                    {
+                        id: 'r',
+                        name: 'n',
+                        patch: {
+                            macroMappings: [
+                                {
+                                    targets: [
+                                        {
+                                            target: 'filterCutoff',
+                                            center: 0,
+                                            depth: 1,
+                                            min: 'low',
+                                            max: 1,
+                                            curve: 'linear',
+                                        },
+                                    ],
+                                },
+                                ...Array.from({ length: 7 }, () => ({ targets: [] })),
+                            ],
+                        },
+                    },
+                ])
+            );
+            expect(loadUserPatches()[0]!.patch.macroMappings).toEqual(DEFAULT_PATCH.macroMappings);
+        });
+
+        it('rejects a macro target whose max is not a number (string)', () => {
+            window.localStorage.setItem(
+                STORAGE_KEY,
+                JSON.stringify([
+                    {
+                        id: 'r',
+                        name: 'n',
+                        patch: {
+                            macroMappings: [
+                                {
+                                    targets: [
+                                        {
+                                            target: 'filterCutoff',
+                                            center: 0,
+                                            depth: 1,
+                                            min: 0,
+                                            max: 'high',
+                                            curve: 'linear',
+                                        },
+                                    ],
+                                },
+                                ...Array.from({ length: 7 }, () => ({ targets: [] })),
+                            ],
+                        },
+                    },
+                ])
+            );
+            expect(loadUserPatches()[0]!.patch.macroMappings).toEqual(DEFAULT_PATCH.macroMappings);
+        });
+
+        it('rejects a macro target whose curve is not a string', () => {
+            window.localStorage.setItem(
+                STORAGE_KEY,
+                JSON.stringify([
+                    {
+                        id: 'r',
+                        name: 'n',
+                        patch: {
+                            macroMappings: [
+                                {
+                                    targets: [
+                                        { target: 'filterCutoff', center: 0, depth: 1, min: 0, max: 1, curve: 5 },
+                                    ],
+                                },
+                                ...Array.from({ length: 7 }, () => ({ targets: [] })),
+                            ],
+                        },
+                    },
+                ])
+            );
+            expect(loadUserPatches()[0]!.patch.macroMappings).toEqual(DEFAULT_PATCH.macroMappings);
+        });
+
+        it('rejects a macro target inside a mapping that is itself not an object', () => {
+            const mappings = Array.from({ length: 8 }, () => ({ targets: [] }));
+            // A target entry that is a primitive exercises isJsonObject→false inside sanitizeMacroTarget
+            (mappings[0] as { targets: unknown[] }).targets = [42];
+            window.localStorage.setItem(
+                STORAGE_KEY,
+                JSON.stringify([{ id: 'r', name: 'n', patch: { macroMappings: mappings } }])
+            );
+            expect(loadUserPatches()[0]!.patch.macroMappings).toEqual(DEFAULT_PATCH.macroMappings);
+        });
+    });
+
+    describe('macros tuple non-array and length guards', () => {
+        it('falls back when a macros tuple entry is not a number (boolean)', () => {
+            const macros = [0.1, 0.2, true, 0.4, 0.5, 0.6, 0.7, 0.8];
+            window.localStorage.setItem(STORAGE_KEY, JSON.stringify([{ id: 'r', name: 'n', patch: { macros } }]));
+            expect(loadUserPatches()[0]!.patch.macros).toEqual(DEFAULT_PATCH.macros);
+        });
+    });
+
+    describe('patch field non-number guard', () => {
+        it('skips a stored numeric field whose value is a non-number type (string)', () => {
+            window.localStorage.setItem(
+                STORAGE_KEY,
+                JSON.stringify([{ id: 'r', name: 'n', patch: { filterCutoff: 'bright', oscLevel: 'loud' } }])
+            );
+            const patch = loadUserPatches()[0]!.patch;
+            expect(patch.filterCutoff).toBe(DEFAULT_PATCH.filterCutoff);
+            expect(patch.oscLevel).toBe(DEFAULT_PATCH.oscLevel);
+        });
     });
 });

@@ -62,5 +62,16 @@ describe('Workspace Scratch Pad Handlers', () => {
             void handleToggleScratchPad.execute({ type: 'toggleScratchPad', payload: undefined });
             expect(workspaceStore.set).toHaveBeenCalledWith(expect.objectContaining({ scratchPadOpen: false }));
         });
+
+        it('is a no-op when the workspace store value is null (guard branch)', () => {
+            // Drive the store value to null via the mock setter, then clear
+            // the call log so only post-null writes are counted.
+            workspaceStore.set(null as any);
+            vi.mocked(workspaceStore.set).mockClear();
+
+            void handleToggleScratchPad.execute({ type: 'toggleScratchPad', payload: undefined });
+
+            expect(workspaceStore.set).not.toHaveBeenCalled();
+        });
     });
 });

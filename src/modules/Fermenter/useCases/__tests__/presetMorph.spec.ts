@@ -208,4 +208,102 @@ describe('presetMorph', () => {
         expect(updateDevicePatch).toHaveBeenCalledWith('t1', 'd1', expect.objectContaining({ master_gain: 3 }));
         expect(persistDevicePatch).toHaveBeenCalledWith('d1', c);
     });
+
+    it('applyMorphedPatch is a no-op when the device write target is ineligible', () => {
+        setFermenterDependencies({
+            getAllTracks,
+            resolveEligibleDeviceWriteTarget: () => ({ status: 'ineligible' }),
+            updateDeviceParam: updateDeviceParam as never,
+            persistDeviceParam: persistDeviceParam as never,
+            updateDevicePatch: updateDevicePatch as never,
+            persistDevicePatch: persistDevicePatch as never,
+        });
+
+        applyMorphedPatch('d1', patch('P'));
+
+        // Ineligible target → no store write, no batched flush.
+        expect(loadFermenterPatch).not.toHaveBeenCalled();
+        vi.advanceTimersByTime(16);
+        expect(updateDevicePatch).not.toHaveBeenCalled();
+        expect(persistDevicePatch).not.toHaveBeenCalled();
+    });
+
+    it('applyMorphedPatch is a no-op when the device write target is missing', () => {
+        setFermenterDependencies({
+            getAllTracks,
+            resolveEligibleDeviceWriteTarget: () => ({ status: 'missing' }),
+            updateDeviceParam: updateDeviceParam as never,
+            persistDeviceParam: persistDeviceParam as never,
+            updateDevicePatch: updateDevicePatch as never,
+            persistDevicePatch: persistDevicePatch as never,
+        });
+
+        applyMorphedPatch('d1', patch('P'));
+
+        expect(loadFermenterPatch).not.toHaveBeenCalled();
+        vi.advanceTimersByTime(16);
+        expect(updateDevicePatch).not.toHaveBeenCalled();
+    });
+
+    it('flushMorph skips the engine write when updateDevicePatch is not provided', () => {
+        // Only persistence is wired (updateDevicePatch omitted) — the flush must
+        // still persist the raw patch but skip the engine write.
+        setFermenterDependencies({
+            getAllTracks,
+            resolveEligibleDeviceWriteTarget: () => ({ status: 'eligible', trackId: 't1', deviceId: 'd1' }),
+            updateDeviceParam: updateDeviceParam as never,
+            persistDeviceParam: persistDeviceParam as never,
+            persistDevicePatch: persistDevicePatch as never,
+        });
+
+        applyMorphedPatch('d1', patch('P', { masterGain: 7 }));
+        vi.advanceTimersByTime(16);
+
+        expect(updateDevicePatch).not.toHaveBeenCalled();
+        expect(persistDevicePatch).toHaveBeenCalledWith('d1', expect.objectContaining({ masterGain: 7 }));
+    });
+
+    it('flushMorph skips persistence when persistDevicePatch is not provided', () => {
+        setFermenterDependencies({
+            getAllTracks,
+            resolveEligibleDeviceWriteTarget: () => ({ status: 'eligible', trackId: 't1', deviceId: 'd1' }),
+            updateDeviceParam: updateDeviceParam as never,
+            persistDeviceParam: persistDeviceParam as never,
+            updateDevicePatch: updateDevicePatch as never,
+        });
+
+        applyMorphedPatch('d1', patch('P', { masterGain: 9 }));
+        vi.advanceTimersByTime(16);
+
+        expect(updateDevicePatch).toHaveBeenCalledWith('t1', 'd1', expect.objectContaining({ master_gain: 9 }));
+        expect(persistDevicePatch).not.toHaveBeenCalled();
+    });
+
+    it('flushMorph is a no-op when the deferred target becomes ineligible at flush time', () => {
+        // The applyMorphedPatch call resolves eligible (so the batch is scheduled),
+        // but by the time the rAF flush runs the target is ineligible.
+        let callCount = 0;
+        setFermenterDependencies({
+            getAllTracks,
+            resolveEligibleDeviceWriteTarget: () => {
+                callCount++;
+                return callCount <= 1
+                    ? { status: 'eligible', trackId: 't1', deviceId: 'd1' }
+                    : { status: 'ineligible' };
+            },
+            updateDeviceParam: updateDeviceParam as never,
+            persistDeviceParam: persistDeviceParam as never,
+            updateDevicePatch: updateDevicePatch as never,
+            persistDevicePatch: persistDevicePatch as never,
+        });
+
+        applyMorphedPatch('d1', patch('P'));
+        vi.advanceTimersByTime(16);
+
+        // Store was still written (the eligibility check in applyMorphedPatch passed),
+        // but the flush wrote nothing.
+        expect(loadFermenterPatch).toHaveBeenCalledWith('d1', expect.any(Object));
+        expect(updateDevicePatch).not.toHaveBeenCalled();
+        expect(persistDevicePatch).not.toHaveBeenCalled();
+    });
 });

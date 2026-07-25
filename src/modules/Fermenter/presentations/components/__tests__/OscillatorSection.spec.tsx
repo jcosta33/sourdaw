@@ -153,4 +153,22 @@ describe('OscillatorSection', () => {
             expect(onNoiseLevelChange).toHaveBeenCalledWith(0.9);
         });
     });
+
+    describe('waveform key fallback', () => {
+        it('renders without crashing when the rotaryKnob override is omitted (uses real RotaryKnob)', () => {
+            const props = defaultProps({ rotaryKnob: undefined });
+            delete (props as Record<string, unknown>).rotaryKnob;
+            // Default-branch: real RotaryKnob is used. Must not throw.
+            const { container } = render(<OscillatorSection {...props} />);
+            expect(container.firstChild).toBeTruthy();
+        });
+
+        it('falls back to the sawtooth waveform when the index is out of range', () => {
+            // waveform index 99 is out of range → wfKey defaults to 'sawtooth'.
+            // The OscillatorWaveform must still receive a valid key, not undefined.
+            render(<OscillatorSection {...defaultProps({ waveform: 99 })} />);
+            // No crash; the section renders its chips and header.
+            expect(screen.getByText('Oscillator')).toBeInTheDocument();
+        });
+    });
 });

@@ -20,4 +20,13 @@ describe('setEditingTool', () => {
         setEditingTool('cut');
         expect(mocks.updateWorkspaceState).toHaveBeenCalledWith({ activeTool: 'cut' });
     });
+
+    it('is a no-op when workspace state is null (guard branch)', () => {
+        mocks.getWorkspaceState.mockReturnValue(null);
+        mocks.updateWorkspaceState.mockClear();
+
+        setEditingTool('cut');
+
+        expect(mocks.updateWorkspaceState).not.toHaveBeenCalled();
+    });
 });

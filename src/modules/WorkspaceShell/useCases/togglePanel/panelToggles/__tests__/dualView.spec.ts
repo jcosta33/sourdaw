@@ -25,4 +25,16 @@ describe('toggleDualView', () => {
         toggleDualView();
         expect(mocks.updateWorkspaceState).toHaveBeenCalledWith({ dualViewOpen: true });
     });
+
+    it('should toggle dualViewOpen off when currently on', () => {
+        workspaceStore.set({ dualViewOpen: true } as unknown as WorkspaceState);
+        toggleDualView();
+        expect(mocks.updateWorkspaceState).toHaveBeenCalledWith({ dualViewOpen: false });
+    });
+
+    it('is a no-op when workspace state is null (guard branch)', () => {
+        workspaceStore.set(null as unknown as WorkspaceState);
+        toggleDualView();
+        expect(mocks.updateWorkspaceState).not.toHaveBeenCalled();
+    });
 });

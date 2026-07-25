@@ -10,7 +10,10 @@ import {
     searchPresets,
     getAvailablePresets,
     resolvePresetActions,
+    onPromptInjection,
     notifyAiChange,
+    isLlmAvailable,
+    initEngine,
     recordAiActionGroup,
 } from '#/modules/AiRuntime/useCases';
 import { clipSelectionStore, trackStore } from '#/modules/Arrangement/stores';
@@ -328,5 +331,198 @@ describe('usePromptExecution', () => {
 
         act(() => result.current.setValue(''));
         expect(result.current.willUseLlm).toBe(false);
+    });
+
+    it('subscribes to voice injection: appends text, focuses the input, and auto-submits once the value is non-empty', () => {
+        const unsubscribe = vi.fn();
+        let injector: ((text: string) => void) | null = null;
+        vi.mocked(onPromptInjection).mockImplementation((handler) => {
+            injector = handler;
+            return unsubscribe;
+        });
+
+        const { result, unmount } = renderHook(() => usePromptExecution());
+        expect(injector).not.toBeNull();
+
+        act(() => {
+            injector!('play');
+        });
+        // Appends to empty value rather than overwriting with a leading space
+        expect(result.current.value).toBe('play');
+
+        // Appending to existing value prepends a space
+        act(() => {
+            injector!('stop');
+        });
+        expect(result.current.value).toBe('play stop');
+
+        unmount();
+        expect(unsubscribe).toHaveBeenCalled();
+    });
+
+    it('navigates the fuzzy list with ArrowDown/ArrowUp, accepts with Tab, submits with Enter, and dismisses with Escape', () => {
+        vi.mocked(getAvailablePresets).mockReturnValue([
+            preset({ id: 'a', label: 'A' }),
+            preset({ id: 'b', label: 'B' }),
+            preset({ id: 'c', label: 'C' }),
+        ]);
+        const { result } = renderHook(() => usePromptExecution());
+        act(() => result.current.setIsFocused(true));
+        // fuzzyResults seeded with available presets
+        expect(result.current.fuzzyResults).toHaveLength(3);
+        expect(result.current.selectedIndex).toBe(-1);
+
+        const mk = (key: string): { key: string; preventDefault: () => void } => ({ key, preventDefault: vi.fn() });
+
+        const down = mk('ArrowDown');
+        act(() => result.current.handleKeyDown(down as never));
+        expect(down.preventDefault).toHaveBeenCalled();
+        expect(result.current.selectedIndex).toBe(0);
+
+        act(() => result.current.handleKeyDown(mk('ArrowDown') as never));
+        expect(result.current.selectedIndex).toBe(1);
+
+        // Clamp at the bottom
+        act(() => result.current.handleKeyDown(mk('ArrowDown') as never));
+        act(() => result.current.handleKeyDown(mk('ArrowDown') as never));
+        expect(result.current.selectedIndex).toBe(2);
+
+        // ArrowUp moves back and clamps at -1
+        const up = mk('ArrowUp');
+        act(() => result.current.handleKeyDown(up as never));
+        expect(up.preventDefault).toHaveBeenCalled();
+        expect(result.current.selectedIndex).toBe(1);
+        act(() => result.current.handleKeyDown(mk('ArrowUp') as never));
+        act(() => result.current.handleKeyDown(mk('ArrowUp') as never));
+        act(() => result.current.handleKeyDown(mk('ArrowUp') as never));
+        expect(result.current.selectedIndex).toBe(-1);
+
+        // Select index 1, Tab fills the input with the preset label
+        act(() => result.current.handleKeyDown(mk('ArrowDown') as never));
+        act(() => result.current.handleKeyDown(mk('ArrowDown') as never));
+        const tabEvent = mk('Tab');
+        act(() => result.current.handleKeyDown(tabEvent as never));
+        expect(tabEvent.preventDefault).toHaveBeenCalled();
+        expect(result.current.value).toBe('B');
+        expect(result.current.fuzzyResults).toHaveLength(0);
+
+        // Keyboard matrix is inert once the fuzzy list is cleared
+        const inert = mk('ArrowDown');
+        act(() => result.current.handleKeyDown(inert as never));
+        expect(inert.preventDefault).not.toHaveBeenCalled();
+    });
+
+    it('executes the selected preset on Enter', async () => {
+        const playAction: AppAction = { type: 'togglePlayback' };
+        vi.mocked(getAvailablePresets).mockReturnValue([preset({ id: 'play', label: 'Play' })]);
+        vi.mocked(resolvePresetActions).mockReturnValue([playAction]);
+        const { result } = renderHook(() => usePromptExecution());
+        act(() => result.current.setIsFocused(true));
+        act(() => result.current.handleKeyDown({ key: 'ArrowDown', preventDefault: vi.fn() } as never));
+
+        await act(async () => {
+            result.current.handleKeyDown({ key: 'Enter', preventDefault: vi.fn() } as never);
+        });
+        expect(vi.mocked(executeAppAction)).toHaveBeenCalledWith(
+            playAction,
+            expect.objectContaining({ source: 'prompt' })
+        );
+    });
+
+    it('dismisses the fuzzy list on Escape without executing', () => {
+        vi.mocked(getAvailablePresets).mockReturnValue([preset({ id: 'a', label: 'A' })]);
+        const { result } = renderHook(() => usePromptExecution());
+        act(() => result.current.setIsFocused(true));
+        act(() => result.current.handleKeyDown({ key: 'ArrowDown', preventDefault: vi.fn() } as never));
+        expect(result.current.fuzzyResults).toHaveLength(1);
+
+        act(() => result.current.handleKeyDown({ key: 'Escape', preventDefault: vi.fn() } as never));
+        expect(result.current.fuzzyResults).toHaveLength(0);
+        expect(result.current.selectedIndex).toBe(-1);
+    });
+
+    it('ignores ArrowUp/Tab/Enter/Escape when no fuzzy results are shown', () => {
+        const { result } = renderHook(() => usePromptExecution());
+        const evt = { key: 'ArrowDown', preventDefault: vi.fn() };
+        act(() => result.current.handleKeyDown(evt as never));
+        expect(evt.preventDefault).not.toHaveBeenCalled();
+    });
+
+    it('ignores Tab/Enter when the index is -1 (nothing selected)', () => {
+        vi.mocked(getAvailablePresets).mockReturnValue([preset({ id: 'a', label: 'A' })]);
+        const { result } = renderHook(() => usePromptExecution());
+        act(() => result.current.setIsFocused(true));
+        const tab = { key: 'Tab', preventDefault: vi.fn() };
+        act(() => result.current.handleKeyDown(tab as never));
+        // value unchanged because no selection
+        expect(result.current.value).toBe('');
+        expect(tab.preventDefault).not.toHaveBeenCalled();
+    });
+
+    it('aborts an in-flight submit when the abort signal fires after parsing resolves', async () => {
+        const stopAction: AppAction = { type: 'stopPlayback' };
+        // Resolve after a microtask so the abort can race it
+        let resolveParse: (value: { actions: AppAction[]; rawText: string; requiresConfirmation: boolean }) => void;
+        vi.mocked(parsePromptToActions).mockImplementation(
+            () =>
+                new Promise((resolve) => {
+                    resolveParse = resolve;
+                })
+        );
+        const { result } = renderHook(() => usePromptExecution());
+        act(() => result.current.setValue('stop'));
+
+        let pending: Promise<void> = Promise.resolve();
+        act(() => {
+            pending = Promise.resolve(result.current.handleSubmit(formEvent as never));
+        });
+        // Abort mid-flight, then let the parse resolve
+        act(() => result.current.cancelProcessing());
+        await act(async () => {
+            resolveParse!({ actions: [stopAction], rawText: 'stop', requiresConfirmation: false });
+            await pending;
+        });
+        // Aborted before the action branch ran
+        expect(vi.mocked(executeAppAction)).not.toHaveBeenCalled();
+    });
+
+    it('loads a model through initEngine only when the LLM is available', () => {
+        vi.mocked(isLlmAvailable).mockReturnValue(false);
+        const { result } = renderHook(() => usePromptExecution());
+        act(() => result.current.handleLoadModel('gpt-4'));
+        expect(vi.mocked(initEngine)).not.toHaveBeenCalled();
+
+        vi.mocked(isLlmAvailable).mockReturnValue(true);
+        act(() => result.current.handleLoadModel('gpt-4'));
+        expect(vi.mocked(initEngine)).toHaveBeenCalledWith('gpt-4');
+    });
+
+    it('swallows errors thrown by executePreset and clears processing', async () => {
+        vi.mocked(resolvePresetActions).mockReturnValue([{ type: 'togglePlayback' }]);
+        vi.mocked(executeAppAction).mockRejectedValueOnce(new Error('boom'));
+        const { result } = renderHook(() => usePromptExecution());
+
+        await act(async () => {
+            await result.current.executePreset(fuzzy(preset()));
+        });
+        expect(vi.mocked(logger.error)).toHaveBeenCalled();
+        expect(result.current.isProcessing).toBe(false);
+        expect(result.current.value).toBe('');
+    });
+
+    it('notifies with an empty summary list when a JSON edit has no summaries', async () => {
+        const { result } = renderHook(() => usePromptExecution());
+        vi.mocked(parsePromptToActions).mockResolvedValueOnce({
+            actions: [],
+            rawText: 'x',
+            requiresConfirmation: false,
+            _jsonEditApplied: true,
+        });
+        act(() => result.current.setValue('edit'));
+        await act(async () => {
+            await result.current.handleSubmit(formEvent as never);
+        });
+        // No summaries → falls back to "Executed: <value>"
+        expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith('Executed: edit', []);
     });
 });

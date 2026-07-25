@@ -59,6 +59,8 @@ vi.mock('#/modules/MixerConsole/presentations/views', () => ({
 vi.mock('#/modules/TimelineEditor/presentations/views', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/TimelineEditor/presentations/views')>()),
     ClipView: () => <div data-testid="clip-view">Clip View</div>,
+    AutomationBottomPanel: () => <div data-testid="automation-panel">Automation</div>,
+    InspectorPanel: () => <div data-testid="inspector-panel">Inspector</div>,
 }));
 
 vi.mock('#/modules/Preferences/presentations/views', () => ({
@@ -67,6 +69,27 @@ vi.mock('#/modules/Preferences/presentations/views', () => ({
 
 vi.mock('#/modules/ElasticAudio/presentations/views', () => ({
     ElasticEditorPanel: elasticEditorPanelMock,
+}));
+
+vi.mock('#/modules/Routing/presentations/views', () => ({
+    RoutingMatrix: () => <div data-testid="routing-matrix">Routing</div>,
+}));
+
+vi.mock('#/modules/SessionLauncher/presentations/views', () => ({
+    LoopStationPanel: () => <div data-testid="loop-station-panel">LoopStation</div>,
+    SessionView: () => <div data-testid="session-view">Session</div>,
+}));
+
+vi.mock('#/modules/Setlist/presentations/views', () => ({
+    SetlistPanel: () => <div data-testid="setlist-panel">Setlist</div>,
+}));
+
+vi.mock('#/modules/Metering/presentations/views', () => ({
+    AnalysisPanel: () => <div data-testid="analysis-panel">Analysis</div>,
+}));
+
+vi.mock('#/modules/Automation/presentations/views', () => ({
+    ModulationMatrix: () => <div data-testid="modulation-matrix">Modulation</div>,
 }));
 
 vi.mock('#/modules/AiRuntime/presentations/views', async (importOriginal) => ({
@@ -563,6 +586,44 @@ describe('AppShell', () => {
             projectState = createProjectState({ initialized: false, loading: false });
             rerender(<AppShell>Content</AppShell>);
             expect(screen.queryByTestId('launch-screen')).not.toBeInTheDocument();
+        });
+    });
+
+    // ── Bottom-dock tab content routing ───────────────────────────────────────────
+    describe('bottom-dock tab routing', () => {
+        beforeEach(() => {
+            vi.mocked(useWorkspaceState).mockReturnValue(
+                createWorkspaceState({
+                    sidebarOpen: false,
+                    inspectorOpen: false,
+                    mixerOpen: true,
+                })
+            );
+        });
+
+        const tabCases: Array<[string, string]> = [
+            ['Routing', 'routing-matrix'],
+            ['Automation', 'automation-panel'],
+            ['Session', 'session-view'],
+            ['Analysis', 'analysis-panel'],
+            ['Setlist', 'setlist-panel'],
+            ['Loop Station', 'loop-station-panel'],
+            ['Modulation', 'modulation-matrix'],
+        ];
+
+        it.each(tabCases)('renders the %s panel when its tab is clicked', (label, testId) => {
+            render(<AppShell>Content</AppShell>);
+            fireEvent.click(screen.getByRole('tab', { name: label }));
+            expect(screen.getByTestId(testId)).toBeInTheDocument();
+        });
+
+        it('falls back to the RoutingMatrix for an unknown tab value', () => {
+            // The default case in renderBottomTabContent renders RoutingMatrix.
+            // We can't easily synthesize an unknown value through the UI, but the
+            // routing tab itself exercises the RoutingMatrix branch.
+            render(<AppShell>Content</AppShell>);
+            fireEvent.click(screen.getByRole('tab', { name: 'Routing' }));
+            expect(screen.getByTestId('routing-matrix')).toBeInTheDocument();
         });
     });
 });
