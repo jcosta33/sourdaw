@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 
+import { logger } from '#/infra/logger/appLogger';
 import { LEGACY_MIDI_PROBABILITY_SEED } from '#/modules/MIDI/stores';
 import { playheadPositionRef } from '#/modules/Transport/stores';
 
@@ -563,5 +564,163 @@ describe('buildTimelineRenderModel — inline midi note preview', () => {
         });
         inlineMidiNotePreviewRef.current = { clipId: 'c1', noteId: 'missing', pitch: 72, startBeat: 2 };
         expect(buildTimelineRenderModel().tracks[0]!.clips[0]!.midiNotes[0]!.pitch).toBe(60);
+    });
+
+    it('leaves the model unchanged when the note preview targets a clip that is not on any track', () => {
+        seedStores({
+            tracks: [
+                {
+                    ...createTrack({ id: 't', name: 'T', kind: 'midi' }),
+                    clips: [clip({ id: 'c1' })],
+                    color: '#000',
+                    alternatives: [],
+                    showVariationLanes: false,
+                },
+            ],
+            midiByClip: { c1: [note({ pitch: 60, startBeat: 0 })] },
+        });
+        inlineMidiNotePreviewRef.current = { clipId: 'other-clip', noteId: 'n1', pitch: 72, startBeat: 2 };
+        expect(buildTimelineRenderModel().tracks[0]!.clips[0]!.midiNotes[0]!.pitch).toBe(60);
+    });
+});
+
+describe('buildTimelineRenderModel — recording overlay cache', () => {
+    it('uses the fast path (mutating endBeat in place) when called again with the same model and rec clip set', () => {
+        seedStores({
+            tracks: [
+                {
+                    ...createTrack({ id: 't', name: 'T', kind: 'audio' }),
+                    clips: [clip({ id: 'rec', startBeat: 0, endBeat: 2, type: 'audio' })],
+                    color: '#000',
+                    alternatives: [],
+                    showVariationLanes: false,
+                },
+            ],
+            transport: { isRecording: true },
+        });
+        const recClips = ['rec'];
+        activeRecordingRef.current = recClips;
+        playheadPositionRef.current = 5;
+        const first = buildTimelineRenderModel();
+        expect(first.tracks[0]!.clips[0]!.endBeat).toBe(5);
+
+        // Same recClips array identity, same underlying cached model → fast path.
+        playheadPositionRef.current = 9;
+        const second = buildTimelineRenderModel();
+        expect(second.tracks[0]!.clips[0]!.endBeat).toBe(9);
+        expect(second.dataDirty).toBe(true);
+    });
+
+    it('keeps non-recording clips on a track that also has a recording clip untouched', () => {
+        seedStores({
+            tracks: [
+                {
+                    ...createTrack({ id: 't', name: 'T', kind: 'audio' }),
+                    clips: [
+                        clip({ id: 'other', startBeat: 0, endBeat: 2, type: 'audio' }),
+                        clip({ id: 'rec', startBeat: 4, endBeat: 6, type: 'audio' }),
+                    ],
+                    color: '#000',
+                    alternatives: [],
+                    showVariationLanes: false,
+                },
+            ],
+            transport: { isRecording: true },
+        });
+        activeRecordingRef.current = ['rec'];
+        playheadPositionRef.current = 10;
+        const model = buildTimelineRenderModel();
+        const byId = new Map(model.tracks[0]!.clips.map((c) => [c.id, c]));
+        expect(byId.get('rec')?.endBeat).toBe(10);
+        expect(byId.get('other')?.endBeat).toBe(2);
+    });
+
+    it('reports a drift warning once when transport says not-recording but the rec ref still holds clips', () => {
+        const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+        seedStores({
+            tracks: [
+                {
+                    ...createTrack({ id: 't', name: 'T', kind: 'audio' }),
+                    clips: [clip({ id: 'rec', startBeat: 0, endBeat: 2, type: 'audio' })],
+                    color: '#000',
+                    alternatives: [],
+                    showVariationLanes: false,
+                },
+            ],
+            transport: { isRecording: false },
+        });
+        activeRecordingRef.current = ['rec'];
+
+        buildTimelineRenderModel();
+        buildTimelineRenderModel();
+        // The one-shot latch reports the drift only on the first frame.
+        expect(warnSpy).toHaveBeenCalledTimes(1);
+        expect(warnSpy.mock.calls[0]![0]).toContain('drift detected');
+
+        // Resetting the rec ref clears the latch so a future drift is reported again.
+        activeRecordingRef.current = [];
+        buildTimelineRenderModel();
+        activeRecordingRef.current = ['rec'];
+        buildTimelineRenderModel();
+        expect(warnSpy).toHaveBeenCalledTimes(2);
+        warnSpy.mockRestore();
+    });
+});
+
+describe('buildTimelineRenderModel — drag preview offsets', () => {
+    it('falls back to the base clip offsets when the preview position omits them', () => {
+        seedStores({
+            tracks: [
+                {
+                    ...createTrack({ id: 't', name: 'T', kind: 'audio' }),
+                    clips: [
+                        clip({
+                            id: 'c1',
+                            startBeat: 0,
+                            endBeat: 4,
+                            type: 'audio',
+                            audioOffsetBeats: 1.5,
+                            midiOffsetBeats: 0.5,
+                        }),
+                    ],
+                    color: '#000',
+                    alternatives: [],
+                    showVariationLanes: false,
+                },
+            ],
+        });
+        clipDragPreviewRef.current = {
+            // Position supplies new beats but no offsets → must inherit base offsets.
+            positions: new Map([['c1', { trackId: 't', startBeat: 100, endBeat: 104 }]]),
+            originals: new Map(),
+        };
+        const mapped = buildTimelineRenderModel().tracks[0]!.clips[0]!;
+        expect(mapped.startBeat).toBe(100);
+        expect(mapped.endBeat).toBe(104);
+        expect(mapped.audioOffsetBeats).toBe(1.5);
+        expect(mapped.midiOffsetBeats).toBe(0.5);
+    });
+
+    it('keeps clips not present in the drag preview in their original order', () => {
+        seedStores({
+            tracks: [
+                {
+                    ...createTrack({ id: 't', name: 'T', kind: 'midi' }),
+                    clips: [
+                        clip({ id: 'c1', startBeat: 0, endBeat: 4 }),
+                        clip({ id: 'c2', startBeat: 8, endBeat: 12 }),
+                    ],
+                    color: '#000',
+                    alternatives: [],
+                    showVariationLanes: false,
+                },
+            ],
+        });
+        clipDragPreviewRef.current = {
+            positions: new Map([['c1', { trackId: 't', startBeat: 50, endBeat: 54 }]]),
+            originals: new Map(),
+        };
+        const ids = buildTimelineRenderModel().tracks[0]!.clips.map((c) => c.id);
+        expect(ids).toEqual(['c1', 'c2']);
     });
 });
