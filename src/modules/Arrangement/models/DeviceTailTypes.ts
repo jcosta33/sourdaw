@@ -1,5 +1,5 @@
 /**
- * Declared render-tail capability for a device (OE-9).
+ * Declared render-tail capability for a device.
  *
  * Offline export has to know how long a device keeps sounding after its last
  * input so a bounce is not cut off mid-reverb. That used to be a hardcoded

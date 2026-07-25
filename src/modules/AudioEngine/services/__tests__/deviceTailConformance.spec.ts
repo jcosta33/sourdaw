@@ -11,7 +11,7 @@ import { createOfflineDeviceNode } from '../../repositories/deviceNodeFactory';
 import { estimateRenderTailSeconds } from '../estimateRenderTailSeconds';
 
 /**
- * OE-9 cross-conformance.
+ * Descriptor/estimator cross-conformance for declared device tails.
  *
  * `estimateRenderTailSeconds` mirrors `DeviceTailDeclaration` structurally
  * instead of importing it, because a pure service cannot reach into another

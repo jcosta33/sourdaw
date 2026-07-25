@@ -9,12 +9,12 @@ export type Mp3BitRate = 96 | 128 | 192 | 320;
  * Dither applied when quantizing to a fixed bit depth.
  *
  * `random` is the historical behaviour and stays the default; `seeded` and
- * `none` exist so an export can be reproduced byte for byte (OE-10).
+ * `none` exist so an export can be reproduced byte for byte.
  */
 export type ExportDither = 'random' | 'seeded' | 'none';
 
 /**
- * Loudness normalization applied before encoding (OE-7).
+ * Loudness normalization applied before encoding.
  *
  * `off` is the default and leaves the mix at its authored level, with only the
  * existing sample-peak clip guard. `r128` measures programme loudness and true

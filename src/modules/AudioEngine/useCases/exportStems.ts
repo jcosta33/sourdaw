@@ -360,7 +360,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
             onProgress?.(fractAfterSchedule);
             await yieldToMain();
 
-            // OE-6/OE-11 — same segmented kernel the mixdown uses, so a stem
+            // Same segmented kernel the mixdown uses, so a stem
             // render aborts at a real boundary instead of running to completion
             // in the background (up to MAX_CONCURRENT_RENDERS of them at once),
             // and this stem's slot advances on measured render progress rather

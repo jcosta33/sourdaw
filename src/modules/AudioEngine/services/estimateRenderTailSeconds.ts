@@ -1,7 +1,7 @@
 /**
  * Longest declared render tail across a project, in seconds.
  *
- * OE-9 — this used to be a hardcoded switch over `builtin-reverb` and
+ * This used to be a hardcoded switch over `builtin-reverb` and
  * `builtin-delay`, which gave every other tail-producing device a tail of zero:
  * the ProofChamber reverb, the Faust reverbs and delays, the convolution
  * reverb, and every instrument release stage were all truncated on export even

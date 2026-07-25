@@ -21,7 +21,7 @@ type SegmentedContextHarness = {
  * on: `suspend(t)` resolves only when the render reaches `t`, and the render
  * makes no further progress until `resume()` is called. A checkpoint whose
  * `resume()` never arrives therefore leaves the render permanently stalled —
- * which is exactly the "work actually stopped" property OE-6 is about.
+ * which is exactly the "work actually stopped" property this kernel provides.
  */
 function createSegmentedContext(durationSeconds: number): SegmentedContextHarness {
     const suspendResolvers = new Map<number, () => void>();

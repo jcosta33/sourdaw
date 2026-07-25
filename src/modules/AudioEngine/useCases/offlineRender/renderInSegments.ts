@@ -52,7 +52,7 @@ function planCheckpointSeconds({
 
 /**
  * Runs an offline render as a sequence of suspendable segments so a cancel or a
- * blown time budget can actually stop the work (OE-6).
+ * blown time budget can actually stop the work.
  *
  * `OfflineAudioContext` has no abort API, but a suspended context renders
  * nothing: the graph only advances while it is resumed. Scheduling a suspend at
@@ -62,7 +62,7 @@ function planCheckpointSeconds({
  * `renderWithTimeout` guard does.
  *
  * Reaching a checkpoint is also the only honest progress signal the API offers,
- * so the same boundaries drive `onRenderProgress` (OE-11) in place of a timer
+ * so the same boundaries drive `onRenderProgress` in place of a timer
  * simulation.
  *
  * Degradation is deliberate and always toward "render normally": a context

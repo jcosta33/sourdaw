@@ -21,7 +21,7 @@ export type ResolveNormalizationGainOutput = {
 
 /**
  * Resolve the single gain that takes a mix to its loudness target without
- * breaching the true-peak ceiling (OE-7).
+ * breaching the true-peak ceiling.
  *
  * The two constraints can disagree: a heavily limited master may already be at
  * the ceiling well below the target loudness. Gain alone cannot satisfy both,

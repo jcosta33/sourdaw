@@ -22,7 +22,7 @@ export type ApplyExportNormalizationOutput = {
 
 /**
  * Measure a rendered export and scale it to the requested loudness without
- * breaching the true-peak ceiling (OE-7).
+ * breaching the true-peak ceiling.
  *
  * Applied once, before the format loop, so every requested format is encoded
  * from identical audio — a mix normalized for WAV but not for MP3 would ship

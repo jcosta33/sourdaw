@@ -16,7 +16,7 @@ export const REPRODUCIBLE_DITHER_SEED = 0x50f7_1a11;
 /**
  * Resolve the export dither preference into the options the encoders take.
  *
- * OE-10 — quantizing to 16-bit without dither adds correlated distortion, so
+ * Quantizing to 16-bit without dither adds correlated distortion, so
  * dither stays on by default. But the default draws from `Math.random()`, which
  * makes every export of an unchanged project a different file: no byte-exact
  * re-delivery, no diffing two bounces, nothing reproducible. The two extra

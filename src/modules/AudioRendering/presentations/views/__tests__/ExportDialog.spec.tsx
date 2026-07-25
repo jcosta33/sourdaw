@@ -364,7 +364,7 @@ describe('ExportDialog', () => {
         expect(vi.mocked(audioBufferToFlac).mock.calls[0]![1]).toBe(24);
     });
 
-    it('should hand the encoder a seeded dither when repeatable export is selected (OE-10)', async () => {
+    it('should hand the encoder a seeded dither when repeatable export is selected', async () => {
         vi.mocked(loadExportSettings).mockReturnValueOnce({
             formats: ['wav'],
             sampleRate: 44100,
@@ -388,7 +388,7 @@ describe('ExportDialog', () => {
         expect(typeof ditherArgument.seed).toBe('number');
     });
 
-    it('should hand the encoder an off-dither setting for a bit-exact bounce (OE-10)', async () => {
+    it('should hand the encoder an off-dither setting for a bit-exact bounce', async () => {
         vi.mocked(loadExportSettings).mockReturnValueOnce({
             formats: ['wav'],
             sampleRate: 44100,
@@ -408,7 +408,7 @@ describe('ExportDialog', () => {
         expect(mocks.encodeWav.mock.calls[0]![3]).toEqual({ mode: 'none' });
     });
 
-    it('should normalize the exported audio to the loudness target when R128 is selected (OE-7)', async () => {
+    it('should normalize the exported audio to the loudness target when R128 is selected', async () => {
         vi.mocked(loadExportSettings).mockReturnValueOnce({
             formats: ['wav'],
             sampleRate: 44100,
@@ -450,7 +450,7 @@ describe('ExportDialog', () => {
         expect(20 * Math.log10(encodedPeak)).toBeCloseTo(-14, 1);
     });
 
-    it('should leave the exported audio at its authored level when normalization is off (OE-7)', async () => {
+    it('should leave the exported audio at its authored level when normalization is off', async () => {
         const buffer = MockAudioBuffer.create(2, 44100, 44100);
         const amplitude = Math.pow(10, -20 / 20);
         for (let channel = 0; channel < 2; channel++) {

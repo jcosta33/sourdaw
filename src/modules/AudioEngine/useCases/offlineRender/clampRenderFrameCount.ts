@@ -11,7 +11,7 @@ type ClampRenderFrameCountInput = {
  * Resolves the frame count for an offline render, capped to what the renderer
  * can allocate.
  *
- * OE-11 — the cap itself is unavoidable, but it used to be applied silently, so
+ * The cap itself is unavoidable, but it used to be applied silently, so
  * an over-long export produced a short file that looked like a success. Both the
  * mixdown and the stem path resolve their frame count here so the truncation is
  * always reported the same way.

@@ -144,7 +144,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         return { startBeat: 0, durationBeats: projectMaxBeat };
     };
 
-    // OE-9 — the descriptor lookup happens here because this view sits
+    // The descriptor lookup happens here because this view sits
     // downstream of both Arrangement and AudioEngine; wiring it inside
     // AudioEngine instead would make the two modules mutually dependent.
     const deviceTailFor = (deviceType: string) => getPluginById(deviceType)?.tail;
@@ -153,7 +153,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         if (!autoTail) {
             return Math.max(0, Math.min(MAX_MANUAL_TAIL_SECONDS, tailSeconds));
         }
-        // OE-9 — the estimator already caps the detected tail at its own
+        // The estimator already caps the detected tail at its own
         // ceiling. Re-clamping here to a second, lower number is what used to
         // truncate long reverbs back to 30 s.
         return Math.max(0, getAutoDetectedTailSeconds({ tailForDeviceType: deviceTailFor }));
@@ -353,7 +353,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             const { startBeat, durationBeats } = resolveRange();
             const tail = effectiveTailSeconds();
             const bd = resolveExportBitDepths({ formats, selectedBitDepth: bitDepth }).bitDepth;
-            // OE-10 — every encoder gets the same dither decision, so a seeded
+            // Every encoder gets the same dither decision, so a seeded
             // or undithered export is reproducible in all selected formats.
             const ditherOptions = resolveExportDither(dither);
             const formatList = Array.from(formats);
@@ -367,7 +367,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 fractionOffset: number,
                 fractionRange: number
             ) => {
-                // OE-7 — normalize once, before the format loop, so every
+                // Normalize once, before the format loop, so every
                 // requested format is encoded from identical audio.
                 if (normalization === 'r128') {
                     setStatusText(`Measuring ${name}...`);

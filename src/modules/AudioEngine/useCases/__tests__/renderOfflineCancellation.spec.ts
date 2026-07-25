@@ -204,7 +204,7 @@ describe('renderOffline — cancelling an in-flight render', () => {
         await reachCheckpoint(2);
 
         await rejection;
-        // The whole point of OE-6: the render is left suspended at the cancel
+        // The whole point: the render is left suspended at the cancel
         // boundary, so it stops consuming CPU rather than running to completion
         // in the background. A resume here would mean the work continued.
         expect(context.resumeCount).toBe(1);

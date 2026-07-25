@@ -277,7 +277,7 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
         // Yield so the UI can paint the scheduling-complete mark before startRendering() blocks.
         await yieldToMain();
 
-        // OE-6/OE-11 — render in suspendable segments. Each boundary is both a
+        // Render in suspendable segments. Each boundary is both a
         // real abort point (a cancelled render is left suspended rather than
         // running to completion in the background) and the only truthful
         // progress signal the API offers, replacing the old eased timer that

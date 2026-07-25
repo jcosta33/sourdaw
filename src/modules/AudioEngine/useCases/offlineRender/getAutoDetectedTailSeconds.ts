@@ -19,7 +19,7 @@ type GetAutoDetectedTailSecondsInput = {
  * Read the current project tracks and return the longest device tail in
  * seconds. Used by the export dialog's "auto-detect tail" checkbox.
  *
- * OE-9 — this is the seam that carries each device's declared tail from its
+ * This is the seam that carries each device's declared tail from its
  * descriptor into the pure estimator.
  */
 export function getAutoDetectedTailSeconds({ tailForDeviceType }: GetAutoDetectedTailSecondsInput): number {
