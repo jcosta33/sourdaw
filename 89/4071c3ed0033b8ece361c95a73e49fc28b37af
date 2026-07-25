@@ -1,0 +1,99 @@
+src/modules/Transport/stores/transportStore.ts
+  s_0d39f3a4a4357a::t_99f9dd3a09d07c 348-350
+src/modules/CrdtDocument/useCases/resetCrdtProjectAuthority.ts
+  s_0d39f3a4a4357a::t_c28086d3e32f8c 1-4
+  s_0d39f3a4a4357a::t_d1c010d6bca93f 21-25
+src/modules/Project/stores/arrangementStore.ts
+  s_0d39f3a4a4357a::t_9e9ca471dfead0 709-713
+src/modules/Automation/stores/automationStore.ts
+  s_0d39f3a4a4357a::t_d0933915844b7e 421-425
+src/infra/store/storage/__tests__/createAutomergeStorage.projectionPurity.spec.ts
+  s_0d39f3a4a4357a::t_c43bdde26e8477 1-196
+src/modules/CrdtDocument/useCases/projection/__tests__/projectionCompleteness.spec.ts
+  s_0d39f3a4a4357a::t_74ecb1c7f181f1 5-18,21-24,26,39,54,56,59-75,78,83-87,102-114,116
+  s_0d39f3a4a4357a::t_62d4028f14ad8b 115
+src/modules/CvGate/stores/cvGate.ts
+  s_0d39f3a4a4357a::t_7497e257c995de 167-171
+src/modules/CrdtDocument/useCases/projection/projectProjection.ts
+  s_0d39f3a4a4357a::t_8e386827351380 4,6,8,11,16-97,100,102-142
+src/modules/Arrangement/stores/trackStore.ts
+  s_0d39f3a4a4357a::t_1eb1fea2c8e885 681-683
+src/modules/Arrangement/stores/takeLaneStore.ts
+  s_0d39f3a4a4357a::t_2a0099cfe68cc3 288-292
+src/modules/CrdtDocument/useCases/projection/__tests__/projectProjection.spec.ts
+  s_0d39f3a4a4357a::t_552023c0d709ca 1-26,28-33,35,37-38,40-43,45-46,48,50-51,54-55,57-60,62-63,65,67-115,117
+src/infra/store/storage/createAutomergeStorage.ts
+  s_0d39f3a4a4357a::t_f9252592334bea 149,152
+  s_0d39f3a4a4357a::t_74be8090c48a3d 19-33,43-49
+  s_0d39f3a4a4357a::t_4808e6881e81da 426-434
+  s_0d39f3a4a4357a::t_90e513e5d0a6be 425,627-651
+  s_0d39f3a4a4357a::t_3cffbbe8850c35 474
+  s_0d39f3a4a4357a::t_8f7b42a302ba39 778,782-792,794-800,806-809
+  s_0d39f3a4a4357a::t_0ee602f08c39d7 686-687,692-694
+  s_0d39f3a4a4357a::t_5ba748bd4121ad 327-349
+  s_0d39f3a4a4357a::t_96e16610a93aa4 695-697
+src/modules/Yeast/stores/yeastAutomergeStorage.ts
+  s_0d39f3a4a4357a::t_a24cc9f8572de9 8-13
+  s_0d39f3a4a4357a::t_5559d0ff4d03a6 287-292
+src/modules/Transport/stores/timeSignatureMapStore.ts
+  s_0d39f3a4a4357a::t_c2492b9ad0d382 113-117
+src/modules/CrdtDocument/useCases/__tests__/mutateCrdtDoc.spec.ts
+  s_0d39f3a4a4357a::t_04f1fe9b3bbeab 23,31-37,46-63
+src/modules/CrdtDocument/useCases/projection/setupProjectionBridge.ts
+  s_0d39f3a4a4357a::t_57edeedcdcc1fb 4,15-21,24,28-29
+  s_0d39f3a4a4357a::t_860ef10c85713a 30-31
+src/modules/Project/stores/projectStore.ts
+  s_0d39f3a4a4357a::t_99d6ad7f8297ff 303-305
+src/modules/Routing/stores/sidechainStore.ts
+  s_0d39f3a4a4357a::t_16fc1849b4c3e1 111-115
+src/infra/store/storage/__tests__/createAutomergeStorage.spec.ts
+  s_0d39f3a4a4357a::t_b3d5bc6421fee2 89,107-115,117
+  s_0d39f3a4a4357a::t_8f2ccf94407908 270-275,283-288
+src/modules/CrdtDocument/useCases/__tests__/resetCrdtProjectAuthority.spec.ts
+  s_0d39f3a4a4357a::t_67b58e2b868282 106-129
+src/modules/CrdtDocument/useCases/mutateCrdtDoc.ts
+  s_0d39f3a4a4357a::t_3378e20d1224fa 33-39
+  s_0d39f3a4a4357a::t_954480d45e832f 17-23
+src/modules/Transport/stores/tempoMapStore.ts
+  s_0d39f3a4a4357a::t_f1498e46708285 109-113
+src/modules/CrdtDocument/useCases/projection/__tests__/projectionCost.spec.ts
+  s_0d39f3a4a4357a::t_9d8002b227eecd 139-170,177-178
+  s_0d39f3a4a4357a::t_f39f1cbb7719c6 192
+  s_0d39f3a4a4357a::t_478e9417c80b26 4-5,20-21,28-93,125,134-135,180-184,215-216,218-219,224,235
+  s_0d39f3a4a4357a::t_584599861f3ea0 171-176
+  s_0d39f3a4a4357a::t_4106f91f9b9dde 186
+  s_0d39f3a4a4357a::t_d98a68e22edb0a 228-233,240-241
+  s_0d39f3a4a4357a::t_5cfb46c481ea54 1-3,6-19,22-27,94-124,126-133,136-138,179,185,187-191,193-201,204,206-214,217,220-223,225-227,234,236-239,242-243
+  s_0d39f3a4a4357a::t_50bdf1a4a66825 202-203,205
+src/modules/MIDI/stores/grooveTemplateAutomergeStorage.ts
+  s_0d39f3a4a4357a::t_1f65585b0ef570 5
+  s_0d39f3a4a4357a::t_7cb63e74d0d9f5 290-295
+src/modules/Arrangement/stores/markerStore.ts
+  s_0d39f3a4a4357a::t_11793a4634f3ca 167-171
+src/modules/Yeast/stores/yeastStore.ts
+  s_0d39f3a4a4357a::t_c51b5022aee92d 13,17-19
+src/modules/CrdtDocument/repositories/automergeRepository.ts
+  s_0d39f3a4a4357a::t_47da68c65780c9 204-216
+  s_0d39f3a4a4357a::t_2424ecbf255de2 981,984
+  s_0d39f3a4a4357a::t_83dbfc471a52f0 331-334,340-341,352
+src/modules/Knead/stores/kneadStore.ts
+  s_0d39f3a4a4357a::t_ae184178dd1041 335-337
+src/modules/CrdtDocument/useCases/registerCrdtStorageRuntime.ts
+  s_0d39f3a4a4357a::t_80d55a0e6af3f7 17,20,26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "894071c3ed0033b8ece361c95a73e49fc28b37af",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}

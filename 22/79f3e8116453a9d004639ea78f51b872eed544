@@ -1,0 +1,36 @@
+src/modules/CrdtDocument/useCases/projection/projectSlotProjections.ts
+  s_0d39f3a4a4357a::t_dab328e52ccde9 1-115
+src/modules/CrdtDocument/useCases/projection/__tests__/projectionCost.spec.ts
+  s_0d39f3a4a4357a::t_305054fe54948c 11
+src/modules/CrdtDocument/useCases/projection/setupProjectionBridge.ts
+  s_0d39f3a4a4357a::t_8613896bab874c 23-29
+  s_0d39f3a4a4357a::t_4b45d5ae56be72 4-5
+src/modules/CrdtDocument/useCases/projection/__tests__/projectionCompleteness.spec.ts
+  s_0d39f3a4a4357a::t_18aff4755b4371 66-68
+  s_0d39f3a4a4357a::t_e4083cffb98dc7 5-6
+src/modules/CrdtDocument/useCases/projection/__tests__/projectProjection.spec.ts
+  s_0d39f3a4a4357a::t_09ae8d9ac3aafc 3-5
+src/infra/store/storage/__tests__/createAutomergeStorage.projectionPurity.spec.ts
+  s_0d39f3a4a4357a::t_f33e65858cdcd6 140-168
+  s_0d39f3a4a4357a::t_c2129bce43f92f 8
+src/modules/CrdtDocument/useCases/projection/projectProjection.ts
+  s_0d39f3a4a4357a::t_faf182807c1514 1,4,6-9
+src/modules/CrdtDocument/useCases/projection/projectChangedCrdtSlots.ts
+  s_0d39f3a4a4357a::t_16812b480abe98 1-40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "2279f3e8116453a9d004639ea78f51b872eed544",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
