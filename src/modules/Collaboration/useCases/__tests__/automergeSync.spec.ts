@@ -1,4 +1,4 @@
-import { init as automergeInit, initSyncState, generateSyncMessage, type Doc } from '@automerge/automerge';
+import { init as automergeInit, initSyncState, change, generateSyncMessage, type Doc } from '@automerge/automerge';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import {
@@ -14,12 +14,14 @@ import { bytesToBase64 } from '#/utils/base64';
 
 import { AutomergeSync } from '../automergeSync';
 
+import { createPeerSyncMessages } from './peerSyncHandshake';
+
 const command_mocks = vi.hoisted(() => ({
-    reset_action_replay_authority: vi.fn<() => void>(),
+    sync_action_replay_metadata: vi.fn<(entries: readonly { id: string }[]) => void>(),
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
-    resetActionReplayAuthority: command_mocks.reset_action_replay_authority,
+    syncActionReplayMetadata: command_mocks.sync_action_replay_metadata,
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
@@ -54,6 +56,22 @@ function makeRealSyncMessage(): string {
 // this returns a genuine empty doc for receiveSyncMessage to operate on.
 function createAmDoc(): Doc<unknown> {
     return automergeInit();
+}
+
+type SeededDoc = {
+    actionHistory?: { entries: { id: string }[] };
+    /** A slot with no store projection — stands in for ordinary project truth. */
+    peerProbe?: string;
+};
+
+/**
+ * A document seeded with the shared history slot, so a peer copy forked from it
+ * merges against the same lineage instead of an unrelated document.
+ */
+function seedAmDoc(): Doc<SeededDoc> {
+    return change(automergeInit<SeededDoc>('aaaaaaaaaaaaaaaa'), (draft) => {
+        draft.actionHistory = { entries: [] };
+    });
 }
 
 describe('AutomergeSync', () => {
@@ -115,21 +133,76 @@ describe('AutomergeSync', () => {
         expect(persistCrdtProject).toHaveBeenCalledTimes(1);
     });
 
-    it('should revoke replay authority before installing an accepted remote document', () => {
+    /**
+     * CC-3 — replay-authority invalidation is scoped to what the sync touched.
+     *
+     * Installs a mutable stand-in repository so a multi-round Automerge
+     * handshake (the first message carries no changes) reaches `receiveSync`
+     * exactly as it would in a session.
+     */
+    function deliverPeerSync({ docId, mutate }: { docId: string; mutate?: (draft: SeededDoc) => void }): string[] {
         const order: string[] = [];
-        vi.mocked(getCrdtDoc).mockReturnValue(createAmDoc());
-        command_mocks.reset_action_replay_authority.mockImplementation(() => {
-            order.push('reset-authority');
-        });
-        vi.mocked(replaceCrdtDoc).mockImplementation(() => {
+        let live = seedAmDoc();
+        vi.mocked(getCrdtDoc).mockImplementation(() => live);
+        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
             order.push('replace-document');
+            live = doc;
         });
+        command_mocks.sync_action_replay_metadata.mockImplementation(() => {
+            order.push('reconcile-replay-metadata');
+        });
+
+        const remote = mutate ? change(seedAmDoc(), mutate) : seedAmDoc();
         const sync = new AutomergeSync(makePeerManager());
+        for (const syncMessageBase64 of createPeerSyncMessages({ remote, local: live })) {
+            sync.receiveSync({ peerId: 'editor', docId, syncMessageBase64 });
+        }
+        return order;
+    }
 
-        sync.receiveSync({ peerId: 'editor', docId: 'root', syncMessageBase64: makeRealSyncMessage() });
+    it('leaves replay authority alone when a root sync applies no change', () => {
+        const order = deliverPeerSync({ docId: 'root' });
 
-        expect(sanitizeIncomingCrdtDocument).toHaveBeenCalledTimes(1);
-        expect(order).toEqual(['reset-authority', 'replace-document']);
+        expect(order).toEqual(['replace-document']);
+        expect(command_mocks.sync_action_replay_metadata).not.toHaveBeenCalled();
+    });
+
+    it("leaves replay authority alone when a root sync only touches a slot that isn't the action history", () => {
+        const order = deliverPeerSync({
+            docId: 'root',
+            mutate: (draft) => {
+                draft.peerProbe = 'peer edit';
+            },
+        });
+
+        expect(order).toEqual(['replace-document', 'replace-document']);
+        expect(command_mocks.sync_action_replay_metadata).not.toHaveBeenCalled();
+    });
+
+    it('leaves replay authority alone when the action history changes on a branch document', () => {
+        const order = deliverPeerSync({
+            docId: 'branch_feature',
+            mutate: (draft) => {
+                draft.actionHistory = { entries: [{ id: 'branch-entry' }] };
+            },
+        });
+
+        expect(order).toEqual(['replace-document', 'replace-document']);
+        expect(command_mocks.sync_action_replay_metadata).not.toHaveBeenCalled();
+    });
+
+    it('reconciles replay authority after installing a root sync that rewrote the action history', () => {
+        const order = deliverPeerSync({
+            docId: 'root',
+            mutate: (draft) => {
+                draft.actionHistory = { entries: [{ id: 'peer-entry' }] };
+            },
+        });
+
+        // Reconciliation must run against the *projected* post-sync history, so
+        // it can only happen after the document is installed.
+        expect(order).toEqual(['replace-document', 'replace-document', 'reconcile-replay-metadata']);
+        expect(command_mocks.sync_action_replay_metadata).toHaveBeenCalledTimes(1);
     });
 
     it('should abort install and persistence when CrdtDocument sanitation fails', async () => {
@@ -142,7 +215,7 @@ describe('AutomergeSync', () => {
 
         sync.receiveSync({ peerId: 'editor', docId: 'root', syncMessageBase64: makeRealSyncMessage() });
 
-        expect(command_mocks.reset_action_replay_authority).not.toHaveBeenCalled();
+        expect(command_mocks.sync_action_replay_metadata).not.toHaveBeenCalled();
         expect(replaceCrdtDoc).not.toHaveBeenCalled();
         expect(persistCrdtProject).not.toHaveBeenCalled();
     });

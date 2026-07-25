@@ -1,4 +1,4 @@
-import { change, init, load, loadIncremental, merge, save } from '@automerge/automerge';
+import { change, getHeads, init, load, loadIncremental, merge, save } from '@automerge/automerge';
 
 import { compareIncrementalKeys } from '../crdtPersistence/compareIncrementalKeys';
 
@@ -6,10 +6,13 @@ import type { TransactionalPersistence } from '../../testing/transactionalPersis
 
 export type BundleEntry = [string, Uint8Array];
 
+export type HeadsEntry = [string, string[]];
+
 export type LoadBundleRequest = {
     id: number;
     type: 'loadBundle';
     bundle: BundleEntry[];
+    retainShadow?: boolean;
 };
 
 export type MergeBundleRequest = {
@@ -19,11 +22,22 @@ export type MergeBundleRequest = {
     incoming: BundleEntry[];
 };
 
-export type WorkerRequest = LoadBundleRequest | MergeBundleRequest;
+export type CompactShadowRequest = {
+    id: number;
+    type: 'compactShadow';
+    seeds: BundleEntry[];
+    deltas: BundleEntry[];
+    removedDocIds: string[];
+    expectedHeads: HeadsEntry[];
+};
+
+export type WorkerRequest = LoadBundleRequest | MergeBundleRequest | CompactShadowRequest;
 
 export type WorkerResponse =
     | { id: number; type: 'loaded'; compacted: BundleEntry[]; rootId: string }
-    | { id: number; type: 'merged'; compacted: BundleEntry[]; mergedDocIds: string[]; newDocIds: string[] };
+    | { id: number; type: 'merged'; compacted: BundleEntry[]; mergedDocIds: string[]; newDocIds: string[] }
+    | { id: number; type: 'compacted'; bundle: BundleEntry[] }
+    | { id: number; type: 'compactStale'; reason: string };
 
 export type FatalWorkerEvent = 'error' | 'messageerror';
 
@@ -40,6 +54,31 @@ function isBundleEntries(value: unknown): value is BundleEntry[] {
     );
 }
 
+function isHeadsEntries(value: unknown): value is HeadsEntry[] {
+    return (
+        Array.isArray(value) &&
+        value.every(
+            (entry) =>
+                Array.isArray(entry) &&
+                entry.length === 2 &&
+                typeof entry[0] === 'string' &&
+                Array.isArray(entry[1]) &&
+                entry[1].every((hash) => typeof hash === 'string')
+        )
+    );
+}
+
+/**
+ * The worker's document replica, mirrored here so repository-level tests can
+ * exercise the `compactShadow` round trip. The real replica logic lives in
+ * `workers/crdtWorker.ts` and is pinned directly by `crdtWorker.spec.ts`.
+ */
+const shadowReplica = new Map<string, ReturnType<typeof load<Record<string, unknown>>>>();
+
+function sameHeads(left: string[], right: string[]): boolean {
+    return left.length === right.length && [...left].sort().every((hash, index) => hash === [...right].sort()[index]);
+}
+
 function parseWorkerRequest(value: unknown): WorkerRequest {
     if (typeof value !== 'object' || value === null || !('id' in value) || !('type' in value)) {
         throw new TypeError('Expected a worker request');
@@ -48,7 +87,8 @@ function parseWorkerRequest(value: unknown): WorkerRequest {
         throw new TypeError('Expected a numeric worker request id');
     }
     if (value.type === 'loadBundle' && 'bundle' in value && isBundleEntries(value.bundle)) {
-        return { id: value.id, type: value.type, bundle: value.bundle };
+        const retainShadow = 'retainShadow' in value && value.retainShadow === true;
+        return { id: value.id, type: value.type, bundle: value.bundle, retainShadow };
     }
     if (
         value.type === 'mergeBundle' &&
@@ -58,6 +98,26 @@ function parseWorkerRequest(value: unknown): WorkerRequest {
         isBundleEntries(value.incoming)
     ) {
         return { id: value.id, type: value.type, current: value.current, incoming: value.incoming };
+    }
+    if (
+        value.type === 'compactShadow' &&
+        'seeds' in value &&
+        'deltas' in value &&
+        'removedDocIds' in value &&
+        'expectedHeads' in value &&
+        isBundleEntries(value.seeds) &&
+        isBundleEntries(value.deltas) &&
+        isHeadsEntries(value.expectedHeads) &&
+        Array.isArray(value.removedDocIds)
+    ) {
+        return {
+            id: value.id,
+            type: value.type,
+            seeds: value.seeds,
+            deltas: value.deltas,
+            removedDocIds: value.removedDocIds.map(String),
+            expectedHeads: value.expectedHeads,
+        };
     }
     throw new TypeError('Expected a supported worker request');
 }
@@ -79,6 +139,7 @@ export class ControlledWorker {
     static reset(): void {
         ControlledWorker.instances = [];
         ControlledWorker.onPostMessage = null;
+        shadowReplica.clear();
     }
 
     addEventListener(type: string, listener: EventListenerOrEventListenerObject | null): void {
@@ -154,11 +215,55 @@ export function respondToLoad(worker: ControlledWorker, request: LoadBundleReque
         documents.set(documentId, loadIncremental(document, bytes));
     }
 
+    if (request.retainShadow === true) {
+        shadowReplica.clear();
+        for (const [id, document] of documents) {
+            shadowReplica.set(id, document);
+        }
+    }
+
     worker.emitMessage({
         id: request.id,
         type: 'loaded',
         compacted: [...documents].map(([id, document]) => [id, save(document)]),
         rootId: 'root',
+    });
+}
+
+/** Mirror of the worker's `compactShadow` handler for repository-level tests. */
+export function respondToCompactShadow(worker: ControlledWorker, request: CompactShadowRequest): void {
+    for (const id of request.removedDocIds) {
+        shadowReplica.delete(id);
+    }
+    for (const [id, bytes] of request.seeds) {
+        shadowReplica.set(id, load<Record<string, unknown>>(bytes));
+    }
+    for (const [id, bytes] of request.deltas) {
+        const document = shadowReplica.get(id);
+        if (!document) {
+            worker.emitMessage({ id: request.id, type: 'compactStale', reason: `no replica for ${id}` });
+            return;
+        }
+        shadowReplica.set(id, loadIncremental(document, bytes));
+    }
+
+    const expected = new Map(request.expectedHeads);
+    if (expected.size !== shadowReplica.size) {
+        worker.emitMessage({ id: request.id, type: 'compactStale', reason: 'document set diverged' });
+        return;
+    }
+    for (const [id, document] of shadowReplica) {
+        const expectedHeads = expected.get(id);
+        if (!expectedHeads || !sameHeads(getHeads(document), expectedHeads)) {
+            worker.emitMessage({ id: request.id, type: 'compactStale', reason: `heads diverged for ${id}` });
+            return;
+        }
+    }
+
+    worker.emitMessage({
+        id: request.id,
+        type: 'compacted',
+        bundle: [...shadowReplica].map(([id, document]) => [id, save(document)]),
     });
 }
 
@@ -178,6 +283,12 @@ export function respondToMerge(worker: ControlledWorker, request: MergeBundleReq
             compacted.set(id, incomingBytes);
             newDocIds.push(id);
         }
+    }
+
+    // The worker keeps the merged documents as its replica.
+    shadowReplica.clear();
+    for (const [id, bytes] of compacted) {
+        shadowReplica.set(id, load<Record<string, unknown>>(bytes));
     }
 
     worker.emitMessage({
@@ -210,6 +321,9 @@ export function deferFirstMergeRequest(): {
     ControlledWorker.onPostMessage = (worker, request) => {
         if (request.type === 'loadBundle') {
             queueMicrotask(() => respondToLoad(worker, request));
+            return;
+        }
+        if (request.type !== 'mergeBundle') {
             return;
         }
         requestCount++;

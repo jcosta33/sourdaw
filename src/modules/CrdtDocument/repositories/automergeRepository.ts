@@ -6,10 +6,12 @@ import {
     load,
     save,
     saveIncremental,
+    saveSince,
     loadIncremental,
     merge,
     change,
     getChanges,
+    getMissingDeps,
     view,
     getHeads,
     clone,
@@ -27,6 +29,8 @@ type AnyDoc = Record<string, unknown>;
 type DecodedBundle = {
     documents: Map<DocId, Doc<AnyDoc>>;
     rootId: DocId;
+    /** True when the CRDT worker produced these documents and kept them as its replica. */
+    decodedByWorker: boolean;
 };
 
 type MergeBundleOptions = {
@@ -57,6 +61,8 @@ function createSnapshotTransactionOverlapError(id: DocId): Error {
 type WorkerResponse =
     | { id: number; type: 'loaded'; compacted: [string, Uint8Array][]; rootId: string }
     | { id: number; type: 'merged'; compacted: [string, Uint8Array][]; mergedDocIds: string[]; newDocIds: string[] }
+    | { id: number; type: 'compacted'; bundle: [string, Uint8Array][] }
+    | { id: number; type: 'compactStale'; reason: string }
     | { id: number; type: 'error'; message: string };
 
 type PendingWorkerRequest = {
@@ -73,9 +79,21 @@ type CrdtWorkerInstance = {
 };
 
 // §135.3 — Worker + next-id coalesced into a single holder.
-const crdtWorkerState: { instance: CrdtWorkerInstance | null; nextId: number } = {
+//
+// CC-8: `shadowHeads` records the per-document heads of the worker's document
+// replica — i.e. what the worker last materialised and this repository then
+// installed verbatim. It is the only warrant for asking the worker to re-encode
+// (`compactShadow`) instead of encoding on the main thread. `null` means "no
+// trustworthy replica": a fresh or crashed worker, or a decode whose result was
+// never installed here.
+const crdtWorkerState: {
+    instance: CrdtWorkerInstance | null;
+    nextId: number;
+    shadowHeads: Map<DocId, Heads> | null;
+} = {
     instance: null,
     nextId: 0,
+    shadowHeads: null,
 };
 
 function failCrdtWorker(instance: CrdtWorkerInstance, error: Error): void {
@@ -84,6 +102,8 @@ function failCrdtWorker(instance: CrdtWorkerInstance, error: Error): void {
     }
 
     instance.failed = true;
+    // The replica died with the worker; a replacement worker starts empty.
+    crdtWorkerState.shadowHeads = null;
     if (crdtWorkerState.instance === instance) {
         crdtWorkerState.instance = null;
     }
@@ -146,6 +166,8 @@ function createCrdtWorkerInstance(): CrdtWorkerInstance {
 
 function getCrdtWorkerInstance(): CrdtWorkerInstance {
     if (!crdtWorkerState.instance) {
+        // A newly spawned worker holds no replica yet.
+        crdtWorkerState.shadowHeads = null;
         crdtWorkerState.instance = createCrdtWorkerInstance();
     }
     return crdtWorkerState.instance;
@@ -258,7 +280,10 @@ class AutomergeRepository {
     /** Create a new empty project with a root document. */
     createProject(_name: string): DocId {
         this.docs.clear();
-
+        // The worker replica is deliberately NOT dropped here. saveAllOffThread's
+        // ancestry check already reseeds the new root, which keeps the next full
+        // save off-thread; nulling would force it back onto the main thread at
+        // exactly the moment compaction is most likely to run.
         this.rootId = DOC_PREFIX_ROOT;
         this.docs.set(this.rootId, init<AnyDoc>());
         this.markDocumentIdentityMutation();
@@ -370,6 +395,113 @@ class AutomergeRepository {
         for (const [id, doc] of this.docs) {
             bundle.set(id, save(doc));
         }
+        return bundle;
+    }
+
+    /** Record the worker replica's per-document heads after installing its output. */
+    private captureWorkerShadowHeads(): void {
+        const heads = new Map<DocId, Heads>();
+        for (const [id, doc] of this.docs) {
+            heads.set(id, getHeads(doc));
+        }
+        crdtWorkerState.shadowHeads = heads;
+    }
+
+    /**
+     * CC-8 — `saveAll()` off the main thread.
+     *
+     * A live WASM `Doc` cannot cross `postMessage`, so the worker keeps its own
+     * replica (seeded by `loadBundle`/`mergeBundle`, which already materialise
+     * every document there). This ships only what the replica is missing —
+     * `saveSince` deltas for documents it already holds, full saves for ones it
+     * does not — and lets the worker run the expensive full encode.
+     *
+     * `saveSince` does not consume Automerge's incremental cursor, so the
+     * coordinator's `saveDocIncremental` chunking is unaffected.
+     *
+     * Failure semantics match `mergeBundle`: a worker crash, a stale replica or
+     * an unexpected response degrades to the synchronous `saveAll()` with a
+     * warning — never a silently missing save. Callers still receive a complete
+     * bundle, and any downstream persistence failure surfaces unchanged.
+     */
+    async saveAllOffThread(): Promise<DocumentBundle> {
+        const shadowHeads = crdtWorkerState.shadowHeads;
+        if (!shadowHeads) {
+            return this.seedWorkerShadowFromMainThread();
+        }
+
+        const seeds: [string, Uint8Array][] = [];
+        const deltas: [string, Uint8Array][] = [];
+        const expectedHeads: [string, Heads][] = [];
+        for (const [id, doc] of this.docs) {
+            const heads = getHeads(doc);
+            expectedHeads.push([id, heads]);
+            const replicaHeads = shadowHeads.get(id);
+            // A delta is only meaningful when the replica's heads are ancestors
+            // of this document. `saveSince` does NOT report a violation: given
+            // heads from an unrelated lineage it returns a delta anyway, which
+            // the worker would `loadIncremental` onto the wrong replica and
+            // silently merge two projects into one document. Checked here so
+            // every lineage replacement — `createProject`, `insertDoc`, a
+            // branch-switch `replaceDoc` — reseeds instead, without each
+            // mutation site having to remember to invalidate.
+            if (!replicaHeads || getMissingDeps(doc, replicaHeads).length > 0) {
+                seeds.push([id, save(doc)]);
+                continue;
+            }
+            deltas.push([id, saveSince(doc, replicaHeads)]);
+        }
+        const removedDocIds = Array.from(shadowHeads.keys()).filter((id) => !this.docs.has(id));
+
+        let response: WorkerResponse;
+        try {
+            response = await invokeWorker({ type: 'compactShadow', seeds, deltas, removedDocIds, expectedHeads });
+        } catch (error) {
+            logger.warn('[AutomergeRepository] CRDT worker failed, falling back to synchronous full save:', error);
+            return this.saveAll();
+        }
+
+        if (response.type === 'compactStale') {
+            logger.warn('[AutomergeRepository] CRDT worker replica is stale, saving on the main thread:', {
+                reason: response.reason,
+            });
+            crdtWorkerState.shadowHeads = null;
+            return this.saveAll();
+        }
+        if (response.type !== 'compacted') {
+            logger.warn('[AutomergeRepository] Unexpected CRDT worker response for compactShadow:', response.type);
+            crdtWorkerState.shadowHeads = null;
+            return this.saveAll();
+        }
+
+        crdtWorkerState.shadowHeads = new Map<DocId, Heads>(expectedHeads);
+        return new Map<DocId, Uint8Array>(response.bundle);
+    }
+
+    /**
+     * No trustworthy replica: encode here (unavoidable) and hand the same bytes
+     * to the worker so the next compaction can run off-thread. The reseed is
+     * fire-and-forget — the caller's bundle never waits on it.
+     */
+    private seedWorkerShadowFromMainThread(): DocumentBundle {
+        const bundle = this.saveAll();
+        const capturedHeads = new Map<DocId, Heads>();
+        for (const [id, doc] of this.docs) {
+            capturedHeads.set(id, getHeads(doc));
+        }
+
+        invokeWorker({ type: 'loadBundle', bundle: Array.from(bundle.entries()), retainShadow: true })
+            .then((response) => {
+                if (response.type === 'loaded') {
+                    crdtWorkerState.shadowHeads = capturedHeads;
+                }
+                return null;
+            })
+            .catch((error: unknown) => {
+                logger.warn('[AutomergeRepository] Failed to seed the CRDT worker replica:', error);
+                return null;
+            });
+
         return bundle;
     }
 
@@ -496,7 +628,7 @@ class AutomergeRepository {
             return false;
         }
 
-        const { documents } = await this.decodeAll(bundle);
+        const { documents } = await this.decodeAll(bundle, { retainShadow: false });
         if (!documents.has(DOC_PREFIX_ROOT)) {
             throw createMissingRootError();
         }
@@ -520,7 +652,7 @@ class AutomergeRepository {
         const initialDocumentIdentityEpoch = this.documentIdentityEpoch;
         let decoded: DecodedBundle;
         try {
-            decoded = await this.decodeAll(bundle);
+            decoded = await this.decodeAll(bundle, { retainShadow: true });
         } catch (error) {
             // A superseding load owns the state now. Its canceled result must
             // stay benign even when the abandoned bundle cannot be decoded.
@@ -548,6 +680,11 @@ class AutomergeRepository {
 
         this.docs = documents;
         this.rootId = rootId;
+        if (decoded.decodedByWorker) {
+            // The worker materialised exactly these documents and kept them as
+            // its replica, so its heads are ours.
+            this.captureWorkerShadowHeads();
+        }
         this.markDocumentIdentityMutation();
         this.notifyListeners();
         return true;
@@ -559,16 +696,32 @@ class AutomergeRepository {
      * Heavy WASM parsing (load + loadIncremental loops) runs in
      * crdtWorker.ts. The worker returns compacted binaries; main thread calls
      * load() once per doc (fast — no incremental chain to replay).
+     *
+     * `retainShadow` tells the worker to keep the decoded documents as its
+     * replica for `compactShadow` (CC-8). Only pass it when the caller is about
+     * to install this bundle as repository state — decoding a foreign bundle
+     * (merge input, validation) must leave the replica alone.
      */
-    private async decodeAll(bundle: DocumentBundle): Promise<DecodedBundle> {
+    private async decodeAll(
+        bundle: DocumentBundle,
+        { retainShadow }: { retainShadow: boolean }
+    ): Promise<DecodedBundle> {
         let compacted: [string, Uint8Array][];
         let rootId: string;
         let documents: Map<DocId, Doc<AnyDoc>>;
+        let decodedByWorker = false;
+
+        if (retainShadow) {
+            // The replica is about to be overwritten; nothing recorded about
+            // the previous one survives, whether or not this load commits.
+            crdtWorkerState.shadowHeads = null;
+        }
 
         try {
             const response = await invokeWorker({
                 type: 'loadBundle',
                 bundle: Array.from(bundle.entries()),
+                retainShadow,
             });
             if (response.type !== 'loaded') {
                 throw new Error('Unexpected worker response type');
@@ -579,6 +732,7 @@ class AutomergeRepository {
             for (const [id, bytes] of compacted) {
                 documents.set(id, load<AnyDoc>(bytes));
             }
+            decodedByWorker = retainShadow;
         } catch (error) {
             // Worker unavailable — fall back to synchronous parsing on main thread.
             logger.warn('[AutomergeRepository] CRDT worker failed, falling back to synchronous load:', error);
@@ -587,7 +741,7 @@ class AutomergeRepository {
             rootId = parsed.rootId;
         }
 
-        return { documents, rootId };
+        return { documents, rootId, decodedByWorker };
     }
 
     /** Parse fallback for loadAll when the worker is unavailable. */
@@ -649,7 +803,7 @@ class AutomergeRepository {
      */
     async mergeBundle(bundle: DocumentBundle, { shouldCommit }: MergeBundleOptions = {}): Promise<MergeResult> {
         const initialDocumentIdentityEpoch = this.documentIdentityEpoch;
-        const decodedIncoming = await this.decodeAll(bundle);
+        const decodedIncoming = await this.decodeAll(bundle, { retainShadow: false });
         if (shouldCommit?.() === false) {
             return { mergedDocIds: [], newDocIds: [] };
         }
@@ -705,6 +859,9 @@ class AutomergeRepository {
             for (const [id, bytes] of compacted) {
                 this.docs.set(id, load<AnyDoc>(bytes));
             }
+            // The worker's `mergeBundle` kept the merged documents as its
+            // replica, and those are exactly the documents just installed.
+            this.captureWorkerShadowHeads();
 
             if (newDocIds.length > 0) {
                 this.markDocumentIdentityMutation();
@@ -766,6 +923,10 @@ class AutomergeRepository {
     /** Clear all documents and listeners. */
     reset(): void {
         this.docs.clear();
+        // Teardown boundary: no documents remain to compact, so dropping the
+        // replica costs nothing and stops recorded heads outliving the session
+        // that produced them.
+        crdtWorkerState.shadowHeads = null;
         this.rootId = DOC_PREFIX_ROOT;
         this.markDocumentIdentityMutation();
         // Drop change listeners too: otherwise projection-bridge subscriptions

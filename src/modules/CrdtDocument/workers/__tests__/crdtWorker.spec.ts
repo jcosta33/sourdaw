@@ -1,4 +1,4 @@
-import { change, init, load, save } from '@automerge/automerge';
+import { change, getHeads, init, load, save, saveSince } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { processLoad } from '../crdtWorker';
@@ -22,7 +22,11 @@ type MergedResponse = {
 
 type ErrorResponse = { id: number; type: 'error'; message: string };
 
-type WorkerResponse = LoadedResponse | MergedResponse | ErrorResponse;
+type CompactedResponse = { id: number; type: 'compacted'; bundle: [string, Uint8Array][] };
+
+type CompactStaleResponse = { id: number; type: 'compactStale'; reason: string };
+
+type WorkerResponse = LoadedResponse | MergedResponse | ErrorResponse | CompactedResponse | CompactStaleResponse;
 
 /** Save a fresh doc with a fixed actor so byte output is deterministic. */
 function freshDoc(actor: string, mutate?: (doc: AnyDoc) => void): Uint8Array {
@@ -313,5 +317,158 @@ describe('crdtWorker message dispatcher', () => {
             throw new Error('expected error');
         }
         expect(response.message).toContain('missing base document');
+    });
+
+    // ── compactShadow (CC-8) ──────────────────────────────────────────────
+    //
+    // The worker keeps a replica of the caller's documents so a full save can
+    // be re-encoded here instead of on the main thread. The replica is only
+    // ever allowed to produce bytes when its heads prove it holds the caller's
+    // exact change set.
+
+    type SeedReplicaOutput = { rootBytes: Uint8Array; rootHeads: string[] };
+
+    function seedReplica(mutate: (doc: AnyDoc) => void): SeedReplicaOutput {
+        const rootBytes = freshDoc('aaaaaaaaaaaaaaaa', mutate);
+        onmessage!({ data: { id: 1, type: 'loadBundle', bundle: [['root', rootBytes]], retainShadow: true } });
+        posted.length = 0;
+        return { rootBytes, rootHeads: getHeads(load<AnyDoc>(rootBytes)) };
+    }
+
+    it('re-encodes its replica when the caller reports matching heads', () => {
+        const { rootHeads } = seedReplica((doc) => {
+            doc.seed = 'replica';
+        });
+
+        onmessage!({
+            data: {
+                id: 20,
+                type: 'compactShadow',
+                seeds: [],
+                deltas: [],
+                removedDocIds: [],
+                expectedHeads: [['root', rootHeads]],
+            },
+        });
+
+        const response = posted[0]!;
+        if (response.type !== 'compacted') {
+            throw new Error(`expected compacted, got ${response.type}`);
+        }
+        expect(response.id).toBe(20);
+        expect(load<AnyDoc>(new Map(response.bundle).get('root')!).seed).toBe('replica');
+    });
+
+    it('applies a saveSince delta onto the replica before encoding', () => {
+        const { rootBytes, rootHeads } = seedReplica((doc) => {
+            doc.seed = 'replica';
+        });
+        const evolved = change(load<AnyDoc>(rootBytes), (doc) => {
+            doc.later = 'edit';
+        });
+
+        onmessage!({
+            data: {
+                id: 21,
+                type: 'compactShadow',
+                seeds: [],
+                deltas: [['root', saveSince(evolved, rootHeads)]],
+                removedDocIds: [],
+                expectedHeads: [['root', getHeads(evolved)]],
+            },
+        });
+
+        const response = posted[0]!;
+        if (response.type !== 'compacted') {
+            throw new Error(`expected compacted, got ${response.type}`);
+        }
+        expect(load<AnyDoc>(new Map(response.bundle).get('root')!)).toMatchObject({
+            seed: 'replica',
+            later: 'edit',
+        });
+    });
+
+    it('refuses to encode when the replica lags the heads the caller reports', () => {
+        const { rootBytes, rootHeads } = seedReplica((doc) => {
+            doc.seed = 'replica';
+        });
+        const evolved = change(load<AnyDoc>(rootBytes), (doc) => {
+            doc.unshipped = true;
+        });
+
+        // The caller's document moved on but no delta was shipped.
+        onmessage!({
+            data: {
+                id: 22,
+                type: 'compactShadow',
+                seeds: [],
+                deltas: [],
+                removedDocIds: [],
+                expectedHeads: [['root', getHeads(evolved)]],
+            },
+        });
+
+        const response = posted[0]!;
+        if (response.type !== 'compactStale') {
+            throw new Error(`expected compactStale, got ${response.type}`);
+        }
+        expect(response.reason).toContain('heads diverged for root');
+        expect(rootHeads).not.toEqual(getHeads(evolved));
+    });
+
+    it('refuses to encode when the caller holds a document the replica does not', () => {
+        const { rootHeads } = seedReplica((doc) => {
+            doc.seed = 'replica';
+        });
+        const branch = load<AnyDoc>(
+            freshDoc('bbbbbbbbbbbbbbbb', (doc) => {
+                doc.branch = true;
+            })
+        );
+
+        onmessage!({
+            data: {
+                id: 23,
+                type: 'compactShadow',
+                seeds: [],
+                deltas: [],
+                removedDocIds: [],
+                expectedHeads: [
+                    ['root', rootHeads],
+                    ['branch_missing', getHeads(branch)],
+                ],
+            },
+        });
+
+        const response = posted[0]!;
+        if (response.type !== 'compactStale') {
+            throw new Error(`expected compactStale, got ${response.type}`);
+        }
+        expect(response.reason).toContain('replica holds 1 docs, caller holds 2');
+    });
+
+    it('keeps no replica from a load the caller did not mark as its own state', () => {
+        const rootBytes = freshDoc('aaaaaaaaaaaaaaaa', (doc) => {
+            doc.foreign = true;
+        });
+        onmessage!({ data: { id: 2, type: 'loadBundle', bundle: [['root', rootBytes]] } });
+        posted.length = 0;
+
+        onmessage!({
+            data: {
+                id: 24,
+                type: 'compactShadow',
+                seeds: [],
+                deltas: [['root', new Uint8Array()]],
+                removedDocIds: [],
+                expectedHeads: [['root', getHeads(load<AnyDoc>(rootBytes))]],
+            },
+        });
+
+        const response = posted[0]!;
+        if (response.type !== 'compactStale') {
+            throw new Error(`expected compactStale, got ${response.type}`);
+        }
+        expect(response.reason).toContain('no replica for root');
     });
 });
