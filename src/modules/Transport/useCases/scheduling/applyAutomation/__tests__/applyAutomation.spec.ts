@@ -662,4 +662,121 @@ describe('applyAutomation', () => {
             expect(owned.has('track-1')).toBe(false);
         });
     });
+
+    describe('restores the manual base when a lane stops driving (AU-7)', () => {
+        type GateTrack = { automationMode: string };
+
+        function seedRestorableDeviceLane(laneId: string): void {
+            mutableTrackStore.value = {
+                tracks: [
+                    {
+                        id: 'track-1',
+                        kind: 'audio',
+                        automationMode: 'read',
+                        clips: [],
+                        midiFx: [],
+                        devices: [
+                            { id: 'eq-restore', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0.2 } },
+                        ],
+                        gain: 0.4,
+                        pan: 12,
+                    },
+                ],
+            };
+            mutableAutomationStore.value = {
+                lanes: [
+                    {
+                        id: laneId,
+                        trackId: 'track-1',
+                        parameterId: 'eq-restore:eq-low-gain',
+                        minValue: 0,
+                        points: [{ beat: 0, value: 0.75 }],
+                    },
+                ],
+            };
+            vi.mocked(getAutomationValueAtBeat).mockReset();
+            vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(0).mockReturnValue(0.75);
+        }
+
+        function setAutomationMode(mode: string): void {
+            (mutableTrackStore.value.tracks as GateTrack[])[0]!.automationMode = mode;
+        }
+
+        it('writes the device parameter back to its persisted value when the mode goes off', () => {
+            seedRestorableDeviceLane('lane-restore-off');
+            applyAutomation(0);
+            applyAutomation(1);
+            expect(updateDeviceParam).toHaveBeenCalledTimes(1);
+
+            setAutomationMode('off');
+            applyAutomation(2);
+
+            // 0.2 is the device's own persisted parameterValues entry — the manual
+            // value 'off' is supposed to play. Before this, the parameter simply
+            // froze wherever the ride left it (~0.3 from the slew above).
+            expect(updateDeviceParam).toHaveBeenLastCalledWith('track-1', 'eq-restore', 'eq-low-gain', 0.2);
+        });
+
+        it('restores once, not on every subsequent tick', () => {
+            seedRestorableDeviceLane('lane-restore-once');
+            applyAutomation(0);
+            applyAutomation(1);
+
+            setAutomationMode('off');
+            applyAutomation(2);
+            const afterRestore = vi.mocked(updateDeviceParam).mock.calls.length;
+            applyAutomation(3);
+            applyAutomation(4);
+
+            expect(vi.mocked(updateDeviceParam).mock.calls.length).toBe(afterRestore);
+        });
+
+        it('restores the fader to the track gain, and releases the track to the VCA writer', () => {
+            mutableTrackStore.value = {
+                tracks: [
+                    {
+                        id: 'track-1',
+                        kind: 'audio',
+                        automationMode: 'read',
+                        clips: [],
+                        midiFx: [],
+                        devices: [],
+                        gain: 0.4,
+                        pan: 12,
+                    },
+                ],
+            };
+            mutableAutomationStore.value = {
+                lanes: [
+                    {
+                        id: 'lane-restore-gain',
+                        trackId: 'track-1',
+                        parameterId: 'gain',
+                        minValue: 0,
+                        points: [{ beat: 0, value: 0.75 }],
+                    },
+                ],
+            };
+            vi.mocked(getAutomationValueAtBeat).mockReset();
+            vi.mocked(getAutomationValueAtBeat).mockReturnValue(0.75);
+            applyAutomation(0);
+
+            setAutomationMode('off');
+            const owned = applyAutomation(1);
+
+            expect(scheduleTrackGain).toHaveBeenLastCalledWith('track-1', 0.4, 5);
+            expect(owned.has('track-1')).toBe(false);
+        });
+
+        it('restores when the lane itself is disabled mid-ride (AU-9 must not strand it)', () => {
+            seedRestorableDeviceLane('lane-restore-disabled');
+            applyAutomation(0);
+            applyAutomation(1);
+
+            (mutableAutomationStore.value.lanes as Array<{ enabled?: boolean }>)[0]!.enabled = false;
+            applyAutomation(2);
+
+            expect(updateDeviceParam).toHaveBeenLastCalledWith('track-1', 'eq-restore', 'eq-low-gain', 0.2);
+        });
+    });
 });

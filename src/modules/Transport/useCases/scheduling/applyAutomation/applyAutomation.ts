@@ -22,6 +22,7 @@ import { AUTOMATION_SLEW_ALPHA, slewStep } from '#/utils/automationSlew';
 import { schedulerSession } from '../../playheadScheduler/schedulerSession';
 
 import { appliedAutomationBases, clearAppliedAutomationBases } from './appliedAutomationBases';
+import { restoreAutomationBaseValue } from './restoreAutomationBaseValue';
 
 /**
  * Per-parameter exponential slew state for plugin automation. The IIR
@@ -49,10 +50,18 @@ const automationState: {
      * plugin-param slew to its target instead of gliding from the pre-jump value.
      */
     lastDiscontinuityEpoch: number | undefined;
+    /**
+     * Lane ids that wrote their parameter on the previous tick (AU-7). The
+     * driving → not-driving edge is what triggers the one-shot restore of the
+     * manual base; without it a gated lane would either strand the parameter or
+     * fight the UI by rewriting the base every tick.
+     */
+    drivingLanes: Set<string>;
 } = {
     pluginParamSlew: new Map<string, Map<string, number>>(),
     trackIndex: new Map<string, NonNullable<typeof trackStore.value>['tracks'][number]>(),
     lastDiscontinuityEpoch: undefined,
+    drivingLanes: new Set<string>(),
 };
 
 export function applyAutomation(currentBeat: number): Set<string> {
@@ -107,16 +116,32 @@ export function applyAutomation(currentBeat: number): Set<string> {
             continue;
         }
 
-        // AU-9: a lane the project marks disabled drives nothing — live as
-        // offline (scheduleTrackAutomation applies the same gate). Compared
-        // against `false` rather than falsy so a lane persisted before the flag
-        // existed, which normalizes to `enabled: true`, still plays.
-        if (lane.enabled === false) {
+        const track = automationState.trackIndex.get(lane.trackId);
+        if (!track) {
+            automationState.drivingLanes.delete(lane.id);
             continue;
         }
 
-        const track = automationState.trackIndex.get(lane.trackId);
-        if (!track || track.automationMode === 'off') {
+        // AU-7 / AU-9. Two gates stop a lane driving without the project's own
+        // value changing: the track's automationMode going to 'off', and the
+        // lane being marked disabled. `enabled` is compared against `false`
+        // rather than falsy so a lane persisted before the flag existed (which
+        // the legacy normalizer resolves to `enabled: true`) still plays.
+        //
+        // Skipping alone only stops *writing*: the engine holds whatever the
+        // ride last pushed, stranding the parameter mid-ride. On the tick a lane
+        // that was driving becomes gated, restore its manual base once and drop
+        // its slew state so a later re-engage seeds cleanly instead of gliding
+        // from a stale smoothed value.
+        if (track.automationMode === 'off' || lane.enabled === false) {
+            if (automationState.drivingLanes.delete(lane.id)) {
+                automationState.pluginParamSlew.delete(lane.id);
+                restoreAutomationBaseValue({
+                    lane,
+                    track,
+                    landTime: now + compensationFor(lane.trackId),
+                });
+            }
             continue;
         }
 
@@ -135,6 +160,10 @@ export function applyAutomation(currentBeat: number): Set<string> {
         if (value === null) {
             continue;
         }
+
+        // From here the lane writes its parameter, so it is driving: the gate
+        // above will restore this lane's manual base on the tick it stops.
+        automationState.drivingLanes.add(lane.id);
 
         // RT-5 param-family split. `gain` and `pan` are the only automation
         // targets backed by a real native AudioParam (fader GainNode.gain /
