@@ -6,6 +6,8 @@ import {
     getAudioContext,
     getCompensationDelay,
     getCurrentTime,
+    getDefaultBendRangeSemitones,
+    registerScheduledSource,
     scheduleFaustNote,
 } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
@@ -67,6 +69,40 @@ type GetSourceOccurrenceOffsetInput = {
     loopLength: number;
     loopEnabled: boolean;
 };
+
+/** Local view of the built-in synth's MPE params (cross-module model isolation). */
+type ScheduledMpeParams = {
+    pressure?: number;
+    slide?: number;
+    pitchBend?: number;
+    pitchBendRangeSemitones?: number;
+};
+
+/**
+ * The built-in synth's MPE params for a scheduled note, or `undefined` when the
+ * note carries no expression at all.
+ *
+ * The bend range rides along only when there is a bend to interpret. A range on
+ * a note that never bent describes nothing, the synth never reads it, and
+ * emitting it anyway makes every exact-shape assertion downstream pin a
+ * fallback instead of a decision (audit MD-8).
+ */
+function resolveScheduledMpeParams(note: ScheduledMpeParams): ScheduledMpeParams | undefined {
+    const hasExpression = note.pressure !== undefined || note.slide !== undefined || note.pitchBend !== undefined;
+    if (!hasExpression) {
+        return undefined;
+    }
+
+    const params: ScheduledMpeParams = {
+        pressure: note.pressure,
+        slide: note.slide,
+        pitchBend: note.pitchBend,
+    };
+    if (note.pitchBend !== undefined) {
+        params.pitchBendRangeSemitones = note.pitchBendRangeSemitones ?? getDefaultBendRangeSemitones();
+    }
+    return params;
+}
 
 function getSourceOccurrenceOffset({
     sourceStartBeat,
@@ -461,7 +497,7 @@ export async function scheduleMidiNotes(
                                 noteGain
                             );
                         } else if (drumKit) {
-                            scheduleKitNote(
+                            const kitVoice = scheduleKitNote(
                                 ctx,
                                 strip.gainNode,
                                 drumKit,
@@ -471,6 +507,9 @@ export async function scheduleMidiNotes(
                                 projectedNote.velocity,
                                 noteGain
                             );
+                            if (kitVoice) {
+                                registerScheduledSource(kitVoice);
+                            }
                         } else if (workletSynthControls && workletSynthEntry) {
                             const rawVel = projectedNote.velocity;
                             const vel = workletSynthEntry.velocityTransform
@@ -478,6 +517,12 @@ export async function scheduleMidiNotes(
                                 : rawVel;
                             const noteChannel = note.channel ?? 0;
                             workletSynthControls.noteOn(pitch, vel, sampleFrame, noteChannel);
+                            // The depth the bend was recorded at, and only when
+                            // there is a bend. Absent on notes captured before
+                            // RPN 0 was decoded, which resolves to the MPE
+                            // member default — the range they were actually
+                            // performed under (audit MD-8).
+                            const noteBendRange = resolveScheduledMpeParams(note)?.pitchBendRangeSemitones;
                             // MPE per-note expression (audit MD-2). Same
                             // surface the live Web MIDI handlers call, at the
                             // note's own start frame so the worklet applies it
@@ -492,6 +537,7 @@ export async function scheduleMidiNotes(
                                     pitchBend: note.pitchBend,
                                 },
                                 sampleFrame,
+                                bendRangeSemitones: noteBendRange,
                             });
                             workletSynthControls.noteOff(pitch, endSampleFrame, noteChannel);
                         } else if (faustDevice) {
@@ -505,11 +551,11 @@ export async function scheduleMidiNotes(
                                 noteGain
                             );
                         } else {
-                            const mpe =
-                                note.pressure !== undefined || note.slide !== undefined || note.pitchBend !== undefined
-                                    ? { pressure: note.pressure, slide: note.slide, pitchBend: note.pitchBend }
-                                    : undefined;
-                            scheduleNote(
+                            // The built-in synth holds no range of its own; it
+                            // bends by the depth the note was recorded at
+                            // (audit MD-8).
+                            const mpe = resolveScheduledMpeParams(note);
+                            const synthVoice = scheduleNote(
                                 ctx,
                                 strip.gainNode,
                                 pitch,
@@ -520,6 +566,11 @@ export async function scheduleMidiNotes(
                                 mpe,
                                 noteGain
                             );
+                            // Built-in synth and kit voices are bare
+                            // oscillators; nothing else holds their handle, so
+                            // without this a stop or a panic leaves them ringing
+                            // for the rest of their programmed duration (MD-6).
+                            registerScheduledSource(synthVoice);
                         }
                     }
                 }

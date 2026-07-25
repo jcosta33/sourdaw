@@ -31,6 +31,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 
 const { handleWebMidiCC } = await import('../handleWebMidiCC');
 const { activeNotes, channelToNote } = await import('../../../repositories/webMidi/state');
+const { resetChannelControllerState } = await import('../../../repositories/webMidi/resetChannelControllerState');
 
 type HandleWebMidiCCDependencies = Parameters<typeof handleWebMidiCC._factory>[0];
 
@@ -45,6 +46,7 @@ function make_dependencies(overrides: Partial<HandleWebMidiCCDependencies> = {})
         applyMidiMappings: () => {},
         getTrackStoreState: () => ({ tracks: [], selectedTrackId: null }),
         eventBus: { emit: () => Promise.resolve(), on: () => () => {} },
+        panicLiveNotes: () => {},
         ...overrides,
     };
 }
@@ -53,6 +55,7 @@ describe('handleWebMidiCC', () => {
     beforeEach(() => {
         activeNotes.clear();
         channelToNote.clear();
+        resetChannelControllerState();
         apply_note_expression.mockClear();
         mpe_enabled.value = false;
         target_track_id.value = null;
@@ -95,7 +98,9 @@ describe('handleWebMidiCC', () => {
 
         fn(3, 7, 100);
 
-        expect(apply_midi_mappings).toHaveBeenCalledWith(3, 7, 100);
+        // Fourth argument is the resolved 0..1 position (MD-7); a 7-bit-only
+        // controller resolves at 7-bit so it is still value/127.
+        expect(apply_midi_mappings).toHaveBeenCalledWith(3, 7, 100, 100 / 127);
     });
 
     it('should store MPE slide on the active note for the matching channel', () => {
@@ -178,7 +183,7 @@ describe('handleWebMidiCC', () => {
         fn(0, 7, 100);
 
         // Mappings are global (learn) and must run regardless of selection...
-        expect(apply_midi_mappings).toHaveBeenCalledWith(0, 7, 100);
+        expect(apply_midi_mappings).toHaveBeenCalledWith(0, 7, 100, 100 / 127);
         // ...but engine gain/pan require a selected target track.
         expect(set_track_gain).not.toHaveBeenCalled();
     });
@@ -336,6 +341,125 @@ describe('handleWebMidiCC', () => {
 
         fn(0, 74, 40);
 
-        expect(apply_midi_mappings).toHaveBeenCalledWith(0, 74, 40);
+        expect(apply_midi_mappings).toHaveBeenCalledWith(0, 74, 40, 40 / 127);
+    });
+
+    describe('high-resolution 14-bit CC (audit MD-7)', () => {
+        it('drives track gain from the assembled 14-bit pair, not the truncated MSB', () => {
+            target_track_id.value = 'track-1';
+            const fn = handleWebMidiCC._factory(make_dependencies());
+
+            // Channel Volume MSB, then its LSB on controller 39.
+            fn(0, 7, 100);
+            fn(0, 39, 43);
+
+            expect(set_track_gain).toHaveBeenLastCalledWith('track-1', ((100 << 7) | 43) / 16383);
+        });
+
+        it('separates two LSB refinements a 7-bit path would collapse to one gain', () => {
+            target_track_id.value = 'track-1';
+            const fn = handleWebMidiCC._factory(make_dependencies());
+
+            fn(0, 7, 100);
+            fn(0, 39, 0);
+            const coarse = set_track_gain.mock.calls.at(-1)?.[1];
+            fn(0, 39, 127);
+            const fine = set_track_gain.mock.calls.at(-1)?.[1];
+
+            expect(coarse).not.toBe(fine);
+            expect(fine).toBeGreaterThan(coarse as number);
+        });
+
+        it('addresses a mapping by the MSB controller number when the LSB arrives', () => {
+            const apply_midi_mappings = vi.fn<(channel: number, cc: number, value: number, position: number) => void>();
+            const fn = handleWebMidiCC._factory(make_dependencies({ applyMidiMappings: apply_midi_mappings }));
+
+            fn(0, 7, 64);
+            fn(0, 39, 64);
+
+            expect(apply_midi_mappings).toHaveBeenLastCalledWith(0, 7, 64, ((64 << 7) | 64) / 16383);
+        });
+
+        it('still lets a 7-bit-only Channel Volume reach unity gain', () => {
+            target_track_id.value = 'track-1';
+            const fn = handleWebMidiCC._factory(make_dependencies());
+
+            fn(0, 7, 127);
+
+            expect(set_track_gain).toHaveBeenLastCalledWith('track-1', 1);
+        });
+    });
+
+    describe('registered parameters (audit MD-8)', () => {
+        it('does not dispatch the RPN select or Data Entry messages as ordinary CCs', () => {
+            target_track_id.value = 'track-1';
+            const apply_midi_mappings = vi.fn<(channel: number, cc: number, value: number, position: number) => void>();
+            const fn = handleWebMidiCC._factory(make_dependencies({ applyMidiMappings: apply_midi_mappings }));
+
+            fn(0, 101, 0);
+            fn(0, 100, 0);
+            fn(0, 6, 12);
+            fn(0, 38, 0);
+
+            expect(apply_midi_mappings).not.toHaveBeenCalled();
+        });
+
+        it('returns controller 6 to ordinary dispatch once the Null RPN deselects', () => {
+            const apply_midi_mappings = vi.fn<(channel: number, cc: number, value: number, position: number) => void>();
+            const fn = handleWebMidiCC._factory(make_dependencies({ applyMidiMappings: apply_midi_mappings }));
+
+            fn(0, 101, 0);
+            fn(0, 100, 0);
+            fn(0, 6, 12);
+            fn(0, 101, 127);
+            fn(0, 100, 127);
+            fn(0, 6, 96);
+
+            expect(apply_midi_mappings).toHaveBeenCalledTimes(1);
+            expect(apply_midi_mappings).toHaveBeenCalledWith(0, 6, 96, 96 / 127);
+        });
+    });
+
+    describe('channel-mode panic messages (audit MD-6)', () => {
+        it('panics on an incoming All Sound Off instead of treating it as a controller', () => {
+            const panic = vi.fn();
+            const apply_midi_mappings = vi.fn<(channel: number, cc: number, value: number, position: number) => void>();
+            const fn = handleWebMidiCC._factory(
+                make_dependencies({ panicLiveNotes: panic, applyMidiMappings: apply_midi_mappings })
+            );
+
+            fn(0, 120, 0);
+
+            expect(panic).toHaveBeenCalledTimes(1);
+            expect(apply_midi_mappings).not.toHaveBeenCalled();
+        });
+
+        it('panics on an incoming All Notes Off', () => {
+            const panic = vi.fn();
+            const fn = handleWebMidiCC._factory(make_dependencies({ panicLiveNotes: panic }));
+
+            fn(5, 123, 0);
+
+            expect(panic).toHaveBeenCalledTimes(1);
+        });
+
+        it('does not echo the panic back out, which a loopback port would repeat forever', () => {
+            const panic = vi.fn<(input?: { notifyOutputs?: boolean }) => void>();
+            const fn = handleWebMidiCC._factory(make_dependencies({ panicLiveNotes: panic }));
+
+            fn(0, 123, 0);
+
+            expect(panic).toHaveBeenCalledWith({ notifyOutputs: false });
+        });
+
+        it('does not panic on an ordinary controller', () => {
+            const panic = vi.fn();
+            const fn = handleWebMidiCC._factory(make_dependencies({ panicLiveNotes: panic }));
+
+            fn(0, 74, 40);
+            fn(0, 7, 100);
+
+            expect(panic).not.toHaveBeenCalled();
+        });
     });
 });

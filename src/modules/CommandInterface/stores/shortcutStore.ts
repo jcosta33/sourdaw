@@ -93,6 +93,17 @@ const INITIAL_DEFINITIONS: ShortcutDefinition[] = [
         action: { type: 'callback', id: 'stopPlayback' },
     },
     {
+        id: 'transport.panicAllNotes',
+        label: 'MIDI Panic (All Notes Off)',
+        category: 'transport',
+        // Shift+Escape rather than plain Escape: Escape is context-dependent
+        // (dismiss ghost clip / clear selection / stop), and a panic must fire
+        // unconditionally — a stuck note is exactly the moment you cannot
+        // afford the key to mean something else.
+        defaultKeys: ['shift+Escape'],
+        action: { type: 'callback', id: 'panicAllNotes' },
+    },
+    {
         id: 'transport.toggleMetronome',
         label: 'Toggle Metronome',
         category: 'transport',

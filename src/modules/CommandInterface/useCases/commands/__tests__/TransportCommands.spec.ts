@@ -1,13 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { seekPlayhead } from '#/modules/Transport/useCases';
+import { panicAllNotes, seekPlayhead } from '#/modules/Transport/useCases';
 
 import { getLastClipEndBeat } from '../../selectionHelpers/getLastClipEndBeat';
 import { goToNextMarker } from '../../selectionHelpers/goToNextMarker';
 import { goToPreviousMarker } from '../../selectionHelpers/goToPreviousMarker';
 import { transportCommands } from '../TransportCommands';
 
-vi.mock('#/modules/Transport/useCases', () => ({ seekPlayhead: vi.fn() }));
+vi.mock('#/modules/Transport/useCases', () => ({
+    seekPlayhead: vi.fn(),
+    panicAllNotes: vi.fn(() => Promise.resolve()),
+}));
 vi.mock('../../selectionHelpers/getLastClipEndBeat', () => ({ getLastClipEndBeat: vi.fn().mockReturnValue(0) }));
 vi.mock('../../selectionHelpers/goToNextMarker', () => ({ goToNextMarker: vi.fn() }));
 vi.mock('../../selectionHelpers/goToPreviousMarker', () => ({ goToPreviousMarker: vi.fn() }));
@@ -38,7 +41,15 @@ describe('transportCommands', () => {
             { id: 'go-to-end', label: 'Go to End', category: 'Transport' },
             { id: 'next-marker', label: 'Next Marker', category: 'Transport' },
             { id: 'prev-marker', label: 'Previous Marker', category: 'Transport' },
+            { id: 'panic-all-notes', label: 'MIDI Panic — All Notes Off', category: 'Transport' },
         ]);
+    });
+
+    // audit MD-6 — the panic needs a surface a user can actually reach.
+    it('panic-all-notes invokes the transport panic', () => {
+        runAction('panic-all-notes');
+
+        expect(panicAllNotes).toHaveBeenCalledTimes(1);
     });
 
     it('toggle-playback, stop, toggle-recording, toggle-loop, and toggle-metronome are declarative transport actions', () => {

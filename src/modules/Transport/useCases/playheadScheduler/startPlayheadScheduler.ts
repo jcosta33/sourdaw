@@ -38,6 +38,14 @@ function loopSignatureOf(state: { isLooping: boolean; loopStart: number; loopEnd
 const SCHEDULE_AHEAD_SECONDS = 0.1;
 
 /**
+ * How far behind the live position the MIDI high-water mark is rewound when a
+ * window has to be re-emitted. The gate is `startBeat <= lastScheduledBeat`, so
+ * a note sitting exactly on the current beat needs the mark strictly below it.
+ * Matches the nudge the loop-wrap path already uses.
+ */
+const REEMIT_EPSILON_BEATS = 0.0001;
+
+/**
  * Upper bound on a single tick's elapsed real time before we advance the
  * playhead. If the AudioContext is suspended and later resumed (tab
  * backgrounded, OS sleep, device unplugged) `ctx.currentTime` leaps forward by
@@ -151,6 +159,17 @@ export function startPlayheadScheduler(): void {
             stopActiveSources(schedulerSession.activeAudioSources, ctx);
             schedulerSession.scheduledAudioClips.clear();
             schedulerSession.scheduledFrozenTracks.clear();
+            // MIDI notes have no dedup Set — they are gated by the monotonic
+            // high-water mark, which `stopAllScheduled`'s allNotesOff does not
+            // move. Without rewinding it, every note already emitted into the
+            // current look-ahead is silenced here and then blocked from
+            // re-emission (`unswungStartBeat <= lastScheduledBeat`), so a
+            // tempo or loop edit drops a window of notes outright while audio
+            // clips re-align (audit MD-5). Rewinding to the live position
+            // re-opens exactly the window that was just cut, at the new rate.
+            // The metronome is unaffected: it dedups on its own `lastBeat` and
+            // on already-fired click times, neither of which this touches.
+            schedulerSession.lastScheduledBeat = schedulerSession.accumulatedPosition - REEMIT_EPSILON_BEATS;
         }
 
         const currentTempo = getTempoAtBeat(changes, schedulerSession.accumulatedPosition, current.tempo);

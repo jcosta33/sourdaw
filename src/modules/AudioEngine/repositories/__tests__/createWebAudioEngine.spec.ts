@@ -1258,61 +1258,104 @@ describe('AudioEngine', () => {
         });
     });
 
-    // ── Fix 4: stopAllScheduled sends one allNotesOff per synth, not a fan-out ────
+    // ── stopAllScheduled releases every device that can hold a voice ─────────────
     //
-    // It used to post 128 noteOff per Fermenter and 16 per Toaster in one
-    // synchronous loop. Both processors now honor a single allNotesOff worklet
-    // message, so stopAllScheduled must post exactly one {type:'allNotesOff'} to
-    // each device's worklet node port.
+    // One `allNotesOff` per device, never a fan-out of 128 Fermenter / 16 Toaster
+    // per-note messages. The sweep reads the generic `controller.allNotesOff`
+    // every instrument descriptor publishes rather than a hand-kept branch per
+    // device kind, so a device kind cannot be forgotten here (audit MD-6).
     describe('stopAllScheduled all-notes-off', () => {
-        function pushSynth(eng: AudioEngine, trackId: string, controlsKey: string) {
+        function pushInstrument(eng: AudioEngine, trackId: string, type: string) {
+            const allNotesOff = vi.fn();
             const strip = eng.ensureTrackStrip(trackId);
-            const workletNode = new FakeWorkletNode();
-            const nodes = controlsKey === 'toasterControls' ? [makeStripNode(), workletNode] : [workletNode];
             strip.deviceNodes.push({
-                deviceId: `${controlsKey}-dev`,
-                type: controlsKey,
-                nodes,
-                [controlsKey]: { noteOff: vi.fn() },
+                deviceId: `${type}-dev`,
+                type,
+                nodes: [],
+                controller: { allNotesOff, setParam: vi.fn(), setBypass: vi.fn() },
             } as never);
-            return workletNode;
+            return allNotesOff;
         }
 
-        it('posts a single allNotesOff to Fermenter and Toaster worklet ports', () => {
-            const fermNode = pushSynth(engine, 'tFerm', 'fermenterControls');
-            const toastNode = pushSynth(engine, 'tToast', 'toasterControls');
+        it('releases every instrument kind exactly once through the registry control surface', () => {
+            const releases = {
+                fermenter: pushInstrument(engine, 'tFerm', 'fermenter'),
+                toaster: pushInstrument(engine, 'tToast', 'toaster'),
+                grandBoule: pushInstrument(engine, 'tGb', 'grand-boule'),
+                levain: pushInstrument(engine, 'tLev', 'levain'),
+                // A Faust instrument publishes only the generic controller. The
+                // per-device branch this replaced had no case for it, so it was
+                // the one instrument kind a stop could not silence.
+                faust: pushInstrument(engine, 'tFaust', 'faust-organ'),
+            };
 
             engine.stopAllScheduled();
 
-            const fermAllOff = fermNode.port.postMessage.mock.calls.filter(
-                (c) => (c[0] as { type?: string })?.type === 'allNotesOff'
-            );
-            const toastAllOff = toastNode.port.postMessage.mock.calls.filter(
-                (c) => (c[0] as { type?: string })?.type === 'allNotesOff'
-            );
-            expect(fermAllOff.length).toBe(1);
-            expect(toastAllOff.length).toBe(1);
-
-            // And NOT a fan-out of per-note noteOff messages.
-            const fermNoteOffs = fermNode.port.postMessage.mock.calls.filter(
-                (c) => (c[0] as { type?: string })?.type === 'noteOff'
-            );
-            expect(fermNoteOffs.length).toBe(0);
+            for (const release of Object.values(releases)) {
+                expect(release).toHaveBeenCalledTimes(1);
+            }
         });
 
-        it('releases Grand Boule through its control-level allNotesOff contract', () => {
-            const allNotesOff = vi.fn();
-            const strip = engine.ensureTrackStrip('tGrandBoule');
+        it('does not fan out per-note messages to an instrument worklet port', () => {
+            const strip = engine.ensureTrackStrip('tFerm');
+            const workletNode = new FakeWorkletNode();
             strip.deviceNodes.push({
-                deviceId: 'grand-boule-dev',
-                type: 'grand-boule',
-                nodes: [],
-                grandBouleControls: { allNotesOff },
+                deviceId: 'ferm-dev',
+                type: 'fermenter',
+                nodes: [workletNode],
+                controller: { allNotesOff: vi.fn(), setParam: vi.fn(), setBypass: vi.fn() },
             } as never);
 
             engine.stopAllScheduled();
 
-            expect(allNotesOff).toHaveBeenCalledTimes(1);
+            const noteOffs = workletNode.port.postMessage.mock.calls.filter(
+                (c) => (c[0] as { type?: string })?.type === 'noteOff'
+            );
+            expect(noteOffs.length).toBe(0);
+        });
+
+        it('leaves an effect with no release surface alone', () => {
+            const setParam = vi.fn();
+            const strip = engine.ensureTrackStrip('tEq');
+            strip.deviceNodes.push({
+                deviceId: 'eq-dev',
+                type: 'builtin-eq',
+                nodes: [],
+                controller: { setParam, setBypass: vi.fn() },
+            } as never);
+
+            expect(() => engine.stopAllScheduled()).not.toThrow();
+            expect(setParam).not.toHaveBeenCalled();
+        });
+
+        it('stops a registered scheduled source, which the built-in synth path used to leak', () => {
+            // Bare oscillators the scheduler writes into a strip had no handle
+            // anywhere, so nothing could silence them before their programmed
+            // stop time (audit MD-6).
+            const stop = vi.fn();
+            const source = { stop, addEventListener: vi.fn() } as unknown as AudioScheduledSourceNode;
+
+            engine.registerScheduledSource(source);
+            engine.stopAllScheduled();
+
+            expect(stop).toHaveBeenCalledTimes(1);
+        });
+
+        it('drops a registered source once it ends so the tracking list stays bounded', () => {
+            const stop = vi.fn();
+            let endedListener: (() => void) | undefined;
+            const source = {
+                stop,
+                addEventListener: (_event: string, listener: () => void) => {
+                    endedListener = listener;
+                },
+            } as unknown as AudioScheduledSourceNode;
+
+            engine.registerScheduledSource(source);
+            endedListener?.();
+            engine.stopAllScheduled();
+
+            expect(stop).not.toHaveBeenCalled();
         });
     });
 

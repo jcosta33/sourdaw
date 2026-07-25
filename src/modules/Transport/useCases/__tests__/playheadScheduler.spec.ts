@@ -127,6 +127,11 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
         },
     },
     scheduleAdjustmentLayers: vi.fn(),
+    // Missing from this mock until MD-5: every tick threw here, so the tail of
+    // runTick — including the `lastScheduledBeat` high-water-mark update the
+    // MIDI re-emission gate reads — never ran under test. Any assertion about
+    // scheduling windows was vacuous while that hole was open.
+    refreshSidechainAlignment: vi.fn(),
 }));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: harness.logger }));
 vi.mock('../scheduling/scheduleMetronome', () => ({
@@ -337,6 +342,65 @@ describe('playhead scheduler tick', () => {
         await fireTick();
 
         expect(vi.mocked(stopAllScheduled).mock.calls.length).toBeGreaterThan(stopCallsBefore);
+    });
+
+    // audit MD-5 — MIDI notes have no dedup Set; they are gated by the
+    // monotonic high-water mark, which the invalidation above does not move.
+    // Notes already emitted into the look-ahead are silenced by allNotesOff and
+    // then blocked from re-emission, so an edit drops a whole window of them.
+    it('re-opens the MIDI window a tempo edit just cut so notes in it sound again at the new rate', async () => {
+        startPlayheadScheduler();
+
+        harness.clock = 0.05;
+        await fireTick();
+        // At 120bpm the first tick scheduled MIDI up to beat 0.3 and moved the
+        // high-water mark there; a note at 0.2 is inside that emitted window.
+        const positionAtEdit = playheadPositionRef.current;
+        const noteInCutWindow = 0.2;
+        expect(noteInCutWindow).toBeGreaterThan(positionAtEdit);
+
+        harness.tempo_map_store.value = { changes: [{ id: 't1', beat: 0, tempo: 90, curve: 'instant' }] };
+        harness.clock = 0.1;
+        await fireTick();
+
+        const [fromBeat, toBeat, , lastScheduledBeat] = vi.mocked(scheduleMidiNotes).mock.calls.at(-1) ?? [];
+        // The real re-emission gate in scheduleMidiNotes:
+        // `startBeat < fromBeat || startBeat >= toBeat || startBeat <= lastScheduledBeat`.
+        expect(noteInCutWindow).toBeGreaterThanOrEqual(fromBeat as number);
+        expect(noteInCutWindow).toBeLessThan(toBeat as number);
+        expect(noteInCutWindow).toBeGreaterThan(lastScheduledBeat as number);
+    });
+
+    it('re-opens the MIDI window on a loop-region edit as well', async () => {
+        startPlayheadScheduler();
+
+        harness.clock = 0.05;
+        await fireTick();
+        const noteInCutWindow = 0.2;
+
+        harness.transport_store.value = { ...playingTransport, loopStart: 2, loopEnd: 6 };
+        harness.clock = 0.1;
+        await fireTick();
+
+        const [fromBeat, toBeat, , lastScheduledBeat] = vi.mocked(scheduleMidiNotes).mock.calls.at(-1) ?? [];
+        expect(noteInCutWindow).toBeGreaterThanOrEqual(fromBeat as number);
+        expect(noteInCutWindow).toBeLessThan(toBeat as number);
+        expect(noteInCutWindow).toBeGreaterThan(lastScheduledBeat as number);
+    });
+
+    it('keeps the MIDI high-water mark monotonic across steady ticks so notes are not re-emitted twice', async () => {
+        startPlayheadScheduler();
+
+        harness.clock = 0.05;
+        await fireTick();
+        harness.clock = 0.1;
+        await fireTick();
+        const [, , , afterSecond] = vi.mocked(scheduleMidiNotes).mock.calls.at(-1) ?? [];
+        harness.clock = 0.15;
+        await fireTick();
+        const [, , , afterThird] = vi.mocked(scheduleMidiNotes).mock.calls.at(-1) ?? [];
+
+        expect(afterThird as number).toBeGreaterThan(afterSecond as number);
     });
 
     it('does not invalidate when neither tempo map nor loop region changes', async () => {

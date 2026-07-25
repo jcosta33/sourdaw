@@ -3,7 +3,15 @@ import { midiLearnStore } from '../../stores/midiLearnStore';
 import { getMidiLearnDependencies } from './getMidiLearnDependencies';
 import { scaleMidiValue } from './scaleMidiValue';
 
-export function handleMidiMessage(channel: number, cc: number, value: number): void {
+/**
+ * Apply one incoming controller value to every mapping learned for it.
+ *
+ * `normalized` is the caller's already-resolved 0..1 position. It is optional
+ * and defaults to `value / 127`; the Web MIDI input path supplies it so a
+ * controller that arrived as a 14-bit MSB/LSB pair drives its mapped target at
+ * full resolution rather than the 128 steps its MSB alone carries (audit MD-7).
+ */
+export function handleMidiMessage(channel: number, cc: number, value: number, normalized?: number): void {
     const state = midiLearnStore.value;
     if (!state) {
         return;
@@ -17,7 +25,7 @@ export function handleMidiMessage(channel: number, cc: number, value: number): v
     const deps = getMidiLearnDependencies();
 
     for (const mapping of matchingMappings) {
-        const scaled = scaleMidiValue(value, mapping.minValue, mapping.maxValue, mapping.scaleMode);
+        const scaled = scaleMidiValue(value, mapping.minValue, mapping.maxValue, mapping.scaleMode, normalized);
 
         switch (mapping.targetType) {
             case 'trackGain': {

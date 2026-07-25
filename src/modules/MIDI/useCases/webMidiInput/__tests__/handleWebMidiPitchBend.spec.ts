@@ -20,12 +20,23 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
         context: { currentTime: 2 },
     },
     applyNoteExpression: apply_note_expression,
+    getDefaultBendRangeSemitones: () => 48,
     getCompensationDelay: () => 0,
     getFactoryDrumKitByIndex: () => null,
 }));
 
 const { handleWebMidiPitchBend } = await import('../handleWebMidiPitchBend');
 const { activeNotes, channelToNote } = await import('../../../repositories/webMidi/state');
+const { ingestChannelControlChange } = await import('../../../repositories/webMidi/ingestChannelControlChange');
+const { resetChannelControllerState } = await import('../../../repositories/webMidi/resetChannelControllerState');
+
+/** Drive the four-message RPN 0 sequence a controller sends to declare its bend range. */
+function declare_bend_range(channel: number, semitones: number, cents = 0): void {
+    ingestChannelControlChange({ channel, cc: 101, value: 0 });
+    ingestChannelControlChange({ channel, cc: 100, value: 0 });
+    ingestChannelControlChange({ channel, cc: 6, value: semitones });
+    ingestChannelControlChange({ channel, cc: 38, value: cents });
+}
 
 type HandleWebMidiPitchBendDependencies = Parameters<typeof handleWebMidiPitchBend._factory>[0];
 
@@ -43,6 +54,7 @@ describe('handleWebMidiPitchBend', () => {
         activeNotes.clear();
         channelToNote.clear();
         apply_note_expression.mockClear();
+        resetChannelControllerState();
         mpe_enabled.value = true;
         target_track_id.value = 'track-1';
     });
@@ -72,6 +84,9 @@ describe('handleWebMidiPitchBend', () => {
             note: 64,
             channel: 2,
             expression: { pitchBend: 4096, pressure: 100, slide: 20 },
+            // No RPN 0 declared, so the MPE member default the expression
+            // surface itself defines (audit MD-8).
+            bendRangeSemitones: 48,
         });
     });
 
@@ -170,6 +185,148 @@ describe('handleWebMidiPitchBend', () => {
         fn(2, 0, 90);
 
         expect(activeNotes.has(staleKey)).toBe(false);
+    });
+
+    describe('controller-declared bend range via RPN 0 (audit MD-8)', () => {
+        it('interprets a non-MPE bend at the range the controller declared, not the hard-coded ±2', () => {
+            mpe_enabled.value = false;
+            const set_target = vi.fn<(target: number, startTime: number, timeConstant: number) => void>();
+            activeNotes.set(createWebMidiNoteKey(0, 60), {
+                channel: 0,
+                note: 60,
+                trackId: 'track-1',
+                instrumentTrackId: 'instrument-track',
+                startTime: 0,
+                startBeat: 0,
+                osc: { detune: { setTargetAtTime: set_target } } as unknown as OscillatorNode,
+            });
+            declare_bend_range(0, 12);
+            const fn = handleWebMidiPitchBend._factory(make_dependencies());
+
+            // Half-scale bend: +4096 of 8192.
+            fn(0, 0, 96);
+
+            expect(apply_note_expression).toHaveBeenCalledWith(expect.objectContaining({ bendRangeSemitones: 12 }));
+            // Fallback oscillator reads the same range: 4096/8192 * 12 st * 100
+            // cents = 600, plus the track's 5-cent base detune.
+            expect(set_target).toHaveBeenCalledWith(605, 2, 0.003);
+        });
+
+        it('applies the cents half of RPN 0 to the resolved range', () => {
+            mpe_enabled.value = false;
+            activeNotes.set(createWebMidiNoteKey(0, 60), {
+                channel: 0,
+                note: 60,
+                trackId: 'track-1',
+                instrumentTrackId: 'instrument-track',
+                startTime: 0,
+                startBeat: 0,
+            });
+            declare_bend_range(0, 2, 50);
+            const fn = handleWebMidiPitchBend._factory(make_dependencies());
+
+            fn(0, 0, 96);
+
+            expect(apply_note_expression).toHaveBeenCalledWith(expect.objectContaining({ bendRangeSemitones: 2.5 }));
+        });
+
+        it('uses an MPE member channel own declaration over the zone default', () => {
+            const key = createWebMidiNoteKey(2, 64);
+            activeNotes.set(key, {
+                channel: 2,
+                note: 64,
+                trackId: 'track-1',
+                instrumentTrackId: 'instrument-track',
+                startTime: 0,
+                startBeat: 0,
+            });
+            channelToNote.set(2, key);
+            declare_bend_range(2, 24);
+            const fn = handleWebMidiPitchBend._factory(make_dependencies());
+
+            fn(2, 0, 96);
+
+            expect(apply_note_expression).toHaveBeenCalledWith(expect.objectContaining({ bendRangeSemitones: 24 }));
+        });
+
+        it('inherits the MPE zone master declaration on a member channel that never declared one', () => {
+            const key = createWebMidiNoteKey(3, 64);
+            activeNotes.set(key, {
+                channel: 3,
+                note: 64,
+                trackId: 'track-1',
+                instrumentTrackId: 'instrument-track',
+                startTime: 0,
+                startBeat: 0,
+            });
+            channelToNote.set(3, key);
+            // MPE sets pitch-bend sensitivity for the whole zone from channel 0.
+            declare_bend_range(0, 12);
+            const fn = handleWebMidiPitchBend._factory(make_dependencies());
+
+            fn(3, 0, 96);
+
+            expect(apply_note_expression).toHaveBeenCalledWith(expect.objectContaining({ bendRangeSemitones: 12 }));
+        });
+
+        it('captures the range onto the note so recording can persist the depth performed', () => {
+            // The raw wire delta carries no depth. Without this, playback
+            // re-interprets the recorded bend at the MPE default and sounds
+            // four times deeper than it was played (audit MD-8, review r1).
+            const key = createWebMidiNoteKey(2, 64);
+            activeNotes.set(key, {
+                channel: 2,
+                note: 64,
+                trackId: 'track-1',
+                instrumentTrackId: 'instrument-track',
+                startTime: 0,
+                startBeat: 0,
+            });
+            channelToNote.set(2, key);
+            declare_bend_range(2, 12);
+            const fn = handleWebMidiPitchBend._factory(make_dependencies());
+
+            fn(2, 0, 96);
+
+            expect(activeNotes.get(key)?.pitchBend).toBe(4096);
+            expect(activeNotes.get(key)?.pitchBendRangeSemitones).toBe(12);
+        });
+
+        it('captures the MPE default onto the note when the controller declared nothing', () => {
+            const key = createWebMidiNoteKey(2, 64);
+            activeNotes.set(key, {
+                channel: 2,
+                note: 64,
+                trackId: 'track-1',
+                instrumentTrackId: 'instrument-track',
+                startTime: 0,
+                startBeat: 0,
+            });
+            channelToNote.set(2, key);
+            const fn = handleWebMidiPitchBend._factory(make_dependencies());
+
+            fn(2, 0, 96);
+
+            expect(activeNotes.get(key)?.pitchBendRangeSemitones).toBe(48);
+        });
+
+        it('does not leak one channel declaration onto another in non-MPE mode', () => {
+            mpe_enabled.value = false;
+            activeNotes.set(createWebMidiNoteKey(5, 60), {
+                channel: 5,
+                note: 60,
+                trackId: 'track-1',
+                instrumentTrackId: 'instrument-track',
+                startTime: 0,
+                startBeat: 0,
+            });
+            declare_bend_range(0, 12);
+            const fn = handleWebMidiPitchBend._factory(make_dependencies());
+
+            fn(5, 0, 96);
+
+            expect(apply_note_expression).toHaveBeenCalledWith(expect.objectContaining({ bendRangeSemitones: 2 }));
+        });
     });
 
     it('in non-MPE mode, retunes all active oscillators by the global ±2 semitone bend', () => {

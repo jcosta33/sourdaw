@@ -206,6 +206,11 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
                 }
                 if (noteData.pitchBend !== undefined) {
                     midiNote.pitchBend = noteData.pitchBend;
+                    // Persist the depth alongside the wire delta. Without it
+                    // playback re-interprets every recorded bend at the MPE
+                    // default, so a controller set to ±12 records +6 semitones
+                    // and plays back +24 (audit MD-8).
+                    midiNote.pitchBendRangeSemitones = noteData.pitchBendRangeSemitones;
                 }
             }
 

@@ -100,6 +100,72 @@ function scheduleWithVelocity(ctx: BaseAudioContext, velocity: number, startTime
     });
 }
 
+/** A440 (pitch 69) shifted by `semitones`, in Hz. */
+function frequencyAfterBend(semitones: number): number {
+    return 440 * 2 ** (semitones / 12);
+}
+
+function scheduleWithBend(ctx: BaseAudioContext, mpe: Record<string, number> | undefined) {
+    return scheduleBuiltinSynthNote({
+        ctx,
+        destination,
+        pitch: 69,
+        startTime: 0,
+        duration: 1,
+        velocity: 100,
+        params: baseBuiltinSynthParams,
+        mpe,
+        clipGain: 1,
+    });
+}
+
+// audit MD-8, review round 1 — this file used to hold its own
+// `MPE_BEND_RANGE_SEMITONES = 48`, so a bend recorded on a controller set to
+// ±12 played back four times deeper than it was performed. The range is the
+// caller's now.
+describe('scheduleBuiltinSynthNote pitch-bend depth', () => {
+    function firstFrequency(events: ParamEvent[]): number {
+        const event = events.find((candidate) => candidate.method === 'setValueAtTime' && candidate.value > 100);
+        return event?.value ?? 0;
+    }
+
+    it('bends by the range the caller supplies, not a range of its own', () => {
+        const { ctx, events } = makeFakeContext();
+
+        // Half-scale bend at ±12 st is +6 semitones.
+        scheduleWithBend(ctx, { pitchBend: 4096, pitchBendRangeSemitones: 12 });
+
+        expect(firstFrequency(events)).toBeCloseTo(frequencyAfterBend(6), 6);
+    });
+
+    it('sounds a different pitch for the same wire delta at a different range', () => {
+        const shallow = makeFakeContext();
+        const deep = makeFakeContext();
+
+        scheduleWithBend(shallow.ctx, { pitchBend: 4096, pitchBendRangeSemitones: 12 });
+        scheduleWithBend(deep.ctx, { pitchBend: 4096, pitchBendRangeSemitones: 48 });
+
+        expect(firstFrequency(shallow.events)).toBeCloseTo(frequencyAfterBend(6), 6);
+        expect(firstFrequency(deep.events)).toBeCloseTo(frequencyAfterBend(24), 6);
+    });
+
+    it('leaves the pitch unbent when the caller supplies no range', () => {
+        const { ctx, events } = makeFakeContext();
+
+        scheduleWithBend(ctx, { pitchBend: 4096 });
+
+        expect(firstFrequency(events)).toBeCloseTo(440, 6);
+    });
+
+    it('leaves the pitch unbent for a note with no bend', () => {
+        const { ctx, events } = makeFakeContext();
+
+        scheduleWithBend(ctx, undefined);
+
+        expect(firstFrequency(events)).toBeCloseTo(440, 6);
+    });
+});
+
 describe('scheduleBuiltinSynthNote', () => {
     const startTime = 10;
 

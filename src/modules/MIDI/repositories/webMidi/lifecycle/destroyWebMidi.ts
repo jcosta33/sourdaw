@@ -3,13 +3,14 @@ import { tauriInvoke } from '#/utils/tauriBridge';
 import { getMidiAccess } from '../getMidiAccess';
 import { getTauriEventUnlisten } from '../getTauriEventUnlisten';
 import { getTauriMode } from '../getTauriMode';
-import { releaseActiveToasterNote } from '../releaseActiveToasterNote';
+import { releaseAllActiveNotes } from '../releaseAllActiveNotes';
+import { resetChannelControllerState } from '../resetChannelControllerState';
 import { setMidiAccess } from '../setMidiAccess';
 import { setState } from '../setState';
 import { setTargetTrackId } from '../setTargetTrackId';
 import { setTauriEventUnlisten } from '../setTauriEventUnlisten';
 import { setTauriMode } from '../setTauriMode';
-import { activeNotes, channelToNote, midiLearn } from '../state';
+import { midiLearn } from '../state';
 
 import { detachActiveInput } from './detachActiveInput';
 
@@ -28,18 +29,11 @@ export function destroyWebMidi(getTrackStrip: GetWebMidiTrackStrip): void {
         setTauriMode(false);
     }
 
-    for (const noteData of activeNotes.values()) {
-        releaseActiveToasterNote(noteData, getTrackStrip);
-        if (noteData.osc) {
-            try {
-                noteData.osc.stop();
-            } catch {
-                // already stopped
-            }
-        }
-    }
-    activeNotes.clear();
-    channelToNote.clear();
+    // Same release core as reset and panic (audit MD-6). Teardown used to stop
+    // Toaster pads and raw oscillators only, so a Fermenter / Grand Boule /
+    // Levain voice held at teardown kept sounding.
+    releaseAllActiveNotes({ getTrackStrip });
+    resetChannelControllerState();
 
     const access = getMidiAccess();
     if (access) {

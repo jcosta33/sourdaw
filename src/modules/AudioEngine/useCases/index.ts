@@ -40,6 +40,7 @@ export { scheduleFaustNote } from './faustScheduler/scheduleFaustNote';
 export { startFaustNote } from './faustScheduler/startFaustNote';
 
 export { applyNoteExpression } from './noteExpression/applyNoteExpression';
+export { getDefaultBendRangeSemitones } from './noteExpression/getDefaultBendRangeSemitones';
 export { getNoteExpressionDimensions } from './noteExpression/getNoteExpressionDimensions';
 
 export { buildDeviceChain } from './buildDeviceChain';
@@ -114,6 +115,7 @@ export { getSharedAdjustmentLayerApplier } from './adjustmentLayer/sharedAdjustm
 
 export { scheduleClick } from './scheduling/scheduleClick';
 export { stopAllScheduled } from './scheduling/stopAllScheduled';
+export { registerScheduledSource } from './scheduling/registerScheduledSource';
 export { getCurrentTime } from './scheduling/getCurrentTime';
 export { createBufferSource } from './scheduling/createBufferSource';
 

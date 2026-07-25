@@ -42,6 +42,12 @@ export type ActiveNoteData = {
     pressure?: number;
     slide?: number;
     pitchBend?: number;
+    /**
+     * Semitone range the captured `pitchBend` was performed against (audit
+     * MD-8), so recording can persist the depth the player actually heard
+     * instead of leaving playback to guess.
+     */
+    pitchBendRangeSemitones?: number;
     osc?: OscillatorNode & { _env?: GainNode };
     /** When the note was sent to a Fermenter instance, stores the device ID for noteOff routing */
     fermenterDeviceId?: string;

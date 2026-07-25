@@ -611,10 +611,17 @@ describe('AudioEngineImpl — residual branch coverage', () => {
         it('releases Levain through its silent allNotesOff contract', () => {
             const strip = engine.ensureTrackStrip('levain-track');
             const allNotesOff = vi.fn();
+            // Shape the device registry actually produces: every instrument
+            // descriptor publishes `controller.allNotesOff` alongside its
+            // typed controls, and the stop sweep reads the generic one so a
+            // new instrument cannot be forgotten (audit MD-6). The intent of
+            // this test is unchanged — Levain is released by one silent
+            // all-notes-off, never a 128-note fan-out.
             strip.deviceNodes.push({
                 deviceId: 'levain-dev',
                 type: 'levain',
                 nodes: [],
+                controller: { allNotesOff },
                 levainControls: { allNotesOff },
             } as never);
 

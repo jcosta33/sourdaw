@@ -17,7 +17,7 @@ import {
 import { CommandEventBus, executeAppAction, pushUndoEntry, redo, undo } from '#/modules/Command/useCases';
 import { loopStationStore } from '#/modules/SessionLauncher/stores';
 import { stopAllSlots, triggerPad } from '#/modules/SessionLauncher/useCases';
-import { stopPlayback, seekPlayhead, setLoopRegion } from '#/modules/Transport/useCases';
+import { panicAllNotes, stopPlayback, seekPlayhead, setLoopRegion } from '#/modules/Transport/useCases';
 import { type EditingTool } from '#/modules/WorkspaceShell/stores';
 import {
     cycleAutomationVisibility,
@@ -247,6 +247,14 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
                         logger.error(new Error('Keyboard shortcut stop request failed', { cause: error }));
                     });
                     return false;
+                }
+                case 'panicAllNotes': {
+                    // Unconditional, unlike `stopPlayback` above: a panic must
+                    // not be swallowed by a selection or a ghost clip (MD-6).
+                    void panicAllNotes().catch((error: unknown) => {
+                        logger.error(new Error('Keyboard shortcut MIDI panic failed', { cause: error }));
+                    });
+                    return true;
                 }
                 case 'zoomIn':
                     zoomTimeline(ZOOM_STEP);

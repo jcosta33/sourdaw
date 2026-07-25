@@ -335,6 +335,8 @@ export type AudioEngine = {
     scheduleOscillator(frequency: number, startTime: number, duration: number, gain?: number): void;
     scheduleClick(time: number, accent: boolean, volume?: number): void;
     stopAllScheduled(): void;
+    /** Track a scheduled source so `stopAllScheduled` can silence it (audit MD-6). */
+    registerScheduledSource(node: AudioScheduledSourceNode): void;
     wireSidechainRoute(sourceTrackId: string, targetTrackId: string, targetDeviceId: string): void;
     unwireSidechainRoute(sourceTrackId: string, targetDeviceId: string): void;
     /** FX-5 — re-resolve and glide every wired key-alignment delay. The resolver

@@ -1,37 +1,26 @@
-import { MIDI_CC } from '../../../models/WebMidiTypes';
 import { getActiveInput } from '../getActiveInput';
-import { getMidiAccess } from '../getMidiAccess';
-import { releaseActiveToasterNote } from '../releaseActiveToasterNote';
-import { activeNotes, channelToNote } from '../state';
+import { releaseAllActiveNotes } from '../releaseAllActiveNotes';
+import { resetChannelControllerState } from '../resetChannelControllerState';
+import { sendPanicToMidiOutputs } from '../sendPanicToMidiOutputs';
 
 import type { GetWebMidiTrackStrip } from '../engineStripAccess';
 
+/**
+ * Return the live MIDI input to a clean slate: release every held voice, drop
+ * the decoded controller state, and tell downstream hardware to do the same.
+ *
+ * The release itself is `releaseAllActiveNotes` rather than a list kept here —
+ * this path used to release Toaster pads and raw oscillators only, and cleared
+ * the note map on top, so a Fermenter / Grand Boule / Levain voice was left
+ * sounding with nothing left that knew about it (audit MD-6).
+ */
 export function resetMidiState(deps: { getCurrentTime: () => number; getTrackStrip: GetWebMidiTrackStrip }): void {
-    for (const [, noteData] of activeNotes) {
-        releaseActiveToasterNote(noteData, deps.getTrackStrip);
-        if (noteData.osc) {
-            const now = deps.getCurrentTime();
-            if (noteData.osc._env) {
-                noteData.osc._env.gain.setTargetAtTime(0, now, 0.005);
-            }
-            try {
-                noteData.osc.stop(now + 0.02);
-            } catch {
-                // already stopped
-            }
-        }
-    }
-    activeNotes.clear();
-    channelToNote.clear();
+    releaseAllActiveNotes(deps);
+    // Latched 14-bit halves and a declared RPN 0 bend range describe the
+    // controller, not the project (audit MD-7, MD-8).
+    resetChannelControllerState();
 
-    const access = getMidiAccess();
-    if (getActiveInput() && access) {
-        const output = access.outputs.values().next().value;
-        if (output) {
-            for (let ch = 0; ch < 16; ch++) {
-                output.send([MIDI_CC | ch, 120, 0]);
-                output.send([MIDI_CC | ch, 121, 0]);
-            }
-        }
+    if (getActiveInput()) {
+        sendPanicToMidiOutputs();
     }
 }
