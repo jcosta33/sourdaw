@@ -927,6 +927,9 @@ module.exports = {
                     // Shared AU-1 automation curve-conformance case table,
                     // imported only from the live/offline conformance specs.
                     '^src/utils/__tests__/automationCurveCases\\.ts$',
+                    // Shared reproduction of Tauri's IPC serializer, imported
+                    // only from the binary-IPC payload-size specs.
+                    '^src/utils/__tests__/serializeLikeTauri\\.ts$',
                     // Reachable type/helper files imported by runtime code, but
                     // currently invisible to dependency-cruiser's orphan graph.
                     '^src/utils/DOM/GestureEvent\\.ts$',

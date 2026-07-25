@@ -14,7 +14,7 @@ import type { PluginLatencyChange } from '../../../repositories/pluginBridge/typ
 // latency push reaches the right instance's sink (PH-4).
 const mocks = vi.hoisted(() => ({
     loadPluginRepo: vi.fn<(pluginId: string, instanceId: string) => Promise<unknown>>(),
-    setPluginStateRepo: vi.fn<(instanceId: string, state: number[]) => Promise<void>>(),
+    setPluginStateRepo: vi.fn<(instanceId: string, state: Uint8Array) => Promise<void>>(),
     unloadPluginRepo: vi.fn<(instanceId: string) => Promise<void>>(),
     subscribe: vi.fn<(handler: (change: PluginLatencyChange) => void) => Promise<() => void>>(),
     warn: vi.fn(),
@@ -55,7 +55,7 @@ function emitLatencyChange(change: PluginLatencyChange): void {
 
 // base64 'c2F2ZWQ=' decodes to the bytes of "saved".
 const SAVED_CHUNK = 'c2F2ZWQ=';
-const SAVED_BYTES = [115, 97, 118, 101, 100];
+const SAVED_BYTES = new Uint8Array([115, 97, 118, 101, 100]);
 
 describe('activateExternalPlugin', () => {
     beforeEach(() => {

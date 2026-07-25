@@ -18,7 +18,6 @@ export function restorePluginState(instanceId: string, stateChunk: string): Prom
         if (stateChunk.length === 0) {
             return;
         }
-        const bytes = base64ToBytes(stateChunk);
-        await setPluginState(instanceId, [...bytes]);
+        await setPluginState(instanceId, base64ToBytes(stateChunk));
     });
 }
