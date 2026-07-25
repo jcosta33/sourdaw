@@ -11,6 +11,7 @@ import {
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationValueAtBeat, isRecordingAutomation } from '#/modules/Automation/useCases';
 import { setFermenterMappedParam } from '#/modules/Fermenter/useCases';
+import { dbToGain } from '#/utils/audioLevelLaw';
 import {
     getDeviceAutomationParameterId,
     resolveDeviceAutomationTargetIndex,
@@ -100,6 +101,14 @@ export function applyAutomation(currentBeat: number): Set<string> {
             continue;
         }
 
+        // AU-9: a lane the project marks disabled drives nothing — live as
+        // offline (scheduleTrackAutomation applies the same gate). Compared
+        // against `false` rather than falsy so a lane persisted before the flag
+        // existed, which normalizes to `enabled: true`, still plays.
+        if (lane.enabled === false) {
+            continue;
+        }
+
         const track = automationState.trackIndex.get(lane.trackId);
         if (!track || track.automationMode === 'off') {
             continue;
@@ -136,7 +145,10 @@ export function applyAutomation(currentBeat: number): Set<string> {
         // (scheduleAutomationOnParam); this closes the live half for the
         // AudioParam-backed families only.
         if (lane.parameterId === 'gain') {
-            const linearGain = lane.minValue < 0 ? 10 ** (value / 20) : value;
+            // AU-10: one shared level law. A lane with `minValue < 0` is a
+            // decibel lane; `dbToGain` is the same conversion the offline
+            // scheduler now applies, so the bounce matches the monitor.
+            const linearGain = lane.minValue < 0 ? dbToGain(value) : value;
             // Compose the VCA master multiplier so a gain lane on a VCA-member
             // track scales WITH its group rather than nullifying it. getEffectiveGain
             // with a base of 1 returns just the multiplier (1 for a non-VCA track).

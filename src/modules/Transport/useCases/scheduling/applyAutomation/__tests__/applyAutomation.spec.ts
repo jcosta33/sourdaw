@@ -571,4 +571,95 @@ describe('applyAutomation', () => {
             expect(updateMidiFxParam).not.toHaveBeenCalled();
         });
     });
+
+    describe('lane.enabled gating (AU-9)', () => {
+        function seedGatingTrack(devices: SeedDevice[]): void {
+            mutableTrackStore.value = {
+                tracks: [
+                    {
+                        id: 'track-1',
+                        kind: 'audio',
+                        automationMode: 'read',
+                        clips: [],
+                        midiFx: [],
+                        devices,
+                        gain: 0.5,
+                        pan: 0,
+                    },
+                ],
+            };
+        }
+
+        const GATE_EQ = { id: 'eq-gate', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } };
+
+        it('does not drive a device param from a lane whose enabled flag is false', () => {
+            seedGatingTrack([GATE_EQ]);
+            mutableAutomationStore.value = {
+                lanes: [
+                    {
+                        id: 'lane-gate-disabled',
+                        trackId: 'track-1',
+                        parameterId: 'eq-gate:eq-low-gain',
+                        enabled: false,
+                        minValue: 0,
+                        points: [{ beat: 0, value: 0.75 }],
+                    },
+                ],
+            };
+            vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(0).mockReturnValue(0.75);
+
+            applyAutomation(0);
+            applyAutomation(1);
+
+            expect(updateDeviceParam).not.toHaveBeenCalled();
+        });
+
+        it('drives the same device param when the lane is enabled', () => {
+            seedGatingTrack([GATE_EQ]);
+            mutableAutomationStore.value = {
+                lanes: [
+                    {
+                        id: 'lane-gate-enabled',
+                        trackId: 'track-1',
+                        parameterId: 'eq-gate:eq-low-gain',
+                        enabled: true,
+                        minValue: 0,
+                        points: [{ beat: 0, value: 0.75 }],
+                    },
+                ],
+            };
+            // mockReset first: the disabled case above queues a mockReturnValueOnce
+            // it never consumes (its lane is gated out before the lookup), and
+            // clearAllMocks does not drain a once-queue — the leftover would make
+            // both ticks read the same value and suppress the dispatch here.
+            vi.mocked(getAutomationValueAtBeat).mockReset();
+            vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(0).mockReturnValue(0.75);
+
+            applyAutomation(0);
+            applyAutomation(1);
+
+            expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'eq-gate', 'eq-low-gain', expect.any(Number));
+        });
+
+        it('does not schedule fader gain, nor claim the track, for a disabled gain lane', () => {
+            seedGatingTrack([]);
+            mutableAutomationStore.value = {
+                lanes: [
+                    {
+                        id: 'lane-gate-gain',
+                        trackId: 'track-1',
+                        parameterId: 'gain',
+                        enabled: false,
+                        minValue: 0,
+                        points: [{ beat: 0, value: 0.75 }],
+                    },
+                ],
+            };
+
+            const owned = applyAutomation(0);
+
+            expect(scheduleTrackGain).not.toHaveBeenCalled();
+            expect(owned.has('track-1')).toBe(false);
+        });
+    });
 });

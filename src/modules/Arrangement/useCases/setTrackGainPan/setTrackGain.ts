@@ -1,6 +1,7 @@
 import { setTrackGain as engineSetTrackGain, updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { recordAutomationValue } from '#/modules/Automation/useCases';
 import { transportStore } from '#/modules/Transport/stores';
+import { clampFaderGain } from '#/utils/audioLevelLaw';
 
 import { getTrackById } from '../../repositories/track/getTrackById';
 import { updateTrack } from '../../repositories/track/updateTrack';
@@ -10,7 +11,7 @@ import { syncToasterPadParam } from './helpers';
 import { maybeRecordAutomation } from './maybeRecordAutomation';
 
 export function setTrackGain(trackId: string, gain: number, isTransient = false): void {
-    const clamped = Math.max(0, Math.min(1, gain));
+    const clamped = clampFaderGain(gain);
     engineSetTrackGain(trackId, clamped);
 
     if (!isTransient) {
