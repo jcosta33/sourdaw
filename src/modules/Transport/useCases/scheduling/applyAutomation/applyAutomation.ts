@@ -21,6 +21,8 @@ import { AUTOMATION_SLEW_ALPHA, slewStep } from '#/utils/automationSlew';
 
 import { schedulerSession } from '../../playheadScheduler/schedulerSession';
 
+import { appliedAutomationBases, clearAppliedAutomationBases } from './appliedAutomationBases';
+
 /**
  * Per-parameter exponential slew state for plugin automation. The IIR
  * coefficient (AUTOMATION_SLEW_ALPHA, 0.4) and its one-tick step (slewStep) are
@@ -58,6 +60,10 @@ export function applyAutomation(currentBeat: number): Set<string> {
     // applyVcaGains skips these so the VCA writer defers to the composed value
     // instead of racing it (see the gain branch below).
     const gainAutomationTrackIds = new Set<string>();
+    // AU-11: this tick's device writes, handed to applyModulationToEngine so a
+    // param that is both automated and modulated combines onto the value
+    // automation actually applied rather than a separately recomputed one.
+    clearAppliedAutomationBases();
     const autoState = automationStore.value;
     if (!autoState) {
         return gainAutomationTrackIds;
@@ -187,6 +193,16 @@ export function applyAutomation(currentBeat: number): Set<string> {
                 const prev = laneSlew.get(device.id) ?? value;
                 const smoothed = isDiscontinuity ? value : slewStep(prev, value, AUTOMATION_SLEW_ALPHA);
                 laneSlew.set(device.id, smoothed);
+                // AU-11: record the applied value even when the dispatch below
+                // is suppressed as sub-epsilon — the engine still holds this
+                // value (within epsilon), so it is the correct base for the
+                // modulation write that follows in this same tick.
+                let appliedByParameter = appliedAutomationBases.get(device.id);
+                if (!appliedByParameter) {
+                    appliedByParameter = new Map<string, number>();
+                    appliedAutomationBases.set(device.id, appliedByParameter);
+                }
+                appliedByParameter.set(paramId, smoothed);
                 if (isDiscontinuity || Math.abs(smoothed - prev) > SLEW_EPSILON) {
                     if (device.type === 'fermenter') {
                         // Fermenter params use camelCase ids that must be mapped to
