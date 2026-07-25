@@ -9,9 +9,6 @@ export const BUILTIN_INSTRUMENT_DESCRIPTORS: PluginDescriptor[] = [
         format: 'builtin',
         category: 'instrument',
         hasCustomUI: false,
-        // Amp-envelope release keeps the voice sounding past the last note. The
-        // synth variants inherit this declaration and override the value.
-        tail: { kind: 'decaySeconds', parameterId: 'release', defaultSeconds: 0.3 },
         parameters: [
             {
                 id: 'waveform',

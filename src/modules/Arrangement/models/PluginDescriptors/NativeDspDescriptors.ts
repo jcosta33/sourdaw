@@ -10,13 +10,6 @@ export const NATIVE_DSP_DESCRIPTORS: PluginDescriptor[] = [
         category: 'effect',
         hasCustomUI: true,
         platform: 'both',
-        // The FDN consumes `decay` as an RT60 in seconds (crates/proof-chamber
-        // src/fdn.rs `set_param`, arm "rt60" | "decay"), so the tail is that value
-        // plus pre-delay. Note the descriptor declares `decay` with a 0-0.999
-        // range while the engine reads seconds — that range mismatch is a real
-        // device bug tracked separately; this declaration matches what the engine
-        // actually does today rather than what the range implies.
-        tail: { kind: 'decaySeconds', parameterId: 'decay', defaultSeconds: 0.5, predelayMsParameterId: 'predelay' },
         parameters: [
             {
                 id: 'mix',

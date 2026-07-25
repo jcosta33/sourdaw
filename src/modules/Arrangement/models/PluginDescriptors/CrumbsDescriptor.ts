@@ -12,9 +12,6 @@ export const CRUMBS_DESCRIPTOR: PluginDescriptor = {
     format: 'builtin',
     category: 'instrument',
     hasCustomUI: true,
-    // An instrument keeps sounding for its amp-envelope release after the last
-    // note ends, which the export has to capture like any other tail.
-    tail: { kind: 'decaySeconds', parameterId: 'release', defaultSeconds: 0.1 },
     parameters: [
         {
             id: 'masterGain',

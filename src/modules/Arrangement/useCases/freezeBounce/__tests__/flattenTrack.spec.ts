@@ -1,7 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { UNKNOWN_FROZEN_TAIL_SECONDS } from '#/utils/frozenBufferTail';
-
 import { updateTrack } from '../../../repositories/track/updateTrack';
 import { trackStore } from '../../../stores/trackStore';
 import { flattenTrack } from '../flattenTrack';
@@ -193,13 +191,9 @@ describe('flattenTrack', () => {
         if (!clip) {
             throw new Error('expected flattened clip');
         }
-        // No renderSettings means the baked tail is UNKNOWN, not zero. Flatten
-        // bakes this clip permanently into the timeline, so treating unknown as
-        // zero discards whatever the buffer decays past beat 6 from the project
-        // itself — not just from one export. Reserve the unknown-tail floor:
-        // 10 s at 120 BPM is 20 beats.
+        // No renderSettings => tailLengthSeconds is undefined => tail contribution is 0.
         expect(clip.startBeat).toBe(2);
-        expect(clip.endBeat).toBe(6 + UNKNOWN_FROZEN_TAIL_SECONDS * 2);
+        expect(clip.endBeat).toBe(6);
     });
 
     it('rejects an ineligible destination before transport reads, UUID allocation, or replacement', () => {

@@ -137,7 +137,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     cancelExport: vi.fn(),
     exportStems: mocks.exportStems,
     getAudioContext: mocks.getAudioContext,
-    getAutoDetectedTailSeconds: vi.fn(() => ({ seconds: 2, clamped: false })),
+    getAutoDetectedTailSeconds: vi.fn(() => 2),
     isExportActive: mocks.isExportActive,
     MAX_AUTO_TAIL_SECONDS: 60,
     renderOffline: mocks.renderOffline,

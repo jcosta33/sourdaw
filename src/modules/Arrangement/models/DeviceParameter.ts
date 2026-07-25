@@ -39,15 +39,13 @@ export type {
 // ── Synth variants (generated from builtin-synth base) ─────────────────────
 function createSynthVariant(id: string, name: string, overrides: Record<string, number>): PluginDescriptor {
     const base = BUILTIN_INSTRUMENT_DESCRIPTORS.find((param) => param.id === 'builtin-synth')!;
-    // Spread the base rather than re-listing its fields. Re-listing silently
-    // dropped every capability the base declared but the literal did not name:
-    // the variants lost `tail`, so all four exported with a tail of zero while
-    // "Analog Strings" was setting `release: 1.2`. A field added to
-    // `PluginDescriptor` now reaches the variants without touching this function.
     return {
-        ...base,
         id,
         name,
+        vendor: 'Sourdaw',
+        format: 'builtin',
+        category: 'instrument',
+        hasCustomUI: false,
         parameters: base.parameters.map((param) => {
             const val = overrides[param.id] !== undefined ? overrides[param.id]! : param.defaultValue;
             return { ...param, deviceId: id, value: val, defaultValue: val };
@@ -98,11 +96,13 @@ const SYNTH_VARIANTS: PluginDescriptor[] = [
 // ── Drum variants (generated from builtin-drum-kit base) ──────────────────
 function createDrumVariant(id: string, name: string, kitIndex: number): PluginDescriptor {
     const base = BUILTIN_INSTRUMENT_DESCRIPTORS.find((param) => param.id === 'builtin-drum-kit')!;
-    // Same inheritance rule as the synth variants: spread, never re-list.
     return {
-        ...base,
         id,
         name,
+        vendor: 'Sourdaw',
+        format: 'builtin',
+        category: 'instrument',
+        hasCustomUI: false,
         parameters: base.parameters.map((param) => {
             if (param.id === 'kit') {
                 return { ...param, deviceId: id, value: kitIndex, defaultValue: kitIndex };
