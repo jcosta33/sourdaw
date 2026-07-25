@@ -87,4 +87,15 @@ describe('undoRippleInsertClip', () => {
             ],
         });
     });
+
+    it('is a no-op when the track store holds no state', () => {
+        vi.mocked(getTrackStoreState).mockReturnValue(null);
+
+        undoRippleInsertClip({
+            trackId: 'track-target',
+            plan: { shiftedClips: [{ clipId: 'clip-shifted', origStartBeat: 2, origEndBeat: 4 }] },
+        });
+
+        expect(setTrackState).not.toHaveBeenCalled();
+    });
 });

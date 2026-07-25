@@ -64,4 +64,15 @@ describe('scrollTimelineViewportFromWheel', () => {
         expect(setScrollY).toHaveBeenCalledWith(0);
         expect(scrollTimeline).not.toHaveBeenCalled();
     });
+
+    it('treats an absent view state as a zero vertical scroll offset', () => {
+        viewStoreMock.state = null as unknown as typeof viewStoreMock.state;
+
+        scrollTimelineViewportFromWheel({ deltaX: 0, deltaY: 30, shiftKey: false });
+
+        // No prior scrollY -> the delta alone becomes the new offset.
+        expect(setScrollY).toHaveBeenCalledTimes(1);
+        expect(setScrollY).toHaveBeenCalledWith(30);
+        expect(scrollTimeline).not.toHaveBeenCalled();
+    });
 });
