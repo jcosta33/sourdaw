@@ -1,41 +1,208 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
 
 import { StatusBar } from '../StatusBar';
 
+const undoState = vi.hoisted(() => ({
+    canUndo: false,
+    canRedo: false,
+    lastAction: null as { label: string } | null,
+    undoCount: 0,
+}));
+const collab = vi.hoisted<{ connectionStatus: string; isEnabled: boolean; peers: unknown[] }>(() => ({
+    connectionStatus: 'disconnected',
+    isEnabled: false,
+    peers: [],
+}));
+const selectionLabel = vi.hoisted(() => ({ value: '' }));
+const llmState = vi.hoisted<{ value: Record<string, unknown> }>(() => ({ value: { state: 'idle' } }));
+const renderQueueValue = vi.hoisted(() => ({
+    entries: [] as Array<{ status: string }>,
+    cachedPhraseIds: [],
+    phraseStatusMap: {},
+}));
+const renderQueueNull = vi.hoisted(() => ({ value: false }));
+const toggleCollaborationPanelMock = vi.hoisted(() => vi.fn());
+const toggleUndoHistoryMock = vi.hoisted(() => vi.fn());
+
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn((_store, defaultValue) => defaultValue),
+    // Distinguish the two useStore calls by their default-value argument:
+    // llmStatus defaults to { state: 'idle' }, renderQueue to { entries: ... }.
+    useStore: vi.fn((_store: unknown, defaultValue: unknown) => {
+        if (typeof defaultValue === 'object' && defaultValue !== null && 'state' in defaultValue) {
+            return llmState.value;
+        }
+        if (typeof defaultValue === 'object' && defaultValue !== null && 'entries' in defaultValue) {
+            return renderQueueNull.value ? null : renderQueueValue;
+        }
+        return defaultValue;
+    }),
+}));
+
+vi.mock('#/modules/WorkspaceShell/presentations/hooks/useUndoState', () => ({
+    useUndoState: () => undoState,
+}));
+vi.mock('#/modules/WorkspaceShell/presentations/hooks/useCollaborationState', () => ({
+    useCollaborationState: () => collab,
+}));
+vi.mock('#/modules/WorkspaceShell/presentations/hooks/useSelectionLabel', () => ({
+    useSelectionLabel: () => selectionLabel.value,
+}));
+vi.mock('#/modules/WorkspaceShell/presentations/hooks/useStatusBarMetrics', () => ({
+    useStatusBarMetrics: () => {},
+}));
+
+vi.mock('#/modules/WorkspaceShell/useCases/togglePanel/panelToggles/toggleCollaborationPanel', () => ({
+    toggleCollaborationPanel: toggleCollaborationPanelMock,
+}));
+vi.mock('#/modules/WorkspaceShell/useCases/togglePanel/panelToggles/toggleUndoHistory', () => ({
+    toggleUndoHistory: toggleUndoHistoryMock,
 }));
 
 const renderWithTooltip = (ui: React.ReactElement) => {
-    return render(<TooltipProvider>{ui}</TooltipProvider>);
+    return render(<TooltipProvider delayDuration={0}>{ui}</TooltipProvider>);
 };
 
 describe('StatusBar', () => {
     beforeEach(() => {
-        vi.clearAllMocks();
+        undoState.canUndo = false;
+        undoState.canRedo = false;
+        undoState.lastAction = null;
+        undoState.undoCount = 0;
+        collab.connectionStatus = 'disconnected';
+        collab.isEnabled = false;
+        collab.peers = [];
+        selectionLabel.value = '';
+        llmState.value = { state: 'idle' };
+        renderQueueValue.entries = [];
+        renderQueueNull.value = false;
+        toggleCollaborationPanelMock.mockClear();
+        toggleUndoHistoryMock.mockClear();
     });
 
-    it('should render without crashing', () => {
-        renderWithTooltip(<StatusBar />);
-        expect(document.body).toBeTruthy();
+    describe('LLM status badge', () => {
+        it('shows idle by default', () => {
+            renderWithTooltip(<StatusBar />);
+            expect(screen.getByText('idle')).toBeInTheDocument();
+        });
+
+        it('shows the loading percentage when state is loading', () => {
+            llmState.value = { state: 'loading', progress: 0.42, text: 'Loading' };
+            renderWithTooltip(<StatusBar />);
+            expect(screen.getByText('42%')).toBeInTheDocument();
+        });
+
+        it('shows active when state is generating', () => {
+            llmState.value = { state: 'generating' };
+            renderWithTooltip(<StatusBar />);
+            expect(screen.getByText('active')).toBeInTheDocument();
+        });
+
+        it('shows ready when state is ready', () => {
+            llmState.value = { state: 'ready', modelId: 'm1' };
+            renderWithTooltip(<StatusBar />);
+            expect(screen.getByText('ready')).toBeInTheDocument();
+        });
     });
 
-    it('should handle store state', () => {
-        renderWithTooltip(<StatusBar />);
-        expect(document.body).toBeTruthy();
+    describe('AI render count', () => {
+        it('hides the AI Render metric when no renders are active', () => {
+            renderWithTooltip(<StatusBar />);
+            expect(screen.queryByText('AI Render')).not.toBeInTheDocument();
+        });
+
+        it('shows the active render count when renders are queued/rendering', () => {
+            renderQueueValue.entries = [
+                { status: 'rendering-browser' },
+                { status: 'queued' },
+                { status: 'preparing' },
+                { status: 'done' },
+            ];
+            renderWithTooltip(<StatusBar />);
+            // 3 of 4 entries are active (rendering-browser, queued, preparing).
+            expect(screen.getByText('3 active')).toBeInTheDocument();
+        });
+
+        it('treats a null render queue as zero active renders', () => {
+            // useStore returns null for renderQueue (defensive null guard -> `: 0` branch at line 52).
+            renderQueueNull.value = true;
+            renderWithTooltip(<StatusBar />);
+            expect(screen.queryByText(/active/)).not.toBeInTheDocument();
+        });
     });
 
-    it('should render with useCase bindings', () => {
-        renderWithTooltip(<StatusBar />);
-        expect(document.body).toBeTruthy();
+    describe('selection label', () => {
+        it('hides the selection label when empty', () => {
+            renderWithTooltip(<StatusBar />);
+            expect(screen.queryByText('3 clips selected')).not.toBeInTheDocument();
+        });
+
+        it('shows the selection label when clips are selected', () => {
+            selectionLabel.value = '3 clips selected';
+            renderWithTooltip(<StatusBar />);
+            expect(screen.getByText('3 clips selected')).toBeInTheDocument();
+        });
     });
 
-    it('should have interactive elements', () => {
-        renderWithTooltip(<StatusBar />);
-        const buttons = screen.queryAllByRole('button');
-        expect(buttons.length).toBeGreaterThanOrEqual(0);
+    describe('undo state', () => {
+        it('hides the last-action label when there is no undo history', () => {
+            renderWithTooltip(<StatusBar />);
+            expect(screen.queryByText(/Last:/)).not.toBeInTheDocument();
+        });
+
+        it('shows the last action label when history exists', () => {
+            undoState.lastAction = { label: 'Add note' };
+            renderWithTooltip(<StatusBar />);
+            expect(screen.getByText('Last: Add note')).toBeInTheDocument();
+        });
+
+        it('pluralizes undo count when > 1', () => {
+            undoState.undoCount = 3;
+            renderWithTooltip(<StatusBar />);
+            expect(screen.getByText(/3 undos/)).toBeInTheDocument();
+        });
+
+        it('uses singular undo when count is exactly 1', () => {
+            undoState.undoCount = 1;
+            renderWithTooltip(<StatusBar />);
+            const btn = screen.getByLabelText('Toggle undo history panel');
+            expect(btn.textContent).toMatch(/1 undo(?!s)/);
+        });
+
+        it('routes the undo history button to toggleUndoHistory', () => {
+            renderWithTooltip(<StatusBar />);
+            fireEvent.click(screen.getByLabelText('Toggle undo history panel'));
+            expect(toggleUndoHistoryMock).toHaveBeenCalledTimes(1);
+        });
+    });
+
+    describe('collaboration badge', () => {
+        it('routes the collaboration button to toggleCollaborationPanel', () => {
+            renderWithTooltip(<StatusBar />);
+            fireEvent.click(screen.getByLabelText('Toggle collaboration panel'));
+            expect(toggleCollaborationPanelMock).toHaveBeenCalledTimes(1);
+        });
+
+        it('shows zero peers when collaboration is disabled', () => {
+            renderWithTooltip(<StatusBar />);
+            expect(screen.getByLabelText('Toggle collaboration panel')).toHaveTextContent('0');
+        });
+
+        it('shows the peer count when collaboration is enabled with peers', () => {
+            collab.isEnabled = true;
+            collab.peers = [{ id: 'p1' }, { id: 'p2' }];
+            renderWithTooltip(<StatusBar />);
+            expect(screen.getByLabelText('Toggle collaboration panel')).toHaveTextContent('2');
+        });
+
+        it('renders a success status dot when connected', () => {
+            collab.connectionStatus = 'connected';
+            renderWithTooltip(<StatusBar />);
+            // The dot uses tone="success"; its container is the toggle button.
+            const btn = screen.getByLabelText('Toggle collaboration panel');
+            expect(btn).toBeInTheDocument();
+        });
     });
 });

@@ -84,7 +84,7 @@ describe('PlayheadDisplay', () => {
 
     describe('wall-clock mode (mm:ss.ms)', () => {
         it('formats 0:00.000 at position 0 with tempo 120', () => {
-            renderWithTooltip(<PlayheadDisplay tempo={120} numerator={4} timeDisplayMode="seconds" />);
+            renderWithTooltip(<PlayheadDisplay tempo={120} numerator={4} timeDisplayMode="time" />);
 
             // seconds = 0 / (120/60) = 0 → min 00, sec 00, ms 000
             // min and sec are both "00", so assert there are two of them.
@@ -96,7 +96,7 @@ describe('PlayheadDisplay', () => {
             // tempo 120 → 2 beats/sec. Position 125 beats = 62.5 seconds.
             // 62.5s → min 01, sec 02, ms 500.
             playheadPosition.current = 125;
-            renderWithTooltip(<PlayheadDisplay tempo={120} numerator={4} timeDisplayMode="seconds" />);
+            renderWithTooltip(<PlayheadDisplay tempo={120} numerator={4} timeDisplayMode="time" />);
 
             expect(screen.getByText('01')).toBeInTheDocument(); // min
             expect(screen.getByText('02')).toBeInTheDocument(); // sec
@@ -106,7 +106,7 @@ describe('PlayheadDisplay', () => {
         it('uses the tempo to scale the conversion (tempo 60 = 1 beat/sec)', () => {
             // tempo 60 → 1 beat/sec. Position 65.25 beats = 65.25s → 1m 5s 250ms.
             playheadPosition.current = 65.25;
-            renderWithTooltip(<PlayheadDisplay tempo={60} numerator={4} timeDisplayMode="seconds" />);
+            renderWithTooltip(<PlayheadDisplay tempo={60} numerator={4} timeDisplayMode="time" />);
 
             expect(screen.getByText('01')).toBeInTheDocument(); // min
             expect(screen.getByText('05')).toBeInTheDocument(); // secs

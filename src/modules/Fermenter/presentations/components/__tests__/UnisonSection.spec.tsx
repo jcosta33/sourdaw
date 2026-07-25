@@ -77,4 +77,12 @@ describe('UnisonSection', () => {
             expect(onSpreadChange).toHaveBeenLastCalledWith(7);
         });
     });
+
+    it('renders with the real RotaryKnob when no override is supplied', () => {
+        const props = defaultProps({ rotaryKnob: undefined });
+        delete (props as Record<string, unknown>).rotaryKnob;
+        // Exercises the default-param branch (Knob = RotaryKnob).
+        const { container } = render(<UnisonSection {...props} />);
+        expect(container.firstChild).toBeTruthy();
+    });
 });

@@ -2,6 +2,9 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
+import { useStore } from '#/infra/store/useStore';
+import { aiStore } from '#/modules/AiGeneration/stores';
+import { linkStatusStore } from '#/modules/Transport/stores';
 
 import { PanelToggles } from '../PanelToggles';
 
@@ -45,7 +48,7 @@ vi.mock('#/modules/WorkspaceShell/useCases/togglePanel/panelToggles/toggleInspec
 }));
 vi.mock('#/modules/WorkspaceShell/useCases/togglePanel/panelToggles/toggleMixer', () => ({
     toggleMixer: mocks.toggleMixer,
-}))
+}));
 vi.mock('#/modules/WorkspaceShell/useCases/togglePanel/panelToggles/toggleSidebar', () => ({
     toggleSidebar: mocks.toggleSidebar,
 }));
@@ -55,10 +58,6 @@ vi.mock('#/modules/WorkspaceShell/useCases/togglePanel/panelToggles/toggleTrackL
 vi.mock('#/modules/WorkspaceShell/useCases/togglePanel/panelToggles/toggleVirtualKeyboard', () => ({
     toggleVirtualKeyboard: mocks.toggleVirtualKeyboard,
 }));
-
-import { useStore } from '#/infra/store/useStore';
-import { aiStore } from '#/modules/AiGeneration/stores';
-import { linkStatusStore } from '#/modules/Transport/stores';
 
 const renderWithTooltip = (ui: React.ReactElement) => {
     return render(<TooltipProvider delayDuration={0}>{ui}</TooltipProvider>);
@@ -77,7 +76,7 @@ const allClosed = {
 describe('PanelToggles', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        vi.mocked(useStore).mockImplementation((store, defaultValue) => defaultValue as never);
+        vi.mocked(useStore).mockImplementation((_store, defaultValue) => defaultValue);
     });
 
     it('routes each panel toggle button to its useCase', () => {
@@ -122,7 +121,7 @@ describe('PanelToggles', () => {
                 chatPanelOpen={true}
                 virtualKeyboardOpen={true}
                 dualViewOpen={true}
-            />,
+            />
         );
 
         expect(screen.getByLabelText('Toggle browser')).toHaveAttribute('aria-pressed', 'true');
@@ -145,23 +144,19 @@ describe('PanelToggles', () => {
         // AI panel open comes from the aiStore, so mock that.
         vi.mocked(useStore).mockImplementation((store) => {
             if (store === aiStore) {
-                return { isPanelOpen: true } as never;
+                return { isPanelOpen: true };
             }
             if (store === linkStatusStore) {
-                return { enabled: false } as never;
+                return { enabled: false };
             }
-            return { enabled: false } as never;
+            return { enabled: false };
         });
 
-        renderWithTooltip(
-            <PanelToggles
-                {...allClosed}
-                dualViewOpen={true}
-                virtualKeyboardOpen={true}
-            />,
-        );
+        renderWithTooltip(<PanelToggles {...allClosed} dualViewOpen={true} virtualKeyboardOpen={true} />);
 
-        expect(screen.getByLabelText('Toggle Session + Arrangement View')).toHaveClass('text-[var(--color-accent-mint)]');
+        expect(screen.getByLabelText('Toggle Session + Arrangement View')).toHaveClass(
+            'text-[var(--color-accent-mint)]'
+        );
         expect(screen.getByLabelText('Toggle virtual keyboard')).toHaveClass('text-[var(--color-accent-lavender)]');
         expect(screen.getByLabelText('Generate')).toHaveClass('text-[var(--color-accent-lavender)]');
     });
@@ -169,8 +164,10 @@ describe('PanelToggles', () => {
     describe('Ableton Link toggle', () => {
         it('enables Link when currently disabled', () => {
             vi.mocked(useStore).mockImplementation((store) => {
-                if (store === aiStore) return { isPanelOpen: false } as never;
-                return { enabled: false } as never;
+                if (store === aiStore) {
+                    return { isPanelOpen: false };
+                }
+                return { enabled: false };
             });
 
             renderWithTooltip(<PanelToggles {...allClosed} />);
@@ -182,8 +179,10 @@ describe('PanelToggles', () => {
 
         it('disables Link when currently enabled', () => {
             vi.mocked(useStore).mockImplementation((store) => {
-                if (store === aiStore) return { isPanelOpen: false } as never;
-                return { enabled: true } as never;
+                if (store === aiStore) {
+                    return { isPanelOpen: false };
+                }
+                return { enabled: true };
             });
 
             renderWithTooltip(<PanelToggles {...allClosed} />);
@@ -195,8 +194,10 @@ describe('PanelToggles', () => {
 
         it('shows the active label and pressed state when Link is enabled', () => {
             vi.mocked(useStore).mockImplementation((store) => {
-                if (store === aiStore) return { isPanelOpen: false } as never;
-                return { enabled: true } as never;
+                if (store === aiStore) {
+                    return { isPanelOpen: false };
+                }
+                return { enabled: true };
             });
 
             renderWithTooltip(<PanelToggles {...allClosed} />);
@@ -208,8 +209,10 @@ describe('PanelToggles', () => {
 
         it('gracefully handles enableLink rejection', async () => {
             vi.mocked(useStore).mockImplementation((store) => {
-                if (store === aiStore) return { isPanelOpen: false } as never;
-                return { enabled: false } as never;
+                if (store === aiStore) {
+                    return { isPanelOpen: false };
+                }
+                return { enabled: false };
             });
             mocks.enableLink.mockRejectedValueOnce(new Error('not available'));
 
