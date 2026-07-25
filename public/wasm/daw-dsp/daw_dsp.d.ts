@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:74e145186ec7b3c5c654f2835db8e141cb5d2635598c88514d9cb10c9841fb3d
+// @wasm-bindgen-dts crate-source: sha256:5b46b58e4bb1697950b6ee4097ce04686fa8cbbf32b510215ea6e9df03b89c44
 /* tslint:disable */
 /* eslint-disable */
 
@@ -559,6 +559,18 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly __wbg_toasterinstance_free: (a: number, b: number) => void;
+    readonly toasterinstance_get_nan_flush_count: (a: number) => number;
+    readonly toasterinstance_get_right_ptr: (a: number) => number;
+    readonly toasterinstance_new: (a: number, b: number) => number;
+    readonly toasterinstance_note_off: (a: number, b: number) => void;
+    readonly toasterinstance_note_on: (a: number, b: number, c: number, d: number) => void;
+    readonly toasterinstance_process: (a: number, b: number) => number;
+    readonly toasterinstance_reset_pad_dry_routing: (a: number) => void;
+    readonly toasterinstance_set_pad_dry_routed: (a: number, b: number, c: number) => void;
+    readonly toasterinstance_set_pad_param: (a: number, b: number, c: number, d: number, e: number) => void;
+    readonly toasterinstance_set_param: (a: number, b: number, c: number, d: number) => void;
+    readonly toasterinstance_set_param_by_id: (a: number, b: number, c: number) => void;
     readonly __wbg_bacteriainstance_free: (a: number, b: number) => void;
     readonly __wbg_grinderinstance_free: (a: number, b: number) => void;
     readonly bacteriainstance_add_macro_mapping: (a: number, b: number, c: number, d: number, e: number) => void;
@@ -666,6 +678,8 @@ export interface InitOutput {
     readonly proofinstance_reorder: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
     readonly proofinstance_reset_integrated: (a: number) => void;
     readonly proofinstance_set_param: (a: number, b: number, c: number, d: number) => void;
+    readonly analyze_pitch_wasm: (a: number, b: number, c: number) => [number, number];
+    readonly commit_pitch_edit_wasm: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number];
     readonly __wbg_grandbouleinstance_free: (a: number, b: number) => void;
     readonly __wbg_kneadinstance_free: (a: number, b: number) => void;
     readonly grandbouleinstance_all_notes_off: (a: number) => void;
@@ -696,20 +710,6 @@ export interface InitOutput {
     readonly kneadinstance_process: (a: number, b: number) => number;
     readonly kneadinstance_set_shift_semitones: (a: number, b: number) => void;
     readonly init_panic_hook: () => void;
-    readonly __wbg_toasterinstance_free: (a: number, b: number) => void;
-    readonly toasterinstance_get_nan_flush_count: (a: number) => number;
-    readonly toasterinstance_get_right_ptr: (a: number) => number;
-    readonly toasterinstance_new: (a: number, b: number) => number;
-    readonly toasterinstance_note_off: (a: number, b: number) => void;
-    readonly toasterinstance_note_on: (a: number, b: number, c: number, d: number) => void;
-    readonly toasterinstance_process: (a: number, b: number) => number;
-    readonly toasterinstance_reset_pad_dry_routing: (a: number) => void;
-    readonly toasterinstance_set_pad_dry_routed: (a: number, b: number, c: number) => void;
-    readonly toasterinstance_set_pad_param: (a: number, b: number, c: number, d: number, e: number) => void;
-    readonly toasterinstance_set_param: (a: number, b: number, c: number, d: number) => void;
-    readonly toasterinstance_set_param_by_id: (a: number, b: number, c: number) => void;
-    readonly analyze_pitch_wasm: (a: number, b: number, c: number) => [number, number];
-    readonly commit_pitch_edit_wasm: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number];
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

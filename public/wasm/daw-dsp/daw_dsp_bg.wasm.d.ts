@@ -1,7 +1,19 @@
-// @wasm-bindgen-dts crate-source: sha256:74e145186ec7b3c5c654f2835db8e141cb5d2635598c88514d9cb10c9841fb3d
+// @wasm-bindgen-dts crate-source: sha256:5b46b58e4bb1697950b6ee4097ce04686fa8cbbf32b510215ea6e9df03b89c44
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
+export const __wbg_toasterinstance_free: (a: number, b: number) => void;
+export const toasterinstance_get_nan_flush_count: (a: number) => number;
+export const toasterinstance_get_right_ptr: (a: number) => number;
+export const toasterinstance_new: (a: number, b: number) => number;
+export const toasterinstance_note_off: (a: number, b: number) => void;
+export const toasterinstance_note_on: (a: number, b: number, c: number, d: number) => void;
+export const toasterinstance_process: (a: number, b: number) => number;
+export const toasterinstance_reset_pad_dry_routing: (a: number) => void;
+export const toasterinstance_set_pad_dry_routed: (a: number, b: number, c: number) => void;
+export const toasterinstance_set_pad_param: (a: number, b: number, c: number, d: number, e: number) => void;
+export const toasterinstance_set_param: (a: number, b: number, c: number, d: number) => void;
+export const toasterinstance_set_param_by_id: (a: number, b: number, c: number) => void;
 export const __wbg_bacteriainstance_free: (a: number, b: number) => void;
 export const __wbg_grinderinstance_free: (a: number, b: number) => void;
 export const bacteriainstance_add_macro_mapping: (a: number, b: number, c: number, d: number, e: number) => void;
@@ -109,6 +121,8 @@ export const proofinstance_process: (a: number, b: number) => number;
 export const proofinstance_reorder: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
 export const proofinstance_reset_integrated: (a: number) => void;
 export const proofinstance_set_param: (a: number, b: number, c: number, d: number) => void;
+export const analyze_pitch_wasm: (a: number, b: number, c: number) => [number, number];
+export const commit_pitch_edit_wasm: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number];
 export const __wbg_grandbouleinstance_free: (a: number, b: number) => void;
 export const __wbg_kneadinstance_free: (a: number, b: number) => void;
 export const grandbouleinstance_all_notes_off: (a: number) => void;
@@ -139,20 +153,6 @@ export const kneadinstance_new: (a: number) => number;
 export const kneadinstance_process: (a: number, b: number) => number;
 export const kneadinstance_set_shift_semitones: (a: number, b: number) => void;
 export const init_panic_hook: () => void;
-export const __wbg_toasterinstance_free: (a: number, b: number) => void;
-export const toasterinstance_get_nan_flush_count: (a: number) => number;
-export const toasterinstance_get_right_ptr: (a: number) => number;
-export const toasterinstance_new: (a: number, b: number) => number;
-export const toasterinstance_note_off: (a: number, b: number) => void;
-export const toasterinstance_note_on: (a: number, b: number, c: number, d: number) => void;
-export const toasterinstance_process: (a: number, b: number) => number;
-export const toasterinstance_reset_pad_dry_routing: (a: number) => void;
-export const toasterinstance_set_pad_dry_routed: (a: number, b: number, c: number) => void;
-export const toasterinstance_set_pad_param: (a: number, b: number, c: number, d: number, e: number) => void;
-export const toasterinstance_set_param: (a: number, b: number, c: number, d: number) => void;
-export const toasterinstance_set_param_by_id: (a: number, b: number, c: number) => void;
-export const analyze_pitch_wasm: (a: number, b: number, c: number) => [number, number];
-export const commit_pitch_edit_wasm: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number];
 export const __wbindgen_free: (a: number, b: number, c: number) => void;
 export const __wbindgen_malloc: (a: number, b: number) => number;
 export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
