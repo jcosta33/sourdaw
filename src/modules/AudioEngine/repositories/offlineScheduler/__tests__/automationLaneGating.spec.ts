@@ -49,7 +49,7 @@ function rampValues(param: ReturnType<typeof makeParam>): number[] {
     return param.linearRampToValueAtTime.mock.calls.map((call) => call[0] as number);
 }
 
-describe('offline lane.enabled gating (AU-9)', () => {
+describe('offline lane.enabled gating', () => {
     it('emits nothing for a lane whose enabled flag is false', () => {
         const { gain } = schedule(
             makeLane({
@@ -83,7 +83,7 @@ describe('offline lane.enabled gating (AU-9)', () => {
     });
 });
 
-describe('offline gain automation obeys the fader level law (AU-10)', () => {
+describe('offline gain automation obeys the fader level law', () => {
     it('clamps gain automation above unity, as the live fader write does', () => {
         const { gain } = schedule(
             makeLane({
@@ -105,12 +105,13 @@ describe('offline gain automation obeys the fader level law (AU-10)', () => {
     });
 
     it('applies the law after linkScale, so an inverted gain link floors at silence', () => {
-        // The AU-3 link tests observe the linkScale algebra on `pan`, which has no
+        // The linked-lane tests observe the linkScale algebra on `pan`, which has no
         // level law. This is the gain-side counterpart: the composition. An
         // inverting link resolves the source 0.6 to -0.6, and the fader floor
         // turns that into silence rather than a phase-inverted signal — which is
         // exactly what live playback does, since TrackNode clamps every fader
-        // write. Pre-AU-10 the bounce scheduled a literal -0.6 gain.
+        // write. Before the law was applied offline, the bounce scheduled a
+        // literal -0.6 gain.
         const gain = makeParam();
         const source = makeLane({
             id: 'link-source',

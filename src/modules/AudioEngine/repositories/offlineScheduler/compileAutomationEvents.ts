@@ -32,7 +32,7 @@ export type CompileAutomationEventsOptions = {
     /**
      * Non-affine post-transform applied AFTER `valueScale`/`valueOffset` and
      * before the slew — for laws the affine pair cannot express, notably the
-     * fader's dB→linear conversion and its unity ceiling (AU-10). Keep it pure;
+     * fader's dB→linear conversion and its unity ceiling. Keep it pure;
      * it runs once per compiled event.
      */
     valueTransform?: (value: number) => number;

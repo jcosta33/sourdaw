@@ -53,7 +53,7 @@ export function scheduleTrackAutomation(
 
     // AU-12: track-level lanes (no clipId) AND clip-scoped lanes both render; a
     // clip lane emits only within its clip span (activeWindowSeconds below).
-    // AU-9: a lane the project marks disabled drives nothing — offline as live.
+    // A lane the project marks disabled drives nothing — offline as live.
     // Compared against `false` (not falsy) so a lane persisted before the flag
     // existed, which normalizes to `enabled: true`, still renders.
     const trackLanes = lanes.filter((lane) => lane.trackId === trackId && lane.enabled !== false);
@@ -97,7 +97,7 @@ export function scheduleTrackAutomation(
             activeWindowSeconds || laneScale !== 1 ? { activeWindowSeconds, valueScale: laneScale } : undefined;
 
         if (lane.parameterId === 'gain') {
-            // AU-10: the fader level law is the live path's, applied offline too.
+            // The fader level law is the live path's, applied offline too.
             // Live `applyAutomation` reads a lane with `minValue < 0` as a
             // decibel lane and writes `dbToGain(value)`, and `TrackNode` clamps
             // every fader write to [0, 1]; offline wrote the raw curve straight

@@ -35,7 +35,7 @@ export const SEND_MIN_DB = -60;
  * produce reaches the output. #789 found the first half of that divergence (a
  * stored gain above unity rendered louder on export than it ever played back)
  * and fixed the static strip gain; {@link clampFaderGain} is the shared law
- * both runtimes now route through, including gain *automation* (AU-10), which
+ * both runtimes now route through, including gain *automation*, which
  * escaped the offline clamp because it writes the AudioParam directly rather
  * than through the strip's initial value.
  */

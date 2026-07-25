@@ -726,10 +726,10 @@ describe('scheduleTrackAutomation', () => {
 
     // These link tests carry the lane on `pan`, not `gain`. What they assert is
     // the linkScale algebra on the resolved scalar, and a `gain` lane now runs
-    // through the fader level law (AU-10: dB conversion + the [0,1] ceiling the
+    // through the fader level law (dB conversion + the [0,1] ceiling the
     // live path has always applied), which clamps the very signed/above-unity
     // scalars these cases exist to observe. `pan` carries the scalar through
-    // unaltered, so every expected number below is the pre-AU-10 one, unchanged.
+    // unaltered, so every expected number below is unaffected by that law.
     it('follows a linked lane offline, scaled by linkScale (AU-3 parity with live)', () => {
         const pan = makeParam();
         const gainNode = { gain: makeParam() } as unknown as GainNode;
