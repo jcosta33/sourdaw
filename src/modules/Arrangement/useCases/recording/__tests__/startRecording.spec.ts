@@ -100,6 +100,19 @@ describe('startRecording', () => {
         expect(mocks.setTrackState).not.toHaveBeenCalled();
     });
 
+    it('creates a midi-typed clip for an armed midi track with no existing clip', () => {
+        mocks.getTrackState.mockReturnValue({
+            tracks: [{ id: 't1', armed: true, kind: 'midi', clips: [] }],
+        });
+        mocks.transportStoreValue = { playheadPosition: 4 };
+        mocks.getTakeLaneForTrack.mockReturnValue(null);
+
+        const newClips = startRecording();
+
+        expect(newClips).toHaveLength(1);
+        expect(newClips[0]).toMatchObject({ trackId: 't1', type: 'midi' });
+    });
+
     it('excludes an armed dormant VCA before clip, take, or store work', () => {
         mocks.getTrackState.mockReturnValue({
             tracks: [{ id: 'vca-1', armed: true, kind: 'vca', clips: [] }],
