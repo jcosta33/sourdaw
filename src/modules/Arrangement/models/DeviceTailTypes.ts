@@ -12,11 +12,16 @@
 
 export type DeviceTailDeclaration =
     /**
-     * A constant worst case. For devices whose tail is not derivable from any
-     * exposed parameter (convolution reverb, where the impulse response decides
-     * it).
+     * A constant tail. For devices whose sounding length is fixed by their
+     * implementation rather than by any exposed parameter — a baked impulse
+     * response, or a decay knob that reaches no audio node.
      */
-    | { kind: 'fixed'; seconds: number }
+    | {
+          kind: 'fixed';
+          seconds: number;
+          /** Optional pre-delay parameter, in milliseconds, added to the tail. */
+          predelayMsParameterId?: string;
+      }
     /**
      * A parameter that already expresses the tail in seconds — reverb decay
      * time, or an amp-envelope release stage.

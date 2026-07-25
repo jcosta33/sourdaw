@@ -26,7 +26,7 @@ const MINUS_60_DB = 0.001;
 export const MAX_AUTO_TAIL_SECONDS = 60;
 
 export type TailDeclarationLike =
-    | { kind: 'fixed'; seconds: number }
+    | { kind: 'fixed'; seconds: number; predelayMsParameterId?: string }
     | { kind: 'decaySeconds'; parameterId: string; defaultSeconds: number; predelayMsParameterId?: string }
     | {
           kind: 'feedbackLoop';
@@ -82,18 +82,22 @@ function evaluateFeedbackLoop(
     return tailSeconds;
 }
 
+/** Pre-delay shifts the whole tail later, so it adds to the sounding length. */
+function withPredelay(device: DeviceLike, seconds: number, predelayMsParameterId: string | undefined): number {
+    if (predelayMsParameterId === undefined) {
+        return seconds;
+    }
+    return seconds + readParameter(device, predelayMsParameterId, 0) / 1000;
+}
+
 function evaluateDeclaration(device: DeviceLike, tail: TailDeclarationLike): number {
     if (tail.kind === 'fixed') {
-        return tail.seconds;
+        return withPredelay(device, tail.seconds, tail.predelayMsParameterId);
     }
 
     if (tail.kind === 'decaySeconds') {
         const decaySeconds = readParameter(device, tail.parameterId, tail.defaultSeconds);
-        if (tail.predelayMsParameterId === undefined) {
-            return decaySeconds;
-        }
-        const predelayMs = readParameter(device, tail.predelayMsParameterId, 0);
-        return decaySeconds + predelayMs / 1000;
+        return withPredelay(device, decaySeconds, tail.predelayMsParameterId);
     }
 
     return evaluateFeedbackLoop(device, tail);
