@@ -21,6 +21,28 @@ Each action executes inside an Automerge storage transaction and carries a seman
 
 **Why:** a write that skips the transaction is invisible to undo, persistence, and merge — three features lost for the price of one shortcut.
 
+#### The transaction is ambient only until the handler's first `await`
+
+`runWithAutomergeStorageTransaction` installs the transaction for the **synchronous** execution of the handler. An `async` handler returns its promise at its first `await`, and the transaction is uninstalled right there. Every CRDT-backed store write the handler makes **after** that await runs unscoped: it gets its own commit owner and its own animation frame, so it is **not** part of the action's atomic commit and **survives an abort that should have discarded it**.
+
+A handler that writes after an `await` must capture its scope **synchronously, before that await**, and re-enter it for the later writes:
+
+```ts
+import { captureAutomergeStorageTransactionScope } from '#/infra/store/storage/createAutomergeStorage';
+
+export async function commitSomething(input: Input): Promise<void> {
+    const scope = captureAutomergeStorageTransactionScope();
+    const rendered = await render(input);
+    scope(() => {
+        trackStore.set(rendered);
+    });
+}
+```
+
+Worked example: `src/modules/Knead/useCases/pitch/commitPitchEdit.ts`. Capture is explicit rather than implicit because browsers have no async context propagation — keeping the transaction installed across an `await` would also capture writes made by unrelated code in that window, and this app dispatches many actions without awaiting them.
+
+Nothing enforces this today: it is not caught by types, lint, or `deps:validate`. Audit finding CC-10 tracks the handlers that still need converting.
+
 ### 2. CrdtDocument owns the document; modules own projections
 
 Document lifecycle (create/load/save, branches, merge, semantic action history, compaction) belongs to CrdtDocument. Stores fed from the document are projections (`projection/projectProjection.ts`): derived, disposable, rebuildable — never a second truth and never patched by hand.
@@ -58,6 +80,19 @@ Automerge guarantees convergence of concurrent edits. It does not guarantee sens
 ❌ Wrong: `store.set(...)` on a projected or Automerge-persisted store to "just update the UI".
 
 ✅ Correct: dispatch the owning action; let the transaction update the document and the projection refresh the store.
+
+### CRITICAL — Post-`await` write in an async handler, left unscoped
+
+❌ Wrong: an `async` handler that writes a CRDT-backed store after an `await`. The write escapes the action's atomic commit and outlives its abort.
+
+```ts
+export async function commitSomething(input: Input): Promise<void> {
+    const rendered = await render(input);
+    trackStore.set(rendered); // unscoped: not in the action, not undone by abort
+}
+```
+
+✅ Correct: capture the scope before the `await` and re-enter it (rule 1).
 
 ## References
 
