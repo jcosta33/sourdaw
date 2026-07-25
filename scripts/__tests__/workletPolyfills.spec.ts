@@ -5,8 +5,6 @@ import { describe, expect, it } from 'vitest';
 import { WORKLET_POLYFILLS } from '../workletPolyfills.ts';
 
 /**
- * WB-9.
- *
  * The polyfills ship as source text injected into the AudioWorklet realm, so the only
  * honest way to test them is to evaluate that exact text in a scope where the real
  * `TextDecoder`/`TextEncoder` are absent — which is what the worklet looks like — and

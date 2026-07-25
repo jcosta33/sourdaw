@@ -92,7 +92,7 @@ fn release_coeff(ms: f32, sr: f32) -> f32 {
     (-1.0 / (ms * 0.001 * sr)).exp()
 }
 
-/// The transient branch of the release (DSP-6). Derived from the user's
+/// The transient branch of the release. Derived from the user's
 /// setting rather than fixed, so the control still means something: whatever
 /// release is dialled in, an isolated peak recovers about eight times faster.
 /// Floored at 5 ms because below that the branch starts tracking the waveform
@@ -127,7 +127,7 @@ pub struct LookaheadLimiter {
     ceiling_db: f32,
     /// Nominal release, used under sustained limiting.
     release_coeff: f32,
-    /// Faster release, blended in for isolated transients (DSP-6).
+    /// Faster release, blended in for isolated transients.
     release_coeff_fast: f32,
     /// Running average of the applied gain. An isolated transient pulls
     /// `current_gain` far below this; sustained limiting drags this down to
@@ -240,7 +240,7 @@ impl LookaheadLimiter {
             };
 
             // Smooth: instant attack (look-ahead handles it), program-
-            // dependent release (DSP-6).
+            // dependent release.
             //
             // `gain_avg` trails the applied gain by GAIN_AVERAGE_MS. Right
             // after an isolated transient the applied gain sits far below it,
@@ -307,7 +307,7 @@ impl LookaheadLimiter {
         self.meter_output_peak
     }
     /// Collapse the program-dependent release onto the nominal one,
-    /// reproducing the fixed one-pole this replaced (DSP-6). Test-only: it
+    /// reproducing the fixed one-pole this replaced. Test-only: it
     /// exists so the sustained-distortion comparison has a live oracle rather
     /// than baseline numbers copied out of console output. Call after
     /// `set_param`, which recomputes both coefficients.
@@ -612,7 +612,7 @@ mod tests {
 
 #[cfg(test)]
 mod program_dependent_release_tests {
-    //! DSP-6. A single fixed one-pole release cannot serve both jobs a
+    //! A single fixed one-pole release cannot serve both jobs a
     //! brickwall limiter has. Recover slowly after a brief transient and the
     //! sustained material underneath — which was never over the ceiling — stays
     //! ducked, which is the pumping the finding names. Recover quickly under

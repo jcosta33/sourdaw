@@ -239,7 +239,7 @@ impl ShortTermLufs {
 /// represented (see [`BlockStore::push`]).
 const MAX_LOUDNESS_BLOCKS: usize = 36_000;
 
-/// Exact, fixed-capacity store of 100 ms block loudnesses (WB-7).
+/// Exact, fixed-capacity store of 100 ms block loudnesses.
 ///
 /// **Why not a histogram.** The first shape of this fix binned block loudness
 /// at 0.01 LU and answered both measures from counts. That cannot preserve gate
@@ -464,8 +464,8 @@ fn gated_loudness_range(blocks: &[f32], scratch: &mut Vec<f32>) -> f32 {
 
 pub struct IntegratedLufs {
     momentary: MomentaryLufs,
-    /// 400 ms block loudnesses (WB-7: was an unbounded `Vec` pushed to from the
-    /// audio thread).
+    /// 400 ms block loudnesses. These were held in an unbounded `Vec` pushed
+    /// to from the audio thread.
     blocks: BlockStore,
     /// Recomputed when a block lands, not when the value is read. The worklet
     /// polls this from inside `process()` roughly every 2.7 ms while blocks
@@ -558,8 +558,8 @@ impl TruePeakDetector {
 /// Computed from short-term LUFS blocks using percentile method.
 pub struct LoudnessRange {
     st_lufs: ShortTermLufs,
-    /// Short-term block loudnesses (WB-7: was an unbounded `Vec` that `get_lra`
-    /// also sorted, both on the audio thread).
+    /// Short-term block loudnesses. These were held in an unbounded `Vec` that
+    /// `get_lra` also sorted, both on the audio thread.
     blocks: BlockStore,
     /// Preallocated working buffer for the gated subset, so the percentile
     /// selection never allocates.
@@ -814,7 +814,7 @@ mod denormal_tests {
 
 #[cfg(test)]
 mod loudness_block_store_tests {
-    //! WB-7. The store keeps block loudnesses exactly, so the read path is the
+    //! The store keeps block loudnesses exactly, so the read path is the
     //! previous collect-and-average algorithm over a preallocated array. That
     //! makes equivalence checkable as **bit-identity**, not as a tolerance —
     //! which is the point: the histogram this replaced could only ever be

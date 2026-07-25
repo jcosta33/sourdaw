@@ -199,7 +199,7 @@ impl ProofChain {
         for (slot, &module_id) in self.order.iter().enumerate() {
             match module_id {
                 ModuleId::Eq => {
-                    // DSP-7: fall back to the IIR EQ unless the FIR is designed
+                    // Fall back to the IIR EQ unless the FIR is designed
                     // and filtering. `LinearPhaseEq::process` returns early
                     // while its FIR is undesigned, so routing to it
                     // unconditionally turned the mastering EQ into a dry
@@ -279,7 +279,7 @@ impl ProofChain {
 
 #[cfg(test)]
 mod latency_contract_tests {
-    //! DSP-7. Wave 3 feeds `ProofInstance::get_latency_samples()` into host
+    //! Wave 3 feeds `ProofInstance::get_latency_samples()` into host
     //! plugin-delay compensation, so a reported number the signal path does not
     //! produce is a measurable timing error, not a cosmetic one. These tests
     //! measure the delay rather than reading the field back.
@@ -466,7 +466,7 @@ mod latency_contract_tests {
 
     #[test]
     fn fir_redesign_does_not_allocate() {
-        // DSP-7 as filed. `rebuild` built its magnitude response, impulse
+        // `rebuild` used to build its magnitude response, impulse
         // response and both tap arrays with `vec![]` / `.collect()` on every
         // call; the scratch is preallocated now. The redesign is still far too
         // expensive to sit on the audio thread — see `rebuild`'s own docs — but
@@ -486,7 +486,7 @@ mod latency_contract_tests {
 
 #[cfg(test)]
 mod metering_rt_tests {
-    //! WB-7. The audit hedged "RT-unsafe *if* it ever fires inside
+    //! An audit hedged this as "RT-unsafe *if* it ever fires inside
     //! `process()`". It does: the loudness meters push one entry per 100 ms
     //! into unbounded `Vec`s from `process_sample`, and `proofProcessor.ts`
     //! polls `get_integrated_lufs()` / `get_lra()` from inside `process()`

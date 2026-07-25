@@ -6,7 +6,7 @@
  * string through `TextEncoder.encodeInto`, and anything returning a `String` from Rust
  * comes back through `TextDecoder.decode`.
  *
- * WB-9: the previous implementation was latin1, not UTF-8 — `decode` did
+ * The previous implementation was latin1, not UTF-8 — `decode` did
  * `String.fromCharCode(byte)` per byte and `encode` masked `charCodeAt(i) & 0xff`.
  * Any code point above U+007F was silently corrupted in both directions: a two-byte
  * sequence decoded as two garbage characters, and a non-ASCII character encoded to a
@@ -22,7 +22,7 @@
  */
 export const WORKLET_POLYFILLS = `\
 // AudioWorklet scope lacks TextDecoder/TextEncoder — polyfill before wasm-bindgen glue loads.
-// These are UTF-8, not latin1 (WB-9): wasm-bindgen routes every string across the
+// These are UTF-8, not latin1: wasm-bindgen routes every string across the
 // boundary through them, so a byte-wise codec corrupts any non-ASCII payload silently.
 if (typeof TextDecoder === 'undefined') {
     globalThis.TextDecoder = class TextDecoder {

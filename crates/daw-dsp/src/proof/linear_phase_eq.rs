@@ -58,7 +58,7 @@ pub struct LinearPhaseEqBand {
 
 /// Upper bound on bands a design can take, matching `MasteringEq`'s band count.
 /// Fixing it lets the band set live inline instead of in a `Vec` that the
-/// redesign would have to reallocate (DSP-7).
+/// redesign would have to reallocate.
 pub const MAX_LINEAR_PHASE_BANDS: usize = 8;
 
 pub struct LinearPhaseEq {
@@ -79,7 +79,7 @@ pub struct LinearPhaseEq {
     needs_rebuild: bool,
     bands: [LinearPhaseEqBand; MAX_LINEAR_PHASE_BANDS],
     band_count: usize,
-    // DSP-7: redesign scratch, preallocated so `rebuild` never allocates.
+    // Redesign scratch, preallocated so `rebuild` never allocates.
     magnitude: Vec<f64>,
     impulse: Vec<f64>,
 }
@@ -117,7 +117,7 @@ impl LinearPhaseEq {
 
     /// Rebuild the FIR filter from band settings.
     ///
-    /// **Allocation-free** (DSP-7): the band set, the magnitude response and
+    /// **Allocation-free**: the band set, the magnitude response and
     /// the impulse response all live in buffers sized once in [`Self::new`],
     /// and the centring shift is folded into the index arithmetic instead of
     /// calling `rotate_right`.
@@ -215,7 +215,7 @@ impl LinearPhaseEq {
 
     /// Delay the FIR actually imposes.
     ///
-    /// DSP-7: this used to return `HALF_FIR` whenever `bypassed` was false --
+    /// This used to return `HALF_FIR` whenever `bypassed` was false --
     /// and nothing ever sets `bypassed` -- so a Proof instance reported 1024
     /// samples of latency it did not have. Wave 3 feeds this into host PDC, so
     /// that was a real 21.3 ms timing error at 48 kHz, not a cosmetic one. An

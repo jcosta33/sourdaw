@@ -6,7 +6,7 @@ use core::f64::consts::PI;
 
 /// RBJ coefficients, stored in f64.
 ///
-/// DSP-5: f32 storage moved the pole enough to cost 0.26 dB of a written
+/// f32 storage moved the pole enough to cost 0.26 dB of a written
 /// +18 dB / 20 Hz / Q=10 band. Near that corner `a1 ≈ −2` and `a2 ≈ 1`, where
 /// an f32 ULP is ~2.4e-7 against a pole sitting 4.6e-5 inside the unit circle,
 /// so the quantization is a measurable fraction of the pole's distance from
@@ -234,7 +234,7 @@ impl SmoothedBiquadCoeffs {
 
 /// Direct-Form-I state, carried in f64.
 ///
-/// DSP-5: the recursion `−a1·y1 − a2·y2` subtracts two large near-equal terms
+/// The recursion `−a1·y1 − a2·y2` subtracts two large near-equal terms
 /// once `a1 ≈ −2` and `a2 ≈ 1`, so an f32 accumulator loses the difference to
 /// cancellation. Measured on a +18 dB / 20 Hz / Q=10 band that cost 2.121 dB
 /// of realized gain at 96 kHz and left a −55 dB roundoff floor at 48 kHz.
@@ -278,7 +278,7 @@ impl BiquadState {
         // still exactly the boundary that must not be crossed. Flushing at
         // f64::MIN_POSITIVE instead would let the state ring ~270 orders of
         // magnitude below audibility and would emit subnormal f32 the whole
-        // way down, which is the trap DSP-2 closed.
+        // way down, which is the trap this guard exists to close.
         let out = if raw.abs() < f64::from(DENORMAL_THRESHOLD) {
             0.0
         } else {
@@ -298,7 +298,7 @@ impl BiquadState {
         self.y2 = 0.0;
     }
 
-    /// The stored recursive state, for tests that assert the DSP-2 flush.
+    /// The stored recursive state, for tests that assert the denormal flush.
     #[cfg(test)]
     pub(crate) fn recursive_state(&self) -> (f64, f64) {
         (self.y1, self.y2)
@@ -498,7 +498,7 @@ mod denormal_tests {
     /// before DSP-2. Kept in the test so the failure mode is demonstrated, not
     /// asserted from memory.
     ///
-    /// It carries f64 state because production does (DSP-5). This reference
+    /// It carries f64 state because production does. This reference
     /// exists to isolate exactly one difference from production — the denormal
     /// flush — so it has to track every other change. Holding it at f32 would
     /// turn `guard_is_bit_exact_while_the_signal_stays_in_normal_range` into a
@@ -620,10 +620,10 @@ mod denormal_tests {
 
 #[cfg(test)]
 mod low_frequency_precision_tests {
-    //! DSP-5. The audit filed this as "Proof mastering biquads are
-    //! Direct-Form-I (topology note)" and proposed migrating off DF-I. These
-    //! tests measure the actual error budget instead of accepting that framing,
-    //! because the measurement does not support it.
+    //! Proof's mastering biquads are Direct-Form-I, and a proposal was raised
+    //! to migrate them off that topology on low-frequency precision grounds.
+    //! These tests measure the actual error budget instead of accepting that
+    //! framing, because the measurement does not support it.
     //!
     //! Three error terms were separated at the parameter extremes reachable
     //! from `MasteringEq::set_param` (freq clamps to 20 Hz, Q to 10, gain to
@@ -873,7 +873,7 @@ mod low_frequency_precision_tests {
 
 #[cfg(test)]
 mod rejected_topology_measurement {
-    //! DSP-5's rejected alternative, kept measurable.
+    //! The rejected alternative topology, kept measurable.
     //!
     //! The finding proposed migrating Proof off Direct-Form-I. That was
     //! rejected on measurement rather than opinion, but the measurement lived
@@ -898,7 +898,7 @@ mod rejected_topology_measurement {
     use core::f64::consts::PI;
 
     /// Direct-Form-I with f32 coefficients and f32 state — Proof before the
-    /// DSP-5 widening.
+    /// f64 widening.
     #[derive(Default)]
     struct Df1F32 {
         x1: f32,
@@ -908,7 +908,7 @@ mod rejected_topology_measurement {
     }
 
     /// Transposed Direct Form II with f32 coefficients and f32 state — the
-    /// migration DSP-5 proposed.
+    /// migration the topology note proposed.
     #[derive(Default)]
     struct Tdf2F32 {
         s1: f32,

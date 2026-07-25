@@ -1,5 +1,5 @@
 // AudioWorklet scope lacks TextDecoder/TextEncoder — polyfill before wasm-bindgen glue loads.
-// These are UTF-8, not latin1 (WB-9): wasm-bindgen routes every string across the
+// These are UTF-8, not latin1: wasm-bindgen routes every string across the
 // boundary through them, so a byte-wise codec corrupts any non-ASCII payload silently.
 if (typeof TextDecoder === 'undefined') {
     globalThis.TextDecoder = class TextDecoder {
