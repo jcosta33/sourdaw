@@ -48,6 +48,13 @@ type DeviceLike = {
 
 type TrackLike = {
     devices: DeviceLike[];
+    /**
+     * Tail already baked into a pre-rendered buffer for this track, in seconds.
+     * A frozen track plays a buffer whose decay was captured at freeze time; its
+     * devices are bypassed at playback, so the buffer — not the device list —
+     * is what still needs room at the end of the render.
+     */
+    bakedTailSeconds?: number;
 };
 
 function readParameter(device: DeviceLike, parameterId: string, fallback: number): number {
@@ -159,7 +166,7 @@ export function estimateRenderTailSeconds(tracks: ReadonlyArray<TrackLike>): Est
     let longestChain = 0;
 
     for (const track of tracks) {
-        let chainTail = 0;
+        let chainTail = Math.max(0, track.bakedTailSeconds ?? 0);
         for (const device of track.devices) {
             if (device.bypassed || !device.tail) {
                 continue;
