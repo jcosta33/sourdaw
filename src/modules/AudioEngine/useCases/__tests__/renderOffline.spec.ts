@@ -25,6 +25,7 @@ const offlineRenderMocks = vi.hoisted(() => ({
     createOfflineTrackStrip: vi.fn(),
     renderWithTimeout: vi.fn(),
     scheduleTrackClips: vi.fn(),
+    prepareOfflineSidechainCompressor: vi.fn(),
 }));
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
@@ -107,6 +108,10 @@ vi.mock('../offlineRender/renderWithTimeout', () => ({
 
 vi.mock('../offlineRender/scheduleTrackClips', () => ({
     scheduleTrackClips: offlineRenderMocks.scheduleTrackClips,
+}));
+
+vi.mock('../../repositories/devices/dynamics/prepareOfflineSidechainCompressor', () => ({
+    prepareOfflineSidechainCompressor: offlineRenderMocks.prepareOfflineSidechainCompressor,
 }));
 
 describe('renderOffline', () => {
@@ -272,5 +277,215 @@ describe('renderOffline effective audibility (OE-4)', () => {
         // 'dup' appears twice, so it is not an unambiguous solo owner: no solo
         // engages and 'unique' stays audible — exactly as the live path behaves.
         expect(scheduledTrackIds()).toContain('unique');
+    });
+});
+
+describe('renderOffline residual branches', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        workspaceStore.set(defaultWorkspaceState);
+    });
+
+    function stubOfflineCtx() {
+        class TestOfflineAudioContext {
+            readonly destination = {};
+            createGain() {
+                return { gain: { value: 0 }, connect: vi.fn() };
+            }
+        }
+        vi.stubGlobal('OfflineAudioContext', TestOfflineAudioContext);
+    }
+
+    const fullProjections = () => ({
+        projectMidiEvents: vi.fn(),
+        selectMidiEventProbability: vi.fn(() => true),
+        projectChordPitch: ({ pitch }: { pitch: number }) => pitch,
+        projectPpqEndpoints: vi.fn(),
+        processYeastMidi: vi.fn(),
+        evaluateAutomationValue: vi.fn(),
+    });
+
+    // L84: one of the projections is null → throws "not configured".
+    it('throws when a musical projection is not configured', async () => {
+        offlineRenderMocks.resolveRenderContext.mockReturnValue({
+            tracks: { tracks: [] },
+            midi: {},
+            transport: null,
+            defaultTempo: 120,
+            changes: [],
+            durationSeconds: 1,
+            // projectPpqEndpoints missing → the null-guard throws.
+            ...fullProjections(),
+            projectPpqEndpoints: undefined,
+        });
+        stubOfflineCtx();
+        await expect(renderOffline(4)).rejects.toThrow('Offline musical projection is not configured');
+    });
+
+    // L100: tracks or midi is null → allRenderableTracks is []. The `&&` false arm.
+    it('produces an empty strip list when tracks is null', async () => {
+        offlineRenderMocks.resolveRenderContext.mockReturnValue({
+            tracks: null,
+            midi: null,
+            transport: null,
+            defaultTempo: 120,
+            changes: [],
+            durationSeconds: 1,
+            ...fullProjections(),
+        });
+        offlineRenderMocks.renderWithTimeout.mockResolvedValue({ sampleRate: 44_100 });
+        stubOfflineCtx();
+        const result = await renderOffline(4);
+        expect(result).toEqual({ sampleRate: 44_100 });
+        expect(offlineRenderMocks.createOfflineTrackStrip).not.toHaveBeenCalled();
+    });
+
+    // L141: prepareOfflineSidechainCompressor throws a non-Error → String() branch.
+    it('warns with the stringified reason when sidechain prep throws a non-Error', async () => {
+        const onWarning = vi.fn();
+        offlineRenderMocks.resolveRenderContext.mockReturnValue({
+            tracks: {
+                tracks: [
+                    {
+                        id: 'src',
+                        kind: 'audio',
+                        disabled: false,
+                        muted: false,
+                        soloed: false,
+                        soloSafe: false,
+                        outputId: 'hw_out',
+                        devices: [],
+                        sends: [],
+                    },
+                    {
+                        id: 'tgt',
+                        kind: 'audio',
+                        disabled: false,
+                        muted: false,
+                        soloed: false,
+                        soloSafe: false,
+                        outputId: 'hw_out',
+                        devices: [{ id: 'sc-dev', type: 'builtin-sidechain-compressor', bypassed: false }],
+                        sends: [],
+                    },
+                ],
+            },
+            midi: {},
+            transport: null,
+            defaultTempo: 120,
+            changes: [],
+            durationSeconds: 1,
+            ...fullProjections(),
+        });
+        // Sidechain route from src → tgt/sc-dev so prepareOfflineSidechainCompressor runs.
+        const { sidechainStore } = await import('#/modules/Routing/stores');
+        sidechainStore.set({
+            routes: [{ sourceTrackId: 'src', targetTrackId: 'tgt', targetDeviceId: 'sc-dev', level: 1 }],
+        } as never);
+        // Force prepareOfflineSidechainCompressor to throw a non-Error value.
+        offlineRenderMocks.prepareOfflineSidechainCompressor.mockRejectedValueOnce('wasm compile failed');
+
+        offlineRenderMocks.createOfflineTrackStrip.mockImplementation(() =>
+            Promise.resolve({
+                inputNode: { connect: vi.fn() },
+                preFaderTap: { connect: vi.fn() },
+                faderNode: { connect: vi.fn() },
+                postFaderGain: { connect: vi.fn() },
+                panNode: { connect: vi.fn() },
+                outputNode: { connect: vi.fn() },
+                deviceEntries: [],
+            })
+        );
+        offlineRenderMocks.renderWithTimeout.mockResolvedValue({ sampleRate: 44_100 });
+        stubOfflineCtx();
+
+        // The render must not abort: the catch warns and continues with fallback.
+        const result = await renderOffline({ durationBeats: 4, onWarning });
+        expect(result).toEqual({ sampleRate: 44_100 });
+        expect(onWarning).toHaveBeenCalledWith(expect.stringContaining('Sidechain processor unavailable'));
+        expect(onWarning).toHaveBeenCalledWith(expect.stringContaining('wasm compile failed'));
+    });
+
+    // L129: a sidechain route whose source track or target device does not
+    // resolve is skipped (the else arm).
+    it('skips sidechain routes with no matching source or target device', async () => {
+        const { sidechainStore } = await import('#/modules/Routing/stores');
+        sidechainStore.set({
+            routes: [
+                // Source track does not exist in allRenderableTracks.
+                { sourceTrackId: 'ghost', targetTrackId: 'tgt', targetDeviceId: 'sc-dev', level: 1 },
+                // Target device is bypassed → filtered out.
+                {
+                    sourceTrackId: 'src',
+                    targetTrackId: 'tgt',
+                    targetDeviceId: 'bypassed-dev',
+                    level: 1,
+                },
+                // Target device type is not a sidechain compressor.
+                {
+                    sourceTrackId: 'src',
+                    targetTrackId: 'tgt',
+                    targetDeviceId: 'eq-dev',
+                    level: 1,
+                },
+            ],
+        } as never);
+        offlineRenderMocks.resolveRenderContext.mockReturnValue({
+            tracks: {
+                tracks: [
+                    {
+                        id: 'src',
+                        kind: 'audio',
+                        disabled: false,
+                        muted: false,
+                        soloed: false,
+                        soloSafe: false,
+                        outputId: 'hw_out',
+                        devices: [],
+                        sends: [],
+                    },
+                    {
+                        id: 'tgt',
+                        kind: 'audio',
+                        disabled: false,
+                        muted: false,
+                        soloed: false,
+                        soloSafe: false,
+                        outputId: 'hw_out',
+                        devices: [
+                            { id: 'bypassed-dev', type: 'builtin-sidechain-compressor', bypassed: true },
+                            { id: 'eq-dev', type: 'builtin-eq', bypassed: false },
+                        ],
+                        sends: [],
+                    },
+                ],
+            },
+            midi: {},
+            transport: null,
+            defaultTempo: 120,
+            changes: [],
+            durationSeconds: 1,
+            ...fullProjections(),
+        });
+        offlineRenderMocks.prepareOfflineSidechainCompressor.mockResolvedValue(undefined);
+        offlineRenderMocks.createOfflineTrackStrip.mockImplementation(() =>
+            Promise.resolve({
+                inputNode: { connect: vi.fn() },
+                preFaderTap: { connect: vi.fn() },
+                faderNode: { connect: vi.fn() },
+                postFaderGain: { connect: vi.fn() },
+                panNode: { connect: vi.fn() },
+                outputNode: { connect: vi.fn() },
+                deviceEntries: [],
+            })
+        );
+        offlineRenderMocks.renderWithTimeout.mockResolvedValue({ sampleRate: 44_100 });
+        stubOfflineCtx();
+
+        // No routable sidechain targets → prepareOfflineSidechainCompressor must
+        // NOT be called (all routes were filtered by the guard).
+        const result = await renderOffline(4);
+        expect(result).toEqual({ sampleRate: 44_100 });
+        expect(offlineRenderMocks.prepareOfflineSidechainCompressor).not.toHaveBeenCalled();
     });
 });
