@@ -26,8 +26,18 @@ import { AutomergeSync } from '../automergeSync';
 
 import { createPeerSyncMessages } from './peerSyncHandshake';
 
+/** Entries as a peer may send them — including shapes the sanitizer rejects. */
+type IncomingHistoryEntry = {
+    id: string;
+    label: string;
+    actionKind?: string;
+    source?: string;
+    timestamp?: number;
+    reverted?: boolean;
+};
+
 type RootDocument = {
-    actionHistory?: { entries: { id: string; label: string }[] };
+    actionHistory?: { entries: IncomingHistoryEntry[] };
     /**
      * A document slot with no store projection. Real project slots are
      * back-written by `hydrate()` during projection, which would overwrite the
@@ -198,5 +208,22 @@ describe('AutomergeSync replay authority integration', () => {
         expect(projected_labels).toEqual(['Relabelled by a peer', 'Set snap']);
         expect(getActionReplayStatus(rewritten_entry_id)).toEqual({ status: 'unavailable' });
         expect(getActionReplayStatus(untouched_entry_id)).toEqual({ status: 'ready' });
+    });
+
+    it('keeps replay authority when sanitation strips a malformed entry a peer injected', async () => {
+        const entry_id = await record_local_action(0);
+        unsubscribe_projection = setupProjectionBridge();
+
+        // `reverted` is missing, so `sanitize_action_history_state` rejects the
+        // entry and rewrites the slot — which re-lineages the document before
+        // the scoping decision sees it.
+        const remote = change(fork_peer_document('root'), (draft) => {
+            draft.actionHistory?.entries.push({ id: 'peer-junk', label: 'Injected', actionKind: 'noop' });
+        });
+        deliver_peer_sync({ sync: create_sync(), docId: 'root', remote });
+
+        const projected_ids = actionHistoryStore.value?.entries.map((entry) => entry.id);
+        expect(projected_ids).toEqual([entry_id]);
+        expect(getActionReplayStatus(entry_id)).toEqual({ status: 'ready' });
     });
 });
