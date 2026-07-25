@@ -29,3 +29,9 @@ self.onmessage = (event: MessageEvent<SchedulerMessage>) => {
         }
     }
 };
+
+// Marks this file as a module so its types resolve under `moduleResolution:
+// bundler` and it can be side-effect imported by its spec for coverage. The
+// worker is loaded via `new Worker(new URL(...))`, which bundles it as a module
+// worker regardless; an empty export is a no-op at runtime.
+export {};
