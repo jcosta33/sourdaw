@@ -119,4 +119,25 @@ describe('applySoloLogic', () => {
 
         expect(result.actions).toEqual([{ type: 'setMute', trackId: 'toaster-1', muted: false }]);
     });
+
+    it('mutes a track whose output routes to a missing bus while something else is soloed', () => {
+        // outputId references an absent bus: isRoutedToSoloedTrack finds no
+        // output track, so the source is treated as not routed to the solo.
+        const tracks = [
+            TrackDummy.create({ id: 'solo', soloed: true }),
+            TrackDummy.create({ id: 'orphan', outputId: 'ghost-bus' }),
+        ];
+
+        const result = applySoloLogic({
+            tracks,
+            soloMode: 'sip',
+            savedGains: new Map(),
+            liveStripTrackIds: new Set(['solo', 'orphan']),
+        });
+
+        expect(result.actions).toEqual([
+            { type: 'setMute', trackId: 'solo', muted: false },
+            { type: 'setMute', trackId: 'orphan', muted: true },
+        ]);
+    });
 });

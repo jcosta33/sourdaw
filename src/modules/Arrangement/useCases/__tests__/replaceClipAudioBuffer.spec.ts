@@ -174,4 +174,45 @@ describe('replaceClipAudioBuffer', () => {
         expect(trackStore.value?.tracks[0]?.clips[0]?.audioBufferId).toBe('buf-old');
         expect(kneadStore.value?.contours['clip-1']).toEqual(storedContour);
     });
+
+    it('rejects an empty buffer id without touching the store', () => {
+        const before = trackStore.value;
+
+        const didWrite = replaceClipAudioBuffer('clip-1', '');
+
+        expect(didWrite).toBe(false);
+        expect(trackStore.value).toBe(before);
+    });
+
+    it('rejects when the matched clip is not an audio clip', () => {
+        // A midi clip sharing the lookup key cannot receive a buffer swap.
+        const midiClip: Clip = { ...clip, id: 'clip-midi', type: 'midi' };
+        trackStore.set({
+            tracks: [TrackDummy.create({ id: 'track-1', clips: [midiClip] })],
+            selectedTrackId: null,
+        });
+        const before = trackStore.value;
+
+        const didWrite = replaceClipAudioBuffer('clip-midi', 'buf-new');
+
+        expect(didWrite).toBe(false);
+        expect(trackStore.value).toBe(before);
+    });
+
+    it('leaves non-matching sibling clips untouched while swapping the matched one', () => {
+        // Two clips on one track: the map's "not in set" branch must return the
+        // sibling by reference while patching only the matched clip.
+        const sibling: Clip = { ...clip, id: 'clip-other', audioBufferId: 'buf-other' };
+        trackStore.set({
+            tracks: [TrackDummy.create({ id: 'track-1', clips: [sibling, clip] })],
+            selectedTrackId: null,
+        });
+
+        const didWrite = replaceClipAudioBuffer('clip-1', 'buf-new');
+
+        expect(didWrite).toBe(true);
+        const clips = trackStore.value?.tracks[0]?.clips;
+        expect(clips?.[0]?.audioBufferId).toBe('buf-other');
+        expect(clips?.[1]?.audioBufferId).toBe('buf-new');
+    });
 });

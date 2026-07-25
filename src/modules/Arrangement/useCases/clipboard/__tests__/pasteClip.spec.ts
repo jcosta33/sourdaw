@@ -521,6 +521,45 @@ describe('pasteClip', () => {
         expect(mocks.addClip).not.toHaveBeenCalled();
     });
 
+    it.each([
+        {
+            name: 'the entry itself is not an object',
+            corrupt: () => {
+                // Replace the entry with a primitive while keeping array shape.
+                return 'not-an-object' as unknown as ClipboardEntry;
+            },
+        },
+        {
+            name: 'the entry clip is not an object',
+            corrupt: (entry: ClipboardEntry) => {
+                Reflect.set(entry, 'clip', 'not-a-clip');
+                return entry;
+            },
+        },
+        {
+            name: 'the source clip geometry is invalid',
+            corrupt: (entry: ClipboardEntry) => {
+                entry.clip.startBeat = 8;
+                entry.clip.endBeat = 4;
+                return entry;
+            },
+        },
+    ])('rejects the paste when $name before any allocation', ({ corrupt }) => {
+        const entry = corrupt(createClipboardEntry());
+        mocks.transportState.value = {};
+        mocks.getTrackState.mockReturnValue({
+            selectedTrackId: 'selected-track',
+            tracks: [{ id: 'selected-track' }],
+        });
+        setClipClipboard([entry]);
+
+        expect(pasteClip()).toBe(false);
+
+        expect(mocks.resolveEligibleClipWriteTarget).not.toHaveBeenCalled();
+        expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(mocks.setNotesForClip).not.toHaveBeenCalled();
+    });
+
     it('rolls back Arrangement and MIDI state when the second add fails', () => {
         const arrangementClipIds = new Set(['existing-clip']);
         const midiState = new Map<string, MidiNote[]>([

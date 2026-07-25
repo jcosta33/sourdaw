@@ -234,4 +234,37 @@ describe('MIDI-track MIDI FX operations', () => {
         expect(mocks.updatedTrack).toEqual({ kind: 'midi', midiFx: [] });
         expect(mocks.removeMidiFxFromStrip).toHaveBeenCalledWith('midi-1', 'fx-1');
     });
+
+    it('leaves sibling fx untouched while flipping the matched fx on bypass and param update', () => {
+        // Two fx on one midi track: the map's ternary must keep the sibling fx
+        // verbatim while patching only the targeted id.
+        const sibling: TestMidiFx = {
+            id: 'fx-other',
+            name: 'Sibling',
+            type: 'arp',
+            bypassed: false,
+            parameterValues: { existing: 1 },
+        };
+
+        mocks.updateTrack.mockImplementation((_trackId: string, updater: (track: TestTrack) => TestTrack) => {
+            mocks.updatedTrack = updater({ kind: 'midi', midiFx: [sibling, residue] });
+        });
+
+        bypassMidiFx('midi-1', 'fx-1', true);
+        const afterBypass = mocks.updatedTrack;
+        expect(afterBypass?.midiFx[0]).toBe(sibling);
+        expect(afterBypass?.midiFx[1]?.bypassed).toBe(true);
+
+        mocks.updateTrack.mockClear();
+        mocks.updateMidiFxParam.mockClear();
+        mocks.updateTrack.mockImplementation((_trackId: string, updater: (track: TestTrack) => TestTrack) => {
+            mocks.updatedTrack = updater({ kind: 'midi', midiFx: [sibling, residue] });
+        });
+
+        updateMidiFxParam('midi-1', 'fx-1', 'rate', 5);
+        const afterParam = mocks.updatedTrack;
+        expect(afterParam?.midiFx[0]).toBe(sibling);
+        expect(afterParam?.midiFx[0]?.parameterValues).toEqual({ existing: 1 });
+        expect(afterParam?.midiFx[1]?.parameterValues).toEqual({ rate: 5 });
+    });
 });

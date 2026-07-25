@@ -196,4 +196,32 @@ describe('acceptGhostClip', () => {
         );
         expect(mocks.trackStoreSet).toHaveBeenCalledWith({ ...state, ghostClips: [] });
     });
+
+    it('falls back to an empty list when the post-insert state has no ghostClips field', () => {
+        // After the insert, the refreshed state may legitimately omit ghostClips
+        // (older snapshots). The `?? []` guard must still publish without
+        // crashing on a nullish read.
+        const ghost = createClip({ id: 'ghost-1', trackId: 'track-1', isGhost: true });
+        const state: TrackStoreState = {
+            tracks: [TrackDummy.create({ id: 'track-1', clips: [] })],
+            selectedTrackId: null,
+            ghostClips: [ghost],
+        };
+        mocks.state.value = state;
+        mocks.appendClipToTrack.mockImplementation(() => {
+            // Simulate a refreshed state that no longer carries ghostClips.
+            mocks.state.value = {
+                tracks: state.tracks,
+                selectedTrackId: null,
+            };
+            return true;
+        });
+
+        expect(acceptGhostClip('ghost-1')).toBe(true);
+        expect(mocks.trackStoreSet).toHaveBeenCalledWith({
+            tracks: state.tracks,
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+    });
 });
