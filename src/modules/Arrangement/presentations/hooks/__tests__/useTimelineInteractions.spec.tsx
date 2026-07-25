@@ -5,127 +5,129 @@ import { useTimelineInteractions } from '../useTimelineInteractions';
 
 // Massive mock list
 type MockStoreBox = { value: Record<string, unknown> };
-const mocks = vi.hoisted((): {
-    broadcastPresence: ReturnType<typeof vi.fn>;
-    zoomTimeline: ReturnType<typeof vi.fn>;
-    setPlayheadFromClick: ReturnType<typeof vi.fn>;
-    beginClipDrag: ReturnType<typeof vi.fn>;
-    hitTestClip: ReturnType<typeof vi.fn>;
-    hitTestTrack: ReturnType<typeof vi.fn>;
-    hitTestClipEdge: ReturnType<typeof vi.fn>;
-    snapToGrid: ReturnType<typeof vi.fn>;
-    snapToGridOrClips: ReturnType<typeof vi.fn>;
-    snapToZeroCrossing: ReturnType<typeof vi.fn>;
-    setMarqueeSelection: ReturnType<typeof vi.fn>;
-    toggleClipInSelection: ReturnType<typeof vi.fn>;
-    selectClipWithFocus: ReturnType<typeof vi.fn>;
-    clearClipSelection: ReturnType<typeof vi.fn>;
-    setClipSelection: ReturnType<typeof vi.fn>;
-    selectClip: ReturnType<typeof vi.fn>;
-    setWorkspaceMode: ReturnType<typeof vi.fn>;
-    toggleLoop: ReturnType<typeof vi.fn>;
-    getTransportState: ReturnType<typeof vi.fn>;
-    setLoopRegion: ReturnType<typeof vi.fn>;
-    commitInlineAutomationPaint: ReturnType<typeof vi.fn>;
-    commitInlineMidiNoteMove: ReturnType<typeof vi.fn>;
-    pushUndoEntry: ReturnType<typeof vi.fn>;
-    selectTrack: ReturnType<typeof vi.fn>;
-    addClip: ReturnType<typeof vi.fn>;
-    removeClip: ReturnType<typeof vi.fn>;
-    moveClip: ReturnType<typeof vi.fn>;
-    trimClipStart: ReturnType<typeof vi.fn>;
-    trimClipEnd: ReturnType<typeof vi.fn>;
-    buildTimelineRenderModel: ReturnType<typeof vi.fn>;
-    getTrackAtY: ReturnType<typeof vi.fn>;
-    canvasXToBeat: ReturnType<typeof vi.fn>;
-    getContentY: ReturnType<typeof vi.fn>;
-    tryPaintSubLane: ReturnType<typeof vi.fn>;
-    paintAutoDragPoint: ReturnType<typeof vi.fn>;
-    handleCutTool: ReturnType<typeof vi.fn>;
-    handleDrawTool: ReturnType<typeof vi.fn>;
-    handleAutomationTool: ReturnType<typeof vi.fn>;
-    acceptGhostClip: ReturnType<typeof vi.fn>;
-    toggleInlineEditing: ReturnType<typeof vi.fn>;
-    duplicateClipCore: ReturnType<typeof vi.fn>;
-    slipClipContent: ReturnType<typeof vi.fn>;
-    planRippleInsert: ReturnType<typeof vi.fn>;
-    rippleInsertClip: ReturnType<typeof vi.fn>;
-    undoRippleInsertClip: ReturnType<typeof vi.fn>;
-    planRippleMove: ReturnType<typeof vi.fn>;
-    rippleMoveClip: ReturnType<typeof vi.fn>;
-    getTrackStoreState: ReturnType<typeof vi.fn>;
-    setTrackState: ReturnType<typeof vi.fn>;
-    collaborationStoreValue: MockStoreBox;
-    timelineViewStoreValue: MockStoreBox;
-    workspaceStoreValue: MockStoreBox;
-    clipSelectionStoreValue: MockStoreBox;
-    trackStoreValue: MockStoreBox;
-    midiStoreValue: MockStoreBox;
-    preferencesStoreValue: MockStoreBox;
-    inlineMidiNotePreviewRef: { current: unknown };
-} => ({
-    broadcastPresence: vi.fn(),
-    zoomTimeline: vi.fn(),
-    setPlayheadFromClick: vi.fn(),
-    beginClipDrag: vi.fn(),
-    hitTestClip: vi.fn(),
-    hitTestTrack: vi.fn(),
-    hitTestClipEdge: vi.fn(),
-    snapToGrid: vi.fn((buffer) => buffer),
-    snapToGridOrClips: vi.fn((beat) => beat),
-    snapToZeroCrossing: vi.fn((_, beat) => beat),
-    setMarqueeSelection: vi.fn(),
-    toggleClipInSelection: vi.fn(),
-    selectClipWithFocus: vi.fn(),
-    clearClipSelection: vi.fn(),
-    setClipSelection: vi.fn(),
-    selectClip: vi.fn(),
-    setWorkspaceMode: vi.fn(),
-    toggleLoop: vi.fn(),
-    getTransportState: vi.fn(),
-    setLoopRegion: vi.fn(),
-    commitInlineAutomationPaint: vi.fn(),
-    commitInlineMidiNoteMove: vi.fn(),
-    pushUndoEntry: vi.fn(),
-    selectTrack: vi.fn(),
-    addClip: vi.fn(),
-    removeClip: vi.fn(),
-    moveClip: vi.fn(),
-    trimClipStart: vi.fn(),
-    trimClipEnd: vi.fn(),
-    buildTimelineRenderModel: vi.fn(),
-    getTrackAtY: vi.fn(),
-    canvasXToBeat: vi.fn((x) => x / 100),
-    getContentY: vi.fn((y, state) => y + state),
-    tryPaintSubLane: vi.fn(),
-    paintAutoDragPoint: vi.fn(),
-    handleCutTool: vi.fn(),
-    handleDrawTool: vi.fn(),
-    handleAutomationTool: vi.fn(),
-    acceptGhostClip: vi.fn(),
-    toggleInlineEditing: vi.fn(),
-    duplicateClipCore: vi.fn(),
-    slipClipContent: vi.fn(),
-    planRippleInsert: vi.fn(),
-    rippleInsertClip: vi.fn(),
-    undoRippleInsertClip: vi.fn(),
-    planRippleMove: vi.fn(),
-    rippleMoveClip: vi.fn(),
-    getTrackStoreState: vi.fn(),
-    setTrackState: vi.fn(),
-    collaborationStoreValue: { value: { isEnabled: false } },
-    timelineViewStoreValue: { value: { scrollY: 0, pixelsPerBeat: 100, scrollX: 0 } },
-    workspaceStoreValue: {
-        value: { activeTool: 'select', selectedClipIds: [], automationVisibility: 'hidden' },
-    },
-    clipSelectionStoreValue: {
-        value: { selectedClipId: null, selectedClipIds: [], marqueeSelection: null },
-    },
-    trackStoreValue: { value: { tracks: [] } },
-    midiStoreValue: { value: { notesByClipId: {} } },
-    preferencesStoreValue: { value: {} },
-    inlineMidiNotePreviewRef: { current: null },
-}));
+const mocks = vi.hoisted(
+    (): {
+        broadcastPresence: ReturnType<typeof vi.fn>;
+        zoomTimeline: ReturnType<typeof vi.fn>;
+        setPlayheadFromClick: ReturnType<typeof vi.fn>;
+        beginClipDrag: ReturnType<typeof vi.fn>;
+        hitTestClip: ReturnType<typeof vi.fn>;
+        hitTestTrack: ReturnType<typeof vi.fn>;
+        hitTestClipEdge: ReturnType<typeof vi.fn>;
+        snapToGrid: ReturnType<typeof vi.fn>;
+        snapToGridOrClips: ReturnType<typeof vi.fn>;
+        snapToZeroCrossing: ReturnType<typeof vi.fn>;
+        setMarqueeSelection: ReturnType<typeof vi.fn>;
+        toggleClipInSelection: ReturnType<typeof vi.fn>;
+        selectClipWithFocus: ReturnType<typeof vi.fn>;
+        clearClipSelection: ReturnType<typeof vi.fn>;
+        setClipSelection: ReturnType<typeof vi.fn>;
+        selectClip: ReturnType<typeof vi.fn>;
+        setWorkspaceMode: ReturnType<typeof vi.fn>;
+        toggleLoop: ReturnType<typeof vi.fn>;
+        getTransportState: ReturnType<typeof vi.fn>;
+        setLoopRegion: ReturnType<typeof vi.fn>;
+        commitInlineAutomationPaint: ReturnType<typeof vi.fn>;
+        commitInlineMidiNoteMove: ReturnType<typeof vi.fn>;
+        pushUndoEntry: ReturnType<typeof vi.fn>;
+        selectTrack: ReturnType<typeof vi.fn>;
+        addClip: ReturnType<typeof vi.fn>;
+        removeClip: ReturnType<typeof vi.fn>;
+        moveClip: ReturnType<typeof vi.fn>;
+        trimClipStart: ReturnType<typeof vi.fn>;
+        trimClipEnd: ReturnType<typeof vi.fn>;
+        buildTimelineRenderModel: ReturnType<typeof vi.fn>;
+        getTrackAtY: ReturnType<typeof vi.fn>;
+        canvasXToBeat: ReturnType<typeof vi.fn>;
+        getContentY: ReturnType<typeof vi.fn>;
+        tryPaintSubLane: ReturnType<typeof vi.fn>;
+        paintAutoDragPoint: ReturnType<typeof vi.fn>;
+        handleCutTool: ReturnType<typeof vi.fn>;
+        handleDrawTool: ReturnType<typeof vi.fn>;
+        handleAutomationTool: ReturnType<typeof vi.fn>;
+        acceptGhostClip: ReturnType<typeof vi.fn>;
+        toggleInlineEditing: ReturnType<typeof vi.fn>;
+        duplicateClipCore: ReturnType<typeof vi.fn>;
+        slipClipContent: ReturnType<typeof vi.fn>;
+        planRippleInsert: ReturnType<typeof vi.fn>;
+        rippleInsertClip: ReturnType<typeof vi.fn>;
+        undoRippleInsertClip: ReturnType<typeof vi.fn>;
+        planRippleMove: ReturnType<typeof vi.fn>;
+        rippleMoveClip: ReturnType<typeof vi.fn>;
+        getTrackStoreState: ReturnType<typeof vi.fn>;
+        setTrackState: ReturnType<typeof vi.fn>;
+        collaborationStoreValue: MockStoreBox;
+        timelineViewStoreValue: MockStoreBox;
+        workspaceStoreValue: MockStoreBox;
+        clipSelectionStoreValue: MockStoreBox;
+        trackStoreValue: MockStoreBox;
+        midiStoreValue: MockStoreBox;
+        preferencesStoreValue: MockStoreBox;
+        inlineMidiNotePreviewRef: { current: unknown };
+    } => ({
+        broadcastPresence: vi.fn(),
+        zoomTimeline: vi.fn(),
+        setPlayheadFromClick: vi.fn(),
+        beginClipDrag: vi.fn(),
+        hitTestClip: vi.fn(),
+        hitTestTrack: vi.fn(),
+        hitTestClipEdge: vi.fn(),
+        snapToGrid: vi.fn((buffer) => buffer),
+        snapToGridOrClips: vi.fn((beat) => beat),
+        snapToZeroCrossing: vi.fn((_, beat) => beat),
+        setMarqueeSelection: vi.fn(),
+        toggleClipInSelection: vi.fn(),
+        selectClipWithFocus: vi.fn(),
+        clearClipSelection: vi.fn(),
+        setClipSelection: vi.fn(),
+        selectClip: vi.fn(),
+        setWorkspaceMode: vi.fn(),
+        toggleLoop: vi.fn(),
+        getTransportState: vi.fn(),
+        setLoopRegion: vi.fn(),
+        commitInlineAutomationPaint: vi.fn(),
+        commitInlineMidiNoteMove: vi.fn(),
+        pushUndoEntry: vi.fn(),
+        selectTrack: vi.fn(),
+        addClip: vi.fn(),
+        removeClip: vi.fn(),
+        moveClip: vi.fn(),
+        trimClipStart: vi.fn(),
+        trimClipEnd: vi.fn(),
+        buildTimelineRenderModel: vi.fn(),
+        getTrackAtY: vi.fn(),
+        canvasXToBeat: vi.fn((x) => x / 100),
+        getContentY: vi.fn((y, state) => y + state),
+        tryPaintSubLane: vi.fn(),
+        paintAutoDragPoint: vi.fn(),
+        handleCutTool: vi.fn(),
+        handleDrawTool: vi.fn(),
+        handleAutomationTool: vi.fn(),
+        acceptGhostClip: vi.fn(),
+        toggleInlineEditing: vi.fn(),
+        duplicateClipCore: vi.fn(),
+        slipClipContent: vi.fn(),
+        planRippleInsert: vi.fn(),
+        rippleInsertClip: vi.fn(),
+        undoRippleInsertClip: vi.fn(),
+        planRippleMove: vi.fn(),
+        rippleMoveClip: vi.fn(),
+        getTrackStoreState: vi.fn(),
+        setTrackState: vi.fn(),
+        collaborationStoreValue: { value: { isEnabled: false } },
+        timelineViewStoreValue: { value: { scrollY: 0, pixelsPerBeat: 100, scrollX: 0 } },
+        workspaceStoreValue: {
+            value: { activeTool: 'select', selectedClipIds: [], automationVisibility: 'hidden' },
+        },
+        clipSelectionStoreValue: {
+            value: { selectedClipId: null, selectedClipIds: [], marqueeSelection: null },
+        },
+        trackStoreValue: { value: { tracks: [] } },
+        midiStoreValue: { value: { notesByClipId: {} } },
+        preferencesStoreValue: { value: {} },
+        inlineMidiNotePreviewRef: { current: null },
+    })
+);
 
 vi.mock('#/modules/Collaboration/useCases', async (importOriginal) => ({
     ...(await importOriginal<any>()),
@@ -1025,5 +1027,312 @@ describe('useTimelineInteractions', () => {
         });
 
         expect(mocks.setMarqueeSelection).toHaveBeenCalledWith(null);
+    });
+
+    it('tracks a single pointer move when no pinch is active', () => {
+        const { result } = renderHook(() => useTimelineInteractions(canvasRef as any));
+
+        act(() => {
+            result.current.handlePointerDown(pointer(1, 10, 10));
+        });
+        // A single-pointer move (size 1 < 2) must record the new position rather
+        // than attempt a pinch zoom.
+        act(() => {
+            result.current.handlePointerMove(pointer(1, 40, 40));
+        });
+
+        expect(mocks.zoomTimeline).not.toHaveBeenCalled();
+    });
+
+    it('defaults a missing audio offset to 0 when starting a slip drag', () => {
+        mocks.hitTestClip.mockReturnValue({ clipId: 'c1', trackId: 't1' });
+        // The clip carries no audioOffsetBeats — the slip start must fall back to 0.
+        mocks.trackStoreValue.value = {
+            tracks: [{ id: 't1', clips: [{ id: 'c1', type: 'audio', startBeat: 0, endBeat: 4 }] }],
+        };
+        const { result } = renderHook(() => useTimelineInteractions(canvasRef as any));
+
+        act(() => {
+            result.current.handleMouseDown({
+                button: 0,
+                clientX: 100,
+                clientY: 50,
+                ctrlKey: true,
+                shiftKey: true,
+            } as any);
+        });
+        act(() => {
+            result.current.handleMouseMove({ clientX: 250, clientY: 50 } as any);
+        });
+        act(() => {
+            result.current.handleMouseUp({ clientX: 250, clientY: 50 } as any);
+        });
+
+        // 150px / 100ppb = 1.5 beats from a base offset of 0.
+        expect(mocks.slipClipContent).toHaveBeenCalledWith('c1', 'audio', 1.5);
+    });
+
+    it('defaults a missing midi offset to 0 when starting a slip drag on a midi clip', () => {
+        mocks.hitTestClip.mockReturnValue({ clipId: 'cm', trackId: 't1' });
+        mocks.trackStoreValue.value = {
+            tracks: [{ id: 't1', clips: [{ id: 'cm', type: 'midi', startBeat: 0, endBeat: 4 }] }],
+        };
+        const { result } = renderHook(() => useTimelineInteractions(canvasRef as any));
+
+        act(() => {
+            result.current.handleMouseDown({
+                button: 0,
+                clientX: 100,
+                clientY: 50,
+                ctrlKey: true,
+                shiftKey: true,
+            } as any);
+        });
+        act(() => {
+            result.current.handleMouseMove({ clientX: 200, clientY: 50 } as any);
+        });
+        act(() => {
+            result.current.handleMouseUp({ clientX: 200, clientY: 50 } as any);
+        });
+
+        // 100px / 100ppb = 1.0 beats from a base offset of 0.
+        expect(mocks.slipClipContent).toHaveBeenCalledWith('cm', 'midi', 1);
+    });
+
+    it('broadcasts cursor presence to collaborators while dragging (throttled)', () => {
+        mocks.collaborationStoreValue.value = { isEnabled: true };
+        mocks.hitTestClip.mockReturnValue({ clipId: 'c1', trackId: 't1' });
+        mocks.trackStoreValue.value = {
+            tracks: [{ id: 't1', clips: [{ id: 'c1', type: 'audio', startBeat: 0, endBeat: 4 }] }],
+        };
+        mocks.buildTimelineRenderModel.mockReturnValue({
+            tracks: [{ id: 't1', height: 100, clips: [] }],
+            tempo: 120,
+        });
+        mocks.getTrackAtY.mockReturnValue({ index: 0 });
+        const { result } = renderHook(() => useTimelineInteractions(canvasRef as any));
+
+        act(() => {
+            result.current.handleMouseDown({ button: 0, clientX: 100, clientY: 50 } as any);
+        });
+        act(() => {
+            result.current.handleMouseMove({ clientX: 300, clientY: 50 } as any);
+        });
+
+        // The cursor presence delta must carry the dragged-to beat (cursor-only,
+        // no playheadBeat) and a resolved track id.
+        expect(mocks.broadcastPresence).toHaveBeenCalledWith(
+            expect.objectContaining({ cursorBeat: expect.any(Number) })
+        );
+        const presenceCall = mocks.broadcastPresence.mock.calls[0]![0];
+        expect(presenceCall).not.toHaveProperty('playheadBeat');
+        expect(presenceCall.cursorTrackId).not.toBeUndefined();
+    });
+
+    it('snaps a stretch (trim-end) drag to the nearest zero crossing for audio clips', () => {
+        mocks.workspaceStoreValue.value = {
+            activeTool: 'select',
+            selectedClipIds: [],
+            automationVisibility: 'hidden',
+        };
+        mocks.preferencesStoreValue.value = { snapToZeroCrossing: true };
+        mocks.trackStoreValue.value = {
+            tracks: [{ id: 't1', clips: [{ id: 'c1', type: 'audio', startBeat: 0, endBeat: 4 }] }],
+        };
+        mocks.hitTestClip.mockReturnValue({ clipId: 'c1', trackId: 't1' });
+        mocks.hitTestClipEdge.mockReturnValue({ edge: 'right' });
+        mocks.beginClipDrag.mockReturnValue({
+            clipId: 'c1',
+            sourceTrackId: 't1',
+            startBeat: 0,
+            endBeat: 4,
+            offsetBeat: 0,
+            mode: 'stretch',
+        });
+        mocks.snapToZeroCrossing.mockReturnValue(7);
+        const { result } = renderHook(() => useTimelineInteractions(canvasRef as any));
+
+        act(() => {
+            result.current.handleMouseDown({ button: 0, clientX: 0, clientY: 20 } as any);
+        });
+        act(() => {
+            result.current.handleMouseMove({ clientX: 200, clientY: 20 } as any);
+        });
+
+        // snapToZeroCrossing was consulted for the audio clip and its result (7) used.
+        expect(mocks.snapToZeroCrossing).toHaveBeenCalledWith(
+            expect.objectContaining({ id: 'c1' }),
+            expect.any(Number)
+        );
+    });
+
+    it('skips selected ids that have no preview original during a multi-clip move', () => {
+        mocks.trackStoreValue.value = {
+            tracks: [
+                { id: 't1', clips: [{ id: 'c1', startBeat: 0, endBeat: 4 }] },
+                { id: 't2', clips: [] },
+            ],
+        };
+        mocks.clipSelectionStoreValue.value = {
+            selectedClipId: 'c1',
+            selectedClipIds: ['c1', 'c2'], // c2 has no preview original — must be skipped.
+            marqueeSelection: null,
+        };
+        mocks.hitTestClip.mockReturnValue({ clipId: 'c1', trackId: 't1' });
+        mocks.beginClipDrag.mockReturnValue({
+            clipId: 'c1',
+            sourceTrackId: 't1',
+            startBeat: 0,
+            endBeat: 4,
+            offsetBeat: 0,
+            mode: 'move',
+        });
+        mocks.getTrackAtY.mockReturnValue({ index: 1 });
+        mocks.buildTimelineRenderModel.mockReturnValue({
+            tracks: [
+                { id: 't1', height: 100, clips: [{ id: 'c1', startBeat: 0, endBeat: 4 }] },
+                { id: 't2', height: 100, clips: [] },
+            ],
+            tempo: 120,
+        });
+        const { result } = renderHook(() => useTimelineInteractions(canvasRef as any));
+
+        act(() => {
+            result.current.handleMouseDown({ button: 0, clientX: 0, clientY: 20 } as any);
+        });
+        act(() => {
+            result.current.handleMouseMove({ clientX: 300, clientY: 120 } as any);
+        });
+        act(() => {
+            result.current.handleMouseUp({ clientX: 300, clientY: 120 } as any);
+        });
+
+        // Only c1 (which has an original) is moved; c2 is skipped silently.
+        expect(mocks.moveClip).toHaveBeenCalledWith('c1', 't2', expect.any(Number), 0);
+        expect(mocks.moveClip).not.toHaveBeenCalledWith('c2', expect.anything(), expect.anything(), expect.anything());
+    });
+
+    it('re-inserts the clip via the draw-ripple redo callback', () => {
+        mocks.workspaceStoreValue.value = {
+            activeTool: 'draw',
+            selectedClipIds: [],
+            automationVisibility: 'hidden',
+            rippleEditing: true,
+        };
+        mocks.handleDrawTool.mockImplementation((_x, _y, _beat, ref) => {
+            ref.current = { trackId: 't1', startBeat: 2, clipType: 'midi' };
+        });
+        // First addClip (draw) returns a clip; the redo's addClip returns a clip too.
+        mocks.addClip.mockReturnValue({ id: 'drawn-1' });
+        mocks.planRippleInsert.mockReturnValue({ shiftedClips: [{ clipId: 'other', deltaBeat: 3 }] });
+        const { result } = renderHook(() => useTimelineInteractions(canvasRef as any));
+
+        act(() => {
+            result.current.handleMouseDown({ button: 0, clientX: 200, clientY: 50 } as any);
+            result.current.handleMouseUp({ clientX: 500, clientY: 50 } as any);
+        });
+
+        // The redo callback (3rd arg) must re-add the clip and replay the ripple insert.
+        const redo = mocks.pushUndoEntry.mock.calls.at(-1)![2] as () => void;
+        mocks.rippleInsertClip.mockClear();
+        mocks.addClip.mockClear();
+        act(() => redo());
+
+        expect(mocks.addClip).toHaveBeenCalledWith(expect.objectContaining({ trackId: 't1' }));
+        expect(mocks.rippleInsertClip).toHaveBeenCalled();
+    });
+
+    it('commits a same-track move with ripple editing and replays undo/redo', () => {
+        mocks.workspaceStoreValue.value = {
+            activeTool: 'select',
+            selectedClipIds: [],
+            automationVisibility: 'hidden',
+            rippleEditing: true,
+        };
+        mocks.trackStoreValue.value = {
+            tracks: [
+                {
+                    id: 't1',
+                    clips: [
+                        { id: 'c1', type: 'audio', startBeat: 0, endBeat: 4 },
+                        { id: 'c2', type: 'audio', startBeat: 4, endBeat: 8 },
+                    ],
+                },
+            ],
+        };
+        mocks.hitTestClip.mockReturnValue({ clipId: 'c1', trackId: 't1' });
+        mocks.beginClipDrag.mockReturnValue({
+            clipId: 'c1',
+            sourceTrackId: 't1',
+            startBeat: 0,
+            endBeat: 4,
+            offsetBeat: 0,
+            mode: 'move',
+        });
+        mocks.getTrackAtY.mockReturnValue({ index: 0 });
+        mocks.buildTimelineRenderModel.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    height: 100,
+                    clips: [
+                        { id: 'c1', startBeat: 0, endBeat: 4 },
+                        { id: 'c2', startBeat: 4, endBeat: 8 },
+                    ],
+                },
+            ],
+            tempo: 120,
+        });
+        // Ripple move produces a plan that closes a gap on c2.
+        mocks.planRippleMove.mockReturnValue({
+            gapClosedClips: [{ clipId: 'c2', origStartBeat: 4, origEndBeat: 8 }],
+            destinationOpenedClips: [],
+        });
+        // Undo reads getTrackStoreState to restore shifted clips.
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    clips: [
+                        { id: 'c1', startBeat: 2, endBeat: 6 },
+                        { id: 'c2', startBeat: 6, endBeat: 10 },
+                    ],
+                },
+            ],
+        });
+        const { result } = renderHook(() => useTimelineInteractions(canvasRef as any));
+
+        act(() => {
+            result.current.handleMouseDown({ button: 0, clientX: 0, clientY: 20 } as any);
+        });
+        act(() => {
+            result.current.handleMouseMove({ clientX: 200, clientY: 20 } as any);
+        });
+        act(() => {
+            result.current.handleMouseUp({ clientX: 200, clientY: 20 } as any);
+        });
+
+        // Ripple move committed: rippleMoveClip ran and an undo entry was pushed.
+        expect(mocks.rippleMoveClip).toHaveBeenCalled();
+        const rippleCall = mocks.pushUndoEntry.mock.calls.find((call) => call[0] === 'Move clip (ripple)');
+        expect(rippleCall).toBeTruthy();
+
+        // Undo restores the moved clip and the ripple-shifted sibling.
+        mocks.moveClip.mockClear();
+        mocks.setTrackState.mockClear();
+        const undo = rippleCall![1] as () => void;
+        act(() => undo());
+        expect(mocks.moveClip).toHaveBeenCalledWith('c1', 't1', expect.any(Number));
+        expect(mocks.setTrackState).toHaveBeenCalled();
+
+        // Redo replays the ripple move.
+        mocks.rippleMoveClip.mockClear();
+        mocks.planRippleMove.mockReturnValue({
+            gapClosedClips: [],
+            destinationOpenedClips: [],
+        });
+        const redo = rippleCall![2] as () => void;
+        act(() => redo());
+        expect(mocks.planRippleMove).toHaveBeenCalled();
     });
 });
