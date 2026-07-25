@@ -327,6 +327,66 @@ describe('sanitize_take_lane_store_state', () => {
             ],
         });
     });
+
+    it('should drop lanes whose id is not a string', () => {
+        expect(
+            sanitize_take_lane_store_state({
+                lanes: [
+                    {
+                        id: 7,
+                        trackId: 'track-1',
+                        takes: [],
+                        activeCompRegions: [],
+                    },
+                    {
+                        id: 'lane-1',
+                        trackId: 'track-1',
+                        takes: [],
+                        activeCompRegions: [],
+                    },
+                ],
+            })
+        ).toEqual({
+            lanes: [
+                {
+                    id: 'lane-1',
+                    trackId: 'track-1',
+                    takes: [],
+                    activeCompRegions: [],
+                },
+            ],
+        });
+    });
+
+    it('should drop lanes whose trackId is not a string', () => {
+        expect(
+            sanitize_take_lane_store_state({
+                lanes: [
+                    {
+                        id: 'lane-1',
+                        trackId: 42,
+                        takes: [],
+                        activeCompRegions: [],
+                    },
+                ],
+            })
+        ).toEqual(defaultTakeLaneStoreState);
+    });
+
+    it('should drop lanes whose activeCompRegions is not an array', () => {
+        expect(
+            sanitize_take_lane_store_state({
+                lanes: [
+                    {
+                        id: 'lane-1',
+                        trackId: 'track-1',
+                        takes: [],
+                        activeCompRegions: 'not-an-array',
+                    },
+                ],
+            })
+        ).toEqual(defaultTakeLaneStoreState);
+    });
 });
 
 describe('takeLaneStore', () => {
