@@ -1,0 +1,160 @@
+src/modules/MIDI/repositories/webMidi/channelControllerState.ts
+  s_0d39f3a4a4357a::t_ac571f15c2dac5 1-12
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_0d39f3a4a4357a::t_16debdd9ab8cb9 1217-1218
+  s_0d39f3a4a4357a::t_5664d81be0a60f 1181-1193,1196,1201-1216
+src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/resetMidiState.spec.ts
+  s_0d39f3a4a4357a::t_bd02df052223be 45
+  s_0d39f3a4a4357a::t_81347d37979516 127-192
+src/modules/AudioEngine/useCases/scheduling/registerScheduledSource.ts
+  s_0d39f3a4a4357a::t_f4993c1d6aec27 2-14
+  s_0d39f3a4a4357a::t_3a943563721326 1
+src/modules/Transport/useCases/transportControls/__tests__/panicAllNotes.spec.ts
+  s_0d39f3a4a4357a::t_acf80ca5c137b8 1-79
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_0d39f3a4a4357a::t_68d60e4b50930e 212-229
+  s_0d39f3a4a4357a::t_744f1df12a43e2 66
+  s_0d39f3a4a4357a::t_16b7c740c31314 31
+src/modules/MIDI/repositories/webMidi/__tests__/sendPanicToMidiOutputs.spec.ts
+  s_0d39f3a4a4357a::t_c2c00e0bc7f450 1-66
+src/modules/Transport/useCases/index.ts
+  s_0d39f3a4a4357a::t_04e490bd1b3e9f 29
+src/modules/MIDI/repositories/webMidi/resetChannelControllerState.ts
+  s_0d39f3a4a4357a::t_d17ebe7f48b1a2 1-12
+src/modules/MIDI/repositories/webMidi/__tests__/ingestChannelControlChange.spec.ts
+  s_0d39f3a4a4357a::t_d1ff3c5760955a 1-227
+src/modules/MIDI/repositories/webMidi/lifecycle/destroyWebMidi.ts
+  s_0d39f3a4a4357a::t_2b3846a72d80e6 35
+  s_0d39f3a4a4357a::t_e8cfaac857c076 32-34,36
+  s_0d39f3a4a4357a::t_4183b5f3eb1b26 6-7,13
+src/modules/MIDI/repositories/webMidi/sendPanicToMidiOutputs.ts
+  s_0d39f3a4a4357a::t_6fb39675b9848f 1
+  s_0d39f3a4a4357a::t_b9b4f7d24b9294 2-29
+src/modules/CommandInterface/useCases/commands/TransportCommands.ts
+  s_0d39f3a4a4357a::t_3cf688474b0978 1-2
+  s_0d39f3a4a4357a::t_51c12a4f5e992f 91-102
+src/modules/ControlSurface/useCases/midiLearn/scaleMidiValue.ts
+  s_0d39f3a4a4357a::t_5bbb08c6a01b31 9-13,19-20,22-23
+src/modules/CommandInterface/useCases/commands/__tests__/TransportCommands.spec.ts
+  s_0d39f3a4a4357a::t_53752522e36722 53-54
+  s_0d39f3a4a4357a::t_7846f5c0545c7a 3
+  s_0d39f3a4a4357a::t_0ddb5f51665392 10-13
+  s_0d39f3a4a4357a::t_d0edd0f6431500 44,48-52
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngine.spec.ts
+  s_0d39f3a4a4357a::t_80626f15094746 1261,1263-1266,1268-1269,1272-1275,1277,1280-1290,1294-1309,1311,1314,1317-1319,1321-1322,1324,1327-1355,1358
+src/modules/Crumbs/useCases/__tests__/panicCrumbs.spec.ts
+  s_0d39f3a4a4357a::t_0a35a3640b7396 3
+  s_0d39f3a4a4357a::t_f79a23d954dcc0 1-2,4-34
+src/modules/Crumbs/useCases/index.ts
+  s_0d39f3a4a4357a::t_b1ad256f5efef6 1-4
+src/modules/MIDI/models/MidiControllerState.ts
+  s_0d39f3a4a4357a::t_19b1c92266dfc6 1-38,47-190
+  s_0d39f3a4a4357a::t_06c19b06ade8a0 39-46
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_0d39f3a4a4357a::t_66e8b4d367d6a8 516,527-531
+  s_0d39f3a4a4357a::t_f3260473c0662c 465,475-477
+  s_0d39f3a4a4357a::t_26bd60a0573d73 9
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeydown.ts
+  s_0d39f3a4a4357a::t_007bda87667ea3 20
+  s_0d39f3a4a4357a::t_d5db062026da07 251-258
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_0d39f3a4a4357a::t_b124595b09dd79 827-832
+src/modules/AudioEngine/models/AudioEngineState.ts
+  s_0d39f3a4a4357a::t_bbcbb50b4a3ecd 338-339
+src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts
+  s_0d39f3a4a4357a::t_250a35d3ca5823 130-134
+  s_0d39f3a4a4357a::t_a350df899a949c 347-405
+src/modules/MIDI/repositories/webMidi/ingestChannelControlChange.ts
+  s_0d39f3a4a4357a::t_6d492e0ba60f86 142-144
+  s_0d39f3a4a4357a::t_331a0af56fd25c 185-191
+  s_0d39f3a4a4357a::t_652f16e7deb165 105-110
+  s_0d39f3a4a4357a::t_be6e44cfd7faae 1-104,111-141,145-184,192-270
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiCC.spec.ts
+  s_0d39f3a4a4357a::t_506aaa6acd1c76 34
+  s_0d39f3a4a4357a::t_7e37f21467167b 186
+  s_0d39f3a4a4357a::t_247fa883703782 101-103
+  s_0d39f3a4a4357a::t_dec95d5f8214a6 49,58
+  s_0d39f3a4a4357a::t_5c1a7d721bbbcc 344-454
+src/modules/CommandInterface/stores/shortcutStore.ts
+  s_0d39f3a4a4357a::t_76f6754d7c10eb 96-105
+  s_0d39f3a4a4357a::t_fa404bbeebff35 95
+src/modules/MIDI/useCases/webMidiInput/resolveBendRangeSemitones.ts
+  s_0d39f3a4a4357a::t_5e121df692d88f 3-7
+  s_0d39f3a4a4357a::t_ec8e9ede898415 1-2,8-49
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiPitchBend.ts
+  s_0d39f3a4a4357a::t_f7de0c5bea14df 51
+  s_0d39f3a4a4357a::t_798316f0a6bf18 75
+  s_0d39f3a4a4357a::t_c6a8d5371d6bb3 63
+  s_0d39f3a4a4357a::t_37bab09decc63a 4,10,12-13,18-28,30
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiPitchBend.spec.ts
+  s_0d39f3a4a4357a::t_a603a9700ab6f7 190-208,210-229,231-248,250-268,270-290
+  s_0d39f3a4a4357a::t_8649b6229f9460 23,30-39
+  s_0d39f3a4a4357a::t_1ac2d67c8d5be3 57
+  s_0d39f3a4a4357a::t_57073e7f6a389c 209,230,249,269
+  s_0d39f3a4a4357a::t_c3647a5ba596a4 87-89
+src/modules/Transport/useCases/transportControls/panicAllNotes.ts
+  s_0d39f3a4a4357a::t_b1c51d804d9589 1-34
+src/modules/MIDI/repositories/webMidi/releaseAllActiveNotes.ts
+  s_0d39f3a4a4357a::t_b2a31fcb9e3c2c 8-14
+  s_0d39f3a4a4357a::t_c6b98b249092b9 1-7,15-51,53-80
+  s_0d39f3a4a4357a::t_f91676138d52c3 52
+src/modules/MIDI/useCases/webMidiInput/midiMessageHandlerDependencies.ts
+  s_0d39f3a4a4357a::t_ab459296dd3c9f 52
+  s_0d39f3a4a4357a::t_097b84d82aaf6a 24-25
+src/modules/Crumbs/useCases/panicCrumbs.ts
+  s_0d39f3a4a4357a::t_e8cde936efce1d 1-18
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/__tests__/handleKeydown.spec.ts
+  s_0d39f3a4a4357a::t_503c092d59d7d5 69
+  s_0d39f3a4a4357a::t_eaefb468b2496c 273-326
+  s_0d39f3a4a4357a::t_8c9fbe2f24385b 327-330
+  s_0d39f3a4a4357a::t_2b26eb665c5cd7 53
+  s_0d39f3a4a4357a::t_e4aef25e970bab 125
+src/modules/ControlSurface/useCases/midiLearn/handleMidiMessage.ts
+  s_0d39f3a4a4357a::t_a2e69435280824 28
+  s_0d39f3a4a4357a::t_f31494f75fb776 6-14
+src/modules/MIDI/useCases/webMidiInput/panicLiveNotes.ts
+  s_0d39f3a4a4357a::t_68fd1b50dfe414 1-21
+src/modules/MIDI/useCases/index.ts
+  s_0d39f3a4a4357a::t_f79fa755b4e069 152
+src/modules/MIDI/repositories/webMidi/getChannelBendRangeSemitones.ts
+  s_0d39f3a4a4357a::t_18f6e891bf34d9 1-14
+src/modules/MIDI/repositories/webMidi/__tests__/releaseAllActiveNotes.spec.ts
+  s_0d39f3a4a4357a::t_c5403705d0d5a2 1-217
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiCC.ts
+  s_0d39f3a4a4357a::t_be5d98d5447c51 75-79,86-89
+  s_0d39f3a4a4357a::t_cb7fe419cc0199 39-40,42-51
+  s_0d39f3a4a4357a::t_ca2a3167cf6c15 8,13-20,30-38,52
+  s_0d39f3a4a4357a::t_f0c2dc828cd428 41
+  s_0d39f3a4a4357a::t_2f846f82cf5a7b 101-104,107-108,110-111,114-115,117-118,121-122
+  s_0d39f3a4a4357a::t_993baca73fb29c 4
+  s_0d39f3a4a4357a::t_949a485dc88732 135-137
+src/modules/MIDI/repositories/webMidi/lifecycle/resetMidiState.ts
+  s_0d39f3a4a4357a::t_1de5c761309dc6 2-4,8-16,18-21,23-24
+src/modules/Crumbs/repositories/crumbsBridge/crumbsAllSoundOff.ts
+  s_0d39f3a4a4357a::t_cc7ad546b08935 1-8
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_0d39f3a4a4357a::t_7cb583acac52ab 41-47
+  s_0d39f3a4a4357a::t_ace8f011c5fbec 162-172
+  s_0d39f3a4a4357a::t_4555d0a665a313 40
+src/modules/AudioEngine/useCases/noteExpression/getDefaultBendRangeSemitones.ts
+  s_0d39f3a4a4357a::t_454ce5eb35ffc2 1-14
+src/modules/AudioEngine/useCases/index.ts
+  s_0d39f3a4a4357a::t_809799c09303c2 43
+  s_0d39f3a4a4357a::t_f8abc231ad5630 118
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "dc103e23cfe634f6fc37d1979bea4a24672d088b",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
