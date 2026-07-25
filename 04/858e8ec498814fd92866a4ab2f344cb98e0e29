@@ -1,0 +1,43 @@
+src/modules/AudioRendering/presentations/views/ExportDialog.tsx
+  s_0d39f3a4a4357a::t_b6c6e814e35020 145,147,149-150,345,903-907
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_0d39f3a4a4357a::t_6792fa864fe8cf 140
+src/modules/Arrangement/models/DeviceParameter.ts
+  s_29a49804dab875::t_f34a86b11056bc 45-48,102-105
+src/modules/Arrangement/useCases/freezeBounce/__tests__/flattenTrack.spec.ts
+  s_29a49804dab875::t_7ab745187a5eac 194,196
+src/modules/Arrangement/useCases/freezeBounce/flattenTrack.ts
+  s_29a49804dab875::t_a678c41ac55c46 51-53
+src/modules/AudioEngine/services/__tests__/estimateRenderTailSeconds.spec.ts
+  s_29a49804dab875::t_1da1a631af93ef 3,6,10,13,15,17,22,24,29-30,32,35-38,44,50,53,55,57,60,72
+src/modules/AudioEngine/services/estimateRenderTailSeconds.ts
+  s_29a49804dab875::t_b2c14f6638dd31 12-14,16-17,21,25-29,32-42,46
+src/modules/AudioEngine/useCases/offlineRender/__tests__/getAutoDetectedTailSeconds.spec.ts
+  s_29a49804dab875::t_b2fe3714aebb30 16,41,52,57,60,66,72
+src/modules/AudioEngine/useCases/offlineRender/getAutoDetectedTailSeconds.ts
+  s_29a49804dab875::t_48244f1cf97e57 1,3,6-7,9,11-18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "04858e8ec498814fd92866a4ab2f344cb98e0e29",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_29a49804dab875": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aebd8c37a5fa0c2ad",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
