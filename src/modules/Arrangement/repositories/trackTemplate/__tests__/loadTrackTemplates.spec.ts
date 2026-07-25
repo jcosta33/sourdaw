@@ -145,4 +145,58 @@ describe('loadTrackTemplates', () => {
         const [template] = loadTrackTemplates();
         expect(template?.sends).toEqual([{ busId: 'bus-1', level: 0.4, preFader: true }]);
     });
+
+    it('drops a device whose parameterValues is not a record object', () => {
+        mocks.get.mockReturnValue([
+            validTemplate({
+                devices: [{ id: 'd1', name: 'X', type: 'delay', bypassed: false, parameterValues: 'not-a-record' }],
+            }),
+        ]);
+
+        expect(loadTrackTemplates()).toEqual([]);
+    });
+
+    it('drops a device whose externalPluginId is present but not a string', () => {
+        mocks.get.mockReturnValue([
+            validTemplate({
+                devices: [
+                    {
+                        id: 'd1',
+                        name: 'X',
+                        type: 'external-plugin',
+                        bypassed: false,
+                        parameterValues: {},
+                        externalPluginId: 99,
+                    },
+                ],
+            }),
+        ]);
+
+        expect(loadTrackTemplates()).toEqual([]);
+    });
+
+    it('drops a device whose externalStateChunk is present but not a string', () => {
+        mocks.get.mockReturnValue([
+            validTemplate({
+                devices: [
+                    {
+                        id: 'd1',
+                        name: 'X',
+                        type: 'external-plugin',
+                        bypassed: false,
+                        parameterValues: {},
+                        externalStateChunk: false,
+                    },
+                ],
+            }),
+        ]);
+
+        expect(loadTrackTemplates()).toEqual([]);
+    });
+
+    it('drops a send that is not a record', () => {
+        mocks.get.mockReturnValue([validTemplate({ sends: ['not-a-record'] })]);
+
+        expect(loadTrackTemplates()).toEqual([]);
+    });
 });
