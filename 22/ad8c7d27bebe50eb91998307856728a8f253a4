@@ -1,0 +1,27 @@
+src/modules/Arrangement/useCases/__tests__/soundPresetLibrary.spec.ts
+  s_0d39f3a4a4357a::t_4f9ebbee755e3f 1,19-57
+src/modules/Arrangement/useCases/groupComping/compGroupOperations/__tests__/deleteCompGroup.spec.ts
+  s_0d39f3a4a4357a::t_d4a6f3861b451f 8,56-63
+src/modules/Arrangement/useCases/mixerSnapshot/operations/__tests__/saveMixerSnapshot.spec.ts
+  s_0d39f3a4a4357a::t_7ca01aa0e5ddff 1,3-32,35-84
+src/modules/Arrangement/useCases/recording/__tests__/startRecording.spec.ts
+  s_0d39f3a4a4357a::t_3447cb0ac770ac 115-152
+src/modules/Arrangement/useCases/recording/__tests__/stopRecording.spec.ts
+  s_0d39f3a4a4357a::t_51854ff3dadc45 112-169
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "22ad8c7d27bebe50eb91998307856728a8f253a4",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
