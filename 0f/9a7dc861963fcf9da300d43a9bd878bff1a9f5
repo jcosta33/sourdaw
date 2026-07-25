@@ -1,0 +1,19 @@
+src/modules/Arrangement/useCases/freezeBounce/__tests__/initStalenessDetection.spec.ts
+  s_0d39f3a4a4357a::t_2f85b13d600398 129-298
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "0f9a7dc861963fcf9da300d43a9bd878bff1a9f5",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}

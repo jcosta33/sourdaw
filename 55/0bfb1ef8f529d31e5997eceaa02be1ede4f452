@@ -1,0 +1,23 @@
+src/modules/Arrangement/useCases/device/__tests__/midiFxEligibility.spec.ts
+  s_0d39f3a4a4357a::t_696b7c20478644 93-169
+src/modules/Arrangement/useCases/rippleDelete/__tests__/undoRippleDelete.spec.ts
+  s_0d39f3a4a4357a::t_4209d4b10f74d2 51-92
+src/modules/Arrangement/useCases/toggleTrackState/__tests__/toggleVariationLanes.spec.ts
+  s_0d39f3a4a4357a::t_e50c6bf7a02e35 58-95
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "550bfb1ef8f529d31e5997eceaa02be1ede4f452",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}

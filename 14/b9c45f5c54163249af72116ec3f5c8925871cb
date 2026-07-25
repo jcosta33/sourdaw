@@ -1,0 +1,31 @@
+src/modules/Arrangement/handlers/clip/__tests__/handleDuplicateClip.spec.ts
+  s_0d39f3a4a4357a::t_18a5b9a019268d 116-142
+src/modules/Arrangement/handlers/trackAlternative/__tests__/handleRenameTrackAlternative.spec.ts
+  s_88ffc5326d9b0b::t_931611a07febdc 10,87-116
+src/modules/Arrangement/useCases/device/setDeviceParameter/__tests__/persistDevicePatch.spec.ts
+  s_88ffc5326d9b0b::t_b9f44a48734b88 62-81
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "14b9c45f5c54163249af72116ec3f5c8925871cb",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_88ffc5326d9b0b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ad18badee0d6bb8b2",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}

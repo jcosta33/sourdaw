@@ -1,0 +1,19 @@
+src/modules/Arrangement/useCases/clipboard/__tests__/copySelectedNotes.spec.ts
+  s_88ffc5326d9b0b::t_321e83a289db1f 62-88
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "e005f50a476d8c1a41fec17cebbfe1fed5aea73b",
+  "prompts": {},
+  "sessions": {
+    "s_88ffc5326d9b0b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ad18badee0d6bb8b2",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}

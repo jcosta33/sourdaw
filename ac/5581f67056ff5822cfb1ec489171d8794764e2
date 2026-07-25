@@ -1,0 +1,39 @@
+src/modules/Arrangement/stores/__tests__/gainEnvelopeStoreDeep.spec.ts
+  s_0d39f3a4a4357a::t_a77908579cada2 50-73
+src/modules/Arrangement/useCases/__tests__/detectAndApplySongStructure.spec.ts
+  s_0d39f3a4a4357a::t_0ddbbcefc382d0 1-92
+src/modules/Arrangement/useCases/groupComping/compGroupOperations/__tests__/setActiveGroupTakeSet.spec.ts
+  s_0d39f3a4a4357a::t_6f929ea9c404f7 5-14,28,30-34,39-42,45-52
+src/modules/Arrangement/useCases/marker/markerOperations/__tests__/moveMarker.spec.ts
+  s_0d39f3a4a4357a::t_713348ccb29ebd 5-7,9,11,51-58
+src/modules/Arrangement/useCases/marker/markerOperations/__tests__/renameMarker.spec.ts
+  s_0d39f3a4a4357a::t_5ae77444936f98 5-14,39-46
+src/modules/Arrangement/useCases/marker/markerOperations/__tests__/setMarkerColor.spec.ts
+  s_0d39f3a4a4357a::t_942ce42e04e6d3 5-14,39-46
+src/modules/Arrangement/useCases/marker/sectionOperations/__tests__/moveSection.spec.ts
+  s_0d39f3a4a4357a::t_d5b2b9362af245 5-14,39-64
+src/modules/Arrangement/useCases/marker/sectionOperations/__tests__/resizeSection.spec.ts
+  s_0d39f3a4a4357a::t_31e3f9a7007a9c 5-7,9,11,51-88
+src/modules/Arrangement/useCases/rippleDelete/__tests__/rippleDeleteClips.spec.ts
+  s_0d39f3a4a4357a::t_49265036911db9 77-125
+src/modules/Arrangement/useCases/scratchPad/scratchPadCrud/__tests__/renameScratchPadSection.spec.ts
+  s_0d39f3a4a4357a::t_a9bab0ae279b09 1,3-23,26-51
+src/modules/Arrangement/useCases/scratchPad/scratchPadCrud/__tests__/setScratchPadSectionColor.spec.ts
+  s_0d39f3a4a4357a::t_3c955db68d9eaa 1,3-23,26-51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "ac5581f67056ff5822cfb1ec489171d8794764e2",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
