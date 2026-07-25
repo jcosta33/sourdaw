@@ -1,0 +1,57 @@
+src/utils/__tests__/serializeLikeTauri.ts
+  s_0d39f3a4a4357a::t_876000a19f7f04 1-41
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/activateExternalPlugin.spec.ts
+  s_0d39f3a4a4357a::t_d63b856d0b5fb9 58
+  s_0d39f3a4a4357a::t_f65ac08d1cd9b6 17
+src/utils/__tests__/tauriBridge.spec.ts
+  s_0d39f3a4a4357a::t_d312ef859429b9 20-21
+src-tauri/src/commands/filesystem.rs
+  s_0d39f3a4a4357a::t_68521d87d072a3 1
+  s_0d39f3a4a4357a::t_724c642ce4fe9f 57-58
+  s_0d39f3a4a4357a::t_cc4263195bbc01 298-300
+src-tauri/src/commands/mod.rs
+  s_0d39f3a4a4357a::t_25de9c1b8526d7 4
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/pluginStateRoundtrip.spec.ts
+  s_0d39f3a4a4357a::t_f6ddf750eed499 7-8
+  s_0d39f3a4a4357a::t_9011b307f69fe9 25,31,39,44,49-59
+src/modules/PluginHost/repositories/pluginBridge/__tests__/pluginStateBinaryIpc.spec.ts
+  s_0d39f3a4a4357a::t_3507734a878ce4 1-223
+src-tauri/src/commands/binary_ipc.rs
+  s_0d39f3a4a4357a::t_c6ef46f9ed12bd 1-151
+src/modules/PluginHost/useCases/pluginLifecycle/readPluginState.ts
+  s_0d39f3a4a4357a::t_dc5adf5a588d0c 21
+src-tauri/src/lib.rs
+  s_0d39f3a4a4357a::t_eb004443aca6b4 56-57
+src-tauri/src/commands/plugins.rs
+  s_0d39f3a4a4357a::t_7388f7ff5edb99 479-495,503,514,521,524-531,539-540,549,552,559-596
+  s_0d39f3a4a4357a::t_6b863ab61ca81d 3
+  s_0d39f3a4a4357a::t_d4989e834c537a 860-871,878,889-903,906-919,922-923,925-954
+src/modules/PluginHost/repositories/pluginBridge/__tests__/pluginBridge.spec.ts
+  s_0d39f3a4a4357a::t_edbdd3db8c1e86 79-81
+src/modules/PluginHost/repositories/pluginBridge/setPluginState.ts
+  s_0d39f3a4a4357a::t_542e6441a9ae5c 1,3-22,26-30
+src/utils/tauriBridge.ts
+  s_0d39f3a4a4357a::t_48d9640baa4349 34-35,37,40,43,49-56,61-65,67,70-72,75,78-82,84-86,88-92,108,116-152
+src/modules/PluginHost/repositories/pluginBridge/getPluginState.ts
+  s_0d39f3a4a4357a::t_92460cc27c74f7 1,3-15,17,19
+.dependency-cruiser.cjs
+  s_0d39f3a4a4357a::t_645c9fd49ba47c 930-932
+src/modules/PluginHost/useCases/pluginLifecycle/restorePluginState.ts
+  s_0d39f3a4a4357a::t_2e14a4d9115911 21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "6c245b6577e5f20f3308973e2128b609880c8509",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
