@@ -1,0 +1,43 @@
+crates/daw-dsp/src/proof/biquad.rs
+  s_0d39f3a4a4357a::t_9bd904bf70ec5d 9,237,281,301,501,623-626,876,901,911
+crates/daw-dsp/src/proof/chain.rs
+  s_0d39f3a4a4357a::t_6c4b3a23e28a10 202,282,469,489
+crates/daw-dsp/src/proof/limiter.rs
+  s_0d39f3a4a4357a::t_bb3968edda45dc 95,130,243,310,615
+crates/daw-dsp/src/proof/linear_phase_eq.rs
+  s_0d39f3a4a4357a::t_d5facf95fbc624 61,82,120,218
+crates/daw-dsp/src/proof/metering.rs
+  s_0d39f3a4a4357a::t_714110f160076d 242,467-468,561-562,817
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_0d39f3a4a4357a::t_46c380da8eb281 1
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_0d39f3a4a4357a::t_5b51926bbb493b 1
+public/wasm/manifest.json
+  s_0d39f3a4a4357a::t_32cbadc40bdcb1 12,17-18,20-21,34,48
+scripts/workletPolyfills.ts
+  s_0d39f3a4a4357a::t_2b50d059a47dda 9,25
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_0d39f3a4a4357a::t_b115465e376e26 1
+src/modules/AudioEngine/wasm/daw_dsp.js
+  s_0d39f3a4a4357a::t_dfa2411de5760e 2
+src/modules/AudioEngine/wasm/proof_chamber.js
+  s_0d39f3a4a4357a::t_f3578885ebc615 2
+src/modules/AudioEngine/wasm/scoring.js
+  s_0d39f3a4a4357a::t_13af63bfd6f82b 2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "8ae11e78ac8b839260491f24cef5c3fef97b9d26",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}

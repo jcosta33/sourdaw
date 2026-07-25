@@ -1,0 +1,21 @@
+crates/daw-dsp/src/proof/chain.rs
+  s_0d39f3a4a4357a::t_95cfafe66879ef 527-533
+crates/daw-dsp/src/proof/metering.rs
+  s_0d39f3a4a4357a::t_81a52a32b98518 237-239,263-284,288-292,295-297,302-303,307-317,320-324,326-328,331-333,343-344,968,970-974,976-982,984-987,989-992,994,998-1002,1009-1014,1016-1019,1023-1049,1086-1296
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "1ceca33c7c3f786757dada070934be2caa44e793",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
