@@ -1,0 +1,28 @@
+src/modules/Knead/useCases/pitch/__tests__/commitPitchEdit.spec.ts
+  s_0d39f3a4a4357a::t_521fa158f483aa 298-300,318-320
+  s_0d39f3a4a4357a::t_b417596153cd84 238-297,301-317,321-331
+  s_0d39f3a4a4357a::t_6a8da258296a04 5-9
+  s_0d39f3a4a4357a::t_85f39f01bd9635 18
+src/modules/Knead/useCases/pitch/commitPitchEdit.ts
+  s_0d39f3a4a4357a::t_1da9969f794d06 2,64-66
+  s_0d39f3a4a4357a::t_031576632fd81d 39-45,56-58
+.agents/skills/crdt-collaboration/SKILL.md
+  s_0d39f3a4a4357a::t_7b681a42216981 24-45
+  s_0d39f3a4a4357a::t_c0775cec18bbdf 84-96
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "7d3002c0b6b259172553bcfee3ed46e752c826e0",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
