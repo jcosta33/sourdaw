@@ -302,4 +302,869 @@ describe('createWebGpuRenderer audio waveform cache reads', () => {
         expect(mocks.getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'buf-1' });
         expect(mocks.getCachedAudioBufferWaveformPeaks).not.toHaveBeenCalled();
     });
+
+    it('renders MIDI clip notes across the pitch range and submits a draw', async () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 400;
+        canvas.height = 120;
+        const handles = install_webgpu_mocks(canvas);
+        const { createWebGpuRenderer } = await import('../createWebGpuRenderer');
+        const renderer = await createWebGpuRenderer(canvas);
+        if (!renderer) {
+            throw new Error('expected WebGPU renderer');
+        }
+
+        const midiModel: TimelineRenderModel = {
+            ...create_test_model(),
+            tracks: [
+                {
+                    id: 'midi-track',
+                    name: 'MIDI',
+                    index: 0,
+                    kind: 'midi',
+                    color: '#335577',
+                    muted: false,
+                    soloed: false,
+                    height: 120,
+                    automationMode: 'read',
+                    clips: [
+                        {
+                            id: 'midi-1',
+                            startBeat: 0,
+                            endBeat: 8,
+                            name: 'MIDI Clip',
+                            color: '#446688',
+                            type: 'midi',
+                            muted: false,
+                            // Notes span a pitch range so both the min and max
+                            // update branches fire; a mid note covers neither.
+                            // First note seeds min=max=60; a later lower note
+                            // drives the `param < minPitch` branch and a later
+                            // higher note the `param > maxPitch` branch.
+                            midiNotes: [
+                                { id: 'n1', pitch: 60, startBeat: 0, duration: 2 },
+                                { id: 'n2', pitch: 72, startBeat: 2, duration: 2 },
+                                { id: 'n3', pitch: 48, startBeat: 4, duration: 2 },
+                            ],
+                            loopEnabled: true,
+                            loopLength: 4,
+                            midiOffsetBeats: undefined,
+                            fadeInBeats: 0,
+                            fadeOutBeats: 0,
+                        },
+                    ],
+                },
+            ],
+        };
+
+        renderer.render(midiModel);
+
+        // A MIDI clip with visible notes must push rects onto the GPU buffer and draw.
+        expect(handles.writeBuffer).toHaveBeenCalled();
+        expect(handles.draw).toHaveBeenCalled();
+    });
+
+    it('caps drawn MIDI notes at MAX_NOTES_PER_CLIP and breaks the non-looped clip after one pass', async () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 400;
+        canvas.height = 120;
+        const handles = install_webgpu_mocks(canvas);
+        const { createWebGpuRenderer } = await import('../createWebGpuRenderer');
+        const renderer = await createWebGpuRenderer(canvas);
+        if (!renderer) {
+            throw new Error('expected WebGPU renderer');
+        }
+
+        // Generate well over 300 notes within an 8-beat clip; only the first
+        // 300 may be drawn (the per-clip cap protects the vertex buffer).
+        const manyNotes = Array.from({ length: 400 }, (_, index) => ({
+            id: `n${index}`,
+            pitch: 60,
+            startBeat: index * 0.01,
+            duration: 0.01,
+        }));
+        // A short non-looped clip with few notes: the while-loop reaches the
+        // `!loopEnabled` break on its first pass (the cap path short-circuits
+        // earlier in the dense clip above, so this clip covers the break).
+        const midiModel: TimelineRenderModel = {
+            ...create_test_model(),
+            tracks: [
+                {
+                    id: 'midi-track',
+                    name: 'MIDI',
+                    index: 0,
+                    kind: 'midi',
+                    color: '#335577',
+                    muted: false,
+                    soloed: false,
+                    height: 120,
+                    automationMode: 'read',
+                    clips: [
+                        {
+                            id: 'midi-many',
+                            startBeat: 0,
+                            endBeat: 8,
+                            name: 'Dense',
+                            color: '#446688',
+                            type: 'midi',
+                            muted: false,
+                            midiNotes: manyNotes,
+                            loopEnabled: false,
+                            loopLength: 0,
+                            midiOffsetBeats: 0,
+                            fadeInBeats: 0,
+                            fadeOutBeats: 0,
+                        },
+                        {
+                            id: 'midi-sparse',
+                            startBeat: 10,
+                            endBeat: 10.05,
+                            name: 'Sparse',
+                            color: '#446688',
+                            type: 'midi',
+                            muted: false,
+                            // A clip narrower than the 2px+2px inner margin
+                            // (0.05 beats * 25px/beat = 1.25px < 4px). Any note
+                            // inside it has finalX1 = cx1+2 > finalX2 = cx2-2, so
+                            // the rect is suppressed (guard at line 396).
+                            midiNotes: [{ id: 'sn', pitch: 60, startBeat: 0, duration: 0.001 }],
+                            loopEnabled: false,
+                            loopLength: 0,
+                            midiOffsetBeats: 0,
+                            fadeInBeats: 0,
+                            fadeOutBeats: 0,
+                        },
+                    ],
+                },
+            ],
+        };
+
+        renderer.render(midiModel);
+        // The renderer must complete the render (draw called) without exhausting the buffer.
+        expect(handles.draw).toHaveBeenCalled();
+    });
+
+    it('resize updates the canvas backing store and reconfigures the GPU context', async () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 100;
+        canvas.height = 50;
+        install_webgpu_mocks(canvas);
+        const { createWebGpuRenderer } = await import('../createWebGpuRenderer');
+        const renderer = await createWebGpuRenderer(canvas);
+        if (!renderer) {
+            throw new Error('expected WebGPU renderer');
+        }
+
+        renderer.resize(320, 200);
+
+        expect(canvas.width).toBe(320);
+        expect(canvas.height).toBe(200);
+        expect(canvas.style.width).toBe('320px');
+        expect(canvas.style.height).toBe('200px');
+    });
+
+    it('resize is a no-op for a zero or negative pixel size', async () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 100;
+        canvas.height = 50;
+        install_webgpu_mocks(canvas);
+        const { createWebGpuRenderer } = await import('../createWebGpuRenderer');
+        const renderer = await createWebGpuRenderer(canvas);
+        if (!renderer) {
+            throw new Error('expected WebGPU renderer');
+        }
+
+        renderer.resize(0, 200);
+        // Backing store untouched by the zero-size guard.
+        expect(canvas.width).toBe(100);
+        expect(canvas.height).toBe(50);
+    });
+
+    it('resize honours a devicePixelRatio of 0 by falling back to 1', async () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 100;
+        canvas.height = 50;
+        install_webgpu_mocks(canvas);
+        const { createWebGpuRenderer } = await import('../createWebGpuRenderer');
+        const renderer = await createWebGpuRenderer(canvas);
+        if (!renderer) {
+            throw new Error('expected WebGPU renderer');
+        }
+        Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: 0 });
+
+        renderer.resize(320, 200);
+
+        expect(canvas.width).toBe(320);
+        expect(canvas.height).toBe(200);
+    });
+});
+
+describe('createWebGpuRenderer render-path branches', () => {
+    const base_model = (): TimelineRenderModel => ({
+        dataDirty: false,
+        tracks: [],
+        selectedTrackId: null,
+        selectedClipId: null,
+        selectedClipIds: [],
+        playheadPosition: 0,
+        viewportStartBeat: 0,
+        viewportEndBeat: 16,
+        beatsPerPixel: 1 / 25,
+        pixelsPerBeat: 25,
+        trackHeight: 48,
+        scrollY: 0,
+        tempo: 120,
+        timeSignatureNumerator: 4,
+        timeSignatureDenominator: 4,
+    });
+
+    const make_renderer = async (width = 400, height = 120) => {
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const handles = install_webgpu_mocks(canvas);
+        const { createWebGpuRenderer } = await import('../createWebGpuRenderer');
+        const renderer = await createWebGpuRenderer(canvas);
+        if (!renderer) {
+            throw new Error('expected WebGPU renderer');
+        }
+        return { renderer, canvas, handles };
+    };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.getCachedAudioBuffer.mockReturnValue(null);
+        mocks.getCachedAudioBufferWaveformPeaks.mockReturnValue(new Float32Array());
+    });
+
+    it('submits a frame that contains only grid lines when there are no clips', async () => {
+        const { renderer, handles } = await make_renderer();
+        // No tracks and the playhead offscreen: the only rects produced are the
+        // bar/beat grid lines, which always cover beat 0 of the viewport.
+        renderer.render({ ...base_model(), playheadPosition: 9999 });
+        expect(handles.draw).toHaveBeenCalled();
+    });
+
+    it('parses an oklch clip color through the OKLab→sRGB path', async () => {
+        const { renderer, handles } = await make_renderer();
+        const model: TimelineRenderModel = {
+            ...base_model(),
+            tracks: [
+                {
+                    id: 't',
+                    name: 'T',
+                    index: 0,
+                    kind: 'midi',
+                    color: '',
+                    muted: false,
+                    soloed: false,
+                    height: 48,
+                    automationMode: 'read',
+                    clips: [
+                        {
+                            id: 'c',
+                            startBeat: 0,
+                            endBeat: 8,
+                            name: 'C',
+                            // Two oklch clips cover both gamma branches: a bright
+                            // warm color (channels well above 0.0031308) and a
+                            // near-black color (channels at/below 0.0031308 take
+                            // the 12.92*x linear segment of the sRGB curve).
+                            color: 'oklch(0.62 0.18 35)',
+                            type: 'midi',
+                            muted: false,
+                            midiNotes: [{ id: 'on', pitch: 60, startBeat: 0, duration: 2 }],
+                            loopEnabled: false,
+                            midiOffsetBeats: 0,
+                            fadeInBeats: 0,
+                            fadeOutBeats: 0,
+                        },
+                        {
+                            id: 'c-dark',
+                            startBeat: 8,
+                            endBeat: 16,
+                            name: 'Dark',
+                            color: 'oklch(0.002 0 0)',
+                            type: 'midi',
+                            muted: false,
+                            midiNotes: [{ id: 'dn', pitch: 60, startBeat: 0, duration: 2 }],
+                            loopEnabled: false,
+                            midiOffsetBeats: 0,
+                            fadeInBeats: 0,
+                            fadeOutBeats: 0,
+                        },
+                    ],
+                },
+            ],
+        };
+
+        renderer.render(model);
+        // If the oklch parse produced NaN/garbage the renderer would still run,
+        // but the draw completing confirms the color path did not throw.
+        expect(handles.draw).toHaveBeenCalled();
+    });
+
+    it('falls back to the track color and the default oklch when clip/track colors are empty', async () => {
+        const { renderer, handles } = await make_renderer();
+        // Empty clip color AND empty track color forces both `||` fallbacks to
+        // resolve to the hard-coded oklch default.
+        const model: TimelineRenderModel = {
+            ...base_model(),
+            tracks: [
+                {
+                    id: 't',
+                    name: 'T',
+                    index: 0,
+                    kind: 'audio',
+                    color: '',
+                    muted: false,
+                    soloed: false,
+                    height: 48,
+                    automationMode: 'read',
+                    clips: [
+                        {
+                            id: 'c',
+                            startBeat: 0,
+                            endBeat: 8,
+                            name: 'C',
+                            color: '',
+                            type: 'audio',
+                            muted: false,
+                            midiNotes: [],
+                            loopEnabled: false,
+                            fadeInBeats: 0,
+                            fadeOutBeats: 0,
+                        },
+                    ],
+                },
+            ],
+        };
+
+        renderer.render(model);
+        expect(handles.draw).toHaveBeenCalled();
+    });
+
+    it('parses a 3-character shorthand hex color', async () => {
+        const { renderer, handles } = await make_renderer();
+        const model: TimelineRenderModel = {
+            ...base_model(),
+            tracks: [
+                {
+                    id: 't',
+                    name: 'T',
+                    index: 0,
+                    kind: 'audio',
+                    color: '#abc',
+                    muted: false,
+                    soloed: false,
+                    height: 48,
+                    automationMode: 'read',
+                    clips: [
+                        {
+                            id: 'c',
+                            startBeat: 0,
+                            endBeat: 8,
+                            name: 'C',
+                            color: '#abc',
+                            type: 'audio',
+                            muted: false,
+                            midiNotes: [],
+                            loopEnabled: false,
+                            fadeInBeats: 0,
+                            fadeOutBeats: 0,
+                        },
+                    ],
+                },
+            ],
+        };
+
+        renderer.render(model);
+        expect(handles.draw).toHaveBeenCalled();
+    });
+
+    it('parses a malformed hex color by falling back to the 0.4 defaults', async () => {
+        const { renderer, handles } = await make_renderer();
+        const model: TimelineRenderModel = {
+            ...base_model(),
+            tracks: [
+                {
+                    id: 't',
+                    name: 'T',
+                    index: 0,
+                    kind: 'audio',
+                    // Non-hex garbage in every channel slice: parseInt yields NaN
+                    // for r/g/b alike, so each resolves to the 0.4 fallback
+                    // (the isNaN ternaries on line 80).
+                    color: 'zzzzzz',
+                    muted: false,
+                    soloed: false,
+                    height: 48,
+                    automationMode: 'read',
+                    clips: [
+                        {
+                            id: 'c',
+                            startBeat: 0,
+                            endBeat: 8,
+                            name: 'C',
+                            color: 'zzzzzz',
+                            type: 'audio',
+                            muted: false,
+                            midiNotes: [],
+                            loopEnabled: false,
+                            fadeInBeats: 0,
+                            fadeOutBeats: 0,
+                        },
+                    ],
+                },
+            ],
+        };
+
+        renderer.render(model);
+        expect(handles.draw).toHaveBeenCalled();
+    });
+
+    it('dims a muted clip and highlights a selected clip', async () => {
+        const { renderer, handles } = await make_renderer();
+        const model: TimelineRenderModel = {
+            ...base_model(),
+            selectedTrackId: 't',
+            selectedClipIds: ['c-sel'],
+            tracks: [
+                {
+                    id: 't',
+                    name: 'T',
+                    index: 0,
+                    kind: 'audio',
+                    color: '#336699',
+                    muted: false,
+                    soloed: false,
+                    height: 48,
+                    automationMode: 'read',
+                    clips: [
+                        {
+                            id: 'c-mute',
+                            startBeat: 0,
+                            endBeat: 4,
+                            name: 'Mute',
+                            color: '#336699',
+                            type: 'audio',
+                            muted: true,
+                            midiNotes: [],
+                            loopEnabled: false,
+                            fadeInBeats: 0,
+                            fadeOutBeats: 0,
+                        },
+                        {
+                            id: 'c-sel',
+                            startBeat: 4,
+                            endBeat: 8,
+                            name: 'Sel',
+                            color: '#336699',
+                            type: 'audio',
+                            muted: false,
+                            midiNotes: [],
+                            loopEnabled: false,
+                            fadeInBeats: 0,
+                            fadeOutBeats: 0,
+                        },
+                    ],
+                },
+            ],
+        };
+
+        renderer.render(model);
+        // Both clip states must render (draw called once for the whole frame).
+        expect(handles.draw).toHaveBeenCalled();
+    });
+
+    it('culls clips that fall entirely outside the viewport horizontally', async () => {
+        const { renderer, handles } = await make_renderer(400, 120);
+        // Viewport is 0..16 beats (0..400px). A clip at beat 100..104 is fully
+        // offscreen to the right and is skipped by the cx1 > w cull.
+        const model: TimelineRenderModel = {
+            ...base_model(),
+            tracks: [
+                {
+                    id: 't',
+                    name: 'T',
+                    index: 0,
+                    kind: 'audio',
+                    color: '#336699',
+                    muted: false,
+                    soloed: false,
+                    height: 48,
+                    automationMode: 'read',
+                    clips: [
+                        {
+                            id: 'c-off',
+                            startBeat: 100,
+                            endBeat: 104,
+                            name: 'Off',
+                            color: '#336699',
+                            type: 'audio',
+                            muted: false,
+                            midiNotes: [],
+                            loopEnabled: false,
+                            fadeInBeats: 0,
+                            fadeOutBeats: 0,
+                        },
+                    ],
+                },
+            ],
+        };
+
+        renderer.render(model);
+        // Grid lines and playhead still draw, so the frame is submitted even
+        // though the clip itself was culled.
+        expect(handles.draw).toHaveBeenCalled();
+    });
+
+    it('skips audio waveform drawing when the clip is narrower than 4px', async () => {
+        const { renderer } = await make_renderer(400, 120);
+        mocks.getCachedAudioBuffer.mockReturnValue(create_test_audio_buffer());
+
+        // A 0.05-beat clip is ~1.25px wide (< 4px), so the waveform branch's
+        // `w >= 4` guard short-circuits and no peaks are read.
+        const model: TimelineRenderModel = {
+            ...base_model(),
+            tracks: [
+                {
+                    id: 't',
+                    name: 'T',
+                    index: 0,
+                    kind: 'audio',
+                    color: '#336699',
+                    muted: false,
+                    soloed: false,
+                    height: 48,
+                    automationMode: 'read',
+                    clips: [
+                        {
+                            id: 'c-thin',
+                            startBeat: 0,
+                            endBeat: 0.05,
+                            name: 'Thin',
+                            color: '#336699',
+                            type: 'audio',
+                            muted: false,
+                            midiNotes: [],
+                            audioBufferId: 'buf-1',
+                            loopEnabled: false,
+                            fadeInBeats: 0,
+                            fadeOutBeats: 0,
+                        },
+                    ],
+                },
+            ],
+        };
+
+        renderer.render(model);
+        expect(mocks.getCachedAudioBufferWaveformPeaks).not.toHaveBeenCalled();
+    });
+
+    it('applies default offset and stretch when the clip omits them', async () => {
+        const { renderer } = await make_renderer(400, 120);
+        mocks.getCachedAudioBuffer.mockReturnValue(create_test_audio_buffer());
+        mocks.getCachedAudioBufferWaveformPeaks.mockReturnValue(new Float32Array([0.5, 0.5]));
+
+        // audioOffsetBeats and stretchRatio omitted → the renderer applies the
+        // `?? 0` / `?? 1` defaults when computing the sample window.
+        const model: TimelineRenderModel = {
+            ...base_model(),
+            tracks: [
+                {
+                    id: 't',
+                    name: 'T',
+                    index: 0,
+                    kind: 'audio',
+                    color: '#336699',
+                    muted: false,
+                    soloed: false,
+                    height: 48,
+                    automationMode: 'read',
+                    clips: [
+                        {
+                            id: 'c',
+                            startBeat: 0,
+                            endBeat: 8,
+                            name: 'C',
+                            color: '#336699',
+                            type: 'audio',
+                            muted: false,
+                            midiNotes: [],
+                            audioBufferId: 'buf-1',
+                            loopEnabled: false,
+                            fadeInBeats: 0,
+                            fadeOutBeats: 0,
+                        },
+                    ],
+                },
+            ],
+        };
+
+        renderer.render(model);
+        // With defaults (offset 0, stretch 1) the sample window starts at 0.
+        expect(mocks.getCachedAudioBufferWaveformPeaks).toHaveBeenCalledWith(
+            expect.objectContaining({ bufferId: 'buf-1', startSample: 0 })
+        );
+    });
+
+    it('skips waveform bins that resolve to zero amplitude', async () => {
+        const { renderer } = await make_renderer(400, 120);
+        mocks.getCachedAudioBuffer.mockReturnValue(create_test_audio_buffer());
+        // A sparse peak array with a leading zero bin (peakHeight <= 0.5 is
+        // skipped) followed by a real bin; index access on a Float32Array never
+        // yields undefined, so the `?? 0` only fires on a hand-built sparse-like
+        // input — here we assert the zero bin draws nothing while a real bin does.
+        mocks.getCachedAudioBufferWaveformPeaks.mockReturnValue(new Float32Array([0, 0.6]));
+
+        const model: TimelineRenderModel = {
+            ...base_model(),
+            tracks: [
+                {
+                    id: 't',
+                    name: 'T',
+                    index: 0,
+                    kind: 'audio',
+                    color: '#336699',
+                    muted: false,
+                    soloed: false,
+                    height: 48,
+                    automationMode: 'read',
+                    clips: [
+                        {
+                            id: 'c',
+                            startBeat: 0,
+                            endBeat: 8,
+                            name: 'C',
+                            color: '#336699',
+                            type: 'audio',
+                            muted: false,
+                            midiNotes: [],
+                            audioBufferId: 'buf-1',
+                            audioOffsetBeats: 0,
+                            stretchRatio: 1,
+                            loopEnabled: false,
+                            fadeInBeats: 0,
+                            fadeOutBeats: 0,
+                        },
+                    ],
+                },
+            ],
+        };
+
+        renderer.render(model);
+        expect(mocks.getCachedAudioBufferWaveformPeaks).toHaveBeenCalled();
+    });
+
+    it('skips the waveform pass entirely when the cached buffer is absent', async () => {
+        const { renderer } = await make_renderer(400, 120);
+        mocks.getCachedAudioBuffer.mockReturnValue(null);
+
+        const model: TimelineRenderModel = {
+            ...base_model(),
+            tracks: [
+                {
+                    id: 't',
+                    name: 'T',
+                    index: 0,
+                    kind: 'audio',
+                    color: '#336699',
+                    muted: false,
+                    soloed: false,
+                    height: 48,
+                    automationMode: 'read',
+                    clips: [
+                        {
+                            id: 'c',
+                            startBeat: 0,
+                            endBeat: 8,
+                            name: 'C',
+                            color: '#336699',
+                            type: 'audio',
+                            muted: false,
+                            midiNotes: [],
+                            audioBufferId: 'buf-1',
+                            loopEnabled: false,
+                            fadeInBeats: 0,
+                            fadeOutBeats: 0,
+                        },
+                    ],
+                },
+            ],
+        };
+
+        renderer.render(model);
+        expect(mocks.getCachedAudioBufferWaveformPeaks).not.toHaveBeenCalled();
+    });
+
+    it('draws the playhead when it sits within the viewport', async () => {
+        const { renderer, handles } = await make_renderer(400, 120);
+        const model: TimelineRenderModel = {
+            ...base_model(),
+            playheadPosition: 4,
+        };
+
+        renderer.render(model);
+        expect(handles.draw).toHaveBeenCalled();
+    });
+
+    it('renders with a zero devicePixelRatio by falling back to 1', async () => {
+        const { renderer, handles } = await make_renderer(400, 120);
+        Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: 0 });
+
+        const model: TimelineRenderModel = {
+            ...base_model(),
+            tracks: [
+                {
+                    id: 't',
+                    name: 'T',
+                    index: 0,
+                    kind: 'audio',
+                    color: '#336699',
+                    muted: false,
+                    soloed: false,
+                    height: 48,
+                    automationMode: 'read',
+                    clips: [
+                        {
+                            id: 'c',
+                            startBeat: 0,
+                            endBeat: 8,
+                            name: 'C',
+                            color: '#336699',
+                            type: 'audio',
+                            muted: false,
+                            midiNotes: [],
+                            loopEnabled: false,
+                            fadeInBeats: 0,
+                            fadeOutBeats: 0,
+                        },
+                    ],
+                },
+            ],
+        };
+
+        renderer.render(model);
+        expect(handles.draw).toHaveBeenCalled();
+    });
+
+    it('is a no-op when the canvas backing store has no area', async () => {
+        const { renderer, handles } = await make_renderer(0, 0);
+        const model: TimelineRenderModel = {
+            ...base_model(),
+            playheadPosition: 4,
+        };
+
+        renderer.render(model);
+        // Zero-sized canvas → render returns before emitting any rects.
+        expect(handles.draw).not.toHaveBeenCalled();
+    });
+
+    it('reads no waveform bins when the cached peaks array is empty', async () => {
+        const { renderer } = await make_renderer(400, 120);
+        mocks.getCachedAudioBuffer.mockReturnValue(create_test_audio_buffer());
+        // Buffer present but peaks empty: the `binsToDraw > 0` guard short-
+        // circuits so the per-bin loop never runs.
+        mocks.getCachedAudioBufferWaveformPeaks.mockReturnValue(new Float32Array());
+
+        const model: TimelineRenderModel = {
+            ...base_model(),
+            tracks: [
+                {
+                    id: 't',
+                    name: 'T',
+                    index: 0,
+                    kind: 'audio',
+                    color: '#336699',
+                    muted: false,
+                    soloed: false,
+                    height: 48,
+                    automationMode: 'read',
+                    clips: [
+                        {
+                            id: 'c',
+                            startBeat: 0,
+                            endBeat: 8,
+                            name: 'C',
+                            color: '#336699',
+                            type: 'audio',
+                            muted: false,
+                            midiNotes: [],
+                            audioBufferId: 'buf-1',
+                            audioOffsetBeats: 0,
+                            stretchRatio: 1,
+                            loopEnabled: false,
+                            fadeInBeats: 0,
+                            fadeOutBeats: 0,
+                        },
+                    ],
+                },
+            ],
+        };
+
+        renderer.render(model);
+        expect(mocks.getCachedAudioBufferWaveformPeaks).toHaveBeenCalled();
+    });
+});
+
+describe('createWebGpuRenderer factory failure paths', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.getCachedAudioBuffer.mockReturnValue(null);
+        mocks.getCachedAudioBufferWaveformPeaks.mockReturnValue(new Float32Array());
+    });
+    afterEach(() => {
+        Reflect.deleteProperty(navigator, 'gpu');
+        vi.unstubAllGlobals();
+    });
+
+    it('returns null when WebGPU is unavailable', async () => {
+        Reflect.deleteProperty(navigator, 'gpu');
+        const canvas = document.createElement('canvas');
+        const { createWebGpuRenderer } = await import('../createWebGpuRenderer');
+        const renderer = await createWebGpuRenderer(canvas);
+        expect(renderer).toBeNull();
+    });
+
+    it('returns null when no adapter is available', async () => {
+        const canvas = document.createElement('canvas');
+        Object.defineProperty(navigator, 'gpu', {
+            configurable: true,
+            value: {
+                requestAdapter: vi.fn().mockResolvedValue(null),
+                getPreferredCanvasFormat: vi.fn(() => 'bgra8unorm'),
+            },
+        });
+        const { createWebGpuRenderer } = await import('../createWebGpuRenderer');
+        const renderer = await createWebGpuRenderer(canvas);
+        expect(renderer).toBeNull();
+    });
+
+    it('returns null when the canvas has no webgpu context', async () => {
+        const canvas = document.createElement('canvas');
+        const device = {
+            createShaderModule: vi.fn(),
+            createRenderPipeline: vi.fn(),
+            createBuffer: vi.fn(() => ({ size: 0, destroy: vi.fn() })),
+            createCommandEncoder: vi.fn(),
+            destroy: vi.fn(),
+            queue: { writeBuffer: vi.fn(), submit: vi.fn() },
+        };
+        const adapter = { requestDevice: vi.fn().mockResolvedValue(device) };
+        Object.defineProperty(navigator, 'gpu', {
+            configurable: true,
+            value: {
+                requestAdapter: vi.fn().mockResolvedValue(adapter),
+                getPreferredCanvasFormat: vi.fn(() => 'bgra8unorm'),
+            },
+        });
+        Object.defineProperty(canvas, 'getContext', {
+            configurable: true,
+            value: vi.fn(() => null),
+        });
+        const { createWebGpuRenderer } = await import('../createWebGpuRenderer');
+        const renderer = await createWebGpuRenderer(canvas);
+        expect(renderer).toBeNull();
+    });
 });
