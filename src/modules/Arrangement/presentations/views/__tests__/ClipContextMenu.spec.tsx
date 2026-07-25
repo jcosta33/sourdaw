@@ -73,6 +73,14 @@ vi.mock('../../../useCases/clipEditing/renameClip', () => ({
     renameClip: vi.fn(),
 }));
 
+vi.mock('../../../useCases/clipEditing/muteClip', () => ({
+    muteClip: vi.fn(),
+}));
+
+vi.mock('../../../useCases/clipEditing/lockClip', () => ({
+    lockClip: vi.fn(),
+}));
+
 vi.mock('#/modules/Command/useCases', () => ({
     pushUndoEntry: vi.fn(),
 }));
@@ -269,5 +277,102 @@ describe('ClipContextMenu', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Rename Clip' }));
         fireEvent.click(screen.getByText('Cancel'));
         expect(renameClip).not.toHaveBeenCalled();
+    });
+
+    it('shows Unmute/Lock toggles and dispatches the inverse state for a muted+locked clip', async () => {
+        // Add a muted, locked audio clip to the mocked track store via a fresh
+        // render with a controllable store snapshot.
+        const { trackStore } = await import('../../../stores/trackStore');
+        const previous = trackStore.value;
+        (trackStore as unknown as { value: unknown }).value = {
+            tracks: [
+                {
+                    id: 't1',
+                    clips: [
+                        {
+                            id: 'clipM',
+                            name: 'Muted',
+                            type: 'audio',
+                            startBeat: 0,
+                            endBeat: 4,
+                            muted: true,
+                            locked: true,
+                            audioBufferId: 'bufM',
+                        },
+                    ],
+                },
+            ],
+        };
+        try {
+            render(<ClipContextMenu x={0} y={0} clipId="clipM" splitBeat={4} onClose={mockOnClose} />);
+            // Muted+locked → the labels flip to the inverse action.
+            expect(screen.getByRole('button', { name: 'Unmute Clip' })).toBeInTheDocument();
+            expect(screen.getByRole('button', { name: 'Unlock Clip' })).toBeInTheDocument();
+
+            const { muteClip } = await import('../../../useCases/clipEditing/muteClip');
+            const { lockClip } = await import('../../../useCases/clipEditing/lockClip');
+            fireEvent.click(screen.getByRole('button', { name: 'Unmute Clip' }));
+            // isMuted true → toggles to false.
+            expect(muteClip).toHaveBeenCalledWith('clipM', false);
+            fireEvent.click(screen.getByRole('button', { name: 'Unlock Clip' }));
+            expect(lockClip).toHaveBeenCalledWith('clipM', false);
+        } finally {
+            (trackStore as unknown as { value: unknown }).value = previous;
+        }
+    });
+
+    it('deletes only the targeted clip when a single clip is selected', () => {
+        render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
+        fireEvent.click(screen.getByRole('button', { name: /^Delete/ }));
+        // Single selection → the else branch removes just the one clip.
+        expect(removeClip).toHaveBeenCalledTimes(1);
+        expect(removeClip).toHaveBeenCalledWith('clip1');
+    });
+
+    it('duplicates only the targeted clip when a single clip is selected', () => {
+        render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
+        // "Duplicate to Next Bar" also renders in single-select, so target the
+        // main Duplicate button by its exact accessible name.
+        fireEvent.click(screen.getByRole('button', { name: 'Duplicate' }));
+        expect(duplicateClip).toHaveBeenCalledTimes(1);
+        expect(duplicateClip).toHaveBeenCalledWith('clip1');
+    });
+
+    it('skips tempo and key detection for a clip without an audioBufferId', () => {
+        // clip1 has no audioBufferId: both Detect Tempo and Detect Key must
+        // short-circuit and never call their analysis use cases.
+        render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Detect Tempo' }));
+        expect(detectTempo).not.toHaveBeenCalled();
+        fireEvent.click(screen.getByRole('button', { name: 'Detect Key' }));
+        expect(detectKey).not.toHaveBeenCalled();
+    });
+
+    it('shows the Open Inline Editor toggle for a midi clip not yet editing inline', async () => {
+        const { trackStore } = await import('../../../stores/trackStore');
+        const previous = trackStore.value;
+        (trackStore as unknown as { value: unknown }).value = {
+            tracks: [
+                {
+                    id: 't1',
+                    clips: [{ id: 'midiPlain', name: 'Plain MIDI', type: 'midi', startBeat: 0, endBeat: 4 }],
+                },
+            ],
+        };
+        try {
+            render(<ClipContextMenu x={0} y={0} clipId="midiPlain" splitBeat={4} onClose={mockOnClose} />);
+            expect(screen.getByRole('button', { name: 'Open Inline Editor' })).toBeInTheDocument();
+        } finally {
+            (trackStore as unknown as { value: unknown }).value = previous;
+        }
+    });
+
+    it('initialises the rename field to an empty string when the clip cannot be found', () => {
+        // A clipId that matches no clip leaves `clip` undefined, so the
+        // `clip?.name ?? ''` fallback seeds an empty rename input.
+        render(<ClipContextMenu x={0} y={0} clipId="missing" splitBeat={4} onClose={mockOnClose} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Rename Clip' }));
+        const input = screen.getByTestId('inline-editor').querySelector('input') as HTMLInputElement;
+        expect(input.value).toBe('');
     });
 });
