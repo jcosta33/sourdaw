@@ -6,12 +6,29 @@ import { DEFAULT_PATCH } from '../../../models/FermenterPatch';
 import { FermenterPanel, randomizePatch } from '../FermenterPanel';
 
 const presetBrowserMock = vi.hoisted(() =>
-    vi.fn(({ userPatches }: { userPatches: Array<{ id: string; name: string; patch?: unknown }> }) => (
-        <div data-testid="preset-browser">{JSON.stringify(userPatches)}</div>
-    ))
+    vi.fn(
+        ({
+            userPatches,
+            onLoadPreset,
+        }: {
+            userPatches: Array<{ id: string; name: string; patch?: unknown }>;
+            onLoadPreset: (presetId: string) => void;
+        }) => (
+            <div data-testid="preset-browser">
+                {JSON.stringify(userPatches)}
+                <button type="button" onClick={() => onLoadPreset('fermenter-init')}>
+                    Load Init
+                </button>
+                <button type="button" onClick={() => onLoadPreset('nonexistent-preset')}>
+                    Load Missing
+                </button>
+            </div>
+        )
+    )
 );
 const midiLearnRotaryKnobMock = vi.hoisted(() => vi.fn(() => <div data-testid="midi-learn-knob" />));
 const loadUserPatchesMock = vi.hoisted(() => vi.fn());
+const loadFermenterPatchWithAudioMock = vi.hoisted(() => vi.fn());
 const storeState = vi.hoisted<{ value: unknown }>(() => ({ value: null }));
 
 vi.mock('#/infra/store/useStoreSelector', () => ({
@@ -31,6 +48,10 @@ vi.mock('../../../useCases/user-patches/load-user-patches', async (importOrigina
     loadUserPatchesMock.mockImplementation(actual.loadUserPatches);
     return { loadUserPatches: loadUserPatchesMock };
 });
+
+vi.mock('../../../useCases/fermenterParamBridge/loadFermenterPatchWithAudio', () => ({
+    loadFermenterPatchWithAudio: loadFermenterPatchWithAudioMock,
+}));
 
 function makeState(overrides: Record<string, unknown> = {}) {
     return {
@@ -257,6 +278,60 @@ describe('FermenterPanel', () => {
             fireEvent.keyDown(nameInput, { key: 'Escape' });
 
             expect(screen.queryByPlaceholderText('Name…')).not.toBeInTheDocument();
+        });
+    });
+
+    describe('preset loading', () => {
+        it('loads a factory preset by id and applies its parameterValues to the device', () => {
+            renderPanel();
+            fireEvent.click(screen.getByText('Load Init'));
+
+            // loadFermenterPatchWithAudio receives (deviceId, patch). The init
+            // preset's name ("Blank Dough") is applied to the loaded patch.
+            const initCall = loadFermenterPatchWithAudioMock.mock.calls.find(
+                ([, patch]) => patch?.name === 'Blank Dough'
+            );
+            expect(initCall).toBeTruthy();
+            expect(initCall![0]).toBe('fermenter-1');
+        });
+
+        it('returns without applying when the preset id does not exist', () => {
+            renderPanel();
+            // Clear any calls from initial render / other interactions
+            loadFermenterPatchWithAudioMock.mockClear();
+            fireEvent.click(screen.getByText('Load Missing'));
+
+            // loadPresetPatch returns null → loadFermenterPatchWithAudio not called.
+            expect(loadFermenterPatchWithAudioMock).not.toHaveBeenCalled();
+        });
+
+        it('prefers a user patch over a factory preset with the same id', async () => {
+            // Store a user patch with id 'fermenter-init' so loadPresetPatch
+            // finds it in userPatches before checking FERMENTER_PRESETS.
+            window.localStorage.setItem(
+                'fermenter-user-patches',
+                JSON.stringify([
+                    {
+                        id: 'fermenter-init',
+                        name: 'My Custom Init',
+                        patch: { oscLevel: 0.3 },
+                    },
+                ])
+            );
+
+            renderPanel();
+            // Wait for the userPatches query to resolve before loading the preset.
+            await waitFor(() => {
+                expect(screen.getByTestId('preset-browser').textContent).toContain('My Custom Init');
+            });
+
+            fireEvent.click(screen.getByText('Load Init'));
+
+            const call = loadFermenterPatchWithAudioMock.mock.calls.find(
+                ([, patch]) => patch?.name === 'My Custom Init'
+            );
+            expect(call).toBeTruthy();
+            expect(call![1].oscLevel).toBe(0.3);
         });
     });
 });
