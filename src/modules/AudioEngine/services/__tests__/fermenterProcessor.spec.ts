@@ -453,23 +453,9 @@ describe('FermenterProcessor message handling', () => {
             expect(output[0]![0]).toBeCloseTo(0.1);
         });
 
-        it('emits peak/scope telemetry when the 2048-frame cadence lands in the block', async () => {
-            const proc = await loadProcessor();
-            send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
-            resetRecording();
-
-            // currentFrame stubbed at 0 → 0 % 2048 == 0 < 128 ⇒ telemetry fires.
-            const output = makeChannels(2, FRAMES);
-            proc.process([], [output]);
-
-            const telemetry = proc.port.postMessage.mock.calls
-                .map((c) => c[0] as { type?: string })
-                .find((m) => m.type === 'telemetry');
-            expect(telemetry).toBeDefined();
-            // Left ramp peaks at 0.1*128, right at 0.2*128.
-            expect((telemetry as { peakL: number }).peakL).toBeCloseTo(0.1 * FRAMES, 6);
-            expect((telemetry as { peakR: number }).peakR).toBeCloseTo(0.2 * FRAMES, 6);
-        });
+        // Telemetry publish (peaks + scope waveform into the SAB slot, audit RT-3)
+        // is covered by fermenterProcessorTelemetry.spec — the steady-state branch
+        // sends no port message at all, so asserting one here would be vacuous.
 
         it('faults and posts an error when instance.process throws, then stops processing', async () => {
             const proc = await loadProcessor();

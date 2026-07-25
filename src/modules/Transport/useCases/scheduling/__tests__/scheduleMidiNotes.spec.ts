@@ -2,7 +2,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { type Clip, trackStore } from '#/modules/Arrangement/stores';
 import { resolveClipsWithComping, getSynthParamsForTrack } from '#/modules/Arrangement/useCases';
-import { applyNoteExpression, ensureTrackStrip } from '#/modules/AudioEngine/useCases';
+import {
+    applyNoteExpression,
+    ensureTrackStrip,
+    getDrumKitByIndex,
+    scheduleFaustNote,
+} from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationValueAtBeat } from '#/modules/Automation/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
@@ -13,7 +18,7 @@ import {
     shouldPlayMidiEvent,
     transposeForChordTrack,
 } from '#/modules/MIDI/useCases';
-import { scheduleNote } from '#/modules/Synth/useCases';
+import { getDrumKitDefByIndex, scheduleDrumKitNote, scheduleKitNote, scheduleNote } from '#/modules/Synth/useCases';
 import { processYeastMidi } from '#/modules/Yeast/useCases';
 
 import { defaultTransportState } from '../../../models/TransportState';
@@ -935,6 +940,433 @@ describe('scheduleMidiNotes', () => {
                 expression: { pressure: undefined, slide: undefined, pitchBend: undefined },
                 sampleFrame: expect.any(Number),
             });
+        });
+    });
+
+    describe('per-track dispatch decision (§154.3)', () => {
+        it('routes a drum-kit-def track through scheduleDrumKitNote', async () => {
+            vi.mocked(getDrumKitDefByIndex).mockReturnValue({ id: 'kit-1', voices: [] } as never);
+            const track = midiTrack({
+                clips: [midiClip()],
+                devices: [{ id: 'dk', type: 'builtin-drum-kit', parameterValues: { kit: 0 } }],
+            });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 36, startBeat: 0, duration: 0.25, velocity: 110 }] },
+            };
+
+            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(scheduleDrumKitNote).toHaveBeenCalledTimes(1);
+            expect(scheduleKitNote).not.toHaveBeenCalled();
+            expect(scheduleNote).not.toHaveBeenCalled();
+        });
+
+        it('routes a resolved-drum-kit track through scheduleKitNote with the note duration', async () => {
+            // clearAllMocks() in beforeEach resets call counts but NOT the
+            // mockReturnValue the drum-kit-def test set on getDrumKitDefByIndex;
+            // that residual would make resolveDrumKitDef truthy and steal the
+            // dispatch into the scheduleDrumKitNote arm. Reset both resolvers so
+            // the kit-def arm is null and resolveDrumKit wins.
+            vi.mocked(getDrumKitDefByIndex).mockReturnValue(null);
+            vi.mocked(getDrumKitByIndex).mockReturnValue({
+                id: 'kit-a',
+                voices: [{ name: 'kick', pitchRange: [35, 42], params: {} as never }],
+            } as never);
+            const track = midiTrack({
+                clips: [midiClip()],
+                devices: [{ id: 'dk', type: 'builtin-drum-kit', parameterValues: { kit: 0 } }],
+            });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 38, startBeat: 0, duration: 0.5, velocity: 95 }] },
+            };
+
+            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(scheduleKitNote).toHaveBeenCalledTimes(1);
+            // The resolved kit (not the kit-def) carries the note duration, so the
+            // call reaches scheduleKitNote rather than the one-shot drumKitDef path.
+            expect(scheduleDrumKitNote).not.toHaveBeenCalled();
+            expect(scheduleNote).not.toHaveBeenCalled();
+        });
+
+        it('routes a faust-device track through scheduleFaustNote', async () => {
+            const track = midiTrack({
+                clips: [midiClip()],
+                devices: [{ id: 'f1', type: 'faust-synth' }],
+            });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 60, startBeat: 0, duration: 0.5, velocity: 80 }] },
+            };
+
+            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(scheduleFaustNote).toHaveBeenCalledTimes(1);
+            // (trackId, deviceId, pitch, time, duration, velocity, noteGain)
+            expect(scheduleFaustNote).toHaveBeenCalledWith(
+                'track-1',
+                'f1',
+                60,
+                expect.any(Number),
+                expect.any(Number),
+                80,
+                1
+            );
+            expect(scheduleNote).not.toHaveBeenCalled();
+        });
+
+        it('routes a grand-boule worklet synth and normalises velocity by /127', async () => {
+            const noteOn = vi.fn();
+            const noteOff = vi.fn();
+            vi.mocked(ensureTrackStrip).mockImplementation(
+                () =>
+                    ({
+                        gainNode: {},
+                        preFaderTap: { connect: vi.fn() },
+                        deviceNodes: [
+                            {
+                                type: 'grand-boule',
+                                deviceId: 'gb-1',
+                                grandBouleControls: { noteOn, noteOff, noteExpression: vi.fn() },
+                            },
+                        ],
+                    }) as never
+            );
+            const track = midiTrack({
+                clips: [midiClip()],
+                devices: [{ id: 'gb-1', type: 'grand-boule' }],
+            });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 60, startBeat: 0, duration: 0.5, velocity: 127 }] },
+            };
+
+            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+
+            // grand-boule velocityTransform divides by 127 → 1.0.
+            expect(noteOn).toHaveBeenCalledWith(60, 1, expect.any(Number), 0);
+            expect(noteOff).toHaveBeenCalled();
+        });
+
+        it('routes through the default synth (scheduleNote) with MPE when a note carries expression', async () => {
+            const track = midiTrack({ clips: [midiClip()] });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: {
+                    'clip-1': [{ id: 'n1', pitch: 60, startBeat: 0, duration: 0.5, velocity: 90, pressure: 64 }],
+                },
+            };
+
+            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(scheduleNote).toHaveBeenCalledTimes(1);
+            // 8th arg is the mpe object.
+            expect(vi.mocked(scheduleNote).mock.calls[0]![7]).toEqual({
+                pressure: 64,
+                slide: undefined,
+                pitchBend: undefined,
+            });
+        });
+
+        it('passes undefined MPE to the default synth for an unexpressed note', async () => {
+            const track = midiTrack({ clips: [midiClip()] });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 60, startBeat: 0, duration: 0.5, velocity: 90 }] },
+            };
+
+            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(vi.mocked(scheduleNote).mock.calls[0]![7]).toBeUndefined();
+        });
+    });
+
+    describe('note-window filtering', () => {
+        it('skips a note whose start beat is before lastScheduledBeat', async () => {
+            const track = midiTrack({ clips: [midiClip()] });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 60, startBeat: 1, duration: 0.25, velocity: 100 }] },
+            };
+
+            // lastScheduledBeat=5 ⇒ note at beat 1 (<=5) is dropped.
+            await scheduleMidiNotes(0, 4, 0, 5, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(scheduleNote).not.toHaveBeenCalled();
+        });
+
+        it('skips a note whose start beat is outside the [fromBeat, toBeat) window', async () => {
+            const track = midiTrack({ clips: [midiClip({ startBeat: 8, endBeat: 12 })] });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            // Note lands at beat 9; window is 0..4 ⇒ outside.
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 60, startBeat: 1, duration: 0.25, velocity: 100 }] },
+            };
+
+            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(scheduleNote).not.toHaveBeenCalled();
+        });
+
+        it('skips a clip whose loopLen collapses to <= 0 (startBeat === endBeat)', async () => {
+            const track = midiTrack({ clips: [midiClip({ startBeat: 4, endBeat: 4 })] });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 60, startBeat: 0, duration: 0.25, velocity: 100 }] },
+            };
+
+            await scheduleMidiNotes(0, 8, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(scheduleNote).not.toHaveBeenCalled();
+        });
+
+        it('skips a clip with no notes in the midi store', async () => {
+            const track = midiTrack({ clips: [midiClip()] });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = { notesByClipId: {} };
+
+            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(scheduleNote).not.toHaveBeenCalled();
+        });
+
+        it('skips a non-midi clip and a muted clip', async () => {
+            const track = midiTrack({
+                clips: [
+                    midiClip({ id: 'audio-clip', type: 'audio', muted: false }),
+                    midiClip({ id: 'muted-clip', muted: true }),
+                ],
+            });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: {
+                    'audio-clip': [{ id: 'n1', pitch: 60, startBeat: 0, duration: 0.25, velocity: 100 }],
+                    'muted-clip': [{ id: 'n2', pitch: 61, startBeat: 0, duration: 0.25, velocity: 100 }],
+                },
+            };
+
+            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(scheduleNote).not.toHaveBeenCalled();
+        });
+
+        it('skips a non-midi track kind and a muted track', async () => {
+            (trackStore as { value: unknown }).value = {
+                tracks: [midiTrack({ id: 'audio-trk', kind: 'audio' }), midiTrack({ id: 'muted-trk', muted: true })],
+            };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: {},
+            };
+
+            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(scheduleNote).not.toHaveBeenCalled();
+        });
+
+        it('drops a note beyond the loop length on a non-looping iteration', async () => {
+            const track = midiTrack({ clips: [midiClip({ startBeat: 0, endBeat: 2 })] });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            // Note authored at startBeat 3 but loopLen=2 → 3 - 0 >= 2 ⇒ dropped.
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 60, startBeat: 3, duration: 0.25, velocity: 100 }] },
+            };
+
+            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(scheduleNote).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('toaster child pad fallback (no canonical route)', () => {
+        it('derives the pad from pitch when the child has no canonical pad index', async () => {
+            const toasterNoteOn = vi.fn();
+            // Parent has the toaster device + controls, but the child is NOT found
+            // in the parentId scan (pad stays -1) → pitch-derived pad branch.
+            const parent = midiTrack({
+                id: 'toaster-parent',
+                kind: 'folder',
+                devices: [{ id: 'toaster', type: 'toaster' }],
+            });
+            const child = midiTrack({
+                id: 'orphan-child',
+                parentId: 'toaster-parent',
+                clips: [midiClip()],
+            });
+            (trackStore as { value: unknown }).value = { tracks: [parent, child] };
+            // pitch 60 → pad = 60-36 = 24 → 24>=24 && <=39 → pad=0 (fallback fold).
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 60, startBeat: 1, duration: 0.25, velocity: 100 }] },
+            };
+            vi.mocked(ensureTrackStrip).mockImplementation(
+                (trackId) =>
+                    ({
+                        gainNode: {},
+                        preFaderTap: { connect: vi.fn() },
+                        deviceNodes:
+                            trackId === 'toaster-parent'
+                                ? [{ deviceId: 'toaster', type: 'toaster', toasterControls: { noteOn: toasterNoteOn } }]
+                                : [],
+                    }) as never
+            );
+
+            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+
+            // The note reaches the toaster; pitch 60 yields pad 0 via the fold.
+            expect(toasterNoteOn).toHaveBeenCalledWith(0, 100, 60, expect.any(Number));
+        });
+    });
+
+    describe('early-exit and store-null branches', () => {
+        it('treats a null tempo map as an empty changes list (?? [])', async () => {
+            (tempoMapStore as { value: unknown }).value = null;
+            const track = midiTrack({ clips: [midiClip()] });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 60, startBeat: 0.5, duration: 0.25, velocity: 100 }] },
+            };
+
+            // No throw — the nullish coalesce keeps beatToSamples on [] changes.
+            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(vi.mocked(scheduleNote)).toHaveBeenCalledTimes(1);
+        });
+
+        it('halts the per-track loop when the cancellation token flips stale before a track', async () => {
+            const trackA = midiTrack({ id: 'a', clips: [midiClip({ id: 'clip-a' })] });
+            const trackB = midiTrack({ id: 'b', clips: [midiClip({ id: 'clip-b' })] });
+            (trackStore as { value: unknown }).value = { tracks: [trackA, trackB] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: {
+                    'clip-a': [{ id: 'n1', pitch: 60, startBeat: 0.5, duration: 0.25, velocity: 100 }],
+                    'clip-b': [{ id: 'n2', pitch: 62, startBeat: 0.5, duration: 0.25, velocity: 100 }],
+                },
+            };
+            // isCurrent returns true for track A's guard (call 1) and its single
+            // note's pre-dispatch guard (call 2), then false at track B's guard.
+            let calls = 0;
+            const cancellation: SchedulerCancellation = {
+                generation: 0,
+                discontinuityEpoch: 0,
+                isCurrent: () => ++calls <= 2,
+            };
+
+            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120, cancellation);
+
+            // Track A passes the guard (scheduled); the loop returns before B.
+            expect(vi.mocked(scheduleNote)).toHaveBeenCalledTimes(1);
+        });
+
+        it('halts the per-note loop when the cancellation token flips stale mid-clip', async () => {
+            const track = midiTrack({ clips: [midiClip()] });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: {
+                    'clip-1': [
+                        { id: 'n1', pitch: 60, startBeat: 0.5, duration: 0.25, velocity: 100 },
+                        { id: 'n2', pitch: 62, startBeat: 1.5, duration: 0.25, velocity: 100 },
+                    ],
+                },
+            };
+            // isCurrent is true for the track guard, then false at the first note's
+            // pre-dispatch check, aborting before either note is scheduled.
+            let calls = 0;
+            const cancellation: SchedulerCancellation = {
+                generation: 0,
+                discontinuityEpoch: 0,
+                isCurrent: () => ++calls <= 1,
+            };
+
+            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120, cancellation);
+
+            expect(vi.mocked(scheduleNote)).not.toHaveBeenCalled();
+        });
+
+        it('skips a yeast track clip whose visual length collapses to zero (loopLength <= 0)', async () => {
+            const track = midiTrack({
+                devices: [{ id: 'yeast', type: 'yeast' }],
+                clips: [midiClip({ startBeat: 2, endBeat: 2 })],
+            });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 60, startBeat: 0, duration: 0.25, velocity: 100 }] },
+            };
+
+            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+
+            // The collapsed clip yields no live-yeast iteration and no default synth call.
+            expect(processYeastMidi).not.toHaveBeenCalled();
+            expect(vi.mocked(scheduleNote)).not.toHaveBeenCalled();
+        });
+
+        it('skips a frozen track whose status is frozen but no buffer id is set', async () => {
+            const track = midiTrack({
+                clips: [midiClip()],
+                freezeState: { status: 'frozen' },
+            });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 60, startBeat: 0.5, duration: 0.25, velocity: 100 }] },
+            };
+
+            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+
+            // No buffer id → not a real freeze; the frozen-schedule arm is skipped
+            // and the clip flows through the normal synth path.
+            expect(vi.mocked(scheduleFrozenTrack)).not.toHaveBeenCalled();
+            expect(vi.mocked(scheduleNote)).toHaveBeenCalledTimes(1);
+        });
+
+        it('resolves toaster swing to 0 when every fallback in the chain is absent', async () => {
+            const toasterNoteOn = vi.fn();
+            const parent = midiTrack({
+                id: 'toaster-parent',
+                kind: 'folder',
+                // automationMode absent; toasterStore null; parameterValues has no swing.
+                devices: [{ id: 'toaster', type: 'toaster', parameterValues: {} }],
+            });
+            const child = midiTrack({ parentId: 'toaster-parent', clips: [midiClip()] });
+            (trackStore as { value: unknown }).value = { tracks: [parent, child] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 36, startBeat: 1, duration: 0.25, velocity: 100 }] },
+            };
+            vi.mocked(ensureTrackStrip).mockImplementation(
+                (trackId) =>
+                    ({
+                        gainNode: {},
+                        preFaderTap: { connect: vi.fn() },
+                        deviceNodes:
+                            trackId === 'toaster-parent'
+                                ? [{ deviceId: 'toaster', type: 'toaster', toasterControls: { noteOn: toasterNoteOn } }]
+                                : [],
+                    }) as never
+            );
+
+            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+
+            // swingOffsetBeats falls through to 0; sampleFrame = round(time*sr) with no swing delta.
+            expect(toasterNoteOn).toHaveBeenCalledTimes(1);
+        });
+
+        it('skips chord transposition when a drum kit owns the track', async () => {
+            vi.mocked(getDrumKitDefByIndex).mockReturnValue(null);
+            vi.mocked(getDrumKitByIndex).mockReturnValue({ id: 'kit-a', voices: [] } as never);
+            const track = midiTrack({
+                followChordTrack: true,
+                clips: [midiClip()],
+                devices: [{ id: 'dk', type: 'builtin-drum-kit', parameterValues: { kit: 0 } }],
+            });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 38, startBeat: 0.5, duration: 0.25, velocity: 90 }] },
+            };
+
+            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+
+            // Drum kits keep raw pitch; the chord-transpose arm is short-circuited.
+            expect(transposeForChordTrack).not.toHaveBeenCalled();
+            expect(scheduleKitNote).toHaveBeenCalledTimes(1);
         });
     });
 });

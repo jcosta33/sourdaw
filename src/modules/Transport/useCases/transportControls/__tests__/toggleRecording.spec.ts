@@ -31,7 +31,7 @@ type TestTrackState = {
 type StartAudioRecording = (trackId: string, callback: (buffer: TestRecordingBuffer) => void) => Promise<boolean>;
 
 const mocks = vi.hoisted(() => {
-    const timeSignatureMapStore: { value: { changes: unknown[] } } = { value: { changes: [] } };
+    const timeSignatureMapStore: { value: { changes: unknown[] } | null } = { value: { changes: [] } };
     return {
         scheduleClick: vi.fn<(...args: unknown[]) => void>(),
         resumeEngine: vi.fn<() => Promise<void>>(),
@@ -301,5 +301,167 @@ describe('toggleRecording', () => {
 
         expect(mocks.startRecording).not.toHaveBeenCalled();
         expect(mocks.notifyUser).not.toHaveBeenCalledWith(expect.stringContaining('Unable to start'), 'error');
+    });
+
+    it('stops the active recording when toggled while already recording', () => {
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isRecording: true,
+        });
+
+        toggleRecording();
+
+        expect(mocks.stopActiveRecording).toHaveBeenCalledOnce();
+        // Does not attempt to arm a new recording.
+        expect(mocks.startAudioRecording).not.toHaveBeenCalled();
+    });
+
+    it('punch-in starts recording and playback even when no audio tracks are armed', async () => {
+        // Punch-in must engage transport + record immediately. With no armed audio
+        // tracks the recorder-start block is skipped entirely (recordingStarts is
+        // empty) but the Arrangement recording still commits and playback begins.
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: false,
+            isRecording: false,
+            punchInEnabled: true,
+            countInEnabled: false,
+        });
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
+
+        toggleRecording();
+
+        await vi.waitFor(() => {
+            expect(mocks.startPlayback).toHaveBeenCalledOnce();
+        });
+        // No recorder was started (no armed audio), yet Arrangement recording armed.
+        expect(mocks.startAudioRecording).not.toHaveBeenCalled();
+        expect(mocks.startRecording).toHaveBeenCalledOnce();
+        expect(updateTransportState).toHaveBeenCalledWith({ isRecording: true });
+    });
+
+    it('count-in uses safe defaults when the time-sig store and metronome volume are absent', () => {
+        // A null time-sig store must fall back to an empty change list (flat meter),
+        // and a null metronome volume must fall back to 0.5 — otherwise the count-in
+        // would schedule nothing or click silently.
+        mocks.timeSignatureMapStore.value = null;
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: false,
+            isRecording: false,
+            countInEnabled: true,
+            countInBars: 1,
+            timeSignatureNumerator: 4,
+            timeSignatureDenominator: 4,
+            playheadPosition: 0,
+            metronomeVolume: null as unknown as number,
+        });
+
+        toggleRecording();
+
+        // 1 bar * 4 beats/bar = 4 clicks, each at the safe 0.5 volume.
+        expect(mocks.scheduleClick).toHaveBeenCalledTimes(4);
+        for (const call of mocks.scheduleClick.mock.calls) {
+            expect(call[2]).toBe(0.5);
+        }
+    });
+
+    it('records even when the track store snapshot is null', async () => {
+        // A null track store must degrade to an empty armed list (?? []) rather
+        // than throwing on the optional-chain; recording still proceeds.
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: true,
+            isRecording: false,
+            punchInEnabled: true,
+            countInEnabled: false,
+        });
+        mocks.getTrackStoreState.mockReturnValue(null);
+
+        toggleRecording();
+
+        await vi.waitFor(() => {
+            expect(mocks.startRecording).toHaveBeenCalledOnce();
+        });
+        expect(updateTransportState).toHaveBeenCalledWith({ isRecording: true });
+    });
+
+    it('ignores a recorder callback that fires before the record clip is assigned', async () => {
+        // The buffer-ready callback can race ahead of startRecording() populating
+        // the clip list. The `if (recClip)` guard must keep it a no-op rather than
+        // caching a buffer for a clip that does not exist yet.
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: true,
+            isRecording: false,
+            punchInEnabled: true,
+            countInEnabled: false,
+        });
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 'track-audio', kind: 'audio', armed: true }],
+        });
+        mocks.startAudioRecording.mockReturnValueOnce(
+            // Resolve immediately so beginActualRecording proceeds, but the
+            // buffer-ready callback is invoked before startRecording() populates clips.
+            Promise.resolve(true)
+        );
+
+        toggleRecording();
+        await vi.waitFor(() => expect(mocks.startAudioRecording).toHaveBeenCalledOnce());
+
+        // clips is assigned only after startRecording(); invoke the captured
+        // callback while it is still the initial empty list.
+        const captured = mocks.startAudioRecording.mock.calls[0]?.[1];
+        if (!captured) {
+            throw new Error('Expected recording callback to be registered');
+        }
+        captured({ duration: 2 });
+
+        expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
+    });
+
+    it('falls back to 120 bpm in the recorder callback when the transport snapshot is null', async () => {
+        // The transport tempo at buffer-commit time is read fresh. If the snapshot
+        // is null, the `?? 120` fallback must drive the sample->beat conversion.
+        // Tempo 60 would yield endBeat 12; the 120 fallback yields endBeat 14,
+        // so asserting 14 proves the null-transport fallback was used.
+        const recordingClip = {
+            id: 'clip-recording',
+            trackId: 'track-audio',
+            startBeat: 10,
+            endBeat: 10,
+        };
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            tempo: 60,
+            isPlaying: true,
+            isRecording: false,
+            punchInEnabled: true,
+            countInEnabled: false,
+        });
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 'track-audio', kind: 'audio', armed: true }],
+        });
+        mocks.startRecording.mockReturnValue([recordingClip]);
+
+        toggleRecording();
+        await vi.waitFor(() => expect(mocks.startRecording).toHaveBeenCalledOnce());
+
+        // Now null the transport snapshot so the callback reads the 120 fallback.
+        vi.mocked(getTransportState).mockReturnValue(null);
+
+        const captured = mocks.startAudioRecording.mock.calls[0]?.[1];
+        if (!captured) {
+            throw new Error('Expected recording callback to be registered');
+        }
+        captured({ duration: 2 });
+        await Promise.resolve();
+
+        const clipUpdate = mocks.updateClip.mock.calls[0]?.[1];
+        if (!clipUpdate) {
+            throw new Error('Expected recording clip to be updated');
+        }
+        // durationBeats = 2 * (120/60) = 4 -> endBeat 14 (not 12 from tempo 60).
+        expect(clipUpdate(recordingClip).endBeat).toBe(14);
     });
 });

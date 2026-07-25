@@ -135,4 +135,56 @@ describe('stopPlayback', () => {
         expect(update).toHaveBeenCalledWith({ isPlaying: false, isRecording: false, playheadPosition: 4 });
         expect(playheadPositionRef.current).toBe(4);
     });
+
+    it('returns the recording flush without touching transport when no transport state exists', async () => {
+        // The transport store is the public read contract; an absent snapshot
+        // means there is nothing to halt. The recording flush (count-in cancel +
+        // active recording teardown) must still run.
+        vi.mocked(getTransportState).mockReturnValue(null);
+        vi.mocked(stopActiveRecording).mockResolvedValue(undefined);
+
+        const result = stopPlayback();
+
+        expect(stopPlayheadScheduler).not.toHaveBeenCalled();
+        expect(stopAllScheduled).not.toHaveBeenCalled();
+        expect(resetMidiState).not.toHaveBeenCalled();
+        expect(updateTransportState).not.toHaveBeenCalled();
+        await expect(result).resolves.toBeUndefined();
+    });
+
+    it('double-stops an idle playhead at loop start back to zero (DAW standard UX)', () => {
+        // Already stopped (isPlaying:false) and sitting exactly at loopStart:
+        // a second stop press jumps the playhead to 0.
+        const update = vi.fn();
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: false,
+            loopStart: 4,
+            loopEnd: 8,
+            playheadPosition: 4,
+        });
+        vi.mocked(updateTransportState).mockImplementation(update);
+
+        stopPlayback();
+
+        expect(update).toHaveBeenCalledWith({ isPlaying: false, isRecording: false, playheadPosition: 0 });
+        expect(playheadPositionRef.current).toBe(0);
+    });
+
+    it('keeps the playhead at loop start when stopped but playhead is not at loop start', () => {
+        // Stopped, with a loop, but playhead is elsewhere: jump to loop start.
+        const update = vi.fn();
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: false,
+            loopStart: 4,
+            loopEnd: 8,
+            playheadPosition: 6,
+        });
+        vi.mocked(updateTransportState).mockImplementation(update);
+
+        stopPlayback();
+
+        expect(update).toHaveBeenCalledWith({ isPlaying: false, isRecording: false, playheadPosition: 4 });
+    });
 });

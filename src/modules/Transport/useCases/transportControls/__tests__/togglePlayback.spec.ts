@@ -35,4 +35,12 @@ describe('togglePlayback', () => {
             expect(mocks.pausePlayback).toHaveBeenCalled();
         });
     });
+
+    it('is a no-op when no transport state exists', () => {
+        // Defensive guard: an absent snapshot must not start or pause.
+        mocks.getTransportState.mockReturnValue(undefined);
+        togglePlayback();
+        expect(mocks.startPlayback).not.toHaveBeenCalled();
+        expect(mocks.pausePlayback).not.toHaveBeenCalled();
+    });
 });

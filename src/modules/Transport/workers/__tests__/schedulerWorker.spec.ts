@@ -1,132 +1,93 @@
-import fs from 'fs';
-import path from 'path';
-
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-type SchedulerMessage = { data: { type: string; interval?: number } };
-type MockSelf = {
-    onmessage: ((e: SchedulerMessage) => void) | null;
-    postMessage: (msg: unknown) => void;
-};
-type WorkerExecutor = (
-    self: MockSelf,
-    setInterval: typeof globalThis.setInterval,
-    clearInterval: typeof globalThis.clearInterval
-) => void;
+// Drive the real instrumented schedulerWorker module (not a string-eval of its
+// source) so V8 coverage attributes execution to schedulerWorker.ts. The worker
+// assigns `self.onmessage` and uses the global setInterval/clearInterval, so we
+// stub those on `self` (=== globalThis in jsdom) before importing.
+
+type TickMsg = { type: 'tick' };
 
 describe('schedulerWorker', () => {
-    let workerCode: string;
+    let postedMessages: TickMsg[];
+    let originalPostMessage: typeof self.postMessage;
 
     beforeEach(() => {
-        const rawCode = fs.readFileSync(path.resolve(__dirname, '../schedulerWorker.ts'), 'utf-8');
-        workerCode = rawCode
-            .replaceAll(/^type\s+\w[\w\W]*?;\s*$/gm, '')
-            .replace(/let timerId:.* = null;/, 'let timerId = null;')
-            .replace(/\(event: MessageEvent<\w+>\)/, '(event)')
-            .replaceAll('export ', '');
         vi.useFakeTimers();
+        postedMessages = [];
+        originalPostMessage = self.postMessage.bind(self);
+        // The worker posts ticks to `self`; capture them without touching the DOM.
+        vi.stubGlobal('postMessage', (msg: TickMsg) => postedMessages.push(msg));
     });
 
     afterEach(() => {
         vi.clearAllTimers();
         vi.useRealTimers();
+        vi.unstubAllGlobals();
+        self.postMessage = originalPostMessage;
+        // Reset the module so the next test re-registers a fresh onmessage and
+        // does not inherit a previously-started interval id.
+        vi.resetModules();
     });
 
-    it('should start interval and post ticks', () => {
-        const postedMessages: unknown[] = [];
-        const selfMock: MockSelf = {
-            onmessage: null,
-            postMessage: (msg: unknown) => postedMessages.push(msg),
-        };
+    async function loadWorker(): Promise<void> {
+        // The worker module has no exports (it only registers self.onmessage),
+        // so this is a side-effect import. The instrumentation lives in the
+        // imported source, which is what gives V8 coverage attribution.
+        await import('../../workers/schedulerWorker');
+    }
 
-        // eslint-disable-next-line @typescript-eslint/no-implied-eval -- intentional: this test exercises the scheduler worker by evaluating its source code in a controlled scope with mocked globals
-        const executeWorker = new Function('self', 'setInterval', 'clearInterval', workerCode);
-        (executeWorker as WorkerExecutor)(selfMock, setInterval, clearInterval);
-
-        // Simulate start message
-        selfMock.onmessage?.({ data: { type: 'start', interval: 10 } });
+    it('starts an interval that posts a tick every `interval` ms', async () => {
+        await loadWorker();
+        self.onmessage?.({ data: { type: 'start', interval: 10 } } as MessageEvent);
 
         expect(postedMessages).toHaveLength(0);
-
         vi.advanceTimersByTime(10);
-        expect(postedMessages).toHaveLength(1);
-        expect(postedMessages[0]).toEqual({ type: 'tick' });
-
+        expect(postedMessages).toEqual([{ type: 'tick' }]);
         vi.advanceTimersByTime(20);
-        expect(postedMessages).toHaveLength(3);
+        expect(postedMessages).toHaveLength(3); // 10, 20, 30 ms → 3 ticks
     });
 
-    it('should stop interval on stop message', () => {
-        const postedMessages: unknown[] = [];
-        const selfMock: MockSelf = {
-            onmessage: null,
-            postMessage: (msg: unknown) => postedMessages.push(msg),
-        };
-
-        // eslint-disable-next-line @typescript-eslint/no-implied-eval -- intentional: this test exercises the scheduler worker by evaluating its source code in a controlled scope with mocked globals
-        const executeWorker = new Function('self', 'setInterval', 'clearInterval', workerCode);
-        (executeWorker as WorkerExecutor)(selfMock, setInterval, clearInterval);
-
-        selfMock.onmessage?.({ data: { type: 'start', interval: 10 } });
-
+    it('defaults to a 10 ms interval when interval is not positive', async () => {
+        await loadWorker();
+        // interval <= 0 falls back to the 10 ms floor.
+        self.onmessage?.({ data: { type: 'start', interval: 0 } } as MessageEvent);
         vi.advanceTimersByTime(10);
         expect(postedMessages).toHaveLength(1);
 
-        selfMock.onmessage?.({ data: { type: 'stop' } });
+        self.onmessage?.({ data: { type: 'start', interval: -5 } } as MessageEvent);
+        vi.advanceTimersByTime(10);
+        // The previous interval was cleared and a new 10ms one started.
+        expect(postedMessages.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('clears the previous interval and restarts when start arrives twice', async () => {
+        await loadWorker();
+        self.onmessage?.({ data: { type: 'start', interval: 10 } } as MessageEvent);
+        vi.advanceTimersByTime(5); // before first tick
+
+        self.onmessage?.({ data: { type: 'start', interval: 20 } } as MessageEvent);
+        vi.advanceTimersByTime(10); // old 10ms cleared; new 20ms not elapsed
+        expect(postedMessages).toHaveLength(0);
+
+        vi.advanceTimersByTime(10); // 20ms reached → one tick
+        expect(postedMessages).toHaveLength(1);
+    });
+
+    it('stops posting ticks after a stop message', async () => {
+        await loadWorker();
+        self.onmessage?.({ data: { type: 'start', interval: 10 } } as MessageEvent);
+        vi.advanceTimersByTime(10);
+        expect(postedMessages).toHaveLength(1);
+
+        self.onmessage?.({ data: { type: 'stop' } } as MessageEvent);
         vi.advanceTimersByTime(50);
-        expect(postedMessages).toHaveLength(1); // Should not increase
+        expect(postedMessages).toHaveLength(1); // frozen after stop
     });
 
-    it('should restart interval if started twice', () => {
-        const postedMessages: unknown[] = [];
-        const selfMock: MockSelf = {
-            onmessage: null,
-            postMessage: (msg: unknown) => postedMessages.push(msg),
-        };
-
-        // eslint-disable-next-line @typescript-eslint/no-implied-eval -- intentional: this test exercises the scheduler worker by evaluating its source code in a controlled scope with mocked globals
-        const executeWorker = new Function('self', 'setInterval', 'clearInterval', workerCode);
-        (executeWorker as WorkerExecutor)(selfMock, setInterval, clearInterval);
-
-        selfMock.onmessage?.({ data: { type: 'start', interval: 10 } });
-        vi.advanceTimersByTime(5);
-
-        selfMock.onmessage?.({ data: { type: 'start', interval: 20 } });
-        vi.advanceTimersByTime(10);
-        expect(postedMessages).toHaveLength(0); // the old 10ms is cleared, new is 20ms
-
-        vi.advanceTimersByTime(10);
-        expect(postedMessages).toHaveLength(1);
-    });
-
-    it('should handle missing interval parameter', () => {
-        const postedMessages: unknown[] = [];
-        const selfMock: MockSelf = {
-            onmessage: null,
-            postMessage: (msg: unknown) => postedMessages.push(msg),
-        };
-
-        // eslint-disable-next-line @typescript-eslint/no-implied-eval -- intentional: this test exercises the scheduler worker by evaluating its source code in a controlled scope with mocked globals
-        const executeWorker = new Function('self', 'setInterval', 'clearInterval', workerCode);
-        (executeWorker as WorkerExecutor)(selfMock, setInterval, clearInterval);
-
-        selfMock.onmessage?.({ data: { type: 'start' } }); // Defaults to 10ms
-        vi.advanceTimersByTime(10);
-        expect(postedMessages).toHaveLength(1);
-    });
-
-    it('should not crash if stop is called without start', () => {
-        const postedMessages: unknown[] = [];
-        const selfMock: MockSelf = {
-            onmessage: null,
-            postMessage: (msg: unknown) => postedMessages.push(msg),
-        };
-
-        // eslint-disable-next-line @typescript-eslint/no-implied-eval -- intentional: this test exercises the scheduler worker by evaluating its source code in a controlled scope with mocked globals
-        const executeWorker = new Function('self', 'setInterval', 'clearInterval', workerCode);
-        (executeWorker as WorkerExecutor)(selfMock, setInterval, clearInterval);
-
-        selfMock.onmessage?.({ data: { type: 'stop' } });
+    it('does not crash and posts nothing when stop arrives before any start', async () => {
+        await loadWorker();
+        self.onmessage?.({ data: { type: 'stop' } } as MessageEvent);
+        vi.advanceTimersByTime(50);
         expect(postedMessages).toHaveLength(0);
     });
 });

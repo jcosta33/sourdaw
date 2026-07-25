@@ -331,4 +331,244 @@ describe('applyAutomation', () => {
             expect(owned.has('track-1')).toBe(false);
         });
     });
+
+    describe('early-exit and lane-filtering branches', () => {
+        it('returns an empty set and schedules nothing when automationStore.value is null', () => {
+            mutableAutomationStore.value = null as unknown as { lanes: unknown[] };
+
+            const owned = applyAutomation(0);
+
+            expect(owned).toEqual(new Set());
+            expect(scheduleTrackGain).not.toHaveBeenCalled();
+        });
+
+        it('skips a lane with no points', () => {
+            seedDeviceLane({ devices: [], laneParameterId: 'gain' });
+            (mutableAutomationStore.value.lanes as Array<{ points: unknown[] }>)[0]!.points = [];
+
+            applyAutomation(0);
+
+            expect(scheduleTrackGain).not.toHaveBeenCalled();
+        });
+
+        it('skips a lane whose track is absent from the track index', () => {
+            seedDeviceLane({ devices: [], laneParameterId: 'gain' });
+            (mutableAutomationStore.value.lanes as Array<{ trackId: string }>)[0]!.trackId = 'missing-track';
+
+            applyAutomation(0);
+
+            expect(scheduleTrackGain).not.toHaveBeenCalled();
+        });
+
+        it('skips a lane whose track has automationMode off', () => {
+            seedDeviceLane({ devices: [], laneParameterId: 'gain' });
+            (mutableTrackStore.value.tracks as Array<{ automationMode: string }>)[0]!.automationMode = 'off';
+
+            applyAutomation(0);
+
+            expect(scheduleTrackGain).not.toHaveBeenCalled();
+        });
+
+        it('skips a clip-scoped lane when the clip is missing from the track', () => {
+            seedDeviceLane({ devices: [], laneParameterId: 'gain' });
+            (mutableAutomationStore.value.lanes as Array<{ clipId?: string }>)[0]!.clipId = 'absent-clip';
+
+            applyAutomation(0);
+
+            expect(scheduleTrackGain).not.toHaveBeenCalled();
+        });
+
+        it('skips a clip-scoped lane when the current beat falls before the clip', () => {
+            seedDeviceLane({ devices: [], laneParameterId: 'gain' });
+            (mutableTrackStore.value.tracks as Array<{ clips: unknown[] }>)[0]!.clips = [
+                { id: 'clip-1', startBeat: 4, endBeat: 8 },
+            ];
+            (mutableAutomationStore.value.lanes as Array<{ clipId?: string }>)[0]!.clipId = 'clip-1';
+
+            applyAutomation(0); // beat 0 < clip startBeat 4
+
+            expect(scheduleTrackGain).not.toHaveBeenCalled();
+        });
+
+        it('skips a clip-scoped lane when the current beat falls after the clip', () => {
+            seedDeviceLane({ devices: [], laneParameterId: 'gain' });
+            (mutableTrackStore.value.tracks as Array<{ clips: unknown[] }>)[0]!.clips = [
+                { id: 'clip-1', startBeat: 4, endBeat: 8 },
+            ];
+            (mutableAutomationStore.value.lanes as Array<{ clipId?: string }>)[0]!.clipId = 'clip-1';
+
+            applyAutomation(10); // beat 10 > clip endBeat 8
+
+            expect(scheduleTrackGain).not.toHaveBeenCalled();
+        });
+
+        it('applies a clip-scoped lane when the beat is within the clip range', () => {
+            seedDeviceLane({ devices: [], laneParameterId: 'gain' });
+            (mutableTrackStore.value.tracks as Array<{ clips: unknown[] }>)[0]!.clips = [
+                { id: 'clip-1', startBeat: 4, endBeat: 8 },
+            ];
+            (mutableAutomationStore.value.lanes as Array<{ clipId?: string }>)[0]!.clipId = 'clip-1';
+
+            applyAutomation(6); // 4 <= 6 <= 8
+
+            expect(scheduleTrackGain).toHaveBeenCalledWith('track-1', expect.any(Number), expect.any(Number));
+        });
+
+        it('skips a lane currently being recorded', () => {
+            seedDeviceLane({ devices: [], laneParameterId: 'gain' });
+            vi.mocked(isRecordingAutomation).mockReturnValue(true);
+
+            applyAutomation(0);
+
+            expect(scheduleTrackGain).not.toHaveBeenCalled();
+        });
+
+        it('skips a lane whose resolved value at the beat is null', () => {
+            seedDeviceLane({ devices: [], laneParameterId: 'gain' });
+            vi.mocked(getAutomationValueAtBeat).mockReturnValue(null);
+
+            applyAutomation(0);
+
+            expect(scheduleTrackGain).not.toHaveBeenCalled();
+        });
+
+        it('tolerates an absent trackStore.value (empty index, no scheduling)', () => {
+            seedDeviceLane({ devices: [], laneParameterId: 'gain' });
+            mutableTrackStore.value = undefined as unknown as { tracks: unknown[] };
+
+            applyAutomation(0);
+
+            expect(scheduleTrackGain).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('gain dB conversion', () => {
+        it('converts a dB gain lane (minValue < 0) to linear via 10^(value/20)', () => {
+            seedDeviceLane({ devices: [], laneParameterId: 'gain' });
+            // minValue < 0 marks the lane as dB-domain.
+            (mutableAutomationStore.value.lanes as Array<{ minValue: number }>)[0]!.minValue = -60;
+            vi.mocked(getAutomationValueAtBeat).mockReturnValue(-6); // ≈ 0.501
+            vi.mocked(getCurrentTime).mockReturnValue(0);
+            vi.mocked(getCompensationDelay).mockReturnValue(0);
+
+            applyAutomation(0);
+
+            expect(scheduleTrackGain).toHaveBeenCalledWith('track-1', 10 ** (-6 / 20), 0);
+        });
+    });
+
+    describe('device-param edge branches', () => {
+        it('skips a lane whose resolved parameter id is empty (bare ":" target)', () => {
+            seedDeviceLane({
+                devices: [{ id: 'device-eq1', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } }],
+                // "device-eq1:" → getDeviceAutomationParameterId returns null → continue.
+                laneParameterId: 'device-eq1:',
+            });
+
+            applyAutomation(0);
+            applyAutomation(1);
+
+            expect(updateDeviceParam).not.toHaveBeenCalled();
+        });
+
+        it('skips when resolveDeviceAutomationTargetIndex returns UNRESOLVED (ambiguous duplicate type)', () => {
+            // Two EQs that both accept the param, no owner prefix → ambiguous.
+            seedDeviceLane({
+                devices: [EQ_A, EQ_B],
+                laneParameterId: 'eq-low-gain',
+            });
+
+            applyAutomation(0);
+            applyAutomation(1);
+
+            expect(updateDeviceParam).not.toHaveBeenCalled();
+        });
+
+        it('skips device-param dispatch for a track kind that does not accept device updates', () => {
+            // A MIDI track kind whose eligibility rejects device updates, with a
+            // parameter that does not resolve to any device and no matching midiFx.
+            seedDeviceLane({
+                devices: [],
+                laneParameterId: 'eq-low-gain',
+                trackKind: 'return',
+            });
+
+            applyAutomation(0);
+            applyAutomation(1);
+
+            expect(updateDeviceParam).not.toHaveBeenCalled();
+            expect(updateMidiFxParam).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('MIDI-FX automation slew', () => {
+        it('dispatches a midiFx param when the smoothed value crosses the epsilon threshold', () => {
+            mutableTrackStore.value = {
+                tracks: [
+                    {
+                        id: 'track-1',
+                        kind: 'midi',
+                        automationMode: 'read',
+                        clips: [],
+                        devices: [],
+                        midiFx: [{ id: 'midi-fx-1', parameterValues: { 'fx-param': 0 } }],
+                    },
+                ],
+            };
+            mutableAutomationStore.value = {
+                lanes: [
+                    {
+                        id: 'lane-fx',
+                        trackId: 'track-1',
+                        parameterId: 'fx-param',
+                        minValue: 0,
+                        points: [{ beat: 0, value: 0.9 }],
+                    },
+                ],
+            };
+            vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(0).mockReturnValue(0.9);
+
+            applyAutomation(0);
+            applyAutomation(1);
+
+            expect(updateMidiFxParam).toHaveBeenCalledWith('track-1', 'midi-fx-1', 'fx-param', expect.any(Number));
+        });
+
+        it('does not dispatch on a fresh lane when the target already equals the seeded previous (within epsilon)', () => {
+            mutableTrackStore.value = {
+                tracks: [
+                    {
+                        id: 'track-1',
+                        kind: 'midi',
+                        automationMode: 'read',
+                        clips: [],
+                        devices: [],
+                        midiFx: [{ id: 'midi-fx-1', parameterValues: { 'fx-param': 0 } }],
+                    },
+                ],
+            };
+            // Distinct lane id so the module-level slew Map is fresh for this
+            // test (the shared automationState.pluginParamSlew is not reset
+            // between tests, only the mock call records are).
+            mutableAutomationStore.value = {
+                lanes: [
+                    {
+                        id: 'lane-fx-steady',
+                        trackId: 'track-1',
+                        parameterId: 'fx-param',
+                        minValue: 0,
+                        points: [{ beat: 0, value: 0.5 }],
+                    },
+                ],
+            };
+            // First tick: laneSlew is empty so prev = `?? value` = value, and
+            // slewStep(value, value) === value → |smoothed - prev| == 0 <= epsilon,
+            // so the dispatch branch is skipped (the device path's symmetric guard).
+            vi.mocked(getAutomationValueAtBeat).mockReturnValue(0.5);
+
+            applyAutomation(0);
+
+            expect(updateMidiFxParam).not.toHaveBeenCalled();
+        });
+    });
 });
