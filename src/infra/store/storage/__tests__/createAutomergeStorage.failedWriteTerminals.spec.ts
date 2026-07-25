@@ -99,12 +99,16 @@ describe('createAutomergeStorage — non-committing write terminals', () => {
             expect(Object.hasOwn(doc, 'state')).toBe(false);
             expect(storage.get()).toEqual({ count: 1 });
 
-            setHasDoc(true);
             storage.set({ count: 2 });
+            flushAutomergeStorageWrites();
+            expect(storage.get()).toEqual({ count: 2 });
+
+            setHasDoc(true);
+            storage.set({ count: 3 });
             runArmedFrames();
 
-            expect(doc.state).toEqual({ count: 2 });
-            expect(storage.get()).toEqual({ count: 2 });
+            expect(doc.state).toEqual({ count: 3 });
+            expect(storage.get()).toEqual({ count: 3 });
         });
     });
 
