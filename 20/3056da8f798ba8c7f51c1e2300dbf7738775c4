@@ -1,0 +1,32 @@
+src/modules/Arrangement/models/DeviceParameter.ts
+  s_0d39f3a4a4357a::t_e00715eb380491 101,103
+  s_0d39f3a4a4357a::t_1802b34e46735c 42-46,48
+src/modules/Arrangement/models/DeviceTailTypes.ts
+  s_0d39f3a4a4357a::t_5caadd55180547 15-17,19-24
+src/modules/AudioEngine/services/__tests__/deviceTailConformance.spec.ts
+  s_0d39f3a4a4357a::t_ebd122d8fa658d 85,89-90,165-168
+  s_0d39f3a4a4357a::t_7db91150e2708b 125
+  s_0d39f3a4a4357a::t_a3063a99151a41 3
+  s_0d39f3a4a4357a::t_59090b35ab4ffd 1,6-7,16-32,35-42,59-84,86-88,91-124,126-143,161-164,169-177,181-190,192-203,208-269,272-279
+src/modules/AudioEngine/services/estimateRenderTailSeconds.ts
+  s_0d39f3a4a4357a::t_30a5fa33e4a226 85-92,95,100
+  s_0d39f3a4a4357a::t_5016e21d2dbdc9 29
+src/modules/Arrangement/models/PluginDescriptors/BuiltinEffectDescriptors.ts
+  s_0d39f3a4a4357a::t_3161aed823422f 230-245
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "203056da8f798ba8c7f51c1e2300dbf7738775c4",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
