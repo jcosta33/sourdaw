@@ -5,7 +5,7 @@ import { deleteCompGroup } from '../deleteCompGroup';
 import type { GroupCompingState } from '../../../../stores/groupComping';
 
 const mocks = vi.hoisted(() => {
-    const groupCompingStoreValue: { value: GroupCompingState } = {
+    const groupCompingStoreValue: { value: GroupCompingState | null } = {
         value: { groups: [], activeGroupId: null, defaultCrossfade: 0.125 },
     };
     return {
@@ -52,5 +52,13 @@ describe('deleteCompGroup', () => {
             groups: [{ id: 'g2' }],
             activeGroupId: 'g2',
         } as unknown as GroupCompingState);
+    });
+
+    it('is a no-op when the group-comping store holds no state', () => {
+        mocks.groupCompingStoreValue.value = null;
+
+        deleteCompGroup('g1');
+
+        expect(mocks.groupCompingStoreSet).not.toHaveBeenCalled();
     });
 });
