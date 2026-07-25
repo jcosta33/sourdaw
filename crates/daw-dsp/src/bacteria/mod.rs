@@ -17,7 +17,6 @@ pub mod granular;
 pub mod hilbert;
 pub mod lofi;
 pub mod modulation;
-pub mod oversample;
 pub mod params;
 pub mod spectral;
 pub mod stft;

@@ -291,7 +291,6 @@ function createLane(
         visible: true,
         enabled: true,
         collapsed: false,
-        virginTerritory: false,
         minValue: min,
         maxValue: max,
         color: track.color,

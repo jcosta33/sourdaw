@@ -2,7 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { logger } from '#/infra/logger/appLogger';
-import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+    runWithAutomergeStorageTransaction,
+} from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore, type Clip, type Track, type TrackStoreState } from '#/modules/Arrangement/stores';
 import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction, redo, undo } from '#/modules/Command/useCases';
@@ -11,6 +15,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { defaultKneadState, kneadStore, type PitchContour } from '../../../stores/kneadStore';
 import { getPitchHandlers } from '../../getPitchHandlers';
+import { commitPitchEdit } from '../commitPitchEdit';
 import { setPitchEditDependencies } from '../pitchEditDependencies';
 
 vi.mock('#/infra/logger/appLogger', () => ({
@@ -228,5 +233,99 @@ describe('commitPitchEdit through action dispatch', () => {
         trackStore.set(null);
         await executeAppAction(commitAction('c1'));
         expect(commitPitchEditMock).not.toHaveBeenCalled();
+    });
+});
+
+// Audit CC-10 — `commitPitchEdit` writes the clip's new file pointer and drops
+// the stale contour AFTER `await renderPitchEdit`. Those writes used to run
+// outside the action's storage transaction: they got their own commit owner and
+// their own animation frame, so the action's commit did not carry them and the
+// action's abort did not discard them. A render that succeeded left the clip
+// pointing at the rendered file even when the action it belonged to was rolled
+// back.
+describe('commitPitchEdit storage transaction scope (audit CC-10)', () => {
+    let doc: Record<string, unknown>;
+    let mutations: number;
+
+    beforeEach(() => {
+        injectDependencies(notifyUser, { eventBus: mockNotificationEventBus });
+        vi.clearAllMocks();
+        clearHandlerRegistry();
+        registerHandlerMap(getPitchHandlers());
+        clearUndoHistory();
+        setPitchEditDependencies({ commitPitchEdit: commitPitchEditMock });
+        commitPitchEditMock.mockResolvedValue(undefined);
+
+        doc = {};
+        mutations = 0;
+        configureAutomergeStoragePort({
+            getDoc: () => doc,
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: ({ changeFn }) => {
+                changeFn(doc);
+                mutations += 1;
+            },
+        });
+
+        trackStore.set({
+            tracks: [
+                createTrack({
+                    clips: [createClip({ id: 'c1', type: 'audio', fileId: 'test.wav', audioBufferId: 'buffer-c1' })],
+                }),
+            ],
+            selectedTrackId: 't1',
+            ghostClips: [],
+        } satisfies TrackStoreState);
+        kneadStore.set({ ...defaultKneadState, contours: { c1: storedContour } });
+
+        // Commit the seed so the transaction below starts from a persisted
+        // baseline rather than from pending writes.
+        flushAutomergeStorageWrites();
+        mutations = 0;
+    });
+
+    afterEach(() => {
+        clearUndoHistory();
+        clearHandlerRegistry();
+        configureAutomergeStoragePort(null);
+    });
+
+    it('discards the rendered file pointer and the contour drop when the action aborts', async () => {
+        const transaction = runWithAutomergeStorageTransaction(undefined, () =>
+            commitPitchEdit({ clipId: 'c1', segments, contour })
+        );
+        if (transaction.status !== 'returned') {
+            throw transaction.error;
+        }
+        await transaction.value;
+
+        transaction.abort();
+        flushAutomergeStorageWrites();
+
+        // The render happened, but the action was rolled back — so neither
+        // post-render write may survive it.
+        expect(commitPitchEditMock).toHaveBeenCalledOnce();
+        expect(getFirstClipFileId()).toBe('test.wav');
+        expect(kneadStore.value?.contours.c1).toEqual(storedContour);
+        expect(mutations).toBe(0);
+    });
+
+    it('carries both post-render writes in the action’s own single change', async () => {
+        const transaction = runWithAutomergeStorageTransaction(undefined, () =>
+            commitPitchEdit({ clipId: 'c1', segments, contour })
+        );
+        if (transaction.status !== 'returned') {
+            throw transaction.error;
+        }
+        await transaction.value;
+
+        transaction.commit();
+
+        // One change for the whole action: the clip swap and the contour drop
+        // share it, rather than landing later on their own frame.
+        expect(mutations).toBe(1);
+        expect(getFirstClipFileId()).toBe('test_pitch.wav');
+        expect(kneadStore.value?.contours.c1).toBeUndefined();
     });
 });

@@ -519,9 +519,22 @@ function isAutomation(value: unknown): value is ProjectAutomation {
                 Array.isArray(lane.objects) &&
                 lane.objects.every(isAutomationObject) &&
                 hasType({ record: lane, keys: ['id', 'trackId', 'parameterId', 'parameterName'], type: 'string' }) &&
+                // `virginTerritory` was removed from the lane model. It used to be a
+                // *required* boolean here, so dropping it from this list is what keeps
+                // older files loadable: a file written before the removal still
+                // carries the key, and an unlisted extra key is ignored rather
+                // than rejected.
+                //
+                // No schema version bump, because relaxing a required key to
+                // "ignored" is backward-compatible on its own — every file this
+                // build can read, it could read before. (A bump would not have
+                // broken old files either: `isSupportedProjectVersion` accepts
+                // the inclusive range [MIN_SUPPORTED, CURRENT], so raising
+                // CURRENT to 2 while MIN stays 1 keeps version-1 files loadable.
+                // The bump is simply unnecessary here, not unsafe.)
                 hasType({
                     record: lane,
-                    keys: ['visible', 'enabled', 'collapsed', 'virginTerritory'],
+                    keys: ['visible', 'enabled', 'collapsed'],
                     type: 'boolean',
                 }) &&
                 hasType({ record: lane, keys: ['minValue', 'maxValue'], type: 'number' }) &&

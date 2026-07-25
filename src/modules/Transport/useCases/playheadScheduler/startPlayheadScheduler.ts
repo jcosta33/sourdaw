@@ -19,6 +19,7 @@ import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { transportStore } from '../../stores/transportStore';
 import { evaluateFollowActions } from '../evaluateFollowActions';
+import { appliedAutomationBases } from '../scheduling/applyAutomation/appliedAutomationBases';
 import { applyAutomation } from '../scheduling/applyAutomation/applyAutomation';
 import { applyVcaGains } from '../scheduling/applyAutomation/applyVcaGains';
 import { resetMetronomeBeat } from '../scheduling/resetMetronomeBeat';
@@ -349,7 +350,10 @@ export function startPlayheadScheduler(): void {
         // grain instead of holding a stale value for the rest of the session.
         refreshSidechainAlignment();
         applyModulation(newPosition);
-        applyModulationToEngine(newPosition, schedulerSession.discontinuityEpoch);
+        // Hand modulation the values applyAutomation just applied, so a
+        // param both automated and modulated combines onto the value the engine
+        // actually holds rather than a separately recomputed raw curve value.
+        applyModulationToEngine(newPosition, schedulerSession.discontinuityEpoch, appliedAutomationBases);
         scheduleAdjustmentLayers(newPosition);
 
         schedulerSession.lastScheduledBeat = scheduleUpTo;

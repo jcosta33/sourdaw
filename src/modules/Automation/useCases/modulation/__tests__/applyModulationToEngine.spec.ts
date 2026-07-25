@@ -84,7 +84,6 @@ function createAutomationLaneFixture(input: {
         visible: true,
         enabled: true,
         collapsed: false,
-        virginTerritory: false,
         minValue: input.minValue,
         maxValue: input.maxValue,
     };
@@ -425,5 +424,57 @@ describe('applyModulationToEngine', () => {
 
         expect(mocks.updateDeviceParam).toHaveBeenCalledTimes(1);
         expect(mocks.updateDeviceParam.mock.calls[0]?.[3]).toBeCloseTo(800);
+    });
+
+    describe('automated base agrees with what applyAutomation wrote', () => {
+        function seedAutomatedAndModulatedCutoff(): void {
+            mocks.getPluginById.mockImplementation((deviceType: string) =>
+                deviceType === 'builtin-filter'
+                    ? {
+                          id: 'builtin-filter',
+                          name: 'Filter',
+                          parameters: [{ id: 'cutoff', minValue: 0, maxValue: 1000, defaultValue: 500 }],
+                      }
+                    : undefined
+            );
+            automationStore.set({ lanes: [createCutoffLane(['lane-cutoff', 'd1:cutoff', 800])] });
+            // amount 0 → delta 0, so the written value IS the base the modulator
+            // resolved. That makes the base the only thing under test.
+            modulationStore.set({
+                modulators: [
+                    {
+                        id: 'lfo1',
+                        name: 'LFO',
+                        trackId: 't1',
+                        kind: 'lfo',
+                        config: { kind: 'lfo', waveform: 'sine', rate: 4, sync: true, phase: 0, depth: 1 },
+                        mappings: [{ targetTrackId: 't1', targetDeviceId: 'd1', targetParamId: 'cutoff', amount: 0 }],
+                        enabled: true,
+                    },
+                ],
+            });
+        }
+
+        it('uses the slewed value applyAutomation applied, not a freshly recomputed raw curve value', () => {
+            seedAutomatedAndModulatedCutoff();
+
+            // What applyAutomation actually wrote to the engine this tick: the
+            // slewed value, still gliding toward the 800 the curve reads. Both
+            // writers hit the same param in the same tick, so modulation must
+            // build on this, not on the raw 800 the curve would give.
+            applyModulationToEngine(1, undefined, new Map([['d1', new Map([['cutoff', 620]])]]));
+
+            expect(mocks.updateDeviceParam).toHaveBeenCalledTimes(1);
+            expect(mocks.updateDeviceParam.mock.calls[0]?.[3]).toBeCloseTo(620);
+        });
+
+        it('falls back to the raw curve value when automation applied nothing for that param', () => {
+            seedAutomatedAndModulatedCutoff();
+
+            applyModulationToEngine(1, undefined, new Map());
+
+            expect(mocks.updateDeviceParam).toHaveBeenCalledTimes(1);
+            expect(mocks.updateDeviceParam.mock.calls[0]?.[3]).toBeCloseTo(800);
+        });
     });
 });

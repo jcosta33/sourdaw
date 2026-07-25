@@ -13,7 +13,6 @@ type AutomationLaneHeaderProps = {
     curveColor: string;
     currentValue: number | null;
     isDrawMode: boolean;
-    isVirginTerritory: boolean;
     isYZoomed: boolean;
     viewMin: number;
     viewMax: number;
@@ -25,7 +24,6 @@ export const AutomationLaneHeader = ({
     curveColor,
     currentValue,
     isDrawMode,
-    isVirginTerritory,
     isYZoomed,
     viewMin,
     viewMax,
@@ -43,11 +41,6 @@ export const AutomationLaneHeader = ({
         {isDrawMode ? (
             <DawMicroBadge tone="peach" className="font-mono text-[var(--color-accent-peach)]/80">
                 DRAW
-            </DawMicroBadge>
-        ) : null}
-        {isVirginTerritory ? (
-            <DawMicroBadge tone="success" className="font-mono text-[var(--color-state-success)]/80">
-                VT
             </DawMicroBadge>
         ) : null}
         {isYZoomed ? (

@@ -2,7 +2,7 @@
 
 use super::biquad::{BiquadCoeffs, BiquadState};
 use super::crossover::FourBandSplitter;
-use super::oversample::Oversampler2x;
+use crate::primitives::oversample::Oversampler2x;
 
 const NUM_BANDS: usize = 4;
 

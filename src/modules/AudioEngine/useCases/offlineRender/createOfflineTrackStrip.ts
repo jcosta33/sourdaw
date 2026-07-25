@@ -1,3 +1,5 @@
+import { clampFaderGain } from '#/utils/audioLevelLaw';
+
 import { type Device } from '../../models/TrackViewTypes';
 import { buildDeviceChain } from '../buildDeviceChain';
 
@@ -37,7 +39,7 @@ export async function createOfflineTrackStrip(
     // clamped only the floor, so a stored gain above unity — which importers and
     // older projects can carry — rendered louder on export than it ever played
     // back. The two runtimes must apply the same level law.
-    faderNode.gain.value = Math.max(0, Math.min(1, track.gain));
+    faderNode.gain.value = clampFaderGain(track.gain);
 
     const postFaderGain = offlineCtx.createGain();
     // Mixdown bakes mute into the strip; stem exports opt out so muted

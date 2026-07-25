@@ -13,7 +13,6 @@ const lane: AutomationLane = {
     visible: true,
     enabled: true,
     collapsed: false,
-    virginTerritory: false,
     minValue: 0,
     maxValue: 1,
 };

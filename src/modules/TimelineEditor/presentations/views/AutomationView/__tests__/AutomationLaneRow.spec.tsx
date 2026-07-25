@@ -8,7 +8,6 @@ import {
     deleteSelectedPoints,
     adjustYZoom,
     zoomToUsedRange,
-    toggleVirginTerritory,
     toggleAutomationVisibility,
 } from '#/modules/Automation/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
@@ -52,13 +51,11 @@ vi.mock('../AutomationLaneHeader', () => ({
 
 vi.mock('../AutomationLaneControls', () => ({
     AutomationLaneControls: (props: {
-        onToggleVirginTerritory: () => void;
         onZoomToUsedRange: () => void;
         onToggleVisibility: () => void;
         onClose: () => void;
     }) => (
         <div data-testid="lane-controls">
-            <button onClick={props.onToggleVirginTerritory}>toggle-vt</button>
             <button onClick={props.onZoomToUsedRange}>zoom-used-range</button>
             <button onClick={props.onToggleVisibility}>toggle-visibility</button>
             <button onClick={props.onClose}>close-lane</button>
@@ -116,7 +113,6 @@ vi.mock('#/modules/WorkspaceShell/stores', () => ({
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
-    getAutomationRegions: vi.fn(() => []),
     interpolateAutomationValue: vi.fn(() => 0.5),
 }));
 
@@ -129,7 +125,6 @@ vi.mock('#/modules/Automation/useCases', async (importOriginal) => ({
     deleteSelectedPoints: vi.fn(),
     adjustYZoom: vi.fn(),
     zoomToUsedRange: vi.fn(),
-    toggleVirginTerritory: vi.fn(),
 }));
 
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
@@ -151,7 +146,6 @@ describe('AutomationLaneRow', () => {
             visible: true,
             enabled: true,
             collapsed: false,
-            virginTerritory: false,
         },
         trackColor: '#ff0000',
         pixelsPerBeat: 12,
@@ -199,11 +193,8 @@ describe('AutomationLaneRow', () => {
         expect(laneDiv).toHaveAttribute('tabIndex', '0');
     });
 
-    it('should wire the lane controls callbacks to the virgin territory, zoom, visibility, and close use cases', () => {
+    it('should wire the lane controls callbacks to the zoom, visibility, and close use cases', () => {
         render(<AutomationLaneRow {...defaultProps} />);
-
-        fireEvent.click(screen.getByText('toggle-vt'));
-        expect(toggleVirginTerritory).toHaveBeenCalledWith('lane-1');
 
         fireEvent.click(screen.getByText('zoom-used-range'));
         expect(zoomToUsedRange).toHaveBeenCalledWith('lane-1');
@@ -392,5 +383,32 @@ describe('AutomationLaneRow', () => {
 
         fireEvent.wheel(laneDiv, { deltaY: -10, altKey: true });
         expect(adjustYZoom).toHaveBeenCalledWith('lane-1', 1);
+    });
+
+    it('renders the curve geometry the virgin-territory branch used to produce', () => {
+        // Deleting the virgin-territory drawing branch had to be output-identical,
+        // not assumed to be. Before the deletion this exact case was rendered
+        // twice — flag on and flag off, against the REAL getAutomationRegions
+        // rather than the [] stub above — and the two path sets asserted equal.
+        // They were equal because that helper's default maxGap is Infinity: it
+        // returned exactly one region spanning first point to last, so filtering
+        // the visible points by it was a no-op. The snapshot below is the
+        // geometry captured from that pre-deletion run, so this pins that the
+        // surviving single builder still emits precisely the same thing.
+        const points: AutomationPoint[] = [
+            { beat: 0, value: 0.2, curve: 'linear', tension: 0 },
+            { beat: 4, value: 0.8, curve: 'linear', tension: 0 },
+        ];
+
+        const { container } = render(<AutomationLaneRow {...defaultProps} lane={{ ...defaultProps.lane, points }} />);
+        const plainPaths = [...container.querySelectorAll('path')].map((node) => node.getAttribute('d'));
+
+        expect(plainPaths.length).toBeGreaterThan(0);
+        expect(plainPaths).toMatchInlineSnapshot(`
+          [
+            "M 0 93.6  L 48 120 L 0 120 Z",
+            "M 0 93.6 ",
+          ]
+        `);
     });
 });

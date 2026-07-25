@@ -13,7 +13,8 @@ describe('createAutomationLane', () => {
         expect(lane.objects).toEqual([]);
         expect(lane.visible).toBe(true);
         expect(lane.enabled).toBe(true);
-        expect(lane.virginTerritory).toBe(true);
+        // virginTerritory was removed from the lane model; a new lane must not carry it.
+        expect(lane).not.toHaveProperty('virginTerritory');
         expect(lane.minValue).toBe(0);
         expect(lane.maxValue).toBe(1);
         // Full UUID (8-4-4-4-12 hex), not a 32-bit truncation — see createAutomationLane.

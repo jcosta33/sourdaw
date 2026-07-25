@@ -1,6 +1,9 @@
 //! Product-neutral DSP contracts and reusable primitives.
 
+#[cfg(test)]
+pub(crate) mod alias_probe;
 pub mod denormal;
+pub mod oversample;
 pub mod sanitize;
 pub mod time_stretch;
 

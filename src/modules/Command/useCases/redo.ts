@@ -1,3 +1,4 @@
+import { AppActionCommittedError, AppActionConflictError } from '../errors/AppActionExecutionError';
 import { type UndoEntry } from '../models/UndoEntry';
 import { undoStore } from '../stores/undoStore';
 
@@ -11,12 +12,37 @@ function currentEntryId(past: readonly UndoEntry[]): string | null {
     return past.length > 0 ? past[past.length - 1]!.id : null;
 }
 
-async function executeRedo(entry: UndoEntry): Promise<boolean> {
+/**
+ * What happened when one entry's redo side-effect ran. Audit CC-6 — mirrors
+ * `UndoOutcome`: a conflict wrote nothing and the entry stays redoable, while
+ * a committed error already wrote and must never be re-applied.
+ */
+type RedoOutcome =
+    | { readonly status: 'applied' }
+    | { readonly status: 'not-applied' }
+    | { readonly status: 'conflict' }
+    | { readonly status: 'committed'; readonly error: AppActionCommittedError };
+
+async function executeRedo(entry: UndoEntry): Promise<RedoOutcome> {
     if (entry.kind === 'callback') {
-        return entry.redo() !== REDO_NOT_APPLIED;
+        if (entry.redo() === REDO_NOT_APPLIED) {
+            return { status: 'not-applied' };
+        }
+        return { status: 'applied' };
     }
-    await executeAppAction(entry.action);
-    return true;
+
+    try {
+        await executeAppAction(entry.action);
+        return { status: 'applied' };
+    } catch (error) {
+        if (error instanceof AppActionConflictError) {
+            return { status: 'conflict' };
+        }
+        if (error instanceof AppActionCommittedError) {
+            return { status: 'committed', error };
+        }
+        throw error;
+    }
 }
 
 async function redoImpl(): Promise<void> {
@@ -34,16 +60,32 @@ async function redoImpl(): Promise<void> {
     // behind it.
     while (future.length > 0) {
         const entry = future[0]!;
-        future = future.slice(1);
+        const remainingFuture = future.slice(1);
 
-        const applied = await executeRedo(entry);
-        if (applied) {
+        const outcome = await executeRedo(entry);
+
+        if (outcome.status === 'conflict') {
+            // Nothing was written, so the entry stays at the head of `future`
+            // and remains redoable. Only a purge of not-applied entries made
+            // earlier in this scan needs persisting.
+            if (future.length !== state.future.length) {
+                undoStore.set({ past: state.past, future });
+                undoTreeMoveTo(currentEntryId(state.past));
+            }
+            return;
+        }
+
+        future = remainingFuture;
+        if (outcome.status === 'applied' || outcome.status === 'committed') {
             const newPast = [...state.past, entry];
             undoStore.set({
                 past: newPast,
                 future,
             });
             undoTreeMoveTo(currentEntryId(newPast));
+            if (outcome.status === 'committed') {
+                throw outcome.error;
+            }
             return;
         }
         // Not-applied entry: dropped; keep scanning.

@@ -102,7 +102,7 @@ describe('createMyceliumAscendantBlueprint', () => {
         expect(chordEvents.at(-1)).toMatchObject({ beat: 560, root: 9, quality: 'min9', duration: 16 });
     });
 
-    it('is serializable, structurally deterministic, and leaves the automation seam empty', () => {
+    it('is serializable, structurally deterministic, and includes the final automation choreography', () => {
         const first = createMyceliumAscendantBlueprint();
         const second = createMyceliumAscendantBlueprint();
         const tempoIds = first.projectData.tempoMap?.changes.flatMap((change) => change.id ?? []) ?? [];
@@ -115,6 +115,9 @@ describe('createMyceliumAscendantBlueprint', () => {
             ...tempoIds,
             ...meterIds,
         ];
+        const activeArrangement = first.projectData.arrangements?.find(
+            (arrangement) => arrangement.id === first.projectData.activeArrangementId
+        );
 
         expect(first).toEqual(second);
         expect(JSON.parse(JSON.stringify(first))).toEqual(first);
@@ -122,7 +125,9 @@ describe('createMyceliumAscendantBlueprint', () => {
         expect(new Set(ids).size).toBe(ids.length);
         expect(first.projectData.arrangement.tracks.some((track) => track.clips.length > 0)).toBe(true);
         expect(Object.keys(first.projectData.midi.notesByClipId).length).toBeGreaterThan(0);
-        expect(first.projectData.automation).toEqual({ lanes: [] });
+        expect(first.projectData.automation.lanes).toHaveLength(115);
+        expect(activeArrangement?.automation).toEqual(first.projectData.automation);
+        expect(activeArrangement?.tracks?.tracks).toEqual(first.projectData.arrangement.tracks);
     });
 
     it('preserves sections through validation, import hydration, save, and reload', async () => {
