@@ -1,7 +1,11 @@
 //! Oversampling on a 15-tap half-band FIR.
 //!
-//! [`Oversampler2x`] is the single rate-conversion primitive in this crate;
-//! half-band filters are efficient because every other coefficient is zero.
+//! [`Oversampler2x`] is the shared half-band the Proof, Bacteria and Grinder
+//! paths all run on; half-band filters are efficient because every other
+//! coefficient is zero. It is not the crate’s only rate converter — Gluten
+//! carries a separate, lighter 7-tap `gluten::oversample::Oversample2x` for
+//! its own compressor nonlinearities.
+//!
 //! [`OversamplingChain`] cascades it into the 1x/2x/4x/8x factors a
 //! nonlinearity actually asks for, and is the type to reach for — building an
 //! ad-hoc cascade out of `Oversampler2x` is easy to get subtly wrong (see the
