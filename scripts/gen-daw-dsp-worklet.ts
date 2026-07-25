@@ -29,7 +29,6 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const srcFile = join(root, 'public/wasm/daw-dsp/daw_dsp.js');
 const destFile = join(root, 'src/modules/AudioEngine/wasm/daw_dsp.js');
 
-
 const generated = readFileSync(srcFile, 'utf8');
 
 // Rewrite `new URL('daw_dsp_bg.wasm', import.meta.url)` to a served string path so

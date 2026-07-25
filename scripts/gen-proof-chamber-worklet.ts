@@ -29,7 +29,6 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const srcFile = join(root, 'public/wasm/proof-chamber/proof_chamber.js');
 const destFile = join(root, 'src/modules/AudioEngine/wasm/proof_chamber.js');
 
-
 const generated = readFileSync(srcFile, 'utf8');
 
 // Rewrite `new URL('proof_chamber_bg.wasm', import.meta.url)` to a served string path

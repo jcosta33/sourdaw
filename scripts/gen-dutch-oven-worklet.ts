@@ -19,12 +19,12 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join, dirname } from 'node:path';
+
 import { WORKLET_POLYFILLS } from './workletPolyfills.ts';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const srcFile = join(root, 'public/wasm/dutch-oven/dutch_oven.js');
 const destFile = join(root, 'src/modules/AudioEngine/wasm/dutch_oven.js');
-
 
 let generated = readFileSync(srcFile, 'utf8');
 

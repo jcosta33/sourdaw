@@ -29,7 +29,6 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const srcFile = join(root, 'public/wasm/scoring/scoring.js');
 const destFile = join(root, 'src/modules/AudioEngine/wasm/scoring.js');
 
-
 const generated = readFileSync(srcFile, 'utf8');
 
 // Rewrite `new URL('scoring_bg.wasm', import.meta.url)` to a served string path so

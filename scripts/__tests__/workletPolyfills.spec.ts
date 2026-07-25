@@ -1,3 +1,5 @@
+import { createContext as createRealm, runInContext } from 'node:vm';
+
 import { describe, expect, it } from 'vitest';
 
 import { WORKLET_POLYFILLS } from '../workletPolyfills.ts';
@@ -16,7 +18,10 @@ import { WORKLET_POLYFILLS } from '../workletPolyfills.ts';
  */
 
 type PolyfillScope = {
-    TextDecoder: new (label?: string, options?: { fatal?: boolean }) => {
+    TextDecoder: new (
+        label?: string,
+        options?: { fatal?: boolean }
+    ) => {
         decode: (input?: Uint8Array) => string;
     };
     TextEncoder: new () => {
@@ -26,18 +31,27 @@ type PolyfillScope = {
     FinalizationRegistry: new () => { register: () => void; unregister: () => void };
 };
 
-/** Run the shipped polyfill text in a realm with no built-in text codecs. */
+/**
+ * Run the shipped polyfill text in a realm with no built-in text codecs — which
+ * is what the AudioWorklet global scope is.
+ *
+ * `Uint8Array` is seeded from this realm so the polyfill's `instanceof Uint8Array`
+ * check takes the same branch it takes in production; a bare context would push
+ * every call down the cross-realm fallback path instead, and the branch actually
+ * shipped would go untested.
+ */
 function loadPolyfills(): PolyfillScope {
-    const scope = {} as PolyfillScope;
-    const evaluate = new Function(
-        'globalThis',
-        'TextDecoder',
-        'TextEncoder',
-        'FinalizationRegistry',
-        WORKLET_POLYFILLS
-    );
-    evaluate(scope, undefined, undefined, undefined);
-    return scope;
+    // `TextDecoder`/`TextEncoder` are Node globals rather than ECMAScript
+    // intrinsics, so a vm context lacks them already — like the worklet does.
+    // `FinalizationRegistry` *is* an intrinsic, so it has to be masked
+    // explicitly or the polyfill correctly declines to install its stub.
+    const realm = createRealm({
+        Uint8Array,
+        ArrayBuffer,
+        FinalizationRegistry: undefined,
+    });
+    runInContext(WORKLET_POLYFILLS, realm);
+    return realm as PolyfillScope;
 }
 
 /** Strings that a latin1 codec silently corrupts, one per UTF-8 sequence width. */
@@ -104,9 +118,7 @@ describe('worklet text codec polyfills', () => {
             expect(written).toBe(3 * Math.floor(capacity / 3));
             expect(read).toBe(Math.floor(capacity / 3));
             // Whatever landed must decode cleanly back to the prefix it represents.
-            expect(new PolyfillDecoder().decode(dest.subarray(0, written))).toBe(
-                sample.slice(0, read)
-            );
+            expect(new PolyfillDecoder().decode(dest.subarray(0, written))).toBe(sample.slice(0, read));
         }
     });
 
@@ -130,7 +142,19 @@ describe('worklet text codec polyfills', () => {
     it('throws on malformed input when constructed fatal, as wasm-bindgen does', () => {
         // The generated glue constructs `new TextDecoder('utf-8', { ignoreBOM: true, fatal: true })`.
         const decoder = new PolyfillDecoder('utf-8', { fatal: true });
-        expect(() => decoder.decode(new Uint8Array([0x80]))).toThrow(TypeError);
+        // The polyfill runs in its own realm, so its `TypeError` is not this
+        // realm’s constructor — nor is `Error` — so assert what the caller can
+        // actually observe: that something was thrown, and what it says.
+        let thrown: unknown;
+        try {
+            decoder.decode(new Uint8Array([0x80]));
+        } catch (error: unknown) {
+            thrown = error;
+        }
+        expect(thrown).toBeDefined();
+        expect((thrown as Error).name).toBe('TypeError');
+        expect((thrown as Error).message).toMatch(/malformed UTF-8/);
+        // ...and a well-formed payload still decodes rather than throwing.
         expect(decoder.decode(new TextEncoder().encode('ok ✓'))).toBe('ok ✓');
     });
 
