@@ -1,0 +1,56 @@
+crates/daw-dsp/src/bacteria/engine.rs
+  s_a161a6b0cfe028::t_d43a552190b6ca 829
+  s_a161a6b0cfe028::t_cd04958bb9566a 1371-1378,1380-1390
+  s_a161a6b0cfe028::t_ae91f9c9cf3b23 1339-1340
+  s_a161a6b0cfe028::t_25730fdb5c884b 1480
+  s_a161a6b0cfe028::t_3615c03ab7daf6 664-668
+  s_a161a6b0cfe028::t_eca5cd1aea2dfa 37-39,41-51
+  s_a161a6b0cfe028::t_65929d671f576b 316
+  s_a161a6b0cfe028::t_38a485530a2d63 87-97
+  s_a161a6b0cfe028::t_6af76627834c49 35-36,40
+  s_a161a6b0cfe028::t_cdc4a08cac08a9 1393-1432
+  s_a161a6b0cfe028::t_b113ae9718a51d 905
+  s_a161a6b0cfe028::t_3e752b4ff7bcc8 1351-1363
+  s_a161a6b0cfe028::t_fd1b215a3b6525 326
+  s_a161a6b0cfe028::t_f4032ba625fc81 317-318
+  s_a161a6b0cfe028::t_c88bc4d2dafd62 947
+  s_a161a6b0cfe028::t_af173f2382ae37 540
+  s_a161a6b0cfe028::t_93b04bb1ad9bd7 295-299
+  s_a161a6b0cfe028::t_5aa0f40821b93e 319-325,327-328
+  s_a161a6b0cfe028::t_81ae60527e2dea 69-82,309-315,331-333,531-539,628,671-672,820-821,823-828,830-832,941-946,965-967,1326-1338,1341-1350,1364-1370,1379,1391-1392,1433-1479
+  s_a161a6b0cfe028::t_8dc620bdb34b38 673
+  s_a161a6b0cfe028::t_ccf21c3dc98ed2 1006-1015
+  s_a161a6b0cfe028::t_c81ca4ce3186a2 968-970
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_29a49804dab875::t_a41696b95904dd 1,562-614,658-682,684-694
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_29a49804dab875::t_d5d67a8bdefea3 1,5-57,101-125,127-137
+public/wasm/manifest.json
+  s_a161a6b0cfe028::t_9fda1c7f5484d3 12,16-18,21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_29a49804dab875::t_7f3a26bd904e9a 1,562-614,658-682,684-694
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "41b6385e5533d6d9d34b347cd71e9c4a4e113cb8",
+  "prompts": {},
+  "sessions": {
+    "s_29a49804dab875": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aebd8c37a5fa0c2ad",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a161a6b0cfe028": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "10aa1b3e-538d-428e-af3e-69a8c42d0ec8",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
