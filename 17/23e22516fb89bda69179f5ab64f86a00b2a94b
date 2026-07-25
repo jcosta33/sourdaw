@@ -1,0 +1,29 @@
+src/infra/store/storage/createAutomergeStorage.ts
+  s_0d39f3a4a4357a::t_6012f8d8e21496 676-680,683-684
+src/infra/store/storage/__tests__/createAutomergeStorage.failedWriteTerminals.spec.ts
+  s_ac9b259eab20ba::t_97dd4923715eee 103-107,110-111
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "1723e22516fb89bda69179f5ab64f86a00b2a94b",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
