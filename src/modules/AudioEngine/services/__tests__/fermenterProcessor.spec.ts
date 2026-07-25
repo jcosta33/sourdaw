@@ -39,6 +39,9 @@ class FermenterInstanceMock {
     note_on(note: number, velocity: number): void {
         noteEvents.push({ kind: 'on', note, velocity });
     }
+    note_on_with_channel(note: number, velocity: number, _channel: number): void {
+        noteEvents.push({ kind: 'on', note, velocity });
+    }
     note_off(note: number): void {
         noteEvents.push({ kind: 'off', note });
     }

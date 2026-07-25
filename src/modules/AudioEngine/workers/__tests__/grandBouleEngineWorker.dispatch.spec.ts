@@ -24,6 +24,9 @@ class GrandBouleInstanceMock {
     note_on(note: number, velocity: number): void {
         calls.push({ method: 'note_on', args: [note, velocity] });
     }
+    note_on_with_channel(note: number, velocity: number, _channel: number): void {
+        calls.push({ method: 'note_on', args: [note, velocity] });
+    }
     note_off(note: number): void {
         calls.push({ method: 'note_off', args: [note] });
     }
