@@ -11,8 +11,9 @@ import {
     updateMidiFxParam,
 } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
-import { getAutomationValueAtBeat, isRecordingAutomation } from '#/modules/Automation/useCases';
+import { getAutomationValueAtBeat, isRecordingAutomation, resolveAutoMatchValue } from '#/modules/Automation/useCases';
 import { setFermenterMappedParam } from '#/modules/Fermenter/useCases';
+import { AUTOMATION_SLEW_ALPHA, slewStep } from '#/utils/automationSlew';
 
 import { applyAutomation } from '../applyAutomation';
 
@@ -63,6 +64,10 @@ vi.mock('#/modules/Automation/useCases', async (importOriginal) => {
         ...mod,
         getAutomationValueAtBeat: vi.fn(() => 0.75),
         isRecordingAutomation: vi.fn(() => false),
+        resolveAutoMatchValue: vi.fn(({ automationValue }: { automationValue: number }) => ({
+            value: automationValue,
+            isReleaseStart: false,
+        })),
     };
 });
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
@@ -569,6 +574,310 @@ describe('applyAutomation', () => {
             applyAutomation(0);
 
             expect(updateMidiFxParam).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('lane.enabled gating', () => {
+        function seedGatingTrack(devices: SeedDevice[]): void {
+            mutableTrackStore.value = {
+                tracks: [
+                    {
+                        id: 'track-1',
+                        kind: 'audio',
+                        automationMode: 'read',
+                        clips: [],
+                        midiFx: [],
+                        devices,
+                        gain: 0.5,
+                        pan: 0,
+                    },
+                ],
+            };
+        }
+
+        const GATE_EQ = { id: 'eq-gate', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } };
+
+        it('does not drive a device param from a lane whose enabled flag is false', () => {
+            seedGatingTrack([GATE_EQ]);
+            mutableAutomationStore.value = {
+                lanes: [
+                    {
+                        id: 'lane-gate-disabled',
+                        trackId: 'track-1',
+                        parameterId: 'eq-gate:eq-low-gain',
+                        enabled: false,
+                        minValue: 0,
+                        points: [{ beat: 0, value: 0.75 }],
+                    },
+                ],
+            };
+            vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(0).mockReturnValue(0.75);
+
+            applyAutomation(0);
+            applyAutomation(1);
+
+            expect(updateDeviceParam).not.toHaveBeenCalled();
+        });
+
+        it('drives the same device param when the lane is enabled', () => {
+            seedGatingTrack([GATE_EQ]);
+            mutableAutomationStore.value = {
+                lanes: [
+                    {
+                        id: 'lane-gate-enabled',
+                        trackId: 'track-1',
+                        parameterId: 'eq-gate:eq-low-gain',
+                        enabled: true,
+                        minValue: 0,
+                        points: [{ beat: 0, value: 0.75 }],
+                    },
+                ],
+            };
+            // mockReset first: the disabled case above queues a mockReturnValueOnce
+            // it never consumes (its lane is gated out before the lookup), and
+            // clearAllMocks does not drain a once-queue — the leftover would make
+            // both ticks read the same value and suppress the dispatch here.
+            vi.mocked(getAutomationValueAtBeat).mockReset();
+            vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(0).mockReturnValue(0.75);
+
+            applyAutomation(0);
+            applyAutomation(1);
+
+            expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'eq-gate', 'eq-low-gain', expect.any(Number));
+        });
+
+        it('does not schedule fader gain, nor claim the track, for a disabled gain lane', () => {
+            seedGatingTrack([]);
+            mutableAutomationStore.value = {
+                lanes: [
+                    {
+                        id: 'lane-gate-gain',
+                        trackId: 'track-1',
+                        parameterId: 'gain',
+                        enabled: false,
+                        minValue: 0,
+                        points: [{ beat: 0, value: 0.75 }],
+                    },
+                ],
+            };
+
+            const owned = applyAutomation(0);
+
+            expect(scheduleTrackGain).not.toHaveBeenCalled();
+            expect(owned.has('track-1')).toBe(false);
+        });
+    });
+
+    describe('restores the manual base when a lane stops driving', () => {
+        type GateTrack = { automationMode: string };
+
+        function seedRestorableDeviceLane(laneId: string): void {
+            mutableTrackStore.value = {
+                tracks: [
+                    {
+                        id: 'track-1',
+                        kind: 'audio',
+                        automationMode: 'read',
+                        clips: [],
+                        midiFx: [],
+                        devices: [{ id: 'eq-restore', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0.2 } }],
+                        gain: 0.4,
+                        pan: 12,
+                    },
+                ],
+            };
+            mutableAutomationStore.value = {
+                lanes: [
+                    {
+                        id: laneId,
+                        trackId: 'track-1',
+                        parameterId: 'eq-restore:eq-low-gain',
+                        minValue: 0,
+                        points: [{ beat: 0, value: 0.75 }],
+                    },
+                ],
+            };
+            vi.mocked(getAutomationValueAtBeat).mockReset();
+            vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(0).mockReturnValue(0.75);
+        }
+
+        function setAutomationMode(mode: string): void {
+            (mutableTrackStore.value.tracks as GateTrack[])[0]!.automationMode = mode;
+        }
+
+        it('writes the device parameter back to its persisted value when the mode goes off', () => {
+            seedRestorableDeviceLane('lane-restore-off');
+            applyAutomation(0);
+            applyAutomation(1);
+            expect(updateDeviceParam).toHaveBeenCalledTimes(1);
+
+            setAutomationMode('off');
+            applyAutomation(2);
+
+            // 0.2 is the device's own persisted parameterValues entry — the manual
+            // value 'off' is supposed to play. Before this, the parameter simply
+            // froze wherever the ride left it (~0.3 from the slew above).
+            expect(updateDeviceParam).toHaveBeenLastCalledWith('track-1', 'eq-restore', 'eq-low-gain', 0.2);
+        });
+
+        it('restores once, not on every subsequent tick', () => {
+            seedRestorableDeviceLane('lane-restore-once');
+            applyAutomation(0);
+            applyAutomation(1);
+
+            setAutomationMode('off');
+            applyAutomation(2);
+            const afterRestore = vi.mocked(updateDeviceParam).mock.calls.length;
+            applyAutomation(3);
+            applyAutomation(4);
+
+            expect(vi.mocked(updateDeviceParam).mock.calls.length).toBe(afterRestore);
+        });
+
+        it('restores the fader to the track gain, and releases the track to the VCA writer', () => {
+            mutableTrackStore.value = {
+                tracks: [
+                    {
+                        id: 'track-1',
+                        kind: 'audio',
+                        automationMode: 'read',
+                        clips: [],
+                        midiFx: [],
+                        devices: [],
+                        gain: 0.4,
+                        pan: 12,
+                    },
+                ],
+            };
+            mutableAutomationStore.value = {
+                lanes: [
+                    {
+                        id: 'lane-restore-gain',
+                        trackId: 'track-1',
+                        parameterId: 'gain',
+                        minValue: 0,
+                        points: [{ beat: 0, value: 0.75 }],
+                    },
+                ],
+            };
+            vi.mocked(getAutomationValueAtBeat).mockReset();
+            vi.mocked(getAutomationValueAtBeat).mockReturnValue(0.75);
+            applyAutomation(0);
+
+            setAutomationMode('off');
+            const owned = applyAutomation(1);
+
+            expect(scheduleTrackGain).toHaveBeenLastCalledWith('track-1', 0.4, 5);
+            expect(owned.has('track-1')).toBe(false);
+        });
+
+        it('restores when the lane itself is disabled mid-ride and does not strand the parameter', () => {
+            seedRestorableDeviceLane('lane-restore-disabled');
+            applyAutomation(0);
+            applyAutomation(1);
+
+            (mutableAutomationStore.value.lanes as Array<{ enabled?: boolean }>)[0]!.enabled = false;
+            applyAutomation(2);
+
+            expect(updateDeviceParam).toHaveBeenLastCalledWith('track-1', 'eq-restore', 'eq-low-gain', 0.2);
+        });
+    });
+
+    describe('AutoMatch release ramp', () => {
+        it('writes the AutoMatch blend instead of the raw curve value while a release is gliding', () => {
+            mutableTrackStore.value = {
+                tracks: [
+                    {
+                        id: 'track-1',
+                        kind: 'audio',
+                        automationMode: 'touch',
+                        clips: [],
+                        midiFx: [],
+                        devices: [{ id: 'eq-am', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } }],
+                        gain: 0.4,
+                        pan: 0,
+                    },
+                ],
+            };
+            mutableAutomationStore.value = {
+                lanes: [
+                    {
+                        id: 'lane-automatch',
+                        trackId: 'track-1',
+                        parameterId: 'eq-am:eq-low-gain',
+                        minValue: 0,
+                        points: [{ beat: 0, value: 0.75 }],
+                    },
+                ],
+            };
+            vi.mocked(getAutomationValueAtBeat).mockReset();
+            vi.mocked(getAutomationValueAtBeat).mockReturnValue(0.75);
+
+            // Drive the lane normally first, so its slew holds a real pre-ride
+            // value (~0.3) — the stale value a release must NOT glide from.
+            vi.mocked(resolveAutoMatchValue).mockImplementation(({ automationValue }) => ({
+                value: automationValue,
+                isReleaseStart: false,
+            }));
+            vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(0);
+            applyAutomation(0);
+            applyAutomation(1);
+
+            // Now release at 0.2 and glide back toward the curve's 0.75.
+            vi.mocked(resolveAutoMatchValue).mockReturnValueOnce({ value: 0.2, isReleaseStart: true });
+            applyAutomation(2);
+            vi.mocked(resolveAutoMatchValue).mockReturnValueOnce({ value: 0.3375, isReleaseStart: false });
+            applyAutomation(3);
+
+            // The release tick re-seeds the slew at 0.2, so the next write is one
+            // slew step from 0.2 toward the blend. Without the re-seed the slew
+            // would still hold the stale pre-ride value and land elsewhere;
+            // without the blend it would chase the curve's 0.75 outright.
+            expect(updateDeviceParam).toHaveBeenLastCalledWith(
+                'track-1',
+                'eq-am',
+                'eq-low-gain',
+                slewStep(0.2, 0.3375, AUTOMATION_SLEW_ALPHA)
+            );
+        });
+
+        it('passes the curve value and the engine clock to the AutoMatch resolver', () => {
+            mutableTrackStore.value = {
+                tracks: [
+                    {
+                        id: 'track-1',
+                        kind: 'audio',
+                        automationMode: 'touch',
+                        clips: [],
+                        midiFx: [],
+                        devices: [{ id: 'eq-am2', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } }],
+                        gain: 0.4,
+                        pan: 0,
+                    },
+                ],
+            };
+            mutableAutomationStore.value = {
+                lanes: [
+                    {
+                        id: 'lane-automatch-args',
+                        trackId: 'track-1',
+                        parameterId: 'eq-am2:eq-low-gain',
+                        minValue: 0,
+                        points: [{ beat: 0, value: 0.75 }],
+                    },
+                ],
+            };
+            vi.mocked(getAutomationValueAtBeat).mockReset();
+            vi.mocked(getAutomationValueAtBeat).mockReturnValue(0.75);
+
+            applyAutomation(0);
+
+            expect(resolveAutoMatchValue).toHaveBeenCalledWith({
+                trackId: 'track-1',
+                parameterId: 'eq-am2:eq-low-gain',
+                automationValue: 0.75,
+                nowSeconds: 5,
+            });
         });
     });
 });

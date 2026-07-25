@@ -9,8 +9,9 @@ import {
     updateMidiFxParam,
 } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
-import { getAutomationValueAtBeat, isRecordingAutomation } from '#/modules/Automation/useCases';
+import { getAutomationValueAtBeat, isRecordingAutomation, resolveAutoMatchValue } from '#/modules/Automation/useCases';
 import { setFermenterMappedParam } from '#/modules/Fermenter/useCases';
+import { dbToGain } from '#/utils/audioLevelLaw';
 import {
     getDeviceAutomationParameterId,
     resolveDeviceAutomationTargetIndex,
@@ -19,6 +20,9 @@ import {
 import { AUTOMATION_SLEW_ALPHA, slewStep } from '#/utils/automationSlew';
 
 import { schedulerSession } from '../../playheadScheduler/schedulerSession';
+
+import { appliedAutomationBases, clearAppliedAutomationBases } from './appliedAutomationBases';
+import { restoreAutomationBaseValue } from './restoreAutomationBaseValue';
 
 /**
  * Per-parameter exponential slew state for plugin automation. The IIR
@@ -46,10 +50,18 @@ const automationState: {
      * plugin-param slew to its target instead of gliding from the pre-jump value.
      */
     lastDiscontinuityEpoch: number | undefined;
+    /**
+     * Lane ids that wrote their parameter on the previous tick. The
+     * driving → not-driving edge is what triggers the one-shot restore of the
+     * manual base; without it a gated lane would either strand the parameter or
+     * fight the UI by rewriting the base every tick.
+     */
+    drivingLanes: Set<string>;
 } = {
     pluginParamSlew: new Map<string, Map<string, number>>(),
     trackIndex: new Map<string, NonNullable<typeof trackStore.value>['tracks'][number]>(),
     lastDiscontinuityEpoch: undefined,
+    drivingLanes: new Set<string>(),
 };
 
 export function applyAutomation(currentBeat: number): Set<string> {
@@ -57,6 +69,10 @@ export function applyAutomation(currentBeat: number): Set<string> {
     // applyVcaGains skips these so the VCA writer defers to the composed value
     // instead of racing it (see the gain branch below).
     const gainAutomationTrackIds = new Set<string>();
+    // This tick's device writes, handed to applyModulationToEngine so a
+    // param that is both automated and modulated combines onto the value
+    // automation actually applied rather than a separately recomputed one.
+    clearAppliedAutomationBases();
     const autoState = automationStore.value;
     if (!autoState) {
         return gainAutomationTrackIds;
@@ -101,7 +117,31 @@ export function applyAutomation(currentBeat: number): Set<string> {
         }
 
         const track = automationState.trackIndex.get(lane.trackId);
-        if (!track || track.automationMode === 'off') {
+        if (!track) {
+            automationState.drivingLanes.delete(lane.id);
+            continue;
+        }
+
+        // Two gates stop a lane driving without the project's own
+        // value changing: the track's automationMode going to 'off', and the
+        // lane being marked disabled. `enabled` is compared against `false`
+        // rather than falsy so a lane persisted before the flag existed (which
+        // the legacy normalizer resolves to `enabled: true`) still plays.
+        //
+        // Skipping alone only stops *writing*: the engine holds whatever the
+        // ride last pushed, stranding the parameter mid-ride. On the tick a lane
+        // that was driving becomes gated, restore its manual base once and drop
+        // its slew state so a later re-engage seeds cleanly instead of gliding
+        // from a stale smoothed value.
+        if (track.automationMode === 'off' || lane.enabled === false) {
+            if (automationState.drivingLanes.delete(lane.id)) {
+                automationState.pluginParamSlew.delete(lane.id);
+                restoreAutomationBaseValue({
+                    lane,
+                    track,
+                    landTime: now + compensationFor(lane.trackId),
+                });
+            }
             continue;
         }
 
@@ -116,10 +156,32 @@ export function applyAutomation(currentBeat: number): Set<string> {
             continue;
         }
 
-        const value = getAutomationValueAtBeat(lane.id, currentBeat);
-        if (value === null) {
+        const curveValue = getAutomationValueAtBeat(lane.id, currentBeat);
+        if (curveValue === null) {
             continue;
         }
+
+        // A control released from a touch/latch ride glides back to the
+        // curve over the AutoMatch time instead of being handed straight back to
+        // it. With no pending release this returns the curve value unchanged.
+        const autoMatch = resolveAutoMatchValue({
+            trackId: lane.trackId,
+            parameterId: lane.parameterId,
+            automationValue: curveValue,
+            nowSeconds: now,
+        });
+        const value = autoMatch.value;
+        if (autoMatch.isReleaseStart) {
+            // The lane was skipped for the whole ride, so its slew still holds a
+            // stale pre-ride value. Drop it so the glide seeds at the released
+            // value rather than easing toward it from wherever the parameter sat
+            // before the user touched it.
+            automationState.pluginParamSlew.delete(lane.id);
+        }
+
+        // From here the lane writes its parameter, so it is driving: the gate
+        // above will restore this lane's manual base on the tick it stops.
+        automationState.drivingLanes.add(lane.id);
 
         // RT-5 param-family split. `gain` and `pan` are the only automation
         // targets backed by a real native AudioParam (fader GainNode.gain /
@@ -136,7 +198,10 @@ export function applyAutomation(currentBeat: number): Set<string> {
         // (scheduleAutomationOnParam); this closes the live half for the
         // AudioParam-backed families only.
         if (lane.parameterId === 'gain') {
-            const linearGain = lane.minValue < 0 ? 10 ** (value / 20) : value;
+            // One shared level law. A lane with `minValue < 0` is a
+            // decibel lane; `dbToGain` is the same conversion the offline
+            // scheduler now applies, so the bounce matches the monitor.
+            const linearGain = lane.minValue < 0 ? dbToGain(value) : value;
             // Compose the VCA master multiplier so a gain lane on a VCA-member
             // track scales WITH its group rather than nullifying it. getEffectiveGain
             // with a base of 1 returns just the multiplier (1 for a non-VCA track).
@@ -175,6 +240,16 @@ export function applyAutomation(currentBeat: number): Set<string> {
                 const prev = laneSlew.get(device.id) ?? value;
                 const smoothed = isDiscontinuity ? value : slewStep(prev, value, AUTOMATION_SLEW_ALPHA);
                 laneSlew.set(device.id, smoothed);
+                // Record the applied value even when the dispatch below
+                // is suppressed as sub-epsilon — the engine still holds this
+                // value (within epsilon), so it is the correct base for the
+                // modulation write that follows in this same tick.
+                let appliedByParameter = appliedAutomationBases.get(device.id);
+                if (!appliedByParameter) {
+                    appliedByParameter = new Map<string, number>();
+                    appliedAutomationBases.set(device.id, appliedByParameter);
+                }
+                appliedByParameter.set(paramId, smoothed);
                 if (isDiscontinuity || Math.abs(smoothed - prev) > SLEW_EPSILON) {
                     if (device.type === 'fermenter') {
                         // Fermenter params use camelCase ids that must be mapped to

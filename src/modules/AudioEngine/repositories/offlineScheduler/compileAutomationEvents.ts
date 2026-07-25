@@ -29,6 +29,13 @@ export type CompileAutomationEventsOptions = {
     // is affine so the order does not change the result.
     valueScale?: number;
     valueOffset?: number;
+    /**
+     * Non-affine post-transform applied AFTER `valueScale`/`valueOffset` and
+     * before the slew — for laws the affine pair cannot express, notably the
+     * fader's dB→linear conversion and its unity ceiling. Keep it pure;
+     * it runs once per compiled event.
+     */
+    valueTransform?: (value: number) => number;
 };
 function interpolateValue(
     first: AutomationPoint,
@@ -289,9 +296,11 @@ export function compileAutomationEvents(
     }
     const valueScale = options?.valueScale ?? 1;
     const valueOffset = options?.valueOffset ?? 0;
-    if (valueScale !== 1 || valueOffset !== 0) {
+    const valueTransform = options?.valueTransform;
+    if (valueScale !== 1 || valueOffset !== 0 || valueTransform) {
         for (const event of events) {
-            event.value = event.value * valueScale + valueOffset;
+            const scaled = event.value * valueScale + valueOffset;
+            event.value = valueTransform ? valueTransform(scaled) : scaled;
         }
     }
     if (options?.slew) {

@@ -16,7 +16,6 @@ describe('createAutomationLane', () => {
             visible: true,
             enabled: true,
             collapsed: false,
-            virginTerritory: true,
             minValue: 0,
             maxValue: 2,
         });
