@@ -392,6 +392,52 @@ describe('bounceTrack', () => {
         expect(replaced?.devices).toEqual(devices);
     });
 
+    it('leaves sibling tracks untouched when replacing only the target track', async () => {
+        const renderedBuffer = createTestAudioBuffer();
+        const targetClip = createAudioClip({ id: 'clip-target', startBeat: 0, endBeat: 4 });
+        const targetTrack = createAudioTrack({ id: 'track-1', clips: [targetClip] });
+        const siblingTrack = createAudioTrack({
+            id: 'track-2',
+            clips: [createAudioClip({ id: 'clip-sibling', trackId: 'track-2' })],
+        });
+        setTrackStoreState({ tracks: [targetTrack, siblingTrack], selectedTrackId: 'track-1' });
+        mocks.renderTrackOffline.mockResolvedValue(renderedBuffer);
+
+        await bounceTrack('track-1', {
+            includeInserts: true,
+            includeSends: false,
+            includeAutomation: false,
+            normalization: 'off',
+            tailHandling: 'off',
+            destination: 'replace',
+        });
+
+        const tracks = mocks.trackStore.value?.tracks ?? [];
+        expect(tracks).toHaveLength(2);
+        // Sibling is passed through by identity — same reference, untouched.
+        expect(tracks[1]).toBe(siblingTrack);
+    });
+
+    it('clears inserts on the new track when includeInserts is true', async () => {
+        const renderedBuffer = createTestAudioBuffer();
+        const devices = [{ id: 'd1', name: 'EQ', type: 'eq', bypassed: false, parameterValues: {} }];
+        const sourceTrack = createAudioTrack({ clips: [createAudioClip({})], devices });
+        setTrackStoreState({ tracks: [sourceTrack], selectedTrackId: 'track-1' });
+        mocks.renderTrackOffline.mockResolvedValue(renderedBuffer);
+
+        await bounceTrack('track-1', {
+            includeInserts: true,
+            includeSends: false,
+            includeAutomation: false,
+            normalization: 'off',
+            tailHandling: 'off',
+            destination: 'new-track',
+        });
+
+        const newTrack = mocks.trackStore.value?.tracks[1];
+        expect(newTrack?.devices).toEqual([]);
+    });
+
     it('returns false when the store is cleared between render and commit', async () => {
         const renderedBuffer = createTestAudioBuffer();
         const sourceTrack = createAudioTrack();
