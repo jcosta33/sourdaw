@@ -5,6 +5,12 @@ import { type YeastProcessorInfo, type YeastState } from '../models/YeastState';
 
 const YEAST_CRDT_SCHEMA_VERSION = 1;
 
+/** Empty Yeast rack — the store's seed value and its projection default. */
+export const defaultYeastState: YeastState = {
+    processors: [],
+    uiLevel: 1,
+};
+
 type MutableRecord = Record<string, unknown>;
 type YeastProcessorEntity = { deleted: boolean; value: YeastProcessorInfo };
 type YeastCrdtState = {
@@ -277,6 +283,12 @@ export function createYeastAutomergeStorage(getLocalState: () => YeastState | nu
         fromCrdt: (value) => {
             reconciledConflictState = null;
             return decode(value);
+        },
+        // Audit CC-2 — projection default for a document without this slot, so
+        // hydrate never writes the previous project's cache back into truth.
+        hydrateMissing: () => {
+            reconciledConflictState = null;
+            return defaultYeastState;
         },
         resolveCrdtConflicts: (values) => {
             reconciledConflictState = reconcileRootConflicts(values);

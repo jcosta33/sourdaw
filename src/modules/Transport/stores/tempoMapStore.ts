@@ -106,7 +106,11 @@ export function sanitize_tempo_map_state(value: unknown): TempoMapStoreState {
 }
 
 export const tempoMapStore = createStore<TempoMapStoreState>({
-    storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'tempoMap'),
+    storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'tempoMap', {
+        // Audit CC-2 — projection default for a document without this slot, so
+        // hydrate never writes the previous project's cache back into truth.
+        hydrateMissing: () => create_empty_tempo_map_state(),
+    }),
     initialData: create_empty_tempo_map_state(),
     sanitize: sanitize_tempo_map_state,
 });

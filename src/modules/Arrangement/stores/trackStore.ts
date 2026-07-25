@@ -678,6 +678,9 @@ export const trackStore = createStore<TrackStoreState>({
     storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'tracks', {
         toCrdt: ({ tracks }) => ({ tracks }),
         fromCrdt: sanitize_track_store_state_from_crdt,
+        // Audit CC-2 — projection default for a document without this slot, so
+        // hydrate never writes the previous project's cache back into truth.
+        hydrateMissing: () => defaultTrackState,
     }),
     initialData: defaultTrackState,
 });

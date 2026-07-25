@@ -706,7 +706,11 @@ export function sanitize_arrangement_store_state(value: unknown): ArrangementSto
 }
 
 export const arrangementStore = createStore<ArrangementStoreState>({
-    storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'arrangements'),
+    storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'arrangements', {
+        // Audit CC-2 — projection default for a document without this slot, so
+        // hydrate never writes the previous project's cache back into truth.
+        hydrateMissing: () => defaultArrangementStoreState,
+    }),
     initialData: defaultArrangementStoreState,
     sanitize: sanitize_arrangement_store_state,
 });

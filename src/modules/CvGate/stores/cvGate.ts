@@ -164,7 +164,11 @@ export function sanitize_cv_gate_state(value: unknown): CvGateState {
 }
 
 export const cvGateStore = createStore<CvGateState>({
-    storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'cvGate'),
+    storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'cvGate', {
+        // Audit CC-2 — projection default for a document without this slot, so
+        // hydrate never writes the previous project's cache back into truth.
+        hydrateMissing: () => defaultCvGateState,
+    }),
     initialData: defaultCvGateState,
     sanitize: sanitize_cv_gate_state,
 });

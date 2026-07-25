@@ -108,7 +108,11 @@ export function sanitize_sidechain_store_state(value: unknown): SidechainStoreSt
 }
 
 export const sidechainStore = createStore<SidechainStoreState>({
-    storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'sidechainRoutes'),
+    storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'sidechainRoutes', {
+        // Audit CC-2 — projection default for a document without this slot, so
+        // hydrate never writes the previous project's cache back into truth.
+        hydrateMissing: () => defaultSidechainStoreState,
+    }),
     initialData: defaultSidechainStoreState,
     sanitize: sanitize_sidechain_store_state,
 });

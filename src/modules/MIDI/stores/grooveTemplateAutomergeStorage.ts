@@ -2,6 +2,7 @@ import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeSto
 
 import { type GrooveTemplate } from '../models/GrooveTemplate';
 import {
+    defaultGrooveTemplateState,
     sanitizeGrooveTemplateState,
     type GrooveTemplateAssignment,
     type GrooveTemplateState,
@@ -285,6 +286,12 @@ export function createGrooveTemplateAutomergeStorage() {
         fromCrdt: (value) => {
             reconciledConflictState = null;
             return decodeState(value);
+        },
+        // Audit CC-2 — projection default for a document without this slot, so
+        // hydrate never writes the previous project's cache back into truth.
+        hydrateMissing: () => {
+            reconciledConflictState = null;
+            return defaultGrooveTemplateState;
         },
         resolveCrdtConflicts: (values) => {
             const reconciliation = reconcileCrdtRootConflicts(values);

@@ -418,7 +418,11 @@ export function sanitize_automation_store_state(value: unknown): AutomationStore
 }
 
 export const automationStore = createStore<AutomationStoreState>({
-    storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'automation'),
+    storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'automation', {
+        // Audit CC-2 — projection default for a document without this slot, so
+        // hydrate never writes the previous project's cache back into truth.
+        hydrateMissing: () => defaultAutomationStoreState,
+    }),
     initialData: defaultAutomationStoreState,
     sanitize: sanitize_automation_store_state,
 });

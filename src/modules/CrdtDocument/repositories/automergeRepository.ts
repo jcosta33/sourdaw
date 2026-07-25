@@ -201,7 +201,19 @@ function invokeWorker(msg: Record<string, unknown>): Promise<WorkerResponse> {
  * (bulk load / merge / snapshot) and the listener must re-sync everything.
  * Consumers use the hint to narrow per-doc work (§138.1).
  */
-type ChangeListener = (docId?: DocId) => void;
+/**
+ * Extra narrowing for a change that a local CRDT-backed store performed
+ * (audit CC-1). `localSlots` names the exact document keys the storage adapter
+ * wrote, and its presence marks the change as locally originated — the writing
+ * adapter already holds the truth for those slots, so the projection bridge can
+ * skip re-reading them. Document-origin changes (sync, merge, load, snapshot
+ * restore) never carry it and stay a full re-projection.
+ */
+export type CrdtChangeHint = {
+    readonly localSlots: readonly string[];
+};
+
+type ChangeListener = (docId?: DocId, hint?: CrdtChangeHint) => void;
 
 /**
  * Active snapshot transaction state. A mutation participates only when it
@@ -316,12 +328,17 @@ class AutomergeRepository {
      *
      * @param message - Optional semantic message attached to the Automerge change.
      *   Used for history inspection (`getHistory()` returns this in `DecodedChange.message`).
+     * @param localSlots - Document keys a local CRDT-backed store wrote in this
+     *   change. Supplying them marks the change as locally originated and lets
+     *   the projection bridge skip re-reading slots the writer already owns
+     *   (audit CC-1). Omit for every document-origin write.
      */
     changeDoc<TDoc = AnyDoc>(
         id: DocId,
         changeFn: ChangeFn<TDoc>,
         message?: string,
-        snapshotTransaction?: object
+        snapshotTransaction?: object,
+        localSlots?: readonly string[]
     ): void {
         const doc = this.docs.get(id) as Doc<TDoc> | undefined;
         if (!doc) {
@@ -332,7 +349,7 @@ class AutomergeRepository {
         const updated = message ? change(doc, { message }, changeFn) : change(doc, changeFn);
         this.docs.set(id, updated);
         this.markMutation();
-        this.notifyListeners(id);
+        this.notifyListeners(id, localSlots ? { localSlots } : undefined);
     }
 
     /**
@@ -961,10 +978,10 @@ class AutomergeRepository {
         return getHeads(doc);
     }
 
-    private notifyListeners(docId?: DocId): void {
+    private notifyListeners(docId?: DocId, hint?: CrdtChangeHint): void {
         for (const listener of this.changeListeners) {
             try {
-                listener(docId);
+                listener(docId, hint);
             } catch (error) {
                 logger.warn('[AutomergeRepository] Listener error:', error);
             }

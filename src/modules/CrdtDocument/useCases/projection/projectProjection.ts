@@ -1,37 +1,15 @@
-import { markerStore, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
-import { automationStore, modulationStore } from '#/modules/Automation/stores';
-import { cvGateStore } from '#/modules/CvGate/stores';
-import { hydrateKneadFromTrackStore } from '#/modules/Knead/useCases';
-import { hydrateMidiCrdtProjection } from '#/modules/MIDI/useCases';
-import { arrangementStore, projectStore } from '#/modules/Project/stores';
-import { hydrateSidechainRoutes } from '#/modules/Routing/useCases';
-import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
-import { hydrateYeastCrdtProjection } from '#/modules/Yeast/useCases';
+import { projectSlotProjections } from './projectSlotProjections';
 
-import { actionHistoryStore } from '../../stores/actionHistoryStore';
-
-/** All project-state stores backed by AutomergeStorage. */
-const projectStores = [
-    trackStore,
-    automationStore,
-    modulationStore,
-    transportStore,
-    tempoMapStore,
-    timeSignatureMapStore,
-    markerStore,
-    takeLaneStore,
-    arrangementStore,
-    projectStore,
-    cvGateStore,
-    actionHistoryStore,
-];
-
+/**
+ * Re-project every root slot from the document into its store.
+ *
+ * Used for bulk and document-origin changes (load, merge, sync, snapshot
+ * restore), where the set of keys that moved is not knowable. A change that a
+ * local CRDT-backed store performed names its slots and goes through
+ * `projectChangedCrdtSlots` instead.
+ */
 export function projectCrdtToStores(): void {
-    for (const store of projectStores) {
-        store.hydrate();
+    for (const projection of projectSlotProjections) {
+        projection.hydrate();
     }
-    hydrateMidiCrdtProjection();
-    hydrateYeastCrdtProjection();
-    hydrateKneadFromTrackStore();
-    hydrateSidechainRoutes();
 }

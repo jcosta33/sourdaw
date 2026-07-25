@@ -285,7 +285,11 @@ export function sanitize_take_lane_store_state(value: unknown): TakeLaneStoreSta
 }
 
 export const takeLaneStore = createStore<TakeLaneStoreState>({
-    storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'takeLanes'),
+    storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'takeLanes', {
+        // Audit CC-2 — projection default for a document without this slot, so
+        // hydrate never writes the previous project's cache back into truth.
+        hydrateMissing: () => defaultTakeLaneStoreState,
+    }),
     initialData: defaultTakeLaneStoreState,
     sanitize: sanitize_take_lane_store_state,
 });
