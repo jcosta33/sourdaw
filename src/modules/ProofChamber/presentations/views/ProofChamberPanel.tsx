@@ -26,6 +26,7 @@ import {
     type ProofChamberEngineState,
     expandSpacePreset,
     type SpaceType,
+    usesRt60DecayLaw,
 } from '../../models/ProofChamberState';
 import { chamberStore } from '../../stores/chamberStore';
 import { decodeImpulseResponse } from '../../useCases/proofChamber/decodeImpulseResponse';
@@ -63,12 +64,6 @@ function formatValue(value: number, unit: string): string {
     if (unit === '%') {
         return `${Math.round(value * 100)}%`;
     }
-    if (unit === 'decay') {
-        // `decay` is stored as a normalised 0…0.999 coefficient, so the readout
-        // converts it through the same law the engines use rather than printing
-        // the raw value with an `s` glued on.
-        return `${decayToRt60Seconds(value).toFixed(1)}s`;
-    }
     if (unit === 'ms') {
         return `${Math.round(value)}ms`;
     }
@@ -79,6 +74,19 @@ function formatValue(value: number, unit: string): string {
         return `${value > 0 ? '+' : ''}${value.toFixed(2)}`;
     }
     return value.toFixed(2);
+}
+
+/**
+ * The Decay readout. `decay` is stored as a normalised 0…0.999 coefficient, so
+ * seconds are only shown for the algorithms whose engine actually converts it
+ * into an RT60 — printing a tail length for the plate or the spring would
+ * describe a number their DSP never produces.
+ */
+function formatDecayReadout(decay: number, algorithm: ProofChamberAlgorithm): string {
+    if (usesRt60DecayLaw(algorithm)) {
+        return `${decayToRt60Seconds(decay).toFixed(1)}s`;
+    }
+    return decay.toFixed(3);
 }
 
 function StatusTile({ label, value, accent }: { label: string; value: string; accent: string }): ReactElement {
@@ -351,7 +359,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                     <DawPluginMetricStrip className="ml-auto">
                         <StatusTile
                             label="Decay"
-                            value={formatValue(params.decay, 'decay')}
+                            value={formatDecayReadout(params.decay, params.algorithm)}
                             accent="var(--color-accent-cyan)"
                         />
                         <StatusTile
@@ -522,7 +530,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                     step={0.001}
                                     defaultValue={0.5}
                                     size="md"
-                                    readout={formatValue(params.decay, 'decay')}
+                                    readout={formatDecayReadout(params.decay, params.algorithm)}
                                 />
                                 <KnobCell
                                     label="Mix"

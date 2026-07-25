@@ -7,8 +7,14 @@
 //! Each engine needs a different physical quantity: the FDN needs an RT60 in
 //! seconds, the convolution engine needs a stretch factor for the loaded IR.
 //! Both derive it here through one exponential law, so equal knob travel means
-//! the same *ratio* change in tail length whichever algorithm is selected, and
-//! a stored `decay` keeps one meaning across the whole device.
+//! the same *ratio* change in tail length whichever algorithm is selected.
+//!
+//! Caveat on the convolution side: `decay_stretch` is only consumed by
+//! `ConvolutionEngine::load_ir`, and nothing in the app calls `load_ir` yet —
+//! the IR browser decodes a file but never posts it to the worklet. So the
+//! conversion below is correct and in place, but inert on the convolution and
+//! hybrid algorithms until an IR-load path is wired. It was equally inert
+//! before this contract was unified; the FDN is where the fix has teeth.
 
 /// Descriptor default for `decay` — the neutral centre of the curve.
 pub const DECAY_DEFAULT: f32 = 0.5;

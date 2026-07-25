@@ -469,6 +469,8 @@ impl ConvolutionEngine {
             // `dutch-oven` descriptor declares, converted to a stretch factor by
             // the same law the FDN uses for RT60. Handled here rather than at the
             // call site so the hybrid engine's blind forwarding gets it too.
+            // Note this only bites at `load_ir` time, and nothing calls `load_ir`
+            // yet — see the caveat in `decay_curve`.
             "decay" => self.decay_stretch = decay_to_ir_stretch(value),
             "ir_eq_1" => self.ir_eq[0] = value.clamp(-12.0, 12.0),
             "ir_eq_2" => self.ir_eq[1] = value.clamp(-12.0, 12.0),
