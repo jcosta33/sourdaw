@@ -22,6 +22,57 @@ use super::waveshaper::CustomWaveshaper;
 const MAX_BANDS: usize = 6;
 const MAX_MOD_ASSIGNMENTS: usize = 64;
 
+/// Ring size for the per-band alignment delay.
+///
+/// The longest oversampler round trip is 11.375 base-rate samples (8x), so a
+/// band running at 1x never has to wait more than 12 whole samples to meet
+/// it. Power of two so the wrap compiles to a mask, and a fixed-size array so
+/// changing the compensation never allocates.
+const ALIGNMENT_RING_LEN: usize = 16;
+
+/// Whole-sample delay used to line one band's output up with the slowest one.
+///
+/// Oversampler latencies are fractional (6.5 / 9.75 / 11.375), so a
+/// whole-sample compensation leaves at most half a sample of residual error —
+/// against the 11.375 samples it removes, that pushes the first cancellation
+/// notch from ~2.1 kHz up past the sample rate.
+struct AlignmentDelay {
+    left: [f32; ALIGNMENT_RING_LEN],
+    right: [f32; ALIGNMENT_RING_LEN],
+    write: usize,
+    delay: usize,
+}
+
+impl AlignmentDelay {
+    fn new() -> Self {
+        Self {
+            left: [0.0; ALIGNMENT_RING_LEN],
+            right: [0.0; ALIGNMENT_RING_LEN],
+            write: 0,
+            delay: 0,
+        }
+    }
+
+    fn set_delay(&mut self, delay: usize) {
+        self.delay = delay.min(ALIGNMENT_RING_LEN - 1);
+    }
+
+    /// Write one stereo frame and read the one `delay` frames older.
+    ///
+    /// The ring is written on every call even at zero delay — a bypass that
+    /// skipped the write would let the buffer go stale and replay whatever
+    /// was in it the moment a preset raised the delay again.
+    #[inline]
+    fn process(&mut self, left: f32, right: f32) -> (f32, f32) {
+        self.left[self.write] = left;
+        self.right[self.write] = right;
+        let read = (self.write + ALIGNMENT_RING_LEN - self.delay) % ALIGNMENT_RING_LEN;
+        let output = (self.left[read], self.right[read]);
+        self.write = (self.write + 1) % ALIGNMENT_RING_LEN;
+        output
+    }
+}
+
 /// Modulation assignment: source → target with amount.
 #[derive(Clone)]
 #[allow(dead_code)]
@@ -63,6 +114,8 @@ struct BandChain {
     convolution: ConvolutionProcessor,
     oversampler_l: OversamplingChain,
     oversampler_r: OversamplingChain,
+    /// Pads this band out to the delay of the slowest band in the sum.
+    alignment: AlignmentDelay,
 
     // Enable flags
     distortion_enabled: bool,
@@ -120,6 +173,7 @@ impl BandChain {
             mute: false,
             enabled: true,
             oversampling_factor: 1,
+            alignment: AlignmentDelay::new(),
             peak_level: 0.0,
             meter_decay: (-1.0 / (0.1 * sample_rate)).exp(),
         }
@@ -182,8 +236,41 @@ impl BandChain {
         self.oversampler_l.latency_samples()
     }
 
+    /// Group delay the band's own processing imposes *right now*.
+    ///
+    /// Unlike [`Self::latency_samples`] this does follow `distortion_enabled`:
+    /// the oversampler only sits in the path when the distortion stage runs,
+    /// so a band carrying a factor with distortion switched off delays
+    /// nothing. The compensation has to close the real gap, not the reported
+    /// one — and because it makes up the difference either way, the band's
+    /// total delay stays put across a distortion toggle, which is what lets
+    /// `latency_samples` keep reporting a flag-independent number honestly.
+    fn engaged_latency_samples(&self) -> f32 {
+        if self.distortion_enabled && self.oversampling_factor > 1 {
+            return self.oversampler_l.latency_samples();
+        }
+        0.0
+    }
+
+    /// Delay this band's output until it presents `target` base-rate samples.
+    ///
+    /// Called whenever a parameter could have moved any band's latency; the
+    /// deficit is rounded to whole samples, so up to half a sample of skew
+    /// survives against the 11.375 it removes at 8x.
+    fn set_alignment_target(&mut self, target: f32) {
+        let deficit = target - self.engaged_latency_samples();
+        if deficit <= 0.0 {
+            self.alignment.set_delay(0);
+            return;
+        }
+        self.alignment.set_delay(deficit.round() as usize);
+    }
+
     fn process_sample(&mut self, left: f32, right: f32, gain_offset: f32) -> (f32, f32) {
         if !self.enabled || self.mute {
+            // Keep the alignment ring moving on silence so an unmute does not
+            // flush out whatever the band was playing before it was muted.
+            self.alignment.process(0.0, 0.0);
             return (0.0, 0.0);
         }
 
@@ -275,6 +362,14 @@ impl BandChain {
         let g = (self.gain.next() + gain_offset).max(0.0);
         l *= g;
         r *= g;
+
+        // Pad out to the slowest band's delay. Bands are summed, so a band
+        // that oversamples and a band that does not would otherwise arrive at
+        // the sum up to 11.375 samples apart and comb at their shared
+        // crossover.
+        let (aligned_l, aligned_r) = self.alignment.process(l, r);
+        l = aligned_l;
+        r = aligned_r;
 
         // Update peak meter
         let peak = l.abs().max(r.abs());
@@ -465,6 +560,41 @@ impl BacteriaEngine {
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {
+        self.apply_param(name, value);
+        // Any parameter can move a band's engaged latency: the factor itself,
+        // `bandCount`, or the distortion flag that decides whether the
+        // oversampler is in the path at all. Names reach bands two ways (bare
+        // names broadcast, `bandN_` prefixes target one), so gating this on a
+        // name list would be one missed case away from a silent comb filter.
+        // `set_param` is a control-rate call and this pass is allocation-free
+        // over at most six bands.
+        self.realign_bands();
+    }
+
+    /// Equalize the group delay of every band feeding the sum.
+    ///
+    /// The target is the worst case over active bands derived from their
+    /// configured factors — the same number [`Self::latency_samples`] reports
+    /// to the host — so the report stays exactly what the device delivers.
+    fn realign_bands(&mut self) {
+        let target = self
+            .bands
+            .iter()
+            .take(self.band_count)
+            .map(BandChain::latency_samples)
+            .fold(0.0_f32, f32::max);
+        for (index, band) in self.bands.iter_mut().enumerate() {
+            // Bands past `bandCount` contribute nothing to the sum and must
+            // not hold a stale delay into a later band-count change.
+            if index < self.band_count {
+                band.set_alignment_target(target);
+            } else {
+                band.set_alignment_target(0.0);
+            }
+        }
+    }
+
+    fn apply_param(&mut self, name: &str, value: f32) {
         // Parse band-prefixed params: "band0_drive", "band1_filterCutoff", etc.
         // Only a digit after "band" makes it one — "bandCount" and friends must
         // fall through to the match below, not be swallowed by an early return.
@@ -771,6 +901,10 @@ impl BacteriaEngine {
     /// All six `BandChain`s are allocated up front while only `band_count`
     /// run, so a stale factor on an inactive band must not inflate the report.
     ///
+    /// This is also the alignment target every band is padded out to (see
+    /// `realign_bands`), so the number below is what the device actually
+    /// delivers rather than an upper bound the shorter bands undercut.
+    ///
     /// **Deliberately not included:** `StftProcessor`'s windowing latency on
     /// the spectral path. That omission predates the oversampler rewrite and
     /// the type exposes no accessor to report it; folding in a guessed number
@@ -794,6 +928,8 @@ impl BacteriaEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::grinder::oversample::alias_probe::bin_magnitude;
+    use std::f32::consts::PI;
 
     /// Deterministic pseudo-white noise (LCG) in [-1, 1).
     fn noise_block(len: usize, seed: &mut u32) -> Vec<f32> {
@@ -909,5 +1045,173 @@ mod tests {
             7,
             "band 2 is beyond bandCount=2 and must not inflate the report"
         );
+    }
+
+    /// Base-rate group delay of one oversampling factor, mirroring
+    /// `OversamplingChain::latency_samples` (pinned there against the impulse
+    /// centroid).
+    fn factor_latency(factor: f32) -> f32 {
+        match factor as usize {
+            2 => 6.5,
+            4 => 9.75,
+            8 => 11.375,
+            _ => 0.0,
+        }
+    }
+
+    /// One band's oversampling configuration for the summing probes below.
+    ///
+    /// The distortion flag matters as much as the factor: the oversampler is
+    /// only in the path while the distortion stage runs, so a band carrying
+    /// 8x with distortion off delays nothing.
+    #[derive(Clone, Copy)]
+    struct BandSetup {
+        factor: f32,
+        distortion: bool,
+    }
+
+    const SAMPLE_RATE: f32 = 48_000.0;
+
+    /// Base-rate delay the band actually imposes with this setup.
+    fn engaged_latency(setup: BandSetup) -> f32 {
+        if setup.distortion {
+            return factor_latency(setup.factor);
+        }
+        0.0
+    }
+
+    /// Magnitude at `freq` of the device output for a two-band split, with the
+    /// crossover placed on `freq` so both bands carry half the tone and any
+    /// cancellation between them is maximally exposed.
+    ///
+    /// Drive is zeroed and the probe kept small so the distortion stage stays
+    /// near-linear — it has to be enabled for the oversampler to be in the
+    /// path at all, but its harmonics must not pollute the fundamental bin.
+    fn two_band_sum_magnitude(setups: [BandSetup; 2], freq: f32) -> f32 {
+        const BLOCK: usize = 8_192;
+        const WARMUP: usize = 2_048;
+        const AMPLITUDE: f32 = 0.1;
+
+        let mut engine = BacteriaEngine::new(SAMPLE_RATE);
+        engine.set_param("crossoverFreq1", freq);
+        engine.set_param("bandCount", 2.0);
+        engine.set_param("drive", 0.0);
+        for (index, setup) in setups.iter().enumerate() {
+            let enabled = if setup.distortion { 1.0 } else { 0.0 };
+            engine.set_param(&format!("band{index}_distortionEnabled"), enabled);
+            engine.set_param(&format!("band{index}_oversampling"), setup.factor);
+        }
+
+        let mut left: Vec<f32> = (0..BLOCK)
+            .map(|n| {
+                let phase = 2.0 * PI * freq * n as f32 / SAMPLE_RATE;
+                phase.sin() * AMPLITUDE
+            })
+            .collect();
+        let mut right = left.clone();
+        engine.process_block(&mut left, &mut right);
+
+        bin_magnitude(&left[WARMUP..], freq, SAMPLE_RATE)
+    }
+
+    /// Bands are summed, so a per-band oversampling factor is also a per-band
+    /// group delay: 11.375 base samples at 8x against 0 at 1x is ~0.24 ms at
+    /// 48 kHz, putting a cancellation notch at ~2.1 kHz — audible, and landing
+    /// exactly on a crossover if the preset placed one there. The same gap
+    /// opens when two bands share a factor but only one runs its distortion,
+    /// because the oversampler is bypassed with the stage it feeds.
+    ///
+    /// Each case is measured against the same split with both bands delayed
+    /// equally. Pre-compensation every case retained ≤0.03x — near-total
+    /// cancellation of the tone.
+    #[test]
+    fn bands_with_mismatched_group_delay_still_sum_across_the_crossover() {
+        let driven = |factor: f32| BandSetup {
+            factor,
+            distortion: true,
+        };
+        let cases = [
+            [driven(8.0), driven(1.0)],
+            [driven(4.0), driven(1.0)],
+            [driven(8.0), driven(2.0)],
+            [driven(4.0), driven(2.0)],
+            [
+                driven(8.0),
+                BandSetup {
+                    factor: 8.0,
+                    distortion: false,
+                },
+            ],
+        ];
+
+        for case in cases {
+            let delta = engaged_latency(case[0]) - engaged_latency(case[1]);
+            // The frequency whose half period equals the offset — the first
+            // place the two bands arrive in antiphase.
+            let probe = SAMPLE_RATE / (2.0 * delta);
+            let reference = [case[0], case[0]];
+
+            let matched = two_band_sum_magnitude(reference, probe);
+            let mismatched = two_band_sum_magnitude(case, probe);
+            assert!(
+                matched > 1.0e-4,
+                "the equal-delay reference collapsed at {probe:.0} Hz \
+                 ({matched:.6}) — the comparison below would prove nothing"
+            );
+
+            let retained = mismatched / matched;
+            assert!(
+                retained > 0.9,
+                "a band delayed {delta} samples more than its neighbour combs \
+                 at their shared crossover: {retained:.3}x of the equal-delay \
+                 magnitude survives at {probe:.0} Hz"
+            );
+        }
+    }
+
+    /// The compensation must land the device on its reported latency and no
+    /// further: a band whose oversampler already runs gets no padding, and a
+    /// band that skips it gets exactly enough to match.
+    ///
+    /// Measured as the abs-weighted centroid of the impulse response, the way
+    /// `oversample.rs` pins the chain's own delay. The probe is tiny and drive
+    /// is zeroed so the distortion stage stays near-linear and does not skew
+    /// the centroid.
+    #[test]
+    fn device_delay_lands_on_the_configured_latency_target() {
+        const IMPULSE: f32 = 0.01;
+        const BLOCK: usize = 512;
+
+        for factor in [1.0_f32, 2.0, 4.0, 8.0] {
+            for distortion in [false, true] {
+                let mut engine = BacteriaEngine::new(SAMPLE_RATE);
+                engine.set_param("drive", 0.0);
+                engine.set_param("distortionEnabled", if distortion { 1.0 } else { 0.0 });
+                engine.set_param("oversampling", factor);
+
+                let mut left = vec![0.0_f32; BLOCK];
+                left[0] = IMPULSE;
+                let mut right = left.clone();
+                engine.process_block(&mut left, &mut right);
+
+                let mut numerator = 0.0_f32;
+                let mut denominator = 0.0_f32;
+                for (n, &sample) in left.iter().enumerate() {
+                    numerator += n as f32 * sample.abs();
+                    denominator += sample.abs();
+                }
+                let centroid = numerator / denominator;
+
+                // Every band shares one factor here, so the target is that
+                // factor's own delay whether or not the stage that carries it
+                // is switched on.
+                let target = factor_latency(factor);
+                assert!(
+                    (centroid - target).abs() < 0.55,
+                    "{factor}x (distortion {distortion}) must present {target} \
+                     samples of delay, measured centroid {centroid:.3}"
+                );
+            }
+        }
     }
 }
