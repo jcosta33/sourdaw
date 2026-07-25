@@ -1,11 +1,13 @@
 import { describe, it, expect } from 'vitest';
 
-import * as subject from '../applyMorphedPatch';
+import { applyMorphedPatch } from '../applyMorphedPatch';
 
-describe('applyMorphedPatch', () => {
-    it('should export applyMorphedPatch', () => {
-        expect(subject.applyMorphedPatch).toBeDefined();
-        const t = typeof subject.applyMorphedPatch;
-        expect(t === 'function' || t === 'object').toBe(true);
+describe('applyMorphedPatch (unit surface)', () => {
+    it('exports a callable applyMorphedPatch function', () => {
+        // The detailed routing (eligibility gate, DSP-id mapping, rAF
+        // coalescing, undefined-dependency branches) is covered in
+        // useCases/__tests__/presetMorph.spec.ts. This spec only pins the
+        // public surface so an accidental rename is caught here.
+        expect(typeof applyMorphedPatch).toBe('function');
     });
 });

@@ -31,4 +31,10 @@ describe('updateWorkspaceState repository', () => {
         expect(workspaceStore.set).toHaveBeenCalledWith({ mode: 'automation' });
         expect(getWorkspaceState()?.mode).toBe('automation');
     });
+
+    it('throws when the store is not initialized (null is an invariant violation)', () => {
+        workspaceStore.set(null);
+        // The guard is load-bearing: a null store must surface loudly, not silently swallow.
+        expect(() => updateWorkspaceState({ mode: 'arrange' })).toThrowError(/not initialized/);
+    });
 });
