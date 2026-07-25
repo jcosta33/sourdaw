@@ -79,4 +79,14 @@ describe('persistDevicePatch', () => {
         expect(devices[0]?.parameterValues).toEqual({ tone: 0.3 });
         expect(devices[1]?.parameterValues).toEqual({ gain: 0.9 });
     });
+
+    it('is a no-op when the track store has not loaded', () => {
+        trackStore.set(null);
+        const set = vi.spyOn(trackStore, 'set');
+        set.mockClear();
+
+        persistDevicePatch('d1', { gain: 0.9 });
+
+        expect(set).not.toHaveBeenCalled();
+    });
 });
