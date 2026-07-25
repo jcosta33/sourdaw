@@ -299,10 +299,11 @@ const MAX_LOUDNESS_BLOCKS: usize = 36_000;
 ///    LU, measured, on a programme whose quiet intro was a tenth of its length.
 ///    It therefore reads from [`LoudnessQuantiles`], which counts every block
 ///    so ranks stay exact at any programme length. Its only error is that a
-///    returned percentile is its bin's centre, bounding the range to one bin.
-///    *To check:* compare against the unbounded implementation over material
-///    with a population boundary near the 10th percentile; measured 0.0000 LU
-///    there, and under 0.03 LU on continuously distributed material.
+///    returned percentile is its bin's centre: half a bin per percentile, so
+///    about 0.01 LU across the two the range is built from. *To check:* compare
+///    against the unbounded implementation over material with a population
+///    boundary near the 10th percentile; measured 0.0000 LU there, and under
+///    0.01 LU on continuously distributed material.
 ///
 /// 4. **Stability where a whole population sits on the relative gate.** If a
 ///    large group of blocks lands within a hair of the gate threshold, an
@@ -591,10 +592,16 @@ impl TruePeakDetector {
 const QUANTILE_MIN_LUFS: f32 = -70.0;
 /// Bin width, and therefore the whole of the error in a returned percentile.
 const QUANTILE_BIN_LU: f32 = 0.01;
-/// Spans −70 to +60 LUFS. The top is far above anything a block can reach in
-/// practice; it exists so a loud passage cannot saturate into the top bin and
-/// drag a percentile down with it.
-const QUANTILE_BINS: usize = 13_000;
+/// Bins span −70 to +810 LUFS.
+///
+/// The top is chosen so that **no finite block loudness can reach it**: block
+/// loudness is a decibel figure, and the largest a finite f32 signal can produce
+/// is around +770. Covering the whole reachable range uniformly is deliberate —
+/// an earlier version stopped at +60 and handled everything above it specially,
+/// which produced a silent ceiling twice (first by clamping into the last bin,
+/// then by collapsing a distribution into an interpolation between two
+/// extremes). One mapping with no seam cannot do that. 352 KB, allocated once.
+const QUANTILE_BINS: usize = 88_000;
 
 /// Exact-rank quantile estimator for loudness range.
 ///
@@ -617,6 +624,16 @@ const QUANTILE_BINS: usize = 13_000;
 /// Taking the threshold from binned values is what broke an earlier histogram:
 /// a quantised mean shifted the threshold onto a cluster and flipped all of it
 /// at once. Here the bins only ever answer "what loudness sits at rank k".
+///
+/// **Nothing finite saturates**, and that has to hold past capacity, not just
+/// under it. A runaway filter or a feedback blowup drives block loudness far
+/// above anything music reaches, and surfacing that is the metering path's job;
+/// a meter that quietly reports a plausible number instead has failed at
+/// precisely the moment it mattered. The bins therefore span the entire range a
+/// finite f32 signal can produce, so no reachable loudness lands on the edge.
+///
+/// Non-finite block loudness is discarded rather than binned, so one infinity
+/// cannot poison the gate mean for every later reading.
 #[derive(Clone)]
 struct LoudnessQuantiles {
     counts: Vec<u32>,
@@ -645,11 +662,13 @@ impl LoudnessQuantiles {
 
     fn push(&mut self, lufs: f32) {
         self.total += 1;
-        if !(lufs > QUANTILE_MIN_LUFS) {
+        // Rejects NaN as well as anything at or under the absolute gate.
+        if !(lufs > QUANTILE_MIN_LUFS) || !lufs.is_finite() {
             return;
         }
         self.gate_sum += lufs;
         self.gate_count += 1;
+
         let offset = (lufs - QUANTILE_MIN_LUFS) / QUANTILE_BIN_LU;
         let index = (offset as usize).min(QUANTILE_BINS - 1);
         self.counts[index] += 1;
@@ -662,7 +681,7 @@ impl LoudnessQuantiles {
     }
 
     fn occupied(&self) -> core::ops::Range<usize> {
-        if self.gate_count == 0 {
+        if self.gate_count == 0 || self.lowest > self.highest {
             return 0..0;
         }
         self.lowest..self.highest + 1
@@ -771,9 +790,16 @@ impl LoudnessRange {
     /// blocks start being replaced the stored set is a sample, and a sample
     /// cannot carry order statistics — see [`LoudnessQuantiles`].
     fn record_block(&mut self, lufs: f32) {
+        self.store_block(lufs);
+        self.refresh_cached();
+    }
+
+    /// Everything a block does to the stored state, without refreshing the
+    /// cached measure. Shared so the batched test entry point cannot drift from
+    /// what production records.
+    fn store_block(&mut self, lufs: f32) {
         self.blocks.push(lufs);
         self.quantiles.push(lufs);
-        self.refresh_cached();
     }
 
     /// Recompute the cached measure from the stored state. Pure in that state,
@@ -802,8 +828,7 @@ impl LoudnessRange {
     #[cfg(test)]
     pub(crate) fn record_blocks_for_test(&mut self, blocks: &[f32]) {
         for &lufs in blocks {
-            self.blocks.push(lufs);
-            self.quantiles.push(lufs);
+            self.store_block(lufs);
         }
         self.refresh_cached();
     }
@@ -1183,17 +1208,29 @@ mod loudness_block_store_tests {
         }
     }
 
-    /// Loudness far above the old histogram's +10 LUFS ceiling used to saturate
-    /// into the top bin, which is what pulled the mean and moved the gate in the
-    /// case above. An exact store has no ceiling to saturate against.
+    /// An exact store has no ceiling to saturate against.
+    ///
+    /// This deliberately only covers the under-capacity path; the same property
+    /// past capacity, where a fixed-size structure *can* impose a ceiling, is
+    /// `extreme_loudness_tests`. Keeping this one narrow is the point — an
+    /// earlier version asserted "not clamped" only here, where clamping is
+    /// impossible by construction, and stayed green while the quantile path
+    /// capped loudness range near 80 LU.
     #[test]
-    fn very_loud_blocks_are_not_clamped() {
-        let blocks = vec![60.0_f32, 60.0, 60.0, 60.0];
-        assert_eq!(
-            gated_integrated_lufs(&blocks).to_bits(),
-            reference_integrated(&blocks).to_bits()
-        );
-        assert!((gated_integrated_lufs(&blocks) - 60.0).abs() < 1e-4);
+    fn very_loud_blocks_are_not_clamped_under_capacity() {
+        for level in [60.0_f32, 200.0, 760.0] {
+            let blocks = vec![level; 4];
+            assert_eq!(
+                gated_integrated_lufs(&blocks).to_bits(),
+                reference_integrated(&blocks).to_bits(),
+                "level {level}"
+            );
+            assert!(
+                (gated_integrated_lufs(&blocks) - level).abs() < 1e-3,
+                "level {level} read back as {}",
+                gated_integrated_lufs(&blocks)
+            );
+        }
     }
 
     #[test]
@@ -1671,10 +1708,11 @@ mod loudness_range_past_capacity_tests {
                 worst = worst.max(delta);
             }
         }
-        // One bin is 0.01 LU and two percentiles are read, so 0.02 LU is the
-        // structural ceiling; the margin is for f32 rounding on the difference.
+        // Each percentile is reported as its bin's centre, so it is within half
+        // a bin (0.005 LU) and the range built from two is within about 0.01 LU.
+        // Measured worst: 0.0031 LU.
         assert!(
-            worst < 0.03,
+            worst < 0.01,
             "worst LRA divergence on continuous material {worst:.4} LU exceeds the \
              one-bin ceiling — the percentile lookup is not doing what its bin width says"
         );
@@ -1702,6 +1740,124 @@ mod loudness_range_past_capacity_tests {
         assert!(
             meter.get_lra() > 0.0,
             "the meter should still be reporting a range"
+        );
+    }
+}
+
+#[cfg(test)]
+mod extreme_loudness_tests {
+    //! A metering path exists partly to surface anomalies. A runaway filter or a
+    //! feedback blowup drives block loudness far above anything music reaches,
+    //! and the meter's job is to show that, not to quietly report a plausible
+    //! number instead.
+
+    use super::{
+        LoudnessRange, MAX_LOUDNESS_BLOCKS, QUANTILE_BIN_LU, QUANTILE_BINS, QUANTILE_MIN_LUFS,
+    };
+
+    fn reference_lra(blocks: &[f32]) -> f32 {
+        if blocks.len() < 2 {
+            return 0.0;
+        }
+        let mut above_abs: Vec<f32> = blocks.iter().copied().filter(|&b| b > -70.0).collect();
+        if above_abs.is_empty() {
+            return 0.0;
+        }
+        let mean: f32 = above_abs.iter().sum::<f32>() / above_abs.len() as f32;
+        let rel_threshold = mean - 20.0;
+        let mut above_rel: Vec<f32> = above_abs.drain(..).filter(|&b| b > rel_threshold).collect();
+        if above_rel.len() < 2 {
+            return 0.0;
+        }
+        above_rel.sort_by(|a, b| a.partial_cmp(b).unwrap_or(core::cmp::Ordering::Equal));
+        let n = above_rel.len();
+        let p10_idx = (n as f32 * 0.10) as usize;
+        let p95_idx = ((n as f32 * 0.95) as usize).min(n - 1);
+        above_rel[p95_idx] - above_rel[p10_idx]
+    }
+
+    fn meter_lra(full: &[f32]) -> f32 {
+        let mut meter = LoudnessRange::new(48_000.0);
+        meter.record_blocks_for_test(full);
+        meter.get_lra()
+    }
+
+    /// A steady programme with a loud anomalous passage on the end. 40,000
+    /// blocks, so the store is past capacity and the quantile path is in use.
+    fn with_spike(spike_lufs: f32) -> Vec<f32> {
+        let mut blocks = vec![-20.0f32; 38_000];
+        blocks.extend(core::iter::repeat(spike_lufs).take(2_000));
+        blocks
+    }
+
+    /// The past-capacity half of "no ceiling to saturate against", which is
+    /// where a fixed-size structure can actually impose one.
+    #[test]
+    fn very_loud_blocks_are_not_clamped_past_capacity() {
+        for level in [70.0_f32, 200.0, 760.0] {
+            // A quiet body so the loud passage stays above the relative gate
+            // rather than dragging the mean up past it.
+            let mut blocks = vec![level - 25.0; 38_000];
+            blocks.extend(core::iter::repeat(level).take(2_000));
+            assert!(blocks.len() > MAX_LOUDNESS_BLOCKS);
+
+            let expected = reference_lra(&blocks);
+            let actual = meter_lra(&blocks);
+            assert!(
+                (actual - expected).abs() < 0.01,
+                "a {level} LUFS passage reports a range of {actual:.4} LU against an exact \
+                 {expected:.4} LU — something is capping the reported loudness"
+            );
+        }
+    }
+
+    /// The bin range must cover every loudness a block can actually carry.
+    ///
+    /// `MomentaryLufs::get_lufs` is `-0.691 + 10*log10(mean_sq)`, and `mean_sq`
+    /// is accumulated in f64 from f32 samples, so it peaks at `f32::MAX`
+    /// squared. Deriving the bound here rather than trusting a comment means a
+    /// change to the formula or to the sample type fails this test instead of
+    /// quietly re-introducing a ceiling.
+    #[test]
+    fn the_binned_range_covers_every_reachable_block_loudness() {
+        let max_mean_square = f64::from(f32::MAX) * f64::from(f32::MAX);
+        let max_block_lufs = -0.691 + 10.0 * max_mean_square.log10();
+        // K-weighting can add a few dB of gain on top before the mean square is
+        // taken, so leave room rather than sitting exactly on the bound.
+        let top_edge = f64::from(QUANTILE_MIN_LUFS)
+            + QUANTILE_BINS as f64 * f64::from(QUANTILE_BIN_LU);
+        assert!(
+            max_block_lufs + 20.0 < top_edge,
+            "the loudest reachable block is {max_block_lufs:.1} LUFS but the bins stop at \
+             {top_edge:.1} — extreme loudness would saturate into the last bin"
+        );
+    }
+
+    #[test]
+    fn no_finite_block_loudness_is_clamped_past_capacity() {
+        let mut worst = 0.0f32;
+        let mut worst_spike = 0.0f32;
+        for spike in [60.0f32, 70.0, 100.0, 200.0, 500.0] {
+            let full = with_spike(spike);
+            assert!(
+                full.len() > MAX_LOUDNESS_BLOCKS,
+                "this case only means anything past capacity"
+            );
+            let expected = reference_lra(&full);
+            let actual = meter_lra(&full);
+            let delta = (actual - expected).abs();
+            if delta > worst {
+                worst = delta;
+                worst_spike = spike;
+            }
+        }
+        // Exact: the spike lands in its own bin like any other loudness, so
+        // there is nothing left to quantise away. Measured worst: 0.0000 LU.
+        assert!(
+            worst < 0.01,
+            "a {worst_spike:.0} LUFS passage is mis-measured by {worst:.4} LU past capacity — \
+             loudness above the histogram's top edge saturates into the last bin, so the \
+             meter under-reports an anomaly instead of surfacing it"
         );
     }
 }
