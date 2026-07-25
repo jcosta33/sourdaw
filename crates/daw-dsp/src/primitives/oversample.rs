@@ -1,59 +1,108 @@
-//! Per-band oversampling for Bacteria's distortion stage.
+//! Oversampling on a 15-tap half-band FIR.
 //!
-//! This module previously claimed to implement "half-band polyphase IIR
-//! filters" via a "5th order elliptic half-band IIR (two all-pass branches)".
-//! It implemented none of that. Its `AllPassSection::process` stored the
-//! *input* in the state register:
-//!
-//! ```text
-//! let output = self.z1 + (input - self.z1) * self.coeff;
-//! self.z1 = input;
-//! ```
-//!
-//! which expands to `y[n] = a*x[n] + (1-a)*x[n-1]` — a 2-tap FIR with no pole
-//! and therefore no all-pass property at all. A first-order all-pass needs
-//! output feedback (`y[n] = a*(x[n] - y[n-1]) + x[n-1]`). The polyphase
-//! half-band decomposition is built on each branch being all-pass, so without
-//! it neither the elliptic response nor the band splitting held. Measured on
-//! a 7 kHz tanh drive at 48 kHz, the old chain rejected only ~10% more
-//! fold-back than *no oversampling at all* while attenuating the passband by
-//! 7.4 dB (2x) / 13.9 dB (4x), and factor 8 was bit-identical to factor 4
-//! because `downsample` never read past index 3 — the "interpolated" samples
-//! it fabricated for slots 4..8 were discarded and the third stage was dead.
-//!
-//! The replacement introduces no new filter math. It cascades the crate's
-//! existing, tested 15-tap Kaiser half-band FIR
-//! (`proof::oversample::Oversampler2x` — unity-gain normalized, independent
-//! up/down delay lines), which is the route `grinder::oversample` took for
-//! the DSP-3 fix.
-//!
-//! Cascade shape: each stage uses ONE filter instance driven once per sample
-//! of *its own* input rate — stage 2 runs twice per base sample, stage 3 four
-//! times. Giving each phase its own instance instead (as `proof`'s
-//! `Oversampler4x` does) makes every stage-2 filter see a base-rate-decimated
-//! stream, so its cutoff collapses back onto the stage-1 cutoff and the
-//! passband droop compounds: that arrangement measured 0.936x at 7 kHz for 4x
-//! where the sequential cascade holds 0.959x.
-//!
-//! Trade-off versus a genuine polyphase IIR: the FIR is linear-phase but has
-//! real group delay (see [`OversamplingChain::latency_samples`]), where a
-//! working IIR would have been cheaper and lower-latency at the cost of phase
-//! distortion. Bacteria never had the IIR's latency to preserve — the code
-//! that claimed it was a 2-tap FIR — so consolidating onto the one tested
-//! half-band in the crate costs nothing that existed and removes a second
-//! filter implementation to maintain.
+//! [`Oversampler2x`] is the single rate-conversion primitive in this crate;
+//! half-band filters are efficient because every other coefficient is zero.
+//! [`OversamplingChain`] cascades it into the 1x/2x/4x/8x factors a
+//! nonlinearity actually asks for, and is the type to reach for — building an
+//! ad-hoc cascade out of `Oversampler2x` is easy to get subtly wrong (see the
+//! phase-split note on [`OversamplingChain`]).
 
-use crate::primitives::flush_denormal;
-use crate::proof::oversample::Oversampler2x;
+use super::flush_denormal;
+
+const HALFBAND_TAPS: usize = 15;
+
+/// Half-band lowpass FIR coefficients (Kaiser window, β=5, 15-tap).
+/// Every other coefficient (except center) is zero.
+const HALFBAND_COEFFS: [f32; HALFBAND_TAPS] = [
+    -0.006_903, 0.0, 0.039_377, 0.0, -0.120_882, 0.0, 0.600_408,
+    1.0, // center tap (normalized)
+    0.600_408, 0.0, -0.120_882, 0.0, 0.039_377, 0.0, -0.006_903,
+];
+
+/// DC sum of the half-band kernel (≈2 by half-band design; 2.024 here).
+/// Zero-stuffed interpolation halves the signal energy, so the upsampler
+/// normalizes by SUM/2 to land at ~unity gain; the decimator's anti-alias FIR
+/// runs on the dense 2x-rate signal, so it normalizes by SUM.
+const HALFBAND_COEFF_SUM: f32 = 2.0 * (-0.006_903 + 0.039_377 - 0.120_882 + 0.600_408) + 1.0;
+const UPSAMPLE_GAIN: f32 = 2.0 / HALFBAND_COEFF_SUM;
+const DOWNSAMPLE_GAIN: f32 = 1.0 / HALFBAND_COEFF_SUM;
+
+/// 2x oversampler for a single channel.
+///
+/// Up- and down-sampling keep INDEPENDENT delay lines: the exciter runs both
+/// directions through one instance, and a shared line would mix the two
+/// rates' filter histories (audit #508 row 16 — corrupted wet path and a
+/// 4.048x per-stage gain from dense-line filtering with a x2 compensation).
+pub struct Oversampler2x {
+    up_delay: [f32; HALFBAND_TAPS],
+    up_pos: usize,
+    down_delay: [f32; HALFBAND_TAPS],
+    down_pos: usize,
+}
+
+impl Oversampler2x {
+    pub fn new() -> Self {
+        Self {
+            up_delay: [0.0; HALFBAND_TAPS],
+            up_pos: 0,
+            down_delay: [0.0; HALFBAND_TAPS],
+            down_pos: 0,
+        }
+    }
+
+    /// Convolve the kernel over the circular delay line; `pos` sits just past
+    /// the oldest sample. The kernel is symmetric, so read direction is moot.
+    #[inline]
+    fn fir(delay: &[f32; HALFBAND_TAPS], pos: usize) -> f32 {
+        let mut sum = 0.0_f32;
+        for (i, &c) in HALFBAND_COEFFS.iter().enumerate() {
+            sum += delay[(pos + i) % HALFBAND_TAPS] * c;
+        }
+        sum
+    }
+
+    /// Upsample: zero-stuff (x, 0), then filter each phase at the 2x rate.
+    /// Input: 1 sample. Output: 2 samples at double rate.
+    #[inline]
+    pub fn upsample(&mut self, x: f32) -> (f32, f32) {
+        self.up_delay[self.up_pos] = x;
+        self.up_pos = (self.up_pos + 1) % HALFBAND_TAPS;
+        let aligned = Self::fir(&self.up_delay, self.up_pos) * UPSAMPLE_GAIN;
+
+        self.up_delay[self.up_pos] = 0.0;
+        self.up_pos = (self.up_pos + 1) % HALFBAND_TAPS;
+        let interpolated = Self::fir(&self.up_delay, self.up_pos) * UPSAMPLE_GAIN;
+
+        (aligned, interpolated)
+    }
+
+    /// Downsample: filter at the 2x rate, then decimate by 2.
+    /// Input: 2 samples at double rate. Output: 1 sample.
+    #[inline]
+    pub fn downsample(&mut self, s0: f32, s1: f32) -> f32 {
+        self.down_delay[self.down_pos] = s0;
+        self.down_pos = (self.down_pos + 1) % HALFBAND_TAPS;
+        self.down_delay[self.down_pos] = s1;
+        self.down_pos = (self.down_pos + 1) % HALFBAND_TAPS;
+        Self::fir(&self.down_delay, self.down_pos) * DOWNSAMPLE_GAIN
+    }
+
+    pub fn reset(&mut self) {
+        self.up_delay = [0.0; HALFBAND_TAPS];
+        self.up_pos = 0;
+        self.down_delay = [0.0; HALFBAND_TAPS];
+        self.down_pos = 0;
+    }
+}
 
 /// Largest supported oversampling factor.
 pub const MAX_FACTOR: usize = 8;
 
 /// Round a requested factor down to a supported power of two in 1..=8.
 ///
-/// The previous implementation clamped to `1..=8` but only built stages for
-/// exactly 1/2/4/8, so a factor of 3, 5, 6 or 7 kept the odd factor with an
-/// empty stage vector and panicked on the first `upsample`.
+/// A factor of 3, 5, 6 or 7 must not survive as itself: the chain only builds
+/// stages for 1/2/4/8, and an odd factor would emit a slice no stage can
+/// decimate.
 fn normalize_factor(requested: usize) -> usize {
     if requested >= 8 {
         return 8;
@@ -67,7 +116,7 @@ fn normalize_factor(requested: usize) -> usize {
     1
 }
 
-/// Read a 2x-rate sample without panicking on a short slice.
+/// Read an oversampled sample without panicking on a short slice.
 ///
 /// Callers pass exactly `factor` samples; a short slice would be a caller bug,
 /// but this runs on the audio thread where a panic is worse than a zero.
@@ -81,9 +130,26 @@ fn tap(samples: &[f32], index: usize) -> f32 {
 
 /// Configurable oversampling: 1x (bypass), 2x, 4x, 8x.
 ///
+/// Cascade shape — the part that is easy to get wrong: each stage uses ONE
+/// [`Oversampler2x`] instance driven once per sample of *its own* input rate,
+/// in time order. Stage 2 therefore runs twice per base sample and stage 3
+/// four times, so each delay line advances at the rate it filters and each
+/// cutoff sits an octave above the stage below it.
+///
+/// Giving each phase its own instance instead — one stage-2 filter fed only
+/// the even 2x-rate samples, another fed only the odd — advances both delay
+/// lines at the BASE rate. Every stage-2 cutoff then collapses back onto
+/// stage 1's and the passband droop compounds: that arrangement measures
+/// 0.936x at 7 kHz for a 4x round trip at 48 kHz where this cascade holds
+/// 0.959x.
+///
+/// The filter is linear-phase and so has real group delay (see
+/// [`Self::latency_samples`]); a polyphase IIR would be cheaper and
+/// lower-latency at the cost of phase distortion.
+///
 /// Allocation-free — every stage and the interleave buffer are inline, so
-/// rebuilding the chain when the `oversampling` parameter changes is safe on
-/// the audio thread.
+/// rebuilding the chain when an oversampling parameter changes is safe on the
+/// audio thread.
 pub struct OversamplingChain {
     /// Base rate to 2x.
     stage1: Oversampler2x,
@@ -203,17 +269,138 @@ impl OversamplingChain {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::grinder::oversample::alias_probe::{
-        alias_to_harmonic_ratio, bin_magnitude, drive_tone, HARMONIC_BINS_HZ,
-        PROBE_FUNDAMENTAL_HZ,
+
+    fn sine_1khz(n: usize) -> f32 {
+        (2.0 * std::f32::consts::PI * 1000.0 * n as f32 / 48000.0).sin()
+    }
+
+    /// Cascade gain: a 0 dBFS sine whose peak lands on a sample must stay at
+    /// ~0 dB through the 4x cascade, not gain +24 dB from zero-stuffing.
+    /// (dBTP measurement itself lives in `true_peak.rs` — this half-band
+    /// cascade under-reconstructs the continuous peak and is not a true-peak
+    /// oracle.)
+    #[test]
+    fn upsampled_true_peak_of_full_scale_sine_stays_near_unity() {
+        let mut chain = OversamplingChain::new(4);
+        let mut peak = 0.0_f32;
+        for n in 0..4800 {
+            for &s in chain.upsample(sine_1khz(n)) {
+                peak = peak.max(s.abs());
+            }
+        }
+        assert!(
+            (0.97..=1.05).contains(&peak),
+            "true peak of 0 dBFS sine must stay near 1.0, got {:.4} ({:+.2} dBTP)",
+            peak,
+            20.0 * peak.log10()
+        );
+    }
+
+    /// Exciter path (exciter.rs): up -> process -> down through ONE instance
+    /// must be level-neutral and stable (pre-fix it diverged to NaN).
+    #[test]
+    fn round_trip_through_one_instance_preserves_level_and_stays_finite() {
+        let mut os = Oversampler2x::new();
+        let mut in_energy = 0.0_f32;
+        let mut out_energy = 0.0_f32;
+        for n in 0..4800 {
+            let x = sine_1khz(n);
+            let (s0, s1) = os.upsample(x);
+            let y = os.downsample(s0, s1);
+            assert!(y.is_finite(), "round trip diverged at sample {}", n);
+            if n >= 400 {
+                in_energy += x * x;
+                out_energy += y * y;
+            }
+        }
+        let ratio = (out_energy / in_energy).sqrt();
+        assert!(
+            (0.95..=1.05).contains(&ratio),
+            "round-trip RMS ratio must be ~1, got {:.4}x",
+            ratio
+        );
+    }
+
+    /// The up and down filter histories are independent: interleaving
+    /// downsample calls (any content) must not disturb the upsample output.
+    #[test]
+    fn downsample_calls_do_not_clobber_upsample_state() {
+        let mut interleaved = Oversampler2x::new();
+        let mut reference = Oversampler2x::new();
+        for _ in 0..64 {
+            let actual = interleaved.upsample(0.5);
+            let _ = interleaved.downsample(100.0, -100.0);
+            let expected = reference.upsample(0.5);
+            assert_eq!(actual, expected);
+        }
+    }
+
+    /// Zero-stuffed half-band interpolation: both output phases sit within a
+    /// small bound of the input level at DC (kernel ripple only).
+    #[test]
+    fn upsample_dc_gain_per_phase_stays_near_unity() {
+        let mut os = Oversampler2x::new();
+        let mut aligned = 0.0_f32;
+        let mut interpolated = 0.0_f32;
+        for _ in 0..64 {
+            let (a, i) = os.upsample(0.5);
+            aligned = a;
+            interpolated = i;
+        }
+        assert!(
+            (0.48..=0.52).contains(&aligned),
+            "aligned phase DC gain out of bounds: {:.4}",
+            aligned * 2.0
+        );
+        assert!(
+            (0.48..=0.52).contains(&interpolated),
+            "interpolated phase DC gain out of bounds: {:.4}",
+            interpolated * 2.0
+        );
+    }
+}
+
+#[cfg(test)]
+mod group_delay_tests {
+    use super::*;
+
+    /// The exciter's dry-path compensation is built on this number: the
+    /// round-trip impulse centroid must stay at 6.5 base-rate samples
+    /// (7 per direction at the 2x rate, split across base samples 6 and 7).
+    #[test]
+    fn round_trip_group_delay_is_six_and_a_half_base_samples() {
+        let mut os = Oversampler2x::new();
+        let mut numerator = 0.0_f32;
+        let mut denominator = 0.0_f32;
+        for n in 0..64 {
+            let x = if n == 0 { 1.0 } else { 0.0 };
+            let (s0, s1) = os.upsample(x);
+            let y = os.downsample(s0, s1);
+            numerator += n as f32 * y.abs();
+            denominator += y.abs();
+        }
+        let centroid = numerator / denominator;
+        assert!(
+            (6.4..=6.6).contains(&centroid),
+            "round-trip group delay must stay at 6.5 base samples, got {:.3}",
+            centroid
+        );
+    }
+}
+
+#[cfg(test)]
+mod chain_tests {
+    use super::*;
+    use crate::primitives::alias_probe::{
+        alias_to_harmonic_ratio, bin_magnitude, drive_tone, HARMONIC_BINS_HZ, PROBE_FUNDAMENTAL_HZ,
     };
 
     const SAMPLE_RATE: f32 = 48_000.0;
     const RENDER_LEN: usize = 8_192;
     const DRIVE_AMPLITUDE: f32 = 0.9;
 
-    /// Memoryless stand-in for Bacteria's waveshaper: the fold-back it makes
-    /// is the same class the band distortion produces.
+    /// Memoryless stand-in for a waveshaper: the fold-back it makes is the
+    /// same class any band distortion produces.
     fn hard_drive(x: f32) -> f32 {
         (x * 6.0).tanh()
     }
@@ -222,9 +409,8 @@ mod tests {
         x
     }
 
-    /// Render the probe tone through the chain exactly the way `engine.rs`
-    /// drives it: upsample, run the stage on every oversampled sample,
-    /// decimate.
+    /// Render the probe tone through the chain the way a host stage drives
+    /// it: upsample, run the stage on every oversampled sample, decimate.
     fn render_chain(factor: usize, mut stage: impl FnMut(f32) -> f32) -> Vec<f32> {
         let mut chain = OversamplingChain::new(factor);
         let mut processed = [0.0_f32; MAX_FACTOR];
@@ -262,10 +448,7 @@ mod tests {
         );
     }
 
-    /// The bar the old implementation failed. Pre-fix measurements on this
-    /// fixture: naive 0.1732, 2x 0.1568 (1.1x), 4x 0.0788 (2.2x, and only
-    /// because it attenuated everything by 14 dB), 8x 0.0788 (bit-identical
-    /// to 4x). Post-fix every factor rejects far more.
+    /// Every factor has to earn its cost against doing nothing at all.
     #[test]
     fn every_factor_rejects_far_more_aliasing_than_no_oversampling() {
         let naive = alias_to_harmonic_ratio(&render_naive(), SAMPLE_RATE);
@@ -279,8 +462,8 @@ mod tests {
         }
     }
 
-    /// Rejection has to improve with the factor. The old chain failed this
-    /// outright: 8x was bit-identical to 4x.
+    /// Rejection must improve with the factor. A dead top stage, or a stage
+    /// whose cutoff collapsed onto the one below it, flattens this out.
     #[test]
     fn higher_factors_reject_more_than_lower_factors() {
         let two = alias_to_harmonic_ratio(&render_chain(2, hard_drive), SAMPLE_RATE);
@@ -289,13 +472,13 @@ mod tests {
         assert!(four < two, "4x must beat 2x (2x={two:.5}, 4x={four:.5})");
         assert!(
             eight < four,
-            "8x must beat 4x (4x={four:.5}, 8x={eight:.5}) — it was bit-identical pre-fix"
+            "8x must beat 4x (4x={four:.5}, 8x={eight:.5})"
         );
     }
 
-    /// Rate conversion must be level-neutral. Pre-fix the passband gain was
-    /// 0.425 at 2x and 0.202 at 4x/8x — the "aliasing improvement" at 4x was
-    /// largely the whole signal being crushed 14 dB.
+    /// Rate conversion must be level-neutral at 7 kHz. This is the assertion
+    /// that separates the sequential cascade from a per-phase stage split:
+    /// the phase-split shape droops to 0.936x at 4x, outside this bound.
     #[test]
     fn passband_gain_stays_near_unity_at_every_factor() {
         let reference = bin_magnitude(
@@ -318,7 +501,7 @@ mod tests {
     }
 
     /// Anti-aliasing must not eat the wanted harmonics along with the
-    /// fold-back. Pre-fix 4x/8x retained only 0.256 against a naive baseline.
+    /// fold-back.
     #[test]
     fn wanted_harmonics_survive_the_rate_conversion() {
         let harmonic_energy = |samples: &[f32]| -> f32 {
@@ -338,7 +521,7 @@ mod tests {
     }
 
     /// Silence in, exact silence out — no DC or denormal residue leaking into
-    /// the downstream band chain.
+    /// whatever runs downstream.
     #[test]
     fn silence_in_produces_silence_out() {
         for factor in [1_usize, 2, 4, 8] {
@@ -384,13 +567,15 @@ mod tests {
         for n in 0..256 {
             let from_used = run(&mut used, n, 0.4);
             let from_fresh = run(&mut fresh, n, 0.4);
-            assert_eq!(from_used, from_fresh, "reset must clear history at sample {n}");
+            assert_eq!(
+                from_used, from_fresh,
+                "reset must clear history at sample {n}"
+            );
         }
     }
 
-    /// A non-power-of-two factor used to keep the odd factor with an empty
-    /// stage vector and panic on the first `upsample`. It must now round down
-    /// to a supported factor and produce that many samples.
+    /// A non-power-of-two factor must round down to a supported factor and
+    /// emit that many samples, not keep the odd factor and panic.
     #[test]
     fn non_power_of_two_factors_round_down_instead_of_panicking() {
         for (requested, expected) in [(3_usize, 2_usize), (5, 4), (6, 4), (7, 4), (99, 8), (0, 1)] {
@@ -409,7 +594,8 @@ mod tests {
     }
 
     /// The reported group delay must match the impulse the chain actually
-    /// produces, so a host compensating on this number stays aligned.
+    /// produces, so a host compensating on this number stays aligned. A
+    /// per-phase stage split shifts the 4x centroid off 9.75.
     #[test]
     fn reported_latency_matches_the_measured_impulse_centroid() {
         for factor in [2_usize, 4, 8] {

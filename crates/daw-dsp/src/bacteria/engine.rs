@@ -14,10 +14,10 @@ use super::granular::GranularProcessor;
 use super::hilbert::HilbertShifter;
 use super::lofi::LofiProcessor;
 use super::modulation::{EnvelopeFollower, Lfo, LfoShape, LorenzAttractor};
-use super::oversample::OversamplingChain;
 use super::params::{db_to_linear, linear_to_db, SmoothedParam};
 use super::stft::StftProcessor;
 use super::waveshaper::CustomWaveshaper;
+use crate::primitives::oversample::OversamplingChain;
 
 const MAX_BANDS: usize = 6;
 const MAX_MOD_ASSIGNMENTS: usize = 64;
