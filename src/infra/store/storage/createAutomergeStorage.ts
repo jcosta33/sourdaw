@@ -77,14 +77,31 @@ type AutomergeStorageWriteContext = {
     readonly snapshotTransaction: object | undefined;
 };
 
+/**
+ * Why a pending write cannot be committed right now. Audit CC-5 — `prepare()`
+ * used to answer this with a bare null, which conflated two opposite
+ * situations and forced the single `didDiscard` terminal to guess:
+ *
+ * - `abandon` — the value is not truth. Either a newer committed value already
+ *   superseded it, or the document it targets is gone. The cache must fall
+ *   back to the last committed value, exactly like an abort.
+ * - `defer` — there is no document authority yet (the CRDT port is not wired).
+ *   Nothing has ever committed, so the optimistic value is the only state the
+ *   app has; drop the write but keep the value visible.
+ */
+type PendingWritePreparation =
+    | { readonly status: 'ready'; readonly mutation: AutomergeStorageMutationInput }
+    | { readonly status: 'abandon' }
+    | { readonly status: 'defer' };
+
 type PendingAutomergeStorageWrite = {
     readonly abort: () => void;
     readonly commitOwner: object;
     readonly didCommit: () => void;
-    readonly didDiscard: () => void;
+    readonly didDefer: () => void;
     readonly docId: AutomergeStorageDocId;
     readonly snapshotTransaction: object | undefined;
-    readonly prepare: () => AutomergeStorageMutationInput | null;
+    readonly prepare: () => PendingWritePreparation;
 };
 
 type ActiveAutomergeStorageTransaction = {
@@ -263,16 +280,20 @@ function flushMatchingAutomergeStorageWrites(matches: (pending: PendingAutomerge
     for (const ownerGroups of groups.values()) {
         for (const writes of ownerGroups.values()) {
             const mutations: AutomergeStorageMutationInput[] = [];
+            const abandonedWrites: PendingAutomergeStorageWrite[] = [];
             let preparationFailed = false;
             let preparationUnavailable = false;
 
             for (const write of writes) {
                 try {
-                    const mutation = write.prepare();
-                    if (mutation) {
-                        mutations.push(mutation);
-                    } else {
-                        preparationUnavailable = true;
+                    const preparation = write.prepare();
+                    if (preparation.status === 'ready') {
+                        mutations.push(preparation.mutation);
+                        continue;
+                    }
+                    preparationUnavailable = true;
+                    if (preparation.status === 'abandon') {
+                        abandonedWrites.push(write);
                     }
                 } catch (error) {
                     preparationFailed = true;
@@ -281,11 +302,34 @@ function flushMatchingAutomergeStorageWrites(matches: (pending: PendingAutomerge
             }
 
             if (preparationFailed) {
+                // Audit CC-7 — `prepare()` already cancelled each write's
+                // animation frame, and nothing re-arms it. Leaving the group
+                // pending kept it in the write set forever with a dead frame:
+                // the owner slot stayed occupied, so every later set() reused
+                // it without scheduling a flush and the adapter silently
+                // stopped persisting. Abort instead — the value could not be
+                // serialized, so it can never reach the document, and the
+                // cache must fall back to the last committed value rather
+                // than keep serving a write that will never land. The
+                // collected error still propagates to the caller below.
+                for (const write of writes) {
+                    write.abort();
+                }
                 continue;
             }
             if (preparationUnavailable) {
+                // The group is atomic, so one unpreparable write blocks all of
+                // them. Each write still takes the terminal its own
+                // preparation earned: an abandoned value is rolled back
+                // (audit CC-5), while a write merely blocked by a sibling —
+                // or waiting for the CRDT port — keeps its optimistic value.
+                const abandoned = new Set(abandonedWrites);
                 for (const write of writes) {
-                    write.didDiscard();
+                    if (abandoned.has(write)) {
+                        write.abort();
+                        continue;
+                    }
+                    write.didDefer();
                 }
                 continue;
             }
@@ -503,9 +547,11 @@ export const createAutomergeStorage = <TData>(
         };
     };
 
-    const preparePendingWrite = (pending: AdapterPendingWrite): AutomergeStorageMutationInput | null => {
+    const preparePendingWrite = (pending: AdapterPendingWrite): PendingWritePreparation => {
         if (pendingWritesByOwner.get(pending.write.commitOwner) !== pending) {
-            return null;
+            // A newer pending already owns this slot; this one is inert and
+            // its terminal is a no-op either way.
+            return { status: 'defer' };
         }
         if (pending.rafId !== null) {
             cancelAnimationFrame(pending.rafId);
@@ -521,9 +567,27 @@ export const createAutomergeStorage = <TData>(
         // terminal order (compensating transactions legitimately commit older
         // values last).
         if (!pending.scoped && pending.revision < committedSetRevision) {
-            return null;
+            return { status: 'abandon' };
         }
-        return createMutation(pending.value, pending.message, pending.write.snapshotTransaction);
+
+        const port = getAutomergeStoragePort();
+        if (!port) {
+            // The CRDT is not wired yet (store seeded from initialData before
+            // bootstrap). Nothing has ever committed, so the seeded value is
+            // the only state the app has — drop the write, keep the value.
+            return { status: 'defer' };
+        }
+        if (!port.hasDoc(docId)) {
+            // Audit CC-5 — the document this write targets is gone (authority
+            // reset between projects). The optimistic value is not truth.
+            return { status: 'abandon' };
+        }
+
+        const mutation = createMutation(pending.value, pending.message, pending.write.snapshotTransaction);
+        if (!mutation) {
+            return { status: 'defer' };
+        }
+        return { status: 'ready', mutation };
     };
 
     const releasePendingWrite = (pending: AdapterPendingWrite): boolean => {
@@ -597,7 +661,12 @@ export const createAutomergeStorage = <TData>(
             abort: () => abortPendingWrite(getPending()),
             commitOwner: context.commitOwner,
             didCommit: () => recordCommittedWrite(getPending()),
-            didDiscard: () => releasePendingWrite(getPending()),
+            // Audit CC-5 — the deferred terminal. The write is dropped but
+            // its value stays visible, because no committed value exists to
+            // fall back to. A write whose value is *not* truth takes `abort`
+            // instead, so the cache can never keep serving a write that will
+            // never land.
+            didDefer: () => releasePendingWrite(getPending()),
             docId,
             prepare: () => preparePendingWrite(getPending()),
             snapshotTransaction: context.snapshotTransaction,
