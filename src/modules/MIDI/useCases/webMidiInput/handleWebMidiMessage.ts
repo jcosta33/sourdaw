@@ -9,53 +9,78 @@ import { handleWebMidiNoteOn } from './handleWebMidiNoteOn';
 import { handleWebMidiPitchBend } from './handleWebMidiPitchBend';
 
 /**
- * Serial tail every live MIDI event is dispatched through.
+ * Serial tail for note events.
  *
- * Note events can await a Yeast worker round-trip, so they queue. Expression
- * events used to bypass the tail and run synchronously, which inverted their
- * order against the note they belong to: an MPE controller sends the opening
- * bend with the note-on, the bend ran first, found no entry in the
- * channel->note map the note-on had not yet written, and returned early — the
- * note's opening expression was silently dropped (audit MD-3).
- *
- * Everything now goes through here, so arrival order is preserved end to end.
- * When the tail is idle the handler still runs synchronously, so the common
- * case costs nothing.
+ * A note-on can await a Yeast worker round-trip, so note events queue against
+ * each other to keep a note-off from overtaking the note-on it releases.
  */
 let midiInputTail: Promise<void> | null = null;
 
-function dispatchMidiHandler(handler: () => void | Promise<void>): void {
-    if (midiInputTail) {
-        const queued = midiInputTail
-            .then(() => handler())
-            .catch((error: unknown) => {
-                logger.warn('[MIDI] Web MIDI event handling failed:', error);
-            });
-        midiInputTail = queued;
-        void queued.then(() => {
-            if (midiInputTail === queued) {
-                midiInputTail = null;
-            }
-            return undefined;
-        });
-        return;
-    }
+/**
+ * Most recent still-pending live event per MIDI channel.
+ *
+ * Expression is ordered against its *own* channel only. It has to wait for a
+ * note-on it belongs to — an MPE controller sends the opening bend with the
+ * note-on, and running the bend first finds no entry in the channel->note map
+ * the note-on has not yet written, so the note's opening expression is
+ * silently dropped (audit MD-3).
+ *
+ * It must not wait for anything else. Serializing expression behind the whole
+ * note tail meant an unrelated track's Yeast round-trip could hold a bend for
+ * tens of milliseconds; by the time it ran, its arrival frame was behind the
+ * render position, so it clamped to "now" and voiced audibly late — worse than
+ * the behaviour that predated MD-3's fix. Gating per channel keeps the
+ * ordering the finding actually needs and nothing more.
+ */
+const channelTails = new Map<number, Promise<void>>();
 
-    const result = handler();
-    if (result === undefined) {
-        return;
-    }
+function logHandlerFailure(error: unknown): void {
+    logger.warn('[MIDI] Web MIDI event handling failed:', error);
+}
 
-    const pending = result.catch((error: unknown) => {
-        logger.warn('[MIDI] Web MIDI event handling failed:', error);
+function trackChannelTail(channel: number, work: Promise<void>): void {
+    channelTails.set(channel, work);
+    void work.then(() => {
+        if (channelTails.get(channel) === work) {
+            channelTails.delete(channel);
+        }
+        return undefined;
     });
-    midiInputTail = pending;
-    void pending.then(() => {
-        if (midiInputTail === pending) {
+}
+
+function dispatchNoteHandler(channel: number, handler: () => Promise<void> | void): void {
+    const previous = midiInputTail;
+    // An idle tail runs the handler synchronously up to its first await, so a
+    // note is not deferred a turn just to be queued behind nothing.
+    const started = previous === null ? Promise.resolve(handler()) : previous.then(handler);
+    const queued = started.catch(logHandlerFailure);
+    midiInputTail = queued;
+    trackChannelTail(channel, queued);
+    void queued.then(() => {
+        if (midiInputTail === queued) {
             midiInputTail = null;
         }
         return undefined;
     });
+}
+
+function dispatchExpressionHandler(channel: number, handler: () => void): void {
+    const pending = channelTails.get(channel);
+    if (pending === undefined) {
+        // Nothing outstanding on this channel: voice it now, at its own
+        // arrival frame. This is the common case and it costs nothing.
+        try {
+            handler();
+        } catch (error: unknown) {
+            logHandlerFailure(error);
+        }
+        return;
+    }
+
+    // Something on this channel is still in flight. Queue behind it, and make
+    // this the channel's tail so later expression on the same channel stays in
+    // arrival order rather than overtaking it.
+    trackChannelTail(channel, pending.then(handler).catch(logHandlerFailure));
 }
 
 export function handleWebMidiMessage(event: MIDIMessageEvent): void {
@@ -66,23 +91,29 @@ export function handleWebMidiMessage(event: MIDIMessageEvent): void {
 
     const timeStamp = message.timeStamp;
 
+    const channel = message.channel;
+
     switch (message.type) {
         case 'noteOn':
-            dispatchMidiHandler(() => handleWebMidiNoteOn(message.channel, message.note, message.velocity, timeStamp));
+            dispatchNoteHandler(channel, () => handleWebMidiNoteOn(channel, message.note, message.velocity, timeStamp));
             break;
         case 'noteOff':
-            dispatchMidiHandler(() =>
-                handleWebMidiNoteOff(message.channel, message.note, message.releaseVelocity, timeStamp)
+            dispatchNoteHandler(channel, () =>
+                handleWebMidiNoteOff(channel, message.note, message.releaseVelocity, timeStamp)
             );
             break;
         case 'cc':
-            dispatchMidiHandler(() => handleWebMidiCC(message.channel, message.cc, message.value, timeStamp));
+            dispatchExpressionHandler(channel, () => handleWebMidiCC(channel, message.cc, message.value, timeStamp));
             break;
         case 'channelPressure':
-            dispatchMidiHandler(() => handleWebMidiChannelPressure(message.channel, message.pressure, timeStamp));
+            dispatchExpressionHandler(channel, () =>
+                handleWebMidiChannelPressure(channel, message.pressure, timeStamp)
+            );
             break;
         case 'pitchBend':
-            dispatchMidiHandler(() => handleWebMidiPitchBend(message.channel, message.lsb, message.msb, timeStamp));
+            dispatchExpressionHandler(channel, () =>
+                handleWebMidiPitchBend(channel, message.lsb, message.msb, timeStamp)
+            );
             break;
     }
 }

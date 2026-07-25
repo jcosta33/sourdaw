@@ -5,6 +5,7 @@ const handle_note_off = vi.hoisted(() => vi.fn());
 const handle_cc = vi.hoisted(() => vi.fn());
 const handle_channel_pressure = vi.hoisted(() => vi.fn());
 const handle_pitch_bend = vi.hoisted(() => vi.fn());
+const audio_clock = vi.hoisted(() => ({ currentTime: 2, sampleRate: 48000 }));
 
 vi.mock('../handleWebMidiNoteOn', () => ({
     handleWebMidiNoteOn: handle_note_on,
@@ -26,7 +27,13 @@ vi.mock('../handleWebMidiPitchBend', () => ({
     handleWebMidiPitchBend: handle_pitch_bend,
 }));
 
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    audioEngine: { context: audio_clock },
+}));
+
 const { handleWebMidiMessage } = await import('../handleWebMidiMessage');
+const { resolveInputEventTime } = await import('../resolveInputEventTime');
+const { resolveInputDispatchFrame } = await import('../resolveInputDispatchFrame');
 
 /** Browser receipt time every event in this suite carries. */
 const EVENT_TIME_STAMP = 12_345;
@@ -38,6 +45,7 @@ function midi_event(data: number[], timeStamp: number = EVENT_TIME_STAMP): MIDIM
 describe('handleWebMidiMessage', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        audio_clock.currentTime = 2;
     });
 
     it('should dispatch CC bytes to the CC use case', () => {
@@ -147,5 +155,50 @@ describe('handleWebMidiMessage', () => {
         await Promise.resolve();
 
         expect(order).toEqual(['noteOn', 'channelPressure', 'cc']);
+    });
+
+    it('should not delay expression past its arrival frame behind an unrelated note-on', async () => {
+        let resolveNoteOn!: () => void;
+        const noteOnPending = new Promise<void>((resolve) => {
+            resolveNoteOn = resolve;
+        });
+        handle_note_on.mockImplementationOnce(() => noteOnPending);
+
+        // The bend records the frame it would voice at, resolved exactly the
+        // way the real pitch-bend handler resolves it.
+        let bendFrame: number | null = null;
+        handle_pitch_bend.mockImplementation((_channel: number, _lsb: number, _msb: number, timeStamp?: number) => {
+            bendFrame = resolveInputDispatchFrame({ eventTime: resolveInputEventTime({ timeStamp }) });
+        });
+
+        const performance_now = vi.spyOn(performance, 'now');
+
+        // A note-on on channel 1 lands on a Yeast-equipped track and stalls in
+        // its cross-thread worker round trip.
+        audio_clock.currentTime = 2;
+        performance_now.mockReturnValue(1000);
+        handleWebMidiMessage(midi_event([0x91, 60, 100], 1000));
+
+        // 50 ms later an unrelated channel-2 bend arrives. It owes nothing to
+        // the stalled note, so it must voice at its own arrival frame rather
+        // than waiting and being clamped forward to a later render position.
+        audio_clock.currentTime = 2.05;
+        performance_now.mockReturnValue(1050);
+        handleWebMidiMessage(midi_event([0xe2, 0, 96], 1050));
+
+        // 2.05 s at 48 kHz, plus the one-quantum scheduling budget.
+        expect(bendFrame).toBe(98_528);
+
+        // Draining the note-on must not retroactively move it.
+        audio_clock.currentTime = 2.1;
+        performance_now.mockReturnValue(1100);
+        resolveNoteOn();
+        await noteOnPending;
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(bendFrame).toBe(98_528);
+
+        performance_now.mockRestore();
     });
 });
