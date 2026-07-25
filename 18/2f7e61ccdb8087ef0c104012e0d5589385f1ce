@@ -1,0 +1,23 @@
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_29a49804dab875::t_435a2f0575c45e 681-682,712
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_29a49804dab875::t_cda5c581a4c66d 124-125,155
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_29a49804dab875::t_5849a22bdcf185 681-682,712
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "182f7e61ccdb8087ef0c104012e0d5589385f1ce",
+  "prompts": {},
+  "sessions": {
+    "s_29a49804dab875": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aebd8c37a5fa0c2ad",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,19 @@
+crates/daw-dsp/src/proof/biquad.rs
+  s_0d39f3a4a4357a::t_8ff99e9f841b0f 4,7-13,16-20,119-123,168,225,235-247,250-253,268,273-286,291,300-305,443,500-505,508-511,516,523,558-562,580-582,617-872
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "57706c7462a29c1da217b35475425068e3d9deec",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
