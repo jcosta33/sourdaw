@@ -432,6 +432,7 @@ describe('applyModulationToEngine', () => {
             mocks.getPluginById.mockImplementation((deviceType: string) =>
                 deviceType === 'builtin-filter'
                     ? {
+                          id: 'builtin-filter',
                           name: 'Filter',
                           parameters: [{ id: 'cutoff', minValue: 0, maxValue: 1000, defaultValue: 500 }],
                       }
@@ -448,9 +449,7 @@ describe('applyModulationToEngine', () => {
                         trackId: 't1',
                         kind: 'lfo',
                         config: { kind: 'lfo', waveform: 'sine', rate: 4, sync: true, phase: 0, depth: 1 },
-                        mappings: [
-                            { targetTrackId: 't1', targetDeviceId: 'd1', targetParamId: 'cutoff', amount: 0 },
-                        ],
+                        mappings: [{ targetTrackId: 't1', targetDeviceId: 'd1', targetParamId: 'cutoff', amount: 0 }],
                         enabled: true,
                     },
                 ],

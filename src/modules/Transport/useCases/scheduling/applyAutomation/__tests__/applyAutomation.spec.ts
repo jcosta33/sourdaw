@@ -680,9 +680,7 @@ describe('applyAutomation', () => {
                         automationMode: 'read',
                         clips: [],
                         midiFx: [],
-                        devices: [
-                            { id: 'eq-restore', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0.2 } },
-                        ],
+                        devices: [{ id: 'eq-restore', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0.2 } }],
                         gain: 0.4,
                         pan: 12,
                     },

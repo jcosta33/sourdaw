@@ -52,11 +52,6 @@ export function resolveAutoMatchValue({
         return { value: release.releasedValue, isReleaseStart: true };
     }
 
-    if (AUTOMATCH_RELEASE_SECONDS <= 0) {
-        pendingAutoMatch.delete(key);
-        return { value: automationValue, isReleaseStart: false };
-    }
-
     const progress = (nowSeconds - release.startedAtSeconds) / AUTOMATCH_RELEASE_SECONDS;
     if (progress >= 1) {
         pendingAutoMatch.delete(key);
