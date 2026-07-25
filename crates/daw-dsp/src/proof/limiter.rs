@@ -306,6 +306,16 @@ impl LookaheadLimiter {
     pub fn get_output_peak_db(&self) -> f32 {
         self.meter_output_peak
     }
+    /// Collapse the program-dependent release onto the nominal one,
+    /// reproducing the fixed one-pole this replaced (DSP-6). Test-only: it
+    /// exists so the sustained-distortion comparison has a live oracle rather
+    /// than baseline numbers copied out of console output. Call after
+    /// `set_param`, which recomputes both coefficients.
+    #[cfg(test)]
+    pub(crate) fn force_fixed_release(&mut self) {
+        self.release_coeff_fast = self.release_coeff;
+    }
+
     pub fn latency_samples(&self) -> usize {
         self.lookahead_samples
     }
@@ -619,11 +629,22 @@ mod program_dependent_release_tests {
     //! | 150 ms            | level reached before next hit | −12.58 dB      | **−11.68 dB**     |
     //! | 150 ms            | recovery to within 1 dB       | never          | 113 ms            |
     //!
-    //! And the counter-check that keeps it honest: THD on material held 6 dB
-    //! over the ceiling is **bit-identical to the fixed-release baseline** at
-    //! every one of 15 (frequency, release) combinations, because the fast
-    //! branch is gated behind a deadband the sustained gain ripple never
-    //! clears. Output peak stays at −1.02 dB throughout — the ceiling is a
+    //! And the counter-check that keeps it honest: across all 15 (frequency,
+    //! release) combinations — 30/40/60 Hz against 10/30/100/300/500 ms — THD on
+    //! material held 6 dB over the ceiling is **bit-identical to the fixed
+    //! release in 14 of 15, and differs by 0.000979 dB in the fifteenth**
+    //! (30 Hz at a 10 ms release). The fast branch is gated behind a deadband
+    //! that sustained gain ripple essentially never clears; at the shortest
+    //! release and the lowest frequency the ripple is deepest and a sliver gets
+    //! through, three orders of magnitude below audibility.
+    //!
+    //! An earlier version of this note claimed bit-identity across all 15. That
+    //! was read off two-decimal console output, which cannot resolve 0.000979 dB,
+    //! and the committed test covered only 3 of the 15 at a one-sided 0.1 dB
+    //! bound. Both are fixed: the test below sweeps all 15 and compares against
+    //! a live fixed-release limiter rather than recorded numbers.
+    //!
+    //! Output peak stays at −1.02 dB throughout — the ceiling is a
     //! structural guarantee here, not a tuning outcome, since the attack is
     //! still instant and the release branch is a convex combination bounded by
     //! the gain the look-ahead window already sanctioned.
@@ -661,8 +682,15 @@ mod program_dependent_release_tests {
     }
 
     fn render(input: &[f32], release_ms: f32) -> Vec<f32> {
+        render_with(input, release_ms, false)
+    }
+
+    fn render_with(input: &[f32], release_ms: f32, fixed_release: bool) -> Vec<f32> {
         let mut lim = LookaheadLimiter::new(SR as f32);
         lim.set_param("lim_release", release_ms);
+        if fixed_release {
+            lim.force_fixed_release();
+        }
         let mut out = Vec::with_capacity(input.len());
         let mut i = 0;
         while i + 128 <= input.len() {
@@ -760,12 +788,12 @@ mod program_dependent_release_tests {
     /// fundamental. Low frequencies are the case that matters: the look-ahead
     /// window spans a fraction of a period, so the window maximum dips between
     /// peaks and the release genuinely runs.
-    fn sustained_thd_db(release_ms: f32, tone_hz: f64) -> f64 {
+    fn sustained_thd_db(release_ms: f32, tone_hz: f64, fixed_release: bool) -> f64 {
         let len = 48_000 * 8;
         let input: Vec<f32> = (0..len)
             .map(|n| (2.0 * (2.0 * PI * tone_hz * n as f64 / SR).sin()) as f32)
             .collect();
-        let out = render(&input, release_ms);
+        let out = render_with(&input, release_ms, fixed_release);
         let start = out.len() / 2;
         let n = (40.0 * SR / tone_hz) as usize;
         let seg = &out[start..start + n];
@@ -786,22 +814,61 @@ mod program_dependent_release_tests {
         20.0 * (harmonics / fundamental).log10()
     }
 
+    /// Worst measured excess of the program-dependent release over the fixed
+    /// one across the whole sweep: 0.000979 dB, at 30 Hz with a 10 ms release.
+    /// The bound sits just above it so any real engagement of the fast branch
+    /// on sustained material trips this, while the known sliver does not.
+    const SUSTAINED_THD_TOLERANCE_DB: f64 = 0.002;
+
     #[test]
     fn sustained_limiting_keeps_the_nominal_release() {
         // The counter-check. A faster release under sustained limiting tracks
         // the waveform rather than its envelope and raises distortion, so the
-        // pumping win is only real if these do not move. The baselines are the
-        // fixed one-pole's own measurements; the program-dependent release
-        // reproduces every one of them, because the transient detector's
-        // deadband is above the gain ripple sustained limiting produces.
-        for (tone_hz, baseline_db) in [(30.0, -45.43), (40.0, -54.57), (60.0, -66.22)] {
-            let thd = sustained_thd_db(NOMINAL_MS, tone_hz);
-            assert!(
-                thd <= baseline_db + 0.1,
-                "sustained THD at {tone_hz} Hz is {thd:.2} dB against a fixed-release baseline \
-                 of {baseline_db:.2} dB — the fast branch is engaging on sustained material"
-            );
+        // pumping win is only real if these do not move.
+        //
+        // The oracle is a live limiter with the fast branch collapsed onto the
+        // nominal release, not a recorded baseline — so this re-derives the
+        // comparison on every run instead of trusting numbers that were once
+        // printed to two decimals.
+        let mut worst = 0.0_f64;
+        let mut worst_case = (0.0_f64, 0.0_f32);
+        let mut identical = 0;
+        let mut total = 0;
+
+        for tone_hz in [30.0_f64, 40.0, 60.0] {
+            for release_ms in [10.0_f32, 30.0, 100.0, 300.0, 500.0] {
+                total += 1;
+                let program_dependent = sustained_thd_db(release_ms, tone_hz, false);
+                let fixed = sustained_thd_db(release_ms, tone_hz, true);
+                if program_dependent.to_bits() == fixed.to_bits() {
+                    identical += 1;
+                }
+                let excess = program_dependent - fixed;
+                if excess.abs() > worst.abs() {
+                    worst = excess;
+                    worst_case = (tone_hz, release_ms);
+                }
+                assert!(
+                    excess <= SUSTAINED_THD_TOLERANCE_DB,
+                    "sustained THD at {tone_hz} Hz / {release_ms} ms release is \
+                     {program_dependent:.6} dB against {fixed:.6} dB for the fixed release, \
+                     an excess of {excess:.6} dB — the fast branch is engaging on sustained \
+                     material"
+                );
+            }
         }
+
+        // Pin the shape of the result, not just its bound: if the number of
+        // bit-identical combinations moves in either direction, the deadband's
+        // behaviour has changed and the claim in the module docs is stale.
+        assert_eq!(
+            (identical, total),
+            (14, 15),
+            "expected 14 of 15 combinations bit-identical to the fixed release; \
+             worst excess {worst:.6} dB at {:.0} Hz / {:.0} ms",
+            worst_case.0,
+            worst_case.1
+        );
     }
 
     #[test]
