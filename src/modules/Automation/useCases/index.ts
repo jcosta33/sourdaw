@@ -29,6 +29,7 @@ export { toggleLaneCollapsed } from './automation/toggleLaneCollapsed';
 export { startAutomationRecording } from './automationRecording/startAutomationRecording';
 export { stopAutomationRecording } from './automationRecording/stopAutomationRecording';
 export { releaseTouchAutomation } from './automationRecording/releaseTouchAutomation';
+export { resolveAutoMatchValue } from './automationRecording/resolveAutoMatchValue';
 
 export { beginDrawSession } from './beginDrawSession';
 export { paintDrawPoint } from './paintDrawPoint';

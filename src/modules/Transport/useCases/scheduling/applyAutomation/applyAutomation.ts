@@ -9,7 +9,7 @@ import {
     updateMidiFxParam,
 } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
-import { getAutomationValueAtBeat, isRecordingAutomation } from '#/modules/Automation/useCases';
+import { getAutomationValueAtBeat, isRecordingAutomation, resolveAutoMatchValue } from '#/modules/Automation/useCases';
 import { setFermenterMappedParam } from '#/modules/Fermenter/useCases';
 import { dbToGain } from '#/utils/audioLevelLaw';
 import {
@@ -156,9 +156,27 @@ export function applyAutomation(currentBeat: number): Set<string> {
             continue;
         }
 
-        const value = getAutomationValueAtBeat(lane.id, currentBeat);
-        if (value === null) {
+        const curveValue = getAutomationValueAtBeat(lane.id, currentBeat);
+        if (curveValue === null) {
             continue;
+        }
+
+        // AU-6: a control released from a touch/latch ride glides back to the
+        // curve over the AutoMatch time instead of being handed straight back to
+        // it. With no pending release this returns the curve value unchanged.
+        const autoMatch = resolveAutoMatchValue({
+            trackId: lane.trackId,
+            parameterId: lane.parameterId,
+            automationValue: curveValue,
+            nowSeconds: now,
+        });
+        const value = autoMatch.value;
+        if (autoMatch.isReleaseStart) {
+            // The lane was skipped for the whole ride, so its slew still holds a
+            // stale pre-ride value. Drop it so the glide seeds at the released
+            // value rather than easing toward it from wherever the parameter sat
+            // before the user touched it.
+            automationState.pluginParamSlew.delete(lane.id);
         }
 
         // From here the lane writes its parameter, so it is driving: the gate
