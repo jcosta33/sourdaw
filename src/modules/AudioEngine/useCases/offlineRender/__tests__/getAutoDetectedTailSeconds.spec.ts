@@ -12,6 +12,7 @@ vi.mock('#/modules/WorkspaceShell/stores', async (importOriginal) => ({
 
 import { trackStore } from '#/modules/Arrangement/stores';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
+import { UNKNOWN_FROZEN_TAIL_SECONDS } from '#/utils/frozenBufferTail';
 
 import * as estimateMod from '../../../services/estimateRenderTailSeconds';
 import { getAutoDetectedTailSeconds } from '../getAutoDetectedTailSeconds';
@@ -148,6 +149,42 @@ describe('getAutoDetectedTailSeconds', () => {
         };
 
         expect(getAutoDetectedTailSeconds({ tailForDeviceType, honorMuted: true }).seconds).toBe(10);
+    });
+
+    it('never reserves zero for a frozen buffer whose chain cannot answer', () => {
+        // The chain fallback is bounded below by zero, so every shape where the
+        // chain has nothing to say collapsed to "no tail" for a buffer that
+        // still decays. Freezing a track with no inserts is completely ordinary
+        // — people freeze to lock CPU or print automation — and bypass is
+        // unguarded on frozen tracks.
+        const shapes: Array<[string, ReturnType<typeof makeTrack>]> = [
+            ['empty device list', makeTrack([], { frozenWithoutRenderSettings: true })],
+            [
+                'all devices bypassed',
+                makeTrack([{ type: 'builtin-reverb', parameterValues: { 'rev-decay': 20 }, bypassed: true }], {
+                    frozenWithoutRenderSettings: true,
+                }),
+            ],
+            ['device with no declaration', makeTrack([{ type: 'builtin-eq' }], { frozenWithoutRenderSettings: true })],
+        ];
+
+        for (const [label, track] of shapes) {
+            mockTrackStore.value = { tracks: [track] };
+            const seconds = getAutoDetectedTailSeconds({ tailForDeviceType, honorMuted: true }).seconds;
+            expect(seconds, `${label} reserved nothing`).toBe(UNKNOWN_FROZEN_TAIL_SECONDS);
+        }
+    });
+
+    it('treats a negative recorded tail as unknown rather than trusting it as zero', () => {
+        // Both validators check finiteness and never sign, so -5 persists and
+        // loads. `Math.max(0, -5)` laundered it into a trusted zero.
+        mockTrackStore.value = {
+            tracks: [makeTrack([], { frozen: true, frozenTailSeconds: -5 })],
+        };
+
+        expect(getAutoDetectedTailSeconds({ tailForDeviceType, honorMuted: true }).seconds).toBe(
+            UNKNOWN_FROZEN_TAIL_SECONDS
+        );
     });
 
     it('falls back to the device chain when a frozen track records no baked tail', () => {

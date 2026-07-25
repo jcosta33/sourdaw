@@ -1,5 +1,6 @@
 import { deriveEffectiveAudibility, trackStore, type Track } from '#/modules/Arrangement/stores';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
+import { resolveFrozenBufferTail } from '#/utils/frozenBufferTail';
 
 import { estimateRenderTailSeconds, type TailDeclarationLike } from '../../services/estimateRenderTailSeconds';
 
@@ -44,28 +45,24 @@ function projectDevices(track: Track, tailForDeviceType: DeviceTailLookup) {
 }
 
 function projectTrack(track: Track, tailForDeviceType: DeviceTailLookup) {
-    if (track.freezeState.status === 'frozen') {
-        const recorded = track.freezeState.renderSettings?.tailLengthSeconds;
-        if (typeof recorded === 'number' && Number.isFinite(recorded)) {
-            return { devices: [], bakedTailSeconds: Math.max(0, recorded) };
-        }
-
-        // Frozen, but the buffer's baked tail is unrecorded — `isFreezeState`
-        // accepts `renderSettings: undefined`, so this loads from disk validly.
-        // Falling back to zero is the one answer known to be wrong: the buffer
-        // still carries a decay, and reserving nothing truncates it.
-        //
-        // Freeze bypasses the device chain but does not delete it, so the chain
-        // is the best available description of what was rendered into the
-        // buffer. It is also the pre-existing behaviour for this case, so the
-        // unknown shape is no worse off than before frozen tracks were given
-        // special handling. In practice it over-estimates — freeze bakes only a
-        // few beats — and over-reserving costs trailing silence where
-        // under-reserving costs audio.
+    if (track.freezeState.status !== 'frozen') {
         return { devices: projectDevices(track, tailForDeviceType) };
     }
 
-    return { devices: projectDevices(track, tailForDeviceType) };
+    const baked = resolveFrozenBufferTail(track.freezeState.renderSettings);
+    if (baked.known) {
+        return { devices: [], bakedTailSeconds: baked.seconds };
+    }
+
+    // Unknown baked tail. The device chain is a proxy — freeze bypasses the
+    // chain but does not delete it — yet the chain can equally fail to answer:
+    // an empty insert list, every device bypassed, or devices that declare no
+    // tail all sum to zero. Those are "cannot answer", not "genuinely no tail",
+    // and collapsing the two is what reserved nothing for a decaying buffer.
+    //
+    // So the proxy is floored, never trusted downward.
+    const chainOnly = estimateRenderTailSeconds([{ devices: projectDevices(track, tailForDeviceType) }]).seconds;
+    return { devices: [], bakedTailSeconds: Math.max(chainOnly, baked.atLeastSeconds) };
 }
 
 /**
