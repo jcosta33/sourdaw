@@ -109,7 +109,21 @@ type ActiveAutomergeStorageTransaction = {
     readonly snapshotTransaction: object | undefined;
 };
 
+/**
+ * Re-enters an open transaction for the synchronous duration of `callback`.
+ *
+ * Audit CC-10 — the ambient transaction is installed only while the
+ * transaction callback runs synchronously, so an async handler loses it at its
+ * first `await` and every later write commits unscoped. Browsers have no async
+ * context propagation, and widening the ambient across awaits would also
+ * capture writes made by unrelated code running in that window (dozens of UI
+ * call sites dispatch actions without awaiting them), so the re-entry is
+ * explicit rather than implicit.
+ */
+type AutomergeStorageTransactionScope = <Result>(callback: () => Result) => Result;
+
 type AutomergeStorageTransactionControl = {
+    readonly scope: AutomergeStorageTransactionScope;
     abort(): void;
     commit(): void;
 };
@@ -177,10 +191,66 @@ function commitAutomergeStorageMutations(mutations: readonly AutomergeStorageMut
     });
 }
 
-/** Scope one synchronous action write path to an opaque snapshot transaction. */
+/**
+ * Captures the transaction that is active right now, returning a function that
+ * re-enters it later.
+ *
+ * Audit CC-10 — an `async` action handler runs inside the action's transaction
+ * only until its first `await`; after that the ambient scope is gone and every
+ * store write it makes commits on its own, outside the action's atomic commit,
+ * and survives an abort that should have discarded it.
+ *
+ * A handler that writes after an `await` calls this **synchronously, before
+ * that await**, and wraps the later writes in the returned function:
+ *
+ * ```ts
+ * execute: async (action) => {
+ *     const scope = captureAutomergeStorageTransactionScope();
+ *     const rendered = await render(action);
+ *     scope(() => { trackStore.set(rendered); });
+ * }
+ * ```
+ *
+ * Capture is explicit rather than implicit because browsers have no async
+ * context propagation: keeping the ambient transaction installed across an
+ * `await` would also capture writes made by unrelated code running in that
+ * window, and this app dispatches many actions without awaiting them.
+ *
+ * With no transaction active the returned function simply runs the callback,
+ * which is the correct unscoped behaviour for a handler invoked outside
+ * `executeAppAction`.
+ */
+export function captureAutomergeStorageTransactionScope(): AutomergeStorageTransactionScope {
+    const capturedTransaction = activeAutomergeStorageTransaction;
+    if (!capturedTransaction) {
+        return (callback) => callback();
+    }
+
+    return (callback) => {
+        if (!openAutomergeStorageCommitOwners.has(capturedTransaction.commitOwner)) {
+            // The commit owner is closed: a write attached to it now would
+            // never flush. Fail loudly rather than swallow it.
+            throw new Error('Automerge storage transaction has already settled');
+        }
+        const previous = activeAutomergeStorageTransaction;
+        activeAutomergeStorageTransaction = capturedTransaction;
+        try {
+            return callback();
+        } finally {
+            activeAutomergeStorageTransaction = previous;
+        }
+    };
+}
+
+/**
+ * Scope one action write path to an opaque snapshot transaction.
+ *
+ * `callback` receives a `scope` that re-enters this transaction, equivalent to
+ * `captureAutomergeStorageTransactionScope()` called inside it.
+ */
 export function runWithAutomergeStorageTransaction<Result>(
     snapshotTransaction: object | undefined,
-    callback: () => Result
+    callback: (scope: AutomergeStorageTransactionScope) => Result
 ): AutomergeStorageTransactionResult<Result> {
     const previousTransaction = activeAutomergeStorageTransaction;
     const transaction: ActiveAutomergeStorageTransaction = {
@@ -191,8 +261,24 @@ export function runWithAutomergeStorageTransaction<Result>(
     openAutomergeStorageCommitOwners.add(transaction.commitOwner);
     let terminalState: 'open' | 'committed' | 'aborted' = 'open';
     let outcome: AutomergeStorageTransactionOutcome<Result>;
+
+    const scope: AutomergeStorageTransactionScope = (scopedCallback) => {
+        if (terminalState !== 'open') {
+            // The commit owner is closed: a write attached to it now would
+            // never flush. Fail loudly rather than swallow it.
+            throw new Error(`Automerge storage transaction has already settled (${terminalState})`);
+        }
+        const previous = activeAutomergeStorageTransaction;
+        activeAutomergeStorageTransaction = transaction;
+        try {
+            return scopedCallback();
+        } finally {
+            activeAutomergeStorageTransaction = previous;
+        }
+    };
+
     try {
-        outcome = { status: 'returned', value: callback() };
+        outcome = { status: 'returned', value: callback(scope) };
     } catch (error) {
         outcome = { status: 'threw', error };
     } finally {
@@ -200,6 +286,7 @@ export function runWithAutomergeStorageTransaction<Result>(
     }
 
     const control: AutomergeStorageTransactionControl = {
+        scope,
         abort(): void {
             if (terminalState !== 'open') {
                 return;
