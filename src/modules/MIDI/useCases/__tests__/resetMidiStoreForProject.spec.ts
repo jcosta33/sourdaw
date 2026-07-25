@@ -7,7 +7,6 @@ import {
     midiStore,
     type MidiStoreState,
 } from '../../stores/midiStore';
-import { hydrateMidiCrdtProjection } from '../hydrateMidiCrdtProjection';
 import { resetMidiStoreForProject } from '../resetMidiStoreForProject';
 
 describe('resetMidiStoreForProject', () => {
@@ -47,11 +46,10 @@ describe('resetMidiStoreForProject', () => {
         const set = vi.spyOn(chordTrackStore, 'set');
 
         resetMidiStoreForProject();
-        hydrateMidiCrdtProjection();
 
         expect(getRandomValues).not.toHaveBeenCalled();
         expect(midiStore.value?.probabilitySeed).toBe(LEGACY_MIDI_PROBABILITY_SEED);
-        expect(hydrate).toHaveBeenCalledTimes(2);
+        expect(hydrate).toHaveBeenCalledTimes(1);
         expect(set).not.toHaveBeenCalled();
     });
 });

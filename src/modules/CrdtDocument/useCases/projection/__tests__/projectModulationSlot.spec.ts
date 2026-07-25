@@ -25,7 +25,6 @@ const mocks = vi.hoisted(() => ({
     projectStore: { hydrate: vi.fn() },
     cvGateStore: { hydrate: vi.fn() },
     actionHistoryStore: { hydrate: vi.fn() },
-    hydrateMidiCrdtProjection: vi.fn(),
     hydrateYeastCrdtProjection: vi.fn(),
     hydrateKneadFromTrackStore: vi.fn(),
     hydrateSidechainRoutes: vi.fn(),
@@ -47,11 +46,6 @@ vi.mock('#/modules/Automation/stores', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Automation/stores')>();
     // Keep the REAL modulationStore — it is the store under test.
     return { ...actual, automationStore: mocks.automationStore };
-});
-
-vi.mock('#/modules/MIDI/useCases', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/MIDI/useCases')>();
-    return { ...actual, hydrateMidiCrdtProjection: mocks.hydrateMidiCrdtProjection };
 });
 
 vi.mock('#/modules/Yeast/useCases', async (importOriginal) => {

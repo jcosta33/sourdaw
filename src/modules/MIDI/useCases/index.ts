@@ -37,7 +37,6 @@ export { formatChordName } from './formatChordName';
 export { getMidiStoreState } from './getMidiStoreState';
 export { mergeImportedMidiClipNotes } from './mergeImportedMidiClipNotes';
 export { setMidiStoreState } from './setMidiStoreState';
-export { hydrateMidiCrdtProjection } from './hydrateMidiCrdtProjection';
 export { hydrateMidiProjectState } from './hydrateMidiProjectState';
 export { resetMidiStoreForProject } from './resetMidiStoreForProject';
 export { shouldPlayMidiEvent } from './shouldPlayMidiEvent';
