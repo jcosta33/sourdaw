@@ -41,7 +41,6 @@ export type AutomationLane = {
     collapsed: boolean; // Accordion state — collapsed shows sparkline
     linkedLaneId?: string; // F3.3: ID of another lane this one follows
     linkScale?: number; // F3.3: Scaling factor for linked automation (e.g., -1 for inversion)
-    virginTerritory: boolean; // When true, gaps between points defer to manual control
     minValue: number;
     maxValue: number;
     viewMinValue?: number; // Per-lane Y-axis zoom (null = use minValue)
@@ -70,7 +69,6 @@ export function createAutomationLane(
         visible: true,
         enabled: true,
         collapsed: false,
-        virginTerritory: true,
         minValue,
         maxValue,
     };

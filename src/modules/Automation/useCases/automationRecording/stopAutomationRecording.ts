@@ -4,6 +4,7 @@ import { pushUndoEntry } from '#/modules/Command/useCases';
 import { type AutomationPoint } from '../../models/Automation';
 import { automationStore } from '../../stores/automationStore';
 
+import { pendingAutoMatch } from './autoMatchState';
 import { clearPointsInRange } from './clearPointsInRange';
 import { findLaneId } from './findLaneId';
 import { flushPendingPoints } from './flushPendingPoints';
@@ -111,4 +112,9 @@ export function stopAutomationRecording(): void {
     activeRecording.clear();
     pendingPoints.clear();
     touchActive.clear();
+    // A stop or locate ends the session outright, so any AutoMatch glide
+    // still in flight is abandoned rather than resumed against a clock that has
+    // since jumped. Without this a pending release would blend on the first tick
+    // after the next play, from a value belonging to the previous session.
+    pendingAutoMatch.clear();
 }

@@ -1,4 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
+import { clampFaderGain } from '#/utils/audioLevelLaw';
 import { hasSharedArrayBuffer } from '#/utils/capabilities';
 
 import { applyParams } from '../useCases/deviceResolvers/applyParams';
@@ -175,7 +176,7 @@ export class TrackNode {
     }
 
     public setGain(gain: number): void {
-        this.strip.faderNode.gain.setTargetAtTime(Math.max(0, Math.min(1, gain)), this.deps.context.currentTime, 0.01);
+        this.strip.faderNode.gain.setTargetAtTime(clampFaderGain(gain), this.deps.context.currentTime, 0.01);
     }
 
     public setPan(pan: number): void {
@@ -199,7 +200,7 @@ export class TrackNode {
      * instead of stepping at the ~10ms scheduler grain.
      */
     public scheduleGainAutomation(gain: number, time: number): void {
-        this.rampAutomationParam(this.strip.faderNode.gain, Math.max(0, Math.min(1, gain)), time);
+        this.rampAutomationParam(this.strip.faderNode.gain, clampFaderGain(gain), time);
     }
 
     /** RT-5 companion to {@link scheduleGainAutomation} for the panner. `pan` is

@@ -1,3 +1,4 @@
+import { pendingAutoMatch } from './autoMatchState';
 import { flushPendingPoints } from './flushPendingPoints';
 import { makeKey } from './makeKey';
 import { activeRecording, touchActive } from './recordingSessionState';
@@ -13,6 +14,14 @@ export function releaseTouchAutomation(trackId: string, parameterId: string): vo
     // recorded curve until stop. Clearing lastValue ends the recording window.
     const session = activeRecording.get(key);
     if (session) {
+        // Arm the AutoMatch glide before clearing lastValue — it is the
+        // value the control held at release, and the point the parameter must
+        // glide back to the underlying automation *from*. Without this the next
+        // applyAutomation hands the parameter straight back to the curve and the
+        // value can step.
+        if (session.lastValue !== null) {
+            pendingAutoMatch.set(key, { releasedValue: session.lastValue, startedAtSeconds: null });
+        }
         session.lastValue = null;
     }
 }
