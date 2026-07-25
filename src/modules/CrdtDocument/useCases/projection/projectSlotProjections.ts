@@ -96,12 +96,9 @@ export const projectSlotProjections: readonly ProjectSlotProjection[] = [
         hydrate: () => hydrateSidechainRoutes(),
     }),
     slotProjection({
-        // The Yeast projection also reconciles groove assignments against the
-        // groove-template slot, so a groove change must re-run it.
         slot: 'yeast',
         getStore: () => yeastStore,
         hydrate: () => hydrateYeastCrdtProjection(),
-        triggerSlots: ['yeast', 'grooveTemplates'],
     }),
     slotProjection({
         // Knead clip state is rebuilt from trackStore clip payloads rather than

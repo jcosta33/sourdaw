@@ -95,12 +95,24 @@ describe('projectChangedCrdtSlots (audit CC-1)', () => {
         expect(dispatched.slots).toEqual(['knead']);
     });
 
-    it('re-runs the Yeast projection when the groove-template slot changes', () => {
+    it('does not drag the Yeast projection into a groove-template change', () => {
         dispatched = spyOnProjections();
 
+        // The yeast projection used to declare `grooveTemplates` as a trigger
+        // because it reconciled assignments. That reconciliation moved to the
+        // mutation site (review round 1 on PR #793), so the yeast slot now
+        // depends on nothing but itself.
         projectChangedCrdtSlots({ changedSlots: ['grooveTemplates'], origin: 'local-store' });
 
-        expect(dispatched.slots).toEqual(['yeast']);
+        expect(dispatched.slots).toEqual([]);
+    });
+
+    it('projects the groove-template slot itself on a document-origin change', () => {
+        dispatched = spyOnProjections();
+
+        projectChangedCrdtSlots({ changedSlots: ['grooveTemplates'], origin: 'document' });
+
+        expect(dispatched.slots).toEqual(['grooveTemplates']);
     });
 
     it('projects nothing when a change reports no slots', () => {
