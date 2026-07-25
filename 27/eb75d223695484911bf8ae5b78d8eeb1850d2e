@@ -1,0 +1,19 @@
+src/modules/MIDI/useCases/__tests__/resetMidiStoreForProject.spec.ts
+  s_0d39f3a4a4357a::t_f23505930ec42b 52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "27eb75d223695484911bf8ae5b78d8eeb1850d2e",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": null
+    }
+  }
+}
