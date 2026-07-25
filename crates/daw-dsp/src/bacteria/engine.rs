@@ -32,10 +32,23 @@ const ALIGNMENT_RING_LEN: usize = 16;
 
 /// Whole-sample delay used to line one band's output up with the slowest one.
 ///
-/// Oversampler latencies are fractional (6.5 / 9.75 / 11.375), so a
-/// whole-sample compensation leaves at most half a sample of residual error —
-/// against the 11.375 samples it removes, that pushes the first cancellation
-/// notch from ~2.1 kHz up past the sample rate.
+/// A whole-sample delay cannot change a signal's fractional delay, and the
+/// oversampler latencies do not share one: 0 / 6.5 / 9.75 / 11.375 have
+/// fractional parts .0 / .5 / .75 / .375. Those fractions survive any
+/// compensation, so some residual skew is unavoidable without a fractional
+/// interpolator on every band.
+///
+/// Round-to-nearest against one shared target leaves 0.75 of it — the plain
+/// spread of those fractions. It is not the floor: the integer part of each
+/// band is free, and pushing the 1x band a whole sample past the others
+/// closes the widest cyclic gap between the fractions instead of the widest
+/// linear one, reaching 0.625. Not taken. It buys a notch at 38 kHz over one
+/// at 32 kHz, both already past Nyquist at 48 kHz, and it does it by holding
+/// one band a full sample beyond the latency the host was told to expect.
+///
+/// Either way the residual is not the win: against the 11.375 samples it
+/// removes, 0.75 moves the first cancellation notch from ~2.1 kHz — squarely
+/// audible — to ~32 kHz.
 struct AlignmentDelay {
     left: [f32; ALIGNMENT_RING_LEN],
     right: [f32; ALIGNMENT_RING_LEN],
@@ -53,8 +66,33 @@ impl AlignmentDelay {
         }
     }
 
+    /// Change the compensation, splicing rather than crossfading.
+    ///
+    /// A length change duplicates (growing) or drops (shrinking) up to
+    /// `delay` samples at the seam. That is deliberate: the only parameters
+    /// that move a band's delay are its factor, `distortionEnabled` and
+    /// `bandCount`, and each already discards more state on the same call —
+    /// a factor change rebuilds `OversamplingChain` from scratch, and
+    /// `bandCount` resets every crossover biquad. Slewing the read pointer
+    /// instead would spread the very misalignment this delay exists to remove
+    /// across the whole ramp.
+    ///
+    /// The one seam that is new here is a *sibling* band's factor moving this
+    /// band's target. Bounded at 11 samples — 0.24 ms, once, on a deliberate
+    /// parameter change — against a comb that would otherwise never go away.
     fn set_delay(&mut self, delay: usize) {
         self.delay = delay.min(ALIGNMENT_RING_LEN - 1);
+    }
+
+    /// Drop everything in flight.
+    ///
+    /// For a band leaving the sum: it stops being advanced at all, so without
+    /// this its ring keeps whatever was in it and replays that audio if the
+    /// band ever comes back.
+    fn reset(&mut self) {
+        self.left = [0.0; ALIGNMENT_RING_LEN];
+        self.right = [0.0; ALIGNMENT_RING_LEN];
+        self.write = 0;
     }
 
     /// Write one stereo frame and read the one `delay` frames older.
@@ -254,9 +292,11 @@ impl BandChain {
 
     /// Delay this band's output until it presents `target` base-rate samples.
     ///
-    /// Called whenever a parameter could have moved any band's latency; the
-    /// deficit is rounded to whole samples, so up to half a sample of skew
-    /// survives against the 11.375 it removes at 8x.
+    /// Called whenever a parameter could have moved any band's latency. The
+    /// deficit rounds to whole samples, leaving the irreducible fractional
+    /// skew described on [`AlignmentDelay`] — worst case 0.75 samples,
+    /// between a band on 4x (9.75, padded to 11.75) and one on 1x (padded to
+    /// 11.0), when some band holds the 8x target of 11.375.
     fn set_alignment_target(&mut self, target: f32) {
         let deficit = target - self.engaged_latency_samples();
         if deficit <= 0.0 {
@@ -266,11 +306,31 @@ impl BandChain {
         self.alignment.set_delay(deficit.round() as usize);
     }
 
+    /// Advance the alignment ring by one silent frame for a band that
+    /// produced no output this sample.
+    ///
+    /// A band the caller skips — solo, or a routing mode that does not use it
+    /// — must keep its ring moving. A frozen ring replays whatever was in
+    /// flight at the moment it was skipped, the instant the band comes back.
+    fn skip_sample(&mut self) {
+        self.alignment.process(0.0, 0.0);
+    }
+
+    /// Drop the band's in-flight alignment audio.
+    ///
+    /// For a band dropping out of the sum entirely (`bandCount` shrinking),
+    /// which stops even `skip_sample` from reaching it. Its ring would
+    /// otherwise sit frozen on real audio and flush it the moment the count
+    /// grows back over this index.
+    fn clear_alignment(&mut self) {
+        self.alignment.reset();
+    }
+
     fn process_sample(&mut self, left: f32, right: f32, gain_offset: f32) -> (f32, f32) {
         if !self.enabled || self.mute {
-            // Keep the alignment ring moving on silence so an unmute does not
-            // flush out whatever the band was playing before it was muted.
-            self.alignment.process(0.0, 0.0);
+            // Same reasoning as `skip_sample`: silence still has to flow
+            // through the ring or an unmute flushes out pre-mute audio.
+            self.skip_sample();
             return (0.0, 0.0);
         }
 
@@ -468,6 +528,16 @@ pub struct BacteriaEngine {
     bands_l: [f32; MAX_BANDS],
     bands_r: [f32; MAX_BANDS],
 
+    /// Holds the dry mix tap back to the same delay the bands present.
+    ///
+    /// The wet path costs up to 11.375 samples through an oversampled band.
+    /// Mixed against an undelayed dry signal that is the same comb this
+    /// change removes between bands, just across the wet/dry blend instead —
+    /// deepest at `mix` 0.5 and silent at the default `mix` 1.0, which is why
+    /// it went unnoticed. Delaying dry alongside wet also makes the device
+    /// present its reported latency at every mix value, not only fully wet.
+    dry_alignment: AlignmentDelay,
+
     // Computed parameter offsets per-block from modulations.
     // Convention: [0] = global mix; [1..=6] = per-band gain offsets (linear scale, bands 0-5).
     param_offsets: [f32; 1024],
@@ -555,6 +625,7 @@ impl BacteriaEngine {
             band_levels: [0.0; MAX_BANDS],
             bands_l: [0.0; MAX_BANDS],
             bands_r: [0.0; MAX_BANDS],
+            dry_alignment: AlignmentDelay::new(),
             param_offsets: [0.0; 1024],
         }
     }
@@ -590,8 +661,16 @@ impl BacteriaEngine {
                 band.set_alignment_target(target);
             } else {
                 band.set_alignment_target(0.0);
+                // Nothing advances a band past `bandCount` — not even
+                // `skip_sample` — so its ring has to be emptied here or it
+                // replays pre-shrink audio when the count grows back.
+                // Idempotent, and this only ever runs at control rate.
+                band.clear_alignment();
             }
         }
+        // The dry mix tap bypasses the bands entirely, so it needs the whole
+        // target rather than a deficit against something it already spent.
+        self.dry_alignment.set_delay(target.round() as usize);
     }
 
     fn apply_param(&mut self, name: &str, value: f32) {
@@ -738,11 +817,21 @@ impl BacteriaEngine {
 
     /// Process a stereo block in-place.
     pub fn process_block(&mut self, left: &mut [f32], right: &mut [f32]) {
+        let len = left.len().min(right.len());
+
         if self.bypassed {
+            // Pass through untouched, but keep every ring fed: the dry tap
+            // with the real signal it would have carried, the bands with the
+            // silence they produced. A frozen ring dumps pre-bypass audio the
+            // moment bypass is released.
+            for i in 0..len {
+                self.dry_alignment.process(left[i], right[i]);
+                for band in self.bands.iter_mut().take(self.band_count) {
+                    band.skip_sample();
+                }
+            }
             return;
         }
-
-        let len = left.len().min(right.len());
 
         for i in 0..len {
             // Input gain
@@ -813,6 +902,7 @@ impl BacteriaEngine {
                 RoutingMode::Parallel | RoutingMode::Serial => {
                     for b in 0..self.band_count {
                         if any_solo && !self.bands[b].solo {
+                            self.bands[b].skip_sample();
                             continue;
                         }
                         // param_offsets[1..=6] carry per-band gain offsets (linear scale).
@@ -848,6 +938,13 @@ impl BacteriaEngine {
                     sum_l = pm + ps;
                     sum_r = pm - ps;
 
+                    // M/S only drives bands 0 and 1. The rest still have to
+                    // advance, or switching back to Parallel replays whatever
+                    // they were holding when the mode changed.
+                    for b in 2..self.band_count {
+                        self.bands[b].skip_sample();
+                    }
+
                     if self.band_count > 0 {
                         self.band_levels[0] = self.bands[0].peak_level;
                     }
@@ -865,8 +962,12 @@ impl BacteriaEngine {
             // Wet/dry mix (Param ID 0 is conventionally assigned to mix in this mapping)
             let mix_offset = self.param_offsets[0];
             let m = (self.mix.next() + mix_offset).clamp(0.0, 1.0);
-            left[i] = dry_l * (1.0 - m) + sum_l * m;
-            right[i] = dry_r * (1.0 - m) + sum_r * m;
+            // The dry tap waits for the bands rather than racing ahead of
+            // them. `in_l`/`in_r` fed the crossover undelayed — only this
+            // blend tap is held back.
+            let (aligned_dry_l, aligned_dry_r) = self.dry_alignment.process(dry_l, dry_r);
+            left[i] = aligned_dry_l * (1.0 - m) + sum_l * m;
+            right[i] = aligned_dry_r * (1.0 - m) + sum_r * m;
 
             // Update output peak
             let out_peak = left[i].abs().max(right[i].abs());
@@ -902,8 +1003,16 @@ impl BacteriaEngine {
     /// run, so a stale factor on an inactive band must not inflate the report.
     ///
     /// This is also the alignment target every band is padded out to (see
-    /// `realign_bands`), so the number below is what the device actually
-    /// delivers rather than an upper bound the shorter bands undercut.
+    /// `realign_bands`), and the dry mix tap with it, so every path through
+    /// the device now presents this delay instead of the shorter ones
+    /// undercutting it.
+    ///
+    /// Exact to the rounding below and no further. Host PDC is whole-sample
+    /// while the underlying delays are not, so 8x delivers 11.375 against a
+    /// reported 11 — 0.375 samples, 7.8 µs, in the under-reporting direction
+    /// this file elsewhere calls the unsafe one. Correcting that means
+    /// changing the reported number, which `reported_latency_tracks_the_
+    /// oversampling_factor` pins deliberately; it wants its own change.
     ///
     /// **Deliberately not included:** `StftProcessor`'s windowing latency on
     /// the spectral path. That omission predates the oversampler rewrite and
@@ -1213,5 +1322,160 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Every band's alignment ring has to keep moving even when the band is
+    /// skipped, or the moment it comes back it flushes out audio from before
+    /// the skip. Probed here through the paths that skip a band without
+    /// calling `process_sample`: solo, mid/side, and bypass.
+    ///
+    /// The ring is checked directly rather than through the output, because
+    /// the stale audio is a handful of samples wide and a level assertion
+    /// would not distinguish it from the band's normal signal.
+    #[test]
+    fn skipped_bands_keep_their_alignment_rings_moving() {
+        const PROBE_BLOCK: usize = 70;
+
+        // Returns (frames the ring advanced, loudest sample left in it).
+        let advance = |configure: &dyn Fn(&mut BacteriaEngine), band: usize| -> (usize, f32) {
+            let mut engine = BacteriaEngine::new(SAMPLE_RATE);
+            engine.set_param("bandCount", 3.0);
+            engine.set_param("distortionEnabled", 1.0);
+            engine.set_param("oversampling", 8.0);
+            configure(&mut engine);
+
+            let before = engine.bands[band].alignment.write;
+            let mut left = vec![0.1_f32; PROBE_BLOCK];
+            let mut right = vec![0.1_f32; PROBE_BLOCK];
+            engine.process_block(&mut left, &mut right);
+
+            let ring = &engine.bands[band].alignment;
+            let frames = (ring.write + ALIGNMENT_RING_LEN - before) % ALIGNMENT_RING_LEN;
+            // A skipped band contributes nothing, so what it clocks through
+            // must be silence. Advancing the pointer while writing signal
+            // would still satisfy the frame count and hand the band a blip
+            // to emit the moment it comes back.
+            let loudest = ring
+                .left
+                .iter()
+                .chain(ring.right.iter())
+                .fold(0.0_f32, |worst, s| worst.max(s.abs()));
+            (frames, loudest)
+        };
+
+        // A block that is a whole number of ring laps lands the write pointer
+        // back where it started, which is indistinguishable from frozen.
+        let expected = PROBE_BLOCK % ALIGNMENT_RING_LEN;
+        assert_ne!(expected, 0, "probe block length must not alias the ring");
+
+        let cases = [
+            // Band 1 is skipped because band 0 is soloed.
+            ("solo", 1usize, 1.0_f32, "band0_solo"),
+            // Mid/side drives bands 0 and 1 only; band 2 is skipped.
+            ("mid/side", 2, 2.0, "globalRouting"),
+            // Bypass skips every band.
+            ("bypass", 1, 1.0, "bypass"),
+        ];
+
+        for (label, band, value, param) in cases {
+            let (frames, loudest) = advance(&|engine| engine.set_param(param, value), band);
+            assert_eq!(
+                frames, expected,
+                "{label} froze band {band}'s ring ({frames} of {expected} frames)"
+            );
+            assert!(
+                loudest == 0.0,
+                "{label} clocked {loudest} through band {band}'s ring instead of silence"
+            );
+        }
+    }
+
+    /// A band dropping below `bandCount` stops being advanced at all — no
+    /// `process_sample`, no `skip_sample` — so its ring freezes holding real
+    /// audio. Raising the count back over that index must not flush it out.
+    ///
+    /// Driven with silence after the count is restored, so anything the band
+    /// emits came from before the shrink.
+    #[test]
+    fn a_band_dropped_by_band_count_does_not_replay_stale_audio() {
+        let mut engine = BacteriaEngine::new(SAMPLE_RATE);
+        engine.set_param("bandCount", 4.0);
+        engine.set_param("distortionEnabled", 1.0);
+        engine.set_param("oversampling", 8.0);
+        engine.set_param("band3_oversampling", 1.0);
+
+        // Fill band 3's ring with real content.
+        let mut seed = 3u32;
+        let mut left = noise_block(256, &mut seed);
+        let mut right = noise_block(256, &mut seed);
+        engine.process_block(&mut left, &mut right);
+
+        // Drop it out of the sum, then bring it back.
+        engine.set_param("bandCount", 1.0);
+        engine.set_param("bandCount", 4.0);
+        engine.set_param("band3_solo", 1.0);
+
+        // Silence in: any output is stale audio from before the shrink.
+        let mut silent_l = vec![0.0_f32; 64];
+        let mut silent_r = vec![0.0_f32; 64];
+        engine.process_block(&mut silent_l, &mut silent_r);
+
+        let leaked = silent_l
+            .iter()
+            .chain(silent_r.iter())
+            .fold(0.0_f32, |worst, s| worst.max(s.abs()));
+        assert!(
+            leaked < 1.0e-6,
+            "band 3 flushed {leaked:.4} of pre-shrink audio when bandCount grew back"
+        );
+    }
+
+    /// The wet path costs up to 11.375 samples through an oversampled band.
+    /// Blended against an undelayed dry tap that is the same comb this change
+    /// removes between bands, just across the wet/dry mix — invisible at the
+    /// default `mix` 1.0 and deepest at 0.5.
+    ///
+    /// Probed at the notch frequency for a 1-band 8x configuration, against
+    /// the same mix with no oversampling (where dry and wet already agree).
+    #[test]
+    fn the_dry_tap_stays_aligned_with_the_wet_path() {
+        const BLOCK: usize = 8_192;
+        const WARMUP: usize = 2_048;
+        const AMPLITUDE: f32 = 0.1;
+
+        // 11.375 samples of wet delay puts the first cancellation here.
+        let probe = SAMPLE_RATE / (2.0 * 11.375);
+
+        let render = |factor: f32| -> f32 {
+            let mut engine = BacteriaEngine::new(SAMPLE_RATE);
+            engine.set_param("drive", 0.0);
+            engine.set_param("distortionEnabled", 1.0);
+            engine.set_param("oversampling", factor);
+            engine.set_param("mix", 0.5);
+
+            let mut left: Vec<f32> = (0..BLOCK)
+                .map(|n| {
+                    let phase = 2.0 * PI * probe * n as f32 / SAMPLE_RATE;
+                    phase.sin() * AMPLITUDE
+                })
+                .collect();
+            let mut right = left.clone();
+            engine.process_block(&mut left, &mut right);
+            bin_magnitude(&left[WARMUP..], probe, SAMPLE_RATE)
+        };
+
+        let aligned = render(1.0);
+        let oversampled = render(8.0);
+        assert!(
+            aligned > 1.0e-4,
+            "the 1x reference collapsed ({aligned:.6}) — nothing to compare against"
+        );
+
+        let retained = oversampled / aligned;
+        assert!(
+            retained > 0.9,
+            "at mix 0.5 the oversampled wet path combs against the dry tap: \
+             {retained:.3}x of the 1x magnitude survives at {probe:.0} Hz"
+        );
     }
 }
