@@ -1,0 +1,31 @@
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_29a49804dab875::t_c39c4275ed88b8 423,454
+src/modules/AudioRendering/presentations/views/__tests__/resolveExportDither.spec.ts
+  s_29a49804dab875::t_9b68711fa0a33b 3
+src/modules/AudioRendering/repositories/audioEncoders/__tests__/loudnessMeasurement.spec.ts
+  s_29a49804dab875::t_4b9313833aef6b 64,79,105
+src/modules/AudioRendering/repositories/audioEncoders/__tests__/resolveNormalizationGain.spec.ts
+  s_29a49804dab875::t_6e24c0953e2070 53
+src/modules/AudioRendering/repositories/audioEncoders/createKWeightingFilters.ts
+  s_29a49804dab875::t_4c52048ed71b6b 25-26
+src/modules/AudioRendering/repositories/audioEncoders/measureIntegratedLoudness.ts
+  s_29a49804dab875::t_4ac961ad6afb25 98,112
+src/modules/AudioRendering/repositories/audioEncoders/resolveNormalizationGain.ts
+  s_29a49804dab875::t_d0617566d925e2 47-48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "4e5f4a07025fbd5d1624cadf9f0cd600a811dbbb",
+  "prompts": {},
+  "sessions": {
+    "s_29a49804dab875": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aebd8c37a5fa0c2ad",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
