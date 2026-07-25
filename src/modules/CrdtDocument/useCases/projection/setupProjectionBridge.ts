@@ -1,7 +1,8 @@
 import { DOC_PREFIX_ROOT } from '../../models/CrdtDocumentTypes';
 import { automergeRepository } from '../../repositories/automergeRepository';
 
-import { projectChangedCrdtSlots, projectCrdtToStores } from './projectProjection';
+import { projectChangedCrdtSlots } from './projectChangedCrdtSlots';
+import { projectCrdtToStores } from './projectProjection';
 
 /**
  * Set up the projection bridge: subscribe to Automerge changes and hydrate stores.
@@ -19,6 +20,13 @@ import { projectChangedCrdtSlots, projectCrdtToStores } from './projectProjectio
  * a *sibling* slot still run. Document-origin changes name no slots and keep the
  * full re-projection, because the changed key set is not knowable from a merged
  * document.
+ *
+ * Trade-off taken deliberately: for the few slots whose adapter normalizes on
+ * the way into the document (`mutateCrdt` / `toCrdt` on chordTrack,
+ * grooveTemplates, yeast), that normalization no longer bounces straight back
+ * into the store on the writer's own change — it lands on the next
+ * document-origin projection. The value the writer set stays the value the
+ * writer sees, which is what a local edit means.
  */
 export function setupProjectionBridge(): () => void {
     return automergeRepository.onChange((docId?: string, hint?: { readonly localSlots: readonly string[] }) => {

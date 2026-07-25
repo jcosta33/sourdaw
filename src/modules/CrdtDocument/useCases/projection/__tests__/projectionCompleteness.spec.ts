@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it, type MockInstance, vi } from 'vitest';
 
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 
-import { projectCrdtToStores, projectSlotProjections } from '../projectProjection';
+import { projectCrdtToStores } from '../projectProjection';
+import { projectSlotProjections } from '../projectSlotProjections';
 
 // Class guard for audit CC-4, kept honest for audit CC-1/CC-2.
 //
@@ -62,9 +63,9 @@ describe('projection completeness (audit CC-4 class guard)', () => {
     it('sees generic construction forms, not only the plain call', () => {
         // Pins the fix for the hole this guard shipped with: a generic type
         // argument used to hide a slot from the scan entirely.
-        const generic = [
-            ...`createAutomergeStorage<YeastState>('root', 'yeast', {`.matchAll(SLOT_PATTERN),
-        ].map((match) => match[1]);
+        const generic = [...`createAutomergeStorage<YeastState>('root', 'yeast', {`.matchAll(SLOT_PATTERN)].map(
+            (match) => match[1]
+        );
 
         expect(generic).toEqual(['yeast']);
     });

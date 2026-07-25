@@ -8,7 +8,7 @@ import { transportStore } from '#/modules/Transport/stores';
 import { automergeRepository } from '../../../repositories/automergeRepository';
 import { actionHistoryStore } from '../../../stores/actionHistoryStore';
 import { registerCrdtStorageRuntime } from '../../registerCrdtStorageRuntime';
-import { projectSlotProjections } from '../projectProjection';
+import { projectSlotProjections } from '../projectSlotProjections';
 import { setupProjectionBridge } from '../setupProjectionBridge';
 
 /**

@@ -5,6 +5,7 @@ import {
     createAutomergeStorage,
     flushAutomergeStorageWrites,
     resetAutomergeStorageProjections,
+    runWithAutomergeStorageTransaction,
 } from '../createAutomergeStorage';
 
 /**
@@ -134,6 +135,35 @@ describe('createAutomergeStorage projection purity (audit CC-2)', () => {
         flushAutomergeStorageWrites();
 
         expect(mutatedKeys).toEqual([['tracks']]);
+    });
+
+    it('reports every slot key a coalesced multi-store write touched', () => {
+        const { mutatedKeys, port } = createTestPort();
+        configureAutomergeStoragePort(port);
+        const tracks = createAutomergeStorage<{ count: number }>('root', 'tracks');
+        const markers = createAutomergeStorage<{ count: number }>('root', 'markers');
+
+        // Two stores writing inside one transaction coalesce into a single
+        // document change; the hint must name both, or the projection of the
+        // second slot silently stops running for remote peers.
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+            tracks.set({ count: 1 });
+            markers.set({ count: 2 });
+        });
+        transaction.commit();
+
+        expect(mutatedKeys).toEqual([['tracks', 'markers']]);
+    });
+
+    it('resets an adapter without a declared default to an empty projection', () => {
+        const { port } = createTestPort();
+        configureAutomergeStoragePort(port);
+        const storage = createAutomergeStorage<{ value: string }>('root', 'undeclared');
+
+        storage.set({ value: 'previous-project' });
+        resetAutomergeStorageProjections('root');
+
+        expect(storage.get()).toBeNull();
     });
 
     it('skips re-serializing a slot whose document heads have not moved', () => {

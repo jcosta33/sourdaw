@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, afterEach, type MockInstance } from 'vitest';
 
-import { projectChangedCrdtSlots, projectCrdtToStores, projectSlotProjections } from '../projectProjection';
+import { projectChangedCrdtSlots } from '../projectChangedCrdtSlots';
+import { projectCrdtToStores } from '../projectProjection';
+import { projectSlotProjections } from '../projectSlotProjections';
 
 /**
  * The projection registry is the single source for which document slot feeds
