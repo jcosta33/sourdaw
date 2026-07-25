@@ -225,4 +225,77 @@ describe('handleCreateTrackAlternative', () => {
 
         expect(desc.inverseAction).toBeNull();
     });
+
+    it('returns no-write when the track store is unavailable', () => {
+        mocks.getTrackStoreState.mockReturnValue(null);
+
+        const result = handleCreateTrackAlternative.execute({
+            type: 'createTrackAlternative',
+            payload: { trackId: 't1', name: 'X', duplicateActive: false },
+        });
+
+        expect(result).toEqual({ status: 'no-write' });
+        expect(mocks.setTrackStoreState).not.toHaveBeenCalled();
+    });
+
+    it('returns no-write when the active alternative id matches more than one alternative', () => {
+        // Duplicate active ids break the single-active invariant.
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    activeAlternativeId: 'alt1',
+                    clips: [],
+                    alternatives: [
+                        { id: 'alt1', name: 'A', clips: [] },
+                        { id: 'alt1', name: 'Dupe', clips: [] },
+                    ],
+                },
+            ],
+        });
+
+        const result = handleCreateTrackAlternative.execute({
+            type: 'createTrackAlternative',
+            payload: { trackId: 't1', name: 'X', duplicateActive: false },
+        });
+
+        expect(result).toEqual({ status: 'no-write' });
+        expect(mocks.setTrackStoreState).not.toHaveBeenCalled();
+    });
+
+    it('returns no-write when the caller-supplied alternative id already exists', () => {
+        const result = handleCreateTrackAlternative.execute({
+            type: 'createTrackAlternative',
+            payload: { trackId: 't1', name: 'X', duplicateActive: false, alternativeId: 'alt1' },
+        });
+
+        expect(result).toEqual({ status: 'no-write' });
+        expect(mocks.setTrackStoreState).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        ['not an array', 'garbage'],
+        ['a non-object element', [{ id: 'alt1', name: 'A', clips: [] }, 'garbage']],
+        ['an element with an empty id', [{ id: '', name: 'A', clips: [] }]],
+        ['an element with a non-array clips', [{ id: 'alt1', name: 'A', clips: 'x' }]],
+    ])('returns no-write when the alternatives collection is %s', (_label, alternatives) => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    activeAlternativeId: 'alt1',
+                    clips: [],
+                    alternatives,
+                },
+            ],
+        });
+
+        const result = handleCreateTrackAlternative.execute({
+            type: 'createTrackAlternative',
+            payload: { trackId: 't1', name: 'X', duplicateActive: false },
+        });
+
+        expect(result).toEqual({ status: 'no-write' });
+        expect(mocks.setTrackStoreState).not.toHaveBeenCalled();
+    });
 });

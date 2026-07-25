@@ -459,4 +459,93 @@ describe('isPromotableRuntimeClipCollection — kneadState validation', () => {
             })
         ).toBe(false);
     });
+
+    it('accepts a kneadState blob with a valid originalPitchCenterCents', () => {
+        const clip = clipWithKnead({
+            blobs: [
+                {
+                    id: 'blob-1',
+                    startTime: 0,
+                    endTime: 1,
+                    pitchCenterCents: 0,
+                    voicedConfidence: 1,
+                    pitchCurveCents: [0],
+                    originalPitchCenterCents: 10,
+                },
+            ],
+            retuneSpeedMs: 50,
+            humanizePercent: 0.2,
+            formantPreserve: false,
+        });
+        expect(
+            isPromotableRuntimeClipCollection({
+                value: [clip],
+                targetTrackId: 't1',
+                tracks: minimalTracks(),
+                source: SOURCE,
+            })
+        ).toBe(true);
+    });
+
+    it('rejects a kneadState blob with a non-finite originalPitchCenterCents', () => {
+        const clip = clipWithKnead({
+            blobs: [
+                {
+                    id: 'blob-1',
+                    startTime: 0,
+                    endTime: 1,
+                    pitchCenterCents: 0,
+                    voicedConfidence: 1,
+                    pitchCurveCents: [0],
+                    originalPitchCenterCents: Number.NaN,
+                },
+            ],
+            retuneSpeedMs: 50,
+            humanizePercent: 0.2,
+            formantPreserve: false,
+        });
+        expect(
+            isPromotableRuntimeClipCollection({
+                value: [clip],
+                targetTrackId: 't1',
+                tracks: minimalTracks(),
+                source: SOURCE,
+            })
+        ).toBe(false);
+    });
+});
+
+describe('isPromotableRuntimeClipCollection — malformed alternative and non-array clip collections', () => {
+    it('rejects when an external alternative is not a record', () => {
+        // A corrupted alternative object makes hasExternalClipIdCollision bail.
+        const tracks = [
+            { id: 't1', clips: [], alternatives: [] },
+            { id: 't2', clips: [], alternatives: ['not-an-alternative'] },
+        ];
+        expect(
+            isPromotableRuntimeClipCollection({
+                value: [validClip('c1')],
+                targetTrackId: 't1',
+                tracks,
+                source: SOURCE,
+            })
+        ).toBe(false);
+    });
+
+    it('rejects when an external track clips collection is not an array', () => {
+        // collectionContainsSelectedId must treat a non-array as a malformed
+        // collision (null) rather than iterating.
+        const tracks = [
+            { id: 't1', clips: [], alternatives: [] },
+            { id: 't2', clips: 'not-an-array', alternatives: [] },
+        ];
+        expect(
+            isPromotableRuntimeClipCollection({
+                value: [validClip('c1')],
+                targetTrackId: 't1',
+                tracks,
+                source: SOURCE,
+            })
+        ).toBe(false);
+    });
 });

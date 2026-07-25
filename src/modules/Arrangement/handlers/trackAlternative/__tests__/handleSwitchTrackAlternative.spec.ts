@@ -440,4 +440,64 @@ describe('handleSwitchTrackAlternative', () => {
         expect(result).toEqual({ status: 'no-write' });
         expect(mocks.setTrackStoreState).not.toHaveBeenCalled();
     });
+
+    it('rejects when the target alternative id is missing from the alternatives list', () => {
+        // targetAlternatives.length === 0 (not 1): the requested alternative
+        // does not exist, so the switch cannot proceed.
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    activeAlternativeId: 'alt1',
+                    clips: [makeClip('c1')],
+                    alternatives: [{ id: 'alt1', clips: [] }],
+                },
+            ],
+        });
+
+        const result = handleSwitchTrackAlternative.execute({
+            type: 'switchTrackAlternative',
+            payload: { trackId: 't1', alternativeId: 'nonexistent' },
+        });
+
+        expect(result).toEqual({ status: 'no-write' });
+        expect(mocks.setTrackStoreState).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        ['not an array', 'garbage'],
+        ['a non-object element', [{ id: 'alt1', clips: [] }, 'garbage']],
+    ])('rejects when the alternatives collection is %s', (_label, alternatives) => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    activeAlternativeId: 'alt1',
+                    clips: [makeClip('c1')],
+                    alternatives: alternatives as MockTrack['alternatives'],
+                },
+            ],
+        });
+
+        const result = handleSwitchTrackAlternative.execute({
+            type: 'switchTrackAlternative',
+            payload: { trackId: 't1', alternativeId: 'alt2' },
+        });
+
+        expect(result).toEqual({ status: 'no-write' });
+        expect(mocks.setTrackStoreState).not.toHaveBeenCalled();
+    });
+
+    it('describe returns a null inverse when the track has no active alternative', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', activeAlternativeId: '', clips: [], alternatives: [] }],
+        });
+
+        const desc = handleSwitchTrackAlternative.describe({
+            type: 'switchTrackAlternative',
+            payload: { trackId: 't1', alternativeId: 'alt2' },
+        });
+
+        expect(desc.inverseAction).toBeNull();
+    });
 });

@@ -337,4 +337,67 @@ describe('createAlternativeClips', () => {
             trackId: 't1',
         });
     });
+
+    it('rejects when the project track list is structurally malformed', () => {
+        // collectProjectClipIds defensively validates the tracks graph; a
+        // corrupted entry (non-array clips, non-object track, or an alternative
+        // missing its clips array) short-circuits the whole operation.
+        const original = ClipDummy.create({ id: 'c1', trackId: 't1', type: 'midi' });
+        const malformedTrack = TrackDummy.create({ id: 't2', clips: [] });
+        // Corrupt the clips field so addClipIdsToSet returns false.
+        Reflect.set(malformedTrack, 'clips', 'not-an-array');
+        mocks.getTrackState.mockReturnValue({
+            tracks: [TrackDummy.create({ id: 't1', clips: [original] }), malformedTrack],
+            selectedTrackId: 't1',
+        });
+        const randomUuid = vi.spyOn(crypto, 'randomUUID');
+
+        expect(createAlternativeClips('c1', [[note()]])).toBe(false);
+
+        expect(randomUuid).not.toHaveBeenCalled();
+        expect(mocks.setNotesForClip).not.toHaveBeenCalled();
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+    });
+
+    it('rejects when a track alternative carries a non-array clips collection', () => {
+        const original = ClipDummy.create({ id: 'c1', trackId: 't1', type: 'midi' });
+        const trackWithBadAlt = TrackDummy.create({
+            id: 't2',
+            clips: [],
+            alternatives: [{ id: 'alt-1', name: 'Alt', clips: [] }],
+        });
+        // Corrupt the alternative's clips so collectProjectClipIds aborts.
+        const alt = trackWithBadAlt.alternatives[0];
+        if (alt) {
+            Reflect.set(alt, 'clips', null);
+        }
+        mocks.getTrackState.mockReturnValue({
+            tracks: [TrackDummy.create({ id: 't1', clips: [original] }), trackWithBadAlt],
+            selectedTrackId: 't1',
+        });
+
+        expect(createAlternativeClips('c1', [[note()]])).toBe(false);
+
+        expect(mocks.setNotesForClip).not.toHaveBeenCalled();
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+    });
+
+    it('rejects a clip id entry that is not a non-empty string when scanning occupied ids', () => {
+        // A clip object whose id is missing/empty makes addClipIdsToSet bail.
+        const original = ClipDummy.create({ id: 'c1', trackId: 't1', type: 'midi' });
+        const trackWithBadClip = TrackDummy.create({ id: 't2', clips: [ClipDummy.create({ id: 'x' })] });
+        const badClip = trackWithBadClip.clips[0];
+        if (badClip) {
+            Reflect.set(badClip, 'id', 42);
+        }
+        mocks.getTrackState.mockReturnValue({
+            tracks: [TrackDummy.create({ id: 't1', clips: [original] }), trackWithBadClip],
+            selectedTrackId: 't1',
+        });
+
+        expect(createAlternativeClips('c1', [[note()]])).toBe(false);
+
+        expect(mocks.setNotesForClip).not.toHaveBeenCalled();
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+    });
 });
