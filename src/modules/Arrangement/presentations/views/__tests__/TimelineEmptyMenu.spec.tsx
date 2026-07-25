@@ -248,6 +248,22 @@ describe('TimelineEmptyMenu', () => {
             type: 'generateDrumPattern',
             payload: { style: 'rock', bars: 4, trackId: undefined, startBeat: 0 },
         });
+        // Drive the remaining generators so their `trackId ?? undefined`
+        // fallbacks are exercised too.
+        fireEvent.click(screen.getByText('Generate Chord Progression'));
+        expect(executeAppAction).toHaveBeenCalledWith(
+            expect.objectContaining({
+                type: 'generateChordProgression',
+                payload: expect.objectContaining({ trackId: undefined }),
+            })
+        );
+        fireEvent.click(screen.getByText('Generate Melody'));
+        expect(executeAppAction).toHaveBeenCalledWith(
+            expect.objectContaining({
+                type: 'generateMelody',
+                payload: expect.objectContaining({ trackId: undefined }),
+            })
+        );
     });
 
     it('renders the nearby marker color/remove controls when a marker is within 2 beats', () => {
@@ -377,5 +393,124 @@ describe('TimelineEmptyMenu', () => {
 
         expect(importMidiFileMock).toHaveBeenCalled();
         expect(mockOnClose).toHaveBeenCalled();
+    });
+
+    it('aborts the audio import when the file dialog is cancelled (no file)', async () => {
+        let captured: HTMLInputElement | null = null;
+        const realCreate = document.createElement.bind(document);
+        const createSpy = vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+            const el = realCreate(tag);
+            if (tag === 'input') {
+                captured = el as HTMLInputElement;
+                el.click = vi.fn();
+            }
+            return el;
+        });
+
+        renderWithTooltip(<TimelineEmptyMenu x={0} y={0} trackId={null} beat={0} onClose={mockOnClose} />);
+        fireEvent.click(screen.getByText('Import Audio…'));
+        // No files selected (user cancelled the dialog).
+        Object.defineProperty(captured!, 'files', { value: [], configurable: true });
+        await captured!.onchange?.(new Event('change'));
+        createSpy.mockRestore();
+
+        // Nothing is decoded or added when no file was picked.
+        expect(decodeAudioFileMock).not.toHaveBeenCalled();
+        expect(addClip).not.toHaveBeenCalled();
+    });
+
+    it('aborts the MIDI import when no file is selected', async () => {
+        let captured: HTMLInputElement | null = null;
+        const realCreate = document.createElement.bind(document);
+        const createSpy = vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+            const el = realCreate(tag);
+            if (tag === 'input') {
+                captured = el as HTMLInputElement;
+                el.click = vi.fn();
+            }
+            return el;
+        });
+
+        renderWithTooltip(<TimelineEmptyMenu x={0} y={0} trackId={null} beat={0} onClose={mockOnClose} />);
+        fireEvent.click(screen.getByText('Import MIDI…'));
+        Object.defineProperty(captured!, 'files', { value: [], configurable: true });
+        await captured!.onchange?.(new Event('change'));
+        createSpy.mockRestore();
+
+        expect(importMidiFileMock).not.toHaveBeenCalled();
+    });
+
+    it('notifies on a failed audio decode and adds nothing', async () => {
+        decodeAudioFileMock.mockRejectedValue(new Error('corrupt'));
+        let captured: HTMLInputElement | null = null;
+        const realCreate = document.createElement.bind(document);
+        const createSpy = vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+            const el = realCreate(tag);
+            if (tag === 'input') {
+                captured = el as HTMLInputElement;
+                el.click = vi.fn();
+            }
+            return el;
+        });
+
+        renderWithTooltip(<TimelineEmptyMenu x={0} y={0} trackId="t1" beat={0} onClose={mockOnClose} />);
+        fireEvent.click(screen.getByText('Import Audio…'));
+        Object.defineProperty(captured!, 'files', { value: [new File([], 'bad.wav')], configurable: true });
+        await captured!.onchange?.(new Event('change'));
+        createSpy.mockRestore();
+
+        expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('Failed to import'), 'error');
+        expect(addClip).not.toHaveBeenCalled();
+    });
+
+    it('does not dispatch a generate-audio action when the prompt is cancelled', () => {
+        vi.mocked(isAudioGenerationAvailable).mockReturnValue(true);
+        const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue(null);
+
+        renderWithTooltip(<TimelineEmptyMenu x={0} y={0} trackId="t1" beat={8} onClose={mockOnClose} />);
+        fireEvent.click(screen.getByText('Generate Audio Here…'));
+
+        expect(executeAppAction).not.toHaveBeenCalled();
+        promptSpy.mockRestore();
+    });
+
+    it('does not dispatch a generate-audio action when the prompt is blank', () => {
+        vi.mocked(isAudioGenerationAvailable).mockReturnValue(true);
+        const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('   ');
+
+        renderWithTooltip(<TimelineEmptyMenu x={0} y={0} trackId="t1" beat={8} onClose={mockOnClose} />);
+        fireEvent.click(screen.getByText('Generate Audio Here…'));
+
+        expect(executeAppAction).not.toHaveBeenCalled();
+        promptSpy.mockRestore();
+    });
+
+    it('falls back to 120 BPM when the transport tempo is unavailable', async () => {
+        const { transportStore } = await import('#/modules/Transport/stores');
+        // tempo missing → `?? 120` default drives the clip-duration calc.
+        vi.mocked(transportStore as unknown as { value: { tempo?: number } }).value = {};
+        decodeAudioFileMock.mockResolvedValue({ id: 'buf-1', buffer: { duration: 2 } });
+
+        let captured: HTMLInputElement | null = null;
+        const realCreate = document.createElement.bind(document);
+        const createSpy = vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+            const el = realCreate(tag);
+            if (tag === 'input') {
+                captured = el as HTMLInputElement;
+                el.click = vi.fn();
+            }
+            return el;
+        });
+
+        renderWithTooltip(<TimelineEmptyMenu x={0} y={0} trackId="t1" beat={0} onClose={mockOnClose} />);
+        fireEvent.click(screen.getByText('Import Audio…'));
+        Object.defineProperty(captured!, 'files', { value: [new File([], 'x.wav')], configurable: true });
+        await captured!.onchange?.(new Event('change'));
+        createSpy.mockRestore();
+
+        // 2s at 120 BPM → 4 beats; endBeat = 0 + 4 = 4.
+        expect(addClip).toHaveBeenCalledWith(expect.objectContaining({ startBeat: 0, endBeat: 4 }));
+        // Restore the mock's default tempo for subsequent tests.
+        vi.mocked(transportStore as unknown as { value: { tempo?: number } }).value = { tempo: 120 };
     });
 });
