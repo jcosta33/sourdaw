@@ -9,7 +9,19 @@ import { executeAppAction } from '#/modules/Command/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { addTrack } from '../../../useCases/addTrack';
+import { addClip } from '../../../useCases/clip/addClip';
+import { removeMarker } from '../../../useCases/marker/markerOperations/removeMarker';
+import { setMarkerColor } from '../../../useCases/marker/markerOperations/setMarkerColor';
 import { TimelineEmptyMenu } from '../TimelineEmptyMenu';
+
+// Controllable store values so individual tests can seed markers/tracks.
+const storeValues = vi.hoisted(() => ({
+    track: { tracks: [] as Array<{ id: string; kind: string }> },
+    marker: {
+        markers: [] as Array<{ id: string; name: string; beat: number; color: string }>,
+        sections: [] as unknown[],
+    },
+}));
 
 // Mock external dependencies
 vi.mock('#/infra/store/useStore', () => ({
@@ -20,11 +32,19 @@ vi.mock('#/infra/store/useStore', () => ({
 }));
 
 vi.mock('../../../stores/trackStore', () => ({
-    trackStore: { value: { tracks: [] } },
+    trackStore: {
+        get value() {
+            return storeValues.track;
+        },
+    },
 }));
 
 vi.mock('../../../stores/markerStore', () => ({
-    markerStore: { value: { markers: [], sections: [] } },
+    markerStore: {
+        get value() {
+            return storeValues.marker;
+        },
+    },
     defaultMarkerStoreState: { markers: [], sections: [] },
 }));
 
@@ -41,8 +61,18 @@ vi.mock('#/modules/AudioAnalysis/useCases', () => ({
     isAudioGenerationAvailable: vi.fn(() => false),
 }));
 
+const importMidiFileMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 vi.mock('../../../useCases/importMidiFile', () => ({
-    importMidiFile: vi.fn(),
+    importMidiFile: importMidiFileMock,
+}));
+
+const decodeAudioFileMock = vi.hoisted(() => vi.fn<() => Promise<{ id: string; buffer: { duration: number } }>>());
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    decodeAudioFile: decodeAudioFileMock,
+}));
+
+vi.mock('../../../useCases/clipboard/pasteClip', () => ({
+    pasteClip: vi.fn(),
 }));
 
 vi.mock('../../../useCases/addTrack', () => ({
@@ -169,5 +199,183 @@ describe('TimelineEmptyMenu', () => {
         renderWithTooltip(<TimelineEmptyMenu x={150} y={200} trackId={null} beat={8} onClose={mockOnClose} />);
         const menu = screen.getByRole('menu');
         expect(menu).toHaveStyle({ left: '150px', top: '200px' });
+    });
+
+    it('adds an audio clip on Add Clip Here for a non-midi track', () => {
+        storeValues.track = { tracks: [{ id: 't1', kind: 'audio' }] };
+        renderWithTooltip(<TimelineEmptyMenu x={0} y={0} trackId="t1" beat={4} onClose={mockOnClose} />);
+        fireEvent.click(screen.getByText('Add Clip Here'));
+        expect(addClip).toHaveBeenCalledWith(
+            expect.objectContaining({ trackId: 't1', startBeat: 4, endBeat: 8, type: 'audio', name: 'New audio clip' })
+        );
+        expect(mockOnClose).toHaveBeenCalled();
+        storeValues.track = { tracks: [] };
+    });
+
+    it('adds a midi clip on Add Clip Here for a midi track', () => {
+        storeValues.track = { tracks: [{ id: 't1', kind: 'midi' }] };
+        renderWithTooltip(<TimelineEmptyMenu x={0} y={0} trackId="t1" beat={2} onClose={mockOnClose} />);
+        fireEvent.click(screen.getByText('Add Clip Here'));
+        expect(addClip).toHaveBeenCalledWith(
+            expect.objectContaining({ trackId: 't1', startBeat: 2, endBeat: 6, type: 'midi', name: 'New midi clip' })
+        );
+        storeValues.track = { tracks: [] };
+    });
+
+    it('dispatches generate actions with the selected trackId and startBeat', () => {
+        renderWithTooltip(<TimelineEmptyMenu x={0} y={0} trackId="t1" beat={8} onClose={mockOnClose} />);
+        fireEvent.click(screen.getByText('Generate Drum Pattern'));
+        expect(executeAppAction).toHaveBeenCalledWith({
+            type: 'generateDrumPattern',
+            payload: { style: 'rock', bars: 4, trackId: 't1', startBeat: 8 },
+        });
+        fireEvent.click(screen.getByText('Generate Chord Progression'));
+        expect(executeAppAction).toHaveBeenCalledWith({
+            type: 'generateChordProgression',
+            payload: expect.objectContaining({ trackId: 't1', startBeat: 8, key: 0, scale: 'major' }),
+        });
+        fireEvent.click(screen.getByText('Generate Melody'));
+        expect(executeAppAction).toHaveBeenCalledWith({
+            type: 'generateMelody',
+            payload: expect.objectContaining({ trackId: 't1', startBeat: 8 }),
+        });
+    });
+
+    it('dispatches generate actions with undefined trackId when none is selected', () => {
+        renderWithTooltip(<TimelineEmptyMenu x={0} y={0} trackId={null} beat={0} onClose={mockOnClose} />);
+        fireEvent.click(screen.getByText('Generate Drum Pattern'));
+        expect(executeAppAction).toHaveBeenCalledWith({
+            type: 'generateDrumPattern',
+            payload: { style: 'rock', bars: 4, trackId: undefined, startBeat: 0 },
+        });
+    });
+
+    it('renders the nearby marker color/remove controls when a marker is within 2 beats', () => {
+        storeValues.marker = {
+            markers: [{ id: 'mk1', name: 'Verse', beat: 8, color: '#fff' }],
+            sections: [],
+        };
+        renderWithTooltip(<TimelineEmptyMenu x={0} y={0} trackId={null} beat={8} onClose={mockOnClose} />);
+        expect(screen.getByText('Marker: Verse')).toBeInTheDocument();
+        // Remove marker control is present.
+        fireEvent.click(screen.getByText('Remove Marker'));
+        expect(removeMarker).toHaveBeenCalledWith('mk1');
+        expect(mockOnClose).toHaveBeenCalled();
+        storeValues.marker = { markers: [], sections: [] };
+    });
+
+    it('sets a nearby marker color from a swatch', () => {
+        storeValues.marker = {
+            markers: [{ id: 'mk1', name: 'Verse', beat: 8, color: '' }],
+            sections: [],
+        };
+        renderWithTooltip(<TimelineEmptyMenu x={0} y={0} trackId={null} beat={8} onClose={mockOnClose} />);
+        const swatch = screen.getAllByLabelText('Set marker color')[0]!;
+        fireEvent.click(swatch);
+        expect(setMarkerColor).toHaveBeenCalledWith('mk1', expect.any(String));
+        storeValues.marker = { markers: [], sections: [] };
+    });
+
+    it('does not render nearby marker controls when no marker is close', () => {
+        storeValues.marker = {
+            markers: [{ id: 'mk1', name: 'Far', beat: 100, color: '' }],
+            sections: [],
+        };
+        renderWithTooltip(<TimelineEmptyMenu x={0} y={0} trackId={null} beat={8} onClose={mockOnClose} />);
+        expect(screen.queryByText('Marker: Far')).not.toBeInTheDocument();
+        storeValues.marker = { markers: [], sections: [] };
+    });
+
+    it('imports an audio file into a new track when no trackId is selected', async () => {
+        decodeAudioFileMock.mockResolvedValue({
+            id: 'buf-1',
+            buffer: { duration: 2 },
+        });
+
+        // Capture the file input the handler creates so we can drive its onchange.
+        let captured: HTMLInputElement | null = null;
+        const realCreate = document.createElement.bind(document);
+        const createSpy = vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+            const el = realCreate(tag);
+            if (tag === 'input') {
+                captured = el as HTMLInputElement;
+                el.click = vi.fn();
+            }
+            return el;
+        });
+
+        renderWithTooltip(<TimelineEmptyMenu x={0} y={0} trackId={null} beat={0} onClose={mockOnClose} />);
+        fireEvent.click(screen.getByText('Import Audio…'));
+        expect(captured).not.toBeNull();
+        // Simulate the user picking a file.
+        Object.defineProperty(captured!, 'files', {
+            value: [new File([], 'loop.wav')],
+            configurable: true,
+        });
+        await captured!.onchange?.(new Event('change'));
+        createSpy.mockRestore();
+
+        // No trackId → a new audio track is added, then the clip lands there.
+        expect(addTrack).toHaveBeenCalledWith(expect.objectContaining({ kind: 'audio', name: 'loop' }));
+        expect(addClip).toHaveBeenCalledWith(
+            expect.objectContaining({ name: 'loop', audioBufferId: 'buf-1', startBeat: 0 })
+        );
+        expect(mockOnClose).toHaveBeenCalled();
+    });
+
+    it('imports an audio file into the selected track when trackId is set', async () => {
+        decodeAudioFileMock.mockResolvedValue({
+            id: 'buf-2',
+            buffer: { duration: 4 },
+        });
+
+        let captured: HTMLInputElement | null = null;
+        const realCreate = document.createElement.bind(document);
+        const createSpy = vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+            const el = realCreate(tag);
+            if (tag === 'input') {
+                captured = el as HTMLInputElement;
+                el.click = vi.fn();
+            }
+            return el;
+        });
+
+        renderWithTooltip(<TimelineEmptyMenu x={0} y={0} trackId="t1" beat={0} onClose={mockOnClose} />);
+        fireEvent.click(screen.getByText('Import Audio…'));
+        Object.defineProperty(captured!, 'files', {
+            value: [new File([], 'kick.wav')],
+            configurable: true,
+        });
+        await captured!.onchange?.(new Event('change'));
+
+        createSpy.mockRestore();
+        // Selected track → no new track, clip goes to t1.
+        expect(addTrack).not.toHaveBeenCalled();
+        expect(addClip).toHaveBeenCalledWith(expect.objectContaining({ trackId: 't1', audioBufferId: 'buf-2' }));
+    });
+
+    it('imports a MIDI file via the import handler', async () => {
+        let captured: HTMLInputElement | null = null;
+        const realCreate = document.createElement.bind(document);
+        const createSpy = vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+            const el = realCreate(tag);
+            if (tag === 'input') {
+                captured = el as HTMLInputElement;
+                el.click = vi.fn();
+            }
+            return el;
+        });
+
+        renderWithTooltip(<TimelineEmptyMenu x={0} y={0} trackId={null} beat={0} onClose={mockOnClose} />);
+        fireEvent.click(screen.getByText('Import MIDI…'));
+        Object.defineProperty(captured!, 'files', {
+            value: [new File([], 'song.mid')],
+            configurable: true,
+        });
+        await captured!.onchange?.(new Event('change'));
+        createSpy.mockRestore();
+
+        expect(importMidiFileMock).toHaveBeenCalled();
+        expect(mockOnClose).toHaveBeenCalled();
     });
 });
