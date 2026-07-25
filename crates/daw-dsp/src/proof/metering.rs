@@ -231,157 +231,197 @@ impl ShortTermLufs {
 }
 
 /// Integrated LUFS with gating (ITU-R BS.1770-4).
-/// Lower edge of the histogram — the EBU R128 absolute gate. Blocks at or below
-/// it are discarded by both measures anyway, so they are never stored.
-const LOUDNESS_HISTOGRAM_MIN_LUFS: f32 = -70.0;
-/// Bin width.
+/// Blocks retained for the gated loudness measures — one hour at one block per
+/// 100 ms.
 ///
-/// This is finer than the half-bin error on a single block would suggest it
-/// needs to be, because the error does not stay bounded by the bin width: the
-/// relative gate's threshold is derived from the mean of the *quantized*
-/// blocks, so shifting the mean by half a bin moves the threshold and flips
-/// blocks in and out of the gated set. At 0.1 LU that measured 0.134 LU of
-/// error on integrated loudness and 0.42 LU on LRA -- at or above the 0.1 LU
-/// resolution both are displayed at. At 0.01 LU it is an order of magnitude
-/// under it.
-const LOUDNESS_HISTOGRAM_BIN_LU: f32 = 0.01;
-/// Covers -70.0 LUFS up to +10.0 LUFS; anything louder saturates the top bin.
-/// 32 KB per histogram, fixed — against the ~1.1 MiB per hour the unbounded
-/// block list grew by.
-const LOUDNESS_HISTOGRAM_BINS: usize = 8_000;
+/// This is a *capacity*, not a measurement window: past it the store decimates
+/// rather than forgetting, so the programme stays represented (see
+/// [`BlockStore::push`]).
+const MAX_LOUDNESS_BLOCKS: usize = 36_000;
 
-/// Fixed-size distribution of 100 ms block loudnesses (WB-7).
+/// Exact, fixed-capacity store of 100 ms block loudnesses (WB-7).
 ///
-/// Both R128 measures are defined over the whole programme, so the obvious
-/// implementation keeps every block in a growing `Vec`. That allocates on the
-/// audio thread and grows without bound — measured at roughly 1.1 MiB per hour
-/// of wasm linear memory, with a realloc memcpy of the whole vector at each
-/// doubling, plus session-length `collect()`s and a sort on every poll.
+/// **Why not a histogram.** The first shape of this fix binned block loudness
+/// at 0.01 LU and answered both measures from counts. That cannot preserve gate
+/// accuracy, and the reason is structural rather than a matter of bin width:
+/// the relative gate's threshold is derived from the data, so a bucket the
+/// threshold lands inside must be decided as a unit, while the reference
+/// decides its members individually. Bin width bounds the *value* error; it
+/// does not bound the *classification* error, whose size scales with how many
+/// blocks share the straddling bucket. Uniformly-spread material hides this —
+/// every bucket holds a handful of blocks. Ordinary programme material does
+/// not: a quiet section and a loud section are two tight clusters, and when one
+/// sits near the gate the histogram flips it wholesale. Measured on 800 blocks
+/// near −30 LUFS against 200 near +20 LUFS, integrated loudness diverged by up
+/// to **45.21 LU** and LRA by **10.04 LU** — a mastering meter reading a wrong
+/// loudness by tens of LU.
 ///
-/// A histogram answers everything both measures need — a mean over a gated
-/// subset, and rank-order percentiles — from counts alone. It is O(1) in
-/// memory, allocation-free, sort-free, and unlike a ring buffer it puts no
-/// ceiling on how long a programme can be measured.
+/// Keeping the values exact removes the question entirely: the read path is the
+/// reference algorithm over a preallocated array, so equivalence is by
+/// construction rather than by tolerance.
+///
+/// **Allocation-free.** The backing store is sized once in [`Self::new`] and
+/// `push` never grows it, because [`Self::decimate`] runs first whenever it
+/// would.
 #[derive(Clone)]
-struct LoudnessHistogram {
-    counts: [u32; LOUDNESS_HISTOGRAM_BINS],
-    total: u64,
-    /// Inclusive range of bins that have ever been written, so the scans below
-    /// cost what the programme's actual loudness spread costs rather than the
-    /// full 8000 bins on every poll.
-    lowest: usize,
-    highest: usize,
+struct BlockStore {
+    blocks: Vec<f32>,
+    /// Keep one block in every `stride`. 1 until the store first fills.
+    stride: u32,
+    since_kept: u32,
 }
 
-impl LoudnessHistogram {
+impl BlockStore {
     fn new() -> Self {
         Self {
-            counts: [0; LOUDNESS_HISTOGRAM_BINS],
-            total: 0,
-            lowest: LOUDNESS_HISTOGRAM_BINS - 1,
-            highest: 0,
+            blocks: Vec::with_capacity(MAX_LOUDNESS_BLOCKS),
+            stride: 1,
+            since_kept: 0,
         }
     }
 
-    /// Bins that have been written to, in ascending loudness order. Empty
-    /// while nothing has been recorded.
-    fn occupied(&self) -> core::ops::Range<usize> {
-        if self.total == 0 {
-            return 0..0;
-        }
-        self.lowest..self.highest + 1
-    }
-
-    /// Record one block. Written as `>` rather than `>=` to match the
-    /// absolute gate's own comparison, and to drop NaN.
+    /// Record one block.
+    ///
+    /// Under capacity every block is kept, so the measures are exact. At
+    /// capacity the store halves itself — dropping every second block and
+    /// doubling the stride — which keeps a uniform sample of the whole
+    /// programme in fixed memory. Accuracy degrades in resolution, not in bias,
+    /// and only past an hour of continuous audio.
     fn push(&mut self, lufs: f32) {
-        if !(lufs > LOUDNESS_HISTOGRAM_MIN_LUFS) {
+        self.since_kept += 1;
+        if self.since_kept < self.stride {
             return;
         }
-        let offset = (lufs - LOUDNESS_HISTOGRAM_MIN_LUFS) / LOUDNESS_HISTOGRAM_BIN_LU;
-        let index = (offset as usize).min(LOUDNESS_HISTOGRAM_BINS - 1);
-        self.counts[index] += 1;
-        self.total += 1;
-        self.lowest = self.lowest.min(index);
-        self.highest = self.highest.max(index);
-    }
-
-    fn bin_loudness(index: usize) -> f32 {
-        LOUDNESS_HISTOGRAM_MIN_LUFS + (index as f32 + 0.5) * LOUDNESS_HISTOGRAM_BIN_LU
-    }
-
-    fn is_empty(&self) -> bool {
-        self.total == 0
-    }
-
-    /// Mean loudness across every block louder than `threshold`.
-    fn mean_above(&self, threshold: f32) -> Option<f32> {
-        let mut weighted = 0.0_f64;
-        let mut counted = 0_u64;
-        for index in self.occupied() {
-            let count = self.counts[index];
-            if count == 0 {
-                continue;
-            }
-            let loudness = Self::bin_loudness(index);
-            if loudness > threshold {
-                weighted += f64::from(loudness) * f64::from(count);
-                counted += u64::from(count);
-            }
+        self.since_kept = 0;
+        if self.blocks.len() == MAX_LOUDNESS_BLOCKS {
+            self.decimate();
         }
-        if counted == 0 {
-            return None;
-        }
-        Some((weighted / counted as f64) as f32)
+        self.blocks.push(lufs);
     }
 
-    fn count_above(&self, threshold: f32) -> u64 {
-        let mut counted = 0_u64;
-        for index in self.occupied() {
-            let count = self.counts[index];
-            if count > 0 && Self::bin_loudness(index) > threshold {
-                counted += u64::from(count);
-            }
+    /// Halve the retained set in place. No allocation: this only ever shortens.
+    fn decimate(&mut self) {
+        let mut write = 0;
+        let mut read = 0;
+        while read < self.blocks.len() {
+            self.blocks[write] = self.blocks[read];
+            write += 1;
+            read += 2;
         }
-        counted
+        self.blocks.truncate(write);
+        self.stride = self.stride.saturating_mul(2);
     }
 
-    /// Loudness of the block at zero-based `rank` when the blocks louder than
-    /// `threshold` are ordered quietest-first. Bins are already in ascending
-    /// loudness order, so this is the sorted index the previous `Vec`-and-sort
-    /// implementation looked up, without the sort.
-    fn loudness_at_rank_above(&self, threshold: f32, rank: u64) -> Option<f32> {
-        let mut seen = 0_u64;
-        for index in self.occupied() {
-            let count = self.counts[index];
-            if count == 0 {
-                continue;
-            }
-            let loudness = Self::bin_loudness(index);
-            if loudness <= threshold {
-                continue;
-            }
-            seen += u64::from(count);
-            if seen > rank {
-                return Some(loudness);
-            }
-        }
-        None
+    fn as_slice(&self) -> &[f32] {
+        &self.blocks
     }
 
     fn clear(&mut self) {
-        self.counts = [0; LOUDNESS_HISTOGRAM_BINS];
-        self.total = 0;
-        self.lowest = LOUDNESS_HISTOGRAM_BINS - 1;
-        self.highest = 0;
+        self.blocks.clear();
+        self.stride = 1;
+        self.since_kept = 0;
     }
+}
+
+/// Gated integrated loudness over `blocks`, per EBU R128's two-pass gate.
+///
+/// Allocation-free, and arithmetically identical to the previous
+/// collect-and-average implementation: same f64 accumulation, same iteration
+/// order, same strict `>` comparisons at both gates.
+fn gated_integrated_lufs(blocks: &[f32]) -> f32 {
+    if blocks.is_empty() {
+        return -100.0;
+    }
+
+    // Absolute gate: -70 LUFS.
+    let mut sum = 0.0_f64;
+    let mut count = 0_usize;
+    for &block in blocks {
+        let block = f64::from(block);
+        if block > -70.0 {
+            sum += block;
+            count += 1;
+        }
+    }
+    if count == 0 {
+        return -100.0;
+    }
+
+    // Relative gate: 10 LU below the mean of the above-absolute set.
+    let relative_threshold = sum / count as f64 - 10.0;
+    let mut gated_sum = 0.0_f64;
+    let mut gated_count = 0_usize;
+    for &block in blocks {
+        let block = f64::from(block);
+        if block > -70.0 && block > relative_threshold {
+            gated_sum += block;
+            gated_count += 1;
+        }
+    }
+    if gated_count == 0 {
+        return -100.0;
+    }
+    (gated_sum / gated_count as f64) as f32
+}
+
+/// Loudness range over `blocks`, in LU.
+///
+/// `scratch` is the caller's preallocated buffer for the gated subset; it is
+/// cleared on entry and never grown, so this allocates nothing. Percentiles use
+/// `select_nth_unstable_by` — two O(n) selections rather than the O(n log n)
+/// full sort the previous implementation ran on every poll — which returns the
+/// same order statistic the sorted vector was indexed at.
+fn gated_loudness_range(blocks: &[f32], scratch: &mut Vec<f32>) -> f32 {
+    if blocks.len() < 2 {
+        return 0.0;
+    }
+
+    // Absolute gate, and its mean, in f32 to match the previous implementation.
+    let mut sum = 0.0_f32;
+    let mut count = 0_usize;
+    for &block in blocks {
+        if block > -70.0 {
+            sum += block;
+            count += 1;
+        }
+    }
+    if count == 0 {
+        return 0.0;
+    }
+    let relative_threshold = sum / count as f32 - 20.0;
+
+    scratch.clear();
+    for &block in blocks {
+        if block > -70.0 && block > relative_threshold {
+            scratch.push(block);
+        }
+    }
+    if scratch.len() < 2 {
+        return 0.0;
+    }
+
+    let n = scratch.len();
+    let p10 = (n as f32 * 0.10) as usize;
+    let p95 = ((n as f32 * 0.95) as usize).min(n - 1);
+    let order = |a: &f32, b: &f32| a.partial_cmp(b).unwrap_or(core::cmp::Ordering::Equal);
+
+    // Read the low percentile before selecting the high one: the second
+    // selection re-partitions and may move the first.
+    let (_, low, _) = scratch.select_nth_unstable_by(p10, order);
+    let low = *low;
+    let (_, high, _) = scratch.select_nth_unstable_by(p95, order);
+    *high - low
 }
 
 pub struct IntegratedLufs {
     momentary: MomentaryLufs,
-    /// Distribution of 400 ms block loudnesses (WB-7: was an unbounded `Vec`
-    /// pushed to from the audio thread).
-    blocks: LoudnessHistogram,
+    /// 400 ms block loudnesses (WB-7: was an unbounded `Vec` pushed to from the
+    /// audio thread).
+    blocks: BlockStore,
+    /// Recomputed when a block lands, not when the value is read. The worklet
+    /// polls this from inside `process()` roughly every 2.7 ms while blocks
+    /// arrive at 10 Hz, so recomputing on read did ~37x redundant work.
+    cached_lufs: f32,
     hop_counter: usize,
     hop_size: usize, // 100ms hop
 }
@@ -391,7 +431,8 @@ impl IntegratedLufs {
         let hop_size = (0.1 * sr) as usize;
         Self {
             momentary: MomentaryLufs::new(sr),
-            blocks: LoudnessHistogram::new(),
+            blocks: BlockStore::new(),
+            cached_lufs: -100.0,
             hop_counter: 0,
             hop_size,
         }
@@ -403,29 +444,17 @@ impl IntegratedLufs {
         if self.hop_counter >= self.hop_size {
             self.hop_counter = 0;
             self.blocks.push(self.momentary.get_lufs());
+            self.cached_lufs = gated_integrated_lufs(self.blocks.as_slice());
         }
     }
 
-    /// Gated integrated loudness, allocation-free (WB-7): the worklet polls
-    /// this from inside `process()`, so it must not collect or sort.
     pub fn get_lufs(&self) -> f32 {
-        if self.blocks.is_empty() {
-            return -100.0;
-        }
-
-        // Absolute gate: -70 LUFS. Applied on the way in, so everything the
-        // histogram holds is already above it.
-        let Some(mean_absolute) = self.blocks.mean_above(f32::NEG_INFINITY) else {
-            return -100.0;
-        };
-
-        // Relative gate: 10 LU below the mean of the above-absolute set.
-        let relative_threshold = mean_absolute - 10.0;
-        self.blocks.mean_above(relative_threshold).unwrap_or(-100.0)
+        self.cached_lufs
     }
 
     pub fn reset(&mut self) {
         self.blocks.clear();
+        self.cached_lufs = -100.0;
         self.hop_counter = 0;
     }
 }
@@ -480,9 +509,13 @@ impl TruePeakDetector {
 /// Computed from short-term LUFS blocks using percentile method.
 pub struct LoudnessRange {
     st_lufs: ShortTermLufs,
-    /// Distribution of short-term block loudnesses (WB-7: was an unbounded
-    /// `Vec` that `get_lra` also sorted, both on the audio thread).
-    blocks: LoudnessHistogram,
+    /// Short-term block loudnesses (WB-7: was an unbounded `Vec` that `get_lra`
+    /// also sorted, both on the audio thread).
+    blocks: BlockStore,
+    /// Preallocated working buffer for the gated subset, so the percentile
+    /// selection never allocates.
+    scratch: Vec<f32>,
+    cached_lra: f32,
     hop_counter: usize,
     hop_size: usize,
 }
@@ -492,7 +525,9 @@ impl LoudnessRange {
         let hop_size = (0.1 * sr) as usize; // 100ms hop
         Self {
             st_lufs: ShortTermLufs::new(sr),
-            blocks: LoudnessHistogram::new(),
+            blocks: BlockStore::new(),
+            scratch: Vec::with_capacity(MAX_LOUDNESS_BLOCKS),
+            cached_lra: 0.0,
             hop_counter: 0,
             hop_size,
         }
@@ -504,40 +539,19 @@ impl LoudnessRange {
         if self.hop_counter >= self.hop_size {
             self.hop_counter = 0;
             self.blocks.push(self.st_lufs.get_lufs());
+            self.cached_lra = gated_loudness_range(self.blocks.as_slice(), &mut self.scratch);
         }
     }
 
-    /// LRA in LU (loudness units), allocation-free and sort-free (WB-7).
+    /// LRA in LU (loudness units).
     pub fn get_lra(&self) -> f32 {
-        if self.blocks.total < 2 {
-            return 0.0;
-        }
-
-        // Absolute gate: -70 LUFS, applied on the way in.
-        let Some(mean) = self.blocks.mean_above(f32::NEG_INFINITY) else {
-            return 0.0;
-        };
-
-        // Relative gate: 20 LU below the mean of the above-absolute set.
-        let relative_threshold = mean - 20.0;
-        let n = self.blocks.count_above(relative_threshold);
-        if n < 2 {
-            return 0.0;
-        }
-
-        // Same nearest-rank percentiles the sorted vector was indexed at.
-        let p10_rank = (n as f32 * 0.10) as u64;
-        let p95_rank = ((n as f32 * 0.95) as u64).min(n - 1);
-        let low = self.blocks.loudness_at_rank_above(relative_threshold, p10_rank);
-        let high = self.blocks.loudness_at_rank_above(relative_threshold, p95_rank);
-        match (low, high) {
-            (Some(low), Some(high)) => high - low,
-            _ => 0.0,
-        }
+        self.cached_lra
     }
 
     pub fn reset(&mut self) {
         self.blocks.clear();
+        self.scratch.clear();
+        self.cached_lra = 0.0;
         self.hop_counter = 0;
     }
 }
@@ -750,15 +764,20 @@ mod denormal_tests {
 }
 
 #[cfg(test)]
-mod loudness_histogram_tests {
-    //! WB-7. The histogram replaces an unbounded block list, so the risk is not
-    //! memory but arithmetic: it must produce the same gated loudness and the
-    //! same percentiles the `Vec`-and-sort implementation did. These compare it
-    //! against that exact algorithm, kept here verbatim as the reference.
+mod loudness_block_store_tests {
+    //! WB-7. The store keeps block loudnesses exactly, so the read path is the
+    //! previous collect-and-average algorithm over a preallocated array. That
+    //! makes equivalence checkable as **bit-identity**, not as a tolerance —
+    //! which is the point: the histogram this replaced could only ever be
+    //! argued for within some error bound, and review round 1 found ordinary
+    //! programme material where that bound was 45.21 LU.
 
-    use super::{IntegratedLufs, LoudnessHistogram, LoudnessRange};
+    use super::{
+        gated_integrated_lufs, gated_loudness_range, BlockStore, IntegratedLufs, LoudnessRange,
+        MAX_LOUDNESS_BLOCKS,
+    };
 
-    /// The previous `IntegratedLufs::get_lufs`, unchanged.
+    /// The previous `IntegratedLufs::get_lufs`, verbatim, as the oracle.
     fn reference_integrated(blocks: &[f32]) -> f32 {
         if blocks.is_empty() {
             return -100.0;
@@ -784,7 +803,7 @@ mod loudness_histogram_tests {
         (above_relative.iter().sum::<f64>() / above_relative.len() as f64) as f32
     }
 
-    /// The previous `LoudnessRange::get_lra`, unchanged.
+    /// The previous `LoudnessRange::get_lra`, verbatim, as the oracle.
     fn reference_lra(blocks: &[f32]) -> f32 {
         if blocks.len() < 2 {
             return 0.0;
@@ -806,125 +825,168 @@ mod loudness_histogram_tests {
         above_rel[p95_idx] - above_rel[p10_idx]
     }
 
-    fn histogram_of(blocks: &[f32]) -> LoudnessHistogram {
-        let mut h = LoudnessHistogram::new();
-        for &b in blocks {
-            h.push(b);
-        }
-        h
+    fn actual_lra(blocks: &[f32]) -> f32 {
+        let mut scratch = Vec::with_capacity(blocks.len());
+        gated_loudness_range(blocks, &mut scratch)
     }
 
-    fn histogram_integrated(blocks: &[f32]) -> f32 {
-        let h = histogram_of(blocks);
-        if h.is_empty() {
-            return -100.0;
-        }
-        let Some(mean_absolute) = h.mean_above(f32::NEG_INFINITY) else {
-            return -100.0;
-        };
-        h.mean_above(mean_absolute - 10.0).unwrap_or(-100.0)
-    }
-
-    fn histogram_lra(blocks: &[f32]) -> f32 {
-        let h = histogram_of(blocks);
-        if h.total < 2 {
-            return 0.0;
-        }
-        let Some(mean) = h.mean_above(f32::NEG_INFINITY) else {
-            return 0.0;
-        };
-        let threshold = mean - 20.0;
-        let n = h.count_above(threshold);
-        if n < 2 {
-            return 0.0;
-        }
-        let p10 = (n as f32 * 0.10) as u64;
-        let p95 = ((n as f32 * 0.95) as u64).min(n - 1);
-        match (
-            h.loudness_at_rank_above(threshold, p10),
-            h.loudness_at_rank_above(threshold, p95),
-        ) {
-            (Some(low), Some(high)) => high - low,
-            _ => 0.0,
-        }
-    }
-
-    /// Deterministic spread of block loudnesses across the useful range,
-    /// including values under the absolute gate that both must discard.
+    /// Smoothly-spread material. This is the distribution the histogram handled
+    /// fine, kept so a regression toward bucketing is still caught here too.
     fn synthetic_blocks(count: usize, seed: u32) -> Vec<f32> {
         let mut state = seed;
         (0..count)
             .map(|_| {
                 state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
                 let unit = f32::from((state >> 16) as u16) / 65_535.0;
-                // -80 .. -4 LUFS, so roughly a tenth land under the -70 gate.
                 -80.0 + unit * 76.0
             })
             .collect()
     }
 
-    /// Comfortably inside the 0.1 LU resolution either measure is displayed
-    /// at, and roughly an order of magnitude better than the 0.1 LU bin width
-    /// this replaced measured (0.134 LU integrated, 0.42 LU LRA).
-    const BIN_TOLERANCE_LU: f32 = 0.02;
+    /// A quiet section and a loud section — dialogue plus music, or programme
+    /// plus a calibration tone. Two tight clusters rather than a spread, which
+    /// is what ordinary material actually looks like and what broke the
+    /// histogram: when a cluster sits near the relative gate, a bucketed store
+    /// decides all of it as a unit while the reference splits it.
+    fn bimodal_blocks(quiet_lufs: f32) -> Vec<f32> {
+        let mut blocks = Vec::with_capacity(1_000);
+        for i in 0..800 {
+            blocks.push(quiet_lufs + (i % 7) as f32 * 0.003);
+        }
+        for i in 0..200 {
+            blocks.push(20.0 + (i % 5) as f32 * 0.01);
+        }
+        blocks
+    }
 
     #[test]
-    fn integrated_loudness_matches_the_unbounded_reference() {
+    fn integrated_loudness_is_bit_identical_on_smooth_material() {
         for seed in [1_u32, 7, 99, 4_242] {
             for count in [12_usize, 300, 36_000] {
                 let blocks = synthetic_blocks(count, seed);
-                let expected = reference_integrated(&blocks);
-                let actual = histogram_integrated(&blocks);
-                assert!(
-                    (actual - expected).abs() <= BIN_TOLERANCE_LU,
-                    "seed {seed}, {count} blocks: histogram {actual:.4} LUFS vs unbounded \
-                     reference {expected:.4} LUFS"
+                assert_eq!(
+                    gated_integrated_lufs(&blocks).to_bits(),
+                    reference_integrated(&blocks).to_bits(),
+                    "seed {seed}, {count} blocks"
                 );
             }
         }
     }
 
     #[test]
-    fn loudness_range_matches_the_unbounded_reference() {
+    fn loudness_range_is_bit_identical_on_smooth_material() {
         for seed in [1_u32, 7, 99, 4_242] {
             for count in [12_usize, 300, 36_000] {
                 let blocks = synthetic_blocks(count, seed);
-                let expected = reference_lra(&blocks);
-                let actual = histogram_lra(&blocks);
-                        // Two rank lookups, so up to two bins of quantization.
-                assert!(
-                    (actual - expected).abs() <= 4.0 * BIN_TOLERANCE_LU,
-                    "seed {seed}, {count} blocks: histogram LRA {actual:.4} LU vs unbounded \
-                     reference {expected:.4} LU"
+                assert_eq!(
+                    actual_lra(&blocks).to_bits(),
+                    reference_lra(&blocks).to_bits(),
+                    "seed {seed}, {count} blocks"
                 );
             }
         }
     }
 
+    /// Review round 1's adversarial case. The sweep walks the quiet cluster
+    /// across the relative-gate threshold, so at some offset the gate lands
+    /// inside it. The histogram diverged by up to 45.21 LU here (LRA 10.04 LU)
+    /// against a committed tolerance of 0.02 LU.
     #[test]
-    fn blocks_under_the_absolute_gate_are_discarded_not_stored() {
-        let mut h = LoudnessHistogram::new();
-        h.push(-70.0); // exactly at the gate — the gate is `>`, so excluded
-        h.push(-90.0);
-        h.push(f32::NAN);
-        assert!(h.is_empty(), "gated blocks must not be counted");
-        h.push(-69.9);
-        assert_eq!(h.total, 1);
+    fn integrated_loudness_is_bit_identical_across_a_gate_straddling_cluster() {
+        for step in 0..11 {
+            let quiet = -34.0 + step as f32;
+            let blocks = bimodal_blocks(quiet);
+            assert_eq!(
+                gated_integrated_lufs(&blocks).to_bits(),
+                reference_integrated(&blocks).to_bits(),
+                "quiet section at {quiet:.1} LUFS"
+            );
+        }
     }
 
     #[test]
-    fn loudness_above_the_top_bin_saturates_instead_of_indexing_out_of_range() {
-        let mut h = LoudnessHistogram::new();
-        h.push(1_000.0);
-        assert_eq!(h.total, 1);
-        let mean = h.mean_above(f32::NEG_INFINITY).expect("one block recorded");
-        assert!(mean > 9.0, "a saturating block lands in the top bin, got {mean}");
+    fn loudness_range_is_bit_identical_across_a_gate_straddling_cluster() {
+        for step in 0..11 {
+            let quiet = -34.0 + step as f32;
+            let blocks = bimodal_blocks(quiet);
+            assert_eq!(
+                actual_lra(&blocks).to_bits(),
+                reference_lra(&blocks).to_bits(),
+                "quiet section at {quiet:.1} LUFS"
+            );
+        }
+    }
+
+    /// Loudness far above the old histogram's +10 LUFS ceiling used to saturate
+    /// into the top bin, which is what pulled the mean and moved the gate in the
+    /// case above. An exact store has no ceiling to saturate against.
+    #[test]
+    fn very_loud_blocks_are_not_clamped() {
+        let blocks = vec![60.0_f32, 60.0, 60.0, 60.0];
+        assert_eq!(
+            gated_integrated_lufs(&blocks).to_bits(),
+            reference_integrated(&blocks).to_bits()
+        );
+        assert!((gated_integrated_lufs(&blocks) - 60.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn blocks_under_the_absolute_gate_are_excluded_but_still_counted() {
+        // The reference stored every block and gated at read time; `blocks.len()`
+        // therefore included sub-gate blocks, and LRA's `< 2` guard saw them.
+        let blocks = vec![-90.0_f32, -70.0, f32::NAN, -20.0, -21.0];
+        assert_eq!(
+            gated_integrated_lufs(&blocks).to_bits(),
+            reference_integrated(&blocks).to_bits()
+        );
+        assert_eq!(actual_lra(&blocks).to_bits(), reference_lra(&blocks).to_bits());
+    }
+
+    #[test]
+    fn store_stays_within_capacity_and_decimates_uniformly() {
+        let mut store = BlockStore::new();
+        for i in 0..MAX_LOUDNESS_BLOCKS {
+            store.push(i as f32 * 0.001 - 30.0);
+        }
+        assert_eq!(store.as_slice().len(), MAX_LOUDNESS_BLOCKS);
+        assert_eq!(store.stride, 1, "no decimation while under capacity");
+
+        // One past capacity: halve, then keep every second block.
+        store.push(0.0);
+        assert_eq!(store.stride, 2);
+        assert!(store.as_slice().len() <= MAX_LOUDNESS_BLOCKS);
+
+        for i in 0..MAX_LOUDNESS_BLOCKS * 3 {
+            store.push(i as f32 * 0.001 - 30.0);
+        }
+        assert!(
+            store.as_slice().len() <= MAX_LOUDNESS_BLOCKS,
+            "capacity is never exceeded, so `push` never reallocates"
+        );
+        assert!(store.stride >= 4, "stride keeps doubling as the programme runs long");
+    }
+
+    #[test]
+    fn decimation_preserves_the_measured_loudness() {
+        // Past capacity the store holds a uniform sample rather than every
+        // block, so the measure degrades in resolution, not in bias.
+        let full: Vec<f32> = (0..MAX_LOUDNESS_BLOCKS * 4)
+            .map(|i| if i % 5 == 0 { -12.0 } else { -26.0 })
+            .collect();
+        let mut store = BlockStore::new();
+        for &b in &full {
+            store.push(b);
+        }
+        let decimated = gated_integrated_lufs(store.as_slice());
+        let exact = reference_integrated(&full);
+        assert!(
+            (decimated - exact).abs() < 0.5,
+            "decimated {decimated:.3} LUFS vs exact {exact:.3} LUFS over four hours of audio"
+        );
     }
 
     #[test]
     fn a_steady_level_integrates_to_that_level() {
-        // End-to-end through the real meter rather than the helpers: a constant
-        // programme must integrate to its own loudness.
         let sr = 48_000.0;
         let mut meter = IntegratedLufs::new(sr);
         for n in 0..(sr as usize * 4) {
@@ -936,8 +998,6 @@ mod loudness_histogram_tests {
             (-20.0..-6.0).contains(&integrated),
             "a steady -6 dBFS 1 kHz tone should integrate to a plausible LUFS, got {integrated}"
         );
-
-        // Reset must actually clear the distribution, not just the counter.
         meter.reset();
         assert_eq!(meter.get_lufs(), -100.0);
     }
@@ -946,9 +1006,6 @@ mod loudness_histogram_tests {
     fn alternating_levels_produce_a_loudness_range_near_their_separation() {
         let sr = 48_000.0;
         let mut meter = LoudnessRange::new(sr);
-        // Alternate every 8 s so the short-term meter's own 3 s window settles
-        // fully at each level; shorter blocks measure the meter's smoothing
-        // rather than the programme's range.
         for n in 0..(sr as usize * 32) {
             let loud = (n / (sr as usize * 8)) % 2 == 0;
             let amp = if loud { 0.5 } else { 0.05 };
@@ -960,7 +1017,6 @@ mod loudness_histogram_tests {
             (10.0..30.0).contains(&lra),
             "alternating 20 dB apart should give an LRA near 20 LU, got {lra}"
         );
-
         meter.reset();
         assert_eq!(meter.get_lra(), 0.0);
     }
