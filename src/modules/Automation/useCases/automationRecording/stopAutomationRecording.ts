@@ -112,7 +112,7 @@ export function stopAutomationRecording(): void {
     activeRecording.clear();
     pendingPoints.clear();
     touchActive.clear();
-    // AU-6: a stop or locate ends the session outright, so any AutoMatch glide
+    // A stop or locate ends the session outright, so any AutoMatch glide
     // still in flight is abandoned rather than resumed against a clock that has
     // since jumped. Without this a pending release would blend on the first tick
     // after the next play, from a value belonging to the previous session.

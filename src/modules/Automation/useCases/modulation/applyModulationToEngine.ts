@@ -19,7 +19,7 @@ type AutomationLane = NonNullable<typeof automationStore.value>['lanes'][number]
 type IndexedLane = readonly [AutomationLane, ModulationTrack, string, string, string];
 type AutomatedBaseSlot = { activeLaneCount: number; value: number | null };
 /**
- * AU-11: what the live automation pass actually wrote to each device parameter
+ * What the live automation pass actually wrote to each device parameter
  * on this tick, indexed `deviceId → parameterId → value`. Nested rather than a
  * composite string key so no key format has to be agreed across modules. The
  * transport scheduler owns the map and hands it in; it is read-only here.
@@ -229,7 +229,7 @@ export function applyModulationToEngine(
 
             const key = `${mapping.targetTrackId} ${mapping.targetDeviceId} ${mapping.targetParamId}`;
             const automatedBase = automatedBaseByDevice.get(mapping.targetDeviceId)?.get(mapping.targetParamId);
-            // AU-11: prefer the value applyAutomation actually applied to this
+            // Prefer the value applyAutomation actually applied to this
             // param on this tick — the *slewed* one. Recomputing the raw curve
             // value here made the two writers disagree about the same param in
             // the same tick: automation wrote the slewed value, then modulation

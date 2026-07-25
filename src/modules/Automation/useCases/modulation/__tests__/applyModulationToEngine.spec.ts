@@ -426,7 +426,7 @@ describe('applyModulationToEngine', () => {
         expect(mocks.updateDeviceParam.mock.calls[0]?.[3]).toBeCloseTo(800);
     });
 
-    describe('automated base agrees with what applyAutomation wrote (AU-11)', () => {
+    describe('automated base agrees with what applyAutomation wrote', () => {
         function seedAutomatedAndModulatedCutoff(): void {
             mocks.getPluginById.mockImplementation((deviceType: string) =>
                 deviceType === 'builtin-filter'

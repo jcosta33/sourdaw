@@ -14,7 +14,7 @@ export function releaseTouchAutomation(trackId: string, parameterId: string): vo
     // recorded curve until stop. Clearing lastValue ends the recording window.
     const session = activeRecording.get(key);
     if (session) {
-        // AU-6: arm the AutoMatch glide before clearing lastValue — it is the
+        // Arm the AutoMatch glide before clearing lastValue — it is the
         // value the control held at release, and the point the parameter must
         // glide back to the underlying automation *from*. Without this the next
         // applyAutomation hands the parameter straight back to the curve and the

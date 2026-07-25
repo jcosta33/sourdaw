@@ -1,5 +1,5 @@
 /**
- * AU-6 — AutoMatch release state.
+ * AutoMatch release state.
  *
  * When a touch/latch ride ends, the control is at wherever the user left it
  * while the underlying automation curve says something else. Releasing used to

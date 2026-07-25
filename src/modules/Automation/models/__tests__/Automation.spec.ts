@@ -13,7 +13,7 @@ describe('createAutomationLane', () => {
         expect(lane.objects).toEqual([]);
         expect(lane.visible).toBe(true);
         expect(lane.enabled).toBe(true);
-        // virginTerritory was removed (AU-8); a new lane must not carry it.
+        // virginTerritory was removed from the lane model; a new lane must not carry it.
         expect(lane).not.toHaveProperty('virginTerritory');
         expect(lane.minValue).toBe(0);
         expect(lane.maxValue).toBe(1);

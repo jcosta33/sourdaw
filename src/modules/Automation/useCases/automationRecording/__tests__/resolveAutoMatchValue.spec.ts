@@ -14,7 +14,7 @@ function resolveAt(nowSeconds: number, automationValue = 1) {
     return resolveAutoMatchValue({ trackId: 't1', parameterId: 'cutoff', automationValue, nowSeconds });
 }
 
-describe('resolveAutoMatchValue (AU-6)', () => {
+describe('resolveAutoMatchValue', () => {
     beforeEach(() => {
         pendingAutoMatch.clear();
     });

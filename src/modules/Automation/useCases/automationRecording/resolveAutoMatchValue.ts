@@ -24,7 +24,7 @@ type ResolveAutoMatchValueOutput = {
 };
 
 /**
- * AU-6 — resolve the value a released control should take this tick.
+ * Resolve the value a released control should take this tick.
  *
  * With no pending release this returns the curve value untouched, so the normal
  * playback path is unaffected. While a release is gliding it returns a linear
