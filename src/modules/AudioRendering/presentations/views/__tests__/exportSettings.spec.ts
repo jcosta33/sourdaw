@@ -30,6 +30,7 @@ describe('exportSettings', () => {
             bitDepth: 24,
             mp3BitRate: 128,
             dither: 'random',
+            normalization: 'off',
         });
     });
 
@@ -50,6 +51,7 @@ describe('exportSettings', () => {
             bitDepth: 24,
             mp3BitRate: 320,
             dither: 'random',
+            normalization: 'off',
         });
     });
 
@@ -70,6 +72,7 @@ describe('exportSettings', () => {
             bitDepth: 16,
             mp3BitRate: 192,
             dither: 'random',
+            normalization: 'off',
         });
     });
 
@@ -91,6 +94,7 @@ describe('exportSettings', () => {
             bitDepth: 32,
             mp3BitRate: 320,
             dither: 'random',
+            normalization: 'off',
         });
         expect(setItem).not.toHaveBeenCalled();
     });
@@ -115,6 +119,7 @@ describe('exportSettings', () => {
             bitDepth: 16,
             mp3BitRate: 96,
             dither: 'random',
+            normalization: 'off',
         });
     });
 
@@ -128,6 +133,7 @@ describe('exportSettings', () => {
                 bitDepth: 24,
                 mp3BitRate: 128,
                 dither: 'random',
+                normalization: 'off',
             });
         }
     });
@@ -150,6 +156,7 @@ describe('exportSettings', () => {
                 bitDepth: 24,
                 mp3BitRate: 128,
                 dither: 'random',
+                normalization: 'off',
             });
         }
     });
@@ -178,6 +185,7 @@ describe('exportSettings', () => {
             bitDepth: 24,
             mp3BitRate: 192,
             dither: 'seeded',
+            normalization: 'off',
         });
 
         expect(window.localStorage.getItem(EXPORT_SETTINGS_KEY)).toBe(
@@ -187,6 +195,7 @@ describe('exportSettings', () => {
                 bitDepth: 24,
                 mp3BitRate: 192,
                 dither: 'seeded',
+                normalization: 'off',
             })
         );
     });

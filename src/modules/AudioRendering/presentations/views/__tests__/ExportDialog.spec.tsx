@@ -193,10 +193,20 @@ vi.mock('#/modules/Project/useCases', () => ({
     isNativeProjectRuntimeAvailable: vi.fn(() => true),
 }));
 
-vi.mock('../exportSettings', () => ({
-    loadExportSettings: vi.fn(() => ({ formats: ['wav'], sampleRate: 44100, bitDepth: 24, mp3BitRate: 128 })),
+// Partial mock: only the load/save pair is stubbed. The module also exports the
+// export-format constants the dialog renders, and replacing it wholesale meant
+// every new constant silently arrived as undefined.
+vi.mock('../exportSettings', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../exportSettings')>()),
+    loadExportSettings: vi.fn(() => ({
+        formats: ['wav'],
+        sampleRate: 44100,
+        bitDepth: 24,
+        mp3BitRate: 128,
+        dither: 'random',
+        normalization: 'off',
+    })),
     saveExportSettings: vi.fn(),
-    MAX_MANUAL_TAIL_SECONDS: 60,
 }));
 
 function createClip(input: { id: string; audioBufferId?: string }): TestClip {
@@ -323,6 +333,7 @@ describe('ExportDialog', () => {
             bitDepth: 32,
             mp3BitRate: 128,
             dither: 'random',
+            normalization: 'off',
         });
 
         render(<ExportDialog open={true} onClose={vi.fn()} />);
@@ -339,6 +350,7 @@ describe('ExportDialog', () => {
             bitDepth: 24,
             mp3BitRate: 128,
             dither: 'random',
+            normalization: 'off',
         });
         vi.mocked(audioBufferToFlac).mockResolvedValue(new Uint8Array([7, 7, 7]));
         mocks.selectNativeAudioExportFile.mockResolvedValue('/tmp/sourdaw-export.flac');
@@ -359,6 +371,7 @@ describe('ExportDialog', () => {
             bitDepth: 16,
             mp3BitRate: 128,
             dither: 'seeded',
+            normalization: 'off',
         });
         mocks.selectNativeAudioExportFile.mockResolvedValue('/tmp/sourdaw-export.wav');
 
@@ -382,6 +395,7 @@ describe('ExportDialog', () => {
             bitDepth: 16,
             mp3BitRate: 128,
             dither: 'none',
+            normalization: 'off',
         });
         mocks.selectNativeAudioExportFile.mockResolvedValue('/tmp/sourdaw-export.wav');
 
@@ -394,6 +408,76 @@ describe('ExportDialog', () => {
         expect(mocks.encodeWav.mock.calls[0]![3]).toEqual({ mode: 'none' });
     });
 
+    it('should normalize the exported audio to the loudness target when R128 is selected (OE-7)', async () => {
+        vi.mocked(loadExportSettings).mockReturnValueOnce({
+            formats: ['wav'],
+            sampleRate: 44100,
+            bitDepth: 24,
+            mp3BitRate: 128,
+            dither: 'random',
+            normalization: 'r128',
+        });
+
+        // One second of a -20 dBFS 1 kHz tone: long enough for the gating
+        // blocks, and a known loudness to correct from.
+        const buffer = MockAudioBuffer.create(2, 44100, 44100);
+        const amplitude = Math.pow(10, -20 / 20);
+        for (let channel = 0; channel < 2; channel++) {
+            const samples = buffer.getChannelData(channel);
+            for (let index = 0; index < samples.length; index++) {
+                samples[index] = amplitude * Math.sin((2 * Math.PI * 1000 * index) / 44100);
+            }
+        }
+        mocks.renderOffline.mockResolvedValue(buffer);
+        mocks.selectNativeAudioExportFile.mockResolvedValue('/tmp/sourdaw-export.wav');
+
+        render(<ExportDialog open={true} onClose={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+
+        await waitFor(() => {
+            expect(mocks.encodeWav).toHaveBeenCalledTimes(1);
+        });
+
+        let encodedPeak = 0;
+        const encodedChannel = buffer.getChannelData(0);
+        for (const sample of encodedChannel) {
+            encodedPeak = Math.max(encodedPeak, Math.abs(sample));
+        }
+
+        // -20 LUFS raised to the -14 LUFS target is +6 dB, so the -20 dBFS tone
+        // should now peak near -14 dBFS. The true-peak ceiling is -1 dBTP and is
+        // nowhere near binding here.
+        expect(20 * Math.log10(encodedPeak)).toBeCloseTo(-14, 1);
+    });
+
+    it('should leave the exported audio at its authored level when normalization is off (OE-7)', async () => {
+        const buffer = MockAudioBuffer.create(2, 44100, 44100);
+        const amplitude = Math.pow(10, -20 / 20);
+        for (let channel = 0; channel < 2; channel++) {
+            const samples = buffer.getChannelData(channel);
+            for (let index = 0; index < samples.length; index++) {
+                samples[index] = amplitude * Math.sin((2 * Math.PI * 1000 * index) / 44100);
+            }
+        }
+        mocks.renderOffline.mockResolvedValue(buffer);
+        mocks.selectNativeAudioExportFile.mockResolvedValue('/tmp/sourdaw-export.wav');
+
+        render(<ExportDialog open={true} onClose={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+
+        await waitFor(() => {
+            expect(mocks.encodeWav).toHaveBeenCalledTimes(1);
+        });
+
+        let encodedPeak = 0;
+        for (const sample of buffer.getChannelData(0)) {
+            encodedPeak = Math.max(encodedPeak, Math.abs(sample));
+        }
+
+        // Default is 'off': the mix keeps the level it was authored at.
+        expect(20 * Math.log10(encodedPeak)).toBeCloseTo(-20, 1);
+    });
+
     it('should stop offering 32-bit when FLAC is toggled on while 32-bit is chosen (OE-8)', () => {
         vi.mocked(loadExportSettings).mockReturnValueOnce({
             formats: ['wav'],
@@ -401,6 +485,7 @@ describe('ExportDialog', () => {
             bitDepth: 32,
             mp3BitRate: 128,
             dither: 'random',
+            normalization: 'off',
         });
 
         render(<ExportDialog open={true} onClose={vi.fn()} />);
@@ -419,6 +504,7 @@ describe('ExportDialog', () => {
             bitDepth: 32,
             mp3BitRate: 128,
             dither: 'random',
+            normalization: 'off',
         });
 
         render(<ExportDialog open={true} onClose={vi.fn()} />);
