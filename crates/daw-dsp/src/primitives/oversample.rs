@@ -462,8 +462,12 @@ mod chain_tests {
         }
     }
 
-    /// Rejection must improve with the factor. A dead top stage, or a stage
-    /// whose cutoff collapsed onto the one below it, flattens this out.
+    /// Rejection must improve with the factor. A dead top stage flattens this
+    /// out — pre-#801 the 8x path was bit-identical to 4x. It does NOT catch a
+    /// stage whose cutoff collapsed onto the one below it: measured, the
+    /// phase-split cascade rejects *more* fold-back, not less, because its
+    /// extra droop eats the aliases along with them. Passband droop is what
+    /// catches that shape — see `droop_per_stage_stays_flat_across_factors`.
     #[test]
     fn higher_factors_reject_more_than_lower_factors() {
         let two = alias_to_harmonic_ratio(&render_chain(2, hard_drive), SAMPLE_RATE);
@@ -476,26 +480,57 @@ mod chain_tests {
         );
     }
 
-    /// Rate conversion must be level-neutral at 7 kHz. This is the assertion
-    /// that separates the sequential cascade from a per-phase stage split:
-    /// the phase-split shape droops to 0.936x at 4x, outside this bound.
-    #[test]
-    fn passband_gain_stays_near_unity_at_every_factor() {
+    /// 7 kHz round-trip gain, referenced to the 1x bypass path so the probe's
+    /// own windowing cancels out.
+    fn passband_gain_at_probe(factor: usize) -> f32 {
         let reference = bin_magnitude(
             &render_chain(1, identity),
             PROBE_FUNDAMENTAL_HZ,
             SAMPLE_RATE,
         );
+        let measured = bin_magnitude(
+            &render_chain(factor, identity),
+            PROBE_FUNDAMENTAL_HZ,
+            SAMPLE_RATE,
+        );
+        measured / reference
+    }
+
+    /// Rate conversion must not eat the passband. This is an absolute
+    /// level-neutrality bound, not a cascade-shape check: the correct cascade
+    /// already sits at 0.959x (−0.36 dB) at 4x, so there is under 1% of
+    /// headroom and the measured value drifts with probe length (0.9556x at
+    /// RENDER_LEN 2048, 0.9599x at 32768). Weak as a separator — see
+    /// `droop_per_stage_stays_flat_across_factors` for that.
+    #[test]
+    fn passband_gain_stays_near_unity_at_every_factor() {
         for factor in [2_usize, 4, 8] {
-            let measured = bin_magnitude(
-                &render_chain(factor, identity),
-                PROBE_FUNDAMENTAL_HZ,
-                SAMPLE_RATE,
-            );
-            let gain = measured / reference;
+            let gain = passband_gain_at_probe(factor);
             assert!(
                 (0.95..=1.05).contains(&gain),
-                "{factor}x round trip must be level-neutral at 7 kHz, got {gain:.4}x"
+                "{factor}x round trip must keep the 7 kHz passband within 5%, got {gain:.4}x"
+            );
+        }
+    }
+
+    /// THE cascade-shape separator. Each stage runs an octave above the one
+    /// below it, so stacking stages must cost almost nothing extra at 7 kHz.
+    /// Giving each phase its own stage-2 instance collapses every cutoff back
+    /// onto stage 1's and the droop compounds per stage instead.
+    ///
+    /// The assertion is a ratio against the same run's 2x reading, not an
+    /// absolute gain, so it does not drift with probe length the way the
+    /// absolute bound above does.
+    #[test]
+    fn droop_per_stage_stays_flat_across_factors() {
+        let two = passband_gain_at_probe(2);
+        for factor in [4_usize, 8] {
+            let ratio = passband_gain_at_probe(factor) / two;
+            assert!(
+                ratio > 0.975,
+                "{factor}x must not compound stage droop against 2x \
+                 (2x={two:.4}x, {factor}x/2x={ratio:.4}) — a per-phase stage \
+                 split collapses the cutoffs and reads far below this"
             );
         }
     }
@@ -595,7 +630,13 @@ mod chain_tests {
 
     /// The reported group delay must match the impulse the chain actually
     /// produces, so a host compensating on this number stays aligned. A
-    /// per-phase stage split shifts the 4x centroid off 9.75.
+    /// per-phase stage split shifts the 4x centroid off 9.75 by 3.25 samples.
+    ///
+    /// The centroid is SIGNED, not `abs()`-weighted: rectifying a linear-phase
+    /// impulse lets the sidelobes drag the estimate (4x reads 9.5425 rectified
+    /// against a true 9.7501), which burned 41% of a 0.5-sample tolerance on
+    /// pure measurement error. Signed, the residual is under 1e-4, so the
+    /// tolerance can be 0.01 and this actually pins the reported number.
     #[test]
     fn reported_latency_matches_the_measured_impulse_centroid() {
         for factor in [2_usize, 4, 8] {
@@ -613,15 +654,15 @@ mod chain_tests {
                     up.len()
                 };
                 let out = chain.downsample(&processed[..len]);
-                numerator += n as f32 * out.abs();
-                denominator += out.abs();
+                numerator += n as f32 * out;
+                denominator += out;
             }
             let centroid = numerator / denominator;
             let reported = chain.latency_samples();
             assert!(
-                (centroid - reported).abs() < 0.5,
+                (centroid - reported).abs() < 0.01,
                 "{factor}x reports {reported} samples of latency but the impulse \
-                 centroid sits at {centroid:.3}"
+                 centroid sits at {centroid:.4}"
             );
         }
     }
