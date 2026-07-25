@@ -23,7 +23,11 @@ type FakeNode = {
 type FakeGain = {
     connect: ReturnType<typeof vi.fn>;
     disconnect: ReturnType<typeof vi.fn>;
-    gain: { value: number; setValueAtTime: vi.ReturnMock; exponentialRampToValueAtTime: vi.ReturnMock };
+    gain: {
+        value: number;
+        setValueAtTime: ReturnType<typeof vi.fn>;
+        exponentialRampToValueAtTime: ReturnType<typeof vi.fn>;
+    };
 };
 
 type FakeBufferSource = {
