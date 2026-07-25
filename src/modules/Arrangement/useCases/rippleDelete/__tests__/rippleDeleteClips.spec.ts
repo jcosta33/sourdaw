@@ -123,4 +123,26 @@ describe('rippleDeleteClips', () => {
 
         expect(mocks.shiftClipAutomation).not.toHaveBeenCalled();
     });
+
+    it('leaves unrelated tracks untouched while applying the plan to the target track', () => {
+        const mockPlan = {
+            removedClips: [{ id: 'c1' }],
+            shiftedClips: [],
+            nextClips: [{ id: 'c2' }],
+        };
+        mocks.planRippleDelete.mockReturnValue(mockPlan);
+        const otherTrack = { id: 'other', clips: [{ id: 'keep' }] };
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', clips: [{ id: 'c1' }, { id: 'c2' }] }, otherTrack],
+        });
+
+        rippleDeleteClips({ trackId: 't1', clipIds: ['c1'] });
+
+        const setCall = mocks.setTrackState.mock.calls[0];
+        if (!setCall) {
+            throw new Error('expected setTrackState to be called');
+        }
+        // The non-target track is returned by reference, unchanged.
+        expect(setCall[0].tracks[1]).toBe(otherTrack);
+    });
 });
