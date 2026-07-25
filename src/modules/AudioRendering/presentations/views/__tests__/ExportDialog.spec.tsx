@@ -139,6 +139,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getAudioContext: mocks.getAudioContext,
     getAutoDetectedTailSeconds: vi.fn(() => 2),
     isExportActive: mocks.isExportActive,
+    MAX_AUTO_TAIL_SECONDS: 60,
     renderOffline: mocks.renderOffline,
     restoreCachedAudioBuffersFromIdb: mocks.restoreCachedAudioBuffersFromIdb,
 }));
@@ -155,7 +156,11 @@ vi.mock('../../../useCases/audioBufferToFlac', () => ({
     audioBufferToFlac: vi.fn(),
 }));
 
-vi.mock('#/modules/Transport/stores', () => ({
+// Partial mock: the dialog now also reaches Arrangement's use-case barrel for
+// device tail declarations, which pulls in MIDI/Transport consumers that need
+// the real module's other exports.
+vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Transport/stores')>()),
     defaultTransportState: { loopStart: 0, loopEnd: 0 },
     transportStore: mocks.transportStore,
 }));
@@ -191,6 +196,7 @@ vi.mock('#/modules/Project/useCases', () => ({
 vi.mock('../exportSettings', () => ({
     loadExportSettings: vi.fn(() => ({ formats: ['wav'], sampleRate: 44100, bitDepth: 24, mp3BitRate: 128 })),
     saveExportSettings: vi.fn(),
+    MAX_MANUAL_TAIL_SECONDS: 60,
 }));
 
 function createClip(input: { id: string; audioBufferId?: string }): TestClip {

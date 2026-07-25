@@ -227,6 +227,13 @@ export const BUILTIN_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
         category: 'effect',
         hasCustomUI: false,
         platform: 'both',
+        // `rev-decay` is already an RT60 in seconds; pre-delay shifts the whole tail later.
+        tail: {
+            kind: 'decaySeconds',
+            parameterId: 'rev-decay',
+            defaultSeconds: 2,
+            predelayMsParameterId: 'rev-predelay',
+        },
         parameters: [
             {
                 id: 'rev-size',
@@ -316,6 +323,15 @@ export const BUILTIN_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
         category: 'effect',
         hasCustomUI: false,
         platform: 'both',
+        tail: {
+            kind: 'feedbackLoop',
+            feedbackParameterId: 'delay-feedback',
+            defaultFeedback: 0.4,
+            maxFeedback: 0.95,
+            loopParameterId: 'delay-time',
+            loopUnit: 'ms',
+            defaultLoopSeconds: 0.25,
+        },
         parameters: [
             {
                 id: 'delay-time',
@@ -987,6 +1003,9 @@ export const BUILTIN_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
         format: 'builtin',
         category: 'effect',
         hasCustomUI: false,
+        // The impulse response sets the tail and no exposed parameter reports its
+        // length, so reserve a constant that covers the bundled IRs.
+        tail: { kind: 'fixed', seconds: 6 },
         parameters: [
             {
                 id: 'conv-ir',

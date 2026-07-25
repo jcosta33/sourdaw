@@ -10,6 +10,29 @@ import { trackStore } from '#/modules/Arrangement/stores';
 import * as estimateMod from '../../../services/estimateRenderTailSeconds';
 import { getAutoDetectedTailSeconds } from '../getAutoDetectedTailSeconds';
 
+const DELAY_TAIL = {
+    kind: 'feedbackLoop',
+    feedbackParameterId: 'delay-feedback',
+    defaultFeedback: 0.4,
+    maxFeedback: 0.95,
+    loopParameterId: 'delay-time',
+    loopUnit: 'ms',
+    defaultLoopSeconds: 0.25,
+} as const;
+
+const REVERB_TAIL = { kind: 'decaySeconds', parameterId: 'rev-decay', defaultSeconds: 2 } as const;
+
+/** Stands in for the descriptor lookup the export dialog injects. */
+const tailForDeviceType = (deviceType: string) => {
+    if (deviceType === 'builtin-reverb') {
+        return REVERB_TAIL;
+    }
+    if (deviceType === 'builtin-delay') {
+        return DELAY_TAIL;
+    }
+    return undefined;
+};
+
 type MutableTrackStore = { value: { tracks: unknown[] } | null };
 const mockTrackStore = trackStore as unknown as MutableTrackStore;
 
@@ -38,7 +61,7 @@ describe('getAutoDetectedTailSeconds', () => {
             ],
         };
 
-        expect(getAutoDetectedTailSeconds()).toBe(4);
+        expect(getAutoDetectedTailSeconds({ tailForDeviceType })).toBe(4);
     });
 
     it('skips bypassed devices so their tail no longer counts', () => {
@@ -49,29 +72,54 @@ describe('getAutoDetectedTailSeconds', () => {
             ],
         };
 
-        expect(getAutoDetectedTailSeconds()).toBe(1.5);
+        expect(getAutoDetectedTailSeconds({ tailForDeviceType })).toBe(1.5);
     });
 
     it('returns 0 when the track store has no state', () => {
         mockTrackStore.value = null;
-        expect(getAutoDetectedTailSeconds()).toBe(0);
+        expect(getAutoDetectedTailSeconds({ tailForDeviceType })).toBe(0);
     });
 
-    it('forwards the mapped device projection (type/parameterValues/bypassed) verbatim', () => {
+    it('forwards the device projection together with the descriptor-declared tail', () => {
         const spy = vi.spyOn(estimateMod, 'estimateRenderTailSeconds');
         mockTrackStore.value = {
             tracks: [makeTrack([{ type: 'builtin-delay', parameterValues: { 'delay-time': 300 } }])],
         };
 
-        getAutoDetectedTailSeconds();
+        getAutoDetectedTailSeconds({ tailForDeviceType });
         expect(spy).toHaveBeenCalledTimes(1);
         const projected = spy.mock.calls[0]![0];
+        // The tail declaration has to come from the device's own descriptor —
+        // the estimator is pure and cannot look it up itself, so a missing
+        // lookup here silently turns every tail into zero.
         expect(projected).toEqual([
             {
                 devices: [
-                    { type: 'builtin-delay', parameterValues: { 'delay-time': 300 }, bypassed: false },
+                    {
+                        type: 'builtin-delay',
+                        parameterValues: { 'delay-time': 300 },
+                        bypassed: false,
+                        tail: {
+                            kind: 'feedbackLoop',
+                            feedbackParameterId: 'delay-feedback',
+                            defaultFeedback: 0.4,
+                            maxFeedback: 0.95,
+                            loopParameterId: 'delay-time',
+                            loopUnit: 'ms',
+                            defaultLoopSeconds: 0.25,
+                        },
+                    },
                 ],
             },
         ]);
+    });
+
+    it('leaves a device with no declared tail undeclared in the projection', () => {
+        const spy = vi.spyOn(estimateMod, 'estimateRenderTailSeconds');
+        mockTrackStore.value = { tracks: [makeTrack([{ type: 'builtin-eq' }])] };
+
+        getAutoDetectedTailSeconds({ tailForDeviceType });
+        const projected = spy.mock.calls[0]![0];
+        expect(projected[0]!.devices[0]!.tail).toBeUndefined();
     });
 });

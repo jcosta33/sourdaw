@@ -17,6 +17,7 @@ import {
     defaultTrackState,
     trackStore,
 } from '#/modules/Arrangement/stores';
+import { getPluginById } from '#/modules/Arrangement/useCases';
 import {
     cancelExport,
     exportStems,
@@ -40,7 +41,13 @@ import { writeNativeAudioStemFile } from '../../useCases/audioExport/writeNative
 import { renderToClip } from '../../useCases/renderToClip';
 
 import { deriveStemFileBaseNames } from './deriveStemFileBaseNames';
-import { loadExportSettings, saveExportSettings, type ExportFormat, type Mp3BitRate } from './exportSettings';
+import {
+    loadExportSettings,
+    MAX_MANUAL_TAIL_SECONDS,
+    saveExportSettings,
+    type ExportFormat,
+    type Mp3BitRate,
+} from './exportSettings';
 import { resolveExportBitDepths } from './resolveExportBitDepths';
 
 type ExportMode = 'mixdown' | 'stems' | 'render-to-clip';
@@ -129,12 +136,19 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         return { startBeat: 0, durationBeats: projectMaxBeat };
     };
 
+    // OE-9 — the descriptor lookup happens here because this view sits
+    // downstream of both Arrangement and AudioEngine; wiring it inside
+    // AudioEngine instead would make the two modules mutually dependent.
+    const deviceTailFor = (deviceType: string) => getPluginById(deviceType)?.tail;
+
     const effectiveTailSeconds = (): number => {
         if (!autoTail) {
-            return Math.max(0, Math.min(30, tailSeconds));
+            return Math.max(0, Math.min(MAX_MANUAL_TAIL_SECONDS, tailSeconds));
         }
-        const detected = getAutoDetectedTailSeconds();
-        return Math.max(0, Math.min(30, detected));
+        // OE-9 — the estimator already caps the detected tail at its own
+        // ceiling. Re-clamping here to a second, lower number is what used to
+        // truncate long reverbs back to 30 s.
+        return Math.max(0, getAutoDetectedTailSeconds({ tailForDeviceType: deviceTailFor }));
     };
 
     const toggleFormat = (freq: ExportFormat) => {
@@ -823,7 +837,8 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                             </label>
                             {autoTail ? (
                                 <span className="text-[10px] text-orange-400/70">
-                                    {getAutoDetectedTailSeconds().toFixed(2)}s detected
+                                    {getAutoDetectedTailSeconds({ tailForDeviceType: deviceTailFor }).toFixed(2)}s
+                                    detected
                                 </span>
                             ) : null}
                         </div>
