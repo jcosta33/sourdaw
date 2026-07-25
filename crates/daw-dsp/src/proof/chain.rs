@@ -483,3 +483,50 @@ mod latency_contract_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod metering_rt_tests {
+    //! WB-7. The audit hedged "RT-unsafe *if* it ever fires inside
+    //! `process()`". It does: the loudness meters push one entry per 100 ms
+    //! into unbounded `Vec`s from `process_sample`, and `proofProcessor.ts`
+    //! polls `get_integrated_lufs()` / `get_lra()` from inside `process()`
+    //! every 8 render quanta, each of which collected and sorted
+    //! session-length vectors.
+
+    use super::ProofChain;
+    use assert_no_alloc::assert_no_alloc;
+
+    const SR: f64 = 48_000.0;
+    const BLOCK: usize = 128;
+
+    fn render_seconds(chain: &mut ProofChain, seconds: usize) {
+        let blocks = seconds * SR as usize / BLOCK;
+        for b in 0..blocks {
+            let mut left = [0.0f32; BLOCK];
+            let mut right = [0.0f32; BLOCK];
+            for (i, (l, r)) in left.iter_mut().zip(right.iter_mut()).enumerate() {
+                let n = (b * BLOCK + i) as f64;
+                let s = 0.25 * (2.0 * core::f64::consts::PI * 440.0 * n / SR).sin();
+                *l = s as f32;
+                *r = s as f32;
+            }
+            chain.process(&mut left, &mut right);
+        }
+    }
+
+    #[test]
+    fn long_running_metering_does_not_allocate_on_the_audio_thread() {
+        let mut chain = ProofChain::new(SR);
+        // Warm past the first few 100 ms hop boundaries so nothing lazy is
+        // left to initialize inside the guarded region.
+        render_seconds(&mut chain, 1);
+
+        assert_no_alloc(|| {
+            // 30 s of audio crosses 300 hop boundaries in each meter, and the
+            // getters are polled the way the worklet polls them.
+            render_seconds(&mut chain, 30);
+            let _ = chain.integrated_lufs.get_lufs();
+            let _ = chain.lra.get_lra();
+        });
+    }
+}
