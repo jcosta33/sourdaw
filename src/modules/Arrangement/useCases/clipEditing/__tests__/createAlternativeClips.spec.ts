@@ -250,12 +250,15 @@ describe('createAlternativeClips', () => {
             [
                 note({ pitch: 200, velocity: 0, duration: -1, startBeat: -3 }),
                 note({ pitch: Number.NaN, velocity: Number.POSITIVE_INFINITY, duration: Number.NaN }),
+                note({ pitch: 64, velocity: 100, duration: 1, startBeat: Number.NaN }),
             ],
         ]);
 
         const { notes } = writtenNotes(0);
         expect(notes[0]).toMatchObject({ pitch: 127, velocity: 1, duration: 0.0625, startBeat: 4 });
         expect(notes[1]).toMatchObject({ pitch: 60, velocity: 80, duration: 0.5 });
+        // A non-finite startBeat clamps to 0 relative to the clip (clip starts at beat 4).
+        expect(notes[2]).toMatchObject({ pitch: 64, velocity: 100, duration: 1, startBeat: 4 });
     });
 
     it.each([
