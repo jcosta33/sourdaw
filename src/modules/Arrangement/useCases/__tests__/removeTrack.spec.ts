@@ -13,6 +13,8 @@ const ownerUseCases = vi.hoisted(() => ({
     removeTrackStrip: vi.fn(),
     removeBusStrip: vi.fn(),
     setTrackOutput: vi.fn(),
+    getAllSidechainRoutes: vi.fn().mockReturnValue([]),
+    removeSidechainRoute: vi.fn(),
 }));
 
 vi.mock('../../repositories/track/getTrackState', () => ({
@@ -38,6 +40,11 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     removeBusStrip: ownerUseCases.removeBusStrip,
     setTrackOutput: ownerUseCases.setTrackOutput,
 }));
+vi.mock('#/modules/Routing/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Routing/useCases')>()),
+    getAllSidechainRoutes: ownerUseCases.getAllSidechainRoutes,
+    removeSidechainRoute: ownerUseCases.removeSidechainRoute,
+}));
 vi.mock('../../stores/takeLaneStore', () => ({
     takeLaneStore: {
         value: { lanes: [] },
@@ -61,6 +68,9 @@ describe('removeTrack', () => {
         ownerUseCases.removeTrackStrip.mockReset();
         ownerUseCases.removeBusStrip.mockReset();
         ownerUseCases.setTrackOutput.mockReset();
+        ownerUseCases.getAllSidechainRoutes.mockReset();
+        ownerUseCases.getAllSidechainRoutes.mockReturnValue([]);
+        ownerUseCases.removeSidechainRoute.mockReset();
     });
 
     it('should return early when track state is missing', () => {
@@ -281,6 +291,35 @@ describe('removeTrack', () => {
         expect(mockEventBus.emit).toHaveBeenCalledWith('track.removed', { trackId: 'legacy-track' });
     });
 
+    it('removes sidechain routes that reference the removed track as source or target', () => {
+        const track = {
+            id: 't1',
+            name: 'One',
+            kind: 'audio' as const,
+            clips: [],
+            outputId: 'master',
+            sends: [],
+        };
+        vi.mocked(getTrackState).mockReturnValue({
+            tracks: [track as never],
+            selectedTrackId: null,
+        });
+        vi.mocked(getTrackById).mockReturnValue(track as never);
+        // A route where t1 is the source, a route where t1 is the target, and a
+        // route referencing an unrelated track (must survive).
+        ownerUseCases.getAllSidechainRoutes.mockReturnValue([
+            { id: 'r1', sourceTrackId: 't1', targetTrackId: 'other' },
+            { id: 'r2', sourceTrackId: 'other', targetTrackId: 't1' },
+            { id: 'r3', sourceTrackId: 'other-a', targetTrackId: 'other-b' },
+        ]);
+
+        removeTrack('t1');
+
+        // Only the two routes referencing t1 are torn down; the unrelated one survives.
+        expect(ownerUseCases.removeSidechainRoute).toHaveBeenCalledWith('r1');
+        expect(ownerUseCases.removeSidechainRoute).toHaveBeenCalledWith('r2');
+        expect(ownerUseCases.removeSidechainRoute).not.toHaveBeenCalledWith('r3');
+    });
     // FX-6: deleting a bus used to leave every dependent's `outputId` and every
     // send pointing at an id no track owns. The engine then resolved that dead
     // id through `getDefaultDestination`'s fallback and silently reseated the
