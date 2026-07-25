@@ -333,7 +333,7 @@ describe('usePromptExecution', () => {
         expect(result.current.willUseLlm).toBe(false);
     });
 
-    it('subscribes to voice injection: appends text, focuses the input, and auto-submits once the value is non-empty', async () => {
+    it('subscribes to voice injection: appends text, focuses the input, and auto-submits once the value is non-empty', () => {
         const unsubscribe = vi.fn();
         let injector: ((text: string) => void) | null = null;
         vi.mocked(onPromptInjection).mockImplementation((handler) => {
@@ -421,9 +421,12 @@ describe('usePromptExecution', () => {
         act(() => result.current.handleKeyDown({ key: 'ArrowDown', preventDefault: vi.fn() } as never));
 
         await act(async () => {
-            await result.current.handleKeyDown({ key: 'Enter', preventDefault: vi.fn() } as never);
+            result.current.handleKeyDown({ key: 'Enter', preventDefault: vi.fn() } as never);
         });
-        expect(vi.mocked(executeAppAction)).toHaveBeenCalledWith(playAction, expect.objectContaining({ source: 'prompt' }));
+        expect(vi.mocked(executeAppAction)).toHaveBeenCalledWith(
+            playAction,
+            expect.objectContaining({ source: 'prompt' })
+        );
     });
 
     it('dismisses the fuzzy list on Escape without executing', () => {
@@ -469,15 +472,15 @@ describe('usePromptExecution', () => {
         const { result } = renderHook(() => usePromptExecution());
         act(() => result.current.setValue('stop'));
 
-        let pending: Promise<void>;
+        let pending: Promise<void> = Promise.resolve();
         act(() => {
-            pending = result.current.handleSubmit(formEvent as never);
+            pending = Promise.resolve(result.current.handleSubmit(formEvent as never));
         });
         // Abort mid-flight, then let the parse resolve
         act(() => result.current.cancelProcessing());
         await act(async () => {
             resolveParse!({ actions: [stopAction], rawText: 'stop', requiresConfirmation: false });
-            await pending!;
+            await pending;
         });
         // Aborted before the action branch ran
         expect(vi.mocked(executeAppAction)).not.toHaveBeenCalled();
@@ -495,7 +498,7 @@ describe('usePromptExecution', () => {
     });
 
     it('swallows errors thrown by executePreset and clears processing', async () => {
-        vi.mocked(resolvePresetActions).mockReturnValue([{ type: 'togglePlayback' } as AppAction]);
+        vi.mocked(resolvePresetActions).mockReturnValue([{ type: 'togglePlayback' }]);
         vi.mocked(executeAppAction).mockRejectedValueOnce(new Error('boom'));
         const { result } = renderHook(() => usePromptExecution());
 

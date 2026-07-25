@@ -66,7 +66,13 @@ describe('TransformPad', () => {
         fireEvent.pointerDown(canvas, { clientX: 80, clientY: 80, pointerId: 1 });
 
         expect(bilinearPatchMock).toHaveBeenCalledTimes(1);
-        const [c0, c1, c2, c3] = bilinearPatchMock.mock.calls[0]!;
+        const calls = bilinearPatchMock.mock.calls[0] as unknown as Array<
+            Record<string, unknown> & { macros: number[] }
+        >;
+        const c0 = calls[0]!;
+        const c1 = calls[1]!;
+        const c2 = calls[2]!;
+        const c3 = calls[3]!;
         // Init: oscLevel applied, macro0 applied
         expect(c0.oscLevel).toBe(0.5);
         expect(c0.macros[0]).toBe(0.1);
@@ -78,7 +84,7 @@ describe('TransformPad', () => {
         expect(c2.oscEngine).toBe(2);
         // Acid Bass: macro3 applied, unknownKey ignored
         expect(c3.macros[3]).toBe(0.5);
-        expect((c3 as Record<string, unknown>).unknownKey).toBeUndefined();
+        expect(c3.unknownKey).toBeUndefined();
     });
 
     it('morphs the patch and applies it to the device on pointer down', () => {
@@ -93,7 +99,10 @@ describe('TransformPad', () => {
         expect(call[5]).toBeGreaterThanOrEqual(0);
         // applyMorphedPatch receives (deviceId, morphedPatch); applyPosition
         // overrides the morphed name to 'Transform'.
-        expect(applyMorphedPatchMock).toHaveBeenCalledWith(mockDeviceId, expect.objectContaining({ name: 'Transform' }));
+        expect(applyMorphedPatchMock).toHaveBeenCalledWith(
+            mockDeviceId,
+            expect.objectContaining({ name: 'Transform' })
+        );
     });
 
     it('continues morphing while dragging (pointerMove) and stops on pointerUp', () => {

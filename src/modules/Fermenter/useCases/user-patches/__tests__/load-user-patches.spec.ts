@@ -387,7 +387,14 @@ describe('loadUserPatches', () => {
                             macroMappings: [
                                 {
                                     targets: [
-                                        { target: 'filterCutoff', center: 'bright', depth: 1, min: 0, max: 1, curve: 'linear' },
+                                        {
+                                            target: 'filterCutoff',
+                                            center: 'bright',
+                                            depth: 1,
+                                            min: 0,
+                                            max: 1,
+                                            curve: 'linear',
+                                        },
                                     ],
                                 },
                                 ...Array.from({ length: 7 }, () => ({ targets: [] })),
@@ -410,7 +417,14 @@ describe('loadUserPatches', () => {
                             macroMappings: [
                                 {
                                     targets: [
-                                        { target: 'filterCutoff', center: 0, depth: true, min: 0, max: 1, curve: 'linear' },
+                                        {
+                                            target: 'filterCutoff',
+                                            center: 0,
+                                            depth: true,
+                                            min: 0,
+                                            max: 1,
+                                            curve: 'linear',
+                                        },
                                     ],
                                 },
                                 ...Array.from({ length: 7 }, () => ({ targets: [] })),
@@ -433,7 +447,14 @@ describe('loadUserPatches', () => {
                             macroMappings: [
                                 {
                                     targets: [
-                                        { target: 'filterCutoff', center: 0, depth: 1, min: 'low', max: 1, curve: 'linear' },
+                                        {
+                                            target: 'filterCutoff',
+                                            center: 0,
+                                            depth: 1,
+                                            min: 'low',
+                                            max: 1,
+                                            curve: 'linear',
+                                        },
                                     ],
                                 },
                                 ...Array.from({ length: 7 }, () => ({ targets: [] })),
@@ -456,7 +477,14 @@ describe('loadUserPatches', () => {
                             macroMappings: [
                                 {
                                     targets: [
-                                        { target: 'filterCutoff', center: 0, depth: 1, min: 0, max: 'high', curve: 'linear' },
+                                        {
+                                            target: 'filterCutoff',
+                                            center: 0,
+                                            depth: 1,
+                                            min: 0,
+                                            max: 'high',
+                                            curve: 'linear',
+                                        },
                                     ],
                                 },
                                 ...Array.from({ length: 7 }, () => ({ targets: [] })),
