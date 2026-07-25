@@ -8,6 +8,10 @@
 /// - Multiple incommensurate-frequency LFOs for modulation
 use std::f32::consts::TAU;
 
+// The `decay` contract is crate-wide: `decay` is a normalised coefficient, and
+// this engine is the one that needs it expressed in seconds.
+use crate::decay_curve::{decay_to_rt60_seconds, MAX_RT60_SECONDS, MIN_RT60_SECONDS};
+
 // ---------------------------------------------------------------------------
 // Mixing matrices
 // ---------------------------------------------------------------------------
@@ -242,6 +246,9 @@ pub struct FdnReverb {
     // Parameters
     pub rt60: f32,
     pub rt60_hf: f32,
+    /// Normalised 0..0.999 damping. `rt60_hf` is derived from it and the
+    /// current `rt60` on every filter update, so the two cannot drift apart.
+    damping: f32,
     pub size: f32,
     pub mix: f32,
     pub early_late_balance: f32, // 0=all early, 1=all late
@@ -309,6 +316,7 @@ impl FdnReverb {
             early_reflections_r: EarlyReflections::new(sample_rate, 0.5),
             rt60: 2.0,
             rt60_hf: 0.8,
+            damping: 0.2, // yields the historical rt60_hf/rt60 ratio of 0.4
             size: 0.5,
             mix: 0.3,
             early_late_balance: 0.4,
@@ -325,13 +333,21 @@ impl FdnReverb {
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
             "mix" => self.mix = value.clamp(0.0, 1.0),
-            "rt60" | "decay" => {
-                self.rt60 = value.clamp(0.1, 30.0);
+            "rt60" => {
+                // Seconds-native alias: the value already IS an RT60.
+                self.rt60 = value.clamp(MIN_RT60_SECONDS, MAX_RT60_SECONDS);
+                self.update_absorptive_filters();
+            }
+            "decay" => {
+                // Host contract: `decay` is the unitless 0..0.999 coefficient
+                // declared by the `dutch-oven` descriptor, never seconds.
+                self.rt60 = decay_to_rt60_seconds(value);
                 self.update_absorptive_filters();
             }
             "rt60_hf" | "damping" => {
-                // Map 0-1 damping to rt60_hf as fraction of rt60
-                self.rt60_hf = self.rt60 * (1.0 - value.clamp(0.0, 0.999)) * 0.5;
+                // Stored normalised; `rt60_hf` is derived from the current RT60
+                // in `update_absorptive_filters`.
+                self.damping = value.clamp(0.0, 0.999);
                 self.update_absorptive_filters();
             }
             "size" => {
@@ -354,7 +370,14 @@ impl FdnReverb {
         }
     }
 
+    /// Recompute the per-line absorptive gains.
+    ///
+    /// `rt60_hf` is derived here rather than stored at `damping`-set time: the
+    /// HF band is a fraction of the current RT60, so a later `decay` change
+    /// must re-derive it or the high band stays pinned to whatever RT60 was
+    /// current when damping was last touched.
     fn update_absorptive_filters(&mut self) {
+        self.rt60_hf = self.rt60 * (1.0 - self.damping) * 0.5;
         for (i, filter) in self.absorptive_filters.iter_mut().enumerate() {
             if i < self.delay_lengths.len() {
                 filter.update_rt60(
@@ -484,6 +507,125 @@ impl FdnReverb {
             let m = self.smooth_mix;
             left[i] = dry_l * (1.0 - m) + wet_l * m;
             right[i] = dry_r * (1.0 - m) + wet_r * m;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{decay_to_rt60_seconds, FdnReverb, MAX_RT60_SECONDS, MIN_RT60_SECONDS};
+
+    // The `decay` parameter as declared by the `dutch-oven` descriptor in
+    // src/modules/Arrangement/models/PluginDescriptors/NativeDspDescriptors.ts.
+    const DESCRIPTOR_MIN: f32 = 0.0;
+    const DESCRIPTOR_DEFAULT: f32 = 0.5;
+    const DESCRIPTOR_MAX: f32 = 0.999;
+
+    fn rt60_for_decay(decay: f32) -> f32 {
+        let mut reverb = FdnReverb::new(48_000.0, 8);
+        reverb.set_param("decay", decay);
+        reverb.rt60
+    }
+
+    #[test]
+    fn descriptor_decay_range_maps_onto_the_full_realisable_rt60() {
+        // Endpoints of the declared range reach the endpoints of the FDN's
+        // usable RT60 window; the descriptor default lands mid-hall.
+        assert!(
+            (rt60_for_decay(DESCRIPTOR_MIN) - MIN_RT60_SECONDS).abs() < 1e-4,
+            "decay 0.0 must land on the shortest realisable RT60, got {}",
+            rt60_for_decay(DESCRIPTOR_MIN)
+        );
+        assert!(
+            (rt60_for_decay(DESCRIPTOR_DEFAULT) - 1.7320508).abs() < 1e-3,
+            "decay 0.5 must land on ~1.73 s, got {}",
+            rt60_for_decay(DESCRIPTOR_DEFAULT)
+        );
+        assert!(
+            (rt60_for_decay(DESCRIPTOR_MAX) - 29.829_4).abs() < 1e-2,
+            "decay 0.999 must reach ~29.8 s, got {}",
+            rt60_for_decay(DESCRIPTOR_MAX)
+        );
+    }
+
+    #[test]
+    fn top_of_the_declared_range_is_reachable_not_clamped_near_one_second() {
+        // Regression: the FDN used to read `decay` as raw seconds, so the whole
+        // declared 0..0.999 range collapsed into an RT60 of 0.1..1.0 s.
+        let top = rt60_for_decay(DESCRIPTOR_MAX);
+        assert!(
+            top > 25.0,
+            "the top of the declared range must produce a long tail, got {top} s"
+        );
+        assert!(
+            top <= MAX_RT60_SECONDS,
+            "the mapping must stay inside the realisable window, got {top} s"
+        );
+    }
+
+    #[test]
+    fn decay_is_strictly_increasing_across_the_declared_range() {
+        let mut previous = 0.0_f32;
+        for step in 0..=999 {
+            let decay = step as f32 / 1000.0;
+            let rt60 = rt60_for_decay(decay);
+            assert!(
+                rt60 > previous,
+                "RT60 must increase with decay: {decay} produced {rt60} s after {previous} s"
+            );
+            previous = rt60;
+        }
+    }
+
+    #[test]
+    fn out_of_range_decay_is_clamped_to_the_realisable_window() {
+        assert!((rt60_for_decay(-1.0) - MIN_RT60_SECONDS).abs() < 1e-4);
+        assert!((rt60_for_decay(4.2) - MAX_RT60_SECONDS).abs() < 1e-3);
+    }
+
+    #[test]
+    fn rt60_alias_still_takes_raw_seconds() {
+        // `rt60` is the seconds-native name and must not go through the
+        // normalised mapping, or the two aliases would disagree.
+        let mut reverb = FdnReverb::new(48_000.0, 8);
+        reverb.set_param("rt60", 4.0);
+        assert!((reverb.rt60 - 4.0).abs() < 1e-6);
+
+        reverb.set_param("rt60", 500.0);
+        assert!((reverb.rt60 - MAX_RT60_SECONDS).abs() < 1e-6);
+
+        // ...and the normalised name is not an alias of it.
+        reverb.set_param("decay", 4.0);
+        assert!((reverb.rt60 - MAX_RT60_SECONDS).abs() < 1e-3);
+        reverb.set_param("decay", 0.0);
+        assert!((reverb.rt60 - MIN_RT60_SECONDS).abs() < 1e-4);
+    }
+
+    #[test]
+    fn damping_ratio_survives_a_later_decay_change() {
+        let mut reverb = FdnReverb::new(48_000.0, 8);
+        reverb.set_param("damping", 0.5);
+        let short_ratio = reverb.rt60_hf / reverb.rt60;
+
+        reverb.set_param("decay", 0.9);
+        let long_ratio = reverb.rt60_hf / reverb.rt60;
+
+        assert!(
+            (short_ratio - long_ratio).abs() < 1e-6,
+            "damping is a ratio of the current RT60: {short_ratio} vs {long_ratio}"
+        );
+        assert!(
+            reverb.rt60_hf > 1.0,
+            "the HF band must stretch with the tail, got {} s",
+            reverb.rt60_hf
+        );
+    }
+
+    #[test]
+    fn mapping_helper_agrees_with_the_engine_it_feeds() {
+        for step in 0..=100 {
+            let decay = step as f32 / 100.0;
+            assert!((decay_to_rt60_seconds(decay) - rt60_for_decay(decay)).abs() < 1e-6);
         }
     }
 }

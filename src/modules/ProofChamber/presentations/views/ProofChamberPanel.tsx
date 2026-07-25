@@ -16,6 +16,7 @@ import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
 import { executeAppAction } from '#/modules/Command/useCases';
+import { decayToRt60Seconds } from '#/utils/reverbDecayLaw';
 
 import {
     type ProofChamberAlgorithm,
@@ -62,8 +63,11 @@ function formatValue(value: number, unit: string): string {
     if (unit === '%') {
         return `${Math.round(value * 100)}%`;
     }
-    if (unit === 's') {
-        return `${(value * 30).toFixed(1)}s`;
+    if (unit === 'decay') {
+        // `decay` is stored as a normalised 0…0.999 coefficient, so the readout
+        // converts it through the same law the engines use rather than printing
+        // the raw value with an `s` glued on.
+        return `${decayToRt60Seconds(value).toFixed(1)}s`;
     }
     if (unit === 'ms') {
         return `${Math.round(value)}ms`;
@@ -347,7 +351,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                     <DawPluginMetricStrip className="ml-auto">
                         <StatusTile
                             label="Decay"
-                            value={formatValue(params.decay, 's')}
+                            value={formatValue(params.decay, 'decay')}
                             accent="var(--color-accent-cyan)"
                         />
                         <StatusTile
@@ -518,7 +522,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                     step={0.001}
                                     defaultValue={0.5}
                                     size="md"
-                                    readout={formatValue(params.decay, 's')}
+                                    readout={formatValue(params.decay, 'decay')}
                                 />
                                 <KnobCell
                                     label="Mix"

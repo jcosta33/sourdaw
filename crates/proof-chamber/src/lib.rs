@@ -5,6 +5,7 @@
 //! Compiles to both native (Rust library) and WASM (AudioWorklet).
 
 pub mod convolution;
+pub mod decay_curve;
 pub mod decay_eq;
 pub mod fdn;
 pub mod hybrid;
@@ -132,12 +133,9 @@ impl ProofChamberInstance {
                     s.set_param("dispersion", value);
                 }
             }
-            ReverbEngine::Convolution(c) => {
-                c.set_param(name, value);
-                if name == "decay" {
-                    c.set_param("ir_stretch", 0.25 + value * 3.75);
-                }
-            }
+            // `decay` is converted to an IR stretch inside the convolution
+            // engine itself, so the hybrid path below inherits it unchanged.
+            ReverbEngine::Convolution(c) => c.set_param(name, value),
             ReverbEngine::Hybrid(h) => h.set_param(name, value),
             ReverbEngine::Reverse(r) => r.set_param(name, value),
         }
@@ -226,7 +224,9 @@ impl ProofChamberInstance {
             ReverbEngine::Plate(p) => p.param_names(),
             ReverbEngine::Fdn8(_) | ReverbEngine::Fdn16(_) => vec![
                 "mix",
-                "rt60",
+                // The host-facing name is the descriptor's `decay`; `rt60` stays
+                // accepted as the seconds-native alias but is not advertised.
+                "decay",
                 "damping",
                 "predelay",
                 "size",
