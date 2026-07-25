@@ -161,4 +161,62 @@ describe('LlmStatusBadge', () => {
 
         expect(onLoad).toHaveBeenCalledWith();
     });
+
+    describe('backend panel content', () => {
+        it('shows the native model description and specs in the idle panel', () => {
+            module_mocks.resolve_backend.mockReturnValue('native');
+            render(<LlmStatusBadge status={{ state: 'idle' }} onLoad={vi.fn()} />);
+
+            fireEvent.click(screen.getByRole('button', { name: /Load AI/ }));
+
+            expect(screen.getByText('In-process inference via Metal/CUDA GPU.')).toBeInTheDocument();
+            expect(screen.getByText('~5.0 GB (first run only)')).toBeInTheDocument();
+            expect(screen.getByText('~6.0 GB')).toBeInTheDocument();
+        });
+
+        it('shows the cloud model description in the idle panel', () => {
+            module_mocks.resolve_backend.mockReturnValue('cloud');
+            render(<LlmStatusBadge status={{ state: 'idle' }} onLoad={vi.fn()} />);
+
+            fireEvent.click(screen.getByRole('button', { name: /Load AI/ }));
+
+            expect(screen.getByText('Cloud-hosted assistant.')).toBeInTheDocument();
+            expect(screen.getByText('Connect Cloud AI')).toBeInTheDocument();
+        });
+
+        it('shows the native display name and RAM in the ready panel', () => {
+            module_mocks.resolve_backend.mockReturnValue('native');
+            render(<LlmStatusBadge status={{ state: 'ready', modelId: 'qwen3-8b-native' }} onLoad={vi.fn()} />);
+
+            fireEvent.click(screen.getByRole('button', { name: /AI Ready/ }));
+
+            expect(screen.getByText('Qwen3 8B')).toBeInTheDocument();
+            expect(screen.getByText(/~6.0 GB RAM/)).toBeInTheDocument();
+        });
+    });
+
+    describe('panel dismissal', () => {
+        it('closes the idle panel when clicking outside', () => {
+            render(<LlmStatusBadge status={{ state: 'idle' }} onLoad={vi.fn()} />);
+
+            fireEvent.click(screen.getByRole('button', { name: /Load AI/ }));
+            expect(screen.getByText('Light')).toBeInTheDocument();
+
+            // Click outside the panel.
+            fireEvent.mouseDown(document.body);
+
+            expect(screen.queryByText('Light')).not.toBeInTheDocument();
+        });
+
+        it('closes the ready panel when clicking outside', () => {
+            render(<LlmStatusBadge status={{ state: 'ready', modelId: 'Qwen3-4B-q4f16_1-MLC' }} onLoad={vi.fn()} />);
+
+            fireEvent.click(screen.getByRole('button', { name: /AI Ready/ }));
+            expect(screen.getByText('Unload from Memory')).toBeInTheDocument();
+
+            fireEvent.mouseDown(document.body);
+
+            expect(screen.queryByText('Unload from Memory')).not.toBeInTheDocument();
+        });
+    });
 });
