@@ -180,4 +180,42 @@ describe('resolveEligibleClipWriteTarget', () => {
         expect(both).toEqual({ status: 'ineligible' });
         expect(neither).toEqual({ status: 'ineligible' });
     });
+
+    it('fails closed when the input is not an object', () => {
+        expect(resolveEligibleClipWriteTarget('not-an-object' as unknown as { trackId: string })).toEqual({
+            status: 'ineligible',
+        });
+        expect(resolveEligibleClipWriteTarget(null as unknown as { clipId: string })).toEqual({
+            status: 'ineligible',
+        });
+    });
+
+    it('fails closed when a clip entry is not an object', () => {
+        vi.spyOn(trackStore, 'value', 'get').mockReturnValue({
+            ...defaultTrackState,
+            tracks: [
+                {
+                    ...makeTrack('track-1'),
+                    clips: ['not-a-clip' as unknown as Clip],
+                },
+            ],
+        });
+
+        expect(resolveEligibleClipWriteTarget({ trackId: 'track-1' })).toEqual({ status: 'ineligible' });
+        expect(resolveEligibleClipWriteTarget({ clipId: 'clip-1' })).toEqual({ status: 'ineligible' });
+    });
+
+    it('fails closed when a clip trackId does not match its owning track', () => {
+        vi.spyOn(trackStore, 'value', 'get').mockReturnValue({
+            ...defaultTrackState,
+            tracks: [
+                {
+                    ...makeTrack('track-1'),
+                    clips: [makeClip('clip-mismatched', 'other-track')],
+                },
+            ],
+        });
+
+        expect(resolveEligibleClipWriteTarget({ clipId: 'clip-mismatched' })).toEqual({ status: 'ineligible' });
+    });
 });
