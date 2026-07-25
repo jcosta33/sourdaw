@@ -1,0 +1,29 @@
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngineBranches.spec.ts
+  s_0d39f3a4a4357a::t_16525f81166892 614-619,624
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadScheduler.spec.ts
+  s_0d39f3a4a4357a::t_6d0b22e4af6d23 144
+  s_0d39f3a4a4357a::t_099c2c817757f8 96
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_0d39f3a4a4357a::t_94a56d76a17460 73-106
+  s_0d39f3a4a4357a::t_17ad2fe50813ed 520-525
+  s_0d39f3a4a4357a::t_e5d09a817a4745 554-557
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_0d39f3a4a4357a::t_460a11c4cf087e 280-292
+  s_0d39f3a4a4357a::t_a795e596ce722a 1076-1077
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "57a857fbc47810e8dca003789c61b9599c83ff1b",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
