@@ -260,25 +260,53 @@ const MAX_LOUDNESS_BLOCKS: usize = 36_000;
 /// reference algorithm over a preallocated array, so equivalence is by
 /// construction rather than by tolerance.
 ///
-/// **Beyond capacity the store holds a uniform random sample** of every block
-/// seen, by reservoir sampling (Vitter's Algorithm R).
+/// # What this store guarantees
 ///
-/// The first shape of this used fixed-phase decimation — keep one block in
-/// every `stride`, and halve by keeping every other stored block — and claimed
-/// that accuracy degraded "in resolution, not in bias". **That claim was
-/// false**, and review round 2 measured it: both reductions select by
-/// *position*, so periodic material phase-locks. Six hours of alternating
-/// −40/0 LUFS blocks retained 27,000 samples that were **all quiet**, reading
-/// −40.0000 LUFS against an exact 0.0000 — the loud phase, which is the
-/// population that actually clears the relative gate, deleted outright. That is
-/// total bias, and it is the same defect as the histogram this replaced, one
-/// layer down: a classification decided for a group rather than per member.
+/// 1. **Up to [`MAX_LOUDNESS_BLOCKS`], every block is retained, in order.** Both
+///    measures are then exactly what they would be computed over the whole
+///    sequence — not approximately. *To check:* push any number of blocks up to
+///    capacity and compare the stored slice against the input; they are equal.
 ///
-/// Reservoir sampling selects independently of position, so no phase
-/// relationship in the input can bias which blocks survive. Both measures are
-/// distribution statistics — a gated mean and two gated percentiles — so a
-/// uniform sample of 36,000 estimates them with a sampling error that shrinks
-/// as 1/√n and carries no directional bias.
+/// 2. **Past capacity, the retained set is a uniform random sample of every
+///    block offered, and selection does not depend on a block's position in the
+///    stream.** *To check:* feed a periodic sequence — one loud block every `p`,
+///    offset by any phase — for several times capacity, and count how many of
+///    each population survive. Each should be retained in proportion to how
+///    often it occurs, for every `p` and every phase.
+///
+/// # What it does not guarantee
+///
+/// 3. **Exactness past capacity.** Both measures become estimates from the
+///    sample. The error shrinks as 1/√n and has no preferred direction, but it
+///    is not zero: across 34 period/phase combinations over six hours the worst
+///    observed divergence was 0.146 LU.
+///
+/// 4. **Stability where a whole population sits on the relative gate.** If a
+///    large group of blocks lands within a hair of the gate threshold, an
+///    arbitrarily small change decides all of them at once and the answer jumps.
+///    That discontinuity belongs to the gated measure itself, not to this store:
+///    perturbing the *input* by 0.01 LU moves the exact answer by more than
+///    10 LU at such a point. No sampling scheme can be stable there. *To check:*
+///    compare each block value against the relative threshold; if the nearest is
+///    closer than the sampling error can resolve, the configuration is degenerate.
+///
+/// # Why selection must ignore position
+///
+/// Guarantee 2 is load-bearing and easy to lose. Any "keep every Nth block"
+/// reduction — whether gating the incoming stream or halving the stored array —
+/// selects by position, and against periodic material that phase-locks: it
+/// retains one phase and can retain **none** of another. Concretely, six hours of
+/// blocks alternating −40 and 0 LUFS under a keep-every-other reduction retained
+/// 27,000 samples that were *all* −40, reporting −40.0000 LUFS where the true
+/// value is 0.0000 — the louder phase, which is the population that actually
+/// clears the relative gate, deleted outright. That is not lost resolution, it is
+/// total bias, and periodic loudness at a small multiple of the 100 ms block rate
+/// is ordinary material: sidechain pumping, rhythmic gating, tremolo, a looped
+/// test tone.
+///
+/// Reservoir sampling (Vitter's Algorithm R) is used because its selection
+/// probability depends only on how many blocks have been seen, never on where a
+/// block sat, so no periodicity in the input can favour one phase over another.
 ///
 /// **Allocation-free.** The backing store is sized once in [`Self::new`]; past
 /// capacity `push` overwrites in place and never grows it.
@@ -317,11 +345,10 @@ impl BlockStore {
 
     /// Record one block.
     ///
-    /// Under capacity every block is retained in order, so the measures are
-    /// exact and bit-identical to computing them over the whole sequence. Past
-    /// capacity the block replaces a uniformly chosen slot with probability
-    /// `capacity / seen`, which is Algorithm R: the retained set stays a
-    /// uniform random sample of everything seen, whatever order it arrived in.
+    /// Under capacity the block is appended. Past capacity it replaces a
+    /// uniformly chosen slot with probability `capacity / seen`, which is what
+    /// keeps the retained set a uniform sample of everything offered regardless
+    /// of arrival order — see the guarantees on [`BlockStore`].
     fn push(&mut self, lufs: f32) {
         self.seen += 1;
         if self.blocks.len() < MAX_LOUDNESS_BLOCKS {
