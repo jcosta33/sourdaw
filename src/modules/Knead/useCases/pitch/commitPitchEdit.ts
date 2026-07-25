@@ -1,4 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
+import { captureAutomergeStorageTransactionScope } from '#/infra/store/storage/createAutomergeStorage';
 import { updateClipInStore } from '#/modules/Arrangement/stores';
 import { type PitchContourSnapshot, type PitchEditSegmentSnapshot } from '#/utils/handlerContract';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -35,6 +36,13 @@ export async function commitPitchEdit({ clipId, segments, contour }: CommitPitch
     const originalFileId = targetClip.fileId;
     const outputAudioPath = originalFileId.replace('.wav', '_pitch.wav');
 
+    // Audit CC-10 — both writes below happen after `await renderPitchEdit`, by
+    // which point the action's storage transaction is no longer ambient.
+    // Captured here, while it still is, so they rejoin the action's commit
+    // instead of landing on their own frame — otherwise a rolled-back action
+    // still left the clip pointing at the rendered file.
+    const scope = captureAutomergeStorageTransactionScope();
+
     try {
         const { commitPitchEdit: renderPitchEdit } = getPitchEditDependencies();
         await renderPitchEdit({
@@ -45,13 +53,17 @@ export async function commitPitchEdit({ clipId, segments, contour }: CommitPitch
             contour,
         });
 
-        updateClipInStore(clipId, (clip) => ({ ...clip, fileId: outputAudioPath }));
+        scope(() => {
+            updateClipInStore(clipId, (clip) => ({ ...clip, fileId: outputAudioPath }));
+        });
 
         // The rendered `_pitch.wav` replaces the clip's audio, so the pre-commit
         // contour is stale. Drop it to re-open the PitchEditor gate (waveform
         // interactions reachable, Analyze Pitch offered again). Only on success —
         // the catch path rethrows before this point and keeps the contour editable.
-        clearClipPitchContour(clipId);
+        scope(() => {
+            clearClipPitchContour(clipId);
+        });
     } catch (error) {
         // Surface the failure so a failed pitch commit does not look like success:
         // log through the project `logger` facade and notify the user. Rethrow so the
