@@ -1,0 +1,42 @@
+src/modules/Project/useCases/projectPersistence/helpers/isHydratableProjectData.ts
+  s_0d39f3a4a4357a::t_6e0ebc181d3c04 522-529,532
+src/modules/TimelineEditor/presentations/views/AutomationView/AutomationLaneRow.tsx
+  s_0d39f3a4a4357a::t_744627fc0f63fe 4
+  s_0d39f3a4a4357a::t_e0cfc378bead49 122-135,138-139,142,147-150
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/applyImportedProjectData.roundTrip.spec.ts
+  s_0d39f3a4a4357a::t_744cdd84a86975 885-915
+  s_0d39f3a4a4357a::t_74fe88fac2b90a 916-917
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationLaneGating.spec.ts
+  s_0d39f3a4a4357a::t_afae4ab5d668bf 107-143
+src/modules/Project/useCases/projectPersistence/helpers/normalizeLegacyProjectData.ts
+  s_0d39f3a4a4357a::t_c68e11f755b186 54,64-72
+src/modules/TimelineEditor/presentations/views/AutomationView/__tests__/AutomationLaneRow.spec.tsx
+  s_0d39f3a4a4357a::t_db66394e2986b2 387,398-402,405,413
+  s_0d39f3a4a4357a::t_8bf568f0357f63 388-397,403-404,406
+  s_0d39f3a4a4357a::t_f665f89d6afecd 196
+  s_0d39f3a4a4357a::t_646a74e8c6e245 407-412
+src/modules/TimelineEditor/presentations/views/AutomationView/__tests__/AutomationLaneControls.spec.tsx
+  s_0d39f3a4a4357a::t_6a5a60da597c21 98-99
+  s_0d39f3a4a4357a::t_23c46662620020 59,61
+  s_0d39f3a4a4357a::t_05d30f0d544ca8 46
+src/modules/Automation/models/__tests__/Automation.spec.ts
+  s_0d39f3a4a4357a::t_2d689422001810 16-17
+src/modules/TimelineEditor/presentations/views/AutomationView/__tests__/AutomationLaneHeader.spec.tsx
+  s_0d39f3a4a4357a::t_30b91b89c022aa 62-63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "60cc6d2a45621a175fc57604f3cf966fc29cc771",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
