@@ -59,4 +59,12 @@ describe('removeTimeSignatureChange', () => {
         subject.removeTimeSignatureChange(8);
         expect(setMock.mock.calls[0]![0]!.changes.map((context) => context.id)).toEqual(['a']);
     });
+
+    it('is a no-op when the time-sig store has no state', () => {
+        // Defensive guard against a null store snapshot: must not throw, must
+        // not call set.
+        mockStore.value = null;
+        subject.removeTimeSignatureChange(0);
+        expect(setMock).not.toHaveBeenCalled();
+    });
 });

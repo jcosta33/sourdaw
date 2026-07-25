@@ -62,4 +62,35 @@ describe('addTempoChange', () => {
         const result = setMock.mock.calls[0]![0]!;
         expect(result.changes.map((context) => context.beat)).toEqual([4, 8]);
     });
+
+    it('is a no-op when the tempo map store has no state', () => {
+        // Defensive guard against a null store snapshot (e.g. before initial load):
+        // must not throw on the optional-chain, must not call set.
+        mockStore.value = null;
+        subject.addTempoChange(4, 120);
+        expect(setMock).not.toHaveBeenCalled();
+    });
+
+    it('defaults the curve to instant when omitted', () => {
+        mockStore.value = { changes: [] };
+        subject.addTempoChange(0, 120);
+        const result = setMock.mock.calls[0]![0]!;
+        expect(result.changes[0]!.curve).toBe('instant');
+    });
+
+    it('keeps unrelated changes untouched when updating an existing beat', () => {
+        // Exercises the ternary false-arm (index !== existing returns the
+        // original context unchanged) alongside the update path.
+        mockStore.value = {
+            changes: [
+                { id: 'c1', beat: 4, tempo: 100, curve: 'instant' },
+                { id: 'c2', beat: 8, tempo: 140, curve: 'linear' },
+            ],
+        };
+        subject.addTempoChange(4, 120, 'linear');
+        const result = setMock.mock.calls[0]![0]!;
+        expect(result.changes).toHaveLength(2);
+        expect(result.changes[0]).toEqual({ id: 'c1', beat: 4, tempo: 120, curve: 'linear' });
+        expect(result.changes[1]).toEqual({ id: 'c2', beat: 8, tempo: 140, curve: 'linear' });
+    });
 });
