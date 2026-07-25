@@ -1,5 +1,6 @@
 import { CURRENT_PROJECT_VERSION, type ProjectData } from '../../../models/ProjectData';
 
+import { createMyceliumAutomation } from './createMyceliumAutomation';
 import { createMyceliumId } from './createMyceliumId';
 import { createMyceliumRhythmPerformance } from './createMyceliumRhythmPerformance';
 import { createMyceliumTopology } from './createMyceliumTopology';
@@ -173,5 +174,23 @@ export function createMyceliumAscendantBlueprint(): MyceliumAscendantBlueprint {
     projectData.activeArrangementId = activeArrangementId;
 
     const rhythmProjectData = createMyceliumRhythmPerformance(projectData);
-    return { projectData: createMyceliumVoicePerformance(rhythmProjectData), sections, chordEvents };
+    const performanceProjectData = createMyceliumVoicePerformance(rhythmProjectData);
+    const automated = createMyceliumAutomation(performanceProjectData.arrangement.tracks);
+    const automation = { lanes: automated.lanes };
+    const automatedProjectData: ProjectData = {
+        ...performanceProjectData,
+        arrangement: { tracks: automated.tracks },
+        automation,
+        arrangements: performanceProjectData.arrangements?.map((arrangement) => {
+            if (arrangement.id !== activeArrangementId) {
+                return arrangement;
+            }
+            return {
+                ...arrangement,
+                tracks: { tracks: automated.tracks, selectedTrackId: arrangement.tracks?.selectedTrackId ?? null },
+                automation,
+            };
+        }),
+    };
+    return { projectData: automatedProjectData, sections, chordEvents };
 }
