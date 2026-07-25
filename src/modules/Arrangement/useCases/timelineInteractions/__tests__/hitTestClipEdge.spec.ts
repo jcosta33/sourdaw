@@ -103,4 +103,26 @@ describe('hitTestClipEdge', () => {
         mockGetTrackAtY.mockReturnValue({ index: 0, id: 't1' });
         expect(hitTestClipEdge(0, 0)).toBeNull();
     });
+
+    it('returns null when no track lane contains the y coordinate', () => {
+        setup();
+        mockGetTrackAtY.mockReturnValue(null);
+
+        expect(hitTestClipEdge(40, 500)).toBeNull();
+    });
+
+    it('returns null when the beat falls outside every clip on the hit track', () => {
+        setup();
+        // pixelsPerBeat is 10; x=200 -> beat 20, past the clip end (beat 8).
+        expect(hitTestClipEdge(200, 10)).toBeNull();
+    });
+
+    it('falls back to a zero scroll offset when the view state omits scrollY', () => {
+        mockTimelineViewValue.value = { pixelsPerBeat: 10, scrollX: 0 } as any;
+        mockBuildTimelineRenderModel.mockReturnValue(baseModel);
+        mockGetTrackAtY.mockReturnValue({ index: 0, id: 't1' });
+
+        // scrollY undefined -> contentY clamps from canvasY 10 with no offset.
+        expect(hitTestClipEdge(40, 10)).toEqual({ clipId: 'c1', trackId: 't1', edge: 'body' });
+    });
 });
