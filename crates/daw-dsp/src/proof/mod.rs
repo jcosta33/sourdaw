@@ -166,3 +166,4 @@ impl ProofInstance {
         self.chain.true_peak.reset();
     }
 }
+

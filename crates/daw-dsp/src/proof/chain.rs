@@ -199,7 +199,12 @@ impl ProofChain {
         for (slot, &module_id) in self.order.iter().enumerate() {
             match module_id {
                 ModuleId::Eq => {
-                    if self.eq_linear_phase {
+                    // DSP-7: fall back to the IIR EQ unless the FIR is designed
+                    // and filtering. `LinearPhaseEq::process` returns early
+                    // while its FIR is undesigned, so routing to it
+                    // unconditionally turned the mastering EQ into a dry
+                    // passthrough -- and no caller has ever designed the FIR.
+                    if self.linear_eq.is_active() {
                         self.linear_eq.process(left, right);
                     } else {
                         self.eq.process(left, right);
@@ -258,7 +263,223 @@ impl ProofChain {
         self.ab_gain_offset
     }
 
+    /// Pure delay this chain imposes, in samples, for host PDC.
+    ///
+    /// Reports delay-line latency only. The multiband crossovers, the imager
+    /// and the exciter are IIR and smear an impulse by a few samples
+    /// (measured: 4 at the shipped defaults), but that is frequency-dependent
+    /// phase, not a constant delay a compensating buffer can undo, so it is
+    /// deliberately excluded -- see `latency_contract_tests`, which measures
+    /// against those stages bypassed for exactly this reason.
     pub fn latency_samples(&self) -> usize {
         self.limiter.latency_samples() + self.linear_eq.latency_samples()
+    }
+}
+
+
+#[cfg(test)]
+mod latency_contract_tests {
+    //! DSP-7. Wave 3 feeds `ProofInstance::get_latency_samples()` into host
+    //! plugin-delay compensation, so a reported number the signal path does not
+    //! produce is a measurable timing error, not a cosmetic one. These tests
+    //! measure the delay rather than reading the field back.
+    //!
+    //! Before the fix the chain reported **1264** samples while delaying by
+    //! **240**: `LinearPhaseEq::latency_samples()` returned `HALF_FIR` whenever
+    //! its `bypassed` flag was false, and nothing in the crate or the app ever
+    //! sets that flag — nor ever designs the FIR, nor even sends
+    //! `eq_linear_phase`. Every Proof instance therefore claimed 1024 samples
+    //! (21.3 ms at 48 kHz) of delay it did not have.
+
+    use super::super::biquad::BiquadCoeffs;
+    use super::super::linear_phase_eq::LinearPhaseEqBand;
+    use super::ProofChain;
+    use assert_no_alloc::assert_no_alloc;
+
+    const SR: f64 = 48_000.0;
+    const BLOCK: usize = 128;
+    /// Comfortably longer than the limiter look-ahead plus a full linear-phase
+    /// FIR delay, so a wrong answer in either direction lands inside the window.
+    const RENDER: usize = 8_192;
+
+    /// The multiband crossovers, imager and exciter are IIR: they smear an
+    /// impulse by a few samples (measured: 4 at the shipped defaults) as
+    /// frequency-dependent phase, which no compensating delay buffer can undo
+    /// and which `latency_samples()` therefore does not claim. Bypassing them
+    /// leaves only the pure delay elements, so the assertion can be exact.
+    fn bypass_all_iir_stages(chain: &mut ProofChain) {
+        for param in ["dyn_bypass", "img_bypass", "exc_bypass", "dyneq_bypass"] {
+            chain.set_param(param, 1.0);
+        }
+    }
+
+    /// Push one impulse through the chain and return the sample index it peaks
+    /// at. 0.5 sits under the −1 dBTP ceiling so the limiter delays it without
+    /// reshaping it, and dither defaults to off.
+    fn measured_pure_delay(chain: &mut ProofChain) -> usize {
+        let mut out = Vec::with_capacity(RENDER);
+        for block in 0..RENDER / BLOCK {
+            let mut left = [0.0f32; BLOCK];
+            let mut right = [0.0f32; BLOCK];
+            if block == 0 {
+                left[0] = 0.5;
+                right[0] = 0.5;
+            }
+            chain.process(&mut left, &mut right);
+            out.extend_from_slice(&left);
+        }
+        let mut peak_index = 0;
+        let mut peak = 0.0f32;
+        for (i, &s) in out.iter().enumerate() {
+            if s.abs() > peak {
+                peak = s.abs();
+                peak_index = i;
+            }
+        }
+        assert!(
+            peak > 1e-6,
+            "the impulse never reached the output (peak {peak:e}) — the probe measures nothing"
+        );
+        peak_index
+    }
+
+    #[test]
+    fn reported_latency_matches_measured_pure_delay() {
+        let mut chain = ProofChain::new(SR);
+        bypass_all_iir_stages(&mut chain);
+        let measured = measured_pure_delay(&mut chain);
+        assert_eq!(
+            chain.latency_samples(),
+            measured,
+            "Proof must not report latency the signal path does not impose \
+             (pre-fix this read 1264 against a measured 240)"
+        );
+    }
+
+    #[test]
+    fn reported_latency_tracks_the_limiter_lookahead() {
+        // Bidirectional: the number has to follow a real change in the path,
+        // not be a constant that happens to line up once.
+        let mut short_chain = ProofChain::new(SR);
+        bypass_all_iir_stages(&mut short_chain);
+        short_chain.set_param("lim_lookahead", 1.0);
+        let short = measured_pure_delay(&mut short_chain);
+        assert_eq!(short_chain.latency_samples(), short);
+
+        let mut long_chain = ProofChain::new(SR);
+        bypass_all_iir_stages(&mut long_chain);
+        long_chain.set_param("lim_lookahead", 10.0);
+        let long = measured_pure_delay(&mut long_chain);
+        assert_eq!(long_chain.latency_samples(), long);
+
+        assert!(
+            long > short,
+            "a 10 ms look-ahead ({long}) must delay more than a 1 ms one ({short})"
+        );
+    }
+
+    fn flat_bands() -> Vec<LinearPhaseEqBand> {
+        vec![LinearPhaseEqBand {
+            enabled: true,
+            coeffs: BiquadCoeffs::peak(1_000.0, 0.0, 1.0, SR),
+        }]
+    }
+
+    #[test]
+    fn a_designed_fir_reports_and_imposes_its_group_delay() {
+        // The other half of the contract: once the FIR *is* in the path, the
+        // reported number must grow by exactly the delay it adds. This is also
+        // the only test that exercises `rebuild`, which has no production
+        // caller.
+        let mut chain = ProofChain::new(SR);
+        bypass_all_iir_stages(&mut chain);
+        let without_fir = measured_pure_delay(&mut chain);
+
+        let mut chain = ProofChain::new(SR);
+        bypass_all_iir_stages(&mut chain);
+        chain.linear_eq.rebuild(&flat_bands());
+        let with_fir = measured_pure_delay(&mut chain);
+
+        assert_eq!(
+            chain.latency_samples(),
+            with_fir,
+            "a designed FIR must report the delay it actually imposes"
+        );
+        assert_eq!(
+            with_fir - without_fir,
+            1_024,
+            "a 2048-tap linear-phase FIR delays by half its length"
+        );
+    }
+
+    #[test]
+    fn enabling_linear_phase_never_silently_bypasses_the_eq() {
+        // `LinearPhaseEq::process` returns early while its FIR is undesigned,
+        // so routing to it unconditionally turned the mastering EQ into a dry
+        // passthrough — with no caller anywhere that designs the FIR, that was
+        // permanent. A +18 dB band must boost whichever EQ is in the path.
+        let mut chain = ProofChain::new(SR);
+        chain.set_param("eq_linear_phase", 1.0);
+        chain.set_param("eq_band3_type", 0.0); // peak
+        chain.set_param("eq_band3_freq", 1_000.0);
+        chain.set_param("eq_band3_q", 1.0);
+        chain.set_param("eq_band3_gain", 18.0);
+        chain.set_param("eq_band3_enabled", 1.0);
+        chain.set_param("lim_bypass", 1.0);
+        bypass_all_iir_stages(&mut chain);
+
+        let tone_hz = 1_000.0;
+        let total = 16_384;
+        let mut peak_in = 0.0f32;
+        let mut peak_out = 0.0f32;
+        let mut n = 0usize;
+        while n < total {
+            let mut left = [0.0f32; BLOCK];
+            let mut right = [0.0f32; BLOCK];
+            for i in 0..BLOCK {
+                let s = 0.25
+                    * (2.0 * core::f64::consts::PI * tone_hz * (n + i) as f64 / SR).sin() as f32;
+                left[i] = s;
+                right[i] = s;
+            }
+            // Ignore the first half while the coefficient ramp settles.
+            if n >= total / 2 {
+                for &s in left.iter() {
+                    peak_in = peak_in.max(s.abs());
+                }
+            }
+            chain.process(&mut left, &mut right);
+            if n >= total / 2 {
+                for &s in left.iter() {
+                    peak_out = peak_out.max(s.abs());
+                }
+            }
+            n += BLOCK;
+        }
+        let gain_db = 20.0 * (peak_out / peak_in).log10();
+        assert!(
+            gain_db > 12.0,
+            "a +18 dB band realized {gain_db:.2} dB with linear phase requested; \
+             a dry passthrough reads 0.00 dB, which is what shipped"
+        );
+    }
+
+    #[test]
+    fn fir_redesign_does_not_allocate() {
+        // DSP-7 as filed. `rebuild` built its magnitude response, impulse
+        // response and both tap arrays with `vec![]` / `.collect()` on every
+        // call; the scratch is preallocated now. The redesign is still far too
+        // expensive to sit on the audio thread — see `rebuild`'s own docs — but
+        // it no longer allocates when it runs.
+        let mut chain = ProofChain::new(SR);
+        let bands = flat_bands();
+        chain.linear_eq.rebuild(&bands); // warm: first call is the same path
+        assert_no_alloc(|| {
+            chain.linear_eq.rebuild(&bands);
+        });
+        assert!(
+            chain.linear_eq.is_active(),
+            "a designed FIR must report itself as filtering"
+        );
     }
 }
