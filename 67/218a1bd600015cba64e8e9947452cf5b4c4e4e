@@ -1,0 +1,29 @@
+docs/evidence/mycelium-ascendant/render-evidence.json
+  s_00e9d398e5bb60::t_89ed560c2dfb26 4
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/renderMyceliumAscendantDemo.spec.ts
+  s_8f89a3d37eda48::t_5baa35277ca698 10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "67218a1bd600015cba64e8e9947452cf5b4c4e4e",
+  "prompts": {},
+  "sessions": {
+    "s_00e9d398e5bb60": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aaa3e04ea5c9808aa",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_8f89a3d37eda48": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-abcc2f354a2fa6fa5",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
