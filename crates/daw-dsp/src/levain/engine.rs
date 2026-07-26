@@ -905,30 +905,36 @@ mod tests {
         );
     }
 
-    /// `fallback.rs` opens with: "produces a simple sine wave when no samples
-    /// are loaded. This ensures the instrument always makes sound in response
-    /// to MIDI, even before sample content is available."
+    /// The fallback's arming window, pinned at both ends.
     ///
-    /// This test holds that sentence to its word on the one state it names —
-    /// an engine with no sample content — and it is deliberately written
-    /// against a *bare* engine. It does not call `clear_zones()`. Waking the
-    /// fallback with `clear_zones()` is the reflex that makes a Levain harness
-    /// go green while leaving a default-constructed engine mute, and it is how
-    /// this stayed invisible: every existing path happens to clear zones before
-    /// playing, so nothing ever observed the constructed state.
+    /// `clear_zones` is the only writer that arms it and `build_zone_map` the
+    /// only one that disarms it, so the tone covers the interval between "a
+    /// sample load has begun" and "zones exist" — and nothing wider. A bare
+    /// engine is *outside* that window and must render digital silence.
+    ///
+    /// Arming at construction instead was tried and rejected: it makes an
+    /// engine that never began a load sing a sine where the instrument's real
+    /// content belongs, which is audible garbage that reads as working. The
+    /// two halves are asserted together so neither can be "fixed" alone.
     #[test]
-    fn a_freshly_constructed_engine_sounds_without_being_cleared_first() {
-        let mut engine = LevainEngine::new(SAMPLE_RATE, 8);
-        engine.note_on(60, 100);
-        let rendered = render(&mut engine, 24);
+    fn the_fallback_is_armed_by_clear_zones_and_not_by_construction() {
+        let mut bare = LevainEngine::new(SAMPLE_RATE, 8);
+        bare.note_on(60, 100);
+        let bare_level = rms(&render(&mut bare, 24));
+        assert_eq!(
+            bare_level, 0.0,
+            "an engine that never began a sample load rendered RMS {bare_level:e}; \
+             if the fallback is now armed at construction, note that a sine tone is \
+             not a stand-in for missing sample content"
+        );
 
-        let level = rms(&rendered);
+        let mut loading = LevainEngine::new(SAMPLE_RATE, 8);
+        loading.clear_zones();
+        loading.note_on(60, 100);
+        let loading_level = rms(&render(&mut loading, 24));
         assert!(
-            level > 1.0e-3,
-            "a Levain engine that has never begun a sample load rendered RMS \
-             {level:e} for a held note — silence. The fallback tone exists to \
-             cover exactly this state and its own module header promises the \
-             instrument 'always makes sound in response to MIDI'."
+            loading_level > 1.0e-3,
+            "once a load has begun the fallback must cover it, got RMS {loading_level:e}"
         );
     }
 
