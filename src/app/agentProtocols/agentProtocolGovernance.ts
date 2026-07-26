@@ -13,6 +13,7 @@ export type AgentProtocolFamily = (typeof protocolFamilies)[number];
 export type AgentProtocolId = `sourdaw.agent.${AgentProtocolFamily}`;
 export type AgentProtocolOwner = 'Command' | 'Project' | 'AiRuntime' | 'DeviceModules' | 'AgentAdapters';
 export type AgentProtocolVersionHandling = 'migrate' | 'read-write' | 'read-only-preserve';
+type AgentProtocolAvailability = Readonly<{ state: 'governance-only'; detail: string }>;
 
 export type AgentProtocolDescriptor = {
     readonly id: AgentProtocolId;
@@ -30,10 +31,7 @@ export type AgentProtocolDescriptor = {
         future: 'read-only-preserve';
         unknownFields: 'preserve';
     }>;
-    readonly availability: Readonly<{
-        state: 'governance-only';
-        detail: string;
-    }>;
+    readonly availability: AgentProtocolAvailability;
 };
 
 type AgentProtocolDefinition = readonly [
@@ -62,7 +60,7 @@ function defineAgentProtocol(
         requiredOperationVersions: Object.freeze(requiredOperationVersions),
         supportedOperationVersions: Object.freeze({}),
         compatibility: Object.freeze({
-            minimumReadableVersion: 0,
+            minimumReadableVersion: family === 'command' ? 0 : 1,
             previous,
             current: 'read-write',
             future: 'read-only-preserve',
@@ -75,13 +73,10 @@ function defineAgentProtocol(
     });
 }
 
+const commandCapabilities = ['validated-envelope', 'descriptor-discovery', 'typed-outcome'] as const;
+const commandOperations = ['validate', 'execute', 'preview'] as const;
 const protocolDefinitions = {
-    command: [
-        'Command',
-        ['validated-envelope', 'descriptor-discovery', 'typed-outcome'],
-        ['validate', 'execute', 'preview'],
-        'migrate',
-    ],
+    command: ['Command', commandCapabilities, commandOperations, 'migrate'],
     query: ['Project', ['bounded-query', 'evidence-backed-resolution'], ['execute', 'resolve']],
     receipt: ['Command', ['terminal-outcome', 'revision-correlation'], ['record', 'read']],
     provider: ['AiRuntime', ['text-completion', 'tool-calling', 'streaming'], ['complete', 'stream']],
@@ -91,38 +86,48 @@ const protocolDefinitions = {
     'external-adapter': ['AgentAdapters', ['capability-discovery', 'revision-bound-invocation'], ['connect', 'invoke']],
 } as const satisfies Record<AgentProtocolFamily, AgentProtocolDefinition>;
 
-export const agentProtocolRegistry: readonly AgentProtocolDescriptor[] = Object.freeze(
+export const agentProtocolRegistry = Object.freeze(
     protocolFamilies.map((family) => defineAgentProtocol(family, protocolDefinitions[family]))
 );
 
-const protocolAliases: Readonly<Record<string, AgentProtocolId>> = Object.freeze({
-    'sourdaw.agent.model-provider': 'sourdaw.agent.provider',
-});
-const protocolTombstones: Readonly<Record<string, { replacement: AgentProtocolId; handling: 'read-only-preserve' }>> =
-    Object.freeze({
-        'sourdaw.agent.runtime-action': Object.freeze({
-            replacement: 'sourdaw.agent.command',
-            handling: 'read-only-preserve',
-        }),
-    });
-
 const protocolIdPattern = /^sourdaw\.agent\.[a-z]+(?:-[a-z]+)*$/u;
 
-export function resolvePersistedAgentProtocol({ id, schemaVersion }: { id: unknown; schemaVersion: unknown }) {
+type SupportedPayload = Readonly<{ protocol: AgentProtocolDescriptor; handling: AgentProtocolVersionHandling }>;
+type TombstonePayload = Readonly<{ replacement: AgentProtocolId; handling: 'read-only-preserve' }>;
+type UnsupportedResolutionReason = 'malformed-id' | 'malformed-version' | 'unknown-id' | 'below-minimum-version';
+export type PersistedAgentProtocolResolution = Readonly<
+    | ({ status: 'supported'; persistedId: string; canonicalId: AgentProtocolId } & SupportedPayload)
+    | ({ status: 'tombstoned'; persistedId: string } & TombstonePayload)
+    | { status: 'unsupported'; reason: UnsupportedResolutionReason; preservation: 'retain-bytes' }
+>;
+
+type ResolvePersistedAgentProtocolInput = Readonly<{ id: unknown; schemaVersion: unknown }>;
+
+export function resolvePersistedAgentProtocol(
+    input: ResolvePersistedAgentProtocolInput
+): PersistedAgentProtocolResolution {
+    const { id, schemaVersion } = input;
     if (typeof id !== 'string' || !protocolIdPattern.test(id)) {
         return { status: 'unsupported', reason: 'malformed-id', preservation: 'retain-bytes' };
     }
     if (!Number.isSafeInteger(schemaVersion) || Number(schemaVersion) < 0) {
         return { status: 'unsupported', reason: 'malformed-version', preservation: 'retain-bytes' };
     }
-    const tombstone = protocolTombstones[id];
-    if (tombstone) {
-        return { status: 'tombstoned', persistedId: id, ...tombstone };
+    if (id === 'sourdaw.agent.runtime-action') {
+        return {
+            status: 'tombstoned',
+            persistedId: id,
+            replacement: 'sourdaw.agent.command',
+            handling: 'read-only-preserve',
+        };
     }
-    const canonicalId = protocolAliases[id] ?? id;
+    const canonicalId = id === 'sourdaw.agent.model-provider' ? 'sourdaw.agent.provider' : id;
     const protocol = agentProtocolRegistry.find((candidate) => candidate.id === canonicalId);
     if (!protocol) {
         return { status: 'unsupported', reason: 'unknown-id', preservation: 'retain-bytes' };
+    }
+    if (Number(schemaVersion) < protocol.compatibility.minimumReadableVersion) {
+        return { status: 'unsupported', reason: 'below-minimum-version', preservation: 'retain-bytes' };
     }
     let handling: AgentProtocolVersionHandling = protocol.compatibility.future;
     if (schemaVersion === protocol.schemaVersion) {
@@ -132,9 +137,3 @@ export function resolvePersistedAgentProtocol({ id, schemaVersion }: { id: unkno
     }
     return { status: 'supported', persistedId: id, canonicalId: protocol.id, protocol, handling };
 }
-export type PersistedAgentProtocolResolution = ReturnType<typeof resolvePersistedAgentProtocol>;
-export const agentProjectStateCompatibility = Object.freeze({
-    canonicalSource: 'materialized-project-state',
-    obsoleteCommandHandling: 'audit-only',
-    replayRequiredForLoad: false,
-});

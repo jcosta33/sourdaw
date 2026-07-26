@@ -1,5 +1,5 @@
 import { change, init } from '@automerge/automerge';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 
 import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 import { DOC_PREFIX_ROOT, registerCrdtStorageRuntime, replaceCrdtDoc } from '#/modules/CrdtDocument/useCases';
@@ -8,84 +8,79 @@ import { loadProject, setProjectIdentityTransitionDependencies } from '#/modules
 
 import { agentProtocolRegistry, resolvePersistedAgentProtocol } from '../agentProtocols/agentProtocolGovernance';
 
-import {
-    agentProtocolDescriptorGolden,
-    agentProjectHydrationFixture,
-} from './fixtures/agentProtocols/agentProtocolVersionFixtures';
+import { projectFixture, protocolGolden } from './fixtures/agentProtocols/agentProtocolVersionFixtures';
+
+import type { PersistedAgentProtocolResolution } from '../agentProtocols/agentProtocolGovernance';
 
 const loadMocks = vi.hoisted(() => ({
-    clearUndoHistory: vi.fn(),
     executeAppAction: vi.fn(),
     loadCrdtProject: vi.fn(),
-    migrateAbsoluteMidiNotes: vi.fn(),
-    prepareCachedAudioBuffersFromIdb: vi.fn(() => Promise.resolve({ publish: vi.fn() })),
-    readLegacyChordTrackMigration: vi.fn(),
-    resetActionReplayAuthority: vi.fn(),
-    startCrdtAutoSave: vi.fn(() => vi.fn()),
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     cancelPendingAudioBufferImport: vi.fn(),
     getAudioContext: vi.fn(() => ({})),
-    prepareCachedAudioBuffersFromIdb: loadMocks.prepareCachedAudioBuffersFromIdb,
+    prepareCachedAudioBuffersFromIdb: vi.fn(() => Promise.resolve({ publish: vi.fn() })),
     setMasterGainValue: vi.fn(),
 }));
 vi.mock('#/modules/Command/useCases', () => ({
-    clearUndoHistory: loadMocks.clearUndoHistory,
+    clearUndoHistory: vi.fn(),
     executeAppAction: loadMocks.executeAppAction,
-    resetActionReplayAuthority: loadMocks.resetActionReplayAuthority,
+    resetActionReplayAuthority: vi.fn(),
 }));
 vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
     loadCrdtProject: loadMocks.loadCrdtProject,
     persistCrdtProject: vi.fn(() => Promise.resolve()),
-    startCrdtAutoSave: loadMocks.startCrdtAutoSave,
+    startCrdtAutoSave: vi.fn(() => vi.fn()),
 }));
 vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),
-    migrateAbsoluteMidiNotes: loadMocks.migrateAbsoluteMidiNotes,
-    readLegacyChordTrackMigration: loadMocks.readLegacyChordTrackMigration,
+    migrateAbsoluteMidiNotes: vi.fn(),
+    readLegacyChordTrackMigration: vi.fn(),
 }));
 
 describe('agent protocol governance', () => {
     it('publishes the complete governance-only registry against an independent golden', () => {
-        expect(agentProtocolRegistry).toEqual(agentProtocolDescriptorGolden);
+        expect(agentProtocolRegistry).toEqual(protocolGolden);
     });
 
     it('deep-freezes independent policies, capabilities, operation versions, and availability', () => {
-        expect(Object.isFrozen(agentProtocolRegistry)).toBe(true);
-        for (const protocol of agentProtocolRegistry) {
-            expect(
-                [
-                    protocol,
-                    protocol.requiredCapabilities,
-                    protocol.supportedCapabilities,
-                    protocol.requiredOperationVersions,
-                    protocol.supportedOperationVersions,
-                    protocol.compatibility,
-                    protocol.availability,
-                    ...Object.values(protocol.requiredOperationVersions),
-                ].every(Object.isFrozen)
-            ).toBe(true);
-        }
+        const frozenValues = agentProtocolRegistry.flatMap((protocol) => [
+            protocol,
+            protocol.requiredCapabilities,
+            protocol.supportedCapabilities,
+            protocol.requiredOperationVersions,
+            protocol.supportedOperationVersions,
+            protocol.compatibility,
+            protocol.availability,
+            ...Object.values(protocol.requiredOperationVersions),
+        ]);
+        expect([agentProtocolRegistry, ...frozenValues].every(Object.isFrozen)).toBe(true);
         for (const field of ['compatibility', 'availability'] as const) {
-            expect(new Set(agentProtocolRegistry.map((protocol) => protocol[field])).size).toBe(
-                agentProtocolDescriptorGolden.length
-            );
+            expect(new Set(agentProtocolRegistry.map((protocol) => protocol[field])).size).toBe(protocolGolden.length);
         }
     });
 
     it('resolves frozen old, current, and future persisted versions through one boundary', () => {
-        const actual = agentProtocolDescriptorGolden.flatMap(({ id, schemaVersion }) =>
+        expectTypeOf(resolvePersistedAgentProtocol).returns.toEqualTypeOf<PersistedAgentProtocolResolution>();
+        const actual = protocolGolden.flatMap(({ id, schemaVersion }) =>
             [schemaVersion - 1, schemaVersion, schemaVersion + 1].map((version) => {
                 const resolution = resolvePersistedAgentProtocol({ id, schemaVersion: version });
-                return resolution.status === 'supported' ? resolution.handling : resolution.status;
+                if (resolution.status === 'supported') {
+                    return resolution.handling;
+                }
+                return resolution.status === 'unsupported' ? resolution.reason : resolution.status;
             })
         );
-        const expected = agentProtocolDescriptorGolden.flatMap(({ compatibility }) =>
-            (['previous', 'current', 'future'] as const).map((version) => compatibility[version])
-        );
+        const expected = protocolGolden.flatMap(({ schemaVersion, compatibility }) => {
+            let previous: string = compatibility.previous;
+            if (schemaVersion - 1 < compatibility.minimumReadableVersion) {
+                previous = 'below-minimum-version';
+            }
+            return [previous, compatibility.current, compatibility.future];
+        });
         expect(actual).toEqual(expected);
     });
 
@@ -115,7 +110,7 @@ describe('agent protocol governance', () => {
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
         let persistedDocument = init<Record<string, unknown>>();
         persistedDocument = change(persistedDocument, (draft) => {
-            Object.assign(draft, structuredClone(agentProjectHydrationFixture));
+            Object.assign(draft, structuredClone(projectFixture));
         });
         loadMocks.loadCrdtProject.mockImplementation(() => {
             replaceCrdtDoc({ id: DOC_PREFIX_ROOT, doc: persistedDocument });
@@ -124,8 +119,8 @@ describe('agent protocol governance', () => {
 
         await expect(loadProject()).resolves.toBe(true);
 
-        expect(projectStore.value?.name).toBe(agentProjectHydrationFixture.projectMeta.name);
-        expect(actionHistoryStore.value?.entries).toEqual(agentProjectHydrationFixture.actionHistory.entries);
+        expect(projectStore.value?.name).toBe(projectFixture.projectMeta.name);
+        expect(actionHistoryStore.value?.entries).toEqual(projectFixture.actionHistory.entries);
         expect(loadMocks.executeAppAction).not.toHaveBeenCalled();
     });
 });

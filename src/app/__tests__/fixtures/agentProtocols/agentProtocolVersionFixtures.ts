@@ -1,12 +1,12 @@
 const protocolFixtures = [
-    ['command', 'Command', 'migrate'],
-    ['query', 'Project', 'read-only-preserve'],
-    ['receipt', 'Command', 'read-only-preserve'],
-    ['provider', 'AiRuntime', 'read-only-preserve'],
-    ['device-manifest', 'DeviceModules', 'read-only-preserve'],
-    ['production-brief', 'Project', 'read-only-preserve'],
-    ['transform', 'Command', 'read-only-preserve'],
-    ['external-adapter', 'AgentAdapters', 'read-only-preserve'],
+    ['command', 'Command', 'migrate', 0],
+    ['query', 'Project', 'read-only-preserve', 1],
+    ['receipt', 'Command', 'read-only-preserve', 1],
+    ['provider', 'AiRuntime', 'read-only-preserve', 1],
+    ['device-manifest', 'DeviceModules', 'read-only-preserve', 1],
+    ['production-brief', 'Project', 'read-only-preserve', 1],
+    ['transform', 'Command', 'read-only-preserve', 1],
+    ['external-adapter', 'AgentAdapters', 'read-only-preserve', 1],
 ] as const;
 const capabilities = {
     command: ['validated-envelope', 'descriptor-discovery', 'typed-outcome'],
@@ -18,7 +18,7 @@ const capabilities = {
     transform: ['deterministic-lowering', 'bounded-expansion'],
     'external-adapter': ['capability-discovery', 'revision-bound-invocation'],
 } as const;
-const operations = {
+const ops = {
     command: ['validate', 'execute', 'preview'],
     query: ['execute', 'resolve'],
     receipt: ['record', 'read'],
@@ -28,19 +28,17 @@ const operations = {
     transform: ['compile'],
     'external-adapter': ['connect', 'invoke'],
 } as const;
-export const agentProtocolDescriptorGolden = protocolFixtures.map(([family, semanticOwner, previous]) => ({
+export const protocolGolden = protocolFixtures.map(([family, semanticOwner, previous, minimumReadableVersion]) => ({
     id: `sourdaw.agent.${family}`,
     family,
     semanticOwner,
     schemaVersion: 1,
     requiredCapabilities: capabilities[family],
     supportedCapabilities: [],
-    requiredOperationVersions: Object.fromEntries(
-        operations[family].map((operation) => [`agent.${family}.${operation}`, [1]])
-    ),
+    requiredOperationVersions: Object.fromEntries(ops[family].map((op) => [`agent.${family}.${op}`, [1]])),
     supportedOperationVersions: {},
     compatibility: {
-        minimumReadableVersion: 0,
+        minimumReadableVersion,
         previous,
         current: 'read-write',
         future: 'read-only-preserve',
@@ -51,7 +49,7 @@ export const agentProtocolDescriptorGolden = protocolFixtures.map(([family, sema
         detail: 'SA-00 publishes the contract only; a downstream owner must admit runtime behavior.',
     },
 }));
-export const agentProjectHydrationFixture = {
+export const projectFixture = {
     projectMeta: { name: 'Materialized Mix', createdAt: 1, updatedAt: 2, keyRoot: 0, scaleName: 'chromatic' },
     tracks: { tracks: [] },
     chordTrack: { enabled: false, events: {} },

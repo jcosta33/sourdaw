@@ -1,4 +1,4 @@
-import { change, init, save, saveIncremental } from '@automerge/automerge';
+import { change, init, load, save, saveIncremental } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { automergeRepository } from '../../repositories/automergeRepository';
@@ -148,7 +148,8 @@ describe('loadCrdtProject persisted action-history sanitization', () => {
 
         expect(mocks.saveAllToIdb).toHaveBeenCalledTimes(1);
         const persisted_bundle = mocks.saveAllToIdb.mock.calls[0]?.[0] as Map<string, Uint8Array>;
-        expect(persisted_bundle).toBeInstanceOf(Map);
+        expect(load<PersistedRoot>(persisted_bundle.get('root')!).agentProtocolFuture?.bytes).toEqual([17, 34, 51]);
+        expect(automergeRepository.getDoc<PersistedRoot>('root')?.agentProtocolFuture?.bytes).toEqual([17, 34, 51]);
         expect(automergeRepository.getDoc<PersistedRoot>('root')?.actionHistory?.entries[0]).toEqual({
             id: 'entry',
             label: 'Set tempo',
@@ -178,6 +179,9 @@ describe('loadCrdtProject persisted action-history sanitization', () => {
 
         expect(mocks.saveAllToIdb).toHaveBeenCalledTimes(2);
         expect(mocks.saveAllToIdb.mock.calls[1]?.[1]).toEqual({ expectedAuthority: authority(5) });
+        const retried_bundle = mocks.saveAllToIdb.mock.calls[1]?.[0] as Map<string, Uint8Array>;
+        expect(load<PersistedRoot>(retried_bundle.get('root')!).agentProtocolFuture?.bytes).toEqual([17, 34, 51]);
+        expect(automergeRepository.getDoc<PersistedRoot>('root')?.agentProtocolFuture?.bytes).toEqual([17, 34, 51]);
         expect(automergeRepository.getDoc<PersistedRoot>('root')?.project).toBe('C');
     });
 });
