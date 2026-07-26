@@ -7,12 +7,14 @@ import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { createEvidencePolicy } from '../evidenceContract';
+import { validateEvidenceManifest } from '../evidenceManifest';
 import { createGitCheckout, runEvidenceGate, type EvidenceRunnerDependencies } from '../run-evidence-gate';
 
 const head = 'a'.repeat(40);
 const roots: string[] = [];
 const manifest = 'evidence/agent-campaign/manifest.json';
 const gate = ['--task', 'TASK-SA-00-protocol-governance', '--gate', 'AC-060', '--manifest', manifest];
+const captureTime = '2026-07-27T12:00:00.000Z';
 
 async function setup(overrides: Partial<EvidenceRunnerDependencies> = {}) {
     const root = await mkdtemp(join(tmpdir(), 'sourdaw-evidence-runner-'));
@@ -32,6 +34,10 @@ async function setup(overrides: Partial<EvidenceRunnerDependencies> = {}) {
             baselineIsAncestor: () => Promise.resolve(true),
             dirty: () => Promise.resolve(false),
         },
+        clock: { now: () => new Date(captureTime) },
+        monotonicClock: { now: () => 0 },
+        environment: { observe: (_signal: AbortSignal) => Promise.resolve(structuredClone(policy.environment)) },
+        manifest: { validate: validateEvidenceManifest },
         ...overrides,
     };
 }
@@ -87,17 +93,253 @@ describe('runEvidenceGate', () => {
         });
     });
 
-    it('should bind observed identity while every executable mode fails closed', async () => {
-        const dependencies = await setup();
+    it('should bind a valid run envelope and environment before typed terminal outcomes', async () => {
+        const calls: string[] = [];
+        const policy = createEvidencePolicy();
+        const dependencies = await setup({
+            clock: {
+                now: () => {
+                    calls.push('clock');
+                    return new Date(captureTime);
+                },
+            },
+            environment: {
+                observe: () => {
+                    calls.push('environment');
+                    return Promise.resolve(structuredClone(policy.environment));
+                },
+            },
+        });
         const gateResult = await runEvidenceGate(gate, dependencies);
-        const suiteResult = await runEvidenceGate(['--suite', 'webllm-real', '--manifest', manifest], dependencies);
-        const releaseResult = await runEvidenceGate(['--release', '--manifest', manifest], dependencies);
 
         expect(gateResult).toMatchObject({
-            code: 'execution-unimplemented',
+            code: 'executor-unimplemented',
+            targetId: 'AC-060',
             integratedCommit: head,
+            capturedAt: captureTime,
+            environmentMatch: true,
         });
-        expect([suiteResult.code, releaseResult.code]).toEqual(['execution-unimplemented', 'execution-unimplemented']);
+        expect(gateResult.runEnvelopeSha256).toMatch(/^[a-f0-9]{64}$/);
+        expect(calls).toEqual(['clock', 'environment', 'clock', 'clock']);
+
+        const suiteResult = await runEvidenceGate(['--suite', 'webllm-real', '--manifest', manifest], await setup());
+        const releaseResult = await runEvidenceGate(['--release', '--manifest', manifest], await setup());
+        expect([suiteResult.code, releaseResult.code]).toEqual(['executor-unimplemented', 'release-unimplemented']);
+    });
+
+    it('should reject unknown, wrongly owned, and mechanically inapplicable targets', async () => {
+        const argumentsByCase = [
+            ['--task', 'TASK-SA-01-command-registry-and-outcomes', '--gate', 'AC-060', '--manifest', manifest],
+            ['--task', 'TASK-SA-00-protocol-governance', '--gate', 'AC-999', '--manifest', manifest],
+            ['--suite', 'unknown-suite', '--manifest', manifest],
+            ['--suite', 'openai-real', '--manifest', manifest],
+        ];
+        const results = await Promise.all(
+            argumentsByCase.map(async (arguments_) => runEvidenceGate(arguments_, await setup()))
+        );
+        expect(results.map(({ code }) => code)).toEqual([
+            'unknown-target',
+            'unknown-target',
+            'unknown-target',
+            'target-inapplicable',
+        ]);
+    });
+
+    it('should redact rejected, mismatched, and non-JSON environment attestations', async () => {
+        const policy = createEvidencePolicy();
+        let proxyTraps = 0;
+        const proxyEnvironment = new Proxy(structuredClone(policy.environment), {
+            getPrototypeOf: (target) => {
+                proxyTraps += 1;
+                return Reflect.getPrototypeOf(target);
+            },
+            ownKeys: (target) => {
+                proxyTraps += 1;
+                return Reflect.ownKeys(target);
+            },
+            getOwnPropertyDescriptor: (target, key) => {
+                proxyTraps += 1;
+                return Reflect.getOwnPropertyDescriptor(target, key);
+            },
+        });
+        const cyclic: { self?: unknown } = {};
+        cyclic.self = cyclic;
+        let toJsonCalled = false;
+        const withToJson = { toJSON: () => (toJsonCalled = true) };
+        let accessorCalled = false;
+        const withAccessor = Object.defineProperty({}, 'secret', {
+            enumerable: true,
+            get: () => {
+                accessorCalled = true;
+                throw new Error('private accessor detail');
+            },
+        });
+        const malformed = [
+            {},
+            proxyEnvironment,
+            1n,
+            cyclic,
+            withToJson,
+            withAccessor,
+            { value: undefined },
+            { value: Symbol('private') },
+            { value: () => 'private' },
+            { value: Number.NaN },
+            { value: Number.POSITIVE_INFINITY },
+            Object.create({ inherited: true }),
+            Object.setPrototypeOf([], {}),
+        ];
+        const results = await Promise.all([
+            runEvidenceGate(
+                gate,
+                await setup({ environment: { observe: () => Promise.reject(new Error('private')) } })
+            ),
+            ...malformed.map(async (value) =>
+                runEvidenceGate(gate, await setup({ environment: { observe: () => Promise.resolve(value) } }))
+            ),
+        ]);
+
+        expect(results.map(({ code }) => code).every((code) => code === 'environment-unavailable')).toBe(true);
+        expect(results.flatMap(({ failures }) => failures).join()).not.toMatch(/private|accessor/);
+        expect([toJsonCalled, accessorCalled]).toEqual([false, false]);
+        expect(proxyTraps).toBe(0);
+    });
+
+    it('should abort a bounded observation and handle rejection after timeout', async () => {
+        let neverSignal: AbortSignal | undefined;
+        const neverSettles = await setup({
+            environment: {
+                timeoutMs: 5,
+                observe: (signal) => {
+                    neverSignal = signal;
+                    return new Promise(() => undefined);
+                },
+            },
+        });
+        const rejectsLate = await setup({
+            environment: {
+                timeoutMs: 5,
+                observe: (signal) =>
+                    new Promise((_resolve, reject) => {
+                        signal.addEventListener('abort', () => queueMicrotask(() => reject(new Error('private late'))));
+                    }),
+            },
+        });
+        const results = await Promise.all([runEvidenceGate(gate, neverSettles), runEvidenceGate(gate, rejectsLate)]);
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+        expect(results.map(({ code }) => code)).toEqual(['environment-unavailable', 'environment-unavailable']);
+        expect(neverSignal?.aborted).toBe(true);
+        expect(results.flatMap(({ failures }) => failures).join()).not.toMatch(/private|timeout/);
+    });
+
+    it.each([
+        ['future', -1, 'invalid-run-envelope'],
+        ['current', 0, 'executor-unimplemented'],
+        ['at 60 seconds', 60_000, 'executor-unimplemented'],
+        ['over 60 seconds', 60_001, 'invalid-run-envelope'],
+    ])('should classify a %s capture using an independent clock sample', async (_case, elapsed, expectedCode) => {
+        const start = Date.parse(captureTime);
+        const samples = [new Date(start), new Date(start + elapsed)];
+        let index = 0;
+        const dependencies = await setup({ clock: { now: () => samples[index++] ?? samples[1] } });
+
+        expect((await runEvidenceGate(gate, dependencies)).code).toBe(expectedCode);
+        expect(index).toBe(3);
+    });
+
+    it('should reject a capture that becomes stale during manifest validation', async () => {
+        const start = Date.parse(captureTime);
+        const samples = [new Date(start), new Date(start), new Date(start + 60_001)];
+        let index = 0;
+        const dependencies = await setup({ clock: { now: () => samples[index++] ?? samples[2] } });
+        const validate = dependencies.manifest.validate;
+        dependencies.manifest.validate = async (input) => {
+            await Promise.resolve();
+            return validate(input);
+        };
+
+        expect((await runEvidenceGate(gate, dependencies)).code).toBe('invalid-run-envelope');
+        expect(index).toBe(3);
+    });
+
+    it('should reject HEAD changes and dirt introduced during manifest validation', async () => {
+        let currentHead = head;
+        let dirty = false;
+        const changedHead = await setup();
+        changedHead.checkout.head = () => Promise.resolve(currentHead);
+        const validateHead = changedHead.manifest.validate;
+        changedHead.manifest.validate = async (input) => {
+            const failures = await validateHead(input);
+            currentHead = 'b'.repeat(40);
+            return failures;
+        };
+
+        const changedTree = await setup();
+        changedTree.checkout.dirty = () => Promise.resolve(dirty);
+        const validateTree = changedTree.manifest.validate;
+        changedTree.manifest.validate = async (input) => {
+            const failures = await validateTree(input);
+            dirty = true;
+            return failures;
+        };
+
+        const results = await Promise.all([runEvidenceGate(gate, changedHead), runEvidenceGate(gate, changedTree)]);
+        expect(results.map(({ code }) => code)).toEqual(['invalid-checkout', 'dirty-checkout']);
+    });
+
+    it('should reject HEAD changes made by the final dirty probe', async () => {
+        let currentHead = head;
+        let dirtyReads = 0;
+        const dependencies = await setup();
+        dependencies.checkout.head = () => Promise.resolve(currentHead);
+        dependencies.checkout.dirty = () => {
+            dirtyReads += 1;
+            if (dirtyReads === 2) {
+                currentHead = 'b'.repeat(40);
+            }
+            return Promise.resolve(false);
+        };
+
+        expect((await runEvidenceGate(gate, dependencies)).code).toBe('invalid-checkout');
+    });
+
+    it.each([
+        ['frozen', 0, 60_001],
+        ['stepped', 1_000, 60_001],
+        ['backward', 0, -1],
+    ])('should reject %s wall time with invalid monotonic elapsed', async (_case, wallStep, monotonicElapsed) => {
+        const start = Date.parse(captureTime);
+        const wallSamples = [new Date(start), new Date(start + wallStep), new Date(start + wallStep * 2)];
+        const monotonicSamples = [0, monotonicElapsed];
+        let wallIndex = 0;
+        let monotonicIndex = 0;
+        const dependencies = await setup({
+            clock: { now: () => wallSamples[wallIndex++] ?? wallSamples[2] },
+            monotonicClock: { now: () => monotonicSamples[monotonicIndex++] ?? monotonicSamples[1] },
+        });
+
+        expect((await runEvidenceGate(gate, dependencies)).code).toBe('invalid-run-envelope');
+        expect([wallIndex, monotonicIndex]).toEqual([3, 2]);
+    });
+
+    it('should redact final checkout adapter failures', async () => {
+        const headFailure = await setup();
+        let headReads = 0;
+        headFailure.checkout.head = () => {
+            headReads += 1;
+            return headReads === 1 ? Promise.resolve(head) : Promise.reject(new Error('private final head'));
+        };
+        const dirtyFailure = await setup();
+        let dirtyReads = 0;
+        dirtyFailure.checkout.dirty = () => {
+            dirtyReads += 1;
+            return dirtyReads === 1 ? Promise.resolve(false) : Promise.reject(new Error('private final dirty'));
+        };
+
+        const results = await Promise.all([runEvidenceGate(gate, headFailure), runEvidenceGate(gate, dirtyFailure)]);
+        expect(results.map(({ code }) => code)).toEqual(['invalid-checkout', 'invalid-checkout']);
+        expect(results.flatMap(({ failures }) => failures).join()).not.toMatch(/private final/);
     });
 
     it('should reject unsafe and stale policies', async () => {
@@ -151,7 +393,7 @@ describe('runEvidenceGate', () => {
 
         expect([copiedPolicy.code, retainedOutput.code, untrackedDirt.code, trackedTamper.code]).toEqual([
             'invalid-checkout',
-            'execution-unimplemented',
+            'executor-unimplemented',
             'dirty-checkout',
             'dirty-checkout',
         ]);
