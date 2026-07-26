@@ -69,21 +69,24 @@ class GrandBouleInstanceMock {
 // yield. Provide a controllable MessageChannel so the render loop does not fire
 // spuriously during dispatch tests.
 const queuedYields: Array<() => void> = [];
-vi.stubGlobal('MessageChannel', class {
-    port1 = {
-        onmessage: null as ((ev: MessageEvent) => void) | null,
-    };
-    port2 = {
-        postMessage: () => {
-            // Defer: capture the renderLoop callback instead of running it, so
-            // dispatch tests stay synchronous and deterministic.
-            const cb = this.port1.onmessage;
-            if (cb) {
-                queuedYields.push(() => cb({ data: null } as MessageEvent));
-            }
-        },
-    };
-});
+vi.stubGlobal(
+    'MessageChannel',
+    class {
+        port1 = {
+            onmessage: null as ((ev: MessageEvent) => void) | null,
+        };
+        port2 = {
+            postMessage: () => {
+                // Defer: capture the renderLoop callback instead of running it, so
+                // dispatch tests stay synchronous and deterministic.
+                const cb = this.port1.onmessage;
+                if (cb) {
+                    queuedYields.push(() => cb({ data: null } as MessageEvent));
+                }
+            },
+        };
+    }
+);
 
 // A real SharedArrayBuffer-backed control plane the init path parses.
 const RING_FRAMES = 128 * 8; // enough for TARGET_AHEAD (128*6)
@@ -151,7 +154,9 @@ describe('Grand Boule engine worker control plane', () => {
 
         const before = calls.length;
         // Run a queued render tick — running=false ⇒ renderLoop returns immediately.
-        queuedYields.forEach((fn) => fn());
+        for (const fn of queuedYields) {
+            fn();
+        }
         expect(calls.length).toBe(before);
     });
 

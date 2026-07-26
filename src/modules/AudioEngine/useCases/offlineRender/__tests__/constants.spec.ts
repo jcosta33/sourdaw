@@ -5,7 +5,6 @@ import {
     MIN_RENDER_TIMEOUT_MS,
     RENDER_TIMEOUT_MULTIPLIER,
     YIELD_EVERY_N_NOTES,
-    PROGRESS_EASE_COEFF,
     MAX_OFFLINE_FRAMES,
 } from '../constants';
 
@@ -15,7 +14,6 @@ describe('offlineRender/constants', () => {
         expect(MIN_RENDER_TIMEOUT_MS).toBe(60_000);
         expect(RENDER_TIMEOUT_MULTIPLIER).toBe(10);
         expect(YIELD_EVERY_N_NOTES).toBe(200);
-        expect(PROGRESS_EASE_COEFF).toBe(0.025);
         expect(MAX_OFFLINE_FRAMES).toBe(2 ** 30);
     });
 });

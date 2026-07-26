@@ -5,7 +5,15 @@ import { tauriInvoke, isTauri } from '#/utils/tauriBridge';
  * Bypasses JSON entirely to use binary payloads on the Tauri custom protocol.
  */
 type ProcessAudioIPCInput = {
-    enginePluginId: number;
+    /**
+     * The plugin instance id — the identifier both sides already agree on.
+     *
+     * Deliberately not the engine plugin id: that id is reserved inside the
+     * Rust audio engine, never reaches the frontend, and a placeholder value
+     * resolves no bridge, which degrades to an unprocessed dry signal instead
+     * of a visible error. Rust resolves the engine id from this instance id.
+     */
+    instanceId: string;
     audioBytes: Uint8Array;
 };
 
@@ -34,7 +42,7 @@ export async function processAudioIPC(input: ProcessAudioIPCInput): ProcessAudio
 
     try {
         const response = await tauriInvoke('process_plugin_audio', {
-            enginePluginId: input.enginePluginId,
+            instanceId: input.instanceId,
             audioBytes: input.audioBytes,
         });
 

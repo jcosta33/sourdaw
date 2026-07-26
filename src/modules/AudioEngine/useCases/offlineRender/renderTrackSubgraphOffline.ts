@@ -1,4 +1,4 @@
-import { type Track } from '#/modules/Arrangement/stores';
+import { deriveVcaMultiplier, getVcaGroupsState, type Track } from '#/modules/Arrangement/stores';
 import { sidechainStore } from '#/modules/Routing/stores';
 
 import { connectOfflineSidechainRoutes } from '../../repositories/offlineRouting/connectOfflineSidechainRoutes';
@@ -7,9 +7,10 @@ import { getAudioContext } from '../engineAccess/getAudioContext';
 import { getSidechainKeyDelay } from '../latencyCompensation/compensation/getSidechainKeyDelay';
 
 import { connectOfflineToasterPadRoutes } from './connectOfflineToasterPadRoutes';
-import { MAX_OFFLINE_FRAMES } from './constants';
+import { MAX_OFFLINE_FRAMES, MIN_RENDER_TIMEOUT_MS, RENDER_TIMEOUT_MULTIPLIER } from './constants';
 import { createOfflineTrackStrip } from './createOfflineTrackStrip';
 import { isOfflineInstrumentDevice } from './isOfflineInstrumentDevice';
+import { renderInSegments } from './renderInSegments';
 import { resolveRenderContext } from './resolveRenderContext';
 import { schedulePendingSuspends } from './schedulePendingSuspends';
 import { scheduleTrackClips } from './scheduleTrackClips';
@@ -20,9 +21,6 @@ import { yieldToMain } from './yieldToMain';
 const NEUTRAL_GAIN = 0.8;
 const NEUTRAL_PAN = 0;
 
-/** Progress reported once every rendered chunk of this many seconds. */
-const PROGRESS_CHUNK_SECONDS = 2;
-
 /** Stand-in note tables for a render started before the MIDI store is hydrated. */
 const EMPTY_MIDI_STATE = {
     probabilitySeed: 0,
@@ -31,7 +29,37 @@ const EMPTY_MIDI_STATE = {
     pitchBendByClipId: {},
 } as const;
 
-export type RenderTrackSubgraphOfflineInput = {
+export type ResolveContributorVcaMultiplierInput = {
+    track: Track;
+    isTarget: boolean;
+    groups: ReturnType<typeof getVcaGroupsState>;
+};
+
+/**
+ * The VCA group master to bake into one track of this render — and the one place
+ * the two halves of this subgraph are deliberately treated differently.
+ *
+ * **Upstream contributors get it.** Their audio is summed into the print exactly
+ * once and is never recomposed afterwards: the routing edge that got baked stops
+ * carrying live signal the moment the target is frozen, so whatever their group
+ * master was worth has to be in the samples or it is lost for good.
+ *
+ * **The target does not.** Its strip stays live after the freeze, and
+ * `applyVcaGains` / the gain-automation branch keep driving that same fader.
+ * Baking the multiplier in here would apply the group twice, once in the buffer
+ * and again on the fader the buffer is replayed through.
+ *
+ * Two rules in one loop, so it is stated here rather than left to be inferred.
+ */
+function resolveContributorVcaMultiplier({ track, isTarget, groups }: ResolveContributorVcaMultiplierInput): number {
+    if (isTarget) {
+        return 1;
+    }
+
+    return deriveVcaMultiplier({ vcaGroupId: track.vcaGroupId, groups });
+}
+
+type RenderTrackSubgraphOfflineInput = {
     /** Track whose strip output is captured into the returned buffer. */
     targetTrackId: string;
     /**
@@ -83,62 +111,6 @@ function projectStripTrack({ track, isTarget, includeInserts, includeAutomation 
     return { ...track, devices, gain: NEUTRAL_GAIN, pan: NEUTRAL_PAN };
 }
 
-type RenderWithProgressInput = {
-    offlineCtx: OfflineAudioContext;
-    onProgress?: (fraction: number) => void;
-    abortSignal?: AbortSignal;
-};
-
-function renderWithProgress({ offlineCtx, onProgress, abortSignal }: RenderWithProgressInput): Promise<AudioBuffer> {
-    return new Promise<AudioBuffer>((resolve, reject) => {
-        if (abortSignal?.aborted) {
-            reject(new Error('Render aborted'));
-            return;
-        }
-
-        function abortHandler(): void {
-            reject(new Error('Render aborted'));
-        }
-        abortSignal?.addEventListener('abort', abortHandler);
-
-        const totalFrames = offlineCtx.length;
-        const chunkFrames = Math.max(1, Math.round(PROGRESS_CHUNK_SECONDS * offlineCtx.sampleRate));
-        for (let frame = chunkFrames; frame < totalFrames; frame += chunkFrames) {
-            const capturedFrame = frame;
-            offlineCtx
-                .suspend(capturedFrame / offlineCtx.sampleRate)
-                .then(() => {
-                    if (abortSignal?.aborted) {
-                        return null;
-                    }
-                    onProgress?.(capturedFrame / totalFrames);
-                    void offlineCtx.resume();
-                    return null;
-                })
-                .catch((error: unknown) => {
-                    reject(error instanceof Error ? error : new Error(String(error)));
-                    return null;
-                });
-        }
-
-        offlineCtx
-            .startRendering()
-            .then((buffer) => {
-                abortSignal?.removeEventListener('abort', abortHandler);
-                if (!abortSignal?.aborted) {
-                    onProgress?.(1);
-                    resolve(buffer);
-                }
-                return null;
-            })
-            .catch((error: unknown) => {
-                abortSignal?.removeEventListener('abort', abortHandler);
-                reject(error instanceof Error ? error : new Error(String(error)));
-                return null;
-            });
-    });
-}
-
 /**
  * Render one track (plus everything routed into it) offline through the *real*
  * device graph — the same strip topology, instrument nodes and note scheduling
@@ -186,6 +158,10 @@ export async function renderTrackSubgraphOffline({
     }
     const offlineCtx = new OfflineAudioContext(2, frameCount, sampleRate);
 
+    // Snapshot once: every strip and every gain lane in this render must see the
+    // same group levels, however long the render takes.
+    const vcaGroups = getVcaGroupsState();
+
     const trackStripsById = new Map<string, OfflineTrackStrip>();
     const deviceEntriesByTrack = new Map<string, DeviceNodeEntry[]>();
     for (const track of renderTracks) {
@@ -202,7 +178,18 @@ export async function renderTrackSubgraphOffline({
             // would hand back a zeroed buffer, and bounce-to-new-track then
             // shows that silent waveform on an unmuted track. The renderer this
             // replaced never consulted `muted` at all.
-            { honorMuted: false }
+            //
+            // The VCA multiplier is per-track and asymmetric here; see
+            // `resolveContributorVcaMultiplier` for why the target is the one
+            // track that does not get it.
+            {
+                honorMuted: false,
+                vcaMultiplier: resolveContributorVcaMultiplier({
+                    track,
+                    isTarget: track.id === targetTrackId,
+                    groups: vcaGroups,
+                }),
+            }
         );
         trackStripsById.set(track.id, strip);
         deviceEntriesByTrack.set(track.id, strip.deviceEntries);
@@ -286,6 +273,13 @@ export async function renderTrackSubgraphOffline({
             deviceEntriesByTrack,
             regionStartBeat: startBeat,
             includeAutomation: track.id === targetTrackId ? includeAutomation : true,
+            // Same rule the strip was seeded with, so a gain lane on an upstream
+            // contributor rides its group instead of nullifying it.
+            vcaMultiplier: resolveContributorVcaMultiplier({
+                track,
+                isTarget: track.id === targetTrackId,
+                groups: vcaGroups,
+            }),
         });
     }
 
@@ -293,5 +287,29 @@ export async function renderTrackSubgraphOffline({
 
     await yieldToMain();
 
-    return renderWithProgress({ offlineCtx, onProgress, abortSignal });
+    if (abortSignal?.aborted) {
+        throw new Error('Render aborted');
+    }
+
+    // The same segmented kernel the mixdown and stem exports use, rather than a
+    // second copy of it. Two things this path did not have before: a wall-clock
+    // backstop, so a wedged freeze can no longer hang indefinitely, and teardown
+    // of the context it abandons.
+    //
+    // The stop signal is this render's own `AbortSignal`, deliberately not the
+    // global export cancel flag — cancelling an export must not kill a freeze.
+    const renderTimeoutMs = Math.max(MIN_RENDER_TIMEOUT_MS, durationSeconds * RENDER_TIMEOUT_MULTIPLIER * 1000);
+    const buffer = await renderInSegments({
+        offlineCtx,
+        durationSeconds,
+        timeoutMs: renderTimeoutMs,
+        onRenderProgress: onProgress,
+        cancelSource: {
+            isCancelled: () => abortSignal?.aborted ?? false,
+            createCancelError: () => new Error('Render aborted'),
+        },
+    });
+
+    onProgress?.(1);
+    return buffer;
 }

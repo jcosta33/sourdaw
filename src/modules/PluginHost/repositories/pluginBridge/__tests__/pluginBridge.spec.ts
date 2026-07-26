@@ -84,7 +84,7 @@ describe('pluginBridge repository', () => {
         it('returns no processed bytes outside the desktop app', async () => {
             vi.mocked(isTauri).mockReturnValue(false);
             const audioBytes = new Uint8Array([1, 2, 3]);
-            const result = await processAudioIPC({ enginePluginId: 17, audioBytes });
+            const result = await processAudioIPC({ instanceId: 'instance-17', audioBytes });
             expect(result).toBeNull();
             expect(tauriInvoke).not.toHaveBeenCalled();
         });
@@ -97,10 +97,10 @@ describe('pluginBridge repository', () => {
             const pool = new Uint8Array([9, 9, 1, 2, 3]);
             const audioBytes = pool.subarray(2);
 
-            const result = await processAudioIPC({ enginePluginId: 17, audioBytes });
+            const result = await processAudioIPC({ instanceId: 'instance-17', audioBytes });
 
             expect(tauriInvoke).toHaveBeenCalledWith('process_plugin_audio', {
-                enginePluginId: 17,
+                instanceId: 'instance-17',
                 audioBytes,
             });
             expect(result).toEqual(processedBytes);
@@ -111,7 +111,7 @@ describe('pluginBridge repository', () => {
             vi.mocked(tauriInvoke).mockResolvedValue([1, 2, 3]);
 
             const result = await processAudioIPC({
-                enginePluginId: 17,
+                instanceId: 'instance-17',
                 audioBytes: new Uint8Array([1, 2, 3]),
             });
 
@@ -124,7 +124,7 @@ describe('pluginBridge repository', () => {
             vi.mocked(tauriInvoke).mockResolvedValue(backing.subarray(2));
 
             const result = await processAudioIPC({
-                enginePluginId: 17,
+                instanceId: 'instance-17',
                 audioBytes: new Uint8Array([1, 2, 3]),
             });
 
@@ -137,7 +137,7 @@ describe('pluginBridge repository', () => {
             vi.mocked(tauriInvoke).mockResolvedValue([1, -1, 300]);
 
             const result = await processAudioIPC({
-                enginePluginId: 17,
+                instanceId: 'instance-17',
                 audioBytes: new Uint8Array([1, 2, 3]),
             });
 
@@ -149,7 +149,7 @@ describe('pluginBridge repository', () => {
             vi.mocked(tauriInvoke).mockRejectedValue(new Error('native failed'));
 
             const result = await processAudioIPC({
-                enginePluginId: 17,
+                instanceId: 'instance-17',
                 audioBytes: new Uint8Array([1, 2, 3]),
             });
 

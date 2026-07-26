@@ -1,4 +1,9 @@
-import { shouldCreateLiveTrackStrip, type getTrackEligibility } from '#/modules/Arrangement/stores';
+import {
+    deriveVcaMultiplier,
+    getVcaGroupsState,
+    shouldCreateLiveTrackStrip,
+    type getTrackEligibility,
+} from '#/modules/Arrangement/stores';
 import { sidechainStore } from '#/modules/Routing/stores';
 
 import { createExportError } from '../errors/ExportError';
@@ -9,16 +14,12 @@ import { type DeviceNodeEntry } from './buildDeviceChain';
 import { getSidechainKeyDelay } from './latencyCompensation/compensation/getSidechainKeyDelay';
 import { acquireRenderLock } from './offlineRender/acquireRenderLock';
 import { checkCancel } from './offlineRender/checkCancel';
+import { clampRenderFrameCount } from './offlineRender/clampRenderFrameCount';
 import { connectOfflineToasterPadRoutes } from './offlineRender/connectOfflineToasterPadRoutes';
-import {
-    MAX_OFFLINE_FRAMES,
-    MIN_RENDER_TIMEOUT_MS,
-    PROGRESS_EASE_COEFF,
-    RENDER_TIMEOUT_MULTIPLIER,
-} from './offlineRender/constants';
+import { MIN_RENDER_TIMEOUT_MS, RENDER_TIMEOUT_MULTIPLIER } from './offlineRender/constants';
 import { createOfflineTrackStrip } from './offlineRender/createOfflineTrackStrip';
 import { isCancelRequested } from './offlineRender/isCancelRequested';
-import { renderWithTimeout } from './offlineRender/renderWithTimeout';
+import { renderInSegments } from './offlineRender/renderInSegments';
 import { resetCancelFlag } from './offlineRender/resetCancelFlag';
 import { resolveRenderContext } from './offlineRender/resolveRenderContext';
 import { schedulePendingSuspends } from './offlineRender/schedulePendingSuspends';
@@ -158,6 +159,9 @@ export const exportStems: ExportStemsFn = async function exportStems(
         // FX-9 — read once; each stem then plans only the routes that key a device
         // it actually renders.
         const sidechainRoutes = sidechainStore.value?.routes ?? [];
+        // Snapshot once so every stem in the set is levelled against the same
+        // group state, however long the whole export takes.
+        const vcaGroups = getVcaGroupsState();
 
         if (!tracks || !midi) {
             onProgress?.(1);
@@ -203,7 +207,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
             return stems;
         }
 
-        const frameCount = Math.min(Math.ceil(durationSeconds * sampleRate), MAX_OFFLINE_FRAMES);
+        const frameCount = clampRenderFrameCount({ durationSeconds, sampleRate, onWarning });
         // Dynamically scale CPU threads based on hardware, clamped to 8 max to prevent OOM.
         const MAX_CONCURRENT_RENDERS =
             typeof navigator !== 'undefined' ? Math.max(1, Math.min(navigator.hardwareConcurrency || 4, 8)) : 4;
@@ -253,7 +257,14 @@ export const exportStems: ExportStemsFn = async function exportStems(
             for (const groupedTrack of groupedTracks) {
                 // Stems carry the track's content even when muted (see the
                 // eligibility comment above) — only the mixdown bakes mute in.
-                const groupedStrip = await createOfflineTrackStrip(offlineCtx, groupedTrack, { honorMuted: false });
+                // A stem is a level, not a monitoring snapshot: the track's own
+                // fader is already baked in, and its VCA group master is part of
+                // the same balance, so it composes in here too. (Mute and solo
+                // stay ignored above — those are monitoring state, not level.)
+                const groupedStrip = await createOfflineTrackStrip(offlineCtx, groupedTrack, {
+                    honorMuted: false,
+                    vcaMultiplier: deriveVcaMultiplier({ vcaGroupId: groupedTrack.vcaGroupId, groups: vcaGroups }),
+                });
                 trackStripsById.set(groupedTrack.id, groupedStrip);
                 deviceEntriesByTrack.set(groupedTrack.id, groupedStrip.deviceEntries);
             }
@@ -280,7 +291,12 @@ export const exportStems: ExportStemsFn = async function exportStems(
             // content, track by track", so its keys are derived from that same full
             // content rather than from the monitoring state at export time.
             for (const keySourceTrack of stemSidechain.keySourceTracks) {
-                const keyStrip = await createOfflineTrackStrip(offlineCtx, keySourceTrack, { honorMuted: false });
+                // The live compressor keys off a post-fader signal, which rides
+                // the key track's VCA group, so the offline key does too.
+                const keyStrip = await createOfflineTrackStrip(offlineCtx, keySourceTrack, {
+                    honorMuted: false,
+                    vcaMultiplier: deriveVcaMultiplier({ vcaGroupId: keySourceTrack.vcaGroupId, groups: vcaGroups }),
+                });
                 trackStripsById.set(keySourceTrack.id, keyStrip);
                 deviceEntriesByTrack.set(keySourceTrack.id, keyStrip.deviceEntries);
             }
@@ -321,6 +337,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                     allTracks: groupedTopology,
                     deviceEntriesByTrack,
                     regionStartBeat: startBeat,
+                    vcaMultiplier: deriveVcaMultiplier({ vcaGroupId: groupedTrack.vcaGroupId, groups: vcaGroups }),
                 });
             }
 
@@ -354,6 +371,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                     allTracks: tracks.tracks,
                     deviceEntriesByTrack,
                     regionStartBeat: startBeat,
+                    vcaMultiplier: deriveVcaMultiplier({ vcaGroupId: keySourceTrack.vcaGroupId, groups: vcaGroups }),
                 });
             }
 
@@ -364,21 +382,20 @@ export const exportStems: ExportStemsFn = async function exportStems(
             onProgress?.(fractAfterSchedule);
             await yieldToMain();
 
-            // Simulate progress during the black-box startRendering() call.
-            let stemSim = fractAfterSchedule;
-            const stemTarget = (done + 1) / eligible.length;
-            const stemTimer = onProgress
-                ? setInterval(() => {
-                      stemSim += (stemTarget * 0.97 - stemSim) * PROGRESS_EASE_COEFF;
-                      onProgress(stemSim);
-                  }, 100)
-                : null;
-
+            // Same segmented kernel the mixdown uses, so a stem
+            // render aborts at a real boundary instead of running to completion
+            // in the background (up to MAX_CONCURRENT_RENDERS of them at once),
+            // and this stem's slot advances on measured render progress rather
+            // than an eased timer.
+            const stemSpan = 1 / eligible.length;
             const stemTimeoutMs = Math.max(MIN_RENDER_TIMEOUT_MS, durationSeconds * RENDER_TIMEOUT_MULTIPLIER * 1000);
-            const buffer = await renderWithTimeout(offlineCtx, stemTimeoutMs).finally(() => {
-                if (stemTimer !== null) {
-                    clearInterval(stemTimer);
-                }
+            const buffer = await renderInSegments({
+                offlineCtx,
+                durationSeconds,
+                timeoutMs: stemTimeoutMs,
+                onRenderProgress: onProgress
+                    ? (fraction) => onProgress(fractAfterSchedule + fraction * (stemSpan * 0.6))
+                    : undefined,
             });
 
             stems.set(track.id, buffer);

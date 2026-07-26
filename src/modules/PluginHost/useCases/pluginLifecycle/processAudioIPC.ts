@@ -5,7 +5,7 @@ import { processAudioIPC as processAudioIPCRepo } from '../../repositories/plugi
  * Sends raw audio bytes to Rust and returns processed bytes when available.
  */
 type ProcessAudioIPCInput = {
-    enginePluginId: number;
+    instanceId: string;
     audioBytes: Uint8Array;
 };
 

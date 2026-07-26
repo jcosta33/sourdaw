@@ -33,7 +33,7 @@ describe('toggleDualView', () => {
     });
 
     it('is a no-op when workspace state is null (guard branch)', () => {
-        workspaceStore.set(null as unknown as WorkspaceState);
+        workspaceStore.set(null);
         toggleDualView();
         expect(mocks.updateWorkspaceState).not.toHaveBeenCalled();
     });

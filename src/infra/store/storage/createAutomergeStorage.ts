@@ -842,6 +842,70 @@ export const createAutomergeStorage = <TData>(
             pending.revision = cachedRevision;
         },
 
+        /**
+         * The document is a wire format shared with peers that may run
+         * different builds, and row validators here are structural and
+         * version-blind — no protocol version is negotiated anywhere in the
+         * sync layer. A peer whose validator still requires a field a newer
+         * build removed rejects every row that lacks it. Refusing to surface
+         * those rows is right; writing the refusal back is not, because the
+         * deletion then propagates to peers that read them fine.
+         *
+         * So a sanitized value replaces the committed baseline and nothing
+         * else. Every revision counter is deliberately left where it was:
+         *
+         * - `lastHydratedJson` / `lastHydratedHeads` describe the document,
+         *   which has not changed.
+         * - `committedCacheRevision` and `committedSetRevision` mean "a commit
+         *   landed and superseded older writes". No commit landed here.
+         *   Advancing `committedSetRevision` in particular makes
+         *   `preparePendingWrite`'s supersede guard abandon an unflushed local
+         *   edit that nothing actually superseded — the store would keep
+         *   showing a value the document never received.
+         *
+         * The visible pending write needs correcting rather than outranking.
+         * `sanitize` guards data arriving from outside and is deliberately
+         * absent from the commit path, because a locally authored value is
+         * built by a use case from typed models and the store must not quietly
+         * rewrite what that use case asked to write. `hydrate`'s rebase branch
+         * breaks that premise: it blends freshly-hydrated document data into an
+         * in-flight write (`{ ...pendingValue, ...crdtData }`), so the pending
+         * is no longer purely authored and its inbound half never passed the
+         * guard. Racing it on revision order lets the rejected blend win the
+         * cache and then flush to the document unexamined.
+         *
+         * So the pending whose value the sanitizer just examined — the visible
+         * one, which is what `get()` returned — takes the verdict. That
+         * corrects an injection `hydrate` made; it does not author a write, and
+         * a pending nothing rebased still carries exactly what its use case
+         * set.
+         *
+         * If you are adding a sanitizer, know what this relies on. It is
+         * reached only when a sanitizer returns a value that is not reference-
+         * identical to its input, so a sanitizer that short-circuits on accept
+         * (`if (is_exact_X(value)) { return value; }`) keeps clean hydrates off
+         * this path entirely. One that always rebuilds reaches it on *every*
+         * hydrate, and this correction is deliberately blunt: it does not check
+         * whether the rebase actually blended the visible pending or merely
+         * touched its revision, and it does not exempt a scoped transactional
+         * write. Those distinctions do not matter while clean values never get
+         * here — give a new sanitizer the accept path and keep it that way.
+         */
+        setProjected(value: TData | null): void {
+            const visibleBefore = cachedValue;
+            committedCacheValue = value;
+            const visiblePending = [...pendingWritesByOwner.values()].find(
+                (pending) => pending.revision === cachedRevision
+            );
+            if (visiblePending) {
+                visiblePending.value = value;
+            }
+            recomputeCachedValue();
+            if (!Object.is(visibleBefore, cachedValue)) {
+                notifyDeferredChange();
+            }
+        },
+
         isSupported(): boolean {
             return true;
         },

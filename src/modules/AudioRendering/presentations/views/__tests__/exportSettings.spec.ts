@@ -29,6 +29,8 @@ describe('exportSettings', () => {
             sampleRate: 44100,
             bitDepth: 24,
             mp3BitRate: 128,
+            dither: 'random',
+            normalization: 'off',
         });
     });
 
@@ -48,6 +50,8 @@ describe('exportSettings', () => {
             sampleRate: 48000,
             bitDepth: 24,
             mp3BitRate: 320,
+            dither: 'random',
+            normalization: 'off',
         });
     });
 
@@ -67,6 +71,8 @@ describe('exportSettings', () => {
             sampleRate: 96000,
             bitDepth: 16,
             mp3BitRate: 192,
+            dither: 'random',
+            normalization: 'off',
         });
     });
 
@@ -87,6 +93,8 @@ describe('exportSettings', () => {
             sampleRate: 88200,
             bitDepth: 32,
             mp3BitRate: 320,
+            dither: 'random',
+            normalization: 'off',
         });
         expect(setItem).not.toHaveBeenCalled();
     });
@@ -110,6 +118,8 @@ describe('exportSettings', () => {
             sampleRate: 48000,
             bitDepth: 16,
             mp3BitRate: 96,
+            dither: 'random',
+            normalization: 'off',
         });
     });
 
@@ -122,6 +132,8 @@ describe('exportSettings', () => {
                 sampleRate: 44100,
                 bitDepth: 24,
                 mp3BitRate: 128,
+                dither: 'random',
+                normalization: 'off',
             });
         }
     });
@@ -143,7 +155,26 @@ describe('exportSettings', () => {
                 sampleRate: 44100,
                 bitDepth: 24,
                 mp3BitRate: 128,
+                dither: 'random',
+                normalization: 'off',
             });
+        }
+    });
+
+    it('should keep a stored dither preference and reject an unknown one', () => {
+        for (const [stored, expected] of [
+            ['seeded', 'seeded'],
+            ['none', 'none'],
+            ['random', 'random'],
+            ['crunchy', 'random'],
+            [42, 'random'],
+        ] as const) {
+            window.localStorage.setItem(
+                EXPORT_SETTINGS_KEY,
+                JSON.stringify({ formats: ['wav'], sampleRate: 44100, bitDepth: 24, mp3BitRate: 128, dither: stored })
+            );
+
+            expect(loadExportSettings().dither).toBe(expected);
         }
     });
 
@@ -153,6 +184,8 @@ describe('exportSettings', () => {
             sampleRate: 48000,
             bitDepth: 24,
             mp3BitRate: 192,
+            dither: 'seeded',
+            normalization: 'off',
         });
 
         expect(window.localStorage.getItem(EXPORT_SETTINGS_KEY)).toBe(
@@ -161,6 +194,8 @@ describe('exportSettings', () => {
                 sampleRate: 48000,
                 bitDepth: 24,
                 mp3BitRate: 192,
+                dither: 'seeded',
+                normalization: 'off',
             })
         );
     });
