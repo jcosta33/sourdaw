@@ -1,0 +1,32 @@
+src/infra/store/storage/reconcileCrdtSlot.ts
+  s_0d39f3a4a4357a::t_a16a6f43f25ccd 396-399,405
+  s_0d39f3a4a4357a::t_70ad21c6156211 277-284
+  s_0d39f3a4a4357a::t_f218501dd0bb23 309
+  s_0d39f3a4a4357a::t_09d66c5e12fbb0 258-261,263-264,287-308,310-338,343,348-367,369,371-375,378-393,400-404,406-416,419-421
+  s_0d39f3a4a4357a::t_340eb73f8337e4 370
+src/infra/store/storage/__tests__/reconcileCrdtSlot.spec.ts
+  s_0d39f3a4a4357a::t_8d9825d70a04b5 192-324
+src/infra/store/storage/__tests__/createAutomergeStorage.concurrentReorder.spec.ts
+  s_0d39f3a4a4357a::t_2f444a0319aa46 144-165,167-178
+  s_0d39f3a4a4357a::t_c6323121c66ef0 104,132,166
+  s_0d39f3a4a4357a::t_bd6b9846a23287 194
+  s_0d39f3a4a4357a::t_728f34e62d4f10 50
+  s_0d39f3a4a4357a::t_8c13708f2aa781 71-79
+  s_0d39f3a4a4357a::t_e453f7a82776b1 1-49,51-70,80-103,105-131,133-143,179-193,195-208
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "ea0ad2aea9c9833b331bab5e5d3402f8504bfeeb",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
