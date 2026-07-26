@@ -47,6 +47,18 @@ export type AudioDeviceRuntimeSink = {
     syncProofPatch: (deviceId: string) => void;
     updateProofMeters: (deviceId: string, meters: ProofMeterData) => void;
     updateTunerTelemetry: (deviceId: string, telemetry: ScoringTelemetry) => void;
+    /**
+     * Perform the engine setup an instrument needs before it can render, and
+     * resolve only once it can (OE-21).
+     *
+     * The offline render builds its nodes through a different registry than live
+     * playback, so none of the per-device setup the live descriptors perform ever
+     * ran for an export. Levain therefore rendered digital silence: no zones, and
+     * a fallback tone that only `clear_zones()` arms. This is the seam where the
+     * offline path asks for that setup, and — unlike the live registration, which
+     * is deliberately fire-and-forget — waits for it.
+     */
+    prepareOfflineInstrument: (input: { deviceId: string; deviceType: string; port: MessagePort }) => Promise<void>;
 };
 
 const defaultSink: AudioDeviceRuntimeSink = {
@@ -65,6 +77,7 @@ const defaultSink: AudioDeviceRuntimeSink = {
     syncProofPatch: () => {},
     updateProofMeters: () => {},
     updateTunerTelemetry: () => {},
+    prepareOfflineInstrument: async () => {},
 };
 
 let runtimeSink = defaultSink;

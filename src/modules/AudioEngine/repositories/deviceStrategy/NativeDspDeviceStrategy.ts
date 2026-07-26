@@ -1,3 +1,4 @@
+import { getAudioDeviceRuntimeSink } from '../../engine/audioDeviceRuntimeSink';
 import { type Device } from '../../models/TrackViewTypes';
 import { type OfflineDeviceNode } from '../devices/types';
 
@@ -82,6 +83,19 @@ export async function createNativeDspStrategy(ctx: BaseAudioContext, device: Dev
     for (const [key, val] of Object.entries(device.parameterValues)) {
         strategy.setParam(key, val);
     }
+
+    // OE-21: `parameterValues` is only the numeric half of a device's state. Every
+    // instrument whose live descriptor does setup beyond plain params — Levain's
+    // sample zones, Toaster's kit — got none of it here, because this path and the
+    // live `wasmDeviceRegistry` are two registries, not one builder with a flag.
+    // Levain consequently exported silence. Awaiting this is the point: an offline
+    // context renders faster than real time, so a load that is merely started never
+    // lands.
+    await getAudioDeviceRuntimeSink().prepareOfflineInstrument({
+        deviceId: device.id,
+        deviceType: device.type,
+        port: result.workletNode.port,
+    });
 
     return strategy;
 }
