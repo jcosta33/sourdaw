@@ -285,7 +285,15 @@ export const NATIVE_DSP_DESCRIPTORS: PluginDescriptor[] = [
                 value: 0,
                 defaultValue: 0,
                 minValue: 0,
-                maxValue: 5,
+                // 6 is Reverse, the highest value the selector can produce. 4
+                // and 5 fall inside the range but select nothing: they belong
+                // to the convolution-backed engines, which need an impulse
+                // response no code can supply, and the engine dispatch routes
+                // them to Plate. This range is not what keeps them unreachable
+                // — nothing clamps a parameter write against a descriptor —
+                // it just stops the declared range from contradicting both of
+                // its neighbours, which at `maxValue: 5` it did.
+                maxValue: 6,
                 unit: '',
                 automatable: false,
                 hasAutomation: false,

@@ -65,6 +65,19 @@ enum ReverbEngine {
     Reverse(ReverseReverb),
 }
 
+/// An engine that is built and renders, but that no `algorithm` wire value
+/// selects.
+///
+/// Named rather than numbered so the reason travels with the call: these two
+/// are convolution-backed, they need an impulse response, and no transport
+/// delivers one yet. When one exists, they get wire values in `set_param` and
+/// this type goes away.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UnexposedEngine {
+    Convolution,
+    Hybrid,
+}
+
 // ---------------------------------------------------------------------------
 // WASM instance — unified interface
 // ---------------------------------------------------------------------------
@@ -104,9 +117,19 @@ impl ProofChamberInstance {
                     1 => ReverbEngine::Fdn8(FdnReverb::new(sr, 8)),
                     2 => ReverbEngine::Fdn16(FdnReverb::new(sr, 16)),
                     3 => ReverbEngine::Spring(SpringReverb::new(sr)),
-                    4 => ReverbEngine::Convolution(ConvolutionEngine::new(sr)),
-                    5 => ReverbEngine::Hybrid(HybridReverb::new(sr)),
                     6 => ReverbEngine::Reverse(ReverseReverb::new(sr)),
+                    // 4 (Convolution) and 5 (Hybrid) are reserved, not free.
+                    // Both are built and both render, but both need an impulse
+                    // response and nothing can deliver one: `load_ir` has no
+                    // caller anywhere in the application and no impulse
+                    // responses ship. Selecting either would hand the user an
+                    // engine that passes its dry input through and calls the
+                    // result reverb, so they fall through to Plate until an IR
+                    // transport exists. Their numbers stay assigned, because
+                    // this dispatch is a wire format — `algorithm` is written
+                    // into project files and replayed verbatim — and reusing 4
+                    // or 5 for something else would silently repoint any value
+                    // already stored.
                     _ => ReverbEngine::Plate(ProofChamber::new(sr)),
                 };
                 return;
@@ -245,9 +268,29 @@ impl ProofChamberInstance {
     }
 }
 
+/// Rust-only affordances, deliberately outside the `#[wasm_bindgen]` block
+/// above so none of this reaches the JS surface.
+impl ProofChamberInstance {
+    /// Switch to an engine no wire value selects.
+    ///
+    /// Not exported to JS, which is the whole point: the worklet has no way to
+    /// call it, so a preset, a project file or a model-emitted parameter write
+    /// cannot reach these engines. It exists so they stay under test — the
+    /// allocation pin in `tests/reverb_process_rt.rs` needs to drive the
+    /// convolution render path — rather than being quietly untested code that
+    /// nobody can run at all.
+    pub fn select_unexposed_engine(&mut self, which: UnexposedEngine) {
+        let sr = self.sample_rate;
+        self.engine = match which {
+            UnexposedEngine::Convolution => ReverbEngine::Convolution(ConvolutionEngine::new(sr)),
+            UnexposedEngine::Hybrid => ReverbEngine::Hybrid(HybridReverb::new(sr)),
+        };
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::ProofChamberInstance;
+    use super::{ProofChamberInstance, UnexposedEngine};
     use assert_no_alloc::{assert_no_alloc, AllocDisabler};
 
     #[global_allocator]
@@ -259,7 +302,9 @@ mod tests {
         // Algorithmic engines report zero latency.
         assert_eq!(instance.get_latency(), 0);
 
-        instance.set_param("algorithm", 4.0); // Convolution
+        // Wire value 4 no longer reaches Convolution, so this goes through the
+        // Rust-only selector the engine's own tests use.
+        instance.select_unexposed_engine(UnexposedEngine::Convolution);
         assert_eq!(
             instance.get_latency(),
             128,
