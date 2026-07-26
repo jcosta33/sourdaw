@@ -1,68 +1,79 @@
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { createEvidenceManifest, type EvidenceRunIdentity } from '../../../scripts/agent-campaign/evidenceContract';
-import { validateEvidenceManifest } from '../../../scripts/agent-campaign/evidenceManifest';
-import { generateEvidenceManifest } from '../../../scripts/agent-campaign/generateEvidenceManifest';
+import { createEvidencePolicy, type EvidenceRunIdentity } from '../../../scripts/agent-campaign/evidenceContract';
+import {
+    computeEvidencePolicyDigest,
+    evidencePolicyTransitions,
+    validateEvidenceManifest,
+    validateEvidencePolicy,
+} from '../../../scripts/agent-campaign/evidenceManifest';
+import {
+    generateEvidenceManifest,
+    generateEvidencePolicy,
+} from '../../../scripts/agent-campaign/generateEvidenceManifest';
 
-const BASELINE: EvidenceRunIdentity = {
-    observedCommit: '28920e9cf61367c25da2da1a092db6f720899ccc',
-    observedDirty: false,
-    capturedAt: '2026-07-26T18:49:17.139Z',
-};
-const manifestSource = readFileSync(resolve(process.cwd(), 'evidence/agent-campaign/manifest.json'), 'utf8');
-const checkedManifest = createEvidenceManifest(BASELINE);
-const dirtySource = generateEvidenceManifest({ ...BASELINE, observedDirty: true });
-const releaseError = 'mandatory WebLLM artifact closure is not release ready';
-type Manifest = ReturnType<typeof createEvidenceManifest>;
-type ValidationOverrides = Partial<EvidenceRunIdentity> & { source?: string; releaseReady?: boolean };
-
-function validate(overrides: ValidationOverrides = {}): Promise<string[]> {
-    return validateEvidenceManifest({ ...BASELINE, source: manifestSource, releaseReady: false, ...overrides });
+const policySource = readFileSync(resolve(process.cwd(), 'evidence/agent-campaign/manifest.json'), 'utf8');
+const observedCommit = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+const capturedAt = '2026-07-26T20:00:00.000Z';
+const observedNow = '2026-07-26T20:00:30.000Z';
+const identity: EvidenceRunIdentity = { observedCommit, observedDirty: false, capturedAt };
+const run = generateEvidenceManifest;
+const source = run({ policySource, ...identity });
+const dirtySource = run({ policySource, ...identity, observedDirty: true });
+const forgedCaptureSource = run({ policySource, ...identity, capturedAt: '2000-01-01T00:00:00.000Z' });
+const policy = createEvidencePolicy();
+type Policy = ReturnType<typeof createEvidencePolicy>;
+type Validation = Parameters<typeof validateEvidenceManifest>[0];
+function validate(overrides: Partial<Validation> = {}): Promise<string[]> {
+    const observed = { observedCommit, observedDirty: false, observedCapturedAt: capturedAt, observedNow };
+    return validateEvidenceManifest({ source, policySource, releaseReady: false, ...observed, ...overrides });
 }
-
-function mutate(apply: (draft: Manifest) => void): string {
-    const draft = structuredClone(checkedManifest);
+function mutatePolicy(apply: (draft: Policy) => void): string {
+    const draft = structuredClone(policy);
     apply(draft);
     return `${JSON.stringify(draft)}\n`;
 }
-
 describe('agent campaign evidence manifest', () => {
-    it('generates complete frozen rows for the explicitly observed baseline', async () => {
-        expect(generateEvidenceManifest(BASELINE)).toBe(manifestSource);
+    it('checks the versioned policy, observed run envelope, and pending WebLLM release', async () => {
+        expect(generateEvidencePolicy()).toBe(policySource);
+        await expect(validateEvidencePolicy(policySource)).resolves.toEqual([]);
+        await expect(computeEvidencePolicyDigest(policySource)).resolves.toBe(evidencePolicyTransitions.at(-1)?.sha256);
+        expect(evidencePolicyTransitions.at(-1)).toMatchObject({
+            policyVersion: 2,
+            predecessorSha256: '94f87d34436dd6e9b1ac0eff3c663ff0123c3b835daaa0aeb08cfa7dbccbab42',
+            transitionReason: 'Separate the checked policy template from observed run provenance',
+            governingHashTransition: 'unchanged: no governing source hash changed',
+        });
         await expect(validate()).resolves.toEqual([]);
-        expect(checkedManifest.inventories.gates.entries).toHaveLength(75);
-        expect(checkedManifest.inventories.results.entries).toHaveLength(88);
-        for (const id of ['conflictDetection', 'lockDetection', 'reversionDetection', 'staleRevisionDetection']) {
-            expect(checkedManifest.thresholds[id]).toEqual(['exact', 1]);
-        }
-        expect(() => Object.assign(checkedManifest.capabilities[0]!, { ownerTask: '' })).toThrow(TypeError);
-        expect(createEvidenceManifest(BASELINE)).not.toBe(checkedManifest);
-    });
-
-    it('fails release admission while mandatory WebLLM lacks an immutable digest closure', async () => {
-        const missing = checkedManifest.environment.webLlmArtifactClosure.missingDigestCategories.join(',');
+        await expect(validate({ source: policySource })).resolves.toContain(
+            'checked policy template is not a run envelope'
+        );
+        expect([policy.inventories.gates.entries.length, policy.inventories.results.entries.length]).toEqual([75, 88]);
+        expect(() => Object.assign(policy.capabilities[0]!, { ownerTask: '' })).toThrow(TypeError);
+        const missing = policy.environment.webLlmArtifactClosure.missingDigestCategories.join(',');
         expect(missing).toBe('config,tokenizer,weights,wasm');
-        await expect(validate({ releaseReady: true })).resolves.toContain(releaseError);
+        await expect(validate({ releaseReady: true })).resolves.not.toEqual([]);
     });
-
     it.each([
-        ['stale head', { observedCommit: '1111111111111111111111111111111111111111' }],
+        ['stale head', { observedCommit: '1'.repeat(40) }],
         ['dirty checkout', { observedDirty: true, source: dirtySource }],
+        ['caller-forged capture', { source: forgedCaptureSource }],
+        ['unknown envelope field', { source: source.replace('{"envelopeVersion":1', '{"envelopeVersion":1,"x":0') }],
+        ['stale capture', { observedNow: '2026-07-26T20:01:00.001Z' }],
+        ['future capture', { observedNow: '2026-07-26T19:59:59.999Z' }],
         ['mode omission', { releaseReady: undefined }],
-    ])('rejects %s', async (_name, identity) => {
-        await expect(validate(identity)).resolves.not.toEqual([]);
+    ])('rejects %s', async (_name, overrides) => {
+        await expect(validate(overrides)).resolves.not.toEqual([]);
     });
-
     it.each([
-        ['provenance', (draft: Manifest) => (draft.identity.buildProvenance.prerequisiteCommit = '1'.repeat(40))],
-        ['timestamp', (draft: Manifest) => (draft.identity.buildProvenance.capturedAt = 'not-an-iso-timestamp')],
-        ['gate omission', (draft: Manifest) => draft.inventories.gates.entries.shift()],
-        ['result pairing', (draft: Manifest) => (draft.inventories.results.entries[0]!.gateOrSuiteId = 'AC-002')],
-        ['owner authority', (draft: Manifest) => (draft.capabilities[0]!.ownerTask = '')],
-    ])('fails closed on %s mutation', async (_name, apply) => {
-        await expect(validate({ source: mutate(apply) })).resolves.not.toEqual([]);
+        ['gate omission', (draft: Policy) => draft.inventories.gates.entries.shift()],
+        ['result pairing', (draft: Policy) => (draft.inventories.results.entries[0]!.gateOrSuiteId = 'AC-002')],
+        ['owner authority', (draft: Policy) => (draft.capabilities[0]!.ownerTask = '')],
+    ])('fails closed on %s policy mutation', async (_name, apply) => {
+        await expect(validateEvidencePolicy(mutatePolicy(apply))).resolves.not.toEqual([]);
     });
 });

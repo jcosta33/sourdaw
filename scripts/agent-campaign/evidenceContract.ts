@@ -1,46 +1,32 @@
-const TASKS: Record<string, string> = {
-    SA00: 'TASK-SA-00-protocol-governance',
-    SA01: 'TASK-SA-01-command-registry-and-outcomes',
-    SA02: 'TASK-SA-02-revision-preview-and-compensation',
-    SA03: 'TASK-SA-03-query-brief-and-resolution',
-    SA04: 'TASK-SA-04-local-provider-runtime',
-    SA05: 'TASK-SA-05-remote-provider-security',
-    SA06: 'TASK-SA-06-run-tool-context-and-planning',
-    SA07: 'TASK-SA-07-current-producer-cutover',
-    SA08: 'TASK-SA-08-command-coverage-and-transforms',
-    SA09: 'TASK-SA-09-manifests-catalog-and-assets',
-    SA10: 'TASK-SA-10-workspace-trust-and-preview',
-    SA11: 'TASK-SA-11-render-and-analysis',
-    SA12: 'TASK-SA-12-vibe-mixing-scope-and-planning',
-    SA13: 'TASK-SA-13-deferred-media-workflow-guards',
-    SA14: 'TASK-SA-14-external-adapters',
-    SA15: 'TASK-SA-15-hardening-and-retirement',
-};
-
-const table = (source: string): string[][] =>
-    source
+const taskSuffixes = `
+protocol-governance command-registry-and-outcomes revision-preview-and-compensation query-brief-and-resolution
+local-provider-runtime remote-provider-security run-tool-context-and-planning current-producer-cutover
+command-coverage-and-transforms manifests-catalog-and-assets workspace-trust-and-preview render-and-analysis
+vibe-mixing-scope-and-planning deferred-media-workflow-guards external-adapters hardening-and-retirement
+`
+    .trim()
+    .split(/\s+/);
+function table(source: string): string[][] {
+    return source
         .trim()
-        .split('\n')
+        .split(/\n|;/)
         .map((row) => row.trim().split('|'));
-const task = (code: string): string => TASKS[code] ?? '';
-
+}
+const task = (code: string): string => `TASK-SA-${code.slice(2)}-${taskSuffixes[Number(code.slice(2))]}`;
 function numberedIds({ prefix, count }: { prefix: string; count: number }): string[] {
     return Array.from({ length: count }, (_, index) => `${prefix}-${String(index + 1).padStart(3, '0')}`);
 }
-
 const boundaryCommands: Record<string, string> = {
     provider: 'pnpm test:run src/modules/AiRuntime/repositories/__tests__/providerSecretBoundary.spec.ts',
     voice: 'pnpm test:run src/modules/AiRuntime/useCases/voiceInput/__tests__/localVoiceCommandBoundary.spec.ts',
 };
-const defaultDetector = 'pnpm deps:validate';
 function detector(code: string): string {
     const suiteId = code === 'media' ? 'deferred-media-boundary' : code.replace('suite:', '');
     if (code === 'media' || code.startsWith('suite:')) {
         return `node --experimental-strip-types scripts/agent-campaign/run-evidence-gate.ts --suite ${suiteId} --manifest evidence/agent-campaign/manifest.json`;
     }
-    return boundaryCommands[code] ?? defaultDetector;
+    return boundaryCommands[code] ?? 'pnpm deps:validate';
 }
-
 const gateIds = [...numberedIds({ prefix: 'AC', count: 63 }), ...numberedIds({ prefix: 'PG', count: 12 })];
 const capabilityRows = table(`
 webllm-browser|mandatory|SA04|browser|webgpu-worker|always|Standalone browser route|suite:webllm-real
@@ -71,93 +57,52 @@ const capabilities = capabilityRows.map((row) => ({
     ownerTask: task(row[2] ?? ''),
     detectingCommand: detector(row[7] ?? ''),
 }));
-
 const ownerRows = table(`
-SA07|AC-001
-SA03|AC-002,AC-003,AC-004,AC-005
-SA01|AC-006,AC-007,AC-009,AC-010,AC-059
-SA08|AC-008,AC-037,AC-063
-SA02|AC-011,AC-012,AC-014,AC-015,AC-016
-SA10|AC-013,AC-050,AC-061
+SA07|AC-001;SA03|AC-002,AC-003,AC-004,AC-005
+SA01|AC-006,AC-007,AC-009,AC-010,AC-059;SA08|AC-008,AC-037,AC-063
+SA02|AC-011,AC-012,AC-014,AC-015,AC-016;SA10|AC-013,AC-050,AC-061
 SA00|AC-017,AC-060,PG-005,PG-011
 SA06|AC-018,AC-019,AC-020,AC-022,AC-032,AC-033,AC-034,AC-035,AC-036,AC-038
-SA04|AC-021,AC-023,AC-024,AC-028,AC-029
-SA05|AC-025,AC-026,AC-027,AC-030,AC-031,AC-057
-SA09|AC-039,AC-040,AC-049,AC-062
-SA11|AC-041,AC-042,AC-043
-SA12|AC-044,AC-045,AC-046,AC-047
-SA13|AC-048
-SA14|AC-051
+SA04|AC-021,AC-023,AC-024,AC-028,AC-029;SA05|AC-025,AC-026,AC-027,AC-030,AC-031,AC-057
+SA09|AC-039,AC-040,AC-049,AC-062;SA11|AC-041,AC-042,AC-043
+SA12|AC-044,AC-045,AC-046,AC-047;SA13|AC-048;SA14|AC-051
 SA15|AC-052,AC-053,AC-054,AC-055,AC-056,AC-058,PG-001,PG-002,PG-003,PG-004,PG-006,PG-007,PG-008,PG-009,PG-010,PG-012
 `);
 const ownerByGate = new Map(
-    ownerRows.flatMap((row) => {
-        const [taskCode = '', ids = ''] = row;
-        return ids.split(',').map((gateId) => [gateId, task(taskCode)] as const);
-    })
+    ownerRows.flatMap(([taskCode = '', ids = '']) => ids.split(',').map((gateId) => [gateId, task(taskCode)] as const))
 );
-
 const thresholdRows = table(`
-acceptedBatchValidation|minimum|1
-adapterOverheadP95Ms|maximumExclusive|25
-audioDeadlineMisses|maximum|0
-cancellationUiMs|maximum|1000
-clarifyPrecision|minimum|0.9
-clarifyRecall|minimum|0.98
-commandSourceOperationCount|exact|130
-conflictDetection|exact|1
-generalScopeExactness|minimum|0.98
-humanAcceptance|minimum|0.8
-humanKappa|minimum|0.6
-humanRaters|minimum|2
-lockDetection|exact|1
-mainThreadLongTaskMs|maximum|50
-oracleMutations|maximum|0
-primaryOutcomeMacroF1|minimum|0.95
-protectedScopeExactness|minimum|1
-queryAndBatchP95Ms|maximum|1000
-regressionRatio|maximum|0.1
-reversionDetection|exact|1
-safetyOutcomeRecall|minimum|1
-staleRevisionDetection|exact|1
-unnecessaryAbstention|maximum|0.1
-unsafeWriteFalsePositives|maximum|0
+acceptedBatchValidation|minimum|1;adapterOverheadP95Ms|maximumExclusive|25;audioDeadlineMisses|maximum|0
+cancellationUiMs|maximum|1000;clarifyPrecision|minimum|0.9;clarifyRecall|minimum|0.98
+commandSourceOperationCount|exact|130;conflictDetection|exact|1;generalScopeExactness|minimum|0.98
+humanAcceptance|minimum|0.8;humanKappa|minimum|0.6;humanRaters|minimum|2
+lockDetection|exact|1;mainThreadLongTaskMs|maximum|50;oracleMutations|maximum|0
+primaryOutcomeMacroF1|minimum|0.95;protectedScopeExactness|minimum|1;queryAndBatchP95Ms|maximum|1000
+regressionRatio|maximum|0.1;reversionDetection|exact|1;safetyOutcomeRecall|minimum|1
+staleRevisionDetection|exact|1;unnecessaryAbstention|maximum|0.1;unsafeWriteFalsePositives|maximum|0
 `);
-export const thresholds: Record<string, [string, number]> = Object.fromEntries(
-    thresholdRows.map((row) => {
-        const [id = '', comparator = '', rawValue = ''] = row;
-        return [id, [comparator, Number(rawValue)]];
-    })
+const thresholds: Record<string, [string, number]> = Object.fromEntries(
+    thresholdRows.map(([id = '', comparator = '', rawValue = '']) => [id, [comparator, Number(rawValue)]])
 );
-
 const bindingRows = table(`
-AC-008|commandSourceOperationCount
-AC-021|adapterOverheadP95Ms
+AC-008|commandSourceOperationCount;AC-021|adapterOverheadP95Ms
 AC-053|cancellationUiMs,mainThreadLongTaskMs,queryAndBatchP95Ms,regressionRatio
 AC-054|acceptedBatchValidation,clarifyPrecision,clarifyRecall,conflictDetection,generalScopeExactness,humanAcceptance,humanKappa,humanRaters,lockDetection,oracleMutations,primaryOutcomeMacroF1,protectedScopeExactness,reversionDetection,safetyOutcomeRecall,staleRevisionDetection,unnecessaryAbstention,unsafeWriteFalsePositives
 PG-008|audioDeadlineMisses
 `);
-export const thresholdBindings: Record<string, string[]> = Object.fromEntries(
-    bindingRows.map((row) => {
-        const [gateId = '', ids = ''] = row;
-        return [gateId, ids.split(',')];
-    })
+const thresholdBindings: Record<string, string[]> = Object.fromEntries(
+    bindingRows.map(([gateId = '', ids = '']) => [gateId, ids.split(',')])
 );
-
 const suiteRows = table(`
-webllm-real|SA04|always|webllm-browser|-
-native-local-real|SA04|capability.native-local-tauri == admitted|native-local-tauri|-
-openai-real|SA05|capability.openai-tauri == admitted|openai-tauri|-
-anthropic-real|SA05|capability.anthropic-tauri == admitted|anthropic-tauri|-
+webllm-real|SA04|always|webllm-browser|-;native-local-real|SA04|capability.native-local-tauri == admitted|native-local-tauri|-
+openai-real|SA05|capability.openai-tauri == admitted|openai-tauri|-;anthropic-real|SA05|capability.anthropic-tauri == admitted|anthropic-tauri|-
 compatible-provider-real|SA05|capability.compatible-provider-tauri == admitted|compatible-provider-tauri|-
 deferred-media-boundary|SA13|always|model-audio-input-output|-
-browser-ui|SA10|always|-|-
-packaged-tauri-macos-ui|SA10|platform == darwin|-|-
+browser-ui|SA10|always|-|-;packaged-tauri-macos-ui|SA10|platform == darwin|-|-
 two-client-collaboration|SA15|always|-|-
 audio-deadline|SA11|always|-|audioDeadlineMisses,mainThreadLongTaskMs
 performance-and-cost|SA15|always|-|adapterOverheadP95Ms,cancellationUiMs,queryAndBatchP95Ms,regressionRatio
-retention-and-deletion|SA15|always|-|-
-accessibility|SA15|always|-|-
+retention-and-deletion|SA15|always|-|-;accessibility|SA15|always|-|-
 `);
 const suites = suiteRows.map((row) => {
     const [id = '', taskCode = '', requiredWhen = '', rawCapability = '', rawThresholds = ''] = row;
@@ -165,8 +110,7 @@ const suites = suiteRows.map((row) => {
     const boundThresholds = rawThresholds === '-' ? [] : rawThresholds.split(',');
     return { id, owningTask: task(taskCode), requiredWhen, capabilityId, thresholds: boundThresholds };
 });
-export const suiteIds = suites.map(({ id }) => id);
-
+const suiteIds = suites.map(({ id }) => id);
 const gateFields =
     'gateId,owningTask,requirementId,command,arguments,prerequisiteGateIds,requiredWhen,assertions,thresholds,timeoutMs,retryPolicy,outputSchema,evidencePaths'.split(
         ','
@@ -175,13 +119,17 @@ const resultFields =
     'resultId,gateOrSuiteId,fixtureIds,status,startedAt,endedAt,exitStatus,stdoutSha256,stderrSha256,assertionTotals,metricSamples,aggregates,rawSamplePaths,environmentMatch,capabilityDecision,reviewerDisposition'.split(
         ','
     );
-const fixtureFields =
-    'fixtureId,path,schemaVersion,sha256,labelVisibility,split,requirementIds,oracleType,classification';
+const fixture = 'fixtureId,path,schemaVersion,sha256,labelVisibility,split,requirementIds,oracleType,classification';
 const scanPatterns = 'credentials,authorization-headers,prompts,project-names,lyrics,private-paths,raw-midi,raw-audio';
 const forbiddenEvidence =
     'raw-credentials,authorization-headers,raw-prompts,project-names,lyrics,private-paths,raw-midi,raw-audio';
 const gateArgumentPrefix = ['--experimental-strip-types', 'scripts/agent-campaign/run-evidence-gate.ts', '--task'];
 const gateArgumentSuffix = ['--manifest', 'evidence/agent-campaign/manifest.json'];
+const emptyResultFields = Object.fromEntries(
+    'startedAt,endedAt,exitStatus,stdoutSha256,stderrSha256,assertionTotals,environmentMatch,capabilityDecision,reviewerDisposition'
+        .split(',')
+        .map((key) => [key, null])
+);
 const gateEntries = gateIds.map((gateId) => {
     const owningTask = ownerByGate.get(gateId) ?? '';
     return {
@@ -205,29 +153,18 @@ const resultEntries = [...gateIds, ...suiteIds].map((gateOrSuiteId) => ({
     gateOrSuiteId,
     fixtureIds: [],
     status: 'pending',
-    ...Object.fromEntries(
-        'startedAt,endedAt,exitStatus,stdoutSha256,stderrSha256,assertionTotals'.split(',').map((key) => [key, null])
-    ),
+    ...emptyResultFields,
     metricSamples: [],
     aggregates: {},
     rawSamplePaths: [],
-    ...Object.fromEntries(
-        'environmentMatch,capabilityDecision,reviewerDisposition'.split(',').map((key) => [key, null])
-    ),
 }));
-
-const evidenceManifestTemplate = deepFreeze({
+const evidencePolicyTemplate = deepFreeze({
     schemaVersion: 1,
+    policyVersion: 2,
+    policyTransitionId: 'evidence-policy-v2',
     campaignId: 'sourdaw-agent',
     identity: {
         baselineCommit: 'b5c1dfeede35b52325b69c584db6a629349ae668',
-        integratedCommit: '28920e9cf61367c25da2da1a092db6f720899ccc',
-        dirty: false,
-        buildProvenance: {
-            kind: 'local',
-            prerequisiteCommit: '28920e9cf61367c25da2da1a092db6f720899ccc',
-            capturedAt: '2026-07-26T18:49:17.139Z',
-        },
         lockfileSha256: '993d570ce02a3e110ba75bcfff0cab873e32024ba716123735820cff7c0d37d4',
         governingHashes: {
             campaignIndex: '15f084e9138beb2dfe5e4b1bf61448b05a0061839579ecacacdedbb4f976e505',
@@ -305,7 +242,7 @@ const evidenceManifestTemplate = deepFreeze({
     capabilities,
     inventories: {
         fixtures: {
-            requiredFields: fixtureFields.split(','),
+            requiredFields: fixture.split(','),
             entries: [],
         },
         gates: { requiredFields: gateFields, entries: gateEntries },
@@ -322,9 +259,6 @@ const evidenceManifestTemplate = deepFreeze({
         forbiddenOrdinaryEvidence: forbiddenEvidence.split(','),
     },
 });
-
-export type EvidenceRunIdentity = { observedCommit: string; observedDirty: boolean; capturedAt: string };
-
 function deepFreeze<Value>(value: Value): Value {
     if (typeof value === 'object' && value !== null) {
         for (const child of Object.values(value)) {
@@ -334,19 +268,7 @@ function deepFreeze<Value>(value: Value): Value {
     }
     return value;
 }
+export type EvidenceRunIdentity = { observedCommit: string; observedDirty: boolean; capturedAt: string };
+export type EvidencePolicy = typeof evidencePolicyTemplate;
 
-export function createEvidenceManifest(identity: EvidenceRunIdentity): typeof evidenceManifestTemplate {
-    if (!/^[a-f0-9]{40}$/.test(identity.observedCommit) || typeof identity.observedDirty !== 'boolean') {
-        throw new Error('observed commit and dirty state are invalid');
-    }
-    const parsedTimestamp = Date.parse(identity.capturedAt);
-    if (!Number.isFinite(parsedTimestamp) || new Date(parsedTimestamp).toISOString() !== identity.capturedAt) {
-        throw new Error('capturedAt must be a canonical ISO timestamp');
-    }
-    const manifest = structuredClone(evidenceManifestTemplate);
-    manifest.identity.integratedCommit = identity.observedCommit;
-    manifest.identity.dirty = identity.observedDirty;
-    manifest.identity.buildProvenance.prerequisiteCommit = identity.observedCommit;
-    manifest.identity.buildProvenance.capturedAt = identity.capturedAt;
-    return deepFreeze(manifest);
-}
+export const createEvidencePolicy = (): EvidencePolicy => deepFreeze(structuredClone(evidencePolicyTemplate));
