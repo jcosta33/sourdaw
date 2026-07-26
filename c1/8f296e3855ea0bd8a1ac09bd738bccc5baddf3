@@ -1,0 +1,19 @@
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/renderMyceliumAscendantDemo.spec.ts
+  s_0d39f3a4a4357a::t_74e4679b6edd40 113-126
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "c18f296e3855ea0bd8a1ac09bd738bccc5baddf3",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
