@@ -1,0 +1,19 @@
+src/modules/Project/useCases/projectTemplates/templateDefinitions/__tests__/createMyceliumFromTemplate.integration.spec.ts
+  s_ac9b259eab20ba::t_ae0f4d3b979897 1-323
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "a102500cbf062840d574d22d0eae2471ef67e59b",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
