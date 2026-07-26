@@ -904,4 +904,58 @@ mod tests {
             "a stolen voice must not inherit the previous note's pressure, got {ratio}x"
         );
     }
+
+    /// `fallback.rs` opens with: "produces a simple sine wave when no samples
+    /// are loaded. This ensures the instrument always makes sound in response
+    /// to MIDI, even before sample content is available."
+    ///
+    /// This test holds that sentence to its word on the one state it names —
+    /// an engine with no sample content — and it is deliberately written
+    /// against a *bare* engine. It does not call `clear_zones()`. Waking the
+    /// fallback with `clear_zones()` is the reflex that makes a Levain harness
+    /// go green while leaving a default-constructed engine mute, and it is how
+    /// this stayed invisible: every existing path happens to clear zones before
+    /// playing, so nothing ever observed the constructed state.
+    #[test]
+    fn a_freshly_constructed_engine_sounds_without_being_cleared_first() {
+        let mut engine = LevainEngine::new(SAMPLE_RATE, 8);
+        engine.note_on(60, 100);
+        let rendered = render(&mut engine, 24);
+
+        let level = rms(&rendered);
+        assert!(
+            level > 1.0e-3,
+            "a Levain engine that has never begun a sample load rendered RMS \
+             {level:e} for a held note — silence. The fallback tone exists to \
+             cover exactly this state and its own module header promises the \
+             instrument 'always makes sound in response to MIDI'."
+        );
+    }
+
+    /// The other half of the contract, so the fix above cannot be "leave the
+    /// sine on forever". Once real zones exist the sampler must own the output
+    /// and the fallback must be out of the path.
+    #[test]
+    fn loading_real_zones_takes_the_fallback_tone_back_out_of_the_path() {
+        let mut engine = engine_with_sawtooth_zone();
+        engine.note_on(60, 100);
+        let rendered = render(&mut engine, 24);
+
+        assert!(
+            rms(&rendered) > 1.0e-3,
+            "the sampler voice must sound once a zone is loaded"
+        );
+        // Both candidate sources are periodic, so the zero-crossing rate names
+        // which one is sounding: the loaded zone is a 200 Hz sawtooth, while
+        // the fallback would sing MIDI 60 at ~261.6 Hz. Neither pitch is close
+        // to the other's tolerance, so this distinguishes them outright.
+        let duration_seconds = 24.0 * 128.0 / SAMPLE_RATE;
+        let implied_hz = zero_crossings(&rendered) as f32 / 2.0 / duration_seconds;
+        assert!(
+            (180.0..=225.0).contains(&implied_hz),
+            "the rendered pitch is {implied_hz:.1} Hz. The loaded sawtooth zone \
+             is 200 Hz and the fallback sine at MIDI 60 is 261.6 Hz, so this \
+             output is not the sampler voice the zone map should have selected."
+        );
+    }
 }

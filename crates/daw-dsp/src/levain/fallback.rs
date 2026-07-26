@@ -97,7 +97,18 @@ impl FallbackToneEngine {
         Self {
             voices: [FallbackVoice::new(); MAX_FALLBACK_VOICES],
             sample_rate,
-            enabled: false,
+            // Armed from construction, which is what the module header above
+            // promises: the fallback covers the window before sample content
+            // exists, and a freshly built engine is squarely inside it.
+            //
+            // This used to be `false`, leaving the only writer that turns it on
+            // as `LevainEngine::clear_zones`. Every shipped load path happens to
+            // clear zones before playing a note, so the sine did sound during a
+            // normal load — but an engine that had never *begun* a load was
+            // mute in exactly the state this module exists to cover, and the
+            // header claimed otherwise. `build_zone_map` still switches it off
+            // once real zones exist, so the sampler owns the output as before.
+            enabled: true,
         }
     }
 
