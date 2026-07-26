@@ -7,6 +7,8 @@ import {
 } from '../../services/transformMidiGlobalTimeState';
 import { midiStore, type MidiStoreState } from '../../stores/midiStore';
 
+import { midiTimeStateCodec } from './midiTimeStateCodec';
+
 type MidiGlobalTimeClipSnapshot = {
     clipId: string;
     startBeat: number;
@@ -63,6 +65,14 @@ type MidiGlobalTimeReplayNote = MidiGeneratedNoteIdentityRequest & {
 type MidiGlobalTimeReplayPlan = {
     version: 1;
     notes: readonly MidiGlobalTimeReplayNote[];
+};
+
+type MidiTimeStateSnapshot = NonNullable<ReturnType<typeof midiTimeStateCodec.encodeState>>;
+
+type MidiGlobalTimeStateRestorePlan = {
+    version: 1;
+    expected: MidiTimeStateSnapshot;
+    replacement: MidiTimeStateSnapshot;
 };
 
 type PrepareMidiGlobalTimeTransactionInput = {
@@ -587,9 +597,33 @@ function isPublishingPhase(phase: TransactionPhase): boolean {
     return phase === 'publishing';
 }
 
+function createInversePlan(
+    expectedState: MidiStoreState,
+    replacementState: MidiStoreState
+): MidiGlobalTimeStateRestorePlan | null {
+    const expected = midiTimeStateCodec.encodeState(expectedState);
+    const replacement = midiTimeStateCodec.encodeState(replacementState);
+    if (!expected || !replacement) {
+        return null;
+    }
+
+    return {
+        version: 1,
+        expected,
+        replacement,
+    };
+}
+
 export function prepareMidiGlobalTimeTransaction(input: PrepareMidiGlobalTimeTransactionInput) {
     const preparedState = midiStore.value;
-    const prepared = prepareState(preparedState, input);
+    let prepared = prepareState(preparedState, input);
+    let inversePlan: MidiGlobalTimeStateRestorePlan | null = null;
+    if (prepared.status === 'ready' && prepared.hasChanges && preparedState && prepared.nextState) {
+        inversePlan = createInversePlan(prepared.nextState, preparedState);
+        if (!inversePlan) {
+            prepared = rejectPreparation();
+        }
+    }
     let phase: TransactionPhase = prepared.hasChanges ? 'prepared' : 'closed';
 
     function apply(): boolean {
@@ -658,6 +692,7 @@ export function prepareMidiGlobalTimeTransaction(input: PrepareMidiGlobalTimeTra
         status: prepared.status,
         hasChanges: prepared.hasChanges,
         replayPlan: prepared.replayPlan,
+        inversePlan,
         apply,
         revert,
     };
