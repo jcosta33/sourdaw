@@ -1,0 +1,289 @@
+{
+    "capturedAt": "2026-07-26T15:22:54.135Z",
+    "projectSha256": "1cea829dfa15f1e3ac94e611606cc3ef2ac3c4a2bccdfe1cc5707412565ffd9c",
+    "rendererSourceSha256": "3045a06e0d1698b4ea4bcfab99ac3c88ca9ca16ef763e7df1ee2a547c0793640",
+    "sampleRate": 44100,
+    "channelsPerStem": 2,
+    "audibleRmsThreshold": 0.00001,
+    "activeBlockRmsThreshold": 0.0001,
+    "reloadBeforeRender": true,
+    "notes": [
+        "Stem peaks are pre-master measurements and may exceed full scale; mastered stereo metrics are recorded separately in render-evidence.json.",
+        "The isolated Playwright run reloaded the saved project, rendered every eligible stereo source stem for each required window, and reported no renderer warnings, console errors, page errors, failed requests, external requests, or HTTP errors.",
+        "False Floor preserves continuous render history from beat 416 and analyzes only beats 480–484; numerical residue below 1e-10 is treated as silence, independently of the 0.00001 audible-stem threshold."
+    ],
+    "windows": [
+        {
+            "name": "Pressure Bloom",
+            "beats": [128, 192],
+            "timestamps": ["00:53.333", "01:20.000"],
+            "durationSeconds": 26.666666666666668,
+            "automationLaneCount": 115,
+            "automationPointCount": 357,
+            "stemCount": 22,
+            "audibleStemCount": 9,
+            "signals": [
+                {
+                    "track": "Rolling Colony",
+                    "rms": 1.4435167047641826,
+                    "samplePeak": 6.186884880065918,
+                    "activeBlockRatio": 0.8278260869565217
+                },
+                {
+                    "track": "Acid Tendril",
+                    "rms": 0.7156698449181774,
+                    "samplePeak": 5.517019271850586,
+                    "activeBlockRatio": 0.9930434782608696
+                },
+                {
+                    "track": "FM Spores",
+                    "rms": 0.3278736947951726,
+                    "samplePeak": 1.8685593605041504,
+                    "activeBlockRatio": 0.9930434782608696
+                },
+                {
+                    "track": "Impact Field",
+                    "rms": 0.27927421217311155,
+                    "samplePeak": 2.793858051300049,
+                    "activeBlockRatio": 0.9008695652173913
+                },
+                {
+                    "track": "Psy Pluck",
+                    "rms": 0.17968384198701481,
+                    "samplePeak": 2.5861387252807617,
+                    "activeBlockRatio": 0.9130434782608695
+                },
+                {
+                    "track": "Pulse Engine",
+                    "rms": 0.09287173503955243,
+                    "samplePeak": 0.9008182287216187,
+                    "activeBlockRatio": 0.5095652173913043
+                },
+                {
+                    "track": "Fractal Riser",
+                    "rms": 0.0538750992771879,
+                    "samplePeak": 0.6431154012680054,
+                    "activeBlockRatio": 0.8191304347826087
+                },
+                {
+                    "track": "Granular Voices",
+                    "rms": 0.04307597122648556,
+                    "samplePeak": 0.5824320316314697,
+                    "activeBlockRatio": 0.8208695652173913
+                }
+            ]
+        },
+        {
+            "name": "Psilocybin Chapel",
+            "beats": [288, 352],
+            "timestamps": ["02:00.000", "02:26.667"],
+            "durationSeconds": 26.666666666666668,
+            "automationLaneCount": 114,
+            "automationPointCount": 227,
+            "stemCount": 22,
+            "audibleStemCount": 11,
+            "signals": [
+                {
+                    "track": "Root Drone",
+                    "rms": 0.30875537639206563,
+                    "samplePeak": 1.6852315664291382,
+                    "activeBlockRatio": 0.9634782608695652
+                },
+                {
+                    "track": "Rolling Colony",
+                    "rms": 0.17513516666152457,
+                    "samplePeak": 0.9063223600387573,
+                    "activeBlockRatio": 0.808695652173913
+                },
+                {
+                    "track": "Granular Voices",
+                    "rms": 0.05297084197941731,
+                    "samplePeak": 1.6398519277572632,
+                    "activeBlockRatio": 0.8139130434782609
+                },
+                {
+                    "track": "Glitch Spirits",
+                    "rms": 0.050532941614802755,
+                    "samplePeak": 1.104958415031433,
+                    "activeBlockRatio": 0.8226086956521739
+                },
+                {
+                    "track": "Psy Pluck",
+                    "rms": 0.04175589693475092,
+                    "samplePeak": 0.6828276515007019,
+                    "activeBlockRatio": 0.551304347826087
+                },
+                {
+                    "track": "Harmonic Mist",
+                    "rms": 0.01886586676818842,
+                    "samplePeak": 0.448199987411499,
+                    "activeBlockRatio": 0.8365217391304348
+                },
+                {
+                    "track": "Grand Boule Ritual",
+                    "rms": 0.0031505018982485914,
+                    "samplePeak": 0.5627223253250122,
+                    "activeBlockRatio": 0.09391304347826086
+                }
+            ]
+        },
+        {
+            "name": "Singularity Build",
+            "beats": [352, 416],
+            "timestamps": ["02:26.667", "02:53.150"],
+            "durationSeconds": 26.483174603174604,
+            "automationLaneCount": 115,
+            "automationPointCount": 356,
+            "stemCount": 22,
+            "audibleStemCount": 9,
+            "signals": [
+                {
+                    "track": "Rolling Colony",
+                    "rms": 0.6939721656403782,
+                    "samplePeak": 3.0649588108062744,
+                    "activeBlockRatio": 0.8651488616462347
+                },
+                {
+                    "track": "Acid Tendril",
+                    "rms": 0.5204917567352677,
+                    "samplePeak": 7.227946758270264,
+                    "activeBlockRatio": 0.9929947460595446
+                },
+                {
+                    "track": "Impact Field",
+                    "rms": 0.3382177842125192,
+                    "samplePeak": 4.41912841796875,
+                    "activeBlockRatio": 0.6164623467600701
+                },
+                {
+                    "track": "FM Spores",
+                    "rms": 0.16947747829715074,
+                    "samplePeak": 1.6671857833862305,
+                    "activeBlockRatio": 0.9929947460595446
+                },
+                {
+                    "track": "Triplet Helix",
+                    "rms": 0.12414397522868087,
+                    "samplePeak": 2.5094733238220215,
+                    "activeBlockRatio": 0.8756567425569177
+                },
+                {
+                    "track": "Pulse Engine",
+                    "rms": 0.11428979453592526,
+                    "samplePeak": 0.861183762550354,
+                    "activeBlockRatio": 0.4080560420315236
+                },
+                {
+                    "track": "Fractal Riser",
+                    "rms": 0.05824797871289865,
+                    "samplePeak": 0.788302481174469,
+                    "activeBlockRatio": 0.6059544658493871
+                },
+                {
+                    "track": "Glitch Spirits",
+                    "rms": 0.05241750419071428,
+                    "samplePeak": 0.8768613338470459,
+                    "activeBlockRatio": 0.6532399299474606
+                }
+            ]
+        },
+        {
+            "name": "False Floor",
+            "renderBeats": [416, 484],
+            "analysisBeats": [480, 484],
+            "timestamps": ["03:19.451", "03:21.095"],
+            "durationSeconds": 1.6438321995464853,
+            "automationLaneCount": 115,
+            "automationPointCount": 230,
+            "stemCount": 22,
+            "audibleStemCount": 1,
+            "signals": [
+                {
+                    "track": "Parallel Crush",
+                    "rms": 0.00003628117403317126,
+                    "samplePeak": 0.0000362811770173721,
+                    "activeBlockRatio": 0
+                },
+                { "track": "Pulse Engine", "rms": 0, "samplePeak": 0, "activeBlockRatio": 0 },
+                {
+                    "track": "Rolling Colony",
+                    "rms": 6.706661285361156e-18,
+                    "samplePeak": 3.6170834711710587e-16,
+                    "activeBlockRatio": 0
+                },
+                {
+                    "track": "Sub Mycelium",
+                    "rms": 2.750574411011161e-17,
+                    "samplePeak": 1.0288812860300236e-15,
+                    "activeBlockRatio": 0
+                }
+            ]
+        },
+        {
+            "name": "Dissolution",
+            "beats": [544, 576],
+            "timestamps": ["03:45.753", "03:58.994"],
+            "durationSeconds": 13.241587301587302,
+            "automationLaneCount": 115,
+            "automationPointCount": 267,
+            "stemCount": 22,
+            "audibleStemCount": 11,
+            "signals": [
+                {
+                    "track": "Rolling Colony",
+                    "rms": 0.2357555066732587,
+                    "samplePeak": 2.3978068828582764,
+                    "activeBlockRatio": 0.4965034965034965
+                },
+                {
+                    "track": "Sub Mycelium",
+                    "rms": 0.17226110972637257,
+                    "samplePeak": 1.652905821800232,
+                    "activeBlockRatio": 0.4965034965034965
+                },
+                {
+                    "track": "Root Drone",
+                    "rms": 0.1301120542258609,
+                    "samplePeak": 0.5989459156990051,
+                    "activeBlockRatio": 0.9965034965034965
+                },
+                {
+                    "track": "Acid Tendril",
+                    "rms": 0.08112698150514114,
+                    "samplePeak": 1.2508070468902588,
+                    "activeBlockRatio": 0.4230769230769231
+                },
+                {
+                    "track": "Granular Voices",
+                    "rms": 0.035569874861036216,
+                    "samplePeak": 0.5747150778770447,
+                    "activeBlockRatio": 0.7517482517482518
+                },
+                {
+                    "track": "Harmonic Mist",
+                    "rms": 0.027229469968127407,
+                    "samplePeak": 0.5483348965644836,
+                    "activeBlockRatio": 0.2762237762237762
+                },
+                {
+                    "track": "Pulse Engine",
+                    "rms": 0.015329473866596551,
+                    "samplePeak": 0.17984813451766968,
+                    "activeBlockRatio": 0.10139860139860139
+                },
+                {
+                    "track": "Grand Boule Ritual",
+                    "rms": 0.012380496080239261,
+                    "samplePeak": 1.345935583114624,
+                    "activeBlockRatio": 0.1958041958041958
+                },
+                {
+                    "track": "Main Vision",
+                    "rms": 0.011558638738271183,
+                    "samplePeak": 0.19232727587223053,
+                    "activeBlockRatio": 0.25874125874125875
+                }
+            ]
+        }
+    ]
+}

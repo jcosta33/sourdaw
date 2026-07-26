@@ -189,4 +189,22 @@ describe('createMyceliumTopology', () => {
             byId.get(route?.targetTrackId ?? '')?.devices.some((device) => device.id === route?.targetDeviceId)
         ).toBe(true);
     });
+
+    it('uses bundled synthesis only without Crumbs or external audio assets', () => {
+        const { projectData } = createMyceliumAscendantBlueprint();
+        const clips = projectData.arrangement.tracks.flatMap((track) => track.clips);
+        const deviceTypes = projectData.arrangement.tracks.flatMap((track) =>
+            track.devices.map((device) => device.type)
+        );
+
+        expect(projectData.audioBuffers ?? {}).toEqual({});
+        expect(clips.every((clip) => clip.type === 'midi')).toBe(true);
+        expect(
+            clips.every(
+                (clip) =>
+                    clip.bufferId === undefined && clip.audioBufferId === undefined && clip.assetHash === undefined
+            )
+        ).toBe(true);
+        expect(deviceTypes).not.toContain('crumbs');
+    });
 });
