@@ -7,22 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { createMyceliumAscendantBlueprint } from '../createMyceliumAscendantBlueprint';
 
 const RENDER_EVIDENCE_PATH = join(process.cwd(), 'docs/evidence/mycelium-ascendant/render-evidence.json');
-const RENDER_SOURCE_ROOTS = [
-    'public/wasm',
-    'src/infra',
-    'src/modules/Arrangement',
-    'src/modules/AudioEngine',
-    'src/modules/AudioRendering',
-    'src/modules/Automation',
-    'src/modules/MIDI',
-    'src/modules/PluginHost',
-    'src/modules/Project',
-    'src/modules/Routing',
-    'src/modules/Synth',
-    'src/modules/Transport',
-    'src/modules/WorkspaceShell',
-    'src/modules/Yeast',
-] as const;
+const RENDER_SOURCE_ROOTS = ['public/wasm', 'src'] as const;
 const RUNTIME_EXTENSIONS = new Set(['.css', '.js', '.json', '.mjs', '.ts', '.tsx', '.wasm']);
 
 type RenderEvidence = {

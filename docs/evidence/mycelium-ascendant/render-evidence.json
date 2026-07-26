@@ -1,7 +1,7 @@
 {
     "capturedAt": "2026-07-26T14:14:00.595Z",
     "projectSha256": "1cea829dfa15f1e3ac94e611606cc3ef2ac3c4a2bccdfe1cc5707412565ffd9c",
-    "rendererSourceSha256": "933c4771e96fae25e6902cea2c484046fe98ee1fb0a67777232bf1665a8fcca6",
+    "rendererSourceSha256": "f43856e7e1ad02b64c0cfd3e992e1fb8184187aefef2dc20a9accf22266aa4c0",
     "wavSha256": "a198752118fe160d1d4410acc19ced10dbe7279c9f205aa6839a07b0c99bfc92",
     "wavHashScope": "captured analyzed artifact; current stochastic DSP renders are re-analyzed by E2E and attach their own SHA",
     "durationBeats": 576,
