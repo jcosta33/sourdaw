@@ -3,16 +3,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TempoChange, TempoMapStoreState } from '../../../stores/tempoMapStore';
 import type { TimeSignatureChange, TimeSignatureMapStoreState } from '../../../stores/timeSignatureMapStore';
 
-vi.mock('../../../stores/tempoMapStore', async () => {
+vi.mock('../../../stores/tempoMapStore', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../../../stores/tempoMapStore')>();
     const { createStore } = await import('#/infra/store/createStore');
 
-    return { tempoMapStore: createStore() };
+    return { ...actual, tempoMapStore: createStore() };
 });
 
-vi.mock('../../../stores/timeSignatureMapStore', async () => {
+vi.mock('../../../stores/timeSignatureMapStore', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../../../stores/timeSignatureMapStore')>();
     const { createStore } = await import('#/infra/store/createStore');
 
-    return { timeSignatureMapStore: createStore() };
+    return { ...actual, timeSignatureMapStore: createStore() };
 });
 
 const { tempoMapStore } = await import('../../../stores/tempoMapStore');
@@ -75,6 +77,7 @@ function expectClosedWithoutWrite(
     const transaction = prepareTimelineMapTimeOperation({ operation });
 
     expect(transaction.hasChanges).toBe(false);
+    expect(transaction.inversePlan).toBeNull();
     expect(transaction.apply()).toBe(false);
     expect(transaction.revert()).toBe(false);
     expect(tempoMapStore.value).toBe(capturedTempo);
@@ -511,5 +514,221 @@ describe('prepareTimelineMapTimeOperation', () => {
         expect(timeSignatureMapStore.value).toBe(capturedTimeSignature);
         expect(transaction.apply()).toBe(false);
         expect(transaction.revert()).toBe(false);
+    });
+
+    it.each([
+        {
+            name: 'sparse changes array',
+            createTempoState: (): TempoMapStoreState => {
+                const changes: TempoChange[] = [];
+                changes.length = 1;
+                return tempoState(changes);
+            },
+        },
+        {
+            name: 'class-instance state',
+            createTempoState: (): TempoMapStoreState => {
+                class TempoState implements TempoMapStoreState {
+                    changes = [tempoChange('tempo', 4)];
+                }
+                return new TempoState();
+            },
+        },
+        {
+            name: 'accessor change',
+            createTempoState: (): TempoMapStoreState => {
+                const change = tempoChange('tempo', 4);
+                Object.defineProperty(change, 'beat', {
+                    enumerable: true,
+                    get: () => 4,
+                });
+                return tempoState([change]);
+            },
+        },
+    ])('rejects a non-encodable owner state with $name before writes', ({ createTempoState }) => {
+        setStoreStates(createTempoState(), timeSignatureState([timeSignatureChange('signature', 4)]));
+
+        const transaction = expectClosedWithoutWrite({ type: 'insert', atBeat: 4, durationBeats: 2 });
+
+        expect(transaction.status).toBe('rejected');
+    });
+
+    it('returns an exact detached JSON-round-trippable inverse plan for a changed ready operation', () => {
+        const capturedTempo = tempoState([tempoChange('tempo-zero', -0), tempoChange('tempo-shifted', 4)]);
+        const capturedTimeSignature = timeSignatureState([
+            timeSignatureChange('signature-zero', -0),
+            timeSignatureChange('signature-shifted', 4),
+        ]);
+        setStoreStates(capturedTempo, capturedTimeSignature);
+
+        const transaction = prepareTimelineMapTimeOperation({
+            operation: { type: 'insert', atBeat: 4, durationBeats: 2 },
+        });
+        const plan = transaction.inversePlan;
+        if (!plan) {
+            throw new Error('Expected a changed operation to produce an inverse plan');
+        }
+
+        expect(transaction.status).toBe('ready');
+        expect(transaction.hasChanges).toBe(true);
+        expect(plan).toEqual({
+            version: 1,
+            expected: {
+                tempo: {
+                    changes: [
+                        {
+                            id: 'tempo-zero',
+                            beat: { type: 'negative-zero' },
+                            tempo: { type: 'number', value: 120 },
+                            curve: 'instant',
+                        },
+                        {
+                            id: 'tempo-shifted',
+                            beat: { type: 'number', value: 6 },
+                            tempo: { type: 'number', value: 120 },
+                            curve: 'instant',
+                        },
+                    ],
+                },
+                timeSignature: {
+                    changes: [
+                        {
+                            id: 'signature-zero',
+                            beat: { type: 'negative-zero' },
+                            numerator: { type: 'number', value: 4 },
+                            denominator: { type: 'number', value: 4 },
+                        },
+                        {
+                            id: 'signature-shifted',
+                            beat: { type: 'number', value: 6 },
+                            numerator: { type: 'number', value: 4 },
+                            denominator: { type: 'number', value: 4 },
+                        },
+                    ],
+                },
+            },
+            replacement: {
+                tempo: {
+                    changes: [
+                        {
+                            id: 'tempo-zero',
+                            beat: { type: 'negative-zero' },
+                            tempo: { type: 'number', value: 120 },
+                            curve: 'instant',
+                        },
+                        {
+                            id: 'tempo-shifted',
+                            beat: { type: 'number', value: 4 },
+                            tempo: { type: 'number', value: 120 },
+                            curve: 'instant',
+                        },
+                    ],
+                },
+                timeSignature: {
+                    changes: [
+                        {
+                            id: 'signature-zero',
+                            beat: { type: 'negative-zero' },
+                            numerator: { type: 'number', value: 4 },
+                            denominator: { type: 'number', value: 4 },
+                        },
+                        {
+                            id: 'signature-shifted',
+                            beat: { type: 'number', value: 4 },
+                            numerator: { type: 'number', value: 4 },
+                            denominator: { type: 'number', value: 4 },
+                        },
+                    ],
+                },
+            },
+        });
+        expect(JSON.parse(JSON.stringify(plan))).toEqual(plan);
+        expect(tempoMapStore.value).toBe(capturedTempo);
+        expect(timeSignatureMapStore.value).toBe(capturedTimeSignature);
+
+        plan.expected.tempo.changes[1]!.beat = { type: 'number', value: 12 };
+        plan.replacement.timeSignature.changes[1]!.id = 'mutated-plan-id';
+        expect(transaction.apply()).toBe(true);
+        expect(tempoMapStore.value?.changes[1]?.beat).toBe(6);
+        expect(transaction.revert()).toBe(true);
+        expect(timeSignatureMapStore.value?.changes[1]?.id).toBe('signature-shifted');
+    });
+
+    it.each(['tempo', 'time-signature'] as const)(
+        'detects in-place %s captured-state mutation before apply without writes',
+        (owner) => {
+            const capturedTempo = tempoState([tempoChange('tempo', 4)]);
+            const capturedTimeSignature = timeSignatureState([timeSignatureChange('signature', 4)]);
+            setStoreStates(capturedTempo, capturedTimeSignature);
+            const transaction = prepareTimelineMapTimeOperation({
+                operation: { type: 'insert', atBeat: 4, durationBeats: 2 },
+            });
+            if (owner === 'tempo') {
+                capturedTempo.changes[0]!.tempo = 121;
+            } else {
+                capturedTimeSignature.changes[0]!.numerator = 5;
+            }
+            const tempoSet = vi.spyOn(tempoMapStore, 'set');
+            const timeSignatureSet = vi.spyOn(timeSignatureMapStore, 'set');
+
+            expect(transaction.apply()).toBe(false);
+            expect(tempoSet).not.toHaveBeenCalled();
+            expect(timeSignatureSet).not.toHaveBeenCalled();
+        }
+    );
+
+    it.each(['tempo', 'time-signature'] as const)(
+        'detects in-place %s prepared-state mutation before revert without writes',
+        (owner) => {
+            setStoreStates(
+                tempoState([tempoChange('tempo', 4)]),
+                timeSignatureState([timeSignatureChange('signature', 4)])
+            );
+            const transaction = prepareTimelineMapTimeOperation({
+                operation: { type: 'insert', atBeat: 4, durationBeats: 2 },
+            });
+            expect(transaction.apply()).toBe(true);
+            if (owner === 'tempo') {
+                const appliedTempo = tempoMapStore.value;
+                if (!appliedTempo) {
+                    throw new Error('Expected applied tempo state');
+                }
+                appliedTempo.changes[0]!.tempo = 121;
+            } else {
+                const appliedTimeSignature = timeSignatureMapStore.value;
+                if (!appliedTimeSignature) {
+                    throw new Error('Expected applied time-signature state');
+                }
+                appliedTimeSignature.changes[0]!.numerator = 5;
+            }
+            const tempoSet = vi.spyOn(tempoMapStore, 'set');
+            const timeSignatureSet = vi.spyOn(timeSignatureMapStore, 'set');
+
+            expect(transaction.revert()).toBe(false);
+            expect(tempoSet).not.toHaveBeenCalled();
+            expect(timeSignatureSet).not.toHaveBeenCalled();
+        }
+    );
+
+    it('rejects reentrant apply and revert while preserving the outer forward publication', () => {
+        setStoreStates(
+            tempoState([tempoChange('tempo', 4)]),
+            timeSignatureState([timeSignatureChange('signature', 4)])
+        );
+        const transaction = prepareTimelineMapTimeOperation({
+            operation: { type: 'insert', atBeat: 4, durationBeats: 2 },
+        });
+        const reentrantResults: boolean[] = [];
+        unsubscribers.push(
+            tempoMapStore.subscribe(() => {
+                reentrantResults.push(transaction.apply());
+                reentrantResults.push(transaction.revert());
+            })
+        );
+
+        expect(transaction.apply()).toBe(true);
+        expect(reentrantResults).toEqual([false, false]);
+        expect(transaction.revert()).toBe(true);
+        expect(reentrantResults).toEqual([false, false, false, false]);
     });
 });

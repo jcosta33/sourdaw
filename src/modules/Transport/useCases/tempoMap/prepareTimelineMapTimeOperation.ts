@@ -3,6 +3,8 @@ import { batchStoreUpdates } from '#/infra/store/createStore';
 import { tempoMapStore, type TempoMapStoreState } from '../../stores/tempoMapStore';
 import { timeSignatureMapStore, type TimeSignatureMapStoreState } from '../../stores/timeSignatureMapStore';
 
+import { timelineMapTimeStateCodec } from './timelineMapTimeStateCodec';
+
 type InsertTimelineMapTimeOperation = {
     type: 'insert';
     atBeat: number;
@@ -40,13 +42,27 @@ type ReadyTimelineMapStates = {
     timeSignatureHasChanges: boolean;
     tempoState: TempoMapStoreState;
     timeSignatureState: TimeSignatureMapStoreState;
+    capturedSnapshot: TimelineMapTimeStateSnapshot;
     nextTempoState: TempoMapStoreState;
     nextTimeSignatureState: TimeSignatureMapStoreState;
 };
 
 type PreparedTimelineMapStates = { status: 'rejected' } | ReadyTimelineMapStates;
 
-type TransactionPhase = 'prepared' | 'applied' | 'closed';
+type TransactionPhase = 'prepared' | 'publishing' | 'applied' | 'closed';
+
+type TimelineMapTimeStateSnapshot = NonNullable<ReturnType<typeof timelineMapTimeStateCodec.encodeState>>;
+
+type TimelineMapTimeStateRestorePlan = {
+    version: 1;
+    expected: TimelineMapTimeStateSnapshot;
+    replacement: TimelineMapTimeStateSnapshot;
+};
+
+type PreparedStateSnapshots = {
+    captured: TimelineMapTimeStateSnapshot;
+    next: TimelineMapTimeStateSnapshot;
+};
 
 type PublishTimelineMapStatesInput = {
     tempoState: TempoMapStoreState;
@@ -187,6 +203,11 @@ function prepareTimelineMapStates(operation: TimelineMapTimeOperation): Prepared
         return { status: 'rejected' };
     }
 
+    const capturedSnapshot = timelineMapTimeStateCodec.encodeState({ tempoState, timeSignatureState });
+    if (!capturedSnapshot) {
+        return { status: 'rejected' };
+    }
+
     const preparedTempoChanges = prepareChanges(tempoState.changes, operation);
     if (preparedTempoChanges.status === 'invalid') {
         return { status: 'rejected' };
@@ -220,6 +241,7 @@ function prepareTimelineMapStates(operation: TimelineMapTimeOperation): Prepared
         timeSignatureHasChanges: preparedTimeSignatureChanges.hasChanges,
         tempoState,
         timeSignatureState,
+        capturedSnapshot,
         nextTempoState,
         nextTimeSignatureState,
     };
@@ -305,57 +327,161 @@ function storesMatch(tempoState: TempoMapStoreState, timeSignatureState: TimeSig
     return tempoMapStore.value === tempoState && timeSignatureMapStore.value === timeSignatureState;
 }
 
+function createStateSnapshots(preparedStates: ReadyTimelineMapStates): PreparedStateSnapshots | null {
+    const next = timelineMapTimeStateCodec.encodeState({
+        tempoState: preparedStates.nextTempoState,
+        timeSignatureState: preparedStates.nextTimeSignatureState,
+    });
+    if (!next) {
+        return null;
+    }
+    return { captured: preparedStates.capturedSnapshot, next };
+}
+
+function createInversePlan(snapshots: PreparedStateSnapshots): TimelineMapTimeStateRestorePlan {
+    return {
+        version: 1,
+        expected: structuredClone(snapshots.next),
+        replacement: structuredClone(snapshots.captured),
+    };
+}
+
+function storesMatchReferenceAndValue(
+    tempoState: TempoMapStoreState,
+    timeSignatureState: TimeSignatureMapStoreState,
+    snapshot: TimelineMapTimeStateSnapshot
+): boolean {
+    if (!storesMatch(tempoState, timeSignatureState)) {
+        return false;
+    }
+    return timelineMapTimeStateCodec.stateMatchesSnapshot({
+        tempoState,
+        timeSignatureState,
+        snapshot,
+    });
+}
+
 export function prepareTimelineMapTimeOperation({ operation }: PrepareTimelineMapTimeOperationInput) {
-    const preparedStates = prepareTimelineMapStates(operation);
+    let preparedStates: PreparedTimelineMapStates = prepareTimelineMapStates(operation);
+    let preparedSnapshots: PreparedStateSnapshots | null = null;
+    let inversePlan: TimelineMapTimeStateRestorePlan | null = null;
+    if (preparedStates.status === 'ready') {
+        preparedSnapshots = createStateSnapshots(preparedStates);
+        if (!preparedSnapshots) {
+            preparedStates = { status: 'rejected' };
+        } else if (preparedStates.hasChanges) {
+            inversePlan = createInversePlan(preparedSnapshots);
+        }
+    }
+
     const hasChanges = preparedStates.status === 'ready' && preparedStates.hasChanges;
-    let phase: TransactionPhase = hasChanges ? 'prepared' : 'closed';
+    let phase: TransactionPhase = 'closed';
+    if (hasChanges) {
+        phase = 'prepared';
+    }
 
     function apply(): boolean {
-        if (phase !== 'prepared' || preparedStates.status !== 'ready') {
+        if (phase === 'publishing') {
             return false;
         }
-        if (!storesMatch(preparedStates.tempoState, preparedStates.timeSignatureState)) {
+        if (phase !== 'prepared' || preparedStates.status !== 'ready' || !preparedSnapshots) {
+            return false;
+        }
+        if (
+            !storesMatchReferenceAndValue(
+                preparedStates.tempoState,
+                preparedStates.timeSignatureState,
+                preparedSnapshots.captured
+            ) ||
+            !timelineMapTimeStateCodec.stateMatchesSnapshot({
+                tempoState: preparedStates.nextTempoState,
+                timeSignatureState: preparedStates.nextTimeSignatureState,
+                snapshot: preparedSnapshots.next,
+            })
+        ) {
             phase = 'closed';
             return false;
         }
 
-        phase = 'closed';
-        publishTimelineMapStates({
-            tempoState: preparedStates.nextTempoState,
-            timeSignatureState: preparedStates.nextTimeSignatureState,
-            publishTempo: preparedStates.tempoHasChanges,
-            publishTimeSignature: preparedStates.timeSignatureHasChanges,
-            compensationTempoState: preparedStates.tempoState,
-            compensationTimeSignatureState: preparedStates.timeSignatureState,
-        });
+        phase = 'publishing';
+        try {
+            publishTimelineMapStates({
+                tempoState: preparedStates.nextTempoState,
+                timeSignatureState: preparedStates.nextTimeSignatureState,
+                publishTempo: preparedStates.tempoHasChanges,
+                publishTimeSignature: preparedStates.timeSignatureHasChanges,
+                compensationTempoState: preparedStates.tempoState,
+                compensationTimeSignatureState: preparedStates.timeSignatureState,
+            });
+        } catch (error) {
+            phase = 'closed';
+            throw error;
+        }
+        if (
+            !storesMatchReferenceAndValue(
+                preparedStates.nextTempoState,
+                preparedStates.nextTimeSignatureState,
+                preparedSnapshots.next
+            )
+        ) {
+            phase = 'closed';
+            return false;
+        }
+
         phase = 'applied';
         return true;
     }
 
     function revert(): boolean {
-        if (phase !== 'applied' || preparedStates.status !== 'ready') {
+        if (phase === 'publishing') {
             return false;
         }
-        if (!storesMatch(preparedStates.nextTempoState, preparedStates.nextTimeSignatureState)) {
+        if (phase !== 'applied' || preparedStates.status !== 'ready' || !preparedSnapshots) {
+            return false;
+        }
+        if (
+            !storesMatchReferenceAndValue(
+                preparedStates.nextTempoState,
+                preparedStates.nextTimeSignatureState,
+                preparedSnapshots.next
+            ) ||
+            !timelineMapTimeStateCodec.stateMatchesSnapshot({
+                tempoState: preparedStates.tempoState,
+                timeSignatureState: preparedStates.timeSignatureState,
+                snapshot: preparedSnapshots.captured,
+            })
+        ) {
             phase = 'closed';
             return false;
         }
 
+        phase = 'publishing';
+        try {
+            publishTimelineMapStates({
+                tempoState: preparedStates.tempoState,
+                timeSignatureState: preparedStates.timeSignatureState,
+                publishTempo: preparedStates.tempoHasChanges,
+                publishTimeSignature: preparedStates.timeSignatureHasChanges,
+                compensationTempoState: preparedStates.nextTempoState,
+                compensationTimeSignatureState: preparedStates.nextTimeSignatureState,
+            });
+        } catch (error) {
+            phase = 'closed';
+            throw error;
+        }
+
         phase = 'closed';
-        publishTimelineMapStates({
-            tempoState: preparedStates.tempoState,
-            timeSignatureState: preparedStates.timeSignatureState,
-            publishTempo: preparedStates.tempoHasChanges,
-            publishTimeSignature: preparedStates.timeSignatureHasChanges,
-            compensationTempoState: preparedStates.nextTempoState,
-            compensationTimeSignatureState: preparedStates.nextTimeSignatureState,
-        });
-        return true;
+        return storesMatchReferenceAndValue(
+            preparedStates.tempoState,
+            preparedStates.timeSignatureState,
+            preparedSnapshots.captured
+        );
     }
 
     return {
         status: preparedStates.status,
         hasChanges,
+        inversePlan,
         apply,
         revert,
     };
