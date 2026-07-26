@@ -1,7 +1,8 @@
 {
     "capturedAt": "2026-07-26T15:08:24.521Z",
     "projectSha256": "1cea829dfa15f1e3ac94e611606cc3ef2ac3c4a2bccdfe1cc5707412565ffd9c",
-    "rendererSourceSha256": "3045a06e0d1698b4ea4bcfab99ac3c88ca9ca16ef763e7df1ee2a547c0793640",
+    "rendererSourceSha256": "d640394cb3899a812bfbdcbcb2af2ff8a81b94dc90d7c76e2fbda8175f5c8103",
+    "rendererSourceRoots": ["public/audio/worklets", "public/wasm", "src"],
     "wavSha256": "52b0b2203c0fdcdd549721e5a0d98510d48b47a683344d36b6fb3571b25a616b",
     "wavHashScope": "captured analyzed artifact; current stochastic DSP renders are re-analyzed by E2E and attach their own SHA",
     "durationBeats": 576,

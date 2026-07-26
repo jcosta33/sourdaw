@@ -1,15 +1,34 @@
 {
     "capturedAt": "2026-07-26T15:22:54.135Z",
     "projectSha256": "1cea829dfa15f1e3ac94e611606cc3ef2ac3c4a2bccdfe1cc5707412565ffd9c",
-    "rendererSourceSha256": "3045a06e0d1698b4ea4bcfab99ac3c88ca9ca16ef763e7df1ee2a547c0793640",
+    "rendererSourceSha256": "d640394cb3899a812bfbdcbcb2af2ff8a81b94dc90d7c76e2fbda8175f5c8103",
+    "rendererSourceRoots": ["public/audio/worklets", "public/wasm", "src"],
     "sampleRate": 44100,
     "channelsPerStem": 2,
     "audibleRmsThreshold": 0.00001,
     "activeBlockRmsThreshold": 0.0001,
     "reloadBeforeRender": true,
+    "fullMixCapturedAt": "2026-07-26T16:03:12.637Z",
+    "fullMixTransition": {
+        "renderBeats": [416, 488],
+        "channels": 2,
+        "warnings": [],
+        "falseFloor": {
+            "beats": [480, 484],
+            "durationSeconds": 1.6438321995464853,
+            "rms": 0.00004794944379776064,
+            "samplePeak": 0.0001221161801367998
+        },
+        "returnStrike": {
+            "beats": [484, 488],
+            "durationSeconds": 1.6438321995464853,
+            "rms": 0.15541807960240875,
+            "samplePeak": 0.7651261687278748
+        }
+    },
     "notes": [
         "Stem peaks are pre-master measurements and may exceed full scale; mastered stereo metrics are recorded separately in render-evidence.json.",
-        "The isolated Playwright run reloaded the saved project, rendered every eligible stereo source stem for each required window, and reported no renderer warnings, console errors, page errors, failed requests, external requests, or HTTP errors.",
+        "The isolated Playwright run reloaded the saved project, rendered every eligible stereo track/bus stem for each required window, and reported no renderer warnings, console errors, page errors, failed requests, external requests, or HTTP errors.",
         "False Floor preserves continuous render history from beat 416 and analyzes only beats 480–484; numerical residue below 1e-10 is treated as silence, independently of the 0.00001 audible-stem threshold."
     ],
     "windows": [

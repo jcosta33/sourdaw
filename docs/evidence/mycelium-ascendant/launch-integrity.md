@@ -1,6 +1,6 @@
 # Mycelium Ascendant — launch and dependency integrity
 
-Evidence captured: 2026-07-26 17:34 CEST
+Evidence refreshed: 2026-07-26 18:05 CEST
 Project fingerprint: `1cea829dfa15f1e3ac94e611606cc3ef2ac3c4a2bccdfe1cc5707412565ffd9c`
 
 ## Browser launch
@@ -9,9 +9,11 @@ Project fingerprint: `1cea829dfa15f1e3ac94e611606cc3ef2ac3c4a2bccdfe1cc570741256
 
 ## Desktop-runtime contract launch
 
-`myceliumDesktopRuntime.spec.ts` launches the same demo with the Tauri v2 webview contract active: `window.__TAURI_INTERNALS__` is present and legacy `window.__TAURI__` is absent, matching `withGlobalTauri: false`. It verifies the title, three representative tracks, Sporefall, the native MIDI-list call, and zero unexpected console/page/network failures. The exact run summary is `desktop-runtime-evidence.json`, and the Playwright run attaches `mycelium-desktop-runtime-log`.
+`myceliumDesktopRuntime.spec.ts` launches the same demo with the Tauri v2 webview contract active: `window.__TAURI_INTERNALS__` is present and legacy `window.__TAURI__` is absent, matching `withGlobalTauri: false`. Its strict invoke mock rejects every command except `list_midi_inputs`, and the test asserts that exact single call plus the title, three representative tracks, Sporefall, and zero unexpected console/page/network failures. The exact run summary is `desktop-runtime-evidence.json`; `mycelium-desktop-runtime-log` is a local Playwright attachment.
 
 This is a desktop-runtime contract simulation in Chromium, not a native-shell/WebDriver run. The repository has no Tauri WebDriver harness, and a fresh native build was intentionally not introduced while the workspace had only 19 GiB free; the evidence does not claim native window automation.
+
+**AC-020 status: partial / unsupported for native desktop launch.** Browser launch and the webview contract simulation pass; a native Tauri-shell launch has not been verified.
 
 ## Bundled-only dependency proof
 

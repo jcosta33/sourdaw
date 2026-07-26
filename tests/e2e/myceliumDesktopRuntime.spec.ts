@@ -57,7 +57,6 @@ test('launches Mycelium through the Tauri v2 desktop-runtime contract', async ({
         const calls: RuntimeCall[] = [];
         const callbacks = new Map<number, RuntimeCallback>();
         let nextCallbackId = 1;
-        let nextEventId = 1;
 
         Reflect.set(window, '__MYCELIUM_TAURI_CALLS__', calls);
         Reflect.deleteProperty(window, '__TAURI__');
@@ -66,15 +65,10 @@ test('launches Mycelium through the Tauri v2 desktop-runtime contract', async ({
             convertFileSrc: (path: string) => `asset://localhost/${encodeURIComponent(path)}`,
             invoke: (command: string, args: unknown) => {
                 calls.push({ command, args });
-                if (command === 'plugin:event|listen') {
-                    const eventId = nextEventId;
-                    nextEventId += 1;
-                    return Promise.resolve(eventId);
-                }
                 if (command === 'list_midi_inputs') {
                     return Promise.resolve([]);
                 }
-                return Promise.resolve(null);
+                return Promise.reject(new Error(`Unexpected native command: ${command}`));
             },
             metadata: {
                 currentWindow: { label: 'main' },
@@ -128,7 +122,7 @@ test('launches Mycelium through the Tauri v2 desktop-runtime contract', async ({
         contentType: 'application/json',
     });
 
-    expect(runtimeCalls.length).toBeGreaterThan(0);
+    expect(runtimeCalls).toEqual([{ command: 'list_midi_inputs', args: {} }]);
     expect(consoleErrors).toEqual([]);
     expect(unexpectedWarnings).toEqual([]);
     expect(pageErrors).toEqual([]);

@@ -3,15 +3,15 @@
 Review captured: 2026-07-26 17:28 CEST
 Project fingerprint: `1cea829dfa15f1e3ac94e611606cc3ef2ac3c4a2bccdfe1cc5707412565ffd9c`
 Stereo artifact: `52b0b2203c0fdcdd549721e5a0d98510d48b47a683344d36b6fb3571b25a616b`
-Review basis: decoded 24-bit/44.1 kHz stereo export, attached Playwright WAV, normalized MIDI-note and motif-event reports, automation report, and five 44.1 kHz stereo stem windows.
+Review basis: decoded 24-bit/44.1 kHz stereo export metrics and hash, normalized MIDI-note and motif-event reports, automation report, and five 44.1 kHz stereo stem windows. The WAV was attached only to the local Playwright result and is not a persistent PR artifact.
 
 ## Scope and verdict
 
 The track uses Astrix, Infected Mushroom, and Shpongle only as high-level genre references: psychedelic trance pacing, rolling low-end, organic/electronic contrast, spatial effects, and large-form tension/release. Repository inspection establishes that the deterministic project imports no reference recording, external sample, audio buffer, or attributed catalog asset; all sound is generated from Sourdaw instruments, devices, MIDI, routing, and automation. The score documents purpose-built melodic, harmonic, rhythmic, timbral, and arrangement material, but repository evidence cannot establish catalog-wide non-infringement.
 
-Verdict: passes the specification's source/asset originality boundary and internal creative-intent review. No external music-catalog fingerprint comparison was performed.
+Verdict: the specification's source/asset originality boundary passes. Subjective originality listening remains unsupported, and no external music-catalog fingerprint comparison was performed.
 
-## Timestamped creative-intent review
+## Timestamped encoded creative-intent conformance
 
 | Time                | Section                 | Original musical identity and transformation evidence                                                                                                                                                  | Result |
 | ------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ |
@@ -36,7 +36,7 @@ Verdict: passes the specification's source/asset originality boundary and intern
 
 ## Evidence links
 
-- `render-evidence.json` — mastered stereo render identity and measured delivery metrics; the E2E run also attaches `mycelium-stereo-wav` for direct audition.
+- `render-evidence.json` — mastered stereo render identity and measured delivery metrics; the E2E run emits `mycelium-stereo-wav` only as a local test attachment.
 - `note-event-report.json` — complete section/track note counts.
 - `motif-event-report.json` — normalized section-relative beat, pitch, duration, velocity, and interval signatures for lead, Levain, and Grand Boule comparisons.
 - `automation-stem-evidence.json` — real offline stem signals for every required automation audition window.

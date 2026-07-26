@@ -1,12 +1,14 @@
 # Mycelium Ascendant — render and score conformance sheet
 
-Evidence captured: 2026-07-26 17:28 CEST
+Score/stereo evidence captured: 2026-07-26 17:28 CEST; routed-mix evidence captured: 2026-07-26 18:03 CEST
 Project fingerprint: `1cea829dfa15f1e3ac94e611606cc3ef2ac3c4a2bccdfe1cc5707412565ffd9c`
 Stereo artifact: `52b0b2203c0fdcdd549721e5a0d98510d48b47a683344d36b6fb3571b25a616b`
 
-Reviewer/method: Codex automated render, score, cue, and stem conformance; no loudspeaker/headphone subjective-listening claim is made. The decoded complete stereo export is attached to the Playwright run for human audition. The mix is active for 96.68% of measured blocks and ends at 03:58.994 before its two-second export tail.
+Reviewer/method: Codex automated render, score, cue, and stem conformance; no loudspeaker/headphone subjective-listening claim is made. A decoded complete stereo export was attached only to the local Playwright run, not persisted on PR #837 because GitHub Actions did not start under the repository billing restriction. The mix is active for 96.68% of measured blocks and ends at 03:58.994 before its two-second export tail.
 
-## Eight-section machine audition
+**AC-001 / AC-006 / AC-016 status: partial / unsupported for subjective audition.** The machine-verifiable score, render, cue, automation, and stem requirements pass; timestamped human listening remains outstanding.
+
+## Eight-section machine conformance
 
 | Section                 |   Beats | Time                | Clips | Notes | Active note tracks | Render/score checkpoint                                                                                                                                                                                  | Result |
 | ----------------------- | ------: | ------------------- | ----: | ----: | -----------------: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
@@ -19,17 +21,17 @@ Reviewer/method: Codex automated render, score, cue, and stem conformance; no lo
 | Drop II — Fractal Bloom | 416–544 | 02:53.150–03:45.753 |    29 | 1,277 |                 29 | 124 kicks, 372 rolling-bass notes, all 16 drum-pad roles, displaced/transformed leads, organic punctuations, false floor and return strike form the densest section.                                     | Pass   |
 | Dissolution             | 544–576 | 03:45.753–03:58.994 |    11 |   129 |                 11 | Rhythm and bass reduce to 15 events per remaining role while drone, granular, mist, Main Vision, Levain and Grand Boule signals carry the fade. Eleven stems measure audible.                            | Pass   |
 
-## Named cue audition
+## Named cue machine conformance
 
-| Cue           | Beat | Time      | Evidence checkpoint                                                                                                                                                                                                | Result |
-| ------------- | ---: | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ |
-| Pulse Emerges |   48 | 00:20.000 | Marker begins the final Sporefall lead-in; the following section introduces kick teasers every eight beats and the first sub ghosts.                                                                               | Pass   |
-| Vacuum I      |  188 | 01:18.333 | Pressure automation reaches maximum filter/FX values at beat 188; bass and pad events vacate 191.75–192 before Drop I.                                                                                             | Pass   |
-| Grid Restored |  316 | 02:11.667 | Alternating 7/8 ritual ends and the normal kick/rolling grid resumes for the chapel's final 36 beats.                                                                                                              | Pass   |
-| Vacuum II     |  412 | 02:51.505 | Build automation peaks at beat 412; bass/pad events vacate 415.75–416 before Drop II.                                                                                                                              | Pass   |
-| False Floor   |  480 | 03:19.451 | A continuous beat-416→484 stem render analyzes the 1.644-second 480–484 slice: Pulse is zero, Rolling/Sub residue is below `1e-10`, and low-level Parallel Crush residue remains below the active-block threshold. | Pass   |
-| Return Strike |  484 | 03:21.095 | Automation restores bass gain, drum master, filters, space and width at the boundary; Drop II events resume from beat 484.                                                                                         | Pass   |
-| Last Signal   |  568 | 03:55.667 | Root Drone and late organic voices mark the final eight beats while rhythm/bass and FX automation continue toward zero.                                                                                            | Pass   |
+| Cue           | Beat | Time      | Evidence checkpoint                                                                                                                                           | Result   |
+| ------------- | ---: | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| Pulse Emerges |   48 | 00:20.000 | Marker begins the final Sporefall lead-in; the following section introduces kick teasers every eight beats and the first sub ghosts.                          | Pass     |
+| Vacuum I      |  188 | 01:18.333 | Pressure automation reaches maximum filter/FX values at beat 188; bass and pad events vacate 191.75–192 before Drop I.                                        | Pass     |
+| Grid Restored |  316 | 02:11.667 | Alternating 7/8 ritual ends and the normal kick/rolling grid resumes for the chapel's final 36 beats.                                                         | Pass     |
+| Vacuum II     |  412 | 02:51.505 | Build automation peaks at beat 412; bass/pad events vacate 415.75–416 before Drop II.                                                                         | Pass     |
+| False Floor   |  480 | 03:19.451 | Fully routed 416→488 render: floor RMS `0.0000479`/peak `0.000122`; return RMS `0.1554`/peak `0.7651`. Isolated Pulse/Rolling/Sub stems are effectively zero. | Verified |
+| Return Strike |  484 | 03:21.095 | Automation restores bass gain, drum master, filters, space and width at the boundary; Drop II events resume from beat 484.                                    | Pass     |
+| Last Signal   |  568 | 03:55.667 | Root Drone and late organic voices mark the final eight beats while rhythm/bass and FX automation continue toward zero.                                       | Pass     |
 
 ## Normalized note-event report
 

@@ -10,6 +10,31 @@ const AUDITION_WINDOWS = [
     { name: 'Dissolution', startBeat: 544, endBeat: 576 },
 ] as const;
 
+const ELIGIBLE_STEM_NAMES = [
+    'Acid Tendril',
+    'Counter Vision',
+    'Dub Tunnel',
+    'FM Spores',
+    'Fractal Riser',
+    'Glitch Spirits',
+    'Grand Boule Ritual',
+    'Granular Voices',
+    'Harmonic Mist',
+    'Impact Field',
+    'Levain Answer',
+    'Levain Call',
+    'Main Vision',
+    'Mutation Return',
+    'Parallel Crush',
+    'Psy Pluck',
+    'Pulse Engine',
+    'Rolling Colony',
+    'Root Drone',
+    'Sub Mycelium',
+    'Temple Chamber',
+    'Triplet Helix',
+] as const;
+
 const ALLOWED_WARNING_FRAGMENTS = [
     'using deprecated parameters for `initSync()`',
     '[MIDI] Web MIDI failed, trying Tauri fallback',
@@ -70,7 +95,7 @@ test('renders signal evidence for every required Mycelium automation audition wi
     await expect(page.getByRole('button', { name: 'Mycelium Ascendant' })).toBeVisible();
 
     const report = await page.evaluate(async (auditionWindows) => {
-        type ExportStemsModule = {
+        type AudioEngineModule = {
             exportStems: (options: {
                 startBeat: number;
                 durationBeats: number;
@@ -78,6 +103,13 @@ test('renders signal evidence for every required Mycelium automation audition wi
                 tailSeconds: number;
                 onWarning: (warning: string) => void;
             }) => Promise<Map<string, AudioBuffer>>;
+            renderOffline: (options: {
+                startBeat: number;
+                durationBeats: number;
+                sampleRate: number;
+                tailSeconds: number;
+                onWarning: (warning: string) => void;
+            }) => Promise<AudioBuffer>;
         };
         type TrackStoreModule = {
             trackStore: { value: { tracks: { id: string; name: string }[] } | null };
@@ -87,18 +119,19 @@ test('renders signal evidence for every required Mycelium automation audition wi
             tempoMapStore: { value: { changes: TempoChange[] } | null };
             transportStore: { value: { tempo: number } | null };
         };
-        type TempoMathModule = {
-            beatToSamples: (
-                changes: readonly TempoChange[],
-                beat: number,
-                defaultTempo: number,
-                sampleRate: number
-            ) => number;
+        type TransportUseCasesModule = {
+            projectPpqEndpoints: (input: {
+                startPpq: number;
+                endPpq: number;
+                defaultTempo: number;
+                sampleRate: number;
+                changes: readonly TempoChange[];
+            }) => { durationSamples: number };
         };
         const isRecord = (value: unknown): value is Record<string, unknown> =>
             typeof value === 'object' && value !== null;
-        const isExportStemsModule = (value: unknown): value is ExportStemsModule =>
-            isRecord(value) && typeof value.exportStems === 'function';
+        const isAudioEngineModule = (value: unknown): value is AudioEngineModule =>
+            isRecord(value) && typeof value.exportStems === 'function' && typeof value.renderOffline === 'function';
         const isTrackStoreModule = (value: unknown): value is TrackStoreModule => {
             if (!isRecord(value) || !isRecord(value.trackStore)) {
                 return false;
@@ -131,22 +164,22 @@ test('renders signal evidence for every required Mycelium automation audition wi
                 )
             );
         };
-        const isTempoMathModule = (value: unknown): value is TempoMathModule =>
-            isRecord(value) && typeof value.beatToSamples === 'function';
+        const isTransportUseCasesModule = (value: unknown): value is TransportUseCasesModule =>
+            isRecord(value) && typeof value.projectPpqEndpoints === 'function';
         const audioEngineModule: unknown = await import('/src/modules/AudioEngine/useCases/index.ts');
         const arrangementStoreModule: unknown = await import('/src/modules/Arrangement/stores/index.ts');
         const transportStoreModule: unknown = await import('/src/modules/Transport/stores/index.ts');
-        const tempoMathModule: unknown = await import('/src/modules/Transport/models/TempoMap.ts');
-        if (!isExportStemsModule(audioEngineModule) || !isTrackStoreModule(arrangementStoreModule)) {
+        const transportUseCasesModule: unknown = await import('/src/modules/Transport/useCases/index.ts');
+        if (!isAudioEngineModule(audioEngineModule) || !isTrackStoreModule(arrangementStoreModule)) {
             throw new TypeError('Mycelium stem E2E could not resolve the browser render contracts');
         }
-        if (!isTransportStoreModule(transportStoreModule) || !isTempoMathModule(tempoMathModule)) {
+        if (!isTransportStoreModule(transportStoreModule) || !isTransportUseCasesModule(transportUseCasesModule)) {
             throw new TypeError('Mycelium stem E2E could not resolve the browser tempo contracts');
         }
-        const { exportStems } = audioEngineModule;
+        const { exportStems, renderOffline } = audioEngineModule;
         const { trackStore } = arrangementStoreModule;
         const { tempoMapStore, transportStore } = transportStoreModule;
-        const { beatToSamples } = tempoMathModule;
+        const { projectPpqEndpoints } = transportUseCasesModule;
         const tempoMap = tempoMapStore.value;
         const transport = transportStore.value;
         if (!tempoMap || !transport) {
@@ -160,13 +193,20 @@ test('renders signal evidence for every required Mycelium automation audition wi
             const sampleRate = 44_100;
             const renderStartBeat =
                 'renderStartBeat' in auditionWindow ? auditionWindow.renderStartBeat : auditionWindow.startBeat;
-            const renderStartSample = beatToSamples(tempoMap.changes, renderStartBeat, transport.tempo, sampleRate);
-            const analysisStartFrame =
-                beatToSamples(tempoMap.changes, auditionWindow.startBeat, transport.tempo, sampleRate) -
-                renderStartSample;
-            const analysisEndFrame =
-                beatToSamples(tempoMap.changes, auditionWindow.endBeat, transport.tempo, sampleRate) -
-                renderStartSample;
+            const analysisStartFrame = projectPpqEndpoints({
+                startPpq: renderStartBeat,
+                endPpq: auditionWindow.startBeat,
+                defaultTempo: transport.tempo,
+                sampleRate,
+                changes: tempoMap.changes,
+            }).durationSamples;
+            const analysisEndFrame = projectPpqEndpoints({
+                startPpq: renderStartBeat,
+                endPpq: auditionWindow.endBeat,
+                defaultTempo: transport.tempo,
+                sampleRate,
+                changes: tempoMap.changes,
+            }).durationSamples;
             const stems = await exportStems({
                 startBeat: renderStartBeat,
                 durationBeats: auditionWindow.endBeat - renderStartBeat,
@@ -228,7 +268,63 @@ test('renders signal evidence for every required Mycelium automation audition wi
             });
             stems.clear();
         }
-        return { capturedAt: new Date().toISOString(), sampleRate: 44_100, windows };
+        const falseFloorWarnings: string[] = [];
+        const falseFloorRenderStartBeat = 416;
+        const falseFloorStartBeat = 480;
+        const returnStrikeEndBeat = 488;
+        const fullMix = await renderOffline({
+            startBeat: falseFloorRenderStartBeat,
+            durationBeats: returnStrikeEndBeat - falseFloorRenderStartBeat,
+            sampleRate: 44_100,
+            tailSeconds: 0,
+            onWarning: (warning: string) => falseFloorWarnings.push(warning),
+        });
+        const measureFullMixWindow = (startBeat: number, endBeat: number) => {
+            const startFrame = projectPpqEndpoints({
+                startPpq: falseFloorRenderStartBeat,
+                endPpq: startBeat,
+                defaultTempo: transport.tempo,
+                sampleRate: fullMix.sampleRate,
+                changes: tempoMap.changes,
+            }).durationSamples;
+            const endFrame = projectPpqEndpoints({
+                startPpq: falseFloorRenderStartBeat,
+                endPpq: endBeat,
+                defaultTempo: transport.tempo,
+                sampleRate: fullMix.sampleRate,
+                changes: tempoMap.changes,
+            }).durationSamples;
+            let samplePeak = 0;
+            let sumSquares = 0;
+            let sampleCount = 0;
+            for (let channel = 0; channel < fullMix.numberOfChannels; channel++) {
+                const samples = fullMix.getChannelData(channel);
+                for (let index = startFrame; index < Math.min(endFrame, samples.length); index++) {
+                    const sample = samples[index];
+                    samplePeak = Math.max(samplePeak, Math.abs(sample));
+                    sumSquares += sample * sample;
+                    sampleCount++;
+                }
+            }
+            return {
+                beats: [startBeat, endBeat],
+                durationSeconds: (endFrame - startFrame) / fullMix.sampleRate,
+                rms: Math.sqrt(sumSquares / sampleCount),
+                samplePeak,
+            };
+        };
+        return {
+            capturedAt: new Date().toISOString(),
+            sampleRate: 44_100,
+            windows,
+            fullMixTransition: {
+                renderBeats: [falseFloorRenderStartBeat, returnStrikeEndBeat],
+                channels: fullMix.numberOfChannels,
+                warnings: falseFloorWarnings,
+                falseFloor: measureFullMixWindow(falseFloorStartBeat, 484),
+                returnStrike: measureFullMixWindow(484, returnStrikeEndBeat),
+            },
+        };
     }, AUDITION_WINDOWS);
     await testInfo.attach('mycelium-automation-stem-evidence', {
         body: JSON.stringify(report),
@@ -238,7 +334,8 @@ test('renders signal evidence for every required Mycelium automation audition wi
     expect(report.windows).toHaveLength(AUDITION_WINDOWS.length);
     for (const window of report.windows) {
         expect(window.warnings).toEqual([]);
-        expect(window.stemCount).toBeGreaterThan(15);
+        expect(window.stemCount).toBe(ELIGIBLE_STEM_NAMES.length);
+        expect(window.stems.map((stem) => stem.trackName).sort()).toEqual(ELIGIBLE_STEM_NAMES);
         expect(window.audibleStemCount).toBeGreaterThan(0);
         expect(window.stems.every((stem) => stem.channels === 2)).toBe(true);
         expect(window.stems.every((stem) => stem.sampleRate === 44_100)).toBe(true);
@@ -258,6 +355,11 @@ test('renders signal evidence for every required Mycelium automation audition wi
     expect(signals.get('False Floor')?.get('Sub Mycelium')?.samplePeak).toBeLessThan(1e-10);
     expect(signals.get('Dissolution')?.get('Root Drone')?.activeBlockRatio).toBeGreaterThan(0.9);
     expect(signals.get('Dissolution')?.get('Main Vision')?.samplePeak).toBeGreaterThan(0.1);
+    expect(report.fullMixTransition.warnings).toEqual([]);
+    expect(report.fullMixTransition.channels).toBe(2);
+    expect(report.fullMixTransition.falseFloor.rms).toBeGreaterThan(0);
+    expect(report.fullMixTransition.falseFloor.rms).toBeLessThan(report.fullMixTransition.returnStrike.rms * 0.25);
+    expect(report.fullMixTransition.returnStrike.samplePeak).toBeGreaterThan(0.1);
     expect(consoleErrors).toEqual([]);
     expect(unexpectedWarnings).toEqual([]);
     expect(pageErrors).toEqual([]);
