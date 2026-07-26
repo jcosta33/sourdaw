@@ -1,0 +1,47 @@
+scripts/agent-campaign/evidenceManifest.ts
+  s_bc88af7d3b054c::t_99e57c0d6d7e03 4-22,26-29,31-39,208-211,218-220,228-230,241-243,273-274,277-281
+  s_bc88af7d3b054c::t_7ed319c01d643e 128,135-138,157,250,290
+  s_bc88af7d3b054c::t_c4b8e940d1e41c 42-43,46,49-50,126-127,132-134,212-217,231-240
+  s_bc88af7d3b054c::t_3b7a709ab23a02 123
+  s_bc88af7d3b054c::t_b09b44aa53e9ca 182,190,227,249,272,289,306
+  s_bc88af7d3b054c::t_12168dd6ff4976 101,124-125,129-131
+  s_bc88af7d3b054c::t_93d00c91ece47c 44-45,47-48,109-121
+  s_bc88af7d3b054c::t_a5b18c704b4c18 1-3,41,51-70,72-73,82-100,139-143,145-156,158-181,183-189,195-196,201-207,221-226,244-248,251-261,265-271,275-276,282-284,288,294-295,299,310-311,333-335
+  s_bc88af7d3b054c::t_dadad009b3b6b9 23-25,30,40,144,191-194,197-200,321-324,327-330
+  s_bc88af7d3b054c::t_ec3b0d00784c7a 71,74-81,262-264,285-287,291-293,296-298,300-305,307-309,312-320,325-326,331-332
+  s_bc88af7d3b054c::t_a08694325b7813 102-108,122
+src/app/__tests__/agentCampaignBaseline.spec.ts
+  s_bc88af7d3b054c::t_3923ccd4cc890d 1-77,79,82-88
+  s_bc88af7d3b054c::t_80bf1c4223296d 78,80-81
+  s_0d39f3a4a4357a::t_62f080a6060de9 89-91
+evidence/agent-campaign/manifest.json
+  s_bc88af7d3b054c::t_5bb00a233c5964 11
+  s_bc88af7d3b054c::t_7433a30075e8ed 14
+  s_bc88af7d3b054c::t_d40069c44cb44a 69
+  s_bc88af7d3b054c::t_40f8d324cb52d9 16
+  s_bc88af7d3b054c::t_3916aa3dc3ed21 1-10,12-13,15,17-68,70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "5f412ce14c16f244e0c47be7d8e21ce521ad822b",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
