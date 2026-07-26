@@ -1,0 +1,39 @@
+.agents/decisions/0013-agent-pure-transactions-and-sagas.md
+  s_bc88af7d3b054c::t_fbb4e265d5c0f5 1-35
+src/app/__tests__/agentProtocolVersioning.spec.ts
+  s_bc88af7d3b054c::t_11de77312b8735 8
+  s_bc88af7d3b054c::t_82866c0a2783bd 43
+  s_bc88af7d3b054c::t_ad3b4a358fb48e 1-7,9-42,44-66
+.agents/decisions/0015-agent-run-retention-policy.md
+  s_bc88af7d3b054c::t_fbb4e265d5c0f5 1-35
+.agents/decisions/README.md
+  s_bc88af7d3b054c::t_fbb4e265d5c0f5 28-31
+.agents/decisions/open-decision-docket.md
+  s_bc88af7d3b054c::t_fbb4e265d5c0f5 75-77,208-210
+src/app/agentProtocols/agentProtocolGovernance.ts
+  s_bc88af7d3b054c::t_a181dc4468a7d0 1-10,12-45,47-130,132-147,149-158
+  s_bc88af7d3b054c::t_11de77312b8735 11,148
+  s_bc88af7d3b054c::t_f93b770302a704 46,131
+.agents/decisions/0014-agent-provider-credentials-and-endpoint-admission.md
+  s_bc88af7d3b054c::t_fbb4e265d5c0f5 1-41
+src/app/__tests__/fixtures/agentProtocols/agentProtocolVersionFixtures.ts
+  s_bc88af7d3b054c::t_ad3b4a358fb48e 1-26
+.agents/decisions/0012-agent-command-registry-packaging.md
+  s_bc88af7d3b054c::t_fbb4e265d5c0f5 1-37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "fe92d0f7c3f84a84cf3dd731778c8a9f4e31c2cb",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
