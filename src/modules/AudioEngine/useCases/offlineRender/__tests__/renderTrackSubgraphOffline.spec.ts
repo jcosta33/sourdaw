@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 
 import { type Track } from '#/modules/Arrangement/stores';
 
@@ -174,7 +174,7 @@ class RenderHarnessContext {
         return oscillator;
     }
 
-    suspend(): Promise<void> {
+    suspend(_seconds?: number): Promise<void> {
         return Promise.resolve();
     }
 
@@ -441,5 +441,162 @@ describe('renderTrackSubgraphOffline', () => {
 
         expect(buffer).toBeNull();
         expect(mocks.buildDeviceChain).not.toHaveBeenCalled();
+    });
+
+    describe('render kernel', () => {
+        /**
+         * A context that never finishes and never reaches a checkpoint — the
+         * shape of a wedged render. Freeze and bounce run full track lengths
+         * through this path, so a wedge here is an application that never
+         * un-freezes.
+         */
+        class StalledRenderContext extends RenderHarnessContext {
+            /** The instance the render under test most recently constructed. */
+            static latest: StalledRenderContext | null = null;
+
+            readonly resumeCalls: number[] = [];
+            closeCalls = 0;
+            private readonly checkpoints = new Map<number, () => void>();
+
+            constructor(channels: number, length: number, sampleRate: number) {
+                super(channels, length, sampleRate);
+                StalledRenderContext.latest = this;
+            }
+
+            override suspend(seconds: number): Promise<void> {
+                return new Promise<void>((resolve) => {
+                    this.checkpoints.set(seconds, resolve);
+                });
+            }
+
+            override resume(): Promise<void> {
+                this.resumeCalls.push(this.resumeCalls.length);
+                return Promise.resolve();
+            }
+
+            override startRendering(): Promise<AudioBuffer> {
+                return new Promise<AudioBuffer>(() => undefined);
+            }
+
+            close(): Promise<void> {
+                this.closeCalls += 1;
+                return Promise.resolve();
+            }
+
+            /** Simulate the render arriving at the earliest scheduled checkpoint. */
+            async reachFirstCheckpoint(): Promise<void> {
+                const earliest = [...this.checkpoints.keys()].sort((a, b) => a - b)[0];
+                if (earliest === undefined) {
+                    throw new Error('no checkpoint was scheduled');
+                }
+                this.checkpoints.get(earliest)?.();
+                await Promise.resolve();
+                await Promise.resolve();
+                await Promise.resolve();
+            }
+
+            scheduledCheckpointCount(): number {
+                return this.checkpoints.size;
+            }
+        }
+
+        afterEach(() => {
+            vi.useRealTimers();
+        });
+
+        /** The context the render under test built, once it has built one. */
+        function renderedContext(): StalledRenderContext {
+            const context = StalledRenderContext.latest;
+            if (!context) {
+                throw new Error('the render never constructed an OfflineAudioContext');
+            }
+            return context;
+        }
+
+        /**
+         * Let the render get through strip building, clip scheduling and its
+         * yield-to-main before the checkpoints are inspected.
+         */
+        async function untilCheckpointsScheduled(): Promise<void> {
+            for (let tick = 0; tick < 20; tick++) {
+                await new Promise((resolve) => setTimeout(resolve, 0));
+                if ((StalledRenderContext.latest?.scheduledCheckpointCount() ?? 0) > 0) {
+                    return;
+                }
+            }
+        }
+
+        function stubStalledContext(): void {
+            StalledRenderContext.latest = null;
+            vi.stubGlobal('OfflineAudioContext', StalledRenderContext);
+        }
+
+        it('rejects a wedged render once its wall-clock budget is spent instead of hanging forever', async () => {
+            vi.useFakeTimers();
+            stubStalledContext();
+            const track = TrackDummy.create({ id: 'track-1', kind: 'audio' });
+
+            const rendering = renderTrackSubgraphOffline({
+                targetTrackId: track.id,
+                renderTracks: [track],
+                startBeat: 0,
+                endBeat: 4,
+            });
+            const settled = expect(rendering).rejects.toThrow(/timed out/);
+
+            // Past the 60 s floor the export paths already apply. Without a
+            // backstop this promise never settles at all.
+            await vi.advanceTimersByTimeAsync(70_000);
+            await settled;
+
+            vi.useRealTimers();
+        });
+
+        it('stops at a checkpoint when the caller aborts mid-render and never resumes the context', async () => {
+            stubStalledContext();
+            const controller = new AbortController();
+            const track = TrackDummy.create({ id: 'track-1', kind: 'audio' });
+
+            const rendering = renderTrackSubgraphOffline({
+                targetTrackId: track.id,
+                renderTracks: [track],
+                startBeat: 0,
+                endBeat: 4,
+                abortSignal: controller.signal,
+            });
+            const settled = expect(rendering).rejects.toThrow(/abort|cancel/i);
+
+            await untilCheckpointsScheduled();
+            expect(renderedContext().scheduledCheckpointCount()).toBeGreaterThan(0);
+
+            controller.abort();
+            await renderedContext().reachFirstCheckpoint();
+            await settled;
+
+            // Not resuming is what actually stops the work; rejecting alone
+            // would leave the render running to completion in the background.
+            expect(renderedContext().resumeCalls).toEqual([]);
+            // And the abandoned context is torn down rather than left resident
+            // with its whole device graph.
+            expect(renderedContext().closeCalls).toBe(1);
+        });
+
+        it('segments a freeze render so an abort has somewhere to land', async () => {
+            stubStalledContext();
+            const track = TrackDummy.create({ id: 'track-1', kind: 'audio' });
+
+            void renderTrackSubgraphOffline({
+                targetTrackId: track.id,
+                renderTracks: [track],
+                startBeat: 0,
+                endBeat: 8,
+            }).catch(() => undefined);
+
+            await untilCheckpointsScheduled();
+
+            // 8 beats at 120 BPM is 4 s of audio; the shared kernel's segment
+            // length puts a cancel point strictly inside each second.
+            expect(renderedContext().scheduledCheckpointCount()).toBe(3);
+        });
     });
 });

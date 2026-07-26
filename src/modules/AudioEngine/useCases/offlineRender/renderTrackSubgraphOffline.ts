@@ -7,9 +7,10 @@ import { getAudioContext } from '../engineAccess/getAudioContext';
 import { getSidechainKeyDelay } from '../latencyCompensation/compensation/getSidechainKeyDelay';
 
 import { connectOfflineToasterPadRoutes } from './connectOfflineToasterPadRoutes';
-import { MAX_OFFLINE_FRAMES } from './constants';
+import { MAX_OFFLINE_FRAMES, MIN_RENDER_TIMEOUT_MS, RENDER_TIMEOUT_MULTIPLIER } from './constants';
 import { createOfflineTrackStrip } from './createOfflineTrackStrip';
 import { isOfflineInstrumentDevice } from './isOfflineInstrumentDevice';
+import { renderInSegments } from './renderInSegments';
 import { resolveRenderContext } from './resolveRenderContext';
 import { schedulePendingSuspends } from './schedulePendingSuspends';
 import { scheduleTrackClips } from './scheduleTrackClips';
@@ -19,9 +20,6 @@ import { yieldToMain } from './yieldToMain';
 /** Fader/pan values a bounce uses when the caller asks for the take without mixer moves. */
 const NEUTRAL_GAIN = 0.8;
 const NEUTRAL_PAN = 0;
-
-/** Progress reported once every rendered chunk of this many seconds. */
-const PROGRESS_CHUNK_SECONDS = 2;
 
 /** Stand-in note tables for a render started before the MIDI store is hydrated. */
 const EMPTY_MIDI_STATE = {
@@ -83,62 +81,6 @@ function projectStripTrack({ track, isTarget, includeInserts, includeAutomation 
     return { ...track, devices, gain: NEUTRAL_GAIN, pan: NEUTRAL_PAN };
 }
 
-type RenderWithProgressInput = {
-    offlineCtx: OfflineAudioContext;
-    onProgress?: (fraction: number) => void;
-    abortSignal?: AbortSignal;
-};
-
-function renderWithProgress({ offlineCtx, onProgress, abortSignal }: RenderWithProgressInput): Promise<AudioBuffer> {
-    return new Promise<AudioBuffer>((resolve, reject) => {
-        if (abortSignal?.aborted) {
-            reject(new Error('Render aborted'));
-            return;
-        }
-
-        function abortHandler(): void {
-            reject(new Error('Render aborted'));
-        }
-        abortSignal?.addEventListener('abort', abortHandler);
-
-        const totalFrames = offlineCtx.length;
-        const chunkFrames = Math.max(1, Math.round(PROGRESS_CHUNK_SECONDS * offlineCtx.sampleRate));
-        for (let frame = chunkFrames; frame < totalFrames; frame += chunkFrames) {
-            const capturedFrame = frame;
-            offlineCtx
-                .suspend(capturedFrame / offlineCtx.sampleRate)
-                .then(() => {
-                    if (abortSignal?.aborted) {
-                        return null;
-                    }
-                    onProgress?.(capturedFrame / totalFrames);
-                    void offlineCtx.resume();
-                    return null;
-                })
-                .catch((error: unknown) => {
-                    reject(error instanceof Error ? error : new Error(String(error)));
-                    return null;
-                });
-        }
-
-        offlineCtx
-            .startRendering()
-            .then((buffer) => {
-                abortSignal?.removeEventListener('abort', abortHandler);
-                if (!abortSignal?.aborted) {
-                    onProgress?.(1);
-                    resolve(buffer);
-                }
-                return null;
-            })
-            .catch((error: unknown) => {
-                abortSignal?.removeEventListener('abort', abortHandler);
-                reject(error instanceof Error ? error : new Error(String(error)));
-                return null;
-            });
-    });
-}
-
 /**
  * Render one track (plus everything routed into it) offline through the *real*
  * device graph — the same strip topology, instrument nodes and note scheduling
@@ -197,6 +139,13 @@ export async function renderTrackSubgraphOffline({
                 includeInserts,
                 includeAutomation,
             }),
+            // No `vcaMultiplier` here, deliberately. The mixdown and stem
+            // paths bake a track's VCA group master into its fader because
+            // their output is the finished file. This path's output is replayed
+            // *through the track's own strip* — a frozen buffer is scheduled
+            // onto `trackGainNode`, which now carries that same multiplier — so
+            // composing it in here would apply the group gain twice.
+            //
             // Freeze and bounce produce deliverable audio, not a monitoring
             // snapshot — the same reason exportStems opts out. Baking mute in
             // would hand back a zeroed buffer, and bounce-to-new-track then
@@ -293,5 +242,29 @@ export async function renderTrackSubgraphOffline({
 
     await yieldToMain();
 
-    return renderWithProgress({ offlineCtx, onProgress, abortSignal });
+    if (abortSignal?.aborted) {
+        throw new Error('Render aborted');
+    }
+
+    // The same segmented kernel the mixdown and stem exports use, rather than a
+    // second copy of it. Two things this path did not have before: a wall-clock
+    // backstop, so a wedged freeze can no longer hang indefinitely, and teardown
+    // of the context it abandons.
+    //
+    // The stop signal is this render's own `AbortSignal`, deliberately not the
+    // global export cancel flag — cancelling an export must not kill a freeze.
+    const renderTimeoutMs = Math.max(MIN_RENDER_TIMEOUT_MS, durationSeconds * RENDER_TIMEOUT_MULTIPLIER * 1000);
+    const buffer = await renderInSegments({
+        offlineCtx,
+        durationSeconds,
+        timeoutMs: renderTimeoutMs,
+        onRenderProgress: onProgress,
+        cancelSource: {
+            isCancelled: () => abortSignal?.aborted ?? false,
+            createCancelError: () => new Error('Render aborted'),
+        },
+    });
+
+    onProgress?.(1);
+    return buffer;
 }
