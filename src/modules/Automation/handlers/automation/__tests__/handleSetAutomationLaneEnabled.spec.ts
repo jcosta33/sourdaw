@@ -26,6 +26,33 @@ function seedLane(enabled: boolean): void {
     });
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isUnknownArray(value: unknown): value is unknown[] {
+    return Array.isArray(value);
+}
+
+type GetPersistedLaneEnabledInput = {
+    document: Record<string, unknown>;
+    laneId: string;
+};
+
+function getPersistedLaneEnabled({ document, laneId }: GetPersistedLaneEnabledInput): boolean | undefined {
+    const automation = document.automation;
+    if (!isRecord(automation) || !isUnknownArray(automation.lanes)) {
+        return undefined;
+    }
+    const lane = automation.lanes.find(
+        (candidate): candidate is Record<string, unknown> => isRecord(candidate) && candidate.id === laneId
+    );
+    if (!lane || typeof lane.enabled !== 'boolean') {
+        return undefined;
+    }
+    return lane.enabled;
+}
+
 describe('handleSetAutomationLaneEnabled', () => {
     beforeEach(() => {
         seedLane(true);
@@ -106,6 +133,7 @@ describe('setAutomationLaneEnabled through action dispatch', () => {
         });
 
         expect(automationStore.value?.lanes[0]?.enabled).toBe(false);
+        expect(getPersistedLaneEnabled({ document, laneId: LANE_ID })).toBe(false);
         expect(mutationCount).toBe(1);
         expect(undoStore.value?.past).toHaveLength(1);
         expect(undoStore.value?.past[0]?.label).toBe('Disable automation: Gain');
@@ -113,6 +141,7 @@ describe('setAutomationLaneEnabled through action dispatch', () => {
         await undo();
 
         expect(automationStore.value?.lanes[0]?.enabled).toBe(true);
+        expect(getPersistedLaneEnabled({ document, laneId: LANE_ID })).toBe(true);
         expect(mutationCount).toBe(2);
         expect(undoStore.value?.past).toHaveLength(0);
         expect(undoStore.value?.future).toHaveLength(1);
