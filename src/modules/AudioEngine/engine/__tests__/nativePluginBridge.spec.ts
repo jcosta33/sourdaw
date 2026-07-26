@@ -148,8 +148,10 @@ describe('native plugin bridge transport', () => {
         const [request] = vi.mocked(processAudioIPC).mock.calls[0] ?? [];
         expect(request?.instanceId).toBe('instance-1');
         // The init handshake carries no plugin identity at all — the worklet has
-        // no id to get wrong.
-        expect(node.port.postMessage.mock.calls[0]?.[0]).toEqual({ type: 'init' });
+        // no id to get wrong. It carries only the shared dropout tally.
+        const init = node.port.postMessage.mock.calls[0]?.[0] as Record<string, unknown>;
+        expect(init.type).toBe('init');
+        expect(Object.keys(init).sort()).toEqual(['dropoutSab', 'type']);
     });
 
     it('keeps one block in flight and resumes relaying after the host answers', async () => {

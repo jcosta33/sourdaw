@@ -49,6 +49,13 @@ export type AudioEngineDropoutStats = {
     silentFrames: number;
     /** `currentFrame` at the most recent detected underrun; 0 when there has been none. */
     lastUnderrunAtFrame: number;
+    /**
+     * Blocks the native plugin bridge could not hand to the plugin host, because
+     * the previous round trip had not come back. The block is not silence — the
+     * previously processed block plays again — but the input never reached the
+     * plugin, so a non-zero count means the relay is behind the render thread.
+     */
+    bridgeDroppedBlocks: number;
 };
 
 export type AudioEngineHealth = {

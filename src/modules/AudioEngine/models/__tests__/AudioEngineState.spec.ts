@@ -6,7 +6,12 @@ import type { AudioEngine, AudioEngineHealth } from '../AudioEngineState';
 // of the contract the engine implementation must satisfy. They guard the fix-6
 // reconciliation (dead members removed) and the fix-4/fix-5 health surface.
 
-const NO_DROPOUTS = { detectedUnderrunBlocks: 0, silentFrames: 0, lastUnderrunAtFrame: 0 };
+const NO_DROPOUTS = {
+    detectedUnderrunBlocks: 0,
+    silentFrames: 0,
+    lastUnderrunAtFrame: 0,
+    bridgeDroppedBlocks: 0,
+};
 
 describe('AudioEngineHealth contract', () => {
     it('carries the worklet-ready flag, the two last-error slots and the dropout tally', () => {
@@ -30,20 +35,29 @@ describe('AudioEngineHealth contract', () => {
         expect(failed.lastResumeError).toBeInstanceOf(Error);
     });
 
-    it('reports the runtime dropout tally as three numeric counters (audit RT-10)', () => {
+    it('reports the runtime dropout tally as four numeric counters', () => {
         const glitchy: AudioEngineHealth = {
             workletReady: true,
             lastInitError: null,
             lastResumeError: null,
-            dropouts: { detectedUnderrunBlocks: 4, silentFrames: 512, lastUnderrunAtFrame: 96_000 },
+            dropouts: {
+                detectedUnderrunBlocks: 4,
+                silentFrames: 512,
+                lastUnderrunAtFrame: 96_000,
+                bridgeDroppedBlocks: 3,
+            },
         };
 
         expect(Object.keys(glitchy.dropouts).sort()).toEqual([
+            'bridgeDroppedBlocks',
             'detectedUnderrunBlocks',
             'lastUnderrunAtFrame',
             'silentFrames',
         ]);
         expect(glitchy.dropouts.silentFrames).toBe(512);
+        // A dropped bridge block is not silence: the previous processed block
+        // plays again, so it adds no silent frames.
+        expect(glitchy.dropouts.bridgeDroppedBlocks).toBe(3);
     });
 });
 
