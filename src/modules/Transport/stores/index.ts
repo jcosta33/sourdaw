@@ -4,7 +4,7 @@
 export { playheadPositionRef } from './playheadPositionRef';
 
 export type { TempoMapStoreState } from './tempoMapStore';
-export { tempoMapStore } from './tempoMapStore';
+export { tempoMapStore, MIN_TEMPO_MAP_TEMPO } from './tempoMapStore';
 
 export type { TimeSignatureMapStoreState } from './timeSignatureMapStore';
 export { timeSignatureMapStore } from './timeSignatureMapStore';

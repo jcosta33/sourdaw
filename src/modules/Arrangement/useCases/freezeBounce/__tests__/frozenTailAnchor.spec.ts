@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { MIN_TEMPO } from '#/modules/Transport/stores';
+import { MIN_TEMPO, MIN_TEMPO_MAP_TEMPO } from '#/modules/Transport/stores';
 import {
     LEGACY_FREEZE_MAX_TAIL_BEATS,
     LEGACY_FREEZE_MIN_TAIL_BEATS,
@@ -40,6 +40,27 @@ describe('unknown frozen tail floor — anchored to freeze’s real mechanism', 
                 ).toBeGreaterThanOrEqual(bakedSeconds);
             }
         }
+    });
+
+    it('clears every tempo floor the project validators will accept, not just one of them', () => {
+        // Two validators accept a tempo, and they are not the same validator:
+        // the transport's own tempo and a tempo-map change are range-checked
+        // separately, and their ranges already differ at the top (300 against
+        // 999). The floor is derived from *the slowest tempo a project can
+        // legally hold*, so it has to clear the smaller of the two minima —
+        // whichever that turns out to be.
+        //
+        // This is the assertion that closes the class. Deduplicating the
+        // constants would not: the previous derivation was checked against the
+        // transport's copy alone, so lowering the tempo-map copy would have left
+        // the floor silently wrong with every test still green. Nothing but a
+        // test spanning the boundary can see that, because the copies agree at
+        // the moment they are written.
+        const slowestLegalTempo = Math.min(MIN_TEMPO, MIN_TEMPO_MAP_TEMPO);
+
+        expect(UNKNOWN_FROZEN_TAIL_SECONDS).toBeGreaterThanOrEqual(
+            (LEGACY_FREEZE_MAX_TAIL_BEATS * 60) / slowestLegalTempo
+        );
     });
 
     it('would have rejected the previous 10 s floor', () => {
