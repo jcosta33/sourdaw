@@ -1,0 +1,47 @@
+src/modules/Arrangement/useCases/__tests__/importAudioClipToTrack.spec.ts
+  s_0d39f3a4a4357a::t_179ccc472be864 5-16
+src/modules/Arrangement/useCases/clip/__tests__/duplicateClip.spec.ts
+  s_0d39f3a4a4357a::t_13efc2def02e62 34
+src/modules/Arrangement/useCases/clip/__tests__/duplicateClipToNextBar.spec.ts
+  s_0d39f3a4a4357a::t_e438a387f9dbee 6-16,44,95
+src/modules/AudioEngine/engine/__tests__/FermenterNode.spec.ts
+  s_0d39f3a4a4357a::t_b469e22fa4820a 253
+src/modules/AudioEngine/repositories/devices/dynamics/__tests__/applyLimiterParams.spec.ts
+  s_0d39f3a4a4357a::t_035343cee1550d 8
+src/modules/AudioEngine/services/__tests__/fermenterProcessor.spec.ts
+  s_0d39f3a4a4357a::t_62035e378c111b 240-246
+src/modules/AudioEngine/services/__tests__/grinderProcessorNeuralPatch.spec.ts
+  s_0d39f3a4a4357a::t_25ee05278f9748 34,36,58,63,69,87-92,106-108,110,127-132,134-135
+src/modules/AudioEngine/useCases/__tests__/exportStems.spec.ts
+  s_0d39f3a4a4357a::t_69b3ee1d62ee80 815-816
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/__tests__/getLatencyReport.spec.ts
+  s_0d39f3a4a4357a::t_6051c2cacb644c 19-21,65
+src/modules/AudioEngine/workers/__tests__/grandBouleEngineWorker.dispatch.spec.ts
+  s_0d39f3a4a4357a::t_a9fe12c645efd2 72-89,157-159
+src/modules/WorkspaceShell/handlers/scratchPad/__tests__/scratchPadHandlers.spec.ts
+  s_0d39f3a4a4357a::t_d3d3329c78bd07 69
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useSelectionLabel.spec.ts
+  s_0d39f3a4a4357a::t_e5fe365bf93af1 54-59
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useTracks.spec.ts
+  s_0d39f3a4a4357a::t_5d80f354078f5d 31,33
+src/modules/WorkspaceShell/presentations/views/Transport/__tests__/ProjectName.spec.tsx
+  s_0d39f3a4a4357a::t_8f616df0b5539e 38,120,124
+src/modules/WorkspaceShell/useCases/togglePanel/panelToggles/__tests__/dualView.spec.ts
+  s_0d39f3a4a4357a::t_babe4321329961 36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "bba286c27f5d945f183bcbf834c5931e1df6af8b",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
