@@ -4,6 +4,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFile, realpath } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve } from 'node:path';
+import { performance } from 'node:perf_hooks';
 import { pathToFileURL } from 'node:url';
 import { types as utilTypes } from 'node:util';
 
@@ -35,6 +36,7 @@ export type EvidenceRunnerDependencies = {
     fileSystem: RunnerFileSystem;
     checkout: Checkout;
     clock: { now: () => Date };
+    monotonicClock: { now: () => number };
     environment: { observe: (signal: AbortSignal) => Promise<unknown>; timeoutMs?: number };
     manifest: { validate: typeof validateEvidenceManifest };
 };
@@ -347,8 +349,10 @@ export async function runEvidenceGate(
     }
 
     let capturedAt: string;
+    let monotonicStart: number;
     let envelopeSource: string;
     try {
+        monotonicStart = dependencies.monotonicClock.now();
         capturedAt = dependencies.clock.now().toISOString();
         envelopeSource = generateEvidenceManifest({
             policySource: loaded.policySource,
@@ -397,11 +401,16 @@ export async function runEvidenceGate(
         });
     }
     try {
-        const finalHead = await dependencies.checkout.head();
-        if (finalHead !== head) {
+        const finalHeadBeforeDirty = await dependencies.checkout.head();
+        if (finalHeadBeforeDirty !== head) {
             return failure('invalid-checkout', 2, ['checkout identity could not be verified']);
         }
-        if (await dependencies.checkout.dirty(outputRootRelativePath)) {
+        const finalDirty = await dependencies.checkout.dirty(outputRootRelativePath);
+        const finalHeadAfterDirty = await dependencies.checkout.head();
+        if (finalHeadAfterDirty !== head) {
+            return failure('invalid-checkout', 2, ['checkout identity could not be verified']);
+        }
+        if (finalDirty) {
             return failure('dirty-checkout', 2, ['checkout contains unrelated changes']);
         }
     } catch {
@@ -411,7 +420,12 @@ export async function runEvidenceGate(
     try {
         const handoffNow = dependencies.clock.now().toISOString();
         const finalElapsed = Date.parse(handoffNow) - Date.parse(capturedAt);
-        finalCaptureIsFresh = finalElapsed >= 0 && finalElapsed <= CAPTURE_WINDOW_MS;
+        const monotonicElapsed = dependencies.monotonicClock.now() - monotonicStart;
+        finalCaptureIsFresh =
+            finalElapsed >= 0 &&
+            finalElapsed <= CAPTURE_WINDOW_MS &&
+            monotonicElapsed >= 0 &&
+            monotonicElapsed <= CAPTURE_WINDOW_MS;
     } catch {
         return failure('invalid-run-envelope', 2, ['run envelope could not be verified'], {
             integratedCommit: head,
@@ -462,6 +476,7 @@ if (await isCliInvocation(process.argv[1])) {
         },
         checkout: createGitCheckout(root),
         clock: { now: () => new Date() },
+        monotonicClock: { now: () => performance.now() },
         environment: {
             observe: (_signal) => Promise.reject(new Error('environment attestor is not registered')),
         },

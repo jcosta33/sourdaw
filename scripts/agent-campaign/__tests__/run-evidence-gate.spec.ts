@@ -35,6 +35,7 @@ async function setup(overrides: Partial<EvidenceRunnerDependencies> = {}) {
             dirty: () => Promise.resolve(false),
         },
         clock: { now: () => new Date(captureTime) },
+        monotonicClock: { now: () => 0 },
         environment: { observe: (_signal: AbortSignal) => Promise.resolve(structuredClone(policy.environment)) },
         manifest: { validate: validateEvidenceManifest },
         ...overrides,
@@ -285,6 +286,41 @@ describe('runEvidenceGate', () => {
 
         const results = await Promise.all([runEvidenceGate(gate, changedHead), runEvidenceGate(gate, changedTree)]);
         expect(results.map(({ code }) => code)).toEqual(['invalid-checkout', 'dirty-checkout']);
+    });
+
+    it('should reject HEAD changes made by the final dirty probe', async () => {
+        let currentHead = head;
+        let dirtyReads = 0;
+        const dependencies = await setup();
+        dependencies.checkout.head = () => Promise.resolve(currentHead);
+        dependencies.checkout.dirty = () => {
+            dirtyReads += 1;
+            if (dirtyReads === 2) {
+                currentHead = 'b'.repeat(40);
+            }
+            return Promise.resolve(false);
+        };
+
+        expect((await runEvidenceGate(gate, dependencies)).code).toBe('invalid-checkout');
+    });
+
+    it.each([
+        ['frozen', 0, 60_001],
+        ['stepped', 1_000, 60_001],
+        ['backward', 0, -1],
+    ])('should reject %s wall time with invalid monotonic elapsed', async (_case, wallStep, monotonicElapsed) => {
+        const start = Date.parse(captureTime);
+        const wallSamples = [new Date(start), new Date(start + wallStep), new Date(start + wallStep * 2)];
+        const monotonicSamples = [0, monotonicElapsed];
+        let wallIndex = 0;
+        let monotonicIndex = 0;
+        const dependencies = await setup({
+            clock: { now: () => wallSamples[wallIndex++] ?? wallSamples[2] },
+            monotonicClock: { now: () => monotonicSamples[monotonicIndex++] ?? monotonicSamples[1] },
+        });
+
+        expect((await runEvidenceGate(gate, dependencies)).code).toBe('invalid-run-envelope');
+        expect([wallIndex, monotonicIndex]).toEqual([3, 2]);
     });
 
     it('should redact final checkout adapter failures', async () => {
