@@ -2,6 +2,7 @@ import { getConflicts, type Doc } from '@automerge/automerge';
 
 import { logger } from '#/infra/logger/appLogger';
 
+import { reconcileCrdtSlot, type CrdtEntityIdentityByField } from './reconcileCrdtSlot';
 import { type StorageAdapter } from './types';
 
 type AutomergeStorageDocId = string;
@@ -61,8 +62,25 @@ type AutomergeStorageOptions<TData> = {
     resolveConflicts?: (values: readonly TData[]) => TData;
     /** Reconcile raw concurrent CRDT values before domain decoding when tombstones or schema metadata matter. */
     resolveCrdtConflicts?: (values: readonly unknown[]) => TData;
-    /** Mutate a CRDT slot in place so domain entities retain causal identity. */
-    mutateCrdt?: (input: { doc: AutomergeStorageMutableDoc; key: string; value: TData }) => void;
+    /**
+     * Mutate a CRDT slot in place so domain entities retain causal identity.
+     * Overrides the default in-place reconciliation entirely; a store supplies
+     * one only when its slot carries a schema the generic reconciler cannot
+     * read, such as an explicit tombstone encoding.
+     */
+    mutateCrdt?: (input: {
+        doc: AutomergeStorageMutableDoc;
+        key: string;
+        /** The value this write was derived from, already narrowed by `toCrdt`. */
+        baseValue: Partial<TData> | null;
+        value: TData;
+    }) => void;
+    /**
+     * Identity overrides for collections whose rows carry no `id`, keyed by the
+     * field name holding the collection. Without an entry a collection of
+     * id-less rows is written as one opaque value.
+     */
+    crdtEntityIdentity?: CrdtEntityIdentityByField;
     /** Rebase a deferred local value over a newer hydrated value. */
     rebasePending?: (input: {
         baseValue: TData | null;
@@ -528,6 +546,7 @@ export const createAutomergeStorage = <TData>(
     const resolveConflicts = options?.resolveConflicts;
     const resolveCrdtConflicts = options?.resolveCrdtConflicts;
     const mutateCrdt = options?.mutateCrdt;
+    const crdtEntityIdentity = options?.crdtEntityIdentity;
     const rebasePending = options?.rebasePending;
     type AdapterPendingWrite = {
         baseValue: TData | null;
@@ -599,6 +618,7 @@ export const createAutomergeStorage = <TData>(
 
     const createMutation = (
         value: TData | null,
+        baseValue: TData | null,
         message?: string,
         snapshotTransaction?: object
     ): AutomergeStorageMutationInput | null => {
@@ -612,6 +632,10 @@ export const createAutomergeStorage = <TData>(
         }
 
         const crdtValue = value !== null && toCrdt ? toCrdt(value) : value;
+        // The base is narrowed the same way the value is, so the two describe
+        // the same fields and a deletion can be told from a field this writer
+        // never carried.
+        const crdtBaseValue = baseValue !== null && toCrdt ? toCrdt(baseValue) : baseValue;
 
         return {
             docId,
@@ -619,11 +643,24 @@ export const createAutomergeStorage = <TData>(
             changeFn: (doc) => {
                 if (crdtValue === null) {
                     delete doc[key];
-                } else if (mutateCrdt) {
-                    mutateCrdt({ doc, key, value: toDocSafe(crdtValue as TData) });
-                } else {
-                    doc[key] = toDocSafe(crdtValue);
+                    return;
                 }
+                if (mutateCrdt) {
+                    mutateCrdt({
+                        doc,
+                        key,
+                        baseValue: crdtBaseValue,
+                        value: toDocSafe(crdtValue as TData),
+                    });
+                    return;
+                }
+                reconcileCrdtSlot({
+                    doc,
+                    key,
+                    baseValue: crdtBaseValue,
+                    value: toDocSafe(crdtValue),
+                    identityByField: crdtEntityIdentity,
+                });
             },
             message,
             snapshotTransaction,
@@ -692,7 +729,12 @@ export const createAutomergeStorage = <TData>(
 
         hasObservedDocumentAuthority = true;
 
-        const mutation = createMutation(pending.value, pending.message, pending.write.snapshotTransaction);
+        const mutation = createMutation(
+            pending.value,
+            pending.baseValue,
+            pending.message,
+            pending.write.snapshotTransaction
+        );
         if (!mutation) {
             return { status: 'defer' };
         }

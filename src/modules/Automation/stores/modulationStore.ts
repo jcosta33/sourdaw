@@ -261,8 +261,27 @@ export function sanitize_modulation_store_state(value: unknown): ModulationStore
     };
 }
 
+/**
+ * A modulator mapping carries no id of its own — it is identified by the
+ * parameter it targets. Naming that identity lets two peers map different
+ * parameters of the same modulator without overwriting each other.
+ */
+function modulator_mapping_identity(row: Record<string, unknown>): string | null {
+    const { targetTrackId, targetDeviceId, targetParamId } = row;
+    if (typeof targetTrackId !== 'string' || typeof targetDeviceId !== 'string') {
+        return null;
+    }
+    if (typeof targetParamId !== 'string') {
+        return null;
+    }
+    return [targetTrackId, targetDeviceId, targetParamId].join(' ');
+}
+
 export const modulationStore = createStore<ModulationStoreState>({
     storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'modulation', {
+        crdtEntityIdentity: {
+            mappings: modulator_mapping_identity,
+        },
         // A document without the `modulation` slot (fresh or legacy project)
         // resets the store to its empty default rather than back-writing the
         // stale cache into the new document — projection stays a pure reader,
