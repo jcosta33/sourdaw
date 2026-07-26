@@ -4,7 +4,9 @@ import { type AdjustmentLayer, type AdjustmentLayerState } from '../../../stores
 import { addAdjustmentRegion } from '../addAdjustmentRegion';
 
 const mocks = vi.hoisted(() => {
-    const adjustmentLayerStoreValue: { value: AdjustmentLayerState | null } = { value: { layers: [] as AdjustmentLayer[] } };
+    const adjustmentLayerStoreValue: { value: AdjustmentLayerState | null } = {
+        value: { layers: [] as AdjustmentLayer[] },
+    };
     return {
         adjustmentLayerStoreValue,
         adjustmentLayerStoreSet: vi.fn<(value: AdjustmentLayerState | null) => void>(),

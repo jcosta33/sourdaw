@@ -68,9 +68,7 @@ describe('getAutoDetectedTailSeconds', () => {
         const projected = spy.mock.calls[0]![0];
         expect(projected).toEqual([
             {
-                devices: [
-                    { type: 'builtin-delay', parameterValues: { 'delay-time': 300 }, bypassed: false },
-                ],
+                devices: [{ type: 'builtin-delay', parameterValues: { 'delay-time': 300 }, bypassed: false }],
             },
         ]);
     });

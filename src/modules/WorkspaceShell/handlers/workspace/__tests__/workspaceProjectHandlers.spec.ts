@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { importAudioFile, importMidiFile } from '#/modules/Arrangement/useCases';
 import { newProject, saveProject, exportProjectFile, pickFiles } from '#/modules/Project/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { handleExportProject } from '../handleExportProject';
 import { handleImportAudioFile } from '../handleImportAudioFile';
@@ -29,8 +30,6 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: vi.fn(),
 }));
-
-import { notifyUser } from '#/utils/Notification/notifyUser';
 
 describe('Workspace Project Handlers', () => {
     beforeEach(() => {

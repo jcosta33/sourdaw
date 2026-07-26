@@ -19,13 +19,7 @@ let eqProps: { onParamChange?: (id: string, v: number) => void };
 vi.mock('#/components/daw/visualizers/DistortionCurve', () => ({
     DistortionCurve: (props: typeof distortionProps) => {
         distortionProps = props;
-        return (
-            <div
-                role="img"
-                aria-label="distortion"
-                onClick={() => props.onParamChange?.('fire', 0)}
-            />
-        );
+        return <div role="img" aria-label="distortion" onClick={() => props.onParamChange?.('fire', 0)} />;
     },
 }));
 vi.mock('#/components/daw/visualizers/CompressorCurve', () => ({
@@ -349,7 +343,7 @@ describe('EffectsSection', () => {
                         eqHighGain: undefined,
                         eqHighQ: undefined,
                     }}
-                />,
+                />
             );
             fireEvent.click(screen.getByText('EQ'));
             // Routing still works with defaults in play.

@@ -25,7 +25,11 @@
     "options": {
         "typeAware": true
     },
-    "ignorePatterns": ["src/routeTree.gen.ts", "src/modules/AudioEngine/wasm/*.js"],
+    "ignorePatterns": [
+        "src/routeTree.gen.ts",
+        "src/modules/AudioEngine/wasm/*.js",
+        "src/modules/AudioEngine/wasm/*.d.ts"
+    ],
     "rules": {
         // ── ESLint core (from eslint.config.mjs explicit config) ────────────
         "prefer-template": "error",
