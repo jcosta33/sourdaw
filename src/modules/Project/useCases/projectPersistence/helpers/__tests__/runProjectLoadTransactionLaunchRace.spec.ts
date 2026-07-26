@@ -57,6 +57,20 @@ describe('runProjectLoadTransaction — launch race', () => {
         expect(template.isCurrent()).toBe(true);
     });
 
+    it('does not let a boot restore supersede a completed user template transition', async () => {
+        const { runProjectLoadTransaction } = await loadFreshMachinery();
+
+        const template = runProjectLoadTransaction();
+        await expect(template.prepare()).resolves.toBe(true);
+        expect(template.activate()).toBe(true);
+
+        const boot = runProjectLoadTransaction({ yieldToInFlight: true });
+
+        await expect(boot.prepare()).resolves.toBe(false);
+        expect(boot.activate()).toBe(false);
+        expect(template.isCurrent()).toBe(true);
+    });
+
     it('lets the boot restore proceed when no user transition is in flight', async () => {
         const { runProjectLoadTransaction } = await loadFreshMachinery();
 

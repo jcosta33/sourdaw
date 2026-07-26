@@ -541,6 +541,11 @@ export const createAutomergeStorage = <TData>(
     let cachedValue: TData | null = null;
     let committedCacheValue: TData | null = null;
     let committedCacheRevision = 0;
+
+    // Slot absence is still authoritative once hydrate has observed a document.
+    // Keep that fact separate from revision counters, which only advance for a
+    // present slot, a local commit, or an explicit projection reset.
+    let hasObservedDocumentAuthority = false;
     /**
      * Set-time high-water mark of the newest committed value. Unlike
      * committedCacheRevision (bumped at COMMIT time), this records the
@@ -673,10 +678,19 @@ export const createAutomergeStorage = <TData>(
             return { status: 'defer' };
         }
         if (!port.hasDoc(docId)) {
-            // Audit CC-5 — the document this write targets is gone (authority
-            // reset between projects). The optimistic value is not truth.
+            // Before this adapter has observed project authority, an absent
+            // document means there is no authority yet. Keep bootstrap defaults
+            // and other pre-project state visible regardless of which animation
+            // frame the port became available on.
+            if (!hasObservedDocumentAuthority) {
+                return { status: 'defer' };
+            }
+            // Audit CC-5 — once authoritative state has existed, a missing
+            // document means this optimistic write belongs to outgoing truth.
             return { status: 'abandon' };
         }
+
+        hasObservedDocumentAuthority = true;
 
         const mutation = createMutation(pending.value, pending.message, pending.write.snapshotTransaction);
         if (!mutation) {
@@ -730,6 +744,8 @@ export const createAutomergeStorage = <TData>(
             return;
         }
         const visibleBefore = cachedValue;
+
+        hasObservedDocumentAuthority = true;
         committedCacheValue = pending.value;
         committedCacheRevision = ++nextRevision;
         committedSetRevision = pending.revision;
@@ -799,6 +815,8 @@ export const createAutomergeStorage = <TData>(
             releasePendingWrite(pending);
         }
         const visibleBefore = cachedValue;
+
+        hasObservedDocumentAuthority = true;
         const defaultValue = hydrateMissing ? toDocSafe(hydrateMissing()) : null;
         committedCacheValue = defaultValue;
         committedCacheRevision = ++nextRevision;
@@ -916,6 +934,8 @@ export const createAutomergeStorage = <TData>(
             if (!doc) {
                 return false;
             }
+
+            hasObservedDocumentAuthority = true;
 
             const heads = port?.getDocHeads?.(docId);
             const headsKey = heads ? heads.join(',') : null;

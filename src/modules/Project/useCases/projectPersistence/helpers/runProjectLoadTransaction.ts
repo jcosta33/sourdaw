@@ -6,6 +6,10 @@ import { projectIdentityTransitionDependencies } from '../projectIdentityTransit
 let nextProjectTransitionId = 0;
 let activeProjectTransitionId = 0;
 let latestPreparedProjectTransitionId = 0;
+
+// A subordinate boot restore may replace another boot restore, but never a
+// user-initiated project identity that has already activated.
+let activeProjectTransitionHasExplicitAuthority = false;
 // Count of transitions that have committed to preparing and not yet settled
 // (activated, or failed/superseded during prepare). A yielding boot restore
 // stands down while this is non-zero. Unlike a `latestPrepared > active`
@@ -74,11 +78,14 @@ export function runProjectLoadTransaction({
     return {
         prepare: () => {
             preparation ??= (async () => {
-                // A yielding (boot restore) transition defers to any other
-                // transition that is mid-flight: standing down before any side
-                // effect (no replay-authority reset, no collaboration teardown)
-                // leaves that transition untouched so it can win.
-                if (yieldToInFlight && preparingProjectTransitionCount > 0) {
+                // A yielding (boot restore) transition defers to any explicit
+                // transition that is either preparing or already authoritative.
+                // Standing down before any side effect leaves that user choice
+                // untouched so startup restoration cannot replace it.
+                if (
+                    yieldToInFlight &&
+                    (preparingProjectTransitionCount > 0 || activeProjectTransitionHasExplicitAuthority)
+                ) {
                     return false;
                 }
                 if (transitionId < latestPreparedProjectTransitionId) {
@@ -126,6 +133,8 @@ export function runProjectLoadTransaction({
             }
             activeProjectTransitionId = transitionId;
             activated = true;
+
+            activeProjectTransitionHasExplicitAuthority = !yieldToInFlight;
             cancelPendingAudioBufferImport();
             return true;
         },

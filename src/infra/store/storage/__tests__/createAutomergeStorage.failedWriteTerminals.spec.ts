@@ -29,11 +29,13 @@ type TestPortHandle = {
     doc: TestDoc;
     port: TestPort;
     setHasDoc: (value: boolean) => void;
+    setMutationFails: (value: boolean) => void;
 };
 
 function createTestPort(): TestPortHandle {
     const doc: TestDoc = {};
     let hasDoc = true;
+    let mutationFails = false;
     return {
         doc,
         port: {
@@ -41,11 +43,17 @@ function createTestPort(): TestPortHandle {
             getSemanticMessage: () => undefined,
             hasDoc: () => hasDoc,
             mutateDoc: ({ changeFn }) => {
+                if (mutationFails) {
+                    throw new Error('mutation failed');
+                }
                 changeFn(doc);
             },
         },
         setHasDoc: (value) => {
             hasDoc = value;
+        },
+        setMutationFails: (value) => {
+            mutationFails = value;
         },
     };
 }
@@ -83,6 +91,68 @@ describe('createAutomergeStorage — non-committing write terminals', () => {
     afterEach(() => {
         configureAutomergeStoragePort(null);
         vi.unstubAllGlobals();
+    });
+
+    describe('deferred pre-authority seed', () => {
+        it('keeps a seed visible when the port appears before a document exists', () => {
+            const { doc, port, setHasDoc } = createTestPort();
+            const storage = createAutomergeStorage<{ count: number }>('root', 'state');
+
+            storage.set({ count: 1 });
+            setHasDoc(false);
+            configureAutomergeStoragePort(port);
+
+            flushAutomergeStorageWrites();
+
+            expect(Object.hasOwn(doc, 'state')).toBe(false);
+            expect(storage.get()).toEqual({ count: 1 });
+
+            storage.set({ count: 2 });
+            flushAutomergeStorageWrites();
+            expect(storage.get()).toEqual({ count: 2 });
+
+            setHasDoc(true);
+            storage.set({ count: 3 });
+            runArmedFrames();
+
+            expect(doc.state).toEqual({ count: 3 });
+            expect(storage.get()).toEqual({ count: 3 });
+        });
+    });
+
+    describe('observed document authority', () => {
+        it('rolls back a local write after an observed missing slot loses its document', () => {
+            const { doc, port, setHasDoc } = createTestPort();
+            configureAutomergeStoragePort(port);
+            const storage = createAutomergeStorage<{ count: number }>('root', 'state');
+
+            expect(storage.hydrate?.()).toBe(false);
+            storage.set({ count: 2 });
+            setHasDoc(false);
+
+            flushAutomergeStorageWrites();
+
+            expect(Object.hasOwn(doc, 'state')).toBe(false);
+            expect(storage.get()).toBeNull();
+        });
+
+        it('rolls back a failed mutation retry when the observed document disappears', () => {
+            const { doc, port, setHasDoc, setMutationFails } = createTestPort();
+            configureAutomergeStoragePort(port);
+            const storage = createAutomergeStorage<{ count: number }>('root', 'state');
+
+            storage.set({ count: 2 });
+            setMutationFails(true);
+            expect(() => flushAutomergeStorageWrites()).toThrow('mutation failed');
+            expect(storage.get()).toEqual({ count: 2 });
+
+            setMutationFails(false);
+            setHasDoc(false);
+            flushAutomergeStorageWrites();
+
+            expect(Object.hasOwn(doc, 'state')).toBe(false);
+            expect(storage.get()).toBeNull();
+        });
     });
 
     describe('discarded write (audit CC-5)', () => {
