@@ -124,13 +124,21 @@ class LevainProcessor extends AudioWorkletProcessor {
                     this._handleMessage(msg);
                 }
             } catch (error) {
+                // Same policy as the process() catch below, deliberately.
+                // A throw here is an OOM, a malformed message, or a wasm trap
+                // left by an earlier panic — and a trap arrives with no message
+                // at all, so the three are not distinguishable from this side.
+                // Sample loading runs through here and copies hundreds of MiB
+                // per instrument, which is exactly where an OOM lands. Treat
+                // the instance as unrecoverable and say so: reporting only
+                // while `!_ready` left a post-startup fault in a worklet
+                // console, with the device still accepting work afterwards.
                 console.error('LevainProcessor error:', error);
-                if (!this._ready) {
-                    this.port.postMessage({
-                        type: 'error',
-                        message: error instanceof Error ? error.message : String(error),
-                    });
-                }
+                this._faulted = true;
+                this.port.postMessage({
+                    type: 'error',
+                    message: error instanceof Error ? error.message : String(error),
+                });
             }
         };
     }

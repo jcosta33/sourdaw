@@ -91,7 +91,7 @@ class KneadProcessor extends AudioWorkletProcessor {
                     this._initWasm(msg.wasmBytes, msg.transportSAB ?? null);
                 } else if (msg.type === 'update-state') {
                     this._clips = msg.clips;
-                } else if (msg.type === 'param' && this._instance !== null && this._ready) {
+                } else if (msg.type === 'param' && this._instance !== null && this._ready && !this._faulted) {
                     if (msg.name === 'shift_semitones') {
                         this._instance.set_shift_semitones?.(msg.value);
                     }
@@ -99,7 +99,13 @@ class KneadProcessor extends AudioWorkletProcessor {
                     this._bypassed = msg.bypassed;
                 }
             } catch (error) {
+                // Same policy as the process() catch below. A throw at the wasm
+                // boundary may leave the instance trapped, and a trap carries no
+                // message, so it cannot be told apart from a recoverable error.
+                // This catch already reported; what it did not do was stop the
+                // instance being handed the next message.
                 console.error('KneadProcessor error:', error);
+                this._faulted = true;
                 this.port.postMessage({ type: 'error', message: String(error) });
             }
         };

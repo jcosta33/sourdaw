@@ -540,26 +540,27 @@ describe('ToasterProcessor dispatch paths & process guards', () => {
         expect((errorMsg![0] as { message: string }).message).toBe('wasm-boom');
     });
 
-    it('does not post an error when a dispatched message throws while already ready', async () => {
+    it('posts an error and stops taking work when a dispatched message throws while already ready', async () => {
         const proc = await loadProcessor();
         send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        kitParamCalls.length = 0;
+        vi.mocked(proc.port.postMessage).mockClear();
 
-        const beforeErrorCount = vi
-            .mocked(proc.port.postMessage)
-            .mock.calls.filter((c) => (c[0] as { type?: string }).type === 'error').length;
-
-        // set_param is called for a 'param' message; make it throw while ready
-        // so the onmessage catch hits the `!this._ready` false arm (no error post).
         const spy = vi.spyOn(ToasterInstanceMock.prototype, 'set_param').mockImplementation(() => {
             throw new Error('param trap while ready');
         });
         send(proc, { type: 'param', name: 'swing', value: 0.5 });
         spy.mockRestore();
 
-        const afterErrorCount = vi
+        const errors = vi
             .mocked(proc.port.postMessage)
-            .mock.calls.filter((c) => (c[0] as { type?: string }).type === 'error').length;
-        expect(afterErrorCount).toBe(beforeErrorCount);
+            .mock.calls.filter((c) => (c[0] as { type?: string }).type === 'error');
+        expect(errors).toHaveLength(1);
+        expect((errors[0]![0] as { message: string }).message).toBe('param trap while ready');
+
+        // A throw here may mean the instance is trapped, so it stops being fed.
+        send(proc, { type: 'param', name: 'swing', value: 0.25 });
+        expect(kitParamCalls).toEqual([]);
     });
 
     // ── scheduledHit fill-condition suppression (line 266) ───────────────────

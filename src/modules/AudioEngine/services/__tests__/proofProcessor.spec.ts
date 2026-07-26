@@ -332,18 +332,14 @@ describe('ProofProcessor message handling & process guards', () => {
         expect(out[0]![0]).toBeCloseTo(0.5, 6);
     });
 
-    // ── error-after-ready (proofProcessor.ts:64 `!this._ready` false arm):
-    // once ready, a control handler that throws enters the onmessage catch with
-    // _ready true, so the catch's error-post guard is false → no 'error' posted. ──
-    it('does not post an error when a control handler throws while already ready', async () => {
+    // ── error-after-ready: a control handler that throws once ready enters the
+    // onmessage catch, which reports it and marks the instance faulted — the
+    // same policy the process() catch has always had. ──
+    it('posts an error and stops taking work when a control handler throws while already ready', async () => {
         const proc = await loadProcessor();
         send(proc, { type: 'init', wasmBytes: MINIMAL_WASM }); // _ready = true
-
-        // Make the switch handler throw while ready: set_param is called for a
-        // 'param' message. We count messages BEFORE so we can isolate the delta.
-        const beforeErrorCount = vi
-            .mocked(proc.port.postMessage)
-            .mock.calls.filter((c) => (c[0] as { type?: string }).type === 'error').length;
+        proofParamCalls.length = 0;
+        vi.mocked(proc.port.postMessage).mockClear();
 
         const spy = vi.spyOn(ProofInstanceMock.prototype, 'set_param').mockImplementation(() => {
             throw new Error('param trap while ready');
@@ -351,11 +347,15 @@ describe('ProofProcessor message handling & process guards', () => {
         send(proc, { type: 'param', name: 'lim_threshold', value: -1 });
         spy.mockRestore();
 
-        const afterErrorCount = vi
+        const errors = vi
             .mocked(proc.port.postMessage)
-            .mock.calls.filter((c) => (c[0] as { type?: string }).type === 'error').length;
-        // _ready was true ⇒ the `if (!this._ready)` guard is false ⇒ no new error.
-        expect(afterErrorCount).toBe(beforeErrorCount);
+            .mock.calls.filter((c) => (c[0] as { type?: string }).type === 'error');
+        expect(errors).toHaveLength(1);
+        expect((errors[0]![0] as { message: string }).message).toBe('param trap while ready');
+
+        // A throw here may mean the instance is trapped, so it stops being fed.
+        send(proc, { type: 'param', name: 'lim_threshold', value: -2 });
+        expect(proofParamCalls).toEqual([]);
     });
 
     // ── line 67 String(error) arm: init throws a non-Error value. ──
