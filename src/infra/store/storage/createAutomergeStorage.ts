@@ -835,6 +835,33 @@ export const createAutomergeStorage = <TData>(
             pending.revision = cachedRevision;
         },
 
+        /**
+         * The document is a wire format shared with peers that may run
+         * different builds, and row validators here are structural and
+         * version-blind — no protocol version is negotiated anywhere in the
+         * sync layer. A peer whose validator still requires a field a newer
+         * build removed rejects every row that lacks it. Refusing to surface
+         * those rows is right; writing the refusal back is not, because the
+         * deletion then propagates to peers that read them fine.
+         *
+         * So a sanitized value updates the visible cache and nothing else.
+         * This mirrors the absent-slot branch of `hydrate()` below, which
+         * already declines to write a projection's opinion into truth, and it
+         * deliberately leaves `lastHydratedJson` / `lastHydratedHeads` alone:
+         * they describe the document, which has not changed.
+         */
+        setProjected(value: TData | null): void {
+            const visibleBefore = cachedValue;
+            committedCacheValue = value;
+            committedCacheRevision = ++nextRevision;
+            committedSetRevision = committedCacheRevision;
+            cachedValue = value;
+            cachedRevision = committedCacheRevision;
+            if (!Object.is(visibleBefore, cachedValue)) {
+                notifyDeferredChange();
+            }
+        },
+
         isSupported(): boolean {
             return true;
         },
