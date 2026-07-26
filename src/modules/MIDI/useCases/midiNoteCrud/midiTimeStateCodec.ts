@@ -67,6 +67,10 @@ const REJECTED_VALUE: RejectedValue = { status: 'rejected' };
 const MAX_ARRAY_LENGTH = 0xffff_ffff;
 const MIDI_STATE_REQUIRED_KEYS = ['probabilitySeed', 'notesByClipId', 'ccByClipId', 'pitchBendByClipId'] as const;
 const MIDI_STATE_OPTIONAL_KEYS = ['migratedAbsoluteNoteClipIds'] as const;
+const MIDI_STATE_ALLOWED_KEYS: ReadonlySet<string> = new Set([
+    ...MIDI_STATE_REQUIRED_KEYS,
+    ...MIDI_STATE_OPTIONAL_KEYS,
+]);
 
 function readDataObject(value: unknown, expectedKeys: readonly string[]): Record<string, unknown> | null {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -175,6 +179,16 @@ function isSupportedMidiStoreState(value: unknown): value is MidiStoreState {
     }
 
     return sanitize_midi_store_state(candidate) === candidate;
+}
+
+function hasCanonicalMidiStoreStateKeys(value: MidiStoreState): boolean {
+    for (const ownKey of Reflect.ownKeys(value)) {
+        if (typeof ownKey !== 'string' || !MIDI_STATE_ALLOWED_KEYS.has(ownKey)) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 function encodeArray(value: unknown[], ancestors: Set<object>): ArrayNode | null {
@@ -478,7 +492,7 @@ function decodeStateUnchecked(value: unknown): MidiStoreState | null {
         return null;
     }
 
-    if (!isSupportedMidiStoreState(decodedValue.value)) {
+    if (!isSupportedMidiStoreState(decodedValue.value) || !hasCanonicalMidiStoreStateKeys(decodedValue.value)) {
         return null;
     }
 
@@ -554,8 +568,18 @@ function statesEqual(left: MidiStoreState, right: MidiStoreState): boolean {
     return nodesEqual(encodedLeft, encodedRight);
 }
 
+function stateMatchesSnapshot(state: MidiStoreState, snapshot: MidiTimeStateNode): boolean {
+    const encodedState = encodeState(state);
+    if (!encodedState) {
+        return false;
+    }
+
+    return nodesEqual(encodedState, snapshot);
+}
+
 export const midiTimeStateCodec = {
     decodeState,
     encodeState,
+    stateMatchesSnapshot,
     statesEqual,
 };

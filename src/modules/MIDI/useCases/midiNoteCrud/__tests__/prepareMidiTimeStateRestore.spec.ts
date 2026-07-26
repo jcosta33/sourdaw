@@ -634,6 +634,12 @@ describe('prepareMidiTimeStateRestore', () => {
         const unsupportedPrototypePlan = structuredClone(plan);
         requireEncodedObject(unsupportedPrototypePlan.replacement).prototype = 'foreign';
 
+        const extraRootStateKeyPlan = structuredClone(plan);
+        requireEncodedObject(extraRootStateKeyPlan.replacement).entries.push({
+            key: 'unexpectedRootState',
+            value: { type: 'boolean', value: true },
+        });
+
         for (const malformedPlan of [
             duplicateKeyPlan,
             duplicateIndexPlan,
@@ -641,6 +647,7 @@ describe('prepareMidiTimeStateRestore', () => {
             malformedTagPlan,
             cyclicPlan,
             unsupportedPrototypePlan,
+            extraRootStateKeyPlan,
         ]) {
             expectRejectedWithoutWrite(malformedPlan, preparedPostState);
         }

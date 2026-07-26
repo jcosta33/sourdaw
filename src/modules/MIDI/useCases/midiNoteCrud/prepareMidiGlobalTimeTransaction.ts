@@ -77,8 +77,8 @@ type MidiGlobalTimeStateRestorePlan = {
 
 type MidiGlobalTimeStateSnapshots = {
     inversePlan: MidiGlobalTimeStateRestorePlan;
-    nextValueSnapshot: MidiStoreState;
-    preparedValueSnapshot: MidiStoreState;
+    nextValueSnapshot: MidiTimeStateSnapshot;
+    preparedValueSnapshot: MidiTimeStateSnapshot;
 };
 
 type PrepareMidiGlobalTimeTransactionInput = {
@@ -613,33 +613,27 @@ function createStateSnapshots(
         return null;
     }
 
-    const nextValueSnapshot = midiTimeStateCodec.decodeState(expected);
-    const preparedValueSnapshot = midiTimeStateCodec.decodeState(replacement);
-    if (!nextValueSnapshot || !preparedValueSnapshot) {
-        return null;
-    }
-
     return {
         inversePlan: {
             version: 1,
             expected,
             replacement,
         },
-        nextValueSnapshot,
-        preparedValueSnapshot,
+        nextValueSnapshot: expected,
+        preparedValueSnapshot: replacement,
     };
 }
 
 function matchesReferenceAndValue(
     currentState: MidiStoreState | null,
     expectedReference: MidiStoreState,
-    expectedValueSnapshot: MidiStoreState
+    expectedValueSnapshot: MidiTimeStateSnapshot
 ): boolean {
     if (currentState !== expectedReference) {
         return false;
     }
 
-    return midiTimeStateCodec.statesEqual(currentState, expectedValueSnapshot);
+    return midiTimeStateCodec.stateMatchesSnapshot(currentState, expectedValueSnapshot);
 }
 
 export function prepareMidiGlobalTimeTransaction(input: PrepareMidiGlobalTimeTransactionInput) {
@@ -670,7 +664,7 @@ export function prepareMidiGlobalTimeTransaction(input: PrepareMidiGlobalTimeTra
             phase = 'closed';
             return false;
         }
-        if (!midiTimeStateCodec.statesEqual(prepared.nextState, stateSnapshots.nextValueSnapshot)) {
+        if (!midiTimeStateCodec.stateMatchesSnapshot(prepared.nextState, stateSnapshots.nextValueSnapshot)) {
             phase = 'closed';
             return false;
         }
@@ -711,7 +705,7 @@ export function prepareMidiGlobalTimeTransaction(input: PrepareMidiGlobalTimeTra
             phase = 'closed';
             return false;
         }
-        if (!midiTimeStateCodec.statesEqual(preparedState, stateSnapshots.preparedValueSnapshot)) {
+        if (!midiTimeStateCodec.stateMatchesSnapshot(preparedState, stateSnapshots.preparedValueSnapshot)) {
             phase = 'closed';
             return false;
         }
