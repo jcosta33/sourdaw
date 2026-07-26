@@ -1,0 +1,47 @@
+scripts/agent-campaign/generateEvidenceManifest.ts
+  s_bc88af7d3b054c::t_c11d9f62db8af4 13
+  s_bc88af7d3b054c::t_61d895050a902f 5-7,9-12,15
+  s_bc88af7d3b054c::t_994ab54e35f9eb 8,14
+scripts/agent-campaign/evidenceManifest.ts
+  s_bc88af7d3b054c::t_84e600caca6c04 22-28,36,42,62-63,65-66,82-84,96,120-122
+  s_bc88af7d3b054c::t_3f354b82027d30 43-45,68,72-73,99,103,105,112-113,118-119,123-124
+  s_bc88af7d3b054c::t_de28535ba4c8e1 16
+  s_bc88af7d3b054c::t_7753715460398b 29,88-93,107-109
+  s_bc88af7d3b054c::t_594c3151939449 11,19
+  s_bc88af7d3b054c::t_41d25a5c576d59 2,4-10,12-15,17-18,20-21,30-32,35,38,40-41,46-53,55-61,64,67,69-71,74-81,85-86,94-95,97-98,104,110-111,114,116-117,125
+src/app/__tests__/agentCampaignBaseline.spec.ts
+  s_bc88af7d3b054c::t_26294bb1eecab1 1,7-17,19-23,28-33,35-36,42-47,50,56,62,66-67,69-70,73-77
+  s_bc88af7d3b054c::t_c11d9f62db8af4 24-27
+  s_bc88af7d3b054c::t_594c3151939449 49
+  s_bc88af7d3b054c::t_eff78e435bf2ad 41
+  s_bc88af7d3b054c::t_d3607e8895d79f 48,57
+  s_bc88af7d3b054c::t_3dffa734e19f6d 52-55,59,64
+  s_bc88af7d3b054c::t_7753715460398b 65
+scripts/agent-campaign/evidenceContract.ts
+  s_bc88af7d3b054c::t_90f44dcfc84918 9,14
+  s_bc88af7d3b054c::t_859b3607cb2861 10,12,122,245
+  s_bc88af7d3b054c::t_aca75365c2ce69 97-98,101,105
+  s_bc88af7d3b054c::t_7ff36dfc548d78 161,163-164,271-272,274
+  s_bc88af7d3b054c::t_486c9c92277659 61-63,66-68,72,88
+  s_bc88af7d3b054c::t_45141c2919d8ae 75-82
+  s_bc88af7d3b054c::t_cdea51c7b8933e 1-8,28,84-85,93-94,113,128-132,156
+  s_bc88af7d3b054c::t_d8a39f6ffc6f83 15
+evidence/agent-campaign/manifest.json
+  s_bc88af7d3b054c::t_e4e3400ed6bae9 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "c9c341a9300102e23d3d162c00cd00bcd9b6ff07",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
