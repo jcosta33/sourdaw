@@ -7,6 +7,7 @@ import { defaultTransportState } from '#/modules/Transport/useCases';
 const mocks = vi.hoisted(() => ({
     resetArrangementStoresForProject: vi.fn(),
     transportStoreSet: vi.fn(),
+    setMasterGainValue: vi.fn(),
     automationStoreSet: vi.fn(),
     midiStoreSet: vi.fn(),
     resetMidiStoreForProject: vi.fn(),
@@ -23,6 +24,11 @@ const mocks = vi.hoisted(() => ({
 vi.mock('#/modules/Arrangement/useCases', () => ({
     resetArrangementStoresForProject: mocks.resetArrangementStoresForProject,
 }));
+
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
+    return { ...actual, setMasterGainValue: mocks.setMasterGainValue };
+});
 
 vi.mock('#/modules/Automation/stores', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Automation/stores')>();
@@ -86,6 +92,7 @@ describe('resetModuleStoresToDefault', () => {
     beforeEach(() => {
         mocks.resetArrangementStoresForProject.mockClear();
         mocks.transportStoreSet.mockClear();
+        mocks.setMasterGainValue.mockClear();
         mocks.automationStoreSet.mockClear();
         mocks.midiStoreSet.mockClear();
         mocks.resetMidiStoreForProject.mockClear();
@@ -104,6 +111,7 @@ describe('resetModuleStoresToDefault', () => {
 
         expect(mocks.resetArrangementStoresForProject).toHaveBeenCalledTimes(1);
         expect(mocks.transportStoreSet).toHaveBeenCalledWith(defaultTransportState);
+        expect(mocks.setMasterGainValue).toHaveBeenCalledWith(defaultTransportState.masterGain / 100);
         expect(mocks.automationStoreSet).toHaveBeenCalledWith({ lanes: [] });
         expect(mocks.resetMidiStoreForProject).toHaveBeenCalledWith({ generateProbabilitySeed: false });
         expect(mocks.tempoMapStoreSet).toHaveBeenCalledWith({ changes: [] });

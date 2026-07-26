@@ -14,13 +14,19 @@ const RENDER_SOURCE_ROOTS = [
     'src/modules/AudioEngine',
     'src/modules/AudioRendering',
     'src/modules/Automation',
+    'src/modules/MIDI',
+    'src/modules/PluginHost',
     'src/modules/Project',
+    'src/modules/Routing',
+    'src/modules/Synth',
     'src/modules/Transport',
+    'src/modules/WorkspaceShell',
     'src/modules/Yeast',
 ] as const;
 const RUNTIME_EXTENSIONS = new Set(['.css', '.js', '.json', '.mjs', '.ts', '.tsx', '.wasm']);
 
 type RenderEvidence = {
+    activeBlockRatio: number;
     bitsPerSample: number;
     capturedAt: string;
     channels: number;
@@ -99,13 +105,14 @@ describe('Mycelium Ascendant full browser render', () => {
         expect(evidence.tailSeconds).toBe(2);
         expect(evidence.durationSeconds).toBeGreaterThan(240);
         expect(evidence.durationSeconds).toBeLessThan(242);
+        expect(evidence.activeBlockRatio).toBeGreaterThan(0.5);
         expect(evidence.sampleRate).toBe(44_100);
         expect(evidence.channels).toBe(2);
         expect(evidence.bitsPerSample).toBe(24);
         expect(evidence.integratedLufs).toBeGreaterThanOrEqual(-11);
         expect(evidence.integratedLufs).toBeLessThanOrEqual(-8);
         expect(evidence.truePeakDbTp).toBeLessThanOrEqual(-0.8);
-        expect(evidence.samplePeak).toBeLessThan(1);
+        expect(evidence.samplePeak).toBeLessThan(0.9);
         expect(evidence.clippedSampleCount).toBe(0);
         expect(maximumDcOffset).toBeLessThan(0.005);
         expect(evidence.lowMonoCompatibilityDb).toBeGreaterThan(-3);
