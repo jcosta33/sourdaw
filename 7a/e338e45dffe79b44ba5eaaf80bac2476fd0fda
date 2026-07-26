@@ -1,0 +1,19 @@
+crates/daw-dsp/src/knead/engine.rs
+  s_0d39f3a4a4357a::t_d8bd4c1367ba4a 972-1009
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "7ae338e45dffe79b44ba5eaaf80bac2476fd0fda",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
