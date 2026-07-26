@@ -256,7 +256,12 @@ setModulationDependencies({
         if (!paramDef) {
             return null;
         }
-        return { min: paramDef.minValue, max: paramDef.maxValue, defaultValue: paramDef.defaultValue };
+        return {
+            min: paramDef.minValue,
+            max: paramDef.maxValue,
+            defaultValue: paramDef.defaultValue,
+            automatable: paramDef.automatable,
+        };
     },
 });
 

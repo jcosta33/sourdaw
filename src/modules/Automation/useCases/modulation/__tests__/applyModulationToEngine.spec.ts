@@ -5,6 +5,8 @@ type MockPluginParam = {
     minValue: number;
     maxValue: number;
     defaultValue: number;
+    /** Optional so fixtures that predate the flag keep meaning "drivable". */
+    automatable?: boolean;
 };
 
 type MockPluginDescriptor = {
@@ -121,7 +123,12 @@ describe('applyModulationToEngine', () => {
                 if (!paramDef) {
                     return null;
                 }
-                return { min: paramDef.minValue, max: paramDef.maxValue, defaultValue: paramDef.defaultValue };
+                return {
+                    min: paramDef.minValue,
+                    max: paramDef.maxValue,
+                    defaultValue: paramDef.defaultValue,
+                    automatable: paramDef.automatable !== false,
+                };
             },
         });
 

@@ -1,5 +1,9 @@
 import { getTrackEligibility, resolveEligibleDeviceWriteTarget, trackStore } from '#/modules/Arrangement/stores';
-import { getEffectiveGain } from '#/modules/Arrangement/useCases';
+import {
+    clampDeviceParameterValue,
+    getEffectiveGain,
+    isDeviceParameterAutomatable,
+} from '#/modules/Arrangement/useCases';
 import {
     getCompensationDelay,
     getCurrentTime,
@@ -34,11 +38,24 @@ import { restoreAutomationBaseValue } from './restoreAutomationBaseValue';
 /** Skip dispatch when the smoothed value has moved less than this per tick. */
 const SLEW_EPSILON = 5e-5;
 
+/**
+ * Whether a lane is allowed to drive this parameter on this device.
+ *
+ * Key presence alone used to be the whole test, and the key is present for any
+ * parameter a panel has ever written — so a lane the picker would refuse to
+ * create drove the parameter at full range once it arrived from a preset, a
+ * project file or a model action. The declared flag is now read here, where the
+ * decision is actually made, rather than only where lanes are offered.
+ */
 function deviceAcceptsAutomationParameter(
-    device: { parameterValues: Record<string, number> },
+    device: { type: string; parameterValues: Record<string, number> },
     parameterId: string
 ): boolean {
-    return device.parameterValues[parameterId] !== undefined;
+    if (device.parameterValues[parameterId] === undefined) {
+        return false;
+    }
+
+    return isDeviceParameterAutomatable({ deviceType: device.type, paramId: parameterId });
 }
 
 const automationState: {
@@ -238,7 +255,12 @@ export function applyAutomation(currentBeat: number): Set<string> {
                 }
 
                 const prev = laneSlew.get(device.id) ?? value;
-                const smoothed = isDiscontinuity ? value : slewStep(prev, value, AUTOMATION_SLEW_ALPHA);
+                const slewed = isDiscontinuity ? value : slewStep(prev, value, AUTOMATION_SLEW_ALPHA);
+                // Lane data is validated on load only for finiteness and
+                // `maxValue >= minValue` — never against the descriptor — so a
+                // stored curve can ask for anything. The declared range binds
+                // here just as it does on a direct write.
+                const smoothed = clampDeviceParameterValue({ deviceType: device.type, paramId, value: slewed });
                 laneSlew.set(device.id, smoothed);
                 // Record the applied value even when the dispatch below
                 // is suppressed as sub-epsilon — the engine still holds this

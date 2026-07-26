@@ -212,4 +212,61 @@ describe('setDeviceParameter', () => {
         expect(undoStore.value?.past).toEqual([]);
         expect(actionHistoryMetadataPort.record).not.toHaveBeenCalled();
     });
+
+    function makeDescribedTrack(id: string, deviceId = 'd1'): Track {
+        const track = createTrack({ id, name: id, kind: 'audio' });
+        // A device type that actually carries a descriptor, so the declared
+        // range is real rather than fixture-invented. `mix` is declared 0..1.
+        track.devices = [
+            {
+                id: deviceId,
+                name: 'Dutch Oven',
+                type: 'dutch-oven',
+                bypassed: false,
+                parameterValues: { mix: 0.5 },
+            },
+        ];
+        return track;
+    }
+
+    it('holds a write above the declared maximum to that maximum, in the engine and the store', () => {
+        setTrackState([makeDescribedTrack('t1')]);
+
+        expect(setDeviceParameter('d1', 'mix', 12)).toBe(true);
+
+        expect(mocks.updateDeviceParam).toHaveBeenCalledWith('t1', 'd1', 'mix', 1);
+
+        const updater = mocks.updateTrack.mock.calls[0]![1];
+        const updated = updater(makeDescribedTrack('t1'));
+        expect(updated.devices[0]!.parameterValues.mix).toBe(1);
+    });
+
+    it('holds a write below the declared minimum to that minimum', () => {
+        setTrackState([makeDescribedTrack('t1')]);
+
+        expect(setDeviceParameter('d1', 'mix', -3)).toBe(true);
+
+        expect(mocks.updateDeviceParam).toHaveBeenCalledWith('t1', 'd1', 'mix', 0);
+    });
+
+    it('records the value that actually landed, not the one that was asked for', () => {
+        mocks.transportStoreValue = { isPlaying: true, playheadPosition: 4 };
+        const track = makeDescribedTrack('t1');
+        track.automationMode = 'write';
+        setTrackState([track]);
+
+        setDeviceParameter('d1', 'mix', 12);
+
+        // Recording the requested value would write a curve the engine can
+        // never reproduce, and the lane would drift from the device on replay.
+        expect(mocks.recordAutomationValue).toHaveBeenCalledWith('t1', 'd1:mix', 1, 4);
+    });
+
+    it('leaves a parameter with no declared range untouched', () => {
+        setTrackState([makeTrack('t1')]);
+
+        expect(setDeviceParameter('d1', 'gain', 4200)).toBe(true);
+
+        expect(mocks.updateDeviceParam).toHaveBeenCalledWith('t1', 'd1', 'gain', 4200);
+    });
 });

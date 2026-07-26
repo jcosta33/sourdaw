@@ -10,10 +10,17 @@
  */
 export type ModulationDependencies = {
     updateDeviceParam: (trackId: string, deviceId: string, paramId: string, value: number) => void;
+    /**
+     * The parameter's declared contract, or null when the device declares none
+     * (Faust, hosted plugins, anything with discovered parameters). Carries
+     * `automatable` as well as the range because modulation is one of the
+     * routes that reaches a parameter without the lane picker ever being
+     * involved, and the flag means nothing unless something enforces it.
+     */
     getPluginParamRange: (
         deviceType: string,
         paramId: string
-    ) => { min: number; max: number; defaultValue: number } | null;
+    ) => { min: number; max: number; defaultValue: number; automatable: boolean } | null;
 };
 
 export let dependencies: ModulationDependencies | null = null;

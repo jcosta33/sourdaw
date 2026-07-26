@@ -1,5 +1,5 @@
 import { resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
-import { getEffectiveGain } from '#/modules/Arrangement/useCases';
+import { getEffectiveGain, isDeviceParameterAutomatable } from '#/modules/Arrangement/useCases';
 import {
     scheduleTrackGain,
     scheduleTrackPan,
@@ -29,8 +29,16 @@ export type RestoreAutomationBaseValueInput = {
     landTime: number;
 };
 
-function deviceAcceptsAutomationParameter(device: { parameterValues: Record<string, number> }, id: string): boolean {
-    return device.parameterValues[id] !== undefined;
+/** Same acceptance law as the apply path: a lane that may not drive it may not restore it either. */
+function deviceAcceptsAutomationParameter(
+    device: { type: string; parameterValues: Record<string, number> },
+    id: string
+): boolean {
+    if (device.parameterValues[id] === undefined) {
+        return false;
+    }
+
+    return isDeviceParameterAutomatable({ deviceType: device.type, paramId: id });
 }
 
 /**
