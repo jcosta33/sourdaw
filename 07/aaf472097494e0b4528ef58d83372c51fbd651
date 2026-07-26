@@ -1,0 +1,91 @@
+tests/e2e/myceliumAutomationStems.spec.ts
+  s_0d39f3a4a4357a::t_ec6b0e8752872a 1-267
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/renderMyceliumAscendantDemo.spec.ts
+  s_0d39f3a4a4357a::t_7a88f2d33d2a40 115-119,123-125,137-140
+  s_0d39f3a4a4357a::t_686b65bd81acf0 112-114
+  s_0d39f3a4a4357a::t_958512c5f8ae3c 141-143
+  s_ac9b259eab20ba::t_b8d88f695fe5d4 10-18,47-72,108-111,144-166
+docs/evidence/mycelium-ascendant/listening-conformance.md
+  s_0d39f3a4a4357a::t_3bcbc77a7ae06f 1-54
+docs/evidence/mycelium-ascendant/note-event-report.json
+  s_c2fca615e81f34::t_ed9ac4ddc65852 1-182
+docs/evidence/mycelium-ascendant/automation-audition.md
+  s_ac9b259eab20ba::t_8a6d89f4132154 1-31
+docs/evidence/mycelium-ascendant/render-evidence.json
+  s_0d39f3a4a4357a::t_afcc924d6a737d 2,5,14-16,18-20
+  s_00e9d398e5bb60::t_89ed560c2dfb26 4
+docs/evidence/mycelium-ascendant/automation-stem-evidence.json
+  s_0d39f3a4a4357a::t_b48a8680364636 1-289
+docs/evidence/mycelium-ascendant/originality-review.md
+  s_0d39f3a4a4357a::t_3d3d547f8d61ac 1-44
+docs/evidence/mycelium-ascendant/desktop-runtime-evidence.json
+  s_ac9b259eab20ba::t_86153a9362330f 1-24
+docs/evidence/mycelium-ascendant/launch-integrity.md
+  s_9712f52665bcce::t_d5640fd8405689 1-25
+docs/evidence/mycelium-ascendant/motif-event-report.json
+  s_ac9b259eab20ba::t_57111d62f169da 1-615
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/createMyceliumTopology.spec.ts
+  s_ac9b259eab20ba::t_d55528b437a496 192-209
+tests/e2e/myceliumDesktopRuntime.spec.ts
+  s_ac9b259eab20ba::t_5f0663176fd3eb 1-138
+tests/e2e/myceliumExport.spec.ts
+  s_ac9b259eab20ba::t_929f58b3011154 117-120
+tests/e2e/playwright.mycelium.config.cjs
+  s_632f2037b21060::t_9004d54a65601d 1-26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "07aaf472097494e0b4528ef58d83372c51fbd651",
+  "prompts": {},
+  "sessions": {
+    "s_00e9d398e5bb60": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aaa3e04ea5c9808aa",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_632f2037b21060": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9f0c-1bb1-7aa0-be1b-06351adffd6e",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9712f52665bcce": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9f17-446f-7ae1-ab12-bd6a75b760f2",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
