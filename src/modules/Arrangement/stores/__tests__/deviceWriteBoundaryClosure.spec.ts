@@ -295,6 +295,14 @@ const DEVICE_DATA_COUNTS = {
         'src/modules/Arrangement/useCases/duplicateTrack.ts': 1,
         'src/modules/Arrangement/useCases/freezeBounce/bounceTrack.ts': 2,
         'src/modules/Arrangement/useCases/freezeBounce/flattenTrack.ts': 1,
+        // Count provenance: 0 -> 1. Freeze now sizes its tail from the device
+        // tail declarations instead of a substring test on the device type, so
+        // it passes `devices: track.devices` to `getDeviceChainTailSeconds` — a
+        // pure calculator that returns a number of seconds. This does not undo
+        // the retirement noted below: freeze still does not build its own
+        // device chain from `track.devices`, it only measures how long that
+        // chain rings. Read, not write; no live device is touched.
+        'src/modules/Arrangement/useCases/freezeBounce/freezeTrack.ts': 1,
         // MD-4 (#716) retired the two sinks this file used to carry: the freeze/
         // bounce renderer no longer reads `track.devices` to build its own device
         // chain — it hands the render subgraph to the AudioEngine offline graph,

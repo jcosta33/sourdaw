@@ -348,6 +348,13 @@ export type ProjectFreezeState = {
          */
         bakeVersion?: number;
     };
+    /**
+     * Plugin-delay compensation the chain carried when the buffer was printed.
+     * Frozen playback must shift by this baked figure, not the live chain's
+     * current latency — a latency change never marks a frozen track stale, so
+     * compensating against the current chain drifts silently and permanently.
+     */
+    compensationSeconds?: number;
     renderProgress?: number;
     errorMessage?: string;
     renderedAt?: number;

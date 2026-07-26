@@ -362,6 +362,47 @@ describe('sanitizeTrackSnapshot — freeze state render settings round-trip', ()
         expect(restored?.sampleRate).toBe(48000);
         expect(restored?.bakeVersion).toBeUndefined();
     });
+
+    /**
+     * `compensationSeconds` is the plugin-delay figure the chain carried at the
+     * moment the buffer was printed, and it is the only one that matches the
+     * buffer's content. `scheduleFrozenTrack` falls back to the *live* chain's
+     * current latency when it is absent — a fallback its comment scopes to
+     * buffers frozen before the field existed. Dropping the field in the
+     * projection puts every reloaded track on that legacy path, and since a
+     * plugin latency change never marks a frozen track stale, the resulting
+     * drift is silent and never self-corrects.
+     */
+    it('preserves compensationSeconds through the round-trip so playback shifts by the baked figure', () => {
+        const result = sanitizeTrackSnapshot(
+            snapshotWithTrack({
+                ...validTrackBase,
+                freezeState: { status: 'frozen', compensationSeconds: 0.032 },
+            })
+        );
+
+        expect(result.tracks[0]?.freezeState?.compensationSeconds).toBe(0.032);
+    });
+
+    it('leaves compensationSeconds absent for a buffer frozen before the field existed', () => {
+        const result = sanitizeTrackSnapshot(
+            snapshotWithTrack({ ...validTrackBase, freezeState: { status: 'frozen' } })
+        );
+
+        expect(result.tracks[0]?.freezeState?.compensationSeconds).toBeUndefined();
+    });
+
+    it('drops a non-numeric compensationSeconds rather than persisting it as garbage', () => {
+        const result = sanitizeTrackSnapshot(
+            snapshotWithTrack({
+                ...validTrackBase,
+                freezeState: { status: 'frozen', compensationSeconds: 'late' },
+            })
+        );
+
+        expect(result.tracks[0]?.freezeState?.status).toBe('frozen');
+        expect(result.tracks[0]?.freezeState?.compensationSeconds).toBeUndefined();
+    });
 });
 
 describe('sanitizeTrackSnapshot — track-level optional field round-trip', () => {

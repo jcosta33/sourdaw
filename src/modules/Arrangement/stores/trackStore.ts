@@ -463,6 +463,15 @@ function normalize_freeze_state(value: unknown): FreezeState | null {
     if (is_finite_number(value.renderedAt)) {
         freeze_state.renderedAt = value.renderedAt;
     }
+    // The plugin-delay figure the chain carried when the buffer was printed —
+    // the only one that matches its content. `scheduleFrozenTrack` falls back
+    // to the live chain's current latency when this is absent, a path scoped to
+    // buffers frozen before the field existed; dropping it here put every
+    // reloaded track on that path, and since a latency change never marks a
+    // frozen track stale, the drift was silent and permanent.
+    if (is_finite_number(value.compensationSeconds)) {
+        freeze_state.compensationSeconds = value.compensationSeconds;
+    }
 
     if (is_plain_object(value.renderSettings)) {
         const render_settings = value.renderSettings;

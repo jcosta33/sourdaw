@@ -105,6 +105,8 @@ export type ProjectFreezeState = {
         /** Which set of freeze rules printed this buffer (`FREEZE_BAKE_VERSION`); absent means it predates the field. */
         bakeVersion?: number;
     };
+    /** Plugin-delay compensation baked into the buffer; frozen playback shifts by this, not the live chain's latency. */
+    compensationSeconds?: number;
     renderProgress?: number;
     errorMessage?: string;
     renderedAt?: number;

@@ -298,7 +298,11 @@ function isFreezeState(value: unknown): boolean {
             ],
             type: 'string',
         }) ||
-        !hasOptionalType({ record: value, keys: ['renderProgress', 'renderedAt'], type: 'number' })
+        !hasOptionalType({
+            record: value,
+            keys: ['renderProgress', 'renderedAt', 'compensationSeconds'],
+            type: 'number',
+        })
     ) {
         return false;
     }
