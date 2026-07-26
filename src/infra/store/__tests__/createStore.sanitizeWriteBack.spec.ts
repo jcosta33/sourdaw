@@ -180,4 +180,29 @@ describe('createStore sanitization against a shared document', () => {
         expect(warn).toHaveBeenCalledTimes(1);
         expect(String(warn.mock.calls[0]?.[0])).toContain('quarantined');
     });
+
+    it('delivers a local edit that was in flight while a sanitizer quarantined content', () => {
+        // Quarantining is a read-side act, so it must not look like a commit to
+        // an unflushed local write. The supersede guard abandons an unscoped
+        // pending whose revision predates the newest committed value; if
+        // quarantining advances that high-water mark, the guard fires with no
+        // commit behind it and the user's edit is dropped on the floor while
+        // `store.value` still shows it.
+        const { doc, port } = createTestPort({ lanes: { lanes: [{ id: 'lane-1', value: 7 }] } });
+        configureAutomergeStoragePort(port);
+        const store = createStore<LaneState>({
+            storage: createAutomergeStorage<LaneState>('root', 'lanes'),
+            sanitize: sanitizeAsOlderBuild,
+        });
+
+        // A local edit the user has authored but whose rAF has not fired.
+        store.set({ lanes: [{ id: 'lane-2', value: 2, legacy: 'kept' }] });
+        // A sync message lands and is projected, quarantining lane-1.
+        store.hydrate();
+        flushAutomergeStorageWrites();
+
+        expect(store.value).toEqual({ lanes: [{ id: 'lane-2', value: 2, legacy: 'kept' }] });
+        // What the store shows must be what the document received.
+        expect(doc.lanes).toEqual({ lanes: [{ id: 'lane-2', value: 2, legacy: 'kept' }] });
+    });
 });

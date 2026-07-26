@@ -844,19 +844,26 @@ export const createAutomergeStorage = <TData>(
          * those rows is right; writing the refusal back is not, because the
          * deletion then propagates to peers that read them fine.
          *
-         * So a sanitized value updates the visible cache and nothing else.
-         * This mirrors the absent-slot branch of `hydrate()` below, which
-         * already declines to write a projection's opinion into truth, and it
-         * deliberately leaves `lastHydratedJson` / `lastHydratedHeads` alone:
-         * they describe the document, which has not changed.
+         * So a sanitized value replaces the committed baseline and nothing
+         * else. Every revision counter is deliberately left where it was:
+         *
+         * - `lastHydratedJson` / `lastHydratedHeads` describe the document,
+         *   which has not changed.
+         * - `committedCacheRevision` and `committedSetRevision` mean "a commit
+         *   landed and superseded older writes". No commit landed here.
+         *   Advancing `committedSetRevision` in particular makes
+         *   `preparePendingWrite`'s supersede guard abandon an unflushed local
+         *   edit that nothing actually superseded — the store would keep
+         *   showing a value the document never received.
+         *
+         * Recomputing rather than assigning `cachedValue` is what keeps an
+         * in-flight local write visible: it already outranks the baseline, and
+         * a read-side correction must not outrank an authored one.
          */
         setProjected(value: TData | null): void {
             const visibleBefore = cachedValue;
             committedCacheValue = value;
-            committedCacheRevision = ++nextRevision;
-            committedSetRevision = committedCacheRevision;
-            cachedValue = value;
-            cachedRevision = committedCacheRevision;
+            recomputeCachedValue();
             if (!Object.is(visibleBefore, cachedValue)) {
                 notifyDeferredChange();
             }
