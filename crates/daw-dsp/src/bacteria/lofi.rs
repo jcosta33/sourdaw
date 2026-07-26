@@ -68,6 +68,11 @@ pub struct LofiProcessor {
     fht_write_pos: usize,
     fht_size: usize,
     output_buffer: Vec<f32>,
+    /// Scratch frame the forward/inverse transform runs in. Preallocated
+    /// because `process_codec` crosses a frame boundary every `fht_size`
+    /// samples on the audio thread, and on wasm32 a fresh allocation there can
+    /// call `memory.grow()`.
+    codec_scratch: Vec<f32>,
     output_read_pos: usize,
     frame_counter: usize,
 
@@ -89,6 +94,7 @@ impl LofiProcessor {
             fht_write_pos: 0,
             fht_size,
             output_buffer: vec![0.0; fht_size],
+            codec_scratch: vec![0.0; fht_size],
             output_read_pos: 0,
             frame_counter: 0,
             amount: 0.0,
@@ -151,13 +157,16 @@ impl LofiProcessor {
             self.fht_write_pos = 0;
             self.output_read_pos = 0;
 
-            // Forward FHT
-            let mut work = self.fht_buffer.clone();
-            fht(&mut work);
+            // Forward FHT, run in the preallocated scratch frame. Cloning
+            // `fht_buffer` here would allocate on the audio thread once per
+            // frame boundary for as long as the codec stage is engaged.
+            let work = &mut self.codec_scratch;
+            work.copy_from_slice(&self.fht_buffer);
+            fht(work);
 
             // Threshold coefficients — set small ones to zero (lossy compression)
             let threshold = self.codec_amount * 0.5;
-            for coeff in &mut work {
+            for coeff in work.iter_mut() {
                 if coeff.abs() < threshold {
                     *coeff = 0.0;
                 }
@@ -175,7 +184,7 @@ impl LofiProcessor {
             }
 
             // Inverse FHT (FHT is its own inverse, scaled by 1/N)
-            fht(&mut work);
+            fht(work);
             let scale = 1.0 / self.fht_size as f32;
             for (i, val) in work.iter().enumerate() {
                 self.output_buffer[i] = val * scale;

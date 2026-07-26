@@ -1,7 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { defaultWorkspaceState } from '../../../models/WorkspaceState';
-
 vi.mock('../../../repositories/getWorkspaceState', () => ({
     getWorkspaceState: vi.fn(),
 }));
@@ -9,6 +7,7 @@ vi.mock('../../../repositories/updateWorkspaceState', () => ({
     updateWorkspaceState: vi.fn(),
 }));
 
+import { defaultWorkspaceState } from '../../../models/WorkspaceState';
 import { getWorkspaceState } from '../../../repositories/getWorkspaceState';
 import { updateWorkspaceState } from '../../../repositories/updateWorkspaceState';
 import { removeAutomationSubLane } from '../removeAutomationSubLane';

@@ -2352,7 +2352,12 @@ export default defineConfig(
             // the type-aware parser does not fatal on files outside any project.
             '.agents/',
             'src/routeTree.gen.ts',
+            // wasm-bindgen output. Both the glue `.js` and the `.d.ts` are
+            // rewritten wholesale by `pnpm wasm:all`, including the
+            // `/* eslint-disable */` header wasm-bindgen emits, so any
+            // in-file fix is erased on the next build.
             'src/modules/AudioEngine/wasm/*.js',
+            'src/modules/AudioEngine/wasm/*.d.ts',
             'test-debug.mjs',
             'test-jscodeshift.js',
             'test-manual-fix.mjs',

@@ -31,14 +31,12 @@ vi.mock('../../../stores/timeSignatureMapStore', () => ({
 }));
 
 vi.mock('../../../models/TimeSignatureMap', () => ({
-    createTimeSignatureChange: vi.fn(
-        (beat: number, numerator: number, denominator: number) => ({
-            id: `ts-${beat}`,
-            beat,
-            numerator,
-            denominator,
-        })
-    ),
+    createTimeSignatureChange: vi.fn((beat: number, numerator: number, denominator: number) => ({
+        id: `ts-${beat}`,
+        beat,
+        numerator,
+        denominator,
+    })),
 }));
 
 import * as subject from '../addTimeSignatureChange';
