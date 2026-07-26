@@ -1,0 +1,54 @@
+src/modules/Arrangement/stores/__tests__/trackStoreCollaboration.spec.ts
+  s_0d39f3a4a4357a::t_d4fa8e0114a629 177
+  s_0d39f3a4a4357a::t_6c2de27c1aea4c 10-11
+  s_0d39f3a4a4357a::t_363906ee12dfbb 67-83
+  s_0d39f3a4a4357a::t_086fde37f55b56 7
+  s_0d39f3a4a4357a::t_b940db503ac021 63
+  s_0d39f3a4a4357a::t_04fca6369e5416 32-37,39,41-42,51,53
+  s_0d39f3a4a4357a::t_289e5691002b62 1-6,8-9,12-31,38,40,56,58-60,62,65-66,84-176,178-182,184-196
+  s_0d39f3a4a4357a::t_6178e2f8edc58c 183
+  s_0d39f3a4a4357a::t_3e545b4c8c83b2 43-50,52,54-55,57,61,64
+src/infra/store/storage/__tests__/createAutomergeStorage.concurrentSlotMerge.spec.ts
+  s_0d39f3a4a4357a::t_5d839f1502b829 1-3,9-103
+  s_0d39f3a4a4357a::t_d108d2164cd343 4-8
+src/modules/Automation/stores/modulationStore.ts
+  s_0d39f3a4a4357a::t_ae945893899dfc 279
+  s_0d39f3a4a4357a::t_05f53337fb04ef 264-278,282-284
+src/infra/store/storage/reconcileCrdtSlot.ts
+  s_0d39f3a4a4357a::t_22ec2d9379f9fb 98
+  s_0d39f3a4a4357a::t_4270149de912eb 1-46,62-97,99-123,130,133-134,140-142,148,150-165,167-225,227-348
+  s_0d39f3a4a4357a::t_fa80a100dacaf2 226
+  s_0d39f3a4a4357a::t_cd989992b35c1e 124-129,131-132,135-139,143-147,149
+  s_0d39f3a4a4357a::t_479871b08abc1d 47-61
+  s_0d39f3a4a4357a::t_bc6a8a6a4ce82e 166
+src/modules/Arrangement/stores/trackStore.ts
+  s_0d39f3a4a4357a::t_b5d3e53ebaca32 681-688
+src/infra/store/__tests__/createStore.sanitizeWriteBack.spec.ts
+  s_0d39f3a4a4357a::t_53e1be12129ffb 216-224
+src/infra/store/storage/__tests__/reconcileCrdtSlot.spec.ts
+  s_0d39f3a4a4357a::t_b8550b6c29e9ed 88-89
+  s_0d39f3a4a4357a::t_1d7f4f344a9089 1-87,90-225
+src/infra/store/storage/createAutomergeStorage.ts
+  s_0d39f3a4a4357a::t_a9c5a7a8ffee96 5
+  s_0d39f3a4a4357a::t_49f3d6947849d1 652
+  s_0d39f3a4a4357a::t_b73f4065658d6a 621,635-638,646-651,653-655
+  s_0d39f3a4a4357a::t_a2329e9e2adfb1 549,732-737
+  s_0d39f3a4a4357a::t_2307fd4b0f2402 65-83
+  s_0d39f3a4a4357a::t_ac695d2e674e19 657-663
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "e249134abb339a0ffdd58643cb049e0befee60b8",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
