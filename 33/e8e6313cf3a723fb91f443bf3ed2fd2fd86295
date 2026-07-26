@@ -1,0 +1,49 @@
+src/modules/AudioEngine/repositories/deviceStrategy/NativeDspDeviceStrategy.ts
+  s_0d39f3a4a4357a::t_cfba824b9fd6ba 86-90
+src/modules/Levain/useCases/__tests__/prepareOfflineLevain.spec.ts
+  s_0d39f3a4a4357a::t_72eaab6cdff39f 7,10-11,14,16-23,28-29,33-39,46-77,81,83-91,99,107
+src/app/__tests__/bootstrap.spec.ts
+  s_0d39f3a4a4357a::t_a3b18ec1606535 122
+  s_0d39f3a4a4357a::t_84752613f64d38 211
+  s_0d39f3a4a4357a::t_c479d462d431f4 19-32
+  s_0d39f3a4a4357a::t_68a7175e3f7f7f 66-67
+  s_0d39f3a4a4357a::t_29f5a47c165230 390-434
+  s_0d39f3a4a4357a::t_d8566421cad83d 47-48
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_0d39f3a4a4357a::t_e1d17235c7624b 240-246
+src/modules/AudioEngine/useCases/__tests__/buildDeviceChainOfflineInstrumentSetup.spec.ts
+  s_0d39f3a4a4357a::t_a94a8e6f3ed780 1-199,206-219,221-228,230-243
+  s_0d39f3a4a4357a::t_3aca8382e68d16 200-205
+  s_0d39f3a4a4357a::t_ffe1e0399896f7 220
+  s_0d39f3a4a4357a::t_a842045405a2c0 229
+src/modules/Levain/useCases/prepareOfflineLevain.ts
+  s_0d39f3a4a4357a::t_049ec67759feba 3,15-16,19,21-46,51-54
+crates/daw-dsp/tests/levain_instrument_identity_is_audible.rs
+  s_0d39f3a4a4357a::t_3f44a308de438e 134-138
+  s_0d39f3a4a4357a::t_a779bffbdbb325 1-133,139-144
+src/modules/AudioEngine/useCases/buildDeviceChain.ts
+  s_0d39f3a4a4357a::t_c7bc093af80289 48-49
+  s_0d39f3a4a4357a::t_9adb8846bb04ba 85-94
+  s_0d39f3a4a4357a::t_490e429244bba6 42-47,50-84,95-117
+  s_0d39f3a4a4357a::t_1f92495132ed24 151-170,172-174
+  s_0d39f3a4a4357a::t_4729b07b2d3ff9 5
+  s_0d39f3a4a4357a::t_14d6fd5220488f 171
+src/modules/AudioEngine/engine/audioDeviceRuntimeSink.ts
+  s_0d39f3a4a4357a::t_147ad37baf2aa8 57-65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "33e8e6313cf3a723fb91f443bf3ed2fd2fd86295",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
