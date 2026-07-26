@@ -1,0 +1,56 @@
+src/modules/Arrangement/stores/clampDeviceParamWrite.ts
+  s_0d39f3a4a4357a::t_99f250abdaf3b1 74-76,79
+  s_0d39f3a4a4357a::t_7fc6c200ce76eb 1-10,48-73,77-78,80
+  s_0d39f3a4a4357a::t_9c955aa14615dc 17-22
+  s_0d39f3a4a4357a::t_f4bb4c8ad7c281 11-16,23-47
+src/modules/Arrangement/useCases/preset/__tests__/presetLoading.spec.ts
+  s_0d39f3a4a4357a::t_4d3931de7ca1a0 213-246,248,250-253
+  s_0d39f3a4a4357a::t_9f209460421b5d 247,249
+src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts
+  s_0d39f3a4a4357a::t_d688550534a841 309
+  s_0d39f3a4a4357a::t_6f76e108296445 319-323
+  s_0d39f3a4a4357a::t_d2ef1b863072f0 298-308,312-318,324-328
+src/modules/Arrangement/stores/index.ts
+  s_0d39f3a4a4357a::t_399b158386080d 29
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/restoreAutomationBaseValue.spec.ts
+  s_0d39f3a4a4357a::t_e329d0e9d8fb4f 1-109
+src/modules/Arrangement/stores/__tests__/clampDeviceParamWrite.spec.ts
+  s_0d39f3a4a4357a::t_4a310d812561ea 1-79
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_0d39f3a4a4357a::t_98babdb8d67630 78-84
+  s_0d39f3a4a4357a::t_b9033940eda734 57-65
+src/modules/Transport/useCases/scheduling/applyAutomation/restoreAutomationBaseValue.ts
+  s_0d39f3a4a4357a::t_1b0e70c71a9234 113-118,122
+  s_0d39f3a4a4357a::t_33fb9d5bdb207a 119
+  s_0d39f3a4a4357a::t_b4fd15423bfd34 22
+src/modules/AudioEngine/useCases/deviceControls/__tests__/updateDeviceParam.spec.ts
+  s_0d39f3a4a4357a::t_bae65e287c3a8a 4,24,26,39,41-42,44-45,48-50,56
+  s_0d39f3a4a4357a::t_08997413b4beef 3,14-23,25,30-31,40,43,46-47,51-55
+src/modules/AudioEngine/useCases/deviceControls/updateDeviceParam.ts
+  s_0d39f3a4a4357a::t_69301dfb646bc6 1-2,5-18
+  s_0d39f3a4a4357a::t_51d2ebbe07338c 20
+src/modules/Arrangement/useCases/preset/presetLoading.ts
+  s_0d39f3a4a4357a::t_5ded26f0f626d8 57
+  s_0d39f3a4a4357a::t_5accb3c743d9b5 11,40-43,50-56,58-59,65,79
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomation.spec.ts
+  s_0d39f3a4a4357a::t_47c18a941d396c 893-898
+  s_0d39f3a4a4357a::t_adecbc14eecf1d 932-934
+  s_0d39f3a4a4357a::t_8ae7212a9dabab 991
+  s_0d39f3a4a4357a::t_4dcf0d26130c98 883-892,899-931,935-990,992-1059
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "1a7c4a0034922af4135c66a9ecfdc172bafd7a4e",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
