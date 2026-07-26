@@ -442,6 +442,13 @@ describe('ElasticEditorPanel', () => {
         };
         render(<ElasticEditorPanel />);
         expect(screen.getByText(/Select an audio clip/i)).toBeInTheDocument();
+
+        // The placeholder returns before any warp toolbar renders, which is the
+        // only reason the no-clip warp state is never read. Pin that: if the
+        // early return is ever removed, this fails instead of silently
+        // surfacing placeholder warp state.
+        expect(screen.queryByTestId('elastic-quantize-button')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('elastic-waveform-canvas')).not.toBeInTheDocument();
     });
 
     it('shows an empty state when the selected clip is not audio', () => {

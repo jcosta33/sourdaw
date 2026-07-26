@@ -481,8 +481,13 @@ function findClip(
     return null;
 }
 
+// Placeholder state for "no clip selected". Mirrors Arrangement's
+// `defaultWarpState`, which cannot be imported here — models are not
+// re-exported across modules, which is why `WarpStateView` is a local
+// duplicate too. Keep `stretchMode` in step with that default: it must always
+// name a mode with a live executor (see `getStretchModeInfo`).
 function emptyWarpState(): WarpStateView {
-    return { enabled: false, markers: [], stretchMode: 'complex', originalTempo: null };
+    return { enabled: false, markers: [], stretchMode: 'repitch', originalTempo: null };
 }
 
 function countMarkers(markers: ReadonlyArray<WarpMarkerView>): {
