@@ -114,6 +114,10 @@ test('exports the complete Mycelium Ascendant mix as a stereo WAV', async ({ pag
         body: JSON.stringify({ capturedAt: new Date().toISOString(), wavSha256, ...wav }),
         contentType: 'application/json',
     });
+    await testInfo.attach('mycelium-stereo-wav', {
+        path: downloadPath,
+        contentType: 'audio/wav',
+    });
     expect(consoleErrors).toEqual([]);
     expect(unexpectedWarnings).toEqual([]);
     expect(pageErrors).toEqual([]);
