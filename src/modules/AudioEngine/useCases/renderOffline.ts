@@ -1,4 +1,4 @@
-import { deriveEffectiveAudibility } from '#/modules/Arrangement/stores';
+import { deriveEffectiveAudibility, deriveVcaMultiplier, getVcaGroupsState } from '#/modules/Arrangement/stores';
 import { sidechainStore } from '#/modules/Routing/stores';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 
@@ -115,6 +115,9 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
         });
         const sourceTracks = allRenderableTracks.filter((track) => audibleByTrackId.get(track.id) ?? !track.muted);
         const sidechainRoutes = sidechainStore.value?.routes ?? [];
+        // Snapshot once: every strip and every gain lane in this render must see
+        // the same group levels, however long the render takes.
+        const vcaGroups = getVcaGroupsState();
         const routableSidechainTargets = new Set<object>();
         for (const route of sidechainRoutes) {
             const sourceTrack = allRenderableTracks.find((track) => track.id === route.sourceTrackId);
@@ -152,7 +155,14 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
 
         for (const track of allRenderableTracks) {
             checkCancel();
-            const strip = await createOfflineTrackStrip(offlineCtx, track);
+            // A VCA-member track plays through its group master, so the bounce
+            // has to fold the same multiplier into its fader. This is the same
+            // derivation the live path resolves through `getEffectiveGain`, and
+            // it is 1 for a track in no group. Resolved here rather than inside
+            // the strip so the strip builder stays a pure function of what it is
+            // handed.
+            const vcaMultiplier = deriveVcaMultiplier({ vcaGroupId: track.vcaGroupId, groups: vcaGroups });
+            const strip = await createOfflineTrackStrip(offlineCtx, track, { vcaMultiplier });
             trackStripsById.set(track.id, strip);
             deviceEntriesByTrack.set(track.id, strip.deviceEntries);
             if (track.kind === 'bus') {
@@ -262,6 +272,9 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
                 allTracks: tracks?.tracks ?? [],
                 deviceEntriesByTrack,
                 regionStartBeat: startBeat,
+                // Same multiplier the strip was seeded with, so a gain lane on a
+                // VCA-member track rides its group instead of nullifying it.
+                vcaMultiplier: deriveVcaMultiplier({ vcaGroupId: track.vcaGroupId, groups: vcaGroups }),
             });
 
             scheduled++;

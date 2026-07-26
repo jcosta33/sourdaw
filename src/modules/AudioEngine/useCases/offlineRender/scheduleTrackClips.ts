@@ -185,6 +185,13 @@ export type ScheduleTrackClipsInput = {
      * option, not an export one, so the mixdown and stem callers leave it unset.
      */
     includeAutomation?: boolean;
+    /**
+     * The track's VCA group master as a plain multiplier (`1` outside a group),
+     * resolved by the calling render use case. A gain lane composes it into its
+     * scheduled values the same way live does, so an automated VCA-member track
+     * bounces at the level it plays.
+     */
+    vcaMultiplier?: number;
 };
 
 export async function scheduleTrackClips({
@@ -205,6 +212,7 @@ export async function scheduleTrackClips({
     deviceEntriesByTrack,
     regionStartBeat = 0,
     includeAutomation = true,
+    vcaMultiplier = 1,
 }: ScheduleTrackClipsInput): Promise<void> {
     const {
         evaluateAutomationValue,
@@ -293,7 +301,8 @@ export async function scheduleTrackClips({
             projectBeatToSeconds,
             offlineCtx.sampleRate,
             compensationDelay,
-            clipBoundsById
+            clipBoundsById,
+            vcaMultiplier
         );
     }
 

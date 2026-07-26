@@ -1,4 +1,9 @@
-import { shouldCreateLiveTrackStrip, type getTrackEligibility } from '#/modules/Arrangement/stores';
+import {
+    deriveVcaMultiplier,
+    getVcaGroupsState,
+    shouldCreateLiveTrackStrip,
+    type getTrackEligibility,
+} from '#/modules/Arrangement/stores';
 import { sidechainStore } from '#/modules/Routing/stores';
 
 import { createExportError } from '../errors/ExportError';
@@ -154,6 +159,9 @@ export const exportStems: ExportStemsFn = async function exportStems(
         // FX-9 — read once; each stem then plans only the routes that key a device
         // it actually renders.
         const sidechainRoutes = sidechainStore.value?.routes ?? [];
+        // Snapshot once so every stem in the set is levelled against the same
+        // group state, however long the whole export takes.
+        const vcaGroups = getVcaGroupsState();
 
         if (!tracks || !midi) {
             onProgress?.(1);
@@ -249,7 +257,14 @@ export const exportStems: ExportStemsFn = async function exportStems(
             for (const groupedTrack of groupedTracks) {
                 // Stems carry the track's content even when muted (see the
                 // eligibility comment above) — only the mixdown bakes mute in.
-                const groupedStrip = await createOfflineTrackStrip(offlineCtx, groupedTrack, { honorMuted: false });
+                // A stem is a level, not a monitoring snapshot: the track's own
+                // fader is already baked in, and its VCA group master is part of
+                // the same balance, so it composes in here too. (Mute and solo
+                // stay ignored above — those are monitoring state, not level.)
+                const groupedStrip = await createOfflineTrackStrip(offlineCtx, groupedTrack, {
+                    honorMuted: false,
+                    vcaMultiplier: deriveVcaMultiplier({ vcaGroupId: groupedTrack.vcaGroupId, groups: vcaGroups }),
+                });
                 trackStripsById.set(groupedTrack.id, groupedStrip);
                 deviceEntriesByTrack.set(groupedTrack.id, groupedStrip.deviceEntries);
             }
@@ -276,7 +291,12 @@ export const exportStems: ExportStemsFn = async function exportStems(
             // content, track by track", so its keys are derived from that same full
             // content rather than from the monitoring state at export time.
             for (const keySourceTrack of stemSidechain.keySourceTracks) {
-                const keyStrip = await createOfflineTrackStrip(offlineCtx, keySourceTrack, { honorMuted: false });
+                // The live compressor keys off a post-fader signal, which rides
+                // the key track's VCA group, so the offline key does too.
+                const keyStrip = await createOfflineTrackStrip(offlineCtx, keySourceTrack, {
+                    honorMuted: false,
+                    vcaMultiplier: deriveVcaMultiplier({ vcaGroupId: keySourceTrack.vcaGroupId, groups: vcaGroups }),
+                });
                 trackStripsById.set(keySourceTrack.id, keyStrip);
                 deviceEntriesByTrack.set(keySourceTrack.id, keyStrip.deviceEntries);
             }
@@ -317,6 +337,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                     allTracks: groupedTopology,
                     deviceEntriesByTrack,
                     regionStartBeat: startBeat,
+                    vcaMultiplier: deriveVcaMultiplier({ vcaGroupId: groupedTrack.vcaGroupId, groups: vcaGroups }),
                 });
             }
 
@@ -350,6 +371,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                     allTracks: tracks.tracks,
                     deviceEntriesByTrack,
                     regionStartBeat: startBeat,
+                    vcaMultiplier: deriveVcaMultiplier({ vcaGroupId: keySourceTrack.vcaGroupId, groups: vcaGroups }),
                 });
             }
 

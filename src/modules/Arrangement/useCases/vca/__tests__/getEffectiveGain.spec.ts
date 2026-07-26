@@ -4,7 +4,11 @@ import { type Track } from '../../../models/Track';
 import { getVcaGroupsState } from '../../../stores/vcaGroupStore';
 import { getEffectiveGain } from '../getEffectiveGain';
 
-vi.mock('../../../stores/vcaGroupStore', () => ({
+// Only the store read is faked. `deriveVcaMultiplier` stays real: it is the
+// shared derivation the offline render also evaluates, so stubbing it here
+// would stop these cases proving anything about the multiplier itself.
+vi.mock('../../../stores/vcaGroupStore', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../../../stores/vcaGroupStore')>()),
     getVcaGroupsState: vi.fn(() => []),
 }));
 
