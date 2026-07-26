@@ -291,9 +291,9 @@ configureAudioDeviceRuntimeSink({
     // registry than live playback, so nothing here ran for an export and Levain
     // bounced silence. Dispatch stays in the composition root; each module owns
     // what its own instrument needs.
-    prepareOfflineInstrument: async ({ deviceId, deviceType, port }) => {
+    prepareOfflineInstrument: async ({ deviceId, deviceType, port, signal }) => {
         if (deviceType === 'levain') {
-            await prepareOfflineLevain({ deviceId, port });
+            await prepareOfflineLevain({ deviceId, port, signal });
         }
     },
     setFermenterTelemetry: (deviceId, telemetry) => {

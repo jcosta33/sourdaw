@@ -7,6 +7,11 @@ export type LoadLevainSamplesIntoPortInput = {
     port: MessagePort;
     /** Instrument whose manifest supplies the zones. */
     instrumentId: string;
+    /**
+     * Aborts the fetch. Without one, a stalled response never settles, and the
+     * render lock it is held under is released in a `finally` that never runs.
+     */
+    signal?: AbortSignal;
 };
 
 /**
@@ -33,7 +38,11 @@ export type LoadLevainSamplesIntoPortInput = {
  * neither zones nor fallback and renders digital silence, measured at peak
  * 0.000000 with zero voices.
  */
-export async function loadLevainSamplesIntoPort({ port, instrumentId }: LoadLevainSamplesIntoPortInput): Promise<void> {
+export async function loadLevainSamplesIntoPort({
+    port,
+    instrumentId,
+    signal,
+}: LoadLevainSamplesIntoPortInput): Promise<void> {
     const basePath = await resolveSampleBasePath(instrumentId);
-    await loadInstrumentFromManifest(`${basePath}/manifest.json`, basePath, port, WEB_LOD);
+    await loadInstrumentFromManifest(`${basePath}/manifest.json`, basePath, port, WEB_LOD, undefined, signal);
 }

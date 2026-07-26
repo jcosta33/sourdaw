@@ -7,6 +7,8 @@ export type PrepareOfflineLevainInput = {
     deviceId: string;
     /** Worklet port of the offline Levain instance. */
     port: MessagePort;
+    /** Aborts the sample fetch on export cancellation or deadline. */
+    signal?: AbortSignal;
 };
 
 /**
@@ -21,8 +23,8 @@ export type PrepareOfflineLevainInput = {
  * Falls back to the default patch's instrument when no entry exists, which is the
  * same instrument live registration would seed for a device nobody has opened.
  */
-export async function prepareOfflineLevain({ deviceId, port }: PrepareOfflineLevainInput): Promise<void> {
+export async function prepareOfflineLevain({ deviceId, port, signal }: PrepareOfflineLevainInput): Promise<void> {
     const instances = levainStore.value ?? {};
     const state = instances[deviceId] ?? defaultLevainState;
-    await loadLevainSamplesIntoPort({ port, instrumentId: state.patch.instrumentId });
+    await loadLevainSamplesIntoPort({ port, instrumentId: state.patch.instrumentId, signal });
 }

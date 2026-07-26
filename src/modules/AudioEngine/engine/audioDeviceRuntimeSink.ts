@@ -58,7 +58,13 @@ export type AudioDeviceRuntimeSink = {
      * offline path asks for that setup, and — unlike the live registration, which
      * is deliberately fire-and-forget — waits for it.
      */
-    prepareOfflineInstrument: (input: { deviceId: string; deviceType: string; port: MessagePort }) => Promise<void>;
+    prepareOfflineInstrument: (input: {
+        deviceId: string;
+        deviceType: string;
+        port: MessagePort;
+        /** Aborts the setup when the export is cancelled or outruns its deadline. */
+        signal?: AbortSignal;
+    }) => Promise<void>;
 };
 
 const defaultSink: AudioDeviceRuntimeSink = {
