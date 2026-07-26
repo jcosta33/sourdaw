@@ -1,7 +1,8 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -25,14 +26,12 @@ async function setup(overrides: Partial<EvidenceRunnerDependencies> = {}) {
             readText: (path: string) => readFile(path, 'utf8'),
             realPath: (path: string) => realpath(path),
         },
-        clock: { now: () => new Date('2026-07-26T21:00:00.000Z') },
         checkout: {
             root: () => Promise.resolve(root),
             head: () => Promise.resolve(head),
             baselineIsAncestor: () => Promise.resolve(true),
             dirty: () => Promise.resolve(false),
         },
-        environment: { observe: () => Promise.resolve(structuredClone(policy.environment)) },
         ...overrides,
     };
 }
@@ -42,6 +41,36 @@ afterEach(async () => {
 });
 
 describe('runEvidenceGate', () => {
+    it('should execute through a symlink and tolerate import without an argv entrypoint', async () => {
+        const root = await mkdtemp(join(tmpdir(), 'sourdaw-evidence-runner-cli-'));
+        const repositoryRoot = process.cwd();
+        const script = join(repositoryRoot, 'scripts/agent-campaign/run-evidence-gate.ts');
+        const link = join(root, 'runner.ts');
+        roots.push(root);
+        await symlink(script, link);
+
+        const invocation = spawnSync(process.execPath, ['--experimental-strip-types', link, ...gate], {
+            cwd: repositoryRoot,
+            encoding: 'utf8',
+        });
+        const output: unknown = JSON.parse(invocation.stdout);
+        expect(invocation.status).not.toBe(0);
+        expect(invocation.stdout).toBe(`${JSON.stringify(output)}\n`);
+        expect(output).toMatchObject({ ok: false, exitCode: invocation.status });
+
+        const importOnly = spawnSync(
+            process.execPath,
+            [
+                '--experimental-strip-types',
+                '--input-type=module',
+                '--eval',
+                `process.argv.splice(1); await import(${JSON.stringify(pathToFileURL(script).href)})`,
+            ],
+            { cwd: repositoryRoot, encoding: 'utf8' }
+        );
+        expect([importOnly.status, importOnly.stdout]).toEqual([0, '']);
+    });
+
     it.each([
         ['--release'],
         ['--gate', 'AC-060', '--manifest', manifest],
@@ -56,23 +85,20 @@ describe('runEvidenceGate', () => {
         });
     });
 
-    it('should materialize observed identity while every executable mode fails closed', async () => {
+    it('should bind observed identity while every executable mode fails closed', async () => {
         const dependencies = await setup();
         const gateResult = await runEvidenceGate(gate, dependencies);
         const suiteResult = await runEvidenceGate(['--suite', 'webllm-real', '--manifest', manifest], dependencies);
         const releaseResult = await runEvidenceGate(['--release', '--manifest', manifest], dependencies);
 
         expect(gateResult).toMatchObject({
-            code: 'executor-unimplemented',
-            targetId: 'AC-060',
+            code: 'execution-unimplemented',
             integratedCommit: head,
-            environmentMatch: true,
         });
-        expect(gateResult.runEnvelopeSha256).toMatch(/^[a-f0-9]{64}$/);
-        expect([suiteResult.code, releaseResult.code]).toEqual(['executor-unimplemented', 'release-unimplemented']);
+        expect([suiteResult.code, releaseResult.code]).toEqual(['execution-unimplemented', 'execution-unimplemented']);
     });
 
-    it('should reject unsafe, stale, inapplicable, and unattested inputs', async () => {
+    it('should reject unsafe and stale policies', async () => {
         const escaped = await runEvidenceGate([...gate.slice(0, -1), '../manifest.json'], await setup());
         const stale = await setup();
         await writeFile(join(stale.root, manifest), '{}\n');
@@ -81,33 +107,23 @@ describe('runEvidenceGate', () => {
         const policyCopy = join(linked.root, 'evidence/agent-campaign/policy-copy.json');
         await rename(manifestPath, policyCopy);
         await symlink(policyCopy, manifestPath);
-        const unavailable = await setup({ environment: { observe: () => Promise.resolve(null) } });
-        const rejected = await setup({ environment: { observe: () => Promise.reject(new Error('private detail')) } });
-        const inapplicable = await runEvidenceGate(['--suite', 'openai-real', '--manifest', manifest], await setup());
-        const wrongOwner = await runEvidenceGate(
-            ['--task', 'TASK-SA-01-command-registry-and-outcomes', '--gate', 'AC-060', '--manifest', manifest],
-            await setup()
-        );
 
         const codes = [
             escaped.code,
             (await runEvidenceGate(gate, stale)).code,
             (await runEvidenceGate(gate, linked)).code,
-            (await runEvidenceGate(gate, unavailable)).code,
-            (await runEvidenceGate(gate, rejected)).code,
-            inapplicable.code,
-            wrongOwner.code,
         ];
-        expect(codes).toEqual([
-            'unsafe-manifest-path',
-            'invalid-policy',
-            'unsafe-manifest-path',
-            'environment-unavailable',
-            'environment-unavailable',
-            'target-inapplicable',
-            'unknown-target',
-        ]);
-        expect((await runEvidenceGate(gate, rejected)).failures).not.toContain('private detail');
+        expect(codes).toEqual(['unsafe-manifest-path', 'invalid-policy', 'unsafe-manifest-path']);
+    });
+
+    it('should redact policy boundary failures', async () => {
+        const unreadable = await setup();
+        const unresolved = await setup();
+        unreadable.fileSystem.readText = () => Promise.reject(new Error('private policy detail'));
+        unresolved.fileSystem.realPath = () => Promise.reject(new Error('private root detail'));
+        const results = await Promise.all([runEvidenceGate(gate, unreadable), runEvidenceGate(gate, unresolved)]);
+        expect(results.map(({ code }) => code)).toEqual(['invalid-policy', 'invalid-policy']);
+        expect(results.flatMap(({ failures }) => failures).join()).not.toMatch(/private (policy|root) detail/);
     });
 
     it('should ignore retained runner output from every head but reject unrelated dirt', async () => {
@@ -129,7 +145,7 @@ describe('runEvidenceGate', () => {
 
         expect([copiedPolicy.code, retainedOutput.code, trackedTamper.code]).toEqual([
             'invalid-checkout',
-            'executor-unimplemented',
+            'execution-unimplemented',
             'dirty-checkout',
         ]);
     });
@@ -137,12 +153,17 @@ describe('runEvidenceGate', () => {
     it('should redact checkout adapter failures', async () => {
         const privateError = () => Promise.reject(new Error('private checkout detail'));
         const results = [];
-        for (const method of ['root', 'head', 'dirty'] as const) {
+        for (const method of ['root', 'head', 'baselineIsAncestor', 'dirty'] as const) {
             const failing = await setup();
             failing.checkout = { ...failing.checkout, [method]: privateError };
             results.push(await runEvidenceGate(gate, failing));
         }
-        expect(results.map(({ code }) => code)).toEqual(['invalid-checkout', 'invalid-checkout', 'invalid-checkout']);
+        expect(results.map(({ code }) => code)).toEqual([
+            'invalid-checkout',
+            'invalid-checkout',
+            'invalid-checkout',
+            'invalid-checkout',
+        ]);
         expect(results.flatMap(({ failures }) => failures)).not.toContain('private checkout detail');
     });
 });

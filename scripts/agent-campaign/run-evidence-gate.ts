@@ -1,13 +1,11 @@
 /// <reference types="node" />
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import { readFile, realpath } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { validateEvidenceManifest, validateEvidencePolicy } from './evidenceManifest.ts';
-import { generateEvidenceManifest } from './generateEvidenceManifest.ts';
+import { validateEvidencePolicy } from './evidenceManifest.ts';
 
 import type { createEvidencePolicy } from './evidenceContract.ts';
 
@@ -32,9 +30,7 @@ type Checkout = {
 export type EvidenceRunnerDependencies = {
     root: string;
     fileSystem: RunnerFileSystem;
-    clock: { now: () => Date };
     checkout: Checkout;
-    environment: { observe: () => Promise<unknown> };
 };
 
 export type EvidenceRunnerResult = {
@@ -42,11 +38,7 @@ export type EvidenceRunnerResult = {
     exitCode: number;
     code: string;
     failures: string[];
-    targetId?: string;
     integratedCommit?: string;
-    capturedAt?: string;
-    runEnvelopeSha256?: string;
-    environmentMatch?: boolean;
 };
 
 const COMMIT = /^[a-f0-9]{40}$/;
@@ -54,7 +46,6 @@ const manifestRelativePath = 'evidence/agent-campaign/manifest.json';
 const outputRootRelativePath = 'evidence/agent-campaign/runs';
 
 const canonical = (value: unknown): string => `${JSON.stringify(value)}\n`;
-const digest = (value: string): string => createHash('sha256').update(value).digest('hex');
 
 function failure(
     code: string,
@@ -157,74 +148,33 @@ function parseArguments(arguments_: string[]): RunnerMode | null {
 async function loadPolicy(
     mode: RunnerMode,
     dependencies: EvidenceRunnerDependencies
-): Promise<{ root: string; policySource: string; policy: Policy } | { failure: EvidenceRunnerResult }> {
-    const root = await dependencies.fileSystem.realPath(dependencies.root);
-    const canonicalPath = join(root, manifestRelativePath);
-    const requestedPath = resolve(root, mode.manifest);
-    const relativePath = relative(root, requestedPath);
-    const escaped = relativePath.startsWith('..') || isAbsolute(relativePath);
-    if (escaped || requestedPath !== canonicalPath) {
-        return {
-            failure: failure('unsafe-manifest-path', 2, ['manifest must be the canonical repository path']),
-        };
-    }
-
+): Promise<{ root: string; policy: Policy } | { failure: EvidenceRunnerResult }> {
     try {
+        const root = await dependencies.fileSystem.realPath(dependencies.root);
+        const canonicalPath = join(root, manifestRelativePath);
+        const requestedPath = resolve(root, mode.manifest);
+        const relativePath = relative(root, requestedPath);
+        const escaped = relativePath.startsWith('..') || isAbsolute(relativePath);
+        if (escaped || requestedPath !== canonicalPath) {
+            return {
+                failure: failure('unsafe-manifest-path', 2, ['manifest must be the canonical repository path']),
+            };
+        }
+
         if ((await dependencies.fileSystem.realPath(requestedPath)) !== requestedPath) {
             return {
                 failure: failure('unsafe-manifest-path', 2, ['manifest symlinks are forbidden']),
             };
         }
-    } catch {
-        return {
-            failure: failure('unsafe-manifest-path', 2, ['manifest path is missing or ambiguous']),
-        };
-    }
-
-    const policySource = await dependencies.fileSystem.readText(requestedPath);
-    const failures = await validateEvidencePolicy(policySource);
-    if (failures.length > 0) {
-        return { failure: failure('invalid-policy', 2, failures) };
-    }
-    return { root, policySource, policy: JSON.parse(policySource) as Policy };
-}
-
-function isRequired(requiredWhen: string, policy: Policy): boolean {
-    if (requiredWhen === 'always') {
-        return true;
-    }
-    if (requiredWhen === 'platform == darwin') {
-        return policy.environment.platform === 'darwin';
-    }
-
-    const match = /^capability\.([a-z0-9-]+) == admitted$/.exec(requiredWhen);
-    if (!match) {
-        throw new Error(`unsupported requiredWhen expression: ${requiredWhen}`);
-    }
-    const capability = policy.capabilities.find(({ id }) => id === match[1]);
-    return capability?.status === 'admitted';
-}
-
-function validateTarget(mode: RunnerMode, policy: Policy): EvidenceRunnerResult | { id: string } | null {
-    if (mode.kind === 'release') {
-        return null;
-    }
-    if (mode.kind === 'gate') {
-        const gate = policy.inventories.gates.entries.find(({ gateId }) => gateId === mode.targetId);
-        if (!gate || gate.owningTask !== mode.taskId) {
-            return failure('unknown-target', 2, ['gate and owning task must match the frozen inventory']);
+        const policySource = await dependencies.fileSystem.readText(requestedPath);
+        const failures = await validateEvidencePolicy(policySource);
+        if (failures.length > 0) {
+            return { failure: failure('invalid-policy', 2, failures) };
         }
-        return { id: gate.gateId };
+        return { root, policy: JSON.parse(policySource) as Policy };
+    } catch {
+        return { failure: failure('invalid-policy', 2, ['policy could not be safely loaded or validated']) };
     }
-
-    const suite = policy.suites.find(({ id }) => id === mode.targetId);
-    if (!suite) {
-        return failure('unknown-target', 2, ['suite must exist in the frozen inventory']);
-    }
-    if (!isRequired(suite.requiredWhen, policy)) {
-        return failure('target-inapplicable', 2, ['frozen requiredWhen mechanically evaluates false']);
-    }
-    return { id: suite.id };
 }
 
 export async function runEvidenceGate(
@@ -259,66 +209,23 @@ export async function runEvidenceGate(
         return failure('invalid-checkout', 2, ['checkout identity could not be verified']);
     }
 
-    const target = validateTarget(mode, loaded.policy);
-    if (target && 'ok' in target) {
-        return target;
-    }
-
-    const capturedAt = dependencies.clock.now().toISOString();
-    const envelopeSource = generateEvidenceManifest({
-        policySource: loaded.policySource,
-        observedCommit: head,
-        observedDirty: false,
-        capturedAt,
-    });
-    const envelopeFailures = await validateEvidenceManifest({
-        source: envelopeSource,
-        policySource: loaded.policySource,
-        observedCommit: head,
-        observedDirty: false,
-        observedCapturedAt: capturedAt,
-        observedNow: capturedAt,
-        releaseReady: false,
-    });
-    if (envelopeFailures.length > 0) {
-        return failure('invalid-run-envelope', 2, envelopeFailures);
-    }
-
-    let observedEnvironment: unknown;
-    try {
-        observedEnvironment = await dependencies.environment.observe();
-    } catch {
-        return failure('environment-unavailable', 4, ['environment attestation failed'], {
-            integratedCommit: head,
-            capturedAt,
-            runEnvelopeSha256: digest(envelopeSource),
-            environmentMatch: false,
-        });
-    }
-    const environmentMatch =
-        observedEnvironment !== null &&
-        digest(canonical(observedEnvironment)) === digest(canonical(loaded.policy.environment));
-    const context = {
+    return failure('execution-unimplemented', 3, ['target and environment attestation are not registered'], {
         integratedCommit: head,
-        capturedAt,
-        runEnvelopeSha256: digest(envelopeSource),
-        environmentMatch,
-    };
-    if (!environmentMatch) {
-        return failure('environment-unavailable', 4, ['observed environment is unavailable or mismatched'], context);
-    }
-    if (mode.kind === 'release') {
-        return failure('release-unimplemented', 3, ['release aggregation is not registered'], context);
-    }
-    return failure('executor-unimplemented', 3, ['trusted executor is not registered'], {
-        ...context,
-        targetId: target?.id,
     });
 }
 
-const isCli = import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
+async function isCliInvocation(entrypoint: string | undefined): Promise<boolean> {
+    if (!entrypoint) {
+        return false;
+    }
+    try {
+        return import.meta.url === pathToFileURL(await realpath(entrypoint)).href;
+    } catch {
+        return false;
+    }
+}
 
-if (isCli) {
+if (await isCliInvocation(process.argv[1])) {
     const root = process.cwd();
     const output = await runEvidenceGate(process.argv.slice(2), {
         root,
@@ -326,9 +233,7 @@ if (isCli) {
             readText: (path) => readFile(path, 'utf8'),
             realPath: (path) => realpath(path),
         },
-        clock: { now: () => new Date() },
         checkout: createGitCheckout(root),
-        environment: { observe: () => Promise.resolve(null) },
     });
     process.stdout.write(canonical(output));
     process.exitCode = output.exitCode;
