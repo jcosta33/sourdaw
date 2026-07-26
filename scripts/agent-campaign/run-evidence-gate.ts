@@ -1,11 +1,13 @@
 /// <reference types="node" />
 
 import { execFileSync, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { readFile, realpath } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { validateEvidencePolicy } from './evidenceManifest.ts';
+import { validateEvidenceManifest, validateEvidencePolicy } from './evidenceManifest.ts';
+import { generateEvidenceManifest } from './generateEvidenceManifest.ts';
 
 import type { createEvidencePolicy } from './evidenceContract.ts';
 
@@ -31,6 +33,8 @@ export type EvidenceRunnerDependencies = {
     root: string;
     fileSystem: RunnerFileSystem;
     checkout: Checkout;
+    clock: { now: () => Date };
+    environment: { observe: () => Promise<unknown> };
 };
 
 export type EvidenceRunnerResult = {
@@ -38,7 +42,11 @@ export type EvidenceRunnerResult = {
     exitCode: number;
     code: string;
     failures: string[];
+    targetId?: string;
     integratedCommit?: string;
+    capturedAt?: string;
+    runEnvelopeSha256?: string;
+    environmentMatch?: boolean;
 };
 
 const COMMIT = /^[a-f0-9]{40}$/;
@@ -46,6 +54,61 @@ const manifestRelativePath = 'evidence/agent-campaign/manifest.json';
 const outputRootRelativePath = 'evidence/agent-campaign/runs';
 
 const canonical = (value: unknown): string => `${JSON.stringify(value)}\n`;
+const digest = (value: string): string => createHash('sha256').update(value).digest('hex');
+
+function dataProperty(object: object, key: string): unknown {
+    const descriptor = Object.getOwnPropertyDescriptor(object, key);
+    if (!descriptor?.enumerable || !('value' in descriptor)) {
+        throw new Error('value is not plain JSON');
+    }
+    return descriptor.value;
+}
+
+function canonicalPlainJson(value: unknown, ancestors = new Set<object>()): string {
+    if (value === null) {
+        return 'null';
+    }
+    if (typeof value === 'string' || typeof value === 'boolean') {
+        return JSON.stringify(value);
+    }
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return JSON.stringify(value);
+    }
+    if (typeof value !== 'object' || ancestors.has(value)) {
+        throw new Error('value is not plain JSON');
+    }
+
+    ancestors.add(value);
+    try {
+        if (Array.isArray(value)) {
+            if (
+                Reflect.getPrototypeOf(value) !== Array.prototype ||
+                Reflect.ownKeys(value).length !== value.length + 1
+            ) {
+                throw new Error('array is not plain JSON');
+            }
+            const items = Array.from({ length: value.length }, (_, index) =>
+                canonicalPlainJson(dataProperty(value, String(index)), ancestors)
+            );
+            return `[${items.join(',')}]`;
+        }
+
+        const prototype = Reflect.getPrototypeOf(value);
+        if (prototype !== Object.prototype && prototype !== null) {
+            throw new Error('object is not plain JSON');
+        }
+        const keys = Reflect.ownKeys(value);
+        if (keys.some((key) => typeof key !== 'string' || key === 'toJSON')) {
+            throw new Error('object is not plain JSON');
+        }
+        const fields = (keys as string[])
+            .sort()
+            .map((key) => `${JSON.stringify(key)}:${canonicalPlainJson(dataProperty(value, key), ancestors)}`);
+        return `{${fields.join(',')}}`;
+    } finally {
+        ancestors.delete(value);
+    }
+}
 
 function failure(
     code: string,
@@ -148,7 +211,7 @@ function parseArguments(arguments_: string[]): RunnerMode | null {
 async function loadPolicy(
     mode: RunnerMode,
     dependencies: EvidenceRunnerDependencies
-): Promise<{ root: string; policy: Policy } | { failure: EvidenceRunnerResult }> {
+): Promise<{ root: string; policy: Policy; policySource: string } | { failure: EvidenceRunnerResult }> {
     try {
         const root = await dependencies.fileSystem.realPath(dependencies.root);
         const canonicalPath = join(root, manifestRelativePath);
@@ -171,10 +234,43 @@ async function loadPolicy(
         if (failures.length > 0) {
             return { failure: failure('invalid-policy', 2, failures) };
         }
-        return { root, policy: JSON.parse(policySource) as Policy };
+        return { root, policy: JSON.parse(policySource) as Policy, policySource };
     } catch {
         return { failure: failure('invalid-policy', 2, ['policy could not be safely loaded or validated']) };
     }
+}
+
+function isRequired(requiredWhen: string, policy: Policy): boolean {
+    if (requiredWhen === 'always') {
+        return true;
+    }
+    if (requiredWhen === 'platform == darwin') {
+        return policy.environment.platform === 'darwin';
+    }
+    const match = /^capability\.([a-z0-9-]+) == admitted$/.exec(requiredWhen);
+    const capability = policy.capabilities.find(({ id }) => id === match?.[1]);
+    return Boolean(match && capability?.status === 'admitted');
+}
+
+function validateTarget(mode: RunnerMode, policy: Policy): EvidenceRunnerResult | { id: string } | null {
+    if (mode.kind === 'release') {
+        return null;
+    }
+    if (mode.kind === 'gate') {
+        const gate = policy.inventories.gates.entries.find(({ gateId }) => gateId === mode.targetId);
+        if (!gate || gate.owningTask !== mode.taskId) {
+            return failure('unknown-target', 2, ['gate and owning task must match the frozen inventory']);
+        }
+        return { id: gate.gateId };
+    }
+    const suite = policy.suites.find(({ id }) => id === mode.targetId);
+    if (!suite) {
+        return failure('unknown-target', 2, ['suite must exist in the frozen inventory']);
+    }
+    if (!isRequired(suite.requiredWhen, policy)) {
+        return failure('target-inapplicable', 2, ['frozen requiredWhen mechanically evaluates false']);
+    }
+    return { id: suite.id };
 }
 
 export async function runEvidenceGate(
@@ -209,8 +305,79 @@ export async function runEvidenceGate(
         return failure('invalid-checkout', 2, ['checkout identity could not be verified']);
     }
 
-    return failure('execution-unimplemented', 3, ['target and environment attestation are not registered'], {
+    const target = validateTarget(mode, loaded.policy);
+    if (target && 'ok' in target) {
+        return target;
+    }
+
+    let capturedAt: string;
+    let envelopeSource: string;
+    try {
+        capturedAt = dependencies.clock.now().toISOString();
+        envelopeSource = generateEvidenceManifest({
+            policySource: loaded.policySource,
+            observedCommit: head,
+            observedDirty: false,
+            capturedAt,
+        });
+    } catch {
+        return failure('invalid-run-envelope', 2, ['run envelope could not be verified'], {
+            integratedCommit: head,
+        });
+    }
+    const runEnvelopeSha256 = digest(envelopeSource);
+    let environmentMatch: boolean;
+    try {
+        const observedEnvironment = await dependencies.environment.observe();
+        environmentMatch =
+            digest(canonicalPlainJson(observedEnvironment)) === digest(canonicalPlainJson(loaded.policy.environment));
+    } catch {
+        return failure('environment-unavailable', 4, ['environment attestation could not be verified'], {
+            integratedCommit: head,
+            capturedAt,
+            runEnvelopeSha256,
+            environmentMatch: false,
+        });
+    }
+
+    let envelopeFailures: string[];
+    try {
+        const observedNow = dependencies.clock.now().toISOString();
+        envelopeFailures = await validateEvidenceManifest({
+            source: envelopeSource,
+            policySource: loaded.policySource,
+            observedCommit: head,
+            observedDirty: false,
+            observedCapturedAt: capturedAt,
+            observedNow,
+            releaseReady: false,
+        });
+    } catch {
+        return failure('invalid-run-envelope', 2, ['run envelope could not be verified'], {
+            integratedCommit: head,
+            capturedAt,
+            runEnvelopeSha256,
+            environmentMatch,
+        });
+    }
+    const context = {
         integratedCommit: head,
+        capturedAt,
+        runEnvelopeSha256,
+        environmentMatch,
+    };
+    if (envelopeFailures.length > 0) {
+        return failure('invalid-run-envelope', 2, ['run envelope could not be verified'], context);
+    }
+    if (!environmentMatch) {
+        return failure('environment-unavailable', 4, ['environment attestation could not be verified'], context);
+    }
+    if (mode.kind === 'release') {
+        return failure('release-unimplemented', 3, ['release aggregation is not registered'], context);
+    }
+    return failure('executor-unimplemented', 3, ['trusted executor is not registered'], {
+        ...context,
+        targetId: target?.id,
     });
 }
 
@@ -234,6 +401,8 @@ if (await isCliInvocation(process.argv[1])) {
             realPath: (path) => realpath(path),
         },
         checkout: createGitCheckout(root),
+        clock: { now: () => new Date() },
+        environment: { observe: () => Promise.reject(new Error('environment attestor is not registered')) },
     });
     process.stdout.write(canonical(output));
     process.exitCode = output.exitCode;

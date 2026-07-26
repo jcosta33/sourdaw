@@ -13,6 +13,7 @@ const head = 'a'.repeat(40);
 const roots: string[] = [];
 const manifest = 'evidence/agent-campaign/manifest.json';
 const gate = ['--task', 'TASK-SA-00-protocol-governance', '--gate', 'AC-060', '--manifest', manifest];
+const captureTime = '2026-07-27T12:00:00.000Z';
 
 async function setup(overrides: Partial<EvidenceRunnerDependencies> = {}) {
     const root = await mkdtemp(join(tmpdir(), 'sourdaw-evidence-runner-'));
@@ -32,6 +33,8 @@ async function setup(overrides: Partial<EvidenceRunnerDependencies> = {}) {
             baselineIsAncestor: () => Promise.resolve(true),
             dirty: () => Promise.resolve(false),
         },
+        clock: { now: () => new Date(captureTime) },
+        environment: { observe: () => Promise.resolve(structuredClone(policy.environment)) },
         ...overrides,
     };
 }
@@ -87,17 +90,113 @@ describe('runEvidenceGate', () => {
         });
     });
 
-    it('should bind observed identity while every executable mode fails closed', async () => {
-        const dependencies = await setup();
+    it('should bind a valid run envelope and environment before typed terminal outcomes', async () => {
+        const calls: string[] = [];
+        const policy = createEvidencePolicy();
+        const dependencies = await setup({
+            clock: {
+                now: () => {
+                    calls.push('clock');
+                    return new Date(captureTime);
+                },
+            },
+            environment: {
+                observe: () => {
+                    calls.push('environment');
+                    return Promise.resolve(structuredClone(policy.environment));
+                },
+            },
+        });
         const gateResult = await runEvidenceGate(gate, dependencies);
-        const suiteResult = await runEvidenceGate(['--suite', 'webllm-real', '--manifest', manifest], dependencies);
-        const releaseResult = await runEvidenceGate(['--release', '--manifest', manifest], dependencies);
 
         expect(gateResult).toMatchObject({
-            code: 'execution-unimplemented',
+            code: 'executor-unimplemented',
+            targetId: 'AC-060',
             integratedCommit: head,
+            capturedAt: captureTime,
+            environmentMatch: true,
         });
-        expect([suiteResult.code, releaseResult.code]).toEqual(['execution-unimplemented', 'execution-unimplemented']);
+        expect(gateResult.runEnvelopeSha256).toMatch(/^[a-f0-9]{64}$/);
+        expect(calls).toEqual(['clock', 'environment', 'clock']);
+
+        const suiteResult = await runEvidenceGate(['--suite', 'webllm-real', '--manifest', manifest], await setup());
+        const releaseResult = await runEvidenceGate(['--release', '--manifest', manifest], await setup());
+        expect([suiteResult.code, releaseResult.code]).toEqual(['executor-unimplemented', 'release-unimplemented']);
+    });
+
+    it('should reject unknown, wrongly owned, and mechanically inapplicable targets', async () => {
+        const argumentsByCase = [
+            ['--task', 'TASK-SA-01-command-registry-and-outcomes', '--gate', 'AC-060', '--manifest', manifest],
+            ['--task', 'TASK-SA-00-protocol-governance', '--gate', 'AC-999', '--manifest', manifest],
+            ['--suite', 'unknown-suite', '--manifest', manifest],
+            ['--suite', 'openai-real', '--manifest', manifest],
+        ];
+        const results = await Promise.all(
+            argumentsByCase.map(async (arguments_) => runEvidenceGate(arguments_, await setup()))
+        );
+        expect(results.map(({ code }) => code)).toEqual([
+            'unknown-target',
+            'unknown-target',
+            'unknown-target',
+            'target-inapplicable',
+        ]);
+    });
+
+    it('should redact rejected, mismatched, and non-JSON environment attestations', async () => {
+        const cyclic: { self?: unknown } = {};
+        cyclic.self = cyclic;
+        let toJsonCalled = false;
+        const withToJson = { toJSON: () => (toJsonCalled = true) };
+        let accessorCalled = false;
+        const withAccessor = Object.defineProperty({}, 'secret', {
+            enumerable: true,
+            get: () => {
+                accessorCalled = true;
+                throw new Error('private accessor detail');
+            },
+        });
+        const malformed = [
+            {},
+            1n,
+            cyclic,
+            withToJson,
+            withAccessor,
+            { value: undefined },
+            { value: Symbol('private') },
+            { value: () => 'private' },
+            { value: Number.NaN },
+            { value: Number.POSITIVE_INFINITY },
+            Object.create({ inherited: true }),
+            Object.setPrototypeOf([], {}),
+        ];
+        const results = await Promise.all([
+            runEvidenceGate(
+                gate,
+                await setup({ environment: { observe: () => Promise.reject(new Error('private')) } })
+            ),
+            ...malformed.map(async (value) =>
+                runEvidenceGate(gate, await setup({ environment: { observe: () => Promise.resolve(value) } }))
+            ),
+        ]);
+
+        expect(results.map(({ code }) => code).every((code) => code === 'environment-unavailable')).toBe(true);
+        expect(results.flatMap(({ failures }) => failures).join()).not.toMatch(/private|accessor/);
+        expect([toJsonCalled, accessorCalled]).toEqual([false, false]);
+    });
+
+    it.each([
+        ['future', -1, 'invalid-run-envelope'],
+        ['current', 0, 'executor-unimplemented'],
+        ['at 60 seconds', 60_000, 'executor-unimplemented'],
+        ['over 60 seconds', 60_001, 'invalid-run-envelope'],
+    ])('should classify a %s capture using an independent clock sample', async (_case, elapsed, expectedCode) => {
+        const start = Date.parse(captureTime);
+        const samples = [new Date(start), new Date(start + elapsed)];
+        let index = 0;
+        const dependencies = await setup({ clock: { now: () => samples[index++] ?? samples[1] } });
+
+        expect((await runEvidenceGate(gate, dependencies)).code).toBe(expectedCode);
+        expect(index).toBe(2);
     });
 
     it('should reject unsafe and stale policies', async () => {
@@ -151,7 +250,7 @@ describe('runEvidenceGate', () => {
 
         expect([copiedPolicy.code, retainedOutput.code, untrackedDirt.code, trackedTamper.code]).toEqual([
             'invalid-checkout',
-            'execution-unimplemented',
+            'executor-unimplemented',
             'dirty-checkout',
             'dirty-checkout',
         ]);
