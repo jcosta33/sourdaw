@@ -5,6 +5,7 @@ import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
+import { markerStore, type MarkerStoreState } from '#/modules/Arrangement/stores';
 import { projectCrdtToStores } from '#/modules/CrdtDocument/useCases';
 import { LEGACY_MIDI_PROBABILITY_SEED, midiStore, type MidiStoreState } from '#/modules/MIDI/stores';
 
@@ -12,6 +13,7 @@ import { resetModuleStoresToDefault } from '../helpers/resetModuleStoresToDefaul
 
 type RootDocument = {
     midi?: MidiStoreState;
+    markers?: MarkerStoreState;
     [key: string]: unknown;
 };
 
@@ -69,6 +71,29 @@ function readMidiDocument(peer: ReturnType<typeof createPeer>): unknown {
     return JSON.parse(JSON.stringify(midi));
 }
 
+function persistedMarkerState(): MarkerStoreState {
+    return {
+        markers: [{ id: 'persisted-marker', beat: 0, name: 'Horizon', color: 'blue' }],
+        sections: [
+            {
+                id: 'persisted-section',
+                startBeat: 0,
+                endBeat: 64,
+                name: 'Sporefall',
+                color: 'purple',
+            },
+        ],
+    };
+}
+
+function readMarkerDocument(peer: ReturnType<typeof createPeer>): unknown {
+    const markers = peer.getDoc().markers;
+    if (markers === undefined) {
+        return undefined;
+    }
+    return JSON.parse(JSON.stringify(markers));
+}
+
 describe('project-load MIDI hydration', () => {
     const frameCallbacks: FrameRequestCallback[] = [];
 
@@ -76,6 +101,9 @@ describe('project-load MIDI hydration', () => {
         configureAutomergeStoragePort(null);
         flushAutomergeStorageWrites();
         midiStore.set(defaultMidiState());
+        flushAutomergeStorageWrites();
+
+        markerStore.set({ markers: [], sections: [] });
         flushAutomergeStorageWrites();
         frameCallbacks.length = 0;
         vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback): number => {
@@ -109,6 +137,26 @@ describe('project-load MIDI hydration', () => {
 
         expect(midiStore.value).toEqual(persisted);
         expect(readMidiDocument(peer)).toEqual(persisted);
+    });
+
+    it('preserves persisted arrangement sections through reset, projection, and the deferred frame', () => {
+        const persisted = persistedMarkerState();
+        const peer = createPeer(from<RootDocument>({ markers: persisted }));
+        configureAutomergeStoragePort(peer.port);
+
+        resetModuleStoresToDefault({
+            resetGrooveTemplates: false,
+            resetMidiState: false,
+            resetYeastState: false,
+        });
+        projectCrdtToStores({ resetProjections: true });
+
+        while (frameCallbacks.length > 0) {
+            frameCallbacks.shift()?.(100);
+        }
+
+        expect(markerStore.value).toEqual(persisted);
+        expect(readMarkerDocument(peer)).toEqual(persisted);
     });
 
     it('projects the deterministic legacy default without writing a missing MIDI slot', () => {

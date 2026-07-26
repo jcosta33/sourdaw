@@ -53,7 +53,10 @@ test.describe('Launch Screen & Project Entry', () => {
             await page.getByRole('button', { name: /Nebula Drift/i }).click();
             await wait_for_workspace_ready(page);
 
-            await expect(page.getByRole('grid', { name: /Track list/i }).getByRole('row').first()).toBeVisible();
+            await expect(page.getByRole('button', { name: /^Nebula Drift/ })).toBeVisible();
+            const track_list = page.getByRole('grid', { name: /Track list/i });
+            await expect(track_list.getByRole('row').filter({ hasText: 'Sub Drone' }).first()).toBeVisible();
+            await expect(page.getByRole('region', { name: 'Arrangement sections' })).toContainText('Intro Drift');
         });
 
         test('Can load Mycelium Ascendant and enter its arranged workspace', async ({ page }) => {
@@ -72,6 +75,18 @@ test.describe('Launch Screen & Project Entry', () => {
             await expect(track_list.getByRole('row').filter({ hasText: 'Kick' }).first()).toBeVisible();
             await expect(track_list.getByRole('row').filter({ hasText: 'Main Vision' }).first()).toBeVisible();
             await expect(track_list.getByRole('row').filter({ hasText: 'Temple Chamber' }).first()).toBeVisible();
+            await expect(page.getByRole('region', { name: 'Arrangement sections' })).toContainText('Sporefall');
+
+            await page.reload();
+            await wait_for_workspace_ready(page);
+
+            await expect(page.getByRole('button', { name: /^Mycelium Ascendant/ })).toBeVisible();
+            const reloaded_track_list = page.getByRole('grid', { name: /Track list/i });
+            await expect(reloaded_track_list.getByRole('row').filter({ hasText: 'Kick' }).first()).toBeVisible();
+            await expect(reloaded_track_list.getByRole('row').filter({ hasText: 'Main Vision' }).first()).toBeVisible();
+            await expect(
+                reloaded_track_list.getByRole('row').filter({ hasText: 'Temple Chamber' }).first()
+            ).toBeVisible();
             await expect(page.getByRole('region', { name: 'Arrangement sections' })).toContainText('Sporefall');
         });
 

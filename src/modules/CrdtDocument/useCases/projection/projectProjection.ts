@@ -1,3 +1,7 @@
+import { resetAutomergeStorageProjections } from '#/infra/store/storage/createAutomergeStorage';
+
+import { DOC_PREFIX_ROOT } from '../crdtDocumentTypes';
+
 import { projectSlotProjections } from './projectSlotProjections';
 
 /**
@@ -7,8 +11,19 @@ import { projectSlotProjections } from './projectSlotProjections';
  * restore), where the set of keys that moved is not knowable. A change that a
  * local CRDT-backed store performed names its slots and goes through
  * `projectChangedCrdtSlots` instead.
+ *
+ * A full project load resets projections first so local default writes used to
+ * clear transient module state cannot rebase over the newly loaded authority.
  */
-export function projectCrdtToStores(): void {
+type ProjectCrdtToStoresInput = {
+    resetProjections?: boolean;
+};
+
+export function projectCrdtToStores({ resetProjections = false }: ProjectCrdtToStoresInput = {}): void {
+    if (resetProjections) {
+        resetAutomergeStorageProjections(DOC_PREFIX_ROOT);
+    }
+
     for (const projection of projectSlotProjections) {
         projection.hydrate();
     }

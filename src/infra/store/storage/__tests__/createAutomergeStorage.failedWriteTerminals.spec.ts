@@ -112,6 +112,23 @@ describe('createAutomergeStorage — non-committing write terminals', () => {
         });
     });
 
+    describe('observed document authority', () => {
+        it('rolls back a local write after an observed missing slot loses its document', () => {
+            const { doc, port, setHasDoc } = createTestPort();
+            configureAutomergeStoragePort(port);
+            const storage = createAutomergeStorage<{ count: number }>('root', 'state');
+
+            expect(storage.hydrate?.()).toBe(false);
+            storage.set({ count: 2 });
+            setHasDoc(false);
+
+            flushAutomergeStorageWrites();
+
+            expect(Object.hasOwn(doc, 'state')).toBe(false);
+            expect(storage.get()).toBeNull();
+        });
+    });
+
     describe('discarded write (audit CC-5)', () => {
         it('rolls the cache back to the last committed value when the document is absent', () => {
             const { doc, port, setHasDoc } = createTestPort();

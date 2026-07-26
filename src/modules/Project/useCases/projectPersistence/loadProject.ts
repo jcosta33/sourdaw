@@ -74,10 +74,10 @@ export async function loadProject(): Promise<boolean> {
 
     batchStoreUpdates(() => {
         preparedBuffers.publish();
-        // Reset per-device-instance stores (§13.1) before hydration so stale
-        // device state from a previously open project cannot leak into it.
+        // Reset in-memory module/device state, then discard the reset writes at
+        // the projection boundary before hydrating the newly loaded authority.
         resetModuleStoresToDefault({ resetGrooveTemplates: false, resetMidiState: false, resetYeastState: false });
-        projectCrdtToStores();
+        projectCrdtToStores({ resetProjections: true });
         migrateAbsoluteMidiNotes();
 
         const project = projectStore.value;
