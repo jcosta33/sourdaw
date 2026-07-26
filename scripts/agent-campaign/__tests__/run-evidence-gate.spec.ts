@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { createEvidencePolicy } from '../evidenceContract';
+import { validateEvidenceManifest } from '../evidenceManifest';
 import { createGitCheckout, runEvidenceGate, type EvidenceRunnerDependencies } from '../run-evidence-gate';
 
 const head = 'a'.repeat(40);
@@ -34,7 +35,8 @@ async function setup(overrides: Partial<EvidenceRunnerDependencies> = {}) {
             dirty: () => Promise.resolve(false),
         },
         clock: { now: () => new Date(captureTime) },
-        environment: { observe: () => Promise.resolve(structuredClone(policy.environment)) },
+        environment: { observe: (_signal: AbortSignal) => Promise.resolve(structuredClone(policy.environment)) },
+        manifest: { validate: validateEvidenceManifest },
         ...overrides,
     };
 }
@@ -117,7 +119,7 @@ describe('runEvidenceGate', () => {
             environmentMatch: true,
         });
         expect(gateResult.runEnvelopeSha256).toMatch(/^[a-f0-9]{64}$/);
-        expect(calls).toEqual(['clock', 'environment', 'clock']);
+        expect(calls).toEqual(['clock', 'environment', 'clock', 'clock']);
 
         const suiteResult = await runEvidenceGate(['--suite', 'webllm-real', '--manifest', manifest], await setup());
         const releaseResult = await runEvidenceGate(['--release', '--manifest', manifest], await setup());
@@ -143,6 +145,22 @@ describe('runEvidenceGate', () => {
     });
 
     it('should redact rejected, mismatched, and non-JSON environment attestations', async () => {
+        const policy = createEvidencePolicy();
+        let proxyTraps = 0;
+        const proxyEnvironment = new Proxy(structuredClone(policy.environment), {
+            getPrototypeOf: (target) => {
+                proxyTraps += 1;
+                return Reflect.getPrototypeOf(target);
+            },
+            ownKeys: (target) => {
+                proxyTraps += 1;
+                return Reflect.ownKeys(target);
+            },
+            getOwnPropertyDescriptor: (target, key) => {
+                proxyTraps += 1;
+                return Reflect.getOwnPropertyDescriptor(target, key);
+            },
+        });
         const cyclic: { self?: unknown } = {};
         cyclic.self = cyclic;
         let toJsonCalled = false;
@@ -157,6 +175,7 @@ describe('runEvidenceGate', () => {
         });
         const malformed = [
             {},
+            proxyEnvironment,
             1n,
             cyclic,
             withToJson,
@@ -182,6 +201,35 @@ describe('runEvidenceGate', () => {
         expect(results.map(({ code }) => code).every((code) => code === 'environment-unavailable')).toBe(true);
         expect(results.flatMap(({ failures }) => failures).join()).not.toMatch(/private|accessor/);
         expect([toJsonCalled, accessorCalled]).toEqual([false, false]);
+        expect(proxyTraps).toBe(0);
+    });
+
+    it('should abort a bounded observation and handle rejection after timeout', async () => {
+        let neverSignal: AbortSignal | undefined;
+        const neverSettles = await setup({
+            environment: {
+                timeoutMs: 5,
+                observe: (signal) => {
+                    neverSignal = signal;
+                    return new Promise(() => undefined);
+                },
+            },
+        });
+        const rejectsLate = await setup({
+            environment: {
+                timeoutMs: 5,
+                observe: (signal) =>
+                    new Promise((_resolve, reject) => {
+                        signal.addEventListener('abort', () => queueMicrotask(() => reject(new Error('private late'))));
+                    }),
+            },
+        });
+        const results = await Promise.all([runEvidenceGate(gate, neverSettles), runEvidenceGate(gate, rejectsLate)]);
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+        expect(results.map(({ code }) => code)).toEqual(['environment-unavailable', 'environment-unavailable']);
+        expect(neverSignal?.aborted).toBe(true);
+        expect(results.flatMap(({ failures }) => failures).join()).not.toMatch(/private|timeout/);
     });
 
     it.each([
@@ -196,7 +244,22 @@ describe('runEvidenceGate', () => {
         const dependencies = await setup({ clock: { now: () => samples[index++] ?? samples[1] } });
 
         expect((await runEvidenceGate(gate, dependencies)).code).toBe(expectedCode);
-        expect(index).toBe(2);
+        expect(index).toBe(3);
+    });
+
+    it('should reject a capture that becomes stale during manifest validation', async () => {
+        const start = Date.parse(captureTime);
+        const samples = [new Date(start), new Date(start), new Date(start + 60_001)];
+        let index = 0;
+        const dependencies = await setup({ clock: { now: () => samples[index++] ?? samples[2] } });
+        const validate = dependencies.manifest.validate;
+        dependencies.manifest.validate = async (input) => {
+            await Promise.resolve();
+            return validate(input);
+        };
+
+        expect((await runEvidenceGate(gate, dependencies)).code).toBe('invalid-run-envelope');
+        expect(index).toBe(3);
     });
 
     it('should reject unsafe and stale policies', async () => {

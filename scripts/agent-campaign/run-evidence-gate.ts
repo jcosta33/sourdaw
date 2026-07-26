@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { readFile, realpath } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { types as utilTypes } from 'node:util';
 
 import { validateEvidenceManifest, validateEvidencePolicy } from './evidenceManifest.ts';
 import { generateEvidenceManifest } from './generateEvidenceManifest.ts';
@@ -34,7 +35,8 @@ export type EvidenceRunnerDependencies = {
     fileSystem: RunnerFileSystem;
     checkout: Checkout;
     clock: { now: () => Date };
-    environment: { observe: () => Promise<unknown> };
+    environment: { observe: (signal: AbortSignal) => Promise<unknown>; timeoutMs?: number };
+    manifest: { validate: typeof validateEvidenceManifest };
 };
 
 export type EvidenceRunnerResult = {
@@ -50,6 +52,8 @@ export type EvidenceRunnerResult = {
 };
 
 const COMMIT = /^[a-f0-9]{40}$/;
+const CAPTURE_WINDOW_MS = 60_000;
+const ENVIRONMENT_TIMEOUT_MS = 5_000;
 const manifestRelativePath = 'evidence/agent-campaign/manifest.json';
 const outputRootRelativePath = 'evidence/agent-campaign/runs';
 
@@ -74,7 +78,10 @@ function canonicalPlainJson(value: unknown, ancestors = new Set<object>()): stri
     if (typeof value === 'number' && Number.isFinite(value)) {
         return JSON.stringify(value);
     }
-    if (typeof value !== 'object' || ancestors.has(value)) {
+    if (typeof value !== 'object') {
+        throw new TypeError('value is not plain JSON');
+    }
+    if (utilTypes.isProxy(value) || ancestors.has(value)) {
         throw new Error('value is not plain JSON');
     }
 
@@ -107,6 +114,35 @@ function canonicalPlainJson(value: unknown, ancestors = new Set<object>()): stri
         return `{${fields.join(',')}}`;
     } finally {
         ancestors.delete(value);
+    }
+}
+
+async function observeEnvironment(environment: EvidenceRunnerDependencies['environment']): Promise<unknown> {
+    const requestedTimeout = environment.timeoutMs;
+    const timeoutMs =
+        typeof requestedTimeout === 'number' && Number.isFinite(requestedTimeout) && requestedTimeout > 0
+            ? Math.min(requestedTimeout, ENVIRONMENT_TIMEOUT_MS)
+            : ENVIRONMENT_TIMEOUT_MS;
+    const controller = new AbortController();
+    const timeoutMarker = Symbol('environment-timeout');
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<typeof timeoutMarker>((resolve) => {
+        timer = setTimeout(() => {
+            controller.abort();
+            resolve(timeoutMarker);
+        }, timeoutMs);
+    });
+    const observation = Promise.resolve().then(() => environment.observe(controller.signal));
+    try {
+        const result = await Promise.race([observation, timeout]);
+        if (result === timeoutMarker) {
+            throw new Error('environment attestation timed out');
+        }
+        return result;
+    } finally {
+        if (timer) {
+            clearTimeout(timer);
+        }
     }
 }
 
@@ -328,7 +364,7 @@ export async function runEvidenceGate(
     const runEnvelopeSha256 = digest(envelopeSource);
     let environmentMatch: boolean;
     try {
-        const observedEnvironment = await dependencies.environment.observe();
+        const observedEnvironment = await observeEnvironment(dependencies.environment);
         environmentMatch =
             digest(canonicalPlainJson(observedEnvironment)) === digest(canonicalPlainJson(loaded.policy.environment));
     } catch {
@@ -341,9 +377,10 @@ export async function runEvidenceGate(
     }
 
     let envelopeFailures: string[];
+    let finalCaptureIsFresh: boolean;
     try {
         const observedNow = dependencies.clock.now().toISOString();
-        envelopeFailures = await validateEvidenceManifest({
+        envelopeFailures = await dependencies.manifest.validate({
             source: envelopeSource,
             policySource: loaded.policySource,
             observedCommit: head,
@@ -352,6 +389,9 @@ export async function runEvidenceGate(
             observedNow,
             releaseReady: false,
         });
+        const handoffNow = dependencies.clock.now().toISOString();
+        const finalElapsed = Date.parse(handoffNow) - Date.parse(capturedAt);
+        finalCaptureIsFresh = finalElapsed >= 0 && finalElapsed <= CAPTURE_WINDOW_MS;
     } catch {
         return failure('invalid-run-envelope', 2, ['run envelope could not be verified'], {
             integratedCommit: head,
@@ -366,7 +406,7 @@ export async function runEvidenceGate(
         runEnvelopeSha256,
         environmentMatch,
     };
-    if (envelopeFailures.length > 0) {
+    if (envelopeFailures.length > 0 || !finalCaptureIsFresh) {
         return failure('invalid-run-envelope', 2, ['run envelope could not be verified'], context);
     }
     if (!environmentMatch) {
@@ -402,7 +442,10 @@ if (await isCliInvocation(process.argv[1])) {
         },
         checkout: createGitCheckout(root),
         clock: { now: () => new Date() },
-        environment: { observe: () => Promise.reject(new Error('environment attestor is not registered')) },
+        environment: {
+            observe: (_signal) => Promise.reject(new Error('environment attestor is not registered')),
+        },
+        manifest: { validate: validateEvidenceManifest },
     });
     process.stdout.write(canonical(output));
     process.exitCode = output.exitCode;
