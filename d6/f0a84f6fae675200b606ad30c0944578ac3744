@@ -1,0 +1,50 @@
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderTrackSubgraphOffline.spec.ts
+  s_0d39f3a4a4357a::t_c2e5561168bd49 569
+  s_0d39f3a4a4357a::t_32172af6e839de 177
+  s_0d39f3a4a4357a::t_7aa6b232675a23 454-456
+  s_0d39f3a4a4357a::t_e22c4270db0689 516-522,524-528
+  s_0d39f3a4a4357a::t_5ad6f7096a3496 595
+  s_0d39f3a4a4357a::t_d692dff9676779 445-453,457-460,466-502,529,532-568,570-594,596-600
+  s_0d39f3a4a4357a::t_790ed34494135e 461-465
+  s_0d39f3a4a4357a::t_e404cd6b0e1b58 506-514,523,530-531
+  s_0d39f3a4a4357a::t_3a10184b7b5a8a 503-505,515
+  s_0d39f3a4a4357a::t_7744712a6ba025 1
+  s_0d39f3a4a4357a::t_ab14aff172641b 601
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderInSegments.spec.ts
+  s_0d39f3a4a4357a::t_38512199ea6286 17-19,28-31,34-35,43,45,51-52,59,61,63-73,80-81,83,86-87,98-104
+  s_0d39f3a4a4357a::t_4c17117d16f1f8 251-351
+src/modules/AudioEngine/useCases/offlineRender/renderTrackSubgraphOffline.ts
+  s_0d39f3a4a4357a::t_e00d662f853c97 142-148
+  s_0d39f3a4a4357a::t_8f9cd2d560da8f 10,13
+  s_0d39f3a4a4357a::t_e20b8a22b44922 245-269
+src/modules/AudioEngine/useCases/offlineRender/renderInSegments.ts
+  s_0d39f3a4a4357a::t_b111db5689eb0d 146,153-165
+  s_0d39f3a4a4357a::t_39c67bf9855ca3 95
+  s_0d39f3a4a4357a::t_70b99cc3431a65 182,189
+  s_0d39f3a4a4357a::t_424b72cfebdc21 82-94,96-104
+  s_0d39f3a4a4357a::t_c8e3208c1c6386 133
+  s_0d39f3a4a4357a::t_785398f05b6e10 7-24
+  s_0d39f3a4a4357a::t_f308884dffa138 73-81
+  s_0d39f3a4a4357a::t_5cb3a97cfb335b 35-36
+  s_0d39f3a4a4357a::t_ee5825ae4c5a2e 177,181
+  s_0d39f3a4a4357a::t_d9c02df963f185 179-180
+  s_0d39f3a4a4357a::t_36d5a131d68c63 211-215
+  s_0d39f3a4a4357a::t_6da13585262fb7 105-106
+  s_0d39f3a4a4357a::t_0e04bcddbfb683 166
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "d6f0a84f6fae675200b606ad30c0944578ac3744",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
