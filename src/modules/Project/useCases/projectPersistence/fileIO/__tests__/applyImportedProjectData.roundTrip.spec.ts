@@ -89,17 +89,21 @@ const {
     };
 });
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    cancelPendingAudioBufferImport: vi.fn(),
-    getAudioContext: () => audioContext,
-    getCachedAudioBuffer: () => null,
-    importCachedAudioBuffers,
-    prepareCachedAudioBuffersFromIdb,
-    resetAudioGraph,
-    stopAllScheduled,
-    stopAudioRecording,
-    cancelTrackAutomationRamps: vi.fn(),
-}));
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
+    return {
+        ...actual,
+        cancelPendingAudioBufferImport: vi.fn(),
+        getAudioContext: () => audioContext,
+        getCachedAudioBuffer: () => null,
+        importCachedAudioBuffers,
+        prepareCachedAudioBuffersFromIdb,
+        resetAudioGraph,
+        stopAllScheduled,
+        stopAudioRecording,
+        cancelTrackAutomationRamps: vi.fn(),
+    };
+});
 vi.mock('#/modules/MIDI/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/MIDI/useCases')>();
     return { ...actual, resetMidiState };
