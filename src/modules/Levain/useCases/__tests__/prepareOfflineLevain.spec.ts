@@ -4,54 +4,91 @@ import { defaultLevainState, levainStore } from '../../stores/levainStore';
 import { prepareOfflineLevain } from '../prepareOfflineLevain';
 
 const mocks = vi.hoisted(() => ({
-    loadInstrumentFromManifest: vi.fn(() => Promise.resolve()),
-    resolveSampleBasePath: vi.fn((instrumentId: string) => Promise.resolve(`/samples/levain/${instrumentId}`)),
+    autoLoadLevainSamples: vi.fn(() => Promise.resolve()),
 }));
 
-vi.mock('../../repositories/sampleLoader/loadInstrumentFromManifest', () => ({
-    loadInstrumentFromManifest: mocks.loadInstrumentFromManifest,
+vi.mock('../autoLoadSamples', () => ({
+    autoLoadLevainSamples: mocks.autoLoadLevainSamples,
 }));
 
-vi.mock('../../repositories/sampleLoader/resolveSampleBasePath', () => ({
-    resolveSampleBasePath: mocks.resolveSampleBasePath,
-}));
+type PostedMessage = { type: string; instrumentId?: string };
 
-function fakePort(): MessagePort {
-    return { postMessage: vi.fn() } as unknown as MessagePort;
+function fakePort(): { port: MessagePort; posted: PostedMessage[] } {
+    const posted: PostedMessage[] = [];
+    const port = {
+        postMessage: (message: PostedMessage) => {
+            posted.push(message);
+        },
+    } as unknown as MessagePort;
+    return { port, posted };
 }
 
 describe('prepareOfflineLevain', () => {
     beforeEach(() => {
-        mocks.loadInstrumentFromManifest.mockClear();
-        mocks.resolveSampleBasePath.mockClear();
-        mocks.loadInstrumentFromManifest.mockImplementation(() => Promise.resolve());
+        mocks.autoLoadLevainSamples.mockClear();
+        mocks.autoLoadLevainSamples.mockImplementation(() => Promise.resolve());
         levainStore.set({});
     });
 
-    it('loads the instrument the device patch selects, into that device port', async () => {
-        const port = fakePort();
+    it('tells the engine which instrument it is, using the id the device patch selects', async () => {
+        // `setInstrument` is the only route to the realism layer's
+        // `configure_for`. Without it an offline instance renders as
+        // `Instrument::Other`: no body resonance, no sympathetic strings, no bow
+        // noise, and no bow-scrape/bow-lift transients. Right samples, wrong
+        // instrument, on every exported orchestral track.
+        const { port, posted } = fakePort();
         levainStore.set({
             'device-a': { ...defaultLevainState, patch: { ...defaultLevainState.patch, instrumentId: 'cello' } },
         });
 
         await prepareOfflineLevain({ deviceId: 'device-a', port });
 
-        expect(mocks.resolveSampleBasePath).toHaveBeenCalledWith('cello');
-        const [manifestUrl, basePath, passedPort] = mocks.loadInstrumentFromManifest.mock.calls[0] as unknown as [
-            string,
-            string,
-            MessagePort,
-        ];
-        expect(manifestUrl).toBe('/samples/levain/cello/manifest.json');
-        expect(basePath).toBe('/samples/levain/cello');
-        expect(passedPort).toBe(port);
+        expect(posted).toEqual([{ type: 'setInstrument', instrumentId: 'cello' }]);
+    });
+
+    it('posts the instrument identity before starting the load that clears zones', async () => {
+        // Order matters, and it is only safe in this direction because the
+        // loader's first message is `clearZones`, whose `realism.reset()` clears
+        // filter state and not the configuration. Reversed, the engine would be
+        // configured only after the samples arrive.
+        const { port, posted } = fakePort();
+        const postedWhenLoadStarted: PostedMessage[] = [];
+        mocks.autoLoadLevainSamples.mockImplementation(() => {
+            postedWhenLoadStarted.push(...posted);
+            return Promise.resolve();
+        });
+
+        await prepareOfflineLevain({ deviceId: 'device-a', port });
+
+        expect(postedWhenLoadStarted).toEqual([
+            { type: 'setInstrument', instrumentId: defaultLevainState.patch.instrumentId },
+        ]);
+    });
+
+    it('loads the selected instrument into that device port, forwarding the abort signal', async () => {
+        const { port } = fakePort();
+        const controller = new AbortController();
+        levainStore.set({
+            'device-a': { ...defaultLevainState, patch: { ...defaultLevainState.patch, instrumentId: 'cello' } },
+        });
+
+        await prepareOfflineLevain({ deviceId: 'device-a', port, signal: controller.signal });
+
+        expect(mocks.autoLoadLevainSamples).toHaveBeenCalledWith('device-a', port, 'cello', controller.signal);
     });
 
     it('falls back to the default instrument for a device with no patch entry', async () => {
-        await prepareOfflineLevain({ deviceId: 'never-opened', port: fakePort() });
+        const { port, posted } = fakePort();
 
-        expect(mocks.resolveSampleBasePath).toHaveBeenCalledWith(defaultLevainState.patch.instrumentId);
-        expect(mocks.loadInstrumentFromManifest).toHaveBeenCalledTimes(1);
+        await prepareOfflineLevain({ deviceId: 'never-opened', port });
+
+        expect(posted).toEqual([{ type: 'setInstrument', instrumentId: defaultLevainState.patch.instrumentId }]);
+        expect(mocks.autoLoadLevainSamples).toHaveBeenCalledWith(
+            'never-opened',
+            port,
+            defaultLevainState.patch.instrumentId,
+            undefined
+        );
     });
 
     it('does not resolve until the zone load has finished', async () => {
@@ -59,7 +96,7 @@ describe('prepareOfflineLevain', () => {
         // time, so a load that is merely started never lands. Starting it is not
         // enough — the caller must be able to wait for it.
         let releaseLoad = (): void => {};
-        mocks.loadInstrumentFromManifest.mockImplementation(
+        mocks.autoLoadLevainSamples.mockImplementation(
             () =>
                 new Promise<void>((resolve) => {
                     releaseLoad = resolve;
@@ -67,7 +104,7 @@ describe('prepareOfflineLevain', () => {
         );
 
         let settled = false;
-        const pending = prepareOfflineLevain({ deviceId: 'device-a', port: fakePort() }).then(() => {
+        const pending = prepareOfflineLevain({ deviceId: 'device-a', port: fakePort().port }).then(() => {
             settled = true;
         });
 

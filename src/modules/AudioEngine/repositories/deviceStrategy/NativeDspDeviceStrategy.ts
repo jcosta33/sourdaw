@@ -1,6 +1,3 @@
-import { logger } from '#/infra/logger/appLogger';
-
-import { getAudioDeviceRuntimeSink } from '../../engine/audioDeviceRuntimeSink';
 import { type Device } from '../../models/TrackViewTypes';
 import { type OfflineDeviceNode } from '../devices/types';
 
@@ -10,9 +7,6 @@ import {
     type OfflineAutomationSegment,
 } from './AudioDeviceStrategy';
 import { NATIVE_DSP_DEVICE_FACTORIES, type NativeDspNode } from './nativeDspDeviceFactories';
-
-/** How long one device's offline setup may run before it is abandoned. */
-const OFFLINE_INSTRUMENT_SETUP_TIMEOUT_MS = 30_000;
 
 export class NativeDspDeviceStrategy implements AudioDeviceStrategy {
     public readonly node: OfflineDeviceNode;
@@ -89,65 +83,10 @@ export async function createNativeDspStrategy(ctx: BaseAudioContext, device: Dev
         strategy.setParam(key, val);
     }
 
-    // `parameterValues` is only the numeric half of a device's state. Every
-    // instrument whose live descriptor does setup beyond plain params — Levain's
-    // sample zones, Toaster's kit — got none of it here, because this path and the
-    // live `wasmDeviceRegistry` are two registries, not one builder with a flag.
-    // Levain consequently exported silence. Awaiting this is the point: an offline
-    // context renders faster than real time, so a load that is merely started never
-    // lands.
-    await prepareOfflineInstrumentSafely(device, result);
-
+    // `parameterValues` is only the numeric half of a device's state: the setup an
+    // instrument needs beyond plain params — Levain's instrument identity and
+    // sample zones, Toaster's kit — is not reachable from a repository, which may
+    // not orchestrate module use cases. `buildDeviceChain` performs it against the
+    // returned worklet port instead.
     return strategy;
-}
-
-/**
- * Run a device's offline setup under a deadline and the export's cancel flag, and
- * never let its failure remove the device from the chain.
- *
- * Both halves are load-bearing.
- *
- * The deadline exists because nothing below here was cancellable: the sample fetch
- * was a bare `await`, `renderWithTimeout` only guards `startRendering` much later,
- * and `renderOffline` releases the render lock in a `finally`. A response that
- * never settles therefore never released the lock, and every subsequent export —
- * mixdown or stems, both take the same lock — failed with "an export is already in
- * progress" until the app was reloaded. A stalled network now ends the load
- * instead of bricking exporting.
- *
- * The deadline is a backstop, not cancellation. Pressing cancel during a load
- * still does nothing, because this layer may not read the export's cancel flag —
- * that state lives in `useCases`, and repositories may not import it. Making
- * cancel work means threading an `AbortSignal` from `renderOffline` down through
- * `buildDeviceChain` into `createDevice`, which is a separate change.
- *
- * The catch exists because throwing here is worse than failing. An exception
- * propagates to `buildDeviceChain`, which logs and skips the device; the track
- * then reaches `scheduleTrackClips` with no instrument controls and falls through
- * to the default synth params — a sawtooth lead at 0.3 gain, bounced where an
- * orchestral part belongs, while the export reports success. Degrading to an
- * unconfigured-but-present node means the track renders silent, which is a symptom
- * a user reports rather than one they ship. Silence is recoverable; a plausible
- * wrong instrument is not.
- */
-async function prepareOfflineInstrumentSafely(device: Device, node: NativeDspNode): Promise<void> {
-    const controller = new AbortController();
-    const deadline = setTimeout(() => {
-        controller.abort();
-    }, OFFLINE_INSTRUMENT_SETUP_TIMEOUT_MS);
-    try {
-        await getAudioDeviceRuntimeSink().prepareOfflineInstrument({
-            deviceId: device.id,
-            deviceType: device.type,
-            port: node.workletNode.port,
-            signal: controller.signal,
-        });
-    } catch (error) {
-        // Deliberately swallowed: see why above. The node stays in the chain.
-        logger.warn(
-            `Offline setup failed for ${device.type} (${device.id}); it will render silent rather than be replaced: ${String(error)}`
-        );
-    } finally {
-        clearTimeout(deadline);
-    }
 }
