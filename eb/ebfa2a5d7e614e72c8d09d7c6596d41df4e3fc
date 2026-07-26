@@ -1,0 +1,87 @@
+src/modules/Arrangement/models/PluginDescriptors/__tests__/dutchOvenAlgorithmRange.spec.ts
+  s_0d39f3a4a4357a::t_d0dea6ac9a6178 1-39
+src/modules/ProofChamber/models/ProofChamberState.ts
+  s_0d39f3a4a4357a::t_b291201f7d13fb 1
+  s_0d39f3a4a4357a::t_641eed3e84b538 53-65,71
+src/modules/ProofChamber/presentations/components/__tests__/SignalFlowDiagram.spec.tsx
+  s_0d39f3a4a4357a::t_8e7ef1b3e38927 4,7-12
+  s_0d39f3a4a4357a::t_f88143fe22a338 21-44
+  s_0d39f3a4a4357a::t_2ca171ef7ffa82 13
+crates/proof-chamber/tests/algorithm_wire_contract.rs
+  s_0d39f3a4a4357a::t_92bdc6001deccc 20-21,26,28-31,35,42-75,80,84-88,118-123,125-134,146-152,171-172,199,202
+  s_0d39f3a4a4357a::t_75731b46325958 1-19,22-25,27,32-34,36-41,76-79,81-83,89-117,124,135-145,153-170,173-198,200-201,203
+src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx
+  s_0d39f3a4a4357a::t_cabf02a8627956 64-79
+  s_0d39f3a4a4357a::t_7822cc0684b6c2 296
+  s_0d39f3a4a4357a::t_15a0a120e96939 61
+crates/proof-chamber/tests/reverb_process_rt.rs
+  s_0d39f3a4a4357a::t_4c7700a145490e 42-43
+  s_0d39f3a4a4357a::t_6e782f1c4ed906 85-96
+  s_0d39f3a4a4357a::t_0c9b11b28e7431 227-228,230,233
+  s_0d39f3a4a4357a::t_f814b686748401 100-107
+  s_0d39f3a4a4357a::t_326b6a75e444aa 13-15,19-24
+  s_0d39f3a4a4357a::t_2acf2784c3da6f 116
+  s_0d39f3a4a4357a::t_c56ef014d4bde0 171-178,183-184
+  s_0d39f3a4a4357a::t_6260be4be427bf 29
+  s_0d39f3a4a4357a::t_d851342c6063e7 182
+  s_0d39f3a4a4357a::t_403dcaf60231fa 193-196,199
+src/modules/ProofChamber/models/__tests__/ProofChamberAlgorithmWire.spec.ts
+  s_0d39f3a4a4357a::t_6822fe6603be67 1-41
+src/modules/ProofChamber/models/__tests__/usesRt60DecayLaw.spec.ts
+  s_0d39f3a4a4357a::t_2c29c16f1be909 22-24
+  s_0d39f3a4a4357a::t_0d885bb3556144 32,38
+src/modules/Arrangement/models/PluginDescriptors/NativeDspDescriptors.ts
+  s_0d39f3a4a4357a::t_b58e60995c9cf7 276-284
+src/modules/ProofChamber/presentations/components/SignalFlowDiagram.tsx
+  s_0d39f3a4a4357a::t_0e174ef2749301 109-131
+src/modules/ProofChamber/presentations/views/__tests__/ProofChamberPanel.spec.tsx
+  s_0d39f3a4a4357a::t_a4cb11aa1b5b09 94
+  s_0d39f3a4a4357a::t_9a711cb8a96edb 84-93,95-105,107-116
+  s_0d39f3a4a4357a::t_55ed689e1df745 38-50
+  s_0d39f3a4a4357a::t_91cf9bf45352c5 106
+  s_0d39f3a4a4357a::t_988b96ebd306b5 117-128
+crates/proof-chamber/tests/reverse_engine_character.rs
+  s_0d39f3a4a4357a::t_b1d2545017e02c 12-15,17-24,41-49,53-54,56-59,65,77,81-82,122-124,126,129,134,183,212-213,262
+  s_0d39f3a4a4357a::t_43ddbebe1471d0 144-166
+  s_0d39f3a4a4357a::t_3d80d3eecd4839 215,219-222,228-232,235-239,267-268,271,276,282,287
+  s_0d39f3a4a4357a::t_741384f3a090c5 1-9,11,16,25-31,33-40,51-52,55,60-64,74-76,84-89,91,93-110,112-115,118,140,142-143,167-171,174-182,184,187-188,190-191,194-211,214,218,223-225,234,240-247,249-250,252-260,263-264,266,269-270,272-274,277-279,281,283-285,288-291
+  s_0d39f3a4a4357a::t_6d9af69a36b582 10,32,50,69,78-80,83,90,92,111,116,119-121,125,127-128,130-133,135-139,141,172-173,185-186,189,192-193,216-217,226-227,233,248,251,261,265,275,280,286
+  s_0d39f3a4a4357a::t_ce8db409f7764e 66-68,70-73
+  s_0d39f3a4a4357a::t_0b278fe8e15495 117
+crates/proof-chamber/src/lib.rs
+  s_0d39f3a4a4357a::t_cc57cf03a39c0d 68-80,121-132,271-290,293,305-307
+crates/proof-chamber/src/reverse.rs
+  s_0d39f3a4a4357a::t_01e8c41bb1cf57 129-135
+public/wasm/manifest.json
+  s_c897a2210b65c2::t_44d782848e967e 26,30-32,35
+public/wasm/proof-chamber/proof_chamber.d.ts
+  s_c897a2210b65c2::t_1466c3e5c92aee 1
+public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts
+  s_c897a2210b65c2::t_1c983697fa5cb1 1
+src/modules/AudioEngine/wasm/proof_chamber.d.ts
+  s_c897a2210b65c2::t_eae0025dc6593f 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "ebebfa2a5d7e614e72c8d09d7c6596d41df4e3fc",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c897a2210b65c2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a9ea9e002df9e83b4",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
