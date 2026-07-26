@@ -1,0 +1,33 @@
+crates/daw-dsp/tests/levain_unloaded_instance_is_silent.rs
+  s_0d39f3a4a4357a::t_1e7fb82bf54dd2 1-79
+src/modules/Levain/useCases/prepareOfflineLevain.ts
+  s_0d39f3a4a4357a::t_a0621479afdfab 1-29
+src/modules/Levain/useCases/loadLevainSamplesIntoPort.ts
+  s_0d39f3a4a4357a::t_9403bb4cdd8385 1-39
+src/modules/Levain/useCases/__tests__/prepareOfflineLevain.spec.ts
+  s_0d39f3a4a4357a::t_65fce312655c2a 1-82
+src/app/bootstrap.ts
+  s_0d39f3a4a4357a::t_7d6373f69a5b22 83,284-292
+src/modules/AudioEngine/engine/audioDeviceRuntimeSink.ts
+  s_0d39f3a4a4357a::t_cca7450d40f7e8 50-61,80
+src/modules/AudioEngine/repositories/deviceStrategy/NativeDspDeviceStrategy.ts
+  s_0d39f3a4a4357a::t_43de91f5635ddf 1,87-99
+src/modules/Levain/useCases/index.ts
+  s_0d39f3a4a4357a::t_7be51a071e1bb5 1-2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "f6f20463b2df5b3f7f0597b93928c450e8a4d4e2",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
