@@ -1,0 +1,22 @@
+src/modules/Project/useCases/projectTemplates/templateDefinitions/__tests__/createMyceliumFromTemplate.integration.spec.ts
+  s_ac9b259eab20ba::t_ae0f4d3b979897 2-9,11,14-29,31-115,130-222,229-234,247-262,265,267-295,298-299,310,312-363
+  s_ac9b259eab20ba::t_0776a7815efb11 296-297
+  s_ac9b259eab20ba::t_b8d70968e19546 237-240,302-306
+  s_ac9b259eab20ba::t_11b50888aa599f 1,10,12-13,30,116-129,223-228,235-236,241-246,263-264,266,300-301,307-309,311
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "3977a184c44a03646273a4a3d86e5b386e23763b",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": null
+    }
+  }
+}
