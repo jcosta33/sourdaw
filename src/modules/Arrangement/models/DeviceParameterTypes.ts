@@ -8,6 +8,8 @@
  * the aggregator to avoid circular dependencies.
  */
 
+import { type DeviceTailDeclaration } from './DeviceTailTypes';
+
 export type DeviceParameterType = 'float' | 'int' | 'bool' | 'choice';
 
 export type DeviceParameter = {
@@ -59,4 +61,10 @@ export type PluginDescriptor = {
     hasCustomUI: boolean;
     /** Which runtime this plugin is available on. Defaults to 'both'. */
     platform?: PluginPlatform;
+    /**
+     * How long this device keeps sounding after its input stops, so offline
+     * export can reserve room for it. Omitted means "no tail" — the device
+     * stops when its input does.
+     */
+    tail?: DeviceTailDeclaration;
 };

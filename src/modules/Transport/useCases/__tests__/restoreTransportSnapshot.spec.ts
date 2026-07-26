@@ -1,9 +1,14 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import { setMasterGainValue } from '#/modules/AudioEngine/useCases';
 
 import { defaultTransportState, transportStore, type TransportState } from '../../stores/transportStore';
 import { restoreTransportSnapshot } from '../restoreTransportSnapshot';
+
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    setMasterGainValue: vi.fn(),
+}));
 
 function reset_transport_store(): void {
     transportStore.set({ ...defaultTransportState });
@@ -13,6 +18,7 @@ describe('restoreTransportSnapshot', () => {
     beforeEach(() => {
         configureAutomergeStoragePort(null);
         reset_transport_store();
+        vi.mocked(setMasterGainValue).mockClear();
     });
 
     afterEach(() => {
@@ -66,11 +72,13 @@ describe('restoreTransportSnapshot', () => {
             preRollBars: 3,
             masterGain: 95,
         });
+        expect(setMasterGainValue).toHaveBeenCalledWith(0.95);
     });
 
     it('sanitizes malformed durable snapshots to the default transport state', () => {
         restoreTransportSnapshot({ tempo: 19 });
 
         expect(transportStore.value).toEqual(defaultTransportState);
+        expect(setMasterGainValue).toHaveBeenCalledWith(defaultTransportState.masterGain / 100);
     });
 });

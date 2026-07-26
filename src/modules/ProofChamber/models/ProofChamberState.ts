@@ -1,4 +1,4 @@
-export type ProofChamberAlgorithm = 'plate' | 'fdn-8' | 'fdn-16' | 'spring';
+export type ProofChamberAlgorithm = 'plate' | 'fdn-8' | 'fdn-16' | 'spring' | 'reverse';
 
 export type SpaceType = 'hall' | 'room' | 'plate' | 'chamber' | 'cathedral' | 'shimmer' | 'infinite' | 'spring';
 
@@ -50,11 +50,25 @@ export const DEFAULT_PARAMS: ProofChamberEngineState = {
     vintage: 0,
 };
 
+/**
+ * The number each algorithm writes into the persisted `algorithm` parameter.
+ *
+ * These are a wire format: the value is stored in the project file and replayed
+ * verbatim on load, and the engine dispatch in `crates/proof-chamber/src/lib.rs`
+ * is the only thing that decides what each number means. They cannot be
+ * renumbered without repointing values that are already stored.
+ *
+ * 4 and 5 are absent deliberately. They belong to the convolution and hybrid
+ * engines, which are built and render but need an impulse response that nothing
+ * in the app can supply, so the engine dispatch routes both to Plate. Reverse
+ * keeps 6 rather than moving down into the gap they leave.
+ */
 export const ALGORITHM_MAP: Record<ProofChamberAlgorithm, number> = {
     plate: 0,
     'fdn-8': 1,
     'fdn-16': 2,
     spring: 3,
+    reverse: 6,
 };
 
 /**

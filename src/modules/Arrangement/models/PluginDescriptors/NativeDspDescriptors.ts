@@ -10,6 +10,18 @@ export const NATIVE_DSP_DESCRIPTORS: PluginDescriptor[] = [
         category: 'effect',
         hasCustomUI: true,
         platform: 'both',
+        // `decay` is a normalised coefficient, never seconds — the engines
+        // convert it through `#/utils/reverbDecayLaw`, so the tail has to be
+        // read through the same law. Reading the raw value as seconds would cap
+        // the estimate near 1 s while the FDN reaches ~29.8 s at the top of the
+        // knob, truncating the longest reverbs in the export.
+        tail: {
+            kind: 'mappedDecaySeconds',
+            parameterId: 'decay',
+            defaultValue: 0.5,
+            law: 'dutch-oven-rt60',
+            predelayMsParameterId: 'predelay',
+        },
         parameters: [
             {
                 id: 'mix',
@@ -273,7 +285,15 @@ export const NATIVE_DSP_DESCRIPTORS: PluginDescriptor[] = [
                 value: 0,
                 defaultValue: 0,
                 minValue: 0,
-                maxValue: 5,
+                // 6 is Reverse, the highest value the selector can produce. 4
+                // and 5 fall inside the range but select nothing: they belong
+                // to the convolution-backed engines, which need an impulse
+                // response no code can supply, and the engine dispatch routes
+                // them to Plate. This range is not what keeps them unreachable
+                // — nothing clamps a parameter write against a descriptor —
+                // it just stops the declared range from contradicting both of
+                // its neighbours, which at `maxValue: 5` it did.
+                maxValue: 6,
                 unit: '',
                 automatable: false,
                 hasAutomation: false,

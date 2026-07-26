@@ -35,6 +35,19 @@ vi.mock('../../components/DecayEqOverlay', () => ({
     ),
 }));
 
+/**
+ * The algorithm chips are rendered twice — once on the rail and once in the
+ * deep Engine card — so a label matches more than one node. The rail copy is
+ * the one a click would land on first.
+ */
+function railChip(label: string): HTMLElement {
+    const [chip] = screen.getAllByText(label);
+    if (!chip) {
+        throw new Error(`no chip labelled "${label}" is rendered`);
+    }
+    return chip;
+}
+
 describe('ProofChamberPanel', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -67,5 +80,50 @@ describe('ProofChamberPanel', () => {
             type: 'setDeviceParameter',
             payload: { deviceId: 'test-device', paramId: 'decay_eq_2', value: 1.75 },
         });
+    });
+
+    /**
+     * The algorithm chips are the only surface that writes `algorithm`, and the
+     * number they write is persisted and replayed verbatim on load. Reverse
+     * carries 6 rather than 4, because 4 and 5 are reserved for the two
+     * convolution-backed engines that have no impulse response to render.
+     */
+    it('dispatches the reverse algorithm at the wire value the engine dispatch expects', () => {
+        render(<ProofChamberPanel deviceId="test-device" />);
+
+        fireEvent.click(railChip('Reverse'));
+
+        expect(executeAppAction).toHaveBeenCalledWith({
+            type: 'setDeviceParameter',
+            payload: { deviceId: 'test-device', paramId: 'algorithm', value: 6 },
+        });
+    });
+
+    it('offers no chip that would select an engine with no impulse response', () => {
+        render(<ProofChamberPanel deviceId="test-device" />);
+
+        for (const label of ['Plate', 'FDN 8', 'FDN 16', 'Spring', 'Reverse']) {
+            fireEvent.click(railChip(label));
+        }
+
+        const dispatched = vi
+            .mocked(executeAppAction)
+            .mock.calls.map(([action]) => action)
+            .filter((action) => action.type === 'setDeviceParameter' && action.payload.paramId === 'algorithm')
+            .map((action) => (action.type === 'setDeviceParameter' ? action.payload.value : -1));
+
+        expect(dispatched).toEqual([0, 1, 2, 3, 6]);
+    });
+
+    /**
+     * The badge counts the algorithms on offer, not the stored wire value. The
+     * two differ now that the wire values skip 4 and 5, and reading the stored
+     * value here would print "A7" for the fifth of five engines.
+     */
+    it('numbers the flavour badge by position in the selector, not by wire value', () => {
+        render(<ProofChamberPanel deviceId="test-device" />);
+
+        expect(screen.getByText('A1')).toBeTruthy();
+        expect(screen.queryByText('A7')).toBeNull();
     });
 });

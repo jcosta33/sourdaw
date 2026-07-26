@@ -182,6 +182,7 @@ export const FERMENTER_DESCRIPTOR: PluginDescriptor = {
     format: 'builtin',
     category: 'instrument',
     hasCustomUI: true,
+    tail: { kind: 'decaySeconds', parameterId: 'ampRelease', defaultSeconds: 0.3 },
     parameters: FERMENTER_PARAMS.map((param) => ({
         id: param.id,
         deviceId: 'fermenter',

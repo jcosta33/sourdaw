@@ -1,4 +1,5 @@
 import { resetArrangementStoresForProject } from '#/modules/Arrangement/useCases';
+import { setMasterGainValue } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { bacteriaStore } from '#/modules/Bacteria/stores';
 import { crustStore, defaultCrustState } from '#/modules/Crust/stores';
@@ -35,6 +36,7 @@ export function resetModuleStoresToDefault({
     resetArrangementStoresForProject();
     arrangementStore.set(structuredClone(defaultArrangementStoreState));
     transportStore.set(defaultTransportState);
+    setMasterGainValue(defaultTransportState.masterGain / 100);
     automationStore.set({ lanes: [] });
     if (resetMidiState) {
         resetMidiStoreForProject({ generateProbabilitySeed: createNewMidiProbabilitySeed });

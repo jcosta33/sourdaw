@@ -213,8 +213,15 @@ describe('createStore sanitization against a shared document', () => {
         flushAutomergeStorageWrites();
 
         expect(store.value).toEqual({ lanes: [{ id: 'lane-2', value: 2, legacy: 'kept' }] });
-        // What the store shows must be what the document received.
-        expect(doc.lanes).toEqual({ lanes: [{ id: 'lane-2', value: 2, legacy: 'kept' }] });
+
+        // The store shows less than the document holds, and that gap is the
+        // whole point of quarantining. The local edit has to reach the
+        // document, and the row this build could not read has to survive there
+        // — a write expresses the rows its author actually changed, so a row
+        // the author never had in hand is not something it can delete.
+        const lanes = (doc.lanes as LaneState).lanes;
+        expect(lanes).toContainEqual({ id: 'lane-2', value: 2, legacy: 'kept' });
+        expect(lanes).toContainEqual({ id: 'lane-1', value: 7 });
     });
 
     it('does not let a pending write the hydrate just rebased outrank the sanitizer', () => {
