@@ -25,6 +25,11 @@ export const NATIVE_DSP_DESCRIPTORS: PluginDescriptor[] = [
                 hasAutomation: false,
             },
             {
+                // Unitless by contract: `decay` is a normalised coefficient,
+                // never seconds. Every Dutch Oven engine converts it into its
+                // own quantity (an RT60 for the FDN, an IR stretch for the
+                // convolution path) through `#/utils/reverbDecayLaw`, so this
+                // range and that law must be changed together.
                 id: 'decay',
                 deviceId: 'dutch-oven',
                 name: 'Decay',
