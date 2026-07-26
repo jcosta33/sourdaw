@@ -1,0 +1,19 @@
+docs/evidence/mycelium-ascendant/render-evidence.json
+  s_5c3cd95121310c::t_fea6aa2e5eaf82 2,4-5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "6b2f6aca0364615e25668335fe398d0a1463b801",
+  "prompts": {},
+  "sessions": {
+    "s_5c3cd95121310c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a47e922d8522788ef",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
