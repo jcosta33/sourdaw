@@ -1,8 +1,6 @@
 {
     "capturedAt": "2026-07-26T15:22:54.135Z",
     "projectSha256": "1cea829dfa15f1e3ac94e611606cc3ef2ac3c4a2bccdfe1cc5707412565ffd9c",
-    "rendererSourceSha256": "d640394cb3899a812bfbdcbcb2af2ff8a81b94dc90d7c76e2fbda8175f5c8103",
-    "rendererSourceRoots": ["public/audio/worklets", "public/wasm", "src"],
     "sampleRate": 44100,
     "channelsPerStem": 2,
     "audibleRmsThreshold": 0.00001,
