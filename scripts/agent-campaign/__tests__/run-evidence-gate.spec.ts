@@ -37,7 +37,9 @@ async function setup(overrides: Partial<EvidenceRunnerDependencies> = {}) {
 }
 
 afterEach(async () => {
-    await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+    await Promise.all(
+        roots.splice(0).map((root) => rm(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }))
+    );
 });
 
 describe('runEvidenceGate', () => {
@@ -140,14 +142,31 @@ describe('runEvidenceGate', () => {
         const retainedPath = join(dependencies.root, 'evidence/agent-campaign/runs/old-head/AC-001.json');
         await writeFile(retainedPath, '{}\n');
         const retainedOutput = await runEvidenceGate(gate, dependencies);
+        const unrelatedPath = join(dependencies.root, 'unrelated.txt');
+        await writeFile(unrelatedPath, 'untracked\n');
+        const untrackedDirt = await runEvidenceGate(gate, dependencies);
+        await rm(unrelatedPath);
         execFileSync('git', ['add', retainedPath], { cwd: dependencies.root });
         const trackedTamper = await runEvidenceGate(gate, dependencies);
 
-        expect([copiedPolicy.code, retainedOutput.code, trackedTamper.code]).toEqual([
+        expect([copiedPolicy.code, retainedOutput.code, untrackedDirt.code, trackedTamper.code]).toEqual([
             'invalid-checkout',
             'execution-unimplemented',
             'dirty-checkout',
+            'dirty-checkout',
         ]);
+    });
+
+    it('should reject a mismatched root and malformed HEAD', async () => {
+        const wrongRoot = await setup();
+        const malformedHead = await setup();
+        const otherRoot = await mkdtemp(join(tmpdir(), 'sourdaw-evidence-runner-other-'));
+        roots.push(otherRoot);
+        wrongRoot.checkout.root = () => Promise.resolve(otherRoot);
+        malformedHead.checkout.head = () => Promise.resolve('not-a-commit');
+
+        const results = await Promise.all([runEvidenceGate(gate, wrongRoot), runEvidenceGate(gate, malformedHead)]);
+        expect(results.map(({ code }) => code)).toEqual(['invalid-checkout', 'invalid-checkout']);
     });
 
     it('should redact checkout adapter failures', async () => {
@@ -164,6 +183,6 @@ describe('runEvidenceGate', () => {
             'invalid-checkout',
             'invalid-checkout',
         ]);
-        expect(results.flatMap(({ failures }) => failures)).not.toContain('private checkout detail');
+        expect(results.flatMap(({ failures }) => failures).join()).not.toMatch(/private checkout detail/);
     });
 });
