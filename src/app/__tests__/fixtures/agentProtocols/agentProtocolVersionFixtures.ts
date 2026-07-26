@@ -1,26 +1,37 @@
-export const agentProtocolVersionFixtures = [
-    { id: 'sourdaw.agent.command', version: 0, expected: 'migrate' },
-    { id: 'sourdaw.agent.command', version: 1, expected: 'read-write' },
-    { id: 'sourdaw.agent.command', version: 2, expected: 'read-only-preserve' },
-    { id: 'sourdaw.agent.query', version: 0, expected: 'read-only-preserve' },
-    { id: 'sourdaw.agent.query', version: 1, expected: 'read-write' },
-    { id: 'sourdaw.agent.query', version: 2, expected: 'read-only-preserve' },
-    { id: 'sourdaw.agent.receipt', version: 0, expected: 'read-only-preserve' },
-    { id: 'sourdaw.agent.receipt', version: 1, expected: 'read-write' },
-    { id: 'sourdaw.agent.receipt', version: 2, expected: 'read-only-preserve' },
-    { id: 'sourdaw.agent.provider', version: 0, expected: 'read-only-preserve' },
-    { id: 'sourdaw.agent.provider', version: 1, expected: 'read-write' },
-    { id: 'sourdaw.agent.provider', version: 2, expected: 'read-only-preserve' },
-    { id: 'sourdaw.agent.device-manifest', version: 0, expected: 'read-only-preserve' },
-    { id: 'sourdaw.agent.device-manifest', version: 1, expected: 'read-write' },
-    { id: 'sourdaw.agent.device-manifest', version: 2, expected: 'read-only-preserve' },
-    { id: 'sourdaw.agent.production-brief', version: 0, expected: 'read-only-preserve' },
-    { id: 'sourdaw.agent.production-brief', version: 1, expected: 'read-write' },
-    { id: 'sourdaw.agent.production-brief', version: 2, expected: 'read-only-preserve' },
-    { id: 'sourdaw.agent.transform', version: 0, expected: 'read-only-preserve' },
-    { id: 'sourdaw.agent.transform', version: 1, expected: 'read-write' },
-    { id: 'sourdaw.agent.transform', version: 2, expected: 'read-only-preserve' },
-    { id: 'sourdaw.agent.external-adapter', version: 0, expected: 'read-only-preserve' },
-    { id: 'sourdaw.agent.external-adapter', version: 1, expected: 'read-write' },
-    { id: 'sourdaw.agent.external-adapter', version: 2, expected: 'read-only-preserve' },
+const protocolFixtures = [
+    ['command', 'Command', 'migrate'],
+    ['query', 'Project', 'read-only-preserve'],
+    ['receipt', 'Command', 'read-only-preserve'],
+    ['provider', 'AiRuntime', 'read-only-preserve'],
+    ['device-manifest', 'DeviceModules', 'read-only-preserve'],
+    ['production-brief', 'Project', 'read-only-preserve'],
+    ['transform', 'Command', 'read-only-preserve'],
+    ['external-adapter', 'AgentAdapters', 'read-only-preserve'],
 ] as const;
+
+export const agentProtocolOwnerFixtures = protocolFixtures.map(([family, owner]) => ({
+    id: `sourdaw.agent.${family}`,
+    owner,
+}));
+
+export const agentProtocolVersionFixtures = protocolFixtures.flatMap(([family, , previous]) => {
+    const id = `sourdaw.agent.${family}`;
+    return [
+        { id, version: 0, expected: previous },
+        { id, version: 1, expected: 'read-write' },
+        { id, version: 2, expected: 'read-only-preserve' },
+    ];
+});
+
+export const agentProjectHydrationFixture = {
+    projectMeta: { name: 'Materialized Mix', createdAt: 1, updatedAt: 2, keyRoot: 0, scaleName: 'chromatic' },
+    tracks: { tracks: [] },
+    chordTrack: { enabled: false, events: {} },
+    actionHistory: {
+        entries: [{ id: 'x', label: 'x', actionKind: 'obsolete.x', source: 'ai', timestamp: 1, reverted: false }],
+    },
+    agentProtocolAudit: {
+        bytes: [17, 34, 51],
+        rows: [{ id: 'sourdaw.agent.runtime-action', schemaVersion: 0 }],
+    },
+} as const;
