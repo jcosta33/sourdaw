@@ -377,7 +377,6 @@ export async function runEvidenceGate(
     }
 
     let envelopeFailures: string[];
-    let finalCaptureIsFresh: boolean;
     try {
         const observedNow = dependencies.clock.now().toISOString();
         envelopeFailures = await dependencies.manifest.validate({
@@ -389,6 +388,27 @@ export async function runEvidenceGate(
             observedNow,
             releaseReady: false,
         });
+    } catch {
+        return failure('invalid-run-envelope', 2, ['run envelope could not be verified'], {
+            integratedCommit: head,
+            capturedAt,
+            runEnvelopeSha256,
+            environmentMatch,
+        });
+    }
+    try {
+        const finalHead = await dependencies.checkout.head();
+        if (finalHead !== head) {
+            return failure('invalid-checkout', 2, ['checkout identity could not be verified']);
+        }
+        if (await dependencies.checkout.dirty(outputRootRelativePath)) {
+            return failure('dirty-checkout', 2, ['checkout contains unrelated changes']);
+        }
+    } catch {
+        return failure('invalid-checkout', 2, ['checkout identity could not be verified']);
+    }
+    let finalCaptureIsFresh: boolean;
+    try {
         const handoffNow = dependencies.clock.now().toISOString();
         const finalElapsed = Date.parse(handoffNow) - Date.parse(capturedAt);
         finalCaptureIsFresh = finalElapsed >= 0 && finalElapsed <= CAPTURE_WINDOW_MS;

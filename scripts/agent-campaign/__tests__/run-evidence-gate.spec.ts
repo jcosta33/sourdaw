@@ -262,6 +262,50 @@ describe('runEvidenceGate', () => {
         expect(index).toBe(3);
     });
 
+    it('should reject HEAD changes and dirt introduced during manifest validation', async () => {
+        let currentHead = head;
+        let dirty = false;
+        const changedHead = await setup();
+        changedHead.checkout.head = () => Promise.resolve(currentHead);
+        const validateHead = changedHead.manifest.validate;
+        changedHead.manifest.validate = async (input) => {
+            const failures = await validateHead(input);
+            currentHead = 'b'.repeat(40);
+            return failures;
+        };
+
+        const changedTree = await setup();
+        changedTree.checkout.dirty = () => Promise.resolve(dirty);
+        const validateTree = changedTree.manifest.validate;
+        changedTree.manifest.validate = async (input) => {
+            const failures = await validateTree(input);
+            dirty = true;
+            return failures;
+        };
+
+        const results = await Promise.all([runEvidenceGate(gate, changedHead), runEvidenceGate(gate, changedTree)]);
+        expect(results.map(({ code }) => code)).toEqual(['invalid-checkout', 'dirty-checkout']);
+    });
+
+    it('should redact final checkout adapter failures', async () => {
+        const headFailure = await setup();
+        let headReads = 0;
+        headFailure.checkout.head = () => {
+            headReads += 1;
+            return headReads === 1 ? Promise.resolve(head) : Promise.reject(new Error('private final head'));
+        };
+        const dirtyFailure = await setup();
+        let dirtyReads = 0;
+        dirtyFailure.checkout.dirty = () => {
+            dirtyReads += 1;
+            return dirtyReads === 1 ? Promise.resolve(false) : Promise.reject(new Error('private final dirty'));
+        };
+
+        const results = await Promise.all([runEvidenceGate(gate, headFailure), runEvidenceGate(gate, dirtyFailure)]);
+        expect(results.map(({ code }) => code)).toEqual(['invalid-checkout', 'invalid-checkout']);
+        expect(results.flatMap(({ failures }) => failures).join()).not.toMatch(/private final/);
+    });
+
     it('should reject unsafe and stale policies', async () => {
         const escaped = await runEvidenceGate([...gate.slice(0, -1), '../manifest.json'], await setup());
         const stale = await setup();
