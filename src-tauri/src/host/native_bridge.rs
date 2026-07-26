@@ -10,7 +10,8 @@ use daw_dsp::crumbs::types::CrumbsCommand;
 /// in any `NativePlugin` method.
 use daw_engine::plugin_slot::{MidiNoteEvent, NativePlugin, TransportState};
 use daw_plugin_host::{
-    AudioPlugin, ClapParameterUpdate, ClapWrapper, PluginParameter, Vst3Wrapper,
+    AudioPlugin, ClapParameterUpdate, ClapWrapper, HostTransport, PluginParameter, ProcessingGate,
+    Vst3Wrapper,
 };
 use rtrb::Consumer;
 use std::cell::UnsafeCell;
@@ -19,6 +20,21 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
 
+/// Translate the engine's transport into the plugin host's own shape.
+///
+/// The two types are deliberately separate — the engine is free to carry state
+/// no CLAP plugin has a field for — so the mapping lives here, at the seam, and
+/// is a plain function so it can be checked without an audio thread.
+fn host_transport_from(transport: &TransportState) -> HostTransport {
+    HostTransport {
+        tempo: transport.tempo,
+        time_sig_num: transport.time_sig_num,
+        time_sig_denom: transport.time_sig_denom,
+        is_playing: transport.is_playing,
+        song_pos_beats: transport.song_pos_beats,
+        song_pos_seconds: transport.song_pos_seconds,
+    }
+}
 /// Maximum block size the native engine produces (matches ClapWrapper activation).
 const MAX_BUFFER: usize = 4096;
 /// Maximum MIDI events per block for the event-conversion scratch array.
@@ -271,6 +287,9 @@ pub struct SharedClapPlugin {
     lifecycle: PluginRuntimeLifecycle,
     non_rt_control_lock: Mutex<()>,
     activated: bool,
+    /// Shared with the wrapper. Lets the control path ask for the CLAP
+    /// processing state to be left without performing the transition itself.
+    processing: Arc<ProcessingGate>,
     pending_parameters: PendingParameterQueue,
 }
 
@@ -283,6 +302,7 @@ impl SharedClapPlugin {
     pub fn new(wrapper: ClapWrapper) -> Self {
         let name = wrapper.get_name().to_string();
         let activated = wrapper.is_activated();
+        let processing = wrapper.processing_gate();
         Self {
             name,
             wrapper: UnsafeCell::new(wrapper),
@@ -290,8 +310,16 @@ impl SharedClapPlugin {
             lifecycle: PluginRuntimeLifecycle::new(),
             non_rt_control_lock: Mutex::new(()),
             activated,
+            processing,
             pending_parameters: PendingParameterQueue::new(),
         }
+    }
+
+    /// The plugin's processing gate. Held here as well as inside the wrapper so
+    /// the control path can state its intent, and read whether the audio thread
+    /// has acted on it, without touching the wrapper at all.
+    pub fn processing_gate(&self) -> Arc<ProcessingGate> {
+        Arc::clone(&self.processing)
     }
 
     pub fn name(&self) -> &str {
@@ -356,6 +384,11 @@ impl SharedClapPlugin {
     }
 
     pub fn begin_unload(&self) {
+        // Withdraw the intent to process before the lifecycle closes the door,
+        // so the audio thread — the only thread CLAP lets leave the processing
+        // state — still has blocks in which to do it. The instance stays in the
+        // scheduler until the unload finishes, so those blocks do arrive.
+        self.processing.request_stop();
         self.lifecycle.begin_unload();
     }
 
@@ -458,6 +491,11 @@ impl SharedClapPlugin {
         operation: impl FnOnce(&mut ClapWrapper, &PendingParameterQueue) -> ResultValue,
     ) -> Option<ResultValue> {
         if !self.lifecycle.allows_process() {
+            // An unloading instance is still wired into the scheduler, so blocks
+            // keep arriving for it. It must not be processed, but this is the
+            // audio thread, and leaving the CLAP processing state is the audio
+            // thread's job — so spend the visit on that and nothing else.
+            self.leave_processing_state_on_audio_thread();
             return None;
         }
 
@@ -485,6 +523,35 @@ impl SharedClapPlugin {
             unsafe { &mut *self.wrapper.get() },
             &self.pending_parameters,
         ))
+    }
+
+    /// Perform a pending stop on the audio thread. Called from the RT path only.
+    ///
+    /// Never waits: if the control path currently owns the wrapper, the next
+    /// block tries again. If no block ever comes, `ClapWrapper::drop` performs
+    /// the stop itself and counts the deviation.
+    fn leave_processing_state_on_audio_thread(&self) {
+        if !self.processing.has_pending_stop() {
+            return;
+        }
+
+        if self
+            .access_state
+            .compare_exchange(
+                PLUGIN_ACCESS_IDLE,
+                PLUGIN_ACCESS_PROCESSING,
+                Ordering::Acquire,
+                Ordering::Relaxed,
+            )
+            .is_err()
+        {
+            return;
+        }
+
+        let _guard = PluginAccessGuard {
+            access_state: &self.access_state,
+        };
+        unsafe { &mut *self.wrapper.get() }.sync_processing_state();
     }
 }
 
@@ -570,7 +637,7 @@ impl NativePlugin for ClapPluginSlot {
         right: &mut [f32],
         num_samples: usize,
         midi_events: &[MidiNoteEvent],
-        _transport: &TransportState,
+        transport: &TransportState,
     ) {
         let n = num_samples.min(MAX_BUFFER);
 
@@ -581,7 +648,11 @@ impl NativePlugin for ClapPluginSlot {
             event_buf[i] = (e.note, e.velocity, e.channel, e.is_note_on);
         }
 
+        let host_transport = host_transport_from(transport);
+
         let processed = self.plugin.with_process(|wrapper, pending_parameters| {
+            // Refills a preallocated event in place — no allocation here.
+            wrapper.set_transport(host_transport);
             let parameter_count = drain_pending_parameters_for_process(
                 pending_parameters,
                 &mut self.pending_parameter_scratch,
@@ -730,6 +801,87 @@ mod tests {
                 param_id: 2,
                 value: 0.2,
             }
+        );
+    }
+
+    #[test]
+    fn host_transport_carries_every_field_a_tempo_synced_plugin_reads() {
+        let engine_transport = TransportState {
+            tempo: 174.0,
+            time_sig_num: 5,
+            time_sig_denom: 4,
+            is_playing: true,
+            song_pos_beats: 12.25,
+            song_pos_seconds: 4.5,
+        };
+
+        let plugin_transport = host_transport_from(&engine_transport);
+
+        assert_eq!(
+            plugin_transport,
+            HostTransport {
+                tempo: 174.0,
+                time_sig_num: 5,
+                time_sig_denom: 4,
+                is_playing: true,
+                song_pos_beats: 12.25,
+                song_pos_seconds: 4.5,
+            }
+        );
+    }
+
+    #[test]
+    fn host_transport_keeps_a_parked_playhead_parked() {
+        let engine_transport = TransportState {
+            is_playing: false,
+            song_pos_beats: 8.0,
+            ..TransportState::default()
+        };
+
+        let plugin_transport = host_transport_from(&engine_transport);
+
+        assert!(
+            !plugin_transport.is_playing,
+            "a stopped transport must not read as rolling to the plugin"
+        );
+        assert_eq!(plugin_transport.song_pos_beats, 8.0);
+    }
+
+    #[test]
+    fn beginning_an_unload_asks_the_audio_thread_to_stop_processing() {
+        let wrapper = ClapWrapper::new_engine_owned_command_fixture("fixture", Vec::new(), false);
+        let shared = SharedClapPlugin::new(wrapper);
+        let gate = shared.processing_gate();
+        gate.request_start();
+
+        shared.begin_unload();
+
+        assert!(
+            !gate.wants_processing(),
+            "an unload must withdraw the intent to process before deactivate runs"
+        );
+    }
+
+    #[test]
+    fn an_unloading_instance_is_visited_for_the_stop_but_never_processed() {
+        let wrapper = ClapWrapper::new_engine_owned_command_fixture("fixture", Vec::new(), false);
+        let shared = SharedClapPlugin::new(wrapper);
+        shared.processing_gate().request_start();
+
+        assert!(
+            shared.with_process(|_, _| ()).is_some(),
+            "an active instance processes normally"
+        );
+
+        shared.begin_unload();
+
+        assert!(
+            shared.with_process(|_, _| ()).is_none(),
+            "an unloading instance is never handed a block to process"
+        );
+        assert!(
+            shared.processing_gate().has_stopped(),
+            "the audio-thread visit still leaves the CLAP processing state"
         );
     }
 
