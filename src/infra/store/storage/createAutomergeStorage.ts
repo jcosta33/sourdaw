@@ -872,6 +872,17 @@ export const createAutomergeStorage = <TData>(
          * corrects an injection `hydrate` made; it does not author a write, and
          * a pending nothing rebased still carries exactly what its use case
          * set.
+         *
+         * If you are adding a sanitizer, know what this relies on. It is
+         * reached only when a sanitizer returns a value that is not reference-
+         * identical to its input, so a sanitizer that short-circuits on accept
+         * (`if (is_exact_X(value)) { return value; }`) keeps clean hydrates off
+         * this path entirely. One that always rebuilds reaches it on *every*
+         * hydrate, and this correction is deliberately blunt: it does not check
+         * whether the rebase actually blended the visible pending or merely
+         * touched its revision, and it does not exempt a scoped transactional
+         * write. Those distinctions do not matter while clean values never get
+         * here — give a new sanitizer the accept path and keep it that way.
          */
         setProjected(value: TData | null): void {
             const visibleBefore = cachedValue;
