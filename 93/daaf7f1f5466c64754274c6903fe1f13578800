@@ -1,0 +1,35 @@
+src/modules/Automation/handlers/automation/__tests__/handleSetAutomationLaneEnabled.spec.ts
+  s_ac9b259eab20ba::t_4c9eacb6fdb19c 1-62
+src/modules/Automation/handlers/automation/handleSetAutomationLaneEnabled.ts
+  s_4e45c764a71e86::t_371484f12d04b2 1-41
+src/modules/Automation/useCases/automation/setAutomationLaneEnabled.ts
+  s_ac9b259eab20ba::t_adbcfe9d321aa8 1-20
+src/modules/Automation/useCases/getAutomationHandlers.ts
+  s_ac9b259eab20ba::t_5bc5706f8b22dc 12,19,41
+src/utils/handlerContract.ts
+  s_ac9b259eab20ba::t_768e87dee22389 322
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "93daaf7f1f5466c64754274c6903fe1f13578800",
+  "prompts": {},
+  "sessions": {
+    "s_4e45c764a71e86": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fa084-2ee5-7cd0-b865-a6fc69a739a4",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
