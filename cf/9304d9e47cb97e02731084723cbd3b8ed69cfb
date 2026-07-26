@@ -1,0 +1,21 @@
+src/infra/store/storage/createAutomergeStorage.ts
+  s_b4f56035f67e4a::t_08e5ef4330c36c 693-694
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/reloadMyceliumAscendantDemo.spec.ts
+  s_b4f56035f67e4a::t_cb732b74ae20a1 1-123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "cf9304d9e47cb97e02731084723cbd3b8ed69cfb",
+  "prompts": {},
+  "sessions": {
+    "s_b4f56035f67e4a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a8778b6a9cb26fcae",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
