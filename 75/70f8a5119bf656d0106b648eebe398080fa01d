@@ -1,0 +1,37 @@
+docs/evidence/mycelium-ascendant/render-evidence.json
+  s_0d39f3a4a4357a::t_afcc924d6a737d 2,4-6,10,14-16,18-20
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/renderMyceliumAscendantDemo.spec.ts
+  s_0d39f3a4a4357a::t_80d5cb6e555ca8 17-18,20-21,23,29,108,115
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/resetModuleStoresToDefault.spec.ts
+  s_0d39f3a4a4357a::t_f439c4fafbbe4c 10,28-32,95,114
+tests/e2e/analyzePcmWav.ts
+  s_0d39f3a4a4357a::t_b61fe09cc09606 1-229
+tests/e2e/myceliumExport.spec.ts
+  s_0d39f3a4a4357a::t_2a97fadb60eb83 6,16,93,102-110
+src/modules/Project/useCases/projectPersistence/helpers/resetModuleStoresToDefault.ts
+  s_ac9b259eab20ba::t_b72c9ee15da25b 2,39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "7570f8a5119bf656d0106b648eebe398080fa01d",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
