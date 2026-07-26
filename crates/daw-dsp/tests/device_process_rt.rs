@@ -519,4 +519,9 @@ fn toaster_process_does_not_allocate_with_pads_triggered() {
 
     let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&out, "toaster");
+    assert!(
+        peak(&out) > 1e-4,
+        "toaster produced silence with two pads triggered, so the guarded \
+         region did not exercise the pad voices"
+    );
 }
