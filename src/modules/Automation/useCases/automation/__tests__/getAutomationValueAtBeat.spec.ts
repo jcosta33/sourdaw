@@ -19,7 +19,6 @@ function lane(id: string, points: AutomationPoint[], extra: Partial<AutomationLa
         visible: true,
         enabled: true,
         collapsed: false,
-        virginTerritory: true,
         minValue: 0,
         maxValue: 1,
         ...extra,

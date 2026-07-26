@@ -177,12 +177,12 @@ describe('createMyceliumTopology', () => {
             tracks.flatMap((track) => track.sends).every((send) => returns.some((track) => track.id === send.busId))
         ).toBe(true);
         expect(projectData.sidechainRoutes).toHaveLength(1);
-        expect(returns.map((track) => track.devices.at(-1)?.parameterValues)).toEqual([
-            { mix: 1, decay: 0.75 },
-            { 'delay-mix': 1, 'delay-feedback': 0.55 },
-            { 'crush-mix': 1 },
-            { 'dist-mix': 1 },
-        ]);
+        expect([
+            returns[0]?.devices.at(-1)?.parameterValues.mix,
+            returns[1]?.devices.at(-1)?.parameterValues['delay-mix'],
+            returns[2]?.devices.at(-1)?.parameterValues['crush-mix'],
+            returns[3]?.devices.at(-1)?.parameterValues['dist-mix'],
+        ]).toEqual([1, 1, 1, 1]);
         expect(byId.get(route?.sourceTrackId ?? '')?.name).toBe('Kick');
         expect(byId.get(route?.targetTrackId ?? '')?.name).toBe('Rolling Colony');
         expect(

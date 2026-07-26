@@ -5,15 +5,47 @@ import { type Store } from '#/infra/store/types';
 export type ExportFormat = 'wav' | 'mp3' | 'flac';
 export type Mp3BitRate = 96 | 128 | 192 | 320;
 
+/**
+ * Dither applied when quantizing to a fixed bit depth.
+ *
+ * `random` is the historical behaviour and stays the default; `seeded` and
+ * `none` exist so an export can be reproduced byte for byte.
+ */
+export type ExportDither = 'random' | 'seeded' | 'none';
+
+/**
+ * Loudness normalization applied before encoding.
+ *
+ * `off` is the default and leaves the mix at its authored level, with only the
+ * existing sample-peak clip guard. `r128` measures programme loudness and true
+ * peak and applies one gain to hit the target without breaching the ceiling.
+ */
+export type ExportNormalization = 'off' | 'r128';
+
+/** EBU R 128 broadcast target; also the common streaming delivery level. */
+export const R128_TARGET_LUFS = -14;
+
+/** EBU R 128 recommends -1 dBTP for lossy delivery. */
+export const R128_CEILING_DB_TP = -1;
+
 export type ExportSettings = {
     formats: ExportFormat[];
     sampleRate: number;
     bitDepth: number;
     mp3BitRate: Mp3BitRate;
+    dither: ExportDither;
+    normalization: ExportNormalization;
 };
 
 const EXPORT_SETTINGS_KEY = 'sourdaw:export-settings';
-const DEFAULT_EXPORT_SETTINGS: ExportSettings = { formats: ['wav'], sampleRate: 44100, bitDepth: 24, mp3BitRate: 128 };
+const DEFAULT_EXPORT_SETTINGS: ExportSettings = {
+    formats: ['wav'],
+    sampleRate: 44100,
+    bitDepth: 24,
+    mp3BitRate: 128,
+    dither: 'random',
+    normalization: 'off',
+};
 
 const validExportFormats: readonly string[] = ['wav', 'mp3', 'flac'];
 const validSampleRates: readonly number[] = [44100, 48000, 88200, 96000];
@@ -48,6 +80,20 @@ function readMp3BitRate(value: unknown): Mp3BitRate {
     return DEFAULT_EXPORT_SETTINGS.mp3BitRate;
 }
 
+function readDither(value: unknown): ExportDither {
+    if (value === 'random' || value === 'seeded' || value === 'none') {
+        return value;
+    }
+    return DEFAULT_EXPORT_SETTINGS.dither;
+}
+
+function readNormalization(value: unknown): ExportNormalization {
+    if (value === 'off' || value === 'r128') {
+        return value;
+    }
+    return DEFAULT_EXPORT_SETTINGS.normalization;
+}
+
 function readFormats(parsed: Record<string, unknown>): ExportFormat[] {
     if (Array.isArray(parsed.formats)) {
         const formats = parsed.formats.filter(isExportFormat);
@@ -77,6 +123,8 @@ function sanitizeExportSettings(value: unknown): ExportSettings {
             fallback: DEFAULT_EXPORT_SETTINGS.bitDepth,
         }),
         mp3BitRate: readMp3BitRate(value.mp3BitRate),
+        dither: readDither(value.dither),
+        normalization: readNormalization(value.normalization),
     };
 }
 

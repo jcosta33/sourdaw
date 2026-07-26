@@ -1,3 +1,5 @@
+import { clampFaderGain } from '#/utils/audioLevelLaw';
+
 import { type Device } from '../../models/TrackViewTypes';
 import { buildDeviceChain } from '../buildDeviceChain';
 
@@ -18,6 +20,19 @@ type CreateOfflineTrackStripOptions = {
      * would leak muted-track audio otherwise (PR #616 review).
      */
     honorMuted?: boolean;
+    /**
+     * The track's VCA group master, as a plain multiplier (`1` when the track
+     * belongs to no group). Live folds this into every fader write — the VCA
+     * writer sends `trackGain * groupGain` and the gain-automation branch sends
+     * `dbToGain(value) * groupGain` — so a strip seeded from the raw stored
+     * gain bounces a VCA-member track at a different level than it plays.
+     *
+     * The multiply happens *before* the fader clamp, matching live, where the
+     * clamp lives inside `TrackNode` and therefore sees the product. Clamping
+     * first and multiplying after is a different number whenever the product
+     * crosses unity.
+     */
+    vcaMultiplier?: number;
 };
 
 export async function createOfflineTrackStrip(
@@ -26,6 +41,7 @@ export async function createOfflineTrackStrip(
     options: CreateOfflineTrackStripOptions = {}
 ): Promise<OfflineTrackStrip> {
     const honorMuted = options.honorMuted ?? true;
+    const vcaMultiplier = options.vcaMultiplier ?? 1;
     const inputNode = offlineCtx.createGain();
     inputNode.gain.value = 1;
 
@@ -37,7 +53,10 @@ export async function createOfflineTrackStrip(
     // clamped only the floor, so a stored gain above unity — which importers and
     // older projects can carry — rendered louder on export than it ever played
     // back. The two runtimes must apply the same level law.
-    faderNode.gain.value = Math.max(0, Math.min(1, track.gain));
+    //
+    // The VCA group master multiplies in first, then the pair is clamped
+    // together — the order live composes in.
+    faderNode.gain.value = clampFaderGain(track.gain * vcaMultiplier);
 
     const postFaderGain = offlineCtx.createGain();
     // Mixdown bakes mute into the strip; stem exports opt out so muted

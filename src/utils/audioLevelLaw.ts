@@ -26,6 +26,33 @@
 /** Control travel below unity, in decibels. −60 dB is effectively silent. */
 export const SEND_MIN_DB = -60;
 
+/**
+ * The fader ceiling, as a linear amplitude multiplier. The track fader tops out
+ * at unity (0 dBFS): there is no make-up gain above the fader, by design.
+ *
+ * This is a **product invariant, not an implementation detail** — every writer
+ * of a track's fader gain must apply it, or a value the fader itself cannot
+ * produce reaches the output. #789 found the first half of that divergence (a
+ * stored gain above unity rendered louder on export than it ever played back)
+ * and fixed the static strip gain; {@link clampFaderGain} is the shared law
+ * both runtimes now route through, including gain *automation*, which
+ * escaped the offline clamp because it writes the AudioParam directly rather
+ * than through the strip's initial value.
+ */
+export const FADER_MAX_GAIN = 1;
+
+/**
+ * Clamp a linear amplitude to the fader's range, `[0, {@link FADER_MAX_GAIN}]`.
+ * The floor is a hard 0 — negative amplitude is a phase inversion, never a
+ * level — and the ceiling is unity.
+ */
+export function clampFaderGain(gain: number): number {
+    if (!(gain > 0)) {
+        return 0;
+    }
+    return Math.min(FADER_MAX_GAIN, gain);
+}
+
 /** Linear amplitude gain for a level in decibels. `dbToGain(0) === 1`. */
 export function dbToGain(db: number): number {
     return 10 ** (db / 20);

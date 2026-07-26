@@ -18,6 +18,13 @@ type ModulationTrack = NonNullable<typeof trackStore.value>['tracks'][number];
 type AutomationLane = NonNullable<typeof automationStore.value>['lanes'][number];
 type IndexedLane = readonly [AutomationLane, ModulationTrack, string, string, string];
 type AutomatedBaseSlot = { activeLaneCount: number; value: number | null };
+/**
+ * What the live automation pass actually wrote to each device parameter
+ * on this tick, indexed `deviceId → parameterId → value`. Nested rather than a
+ * composite string key so no key format has to be agreed across modules. The
+ * transport scheduler owns the map and hands it in; it is read-only here.
+ */
+type AppliedAutomationBases = ReadonlyMap<string, ReadonlyMap<string, number>>;
 
 const trackById = new Map<string, ModulationTrack>();
 let cachedLanesRef: readonly AutomationLane[] | undefined;
@@ -171,7 +178,11 @@ function indexAutomatedBases(currentBeat: number): void {
  * passed in) the slew is snapped straight to the combined target on the first
  * tick — the modulation analog of `applyAutomation`'s slew reset.
  */
-export function applyModulationToEngine(currentBeat: number, discontinuityEpoch?: number): void {
+export function applyModulationToEngine(
+    currentBeat: number,
+    discontinuityEpoch?: number,
+    appliedAutomationBases?: AppliedAutomationBases
+): void {
     const state = modulationStore.value;
     if (!state || state.modulators.length === 0) {
         return;
@@ -218,7 +229,16 @@ export function applyModulationToEngine(currentBeat: number, discontinuityEpoch?
 
             const key = `${mapping.targetTrackId} ${mapping.targetDeviceId} ${mapping.targetParamId}`;
             const automatedBase = automatedBaseByDevice.get(mapping.targetDeviceId)?.get(mapping.targetParamId);
-            const base = automatedBase?.value ?? binding.baseValue;
+            // Prefer the value applyAutomation actually applied to this
+            // param on this tick — the *slewed* one. Recomputing the raw curve
+            // value here made the two writers disagree about the same param in
+            // the same tick: automation wrote the slewed value, then modulation
+            // overwrote it with raw + delta, so the combined value jumped ahead
+            // of the glide automation alone would have produced. Falls back to
+            // the raw indexed base (no automation write this tick, e.g. the lane
+            // is being recorded or is gated off) and then to the persisted base.
+            const appliedBase = appliedAutomationBases?.get(mapping.targetDeviceId)?.get(mapping.targetParamId);
+            const base = appliedBase ?? automatedBase?.value ?? binding.baseValue;
             // applyAutomation may have just written an earlier equivalent lane;
             // restate the later authoritative combined target after that write.
             const hasCompetingAutomationWrites = (automatedBase?.activeLaneCount ?? 0) > 1;

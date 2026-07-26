@@ -277,6 +277,25 @@ impl AudioScheduler {
     #[inline]
     pub fn process_block(&mut self, left: &mut [f32], right: &mut [f32], num_samples: usize) {
         for effect in &mut self.effects {
+            // A bridged plugin is driven by `process_audio_bridges` above, from
+            // real worklet audio. This standalone chain runs over zeroed
+            // scratch, so processing a bridged plugin here would push phantom
+            // silence through a stateful plugin (corrupting its tails, envelope
+            // followers and delay lines) and emit its output on a second,
+            // uncontrolled path straight into the CPAL device buffer.
+            //
+            // `pending_midi` is cleared rather than left alone: the bridge path
+            // skips its own clear on the bypassed branch, so dropping through
+            // without clearing here would let events accumulate unboundedly.
+            if self
+                .audio_bridges
+                .iter()
+                .any(|bridge| bridge.plugin_id == effect.id)
+            {
+                effect.pending_midi.clear();
+                continue;
+            }
+
             if effect.bypassed {
                 effect.pending_midi.clear();
                 continue;
@@ -425,11 +444,56 @@ mod tests {
         assert_eq!(scheduler.effects[0].id, 42);
         assert_eq!(scheduler.audio_bridges[0].plugin_id, 42);
 
+        // The standalone chain must leave a bridged plugin alone. It runs over
+        // zeroed scratch, so processing the plugin here would both corrupt its
+        // internal state with phantom silence and write its output into the
+        // CPAL device buffer on a path nothing controls.
         let mut left = [0.0; 4];
         let mut right = [0.0; 4];
         scheduler.process_block(&mut left, &mut right, 4);
-        assert_eq!(left, [0.25; 4]);
-        assert_eq!(right, [0.25; 4]);
+        assert_eq!(left, [0.0; 4]);
+        assert_eq!(right, [0.0; 4]);
+    }
+
+    #[test]
+    fn a_bridged_plugin_processes_only_the_audio_that_arrived_over_its_bridge() {
+        let (mut command_tx, mut scheduler) = create_scheduler();
+        let (bridge, mut handle) = crate::audio_bridge::create_audio_bridge(42);
+
+        command_tx
+            .push(GraphCommand::AddPluginWithBridge(
+                42,
+                Box::new(FakeNativePlugin { value: 0.25 }),
+                bridge,
+            ))
+            .unwrap();
+        scheduler.update_graph();
+
+        // Real worklet audio arrives over the bridge and is processed.
+        assert!(handle.push_input(&[0.0; 4], &[0.0; 4]));
+        scheduler.process_audio_bridges();
+        let processed = handle.pop_output().expect("the bridged block");
+        assert_eq!(processed.frames, 4);
+        assert_eq!(&processed.left[..4], &[0.25; 4]);
+
+        // A standalone callback in the same cycle must not run the plugin a
+        // second time over its silent scratch.
+        let mut left = [0.0; 4];
+        let mut right = [0.0; 4];
+        scheduler.process_block(&mut left, &mut right, 4);
+        assert_eq!(left, [0.0; 4]);
+
+        // And an unbridged plugin still runs on the standalone chain, so the
+        // guard is scoped to bridged instances rather than disabling the path.
+        command_tx
+            .push(GraphCommand::AddPlugin(
+                7,
+                Box::new(FakeNativePlugin { value: 0.5 }),
+            ))
+            .unwrap();
+        scheduler.update_graph();
+        scheduler.process_block(&mut left, &mut right, 4);
+        assert_eq!(left, [0.5; 4]);
     }
 
     #[test]

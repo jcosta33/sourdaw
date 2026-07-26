@@ -3,12 +3,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { type Clip } from '../../../models/Track';
 import * as subject from '../duplicateClipToNextBar';
 
-const mocks = vi.hoisted(() => ({
-    duplicateClipCore: vi.fn<(input: unknown) => boolean>(),
-    transportStore: {
-        value: { timeSignatureNumerator: 4 } as { timeSignatureNumerator: number } | undefined,
-    },
-}));
+const mocks = vi.hoisted(() => {
+    // `value` is deliberately nullable: one test drives it to undefined to
+    // exercise the 4-beat bar fallback.
+    const transportStore: { value: { timeSignatureNumerator: number } | undefined } = {
+        value: { timeSignatureNumerator: 4 },
+    };
+    return {
+        duplicateClipCore: vi.fn<(input: unknown) => boolean>(),
+        transportStore,
+    };
+});
 
 vi.mock('../duplicateClipCore', () => ({
     duplicateClipCore: mocks.duplicateClipCore,
@@ -36,7 +41,7 @@ function makeClip(endBeat: number): Clip {
         color: '#fff',
         locked: false,
         muted: false,
-    } as Clip;
+    };
 }
 
 describe('duplicateClipToNextBar', () => {
@@ -87,7 +92,7 @@ describe('duplicateClipToNextBar', () => {
     });
 
     it('falls back to a 4-beat bar when transport has no time signature', () => {
-        mocks.transportStore.value = undefined as unknown as { timeSignatureNumerator: number };
+        mocks.transportStore.value = undefined;
         const sourceClip = makeClip(6);
 
         subject.duplicateClipToNextBar('src');

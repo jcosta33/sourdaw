@@ -50,10 +50,16 @@ fn biquad_magnitude(coeffs: &BiquadCoeffs, freq_hz: f64, sr: f64) -> f64 {
 }
 
 /// Band specification for linear phase EQ design.
+#[derive(Clone, Copy)]
 pub struct LinearPhaseEqBand {
     pub enabled: bool,
     pub coeffs: BiquadCoeffs, // used only for magnitude response computation
 }
+
+/// Upper bound on bands a design can take, matching `MasteringEq`'s band count.
+/// Fixing it lets the band set live inline instead of in a `Vec` that the
+/// redesign would have to reallocate.
+pub const MAX_LINEAR_PHASE_BANDS: usize = 8;
 
 pub struct LinearPhaseEq {
     fir_l: Vec<f32>,
@@ -67,8 +73,15 @@ pub struct LinearPhaseEq {
     block_size: usize,
     sample_rate: f64,
     bypassed: bool,
+    /// True until a FIR has actually been designed. While set, `process` is a
+    /// no-op and `latency_samples` reports 0 -- the filter is not in the path,
+    /// so it must not claim delay the signal does not experience.
     needs_rebuild: bool,
-    bands: Vec<LinearPhaseEqBand>,
+    bands: [LinearPhaseEqBand; MAX_LINEAR_PHASE_BANDS],
+    band_count: usize,
+    // Redesign scratch, preallocated so `rebuild` never allocates.
+    magnitude: Vec<f64>,
+    impulse: Vec<f64>,
 }
 
 impl LinearPhaseEq {
@@ -85,58 +98,81 @@ impl LinearPhaseEq {
             sample_rate: sr,
             bypassed: false,
             needs_rebuild: true,
-            bands: Vec::new(),
+            bands: [LinearPhaseEqBand {
+                enabled: false,
+                coeffs: BiquadCoeffs::unity(),
+            }; MAX_LINEAR_PHASE_BANDS],
+            band_count: 0,
+            magnitude: vec![1.0; FIR_SIZE / 2 + 1],
+            impulse: vec![0.0; FIR_SIZE],
         }
     }
 
-    /// Rebuild the FIR filter from band settings.
-    pub fn rebuild(&mut self, bands: &[LinearPhaseEqBand]) {
-        self.bands = bands
-            .iter()
-            .map(|b| LinearPhaseEqBand {
-                enabled: b.enabled,
-                coeffs: b.coeffs.clone(),
-            })
-            .collect();
+    /// Whether the FIR is designed and actually filtering. The chain uses this
+    /// to decide both which EQ to run and what latency to report; the two must
+    /// never disagree.
+    pub fn is_active(&self) -> bool {
+        !self.bypassed && !self.needs_rebuild
+    }
 
-        // Compute desired magnitude response at each frequency bin
-        let mut magnitude = vec![1.0_f64; FIR_SIZE / 2 + 1];
+    /// Rebuild the FIR filter from band settings.
+    ///
+    /// **Allocation-free**: the band set, the magnitude response and
+    /// the impulse response all live in buffers sized once in [`Self::new`],
+    /// and the centring shift is folded into the index arithmetic instead of
+    /// calling `rotate_right`.
+    ///
+    /// It is still **not** safe to call from the audio thread, for a reason
+    /// allocation was never the whole of: the inverse transform is evaluated
+    /// naively, so it costs `FIR_SIZE * FIR_SIZE/2` = 2,097,152 cosine
+    /// evaluations -- roughly four 128-sample blocks' worth of budget at
+    /// 48 kHz, in one call. Wiring this to a parameter change needs the work
+    /// amortized across blocks behind a double-buffered FIR; until then the
+    /// chain keeps the IIR `MasteringEq` in the path (see `ProofChain`), so no
+    /// caller reaches this from `process`.
+    pub fn rebuild(&mut self, bands: &[LinearPhaseEqBand]) {
+        self.band_count = bands.len().min(MAX_LINEAR_PHASE_BANDS);
+        self.bands[..self.band_count].copy_from_slice(&bands[..self.band_count]);
+        let bands = &self.bands[..self.band_count];
+
+        // Desired magnitude response at each frequency bin.
         for i in 0..=FIR_SIZE / 2 {
             let freq = i as f64 * self.sample_rate / FIR_SIZE as f64;
             if freq < 1.0 {
+                self.magnitude[i] = 1.0;
                 continue;
             }
-            for band in &self.bands {
+            let mut mag = 1.0_f64;
+            for band in bands {
                 if band.enabled {
-                    magnitude[i] *= biquad_magnitude(&band.coeffs, freq, self.sample_rate);
+                    mag *= biquad_magnitude(&band.coeffs, freq, self.sample_rate);
                 }
             }
+            self.magnitude[i] = mag;
         }
 
-        // Build symmetric impulse response via real IFFT
-        // Since we want linear phase, the impulse response is symmetric (real-only spectrum)
-        let mut ir = vec![0.0_f64; FIR_SIZE];
-        for n in 0..FIR_SIZE {
-            let mut sum = magnitude[0]; // DC component
+        // Symmetric (linear-phase) impulse response via a real inverse
+        // transform, written straight into its centred position: the old code
+        // built it at `n` and then rotated right by HALF_FIR, which maps index
+        // `n` to `n + HALF_FIR`, so index `j` here reads source index
+        // `j - HALF_FIR` modulo FIR_SIZE.
+        for j in 0..FIR_SIZE {
+            let n = (j + FIR_SIZE - HALF_FIR) % FIR_SIZE;
+            let mut sum = self.magnitude[0]; // DC component
             for k in 1..FIR_SIZE / 2 {
                 let angle = 2.0 * PI * k as f64 * n as f64 / FIR_SIZE as f64;
-                sum += 2.0 * magnitude[k] * angle.cos();
+                sum += 2.0 * self.magnitude[k] * angle.cos();
             }
-            sum += magnitude[FIR_SIZE / 2] * (PI * n as f64).cos(); // Nyquist
-            ir[n] = sum / FIR_SIZE as f64;
+            sum += self.magnitude[FIR_SIZE / 2] * (PI * n as f64).cos(); // Nyquist
+            self.impulse[j] = sum / FIR_SIZE as f64;
         }
 
-        // Circular shift to center the impulse
-        ir.rotate_right(HALF_FIR);
-
-        // Apply Blackman-Harris window
-        for (n, sample) in ir.iter_mut().enumerate() {
-            *sample *= blackman_harris(n, FIR_SIZE);
+        // Window in place, then narrow into both channels' taps.
+        for j in 0..FIR_SIZE {
+            let windowed = self.impulse[j] * blackman_harris(j, FIR_SIZE);
+            self.fir_l[j] = windowed as f32;
+            self.fir_r[j] = windowed as f32;
         }
-
-        // Store as f32 FIR
-        self.fir_l = ir.iter().map(|&v| v as f32).collect();
-        self.fir_r = self.fir_l.clone();
         self.needs_rebuild = false;
     }
 
@@ -177,11 +213,18 @@ impl LinearPhaseEq {
         }
     }
 
+    /// Delay the FIR actually imposes.
+    ///
+    /// This used to return `HALF_FIR` whenever `bypassed` was false --
+    /// and nothing ever sets `bypassed` -- so a Proof instance reported 1024
+    /// samples of latency it did not have. Wave 3 feeds this into host PDC, so
+    /// that was a real 21.3 ms timing error at 48 kHz, not a cosmetic one. An
+    /// undesigned FIR is not in the signal path and delays nothing.
     pub fn latency_samples(&self) -> usize {
-        if self.bypassed {
-            0
-        } else {
+        if self.is_active() {
             HALF_FIR
+        } else {
+            0
         }
     }
 }

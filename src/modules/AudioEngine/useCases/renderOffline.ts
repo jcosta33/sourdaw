@@ -1,4 +1,4 @@
-import { deriveEffectiveAudibility } from '#/modules/Arrangement/stores';
+import { deriveEffectiveAudibility, deriveVcaMultiplier, getVcaGroupsState } from '#/modules/Arrangement/stores';
 import { sidechainStore } from '#/modules/Routing/stores';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 
@@ -10,16 +10,12 @@ import { type DeviceNodeEntry } from './buildDeviceChain';
 import { getSidechainKeyDelay } from './latencyCompensation/compensation/getSidechainKeyDelay';
 import { acquireRenderLock } from './offlineRender/acquireRenderLock';
 import { checkCancel } from './offlineRender/checkCancel';
+import { clampRenderFrameCount } from './offlineRender/clampRenderFrameCount';
 import { connectOfflineToasterPadRoutes } from './offlineRender/connectOfflineToasterPadRoutes';
-import {
-    MAX_OFFLINE_FRAMES,
-    MIN_RENDER_TIMEOUT_MS,
-    PROGRESS_EASE_COEFF,
-    RENDER_TIMEOUT_MULTIPLIER,
-} from './offlineRender/constants';
+import { MIN_RENDER_TIMEOUT_MS, RENDER_TIMEOUT_MULTIPLIER } from './offlineRender/constants';
 import { createOfflineBusStrip } from './offlineRender/createOfflineBusStrip';
 import { createOfflineTrackStrip } from './offlineRender/createOfflineTrackStrip';
-import { renderWithTimeout } from './offlineRender/renderWithTimeout';
+import { renderInSegments } from './offlineRender/renderInSegments';
 import { resetCancelFlag } from './offlineRender/resetCancelFlag';
 import { resolveRenderContext } from './offlineRender/resolveRenderContext';
 import { schedulePendingSuspends } from './offlineRender/schedulePendingSuspends';
@@ -86,7 +82,7 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
         }
 
         // Clamp frame count to browser-safe maximum to avoid context creation error.
-        const frameCount = Math.min(Math.ceil(durationSeconds * sampleRate), MAX_OFFLINE_FRAMES);
+        const frameCount = clampRenderFrameCount({ durationSeconds, sampleRate, onWarning });
         const offlineCtx = new OfflineAudioContext(2, frameCount, sampleRate);
         const masterGain = offlineCtx.createGain();
         // Use the project's master gain level (stored as 0-100) rather than a hardcoded value.
@@ -119,6 +115,9 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
         });
         const sourceTracks = allRenderableTracks.filter((track) => audibleByTrackId.get(track.id) ?? !track.muted);
         const sidechainRoutes = sidechainStore.value?.routes ?? [];
+        // Snapshot once: every strip and every gain lane in this render must see
+        // the same group levels, however long the render takes.
+        const vcaGroups = getVcaGroupsState();
         const routableSidechainTargets = new Set<object>();
         for (const route of sidechainRoutes) {
             const sourceTrack = allRenderableTracks.find((track) => track.id === route.sourceTrackId);
@@ -156,7 +155,14 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
 
         for (const track of allRenderableTracks) {
             checkCancel();
-            const strip = await createOfflineTrackStrip(offlineCtx, track);
+            // A VCA-member track plays through its group master, so the bounce
+            // has to fold the same multiplier into its fader. This is the same
+            // derivation the live path resolves through `getEffectiveGain`, and
+            // it is 1 for a track in no group. Resolved here rather than inside
+            // the strip so the strip builder stays a pure function of what it is
+            // handed.
+            const vcaMultiplier = deriveVcaMultiplier({ vcaGroupId: track.vcaGroupId, groups: vcaGroups });
+            const strip = await createOfflineTrackStrip(offlineCtx, track, { vcaMultiplier });
             trackStripsById.set(track.id, strip);
             deviceEntriesByTrack.set(track.id, strip.deviceEntries);
             if (track.kind === 'bus') {
@@ -266,6 +272,9 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
                 allTracks: tracks?.tracks ?? [],
                 deviceEntriesByTrack,
                 regionStartBeat: startBeat,
+                // Same multiplier the strip was seeded with, so a gain lane on a
+                // VCA-member track rides its group instead of nullifying it.
+                vcaMultiplier: deriveVcaMultiplier({ vcaGroupId: track.vcaGroupId, groups: vcaGroups }),
             });
 
             scheduled++;
@@ -281,23 +290,21 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
         // Yield so the UI can paint the scheduling-complete mark before startRendering() blocks.
         await yieldToMain();
 
-        // OfflineAudioContext.startRendering() emits no progress events — animate toward 97%
-        // using an easing approach. eligible.length > 0 means scheduling reached 50%, so start
-        // the simulation from there; otherwise start from 0.
+        // Render in suspendable segments. Each boundary is both a
+        // real abort point (a cancelled render is left suspended rather than
+        // running to completion in the background) and the only truthful
+        // progress signal the API offers, replacing the old eased timer that
+        // animated toward 97% regardless of what the renderer was doing.
+        // Scheduling owns 0-50%, so the render phase maps onto the back half.
         const schedulingFrac = sourceTracks.length > 0 ? 0.5 : 0;
-        let simFrac = schedulingFrac;
-        const renderTimer = onProgress
-            ? setInterval(() => {
-                  simFrac += (0.97 - simFrac) * PROGRESS_EASE_COEFF;
-                  onProgress(simFrac);
-              }, 100)
-            : null;
-
         const renderTimeoutMs = Math.max(MIN_RENDER_TIMEOUT_MS, durationSeconds * RENDER_TIMEOUT_MULTIPLIER * 1000);
-        const buffer = await renderWithTimeout(offlineCtx, renderTimeoutMs).finally(() => {
-            if (renderTimer !== null) {
-                clearInterval(renderTimer);
-            }
+        const buffer = await renderInSegments({
+            offlineCtx,
+            durationSeconds,
+            timeoutMs: renderTimeoutMs,
+            onRenderProgress: onProgress
+                ? (fraction) => onProgress(schedulingFrac + fraction * (1 - schedulingFrac))
+                : undefined,
         });
 
         onProgress?.(1);

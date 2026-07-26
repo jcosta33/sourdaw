@@ -31,9 +31,9 @@ describe('GrinderProcessor neural patch (applyNeuralPatch)', () => {
         patch(processor, { neuralModelMode: 'builtin', profile: { inputDrive: 2 } });
 
         const m = paramMap(grinderSetParamCalls);
-        expect(m['neuralModelMode']).toBe(0);
+        expect(m.neuralModelMode).toBe(0);
         // builtin path returns before touching any custom field
-        expect(m['neuralCustomInputDrive']).toBeUndefined();
+        expect(m.neuralCustomInputDrive).toBeUndefined();
     });
 
     it('writes nothing when neuralModelMode is "imported" but no profile object is provided', async () => {
@@ -55,18 +55,18 @@ describe('GrinderProcessor neural patch (applyNeuralPatch)', () => {
             neuralModelMode: 'imported',
             profile: { preferredTier: 'recurrent' },
         });
-        expect(paramMap(grinderSetParamCalls)['neuralCustomTier']).toBe(3);
+        expect(paramMap(grinderSetParamCalls).neuralCustomTier).toBe(3);
 
         resetGrinderProcessorCalls();
         const p2 = await createReadyGrinderProcessor();
         patch(p2, { neuralModelMode: 'imported', profile: { preferredTier: 'nope' } });
-        expect(paramMap(grinderSetParamCalls)['neuralCustomTier']).toBe(0);
+        expect(paramMap(grinderSetParamCalls).neuralCustomTier).toBe(0);
 
         resetGrinderProcessorCalls();
         const p3 = await createReadyGrinderProcessor();
         patch(p3, { neuralModelMode: 'imported', profile: {} });
         // preferredTier non-string ⇒ default 0
-        expect(paramMap(grinderSetParamCalls)['neuralCustomTier']).toBe(0);
+        expect(paramMap(grinderSetParamCalls).neuralCustomTier).toBe(0);
     });
 
     it('coerces every finite-number profile field and skips non-finite ones', async () => {
@@ -84,12 +84,12 @@ describe('GrinderProcessor neural patch (applyNeuralPatch)', () => {
             },
         });
         const m = paramMap(grinderSetParamCalls);
-        expect(m['neuralCustomInputDrive']).toBe(1.5);
-        expect(m['neuralCustomAsymmetry']).toBe(0.25);
-        expect(m['neuralCustomOutputTrim']).toBe(-3);
-        expect(m['neuralCustomContourMix']).toBe(0.7);
-        expect(m['neuralCustomLstmBias']).toBe(0.1);
-        expect(m['neuralModelMode']).toBe(1); // imported ⇒ 1 at the end
+        expect(m.neuralCustomInputDrive).toBe(1.5);
+        expect(m.neuralCustomAsymmetry).toBe(0.25);
+        expect(m.neuralCustomOutputTrim).toBe(-3);
+        expect(m.neuralCustomContourMix).toBe(0.7);
+        expect(m.neuralCustomLstmBias).toBe(0.1);
+        expect(m.neuralModelMode).toBe(1); // imported ⇒ 1 at the end
     });
 
     it('drops profile fields that are not finite numbers', async () => {
@@ -103,11 +103,11 @@ describe('GrinderProcessor neural patch (applyNeuralPatch)', () => {
             },
         });
         const m = paramMap(grinderSetParamCalls);
-        expect(m['neuralCustomInputDrive']).toBeUndefined();
-        expect(m['neuralCustomAsymmetry']).toBeUndefined();
-        expect(m['neuralCustomOutputTrim']).toBeUndefined();
+        expect(m.neuralCustomInputDrive).toBeUndefined();
+        expect(m.neuralCustomAsymmetry).toBeUndefined();
+        expect(m.neuralCustomOutputTrim).toBeUndefined();
         // neuralModelMode is still written at the end of the imported path
-        expect(m['neuralModelMode']).toBe(1);
+        expect(m.neuralModelMode).toBe(1);
     });
 
     it('writes conv weights for well-formed layers (3 finite values) and skips malformed ones', async () => {
@@ -124,15 +124,15 @@ describe('GrinderProcessor neural patch (applyNeuralPatch)', () => {
             },
         });
         const m = paramMap(grinderSetParamCalls);
-        expect(m['neuralCustomConvWeight0_0']).toBe(0.1);
-        expect(m['neuralCustomConvWeight0_1']).toBe(0.2);
-        expect(m['neuralCustomConvWeight0_2']).toBe(0.3);
-        expect(m['neuralCustomConvWeight3_0']).toBe(0.4);
-        expect(m['neuralCustomConvWeight3_1']).toBeUndefined(); // NaN dropped
-        expect(m['neuralCustomConvWeight3_2']).toBe(0.6);
+        expect(m.neuralCustomConvWeight0_0).toBe(0.1);
+        expect(m.neuralCustomConvWeight0_1).toBe(0.2);
+        expect(m.neuralCustomConvWeight0_2).toBe(0.3);
+        expect(m.neuralCustomConvWeight3_0).toBe(0.4);
+        expect(m.neuralCustomConvWeight3_1).toBeUndefined(); // NaN dropped
+        expect(m.neuralCustomConvWeight3_2).toBe(0.6);
         // layer 1 (too short) and layer 2 (not array) produced nothing
-        expect(m['neuralCustomConvWeight1_0']).toBeUndefined();
-        expect(m['neuralCustomConvWeight2_0']).toBeUndefined();
+        expect(m.neuralCustomConvWeight1_0).toBeUndefined();
+        expect(m.neuralCustomConvWeight2_0).toBeUndefined();
     });
 
     it('defaults convWeights to an empty array when absent, writing no conv-weight params', async () => {

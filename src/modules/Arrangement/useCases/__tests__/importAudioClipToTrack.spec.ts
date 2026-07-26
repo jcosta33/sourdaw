@@ -2,13 +2,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import * as subject from '../importAudioClipToTrack';
 
-const mocks = vi.hoisted(() => ({
-    decodeAudioFile: vi.fn<(file: File) => Promise<{ id: string; buffer: AudioBuffer }>>(),
-    notifyUser: vi.fn(),
-    getTrackById: vi.fn<(id: string) => { clips: { id: string; endBeat: number }[] } | undefined>(),
-    addClip: vi.fn(),
-    transport: { value: { tempo: 120 } as { tempo: number } | undefined },
-}));
+const mocks = vi.hoisted(() => {
+    // `value` is deliberately nullable: one test drives it to undefined to
+    // exercise the missing-transport branch.
+    const transport: { value: { tempo: number } | undefined } = { value: { tempo: 120 } };
+    return {
+        decodeAudioFile: vi.fn<(file: File) => Promise<{ id: string; buffer: AudioBuffer }>>(),
+        notifyUser: vi.fn(),
+        getTrackById: vi.fn<(id: string) => { clips: { id: string; endBeat: number }[] } | undefined>(),
+        addClip: vi.fn(),
+        transport,
+    };
+});
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     decodeAudioFile: (file: File) => mocks.decodeAudioFile(file),

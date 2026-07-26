@@ -1,6 +1,9 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 
-import { type Track } from '#/modules/Arrangement/stores';
+import { trackStore, vcaGroupStore, type Track } from '#/modules/Arrangement/stores';
+// Statically imported so the barrel load is paid once at module init rather
+// than inside a test's time budget.
+import { getEffectiveGain } from '#/modules/Arrangement/useCases';
 
 import { type DeviceNodeEntry } from '../../buildDeviceChain';
 import { renderTrackSubgraphOffline } from '../renderTrackSubgraphOffline';
@@ -174,7 +177,7 @@ class RenderHarnessContext {
         return oscillator;
     }
 
-    suspend(): Promise<void> {
+    suspend(_seconds?: number): Promise<void> {
         return Promise.resolve();
     }
 
@@ -220,10 +223,32 @@ const mocks = vi.hoisted(() => ({
     getAudioContext: vi.fn(() => ({ sampleRate: SAMPLE_RATE })),
     instrumentNoteOn: vi.fn(),
     instrumentNoteOff: vi.fn(),
+    /** Fader level the real strip builder computed, per track, in build order. */
+    builtFaderGains: new Map<string, number>(),
 }));
 
 vi.mock('../../buildDeviceChain', () => ({ buildDeviceChain: mocks.buildDeviceChain }));
 vi.mock('../../engineAccess/getAudioContext', () => ({ getAudioContext: mocks.getAudioContext }));
+
+// The real strip builder runs; this only records the level it computed so a
+// rendered track's fader can be read back and compared against live.
+vi.mock('../createOfflineTrackStrip', async (importOriginal) => {
+    const original = await importOriginal<typeof import('../createOfflineTrackStrip')>();
+    return {
+        createOfflineTrackStrip: async (
+            ...args: Parameters<typeof original.createOfflineTrackStrip>
+        ): ReturnType<typeof original.createOfflineTrackStrip> => {
+            const strip = await original.createOfflineTrackStrip(...args);
+            mocks.builtFaderGains.set(stripKeyForGain(args[1].gain), strip.faderNode.gain.value);
+            return strip;
+        },
+    };
+});
+
+/** Tracks in these cases carry distinct stored gains, so gain identifies them. */
+function stripKeyForGain(gain: number): string {
+    return `gain:${gain}`;
+}
 
 /**
  * Stands in for a worklet instrument's control surface: each note it is handed
@@ -441,5 +466,244 @@ describe('renderTrackSubgraphOffline', () => {
 
         expect(buffer).toBeNull();
         expect(mocks.buildDeviceChain).not.toHaveBeenCalled();
+    });
+
+    describe('VCA group levels in a freeze/bounce render', () => {
+        const GROUP_GAIN = 0.5;
+
+        function seedVcaSubgraph(): { target: Track; upstream: Track } {
+            // Upstream feeds the target, so its audio is summed into the print.
+            const upstream = TrackDummy.create({
+                id: 'up-1',
+                name: 'Upstream',
+                kind: 'audio',
+                gain: 1,
+                vcaGroupId: 'vca-1',
+                outputId: 'track-1',
+            });
+            const target = TrackDummy.create({
+                id: 'track-1',
+                kind: 'audio',
+                gain: 0.5,
+                vcaGroupId: 'vca-1',
+            });
+            trackStore.set({ tracks: [target, upstream], selectedTrackId: null, ghostClips: [] });
+            vcaGroupStore.set({
+                groups: [{ id: 'vca-1', name: 'Drums', gain: GROUP_GAIN, muted: false, trackIds: ['track-1', 'up-1'] }],
+            });
+            mocks.builtFaderGains.clear();
+            return { target, upstream };
+        }
+
+        it('bakes an upstream contributor at the level it plays, not at its raw fader', async () => {
+            const { target, upstream } = seedVcaSubgraph();
+
+            await renderTrackSubgraphOffline({
+                targetTrackId: target.id,
+                renderTracks: [target, upstream],
+                startBeat: 0,
+                endBeat: 4,
+            });
+
+            // The upstream track's contribution is summed into the buffer exactly
+            // once and is never recomposed afterwards — the routing edge that got
+            // baked stops carrying live signal the moment the target is frozen.
+            // So its group master has to be in the print.
+            const live = getEffectiveGain(upstream.id, upstream.gain);
+            const baked = mocks.builtFaderGains.get(stripKeyForGain(upstream.gain));
+
+            expect(live).toBeCloseTo(0.5, 10);
+            expect(baked).toBeCloseTo(live, 10);
+        });
+
+        it('leaves the target track uncomposed, because its own strip applies the group live', async () => {
+            const { target } = seedVcaSubgraph();
+
+            await renderTrackSubgraphOffline({
+                targetTrackId: target.id,
+                renderTracks: [target],
+                startBeat: 0,
+                endBeat: 4,
+            });
+
+            // The frozen buffer replays through this same strip, which the live
+            // VCA writer keeps driving. Composing the group master here would
+            // apply it twice.
+            expect(mocks.builtFaderGains.get(stripKeyForGain(target.gain))).toBeCloseTo(target.gain, 10);
+        });
+
+        it('leaves an upstream contributor outside every group at its own fader', async () => {
+            const upstream = TrackDummy.create({ id: 'up-1', kind: 'audio', gain: 0.6, outputId: 'track-1' });
+            const target = TrackDummy.create({ id: 'track-1', kind: 'audio', gain: 0.5 });
+            trackStore.set({ tracks: [target, upstream], selectedTrackId: null, ghostClips: [] });
+            vcaGroupStore.set({ groups: [] });
+            mocks.builtFaderGains.clear();
+
+            await renderTrackSubgraphOffline({
+                targetTrackId: target.id,
+                renderTracks: [target, upstream],
+                startBeat: 0,
+                endBeat: 4,
+            });
+
+            expect(mocks.builtFaderGains.get(stripKeyForGain(0.6))).toBeCloseTo(0.6, 10);
+        });
+    });
+
+    describe('render kernel', () => {
+        /**
+         * A context that never finishes and never reaches a checkpoint — the
+         * shape of a wedged render. Freeze and bounce run full track lengths
+         * through this path, so a wedge here is an application that never
+         * un-freezes.
+         */
+        class StalledRenderContext extends RenderHarnessContext {
+            /** The instance the render under test most recently constructed. */
+            static latest: StalledRenderContext | null = null;
+
+            readonly resumeCalls: number[] = [];
+            closeCalls = 0;
+            private readonly checkpoints = new Map<number, () => void>();
+
+            constructor(channels: number, length: number, sampleRate: number) {
+                super(channels, length, sampleRate);
+                StalledRenderContext.latest = this;
+            }
+
+            override suspend(seconds: number): Promise<void> {
+                return new Promise<void>((resolve) => {
+                    this.checkpoints.set(seconds, resolve);
+                });
+            }
+
+            override resume(): Promise<void> {
+                this.resumeCalls.push(this.resumeCalls.length);
+                return Promise.resolve();
+            }
+
+            override startRendering(): Promise<AudioBuffer> {
+                return new Promise<AudioBuffer>(() => undefined);
+            }
+
+            close(): Promise<void> {
+                this.closeCalls += 1;
+                return Promise.resolve();
+            }
+
+            /** Simulate the render arriving at the earliest scheduled checkpoint. */
+            async reachFirstCheckpoint(): Promise<void> {
+                const earliest = [...this.checkpoints.keys()].sort((a, b) => a - b)[0];
+                if (earliest === undefined) {
+                    throw new Error('no checkpoint was scheduled');
+                }
+                this.checkpoints.get(earliest)?.();
+                await Promise.resolve();
+                await Promise.resolve();
+                await Promise.resolve();
+            }
+
+            scheduledCheckpointCount(): number {
+                return this.checkpoints.size;
+            }
+        }
+
+        afterEach(() => {
+            vi.useRealTimers();
+        });
+
+        /** The context the render under test built, once it has built one. */
+        function renderedContext(): StalledRenderContext {
+            const context = StalledRenderContext.latest;
+            if (!context) {
+                throw new Error('the render never constructed an OfflineAudioContext');
+            }
+            return context;
+        }
+
+        /**
+         * Let the render get through strip building, clip scheduling and its
+         * yield-to-main before the checkpoints are inspected.
+         */
+        async function untilCheckpointsScheduled(): Promise<void> {
+            for (let tick = 0; tick < 20; tick++) {
+                await new Promise((resolve) => setTimeout(resolve, 0));
+                if ((StalledRenderContext.latest?.scheduledCheckpointCount() ?? 0) > 0) {
+                    return;
+                }
+            }
+        }
+
+        function stubStalledContext(): void {
+            StalledRenderContext.latest = null;
+            vi.stubGlobal('OfflineAudioContext', StalledRenderContext);
+        }
+
+        it('rejects a wedged render once its wall-clock budget is spent instead of hanging forever', async () => {
+            vi.useFakeTimers();
+            stubStalledContext();
+            const track = TrackDummy.create({ id: 'track-1', kind: 'audio' });
+
+            const rendering = renderTrackSubgraphOffline({
+                targetTrackId: track.id,
+                renderTracks: [track],
+                startBeat: 0,
+                endBeat: 4,
+            });
+            const settled = expect(rendering).rejects.toThrow(/timed out/);
+
+            // Past the 60 s floor the export paths already apply. Without a
+            // backstop this promise never settles at all.
+            await vi.advanceTimersByTimeAsync(70_000);
+            await settled;
+
+            vi.useRealTimers();
+        });
+
+        it('stops at a checkpoint when the caller aborts mid-render and never resumes the context', async () => {
+            stubStalledContext();
+            const controller = new AbortController();
+            const track = TrackDummy.create({ id: 'track-1', kind: 'audio' });
+
+            const rendering = renderTrackSubgraphOffline({
+                targetTrackId: track.id,
+                renderTracks: [track],
+                startBeat: 0,
+                endBeat: 4,
+                abortSignal: controller.signal,
+            });
+            const settled = expect(rendering).rejects.toThrow(/abort|cancel/i);
+
+            await untilCheckpointsScheduled();
+            expect(renderedContext().scheduledCheckpointCount()).toBeGreaterThan(0);
+
+            controller.abort();
+            await renderedContext().reachFirstCheckpoint();
+            await settled;
+
+            // Not resuming is what actually stops the work; rejecting alone
+            // would leave the render running to completion in the background.
+            expect(renderedContext().resumeCalls).toEqual([]);
+            // And the abandoned context is torn down rather than left resident
+            // with its whole device graph.
+            expect(renderedContext().closeCalls).toBe(1);
+        });
+
+        it('segments a freeze render so an abort has somewhere to land', async () => {
+            stubStalledContext();
+            const track = TrackDummy.create({ id: 'track-1', kind: 'audio' });
+
+            void renderTrackSubgraphOffline({
+                targetTrackId: track.id,
+                renderTracks: [track],
+                startBeat: 0,
+                endBeat: 8,
+            }).catch(() => undefined);
+
+            await untilCheckpointsScheduled();
+
+            // 8 beats at 120 BPM is 4 s of audio; the shared kernel's segment
+            // length puts a cancel point strictly inside each second.
+            expect(renderedContext().scheduledCheckpointCount()).toBe(3);
+        });
     });
 });

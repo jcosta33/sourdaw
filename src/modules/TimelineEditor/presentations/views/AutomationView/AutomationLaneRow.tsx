@@ -1,7 +1,7 @@
 import { type ReactElement, type MouseEvent, type WheelEvent, type KeyboardEvent, useState, useRef } from 'react';
 
 import { useStore } from '#/infra/store/useStore';
-import { interpolateAutomationValue, getAutomationRegions } from '#/modules/Arrangement/useCases';
+import { interpolateAutomationValue } from '#/modules/Arrangement/useCases';
 import {
     addAutomationPoint,
     removeAutomationPoint,
@@ -11,7 +11,6 @@ import {
     getSelectionBounds,
     adjustYZoom,
     zoomToUsedRange,
-    toggleVirginTerritory,
 } from '#/modules/Automation/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { transportStore } from '#/modules/Transport/stores';
@@ -100,9 +99,6 @@ export const AutomationLaneRow = ({
     const getRect = (): DOMRect | undefined => svgRef.current?.getBoundingClientRect();
     const coords = { getRect, xToBeat, yToValue };
 
-    // Virgin territory data
-    const vtRegions = lane.virginTerritory ? getAutomationRegions(lane.points) : [];
-
     // Interpolated value at playhead
     const playheadBeat = transport.playheadPosition;
     let currentValue: number | null = null;
@@ -123,41 +119,35 @@ export const AutomationLaneRow = ({
     );
     const selectedSet = new Set(selectedPoints);
 
-    // Build SVG paths — in VT mode, break into separate segments per region
+    // Build the SVG curve path.
+    //
+    // This used to be two branches, one per virginTerritory state, and they
+    // were provably identical for any lane with two or more visible points
+    // — `getAutomationRegions`' default `maxGap` is Infinity, so it always
+    // returned exactly one region spanning first point to last, and filtering
+    // the visible points by that region is a no-op. The flag is gone; this is
+    // the surviving single builder.
+    //
+    // The `length > 1` fill guard is kept from the virgin-territory branch,
+    // which is the branch nearly every lane took since the flag defaulted to
+    // true. A single visible point therefore gets no fill, rather than the
+    // zero-width degenerate fill the other branch emitted — which painted
+    // nothing regardless.
     const pathSegments: { pathD: string; fillD: string }[] = [];
 
-    if (lane.virginTerritory && vtRegions.length > 0) {
-        for (const region of vtRegions) {
-            const regionPoints = visiblePoints.filter(
-                (param) => param.beat >= region.startBeat && param.beat <= region.endBeat
-            );
-            if (regionPoints.length === 0) {
-                continue;
-            }
-            const regionIndexMap = new Map(lane.points.map((param, idx) => [param, idx]));
-            let segPath = `M ${beatToX(regionPoints[0]!.beat)} ${valueToY(regionPoints[0]!.value)}`;
-            for (let index = 0; index < regionPoints.length - 1; index++) {
-                const allIdx = regionIndexMap.get(regionPoints[index]!) ?? -1;
-                const prevPt = allIdx > 0 ? lane.points[allIdx - 1] : undefined;
-                const nextPt = allIdx < lane.points.length - 1 ? lane.points[allIdx + 1] : undefined;
-                segPath += ` ${buildCurvePath(regionPoints[index]!, regionPoints[index + 1]!, beatToX, valueToY, prevPt, nextPt)}`;
-            }
-            const segFill =
-                regionPoints.length > 1
-                    ? `${segPath} L ${beatToX(regionPoints[regionPoints.length - 1]!.beat)} ${LANE_HEIGHT} L ${beatToX(regionPoints[0]!.beat)} ${LANE_HEIGHT} Z`
-                    : '';
-            pathSegments.push({ pathD: segPath, fillD: segFill });
-        }
-    } else if (visiblePoints.length > 0) {
-        const visIndexMap = new Map(lane.points.map((param, idx) => [param, idx]));
+    if (visiblePoints.length > 0) {
+        const pointIndexByRef = new Map(lane.points.map((param, idx) => [param, idx]));
         let pathD = `M ${beatToX(visiblePoints[0]!.beat)} ${valueToY(visiblePoints[0]!.value)}`;
         for (let index = 0; index < visiblePoints.length - 1; index++) {
-            const allIdx = visIndexMap.get(visiblePoints[index]!) ?? -1;
+            const allIdx = pointIndexByRef.get(visiblePoints[index]!) ?? -1;
             const prevPt = allIdx > 0 ? lane.points[allIdx - 1] : undefined;
             const nextPt = allIdx < lane.points.length - 1 ? lane.points[allIdx + 1] : undefined;
             pathD += ` ${buildCurvePath(visiblePoints[index]!, visiblePoints[index + 1]!, beatToX, valueToY, prevPt, nextPt)}`;
         }
-        const fillD = `${pathD} L ${beatToX(visiblePoints[visiblePoints.length - 1]!.beat)} ${LANE_HEIGHT} L ${beatToX(visiblePoints[0]!.beat)} ${LANE_HEIGHT} Z`;
+        const fillD =
+            visiblePoints.length > 1
+                ? `${pathD} L ${beatToX(visiblePoints[visiblePoints.length - 1]!.beat)} ${LANE_HEIGHT} L ${beatToX(visiblePoints[0]!.beat)} ${LANE_HEIGHT} Z`
+                : '';
         pathSegments.push({ pathD, fillD });
     }
 
@@ -291,17 +281,14 @@ export const AutomationLaneRow = ({
                 curveColor={curveColor}
                 currentValue={currentValue}
                 isDrawMode={isDrawMode}
-                isVirginTerritory={Boolean(lane.virginTerritory)}
                 isYZoomed={isYZoomed}
                 viewMin={vMin}
                 viewMax={vMax}
             />
             <AutomationLaneControls
                 laneId={lane.id}
-                isVirginTerritory={Boolean(lane.virginTerritory)}
                 isVisible={lane.visible}
                 selectedCount={selectedPoints.length}
-                onToggleVirginTerritory={() => toggleVirginTerritory(lane.id)}
                 onZoomToUsedRange={() => zoomToUsedRange(lane.id)}
                 onToggleVisibility={() => toggleAutomationVisibility(lane.id)}
                 onClose={() => toggleAutomationVisibility(lane.id)}

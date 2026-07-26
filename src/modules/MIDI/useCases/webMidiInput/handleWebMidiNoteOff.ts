@@ -8,6 +8,8 @@ import { routeYeastNoteOffToInstrument } from '../../repositories/webMidi/routeY
 import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 
 import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
+import { resolveInputDispatchFrame } from './resolveInputDispatchFrame';
+import { resolveInputEventTime } from './resolveInputEventTime';
 
 function secondsToBeats(seconds: number, tempo: number): number {
     return (seconds * tempo) / 60;
@@ -54,8 +56,14 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
     return async function handleWebMidiNoteOff(
         channel: number,
         note: number,
-        releaseVelocity: number = 0
+        releaseVelocity: number = 0,
+        timeStamp?: number
     ): Promise<void> {
+        // When the key was released, not when this handler got its turn. The
+        // recorded note length is the difference between two of these, so both
+        // ends have to be measured on the same footing (audit MD-1).
+        const eventTime = resolveInputEventTime({ timeStamp });
+        const dispatchFrame = resolveInputDispatchFrame({ eventTime });
         deps.stepRecordNoteOff(note);
         const noteKey = createWebMidiNoteKey(channel, note);
         const noteData = activeNotes.get(noteKey);
@@ -77,7 +85,7 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
         const yeastDevice = instrumentTrack?.devices.find((device) => device.type === 'yeast');
         if (instrumentTrack && yeastDevice) {
             const context = audioEngine.context;
-            const sampleTime = Math.round(context.currentTime * context.sampleRate);
+            const sampleTime = dispatchFrame;
             const processedEvents = await deps.processRealtimeMidiInput({
                 context,
                 rackId: yeastDevice.id,
@@ -117,7 +125,7 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
                 (candidate) => candidate.deviceId === noteData.fermenterDeviceId
             );
             if (deviceNode?.fermenterControls) {
-                deviceNode.fermenterControls.noteOff(note, undefined, noteData.channel);
+                deviceNode.fermenterControls.noteOff(note, dispatchFrame, noteData.channel);
             }
         }
 
@@ -129,7 +137,7 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
                 (candidate) => candidate.deviceId === noteData.grandBouleDeviceId
             );
             if (deviceNode?.grandBouleControls) {
-                deviceNode.grandBouleControls.noteOff(note, undefined, releaseVelocity, noteData.channel);
+                deviceNode.grandBouleControls.noteOff(note, dispatchFrame, releaseVelocity, noteData.channel);
             }
             void deps.eventBus.emit('midi.noteOff', {
                 deviceId: noteData.grandBouleDeviceId,
@@ -143,12 +151,12 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
             const levainId = noteData.levainDeviceId;
             const deviceNode = strip?.deviceNodes.find((candidate) => candidate.deviceId === levainId);
             if (deviceNode?.levainControls) {
-                deviceNode.levainControls.noteOff(note, undefined, noteData.channel);
+                deviceNode.levainControls.noteOff(note, dispatchFrame, noteData.channel);
             }
         }
 
         if (noteData.osc) {
-            const now = audioEngine.context.currentTime;
+            const now = dispatchFrame / audioEngine.context.sampleRate;
             const synthParams = deps.getSynthParamsForTrack(targetTrackId);
             const releaseTime = synthParams.release;
             if (noteData.osc._env) {
@@ -175,7 +183,7 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
             }
 
             const tempo = transport?.tempo ?? 120;
-            const durationSeconds = audioEngine.context.currentTime - noteData.startTime;
+            const durationSeconds = eventTime - noteData.startTime;
             const durationBeats = secondsToBeats(durationSeconds, tempo);
 
             const trackLatencySec = deps.getCompensationDelay(targetTrackId);

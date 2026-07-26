@@ -4,6 +4,7 @@ import { createWebMidiNoteKey } from '../../../models/WebMidiTypes';
 
 const mpe_enabled = vi.hoisted(() => ({ value: false }));
 const get_track_strip = vi.hoisted(() => vi.fn());
+const audio_clock = vi.hoisted(() => ({ currentTime: 2, sampleRate: 48000, baseLatency: 0, outputLatency: 0 }));
 
 type TestMidiEvent = {
     timeSamples: number;
@@ -16,12 +17,7 @@ vi.mock('../../../repositories/webMidi/getMpeEnabled', () => ({
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     audioEngine: {
-        context: {
-            currentTime: 2,
-            sampleRate: 48000,
-            baseLatency: 0,
-            outputLatency: 0,
-        },
+        context: audio_clock,
         getTrackStrip: get_track_strip,
     },
     getCompensationDelay: () => 0,
@@ -72,12 +68,21 @@ function make_dependencies(
     };
 }
 
+/**
+ * Frame a live release lands on with the harness clock at 2 s / 48 kHz and no
+ * event timestamp: the arrival frame plus the one-render-quantum scheduling
+ * budget `resolveInputDispatchFrame` applies (audit MD-1).
+ */
+const LIVE_DISPATCH_FRAME = 96_128;
+/** The same instant in seconds, for the fallback oscillator's release ramp. */
+const LIVE_DISPATCH_TIME = LIVE_DISPATCH_FRAME / 48_000;
 describe('handleWebMidiNoteOff', () => {
     beforeEach(() => {
         activeNotes.clear();
         channelToNote.clear();
         get_track_strip.mockReset();
         mpe_enabled.value = false;
+        audio_clock.currentTime = 2;
     });
 
     it('should append recorded notes through the MIDI-owned append use case', async () => {
@@ -277,9 +282,9 @@ describe('handleWebMidiNoteOff', () => {
 
         await fn(0, 64);
 
-        expect(cancel_scheduled_values).toHaveBeenCalledWith(2);
-        expect(set_target_at_time).toHaveBeenCalledWith(0, 2, 0.6 / 3);
-        expect(stop).toHaveBeenCalledWith(2 + 0.6 + 0.05);
+        expect(cancel_scheduled_values).toHaveBeenCalledWith(LIVE_DISPATCH_TIME);
+        expect(set_target_at_time).toHaveBeenCalledWith(0, LIVE_DISPATCH_TIME, 0.6 / 3);
+        expect(stop).toHaveBeenCalledWith(LIVE_DISPATCH_TIME + 0.6 + 0.05);
     });
 
     it('should pass Grand Boule release velocity to controls and event payloads', async () => {
@@ -319,7 +324,7 @@ describe('handleWebMidiNoteOff', () => {
 
         await fn(0, 60, 96 / 127);
 
-        expect(grand_boule_note_off).toHaveBeenCalledWith(60, undefined, 96 / 127, 0);
+        expect(grand_boule_note_off).toHaveBeenCalledWith(60, LIVE_DISPATCH_FRAME, 96 / 127, 0);
         expect(emitted).toContainEqual({
             type: 'midi.noteOff',
             payload: { deviceId: 'gb-1', midiNote: 60, releaseVelocity: 96 / 127 },
@@ -372,8 +377,8 @@ describe('handleWebMidiNoteOff', () => {
 
         // Each release is narrowed to its own member channel, so the two
         // same-pitch notes cannot silence one another (audit MD-2).
-        expect(note_off_a).toHaveBeenCalledWith(60, undefined, 1);
-        expect(note_off_b).toHaveBeenCalledWith(60, undefined, 2);
+        expect(note_off_a).toHaveBeenCalledWith(60, LIVE_DISPATCH_FRAME, 1);
+        expect(note_off_b).toHaveBeenCalledWith(60, LIVE_DISPATCH_FRAME, 2);
         expect(activeNotes.size).toBe(0);
     });
 
@@ -605,5 +610,37 @@ describe('handleWebMidiNoteOff', () => {
 
         expect(create_midi_note).not.toHaveBeenCalled();
         expect(append_recorded_midi_note).not.toHaveBeenCalled();
+    });
+
+    it('should record the played note length rather than the handler-run interval', async () => {
+        const recorded = { id: 'note-1', pitch: 60, startBeat: 4, duration: 1, velocity: 100 };
+        const create_midi_note = vi.fn<
+            (pitch: number, startBeat: number, duration: number, velocity: number) => typeof recorded
+        >(() => recorded);
+        const fn = handleWebMidiNoteOff._factory(make_dependencies({ createMidiNote: create_midi_note }));
+        activeNotes.set(createWebMidiNoteKey(0, 60), {
+            // Arrival instant of the note-on, on the audio clock.
+            startTime: 2,
+            startBeat: 4,
+            channel: 0,
+            note: 60,
+            velocity: 100,
+            trackId: 'track-1',
+            instrumentTrackId: 'track-1',
+        });
+        const performance_now = vi.spyOn(performance, 'now');
+
+        // The key was released exactly 0.5 s after it was pressed, but the
+        // note-off handler only ran 20 ms later. Wall-clock at handler-run time
+        // would inflate the recorded length to 0.52 s / 1.04 beats (audit MD-1).
+        audio_clock.currentTime = 2.52;
+        performance_now.mockReturnValue(5020);
+        await fn(0, 60, 0, 5000);
+
+        expect(create_midi_note).toHaveBeenCalledTimes(1);
+        // 0.5 s at 120 bpm is exactly one beat.
+        expect(create_midi_note.mock.calls[0]![2]).toBeCloseTo(1, 9);
+
+        performance_now.mockRestore();
     });
 });

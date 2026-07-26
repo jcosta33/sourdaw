@@ -51,8 +51,12 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 }));
 
 function notify(): void {
-    for (const cb of clipSubscribers) cb();
-    for (const cb of trackSubscribers) cb();
+    for (const cb of clipSubscribers) {
+        cb();
+    }
+    for (const cb of trackSubscribers) {
+        cb();
+    }
 }
 
 describe('useSelectionLabel', () => {

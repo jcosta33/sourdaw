@@ -3,7 +3,10 @@ import { applyNoteExpression } from '#/modules/AudioEngine/useCases';
 import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
 import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 
-export function handleWebMidiChannelPressure(channel: number, pressure: number): void {
+import { resolveInputDispatchFrame } from './resolveInputDispatchFrame';
+import { resolveInputEventTime } from './resolveInputEventTime';
+
+export function handleWebMidiChannelPressure(channel: number, pressure: number, timeStamp?: number): void {
     if (!getMpeEnabled() || channel < 1) {
         return;
     }
@@ -27,6 +30,10 @@ export function handleWebMidiChannelPressure(channel: number, pressure: number):
                 pressure: noteData.pressure,
                 slide: noteData.slide,
             },
+            // Expression now shares the note events' serial tail (audit MD-3),
+            // so it can be voiced a turn or more after it arrived. Addressing
+            // its own arrival frame keeps it landing where it was performed.
+            sampleFrame: resolveInputDispatchFrame({ eventTime: resolveInputEventTime({ timeStamp }) }),
         });
     }
 }

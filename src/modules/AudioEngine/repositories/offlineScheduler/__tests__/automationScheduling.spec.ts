@@ -724,15 +724,21 @@ describe('scheduleTrackAutomation', () => {
         expect(postStep.length).toBeGreaterThan(5);
     });
 
+    // These link tests carry the lane on `pan`, not `gain`. What they assert is
+    // the linkScale algebra on the resolved scalar, and a `gain` lane now runs
+    // through the fader level law (dB conversion + the [0,1] ceiling the
+    // live path has always applied), which clamps the very signed/above-unity
+    // scalars these cases exist to observe. `pan` carries the scalar through
+    // unaltered, so every expected number below is unaffected by that law.
     it('follows a linked lane offline, scaled by linkScale (AU-3 parity with live)', () => {
-        const gain = makeParam();
-        const gainNode = { gain } as unknown as GainNode;
-        const panNode = { pan: makeParam() } as unknown as StereoPannerNode;
+        const pan = makeParam();
+        const gainNode = { gain: makeParam() } as unknown as GainNode;
+        const panNode = { pan } as unknown as StereoPannerNode;
 
         const source = makeLane({
             id: 'source',
             trackId: 'source-track',
-            parameterId: 'gain',
+            parameterId: 'pan',
             points: [
                 { beat: 128, value: 0.2, curve: 'linear', tension: 0 },
                 { beat: 130, value: 0.8, curve: 'linear', tension: 0 },
@@ -740,7 +746,7 @@ describe('scheduleTrackAutomation', () => {
         });
         // A link-only follower on track-1: empty local points, inverting link.
         const follower: AutomationLane = {
-            ...makeLane({ id: 'follower', trackId: 'track-1', parameterId: 'gain', points: [] }),
+            ...makeLane({ id: 'follower', trackId: 'track-1', parameterId: 'pan', points: [] }),
             linkedLaneId: 'source',
             linkScale: -1,
         };
@@ -749,14 +755,14 @@ describe('scheduleTrackAutomation', () => {
 
         // Before AU-3 offline read the follower's empty points and rendered
         // silent; now it renders the source curve inverted (linkScale -1).
-        expect(gain.setValueAtTime).toHaveBeenCalledWith(-0.2, 0);
-        expect(gain.linearRampToValueAtTime.mock.calls.at(-1)?.[0]).toBeCloseTo(-0.8, 10);
+        expect(pan.setValueAtTime).toHaveBeenCalledWith(-0.2, 0);
+        expect(pan.linearRampToValueAtTime.mock.calls.at(-1)?.[0]).toBeCloseTo(-0.8, 10);
     });
 
     it('scales a linked bezier lane by the resolved scalar, not by pre-scaling points (AU-3)', () => {
-        const gain = makeParam();
-        const gainNode = { gain } as unknown as GainNode;
-        const panNode = { pan: makeParam() } as unknown as StereoPannerNode;
+        const pan = makeParam();
+        const gainNode = { gain: makeParam() } as unknown as GainNode;
+        const panNode = { pan } as unknown as StereoPannerNode;
 
         // A bezier source whose control-point altitudes (cp1.y/cp2.y) shape the
         // segment. Pre-scaling point.value would leave cp1.y/cp2.y unscaled and
@@ -773,11 +779,11 @@ describe('scheduleTrackAutomation', () => {
         const source = makeLane({
             id: 'source',
             trackId: 'source-track',
-            parameterId: 'gain',
+            parameterId: 'pan',
             points: [sourceA, sourceB],
         });
         const follower: AutomationLane = {
-            ...makeLane({ id: 'follower', trackId: 'track-1', parameterId: 'gain', points: [] }),
+            ...makeLane({ id: 'follower', trackId: 'track-1', parameterId: 'pan', points: [] }),
             linkedLaneId: 'source',
             linkScale: 2,
         };
@@ -788,7 +794,7 @@ describe('scheduleTrackAutomation', () => {
         // must equal the live-scaled kernel output, not the point-pre-scaled
         // distortion the pre-scale produced.
         const expected = evaluateAutomationCurve({ firstPoint: sourceA, secondPoint: sourceB, beat: 2 }) * 2;
-        const calls = gain.linearRampToValueAtTime.mock.calls as [number, number][];
+        const calls = pan.linearRampToValueAtTime.mock.calls as [number, number][];
         const nearest = calls.reduce((best, call) => (Math.abs(call[1] - 1) < Math.abs(best[1] - 1) ? call : best));
         expect(nearest[0]).toBeCloseTo(expected, 6);
         // The scaled altitude clears 1.0 (endpoints scale to [0,2]); the pre-scale
@@ -797,34 +803,34 @@ describe('scheduleTrackAutomation', () => {
     });
 
     it('renders a chained link cross-track, multiplying linkScale (AU-3)', () => {
-        const gain = makeParam();
-        const gainNode = { gain } as unknown as GainNode;
-        const panNode = { pan: makeParam() } as unknown as StereoPannerNode;
+        const pan = makeParam();
+        const gainNode = { gain: makeParam() } as unknown as GainNode;
+        const panNode = { pan } as unknown as StereoPannerNode;
 
         // C (source) <- B (scale 0.5) <- A (scale -1, on track-1). Cumulative -0.5.
         const laneC = makeLane({
             id: 'C',
             trackId: 't-c',
-            parameterId: 'gain',
+            parameterId: 'pan',
             points: [
                 { beat: 128, value: 0.4, curve: 'linear', tension: 0 },
                 { beat: 130, value: 0.4, curve: 'linear', tension: 0 },
             ],
         });
         const laneB: AutomationLane = {
-            ...makeLane({ id: 'B', trackId: 't-b', parameterId: 'gain', points: [] }),
+            ...makeLane({ id: 'B', trackId: 't-b', parameterId: 'pan', points: [] }),
             linkedLaneId: 'C',
             linkScale: 0.5,
         };
         const laneA: AutomationLane = {
-            ...makeLane({ id: 'A', trackId: 'track-1', parameterId: 'gain', points: [] }),
+            ...makeLane({ id: 'A', trackId: 'track-1', parameterId: 'pan', points: [] }),
             linkedLaneId: 'B',
             linkScale: -1,
         };
 
         scheduleTrackAutomation([laneA, laneB, laneC], 'track-1', gainNode, panNode, [], 10, 120, [], 64);
 
-        expect(gain.setValueAtTime).toHaveBeenCalledWith(-0.2, 0);
+        expect(pan.setValueAtTime).toHaveBeenCalledWith(-0.2, 0);
     });
 
     it('skips a link cycle offline, leaving the param untouched (AU-3)', () => {

@@ -1,4 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
+import { clampFaderGain } from '#/utils/audioLevelLaw';
 import { hasSharedArrayBuffer } from '#/utils/capabilities';
 
 import { applyParams } from '../useCases/deviceResolvers/applyParams';
@@ -175,7 +176,7 @@ export class TrackNode {
     }
 
     public setGain(gain: number): void {
-        this.strip.faderNode.gain.setTargetAtTime(Math.max(0, Math.min(1, gain)), this.deps.context.currentTime, 0.01);
+        this.strip.faderNode.gain.setTargetAtTime(clampFaderGain(gain), this.deps.context.currentTime, 0.01);
     }
 
     public setPan(pan: number): void {
@@ -199,7 +200,7 @@ export class TrackNode {
      * instead of stepping at the ~10ms scheduler grain.
      */
     public scheduleGainAutomation(gain: number, time: number): void {
-        this.rampAutomationParam(this.strip.faderNode.gain, Math.max(0, Math.min(1, gain)), time);
+        this.rampAutomationParam(this.strip.faderNode.gain, clampFaderGain(gain), time);
     }
 
     /** RT-5 companion to {@link scheduleGainAutomation} for the panner. `pan` is
@@ -551,8 +552,9 @@ export class TrackNode {
                 destroy: () => {},
             };
         } else if (deviceType === 'external-plugin') {
-            // Native plugin bridge: uses SharedArrayBuffer for zero-copy audio transfer
-            // between Web Audio and the Rust cpal audio thread.
+            // Native plugin bridge: relays audio between Web Audio and the Rust
+            // cpal audio thread. A SharedArrayBuffer cannot reach the host
+            // process, so the hop to Rust is IPC; the instance id is the key.
             const loadingBypass = context.createGain();
             const pendingLoad: PendingDeviceLoad = { parameterWrites: [], resolved: false };
             dn = {
@@ -574,11 +576,7 @@ export class TrackNode {
             };
             dn.controller = loadingControls;
 
-            const loadPromise = createNativePluginBridgeNode(
-                context,
-                externalInstanceId ?? deviceId,
-                0 // engine plugin ID — will be assigned by Rust
-            )
+            const loadPromise = createNativePluginBridgeNode(context, externalInstanceId ?? deviceId)
                 .then((result) => {
                     const controls = {
                         setParam: (name: string, value: number) => result.setParam(parseInt(name, 10) || 0, value),

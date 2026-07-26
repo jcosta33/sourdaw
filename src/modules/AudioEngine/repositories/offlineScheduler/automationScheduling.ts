@@ -1,3 +1,4 @@
+import { clampFaderGain, dbToGain } from '#/utils/audioLevelLaw';
 import { getDeviceAutomationParameterId, resolveDeviceAutomationTargetIndex } from '#/utils/automationDeviceTarget';
 import { resolveLinkedLane } from '#/utils/automationLaneLink';
 import { AUTOMATION_SLEW_ALPHA, AUTOMATION_SLEW_TICK_SECONDS } from '#/utils/automationSlew';
@@ -40,7 +41,13 @@ export function scheduleTrackAutomation(
     projectBeatToSeconds?: (beat: number) => number,
     sampleRate = 44_100,
     compensationDelaySec = 0,
-    clipBoundsById?: Map<string, { startBeat: number; endBeat: number }>
+    clipBoundsById?: Map<string, { startBeat: number; endBeat: number }>,
+    /**
+     * The track's VCA group master as a plain multiplier (`1` outside a group).
+     * Resolved by the calling render use case and passed in, because this
+     * repository must not reach into Arrangement's VCA read model itself.
+     */
+    vcaMultiplier = 1
 ): void {
     const projectBeat = projectBeatToSeconds ?? ((beat) => beatToSeconds(beat, defaultTempo, changes));
     const laneById = new Map<string, AutomationLane>();
@@ -52,7 +59,10 @@ export function scheduleTrackAutomation(
 
     // AU-12: track-level lanes (no clipId) AND clip-scoped lanes both render; a
     // clip lane emits only within its clip span (activeWindowSeconds below).
-    const trackLanes = lanes.filter((lane) => lane.trackId === trackId);
+    // A lane the project marks disabled drives nothing — offline as live.
+    // Compared against `false` (not falsy) so a lane persisted before the flag
+    // existed, which normalizes to `enabled: true`, still renders.
+    const trackLanes = lanes.filter((lane) => lane.trackId === trackId && lane.enabled !== false);
 
     for (const lane of trackLanes) {
         let activeWindowSeconds: { startSeconds: number; endSeconds: number } | undefined;
@@ -93,6 +103,15 @@ export function scheduleTrackAutomation(
             activeWindowSeconds || laneScale !== 1 ? { activeWindowSeconds, valueScale: laneScale } : undefined;
 
         if (lane.parameterId === 'gain') {
+            // The fader level law is the live path's, applied offline too.
+            // Live `applyAutomation` reads a lane with `minValue < 0` as a
+            // decibel lane and writes `dbToGain(value)`, and `TrackNode` clamps
+            // every fader write to [0, 1]; offline wrote the raw curve straight
+            // onto GainNode.gain, so a dB lane rendered its dB numbers as linear
+            // amplitude and a >unity point bounced louder than it can ever play
+            // back. `valueTransform` runs after linkScale, matching the live
+            // order (scale the dB scalar, then convert, then clamp).
+            const isDecibelLane = lane.minValue < 0;
             scheduleAutomationOnParam(
                 trackGainNode.gain,
                 points,
@@ -102,7 +121,17 @@ export function scheduleTrackAutomation(
                 regionStartSeconds,
                 projectBeatToSeconds,
                 compensationDelaySec,
-                laneOptions
+                {
+                    ...laneOptions,
+                    // The VCA group master composes in exactly where live puts
+                    // it: after the dB→linear conversion and before the fader
+                    // clamp (`dbToGain(value) * vcaMultiplier` handed to
+                    // `scheduleTrackGain`, clamped inside `TrackNode`). Folding
+                    // it into `valueScale` instead would apply it ahead of the
+                    // dB conversion and scale decibels, not amplitude.
+                    valueTransform: (value) =>
+                        clampFaderGain((isDecibelLane ? dbToGain(value) : value) * vcaMultiplier),
+                }
             );
             continue;
         }

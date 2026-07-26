@@ -8,6 +8,7 @@ const target_track_id = vi.hoisted<{ value: string | null }>(() => ({ value: 'tr
 const mpe_enabled = vi.hoisted(() => ({ value: false }));
 const ensure_track_strip = vi.hoisted(() => vi.fn());
 const get_track_strip = vi.hoisted(() => vi.fn());
+const audio_clock = vi.hoisted(() => ({ currentTime: 2, sampleRate: 48000, baseLatency: 0, outputLatency: 0 }));
 
 type TestMidiEvent = {
     timeSamples: number;
@@ -26,7 +27,7 @@ vi.mock('../../../repositories/webMidi/getTargetTrackId', () => ({
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     audioEngine: {
-        context: { currentTime: 2, sampleRate: 48000, baseLatency: 0, outputLatency: 0 },
+        context: audio_clock,
         ensureTrackStrip: ensure_track_strip,
         getTrackStrip: get_track_strip,
     },
@@ -62,6 +63,12 @@ function make_dependencies(overrides: Partial<HandleWebMidiNoteOnDependencies> =
     };
 }
 
+/**
+ * Frame a live note lands on with the harness clock at 2 s / 48 kHz and no
+ * event timestamp: the arrival frame plus the one-render-quantum scheduling
+ * budget `resolveInputDispatchFrame` applies (audit MD-1).
+ */
+const LIVE_DISPATCH_FRAME = 96_128;
 describe('handleWebMidiNoteOn', () => {
     beforeEach(() => {
         activeNotes.clear();
@@ -70,6 +77,7 @@ describe('handleWebMidiNoteOn', () => {
         get_track_strip.mockReset();
         target_track_id.value = 'track-1';
         mpe_enabled.value = false;
+        audio_clock.currentTime = 2;
     });
 
     it('should emit Yeast-routed Grand Boule note-on events with the device id', async () => {
@@ -258,11 +266,17 @@ describe('handleWebMidiNoteOn', () => {
         );
         ensure_track_strip.mockReturnValue({ gainNode: {}, deviceNodes: [] });
 
-        await fn(1, 60, 100);
+        // Pin the wall clock to the event's own stamp so the arrival maths
+        // resolves to "just now" regardless of how long this process has run.
+        const performance_now = vi.spyOn(performance, 'now').mockReturnValue(4242);
+        await fn(1, 60, 100, 4242);
 
         expect(release).toHaveBeenCalledTimes(1);
-        expect(release).toHaveBeenCalledWith(1, 60, 0);
+        // The implicit release inherits the retriggering event's own arrival
+        // time, so the note it cuts is not stretched by handler lag either.
+        expect(release).toHaveBeenCalledWith(1, 60, 0, 4242);
         expect(activeNotes.get(key)).toEqual(expect.objectContaining({ trackId: 'track-1', startTime: 2 }));
+        performance_now.mockRestore();
     });
 
     it('retains same-pitch notes on separate channels and originating tracks', async () => {
@@ -302,7 +316,7 @@ describe('handleWebMidiNoteOn', () => {
         await fn(3, 60, 100);
         await fn(3, 62, 100);
 
-        expect(release).toHaveBeenCalledWith(3, 60, 0);
+        expect(release).toHaveBeenCalledWith(3, 60, 0, undefined);
         expect(activeNotes.has(createWebMidiNoteKey(3, 60))).toBe(false);
         expect(activeNotes.get(createWebMidiNoteKey(3, 62))?.note).toBe(62);
         expect(channelToNote.get(3)).toBe(createWebMidiNoteKey(3, 62));
@@ -353,7 +367,7 @@ describe('handleWebMidiNoteOn', () => {
 
         await fn(0, 64, 95);
 
-        expect(fermenter_note_on).toHaveBeenCalledWith(64, 95, undefined, 0);
+        expect(fermenter_note_on).toHaveBeenCalledWith(64, 95, LIVE_DISPATCH_FRAME, 0);
         expect(activeNotes.get(createWebMidiNoteKey(0, 64))?.fermenterDeviceId).toBe('ferm-1');
     });
 
@@ -378,7 +392,7 @@ describe('handleWebMidiNoteOn', () => {
         // note 60 -> pad = 60 - 36 = 24, in [24,39] so pad -= 24 -> 0, pitchNote 60.
         await fn(0, 60, 100);
 
-        expect(toaster_note_on).toHaveBeenCalledWith(0, 100, 60);
+        expect(toaster_note_on).toHaveBeenCalledWith(0, 100, 60, LIVE_DISPATCH_FRAME);
         expect(activeNotes.get(createWebMidiNoteKey(0, 60))?.toasterRoute).toEqual({ deviceId: 'toast-1', pad: 0 });
     });
 
@@ -400,7 +414,7 @@ describe('handleWebMidiNoteOn', () => {
         // note 36 -> pad = 0 (first octave), not in [24,39], pitchNote 60.
         await fn(0, 36, 100);
 
-        expect(toaster_note_on).toHaveBeenCalledWith(0, 100, 60);
+        expect(toaster_note_on).toHaveBeenCalledWith(0, 100, 60, LIVE_DISPATCH_FRAME);
     });
 
     it('routes a Grand Boule note-on applying the velocity curve from calibration', async () => {
@@ -436,7 +450,7 @@ describe('handleWebMidiNoteOn', () => {
         await fn(0, 60, 100);
 
         // Without a calibration store the velocity falls back to velocity/127.
-        expect(grand_boule_note_on).toHaveBeenCalledWith(60, 100 / 127, undefined, 0);
+        expect(grand_boule_note_on).toHaveBeenCalledWith(60, 100 / 127, LIVE_DISPATCH_FRAME, 0);
         expect(activeNotes.get(createWebMidiNoteKey(0, 60))?.grandBouleDeviceId).toBe('gb-1');
         expect(emitted).toContainEqual({
             type: 'midi.noteOn',
@@ -463,7 +477,7 @@ describe('handleWebMidiNoteOn', () => {
 
         await fn(0, 72, 88);
 
-        expect(levain_note_on).toHaveBeenCalledWith(72, 88, undefined, 0);
+        expect(levain_note_on).toHaveBeenCalledWith(72, 88, LIVE_DISPATCH_FRAME, 0);
         expect(activeNotes.get(createWebMidiNoteKey(0, 72))?.levainDeviceId).toBe('lev-1');
     });
 
@@ -531,5 +545,49 @@ describe('handleWebMidiNoteOn', () => {
         // and no device is engaged.
         expect(activeNotes.has(createWebMidiNoteKey(0, 60))).toBe(false);
         warn.mockRestore();
+    });
+
+    it('should space two live notes by their arrival offset, not by handler-run time', async () => {
+        const fermenter_note_on = vi.fn<(note: number, velocity: number, sampleFrame?: number) => void>();
+        const fn = handleWebMidiNoteOn._factory(
+            make_dependencies({
+                getTrackStoreState: () => ({
+                    tracks: [{ id: 'track-1', devices: [{ id: 'f-1', type: 'fermenter' }] }],
+                    selectedTrackId: 'track-1',
+                }),
+            })
+        );
+        ensure_track_strip.mockReturnValue({
+            gainNode: {},
+            deviceNodes: [
+                {
+                    type: 'fermenter',
+                    deviceId: 'f-1',
+                    fermenterControls: { ready: true, noteOn: fermenter_note_on, noteOff: vi.fn() },
+                },
+            ],
+        });
+        const performance_now = vi.spyOn(performance, 'now');
+
+        // Two notes the player performed 10 ms apart. The second handler runs
+        // 1 ms late — ordinary main-thread jitter. Onset spacing has to stay
+        // the performed 10 ms, not the 11 ms the event loop happened to take
+        // (audit MD-1).
+        audio_clock.currentTime = 2;
+        performance_now.mockReturnValue(1000);
+        await fn(0, 60, 100, 1000);
+
+        audio_clock.currentTime = 2.011;
+        performance_now.mockReturnValue(1011);
+        await fn(0, 64, 100, 1010);
+
+        const first_frame = fermenter_note_on.mock.calls[0]![2];
+        const second_frame = fermenter_note_on.mock.calls[1]![2];
+        expect(typeof first_frame).toBe('number');
+        expect(typeof second_frame).toBe('number');
+        // 10 ms at 48 kHz. Handler-run time would have spaced them 528.
+        expect(second_frame! - first_frame!).toBe(480);
+
+        performance_now.mockRestore();
     });
 });

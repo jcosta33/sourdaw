@@ -6,7 +6,7 @@ import {
     MIDI_PITCH_BEND,
 } from '../../models/WebMidiTypes';
 
-type ParsedWebMidiMessage =
+type ParsedWebMidiMessageBody =
     | {
           type: 'noteOn';
           channel: number;
@@ -37,7 +37,19 @@ type ParsedWebMidiMessage =
           msb: number;
       };
 
+type ParsedWebMidiMessage = ParsedWebMidiMessageBody & {
+    /**
+     * Browser receipt time for this message, a DOMHighResTimeStamp on the
+     * `performance.now()` origin. Carried so a handler can place the event at
+     * the instant it was played rather than the instant it was processed
+     * (audit MD-1). `undefined` when the source supplies no timestamp — the
+     * Tauri bridge forwards raw bytes only.
+     */
+    timeStamp: number | undefined;
+};
+
 export function parseWebMidiMessage(event: MIDIMessageEvent): ParsedWebMidiMessage | null {
+    const timeStamp = typeof event.timeStamp === 'number' ? event.timeStamp : undefined;
     const data = event.data;
     if (!data || data.length < 2) {
         return null;
@@ -54,6 +66,7 @@ export function parseWebMidiMessage(event: MIDIMessageEvent): ParsedWebMidiMessa
                 channel,
                 note: data[1]!,
                 velocity: data[2] ?? 0,
+                timeStamp,
             };
         case MIDI_NOTE_OFF:
             return {
@@ -61,6 +74,7 @@ export function parseWebMidiMessage(event: MIDIMessageEvent): ParsedWebMidiMessa
                 channel,
                 note: data[1]!,
                 releaseVelocity: (data[2] ?? 0) / 127,
+                timeStamp,
             };
         case MIDI_CC:
             return {
@@ -68,12 +82,14 @@ export function parseWebMidiMessage(event: MIDIMessageEvent): ParsedWebMidiMessa
                 channel,
                 cc: data[1]!,
                 value: data[2] ?? 0,
+                timeStamp,
             };
         case MIDI_CHANNEL_PRESSURE:
             return {
                 type: 'channelPressure',
                 channel,
                 pressure: data[1]!,
+                timeStamp,
             };
         case MIDI_PITCH_BEND:
             return {
@@ -81,6 +97,7 @@ export function parseWebMidiMessage(event: MIDIMessageEvent): ParsedWebMidiMessa
                 channel,
                 lsb: data[1]!,
                 msb: data[2] ?? 0,
+                timeStamp,
             };
         default:
             return null;

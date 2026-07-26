@@ -260,7 +260,6 @@ export type ProjectAutomationLane = {
     visible: boolean;
     enabled: boolean;
     collapsed: boolean;
-    virginTerritory: boolean;
     minValue: number;
     maxValue: number;
     viewMinValue?: number;
@@ -510,11 +509,77 @@ function normalize_tracks_section(value: unknown): ProjectTrackStoreState | null
     };
 }
 
+/**
+ * Lane keys that were removed from the lane model and must not survive a
+ * hydrate. `virginTerritory` is the first: a lane flag that never affected
+ * playback or rendering and was deleted rather than given a meaning.
+ *
+ * ## Why a removed key needs stripping here
+ *
+ * This store validates lanes structurally and shallowly on purpose — deep
+ * per-lane validation is `automationStore`'s job (see the trust-boundary note
+ * above), and that only runs for the ACTIVE arrangement. That deferral leaves a
+ * hole for a retired key: a peer still running a build from before the removal
+ * syncs an arrangement whose lanes carry the dead field, every lane is a
+ * perfectly valid identified row, so the section reads as exact and is stored
+ * verbatim. The field then rides `buildProjectData`'s shallow spread of the
+ * snapshot into the saved project file, and the dead key lives forever — the
+ * same failure the file import path strips during legacy normalization,
+ * arriving over sync instead.
+ *
+ * **Invariant: a lane carrying a removed legacy key must be rebuilt, not passed
+ * through.** Adding a key to this list is what enforces it, and it costs no deep
+ * validation.
+ *
+ * ## The reverse direction, which this cannot fix
+ *
+ * Read this before removing any further *required* key from a lane.
+ *
+ * The live document is a wire format shared with peers that may run different
+ * builds, and lane validation is structural and version-blind — no peer or
+ * protocol version is negotiated anywhere in the sync layer. So a peer running
+ * an older build, receiving lanes that lack a key its own validator still
+ * requires, rejects every one of them. Those lanes are filtered out rather than
+ * quarantined, and because the sanitized result is written back, that peer can
+ * propagate an emptied automation-lanes array to everyone — including peers on
+ * the current build. Silent, propagating data loss originating from the peer
+ * that is behind.
+ *
+ * Nothing shipped later can change how an already-released build validates, so
+ * the safe sequence for removing a required key is two releases: first stop
+ * requiring it while still emitting it, then stop emitting it once no older peer
+ * can connect. Removing `virginTerritory` in one step was safe only because the
+ * app had no tagged release and therefore no older peer in existence.
+ */
+const RETIRED_AUTOMATION_LANE_KEYS = ['virginTerritory'] as const;
+
+function has_retired_automation_lane_key(value: unknown): boolean {
+    return is_plain_object(value) && RETIRED_AUTOMATION_LANE_KEYS.some((key) => key in value);
+}
+
+function has_any_retired_automation_lane_key(lanes: unknown): boolean {
+    return Array.isArray(lanes) && lanes.some(has_retired_automation_lane_key);
+}
+
+function strip_retired_automation_lane_keys(lane: ProjectAutomationLane): ProjectAutomationLane {
+    if (!has_retired_automation_lane_key(lane)) {
+        return lane;
+    }
+    const stripped = { ...lane };
+    for (const key of RETIRED_AUTOMATION_LANE_KEYS) {
+        Reflect.deleteProperty(stripped, key);
+    }
+    return stripped;
+}
+
 function is_exact_automation_section(value: unknown): value is ProjectAutomationState {
     return (
         is_plain_object(value) &&
         has_exact_keys({ value, required_keys: AUTOMATION_SECTION_KEYS }) &&
-        is_row_array(value.lanes)
+        is_row_array(value.lanes) &&
+        // A lane carrying a retired key is not "exact" — fall through to
+        // normalize so the key is stripped instead of stored verbatim.
+        !has_any_retired_automation_lane_key(value.lanes)
     );
 }
 
@@ -522,7 +587,9 @@ function normalize_automation_section(value: unknown): ProjectAutomationState | 
     if (!is_plain_object(value)) {
         return null;
     }
-    return { lanes: filter_identified_rows<ProjectAutomationLane>(value.lanes) };
+    return {
+        lanes: filter_identified_rows<ProjectAutomationLane>(value.lanes).map(strip_retired_automation_lane_keys),
+    };
 }
 
 function is_exact_midi_clip_map(value: unknown): boolean {

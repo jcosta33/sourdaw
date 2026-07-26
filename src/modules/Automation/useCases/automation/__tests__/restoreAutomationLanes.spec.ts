@@ -38,7 +38,6 @@ function createLane(id: string, parameterName = `Parameter ${id}`): AutomationLa
         visible: true,
         enabled: true,
         collapsed: false,
-        virginTerritory: true,
         minValue: 0,
         maxValue: 1,
     };

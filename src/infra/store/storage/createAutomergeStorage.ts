@@ -77,14 +77,31 @@ type AutomergeStorageWriteContext = {
     readonly snapshotTransaction: object | undefined;
 };
 
+/**
+ * Why a pending write cannot be committed right now. Audit CC-5 — `prepare()`
+ * used to answer this with a bare null, which conflated two opposite
+ * situations and forced the single `didDiscard` terminal to guess:
+ *
+ * - `abandon` — the value is not truth. Either a newer committed value already
+ *   superseded it, or the document it targets is gone. The cache must fall
+ *   back to the last committed value, exactly like an abort.
+ * - `defer` — there is no document authority yet (the CRDT port is not wired).
+ *   Nothing has ever committed, so the optimistic value is the only state the
+ *   app has; drop the write but keep the value visible.
+ */
+type PendingWritePreparation =
+    | { readonly status: 'ready'; readonly mutation: AutomergeStorageMutationInput }
+    | { readonly status: 'abandon' }
+    | { readonly status: 'defer' };
+
 type PendingAutomergeStorageWrite = {
     readonly abort: () => void;
     readonly commitOwner: object;
     readonly didCommit: () => void;
-    readonly didDiscard: () => void;
+    readonly didDefer: () => void;
     readonly docId: AutomergeStorageDocId;
     readonly snapshotTransaction: object | undefined;
-    readonly prepare: () => AutomergeStorageMutationInput | null;
+    readonly prepare: () => PendingWritePreparation;
 };
 
 type ActiveAutomergeStorageTransaction = {
@@ -92,7 +109,21 @@ type ActiveAutomergeStorageTransaction = {
     readonly snapshotTransaction: object | undefined;
 };
 
+/**
+ * Re-enters an open transaction for the synchronous duration of `callback`.
+ *
+ * Audit CC-10 — the ambient transaction is installed only while the
+ * transaction callback runs synchronously, so an async handler loses it at its
+ * first `await` and every later write commits unscoped. Browsers have no async
+ * context propagation, and widening the ambient across awaits would also
+ * capture writes made by unrelated code running in that window (dozens of UI
+ * call sites dispatch actions without awaiting them), so the re-entry is
+ * explicit rather than implicit.
+ */
+type AutomergeStorageTransactionScope = <Result>(callback: () => Result) => Result;
+
 type AutomergeStorageTransactionControl = {
+    readonly scope: AutomergeStorageTransactionScope;
     abort(): void;
     commit(): void;
 };
@@ -160,10 +191,74 @@ function commitAutomergeStorageMutations(mutations: readonly AutomergeStorageMut
     });
 }
 
-/** Scope one synchronous action write path to an opaque snapshot transaction. */
+/**
+ * Captures the transaction that is active right now, returning a function that
+ * re-enters it later.
+ *
+ * Audit CC-10 — an `async` action handler runs inside the action's transaction
+ * only until its first `await`; after that the ambient scope is gone and every
+ * store write it makes commits on its own, outside the action's atomic commit,
+ * and survives an abort that should have discarded it.
+ *
+ * A handler that writes after an `await` calls this **synchronously, before
+ * that await**, and wraps the later writes in the returned function:
+ *
+ * ```ts
+ * execute: async (action) => {
+ *     const scope = captureAutomergeStorageTransactionScope();
+ *     const rendered = await render(action);
+ *     scope(() => { trackStore.set(rendered); });
+ * }
+ * ```
+ *
+ * Capture is explicit rather than implicit because browsers have no async
+ * context propagation: keeping the ambient transaction installed across an
+ * `await` would also capture writes made by unrelated code running in that
+ * window, and this app dispatches many actions without awaiting them.
+ *
+ * With no transaction active the returned function simply runs the callback,
+ * which is the correct unscoped behaviour for a handler invoked outside
+ * `executeAppAction`.
+ *
+ * The returned function takes a **synchronous** callback. It restores the
+ * previous ambient transaction in a `finally` that runs as soon as the
+ * callback's synchronous portion returns, so `scope(async () => …)` un-scopes
+ * at that callback's own first `await` and silently reproduces the bug this
+ * exists to fix. Await outside, write inside; two writes separated by an
+ * `await` need two calls. Capturing after an `await` degrades the same silent
+ * way, since there is no longer a transaction to capture.
+ */
+export function captureAutomergeStorageTransactionScope(): AutomergeStorageTransactionScope {
+    const capturedTransaction = activeAutomergeStorageTransaction;
+    if (!capturedTransaction) {
+        return (callback) => callback();
+    }
+
+    return (callback) => {
+        if (!openAutomergeStorageCommitOwners.has(capturedTransaction.commitOwner)) {
+            // The commit owner is closed: a write attached to it now would
+            // never flush. Fail loudly rather than swallow it.
+            throw new Error('Automerge storage transaction has already settled');
+        }
+        const previous = activeAutomergeStorageTransaction;
+        activeAutomergeStorageTransaction = capturedTransaction;
+        try {
+            return callback();
+        } finally {
+            activeAutomergeStorageTransaction = previous;
+        }
+    };
+}
+
+/**
+ * Scope one action write path to an opaque snapshot transaction.
+ *
+ * `callback` receives a `scope` that re-enters this transaction, equivalent to
+ * `captureAutomergeStorageTransactionScope()` called inside it.
+ */
 export function runWithAutomergeStorageTransaction<Result>(
     snapshotTransaction: object | undefined,
-    callback: () => Result
+    callback: (scope: AutomergeStorageTransactionScope) => Result
 ): AutomergeStorageTransactionResult<Result> {
     const previousTransaction = activeAutomergeStorageTransaction;
     const transaction: ActiveAutomergeStorageTransaction = {
@@ -174,8 +269,24 @@ export function runWithAutomergeStorageTransaction<Result>(
     openAutomergeStorageCommitOwners.add(transaction.commitOwner);
     let terminalState: 'open' | 'committed' | 'aborted' = 'open';
     let outcome: AutomergeStorageTransactionOutcome<Result>;
+
+    const scope: AutomergeStorageTransactionScope = (scopedCallback) => {
+        if (terminalState !== 'open') {
+            // The commit owner is closed: a write attached to it now would
+            // never flush. Fail loudly rather than swallow it.
+            throw new Error(`Automerge storage transaction has already settled (${terminalState})`);
+        }
+        const previous = activeAutomergeStorageTransaction;
+        activeAutomergeStorageTransaction = transaction;
+        try {
+            return scopedCallback();
+        } finally {
+            activeAutomergeStorageTransaction = previous;
+        }
+    };
+
     try {
-        outcome = { status: 'returned', value: callback() };
+        outcome = { status: 'returned', value: callback(scope) };
     } catch (error) {
         outcome = { status: 'threw', error };
     } finally {
@@ -183,6 +294,7 @@ export function runWithAutomergeStorageTransaction<Result>(
     }
 
     const control: AutomergeStorageTransactionControl = {
+        scope,
         abort(): void {
             if (terminalState !== 'open') {
                 return;
@@ -263,16 +375,20 @@ function flushMatchingAutomergeStorageWrites(matches: (pending: PendingAutomerge
     for (const ownerGroups of groups.values()) {
         for (const writes of ownerGroups.values()) {
             const mutations: AutomergeStorageMutationInput[] = [];
+            const abandonedWrites: PendingAutomergeStorageWrite[] = [];
             let preparationFailed = false;
             let preparationUnavailable = false;
 
             for (const write of writes) {
                 try {
-                    const mutation = write.prepare();
-                    if (mutation) {
-                        mutations.push(mutation);
-                    } else {
-                        preparationUnavailable = true;
+                    const preparation = write.prepare();
+                    if (preparation.status === 'ready') {
+                        mutations.push(preparation.mutation);
+                        continue;
+                    }
+                    preparationUnavailable = true;
+                    if (preparation.status === 'abandon') {
+                        abandonedWrites.push(write);
                     }
                 } catch (error) {
                     preparationFailed = true;
@@ -281,11 +397,34 @@ function flushMatchingAutomergeStorageWrites(matches: (pending: PendingAutomerge
             }
 
             if (preparationFailed) {
+                // Audit CC-7 — `prepare()` already cancelled each write's
+                // animation frame, and nothing re-arms it. Leaving the group
+                // pending kept it in the write set forever with a dead frame:
+                // the owner slot stayed occupied, so every later set() reused
+                // it without scheduling a flush and the adapter silently
+                // stopped persisting. Abort instead — the value could not be
+                // serialized, so it can never reach the document, and the
+                // cache must fall back to the last committed value rather
+                // than keep serving a write that will never land. The
+                // collected error still propagates to the caller below.
+                for (const write of writes) {
+                    write.abort();
+                }
                 continue;
             }
             if (preparationUnavailable) {
+                // The group is atomic, so one unpreparable write blocks all of
+                // them. Each write still takes the terminal its own
+                // preparation earned: an abandoned value is rolled back
+                // (audit CC-5), while a write merely blocked by a sibling —
+                // or waiting for the CRDT port — keeps its optimistic value.
+                const abandoned = new Set(abandonedWrites);
                 for (const write of writes) {
-                    write.didDiscard();
+                    if (abandoned.has(write)) {
+                        write.abort();
+                        continue;
+                    }
+                    write.didDefer();
                 }
                 continue;
             }
@@ -503,9 +642,11 @@ export const createAutomergeStorage = <TData>(
         };
     };
 
-    const preparePendingWrite = (pending: AdapterPendingWrite): AutomergeStorageMutationInput | null => {
+    const preparePendingWrite = (pending: AdapterPendingWrite): PendingWritePreparation => {
         if (pendingWritesByOwner.get(pending.write.commitOwner) !== pending) {
-            return null;
+            // A newer pending already owns this slot; this one is inert and
+            // its terminal is a no-op either way.
+            return { status: 'defer' };
         }
         if (pending.rafId !== null) {
             cancelAnimationFrame(pending.rafId);
@@ -521,9 +662,27 @@ export const createAutomergeStorage = <TData>(
         // terminal order (compensating transactions legitimately commit older
         // values last).
         if (!pending.scoped && pending.revision < committedSetRevision) {
-            return null;
+            return { status: 'abandon' };
         }
-        return createMutation(pending.value, pending.message, pending.write.snapshotTransaction);
+
+        const port = getAutomergeStoragePort();
+        if (!port) {
+            // The CRDT is not wired yet (store seeded from initialData before
+            // bootstrap). Nothing has ever committed, so the seeded value is
+            // the only state the app has — drop the write, keep the value.
+            return { status: 'defer' };
+        }
+        if (!port.hasDoc(docId)) {
+            // Audit CC-5 — the document this write targets is gone (authority
+            // reset between projects). The optimistic value is not truth.
+            return { status: 'abandon' };
+        }
+
+        const mutation = createMutation(pending.value, pending.message, pending.write.snapshotTransaction);
+        if (!mutation) {
+            return { status: 'defer' };
+        }
+        return { status: 'ready', mutation };
     };
 
     const releasePendingWrite = (pending: AdapterPendingWrite): boolean => {
@@ -597,7 +756,12 @@ export const createAutomergeStorage = <TData>(
             abort: () => abortPendingWrite(getPending()),
             commitOwner: context.commitOwner,
             didCommit: () => recordCommittedWrite(getPending()),
-            didDiscard: () => releasePendingWrite(getPending()),
+            // Audit CC-5 — the deferred terminal. The write is dropped but
+            // its value stays visible, because no committed value exists to
+            // fall back to. A write whose value is *not* truth takes `abort`
+            // instead, so the cache can never keep serving a write that will
+            // never land.
+            didDefer: () => releasePendingWrite(getPending()),
             docId,
             prepare: () => preparePendingWrite(getPending()),
             snapshotTransaction: context.snapshotTransaction,
@@ -669,6 +833,70 @@ export const createAutomergeStorage = <TData>(
             cachedRevision = ++nextRevision;
             pending.value = null;
             pending.revision = cachedRevision;
+        },
+
+        /**
+         * The document is a wire format shared with peers that may run
+         * different builds, and row validators here are structural and
+         * version-blind — no protocol version is negotiated anywhere in the
+         * sync layer. A peer whose validator still requires a field a newer
+         * build removed rejects every row that lacks it. Refusing to surface
+         * those rows is right; writing the refusal back is not, because the
+         * deletion then propagates to peers that read them fine.
+         *
+         * So a sanitized value replaces the committed baseline and nothing
+         * else. Every revision counter is deliberately left where it was:
+         *
+         * - `lastHydratedJson` / `lastHydratedHeads` describe the document,
+         *   which has not changed.
+         * - `committedCacheRevision` and `committedSetRevision` mean "a commit
+         *   landed and superseded older writes". No commit landed here.
+         *   Advancing `committedSetRevision` in particular makes
+         *   `preparePendingWrite`'s supersede guard abandon an unflushed local
+         *   edit that nothing actually superseded — the store would keep
+         *   showing a value the document never received.
+         *
+         * The visible pending write needs correcting rather than outranking.
+         * `sanitize` guards data arriving from outside and is deliberately
+         * absent from the commit path, because a locally authored value is
+         * built by a use case from typed models and the store must not quietly
+         * rewrite what that use case asked to write. `hydrate`'s rebase branch
+         * breaks that premise: it blends freshly-hydrated document data into an
+         * in-flight write (`{ ...pendingValue, ...crdtData }`), so the pending
+         * is no longer purely authored and its inbound half never passed the
+         * guard. Racing it on revision order lets the rejected blend win the
+         * cache and then flush to the document unexamined.
+         *
+         * So the pending whose value the sanitizer just examined — the visible
+         * one, which is what `get()` returned — takes the verdict. That
+         * corrects an injection `hydrate` made; it does not author a write, and
+         * a pending nothing rebased still carries exactly what its use case
+         * set.
+         *
+         * If you are adding a sanitizer, know what this relies on. It is
+         * reached only when a sanitizer returns a value that is not reference-
+         * identical to its input, so a sanitizer that short-circuits on accept
+         * (`if (is_exact_X(value)) { return value; }`) keeps clean hydrates off
+         * this path entirely. One that always rebuilds reaches it on *every*
+         * hydrate, and this correction is deliberately blunt: it does not check
+         * whether the rebase actually blended the visible pending or merely
+         * touched its revision, and it does not exempt a scoped transactional
+         * write. Those distinctions do not matter while clean values never get
+         * here — give a new sanitizer the accept path and keep it that way.
+         */
+        setProjected(value: TData | null): void {
+            const visibleBefore = cachedValue;
+            committedCacheValue = value;
+            const visiblePending = [...pendingWritesByOwner.values()].find(
+                (pending) => pending.revision === cachedRevision
+            );
+            if (visiblePending) {
+                visiblePending.value = value;
+            }
+            recomputeCachedValue();
+            if (!Object.is(visibleBefore, cachedValue)) {
+                notifyDeferredChange();
+            }
         },
 
         isSupported(): boolean {

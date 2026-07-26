@@ -29,8 +29,15 @@ describe('helpers', () => {
         }
     });
 
-    it('preserves the pre-existing demo entries', () => {
-        const demoIds = templates.filter((template) => template.category === 'demo').map((template) => template.id);
-        expect(demoIds).toContain('demo-nebula-drift');
+    it('registers Mycelium Ascendant without replacing Nebula Drift', () => {
+        const demos = templates.filter((template) => template.category === 'demo');
+
+        expect(demos.map((template) => template.id)).toEqual(['demo-nebula-drift', 'demo-mycelium-ascendant']);
+        expect(demos.at(-1)).toMatchObject({
+            name: 'Mycelium Ascendant',
+            description:
+                'Four minutes of psychedelic trance: rolling bass, organic signals, fractal effects, and deep automation.',
+            executionBoundary: 'app-action',
+        });
     });
 });
