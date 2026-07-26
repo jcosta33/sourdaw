@@ -801,7 +801,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             }}
         >
             <DialogContent
-                className="w-[480px] gap-0 overflow-hidden rounded-xl border border-orange-900/40 bg-stone-950 p-0 shadow-[0_0_40px_rgba(234,88,12,0.1)]"
+                className="max-h-[calc(100vh-2rem)] w-[480px] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-xl border border-orange-900/40 bg-stone-950 p-0 shadow-[0_0_40px_rgba(234,88,12,0.1)]"
                 showCloseButton={!exporting}
             >
                 <DialogHeader
@@ -822,7 +822,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     </p>
                 </DialogHeader>
 
-                <DawDialogBody className="gap-4 bg-transparent px-6 py-5">
+                <DawDialogBody scrollable className="gap-4 bg-transparent px-6 py-5">
                     <DawDialogSection tone="warm" title="Render Order">
                         <div className="grid grid-cols-3 gap-2">
                             <Button
