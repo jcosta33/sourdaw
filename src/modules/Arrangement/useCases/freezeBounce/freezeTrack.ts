@@ -1,20 +1,13 @@
-import { cacheAudioBuffer, getCompensationDelay } from '#/modules/AudioEngine/useCases';
-import { transportStore } from '#/modules/Transport/stores';
+import { cacheAudioBuffer, getCompensationDelay, getDeviceChainTailSeconds } from '#/modules/AudioEngine/useCases';
+import { FREEZE_BAKE_VERSION } from '#/utils/frozenBufferTail';
 
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { computeTrackHash } from '../../services/computeTrackHash';
 import { getTrackEligibility } from '../../stores/trackEligibility';
 import { trackStore } from '../../stores/trackStore';
+import { getPluginById } from '../getPluginById';
 
 import { renderTrackOffline } from './renderOffline';
-
-/**
- * Beats of tail freeze renders past a track's content. Exported because the
- * unknown-baked-tail floor is derived from the longer of the two, and a
- * hand-copied literal there would drift silently.
- */
-export const FREEZE_MAX_TAIL_BEATS = 8;
-export const FREEZE_MIN_TAIL_BEATS = 4;
 
 export const activeFreezeTasks = new Map<string, AbortController>();
 
@@ -62,13 +55,24 @@ export async function freezeTrack(trackId: string): Promise<boolean> {
             endBeat = 1;
         }
 
-        // Heuristic: If there's a reverb or delay in the chain, give it a longer tail
-        const hasReverbOrDelay = track.devices.some(
-            (data) => data.type.toLowerCase().includes('reverb') || data.type.toLowerCase().includes('delay')
-        );
-        const tailBeats = hasReverbOrDelay ? FREEZE_MAX_TAIL_BEATS : FREEZE_MIN_TAIL_BEATS;
+        // How far past the content this take has to ring, read from the same
+        // device tail declarations the export path evaluates. This used to be a
+        // substring test on the device type — 8 beats for an id containing
+        // "reverb" or "delay", 4 for anything else — which no descriptor fed, so
+        // it could not see the Dutch Oven or Bacteria at all, and which shrank
+        // with tempo because beats are not seconds.
+        const tailSeconds = getDeviceChainTailSeconds({
+            devices: track.devices,
+            tailForDeviceType: (deviceType) => getPluginById(deviceType)?.tail,
+        }).seconds;
 
-        const renderedBuffer = await renderTrackOffline(track, startBeat, endBeat + tailBeats, {
+        const renderedBuffer = await renderTrackOffline(track, startBeat, endBeat, {
+            tailSeconds,
+            // The buffer is replayed through this track's own fader and panner —
+            // live attaches it to `preFaderTap`, the mixdown to the fader node —
+            // so those two values must stay out of the print or they are applied
+            // twice.
+            targetMixer: 'keepLive',
             abortSignal: abortController.signal,
             onProgress: (param) => {
                 updateTrack(trackId, (time) => ({
@@ -107,7 +111,13 @@ export async function freezeTrack(trackId: string): Promise<boolean> {
                     sampleRate: renderedBuffer.sampleRate,
                     bitDepth: 32,
                     channelCount: renderedBuffer.numberOfChannels,
-                    tailLengthSeconds: (tailBeats * 60) / (transportStore.value?.tempo ?? 120),
+                    // Recorded as the seconds actually rendered, not re-derived
+                    // from a beat count and the tempo. The buffer's decay is a
+                    // duration; converting it through tempo twice was what let
+                    // the recorded number describe a different length than the
+                    // one on disk.
+                    tailLengthSeconds: tailSeconds,
+                    bakeVersion: FREEZE_BAKE_VERSION,
                 },
                 renderedAt: Date.now(),
             },

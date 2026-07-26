@@ -4,6 +4,7 @@ import { resolveFrozenBufferTail } from '#/utils/frozenBufferTail';
 
 import { estimateRenderTailSeconds, type TailDeclarationLike } from '../../services/estimateRenderTailSeconds';
 
+import { projectDeviceTails } from './projectDeviceTails';
 import { shouldCreateOfflineStrip } from './shouldCreateOfflineStrip';
 
 type DeviceTailLookup = (deviceType: string) => TailDeclarationLike | undefined;
@@ -36,12 +37,7 @@ type GetAutoDetectedTailSecondsInput = {
  * the buffer actually carries.
  */
 function projectDevices(track: Track, tailForDeviceType: DeviceTailLookup) {
-    return track.devices.map((device) => ({
-        type: device.type,
-        parameterValues: device.parameterValues,
-        bypassed: device.bypassed,
-        tail: tailForDeviceType(device.type),
-    }));
+    return projectDeviceTails({ devices: track.devices, tailForDeviceType });
 }
 
 function projectTrack(track: Track, tailForDeviceType: DeviceTailLookup) {
