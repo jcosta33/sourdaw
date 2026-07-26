@@ -1,0 +1,47 @@
+scripts/agent-campaign/generateEvidenceManifest.ts
+  s_bc88af7d3b054c::t_74fa7b62424fbb 1,6,8-9
+  s_bc88af7d3b054c::t_339702ba835ea8 2
+src/app/__tests__/agentCampaignBaseline.spec.ts
+  s_bc88af7d3b054c::t_f24fec54a849a6 17,53
+  s_bc88af7d3b054c::t_34cb03981b45d9 22,33,35,45,55,65-66
+  s_bc88af7d3b054c::t_393722d0b72021 38-40
+  s_bc88af7d3b054c::t_bdd9ad9e2bb3f1 6,10-16,19,24-27,34,36-37,43-44,49-52,59-64
+  s_bc88af7d3b054c::t_b2a3d72a236c33 54,56
+  s_bc88af7d3b054c::t_4c0a956df23183 18,46-48
+  s_bc88af7d3b054c::t_e0e5f500f2b7c6 20,23,41-42
+scripts/agent-campaign/evidenceContract.ts
+  s_bc88af7d3b054c::t_bbbd58132d5308 35,41
+  s_bc88af7d3b054c::t_aeadd52392b10e 31-34,37-38,180-182,308,317,322
+  s_bc88af7d3b054c::t_3fac09bb50acea 44,69,219,324
+  s_bc88af7d3b054c::t_b505c905efaf53 20-21,25,68,70-73,209,214-216,294-295,326
+  s_bc88af7d3b054c::t_8cd238c0e3effd 178-179
+  s_bc88af7d3b054c::t_7322a2ed406889 283,285-293,296,325,327,329,333-352
+  s_bc88af7d3b054c::t_cc75df6e00477e 183-184,192,208,210
+  s_bc88af7d3b054c::t_4c0a956df23183 328
+  s_bc88af7d3b054c::t_d6c245278cdf1c 330-332
+scripts/agent-campaign/evidenceManifest.ts
+  s_bc88af7d3b054c::t_6fc127df68723b 2
+  s_bc88af7d3b054c::t_0c35b62eab3003 5
+  s_bc88af7d3b054c::t_36552441aef2b8 1,3,7-9,12,15,17,21,23,31-33,36-38,40-42,45,47-50,61
+  s_bc88af7d3b054c::t_d6c245278cdf1c 11,58-60,64
+  s_bc88af7d3b054c::t_f1f7d5cf4cb4f6 22,30,34-35,43-44,46,51-57,62-63,65
+  s_bc88af7d3b054c::t_4c0a956df23183 24-29,39
+evidence/agent-campaign/manifest.json
+  s_bc88af7d3b054c::t_75e2534561900c 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "bab5ce306248396344fb95d1d57c5b9700bdd186",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
