@@ -690,6 +690,8 @@ export const createAutomergeStorage = <TData>(
             return { status: 'abandon' };
         }
 
+        hasObservedDocumentAuthority = true;
+
         const mutation = createMutation(pending.value, pending.message, pending.write.snapshotTransaction);
         if (!mutation) {
             return { status: 'defer' };

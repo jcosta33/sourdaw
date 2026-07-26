@@ -29,11 +29,13 @@ type TestPortHandle = {
     doc: TestDoc;
     port: TestPort;
     setHasDoc: (value: boolean) => void;
+    setMutationFails: (value: boolean) => void;
 };
 
 function createTestPort(): TestPortHandle {
     const doc: TestDoc = {};
     let hasDoc = true;
+    let mutationFails = false;
     return {
         doc,
         port: {
@@ -41,11 +43,17 @@ function createTestPort(): TestPortHandle {
             getSemanticMessage: () => undefined,
             hasDoc: () => hasDoc,
             mutateDoc: ({ changeFn }) => {
+                if (mutationFails) {
+                    throw new Error('mutation failed');
+                }
                 changeFn(doc);
             },
         },
         setHasDoc: (value) => {
             hasDoc = value;
+        },
+        setMutationFails: (value) => {
+            mutationFails = value;
         },
     };
 }
@@ -122,6 +130,24 @@ describe('createAutomergeStorage — non-committing write terminals', () => {
             storage.set({ count: 2 });
             setHasDoc(false);
 
+            flushAutomergeStorageWrites();
+
+            expect(Object.hasOwn(doc, 'state')).toBe(false);
+            expect(storage.get()).toBeNull();
+        });
+
+        it('rolls back a failed mutation retry when the observed document disappears', () => {
+            const { doc, port, setHasDoc, setMutationFails } = createTestPort();
+            configureAutomergeStoragePort(port);
+            const storage = createAutomergeStorage<{ count: number }>('root', 'state');
+
+            storage.set({ count: 2 });
+            setMutationFails(true);
+            expect(() => flushAutomergeStorageWrites()).toThrow('mutation failed');
+            expect(storage.get()).toEqual({ count: 2 });
+
+            setMutationFails(false);
+            setHasDoc(false);
             flushAutomergeStorageWrites();
 
             expect(Object.hasOwn(doc, 'state')).toBe(false);
