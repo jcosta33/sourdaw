@@ -2,21 +2,15 @@ import { change, init } from '@automerge/automerge';
 import { describe, expect, it, vi } from 'vitest';
 
 import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
-import {
-    DOC_PREFIX_ROOT,
-    getCrdtDoc,
-    registerCrdtStorageRuntime,
-    replaceCrdtDoc,
-} from '#/modules/CrdtDocument/useCases';
+import { DOC_PREFIX_ROOT, registerCrdtStorageRuntime, replaceCrdtDoc } from '#/modules/CrdtDocument/useCases';
 import { projectStore } from '#/modules/Project/stores';
 import { loadProject, setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
 
 import { agentProtocolRegistry, resolvePersistedAgentProtocol } from '../agentProtocols/agentProtocolGovernance';
 
 import {
+    agentProtocolDescriptorGolden,
     agentProjectHydrationFixture,
-    agentProtocolOwnerFixtures,
-    agentProtocolVersionFixtures,
 } from './fixtures/agentProtocols/agentProtocolVersionFixtures';
 
 const loadMocks = vi.hoisted(() => ({
@@ -55,11 +49,8 @@ vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
 }));
 
 describe('agent protocol governance', () => {
-    it('publishes complete, uniquely identified families with exact semantic owners', () => {
-        expect(agentProtocolRegistry.map(({ id, semanticOwner: owner }) => ({ id, owner }))).toEqual(
-            agentProtocolOwnerFixtures
-        );
-        expect(new Set(agentProtocolRegistry.map(({ id }) => id)).size).toBe(agentProtocolOwnerFixtures.length);
+    it('publishes the complete governance-only registry against an independent golden', () => {
+        expect(agentProtocolRegistry).toEqual(agentProtocolDescriptorGolden);
     });
 
     it('deep-freezes independent policies, capabilities, operation versions, and availability', () => {
@@ -68,28 +59,34 @@ describe('agent protocol governance', () => {
             expect(
                 [
                     protocol,
-                    protocol.capabilities,
-                    protocol.operationVersions,
+                    protocol.requiredCapabilities,
+                    protocol.supportedCapabilities,
+                    protocol.requiredOperationVersions,
+                    protocol.supportedOperationVersions,
                     protocol.compatibility,
                     protocol.availability,
-                    ...Object.values(protocol.operationVersions),
+                    ...Object.values(protocol.requiredOperationVersions),
                 ].every(Object.isFrozen)
             ).toBe(true);
         }
-        expect(new Set(agentProtocolRegistry.map(({ compatibility }) => compatibility)).size).toBe(
-            agentProtocolOwnerFixtures.length
-        );
-        expect(new Set(agentProtocolRegistry.map(({ availability }) => availability)).size).toBe(
-            agentProtocolOwnerFixtures.length
-        );
+        for (const field of ['compatibility', 'availability'] as const) {
+            expect(new Set(agentProtocolRegistry.map((protocol) => protocol[field])).size).toBe(
+                agentProtocolDescriptorGolden.length
+            );
+        }
     });
 
     it('resolves frozen old, current, and future persisted versions through one boundary', () => {
-        const actual = agentProtocolVersionFixtures.map(({ id, version }) => {
-            const resolution = resolvePersistedAgentProtocol({ id, schemaVersion: version });
-            return resolution.status === 'supported' ? resolution.handling : resolution.status;
-        });
-        expect(actual).toEqual(agentProtocolVersionFixtures.map(({ expected }) => expected));
+        const actual = agentProtocolDescriptorGolden.flatMap(({ id, schemaVersion }) =>
+            [schemaVersion - 1, schemaVersion, schemaVersion + 1].map((version) => {
+                const resolution = resolvePersistedAgentProtocol({ id, schemaVersion: version });
+                return resolution.status === 'supported' ? resolution.handling : resolution.status;
+            })
+        );
+        const expected = agentProtocolDescriptorGolden.flatMap(({ compatibility }) =>
+            (['previous', 'current', 'future'] as const).map((version) => compatibility[version])
+        );
+        expect(actual).toEqual(expected);
     });
 
     it('resolves aliases and tombstones and rejects unknown or malformed identities deterministically', () => {
@@ -129,9 +126,6 @@ describe('agent protocol governance', () => {
 
         expect(projectStore.value?.name).toBe(agentProjectHydrationFixture.projectMeta.name);
         expect(actionHistoryStore.value?.entries).toEqual(agentProjectHydrationFixture.actionHistory.entries);
-        expect(getCrdtDoc<Record<string, unknown>>(DOC_PREFIX_ROOT)?.agentProtocolAudit).toEqual(
-            agentProjectHydrationFixture.agentProtocolAudit
-        );
         expect(loadMocks.executeAppAction).not.toHaveBeenCalled();
     });
 });

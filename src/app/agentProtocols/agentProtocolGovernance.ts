@@ -19,8 +19,10 @@ export type AgentProtocolDescriptor = {
     readonly family: AgentProtocolFamily;
     readonly semanticOwner: AgentProtocolOwner;
     readonly schemaVersion: number;
-    readonly capabilities: readonly string[];
-    readonly operationVersions: Readonly<Record<string, readonly number[]>>;
+    readonly requiredCapabilities: readonly string[];
+    readonly supportedCapabilities: readonly string[];
+    readonly requiredOperationVersions: Readonly<Record<string, readonly number[]>>;
+    readonly supportedOperationVersions: Readonly<Record<string, readonly number[]>>;
     readonly compatibility: Readonly<{
         minimumReadableVersion: number;
         previous: 'migrate' | 'read-only-preserve';
@@ -46,17 +48,19 @@ function defineAgentProtocol(
     [semanticOwner, capabilities, operations, previous = 'read-only-preserve']: AgentProtocolDefinition
 ): AgentProtocolDescriptor {
     const id: AgentProtocolId = `sourdaw.agent.${family}`;
-    const operationVersions: Record<string, readonly number[]> = {};
+    const requiredOperationVersions: Record<string, readonly number[]> = {};
     for (const operation of operations) {
-        operationVersions[`agent.${family}.${operation}`] = Object.freeze([1]);
+        requiredOperationVersions[`agent.${family}.${operation}`] = Object.freeze([1]);
     }
     return Object.freeze({
         id,
         family,
         semanticOwner,
         schemaVersion: 1,
-        capabilities: Object.freeze([...capabilities]),
-        operationVersions: Object.freeze(operationVersions),
+        requiredCapabilities: Object.freeze([...capabilities]),
+        supportedCapabilities: Object.freeze([]),
+        requiredOperationVersions: Object.freeze(requiredOperationVersions),
+        supportedOperationVersions: Object.freeze({}),
         compatibility: Object.freeze({
             minimumReadableVersion: 0,
             previous,
@@ -102,37 +106,9 @@ const protocolTombstones: Readonly<Record<string, { replacement: AgentProtocolId
         }),
     });
 
-type ResolvePersistedAgentProtocolInput = {
-    id: unknown;
-    schemaVersion: unknown;
-};
-
-export type PersistedAgentProtocolResolution =
-    | Readonly<{
-          status: 'supported';
-          persistedId: string;
-          canonicalId: AgentProtocolId;
-          protocol: AgentProtocolDescriptor;
-          handling: AgentProtocolVersionHandling;
-      }>
-    | Readonly<{
-          status: 'tombstoned';
-          persistedId: string;
-          replacement: AgentProtocolId;
-          handling: 'read-only-preserve';
-      }>
-    | Readonly<{
-          status: 'unsupported';
-          reason: 'malformed-id' | 'malformed-version' | 'unknown-id';
-          preservation: 'retain-bytes';
-      }>;
-
 const protocolIdPattern = /^sourdaw\.agent\.[a-z]+(?:-[a-z]+)*$/u;
 
-export function resolvePersistedAgentProtocol({
-    id,
-    schemaVersion,
-}: ResolvePersistedAgentProtocolInput): PersistedAgentProtocolResolution {
+export function resolvePersistedAgentProtocol({ id, schemaVersion }: { id: unknown; schemaVersion: unknown }) {
     if (typeof id !== 'string' || !protocolIdPattern.test(id)) {
         return { status: 'unsupported', reason: 'malformed-id', preservation: 'retain-bytes' };
     }
@@ -156,7 +132,7 @@ export function resolvePersistedAgentProtocol({
     }
     return { status: 'supported', persistedId: id, canonicalId: protocol.id, protocol, handling };
 }
-
+export type PersistedAgentProtocolResolution = ReturnType<typeof resolvePersistedAgentProtocol>;
 export const agentProjectStateCompatibility = Object.freeze({
     canonicalSource: 'materialized-project-state',
     obsoleteCommandHandling: 'audit-only',

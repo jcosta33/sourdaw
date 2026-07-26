@@ -8,30 +8,54 @@ const protocolFixtures = [
     ['transform', 'Command', 'read-only-preserve'],
     ['external-adapter', 'AgentAdapters', 'read-only-preserve'],
 ] as const;
-
-export const agentProtocolOwnerFixtures = protocolFixtures.map(([family, owner]) => ({
+const capabilities = {
+    command: ['validated-envelope', 'descriptor-discovery', 'typed-outcome'],
+    query: ['bounded-query', 'evidence-backed-resolution'],
+    receipt: ['terminal-outcome', 'revision-correlation'],
+    provider: ['text-completion', 'tool-calling', 'streaming'],
+    'device-manifest': ['semantic-parameters', 'operation-discovery'],
+    'production-brief': ['intent-read', 'decision-update'],
+    transform: ['deterministic-lowering', 'bounded-expansion'],
+    'external-adapter': ['capability-discovery', 'revision-bound-invocation'],
+} as const;
+const operations = {
+    command: ['validate', 'execute', 'preview'],
+    query: ['execute', 'resolve'],
+    receipt: ['record', 'read'],
+    provider: ['complete', 'stream'],
+    'device-manifest': ['describe'],
+    'production-brief': ['read', 'update'],
+    transform: ['compile'],
+    'external-adapter': ['connect', 'invoke'],
+} as const;
+export const agentProtocolDescriptorGolden = protocolFixtures.map(([family, semanticOwner, previous]) => ({
     id: `sourdaw.agent.${family}`,
-    owner,
+    family,
+    semanticOwner,
+    schemaVersion: 1,
+    requiredCapabilities: capabilities[family],
+    supportedCapabilities: [],
+    requiredOperationVersions: Object.fromEntries(
+        operations[family].map((operation) => [`agent.${family}.${operation}`, [1]])
+    ),
+    supportedOperationVersions: {},
+    compatibility: {
+        minimumReadableVersion: 0,
+        previous,
+        current: 'read-write',
+        future: 'read-only-preserve',
+        unknownFields: 'preserve',
+    },
+    availability: {
+        state: 'governance-only',
+        detail: 'SA-00 publishes the contract only; a downstream owner must admit runtime behavior.',
+    },
 }));
-
-export const agentProtocolVersionFixtures = protocolFixtures.flatMap(([family, , previous]) => {
-    const id = `sourdaw.agent.${family}`;
-    return [
-        { id, version: 0, expected: previous },
-        { id, version: 1, expected: 'read-write' },
-        { id, version: 2, expected: 'read-only-preserve' },
-    ];
-});
-
 export const agentProjectHydrationFixture = {
     projectMeta: { name: 'Materialized Mix', createdAt: 1, updatedAt: 2, keyRoot: 0, scaleName: 'chromatic' },
     tracks: { tracks: [] },
     chordTrack: { enabled: false, events: {} },
     actionHistory: {
         entries: [{ id: 'x', label: 'x', actionKind: 'obsolete.x', source: 'ai', timestamp: 1, reverted: false }],
-    },
-    agentProtocolAudit: {
-        bytes: [17, 34, 51],
-        rows: [{ id: 'sourdaw.agent.runtime-action', schemaVersion: 0 }],
     },
 } as const;
