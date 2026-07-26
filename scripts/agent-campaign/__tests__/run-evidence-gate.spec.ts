@@ -27,7 +27,9 @@ async function setup(overrides: Partial<EvidenceRunnerDependencies> = {}) {
         },
         clock: { now: () => new Date('2026-07-26T21:00:00.000Z') },
         checkout: {
+            root: () => Promise.resolve(root),
             head: () => Promise.resolve(head),
+            baselineIsAncestor: () => Promise.resolve(true),
             dirty: () => Promise.resolve(false),
         },
         environment: { observe: () => Promise.resolve(structuredClone(policy.environment)) },
@@ -116,12 +118,31 @@ describe('runEvidenceGate', () => {
         execFileSync('git', ['add', '.'], { cwd: dependencies.root });
         execFileSync('git', ['commit', '-qm', 'fixture'], { cwd: dependencies.root });
         dependencies.checkout = createGitCheckout(dependencies.root);
+        const copiedPolicy = await runEvidenceGate(gate, dependencies);
+        dependencies.checkout.baselineIsAncestor = () => Promise.resolve(true);
         await mkdir(join(dependencies.root, 'evidence/agent-campaign/runs/old-head'), { recursive: true });
-        await writeFile(join(dependencies.root, 'evidence/agent-campaign/runs/old-head/AC-001.json'), '{}\n');
+        const retainedPath = join(dependencies.root, 'evidence/agent-campaign/runs/old-head/AC-001.json');
+        await writeFile(retainedPath, '{}\n');
         const retainedOutput = await runEvidenceGate(gate, dependencies);
-        await writeFile(join(dependencies.root, 'unrelated.txt'), 'dirty\n');
-        const unrelated = await runEvidenceGate(gate, dependencies);
+        execFileSync('git', ['add', retainedPath], { cwd: dependencies.root });
+        const trackedTamper = await runEvidenceGate(gate, dependencies);
 
-        expect([retainedOutput.code, unrelated.code]).toEqual(['executor-unimplemented', 'dirty-checkout']);
+        expect([copiedPolicy.code, retainedOutput.code, trackedTamper.code]).toEqual([
+            'invalid-checkout',
+            'executor-unimplemented',
+            'dirty-checkout',
+        ]);
+    });
+
+    it('should redact checkout adapter failures', async () => {
+        const privateError = () => Promise.reject(new Error('private checkout detail'));
+        const results = [];
+        for (const method of ['root', 'head', 'dirty'] as const) {
+            const failing = await setup();
+            failing.checkout = { ...failing.checkout, [method]: privateError };
+            results.push(await runEvidenceGate(gate, failing));
+        }
+        expect(results.map(({ code }) => code)).toEqual(['invalid-checkout', 'invalid-checkout', 'invalid-checkout']);
+        expect(results.flatMap(({ failures }) => failures)).not.toContain('private checkout detail');
     });
 });

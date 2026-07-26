@@ -1,6 +1,6 @@
 /// <reference types="node" />
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFile, realpath } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve } from 'node:path';
@@ -23,7 +23,9 @@ type RunnerFileSystem = {
 };
 
 type Checkout = {
+    root: () => Promise<string>;
     head: () => Promise<string>;
+    baselineIsAncestor: (baseline: string, head: string) => Promise<boolean>;
     dirty: (ignoredOutputRoot: string) => Promise<boolean>;
 };
 
@@ -65,6 +67,13 @@ function failure(
 
 export function createGitCheckout(root: string): Checkout {
     return {
+        root: () =>
+            Promise.resolve(
+                execFileSync('git', ['rev-parse', '--show-toplevel'], {
+                    cwd: root,
+                    encoding: 'utf8',
+                }).trim()
+            ),
         head: () =>
             Promise.resolve(
                 execFileSync('git', ['rev-parse', 'HEAD'], {
@@ -72,7 +81,24 @@ export function createGitCheckout(root: string): Checkout {
                     encoding: 'utf8',
                 }).trim()
             ),
+        baselineIsAncestor: (baseline, head) => {
+            const check = spawnSync('git', ['merge-base', '--is-ancestor', baseline, head], {
+                cwd: root,
+                stdio: 'ignore',
+            });
+            if (check.error) {
+                return Promise.reject(check.error);
+            }
+            return Promise.resolve(check.status === 0);
+        },
         dirty: (ignoredOutputRoot) => {
+            const tracked = execFileSync('git', ['status', '--porcelain', '--untracked-files=no'], {
+                cwd: root,
+                encoding: 'utf8',
+            });
+            if (tracked.length > 0) {
+                return Promise.resolve(true);
+            }
             const exclusion = `:(exclude)${ignoredOutputRoot}/**`;
             const output = execFileSync(
                 'git',
@@ -215,12 +241,22 @@ export async function runEvidenceGate(
         return loaded.failure;
     }
 
-    const head = await dependencies.checkout.head();
-    if (!COMMIT.test(head)) {
-        return failure('invalid-checkout', 2, ['HEAD must be a full commit SHA']);
-    }
-    if (await dependencies.checkout.dirty(outputRootRelativePath)) {
-        return failure('dirty-checkout', 2, ['checkout contains unrelated changes']);
+    let head: string;
+    try {
+        const checkoutRoot = await dependencies.fileSystem.realPath(await dependencies.checkout.root());
+        head = await dependencies.checkout.head();
+        const baselineMatches = await dependencies.checkout.baselineIsAncestor(
+            loaded.policy.identity.baselineCommit,
+            head
+        );
+        if (checkoutRoot !== loaded.root || !COMMIT.test(head) || !baselineMatches) {
+            return failure('invalid-checkout', 2, ['checkout identity could not be verified']);
+        }
+        if (await dependencies.checkout.dirty(outputRootRelativePath)) {
+            return failure('dirty-checkout', 2, ['checkout contains unrelated changes']);
+        }
+    } catch {
+        return failure('invalid-checkout', 2, ['checkout identity could not be verified']);
     }
 
     const target = validateTarget(mode, loaded.policy);
