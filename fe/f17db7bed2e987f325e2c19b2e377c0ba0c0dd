@@ -1,0 +1,40 @@
+src/modules/Transport/stores/tempoMapStore.ts
+  s_0d39f3a4a4357a::t_4a1104ff19e7dd 84-85
+  s_0d39f3a4a4357a::t_50eb6d3040f612 17-34
+src/modules/AudioEngine/useCases/offlineRender/__tests__/getAutoDetectedTailSeconds.spec.ts
+  s_0d39f3a4a4357a::t_eb9fe818637cfc 63
+  s_0d39f3a4a4357a::t_faeb01c1a82c76 94
+  s_0d39f3a4a4357a::t_5db47de72d332a 418-420,423-425
+  s_0d39f3a4a4357a::t_e0a32d6816a1b3 388-406
+src/modules/AudioEngine/useCases/offlineRender/getAutoDetectedTailSeconds.ts
+  s_0d39f3a4a4357a::t_71c1b246a78b61 81-85
+  s_0d39f3a4a4357a::t_65ca43e269916b 65
+  s_0d39f3a4a4357a::t_09f4069d3e99aa 43-57,60
+src/modules/Arrangement/useCases/freezeBounce/__tests__/frozenTailAnchor.spec.ts
+  s_0d39f3a4a4357a::t_02666df1dd33f1 3
+  s_0d39f3a4a4357a::t_b368048dcb30dd 45-65
+src/modules/AudioEngine/services/__tests__/routingCascadeTail.spec.ts
+  s_0d39f3a4a4357a::t_a7ea9b7867df33 1-138
+src/modules/AudioEngine/services/estimateRenderTailSeconds.ts
+  s_0d39f3a4a4357a::t_f1bab25c636c89 172-179
+  s_0d39f3a4a4357a::t_14d60e7a9d4681 67-77
+  s_0d39f3a4a4357a::t_6305d6f940b1d1 199-213,215-216,218-241,243-245,247-272,275-278,280-284
+src/modules/Transport/stores/index.ts
+  s_0d39f3a4a4357a::t_bf4d3c69830529 7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "fef17db7bed2e987f325e2c19b2e377c0ba0c0dd",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
