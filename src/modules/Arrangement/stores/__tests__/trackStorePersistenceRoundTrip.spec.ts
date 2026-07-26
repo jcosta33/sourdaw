@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { FREEZE_BAKE_VERSION } from '#/utils/frozenBufferTail';
+
 import { sanitizeTrackSnapshot } from '../trackStore';
 
 /**
@@ -294,6 +296,71 @@ describe('sanitizeTrackSnapshot — freeze state render settings round-trip', ()
 
         expect(result.tracks[0]?.freezeState?.status).toBe('frozen');
         expect(result.tracks[0]?.freezeState?.renderSettings).toBeUndefined();
+    });
+
+    /**
+     * `bakeVersion` is what tells staleness detection that a buffer was printed
+     * under the current freeze rules. If the projection drops it, a correctly
+     * frozen track reads as older than the current version on every reload and
+     * is marked `stale` — freeze silently undoes itself on project open, and the
+     * track falls back to the live device chain the freeze existed to replace.
+     */
+    it('preserves bakeVersion through the round-trip so a current freeze does not read as legacy', () => {
+        const result = sanitizeTrackSnapshot(
+            snapshotWithTrack({
+                ...validTrackBase,
+                freezeState: {
+                    status: 'frozen',
+                    renderSettings: {
+                        sampleRate: 48000,
+                        bitDepth: 32,
+                        channelCount: 2,
+                        tailLengthSeconds: 3.5,
+                        bakeVersion: FREEZE_BAKE_VERSION,
+                    },
+                },
+            })
+        );
+
+        expect(result.tracks[0]?.freezeState?.renderSettings?.bakeVersion).toBe(FREEZE_BAKE_VERSION);
+    });
+
+    it('leaves bakeVersion absent for a legacy buffer rather than inventing a version', () => {
+        const result = sanitizeTrackSnapshot(
+            snapshotWithTrack({
+                ...validTrackBase,
+                freezeState: {
+                    status: 'frozen',
+                    renderSettings: { sampleRate: 48000, bitDepth: 32, channelCount: 2, tailLengthSeconds: 3.5 },
+                },
+            })
+        );
+
+        const restored = result.tracks[0]?.freezeState?.renderSettings;
+        expect(restored?.tailLengthSeconds).toBe(3.5);
+        expect(restored?.bakeVersion).toBeUndefined();
+    });
+
+    it('drops a non-numeric bakeVersion but keeps the render settings it travelled with', () => {
+        const result = sanitizeTrackSnapshot(
+            snapshotWithTrack({
+                ...validTrackBase,
+                freezeState: {
+                    status: 'frozen',
+                    renderSettings: {
+                        sampleRate: 48000,
+                        bitDepth: 32,
+                        channelCount: 2,
+                        tailLengthSeconds: 3.5,
+                        bakeVersion: 'one',
+                    },
+                },
+            })
+        );
+
+        const restored = result.tracks[0]?.freezeState?.renderSettings;
+        expect(restored?.sampleRate).toBe(48000);
+        expect(restored?.bakeVersion).toBeUndefined();
     });
 });
 

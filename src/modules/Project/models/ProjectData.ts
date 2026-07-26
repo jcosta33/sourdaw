@@ -340,6 +340,13 @@ export type ProjectFreezeState = {
         bitDepth: number;
         channelCount: number;
         tailLengthSeconds: number;
+        /**
+         * Which set of freeze rules printed this buffer (`FREEZE_BAKE_VERSION`).
+         * Absent means it predates the field. Declared here so a future
+         * field-by-field load mapping cannot drop it with a green typecheck —
+         * losing it makes a current freeze read as legacy and unfreeze itself.
+         */
+        bakeVersion?: number;
     };
     renderProgress?: number;
     errorMessage?: string;

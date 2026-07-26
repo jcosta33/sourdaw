@@ -102,6 +102,8 @@ export type ProjectFreezeState = {
         bitDepth: number;
         channelCount: number;
         tailLengthSeconds: number;
+        /** Which set of freeze rules printed this buffer (`FREEZE_BAKE_VERSION`); absent means it predates the field. */
+        bakeVersion?: number;
     };
     renderProgress?: number;
     errorMessage?: string;

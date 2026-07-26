@@ -109,6 +109,37 @@ describe('initStalenessDetection', () => {
         unsub();
     });
 
+    it('marks a legacy buffer stale on the load projection, where the track has no predecessor', async () => {
+        // Project open is exactly this shape: detection starts against an empty
+        // store and the document then projects in, so *every* track is new. The
+        // version check needs nothing from a predecessor, and if it sits behind
+        // the `!prevTrack` guard it is skipped here — the user presses play and
+        // hears the legacy buffer with fader and pan applied twice, until some
+        // later unrelated store write happens to mark it.
+        const unsub = initStalenessDetection();
+
+        const legacyFrozenTrack = {
+            id: 't1',
+            freezeState: {
+                status: 'frozen',
+                sourceContentHash: 'mock-hash',
+                renderSettings: { ...CURRENT_RENDER_SETTINGS, bakeVersion: undefined },
+            },
+            clips: [],
+            devices: [],
+        };
+        trackStore.set({ tracks: [legacyFrozenTrack as any], selectedTrackId: null });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        const call = vi.mocked(updateTrack).mock.calls[0];
+        if (!call) {
+            throw new Error('expected the legacy buffer to be marked stale on the load projection');
+        }
+        expect(call[0]).toBe('t1');
+        expect(call[1](legacyFrozenTrack as any).freezeState.status).toBe('stale');
+        unsub();
+    });
+
     it('sets status to stale if frozen track content hash changes', async () => {
         // Initial state with a frozen track
         trackStore.set({

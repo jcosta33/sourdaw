@@ -478,6 +478,14 @@ function normalize_freeze_state(value: unknown): FreezeState | null {
                 channelCount: render_settings.channelCount,
                 tailLengthSeconds: render_settings.tailLengthSeconds,
             };
+            // Optional on purpose: a document written before the field existed
+            // must project without gaining a version it never had, because
+            // version 0 is exactly what "absent" is defined to mean. Dropping
+            // it instead would be worse than not migrating — a correctly frozen
+            // track would read as legacy on every reload and unfreeze itself.
+            if (is_finite_number(render_settings.bakeVersion)) {
+                freeze_state.renderSettings.bakeVersion = render_settings.bakeVersion;
+            }
         }
     }
 
