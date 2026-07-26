@@ -6,6 +6,10 @@
 /// IR management: auto-trim, exponential decay stretching, frequency-domain EQ.
 use std::f32::consts::TAU;
 
+// The `decay` contract is crate-wide: `decay` is a normalised coefficient, and
+// this engine needs it as a stretch factor for the loaded IR.
+use crate::decay_curve::{decay_to_ir_stretch, MAX_IR_STRETCH, MIN_IR_STRETCH};
+
 // ---------------------------------------------------------------------------
 // Radix-2 FFT
 // ---------------------------------------------------------------------------
@@ -460,7 +464,14 @@ impl ConvolutionEngine {
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
             "mix" => self.mix = value.clamp(0.0, 1.0),
-            "ir_stretch" => self.decay_stretch = value.clamp(0.25, 4.0),
+            "ir_stretch" => self.decay_stretch = value.clamp(MIN_IR_STRETCH, MAX_IR_STRETCH),
+            // Host contract: `decay` is the normalised 0..0.999 coefficient the
+            // `dutch-oven` descriptor declares, converted to a stretch factor by
+            // the same law the FDN uses for RT60. Handled here rather than at the
+            // call site so the hybrid engine's blind forwarding gets it too.
+            // Note this only bites at `load_ir` time, and nothing calls `load_ir`
+            // yet — see the caveat in `decay_curve`.
+            "decay" => self.decay_stretch = decay_to_ir_stretch(value),
             "ir_eq_1" => self.ir_eq[0] = value.clamp(-12.0, 12.0),
             "ir_eq_2" => self.ir_eq[1] = value.clamp(-12.0, 12.0),
             "ir_eq_3" => self.ir_eq[2] = value.clamp(-12.0, 12.0),
@@ -530,6 +541,7 @@ impl ConvolutionEngine {
     pub fn param_names(&self) -> Vec<&str> {
         vec![
             "mix",
+            "decay",
             "ir_stretch",
             "ir_eq_1",
             "ir_eq_2",

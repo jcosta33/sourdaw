@@ -57,6 +57,19 @@ export const ALGORITHM_MAP: Record<ProofChamberAlgorithm, number> = {
     spring: 3,
 };
 
+/**
+ * Whether the selected algorithm's engine converts the stored `decay`
+ * coefficient into an RT60 through `#/utils/reverbDecayLaw`.
+ *
+ * Only the FDN engines do. The plate reads `decay` as a per-sample tank
+ * feedback coefficient (`proof_chamber.rs`) and the spring as a delay-line
+ * feedback gain clamped at 0.95 (`spring.rs`) — neither produces the tail the
+ * RT60 law describes, so a readout must not print seconds for them.
+ */
+export function usesRt60DecayLaw(algorithm: ProofChamberAlgorithm): boolean {
+    return algorithm === 'fdn-8' || algorithm === 'fdn-16';
+}
+
 export const SPACE_PRESETS: Record<SpaceType, Partial<ProofChamberEngineState>> = {
     hall: { size: 0.75, decay: 0.7, damping: 0.3, diffusion: 0.75, modDepth: 0.3, predelay: 20 },
     room: { size: 0.35, decay: 0.4, damping: 0.5, diffusion: 0.6, modDepth: 0.2, predelay: 5 },
