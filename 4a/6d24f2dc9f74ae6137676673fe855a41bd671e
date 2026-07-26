@@ -1,0 +1,22 @@
+scripts/agent-campaign/__tests__/run-evidence-gate.spec.ts
+  s_bc88af7d3b054c::t_734e7cede1b601 38,291-324
+  s_bc88af7d3b054c::t_16fc2de505aa60 325
+scripts/agent-campaign/run-evidence-gate.ts
+  s_bc88af7d3b054c::t_a2e19afac40127 7,39,352,355,404-405,408-413,423-428,479
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "4a6d24f2dc9f74ae6137676673fe855a41bd671e",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
