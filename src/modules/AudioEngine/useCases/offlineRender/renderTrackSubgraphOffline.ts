@@ -1,4 +1,4 @@
-import { type Track } from '#/modules/Arrangement/stores';
+import { deriveVcaMultiplier, getVcaGroupsState, type Track } from '#/modules/Arrangement/stores';
 import { sidechainStore } from '#/modules/Routing/stores';
 
 import { connectOfflineSidechainRoutes } from '../../repositories/offlineRouting/connectOfflineSidechainRoutes';
@@ -29,7 +29,37 @@ const EMPTY_MIDI_STATE = {
     pitchBendByClipId: {},
 } as const;
 
-export type RenderTrackSubgraphOfflineInput = {
+export type ResolveContributorVcaMultiplierInput = {
+    track: Track;
+    isTarget: boolean;
+    groups: ReturnType<typeof getVcaGroupsState>;
+};
+
+/**
+ * The VCA group master to bake into one track of this render — and the one place
+ * the two halves of this subgraph are deliberately treated differently.
+ *
+ * **Upstream contributors get it.** Their audio is summed into the print exactly
+ * once and is never recomposed afterwards: the routing edge that got baked stops
+ * carrying live signal the moment the target is frozen, so whatever their group
+ * master was worth has to be in the samples or it is lost for good.
+ *
+ * **The target does not.** Its strip stays live after the freeze, and
+ * `applyVcaGains` / the gain-automation branch keep driving that same fader.
+ * Baking the multiplier in here would apply the group twice, once in the buffer
+ * and again on the fader the buffer is replayed through.
+ *
+ * Two rules in one loop, so it is stated here rather than left to be inferred.
+ */
+function resolveContributorVcaMultiplier({ track, isTarget, groups }: ResolveContributorVcaMultiplierInput): number {
+    if (isTarget) {
+        return 1;
+    }
+
+    return deriveVcaMultiplier({ vcaGroupId: track.vcaGroupId, groups });
+}
+
+type RenderTrackSubgraphOfflineInput = {
     /** Track whose strip output is captured into the returned buffer. */
     targetTrackId: string;
     /**
@@ -128,6 +158,10 @@ export async function renderTrackSubgraphOffline({
     }
     const offlineCtx = new OfflineAudioContext(2, frameCount, sampleRate);
 
+    // Snapshot once: every strip and every gain lane in this render must see the
+    // same group levels, however long the render takes.
+    const vcaGroups = getVcaGroupsState();
+
     const trackStripsById = new Map<string, OfflineTrackStrip>();
     const deviceEntriesByTrack = new Map<string, DeviceNodeEntry[]>();
     for (const track of renderTracks) {
@@ -139,19 +173,23 @@ export async function renderTrackSubgraphOffline({
                 includeInserts,
                 includeAutomation,
             }),
-            // No `vcaMultiplier` here, deliberately. The mixdown and stem
-            // paths bake a track's VCA group master into its fader because
-            // their output is the finished file. This path's output is replayed
-            // *through the track's own strip* — a frozen buffer is scheduled
-            // onto `trackGainNode`, which now carries that same multiplier — so
-            // composing it in here would apply the group gain twice.
-            //
             // Freeze and bounce produce deliverable audio, not a monitoring
             // snapshot — the same reason exportStems opts out. Baking mute in
             // would hand back a zeroed buffer, and bounce-to-new-track then
             // shows that silent waveform on an unmuted track. The renderer this
             // replaced never consulted `muted` at all.
-            { honorMuted: false }
+            //
+            // The VCA multiplier is per-track and asymmetric here; see
+            // `resolveContributorVcaMultiplier` for why the target is the one
+            // track that does not get it.
+            {
+                honorMuted: false,
+                vcaMultiplier: resolveContributorVcaMultiplier({
+                    track,
+                    isTarget: track.id === targetTrackId,
+                    groups: vcaGroups,
+                }),
+            }
         );
         trackStripsById.set(track.id, strip);
         deviceEntriesByTrack.set(track.id, strip.deviceEntries);
@@ -235,6 +273,13 @@ export async function renderTrackSubgraphOffline({
             deviceEntriesByTrack,
             regionStartBeat: startBeat,
             includeAutomation: track.id === targetTrackId ? includeAutomation : true,
+            // Same rule the strip was seeded with, so a gain lane on an upstream
+            // contributor rides its group instead of nullifying it.
+            vcaMultiplier: resolveContributorVcaMultiplier({
+                track,
+                isTarget: track.id === targetTrackId,
+                groups: vcaGroups,
+            }),
         });
     }
 

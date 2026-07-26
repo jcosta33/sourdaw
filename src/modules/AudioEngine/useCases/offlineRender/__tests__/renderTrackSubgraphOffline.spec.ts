@@ -1,6 +1,9 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 
-import { type Track } from '#/modules/Arrangement/stores';
+import { trackStore, vcaGroupStore, type Track } from '#/modules/Arrangement/stores';
+// Statically imported so the barrel load is paid once at module init rather
+// than inside a test's time budget.
+import { getEffectiveGain } from '#/modules/Arrangement/useCases';
 
 import { type DeviceNodeEntry } from '../../buildDeviceChain';
 import { renderTrackSubgraphOffline } from '../renderTrackSubgraphOffline';
@@ -220,10 +223,32 @@ const mocks = vi.hoisted(() => ({
     getAudioContext: vi.fn(() => ({ sampleRate: SAMPLE_RATE })),
     instrumentNoteOn: vi.fn(),
     instrumentNoteOff: vi.fn(),
+    /** Fader level the real strip builder computed, per track, in build order. */
+    builtFaderGains: new Map<string, number>(),
 }));
 
 vi.mock('../../buildDeviceChain', () => ({ buildDeviceChain: mocks.buildDeviceChain }));
 vi.mock('../../engineAccess/getAudioContext', () => ({ getAudioContext: mocks.getAudioContext }));
+
+// The real strip builder runs; this only records the level it computed so a
+// rendered track's fader can be read back and compared against live.
+vi.mock('../createOfflineTrackStrip', async (importOriginal) => {
+    const original = await importOriginal<typeof import('../createOfflineTrackStrip')>();
+    return {
+        createOfflineTrackStrip: async (
+            ...args: Parameters<typeof original.createOfflineTrackStrip>
+        ): ReturnType<typeof original.createOfflineTrackStrip> => {
+            const strip = await original.createOfflineTrackStrip(...args);
+            mocks.builtFaderGains.set(stripKeyForGain(args[1].gain), strip.faderNode.gain.value);
+            return strip;
+        },
+    };
+});
+
+/** Tracks in these cases carry distinct stored gains, so gain identifies them. */
+function stripKeyForGain(gain: number): string {
+    return `gain:${gain}`;
+}
 
 /**
  * Stands in for a worklet instrument's control surface: each note it is handed
@@ -441,6 +466,88 @@ describe('renderTrackSubgraphOffline', () => {
 
         expect(buffer).toBeNull();
         expect(mocks.buildDeviceChain).not.toHaveBeenCalled();
+    });
+
+    describe('VCA group levels in a freeze/bounce render', () => {
+        const GROUP_GAIN = 0.5;
+
+        function seedVcaSubgraph(): { target: Track; upstream: Track } {
+            // Upstream feeds the target, so its audio is summed into the print.
+            const upstream = TrackDummy.create({
+                id: 'up-1',
+                name: 'Upstream',
+                kind: 'audio',
+                gain: 1,
+                vcaGroupId: 'vca-1',
+                outputId: 'track-1',
+            });
+            const target = TrackDummy.create({
+                id: 'track-1',
+                kind: 'audio',
+                gain: 0.5,
+                vcaGroupId: 'vca-1',
+            });
+            trackStore.set({ tracks: [target, upstream], selectedTrackId: null, ghostClips: [] });
+            vcaGroupStore.set({
+                groups: [{ id: 'vca-1', name: 'Drums', gain: GROUP_GAIN, muted: false, trackIds: ['track-1', 'up-1'] }],
+            });
+            mocks.builtFaderGains.clear();
+            return { target, upstream };
+        }
+
+        it('bakes an upstream contributor at the level it plays, not at its raw fader', async () => {
+            const { target, upstream } = seedVcaSubgraph();
+
+            await renderTrackSubgraphOffline({
+                targetTrackId: target.id,
+                renderTracks: [target, upstream],
+                startBeat: 0,
+                endBeat: 4,
+            });
+
+            // The upstream track's contribution is summed into the buffer exactly
+            // once and is never recomposed afterwards — the routing edge that got
+            // baked stops carrying live signal the moment the target is frozen.
+            // So its group master has to be in the print.
+            const live = getEffectiveGain(upstream.id, upstream.gain);
+            const baked = mocks.builtFaderGains.get(stripKeyForGain(upstream.gain));
+
+            expect(live).toBeCloseTo(0.5, 10);
+            expect(baked).toBeCloseTo(live, 10);
+        });
+
+        it('leaves the target track uncomposed, because its own strip applies the group live', async () => {
+            const { target } = seedVcaSubgraph();
+
+            await renderTrackSubgraphOffline({
+                targetTrackId: target.id,
+                renderTracks: [target],
+                startBeat: 0,
+                endBeat: 4,
+            });
+
+            // The frozen buffer replays through this same strip, which the live
+            // VCA writer keeps driving. Composing the group master here would
+            // apply it twice.
+            expect(mocks.builtFaderGains.get(stripKeyForGain(target.gain))).toBeCloseTo(target.gain, 10);
+        });
+
+        it('leaves an upstream contributor outside every group at its own fader', async () => {
+            const upstream = TrackDummy.create({ id: 'up-1', kind: 'audio', gain: 0.6, outputId: 'track-1' });
+            const target = TrackDummy.create({ id: 'track-1', kind: 'audio', gain: 0.5 });
+            trackStore.set({ tracks: [target, upstream], selectedTrackId: null, ghostClips: [] });
+            vcaGroupStore.set({ groups: [] });
+            mocks.builtFaderGains.clear();
+
+            await renderTrackSubgraphOffline({
+                targetTrackId: target.id,
+                renderTracks: [target, upstream],
+                startBeat: 0,
+                endBeat: 4,
+            });
+
+            expect(mocks.builtFaderGains.get(stripKeyForGain(0.6))).toBeCloseTo(0.6, 10);
+        });
     });
 
     describe('render kernel', () => {
