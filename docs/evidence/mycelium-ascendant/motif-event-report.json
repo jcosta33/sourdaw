@@ -1,6 +1,6 @@
 {
-    "capturedAt": "2026-07-26T15:27:51.997Z",
-    "projectSha256": "1cea829dfa15f1e3ac94e611606cc3ef2ac3c4a2bccdfe1cc5707412565ffd9c",
+    "capturedAt": "2026-07-27T00:13:04.000Z",
+    "projectSha256": "a725e73cb5298edf0fe1c3759053e01af85ffbb2b25842d805cf36d7eba9b2f5",
     "normalization": "Absolute clip-relative MIDI events grouped by half-open section range [startBeat, endBeat); beat is section-relative.",
     "comparisons": [
         {
@@ -390,7 +390,7 @@
         {
             "section": "Drop II — Fractal Bloom",
             "trackName": "Psy Pluck",
-            "eventCount": 63,
+            "eventCount": 64,
             "intervalSignature": [-3, -4, 5],
             "events": [
                 {
@@ -454,7 +454,7 @@
         {
             "section": "Drop II — Fractal Bloom",
             "trackName": "Levain Answer",
-            "eventCount": 15,
+            "eventCount": 16,
             "intervalSignature": [-4, 5, 2],
             "events": [
                 {
@@ -486,7 +486,7 @@
         {
             "section": "Drop II — Fractal Bloom",
             "trackName": "Grand Boule Ritual",
-            "eventCount": 15,
+            "eventCount": 16,
             "intervalSignature": [3, 4, -5],
             "events": [
                 {

@@ -1,8 +1,8 @@
 {
-    "capturedAt": "2026-07-26T16:48:54+02:00",
-    "projectSha256": "1cea829dfa15f1e3ac94e611606cc3ef2ac3c4a2bccdfe1cc5707412565ffd9c",
+    "capturedAt": "2026-07-27T00:13:04.000Z",
+    "projectSha256": "a725e73cb5298edf0fe1c3759053e01af85ffbb2b25842d805cf36d7eba9b2f5",
     "normalization": "Absolute clip-relative MIDI events grouped by half-open section range [startBeat, endBeat), then by owning track name.",
-    "totalNotes": 3784,
+    "totalNotes": 3818,
     "sections": [
         {
             "name": "Sporefall",
@@ -91,7 +91,7 @@
         {
             "name": "Psilocybin Chapel",
             "beats": [288, 352],
-            "noteCount": 492,
+            "noteCount": 499,
             "tracks": {
                 "Clap": 8,
                 "Glitch Spirits": 68,
@@ -105,7 +105,8 @@
                 "Rim": 8,
                 "Rolling Colony": 18,
                 "Root Drone": 5,
-                "Shaker": 56
+                "Shaker": 56,
+                "Sub Mycelium": 7
             }
         },
         {
@@ -127,36 +128,36 @@
         {
             "name": "Drop II — Fractal Bloom",
             "beats": [416, 544],
-            "noteCount": 1277,
+            "noteCount": 1304,
             "tracks": {
-                "Acid Tendril": 31,
+                "Acid Tendril": 32,
                 "Clap": 8,
                 "Clave": 16,
-                "Closed HH": 31,
+                "Closed HH": 32,
                 "Counter Vision": 32,
                 "Cowbell": 16,
                 "Crash": 8,
-                "FM Spores": 63,
+                "FM Spores": 64,
                 "Glitch Spirits": 32,
-                "Grand Boule Ritual": 15,
-                "Harmonic Mist": 63,
+                "Grand Boule Ritual": 16,
+                "Harmonic Mist": 64,
                 "Hi Tom": 24,
-                "Kick": 124,
-                "Levain Answer": 15,
+                "Kick": 128,
+                "Levain Answer": 16,
                 "Levain Call": 16,
                 "Low Tom": 8,
                 "Main Vision": 32,
                 "Mid Tom": 16,
                 "Open HH": 16,
-                "Perc 1": 31,
+                "Perc 1": 32,
                 "Perc 2": 16,
-                "Psy Pluck": 63,
-                "Ride": 31,
+                "Psy Pluck": 64,
+                "Ride": 32,
                 "Rim": 16,
-                "Rolling Colony": 372,
+                "Rolling Colony": 384,
                 "Shaker": 56,
-                "Snare": 31,
-                "Sub Mycelium": 31,
+                "Snare": 32,
+                "Sub Mycelium": 32,
                 "Triplet Helix": 64
             }
         },

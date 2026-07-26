@@ -353,6 +353,9 @@ test('renders signal evidence for every required Mycelium automation audition wi
     expect(signals.get('False Floor')?.get('Pulse Engine')?.samplePeak).toBeLessThan(1e-10);
     expect(signals.get('False Floor')?.get('Rolling Colony')?.samplePeak).toBeLessThan(1e-10);
     expect(signals.get('False Floor')?.get('Sub Mycelium')?.samplePeak).toBeLessThan(1e-10);
+    for (const trackName of ['Triplet Helix', 'Main Vision', 'Levain Call', 'Glitch Spirits']) {
+        expect(signals.get('False Floor')?.get(trackName)?.samplePeak).toBeLessThan(1e-9);
+    }
     expect(signals.get('Dissolution')?.get('Root Drone')?.activeBlockRatio).toBeGreaterThan(0.9);
     expect(signals.get('Dissolution')?.get('Main Vision')?.samplePeak).toBeGreaterThan(0.1);
     expect(report.fullMixTransition.warnings).toEqual([]);

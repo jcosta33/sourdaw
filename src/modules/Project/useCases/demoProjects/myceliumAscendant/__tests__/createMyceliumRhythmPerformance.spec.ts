@@ -126,8 +126,7 @@ describe('createMyceliumRhythmPerformance', () => {
         const rolling = getNotes(projectData, ['Rolling Colony']);
         const dropKickBeats = [
             ...Array.from({ length: 96 }, (_, index) => 192 + index),
-            ...Array.from({ length: 64 }, (_, index) => 416 + index),
-            ...Array.from({ length: 60 }, (_, index) => 484 + index),
+            ...Array.from({ length: 128 }, (_, index) => 416 + index),
         ];
 
         expect([...inRange(kick, 192, 288), ...inRange(kick, 416, 544)].map((note) => note.absoluteBeat)).toEqual(
@@ -144,17 +143,20 @@ describe('createMyceliumRhythmPerformance', () => {
         expect(new Set(rolling.map((note) => note.duration)).size).toBeGreaterThan(2);
         expect(getNotes(projectData, BASS_NAMES).every((note) => note.absoluteBeat % 1 >= 0.25)).toBe(true);
         expect(PAD_NAMES.every((name) => inRange(getNotes(projectData, [name]), 416, 544).length > 0)).toBe(true);
-        expect(overlaps(getNotes(projectData, [...PAD_NAMES, ...BASS_NAMES]), 480, 484)).toEqual([]);
     });
 
     it('uses real 7/8 bars and section-cadenced tom, rim, shaker, and clap fills', () => {
         const projectData = createMyceliumAscendantBlueprint().projectData;
         const kickAndRolling = getNotes(projectData, ['Kick', 'Rolling Colony']);
         const shaker = inRange(getNotes(projectData, ['Shaker']), 288, 316);
+        const underlyingSub = inRange(getNotes(projectData, ['Sub Mycelium']), 288, 316);
         const fillNames = ['Low Tom', 'Mid Tom', 'Hi Tom', 'Rim', 'Shaker', 'Clap'];
         const fills = getNotes(projectData, fillNames);
 
         expect(inRange(kickAndRolling, 288, 316)).toEqual([]);
+        expect(underlyingSub.map((note) => note.absoluteBeat)).toEqual(
+            Array.from({ length: 7 }, (_, index) => 288.25 + index * 4)
+        );
         expect(shaker.map((note) => note.absoluteBeat)).toEqual(
             Array.from({ length: 56 }, (_, index) => 288 + index * 0.5)
         );
@@ -162,7 +164,7 @@ describe('createMyceliumRhythmPerformance', () => {
         for (const startBeat of [192, 224, 256]) {
             expect(inRange(fills, startBeat + 28, startBeat + 32).length).toBeGreaterThan(0);
         }
-        for (const startBeat of [416, 432, 448, 464, 484, 500, 516, 528]) {
+        for (const startBeat of [416, 432, 448, 464, 480, 496, 512, 528]) {
             expect(inRange(fills, Math.max(startBeat + 12, startBeat), startBeat + 16).length).toBeGreaterThan(0);
         }
         expect(new Set(fills.map((note) => note.trackName))).toEqual(new Set(fillNames));

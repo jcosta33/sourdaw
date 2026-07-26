@@ -4,7 +4,7 @@ import { createMyceliumId } from './createMyceliumId';
 
 import type { ProjectAutomationLane, ProjectAutomationPoint, ProjectTrack } from '../../../models/ProjectData';
 
-type Profile = 'drum' | 'bass' | 'voice' | 'atmosphere' | 'return' | 'master' | 'pan' | 'motion' | 'width';
+type Profile = 'drum' | 'bass' | 'voice' | 'atmosphere' | 'glitch' | 'return' | 'master' | 'pan' | 'motion' | 'width';
 type ParameterRange = readonly [min: number, max: number];
 type DeviceLaneSpec = readonly [trackName: string, deviceType: string, parameterIds: readonly string[]];
 
@@ -22,7 +22,8 @@ const GAIN_GROUPS: readonly [Profile, readonly string[]][] = [
             '|'
         ),
     ],
-    ['atmosphere', ['Root Drone', 'Granular Voices', 'Fractal Riser', 'Impact Field', 'Glitch Spirits']],
+    ['atmosphere', ['Root Drone', 'Granular Voices', 'Fractal Riser', 'Impact Field']],
+    ['glitch', ['Glitch Spirits']],
     ['return', ['Temple Chamber', 'Dub Tunnel', 'Mutation Return', 'Parallel Crush']],
     ['master', ['Master']],
 ];
@@ -143,6 +144,7 @@ const PROFILES: Readonly<Record<Profile, readonly (readonly [number, number])[]>
         [191.75, 0],
         [192, 0.92],
         [288, 0],
+        [316, 0],
         [352, 0.18],
         [415.5, 0.96],
         [415.75, 0],
@@ -182,6 +184,21 @@ const PROFILES: Readonly<Record<Profile, readonly (readonly [number, number])[]>
         [352, 0.58],
         [416, 0.38],
         [480, 0.24],
+        [484, 0.42],
+        [544, 0.68],
+        [568, 0.28],
+        [576, 0],
+    ],
+    glitch: [
+        [0, 0.5],
+        [64, 0.44],
+        [128, 0.38],
+        [192, 0.32],
+        [288, 0.76],
+        [352, 0.58],
+        [416, 0.38],
+        [479.75, 0.38],
+        [480, 0],
         [484, 0.42],
         [544, 0.68],
         [568, 0.28],

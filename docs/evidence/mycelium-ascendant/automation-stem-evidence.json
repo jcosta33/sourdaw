@@ -1,12 +1,12 @@
 {
-    "capturedAt": "2026-07-26T15:22:54.135Z",
-    "projectSha256": "1cea829dfa15f1e3ac94e611606cc3ef2ac3c4a2bccdfe1cc5707412565ffd9c",
+    "capturedAt": "2026-07-27T00:17:36.968Z",
+    "projectSha256": "a725e73cb5298edf0fe1c3759053e01af85ffbb2b25842d805cf36d7eba9b2f5",
     "sampleRate": 44100,
     "channelsPerStem": 2,
     "audibleRmsThreshold": 0.00001,
     "activeBlockRmsThreshold": 0.0001,
     "reloadBeforeRender": true,
-    "fullMixCapturedAt": "2026-07-26T16:03:12.637Z",
+    "fullMixCapturedAt": "2026-07-27T00:17:36.968Z",
     "fullMixTransition": {
         "renderBeats": [416, 488],
         "channels": 2,
@@ -14,20 +14,21 @@
         "falseFloor": {
             "beats": [480, 484],
             "durationSeconds": 1.6438321995464853,
-            "rms": 0.00004794944379776064,
-            "samplePeak": 0.0001221161801367998
+            "rms": 0.00004794946981322568,
+            "samplePeak": 0.00012050787336193025
         },
         "returnStrike": {
             "beats": [484, 488],
             "durationSeconds": 1.6438321995464853,
-            "rms": 0.15541807960240875,
-            "samplePeak": 0.7651261687278748
+            "rms": 0.1356242764117264,
+            "samplePeak": 0.7643019556999207
         }
     },
     "notes": [
         "Stem peaks are pre-master measurements and may exceed full scale; mastered stereo metrics are recorded separately in render-evidence.json.",
         "The isolated Playwright run reloaded the saved project, rendered every eligible stereo track/bus stem for each required window, and reported no renderer warnings, console errors, page errors, failed requests, external requests, or HTTP errors.",
-        "False Floor preserves continuous render history from beat 416 and analyzes only beats 480–484; numerical residue below 1e-10 is treated as silence, independently of the 0.00001 audible-stem threshold."
+        "False Floor preserves continuous render history from beat 416 and analyzes only beats 480–484; numerical residue below 1e-9 is treated as silence, independently of the 0.00001 audible-stem threshold.",
+        "Triplet Helix, Main Vision, Levain Call, and Glitch Spirits retain underlying Drop II MIDI during False Floor while their gain automation mutes their rendered stems."
     ],
     "windows": [
         {
@@ -48,21 +49,21 @@
                 },
                 {
                     "track": "Acid Tendril",
-                    "rms": 0.7156698449181774,
-                    "samplePeak": 5.517019271850586,
+                    "rms": 0.7052986778383372,
+                    "samplePeak": 5.504553318023682,
                     "activeBlockRatio": 0.9930434782608696
                 },
                 {
                     "track": "FM Spores",
-                    "rms": 0.3278736947951726,
-                    "samplePeak": 1.8685593605041504,
+                    "rms": 0.33829435090963,
+                    "samplePeak": 1.8818354606628418,
                     "activeBlockRatio": 0.9930434782608696
                 },
                 {
                     "track": "Impact Field",
-                    "rms": 0.27927421217311155,
-                    "samplePeak": 2.793858051300049,
-                    "activeBlockRatio": 0.9008695652173913
+                    "rms": 0.27081672163160064,
+                    "samplePeak": 2.7136406898498535,
+                    "activeBlockRatio": 0.8660869565217392
                 },
                 {
                     "track": "Psy Pluck",
@@ -72,9 +73,9 @@
                 },
                 {
                     "track": "Pulse Engine",
-                    "rms": 0.09287173503955243,
+                    "rms": 0.09404546125447603,
                     "samplePeak": 0.9008182287216187,
-                    "activeBlockRatio": 0.5095652173913043
+                    "activeBlockRatio": 0.5217391304347826
                 },
                 {
                     "track": "Fractal Riser",
@@ -96,7 +97,7 @@
             "timestamps": ["02:00.000", "02:26.667"],
             "durationSeconds": 26.666666666666668,
             "automationLaneCount": 114,
-            "automationPointCount": 227,
+            "automationPointCount": 230,
             "stemCount": 22,
             "audibleStemCount": 11,
             "signals": [
@@ -108,9 +109,9 @@
                 },
                 {
                     "track": "Rolling Colony",
-                    "rms": 0.17513516666152457,
-                    "samplePeak": 0.9063223600387573,
-                    "activeBlockRatio": 0.808695652173913
+                    "rms": 0.07212348848457545,
+                    "samplePeak": 0.5252733826637268,
+                    "activeBlockRatio": 0.40695652173913044
                 },
                 {
                     "track": "Granular Voices",
@@ -132,15 +133,15 @@
                 },
                 {
                     "track": "Harmonic Mist",
-                    "rms": 0.01886586676818842,
-                    "samplePeak": 0.448199987411499,
-                    "activeBlockRatio": 0.8365217391304348
+                    "rms": 0.01741737636604293,
+                    "samplePeak": 0.3879397213459015,
+                    "activeBlockRatio": 0.8034782608695652
                 },
                 {
                     "track": "Grand Boule Ritual",
-                    "rms": 0.0031505018982485914,
-                    "samplePeak": 0.5627223253250122,
-                    "activeBlockRatio": 0.09391304347826086
+                    "rms": 0.003029305948190391,
+                    "samplePeak": 0.5471769571304321,
+                    "activeBlockRatio": 0.09913043478260869
                 }
             ]
         },
@@ -168,9 +169,9 @@
                 },
                 {
                     "track": "Impact Field",
-                    "rms": 0.3382177842125192,
-                    "samplePeak": 4.41912841796875,
-                    "activeBlockRatio": 0.6164623467600701
+                    "rms": 0.32822308172890524,
+                    "samplePeak": 3.751401424407959,
+                    "activeBlockRatio": 0.5779334500875657
                 },
                 {
                     "track": "FM Spores",
@@ -211,7 +212,7 @@
             "timestamps": ["03:19.451", "03:21.095"],
             "durationSeconds": 1.6438321995464853,
             "automationLaneCount": 115,
-            "automationPointCount": 230,
+            "automationPointCount": 231,
             "stemCount": 22,
             "audibleStemCount": 1,
             "signals": [
@@ -224,14 +225,38 @@
                 { "track": "Pulse Engine", "rms": 0, "samplePeak": 0, "activeBlockRatio": 0 },
                 {
                     "track": "Rolling Colony",
-                    "rms": 6.706661285361156e-18,
-                    "samplePeak": 3.6170834711710587e-16,
+                    "rms": 0,
+                    "samplePeak": 0,
                     "activeBlockRatio": 0
                 },
                 {
                     "track": "Sub Mycelium",
-                    "rms": 2.750574411011161e-17,
-                    "samplePeak": 1.0288812860300236e-15,
+                    "rms": 2.8042088785190396e-17,
+                    "samplePeak": 1.0497052734009154e-15,
+                    "activeBlockRatio": 0
+                },
+                {
+                    "track": "Triplet Helix",
+                    "rms": 0,
+                    "samplePeak": 0,
+                    "activeBlockRatio": 0
+                },
+                {
+                    "track": "Main Vision",
+                    "rms": 1.9923060775835745e-14,
+                    "samplePeak": 1.0353048713468427e-12,
+                    "activeBlockRatio": 0
+                },
+                {
+                    "track": "Levain Call",
+                    "rms": 0,
+                    "samplePeak": 0,
+                    "activeBlockRatio": 0
+                },
+                {
+                    "track": "Glitch Spirits",
+                    "rms": 2.515641953710345e-12,
+                    "samplePeak": 1.776045144286087e-10,
                     "activeBlockRatio": 0
                 }
             ]
@@ -278,9 +303,9 @@
                 },
                 {
                     "track": "Harmonic Mist",
-                    "rms": 0.027229469968127407,
-                    "samplePeak": 0.5483348965644836,
-                    "activeBlockRatio": 0.2762237762237762
+                    "rms": 0.027886858419841704,
+                    "samplePeak": 0.5507600903511047,
+                    "activeBlockRatio": 0.27972027972027974
                 },
                 {
                     "track": "Pulse Engine",
@@ -290,9 +315,9 @@
                 },
                 {
                     "track": "Grand Boule Ritual",
-                    "rms": 0.012380496080239261,
-                    "samplePeak": 1.345935583114624,
-                    "activeBlockRatio": 0.1958041958041958
+                    "rms": 0.01211722112704961,
+                    "samplePeak": 1.325818657875061,
+                    "activeBlockRatio": 0.1993006993006993
                 },
                 {
                     "track": "Main Vision",
