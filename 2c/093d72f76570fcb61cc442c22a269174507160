@@ -1,0 +1,69 @@
+src/modules/Arrangement/stores/vcaGroupStore.ts
+  s_0d39f3a4a4357a::t_f1ce2a20b77901 37-65
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_0d39f3a4a4357a::t_67b2570eab6818 304-305
+  s_0d39f3a4a4357a::t_8166f8c9f7cf74 188-194
+  s_0d39f3a4a4357a::t_fb2cb40083bfca 215
+src/modules/AudioEngine/useCases/offlineRender/__tests__/offlineVcaGainParity.spec.ts
+  s_0d39f3a4a4357a::t_e3025673211d81 139
+  s_0d39f3a4a4357a::t_717f816710b642 1-83,95-138,140-175
+  s_0d39f3a4a4357a::t_1a583991c75186 84-94
+  s_0d39f3a4a4357a::t_0d56f7fa85edf9 176-178
+  s_ab76f58e7de714::t_ba7aa735090564 179-181
+src/modules/AudioEngine/useCases/__tests__/exportStems.spec.ts
+  s_0d39f3a4a4357a::t_74ac99717547b1 315
+  s_0d39f3a4a4357a::t_8044c13c72fa4f 824-825
+  s_0d39f3a4a4357a::t_b527f6d502c185 451-457,460
+  s_0d39f3a4a4357a::t_f95c4393b070fe 260-261,264,268
+src/modules/Arrangement/useCases/vca/__tests__/getEffectiveGain.spec.ts
+  s_0d39f3a4a4357a::t_ab1bb754ff25c9 7-11
+src/modules/Arrangement/useCases/vca/getEffectiveGain.ts
+  s_0d39f3a4a4357a::t_8fbb7d22c3e6e9 2,7-10
+src/modules/Arrangement/stores/index.ts
+  s_0d39f3a4a4357a::t_495a1acdf53aa2 53
+src/modules/AudioEngine/useCases/renderOffline.ts
+  s_0d39f3a4a4357a::t_b36ded3cc5c6f6 275-276
+  s_0d39f3a4a4357a::t_2816638317f5e7 118-120
+  s_0d39f3a4a4357a::t_b9dd43d89a8b3c 1
+  s_0d39f3a4a4357a::t_d34e938ef928aa 159-164
+  s_0d39f3a4a4357a::t_20f75cf9771437 277
+  s_0d39f3a4a4357a::t_c2e4cbd08e461f 158,165
+src/modules/AudioEngine/useCases/offlineRender/createOfflineTrackStrip.ts
+  s_0d39f3a4a4357a::t_4569d532110889 56-59
+  s_0d39f3a4a4357a::t_698159bf38929a 23-35
+  s_0d39f3a4a4357a::t_654ac852daf8af 44
+src/modules/AudioEngine/useCases/exportStems.ts
+  s_0d39f3a4a4357a::t_57af8ea1fb1ac3 266,340
+  s_0d39f3a4a4357a::t_79b93b51a2a177 162-164
+  s_0d39f3a4a4357a::t_6003fa5f4fbac6 294-297,299
+  s_0d39f3a4a4357a::t_9d1df76eec7a7a 260-265,267
+  s_0d39f3a4a4357a::t_4d5537d3c7a9b8 1-6
+  s_0d39f3a4a4357a::t_bf3e7616ed29d1 298,374
+src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts
+  s_0d39f3a4a4357a::t_8250436a0f5265 126-133
+  s_0d39f3a4a4357a::t_32605226cbb6a9 44-50
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "2c093d72f76570fcb61cc442c22a269174507160",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ab76f58e7de714": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ad4cc871aedd38bfd",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
