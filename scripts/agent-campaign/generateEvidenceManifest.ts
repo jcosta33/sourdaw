@@ -1,8 +1,10 @@
+import type { EvidenceRunIdentity } from './evidenceContract';
+
 type ContractModule = typeof import('./evidenceContract');
 
 const contractModulePath = './evidenceContract.ts';
-const { evidenceManifestSource } = (await import(contractModulePath)) as ContractModule;
+const { createEvidenceManifest } = (await import(contractModulePath)) as ContractModule;
 
-export function generateEvidenceManifest(): string {
-    return `${JSON.stringify(evidenceManifestSource)}\n`;
+export function generateEvidenceManifest(identity: EvidenceRunIdentity): string {
+    return `${JSON.stringify(createEvidenceManifest(identity))}\n`;
 }

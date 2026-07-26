@@ -17,39 +17,31 @@ const TASKS: Record<string, string> = {
     SA15: 'TASK-SA-15-hardening-and-retirement',
 };
 
-function table(source: string): string[][] {
-    return source
+const table = (source: string): string[][] =>
+    source
         .trim()
         .split('\n')
         .map((row) => row.trim().split('|'));
-}
-
-function task(code: string): string {
-    return TASKS[code] ?? '';
-}
+const task = (code: string): string => TASKS[code] ?? '';
 
 function numberedIds({ prefix, count }: { prefix: string; count: number }): string[] {
     return Array.from({ length: count }, (_, index) => `${prefix}-${String(index + 1).padStart(3, '0')}`);
 }
 
+const boundaryCommands: Record<string, string> = {
+    provider: 'pnpm test:run src/modules/AiRuntime/repositories/__tests__/providerSecretBoundary.spec.ts',
+    voice: 'pnpm test:run src/modules/AiRuntime/useCases/voiceInput/__tests__/localVoiceCommandBoundary.spec.ts',
+};
+const defaultDetector = 'pnpm deps:validate';
 function detector(code: string): string {
-    if (code.startsWith('suite:')) {
-        const suiteId = code.slice('suite:'.length);
+    const suiteId = code === 'media' ? 'deferred-media-boundary' : code.replace('suite:', '');
+    if (code === 'media' || code.startsWith('suite:')) {
         return `node --experimental-strip-types scripts/agent-campaign/run-evidence-gate.ts --suite ${suiteId} --manifest evidence/agent-campaign/manifest.json`;
     }
-    if (code === 'provider') {
-        return 'pnpm test:run src/modules/AiRuntime/repositories/__tests__/providerSecretBoundary.spec.ts';
-    }
-    if (code === 'voice') {
-        return 'pnpm test:run src/modules/AiRuntime/useCases/voiceInput/__tests__/localVoiceCommandBoundary.spec.ts';
-    }
-    if (code === 'media') {
-        return detector('suite:deferred-media-boundary');
-    }
-    return 'pnpm deps:validate';
+    return boundaryCommands[code] ?? defaultDetector;
 }
 
-export const gateIds = [...numberedIds({ prefix: 'AC', count: 63 }), ...numberedIds({ prefix: 'PG', count: 12 })];
+const gateIds = [...numberedIds({ prefix: 'AC', count: 63 }), ...numberedIds({ prefix: 'PG', count: 12 })];
 const capabilityRows = table(`
 webllm-browser|mandatory|SA04|browser|webgpu-worker|always|Standalone browser route|suite:webllm-real
 webllm-tauri|mandatory|SA04|tauri|webgpu-worker|always|Tauri local route|suite:webllm-real
@@ -73,28 +65,12 @@ reference-reconstruction|unadmitted|SA13|any|forbidden|neverInCampaignV1|Require
 render-listen-adjust|unadmitted|SA12|any|forbidden|neverInCampaignV1|No self-triggered revision|media
 sourdaw-agent-server|unadmitted|SA05|any|server|neverInCampaignV1|Serverless-first profile|provider
 `);
-export const capabilities = capabilityRows.map((row) => {
-    const [
-        id = '',
-        status = '',
-        taskCode = '',
-        platform = '',
-        transport = '',
-        predicate = '',
-        reason = '',
-        detectorCode = '',
-    ] = row;
-    return {
-        id,
-        status,
-        ownerTask: task(taskCode),
-        platform,
-        transport,
-        predicate,
-        reason,
-        detectingCommand: detector(detectorCode),
-    };
-});
+const capabilityFields = 'id,status,ownerTask,platform,transport,predicate,reason,detectingCommand'.split(',');
+const capabilities = capabilityRows.map((row) => ({
+    ...Object.fromEntries(capabilityFields.map((field, index) => [field, row[index] ?? ''])),
+    ownerTask: task(row[2] ?? ''),
+    detectingCommand: detector(row[7] ?? ''),
+}));
 
 const ownerRows = table(`
 SA07|AC-001
@@ -199,6 +175,13 @@ const resultFields =
     'resultId,gateOrSuiteId,fixtureIds,status,startedAt,endedAt,exitStatus,stdoutSha256,stderrSha256,assertionTotals,metricSamples,aggregates,rawSamplePaths,environmentMatch,capabilityDecision,reviewerDisposition'.split(
         ','
     );
+const fixtureFields =
+    'fixtureId,path,schemaVersion,sha256,labelVisibility,split,requirementIds,oracleType,classification';
+const scanPatterns = 'credentials,authorization-headers,prompts,project-names,lyrics,private-paths,raw-midi,raw-audio';
+const forbiddenEvidence =
+    'raw-credentials,authorization-headers,raw-prompts,project-names,lyrics,private-paths,raw-midi,raw-audio';
+const gateArgumentPrefix = ['--experimental-strip-types', 'scripts/agent-campaign/run-evidence-gate.ts', '--task'];
+const gateArgumentSuffix = ['--manifest', 'evidence/agent-campaign/manifest.json'];
 const gateEntries = gateIds.map((gateId) => {
     const owningTask = ownerByGate.get(gateId) ?? '';
     return {
@@ -206,16 +189,7 @@ const gateEntries = gateIds.map((gateId) => {
         owningTask,
         requirementId: gateId,
         command: 'node',
-        arguments: [
-            '--experimental-strip-types',
-            'scripts/agent-campaign/run-evidence-gate.ts',
-            '--task',
-            owningTask,
-            '--gate',
-            gateId,
-            '--manifest',
-            'evidence/agent-campaign/manifest.json',
-        ],
+        arguments: [...gateArgumentPrefix, owningTask, '--gate', gateId, ...gateArgumentSuffix],
         prerequisiteGateIds: [],
         requiredWhen: 'always',
         assertions: [`requirement ${gateId}`],
@@ -231,21 +205,18 @@ const resultEntries = [...gateIds, ...suiteIds].map((gateOrSuiteId) => ({
     gateOrSuiteId,
     fixtureIds: [],
     status: 'pending',
-    startedAt: null,
-    endedAt: null,
-    exitStatus: null,
-    stdoutSha256: null,
-    stderrSha256: null,
-    assertionTotals: null,
+    ...Object.fromEntries(
+        'startedAt,endedAt,exitStatus,stdoutSha256,stderrSha256,assertionTotals'.split(',').map((key) => [key, null])
+    ),
     metricSamples: [],
     aggregates: {},
     rawSamplePaths: [],
-    environmentMatch: null,
-    capabilityDecision: null,
-    reviewerDisposition: null,
+    ...Object.fromEntries(
+        'environmentMatch,capabilityDecision,reviewerDisposition'.split(',').map((key) => [key, null])
+    ),
 }));
 
-export const evidenceManifestSource = {
+const evidenceManifestTemplate = deepFreeze({
     schemaVersion: 1,
     campaignId: 'sourdaw-agent',
     identity: {
@@ -309,8 +280,20 @@ export const evidenceManifestSource = {
             confidence: 0.95,
             blockOrder: 'alternating-randomized',
         },
-        modelIds: [],
+        modelIds: ['Qwen3-4B-q4f16_1-MLC'],
         modelArtifacts: [],
+        webLlmArtifactClosure: {
+            status: 'pending',
+            ownerTask: task('SA04'),
+            modelId: 'Qwen3-4B-q4f16_1-MLC',
+            modelRepositoryUrl: 'https://huggingface.co/mlc-ai/Qwen3-4B-q4f16_1-MLC',
+            modelLibraryUrl:
+                'https://raw.githubusercontent.com/mlc-ai/binary-mlc-llm-libs/main/web-llm-models/v0_2_84/base/Qwen3-4B-q4f16_1_cs1k-webgpu.wasm',
+            requiredCategories: ['config', 'tokenizer', 'weights', 'wasm'],
+            missingDigestCategories: ['config', 'tokenizer', 'weights', 'wasm'],
+            authorityMismatch:
+                'Mutable upstream aliases have no repository-owned immutable revision and digest closure',
+        },
         providerApiVersions: {
             webllm: '0.2.84',
             'openai-responses': 'unadmitted',
@@ -322,10 +305,7 @@ export const evidenceManifestSource = {
     capabilities,
     inventories: {
         fixtures: {
-            requiredFields:
-                'fixtureId,path,schemaVersion,sha256,labelVisibility,split,requirementIds,oracleType,classification'.split(
-                    ','
-                ),
+            requiredFields: fixtureFields.split(','),
             entries: [],
         },
         gates: { requiredFields: gateFields, entries: gateEntries },
@@ -334,17 +314,39 @@ export const evidenceManifestSource = {
     suites,
     thresholds,
     redaction: {
-        patternsScanned:
-            'credentials,authorization-headers,prompts,project-names,lyrics,private-paths,raw-midi,raw-audio'.split(
-                ','
-            ),
+        patternsScanned: scanPatterns.split(','),
         retainedFields: 'ids,sizes,hashes,timings,statuses,metrics,redacted-origin'.split(','),
         retentionDurationDays: 30,
         deletionOwner: task('SA15'),
         absenceGateId: 'PG-009',
-        forbiddenOrdinaryEvidence:
-            'raw-credentials,authorization-headers,raw-prompts,project-names,lyrics,private-paths,raw-midi,raw-audio'.split(
-                ','
-            ),
+        forbiddenOrdinaryEvidence: forbiddenEvidence.split(','),
     },
-};
+});
+
+export type EvidenceRunIdentity = { observedCommit: string; observedDirty: boolean; capturedAt: string };
+
+function deepFreeze<Value>(value: Value): Value {
+    if (typeof value === 'object' && value !== null) {
+        for (const child of Object.values(value)) {
+            deepFreeze(child);
+        }
+        Object.freeze(value);
+    }
+    return value;
+}
+
+export function createEvidenceManifest(identity: EvidenceRunIdentity): typeof evidenceManifestTemplate {
+    if (!/^[a-f0-9]{40}$/.test(identity.observedCommit) || typeof identity.observedDirty !== 'boolean') {
+        throw new Error('observed commit and dirty state are invalid');
+    }
+    const parsedTimestamp = Date.parse(identity.capturedAt);
+    if (!Number.isFinite(parsedTimestamp) || new Date(parsedTimestamp).toISOString() !== identity.capturedAt) {
+        throw new Error('capturedAt must be a canonical ISO timestamp');
+    }
+    const manifest = structuredClone(evidenceManifestTemplate);
+    manifest.identity.integratedCommit = identity.observedCommit;
+    manifest.identity.dirty = identity.observedDirty;
+    manifest.identity.buildProvenance.prerequisiteCommit = identity.observedCommit;
+    manifest.identity.buildProvenance.capturedAt = identity.capturedAt;
+    return deepFreeze(manifest);
+}
