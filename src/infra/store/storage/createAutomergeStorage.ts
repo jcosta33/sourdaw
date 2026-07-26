@@ -856,13 +856,32 @@ export const createAutomergeStorage = <TData>(
          *   edit that nothing actually superseded — the store would keep
          *   showing a value the document never received.
          *
-         * Recomputing rather than assigning `cachedValue` is what keeps an
-         * in-flight local write visible: it already outranks the baseline, and
-         * a read-side correction must not outrank an authored one.
+         * The visible pending write needs correcting rather than outranking.
+         * `sanitize` guards data arriving from outside and is deliberately
+         * absent from the commit path, because a locally authored value is
+         * built by a use case from typed models and the store must not quietly
+         * rewrite what that use case asked to write. `hydrate`'s rebase branch
+         * breaks that premise: it blends freshly-hydrated document data into an
+         * in-flight write (`{ ...pendingValue, ...crdtData }`), so the pending
+         * is no longer purely authored and its inbound half never passed the
+         * guard. Racing it on revision order lets the rejected blend win the
+         * cache and then flush to the document unexamined.
+         *
+         * So the pending whose value the sanitizer just examined — the visible
+         * one, which is what `get()` returned — takes the verdict. That
+         * corrects an injection `hydrate` made; it does not author a write, and
+         * a pending nothing rebased still carries exactly what its use case
+         * set.
          */
         setProjected(value: TData | null): void {
             const visibleBefore = cachedValue;
             committedCacheValue = value;
+            const visiblePending = [...pendingWritesByOwner.values()].find(
+                (pending) => pending.revision === cachedRevision
+            );
+            if (visiblePending) {
+                visiblePending.value = value;
+            }
             recomputeCachedValue();
             if (!Object.is(visibleBefore, cachedValue)) {
                 notifyDeferredChange();

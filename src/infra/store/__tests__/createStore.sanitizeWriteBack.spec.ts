@@ -34,7 +34,12 @@ type LaneState = { lanes: LaneRow[] };
 type TestDoc = { [key: string]: unknown };
 type TestPort = NonNullable<Parameters<typeof configureAutomergeStoragePort>[0]>;
 
-function createTestPort(initialDoc: TestDoc): { doc: TestDoc; port: TestPort } {
+function createTestPort(initialDoc: TestDoc): {
+    doc: TestDoc;
+    port: TestPort;
+    /** Model a remote change landing: the slot moved without this replica writing it. */
+    bumpHeads: () => void;
+} {
     const doc = initialDoc;
     let headsCounter = 0;
     const port: TestPort = {
@@ -47,7 +52,13 @@ function createTestPort(initialDoc: TestDoc): { doc: TestDoc; port: TestPort } {
             headsCounter += 1;
         },
     };
-    return { doc, port };
+    return {
+        doc,
+        port,
+        bumpHeads: () => {
+            headsCounter += 1;
+        },
+    };
 }
 
 function isLaneRow(value: unknown): value is LaneRow {
@@ -204,5 +215,56 @@ describe('createStore sanitization against a shared document', () => {
         expect(store.value).toEqual({ lanes: [{ id: 'lane-2', value: 2, legacy: 'kept' }] });
         // What the store shows must be what the document received.
         expect(doc.lanes).toEqual({ lanes: [{ id: 'lane-2', value: 2, legacy: 'kept' }] });
+    });
+
+    it('does not let a pending write the hydrate just rebased outrank the sanitizer', () => {
+        // `toCrdt` strips a field on its way to the document — the documented
+        // reason the option exists — so the slot legitimately carries fewer
+        // keys than the store's own value. To stop a hydrate discarding the
+        // stripped fields, the rebase re-supplies them from the pending write:
+        // `{ ...pendingValue, ...crdtData }`. That blend is neither what the
+        // user authored nor what the document holds, and it can be a
+        // combination that is invalid while both halves are valid alone.
+        //
+        // The sanitizer sees the blend and rejects it. Its verdict then has to
+        // survive: the pending write is a real armed rAF write, and `sanitize`
+        // is never consulted on the commit path, so a rejected blend that
+        // stays in the pending reaches the shared document unexamined.
+        type PunchState = { punchInBeat: number; punchOutBeat: number };
+
+        const stripPunchIn = (value: PunchState): PunchState => {
+            const { punchInBeat: _ephemeral, ...persisted } = value;
+            return persisted as PunchState;
+        };
+        const sanitizePunch = (value: unknown): PunchState => {
+            const record = value as Partial<PunchState> | null;
+            const punchInBeat = typeof record?.punchInBeat === 'number' ? record.punchInBeat : 0;
+            const punchOutBeat = typeof record?.punchOutBeat === 'number' ? record.punchOutBeat : 1;
+            if (punchOutBeat <= punchInBeat) {
+                return { punchInBeat: 0, punchOutBeat: 1 };
+            }
+            return { punchInBeat, punchOutBeat };
+        };
+
+        const { doc, port, bumpHeads } = createTestPort({ punch: { punchOutBeat: 4 } });
+        configureAutomergeStoragePort(port);
+        const store = createStore<PunchState>({
+            storage: createAutomergeStorage<PunchState>('root', 'punch', { toCrdt: stripPunchIn }),
+            sanitize: sanitizePunch,
+        });
+
+        // Authored locally, still in flight. Valid: 8 < 10.
+        store.set({ punchInBeat: 8, punchOutBeat: 10 });
+        // A remote change lands. Valid: the absent punch-in reads as 0 < 5.
+        doc.punch = { punchOutBeat: 5 };
+        bumpHeads();
+        // The rebase blends them into { punchInBeat: 8, punchOutBeat: 5 } — a
+        // punch region that ends before it starts.
+        store.hydrate();
+        flushAutomergeStorageWrites();
+
+        expect(store.value).toEqual({ punchInBeat: 0, punchOutBeat: 1 });
+        // The armed write must not carry the combination the sanitizer refused.
+        expect(doc.punch).toEqual({ punchOutBeat: 1 });
     });
 });
