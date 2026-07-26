@@ -1,0 +1,32 @@
+src/app/__tests__/fixtures/agentProtocols/agentProtocolVersionFixtures.ts
+  s_bc88af7d3b054c::t_e4d68ab2e5b22f 12-20,22-31,33-35,37-38,40-52
+  s_bc88af7d3b054c::t_703c9e9895a130 11,21,36,39
+src/app/__tests__/agentProtocolVersioning.spec.ts
+  s_bc88af7d3b054c::t_808d86945b76ca 5
+  s_bc88af7d3b054c::t_b190f708a88a33 12,52-53,62-65,68,80-84,88-89
+  s_bc88af7d3b054c::t_c9610dc8e1b440 86-87
+  s_bc88af7d3b054c::t_703c9e9895a130 72-76,85
+src/app/agentProtocols/agentProtocolGovernance.ts
+  s_bc88af7d3b054c::t_e386938320d23f 135
+  s_bc88af7d3b054c::t_c13ddfab8281d3 22-25,51,53,60-63
+  s_bc88af7d3b054c::t_703c9e9895a130 111
+src/modules/CrdtDocument/useCases/__tests__/loadCrdtProject.sanitization.integration.spec.ts
+  s_bc88af7d3b054c::t_90a38a934fdfc7 30,53
+  s_bc88af7d3b054c::t_06403b9352f2f7 28,50,77,125,137,152,181
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "ce01142dc397574337494944e6403ee930532a01",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
