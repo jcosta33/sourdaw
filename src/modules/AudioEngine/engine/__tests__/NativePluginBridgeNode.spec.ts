@@ -76,7 +76,7 @@ describe('createNativePluginBridgeNode', () => {
     });
 
     it('should initialize the worklet with the engine plugin id', async () => {
-        await createNativePluginBridgeNode(createAudioContext(), 'instance-1', 17);
+        await createNativePluginBridgeNode(createAudioContext(), 'instance-1');
 
         const node = getCreatedNode();
         expect(node.name).toBe('native-plugin-bridge-processor');
@@ -87,19 +87,19 @@ describe('createNativePluginBridgeNode', () => {
             channelCount: 2,
             channelCountMode: 'explicit',
         });
-        expect(node.port.postMessage).toHaveBeenCalledWith({ type: 'init', enginePluginId: 17 });
+        expect(node.port.postMessage).toHaveBeenCalledWith({ type: 'init' });
     });
 
     it('should delegate audio blocks through the Plugin use-case and post processed bytes', async () => {
         const processedBytes = new Uint8Array([9, 8, 7]);
         vi.mocked(processAudioIPC).mockResolvedValue(processedBytes);
-        await createNativePluginBridgeNode(createAudioContext(), 'instance-1', 17);
+        await createNativePluginBridgeNode(createAudioContext(), 'instance-1');
         const node = getCreatedNode();
 
         await dispatchProcessMessage(node, createAudioBuffer([1, 2, 3]));
 
         const input = vi.mocked(processAudioIPC).mock.calls[0]?.[0];
-        expect(input?.enginePluginId).toBe(17);
+        expect(input?.instanceId).toBe('instance-1');
         expect(Array.from(input?.audioBytes ?? [])).toEqual([1, 2, 3]);
         expect(node.port.postMessage).toHaveBeenCalledWith({ type: 'processed', audio: processedBytes.buffer }, [
             processedBytes.buffer,
@@ -109,7 +109,7 @@ describe('createNativePluginBridgeNode', () => {
     it('should post exactly the processed byte view returned by the Plugin use-case', async () => {
         const backing = new Uint8Array([9, 9, 4, 5, 6]);
         vi.mocked(processAudioIPC).mockResolvedValue(backing.subarray(2));
-        await createNativePluginBridgeNode(createAudioContext(), 'instance-1', 17);
+        await createNativePluginBridgeNode(createAudioContext(), 'instance-1');
         const node = getCreatedNode();
 
         await dispatchProcessMessage(node, createAudioBuffer([1, 2, 3]));
@@ -120,13 +120,13 @@ describe('createNativePluginBridgeNode', () => {
 
     it('should not post processed audio when the Plugin use-case returns no bytes', async () => {
         vi.mocked(processAudioIPC).mockResolvedValue(null);
-        await createNativePluginBridgeNode(createAudioContext(), 'instance-1', 17);
+        await createNativePluginBridgeNode(createAudioContext(), 'instance-1');
         const node = getCreatedNode();
 
         await dispatchProcessMessage(node, createAudioBuffer([1, 2, 3]));
 
         expect(node.port.postMessage).toHaveBeenCalledTimes(1);
-        expect(node.port.postMessage).toHaveBeenCalledWith({ type: 'init', enginePluginId: 17 });
+        expect(node.port.postMessage).toHaveBeenCalledWith({ type: 'init' });
     });
 
     it('should keep one audio block in flight and drop blocks while pending', async () => {
@@ -136,7 +136,7 @@ describe('createNativePluginBridgeNode', () => {
                 processing.resolve = resolve;
             })
         );
-        await createNativePluginBridgeNode(createAudioContext(), 'instance-1', 17);
+        await createNativePluginBridgeNode(createAudioContext(), 'instance-1');
         const node = getCreatedNode();
 
         const firstProcess = dispatchProcessMessage(node, createAudioBuffer([1]));
@@ -160,7 +160,7 @@ describe('createNativePluginBridgeNode', () => {
         vi.mocked(processAudioIPC)
             .mockRejectedValueOnce(new Error('native failed'))
             .mockResolvedValueOnce(new Uint8Array([5]));
-        await createNativePluginBridgeNode(createAudioContext(), 'instance-1', 17);
+        await createNativePluginBridgeNode(createAudioContext(), 'instance-1');
         const node = getCreatedNode();
 
         await dispatchProcessMessage(node, createAudioBuffer([1]));
@@ -171,7 +171,7 @@ describe('createNativePluginBridgeNode', () => {
 
     it('should delegate parameter updates through the Plugin use-case and swallow failures', async () => {
         vi.mocked(setPluginParameter).mockRejectedValue(new Error('native failed'));
-        const result = await createNativePluginBridgeNode(createAudioContext(), 'instance-1', 17);
+        const result = await createNativePluginBridgeNode(createAudioContext(), 'instance-1');
 
         result.setParam(9, 0.25);
         await Promise.resolve();

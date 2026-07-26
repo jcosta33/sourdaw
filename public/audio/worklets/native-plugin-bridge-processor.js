@@ -14,11 +14,11 @@ class NativePluginBridgeProcessor extends AudioWorkletProcessor {
         this.ready = false;
         this.lastOutputL = null;
         this.lastOutputR = null;
-        this.enginePluginId = 0;
 
         this.port.onmessage = (event) => {
             if (event.data.type === 'init') {
-                this.enginePluginId = event.data.enginePluginId;
+                // No plugin identity here: the main-thread relay resolves the
+                // instance. The worklet only needs to know it may start.
                 this.ready = true;
             } else if (event.data.type === 'processed') {
                 // Decode raw bytes back to f32 samples

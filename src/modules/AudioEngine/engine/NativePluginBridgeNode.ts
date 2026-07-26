@@ -23,8 +23,7 @@ export type NativePluginBridgeResult = {
 // eslint-disable-next-line @typescript-eslint/require-await -- async API contract; callers use .then(); will await node initialization once native bridge handshake is implemented
 export async function createNativePluginBridgeNode(
     ctx: AudioContext,
-    instanceId: string,
-    enginePluginId: number
+    instanceId: string
 ): Promise<NativePluginBridgeResult> {
     const node = new AudioWorkletNode(ctx, 'native-plugin-bridge-processor', {
         numberOfInputs: 1,
@@ -34,8 +33,9 @@ export async function createNativePluginBridgeNode(
         channelCountMode: 'explicit',
     });
 
-    // Initialize the worklet with the engine plugin ID
-    node.port.postMessage({ type: 'init', enginePluginId });
+    // The worklet needs no plugin identity: the relay resolves the instance on
+    // the main thread. Init only tells the processor it may start relaying.
+    node.port.postMessage({ type: 'init' });
 
     // Backpressure: only one IPC round-trip in flight at a time.
     let pendingBlock = false;
@@ -61,7 +61,7 @@ export async function createNativePluginBridgeNode(
 
         try {
             const resultBytes = await processAudioIPC({
-                enginePluginId,
+                instanceId,
                 audioBytes: new Uint8Array(audioBuffer),
             });
 

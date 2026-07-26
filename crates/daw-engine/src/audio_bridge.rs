@@ -4,23 +4,39 @@
 //! Uses a lock-free SPSC ring buffer (rtrb) sized for several blocks,
 //! allowing the worklet and Rust thread to run at slightly different rates
 //! without dropping audio.
+//!
+//! The frame count travels with the block. A block carries a fixed-capacity
+//! buffer but records how many frames are actually live, so a short block is
+//! never processed as a full one: the earlier design clamped on push and then
+//! unconditionally processed a full quantum, feeding the plugin whatever stale
+//! samples the reused block still held past the live frames.
 
 use rtrb::{Consumer, Producer, RingBuffer};
 
-const BLOCK_SIZE: usize = 128;
-const RING_CAPACITY: usize = 8; // 8 blocks ≈ 21ms at 48kHz
+/// Largest render quantum the bridge accepts in a single block.
+///
+/// Web Audio's quantum is 128 frames today, but the spec permits a larger one.
+/// The capacity covers 128/256/512 so a quantum change degrades to a rejected
+/// push (visible) rather than silently truncated audio.
+pub const MAX_BLOCK_FRAMES: usize = 512;
 
-/// A stereo audio block (128 samples per channel).
+const RING_CAPACITY: usize = 8; // 8 blocks ≈ 21ms at 48kHz with a 128-frame quantum
+
+/// A stereo audio block. `frames` is authoritative; the arrays are capacity,
+/// not length, and samples past `frames` are undefined carry-over.
 pub struct AudioBlock {
-    pub left: [f32; BLOCK_SIZE],
-    pub right: [f32; BLOCK_SIZE],
+    pub left: [f32; MAX_BLOCK_FRAMES],
+    pub right: [f32; MAX_BLOCK_FRAMES],
+    /// Live frames in this block. Never exceeds `MAX_BLOCK_FRAMES`.
+    pub frames: usize,
 }
 
 impl Default for AudioBlock {
     fn default() -> Self {
         Self {
-            left: [0.0; BLOCK_SIZE],
-            right: [0.0; BLOCK_SIZE],
+            left: [0.0; MAX_BLOCK_FRAMES],
+            right: [0.0; MAX_BLOCK_FRAMES],
+            frames: 0,
         }
     }
 }
@@ -65,6 +81,10 @@ pub fn create_audio_bridge(plugin_id: usize) -> (PluginAudioBridge, PluginAudioB
 
 impl PluginAudioBridge {
     /// Try to read an input block and process it through the plugin.
+    ///
+    /// The closure receives exactly the live frames — never the full capacity —
+    /// so a partial block cannot leak stale samples into the plugin.
+    ///
     /// Returns true if a block was processed.
     #[inline]
     pub fn try_process<F: FnMut(&mut [f32], &mut [f32], usize)>(
@@ -72,7 +92,12 @@ impl PluginAudioBridge {
         mut process_fn: F,
     ) -> bool {
         if let Ok(mut block) = self.input_rx.pop() {
-            process_fn(&mut block.left, &mut block.right, BLOCK_SIZE);
+            let frames = block.frames.min(MAX_BLOCK_FRAMES);
+            process_fn(
+                &mut block.left[..frames],
+                &mut block.right[..frames],
+                frames,
+            );
             let _ = self.output_tx.push(block); // Drop if output ring is full
             true
         } else {
@@ -83,16 +108,99 @@ impl PluginAudioBridge {
 
 impl PluginAudioBridgeHandle {
     /// Push an input block from the worklet (via main thread).
+    ///
+    /// Returns false when the ring is full, when the channels disagree on
+    /// length, or when the block is larger than `MAX_BLOCK_FRAMES` — the
+    /// oversized case is rejected rather than truncated so a render-quantum
+    /// change surfaces instead of quietly halving the audio.
     pub fn push_input(&mut self, left: &[f32], right: &[f32]) -> bool {
+        if left.len() != right.len() || left.len() > MAX_BLOCK_FRAMES {
+            return false;
+        }
+        let frames = left.len();
         let mut block = AudioBlock::default();
-        let len = left.len().min(BLOCK_SIZE);
-        block.left[..len].copy_from_slice(&left[..len]);
-        block.right[..len].copy_from_slice(&right[..len]);
+        block.left[..frames].copy_from_slice(left);
+        block.right[..frames].copy_from_slice(right);
+        block.frames = frames;
         self.input_tx.push(block).is_ok()
     }
 
     /// Pop a processed output block for the worklet (via main thread).
     pub fn pop_output(&mut self) -> Option<AudioBlock> {
         self.output_rx.pop().ok()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_short_block_is_processed_at_its_own_length_not_the_full_capacity() {
+        let (mut bridge, mut handle) = create_audio_bridge(1000);
+        assert!(handle.push_input(&[0.25; 64], &[0.5; 64]));
+
+        let mut observed_frames = 0;
+        let mut observed_left_len = 0;
+        bridge.try_process(|left, right, frames| {
+            observed_frames = frames;
+            observed_left_len = left.len();
+            assert_eq!(right.len(), 64);
+        });
+
+        assert_eq!(observed_frames, 64);
+        assert_eq!(observed_left_len, 64);
+    }
+
+    #[test]
+    fn a_short_block_never_exposes_stale_samples_past_its_live_frames() {
+        let (mut bridge, mut handle) = create_audio_bridge(1000);
+
+        // Run a full-length block through first, then follow it with a short
+        // one. A design that processed the full capacity would hand the plugin
+        // the previous block's tail; the closure must only ever see live frames.
+        assert!(handle.push_input(&[1.0; 128], &[1.0; 128]));
+        bridge.try_process(|_, _, _| {});
+        let _ = handle.pop_output();
+
+        assert!(handle.push_input(&[0.0; 8], &[0.0; 8]));
+        let mut tail_leaked = false;
+        bridge.try_process(|left, _right, frames| {
+            assert_eq!(frames, 8);
+            tail_leaked = left.iter().any(|sample| *sample != 0.0);
+        });
+
+        assert!(!tail_leaked, "stale tail samples reached the plugin");
+    }
+
+    #[test]
+    fn the_processed_block_reports_the_frame_count_it_was_pushed_with() {
+        let (mut bridge, mut handle) = create_audio_bridge(1000);
+        assert!(handle.push_input(&[0.75; 96], &[0.75; 96]));
+
+        bridge.try_process(|left, right, _| {
+            for sample in left.iter_mut().chain(right.iter_mut()) {
+                *sample *= 2.0;
+            }
+        });
+
+        let block = handle.pop_output().expect("a processed block");
+        assert_eq!(block.frames, 96);
+        assert_eq!(block.left[95], 1.5);
+    }
+
+    #[test]
+    fn an_oversized_block_is_rejected_rather_than_truncated() {
+        let (_bridge, mut handle) = create_audio_bridge(1000);
+
+        let oversized = vec![0.5; MAX_BLOCK_FRAMES + 1];
+        assert!(!handle.push_input(&oversized, &oversized));
+    }
+
+    #[test]
+    fn channels_of_differing_length_are_rejected() {
+        let (_bridge, mut handle) = create_audio_bridge(1000);
+
+        assert!(!handle.push_input(&[0.5; 64], &[0.5; 32]));
     }
 }
