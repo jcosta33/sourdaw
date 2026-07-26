@@ -1,0 +1,38 @@
+scripts/agent-campaign/generateEvidenceManifest.ts
+  s_bc88af7d3b054c::t_435e9687672109 1-4
+  s_bc88af7d3b054c::t_5ae408de9b965b 5-7
+  s_bc88af7d3b054c::t_bbe29fe254876d 8
+scripts/agent-campaign/evidenceContract.ts
+  s_bc88af7d3b054c::t_3bb67c4351a609 152,185-228
+  s_bc88af7d3b054c::t_dcd43d8a96cc40 31-34,51-52,81,104-106,139,229-267,269-312,315-318,323,325,330-331
+  s_bc88af7d3b054c::t_1f6a7e757f06f1 1-30,35-50,53-80,82-103,107-138,140-151,153-184,313-314,319-322,324,326-329
+  s_bc88af7d3b054c::t_bfef4cfff15d91 268
+  s_bc88af7d3b054c::t_ca6da7c03e184d 332-350
+src/app/__tests__/agentCampaignBaseline.spec.ts
+  s_bc88af7d3b054c::t_c008754df251bb 6,12-13,15-18,21,38-39,41-42,44-57,60-61
+  s_bc88af7d3b054c::t_09292a91dd243d 8
+  s_bc88af7d3b054c::t_abf8b4bf518858 22-33
+  s_bc88af7d3b054c::t_0854c17616e465 34-37
+evidence/agent-campaign/manifest.json
+  s_bc88af7d3b054c::t_7150addaa5ac26 1
+scripts/agent-campaign/evidenceManifest.ts
+  s_bc88af7d3b054c::t_069c1f4d3344b7 17
+  s_bc88af7d3b054c::t_435e9687672109 1,3-4
+  s_bc88af7d3b054c::t_ce6ee1be4a17fb 6,8,10,14-15,18,20-21,23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "c82bb465beafee6c76b0d6041d761f102ad680d6",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
