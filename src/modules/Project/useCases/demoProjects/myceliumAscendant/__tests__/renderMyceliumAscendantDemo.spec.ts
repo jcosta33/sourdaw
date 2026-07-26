@@ -1,55 +1,117 @@
 import { createHash } from 'node:crypto';
+import { readdirSync, readFileSync } from 'node:fs';
+import { extname, join, relative } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
 import { createMyceliumAscendantBlueprint } from '../createMyceliumAscendantBlueprint';
 
-const RENDER_EVIDENCE = {
-    capturedAt: '2026-07-26T12:41:51.828Z',
-    sourceBaseCommit: '192901c20e96e517f66bdedef979fc90bd39e14e',
-    projectSha256: '1cea829dfa15f1e3ac94e611606cc3ef2ac3c4a2bccdfe1cc5707412565ffd9c',
-    durationBeats: 576,
-    tailSeconds: 2,
-    durationSeconds: 240.9941723356009,
-    sampleRate: 44_100,
-    channels: 2,
-    integratedLufs: -9.94650357800738,
-    truePeakDbTp: -2.2119193820612066,
-    samplePeak: 0.7736612558364868,
-    clippedSampleCount: 0,
-    dcOffsets: [0.0017770500556386186, 0.0017781638059884493],
-    lowMonoCompatibilityDb: -0.0046787452509035096,
-    lowCorrelation: 0.9978605973465653,
-    warningCount: 0,
-    consoleErrorCount: 0,
-    failedRequestCount: 0,
-} as const;
+const RENDER_EVIDENCE_PATH = join(process.cwd(), 'docs/evidence/mycelium-ascendant/render-evidence.json');
+const RENDER_SOURCE_ROOTS = [
+    'public/wasm',
+    'src/infra',
+    'src/modules/Arrangement',
+    'src/modules/AudioEngine',
+    'src/modules/AudioRendering',
+    'src/modules/Automation',
+    'src/modules/Project',
+    'src/modules/Transport',
+    'src/modules/Yeast',
+] as const;
+const RUNTIME_EXTENSIONS = new Set(['.css', '.js', '.json', '.mjs', '.ts', '.tsx', '.wasm']);
+
+type RenderEvidence = {
+    bitsPerSample: number;
+    capturedAt: string;
+    channels: number;
+    clippedSampleCount: number;
+    consoleErrorCount: number;
+    dcOffsets: number[];
+    durationBeats: number;
+    durationSeconds: number;
+    failedRequestCount: number;
+    integratedLufs: number;
+    lowCorrelation: number;
+    lowMonoCompatibilityDb: number;
+    projectSha256: string;
+    rendererSourceSha256: string;
+    samplePeak: number;
+    sampleRate: number;
+    tailSeconds: number;
+    truePeakDbTp: number;
+    warningCount: number;
+    wavSha256: string;
+    wavHashScope: string;
+};
+
+function collectRuntimeFiles(directory: string): string[] {
+    const files: string[] = [];
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        if (entry.name === '__tests__') {
+            continue;
+        }
+        const path = join(directory, entry.name);
+        if (entry.isDirectory()) {
+            files.push(...collectRuntimeFiles(path));
+            continue;
+        }
+        if (entry.name.includes('.spec.') || !RUNTIME_EXTENSIONS.has(extname(entry.name))) {
+            continue;
+        }
+        files.push(path);
+    }
+    return files;
+}
+
+function hashRendererSource(): string {
+    const hash = createHash('sha256');
+    const files = RENDER_SOURCE_ROOTS.flatMap((root) => collectRuntimeFiles(join(process.cwd(), root))).toSorted();
+    for (const file of files) {
+        hash.update(relative(process.cwd(), file));
+        hash.update('\0');
+        hash.update(readFileSync(file));
+        hash.update('\0');
+    }
+    return hash.digest('hex');
+}
+
+function readRenderEvidence(): RenderEvidence {
+    return JSON.parse(readFileSync(RENDER_EVIDENCE_PATH, 'utf8')) as RenderEvidence;
+}
 
 describe('Mycelium Ascendant full browser render', () => {
     it('meets the render envelope', () => {
+        const evidence = readRenderEvidence();
         const { projectData } = createMyceliumAscendantBlueprint();
-        const maximumDcOffset = Math.max(...RENDER_EVIDENCE.dcOffsets.map(Math.abs));
+        const maximumDcOffset = Math.max(...evidence.dcOffsets.map(Math.abs));
         const projectSha256 = createHash('sha256').update(JSON.stringify(projectData)).digest('hex');
+        const rendererSourceSha256 = hashRendererSource();
 
         expect(projectData.meta.name).toBe('Mycelium Ascendant');
-        expect(projectData.transport.loopEnd).toBe(RENDER_EVIDENCE.durationBeats);
-        if (projectSha256 !== RENDER_EVIDENCE.projectSha256) {
-            throw new Error(`Project SHA mismatch: ${projectSha256}`);
+        expect(projectData.transport.loopEnd).toBe(evidence.durationBeats);
+        expect(projectSha256).toBe(evidence.projectSha256);
+        if (rendererSourceSha256 !== evidence.rendererSourceSha256) {
+            throw new Error(`Renderer source SHA mismatch: ${rendererSourceSha256}`);
         }
-        expect(RENDER_EVIDENCE.durationSeconds).toBeGreaterThan(240);
-        expect(RENDER_EVIDENCE.durationSeconds).toBeLessThan(242);
-        expect(RENDER_EVIDENCE.sampleRate).toBe(44_100);
-        expect(RENDER_EVIDENCE.channels).toBe(2);
-        expect(RENDER_EVIDENCE.integratedLufs).toBeGreaterThanOrEqual(-11);
-        expect(RENDER_EVIDENCE.integratedLufs).toBeLessThanOrEqual(-8);
-        expect(RENDER_EVIDENCE.truePeakDbTp).toBeLessThanOrEqual(-0.8);
-        expect(RENDER_EVIDENCE.samplePeak).toBeLessThan(1);
-        expect(RENDER_EVIDENCE.clippedSampleCount).toBe(0);
+        expect(evidence.wavSha256).toMatch(/^[0-9a-f]{64}$/);
+        expect(evidence.wavHashScope).toContain('stochastic DSP');
+        expect(Date.parse(evidence.capturedAt)).not.toBeNaN();
+        expect(evidence.tailSeconds).toBe(2);
+        expect(evidence.durationSeconds).toBeGreaterThan(240);
+        expect(evidence.durationSeconds).toBeLessThan(242);
+        expect(evidence.sampleRate).toBe(44_100);
+        expect(evidence.channels).toBe(2);
+        expect(evidence.bitsPerSample).toBe(24);
+        expect(evidence.integratedLufs).toBeGreaterThanOrEqual(-11);
+        expect(evidence.integratedLufs).toBeLessThanOrEqual(-8);
+        expect(evidence.truePeakDbTp).toBeLessThanOrEqual(-0.8);
+        expect(evidence.samplePeak).toBeLessThan(1);
+        expect(evidence.clippedSampleCount).toBe(0);
         expect(maximumDcOffset).toBeLessThan(0.005);
-        expect(RENDER_EVIDENCE.lowMonoCompatibilityDb).toBeGreaterThan(-3);
-        expect(RENDER_EVIDENCE.lowCorrelation).toBeGreaterThan(0);
-        expect(RENDER_EVIDENCE.warningCount).toBe(0);
-        expect(RENDER_EVIDENCE.consoleErrorCount).toBe(0);
-        expect(RENDER_EVIDENCE.failedRequestCount).toBe(0);
+        expect(evidence.lowMonoCompatibilityDb).toBeGreaterThan(-3);
+        expect(evidence.lowCorrelation).toBeGreaterThan(0);
+        expect(evidence.warningCount).toBe(0);
+        expect(evidence.consoleErrorCount).toBe(0);
+        expect(evidence.failedRequestCount).toBe(0);
     });
 });

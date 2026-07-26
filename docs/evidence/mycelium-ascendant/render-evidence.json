@@ -1,0 +1,23 @@
+{
+    "capturedAt": "2026-07-26T13:37:10.370Z",
+    "projectSha256": "1cea829dfa15f1e3ac94e611606cc3ef2ac3c4a2bccdfe1cc5707412565ffd9c",
+    "rendererSourceSha256": "4e50cb13e2ea216143740f23e972b2da19430ae76a0b7d2076aefcb119eb293b",
+    "wavSha256": "c53778696b323e117588095b0f7afbc5427d24a0f2e1588304611566c31c26a6",
+    "wavHashScope": "captured artifact; stochastic DSP permits later valid renders to differ byte-for-byte",
+    "durationBeats": 576,
+    "tailSeconds": 2,
+    "durationSeconds": 240.9941723356009,
+    "sampleRate": 44100,
+    "channels": 2,
+    "bitsPerSample": 24,
+    "integratedLufs": -9.94650357800738,
+    "truePeakDbTp": -2.2119193820612066,
+    "samplePeak": 0.7736612558364868,
+    "clippedSampleCount": 0,
+    "dcOffsets": [0.0017770500556386186, 0.0017781638059884493],
+    "lowMonoCompatibilityDb": -0.0046787452509035096,
+    "lowCorrelation": 0.9978605973465653,
+    "warningCount": 0,
+    "consoleErrorCount": 0,
+    "failedRequestCount": 0
+}
