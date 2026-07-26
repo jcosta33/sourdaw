@@ -1,4 +1,4 @@
-import { change, init, save, saveIncremental } from '@automerge/automerge';
+import { change, init, load, save, saveIncremental } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { automergeRepository } from '../../repositories/automergeRepository';
@@ -25,8 +25,9 @@ vi.stubGlobal(
     })
 );
 
-type PersistedRootDocument = {
+type PersistedRoot = {
     project: string;
+    agentProtocolFuture?: { bytes: number[] };
     actionHistory?: {
         entries: Array<{
             id: string;
@@ -46,9 +47,10 @@ function authority(revision: number) {
 }
 
 function create_persisted_bundle({ legacy = false, project = 'B' } = {}): Map<string, Uint8Array> {
-    let document = init<PersistedRootDocument>();
+    let document = init<PersistedRoot>();
     document = change(document, (draft) => {
         draft.project = project;
+        draft.agentProtocolFuture = { bytes: [17, 34, 51] };
         draft.actionHistory = {
             entries: [
                 {
@@ -72,7 +74,7 @@ function create_persisted_bundle({ legacy = false, project = 'B' } = {}): Map<st
 }
 
 function create_incremental_bundle(): Map<string, Uint8Array> {
-    let document = init<PersistedRootDocument>();
+    let document = init<PersistedRoot>();
     document = change(document, (draft) => {
         draft.project = 'B';
         draft.actionHistory = { entries: [] };
@@ -120,7 +122,7 @@ describe('loadCrdtProject persisted action-history sanitization', () => {
         await expect(loadCrdtProject()).resolves.toBe(true);
 
         expect(mocks.saveAllToIdb).not.toHaveBeenCalled();
-        expect(automergeRepository.getDoc<PersistedRootDocument>('root')?.project).toBe('B');
+        expect(automergeRepository.getDoc<PersistedRoot>('root')?.agentProtocolFuture?.bytes).toEqual([17, 34, 51]);
     });
 
     it('should preserve valid incremental persistence without rewriting it', async () => {
@@ -132,7 +134,7 @@ describe('loadCrdtProject persisted action-history sanitization', () => {
         await expect(loadCrdtProject()).resolves.toBe(true);
 
         expect(mocks.saveAllToIdb).not.toHaveBeenCalled();
-        expect(automergeRepository.getDoc<PersistedRootDocument>('root')?.project).toBe('C');
+        expect(automergeRepository.getDoc<PersistedRoot>('root')?.project).toBe('C');
     });
 
     it('should persist a sanitized bundle once when executable legacy fields exist', async () => {
@@ -146,8 +148,9 @@ describe('loadCrdtProject persisted action-history sanitization', () => {
 
         expect(mocks.saveAllToIdb).toHaveBeenCalledTimes(1);
         const persisted_bundle = mocks.saveAllToIdb.mock.calls[0]?.[0] as Map<string, Uint8Array>;
-        expect(persisted_bundle).toBeInstanceOf(Map);
-        expect(automergeRepository.getDoc<PersistedRootDocument>('root')?.actionHistory?.entries[0]).toEqual({
+        expect(load<PersistedRoot>(persisted_bundle.get('root')!).agentProtocolFuture?.bytes).toEqual([17, 34, 51]);
+        expect(automergeRepository.getDoc<PersistedRoot>('root')?.agentProtocolFuture?.bytes).toEqual([17, 34, 51]);
+        expect(automergeRepository.getDoc<PersistedRoot>('root')?.actionHistory?.entries[0]).toEqual({
             id: 'entry',
             label: 'Set tempo',
             actionKind: 'setTempo',
@@ -176,6 +179,9 @@ describe('loadCrdtProject persisted action-history sanitization', () => {
 
         expect(mocks.saveAllToIdb).toHaveBeenCalledTimes(2);
         expect(mocks.saveAllToIdb.mock.calls[1]?.[1]).toEqual({ expectedAuthority: authority(5) });
-        expect(automergeRepository.getDoc<PersistedRootDocument>('root')?.project).toBe('C');
+        const retried_bundle = mocks.saveAllToIdb.mock.calls[1]?.[0] as Map<string, Uint8Array>;
+        expect(load<PersistedRoot>(retried_bundle.get('root')!).agentProtocolFuture?.bytes).toEqual([17, 34, 51]);
+        expect(automergeRepository.getDoc<PersistedRoot>('root')?.agentProtocolFuture?.bytes).toEqual([17, 34, 51]);
+        expect(automergeRepository.getDoc<PersistedRoot>('root')?.project).toBe('C');
     });
 });
