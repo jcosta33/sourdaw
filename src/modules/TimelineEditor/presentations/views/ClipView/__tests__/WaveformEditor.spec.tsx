@@ -283,18 +283,23 @@ describe('WaveformEditor', () => {
         expect(vi.mocked(enableWarp)).not.toHaveBeenCalled();
     });
 
-    it('should switch the warp stretch mode when a mode button is clicked', () => {
+    it('offers no warp stretch-mode button while repitch is the only executor', () => {
         vi.mocked(getWarpState).mockReturnValue({
             enabled: true,
-            markers: [],
-            stretchMode: 'complex',
+            markers: [{ id: 'm1', originalBeat: 1, warpedBeat: 1 }],
+            stretchMode: 'repitch',
             originalTempo: null,
         });
         render(<WaveformEditor {...defaultProps} />);
 
-        fireEvent.click(screen.getByRole('button', { name: 'repitch' }));
+        // The warp-enabled strip renders — its marker readout only exists on
+        // this branch, so the absences below are real, not a missing subtree.
+        expect(screen.getByText('1 marker')).toBeInTheDocument();
 
-        expect(vi.mocked(setStretchMode)).toHaveBeenCalledWith('clip-1', 'repitch');
+        for (const mode of ['repitch', 'complex', 'texture', 'beats']) {
+            expect(screen.queryByRole('button', { name: mode })).not.toBeInTheDocument();
+        }
+        expect(vi.mocked(setStretchMode)).not.toHaveBeenCalled();
     });
 
     it('should render canvas element', () => {

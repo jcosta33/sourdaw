@@ -214,6 +214,7 @@ export { toggleVcaMembership } from './vca/toggleVcaMembership';
 export { enableWarp } from './warp/enableWarp';
 export { disableWarp } from './warp/disableWarp';
 export { setStretchMode } from './warp/setStretchMode';
+export { getStretchModeInfo, STRETCH_MODES } from './warp/getStretchModeInfo';
 export { addManualWarpMarker } from './warp/addManualWarpMarker';
 export { removeWarpMarker } from './warp/removeWarpMarker';
 export { moveWarpMarker } from './warp/moveWarpMarker';

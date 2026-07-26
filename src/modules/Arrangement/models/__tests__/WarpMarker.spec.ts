@@ -14,10 +14,10 @@ describe('createWarpMarker', () => {
 });
 
 describe('defaultWarpState', () => {
-    it('disables warping with empty markers and complex stretch', () => {
+    it('disables warping with empty markers and the repitch stretch mode', () => {
         expect(defaultWarpState.enabled).toBe(false);
         expect(defaultWarpState.markers).toEqual([]);
-        expect(defaultWarpState.stretchMode).toBe('complex');
+        expect(defaultWarpState.stretchMode).toBe('repitch');
         expect(defaultWarpState.originalTempo).toBeNull();
     });
 });

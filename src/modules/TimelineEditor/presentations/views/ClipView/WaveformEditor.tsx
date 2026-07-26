@@ -22,6 +22,8 @@ import {
     enableWarp,
     disableWarp,
     setStretchMode,
+    getStretchModeInfo,
+    STRETCH_MODES,
     removeWarpMarker,
     moveWarpMarker,
     commitWarpMarkerBeatDrag,
@@ -47,7 +49,12 @@ type WarpState = {
     originalTempo: number | null;
 };
 
-const STRETCH_MODES: WarpState['stretchMode'][] = ['complex', 'repitch', 'texture', 'beats'];
+// Stretch modes selectable today: only those with a live executor. `complex`,
+// `texture` and `beats` name behaviours nothing in the product performs, so the
+// strip does not offer them.
+const AVAILABLE_STRETCH_MODES: WarpState['stretchMode'][] = STRETCH_MODES.filter(
+    (mode) => getStretchModeInfo(mode).available
+);
 
 type WaveformMenu = { x: number; y: number } | null;
 
@@ -413,20 +420,22 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
 
                 {warpState.enabled ? (
                     <>
-                        <div className="flex items-center gap-0.5 rounded-md border border-border/40 p-0.5">
-                            {STRETCH_MODES.map((mode) => (
-                                <Button
-                                    key={mode}
-                                    variant={warpState.stretchMode === mode ? 'secondary' : 'ghost'}
-                                    size="icon-xs"
-                                    onClick={() => handleStretchMode(mode)}
-                                    className="text-[9px] w-auto px-1.5 h-5 capitalize"
-                                    aria-pressed={warpState.stretchMode === mode}
-                                >
-                                    {mode}
-                                </Button>
-                            ))}
-                        </div>
+                        {AVAILABLE_STRETCH_MODES.length > 1 ? (
+                            <div className="flex items-center gap-0.5 rounded-md border border-border/40 p-0.5">
+                                {AVAILABLE_STRETCH_MODES.map((mode) => (
+                                    <Button
+                                        key={mode}
+                                        variant={warpState.stretchMode === mode ? 'secondary' : 'ghost'}
+                                        size="icon-xs"
+                                        onClick={() => handleStretchMode(mode)}
+                                        className="text-[9px] w-auto px-1.5 h-5 capitalize"
+                                        aria-pressed={warpState.stretchMode === mode}
+                                    >
+                                        {mode}
+                                    </Button>
+                                ))}
+                            </div>
+                        ) : null}
 
                         <span className="text-[10px] text-[var(--color-accent-peach)]/70">
                             {warpState.markers.length} marker{warpState.markers.length !== 1 ? 's' : ''}

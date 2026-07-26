@@ -264,6 +264,19 @@ describe('ElasticEditorPanel', () => {
         expect(screen.queryByText(/élastique|elastique|rubber\s*band/i)).not.toBeInTheDocument();
     });
 
+    it('hides the stretch selector and offers no mode without an executor', () => {
+        render(<ElasticEditorPanel />);
+
+        // The toolbar itself renders — the Quantize control is right beside the
+        // stretch selector, so its presence proves the strip is not simply absent.
+        expect(screen.getByRole('button', { name: 'Quantize' })).toBeInTheDocument();
+
+        expect(screen.queryByLabelText('Stretch mode')).not.toBeInTheDocument();
+        for (const mode of ['complex', 'texture', 'beats']) {
+            expect(screen.queryByRole('option', { name: mode })).not.toBeInTheDocument();
+        }
+    });
+
     it('calls setElasticSensitivity when the sensitivity slider changes', () => {
         render(<ElasticEditorPanel />);
         const slider = screen.getByLabelText('Transient detection sensitivity');
