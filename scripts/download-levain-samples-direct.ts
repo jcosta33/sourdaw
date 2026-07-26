@@ -13,8 +13,8 @@
  *   SOURDAW_ALLOW_PUBLIC_SAMPLE_DOWNLOAD=1 node scripts/download-levain-samples-direct.ts
  */
 
-import { writeFile, mkdir, readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
+import { writeFile, mkdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const RAW_BASE = 'https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master';

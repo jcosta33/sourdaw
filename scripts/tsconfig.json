@@ -1,0 +1,34 @@
+{
+    // Type-resolution project for build tooling.
+    //
+    // This file sits at `scripts/` rather than the repo root on purpose:
+    // oxlint's type-aware pass (tsgolint) discovers the nearest `tsconfig.json`
+    // per file. The root project includes only `src`, so before this existed
+    // every expression in a script resolved to the `error` type and linting a
+    // generator emitted a wall of spurious `no-unsafe-*` errors — output
+    // dominated by false positives, which teaches readers to ignore it.
+    //
+    // It deliberately does NOT narrow strictness, and it covers every TypeScript
+    // script, including ones that still carry type debt, so that lint resolves
+    // types everywhere it is asked to run. The gate that must stay green is
+    // `tsconfig.scripts.json`.
+    //
+    // Two compiler differences from the root project, both describing how these
+    // files actually execute: they run under Node rather than Vite, so they need
+    // Node's globals, and `--experimental-strip-types` resolves imports by their
+    // on-disk `.ts` name.
+    //
+    // The plain-JS tooling here (`check-dependency-boundaries.mjs`,
+    // `generate-view-tests.cjs`) is deliberately left out. Pulling it in with
+    // `allowJs` does not help: it is untyped by construction, so type-aware lint
+    // then reports thousands of real-but-useless `any` violations instead of the
+    // resolution artifacts. It is excluded from the lint globs for the same
+    // reason rather than being half-typed here.
+    "extends": "../tsconfig.json",
+    "compilerOptions": {
+        "types": ["node"],
+        "allowImportingTsExtensions": true
+    },
+    "include": ["."],
+    "exclude": []
+}

@@ -28,7 +28,25 @@
     "ignorePatterns": [
         "src/routeTree.gen.ts",
         "src/modules/AudioEngine/wasm/*.js",
-        "src/modules/AudioEngine/wasm/*.d.ts"
+        "src/modules/AudioEngine/wasm/*.d.ts",
+        // Build tooling written as plain JS. It has no type annotations by
+        // construction, so the type-aware pass reports every expression in it —
+        // thousands of `no-unsafe-*` hits that say only "this file is JavaScript".
+        // Porting it to TypeScript is the way to lint it, not a rule exemption.
+        "scripts/**/*.mjs",
+        "scripts/**/*.cjs",
+        // Pre-existing type debt in `scripts/`, carried over from the day these
+        // files first came under any gate at all. Exact and reviewable, and the
+        // same set `tsconfig.scripts.json` excludes. A list that only shrinks:
+        // deleting an entry and fixing its errors is the intended move.
+        "scripts/__tests__/layoutPrimitivesCensus.spec.ts",
+        "scripts/download-levain-samples-direct.ts",
+        "scripts/download-levain-samples.ts",
+        "scripts/generate-missing-use-case-specs.ts",
+        "scripts/__tests__/check-dependency-boundaries.spec.ts",
+        "scripts/layoutPrimitivesCensus.ts",
+        "scripts/verify-remove-inject-output.ts",
+        "scripts/generate-view-tests.ts"
     ],
     "rules": {
         // ── ESLint core (from eslint.config.mjs explicit config) ────────────

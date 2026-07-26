@@ -218,6 +218,23 @@ function collectRustSources(dirAbs: string, acc: string[]): void {
     }
 }
 
+/**
+ * The first capture group of a match that has already succeeded.
+ *
+ * Every pattern in this file declares exactly one group, so a match always
+ * carries it — but the index signature is optional, and the alternative at
+ * seven call sites is a non-null assertion that would hide a pattern edited to
+ * drop its group. `subject` names what was being read so that mistake fails
+ * loudly instead of producing `undefined` downstream.
+ */
+function firstCapture(match: RegExpMatchArray, subject: string): string {
+    const captured = match[1];
+    if (captured === undefined) {
+        throw new Error(`Pattern for ${subject} matched without its capture group`);
+    }
+    return captured;
+}
+
 /** Matches a Cargo `path = "..."` dependency (any dependency section). */
 const pathDepPattern = /path\s*=\s*"([^"]+)"/g;
 
@@ -237,7 +254,8 @@ function pathDepClosure(crateDir: string): string[] {
         seen.add(current);
         const cargoToml = readFileSync(absolute(join(current, 'Cargo.toml')), 'utf8');
         for (const match of cargoToml.matchAll(pathDepPattern)) {
-            queue.push(relative(repoRoot, resolve(absolute(current), match[1])));
+            const depPath = firstCapture(match, `a path dependency in ${current}/Cargo.toml`);
+            queue.push(relative(repoRoot, resolve(absolute(current), depPath)));
         }
     }
     return [...seen].sort();
@@ -259,7 +277,7 @@ function readCrateName(crateDir: string): string {
     if (!match) {
         throw new Error(`No [package] name found in ${crateDir}/Cargo.toml`);
     }
-    return match[1];
+    return firstCapture(match, `the [package] name in ${crateDir}/Cargo.toml`);
 }
 
 /** Parse Cargo.lock's [[package]] graph, indexed by crate name (a name may have several versions). */
@@ -396,7 +414,7 @@ function wasmBindgenLockVersion(): string {
     if (!match) {
         throw new Error('Could not find the wasm-bindgen version in Cargo.lock');
     }
-    return match[1];
+    return firstCapture(match, 'the wasm-bindgen version in Cargo.lock');
 }
 
 /** The rust toolchain channel pinned in rust-toolchain.toml — an independent source. */
@@ -406,7 +424,7 @@ function rustToolchainChannel(): string {
     if (!match) {
         throw new Error('Could not find the channel in rust-toolchain.toml');
     }
-    return match[1];
+    return firstCapture(match, 'the channel in rust-toolchain.toml');
 }
 
 /** Extract the embedded wasm-bindgen schema id, or throw if the marker is gone. */
@@ -416,7 +434,7 @@ function extractSchemaHash(relPath: string): string {
     if (!match) {
         throw new Error(`No wasm-bindgen schema marker (__wbindgen_throw_<hash>) found in ${relPath}`);
     }
-    return match[1];
+    return firstCapture(match, `the wasm-bindgen schema marker in ${relPath}`);
 }
 
 /**
@@ -445,7 +463,10 @@ function stampDeclaration(relPath: string, crateSourceHash: string): void {
 /** Read back the stamped crate-source hash, or null when the stamp is absent. */
 function extractDeclarationStamp(relPath: string): string | null {
     const match = declarationStampMarker.exec(readFileSync(absolute(relPath), 'utf8'));
-    return match ? match[1] : null;
+    if (!match) {
+        return null;
+    }
+    return firstCapture(match, `the declaration stamp in ${relPath}`);
 }
 
 /** Look up a package spec by id, or throw for an unknown id. */
@@ -478,7 +499,8 @@ function regenerateDeclarations(id: string): void {
 
 function buildPackageManifest(spec: WasmPackageSpec): WasmPackageManifest {
     const schemaHashes = new Set(spec.schemaSources.map((file) => extractSchemaHash(file)));
-    if (schemaHashes.size !== 1) {
+    const [schemaHash] = [...schemaHashes];
+    if (schemaHashes.size !== 1 || schemaHash === undefined) {
         const detail = spec.schemaSources.map((file) => `${file}=${extractSchemaHash(file)}`).join(', ');
         throw new Error(`Package ${spec.id} has mismatched wasm-bindgen schema ids: ${detail}`);
     }
@@ -491,7 +513,7 @@ function buildPackageManifest(spec: WasmPackageSpec): WasmPackageManifest {
     return {
         crate: spec.crateDir,
         crateSourceHash: hashCrateClosure(spec.crateDir),
-        schemaHash: [...schemaHashes][0],
+        schemaHash,
         artifacts,
     };
 }
@@ -529,7 +551,7 @@ function requireObject(value: unknown, label: string): Record<string, unknown> {
 
 function requireString(value: unknown, label: string): string {
     if (typeof value !== 'string') {
-        throw new Error(`${label} must be a string`);
+        throw new TypeError(`${label} must be a string`);
     }
     return value;
 }

@@ -38,6 +38,7 @@ pnpm wasm:verify
 pnpm deps:validate
 pnpm typecheck
 pnpm typecheck:test
+pnpm typecheck:scripts
 run_lint_with_heartbeat
 pnpm test:run --reporter=dot --silent=passed-only
 pnpm build

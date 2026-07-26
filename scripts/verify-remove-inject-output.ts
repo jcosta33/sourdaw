@@ -7,8 +7,9 @@
  */
 
 import { execSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import ts from 'typescript';
 
 const root = dirname(fileURLToPath(import.meta.url));
