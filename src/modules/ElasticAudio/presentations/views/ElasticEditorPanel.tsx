@@ -11,7 +11,13 @@ import {
     trackStore,
     getWarpState,
 } from '#/modules/Arrangement/stores';
-import { commitWarpMarkerBeatDrag, setStretchMode, updateWarpMarkerBeat } from '#/modules/Arrangement/useCases';
+import {
+    commitWarpMarkerBeatDrag,
+    getStretchModeInfo,
+    setStretchMode,
+    STRETCH_MODES,
+    updateWarpMarkerBeat,
+} from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { defaultWorkspaceState, workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { resolveToken } from '#/utils/UI/resolveToken';
@@ -32,7 +38,11 @@ import { toggleMarkerLock } from '../../useCases/elasticAudio/toggleMarkerLock';
 
 type StretchMode = 'repitch' | 'complex' | 'texture' | 'beats';
 
-const STRETCH_MODES: StretchMode[] = ['repitch', 'complex', 'texture', 'beats'];
+// Stretch modes selectable today. Same treatment as the Algorithm selector
+// below: only modes with a live executor are offered, so the toolbar never
+// presents a choice the product cannot perform. `complex`, `texture` and
+// `beats` name behaviours nothing in the tree implements.
+const AVAILABLE_STRETCH_MODES: StretchMode[] = STRETCH_MODES.filter((mode) => getStretchModeInfo(mode).available);
 
 // Warp algorithms selectable today. Only executors that actually run are offered
 // (SPEC-time-stretch-engine AC-002 / AC-015). Repitch is the sole available mode;
@@ -372,21 +382,23 @@ export const ElasticEditorPanel = (): ReactElement => {
                     Quantize
                 </Button>
 
-                <label className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                    Stretch
-                    <select
-                        className="daw-inset-surface rounded px-1 py-0.5 text-[10px] text-foreground"
-                        value={warpState.stretchMode}
-                        onChange={(e) => handleStretchMode(e.target.value as StretchMode)}
-                        aria-label="Stretch mode"
-                    >
-                        {STRETCH_MODES.map((mode) => (
-                            <option key={mode} value={mode}>
-                                {mode}
-                            </option>
-                        ))}
-                    </select>
-                </label>
+                {AVAILABLE_STRETCH_MODES.length > 1 ? (
+                    <label className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                        Stretch
+                        <select
+                            className="daw-inset-surface rounded px-1 py-0.5 text-[10px] text-foreground"
+                            value={warpState.stretchMode}
+                            onChange={(e) => handleStretchMode(e.target.value as StretchMode)}
+                            aria-label="Stretch mode"
+                        >
+                            {AVAILABLE_STRETCH_MODES.map((mode) => (
+                                <option key={mode} value={mode}>
+                                    {getStretchModeInfo(mode).name}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+                ) : null}
 
                 {AVAILABLE_ALGORITHMS.length > 1 ? (
                     <label className="flex items-center gap-1 text-[10px] text-muted-foreground">
@@ -469,8 +481,13 @@ function findClip(
     return null;
 }
 
+// Placeholder state for "no clip selected". Mirrors Arrangement's
+// `defaultWarpState`, which cannot be imported here — models are not
+// re-exported across modules, which is why `WarpStateView` is a local
+// duplicate too. Keep `stretchMode` in step with that default: it must always
+// name a mode with a live executor (see `getStretchModeInfo`).
 function emptyWarpState(): WarpStateView {
-    return { enabled: false, markers: [], stretchMode: 'complex', originalTempo: null };
+    return { enabled: false, markers: [], stretchMode: 'repitch', originalTempo: null };
 }
 
 function countMarkers(markers: ReadonlyArray<WarpMarkerView>): {

@@ -16,6 +16,7 @@ export type WarpMarker = {
 export type WarpState = {
     enabled: boolean;
     markers: WarpMarker[];
+    /** Only `repitch` has an executor; see `useCases/warp/getStretchModeInfo`. */
     stretchMode: 'repitch' | 'complex' | 'texture' | 'beats';
     originalTempo: number | null;
 };
@@ -36,6 +37,6 @@ export const createWarpMarker = (
 export const defaultWarpState: WarpState = {
     enabled: false,
     markers: [],
-    stretchMode: 'complex',
+    stretchMode: 'repitch',
     originalTempo: null,
 };

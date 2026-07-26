@@ -103,7 +103,7 @@ describe('quantizeTransients', () => {
         expect(locked.locked).toBe(true);
     });
 
-    it('flips repitch stretchMode to complex on quantize', () => {
+    it('quantizes without rewriting stretchMode to a mode that has no executor', () => {
         mocks.warpStates.set('c1', {
             enabled: true,
             stretchMode: 'repitch',
@@ -113,7 +113,8 @@ describe('quantizeTransients', () => {
 
         quantizeTransients('c1');
         const after = mocks.warpStates.get('c1')!;
-        expect(after.stretchMode).toBe('complex');
+        expect(after.markers.map((m) => m.warpedBeat)).toEqual([0.25]);
+        expect(after.stretchMode).toBe('repitch');
     });
 
     it('pushes a single undo entry for the whole quantize op', () => {

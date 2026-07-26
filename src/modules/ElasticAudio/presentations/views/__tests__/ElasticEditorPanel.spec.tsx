@@ -264,6 +264,19 @@ describe('ElasticEditorPanel', () => {
         expect(screen.queryByText(/élastique|elastique|rubber\s*band/i)).not.toBeInTheDocument();
     });
 
+    it('hides the stretch selector and offers no mode without an executor', () => {
+        render(<ElasticEditorPanel />);
+
+        // The toolbar itself renders — the Quantize control is right beside the
+        // stretch selector, so its presence proves the strip is not simply absent.
+        expect(screen.getByRole('button', { name: 'Quantize' })).toBeInTheDocument();
+
+        expect(screen.queryByLabelText('Stretch mode')).not.toBeInTheDocument();
+        for (const mode of ['complex', 'texture', 'beats']) {
+            expect(screen.queryByRole('option', { name: mode })).not.toBeInTheDocument();
+        }
+    });
+
     it('calls setElasticSensitivity when the sensitivity slider changes', () => {
         render(<ElasticEditorPanel />);
         const slider = screen.getByLabelText('Transient detection sensitivity');
@@ -429,6 +442,13 @@ describe('ElasticEditorPanel', () => {
         };
         render(<ElasticEditorPanel />);
         expect(screen.getByText(/Select an audio clip/i)).toBeInTheDocument();
+
+        // The placeholder returns before any warp toolbar renders, which is the
+        // only reason the no-clip warp state is never read. Pin that: if the
+        // early return is ever removed, this fails instead of silently
+        // surfacing placeholder warp state.
+        expect(screen.queryByTestId('elastic-quantize-button')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('elastic-waveform-canvas')).not.toBeInTheDocument();
     });
 
     it('shows an empty state when the selected clip is not audio', () => {
