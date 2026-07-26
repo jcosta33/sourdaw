@@ -1,0 +1,28 @@
+{
+    "capturedAt": "2026-07-26T16:05:20.547Z",
+    "projectSha256": "1cea829dfa15f1e3ac94e611606cc3ef2ac3c4a2bccdfe1cc5707412565ffd9c",
+    "scope": "Strict-allowlist Playwright simulation of the Tauri v2 webview runtime contract (__TAURI_INTERNALS__ present, legacy __TAURI__ absent); this is not a native-shell/WebDriver run.",
+    "acceptanceStatus": "partial",
+    "nativeDesktopLaunchVerified": false,
+    "nativeCommandAllowlist": ["list_midi_inputs"],
+    "unexpectedNativeCommandCount": 0,
+    "launchAssertions": [
+        "Mycelium Ascendant workspace title visible",
+        "Kick track visible",
+        "Main Vision track visible",
+        "Temple Chamber track visible",
+        "Sporefall arrangement section visible"
+    ],
+    "runtimeCalls": [
+        {
+            "command": "list_midi_inputs",
+            "args": {}
+        }
+    ],
+    "consoleErrorCount": 0,
+    "unexpectedWarningCount": 0,
+    "pageErrorCount": 0,
+    "failedRequestCount": 0,
+    "externalRequestCount": 0,
+    "httpErrorCount": 0
+}

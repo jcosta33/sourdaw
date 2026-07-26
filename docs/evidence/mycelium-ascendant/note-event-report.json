@@ -1,0 +1,182 @@
+{
+    "capturedAt": "2026-07-26T16:48:54+02:00",
+    "projectSha256": "1cea829dfa15f1e3ac94e611606cc3ef2ac3c4a2bccdfe1cc5707412565ffd9c",
+    "normalization": "Absolute clip-relative MIDI events grouped by half-open section range [startBeat, endBeat), then by owning track name.",
+    "totalNotes": 3784,
+    "sections": [
+        {
+            "name": "Sporefall",
+            "beats": [0, 64],
+            "noteCount": 132,
+            "tracks": {
+                "Glitch Spirits": 16,
+                "Grand Boule Ritual": 32,
+                "Granular Voices": 16,
+                "Harmonic Mist": 32,
+                "Levain Call": 32,
+                "Root Drone": 4
+            }
+        },
+        {
+            "name": "First Germination",
+            "beats": [64, 128],
+            "noteCount": 140,
+            "tracks": {
+                "Granular Voices": 16,
+                "Kick": 8,
+                "Levain Answer": 32,
+                "Psy Pluck": 32,
+                "Shaker": 16,
+                "Sub Mycelium": 4,
+                "Triplet Helix": 32
+            }
+        },
+        {
+            "name": "Pressure Bloom",
+            "beats": [128, 192],
+            "noteCount": 338,
+            "tracks": {
+                "Acid Tendril": 8,
+                "Clap": 3,
+                "Closed HH": 55,
+                "FM Spores": 32,
+                "Fractal Riser": 16,
+                "Granular Voices": 16,
+                "Hi Tom": 9,
+                "Impact Field": 16,
+                "Kick": 64,
+                "Low Tom": 3,
+                "Mid Tom": 6,
+                "Open HH": 12,
+                "Psy Pluck": 32,
+                "Rim": 6,
+                "Rolling Colony": 28,
+                "Shaker": 32
+            }
+        },
+        {
+            "name": "Drop I — Hyphal Drive",
+            "beats": [192, 288],
+            "noteCount": 831,
+            "tracks": {
+                "Acid Tendril": 24,
+                "Clap": 3,
+                "Clave": 12,
+                "Closed HH": 24,
+                "Counter Vision": 24,
+                "Cowbell": 12,
+                "Crash": 3,
+                "FM Spores": 48,
+                "Glitch Spirits": 24,
+                "Grand Boule Ritual": 12,
+                "Hi Tom": 9,
+                "Kick": 96,
+                "Levain Answer": 12,
+                "Levain Call": 12,
+                "Low Tom": 3,
+                "Main Vision": 24,
+                "Mid Tom": 6,
+                "Open HH": 12,
+                "Perc 1": 24,
+                "Perc 2": 12,
+                "Psy Pluck": 48,
+                "Ride": 24,
+                "Rim": 6,
+                "Rolling Colony": 288,
+                "Shaker": 21,
+                "Snare": 24,
+                "Sub Mycelium": 24
+            }
+        },
+        {
+            "name": "Psilocybin Chapel",
+            "beats": [288, 352],
+            "noteCount": 492,
+            "tracks": {
+                "Clap": 8,
+                "Glitch Spirits": 68,
+                "Grand Boule Ritual": 36,
+                "Granular Voices": 67,
+                "Harmonic Mist": 68,
+                "Kick": 18,
+                "Levain Answer": 36,
+                "Levain Call": 36,
+                "Psy Pluck": 68,
+                "Rim": 8,
+                "Rolling Colony": 18,
+                "Root Drone": 5,
+                "Shaker": 56
+            }
+        },
+        {
+            "name": "Singularity Build",
+            "beats": [352, 416],
+            "noteCount": 445,
+            "tracks": {
+                "Acid Tendril": 16,
+                "FM Spores": 63,
+                "Fractal Riser": 32,
+                "Glitch Spirits": 32,
+                "Hi Tom": 174,
+                "Impact Field": 32,
+                "Kick": 16,
+                "Rolling Colony": 16,
+                "Triplet Helix": 64
+            }
+        },
+        {
+            "name": "Drop II — Fractal Bloom",
+            "beats": [416, 544],
+            "noteCount": 1277,
+            "tracks": {
+                "Acid Tendril": 31,
+                "Clap": 8,
+                "Clave": 16,
+                "Closed HH": 31,
+                "Counter Vision": 32,
+                "Cowbell": 16,
+                "Crash": 8,
+                "FM Spores": 63,
+                "Glitch Spirits": 32,
+                "Grand Boule Ritual": 15,
+                "Harmonic Mist": 63,
+                "Hi Tom": 24,
+                "Kick": 124,
+                "Levain Answer": 15,
+                "Levain Call": 16,
+                "Low Tom": 8,
+                "Main Vision": 32,
+                "Mid Tom": 16,
+                "Open HH": 16,
+                "Perc 1": 31,
+                "Perc 2": 16,
+                "Psy Pluck": 63,
+                "Ride": 31,
+                "Rim": 16,
+                "Rolling Colony": 372,
+                "Shaker": 56,
+                "Snare": 31,
+                "Sub Mycelium": 31,
+                "Triplet Helix": 64
+            }
+        },
+        {
+            "name": "Dissolution",
+            "beats": [544, 576],
+            "noteCount": 129,
+            "tracks": {
+                "Acid Tendril": 15,
+                "Closed HH": 15,
+                "Grand Boule Ritual": 16,
+                "Granular Voices": 8,
+                "Harmonic Mist": 8,
+                "Kick": 15,
+                "Levain Call": 16,
+                "Main Vision": 4,
+                "Rolling Colony": 15,
+                "Root Drone": 2,
+                "Sub Mycelium": 15
+            }
+        }
+    ]
+}

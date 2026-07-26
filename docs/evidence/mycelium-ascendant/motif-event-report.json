@@ -1,0 +1,615 @@
+{
+    "capturedAt": "2026-07-26T15:27:51.997Z",
+    "projectSha256": "1cea829dfa15f1e3ac94e611606cc3ef2ac3c4a2bccdfe1cc5707412565ffd9c",
+    "normalization": "Absolute clip-relative MIDI events grouped by half-open section range [startBeat, endBeat); beat is section-relative.",
+    "comparisons": [
+        {
+            "section": "Drop I — Hyphal Drive",
+            "trackName": "Main Vision",
+            "eventCount": 24,
+            "intervalSignature": [-3, -4, 5],
+            "events": [
+                {
+                    "beat": 0.375,
+                    "pitch": 91,
+                    "duration": 0.6,
+                    "velocity": 98
+                },
+                {
+                    "beat": 1.375,
+                    "pitch": 88,
+                    "duration": 0.42,
+                    "velocity": 113
+                },
+                {
+                    "beat": 2.375,
+                    "pitch": 84,
+                    "duration": 0.51,
+                    "velocity": 77
+                },
+                {
+                    "beat": 3.375,
+                    "pitch": 89,
+                    "duration": 0.6,
+                    "velocity": 92
+                }
+            ]
+        },
+        {
+            "section": "Drop I — Hyphal Drive",
+            "trackName": "Counter Vision",
+            "eventCount": 24,
+            "intervalSignature": [3, 4, -5],
+            "events": [
+                {
+                    "beat": 8.625,
+                    "pitch": 62,
+                    "duration": 0.42,
+                    "velocity": 107
+                },
+                {
+                    "beat": 9.625,
+                    "pitch": 65,
+                    "duration": 0.51,
+                    "velocity": 71
+                },
+                {
+                    "beat": 10.625,
+                    "pitch": 69,
+                    "duration": 0.6,
+                    "velocity": 86
+                },
+                {
+                    "beat": 11.625,
+                    "pitch": 64,
+                    "duration": 0.42,
+                    "velocity": 101
+                }
+            ]
+        },
+        {
+            "section": "Drop I — Hyphal Drive",
+            "trackName": "Psy Pluck",
+            "eventCount": 48,
+            "intervalSignature": [3, 4, -5],
+            "events": [
+                {
+                    "beat": 0.125,
+                    "pitch": 71,
+                    "duration": 0.51,
+                    "velocity": 89
+                },
+                {
+                    "beat": 1.125,
+                    "pitch": 74,
+                    "duration": 0.6,
+                    "velocity": 104
+                },
+                {
+                    "beat": 2.125,
+                    "pitch": 78,
+                    "duration": 0.42,
+                    "velocity": 119
+                },
+                {
+                    "beat": 3.125,
+                    "pitch": 73,
+                    "duration": 0.51,
+                    "velocity": 83
+                }
+            ]
+        },
+        {
+            "section": "Drop I — Hyphal Drive",
+            "trackName": "Levain Call",
+            "eventCount": 12,
+            "intervalSignature": [-3, -4, 5],
+            "events": [
+                {
+                    "beat": 1.125,
+                    "pitch": 71,
+                    "duration": 0.7,
+                    "velocity": 84
+                },
+                {
+                    "beat": 4.875,
+                    "pitch": 68,
+                    "duration": 0.7,
+                    "velocity": 90
+                },
+                {
+                    "beat": 17.125,
+                    "pitch": 64,
+                    "duration": 0.7,
+                    "velocity": 96
+                },
+                {
+                    "beat": 20.875,
+                    "pitch": 69,
+                    "duration": 0.7,
+                    "velocity": 102
+                }
+            ]
+        },
+        {
+            "section": "Drop I — Hyphal Drive",
+            "trackName": "Levain Answer",
+            "eventCount": 12,
+            "intervalSignature": [4, -5, -2],
+            "events": [
+                {
+                    "beat": 9.125,
+                    "pitch": 79,
+                    "duration": 0.7,
+                    "velocity": 90
+                },
+                {
+                    "beat": 12.875,
+                    "pitch": 83,
+                    "duration": 0.7,
+                    "velocity": 96
+                },
+                {
+                    "beat": 25.125,
+                    "pitch": 78,
+                    "duration": 0.7,
+                    "velocity": 102
+                },
+                {
+                    "beat": 28.875,
+                    "pitch": 76,
+                    "duration": 0.7,
+                    "velocity": 84
+                }
+            ]
+        },
+        {
+            "section": "Drop I — Hyphal Drive",
+            "trackName": "Grand Boule Ritual",
+            "eventCount": 12,
+            "intervalSignature": [-3, -4, 5],
+            "events": [
+                {
+                    "beat": 4.875,
+                    "pitch": 74,
+                    "duration": 1.25,
+                    "velocity": 84
+                },
+                {
+                    "beat": 12.875,
+                    "pitch": 71,
+                    "duration": 1.25,
+                    "velocity": 90
+                },
+                {
+                    "beat": 20.875,
+                    "pitch": 67,
+                    "duration": 1.25,
+                    "velocity": 96
+                },
+                {
+                    "beat": 28.875,
+                    "pitch": 72,
+                    "duration": 1.25,
+                    "velocity": 102
+                }
+            ]
+        },
+        {
+            "section": "Psilocybin Chapel",
+            "trackName": "Psy Pluck",
+            "eventCount": 68,
+            "intervalSignature": [-3, -4, 5],
+            "events": [
+                {
+                    "beat": 0.375,
+                    "pitch": 67,
+                    "duration": 0.51,
+                    "velocity": 92
+                },
+                {
+                    "beat": 0.875,
+                    "pitch": 64,
+                    "duration": 0.6,
+                    "velocity": 107
+                },
+                {
+                    "beat": 1.375,
+                    "pitch": 60,
+                    "duration": 0.42,
+                    "velocity": 71
+                },
+                {
+                    "beat": 1.875,
+                    "pitch": 65,
+                    "duration": 0.51,
+                    "velocity": 86
+                }
+            ]
+        },
+        {
+            "section": "Psilocybin Chapel",
+            "trackName": "Levain Call",
+            "eventCount": 36,
+            "intervalSignature": [3, 4, -5],
+            "events": [
+                {
+                    "beat": 0.125,
+                    "pitch": 67,
+                    "duration": 0.55,
+                    "velocity": 79
+                },
+                {
+                    "beat": 0.875,
+                    "pitch": 70,
+                    "duration": 0.55,
+                    "velocity": 85
+                },
+                {
+                    "beat": 1.625,
+                    "pitch": 74,
+                    "duration": 0.55,
+                    "velocity": 91
+                },
+                {
+                    "beat": 2.625,
+                    "pitch": 69,
+                    "duration": 0.55,
+                    "velocity": 97
+                }
+            ]
+        },
+        {
+            "section": "Psilocybin Chapel",
+            "trackName": "Levain Answer",
+            "eventCount": 36,
+            "intervalSignature": [-3, -4, 5],
+            "events": [
+                {
+                    "beat": 3.625,
+                    "pitch": 72,
+                    "duration": 0.55,
+                    "velocity": 85
+                },
+                {
+                    "beat": 4.375,
+                    "pitch": 69,
+                    "duration": 0.55,
+                    "velocity": 91
+                },
+                {
+                    "beat": 5.125,
+                    "pitch": 65,
+                    "duration": 0.55,
+                    "velocity": 97
+                },
+                {
+                    "beat": 6.125,
+                    "pitch": 70,
+                    "duration": 0.55,
+                    "velocity": 79
+                }
+            ]
+        },
+        {
+            "section": "Psilocybin Chapel",
+            "trackName": "Grand Boule Ritual",
+            "eventCount": 36,
+            "intervalSignature": [3, -3, 3],
+            "events": [
+                {
+                    "beat": 1.125,
+                    "pitch": 70,
+                    "duration": 0.9,
+                    "velocity": 79
+                },
+                {
+                    "beat": 2.625,
+                    "pitch": 73,
+                    "duration": 0.9,
+                    "velocity": 85
+                },
+                {
+                    "beat": 4.625,
+                    "pitch": 70,
+                    "duration": 0.9,
+                    "velocity": 85
+                },
+                {
+                    "beat": 6.125,
+                    "pitch": 73,
+                    "duration": 0.9,
+                    "velocity": 91
+                }
+            ]
+        },
+        {
+            "section": "Drop II — Fractal Bloom",
+            "trackName": "Main Vision",
+            "eventCount": 32,
+            "intervalSignature": [3, 4, -5],
+            "events": [
+                {
+                    "beat": 0.125,
+                    "pitch": 108,
+                    "duration": 0.6,
+                    "velocity": 107
+                },
+                {
+                    "beat": 1.125,
+                    "pitch": 111,
+                    "duration": 0.42,
+                    "velocity": 71
+                },
+                {
+                    "beat": 2.125,
+                    "pitch": 115,
+                    "duration": 0.51,
+                    "velocity": 86
+                },
+                {
+                    "beat": 3.125,
+                    "pitch": 110,
+                    "duration": 0.6,
+                    "velocity": 101
+                }
+            ]
+        },
+        {
+            "section": "Drop II — Fractal Bloom",
+            "trackName": "Counter Vision",
+            "eventCount": 32,
+            "intervalSignature": [-3, -4, 5],
+            "events": [
+                {
+                    "beat": 8.375,
+                    "pitch": 79,
+                    "duration": 0.42,
+                    "velocity": 116
+                },
+                {
+                    "beat": 9.375,
+                    "pitch": 76,
+                    "duration": 0.51,
+                    "velocity": 80
+                },
+                {
+                    "beat": 10.375,
+                    "pitch": 72,
+                    "duration": 0.6,
+                    "velocity": 95
+                },
+                {
+                    "beat": 11.375,
+                    "pitch": 77,
+                    "duration": 0.42,
+                    "velocity": 110
+                }
+            ]
+        },
+        {
+            "section": "Drop II — Fractal Bloom",
+            "trackName": "Psy Pluck",
+            "eventCount": 63,
+            "intervalSignature": [-3, -4, 5],
+            "events": [
+                {
+                    "beat": 0.875,
+                    "pitch": 88,
+                    "duration": 0.51,
+                    "velocity": 98
+                },
+                {
+                    "beat": 1.875,
+                    "pitch": 85,
+                    "duration": 0.6,
+                    "velocity": 113
+                },
+                {
+                    "beat": 2.875,
+                    "pitch": 81,
+                    "duration": 0.42,
+                    "velocity": 77
+                },
+                {
+                    "beat": 3.875,
+                    "pitch": 86,
+                    "duration": 0.51,
+                    "velocity": 92
+                }
+            ]
+        },
+        {
+            "section": "Drop II — Fractal Bloom",
+            "trackName": "Levain Call",
+            "eventCount": 16,
+            "intervalSignature": [3, 4, -5],
+            "events": [
+                {
+                    "beat": 1.125,
+                    "pitch": 76,
+                    "duration": 0.7,
+                    "velocity": 84
+                },
+                {
+                    "beat": 4.875,
+                    "pitch": 79,
+                    "duration": 0.7,
+                    "velocity": 90
+                },
+                {
+                    "beat": 17.125,
+                    "pitch": 83,
+                    "duration": 0.7,
+                    "velocity": 96
+                },
+                {
+                    "beat": 20.875,
+                    "pitch": 78,
+                    "duration": 0.7,
+                    "velocity": 102
+                }
+            ]
+        },
+        {
+            "section": "Drop II — Fractal Bloom",
+            "trackName": "Levain Answer",
+            "eventCount": 15,
+            "intervalSignature": [-4, 5, 2],
+            "events": [
+                {
+                    "beat": 9.125,
+                    "pitch": 78,
+                    "duration": 0.7,
+                    "velocity": 90
+                },
+                {
+                    "beat": 12.875,
+                    "pitch": 74,
+                    "duration": 0.7,
+                    "velocity": 96
+                },
+                {
+                    "beat": 25.125,
+                    "pitch": 79,
+                    "duration": 0.7,
+                    "velocity": 102
+                },
+                {
+                    "beat": 28.875,
+                    "pitch": 81,
+                    "duration": 0.7,
+                    "velocity": 84
+                }
+            ]
+        },
+        {
+            "section": "Drop II — Fractal Bloom",
+            "trackName": "Grand Boule Ritual",
+            "eventCount": 15,
+            "intervalSignature": [3, 4, -5],
+            "events": [
+                {
+                    "beat": 4.875,
+                    "pitch": 79,
+                    "duration": 1.25,
+                    "velocity": 84
+                },
+                {
+                    "beat": 12.875,
+                    "pitch": 82,
+                    "duration": 1.25,
+                    "velocity": 90
+                },
+                {
+                    "beat": 20.875,
+                    "pitch": 86,
+                    "duration": 1.25,
+                    "velocity": 96
+                },
+                {
+                    "beat": 28.875,
+                    "pitch": 81,
+                    "duration": 1.25,
+                    "velocity": 102
+                }
+            ]
+        },
+        {
+            "section": "Dissolution",
+            "trackName": "Main Vision",
+            "eventCount": 4,
+            "intervalSignature": [-3, -4, 5],
+            "events": [
+                {
+                    "beat": 0.375,
+                    "pitch": 84,
+                    "duration": 0.6,
+                    "velocity": 110
+                },
+                {
+                    "beat": 1.375,
+                    "pitch": 81,
+                    "duration": 0.42,
+                    "velocity": 74
+                },
+                {
+                    "beat": 2.375,
+                    "pitch": 77,
+                    "duration": 0.51,
+                    "velocity": 89
+                },
+                {
+                    "beat": 3.375,
+                    "pitch": 82,
+                    "duration": 0.6,
+                    "velocity": 104
+                }
+            ]
+        },
+        {
+            "section": "Dissolution",
+            "trackName": "Levain Call",
+            "eventCount": 16,
+            "intervalSignature": [-3, -4, 5],
+            "events": [
+                {
+                    "beat": 0.375,
+                    "pitch": 64,
+                    "duration": 0.42,
+                    "velocity": 95
+                },
+                {
+                    "beat": 1.375,
+                    "pitch": 61,
+                    "duration": 0.51,
+                    "velocity": 110
+                },
+                {
+                    "beat": 2.375,
+                    "pitch": 57,
+                    "duration": 0.6,
+                    "velocity": 74
+                },
+                {
+                    "beat": 3.375,
+                    "pitch": 62,
+                    "duration": 0.42,
+                    "velocity": 89
+                }
+            ]
+        },
+        {
+            "section": "Dissolution",
+            "trackName": "Grand Boule Ritual",
+            "eventCount": 16,
+            "intervalSignature": [-3, -4, 5],
+            "events": [
+                {
+                    "beat": 0.875,
+                    "pitch": 67,
+                    "duration": 0.6,
+                    "velocity": 113
+                },
+                {
+                    "beat": 1.875,
+                    "pitch": 64,
+                    "duration": 0.42,
+                    "velocity": 77
+                },
+                {
+                    "beat": 2.875,
+                    "pitch": 60,
+                    "duration": 0.51,
+                    "velocity": 92
+                },
+                {
+                    "beat": 3.875,
+                    "pitch": 65,
+                    "duration": 0.6,
+                    "velocity": 107
+                }
+            ]
+        }
+    ]
+}
