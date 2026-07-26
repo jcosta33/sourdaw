@@ -50,7 +50,7 @@ export type {
     AdjustmentRegion,
 } from './adjustmentLayer';
 
-export { vcaGroupStore, defaultVcaGroupState } from './vcaGroupStore';
+export { vcaGroupStore, defaultVcaGroupState, deriveVcaMultiplier, getVcaGroupsState } from './vcaGroupStore';
 export type { VcaGroupState } from './vcaGroupStore';
 
 export { grooveStore } from './grooveStore';

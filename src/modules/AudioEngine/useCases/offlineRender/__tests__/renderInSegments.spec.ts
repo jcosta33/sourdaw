@@ -14,6 +14,9 @@ type SegmentedContextHarness = {
     finishRendering: () => Promise<void>;
     resumeCount: () => number;
     scheduledCheckpoints: () => number[];
+    closeCount: () => number;
+    /** Checkpoint promises still awaiting a settlement of any kind. */
+    pendingCheckpoints: () => number[];
 };
 
 /**
@@ -22,9 +25,14 @@ type SegmentedContextHarness = {
  * makes no further progress until `resume()` is called. A checkpoint whose
  * `resume()` never arrives therefore leaves the render permanently stalled —
  * which is exactly the "work actually stopped" property this kernel provides.
+ *
+ * `close()` is modelled the way a torn-down context behaves: the checkpoints the
+ * render will now never reach reject instead of hanging, and `startRendering()`
+ * rejects rather than resolving a buffer.
  */
 function createSegmentedContext(durationSeconds: number): SegmentedContextHarness {
-    const suspendResolvers = new Map<number, () => void>();
+    type Checkpoint = { resolve: () => void; reject: (error: Error) => void; settled: boolean };
+    const checkpoints = new Map<number, Checkpoint>();
     const buffer = {
         duration: durationSeconds,
         length: Math.ceil(durationSeconds * SAMPLE_RATE),
@@ -32,36 +40,51 @@ function createSegmentedContext(durationSeconds: number): SegmentedContextHarnes
     } as AudioBuffer;
 
     let resumeCount = 0;
+    let closeCount = 0;
     let resolveRender: ((rendered: AudioBuffer) => void) | null = null;
+    let rejectRender: ((error: Error) => void) | null = null;
 
     const offlineCtx = {
         sampleRate: SAMPLE_RATE,
         length: Math.ceil(durationSeconds * SAMPLE_RATE),
         suspend: (seconds: number): Promise<void> =>
-            new Promise<void>((resolve) => {
-                suspendResolvers.set(seconds, resolve);
+            new Promise<void>((resolve, reject) => {
+                checkpoints.set(seconds, { resolve, reject, settled: false });
             }),
         resume: (): Promise<void> => {
             resumeCount += 1;
             return Promise.resolve();
         },
         startRendering: (): Promise<AudioBuffer> =>
-            new Promise<AudioBuffer>((resolve) => {
+            new Promise<AudioBuffer>((resolve, reject) => {
                 resolveRender = resolve;
+                rejectRender = reject;
             }),
+        close: (): Promise<void> => {
+            closeCount += 1;
+            for (const checkpoint of checkpoints.values()) {
+                if (!checkpoint.settled) {
+                    checkpoint.settled = true;
+                    checkpoint.reject(new Error('InvalidStateError: context is closed'));
+                }
+            }
+            rejectRender?.(new Error('InvalidStateError: context is closed'));
+            return Promise.resolve();
+        },
     } as unknown as OfflineAudioContext;
 
     return {
         offlineCtx,
         buffer,
         reachCheckpoint: async (seconds: number): Promise<void> => {
-            const resolver = suspendResolvers.get(seconds);
-            if (!resolver) {
+            const checkpoint = checkpoints.get(seconds);
+            if (!checkpoint) {
                 throw new Error(
-                    `no checkpoint scheduled at ${seconds}s (scheduled: ${[...suspendResolvers.keys()].join(', ')})`
+                    `no checkpoint scheduled at ${seconds}s (scheduled: ${[...checkpoints.keys()].join(', ')})`
                 );
             }
-            resolver();
+            checkpoint.settled = true;
+            checkpoint.resolve();
             await Promise.resolve();
             await Promise.resolve();
             await Promise.resolve();
@@ -72,7 +95,13 @@ function createSegmentedContext(durationSeconds: number): SegmentedContextHarnes
             await Promise.resolve();
         },
         resumeCount: () => resumeCount,
-        scheduledCheckpoints: () => [...suspendResolvers.keys()].sort((a, b) => a - b),
+        scheduledCheckpoints: () => [...checkpoints.keys()].sort((a, b) => a - b),
+        closeCount: () => closeCount,
+        pendingCheckpoints: () =>
+            [...checkpoints.entries()]
+                .filter(([, checkpoint]) => !checkpoint.settled)
+                .map(([seconds]) => seconds)
+                .sort((a, b) => a - b),
     };
 }
 
@@ -218,5 +247,106 @@ describe('renderInSegments', () => {
         await expect(
             renderInSegments({ offlineCtx, durationSeconds: 2, timeoutMs: 60_000, segmentSeconds: 1 })
         ).resolves.toBe(buffer);
+    });
+
+    it('tears the context down when a cancel abandons the render', async () => {
+        const harness = createSegmentedContext(4);
+
+        const rendering = renderInSegments({
+            offlineCtx: harness.offlineCtx,
+            durationSeconds: 4,
+            timeoutMs: 60_000,
+            segmentSeconds: 1,
+        });
+
+        exportCancellationState.cancelFlag = true;
+        await harness.reachCheckpoint(1);
+
+        await expect(rendering).rejects.toThrow('Export cancelled');
+        // Leaving the context suspended stops the CPU burn but keeps the whole
+        // node graph — worklet instances included — reachable. Stems can abandon
+        // several of these at once, so the abandoned context has to be closed.
+        expect(harness.closeCount()).toBe(1);
+    });
+
+    it('settles the checkpoints past the cancel point instead of leaving them pending forever', async () => {
+        const harness = createSegmentedContext(4);
+
+        const rendering = renderInSegments({
+            offlineCtx: harness.offlineCtx,
+            durationSeconds: 4,
+            timeoutMs: 60_000,
+            segmentSeconds: 1,
+        });
+
+        exportCancellationState.cancelFlag = true;
+        await harness.reachCheckpoint(1);
+        await expect(rendering).rejects.toThrow('Export cancelled');
+        await Promise.resolve();
+
+        // Checkpoints at 2 s and 3 s can never be reached once the render is
+        // abandoned. Each is a promise whose closure holds the graph alive, so
+        // none may still be waiting.
+        expect(harness.pendingCheckpoints()).toEqual([]);
+    });
+
+    it('tears the context down when the time budget is blown', async () => {
+        vi.useFakeTimers();
+        const harness = createSegmentedContext(4);
+
+        const rendering = renderInSegments({
+            offlineCtx: harness.offlineCtx,
+            durationSeconds: 4,
+            timeoutMs: 5_000,
+            segmentSeconds: 1,
+        });
+
+        vi.advanceTimersByTime(6_000);
+        await harness.reachCheckpoint(1);
+
+        await expect(rendering).rejects.toThrow(/timed out/);
+        expect(harness.closeCount()).toBe(1);
+        expect(harness.pendingCheckpoints()).toEqual([]);
+    });
+
+    it('leaves a completed render alone rather than closing a context that produced a buffer', async () => {
+        const harness = createSegmentedContext(2);
+
+        const rendering = renderInSegments({
+            offlineCtx: harness.offlineCtx,
+            durationSeconds: 2,
+            timeoutMs: 60_000,
+            segmentSeconds: 1,
+        });
+
+        await harness.reachCheckpoint(1);
+        await harness.finishRendering();
+
+        await expect(rendering).resolves.toBe(harness.buffer);
+        expect(harness.closeCount()).toBe(0);
+    });
+
+    it('still aborts on a context that does not implement close()', async () => {
+        const checkpointResolvers = new Map<number, () => void>();
+        const offlineCtx = {
+            sampleRate: SAMPLE_RATE,
+            suspend: (seconds: number): Promise<void> =>
+                new Promise<void>((resolve) => {
+                    checkpointResolvers.set(seconds, resolve);
+                }),
+            resume: () => Promise.resolve(),
+            startRendering: () => new Promise<AudioBuffer>(() => undefined),
+        } as unknown as OfflineAudioContext;
+
+        const rendering = renderInSegments({ offlineCtx, durationSeconds: 4, timeoutMs: 60_000, segmentSeconds: 1 });
+
+        exportCancellationState.cancelFlag = true;
+        checkpointResolvers.get(1)?.();
+        await Promise.resolve();
+        await Promise.resolve();
+
+        // `close()` is not universally implemented on OfflineAudioContext, and
+        // its absence must not cost the cancel.
+        await expect(rendering).rejects.toThrow('Export cancelled');
     });
 });

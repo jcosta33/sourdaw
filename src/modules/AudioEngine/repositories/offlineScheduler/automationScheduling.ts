@@ -41,7 +41,13 @@ export function scheduleTrackAutomation(
     projectBeatToSeconds?: (beat: number) => number,
     sampleRate = 44_100,
     compensationDelaySec = 0,
-    clipBoundsById?: Map<string, { startBeat: number; endBeat: number }>
+    clipBoundsById?: Map<string, { startBeat: number; endBeat: number }>,
+    /**
+     * The track's VCA group master as a plain multiplier (`1` outside a group).
+     * Resolved by the calling render use case and passed in, because this
+     * repository must not reach into Arrangement's VCA read model itself.
+     */
+    vcaMultiplier = 1
 ): void {
     const projectBeat = projectBeatToSeconds ?? ((beat) => beatToSeconds(beat, defaultTempo, changes));
     const laneById = new Map<string, AutomationLane>();
@@ -117,7 +123,14 @@ export function scheduleTrackAutomation(
                 compensationDelaySec,
                 {
                     ...laneOptions,
-                    valueTransform: (value) => clampFaderGain(isDecibelLane ? dbToGain(value) : value),
+                    // The VCA group master composes in exactly where live puts
+                    // it: after the dB→linear conversion and before the fader
+                    // clamp (`dbToGain(value) * vcaMultiplier` handed to
+                    // `scheduleTrackGain`, clamped inside `TrackNode`). Folding
+                    // it into `valueScale` instead would apply it ahead of the
+                    // dB conversion and scale decibels, not amplitude.
+                    valueTransform: (value) =>
+                        clampFaderGain((isDecibelLane ? dbToGain(value) : value) * vcaMultiplier),
                 }
             );
             continue;
