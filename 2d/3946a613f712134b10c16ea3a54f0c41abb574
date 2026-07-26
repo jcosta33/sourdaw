@@ -1,0 +1,29 @@
+src/modules/Arrangement/stores/__tests__/trackStorePersistenceRoundTrip.spec.ts
+  s_0d39f3a4a4357a::t_ca1c095d83f2d1 365-405
+src/modules/Arrangement/stores/trackStore.ts
+  s_0d39f3a4a4357a::t_a605651e43efcc 466-474
+src/modules/Project/useCases/projectPersistence/helpers/isHydratableProjectData.ts
+  s_0d39f3a4a4357a::t_d8c7bebe46d15b 301-305
+src/modules/Project/stores/arrangementStore.ts
+  s_0d39f3a4a4357a::t_eff2729b5b400e 108-109
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_0d39f3a4a4357a::t_2482e3720d56ac 283-290
+src/modules/Project/models/ProjectData.ts
+  s_0d39f3a4a4357a::t_e8c7676b1835b7 351-357
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "2d3946a613f712134b10c16ea3a54f0c41abb574",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
