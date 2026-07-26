@@ -49,7 +49,7 @@ export type AudioDeviceRuntimeSink = {
     updateTunerTelemetry: (deviceId: string, telemetry: ScoringTelemetry) => void;
     /**
      * Perform the engine setup an instrument needs before it can render, and
-     * resolve only once it can (OE-21).
+     * resolve only once it can.
      *
      * The offline render builds its nodes through a different registry than live
      * playback, so none of the per-device setup the live descriptors perform ever

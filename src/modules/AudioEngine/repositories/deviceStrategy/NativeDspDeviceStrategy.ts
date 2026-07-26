@@ -84,7 +84,7 @@ export async function createNativeDspStrategy(ctx: BaseAudioContext, device: Dev
         strategy.setParam(key, val);
     }
 
-    // OE-21: `parameterValues` is only the numeric half of a device's state. Every
+    // `parameterValues` is only the numeric half of a device's state. Every
     // instrument whose live descriptor does setup beyond plain params — Levain's
     // sample zones, Toaster's kit — got none of it here, because this path and the
     // live `wasmDeviceRegistry` are two registries, not one builder with a flag.

@@ -11,7 +11,7 @@ export type LoadLevainSamplesIntoPortInput = {
 
 /**
  * Load an instrument's zones into one Levain worklet instance and resolve when
- * the engine can actually play it (OE-21).
+ * the engine can actually play it.
  *
  * This is the engine half of what `registerLevainDevice` does, with none of the
  * live-runtime bookkeeping and none of the UI progress writes. It exists because

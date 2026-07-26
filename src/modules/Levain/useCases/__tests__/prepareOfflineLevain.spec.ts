@@ -20,7 +20,7 @@ function fakePort(): MessagePort {
     return { postMessage: vi.fn() } as unknown as MessagePort;
 }
 
-describe('prepareOfflineLevain (OE-21)', () => {
+describe('prepareOfflineLevain', () => {
     beforeEach(() => {
         mocks.loadInstrumentFromManifest.mockClear();
         mocks.resolveSampleBasePath.mockClear();
@@ -55,7 +55,7 @@ describe('prepareOfflineLevain (OE-21)', () => {
     });
 
     it('does not resolve until the zone load has finished', async () => {
-        // The whole point of OE-21: an offline context renders faster than real
+        // The reason this matters: an offline context renders faster than real
         // time, so a load that is merely started never lands. Starting it is not
         // enough — the caller must be able to wait for it.
         let releaseLoad = (): void => {};

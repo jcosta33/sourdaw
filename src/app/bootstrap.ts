@@ -287,7 +287,7 @@ configureAudioDeviceRuntimeSink({
     setLevainEngineReady: ({ deviceId, isReady }) => {
         setEngineReady(deviceId, isReady);
     },
-    // OE-21: the offline render builds instrument nodes through a different
+    // The offline render builds instrument nodes through a different
     // registry than live playback, so nothing here ran for an export and Levain
     // bounced silence. Dispatch stays in the composition root; each module owns
     // what its own instrument needs.

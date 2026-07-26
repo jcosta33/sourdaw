@@ -1,4 +1,4 @@
-//! OE-21 — the engine-side contract the offline export fix depends on.
+//! The engine-side contract the offline export sample-loading fix depends on.
 //!
 //! A Levain instance that has never begun a sample load renders *digital silence*,
 //! not a fallback tone. The fallback exists precisely to cover an unloaded

@@ -10,8 +10,7 @@ export type PrepareOfflineLevainInput = {
 };
 
 /**
- * Load the zones an offline Levain instance needs, resolving when it can play
- * (OE-21).
+ * Load the zones an offline Levain instance needs, resolving when it can play.
  *
  * The offline render constructs its own Levain node and never registers it, so
  * the instance has no zones and a fallback tone that was never armed — it renders
