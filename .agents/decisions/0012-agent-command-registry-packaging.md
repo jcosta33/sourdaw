@@ -20,9 +20,10 @@ also remain independent of replaying historical command implementations.
 
 ## Decision
 
-Wrap `AppAction` in a versioned `DawCommandV1` envelope and derive envelopes,
-descriptors, schemas, risks, inverses, and receipts from Command's one descriptor
-registry. Retire `RuntimeAction` as a second census.
+Wrap `AppAction` in a versioned `DawCommandV1` envelope. Derive both `AppAction`
+and `DawCommandV1`, along with descriptors, schemas, risks, inverses, and
+receipts, from Command's one descriptor registry. Retire `RuntimeAction` as a
+second census.
 
 Every semantic project mutation, accepted preview, undo, redo, compensation,
 import-created project reference, and project-backed decision enters Command.
