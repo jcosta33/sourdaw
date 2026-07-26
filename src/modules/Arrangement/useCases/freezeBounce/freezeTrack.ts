@@ -8,6 +8,14 @@ import { trackStore } from '../../stores/trackStore';
 
 import { renderTrackOffline } from './renderOffline';
 
+/**
+ * Beats of tail freeze renders past a track's content. Exported because the
+ * unknown-baked-tail floor is derived from the longer of the two, and a
+ * hand-copied literal there would drift silently.
+ */
+export const FREEZE_MAX_TAIL_BEATS = 8;
+export const FREEZE_MIN_TAIL_BEATS = 4;
+
 export const activeFreezeTasks = new Map<string, AbortController>();
 
 export async function freezeTrack(trackId: string): Promise<boolean> {
@@ -58,7 +66,7 @@ export async function freezeTrack(trackId: string): Promise<boolean> {
         const hasReverbOrDelay = track.devices.some(
             (data) => data.type.toLowerCase().includes('reverb') || data.type.toLowerCase().includes('delay')
         );
-        const tailBeats = hasReverbOrDelay ? 8 : 4;
+        const tailBeats = hasReverbOrDelay ? FREEZE_MAX_TAIL_BEATS : FREEZE_MIN_TAIL_BEATS;
 
         const renderedBuffer = await renderTrackOffline(track, startBeat, endBeat + tailBeats, {
             abortSignal: abortController.signal,

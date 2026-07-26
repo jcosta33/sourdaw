@@ -6,7 +6,7 @@ import { defaultTransportState, type TransportState } from '../models/TransportS
 export { defaultTransportState, type TransportState };
 
 const DOC_PREFIX_ROOT = 'root';
-const MIN_TEMPO = 20;
+export const MIN_TEMPO = 20;
 const MAX_TEMPO = 300;
 const MIN_TIME_SIGNATURE_NUMERATOR = 1;
 const MAX_TIME_SIGNATURE_NUMERATOR = 32;
