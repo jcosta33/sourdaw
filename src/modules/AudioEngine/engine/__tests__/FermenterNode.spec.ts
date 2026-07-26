@@ -250,7 +250,7 @@ describe('createFermenterNode message surface & lifecycle', () => {
         // Re-assign prototype so instanceof holds.
         Object.setPrototypeOf(suspendedCtx, FakeAudioContext.prototype);
 
-        await createFermenterNode(suspendedCtx as unknown as BaseAudioContext);
+        await createFermenterNode(suspendedCtx);
         expect(resume).toHaveBeenCalledTimes(1);
     });
 });

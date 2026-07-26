@@ -5,7 +5,7 @@ import { applyLimiterParams } from '../applyLimiterParams';
 import { createLimiter } from '../createLimiter';
 
 function param(node: unknown, property: string): { value: number } {
-    const candidate = node ? Reflect.get(node as object, property) : null;
+    const candidate = node ? Reflect.get(node, property) : null;
     if (typeof candidate !== 'object' || candidate === null || !('value' in candidate)) {
         throw new Error(`Expected AudioParam at .${property}`);
     }

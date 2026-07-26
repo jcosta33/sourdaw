@@ -812,8 +812,8 @@ describe('exportStems — option parsing, validation & control flow', () => {
         // Defer the render resolution so the interval ticks at least once.
         let resolveRender!: (v: unknown) => void;
         offlineRenderMocks.renderWithTimeout.mockReturnValue(
-            new Promise((res) => {
-                resolveRender = res;
+            new Promise((resolve) => {
+                resolveRender = resolve;
             })
         );
         vi.stubGlobal(

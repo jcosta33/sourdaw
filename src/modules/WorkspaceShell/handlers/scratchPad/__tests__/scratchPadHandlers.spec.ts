@@ -66,7 +66,7 @@ describe('Workspace Scratch Pad Handlers', () => {
         it('is a no-op when the workspace store value is null (guard branch)', () => {
             // Drive the store value to null via the mock setter, then clear
             // the call log so only post-null writes are counted.
-            workspaceStore.set(null as any);
+            workspaceStore.set(null);
             vi.mocked(workspaceStore.set).mockClear();
 
             void handleToggleScratchPad.execute({ type: 'toggleScratchPad', payload: undefined });

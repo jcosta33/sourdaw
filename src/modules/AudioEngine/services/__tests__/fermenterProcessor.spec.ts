@@ -237,13 +237,13 @@ describe('FermenterProcessor message handling', () => {
             });
 
             const byName = Object.fromEntries(paramCalls.map((p) => [p.name, p.value]));
-            expect(byName['cutoff']).toBe(1000);
-            expect(byName['resonance']).toBe(0.7);
-            expect(byName['mod_env_to_filter']).toBe(0.3);
-            expect(byName['mod_lfo_to_pitch']).toBe(0.2);
-            expect(byName['engine']).toBe(1);
-            expect(byName['drift']).toBe(0.1);
-            expect(byName['portamento']).toBe(0.05);
+            expect(byName.cutoff).toBe(1000);
+            expect(byName.resonance).toBe(0.7);
+            expect(byName.mod_env_to_filter).toBe(0.3);
+            expect(byName.mod_lfo_to_pitch).toBe(0.2);
+            expect(byName.engine).toBe(1);
+            expect(byName.drift).toBe(0.1);
+            expect(byName.portamento).toBe(0.05);
         });
 
         it('expands a patch macros array into macro0..N params, defaulting missing slots', async () => {

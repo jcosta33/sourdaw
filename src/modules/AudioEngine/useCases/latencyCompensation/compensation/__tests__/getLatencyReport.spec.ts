@@ -16,7 +16,9 @@ vi.mock('../../../engineAccess/getAudioContext', () => ({
 // copies into the result. Stub the engine so we can drive both context shapes
 // (outputLatency present vs absent) without standing up the real Web Audio graph.
 // vi.hoisted makes the shared object available to the hoisted vi.mock factory.
-const { mockContext } = vi.hoisted(() => ({ mockContext: {} as { baseLatency?: number; outputLatency?: number } }));
+const { mockContext } = vi.hoisted((): { mockContext: { baseLatency?: number; outputLatency?: number } } => ({
+    mockContext: {},
+}));
 vi.mock('../../../../repositories/createWebAudioEngine', () => ({
     audioEngine: { context: mockContext },
 }));
@@ -60,10 +62,7 @@ describe('getLatencyReport', () => {
         ctx.baseLatency = 0.01; // 10 ms
         ctx.outputLatency = 0.005; // 5 ms
         mockTrackStore.value = {
-            tracks: [
-                makeTrack('t1', [{ id: 'sc', type: 'builtin-sidechain-compressor' }]),
-                makeTrack('t2'),
-            ],
+            tracks: [makeTrack('t1', [{ id: 'sc', type: 'builtin-sidechain-compressor' }]), makeTrack('t2')],
         };
 
         const report = getLatencyReport();

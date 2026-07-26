@@ -31,7 +31,7 @@ describe('duplicateClip', () => {
             color: '#fff',
             locked: false,
             muted: false,
-        } as Clip;
+        };
 
         const result = subject.duplicateClip('src');
 
