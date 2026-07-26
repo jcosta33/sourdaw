@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { transportStore } from '#/modules/Transport/stores';
+
 import { defaultProjectStoreState, projectStore } from '../../../../stores/projectStore';
 import { buildProjectData } from '../../../projectPersistence/fileIO/buildProjectData';
 import { resetModuleStoresToDefault } from '../../../projectPersistence/helpers/resetModuleStoresToDefault';
@@ -20,6 +22,13 @@ describe('createMyceliumAscendantDemo', () => {
             initialized: false,
             keyRoot: 9,
             scaleName: 'harmonic-minor',
+        });
+        expect(transportStore.value).toMatchObject({
+            tempo: 144,
+            loopStart: 0,
+            loopEnd: 576,
+            isLooping: true,
+            masterGain: 100,
         });
 
         const built = await buildProjectData({ includeAudioBuffers: false });

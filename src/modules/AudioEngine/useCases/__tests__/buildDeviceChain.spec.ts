@@ -9,11 +9,12 @@ const { mocks } = vi.hoisted(() => ({
         createFaustDevice: vi.fn(),
         createFaustNode: vi.fn(),
         isFaustModule: vi.fn(),
+        loggerWarn: vi.fn(),
     },
 }));
 
 vi.mock('#/infra/logger/appLogger', () => ({
-    logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn() },
+    logger: { warn: mocks.loggerWarn, error: vi.fn(), info: vi.fn() },
 }));
 
 vi.mock('#/modules/PluginHost/useCases', () => ({
@@ -112,6 +113,24 @@ describe('buildDeviceChain', () => {
         expect(entries).toEqual([]);
         // Nothing generates into the chain — the track is silent, not merely dry.
         expect(input.connect).toHaveBeenCalledWith(output);
+    });
+
+    it('routes Yeast around the audio chain without logging a missing-device warning', async () => {
+        const input = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
+        const output = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
+        const yeast: Device = {
+            id: 'yeast-1',
+            name: 'Yeast',
+            type: 'yeast',
+            bypassed: false,
+            parameterValues: {},
+        };
+
+        const entries = await buildDeviceChain({} as BaseAudioContext, [yeast], input, output);
+
+        expect(entries).toEqual([]);
+        expect(input.connect).toHaveBeenCalledWith(output);
+        expect(mocks.loggerWarn).not.toHaveBeenCalled();
     });
 
     // MD-4 — the note surface used to be attached to every entry, so the offline

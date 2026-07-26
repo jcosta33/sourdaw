@@ -56,7 +56,9 @@ export const buildDeviceChain = inject({ logger })(
             inputNode: AudioNode,
             outputNode: AudioNode
         ): Promise<BuildDeviceChainOutput> {
-            const activeDevices = devices.filter((data) => !data.bypassed);
+            // Yeast is a MIDI processor discovered from track.devices by the schedulers;
+            // it deliberately has no audio-node factory and must not enter this chain.
+            const activeDevices = devices.filter((device) => !device.bypassed && device.type !== 'yeast');
             if (activeDevices.length === 0) {
                 inputNode.connect(outputNode);
                 return [];

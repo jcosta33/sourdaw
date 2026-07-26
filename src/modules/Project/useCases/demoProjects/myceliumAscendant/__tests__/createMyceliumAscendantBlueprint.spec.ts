@@ -32,7 +32,10 @@ describe('createMyceliumAscendantBlueprint', () => {
             timeSignatureDenominator: 4,
             loopStart: 0,
             loopEnd: 576,
-            masterGain: 80,
+            isLooping: true,
+            preRollEnabled: false,
+            preRollBars: 1,
+            masterGain: 100,
         });
         expect(projectData.tempoMap?.changes.map(({ beat, tempo, curve }) => [beat, tempo, curve])).toEqual([
             [0, 144, 'instant'],
