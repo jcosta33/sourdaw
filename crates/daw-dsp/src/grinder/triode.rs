@@ -7,7 +7,7 @@
 //! Ip = (E₁^Ex / Kg) · (1 + sgn(E₁))
 
 use super::oversample::StageOversampler2x;
-use crate::primitives::flush_denormal_f64;
+use crate::primitives::{flush_denormal, flush_denormal_f64};
 
 #[derive(Clone, Copy)]
 enum AmpModel {
@@ -359,14 +359,6 @@ impl Preamp {
             signal += hp * bright_amount;
         }
 
-        if self.fat || model_low_end.abs() > 0.01 {
-            let dt = 1.0 / self.sample_rate;
-            let low_coeff = (2.0 * std::f32::consts::PI * 180.0 * dt).min(0.35);
-            self.fat_low_state += low_coeff * (signal - self.fat_low_state);
-            let fat_amount = (if self.fat { 0.22 } else { 0.0 }) + model_low_end;
-            signal += self.fat_low_state * fat_amount;
-        }
-
         if model_compression > 0.0 {
             let dt = 1.0 / self.sample_rate;
             let env_coeff = (2.0 * std::f32::consts::PI * 85.0 * dt).min(0.22);
@@ -422,6 +414,29 @@ impl Preamp {
             let post_shaped =
                 (final_out * (1.0 + model_compression * 0.9)).tanh() * (0.96 - model_compression * 0.06);
             final_out = final_out * (1.0 - post_mix) + post_shaped * post_mix;
+        }
+
+        // The model's low-end voicing shelf sits *after* the gain stages.
+        //
+        // It used to sit before them, where it was drive shaping rather than
+        // tone shaping: extra low end went into three saturating triodes and
+        // the model compressor, which removed more than the shelf added. That
+        // inverted the control on the models that saturate hardest — a +0.22
+        // shelf boost measured -8.95% low-band body on Lead JCM and -6.92% on
+        // Custom, while the same boost measured +4.29% on Ac30 Top Boost. A
+        // control whose sign depends on the model cannot be voiced with a
+        // constant, which is why the per-model numbers below never delivered
+        // the separation they describe.
+        //
+        // Downstream of the stages the shelf is monotonic and correctly signed
+        // on every model, so `model_low_end` finally means what it says.
+        if self.fat || model_low_end.abs() > 0.01 {
+            let dt = 1.0 / self.sample_rate;
+            let low_coeff = (2.0 * std::f32::consts::PI * 180.0 * dt).min(0.35);
+            self.fat_low_state =
+                flush_denormal(self.fat_low_state + low_coeff * (final_out - self.fat_low_state));
+            let low_end_amount = (if self.fat { 0.22 } else { 0.0 }) + model_low_end;
+            final_out += self.fat_low_state * low_end_amount;
         }
 
         final_out
@@ -534,7 +549,7 @@ mod tests {
     /// Returns `(low_band_body, edge)` for a palm-muted burst: `body` is the
     /// summed 220 Hz low-pass magnitude, `edge` the summed envelope of what is
     /// left above it.
-    fn body_and_edge_for_amp_model(amp_model: f32) -> (f32, f32) {
+    fn body_and_edge_for_amp_model(amp_model: f32, fat: bool) -> (f32, f32) {
         let sample_rate = 48_000.0;
         let mut preamp = Preamp::new(sample_rate);
         preamp.set_param("ampModel", amp_model);
@@ -543,6 +558,9 @@ mod tests {
         preamp.set_param("tubeBias", 0.56);
         preamp.set_param("gridConduction", 0.62);
         preamp.set_param("couplingCapCharge", 0.70);
+        if fat {
+            preamp.set_param("fat", 1.0);
+        }
 
         let total = 4096;
         let burst_len = 1024;
@@ -769,39 +787,40 @@ mod tests {
         );
     }
 
-    /// ENCODES A KNOWN GAP (DSP-10), NOT THE DESIGN INTENT.
-    ///
     /// Rectifier sets `model_low_end` 0.32 against Lead JCM's 0.05 (see the
-    /// per-model table in `Preamp::process_sample`), so it is *supposed* to
-    /// come out audibly fatter. It does not. On the corrected signal path the
-    /// two models' low-band body is effectively tied.
+    /// per-model table in `Preamp::process_sample`), so it is supposed to come
+    /// out audibly fatter. With the low shelf downstream of the gain stages it
+    /// finally does: measured on this fixture, Rectifier's low-band body is
+    /// **484.4 against Lead's 423.3, a +14.4% separation**, and the same two
+    /// constants give +17.5% on the two-stage channel and +22.1% on the
+    /// one-stage channel.
     ///
-    /// This test used to assert `rectifier_balance - lead_balance > 0.14` and
-    /// passed — but it passed on aliasing. Before DSP-3 replaced Grinder's
-    /// 2-tap box-average "oversampling" with a real half-band FIR, fold-back
-    /// from the high-order harmonics landed below 220 Hz and was counted as
-    /// body. Measured on this exact fixture:
+    /// Neither constant was changed to get there — only the shelf's position.
+    /// While it sat upstream of the stages the same 0.32-vs-0.05 pair measured
+    /// 386.3 against 387.2, a **-0.24%** gap: the models were tied, and the
+    /// separation the product documents was being supplied by alias fold-back
+    /// landing below 220 Hz rather than by the voicing parameter.
     ///
-    /// | model      | body  | edge  | balance |
-    /// |------------|-------|-------|---------|
-    /// | Lead, box  | 397.5 | 199.6 | 1.991   |
-    /// | Lead, FIR  | 387.2 | 192.3 | 2.014   |
-    /// | Rect, box  | 409.5 | 191.9 | 2.134   |
-    /// | Rect, FIR  | 386.0 | 212.2 | 1.817   |
+    /// Both bounds below are live in both directions.
     ///
-    /// Lead barely moves; Rectifier loses 5.7% of its low band and gains 10.7%
-    /// above 220 Hz. So `model_low_end` was never delivering the separation —
-    /// alias mud was. Retuning it needs listening judgement and is tracked as
-    /// DSP-10, not fixed here.
+    /// *Low bound.* Putting the shelf back upstream of the stages, or otherwise
+    /// letting the saturation eat it, collapses the gap toward the -0.24% tie
+    /// and trips it.
     ///
-    /// The bound below is a real guard in both directions: regressing the
-    /// oversampling pushes Rectifier's body back to ~409 (+3.0% over Lead) and
-    /// trips it, and genuinely fixing DSP-10 separates the two and also trips
-    /// it — at which point this test should be rewritten to assert the intent.
+    /// *High bound.* The gap is not a free parameter to dial upward. Reaching
+    /// the `balance` separation of +0.14 that this test asserted before the
+    /// oversampling was corrected needs roughly **1.75** of shelf — about
+    /// +8.8 dB, more than doubling the low band — because `balance` is
+    /// `body / edge` and Rectifier's edge rises with the shelf too. Measured:
+    /// 0.32 gives a balance gap of -0.310, 0.90 gives -0.070, 1.10 gives
+    /// -0.009, and it only clears +0.14 between 1.70 and 2.00. That old target
+    /// was inflated by fold-back counting twice — it added body *and* removed
+    /// edge — so it is not restored here, and anything approaching it is a
+    /// voicing decision that needs ears rather than a constant nudge.
     #[test]
-    fn rectifier_and_lead_jcm_low_band_body_are_comparable_on_the_clean_path() {
-        let (lead_body, lead_edge) = body_and_edge_for_amp_model(2.0);
-        let (rectifier_body, rectifier_edge) = body_and_edge_for_amp_model(4.0);
+    fn rectifier_voices_fatter_than_lead_jcm_through_its_low_end_shelf() {
+        let (lead_body, lead_edge) = body_and_edge_for_amp_model(2.0, false);
+        let (rectifier_body, rectifier_edge) = body_and_edge_for_amp_model(4.0, false);
 
         assert!(
             lead_body > 100.0 && rectifier_body > 100.0,
@@ -809,25 +828,72 @@ mod tests {
              comparison below is vacuous (lead={lead_body}, rectifier={rectifier_body})"
         );
 
-        let body_gap = (rectifier_body - lead_body).abs() / lead_body;
+        let body_gap = (rectifier_body - lead_body) / lead_body;
         assert!(
-            body_gap < 0.02,
-            "DSP-10: Rectifier's model_low_end (0.32 vs Lead JCM's 0.05) still \
-             fails to separate low-band body on the clean path — they are within \
-             2%. A gap outside that band means either the DSP-3 oversampling \
-             regressed or DSP-10 was fixed; both need this test rewritten. \
+            (0.08..0.22).contains(&body_gap),
+            "Rectifier's model_low_end (0.32 vs Lead JCM's 0.05) should put its \
+             low-band body clearly above Lead's without turning into a different \
+             amp. Below the band means the shelf is being spent driving the \
+             saturating stages again; above it means someone widened the voicing \
+             gap, which is a listening decision and not a constant nudge. \
              (lead={lead_body}, rectifier={rectifier_body}, gap={body_gap})"
         );
 
-        // The edge side is where the models *do* differ once fold-back stops
-        // inflating the low band: Rectifier drives harder and now keeps those
-        // harmonics instead of aliasing them downward.
+        // The edge side is the alias-regression tripwire. Fold-back moves
+        // Rectifier's high-order harmonics *below* 220 Hz, so it shows up as
+        // Rectifier carrying less content above 220 Hz than Lead, not more:
+        // on the 2-tap box average this ratio was 0.96, and behind the
+        // half-band FIR it is 1.34. Reintroducing the box average trips this.
+        let edge_ratio = rectifier_edge / lead_edge;
         assert!(
-            rectifier_edge > lead_edge,
-            "Rectifier should carry more content above 220 Hz than Lead JCM \
-             once the harmonics stop folding down (lead={lead_edge}, \
-             rectifier={rectifier_edge})"
+            edge_ratio > 1.15,
+            "Rectifier drives harder than Lead JCM, so it must carry more \
+             content above 220 Hz, not less. A ratio at or below 1.0 means the \
+             harmonics are folding back down into the low band again and the \
+             stage oversampling has regressed (lead={lead_edge}, \
+             rectifier={rectifier_edge}, ratio={edge_ratio})"
         );
+    }
+
+    /// The 180 Hz low shelf is the only thing `model_low_end` drives, and the
+    /// `fat` switch adds exactly `+0.22` to that same shelf amount. So toggling
+    /// `fat` is a single-variable probe of the shelf's *sign*: hold the model,
+    /// the channel, the gain and every tube parameter fixed, move only the
+    /// shelf, and measure what happens below 220 Hz.
+    ///
+    /// A low shelf that boosts must raise low-band body on every model. When
+    /// the shelf sat upstream of the three saturating stages and the model
+    /// compressor it did the opposite on half the models, because the extra low
+    /// end drove those stages harder and they removed more than it added:
+    /// Lead JCM `387.2 -> 352.5 (-8.95%)`, Custom `399.1 -> 371.5 (-6.92%)`,
+    /// Rectifier `386.3 -> 383.6 (-0.68%)`, Clean Twin `+0.05%` — while
+    /// Ac30 Top Boost went `+4.29%` and Crunch JCM `+2.87%`. Same shelf, same
+    /// delta, three different signs depending on how hard the model saturates.
+    ///
+    /// That is what made `model_low_end` unusable as a voicing control: no
+    /// constant can be tuned through a response whose sign flips per model.
+    #[test]
+    fn the_low_end_shelf_raises_low_band_body_on_every_amp_model() {
+        for amp_model in 0..6 {
+            let (dry_body, _) = body_and_edge_for_amp_model(amp_model as f32, false);
+            let (wet_body, _) = body_and_edge_for_amp_model(amp_model as f32, true);
+
+            assert!(
+                dry_body > 100.0,
+                "model {amp_model} must produce low-band output at all, or the \
+                 comparison below is vacuous (body={dry_body})"
+            );
+
+            let delta = (wet_body - dry_body) / dry_body;
+            assert!(
+                delta > 0.05,
+                "model {amp_model}: a +0.22 boost on the 180 Hz low shelf must \
+                 raise low-band body by a clearly audible margin, not lower it. \
+                 A negative or negligible delta means the shelf is being spent \
+                 driving the saturating stages instead of voicing the amp \
+                 (dry={dry_body}, wet={wet_body}, delta={delta})"
+            );
+        }
     }
 
     #[test]
