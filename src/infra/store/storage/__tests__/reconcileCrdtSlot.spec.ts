@@ -189,6 +189,139 @@ describe('reconcileCrdtSlot', () => {
         expect(slotOf(doc).rows.map((row) => row.id)).toStrictEqual(['c', 'a', 'b']);
     });
 
+    it('moves only the rows whose position changed, keeping every other row element', () => {
+        const stayA: Row = { id: 'a', name: 'a0' };
+        const stayB: Row = { id: 'b', name: 'b0' };
+        const doc: Doc = { slot: { rows: [stayA, stayB, { id: 'c', name: 'c0' }] } };
+        const before = {
+            rows: [
+                { id: 'a', name: 'a0' },
+                { id: 'b', name: 'b0' },
+                { id: 'c', name: 'c0' },
+            ],
+        };
+
+        reconcileCrdtSlot({
+            doc,
+            key: 'slot',
+            baseValue: before,
+            value: {
+                rows: [
+                    { id: 'c', name: 'c0' },
+                    { id: 'a', name: 'a0' },
+                    { id: 'b', name: 'b0' },
+                ],
+            },
+        });
+
+        // Moving `c` to the front leaves `a` and `b` in the same relative
+        // order, so only `c` is relocated. The other two keep their element —
+        // which is what carries a concurrent peer edit through the merge.
+        expect(slotOf(doc).rows.map((row) => row.id)).toStrictEqual(['c', 'a', 'b']);
+        expect(slotOf(doc).rows[1]).toBe(stayA);
+        expect(slotOf(doc).rows[2]).toBe(stayB);
+    });
+
+    it('reorders correctly when a row is added in the same write', () => {
+        const doc: Doc = {
+            slot: {
+                rows: [
+                    { id: 'a', name: 'a0' },
+                    { id: 'b', name: 'b0' },
+                ],
+            },
+        };
+
+        reconcileCrdtSlot({
+            doc,
+            key: 'slot',
+            baseValue: {
+                rows: [
+                    { id: 'a', name: 'a0' },
+                    { id: 'b', name: 'b0' },
+                ],
+            },
+            value: {
+                rows: [
+                    { id: 'b', name: 'b0' },
+                    { id: 'new', name: 'new0' },
+                    { id: 'a', name: 'a0' },
+                ],
+            },
+        });
+
+        expect(slotOf(doc).rows.map((row) => row.id)).toStrictEqual(['b', 'new', 'a']);
+    });
+
+    it('reorders correctly when the collection is fully reversed', () => {
+        const doc: Doc = {
+            slot: {
+                rows: [
+                    { id: 'a', name: 'a0' },
+                    { id: 'b', name: 'b0' },
+                    { id: 'c', name: 'c0' },
+                    { id: 'd', name: 'd0' },
+                ],
+            },
+        };
+
+        reconcileCrdtSlot({
+            doc,
+            key: 'slot',
+            baseValue: {
+                rows: [
+                    { id: 'a', name: 'a0' },
+                    { id: 'b', name: 'b0' },
+                    { id: 'c', name: 'c0' },
+                    { id: 'd', name: 'd0' },
+                ],
+            },
+            value: {
+                rows: [
+                    { id: 'd', name: 'd0' },
+                    { id: 'c', name: 'c0' },
+                    { id: 'b', name: 'b0' },
+                    { id: 'a', name: 'a0' },
+                ],
+            },
+        });
+
+        expect(slotOf(doc).rows.map((row) => row.id)).toStrictEqual(['d', 'c', 'b', 'a']);
+    });
+
+    it('keeps a reordered collections foreign row in place', () => {
+        const doc: Doc = {
+            slot: {
+                rows: [
+                    { id: 'a', name: 'a0' },
+                    { id: 'quarantined', name: 'unreadable' },
+                    { id: 'b', name: 'b0' },
+                ],
+            },
+        };
+
+        reconcileCrdtSlot({
+            doc,
+            key: 'slot',
+            baseValue: {
+                rows: [
+                    { id: 'a', name: 'a0' },
+                    { id: 'b', name: 'b0' },
+                ],
+            },
+            value: {
+                rows: [
+                    { id: 'b', name: 'b0' },
+                    { id: 'a', name: 'a0' },
+                ],
+            },
+        });
+
+        const ids = slotOf(doc).rows.map((row) => row.id);
+        expect(ids).toContain('quarantined');
+        expect(ids.indexOf('b')).toBeLessThan(ids.indexOf('a'));
+    });
+
     it('removes a record field the writer saw and dropped, and keeps one it never saw', () => {
         const doc: Doc = {
             slot: {

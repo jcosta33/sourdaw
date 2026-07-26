@@ -255,10 +255,13 @@ function reconcileCollection(input: ReconcileCollectionInput): void {
         current.splice(index, 1);
     }
 
+    // Index once rather than scanning the collection per desired row. This runs
+    // on every slot write in the application, and nested collections compound.
+    const currentIndexByIdentity = indexCollection(current, identify);
+
     for (const [desiredIndex, identity] of desiredIdentities.entries()) {
-        const currentIndex = indexOfIdentity(current, identify, identity);
-        if (currentIndex === -1) {
-            current.splice(Math.min(desiredIndex, current.length), 0, desired[desiredIndex]);
+        const currentIndex = currentIndexByIdentity.get(identity);
+        if (currentIndex === undefined) {
             continue;
         }
         reconcileChild({
@@ -271,44 +274,151 @@ function reconcileCollection(input: ReconcileCollectionInput): void {
         });
     }
 
-    reorderCollection({ current, identify, desired, desiredIdentities, desiredIdentitySet });
+    placeRows({
+        current,
+        identify,
+        desired,
+        desiredIdentities,
+        currentIndexByIdentity,
+        desiredIdentitySet,
+    });
 }
 
-type ReorderCollectionInput = {
+function indexCollection(rows: readonly unknown[], identify: CrdtEntityIdentity): Map<string, number> {
+    const indexByIdentity = new Map<string, number>();
+    for (const [index, row] of rows.entries()) {
+        if (!isUnknownRecord(row)) {
+            continue;
+        }
+        const identity = identify(row);
+        if (identity !== null) {
+            indexByIdentity.set(identity, index);
+        }
+    }
+    return indexByIdentity;
+}
+
+/**
+ * Indices of a longest strictly increasing subsequence of `values`.
+ *
+ * Used to pick the largest set of rows already in the writer's intended
+ * relative order, so a reorder moves the fewest elements it possibly can.
+ */
+function longestIncreasingRun(values: readonly number[]): readonly number[] {
+    const tails: number[] = [];
+    const previous: number[] = Array.from({ length: values.length }, () => -1);
+    for (let index = 0; index < values.length; index += 1) {
+        const value = values[index] ?? 0;
+        let low = 0;
+        let high = tails.length;
+        while (low < high) {
+            const mid = Math.floor((low + high) / 2);
+            const candidate = values[tails[mid] ?? 0] ?? 0;
+            if (candidate < value) {
+                low = mid + 1;
+            } else {
+                high = mid;
+            }
+        }
+        if (low > 0) {
+            previous[index] = tails[low - 1] ?? -1;
+        }
+        tails[low] = index;
+    }
+
+    const run: number[] = [];
+    let cursor = tails.length > 0 ? (tails[tails.length - 1] ?? -1) : -1;
+    while (cursor >= 0) {
+        run.push(cursor);
+        cursor = previous[cursor] ?? -1;
+    }
+    return run.reverse();
+}
+
+type PlaceRowsInput = {
     current: unknown[];
     identify: CrdtEntityIdentity;
     desired: readonly unknown[];
     desiredIdentities: readonly string[];
+    currentIndexByIdentity: ReadonlyMap<string, number>;
     desiredIdentitySet: ReadonlySet<string>;
 };
 
 /**
- * Restore the writer's ordering across the slots its own rows occupy, leaving
- * preserved foreign rows where they sit. Ordering is load-bearing in several
- * slots (device chains, beat-sorted tempo and automation points), so a local
- * reorder has to reach the document — but it is expressed as an assignment per
- * displaced slot rather than a splice, so the collection's length and every
- * foreign row's position survive.
+ * Insert rows the document lacks, and apply the writer's ordering by moving as
+ * few existing rows as possible.
+ *
+ * Ordering is load-bearing in several slots — device and MIDI-FX chains,
+ * beat-sorted tempo and time-signature maps — so a local reorder has to reach
+ * the document. Automerge resolves concurrent list operations by element
+ * identity and offers no move primitive, so the only way to relocate a row is
+ * to remove it and insert it again, which necessarily mints a new element and
+ * discards a peer's concurrent edit to *that* row.
+ *
+ * Writing the writer's own row value into each displaced position instead is
+ * strictly worse: it competes with a peer's concurrent field write on whatever
+ * element already occupies that position and resolves last-writer-wins, so
+ * moving one row to the front silently discarded concurrent edits to every row
+ * it pushed along. One user dragging a device up the chain would drop another
+ * user's knob tweak on a device that never moved.
+ *
+ * So the rows already in the writer's intended relative order are pinned, and
+ * only the genuine movers are removed and re-inserted. The blast radius of a
+ * reorder is then exactly the rows the user actually moved.
  */
-function reorderCollection(input: ReorderCollectionInput): void {
-    const { current, identify, desired, desiredIdentities, desiredIdentitySet } = input;
-    const ownedSlots: number[] = [];
-    for (let index = 0; index < current.length; index += 1) {
-        const identity = identityAt(current, identify, index);
-        if (identity !== null && desiredIdentitySet.has(identity)) {
-            ownedSlots.push(index);
+function placeRows(input: PlaceRowsInput): void {
+    const { current, identify, desired, desiredIdentities, currentIndexByIdentity, desiredIdentitySet } = input;
+
+    const presentDesiredIndices: number[] = [];
+    for (const [desiredIndex, identity] of desiredIdentities.entries()) {
+        if (currentIndexByIdentity.has(identity)) {
+            presentDesiredIndices.push(desiredIndex);
         }
-    }
-    if (ownedSlots.length !== desiredIdentities.length) {
-        return;
     }
 
-    for (const [position, slot] of ownedSlots.entries()) {
-        const wanted = desiredIdentities[position];
-        if (identityAt(current, identify, slot) === wanted) {
+    // Rank each present row by where it currently sits; the longest increasing
+    // run over those positions is the largest set already correctly ordered.
+    const currentPositions = presentDesiredIndices.map(
+        (desiredIndex) => currentIndexByIdentity.get(desiredIdentities[desiredIndex] ?? '') ?? 0
+    );
+    const pinned = new Set<string>();
+    for (const runIndex of longestIncreasingRun(currentPositions)) {
+        const desiredIndex = presentDesiredIndices[runIndex];
+        if (desiredIndex === undefined) {
             continue;
         }
-        current[slot] = desired[position];
+        const identity = desiredIdentities[desiredIndex];
+        if (identity !== undefined) {
+            pinned.add(identity);
+        }
+    }
+
+    // Remove only the writer's own rows that have to move. Pinned rows keep
+    // their element, and with it any concurrent edit a peer is making to them.
+    // A row the writer never had in hand is not its to relocate, so it stays
+    // exactly where it is.
+    for (let index = current.length - 1; index >= 0; index -= 1) {
+        const identity = identityAt(current, identify, index);
+        if (identity === null || pinned.has(identity)) {
+            continue;
+        }
+        if (!desiredIdentitySet.has(identity)) {
+            continue;
+        }
+        current.splice(index, 1);
+    }
+
+    // Walk the writer's order, placing anything not already positioned right
+    // after the previously placed row.
+    let previousIndex = -1;
+    for (const [desiredIndex, identity] of desiredIdentities.entries()) {
+        if (pinned.has(identity)) {
+            previousIndex = indexOfIdentity(current, identify, identity);
+            continue;
+        }
+        const insertAt = Math.min(previousIndex + 1, current.length);
+        current.splice(insertAt, 0, desired[desiredIndex]);
+        previousIndex = insertAt;
     }
 }
 
