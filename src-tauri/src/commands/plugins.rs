@@ -688,13 +688,31 @@ pub async fn update_plugin_transport(
 /// Takes interleaved stereo audio as raw bytes (IEEE 754 little-endian f32,
 /// L0,R0,L1,R1,...). Returns processed audio as raw bytes in the same format.
 /// Uses the lock-free ring buffer — no mutex on the audio thread.
+///
+/// Keyed by `instance_id`, not by the engine plugin id. The engine id is
+/// reserved inside the audio engine and is meaningless to the frontend: the
+/// frontend has no reliable way to learn it, and a placeholder value resolves
+/// no bridge at all, which degrades to an unprocessed dry signal rather than to
+/// a visible error. The instance id is the identifier both sides already agree
+/// on, so the engine id is resolved here, where it is actually known.
 #[tauri::command]
 
 pub async fn process_plugin_audio(
-    engine_plugin_id: usize,
+    instance_id: String,
     audio_bytes: Vec<u8>,
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<u8>, String> {
+    let engine_plugin_id = {
+        let engine_plugins = state
+            .engine_plugins
+            .lock()
+            .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+        engine_plugins
+            .get(&instance_id)
+            .map(|data| data.engine_plugin_id)
+            .ok_or_else(|| format!("No engine plugin for instance {}", instance_id))?
+    };
+
     let mut bridges = state
         .audio_bridges
         .lock()
@@ -734,8 +752,10 @@ pub async fn process_plugin_audio(
     // Try to pop processed output
     // This may be from the previous block with one block of latency.
     if let Some(output) = bridge.pop_output() {
-        // Re-interleave and encode as raw bytes
-        let n = num_samples.min(128);
+        // Re-interleave and encode as raw bytes. The block reports its own
+        // frame count, so a quantum other than 128 round-trips whole instead of
+        // being silently clipped to the first 128 frames.
+        let n = output.frames;
         let mut result = Vec::with_capacity(n * 2 * 4);
         for i in 0..n {
             result.extend_from_slice(&output.left[i].to_le_bytes());

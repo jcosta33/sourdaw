@@ -552,8 +552,9 @@ export class TrackNode {
                 destroy: () => {},
             };
         } else if (deviceType === 'external-plugin') {
-            // Native plugin bridge: uses SharedArrayBuffer for zero-copy audio transfer
-            // between Web Audio and the Rust cpal audio thread.
+            // Native plugin bridge: relays audio between Web Audio and the Rust
+            // cpal audio thread. A SharedArrayBuffer cannot reach the host
+            // process, so the hop to Rust is IPC; the instance id is the key.
             const loadingBypass = context.createGain();
             const pendingLoad: PendingDeviceLoad = { parameterWrites: [], resolved: false };
             dn = {
@@ -575,11 +576,7 @@ export class TrackNode {
             };
             dn.controller = loadingControls;
 
-            const loadPromise = createNativePluginBridgeNode(
-                context,
-                externalInstanceId ?? deviceId,
-                0 // engine plugin ID — will be assigned by Rust
-            )
+            const loadPromise = createNativePluginBridgeNode(context, externalInstanceId ?? deviceId)
                 .then((result) => {
                     const controls = {
                         setParam: (name: string, value: number) => result.setParam(parseInt(name, 10) || 0, value),
