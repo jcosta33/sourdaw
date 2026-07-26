@@ -7,6 +7,8 @@ import {
 } from '../../services/transformMidiGlobalTimeState';
 import { midiStore, type MidiStoreState } from '../../stores/midiStore';
 
+import { midiTimeStateCodec } from './midiTimeStateCodec';
+
 type MidiGlobalTimeClipSnapshot = {
     clipId: string;
     startBeat: number;
@@ -63,6 +65,20 @@ type MidiGlobalTimeReplayNote = MidiGeneratedNoteIdentityRequest & {
 type MidiGlobalTimeReplayPlan = {
     version: 1;
     notes: readonly MidiGlobalTimeReplayNote[];
+};
+
+type MidiTimeStateSnapshot = NonNullable<ReturnType<typeof midiTimeStateCodec.encodeState>>;
+
+type MidiGlobalTimeStateRestorePlan = {
+    version: 1;
+    expected: MidiTimeStateSnapshot;
+    replacement: MidiTimeStateSnapshot;
+};
+
+type MidiGlobalTimeStateSnapshots = {
+    inversePlan: MidiGlobalTimeStateRestorePlan;
+    nextValueSnapshot: MidiTimeStateSnapshot;
+    preparedValueSnapshot: MidiTimeStateSnapshot;
 };
 
 type PrepareMidiGlobalTimeTransactionInput = {
@@ -587,9 +603,49 @@ function isPublishingPhase(phase: TransactionPhase): boolean {
     return phase === 'publishing';
 }
 
+function createStateSnapshots(
+    expectedState: MidiStoreState,
+    replacementState: MidiStoreState
+): MidiGlobalTimeStateSnapshots | null {
+    const expected = midiTimeStateCodec.encodeState(expectedState);
+    const replacement = midiTimeStateCodec.encodeState(replacementState);
+    if (!expected || !replacement) {
+        return null;
+    }
+
+    return {
+        inversePlan: {
+            version: 1,
+            expected,
+            replacement,
+        },
+        nextValueSnapshot: expected,
+        preparedValueSnapshot: replacement,
+    };
+}
+
+function matchesReferenceAndValue(
+    currentState: MidiStoreState | null,
+    expectedReference: MidiStoreState,
+    expectedValueSnapshot: MidiTimeStateSnapshot
+): boolean {
+    if (currentState !== expectedReference) {
+        return false;
+    }
+
+    return midiTimeStateCodec.stateMatchesSnapshot(currentState, expectedValueSnapshot);
+}
+
 export function prepareMidiGlobalTimeTransaction(input: PrepareMidiGlobalTimeTransactionInput) {
     const preparedState = midiStore.value;
-    const prepared = prepareState(preparedState, input);
+    let prepared = prepareState(preparedState, input);
+    let stateSnapshots: MidiGlobalTimeStateSnapshots | null = null;
+    if (prepared.status === 'ready' && prepared.hasChanges && preparedState && prepared.nextState) {
+        stateSnapshots = createStateSnapshots(prepared.nextState, preparedState);
+        if (!stateSnapshots) {
+            prepared = rejectPreparation();
+        }
+    }
     let phase: TransactionPhase = prepared.hasChanges ? 'prepared' : 'closed';
 
     function apply(): boolean {
@@ -600,7 +656,15 @@ export function prepareMidiGlobalTimeTransaction(input: PrepareMidiGlobalTimeTra
             phase = 'closed';
             return false;
         }
-        if (!preparedState || !prepared.nextState || midiStore.value !== preparedState) {
+        if (!preparedState || !prepared.nextState || !stateSnapshots) {
+            phase = 'closed';
+            return false;
+        }
+        if (!matchesReferenceAndValue(midiStore.value, preparedState, stateSnapshots.preparedValueSnapshot)) {
+            phase = 'closed';
+            return false;
+        }
+        if (!midiTimeStateCodec.stateMatchesSnapshot(prepared.nextState, stateSnapshots.nextValueSnapshot)) {
             phase = 'closed';
             return false;
         }
@@ -616,7 +680,7 @@ export function prepareMidiGlobalTimeTransaction(input: PrepareMidiGlobalTimeTra
             phase = 'closed';
             return false;
         }
-        if (midiStore.value !== prepared.nextState) {
+        if (!matchesReferenceAndValue(midiStore.value, prepared.nextState, stateSnapshots.nextValueSnapshot)) {
             phase = 'closed';
             return false;
         }
@@ -633,7 +697,15 @@ export function prepareMidiGlobalTimeTransaction(input: PrepareMidiGlobalTimeTra
             phase = 'closed';
             return false;
         }
-        if (!preparedState || !prepared.nextState || midiStore.value !== prepared.nextState) {
+        if (!preparedState || !prepared.nextState || !stateSnapshots) {
+            phase = 'closed';
+            return false;
+        }
+        if (!matchesReferenceAndValue(midiStore.value, prepared.nextState, stateSnapshots.nextValueSnapshot)) {
+            phase = 'closed';
+            return false;
+        }
+        if (!midiTimeStateCodec.stateMatchesSnapshot(preparedState, stateSnapshots.preparedValueSnapshot)) {
             phase = 'closed';
             return false;
         }
@@ -651,13 +723,14 @@ export function prepareMidiGlobalTimeTransaction(input: PrepareMidiGlobalTimeTra
         }
 
         phase = 'closed';
-        return midiStore.value === preparedState;
+        return matchesReferenceAndValue(midiStore.value, preparedState, stateSnapshots.preparedValueSnapshot);
     }
 
     return {
         status: prepared.status,
         hasChanges: prepared.hasChanges,
         replayPlan: prepared.replayPlan,
+        inversePlan: stateSnapshots?.inversePlan ?? null,
         apply,
         revert,
     };

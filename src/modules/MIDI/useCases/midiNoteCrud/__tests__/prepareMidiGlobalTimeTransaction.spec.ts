@@ -13,14 +13,19 @@ const mocks = vi.hoisted(() => {
     };
 });
 
-vi.mock('../../../stores/midiStore', () => ({
-    midiStore: {
-        get value(): MidiStoreState | null {
-            return mocks.state.value;
+vi.mock('../../../stores/midiStore', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../../../stores/midiStore')>();
+
+    return {
+        ...actual,
+        midiStore: {
+            get value(): MidiStoreState | null {
+                return mocks.state.value;
+            },
+            set: mocks.set,
         },
-        set: mocks.set,
-    },
-}));
+    };
+});
 
 const { prepareMidiGlobalTimeTransaction } = await import('../prepareMidiGlobalTimeTransaction');
 
@@ -131,6 +136,8 @@ describe('prepareMidiGlobalTimeTransaction', () => {
         expect(transaction.status).toBe('ready');
         expect(transaction.hasChanges).toBe(true);
         expect(transaction.replayPlan).toEqual({ version: 1, notes: [] });
+        expect(transaction.inversePlan).not.toBeNull();
+        expect(JSON.parse(JSON.stringify(transaction.inversePlan))).toEqual(transaction.inversePlan);
         expect(mocks.state.value).toBe(preparedState);
         expect(mocks.set).not.toHaveBeenCalled();
 
@@ -259,16 +266,41 @@ describe('prepareMidiGlobalTimeTransaction', () => {
             },
         });
         mocks.state.value = preparedState;
+        const randomUuid = vi.spyOn(crypto, 'randomUUID');
         const first = prepareMidiGlobalTimeTransaction(duplicateInput());
         const replayPlan = first.replayPlan;
+        expect(randomUuid).toHaveBeenCalledTimes(1);
+        randomUuid.mockClear();
 
         const replay = prepareMidiGlobalTimeTransaction(duplicateInput(replayPlan));
 
         expect(replay.status).toBe('ready');
         expect(replay.replayPlan).toBe(replayPlan);
         expect(replay.replayPlan.notes).toBe(replayPlan.notes);
+        expect(replay.inversePlan).not.toBeNull();
+        expect(randomUuid).not.toHaveBeenCalled();
         expect(replay.apply()).toBe(true);
         expect(requireState().notesByClipId.target?.[0]?.id).toBe(replayPlan.notes[0]?.targetNoteId);
+    });
+
+    it('captures an independent inverse snapshot without allocating another note identity', () => {
+        const preparedState = state({
+            notesByClipId: {
+                source: [{ id: 'source-note', pitch: -0, startBeat: 1, duration: 1, velocity: 90 }],
+            },
+        });
+        mocks.state.value = preparedState;
+        const randomUuid = vi.spyOn(crypto, 'randomUUID');
+
+        const transaction = prepareMidiGlobalTimeTransaction(duplicateInput());
+
+        expect(transaction.status).toBe('ready');
+        expect(transaction.inversePlan).not.toBeNull();
+        expect(randomUuid).toHaveBeenCalledTimes(1);
+        const serializedPlan = JSON.stringify(transaction.inversePlan);
+        preparedState.notesByClipId.source![0]!.pitch = 12;
+        expect(JSON.stringify(transaction.inversePlan)).toBe(serializedPlan);
+        expect(JSON.parse(serializedPlan)).toEqual(transaction.inversePlan);
     });
 
     it.each([
@@ -344,6 +376,7 @@ describe('prepareMidiGlobalTimeTransaction', () => {
 
         expect(transaction.status).toBe('rejected');
         expect(transaction.hasChanges).toBe(false);
+        expect(transaction.inversePlan).toBeNull();
         expect(transaction.apply()).toBe(false);
         expect(transaction.revert()).toBe(false);
         expect(mocks.state.value).toBe(preparedState);
@@ -535,6 +568,7 @@ describe('prepareMidiGlobalTimeTransaction', () => {
         expect(transaction.status).toBe('ready');
         expect(transaction.hasChanges).toBe(false);
         expect(transaction.replayPlan).toEqual({ version: 1, notes: [] });
+        expect(transaction.inversePlan).toBeNull();
         expect(transaction.apply()).toBe(false);
         expect(transaction.revert()).toBe(false);
         expect(mocks.set).not.toHaveBeenCalled();
@@ -571,6 +605,40 @@ describe('prepareMidiGlobalTimeTransaction', () => {
         expect(applied.apply()).toBe(true);
         expect(applied.apply()).toBe(false);
         expect(applied.revert()).toBe(false);
+    });
+
+    it('closes when either transaction state is mutated in place', () => {
+        const preparedState = state({
+            notesByClipId: {
+                source: [{ id: 'source-note', pitch: 60, startBeat: 4, duration: 1, velocity: 90 }],
+            },
+        });
+        const input: PrepareInput = {
+            operation: { type: 'insert', atBeat: 4, durationBeats: 2 },
+            owners: [owner('track-1', true, [clip('source')])],
+        };
+        mocks.state.value = preparedState;
+        const staleApply = prepareMidiGlobalTimeTransaction(input);
+        preparedState.notesByClipId.source![0]!.startBeat = 99;
+
+        expect(staleApply.apply()).toBe(false);
+        expect(mocks.state.value).toBe(preparedState);
+        expect(mocks.set).not.toHaveBeenCalled();
+
+        const revertSourceState = state({
+            notesByClipId: {
+                source: [{ id: 'source-note', pitch: 60, startBeat: 4, duration: 1, velocity: 90 }],
+            },
+        });
+        mocks.state.value = revertSourceState;
+        const staleRevert = prepareMidiGlobalTimeTransaction(input);
+        expect(staleRevert.apply()).toBe(true);
+        const appliedState = requireState();
+        appliedState.notesByClipId.source![0]!.startBeat = 99;
+
+        expect(staleRevert.revert()).toBe(false);
+        expect(mocks.state.value).toBe(appliedState);
+        expect(mocks.set).toHaveBeenCalledTimes(1);
     });
 
     it('keeps an in-flight apply revertible after a synchronous reentrant revert', () => {

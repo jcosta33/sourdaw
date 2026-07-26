@@ -91,6 +91,7 @@ export { migrateAbsoluteMidiNotes } from './midiNoteCrud/migrateAbsoluteMidiNote
 export { moveMidiNote } from './midiNoteCrud/moveMidiNote';
 export { prepareClipMidiShiftTransaction } from './midiNoteCrud/prepareClipMidiShiftTransaction';
 export { prepareMidiGlobalTimeTransaction } from './midiNoteCrud/prepareMidiGlobalTimeTransaction';
+export { prepareMidiTimeStateRestore } from './midiNoteCrud/prepareMidiTimeStateRestore';
 export { prepareMidiTimeShiftTransaction } from './midiNoteCrud/prepareMidiTimeShiftTransaction';
 export { removeMidiNote } from './midiNoteCrud/removeMidiNote';
 export { resizeMidiNote } from './midiNoteCrud/resizeMidiNote';
