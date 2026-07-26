@@ -37,6 +37,13 @@ export type ExportSettings = {
     normalization: ExportNormalization;
 };
 
+/**
+ * Upper bound for the manually entered export tail, in seconds. The
+ * auto-detected tail is capped by the estimator that produces it; this is only
+ * the bound on what a user may type into the field.
+ */
+export const MAX_MANUAL_TAIL_SECONDS = 60;
+
 const EXPORT_SETTINGS_KEY = 'sourdaw:export-settings';
 const DEFAULT_EXPORT_SETTINGS: ExportSettings = {
     formats: ['wav'],

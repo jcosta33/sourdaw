@@ -10,6 +10,18 @@ export const NATIVE_DSP_DESCRIPTORS: PluginDescriptor[] = [
         category: 'effect',
         hasCustomUI: true,
         platform: 'both',
+        // `decay` is a normalised coefficient, never seconds — the engines
+        // convert it through `#/utils/reverbDecayLaw`, so the tail has to be
+        // read through the same law. Reading the raw value as seconds would cap
+        // the estimate near 1 s while the FDN reaches ~29.8 s at the top of the
+        // knob, truncating the longest reverbs in the export.
+        tail: {
+            kind: 'mappedDecaySeconds',
+            parameterId: 'decay',
+            defaultValue: 0.5,
+            law: 'dutch-oven-rt60',
+            predelayMsParameterId: 'predelay',
+        },
         parameters: [
             {
                 id: 'mix',

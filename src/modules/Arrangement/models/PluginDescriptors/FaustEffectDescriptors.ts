@@ -42,6 +42,7 @@ export const FAUST_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
         format: 'builtin',
         category: 'effect',
         hasCustomUI: false,
+        tail: { kind: 'decaySeconds', parameterId: 'decay_time', defaultSeconds: 3 },
         parameters: [
             fp('decay_time', 'faust-zita-rev1-reverb', 'Decay Time', 0.1, 15, 3, 0.1, 's', 'log'),
             fp('damping', 'faust-zita-rev1-reverb', 'Damping', 200, 12000, 6000, 100, 'Hz', 'log'),
@@ -101,6 +102,15 @@ export const FAUST_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
         format: 'builtin',
         category: 'effect',
         hasCustomUI: false,
+        tail: {
+            kind: 'feedbackLoop',
+            feedbackParameterId: 'feedback',
+            defaultFeedback: 0.5,
+            maxFeedback: 0.95,
+            loopParameterId: 'delay',
+            loopUnit: 's',
+            defaultLoopSeconds: 0.3,
+        },
         parameters: [
             fp('delay', 'faust-tape-delay', 'Delay Time', 0.01, 2, 0.3, 0.01, 's', 'log'),
             fp('feedback', 'faust-tape-delay', 'Feedback', 0, 0.95, 0.5, 0.01),
@@ -126,6 +136,7 @@ export const FAUST_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
         format: 'builtin',
         category: 'effect',
         hasCustomUI: false,
+        tail: { kind: 'decaySeconds', parameterId: 'decay', defaultSeconds: 2 },
         parameters: [
             fp('decay', 'faust-spring-reverb', 'Decay', 0.1, 10, 2, 0.1, 's', 'log'),
             fp('mix', 'faust-spring-reverb', 'Mix', 0, 1, 0.3, 0.01),

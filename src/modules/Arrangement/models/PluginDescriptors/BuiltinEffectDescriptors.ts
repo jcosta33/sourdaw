@@ -227,6 +227,22 @@ export const BUILTIN_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
         category: 'effect',
         hasCustomUI: false,
         platform: 'both',
+        // The audible tail is the impulse response, which `createReverb` bakes at a
+        // fixed `sampleRate * 2` — exactly 2 s — when the node is built.
+        //
+        // It deliberately does NOT read `rev-decay`. That knob reaches no audio
+        // node: `applyReverbParams` has no `rev-decay` branch, a boundary pinned by
+        // `applyReverbParams.spec.ts` ("does not consume rev-decay") and documented
+        // at `AdjustmentBusNode.ts:44-49`. Declaring the tail from it made every
+        // export reserve or truncate on a number the user cannot hear — "Ambient
+        // Wash" (`rev-decay: 8`) bought 8 s of dead air, "Tight Room" (0.4) cut the
+        // real 2 s tail short.
+        //
+        // Deriving seconds from `rev-decay` anyway would be inventing a conversion
+        // for a dead control. If real decay support lands (Architecture-decision
+        // #1), wire the DSP first and change this declaration in the same commit.
+        // Pre-delay is genuinely honoured, so it still counts.
+        tail: { kind: 'fixed', seconds: 2, predelayMsParameterId: 'rev-predelay' },
         parameters: [
             {
                 id: 'rev-size',
@@ -316,6 +332,15 @@ export const BUILTIN_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
         category: 'effect',
         hasCustomUI: false,
         platform: 'both',
+        tail: {
+            kind: 'feedbackLoop',
+            feedbackParameterId: 'delay-feedback',
+            defaultFeedback: 0.4,
+            maxFeedback: 0.95,
+            loopParameterId: 'delay-time',
+            loopUnit: 'ms',
+            defaultLoopSeconds: 0.25,
+        },
         parameters: [
             {
                 id: 'delay-time',
@@ -987,6 +1012,9 @@ export const BUILTIN_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
         format: 'builtin',
         category: 'effect',
         hasCustomUI: false,
+        // The impulse response sets the tail and no exposed parameter reports its
+        // length, so reserve a constant that covers the bundled IRs.
+        tail: { kind: 'fixed', seconds: 6 },
         parameters: [
             {
                 id: 'conv-ir',

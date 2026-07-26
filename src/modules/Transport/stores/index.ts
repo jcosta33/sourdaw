@@ -9,7 +9,7 @@ export { tempoMapStore } from './tempoMapStore';
 export type { TimeSignatureMapStoreState } from './timeSignatureMapStore';
 export { timeSignatureMapStore } from './timeSignatureMapStore';
 
-export { transportStore, defaultTransportState } from './transportStore';
+export { transportStore, defaultTransportState, MIN_TEMPO } from './transportStore';
 export type { TransportState } from './transportStore';
 
 export type { LinkStatus } from './linkStatusStore';

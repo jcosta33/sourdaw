@@ -1,4 +1,5 @@
 import { transportStore } from '#/modules/Transport/stores';
+import { resolveFrozenBufferTail } from '#/utils/frozenBufferTail';
 
 import { type Clip } from '../../models/Track';
 import { updateTrack } from '../../repositories/track/updateTrack';
@@ -43,14 +44,19 @@ export function flattenTrack(trackId: string): boolean {
         endBeat = 1;
     }
 
+    const bakedTail = resolveFrozenBufferTail(track.freezeState.renderSettings);
+    const frozenTailSeconds = bakedTail.known ? bakedTail.seconds : bakedTail.atLeastSeconds;
+
     const newClip: Clip = {
         id: `flattened-${crypto.randomUUID()}`,
         trackId: target.trackId,
         name: `${track.name} (Flattened)`,
         startBeat,
-        endBeat:
-            endBeat +
-            (track.freezeState.renderSettings?.tailLengthSeconds ?? 0) * ((transportStore.value?.tempo ?? 120) / 60),
+        // Flatten bakes this clip permanently into the timeline, so an unknown
+        // baked tail must not resolve to zero: the buffer's decay past the clip
+        // content would be discarded from the project itself, not from a single
+        // export, and no later fix can recover it.
+        endBeat: endBeat + frozenTailSeconds * ((transportStore.value?.tempo ?? 120) / 60),
         type: 'audio',
         audioBufferId: frozenBufferId,
         fadeInBeats: 0,
