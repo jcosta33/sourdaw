@@ -4,9 +4,12 @@ import { compileFaustDSP, createFaustNode, isFaustModule } from '#/modules/Plugi
 
 import { getAudioDeviceRuntimeSink } from '../engine/audioDeviceRuntimeSink';
 import { isPluginRequiresIsolationError } from '../engine/pluginHostingErrors';
+import { createExportError } from '../errors/ExportError';
 import { type Device } from '../models/TrackViewTypes';
 import { type OfflineDeviceNode } from '../repositories/devices/types';
+import { isNodelessOfflineDeviceType } from '../repositories/deviceStrategy/nodelessOfflineDeviceTypes';
 import { createDeviceRegistry, type AudioDeviceStrategy } from '../repositories/deviceStrategy/setupDeviceStrategies';
+import { isUnsupportedDeviceTypeError } from '../repositories/deviceStrategy/unsupportedDeviceTypeError';
 import { createFaustDevice } from '../repositories/faustDeviceFactory';
 
 export type DeviceNodeEntry = {
@@ -124,6 +127,13 @@ async function runOfflineInstrumentSetup({ device, port, logger }: RunOfflineIns
     }
 }
 
+export type BuildDeviceChainContext = {
+    /** Track name, used only to make a failure message locatable by the user. */
+    trackName?: string;
+    /** The export's user-visible warning channel, for degraded devices. */
+    onWarning?: (message: string) => void;
+};
+
 /**
  * Build an audio device chain, connecting devices between input and output nodes.
  *
@@ -132,7 +142,23 @@ async function runOfflineInstrumentSetup({ device, port, logger }: RunOfflineIns
  * 2. Faust DSP devices (async compilation + AudioWorkletNode)
  * 3. Native Rust/WASM DSP devices (async WASM init + AudioWorkletNode)
  *
- * Unknown or failed devices are skipped gracefully.
+ * Device failures split two ways, and the split is about *why* the device is
+ * missing, not about which line threw:
+ *
+ * - No offline implementation exists for the type (`UnsupportedDeviceTypeError`)
+ *   — a coverage hole in this codebase. The export fails. It used to warn and
+ *   continue, which produced a file that did not contain what the session
+ *   plays: the device was dropped, and because `scheduleTrackClips` then found
+ *   no `instrumentControls`, an unrenderable *instrument* came back as the
+ *   builtin fallback synth (sawtooth at 0.3) — wrong in a way that sounds
+ *   deliberate. A render must contain what playback contains.
+ * - A real implementation failed at runtime (missing WASM asset, unavailable
+ *   worklet, Faust compile error) — an environment problem. That still
+ *   degrades, but it now reaches the user through the export warning channel
+ *   instead of only the log.
+ *
+ * Device types rendered by another offline path never reach either branch; see
+ * `isNodelessOfflineDeviceType`.
  */
 export const buildDeviceChain = inject({ logger })(
     ({ logger }) =>
@@ -140,11 +166,17 @@ export const buildDeviceChain = inject({ logger })(
             ctx: BaseAudioContext,
             devices: Device[],
             inputNode: AudioNode,
-            outputNode: AudioNode
+            outputNode: AudioNode,
+            context: BuildDeviceChainContext = {}
         ): Promise<BuildDeviceChainOutput> {
-            // Yeast is a MIDI processor discovered from track.devices by the schedulers;
-            // it deliberately has no audio-node factory and must not enter this chain.
-            const activeDevices = devices.filter((device) => !device.bypassed && device.type !== 'yeast');
+            const trackLabel = context.trackName ?? 'unknown track';
+            // Some devices render offline through the note or kit scheduler and
+            // deliberately have no audio-node factory. They are named and
+            // justified individually — an unlisted type that cannot be built is
+            // a defect, not something to route around.
+            const activeDevices = devices.filter(
+                (device) => !device.bypassed && !isNodelessOfflineDeviceType(device.type)
+            );
             if (activeDevices.length === 0) {
                 inputNode.connect(outputNode);
                 return [];
@@ -182,6 +214,17 @@ export const buildDeviceChain = inject({ logger })(
                         await runOfflineInstrumentSetup({ device, port: workletPort, logger });
                     }
                 } catch (error) {
+                    if (isUnsupportedDeviceTypeError(error)) {
+                        // Nothing in this build can render this device. Dropping
+                        // it would hand back a file the session does not play,
+                        // so refuse to produce one at all.
+                        throw createExportError(
+                            `Track "${trackLabel}" uses the device "${device.type}", which this build cannot render ` +
+                                `offline. Export stopped rather than producing a file without it. ` +
+                                `Remove the device from the track, or freeze the track, to export.`,
+                            error
+                        );
+                    }
                     // When the plugin fails because it requires cross-origin
                     // isolation (SharedArrayBuffer), surface a user-visible message —
                     // otherwise the device chain silently skipping the node is
@@ -192,6 +235,16 @@ export const buildDeviceChain = inject({ logger })(
                     } else {
                         logger.warn(`Device ${device.type} failed to load: ${error}`);
                     }
+                    // A degraded device is still missing from the render, so the
+                    // user has to hear about it from the export, not the console.
+                    let detail = String(error);
+                    if (error instanceof Error) {
+                        detail = error.message;
+                    }
+                    context.onWarning?.(
+                        `Device "${device.type}" on track "${trackLabel}" could not be loaded and is missing from ` +
+                            `the export: ${detail}`
+                    );
                     continue;
                 }
 

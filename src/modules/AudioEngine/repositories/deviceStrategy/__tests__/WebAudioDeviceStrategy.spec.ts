@@ -20,6 +20,7 @@ vi.mock('../../deviceNodeFactory', () => ({
 
 import { type Device } from '../../../models/TrackViewTypes';
 import { applyParams } from '../../applyParams';
+import { isUnsupportedDeviceTypeError, type UnsupportedDeviceTypeError } from '../unsupportedDeviceTypeError';
 import { WebAudioDeviceStrategy, createWebAudioDevice } from '../WebAudioDeviceStrategy';
 
 describe('WebAudioDeviceStrategy', () => {
@@ -63,6 +64,17 @@ describe('createWebAudioDevice', () => {
             parameterValues: {},
         };
 
-        expect(() => createWebAudioDevice({} as BaseAudioContext, device)).toThrow(/Unknown WebAudio device type/);
+        // A builtin id the node factory cannot build is a coverage hole, not a
+        // runtime failure, so it must carry the type `buildDeviceChain` aborts
+        // the export on rather than the type it degrades past.
+        let failure: unknown = null;
+        try {
+            createWebAudioDevice({} as BaseAudioContext, device);
+        } catch (error) {
+            failure = error;
+        }
+
+        expect(isUnsupportedDeviceTypeError(failure)).toBe(true);
+        expect((failure as UnsupportedDeviceTypeError).deviceType).toBe('unknown-type');
     });
 });

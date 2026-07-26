@@ -4,6 +4,7 @@ import { applyParams } from '../applyParams';
 import { type OfflineDeviceNode, createOfflineDeviceNode } from '../deviceNodeFactory';
 
 import { type AudioDeviceStrategy, type OfflineAutomationBinding } from './AudioDeviceStrategy';
+import { UnsupportedDeviceTypeError } from './unsupportedDeviceTypeError';
 
 export class WebAudioDeviceStrategy implements AudioDeviceStrategy {
     constructor(
@@ -31,7 +32,14 @@ export function createWebAudioDevice(ctx: BaseAudioContext, device: Device): Web
         deviceType: device.type,
     });
     if (!node) {
-        throw new Error(`Unknown WebAudio device type: ${device.type}`);
+        // The `builtin-` prefix matcher claims every builtin id, so reaching
+        // this line means the registry routed a type here that
+        // `createOfflineDeviceNode` has no node for. That is a coverage hole in
+        // our own code, not a runtime failure, so it must be typed as one.
+        throw new UnsupportedDeviceTypeError(
+            device.type,
+            'the builtin- matcher claimed it but deviceNodeFactory builds no node for it'
+        );
     }
     applyParams(node, device.type, device.parameterValues);
     return new WebAudioDeviceStrategy(node, device.type);

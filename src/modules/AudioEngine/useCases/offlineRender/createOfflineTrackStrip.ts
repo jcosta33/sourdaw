@@ -33,6 +33,10 @@ type CreateOfflineTrackStripOptions = {
      * crosses unity.
      */
     vcaMultiplier?: number;
+    /** Track name, so a device failure names the track the user has to fix. */
+    trackName?: string;
+    /** The export's user-visible warning channel, for degraded devices. */
+    onWarning?: (message: string) => void;
 };
 
 export async function createOfflineTrackStrip(
@@ -69,7 +73,10 @@ export async function createOfflineTrackStrip(
     const outputNode = offlineCtx.createGain();
     outputNode.gain.value = 1;
 
-    const deviceEntries = await buildDeviceChain(offlineCtx, track.devices, inputNode, preFaderTap);
+    const deviceEntries = await buildDeviceChain(offlineCtx, track.devices, inputNode, preFaderTap, {
+        trackName: options.trackName,
+        onWarning: options.onWarning,
+    });
 
     preFaderTap.connect(faderNode);
     faderNode.connect(postFaderGain);

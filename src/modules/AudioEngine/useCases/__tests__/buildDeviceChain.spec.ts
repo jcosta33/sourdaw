@@ -92,10 +92,11 @@ describe('buildDeviceChain', () => {
         expect(faustOutput.connect).toHaveBeenCalledWith(output);
     });
 
-    // MD-4 review — this is why a registry matcher gap is silent rather than
-    // loud: an unclaimed device type makes createDevice throw, the chain logs a
-    // warning and drops the device, and an instrument track renders nothing.
-    it('drops a device no registry matcher claims, leaving the chain without it', async () => {
+    // A device type nothing can build is a coverage hole in our own code. The
+    // export used to warn and continue, so the render came back missing the
+    // device — and, for an instrument, came back as the fallback synth instead.
+    // A render must contain what playback contains, so this now fails loudly.
+    it('fails the export when no offline implementation exists for a device type', async () => {
         vi.stubGlobal('AudioWorkletNode', undefined);
         const input = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
         const output = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
@@ -108,28 +109,94 @@ describe('buildDeviceChain', () => {
             parameterValues: {},
         };
 
-        const entries = await buildDeviceChain({} as BaseAudioContext, [unclaimed], input, output);
+        const failure = await buildDeviceChain({} as BaseAudioContext, [unclaimed], input, output, {
+            trackName: 'Lead',
+        }).catch((error: unknown) => error);
 
-        expect(entries).toEqual([]);
-        // Nothing generates into the chain — the track is silent, not merely dry.
-        expect(input.connect).toHaveBeenCalledWith(output);
+        expect(failure).toMatchObject({ _tag: 'Export' });
+        expect((failure as Error).message).toContain('no-matcher-claims-this');
+        expect((failure as Error).message).toContain('Lead');
+        // The partially wired chain must not be handed back as a usable render.
+        expect(input.connect).not.toHaveBeenCalledWith(output);
     });
 
-    it('routes Yeast around the audio chain without logging a missing-device warning', async () => {
+    // The `builtin-` prefix matcher claims every `builtin-*` id, so a builtin
+    // with no node in deviceNodeFactory reaches a factory and fails inside it.
+    // That is still a coverage hole, and splitting on "did a matcher claim it"
+    // would have mis-filed it as a degradable runtime failure.
+    it('fails the export for a builtin id the WebAudio factory cannot build', async () => {
+        vi.stubGlobal('AudioWorkletNode', undefined);
         const input = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
         const output = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
-        const yeast: Device = {
-            id: 'yeast-1',
-            name: 'Yeast',
-            type: 'yeast',
+        mocks.isFaustModule.mockReturnValue(false);
+        const crumbs: Device = {
+            id: 'd1',
+            name: 'Crumbs',
+            type: 'builtin-crumbs',
             bypassed: false,
             parameterValues: {},
         };
 
-        const entries = await buildDeviceChain({} as BaseAudioContext, [yeast], input, output);
+        const failure = await buildDeviceChain({} as BaseAudioContext, [crumbs], input, output, {
+            trackName: 'Sampler',
+        }).catch((error: unknown) => error);
+
+        expect(failure).toMatchObject({ _tag: 'Export' });
+        expect((failure as Error).message).toContain('builtin-crumbs');
+        expect(input.connect).not.toHaveBeenCalledWith(output);
+    });
+
+    // A registered factory that throws at runtime is an environment or asset
+    // problem (missing WASM, unavailable worklet), not a coverage hole. That
+    // stays degradable — but it must reach the user, not only the log.
+    it('reports a runtime factory failure through the export warning channel', async () => {
+        vi.stubGlobal('AudioWorkletNode', undefined);
+        const input = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
+        const output = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
+        const onWarning = vi.fn();
+        mocks.isFaustModule.mockImplementation((type) => type === 'faust-x');
+        mocks.createFaustDevice.mockRejectedValue(new Error('worklet module unavailable'));
+        const device: Device = {
+            id: 'd1',
+            name: 'Faust',
+            type: 'faust-x',
+            bypassed: false,
+            parameterValues: {},
+        };
+
+        const entries = await buildDeviceChain({} as BaseAudioContext, [device], input, output, {
+            trackName: 'Bus',
+            onWarning,
+        });
+
+        expect(entries).toEqual([]);
+        const warning = onWarning.mock.calls[0]?.[0] as string;
+        expect(warning).toContain('faust-x');
+        expect(warning).toContain('Bus');
+        expect(warning).toContain('worklet module unavailable');
+        // Degraded, not aborted: the rest of the chain still reaches the output.
+        expect(input.connect).toHaveBeenCalledWith(output);
+    });
+
+    // The node-less exemptions must not reach the failure path at all: these
+    // devices are rendered by the note/kit schedulers, not the device chain.
+    it.each([
+        ['yeast', 'yeast-1'],
+        ['builtin-synth', 'synth-1'],
+        ['builtin-synth-strings', 'synth-2'],
+        ['builtin-drum-kit', 'kit-1'],
+        ['builtin-drum-machine-808', 'kit-2'],
+    ])('routes %s around the chain without warning or failing', async (type, id) => {
+        const input = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
+        const output = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
+        const onWarning = vi.fn();
+        const device: Device = { id, name: type, type, bypassed: false, parameterValues: {} };
+
+        const entries = await buildDeviceChain({} as BaseAudioContext, [device], input, output, { onWarning });
 
         expect(entries).toEqual([]);
         expect(input.connect).toHaveBeenCalledWith(output);
+        expect(onWarning).not.toHaveBeenCalled();
         expect(mocks.loggerWarn).not.toHaveBeenCalled();
     });
 
