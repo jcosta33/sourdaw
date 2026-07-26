@@ -114,6 +114,28 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // gain/pan scheduling) restructured the tick path and added one
         // doc-comment mention; the reviewed live write path stays singular.
         'src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts': 3,
+        // Count provenance: #807 added the lane-stop base restore, split out of
+        // the drive path above. The 2 are the `updateDeviceParam` import plus its
+        // single call site.
+        //
+        // Read the family name carefully: 'persistence-runtime' is a *combined*
+        // family. Its pattern counts both the CRDT persistence identifiers
+        // (`persistDeviceParam`, `persistDevicePatch`) and the runtime engine ones
+        // (`updateDeviceParam`, `updateDevicePatch`). A hit in this family
+        // therefore does NOT by itself mean a write reached the document — check
+        // which identifier matched before reading it as one.
+        //
+        // These two are engine-only: `updateDeviceParam` bottoms out at
+        // `TrackNode.updateParam` (worklet MessagePort) and never reaches the CRDT
+        // document. Restoring a lane's manual value on the tick it stops driving
+        // mutates no project truth — the base is *read* from the device's own
+        // `parameterValues`, which already holds it, so routing this through
+        // `executeAppAction` would manufacture an undo/history entry and peer-sync
+        // churn for a value that did not change. Same class and same
+        // `resolveEligibleDeviceWriteTarget` ownership guard as the sibling drive
+        // path above and as the modulation twin `revertMappingsToBase`, both of
+        // which are censused here and guard-listed below.
+        'src/modules/Transport/useCases/scheduling/applyAutomation/restoreAutomationBaseValue.ts': 2,
     },
     'strip-add': {
         'src/modules/Arrangement/useCases/device/addDevice.ts': 2,
@@ -373,6 +395,7 @@ const GUARDED_EXECUTABLE_PATHS = [
     'src/modules/Toaster/useCases/toasterParamBridge/setToasterKitParam.ts',
     'src/modules/Toaster/useCases/toasterParamBridge/setToasterPadParam.ts',
     'src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts',
+    'src/modules/Transport/useCases/scheduling/applyAutomation/restoreAutomationBaseValue.ts',
 ] as const;
 
 function productionSources(root: string): ProductionSource[] {
