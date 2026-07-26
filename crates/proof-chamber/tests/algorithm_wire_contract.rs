@@ -13,6 +13,10 @@
 //! asserted here rather than left to review:
 //!
 //! 1. Existing values never move. A stored `0` must stay Plate forever.
+//! 1b. Where a value's *behaviour* does change, that is stated and pinned
+//!    rather than left for someone to trip over. Exactly one value changes
+//!    here — see
+//!    `stored_convolution_backed_values_now_render_plate_instead_of_dry_passthrough`.
 //! 2. A value whose engine cannot render must not select that engine. The
 //!    convolution-backed engines need an impulse response, and no transport
 //!    exists to deliver one — `load_ir` has no caller anywhere in the app and
@@ -163,6 +167,74 @@ fn convolution_backed_wire_values_fall_back_instead_of_engaging() {
             0,
             "algorithm {value} reported convolution PDC latency, so a convolution-backed \
              engine is live on a value the product cannot support yet"
+        );
+    }
+}
+
+/// Render a burst through one wire value at the engine's own default mix.
+/// Returns the output alongside the input it was given, so a caller can ask
+/// whether anything happened to it at all.
+fn render_wire_value(algorithm: f32) -> (Vec<f32>, Vec<f32>) {
+    const FRAMES: usize = 8_192;
+
+    let mut instance = ProofChamberInstance::new(SAMPLE_RATE);
+    instance.set_param("algorithm", algorithm);
+
+    let mut input = Vec::with_capacity(FRAMES);
+    let mut output = Vec::with_capacity(FRAMES);
+    let mut index = 0;
+    while index < FRAMES {
+        let left: Vec<f32> = (0..BLOCK)
+            .map(|i| if index + i < 256 { 0.8 } else { 0.0 })
+            .collect();
+        let right = left.clone();
+        let ptr = instance.process(&left, &right, BLOCK as u32);
+        assert!(!ptr.is_null(), "process returned a null buffer");
+        for i in 0..BLOCK {
+            output.push(unsafe { *ptr.add(i) });
+        }
+        input.extend_from_slice(&left);
+        index += BLOCK;
+    }
+
+    (output, input)
+}
+
+/// A stored `algorithm: 4` does **not** load identically, and that is
+/// deliberate. This pins the change so the next person to touch the dispatch
+/// sees the decision instead of rediscovering it.
+///
+/// Before this change, wire value 4 built a `ConvolutionEngine` whose `loaded`
+/// flag starts false and whose `process` returns before touching the buffers.
+/// A project carrying 4 therefore rendered unconditional dry passthrough with
+/// the `mix` knob completely inert — not a quiet reverb, but the input itself.
+/// It now renders Plate, which is audible where nothing was audible before.
+///
+/// That trade is taken knowingly. A stored 4 could only have arrived through a
+/// path that should never have produced it — an unvalidated
+/// `setDeviceParameter`, a preset, or a model-emitted action — so the old
+/// output is a bug's output. Preserving it would promote that bug to a
+/// contract and keep a selector value that renders nothing.
+///
+/// Value 5 has no equivalent gap: `HybridMode::Off` routes the same
+/// `ProofChamber` that backs Plate, so it already sounded like Plate.
+#[test]
+fn stored_convolution_backed_values_now_render_plate_instead_of_dry_passthrough() {
+    let (plate, _) = render_wire_value(0.0);
+
+    for value in [4.0_f32, 5.0] {
+        let (rendered, input) = render_wire_value(value);
+
+        assert_eq!(
+            rendered, plate,
+            "algorithm {value} must now render exactly what Plate renders; it falls through to \
+             the same engine, so any divergence means the fallback is not the one it claims"
+        );
+        assert_ne!(
+            rendered, input,
+            "algorithm {value} returned its input untouched. That is the pre-change behaviour of \
+             an unloaded convolution engine — dry passthrough with `mix` inert — which means the \
+             fallback did not engage."
         );
     }
 }
