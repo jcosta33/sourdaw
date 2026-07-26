@@ -295,19 +295,37 @@ export function applyAutomation(currentBeat: number): Set<string> {
                 continue;
             }
             for (const fx of track.midiFx) {
-                if (fx.parameterValues[lane.parameterId] !== undefined) {
-                    if (!laneSlew) {
-                        laneSlew = new Map<string, number>();
-                        automationState.pluginParamSlew.set(lane.id, laneSlew);
-                    }
-                    const prev = laneSlew.get(fx.id) ?? value;
-                    const smoothed = isDiscontinuity ? value : slewStep(prev, value, AUTOMATION_SLEW_ALPHA);
-                    laneSlew.set(fx.id, smoothed);
-                    if (isDiscontinuity || Math.abs(smoothed - prev) > SLEW_EPSILON) {
-                        updateMidiFxParam(lane.trackId, fx.id, lane.parameterId, smoothed);
-                    }
+                if (fx.parameterValues[lane.parameterId] === undefined) {
+                    continue;
+                }
+
+                // The owning MIDI FX is found by key presence, but whether a
+                // curve may drive that key is the descriptor's call, exactly as
+                // it is for a device param forty lines above. No MIDI FX type
+                // carries a descriptor today, so both calls pass through
+                // untouched — which is the point: the branch is bound to the
+                // same law now instead of quietly diverging from it the day one
+                // does.
+                if (!isDeviceParameterAutomatable({ deviceType: fx.type, paramId: lane.parameterId })) {
                     break;
                 }
+
+                if (!laneSlew) {
+                    laneSlew = new Map<string, number>();
+                    automationState.pluginParamSlew.set(lane.id, laneSlew);
+                }
+                const prev = laneSlew.get(fx.id) ?? value;
+                const slewedFxValue = isDiscontinuity ? value : slewStep(prev, value, AUTOMATION_SLEW_ALPHA);
+                const smoothed = clampDeviceParameterValue({
+                    deviceType: fx.type,
+                    paramId: lane.parameterId,
+                    value: slewedFxValue,
+                });
+                laneSlew.set(fx.id, smoothed);
+                if (isDiscontinuity || Math.abs(smoothed - prev) > SLEW_EPSILON) {
+                    updateMidiFxParam(lane.trackId, fx.id, lane.parameterId, smoothed);
+                }
+                break;
             }
         }
     }

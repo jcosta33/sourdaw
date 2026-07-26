@@ -19,7 +19,7 @@ type RestoreTargetTrack = {
     gain: number;
     pan: number;
     devices: RestoreTargetDevice[];
-    midiFx: { id: string; parameterValues: Record<string, number> }[];
+    midiFx: { id: string; type: string; parameterValues: Record<string, number> }[];
 };
 
 export type RestoreAutomationBaseValueInput = {
@@ -110,9 +110,15 @@ export function restoreAutomationBaseValue({ lane, track, landTime }: RestoreAut
 
     for (const fx of track.midiFx) {
         const baseValue = fx.parameterValues[lane.parameterId];
-        if (baseValue !== undefined) {
-            updateMidiFxParam(lane.trackId, fx.id, lane.parameterId, baseValue);
-            return;
+        if (baseValue === undefined) {
+            continue;
         }
+
+        // Same acceptance law as the MIDI-FX apply branch: a lane that may not
+        // drive the parameter may not restore it either.
+        if (isDeviceParameterAutomatable({ deviceType: fx.type, paramId: lane.parameterId })) {
+            updateMidiFxParam(lane.trackId, fx.id, lane.parameterId, baseValue);
+        }
+        return;
     }
 }

@@ -8,6 +8,7 @@ import { addDeviceToStrip, updateDeviceParam, removeDeviceFromStrip } from '#/mo
 import { compileFaustDSP } from '#/modules/PluginHost/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { clampDeviceParameterValue } from '../../models/DeviceParameterLaw';
 import { type SoundPreset, type DevicePreset } from '../../models/SoundPreset';
 import { getTrackById } from '../../repositories/track/getTrackById';
 import { updateTrack } from '../../repositories/track/updateTrack';
@@ -36,19 +37,32 @@ function attachEffectDevice(trackId: string, dp: DevicePreset): void {
         return;
     }
     for (const [paramId, value] of Object.entries(dp.parameterValues)) {
+        // `setDeviceParameter` already clamps and pushes the clamped value to
+        // the engine. The raw `updateDeviceParam` that used to follow it here
+        // wrote second and therefore won, handing the DSP the unclamped value
+        // the store had just refused.
         setDeviceParameter(added.id, paramId, value);
-        updateDeviceParam(trackId, added.id, paramId, value);
     }
 }
 
 export const loadPresetToTrack = inject({ logger })(({ logger }) => {
     function attachInstrumentDevice(trackId: string, dp: DevicePreset): void {
+        // An instrument preset is written straight into the track rather than
+        // through `setDeviceParameter`, so nothing upstream has held it to the
+        // descriptor. Clamp while the device type is still in hand: without it
+        // a preset authored against a wider range lands out of bounds in the
+        // store, and the store row is what the project saves and reloads.
+        const parameterValues: Record<string, number> = {};
+        for (const [paramId, value] of Object.entries(dp.parameterValues)) {
+            parameterValues[paramId] = clampDeviceParameterValue({ deviceType: dp.type, paramId, value });
+        }
+
         const device: Device = {
             id: `preset-dev-${crypto.randomUUID()}`,
             name: dp.name,
             type: dp.type,
             bypassed: false,
-            parameterValues: { ...dp.parameterValues },
+            parameterValues,
         };
         updateTrack(trackId, (time) => ({ ...time, devices: [...time.devices, device] }));
 
@@ -62,7 +76,7 @@ export const loadPresetToTrack = inject({ logger })(({ logger }) => {
         }
         addDeviceToStrip(trackId, device.id, dp.type);
 
-        for (const [paramId, value] of Object.entries(dp.parameterValues)) {
+        for (const [paramId, value] of Object.entries(device.parameterValues)) {
             updateDeviceParam(trackId, device.id, paramId, value);
         }
     }

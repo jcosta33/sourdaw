@@ -54,6 +54,15 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
     'persistence-runtime': {
         'src/app/bootstrap.ts': 9,
         'src/modules/Arrangement/stores/index.ts': 2,
+        // Count provenance: measured 3, all three doc-comment mentions — this
+        // file holds no write at all. `clampDeviceParamWrite` resolves a device
+        // type from the store and returns the value the declared range allows.
+        // Its header names `updateDeviceParam` (the caller the law binds at) and
+        // `persistDeviceParam` (the store-side twin it explains itself against),
+        // and the device-type index cites `persistDeviceParam` again as the
+        // writer that establishes the replace-don't-mutate invariant the index
+        // keys on. Neither identifier is called here.
+        'src/modules/Arrangement/stores/clampDeviceParamWrite.ts': 3,
         'src/modules/Arrangement/stores/persistDeviceParam.ts': 1,
         'src/modules/Arrangement/useCases/device/addDevice.ts': 2,
         'src/modules/Arrangement/useCases/device/setDeviceParameter/persistDevicePatch.ts': 1,
@@ -66,7 +75,13 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Arrangement/useCases/setTrackGainPan/setTrackPan.ts': 2,
         'src/modules/AudioEngine/models/AudioEngineState.ts': 2,
         'src/modules/AudioEngine/repositories/createWebAudioEngine.ts': 2,
-        'src/modules/AudioEngine/useCases/deviceControls/updateDeviceParam.ts': 2,
+        // Count provenance: measured 3, was 2. The declared-range law now binds
+        // at this use case — the single door every device-param write reaches
+        // the DSP through — so the file gained a doc-comment mention of the
+        // store-side twin `persistDeviceParam`. The executable surface is
+        // unchanged and still singular: the function declaration plus its one
+        // `audioEngine.updateDeviceParam` call.
+        'src/modules/AudioEngine/useCases/deviceControls/updateDeviceParam.ts': 3,
         'src/modules/AudioEngine/useCases/deviceControls/updateDevicePatch.ts': 2,
         'src/modules/AudioEngine/useCases/index.ts': 4,
         // Count provenance: pre-#597 this file scored 2 — a doc-comment mention
