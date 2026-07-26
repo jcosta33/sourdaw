@@ -1,0 +1,46 @@
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/prepareMidiTimeStateRestore.spec.ts
+  s_c2fca615e81f34::t_6fe6f22231a45b 561-582
+  s_c2fca615e81f34::t_dff7daf98a5678 62-66,73,76-81,87-91,98,101-106
+  s_c2fca615e81f34::t_86d5c100c94df7 319,322
+  s_c2fca615e81f34::t_b465a1ca799779 1-35,134,137-195,208-220,222-275,277-280,282-317,320-321,323-417,435-448,466-480,532-560,583,646
+  s_c2fca615e81f34::t_a232c57cc8b935 135-136
+  s_c2fca615e81f34::t_31e9001d1512b7 196-207,221
+  s_c2fca615e81f34::t_33847b1b57140a 276,281,318
+  s_c2fca615e81f34::t_602c4135f819bc 481-531
+  s_c2fca615e81f34::t_6917e890addcc2 418-434,449-465
+  s_c2fca615e81f34::t_eba7e554cb8170 123-124
+  s_c2fca615e81f34::t_ebd2eac87a93af 584-645
+  s_c2fca615e81f34::t_c293a2e535d01c 36-61,67-72,74-75,82-86,92-97,99-100,107-122,125-133
+src/modules/MIDI/useCases/index.ts
+  s_c2fca615e81f34::t_ab889a22adec33 94
+src/modules/MIDI/useCases/midiNoteCrud/midiTimeStateCodec.ts
+  s_c2fca615e81f34::t_a232c57cc8b935 220-230,260,299,334-335,376-379,388
+  s_c2fca615e81f34::t_eba7e554cb8170 53,68,372
+  s_c2fca615e81f34::t_f5ce2f00137f80 1-52,54-67,70-147,180-219,231-259,261-298,300-305,307-333,336-371,373-375,380-387,389-480,482-484,486-561
+  s_c2fca615e81f34::t_bb1a4a0c7f3966 69,148-179,306,481,485
+src/modules/MIDI/useCases/midiNoteCrud/prepareMidiGlobalTimeTransaction.ts
+  s_c2fca615e81f34::t_67db371b90f6ec 10-11,70-77,600-616,619-626,695
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/prepareMidiGlobalTimeTransaction.spec.ts
+  s_c2fca615e81f34::t_f154ff7cf7df6f 139-140,269,272-273,280-281,286-305,379,571
+  s_c2fca615e81f34::t_df298da620850a 16-25,27-28
+src/modules/MIDI/useCases/midiNoteCrud/prepareMidiTimeStateRestore.ts
+  s_c2fca615e81f34::t_453ef4af7968f5 1-85,87-129,134-153,155-170,172-189,191-206,208-222
+  s_c2fca615e81f34::t_eba7e554cb8170 86,154,190
+  s_c2fca615e81f34::t_a232c57cc8b935 130-133,171,207
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "405ca0b60d35b7358cc0fe7fefb6a6e422a6150c",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
