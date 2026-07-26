@@ -146,6 +146,9 @@ export function prepareMidiTimeStateRestore(plan: unknown) {
     }
 
     function apply(): boolean {
+        if (phase === 'publishing') {
+            return false;
+        }
         if (phase !== 'prepared' || !preparedRestore || !preparedRestore.hasChanges) {
             phase = 'closed';
             return false;
@@ -182,6 +185,9 @@ export function prepareMidiTimeStateRestore(plan: unknown) {
     }
 
     function revert(): boolean {
+        if (phase === 'publishing') {
+            return false;
+        }
         if (phase !== 'applied' || !preparedRestore || !preparedRestore.hasChanges) {
             phase = 'closed';
             return false;

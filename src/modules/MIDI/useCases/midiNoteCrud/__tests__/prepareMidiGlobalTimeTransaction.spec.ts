@@ -607,6 +607,40 @@ describe('prepareMidiGlobalTimeTransaction', () => {
         expect(applied.revert()).toBe(false);
     });
 
+    it('closes when either transaction state is mutated in place', () => {
+        const preparedState = state({
+            notesByClipId: {
+                source: [{ id: 'source-note', pitch: 60, startBeat: 4, duration: 1, velocity: 90 }],
+            },
+        });
+        const input: PrepareInput = {
+            operation: { type: 'insert', atBeat: 4, durationBeats: 2 },
+            owners: [owner('track-1', true, [clip('source')])],
+        };
+        mocks.state.value = preparedState;
+        const staleApply = prepareMidiGlobalTimeTransaction(input);
+        preparedState.notesByClipId.source![0]!.startBeat = 99;
+
+        expect(staleApply.apply()).toBe(false);
+        expect(mocks.state.value).toBe(preparedState);
+        expect(mocks.set).not.toHaveBeenCalled();
+
+        const revertSourceState = state({
+            notesByClipId: {
+                source: [{ id: 'source-note', pitch: 60, startBeat: 4, duration: 1, velocity: 90 }],
+            },
+        });
+        mocks.state.value = revertSourceState;
+        const staleRevert = prepareMidiGlobalTimeTransaction(input);
+        expect(staleRevert.apply()).toBe(true);
+        const appliedState = requireState();
+        appliedState.notesByClipId.source![0]!.startBeat = 99;
+
+        expect(staleRevert.revert()).toBe(false);
+        expect(mocks.state.value).toBe(appliedState);
+        expect(mocks.set).toHaveBeenCalledTimes(1);
+    });
+
     it('keeps an in-flight apply revertible after a synchronous reentrant revert', () => {
         const preparedState = state({
             notesByClipId: {

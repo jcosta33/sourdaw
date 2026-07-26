@@ -75,6 +75,12 @@ type MidiGlobalTimeStateRestorePlan = {
     replacement: MidiTimeStateSnapshot;
 };
 
+type MidiGlobalTimeStateSnapshots = {
+    inversePlan: MidiGlobalTimeStateRestorePlan;
+    nextValueSnapshot: MidiStoreState;
+    preparedValueSnapshot: MidiStoreState;
+};
+
 type PrepareMidiGlobalTimeTransactionInput = {
     operation: MidiGlobalTimeOperation;
     owners: readonly MidiGlobalTimeOwnerSnapshot[];
@@ -597,30 +603,52 @@ function isPublishingPhase(phase: TransactionPhase): boolean {
     return phase === 'publishing';
 }
 
-function createInversePlan(
+function createStateSnapshots(
     expectedState: MidiStoreState,
     replacementState: MidiStoreState
-): MidiGlobalTimeStateRestorePlan | null {
+): MidiGlobalTimeStateSnapshots | null {
     const expected = midiTimeStateCodec.encodeState(expectedState);
     const replacement = midiTimeStateCodec.encodeState(replacementState);
     if (!expected || !replacement) {
         return null;
     }
 
+    const nextValueSnapshot = midiTimeStateCodec.decodeState(expected);
+    const preparedValueSnapshot = midiTimeStateCodec.decodeState(replacement);
+    if (!nextValueSnapshot || !preparedValueSnapshot) {
+        return null;
+    }
+
     return {
-        version: 1,
-        expected,
-        replacement,
+        inversePlan: {
+            version: 1,
+            expected,
+            replacement,
+        },
+        nextValueSnapshot,
+        preparedValueSnapshot,
     };
+}
+
+function matchesReferenceAndValue(
+    currentState: MidiStoreState | null,
+    expectedReference: MidiStoreState,
+    expectedValueSnapshot: MidiStoreState
+): boolean {
+    if (currentState !== expectedReference) {
+        return false;
+    }
+
+    return midiTimeStateCodec.statesEqual(currentState, expectedValueSnapshot);
 }
 
 export function prepareMidiGlobalTimeTransaction(input: PrepareMidiGlobalTimeTransactionInput) {
     const preparedState = midiStore.value;
     let prepared = prepareState(preparedState, input);
-    let inversePlan: MidiGlobalTimeStateRestorePlan | null = null;
+    let stateSnapshots: MidiGlobalTimeStateSnapshots | null = null;
     if (prepared.status === 'ready' && prepared.hasChanges && preparedState && prepared.nextState) {
-        inversePlan = createInversePlan(prepared.nextState, preparedState);
-        if (!inversePlan) {
+        stateSnapshots = createStateSnapshots(prepared.nextState, preparedState);
+        if (!stateSnapshots) {
             prepared = rejectPreparation();
         }
     }
@@ -634,7 +662,15 @@ export function prepareMidiGlobalTimeTransaction(input: PrepareMidiGlobalTimeTra
             phase = 'closed';
             return false;
         }
-        if (!preparedState || !prepared.nextState || midiStore.value !== preparedState) {
+        if (!preparedState || !prepared.nextState || !stateSnapshots) {
+            phase = 'closed';
+            return false;
+        }
+        if (!matchesReferenceAndValue(midiStore.value, preparedState, stateSnapshots.preparedValueSnapshot)) {
+            phase = 'closed';
+            return false;
+        }
+        if (!midiTimeStateCodec.statesEqual(prepared.nextState, stateSnapshots.nextValueSnapshot)) {
             phase = 'closed';
             return false;
         }
@@ -650,7 +686,7 @@ export function prepareMidiGlobalTimeTransaction(input: PrepareMidiGlobalTimeTra
             phase = 'closed';
             return false;
         }
-        if (midiStore.value !== prepared.nextState) {
+        if (!matchesReferenceAndValue(midiStore.value, prepared.nextState, stateSnapshots.nextValueSnapshot)) {
             phase = 'closed';
             return false;
         }
@@ -667,7 +703,15 @@ export function prepareMidiGlobalTimeTransaction(input: PrepareMidiGlobalTimeTra
             phase = 'closed';
             return false;
         }
-        if (!preparedState || !prepared.nextState || midiStore.value !== prepared.nextState) {
+        if (!preparedState || !prepared.nextState || !stateSnapshots) {
+            phase = 'closed';
+            return false;
+        }
+        if (!matchesReferenceAndValue(midiStore.value, prepared.nextState, stateSnapshots.nextValueSnapshot)) {
+            phase = 'closed';
+            return false;
+        }
+        if (!midiTimeStateCodec.statesEqual(preparedState, stateSnapshots.preparedValueSnapshot)) {
             phase = 'closed';
             return false;
         }
@@ -685,14 +729,14 @@ export function prepareMidiGlobalTimeTransaction(input: PrepareMidiGlobalTimeTra
         }
 
         phase = 'closed';
-        return midiStore.value === preparedState;
+        return matchesReferenceAndValue(midiStore.value, preparedState, stateSnapshots.preparedValueSnapshot);
     }
 
     return {
         status: prepared.status,
         hasChanges: prepared.hasChanges,
         replayPlan: prepared.replayPlan,
-        inversePlan,
+        inversePlan: stateSnapshots?.inversePlan ?? null,
         apply,
         revert,
     };

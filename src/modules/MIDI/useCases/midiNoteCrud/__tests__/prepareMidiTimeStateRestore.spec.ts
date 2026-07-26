@@ -478,8 +478,8 @@ describe('prepareMidiTimeStateRestore', () => {
         expect(mocks.set).toHaveBeenCalledTimes(1);
     });
 
-    it('fails closed under a reentrant apply during apply publication', () => {
-        const { plan } = prepareSerializedInversePlan();
+    it('keeps an outer apply revertible after a reentrant apply', () => {
+        const { plan, preparedPostState } = prepareSerializedInversePlan();
         mocks.set.mockReset();
         let reentrantResult: boolean | undefined;
         const transaction = prepareMidiTimeStateRestore(plan);
@@ -488,15 +488,16 @@ describe('prepareMidiTimeStateRestore', () => {
             reentrantResult = transaction.apply();
         });
 
-        expect(transaction.apply()).toBe(false);
+        expect(transaction.apply()).toBe(true);
         expect(reentrantResult).toBe(false);
+        expect(transaction.revert()).toBe(true);
+        expect(mocks.state.value).toBe(preparedPostState);
         expect(transaction.apply()).toBe(false);
-        expect(transaction.revert()).toBe(false);
-        expect(mocks.set).toHaveBeenCalledTimes(1);
+        expect(mocks.set).toHaveBeenCalledTimes(2);
     });
 
-    it('fails closed under a reentrant revert during revert publication', () => {
-        const { plan } = prepareSerializedInversePlan();
+    it('lets an outer revert finish after a reentrant revert', () => {
+        const { plan, preparedPostState } = prepareSerializedInversePlan();
         mocks.set.mockClear();
         const transaction = prepareMidiTimeStateRestore(plan);
         expect(transaction.apply()).toBe(true);
@@ -506,8 +507,9 @@ describe('prepareMidiTimeStateRestore', () => {
             reentrantResult = transaction.revert();
         });
 
-        expect(transaction.revert()).toBe(false);
+        expect(transaction.revert()).toBe(true);
         expect(reentrantResult).toBe(false);
+        expect(mocks.state.value).toBe(preparedPostState);
         expect(transaction.revert()).toBe(false);
         expect(transaction.apply()).toBe(false);
         expect(mocks.set).toHaveBeenCalledTimes(2);
