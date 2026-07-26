@@ -1,0 +1,32 @@
+src/modules/Arrangement/stores/trackStore.ts
+  s_0d39f3a4a4357a::t_44f9de5d897205 481-488
+src/modules/Arrangement/useCases/freezeBounce/__tests__/initStalenessDetection.spec.ts
+  s_0d39f3a4a4357a::t_74de7f6d76bf0f 112-142
+src/modules/Project/useCases/projectPersistence/helpers/isHydratableProjectData.ts
+  s_0d39f3a4a4357a::t_b9219879e04b2f 314-318
+src/modules/Project/models/ProjectData.ts
+  s_0d39f3a4a4357a::t_9ffefe47ad9f95 343-349
+src/modules/Arrangement/stores/__tests__/trackStorePersistenceRoundTrip.spec.ts
+  s_0d39f3a4a4357a::t_c4974575fe7fdb 300-364
+  s_0d39f3a4a4357a::t_07ee44068979e5 3-4
+src/modules/Project/stores/arrangementStore.ts
+  s_0d39f3a4a4357a::t_3baac51ce30661 105-106
+src/modules/Arrangement/useCases/freezeBounce/initStalenessDetection.ts
+  s_0d39f3a4a4357a::t_a0f38fc8eefb97 32-59,65-67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "5ef5f01fdc5d3a61e656b93e858db2cf961c65d2",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
