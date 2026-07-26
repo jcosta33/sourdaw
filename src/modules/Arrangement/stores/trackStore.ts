@@ -678,6 +678,14 @@ export const trackStore = createStore<TrackStoreState>({
     storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'tracks', {
         toCrdt: ({ tracks }) => ({ tracks }),
         fromCrdt: sanitize_track_store_state_from_crdt,
+        // Tracks, clips, devices, midiFx and alternatives all carry an `id`, so
+        // the slot reconciles row by row on its own. Sends are the one
+        // collection here without one: a send is identified by the bus it
+        // feeds, and naming that lets two peers adjust sends to different buses
+        // on the same track without overwriting each other.
+        crdtEntityIdentity: {
+            sends: (row) => (typeof row.busId === 'string' && row.busId.length > 0 ? row.busId : null),
+        },
         // Audit CC-2 — projection default for a document without this slot, so
         // hydrate never writes the previous project's cache back into truth.
         hydrateMissing: () => defaultTrackState,

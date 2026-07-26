@@ -19,6 +19,9 @@ import {
  * - fdn-8 / fdn-16 — `fdn.rs` `"decay" => self.rt60 = decay_to_rt60_seconds(value)`
  * - plate          — `proof_chamber.rs` `"decay" => self.decay = value.clamp(0.0, 0.9999)`
  * - spring         — `spring.rs` `"decay" | "feedback" => self.feedback = value.clamp(0.0, 0.95)`
+ * - reverse        — `reverse.rs` `"decay" => self.decay = value.clamp(0.0, 0.99)`, a flat
+ *                    gain on the reversed signal. Its tail length comes from `size`, the
+ *                    buffer it replays, and has nothing to do with `decay` at all.
  */
 describe('usesRt60DecayLaw', () => {
     it('claims seconds only for the FDN engines', () => {
@@ -26,12 +29,13 @@ describe('usesRt60DecayLaw', () => {
         expect(usesRt60DecayLaw('fdn-16')).toBe(true);
         expect(usesRt60DecayLaw('plate')).toBe(false);
         expect(usesRt60DecayLaw('spring')).toBe(false);
+        expect(usesRt60DecayLaw('reverse')).toBe(false);
     });
 
     it('covers every algorithm the engine map exposes', () => {
         const algorithms = Object.keys(ALGORITHM_MAP) as Array<keyof typeof ALGORITHM_MAP>;
 
-        expect(algorithms).toHaveLength(4);
+        expect(algorithms).toHaveLength(5);
         for (const algorithm of algorithms) {
             expect(typeof usesRt60DecayLaw(algorithm)).toBe('boolean');
         }
