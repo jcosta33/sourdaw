@@ -1,8 +1,8 @@
 {
-    "capturedAt": "2026-07-26T13:37:10.370Z",
+    "capturedAt": "2026-07-26T13:49:44.388Z",
     "projectSha256": "1cea829dfa15f1e3ac94e611606cc3ef2ac3c4a2bccdfe1cc5707412565ffd9c",
-    "rendererSourceSha256": "4e50cb13e2ea216143740f23e972b2da19430ae76a0b7d2076aefcb119eb293b",
-    "wavSha256": "c53778696b323e117588095b0f7afbc5427d24a0f2e1588304611566c31c26a6",
+    "rendererSourceSha256": "b63e4afe020d37b5ed904f835d519d641fd6cf4d9001464d42e247908ca76705",
+    "wavSha256": "b8507f799ea5ac557ea051127b09ee669844e419c8a7aeaaf94091adc291c4e6",
     "wavHashScope": "captured artifact; stochastic DSP permits later valid renders to differ byte-for-byte",
     "durationBeats": 576,
     "tailSeconds": 2,
