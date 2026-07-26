@@ -35,7 +35,7 @@ describe('ProjectName', () => {
         rerender(
             <TooltipProvider>
                 <ProjectName name="My Song" dirty={true} />
-            </TooltipProvider>,
+            </TooltipProvider>
         );
 
         expect(screen.getByTitle('Unsaved changes')).toBeInTheDocument();
@@ -117,11 +117,11 @@ describe('ProjectName', () => {
         rerender(
             <TooltipProvider>
                 <ProjectName name="Second" dirty={false} />
-            </TooltipProvider>,
+            </TooltipProvider>
         );
 
         fireEvent.click(screen.getByText('Second'));
-        expect((screen.getByDisplayValue('Second') as HTMLInputElement).value).toBe('Second');
+        expect(screen.getByDisplayValue<HTMLInputElement>('Second').value).toBe('Second');
     });
 
     it('triggers saveProject on double-click without entering edit mode', () => {

@@ -28,9 +28,9 @@ vi.mock('#/modules/Arrangement/stores', () => ({
         }),
         subscribeReact: vi.fn((cb: () => void) => {
             const wrapper = () => cb();
-            subscribers.add(wrapper as unknown as (v: TrackListViewState) => void);
+            subscribers.add(wrapper);
             return () => {
-                subscribers.delete(wrapper as unknown as (v: TrackListViewState) => void);
+                subscribers.delete(wrapper);
             };
         }),
         getSnapshot: () => trackState.value,
