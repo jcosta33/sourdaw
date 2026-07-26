@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "campaignId": "sourdaw-agent",
+  "identity": {
+    "baselineCommit": "b5c1dfeede35b52325b69c584db6a629349ae668",
+    "integratedCommit": "28920e9cf61367c25da2da1a092db6f720899ccc",
+    "dirty": false,
+    "buildProvenance": {
+      "kind": "local",
+      "prerequisiteCommit": "28920e9cf61367c25da2da1a092db6f720899ccc",
+      "capturedAt": "2026-07-26T18:49:17.139Z"
+    },
+    "lockfileSha256": "993d570ce02a3e110ba75bcfff0cab873e32024ba716123735820cff7c0d37d4",
+    "governingHashes": { "campaignIndex": "15f084e9138beb2dfe5e4b1bf61448b05a0061839579ecacacdedbb4f976e505", "changePlan": "3755461ac320f3e5808c205ea162acdc5a7206eb1706b0b24f0f896535c82ed3", "commandLanguage": "c5cf46cb24d52742f9280a21a1f10808648bd75fc1f8b7aa810d9cf9a69e0ca1", "decisions": "f5b1af17af0ef47cb61b200be1109d9430b6de952d224c2c7fdaeca94d0bae48", "evidenceAuthority": "ce550c680528ea9461ef2d7c80bb2233ecbcd397a352699267b3f3fc0871803e", "inventory": "03ba739b59036e1b15c00138a6f99476cf66ae1138252591f090ee96270eaec3", "providerRuntime": "8253117bfe50029347f8f2ec43ce3779b81691c21d80ce8e87481eb57821b629", "sourceBrief": "bf9822f6a176207b5cd6051489d600b9cc3213145cfe98ea790ee43d3b31014d", "sourceCoverage": "58e511ec912ac60e4291823d50986b956186e9f5b1e0350ac0ffa6c65ba9f4d2", "spec": "858eb91d65377063d9cae46a7736a8dccdbd25e87ce0180e599e1f3b7bb220d4", "specDecisionDisposition": "241b89f503bace13746a0bd3ff382e6594ce377324e5d0fc012795ac692de147", "taskCollision": "7a16233dd9fed13c07aa5e8908df839d31e79bcb922cc1b95dbb14b52bb2e96e", "verification": "86181973f6b1abdc51385214778fb2e5f6c38b9b68ec39f254db6921488a0336" }
+  },
+  "environment": { "platform": "darwin-25.5.0", "architecture": "arm64", "browser": "Chrome 150.0.7871.186", "webview": "WebKit 21624", "webGpu": "Apple M4 Pro", "cpu": "Apple M4 Pro", "logicalCpuCount": 12, "memoryBytes": 25769803776, "audio": { "device": "Mac mini Speakers", "sampleRate": 48000, "bufferFrames": 512 }, "tauri": "2.11.5", "rust": "1.97.0-nightly (17584a181 2026-04-13)", "node": "22.17.0", "pnpm": "11.6.0", "modelIds": [], "modelArtifacts": [], "providerApiVersions": { "webllm": "0.2.84" }, "redactedEndpointOrigin": null },
+  "capabilities": [
+    { "id": "webllm", "status": "mandatory", "ownerTask": "TASK-SA-04-local-provider-runtime", "predicate": "always", "reason": "First-class browser-local route", "detectingCommand": "node --experimental-strip-types scripts/agent-campaign/run-evidence-gate.ts --suite webllm-real --manifest evidence/agent-campaign/manifest.json" },
+    { "id": "native-local", "status": "unsupported", "ownerTask": "TASK-SA-04-local-provider-runtime", "predicate": "admittedNativeRuntime", "reason": "Optional peer route pending evidence", "detectingCommand": "node --experimental-strip-types scripts/agent-campaign/run-evidence-gate.ts --suite native-local-real --manifest evidence/agent-campaign/manifest.json" },
+    { "id": "openai", "status": "unsupported", "ownerTask": "TASK-SA-05-remote-provider-security", "predicate": "admittedOpenAiProfile", "reason": "Tauri route pending evidence", "detectingCommand": "node --experimental-strip-types scripts/agent-campaign/run-evidence-gate.ts --suite openai-real --manifest evidence/agent-campaign/manifest.json" },
+    { "id": "anthropic", "status": "unsupported", "ownerTask": "TASK-SA-05-remote-provider-security", "predicate": "admittedAnthropicProfile", "reason": "Tauri route pending evidence", "detectingCommand": "node --experimental-strip-types scripts/agent-campaign/run-evidence-gate.ts --suite anthropic-real --manifest evidence/agent-campaign/manifest.json" },
+    { "id": "compatible-provider", "status": "unsupported", "ownerTask": "TASK-SA-05-remote-provider-security", "predicate": "admittedCompatibleProfile", "reason": "Allowlisted Tauri route pending evidence", "detectingCommand": "node --experimental-strip-types scripts/agent-campaign/run-evidence-gate.ts --suite compatible-provider-real --manifest evidence/agent-campaign/manifest.json" },
+    { "id": "agent-generated-media", "status": "unadmitted", "ownerTask": "TASK-SA-12-vibe-mixing-scope-and-planning", "predicate": "neverInCampaignV1", "reason": "Requires a governing re-cut", "detectingCommand": "node --experimental-strip-types scripts/agent-campaign/run-evidence-gate.ts --suite deferred-media-boundary --manifest evidence/agent-campaign/manifest.json" },
+    { "id": "bounce-critique", "status": "unadmitted", "ownerTask": "TASK-SA-12-vibe-mixing-scope-and-planning", "predicate": "neverInCampaignV1", "reason": "No model listening", "detectingCommand": "node --experimental-strip-types scripts/agent-campaign/run-evidence-gate.ts --suite deferred-media-boundary --manifest evidence/agent-campaign/manifest.json" },
+    { "id": "direct-project-write", "status": "unadmitted", "ownerTask": "TASK-SA-01-command-registry-and-outcomes", "predicate": "never", "reason": "All writes require Command authority", "detectingCommand": "pnpm deps:validate" },
+    { "id": "model-audio-input-output", "status": "unadmitted", "ownerTask": "TASK-SA-12-vibe-mixing-scope-and-planning", "predicate": "neverInCampaignV1", "reason": "Text and tools only", "detectingCommand": "node --experimental-strip-types scripts/agent-campaign/run-evidence-gate.ts --suite deferred-media-boundary --manifest evidence/agent-campaign/manifest.json" },
+    { "id": "provider-relay", "status": "unadmitted", "ownerTask": "TASK-SA-05-remote-provider-security", "predicate": "neverInCampaignV1", "reason": "No server profile", "detectingCommand": "pnpm test:run src/modules/AiRuntime/repositories/__tests__/providerSecretBoundary.spec.ts" },
+    { "id": "reference-reconstruction", "status": "unadmitted", "ownerTask": "TASK-SA-13-deferred-media-workflow-guards", "predicate": "neverInCampaignV1", "reason": "Requires a governing re-cut", "detectingCommand": "node --experimental-strip-types scripts/agent-campaign/run-evidence-gate.ts --suite deferred-media-boundary --manifest evidence/agent-campaign/manifest.json" },
+    { "id": "render-listen-adjust", "status": "unadmitted", "ownerTask": "TASK-SA-12-vibe-mixing-scope-and-planning", "predicate": "neverInCampaignV1", "reason": "No self-triggered revision", "detectingCommand": "node --experimental-strip-types scripts/agent-campaign/run-evidence-gate.ts --suite deferred-media-boundary --manifest evidence/agent-campaign/manifest.json" },
+    { "id": "sourdaw-agent-server", "status": "unadmitted", "ownerTask": "TASK-SA-05-remote-provider-security", "predicate": "neverInCampaignV1", "reason": "Serverless-first profile", "detectingCommand": "pnpm test:run src/modules/AiRuntime/repositories/__tests__/providerSecretBoundary.spec.ts" }
+  ],
+  "inventories": {
+    "fixtures": {
+      "requiredFields": ["fixtureId", "path", "schemaVersion", "sha256", "labelVisibility", "split", "requirementIds", "oracleType", "classification"],
+      "entries": []
+    },
+    "gates": {
+      "requiredFields": ["gateId", "owningTask", "requirementId", "command", "arguments", "prerequisiteGateIds", "requiredWhen", "assertions", "thresholds", "timeoutMs", "retryPolicy", "outputSchema", "evidencePaths"],
+      "entries": [
+        { "gateId": "AC-060", "owningTask": "TASK-SA-00-protocol-governance", "requirementId": "AC-060", "command": "node", "arguments": ["--experimental-strip-types", "scripts/agent-campaign/run-evidence-gate.ts", "--task", "TASK-SA-00-protocol-governance", "--gate", "AC-060", "--manifest", "evidence/agent-campaign/manifest.json"], "prerequisiteGateIds": [], "requiredWhen": "always", "assertions": ["schema-valid manifest", "frozen campaign baseline"], "thresholds": [], "timeoutMs": 120000, "retryPolicy": "never", "outputSchema": "agent-campaign-result-v1", "evidencePaths": ["evidence/agent-campaign/runs/<integrated-head>/AC-060.json"] },
+        { "gateId": "PG-005", "owningTask": "TASK-SA-00-protocol-governance", "requirementId": "PG-005", "command": "node", "arguments": ["--experimental-strip-types", "scripts/agent-campaign/run-evidence-gate.ts", "--task", "TASK-SA-00-protocol-governance", "--gate", "PG-005", "--manifest", "evidence/agent-campaign/manifest.json"], "prerequisiteGateIds": [], "requiredWhen": "always", "assertions": ["schema migration preservation"], "thresholds": [], "timeoutMs": 120000, "retryPolicy": "never", "outputSchema": "agent-campaign-result-v1", "evidencePaths": ["evidence/agent-campaign/runs/<integrated-head>/PG-005.json"] },
+        { "gateId": "PG-011", "owningTask": "TASK-SA-00-protocol-governance", "requirementId": "PG-011", "command": "node", "arguments": ["--experimental-strip-types", "scripts/agent-campaign/run-evidence-gate.ts", "--task", "TASK-SA-00-protocol-governance", "--gate", "PG-011", "--manifest", "evidence/agent-campaign/manifest.json"], "prerequisiteGateIds": [], "requiredWhen": "always", "assertions": ["dependency ownership"], "thresholds": [], "timeoutMs": 120000, "retryPolicy": "never", "outputSchema": "agent-campaign-result-v1", "evidencePaths": ["evidence/agent-campaign/runs/<integrated-head>/PG-011.json"] }
+      ]
+    },
+    "results": {
+      "requiredFields": ["resultId", "gateOrSuiteId", "fixtureIds", "status", "startedAt", "endedAt", "exitStatus", "stdoutSha256", "stderrSha256", "assertionTotals", "metricSamples", "aggregates", "rawSamplePaths", "environmentMatch", "capabilityDecision", "reviewerDisposition"],
+      "entries": [
+        { "resultId": "SA-00.AC-060", "gateOrSuiteId": "AC-060", "fixtureIds": [], "status": "pending", "startedAt": null, "endedAt": null, "exitStatus": null, "stdoutSha256": null, "stderrSha256": null, "assertionTotals": null, "metricSamples": [], "aggregates": {}, "rawSamplePaths": [], "environmentMatch": null, "capabilityDecision": null, "reviewerDisposition": null },
+        { "resultId": "SA-00.PG-005", "gateOrSuiteId": "PG-005", "fixtureIds": [], "status": "pending", "startedAt": null, "endedAt": null, "exitStatus": null, "stdoutSha256": null, "stderrSha256": null, "assertionTotals": null, "metricSamples": [], "aggregates": {}, "rawSamplePaths": [], "environmentMatch": null, "capabilityDecision": null, "reviewerDisposition": null },
+        { "resultId": "SA-00.PG-011", "gateOrSuiteId": "PG-011", "fixtureIds": [], "status": "pending", "startedAt": null, "endedAt": null, "exitStatus": null, "stdoutSha256": null, "stderrSha256": null, "assertionTotals": null, "metricSamples": [], "aggregates": {}, "rawSamplePaths": [], "environmentMatch": null, "capabilityDecision": null, "reviewerDisposition": null }
+      ]
+    }
+  },
+  "suites": [
+    { "id": "webllm-real", "owningTask": "TASK-SA-04-local-provider-runtime", "requiredWhen": "always", "capabilityId": "webllm" },
+    { "id": "native-local-real", "owningTask": "TASK-SA-04-local-provider-runtime", "requiredWhen": "capability.native-local == admitted", "capabilityId": "native-local" },
+    { "id": "openai-real", "owningTask": "TASK-SA-05-remote-provider-security", "requiredWhen": "capability.openai == admitted", "capabilityId": "openai" },
+    { "id": "anthropic-real", "owningTask": "TASK-SA-05-remote-provider-security", "requiredWhen": "capability.anthropic == admitted", "capabilityId": "anthropic" },
+    { "id": "compatible-provider-real", "owningTask": "TASK-SA-05-remote-provider-security", "requiredWhen": "capability.compatible-provider == admitted", "capabilityId": "compatible-provider" },
+    { "id": "deferred-media-boundary", "owningTask": "TASK-SA-13-deferred-media-workflow-guards", "requiredWhen": "always", "capabilityId": "model-audio-input-output" },
+    { "id": "browser-ui", "owningTask": "TASK-SA-10-workspace-trust-and-preview", "requiredWhen": "always", "capabilityId": null },
+    { "id": "packaged-tauri-macos-ui", "owningTask": "TASK-SA-10-workspace-trust-and-preview", "requiredWhen": "platform == darwin", "capabilityId": null },
+    { "id": "two-client-collaboration", "owningTask": "TASK-SA-15-hardening-and-retirement", "requiredWhen": "always", "capabilityId": null },
+    { "id": "audio-deadline", "owningTask": "TASK-SA-11-render-and-analysis", "requiredWhen": "always", "capabilityId": null },
+    { "id": "performance-and-cost", "owningTask": "TASK-SA-15-hardening-and-retirement", "requiredWhen": "always", "capabilityId": null },
+    { "id": "retention-and-deletion", "owningTask": "TASK-SA-15-hardening-and-retirement", "requiredWhen": "always", "capabilityId": null },
+    { "id": "accessibility", "owningTask": "TASK-SA-15-hardening-and-retirement", "requiredWhen": "always", "capabilityId": null }
+  ],
+  "thresholds": { "acceptedBatchValidation": ["minimum", 1], "adapterOverheadP95Ms": ["maximumExclusive", 25], "audioDeadlineMisses": ["maximum", 0], "cancellationUiMs": ["maximum", 1000], "clarifyPrecision": ["minimum", 0.9], "clarifyRecall": ["minimum", 0.98], "commandSourceOperationCount": ["exact", 130], "conflictDetection": ["minimum", 1], "generalScopeExactness": ["minimum", 0.98], "humanAcceptance": ["minimum", 0.8], "humanKappa": ["minimum", 0.6], "humanRaters": ["minimum", 2], "mainThreadLongTaskMs": ["maximum", 50], "oracleMutations": ["maximum", 0], "primaryOutcomeMacroF1": ["minimum", 0.95], "protectedScopeExactness": ["minimum", 1], "queryAndBatchP95Ms": ["maximum", 1000], "regressionRatio": ["maximum", 0.1], "safetyOutcomeRecall": ["minimum", 1], "unnecessaryAbstention": ["maximum", 0.1], "unsafeWriteFalsePositives": ["maximum", 0] }
+}
