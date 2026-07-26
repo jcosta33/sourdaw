@@ -38,10 +38,13 @@ function findClip(clipId: string): QuantizableClip | null {
 
 /**
  * Snap every non-locked transient marker's `warpedBeat` to the nearest grid
- * position (`workspaceStore.snapValue`, in beats). Flips `stretchMode` away
- * from `repitch` if needed so the warped output actually plays back time-
- * stretched. One grouped undo entry covers both the marker rewrite and the
- * stretch-mode change.
+ * position (`workspaceStore.snapValue`, in beats). One undo entry covers the
+ * marker rewrite.
+ *
+ * `stretchMode` is left exactly as the user set it. This used to flip
+ * `repitch -> complex` on the user's behalf, which wrote a mode the product has
+ * no executor for (`getStretchModeInfo` reports `complex` unavailable) and is
+ * no longer offered by any editor.
  */
 export function quantizeTransients(clipId: string): QuantizeTransientsResult {
     const clip = findClip(clipId);
@@ -75,18 +78,14 @@ export function quantizeTransients(clipId: string): QuantizeTransientsResult {
         0
     );
 
-    if (moved === 0 && before.stretchMode !== 'repitch') {
+    if (moved === 0) {
         return { ok: true, moved: 0 };
     }
-
-    const beforeStretch = before.stretchMode;
-    const nextStretch: typeof before.stretchMode = beforeStretch === 'repitch' ? 'complex' : beforeStretch;
 
     const previousState = before;
     const nextState = {
         ...before,
         markers: after.sort((a, b) => a.originalBeat - b.originalBeat),
-        stretchMode: nextStretch,
         enabled: true,
     };
 

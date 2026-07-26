@@ -164,9 +164,15 @@ export const clipPresets: readonly PresetAction[] = [
         requiresSelection: 'clip',
         buildAction: clipAction('setClipStretchMode', (id) => ({ clipId: id, mode: 'repitch' })),
     },
+    // `timestretch` reaches the same playback-rate resample as `repitch` at both
+    // schedulers — no pitch-preserving executor exists in the product. The two
+    // modes differ only in clip geometry (a ratio change keeps a `timestretch`
+    // clip's timeline length). The label says so rather than promising a
+    // stretch the engine cannot perform; the mode id stays as-is because it is
+    // persisted in saved projects.
     {
         id: 'timestretch-mode',
-        label: 'Enable Timestretch',
+        label: 'Enable Timestretch (no pitch preservation yet)',
         keywords: ['timestretch', 'time stretch', 'elastic'],
         category: 'Clip',
         requiresSelection: 'clip',

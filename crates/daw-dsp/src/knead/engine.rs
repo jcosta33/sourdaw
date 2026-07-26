@@ -969,4 +969,42 @@ mod tests {
             "skip run of {longest} samples in the unshiftable section"
         );
     }
+
+    /// Stereo integrity on the *unvoiced/unshiftable* passthrough.
+    ///
+    /// `shift_preserves_stereo_separation` guards the shifted path only — it
+    /// drives +12 st voiced material, so it never reaches this branch.
+    /// `shifted_to_unshiftable_flushes_held_tail` does reach the branch but
+    /// binds `let (out_l, _)`, discarding the right channel at the binding
+    /// site, so its assertions cannot observe a channel collapse. Line
+    /// coverage counts the branch as covered either way, which is exactly why
+    /// this needs its own guard: a passthrough that re-sourced the right
+    /// output from the left input would collapse Knead to dual-mono on
+    /// unvoiced material with the whole suite still green.
+    ///
+    /// -30 st at 50 Hz gives an 8.8 Hz target, below the scratch bound, so
+    /// every frame takes the `!shifted` fallback. The right input is fed
+    /// polarity-inverted: passed through independently the channels correlate
+    /// ~ -1; sourced from the left they correlate +1.
+    #[test]
+    fn unshifted_passthrough_preserves_stereo_separation() {
+        let sr = 44100.0;
+        let mut engine = KneadEngine::new(sr);
+        engine.set_shift_semitones(-30.0);
+        let (out_l, out_r) = run_engine(&mut engine, 50.0, 50.0, sr, 1.0, true);
+
+        let mut dot = 0.0f32;
+        let mut e_l = 0.0f32;
+        let mut e_r = 0.0f32;
+        for i in SKIP..out_l.len() {
+            dot += out_l[i] * out_r[i];
+            e_l += out_l[i] * out_l[i];
+            e_r += out_r[i] * out_r[i];
+        }
+        let corr = dot / (e_l.sqrt() * e_r.sqrt()).max(1e-9);
+        assert!(
+            corr < -0.9,
+            "unvoiced passthrough collapsed stereo: L/R correlation {corr:.2}, expected ~ -1 for inverted right"
+        );
+    }
 }
