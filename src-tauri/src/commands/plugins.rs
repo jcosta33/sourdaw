@@ -8,7 +8,7 @@ use cpal::traits::{DeviceTrait, HostTrait};
 use daw_engine::audio_bridge::create_audio_bridge;
 use daw_engine::plugin_slot::{MidiNoteEvent, TransportState};
 use daw_engine::EngineHandle;
-use daw_plugin_host::scanner::{self, ScanResult};
+use daw_plugin_host::scanner::{self, ScanResult, ScannedPlugin};
 use daw_plugin_host::{AudioPlugin, ClapWrapper, Vst3Wrapper};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -50,6 +50,55 @@ fn remove_engine_plugin_record_after_scheduler_removal<EnginePluginRecord>(
 
 // ── Scanning commands ───────────────────────────────────────────────────
 
+/// Build the lookup table `load_plugin` resolves against.
+///
+/// Two keys per CLAP plugin, on purpose. The primary key is `ScannedPlugin::id`,
+/// a hash of the file path — which is exactly why it is fragile: move the plugin
+/// or install a version under a new path and a saved project's recorded id
+/// resolves nothing. The secondary key is the CLAP descriptor's own id, which
+/// carries no path and therefore survives the move.
+///
+/// Additive by construction: every primary key is inserted first and a
+/// descriptor id may only fill a vacancy, never displace one. Nothing that
+/// resolves today stops resolving, and there is no migration to run. Making the
+/// descriptor id primary would be the stronger fix, but it would change every
+/// saved project's recorded id at once — deliberately not done here, and it
+/// stays available once there is a migration story.
+///
+/// An empty descriptor id is never a key: VST3 and AU carry no CLAP descriptor,
+/// and they would otherwise all collide on `""`.
+fn index_scanned_plugins(plugins: &[ScannedPlugin]) -> HashMap<String, PluginRegistryEntry> {
+    let mut registry = HashMap::new();
+
+    for plugin in plugins {
+        registry.insert(
+            plugin.id.clone(),
+            PluginRegistryEntry {
+                path: plugin.path.clone(),
+                clap_id: plugin.clap_id.clone(),
+                format: plugin.format.clone(),
+                name: plugin.name.clone(),
+            },
+        );
+    }
+
+    for plugin in plugins {
+        if plugin.clap_id.is_empty() {
+            continue;
+        }
+        registry
+            .entry(plugin.clap_id.clone())
+            .or_insert_with(|| PluginRegistryEntry {
+                path: plugin.path.clone(),
+                clap_id: plugin.clap_id.clone(),
+                format: plugin.format.clone(),
+                name: plugin.name.clone(),
+            });
+    }
+
+    registry
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn scan_plugins(
@@ -75,26 +124,11 @@ pub async fn scan_plugins(
         scanner::scan_directory(&path, &mut plugins, &mut errors);
     }
 
-    // Populate the plugin registry so load_plugin can find them
+    // Populate the plugin registry so load_plugin can find them. The scanner
+    // already read every CLAP descriptor; this used to re-`dlopen` each one to
+    // recover the id it had thrown away.
     if let Ok(mut registry) = state.plugin_registry.lock() {
-        for p in &plugins {
-            let clap_id = if p.format == "clap" {
-                let (_, id) = scanner::extract_clap_metadata(Path::new(&p.path));
-                id
-            } else {
-                String::new()
-            };
-
-            registry.insert(
-                p.id.clone(),
-                PluginRegistryEntry {
-                    path: p.path.clone(),
-                    clap_id,
-                    format: p.format.clone(),
-                    name: p.name.clone(),
-                },
-            );
-        }
+        registry.extend(index_scanned_plugins(&plugins));
     }
 
     Ok(ScanResult {
@@ -1051,5 +1085,82 @@ mod tests {
 
         assert_eq!(result, Ok(Some(42_u32)));
         assert!(!engine_plugins.contains_key("engine-owned-1"));
+    }
+
+    // ── Registry indexing: path hash primary, descriptor id secondary ───
+    //
+    // A plugin's persisted id is a hash of its file path, so moving or
+    // upgrading the plugin changes the id and a saved project stops resolving.
+    // The CLAP descriptor carries a path-independent id, which the scanner now
+    // keeps. Indexing under both means a project that recorded either one
+    // resolves — strictly additive: the path hash is inserted first and is never
+    // displaced, so nothing that resolves today stops resolving.
+
+    fn scanned(id: &str, clap_id: &str, format: &str) -> ScannedPlugin {
+        ScannedPlugin {
+            id: id.to_string(),
+            name: format!("Plugin {id}"),
+            vendor: "Vendor".to_string(),
+            format: format.to_string(),
+            category: "effect".to_string(),
+            path: format!("/plugins/{id}.clap"),
+            version: "1.0.0".to_string(),
+            clap_id: clap_id.to_string(),
+            num_inputs: 2,
+            num_outputs: 2,
+            num_parameters: 0,
+            has_custom_ui: true,
+        }
+    }
+
+    #[test]
+    fn a_scanned_plugin_resolves_by_its_path_hash() {
+        let registry = index_scanned_plugins(&[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
+
+        let entry = registry.get("aaaa1111").expect("path hash resolves");
+        assert_eq!(entry.path, "/plugins/aaaa1111.clap");
+        assert_eq!(entry.clap_id, "com.vendor.reverb");
+    }
+
+    #[test]
+    fn the_same_plugin_also_resolves_by_its_descriptor_id_after_it_moves() {
+        let registry = index_scanned_plugins(&[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
+
+        // A project that recorded the descriptor id survives the file moving,
+        // because the descriptor id does not encode the path.
+        let entry = registry
+            .get("com.vendor.reverb")
+            .expect("descriptor id resolves the same plugin");
+        assert_eq!(entry.path, "/plugins/aaaa1111.clap");
+    }
+
+    #[test]
+    fn a_descriptor_id_never_displaces_a_path_hash_entry() {
+        // Contrived collision: one plugin's descriptor id equals another's path
+        // hash. The path hash is the primary key and must win, or an existing
+        // project would silently start resolving to a different plugin.
+        let registry = index_scanned_plugins(&[
+            scanned("collides", "unrelated.id", "clap"),
+            scanned("bbbb2222", "collides", "clap"),
+        ]);
+
+        let entry = registry.get("collides").expect("primary key survives");
+        assert_eq!(
+            entry.path, "/plugins/collides.clap",
+            "the path-hash owner keeps the key"
+        );
+    }
+
+    #[test]
+    fn a_plugin_with_no_descriptor_id_is_indexed_once() {
+        // VST3 and AU carry no CLAP descriptor, and an empty id must never
+        // become a key that every such plugin fights over.
+        let registry = index_scanned_plugins(&[
+            scanned("cccc3333", "", "vst3"),
+            scanned("dddd4444", "", "au"),
+        ]);
+
+        assert_eq!(registry.len(), 2);
+        assert!(!registry.contains_key(""));
     }
 }

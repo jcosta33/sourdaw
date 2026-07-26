@@ -15,6 +15,13 @@ export type ScannedPlugin = {
     category: string;
     path: string;
     version: string;
+    /**
+     * The plugin's own CLAP descriptor id. Unlike `id`, which is a hash of the
+     * current file path, this survives the plugin being moved or reinstalled
+     * under a new path. Empty for formats with no CLAP descriptor (VST3, AU).
+     * The host resolves either one, so `id` remains the value to persist.
+     */
+    clap_id: string;
     num_inputs: number;
     num_outputs: number;
     num_parameters: number;

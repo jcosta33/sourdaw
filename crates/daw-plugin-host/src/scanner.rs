@@ -18,10 +18,56 @@ pub struct ScannedPlugin {
     pub category: String,
     pub path: String,
     pub version: String,
+    /// The CLAP descriptor's own id — stable across installs and versions,
+    /// unlike `id`, which is a hash of the current file path. Empty for formats
+    /// that carry no CLAP descriptor.
+    pub clap_id: String,
     pub num_inputs: u32,
     pub num_outputs: u32,
     pub num_parameters: u32,
     pub has_custom_ui: bool,
+}
+
+/// What a CLAP plugin's own descriptor says about it.
+///
+/// Read once per plugin during the scan. Everything here is free — the
+/// descriptor is already in hand — which is the point: it used to be read,
+/// partly used, and thrown away, and then read a second time by the caller that
+/// wanted the id.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ClapDescriptorMetadata {
+    pub vendor: String,
+    pub id: String,
+    pub version: String,
+    pub features: Vec<String>,
+}
+
+/// Map a CLAP feature list onto the category string the UI routes on.
+///
+/// Routing is the reason this exists: the plugin browser sends anything
+/// categorised `instrument` down a different path from an effect, so reporting
+/// every plugin as an effect puts instruments in the wrong place.
+///
+/// `instrument` wins over any co-listed effect feature, because a plugin that
+/// both synthesises and processes is an instrument as far as routing goes. The
+/// synthesizer/sampler/drum sub-features are accepted on their own: the spec
+/// lists `instrument` as the primary category, but plugins in the wild ship the
+/// sub-feature alone. Anything unrecognised stays `effect`, which is the answer
+/// the previous hardcode gave, so no existing behaviour changes.
+pub fn category_from_clap_features(features: &[String]) -> String {
+    let has = |needle: &str| features.iter().any(|feature| feature == needle);
+
+    if has("instrument") || has("synthesizer") || has("sampler") || has("drum") || has("drum-machine")
+    {
+        return "instrument".to_string();
+    }
+    if has("note-effect") || has("note-detector") {
+        return "note-effect".to_string();
+    }
+    if has("analyzer") {
+        return "analyzer".to_string();
+    }
+    "effect".to_string()
 }
 
 /// Aggregate result from scanning one or more directories.
@@ -130,31 +176,39 @@ pub fn scan_directory(dir: &Path, plugins: &mut Vec<ScannedPlugin>, errors: &mut
         if let Some(format) = detect_format(&entry_path, is_dir) {
             let name = plugin_name_from_path(&entry_path);
 
-            let (vendor, clap_id, category, has_ui) = if format == "clap" {
-                let (v, id) = extract_clap_metadata(&entry_path);
-                // CLAP plugins generally have GUIs
-                (v, id, "effect".to_string(), true)
-            } else if format == "vst3" {
-                // VST3 metadata extraction would require loading the bundle
-                // For now, use filename and mark as having UI (most VST3s do)
-                (String::new(), String::new(), "effect".to_string(), true)
+            // Only CLAP exposes a descriptor without instantiating the plugin.
+            // VST3 and AU would each need their own bundle reader; until then
+            // they keep the filename-derived name and an empty vendor rather
+            // than inventing values.
+            let descriptor = if format == "clap" {
+                extract_clap_metadata(&entry_path)
             } else {
-                // AudioUnit
-                (String::new(), String::new(), "effect".to_string(), true)
+                ClapDescriptorMetadata::default()
+            };
+
+            let category = if format == "clap" {
+                category_from_clap_features(&descriptor.features)
+            } else {
+                "effect".to_string()
             };
 
             plugins.push(ScannedPlugin {
                 id: stable_id(&entry_path),
                 name,
-                vendor,
+                vendor: descriptor.vendor,
                 format: format.to_string(),
                 category,
                 path: entry_path.to_string_lossy().into_owned(),
-                version: String::new(),
+                version: descriptor.version,
+                clap_id: descriptor.id,
+                // Port and parameter counts are per-instance in CLAP: reading
+                // them means creating the plugin, which scanning must not do.
+                // They stay at these placeholders, and nothing should present
+                // them as measured facts.
                 num_inputs: 2,
                 num_outputs: 2,
                 num_parameters: 0,
-                has_custom_ui: has_ui,
+                has_custom_ui: true,
             });
         } else if is_dir {
             scan_directory(&entry_path, plugins, errors);
@@ -270,41 +324,107 @@ mod tests {
             "expected symlink skip error, got {errors:?}"
         );
     }
+
+    // ── Category derived from CLAP features ─────────────────────────────
+    //
+    // Every scanned plugin used to be reported as an "effect". The plugin
+    // browser routes on that string — an instrument added as an effect lands in
+    // the wrong place — and the descriptor that answers the question was already
+    // being read and thrown away.
+
+    fn features(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| value.to_string()).collect()
+    }
+
+    #[test]
+    fn an_instrument_is_categorised_as_an_instrument_not_an_effect() {
+        assert_eq!(
+            category_from_clap_features(&features(&["instrument", "synthesizer", "stereo"])),
+            "instrument"
+        );
+    }
+
+    #[test]
+    fn a_synthesizer_or_sampler_without_the_instrument_feature_still_reads_as_one() {
+        // The spec lists `instrument` as the primary category, but plugins in
+        // the wild ship the sub-feature alone. Routing on it is still correct.
+        assert_eq!(category_from_clap_features(&features(&["synthesizer"])), "instrument");
+        assert_eq!(category_from_clap_features(&features(&["sampler", "stereo"])), "instrument");
+        assert_eq!(category_from_clap_features(&features(&["drum-machine"])), "instrument");
+    }
+
+    #[test]
+    fn a_note_effect_is_not_an_audio_effect() {
+        // An arpeggiator takes notes and emits notes; sending it down an audio
+        // chain is the wrong routing decision.
+        assert_eq!(category_from_clap_features(&features(&["note-effect"])), "note-effect");
+    }
+
+    #[test]
+    fn an_analyzer_is_reported_as_an_analyzer() {
+        assert_eq!(category_from_clap_features(&features(&["analyzer", "stereo"])), "analyzer");
+    }
+
+    #[test]
+    fn an_audio_effect_and_an_unlabelled_plugin_both_read_as_effect() {
+        assert_eq!(
+            category_from_clap_features(&features(&["audio-effect", "reverb"])),
+            "effect"
+        );
+        // No features at all: "effect" is the safe default, and it is the same
+        // answer the old hardcode gave, so nothing regresses.
+        assert_eq!(category_from_clap_features(&[]), "effect");
+    }
+
+    #[test]
+    fn instrument_wins_over_a_co_listed_effect_feature() {
+        // Plugins that both synthesise and process list several categories.
+        // Instrument is the routing-relevant one.
+        assert_eq!(
+            category_from_clap_features(&features(&["audio-effect", "instrument"])),
+            "instrument"
+        );
+    }
 }
 
 // ── CLAP metadata extraction ────────────────────────────────────────────
 
-/// Load a CLAP plugin temporarily to read its vendor and plugin ID.
+/// Load a CLAP plugin temporarily to read its descriptor.
+///
+/// Returns everything the descriptor carries in one pass. It used to return
+/// only vendor and id, and the caller that wanted the id `dlopen`ed the plugin a
+/// second time to get it — so every CLAP was loaded, init'd and deinit'd twice
+/// per scan.
 ///
 /// # Safety
 /// Calls into native CLAP plugin entry points.
-pub fn extract_clap_metadata(path: &Path) -> (String, String) {
+pub fn extract_clap_metadata(path: &Path) -> ClapDescriptorMetadata {
     unsafe {
         let lib = match Library::new(path) {
             Ok(l) => l,
-            Err(_) => return (String::new(), String::new()),
+            Err(_) => return ClapDescriptorMetadata::default(),
         };
 
         let entry: libloading::Symbol<*const clap_plugin_entry> = match lib.get(b"clap_entry\0") {
             Ok(s) => s,
-            Err(_) => return (String::new(), String::new()),
+            Err(_) => return ClapDescriptorMetadata::default(),
         };
 
         let entry_ptr = *entry;
         if entry_ptr.is_null() {
-            return (String::new(), String::new());
+            return ClapDescriptorMetadata::default();
         }
 
         let entry_ref = &*entry_ptr;
 
         let path_c = match CString::new(path.to_string_lossy().as_bytes()) {
             Ok(c) => c,
-            Err(_) => return (String::new(), String::new()),
+            Err(_) => return ClapDescriptorMetadata::default(),
         };
 
         if let Some(init_fn) = entry_ref.init {
             if !init_fn(path_c.as_ptr()) {
-                return (String::new(), String::new());
+                return ClapDescriptorMetadata::default();
             }
         }
 
@@ -318,53 +438,75 @@ pub fn extract_clap_metadata(path: &Path) -> (String, String) {
     }
 }
 
-/// Read vendor + plugin ID from the CLAP factory's first descriptor. Called
-/// with the entry already init'd — caller is responsible for deinit.
-unsafe fn extract_from_factory(entry_ref: &clap_plugin_entry) -> (String, String) {
+/// Read a C string that may be null, as an owned `String`.
+unsafe fn owned_c_string(value: *const i8) -> String {
+    if value.is_null() {
+        return String::new();
+    }
+    CStr::from_ptr(value).to_string_lossy().into_owned()
+}
+
+/// Read the CLAP feature list, a null-terminated array of C strings.
+///
+/// A null array pointer means the plugin declared no features, which is legal
+/// and reads as an empty list rather than as an error.
+unsafe fn owned_feature_list(features: *const *const i8) -> Vec<String> {
+    if features.is_null() {
+        return Vec::new();
+    }
+
+    let mut collected = Vec::new();
+    let mut index = 0;
+    loop {
+        let feature = *features.add(index);
+        if feature.is_null() {
+            break;
+        }
+        collected.push(CStr::from_ptr(feature).to_string_lossy().into_owned());
+        index += 1;
+    }
+    collected
+}
+
+/// Read the descriptor of the factory's first plugin. Called with the entry
+/// already init'd — the caller is responsible for deinit.
+unsafe fn extract_from_factory(entry_ref: &clap_plugin_entry) -> ClapDescriptorMetadata {
     let factory_id = CLAP_PLUGIN_FACTORY_ID.as_ptr() as *const i8;
     let factory_ptr = match entry_ref.get_factory {
         Some(f) => f(factory_id),
-        None => return (String::new(), String::new()),
+        None => return ClapDescriptorMetadata::default(),
     };
 
     if factory_ptr.is_null() {
-        return (String::new(), String::new());
+        return ClapDescriptorMetadata::default();
     }
 
     let factory = &*(factory_ptr as *const clap_plugin_factory);
 
     let count = match factory.get_plugin_count {
         Some(f) => f(factory),
-        None => return (String::new(), String::new()),
+        None => return ClapDescriptorMetadata::default(),
     };
 
     if count == 0 {
-        return (String::new(), String::new());
+        return ClapDescriptorMetadata::default();
     }
 
     let get_desc = match factory.get_plugin_descriptor {
         Some(f) => f,
-        None => return (String::new(), String::new()),
+        None => return ClapDescriptorMetadata::default(),
     };
 
     let desc = get_desc(factory, 0);
     if desc.is_null() {
-        return (String::new(), String::new());
+        return ClapDescriptorMetadata::default();
     }
 
     let desc_ref = &*desc;
-    let vendor = if !desc_ref.vendor.is_null() {
-        CStr::from_ptr(desc_ref.vendor)
-            .to_string_lossy()
-            .into_owned()
-    } else {
-        String::new()
-    };
-    let id = if !desc_ref.id.is_null() {
-        CStr::from_ptr(desc_ref.id).to_string_lossy().into_owned()
-    } else {
-        String::new()
-    };
-
-    (vendor, id)
+    ClapDescriptorMetadata {
+        vendor: owned_c_string(desc_ref.vendor),
+        id: owned_c_string(desc_ref.id),
+        version: owned_c_string(desc_ref.version),
+        features: owned_feature_list(desc_ref.features),
+    }
 }

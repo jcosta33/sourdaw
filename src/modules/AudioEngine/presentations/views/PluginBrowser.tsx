@@ -265,7 +265,14 @@ const PluginRow = ({
             }
             endSlot={
                 <div className="flex items-center gap-1 shrink-0">
-                    <span className="text-[9px] text-muted-foreground">{plugin.num_parameters}p</span>
+                    {/*
+                     * No parameter count here. CLAP exposes parameters per
+                     * instance, so a scan cannot know the number without
+                     * creating the plugin — which scanning must not do. The
+                     * badge that used to sit here read the scanner's
+                     * placeholder and rendered "0p" for every plugin ever
+                     * listed, which is worse than showing nothing.
+                     */}
                     {selectedTrackId ? <Plus className="size-3 text-muted-foreground" /> : null}
                 </div>
             }
