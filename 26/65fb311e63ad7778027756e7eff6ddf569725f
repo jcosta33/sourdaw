@@ -1,0 +1,26 @@
+src/infra/store/storage/types.ts
+  s_0d39f3a4a4357a::t_8ca77b3f8f83b3 14-28
+src/infra/store/storage/createAutomergeStorage.ts
+  s_0d39f3a4a4357a::t_c8664e9d11e363 838-864
+src/infra/store/__tests__/createStore.sanitizeWriteBack.spec.ts
+  s_0d39f3a4a4357a::t_95f3b1c9f4b2d0 1-183
+src/infra/store/createStore.ts
+  s_0d39f3a4a4357a::t_3d0f7b76eae0fb 53-69,89-97
+  s_0d39f3a4a4357a::t_d1b2426dc727c6 98-99
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "2665fb311e63ad7778027756e7eff6ddf569725f",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": null
+    }
+  }
+}
