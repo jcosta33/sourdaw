@@ -319,6 +319,7 @@ export type AppAction =
           type: 'removeAutomationLane';
           payload: { laneId: string };
       }
+    | { type: 'setAutomationLaneEnabled'; payload: { laneId: string; enabled: boolean } }
     | {
           type: 'addAutomationPoint';
           payload: {

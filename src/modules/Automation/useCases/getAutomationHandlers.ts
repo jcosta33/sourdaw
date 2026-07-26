@@ -9,12 +9,14 @@ import { handleRemoveAutomationPoint } from '../handlers/automation/handleRemove
 import { handleRestoreAutomationLanePoints } from '../handlers/automation/handleRestoreAutomationLanePoints';
 import { handleReverseAutomation } from '../handlers/automation/handleReverseAutomation';
 import { handleScaleAutomation } from '../handlers/automation/handleScaleAutomation';
+import { handleSetAutomationLaneEnabled } from '../handlers/automation/handleSetAutomationLaneEnabled';
 import { handleStretchAutomation } from '../handlers/automation/handleStretchAutomation';
 import { handleThinAutomation } from '../handlers/automation/handleThinAutomation';
 
 type AutomationAction =
     | Extract<AppAction, { type: 'addAutomationLane' }>
     | Extract<AppAction, { type: 'removeAutomationLane' }>
+    | Extract<AppAction, { type: 'setAutomationLaneEnabled' }>
     | Extract<AppAction, { type: 'addAutomationPoint' }>
     | Extract<AppAction, { type: 'removeAutomationPoint' }>
     | Extract<AppAction, { type: 'scaleAutomation' }>
@@ -36,6 +38,7 @@ export function getAutomationHandlers(): AutomationHandlersMap {
     return {
         addAutomationLane: handleAddAutomationLane,
         removeAutomationLane: handleRemoveAutomationLane,
+        setAutomationLaneEnabled: handleSetAutomationLaneEnabled,
         addAutomationPoint: handleAddAutomationPoint,
         removeAutomationPoint: handleRemoveAutomationPoint,
         scaleAutomation: handleScaleAutomation,
