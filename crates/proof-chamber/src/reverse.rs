@@ -126,6 +126,12 @@ impl ReverseReverb {
     }
 
     pub fn param_names(&self) -> Vec<&str> {
-        vec!["mix", "decay", "reverse_time"]
+        // The host-facing name is the descriptor's `size`, which is already
+        // declared and already maps onto this engine's buffer length;
+        // `reverse_time` stays accepted as the engine-native alias but is not
+        // advertised. Same shape as the FDN pair, which advertises `decay`
+        // while still accepting `rt60`. Advertising a name the descriptor
+        // never declares would describe a control the host cannot send.
+        vec!["mix", "decay", "size"]
     }
 }

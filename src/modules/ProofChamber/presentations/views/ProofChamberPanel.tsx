@@ -58,7 +58,24 @@ const ALGORITHMS: ReadonlyArray<{ id: ProofChamberAlgorithm; label: string }> = 
     { id: 'fdn-8', label: 'FDN 8' },
     { id: 'fdn-16', label: 'FDN 16' },
     { id: 'spring', label: 'Spring' },
+    { id: 'reverse', label: 'Reverse' },
 ];
+
+/**
+ * The badge on the Flavor card, numbered by position in the list the panel
+ * offers rather than by the stored wire value.
+ *
+ * The wire values skip 4 and 5 — they belong to two engines that need an
+ * impulse response nothing can supply — so numbering by the stored value would
+ * label Reverse "A7" and advertise two algorithms no chip can reach.
+ */
+function algorithmBadge(algorithm: ProofChamberAlgorithm): string {
+    const position = ALGORITHMS.findIndex((entry) => entry.id === algorithm);
+    if (position < 0) {
+        return 'A1';
+    }
+    return `A${position + 1}`;
+}
 
 function formatValue(value: number, unit: string): string {
     if (unit === '%') {
@@ -276,7 +293,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                     </div>
                 </SectionCard>
 
-                <SectionCard title="Flavor" detail={`A${ALGORITHM_MAP[params.algorithm] + 1}`}>
+                <SectionCard title="Flavor" detail={algorithmBadge(params.algorithm)}>
                     <div className="flex flex-wrap gap-1.5">
                         {VINTAGE_MODES.map((mode) => {
                             const active = params.vintage === mode.id;

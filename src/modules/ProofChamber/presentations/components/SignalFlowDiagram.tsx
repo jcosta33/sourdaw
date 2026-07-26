@@ -106,6 +106,29 @@ function getFlowForAlgorithm(
                 ],
             };
 
+        // Reverse is the one engine with no feedback path: input fills one of
+        // two buffers while the other is read backwards, so the diagram is a
+        // straight line through the swap rather than a loop. `reverse.rs`.
+        case 'reverse':
+            return {
+                nodes: [
+                    { id: 'in', label: 'Input', x: 10, y: 30, active: !freeze, color: accent },
+                    { id: 'buf', label: 'Reverse Buf', x: 100, y: 30, active: true, color: '#a89bc4' },
+                    { id: 'swap', label: 'A/B Swap', x: 200, y: 55, active: true, color: dim },
+                    { id: 'flip', label: 'Grain Flip', x: 240, y: 30, active: true, color: '#c9a07a' },
+                    { id: 'fade', label: 'Hann Fade', x: 350, y: 30, active: true, color: accent },
+                    { id: 'out', label: 'Stereo Out', x: 450, y: 30, active: true, color: accent },
+                ],
+                edges: [
+                    { from: 'in', to: 'buf' },
+                    { from: 'buf', to: 'swap' },
+                    { from: 'swap', to: 'flip' },
+                    { from: 'buf', to: 'flip', label: 'backwards' },
+                    { from: 'flip', to: 'fade' },
+                    { from: 'fade', to: 'out' },
+                ],
+            };
+
         default:
             return { nodes: [], edges: [] };
     }
