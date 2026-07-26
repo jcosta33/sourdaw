@@ -1,0 +1,34 @@
+src/modules/MIDI/repositories/webMidi/__tests__/mapNativeMidiTimestamp.spec.ts
+  s_0d39f3a4a4357a::t_7eeb7305c5a54e 1-81
+src/modules/MIDI/repositories/webMidi/state.ts
+  s_0d39f3a4a4357a::t_64bfef7b3c8457 36-41
+src/modules/MIDI/useCases/webMidiInput/resolveInputEventTime.ts
+  s_0d39f3a4a4357a::t_b66797b6accd54 3,9-11
+src/modules/MIDI/models/InputTiming.ts
+  s_0d39f3a4a4357a::t_adfeae3c8f9790 1-17
+src/modules/MIDI/repositories/webMidi/mapNativeMidiTimestamp.ts
+  s_0d39f3a4a4357a::t_e503e0d494069f 1-76
+src/modules/MIDI/repositories/webMidi/lifecycle/selectMidiInputTauri.ts
+  s_0d39f3a4a4357a::t_70776800859e04 4-5,11-17
+  s_0d39f3a4a4357a::t_8d2578ae208cab 50-58,73-74,77-80,91-101
+src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/selectMidiInputTauri.spec.ts
+  s_0d39f3a4a4357a::t_ccf60b369b4422 99-171
+src/modules/MIDI/repositories/webMidi/resetNativeMidiTimeAnchor.ts
+  s_0d39f3a4a4357a::t_863275cd888f67 1-12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "737ecc48f73caf38500f1ee645e5695c952c2226",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
