@@ -1,22 +1,14 @@
 import { audioEngine } from '#/modules/AudioEngine/useCases';
 
-/**
- * Longest wait still credible as main-thread scheduling delay.
- *
- * A conforming `MIDIMessageEvent.timeStamp` shares the `performance.now()`
- * origin, so the gap between them is only the time the event spent waiting for
- * a turn — milliseconds, even under load. A larger gap means the source is
- * stamping on some other epoch; trusting it would place the note far in the
- * past and corrupt the recorded note length, so such a timestamp is refused
- * outright rather than half-believed.
- */
-const MAX_CREDIBLE_INPUT_WAIT_SECONDS = 1;
+import { MAX_CREDIBLE_INPUT_WAIT_SECONDS } from '../../models/InputTiming';
 
 type ResolveInputEventTimeInput = {
     /**
      * `MIDIMessageEvent.timeStamp` — a DOMHighResTimeStamp sharing the time
      * origin of `performance.now()`. `undefined` when the source cannot supply
-     * one; the Tauri bridge forwards raw bytes with no timestamp.
+     * one. The Tauri bridge supplies it too: it maps midir's foreign epoch onto
+     * this one before handing the event over, so native input reaches here on
+     * the same footing as the browser's.
      */
     timeStamp: number | undefined;
 };
