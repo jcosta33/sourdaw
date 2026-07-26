@@ -39,15 +39,6 @@ type RenderEvidence = {
 };
 
 type AutomationStemEvidence = {
-    capturedAt: string;
-    fullMixCapturedAt: string;
-    fullMixTransition: {
-        renderBeats: number[];
-        channels: number;
-        warnings: string[];
-        falseFloor: { beats: number[]; durationSeconds: number; rms: number; samplePeak: number };
-        returnStrike: { beats: number[]; durationSeconds: number; rms: number; samplePeak: number };
-    };
     projectSha256: string;
 };
 
@@ -60,24 +51,12 @@ type MotifComparison = {
 };
 
 type MotifEventReport = {
-    capturedAt: string;
     projectSha256: string;
     comparisons: MotifComparison[];
 };
 
 type DesktopRuntimeEvidence = {
-    acceptanceStatus: 'partial';
-    capturedAt: string;
     projectSha256: string;
-    nativeCommandAllowlist: string[];
-    nativeDesktopLaunchVerified: false;
-    consoleErrorCount: number;
-    externalRequestCount: number;
-    failedRequestCount: number;
-    httpErrorCount: number;
-    pageErrorCount: number;
-    unexpectedNativeCommandCount: number;
-    unexpectedWarningCount: number;
 };
 
 function readRenderEvidence(): RenderEvidence {
@@ -131,6 +110,20 @@ function buildMotifComparisons(projectData: ProjectData): MotifComparison[] {
     );
 }
 
+// Scope of this spec.
+//
+// Proves: the demo blueprint still has the identity the recorded evidence files were
+// written against. `projectSha256` is recomputed from `createMyceliumAscendantBlueprint()`
+// on every run and compared to the digest stored in all four artifacts, so any edit to the
+// demo project turns them stale together and this test red. The motif comparisons and
+// `loopEnd` are likewise derived from the blueprint here, not read back from JSON.
+//
+// Does NOT prove: that any audio was rendered, or that a render met its targets. Nothing in
+// this repository writes `docs/evidence/mycelium-ascendant/*.json` — the e2e specs only call
+// `testInfo.attach`, which lands in the Playwright report. The files are transcribed by hand.
+// An assertion that reads a measurement out of one and compares it to a literal here would
+// only confirm that a human typed what a human typed, so none are made. The live audio and
+// runtime assertions live in `tests/e2e/mycelium*.spec.ts`, which is not a CI health gate.
 describe('Mycelium Ascendant full browser render', () => {
     it('pins the blueprint against the recorded evidence artifacts', () => {
         const evidence = readRenderEvidence();
@@ -144,32 +137,8 @@ describe('Mycelium Ascendant full browser render', () => {
         expect(projectData.transport.loopEnd).toBe(evidence.durationBeats);
         expect(projectSha256).toBe(evidence.projectSha256);
         expect(automationStemEvidence.projectSha256).toBe(projectSha256);
-        expect(Date.parse(automationStemEvidence.capturedAt)).not.toBeNaN();
-        expect(Date.parse(automationStemEvidence.fullMixCapturedAt)).not.toBeNaN();
-        expect(automationStemEvidence.fullMixTransition.renderBeats).toEqual([416, 488]);
-        expect(automationStemEvidence.fullMixTransition.channels).toBe(2);
-        expect(automationStemEvidence.fullMixTransition.warnings).toEqual([]);
-        expect(automationStemEvidence.fullMixTransition.falseFloor.beats).toEqual([480, 484]);
-        expect(automationStemEvidence.fullMixTransition.falseFloor.rms).toBeGreaterThan(0);
-        expect(automationStemEvidence.fullMixTransition.falseFloor.rms).toBeLessThan(
-            automationStemEvidence.fullMixTransition.returnStrike.rms * 0.25
-        );
-        expect(automationStemEvidence.fullMixTransition.returnStrike.beats).toEqual([484, 488]);
-        expect(automationStemEvidence.fullMixTransition.returnStrike.samplePeak).toBeGreaterThan(0.1);
         expect(motifEventReport.projectSha256).toBe(projectSha256);
-        expect(Date.parse(motifEventReport.capturedAt)).not.toBeNaN();
         expect(motifEventReport.comparisons).toEqual(buildMotifComparisons(projectData));
         expect(desktopRuntimeEvidence.projectSha256).toBe(projectSha256);
-        expect(desktopRuntimeEvidence.acceptanceStatus).toBe('partial');
-        expect(desktopRuntimeEvidence.nativeDesktopLaunchVerified).toBe(false);
-        expect(desktopRuntimeEvidence.nativeCommandAllowlist).toEqual(['list_midi_inputs']);
-        expect(desktopRuntimeEvidence.unexpectedNativeCommandCount).toBe(0);
-        expect(Date.parse(desktopRuntimeEvidence.capturedAt)).not.toBeNaN();
-        expect(desktopRuntimeEvidence.consoleErrorCount).toBe(0);
-        expect(desktopRuntimeEvidence.unexpectedWarningCount).toBe(0);
-        expect(desktopRuntimeEvidence.pageErrorCount).toBe(0);
-        expect(desktopRuntimeEvidence.failedRequestCount).toBe(0);
-        expect(desktopRuntimeEvidence.externalRequestCount).toBe(0);
-        expect(desktopRuntimeEvidence.httpErrorCount).toBe(0);
     });
 });
