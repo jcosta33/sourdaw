@@ -2,6 +2,7 @@ import type { Page } from '@playwright/test';
 
 export type MyceliumProjectReceipt = {
     projectSha256: string;
+    projectSectionSha256: Record<string, string>;
     durationBeats: number;
     trackCount: number;
     clipCount: number;
@@ -111,11 +112,28 @@ export async function captureMyceliumProjectReceipt(page: Page): Promise<Myceliu
                     .map(([key, child]) => [key, normalize(child)])
             );
         };
-        const bytes = new TextEncoder().encode(JSON.stringify(normalize(projectData)));
+        const normalizedProject = normalize(projectData);
+        if (!isRecordValue(normalizedProject)) {
+            throw new TypeError('Mycelium evidence normalization did not produce a project object');
+        }
+        const bytes = new TextEncoder().encode(JSON.stringify(normalizedProject));
         const digest = await crypto.subtle.digest('SHA-256', bytes);
         const projectSha256 = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+        const projectSectionSha256 = Object.fromEntries(
+            await Promise.all(
+                Object.entries(normalizedProject).map(async ([key, value]) => {
+                    const sectionBytes = new TextEncoder().encode(JSON.stringify(value));
+                    const sectionDigest = await crypto.subtle.digest('SHA-256', sectionBytes);
+                    const sectionSha256 = [...new Uint8Array(sectionDigest)]
+                        .map((byte) => byte.toString(16).padStart(2, '0'))
+                        .join('');
+                    return [key, sectionSha256];
+                })
+            )
+        );
         return {
             projectSha256,
+            projectSectionSha256,
             durationBeats: projectData.transport.loopEnd,
             trackCount: projectData.arrangement.tracks.length,
             clipCount: projectData.arrangement.tracks.reduce((total, track) => total + track.clips.length, 0),

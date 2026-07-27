@@ -59,6 +59,7 @@ const SOURCE_PATHS = [
 
 type EvidenceReceipt = {
     projectSha256: string;
+    projectSectionSha256: Record<string, string>;
     sourceRevision: string;
     sourceDirty: boolean;
     sourceTreeSha256: string;
@@ -142,6 +143,18 @@ function normalizeProjectEvidence(value: unknown): unknown {
             })
             .toSorted(([first], [second]) => first.localeCompare(second))
             .map(([key, child]) => [key, normalizeProjectEvidence(child)])
+    );
+}
+
+function projectSectionSha256(normalizedProject: unknown): Record<string, string> {
+    if (!isRecord(normalizedProject)) {
+        throw new TypeError('Mycelium evidence normalization did not produce a project object');
+    }
+    return Object.fromEntries(
+        Object.entries(normalizedProject).map(([key, value]) => [
+            key,
+            createHash('sha256').update(JSON.stringify(value)).digest('hex'),
+        ])
     );
 }
 
@@ -246,12 +259,14 @@ function currentSourceTreeSha256(): string {
 function expectValidReceipt(
     receipt: EvidenceReceipt,
     projectSha256: string,
+    expectedProjectSectionSha256: Record<string, string>,
     sourceRevision: string,
     sourceTreeSha256: string
 ): void {
     const payload = { ...receipt };
     Reflect.deleteProperty(payload, 'receiptSha256');
     expect(receipt.receiptSha256).toBe(createHash('sha256').update(JSON.stringify(payload)).digest('hex'));
+    expect(receipt.projectSectionSha256).toEqual(expectedProjectSectionSha256);
     expect(receipt.projectSha256).toBe(projectSha256);
     expect(receipt.sourceRevision).toBe(sourceRevision);
     expect(receipt.sourceDirty).toBe(false);
@@ -281,9 +296,9 @@ describe('Mycelium Ascendant full browser render', () => {
         const noteEventReport = readNoteEventReport();
         const desktopRuntimeEvidence = readDesktopRuntimeEvidence();
         const { projectData } = createMyceliumAscendantBlueprint();
-        const projectSha256 = createHash('sha256')
-            .update(JSON.stringify(normalizeProjectEvidence(projectData)))
-            .digest('hex');
+        const normalizedProject = normalizeProjectEvidence(projectData);
+        const projectSha256 = createHash('sha256').update(JSON.stringify(normalizedProject)).digest('hex');
+        const expectedProjectSectionSha256 = projectSectionSha256(normalizedProject);
         const sourceRevision = execFileSync('git', ['log', '-1', '--format=%H', '--', ...SOURCE_PATHS], {
             cwd: process.cwd(),
             encoding: 'utf8',
@@ -293,9 +308,21 @@ describe('Mycelium Ascendant full browser render', () => {
 
         expect(projectData.meta.name).toBe('Mycelium Ascendant');
         expect(projectData.transport.loopEnd).toBe(evidence.durationBeats);
-        expectValidReceipt(evidence, projectSha256, sourceRevision, sourceTreeSha256);
-        expectValidReceipt(automationStemEvidence, projectSha256, sourceRevision, sourceTreeSha256);
-        expectValidReceipt(desktopRuntimeEvidence, projectSha256, sourceRevision, sourceTreeSha256);
+        expectValidReceipt(evidence, projectSha256, expectedProjectSectionSha256, sourceRevision, sourceTreeSha256);
+        expectValidReceipt(
+            automationStemEvidence,
+            projectSha256,
+            expectedProjectSectionSha256,
+            sourceRevision,
+            sourceTreeSha256
+        );
+        expectValidReceipt(
+            desktopRuntimeEvidence,
+            projectSha256,
+            expectedProjectSectionSha256,
+            sourceRevision,
+            sourceTreeSha256
+        );
         expect(motifEventReport.projectSha256).toBe(projectSha256);
         expect(motifEventReport.comparisons).toEqual(buildMotifComparisons(projectData));
         expect(noteEventReport.projectSha256).toBe(projectSha256);
