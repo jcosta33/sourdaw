@@ -462,7 +462,7 @@ export async function scheduleMidiNotes(
                         const noteStartBeat = unswungStartBeat + swingOffsetBeats;
                         let pitch = note.pitch;
                         if (track.followChordTrack && !drumKitDef && !drumKit && !toasterRoute) {
-                            const refChord = getChordAtBeat(clip.startBeat);
+                            const refChord = getChordAtBeat(clip.startBeat - clipMidiOffset);
                             const targetChord = getChordAtBeat(noteStartBeat);
                             pitch = transposeForChordTrack(pitch, refChord, targetChord);
                         }

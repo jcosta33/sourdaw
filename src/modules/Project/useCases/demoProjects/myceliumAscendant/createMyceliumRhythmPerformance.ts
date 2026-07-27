@@ -256,7 +256,7 @@ function createTrackPerformance(track: ProjectTrack, notesByClipId: Record<strin
             notesByClipId[clipId] = segment.seeds.map(({ index, seed }) => ({
                 id: createMyceliumId('rhythm-note', `${track.name}:${section.key}:${index}`),
                 pitch,
-                startBeat: seed.beat - segment.startBeat,
+                startBeat: seed.beat - section.startBeat,
                 duration: seed.duration,
                 velocity: seed.velocity,
             }));
@@ -275,6 +275,9 @@ function createTrackPerformance(track: ProjectTrack, notesByClipId: Record<strin
                 color: track.color,
                 locked: false,
                 muted: false,
+                ...(segment.startBeat === section.startBeat
+                    ? {}
+                    : { midiOffsetBeats: segment.startBeat - section.startBeat }),
             };
         });
     });

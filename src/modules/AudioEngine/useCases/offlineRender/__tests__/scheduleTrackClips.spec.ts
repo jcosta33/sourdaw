@@ -279,6 +279,7 @@ type RunScheduleInput = {
     probability?: number;
     probabilityCorpus?: boolean;
     regionStartBeat?: number;
+    segmentOffsetBeats?: number;
 };
 
 async function runSchedule({
@@ -292,11 +293,19 @@ async function runSchedule({
     probability,
     probabilityCorpus = false,
     regionStartBeat = 0,
+    segmentOffsetBeats = 0,
 }: RunScheduleInput = {}): Promise<PendingWorkletEvent[]> {
     const offlineCtx = makeOfflineCtx();
     const track = makeMidiTrack();
     track.followChordTrack = followChordTrack;
     const midi = makeMidi();
+    if (segmentOffsetBeats > 0) {
+        const clip = track.clips[0]!;
+        clip.startBeat += segmentOffsetBeats;
+        clip.endBeat += segmentOffsetBeats;
+        clip.midiOffsetBeats = segmentOffsetBeats;
+        midi.notesByClipId['clip-1']![0]!.startBeat += segmentOffsetBeats;
+    }
     if (probability !== undefined) {
         midi.notesByClipId['clip-1']![0]!.probability = probability;
     }
@@ -781,6 +790,13 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
         expect(direct.find((event) => event.type === 'on')?.pitch).toBe(61);
         expect(yeast.find((event) => event.type === 'on')?.pitch).toBe(61);
         expect(mocks.projectChordPitch).toHaveBeenCalledWith({ pitch: 60, referenceBeat: 0, targetBeat: 1 });
+    });
+
+    it('preserves the source chord reference for a MIDI-offset scheduling clip', async () => {
+        const events = await runSchedule({ followChordTrack: true, segmentOffsetBeats: 16 });
+
+        expect(events.find((event) => event.type === 'on')?.pitch).toBe(77);
+        expect(mocks.projectChordPitch).toHaveBeenCalledWith({ pitch: 60, referenceBeat: 0, targetBeat: 17 });
     });
 
     it('does not chord-project Toaster percussion notes', async () => {

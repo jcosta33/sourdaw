@@ -35,7 +35,7 @@ function getNotes(projectData: ProjectData, trackNames: readonly string[]): Abso
             track.clips.flatMap((clip) =>
                 (projectData.midi.notesByClipId[clip.id] ?? []).map((note) => ({
                     ...note,
-                    absoluteBeat: clip.startBeat + note.startBeat,
+                    absoluteBeat: clip.startBeat + note.startBeat - (clip.midiOffsetBeats ?? 0),
                     trackName: track.name,
                 }))
             )
@@ -75,9 +75,13 @@ describe('createMyceliumRhythmPerformance', () => {
         expect(clips.every((clip) => (first.midi.notesByClipId[clip.id]?.length ?? 0) > 0)).toBe(true);
         expect(
             clips.every((clip) =>
-                (first.midi.notesByClipId[clip.id] ?? []).every(
-                    (note) => note.startBeat >= 0 && note.startBeat + note.duration <= clip.endBeat - clip.startBeat
-                )
+                (first.midi.notesByClipId[clip.id] ?? []).every((note) => {
+                    const clipRelativeStartBeat = note.startBeat - (clip.midiOffsetBeats ?? 0);
+                    return (
+                        clipRelativeStartBeat >= 0 &&
+                        clipRelativeStartBeat + note.duration <= clip.endBeat - clip.startBeat
+                    );
+                })
             )
         ).toBe(true);
         expect(PAD_NAMES.every((name) => tracks.find((track) => track.name === name)?.clips.length)).toBe(true);

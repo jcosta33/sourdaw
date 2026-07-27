@@ -369,6 +369,29 @@ describe('scheduleMidiNotes', () => {
         expect(vi.mocked(scheduleNote).mock.calls[0]?.[5]).toBe(40);
     });
 
+    it('preserves the source chord reference for a MIDI-offset scheduling clip', async () => {
+        const referenceChord = { id: 'reference', root: 4 };
+        const targetChord = { id: 'target', root: 5 };
+        const track = midiTrack({
+            clips: [midiClip({ startBeat: 16, endBeat: 24, midiOffsetBeats: 16 })],
+            followChordTrack: true,
+        });
+        const source = [{ id: 'n1', pitch: 60, startBeat: 16.25, duration: 0.25, velocity: 100 }];
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = { notesByClipId: { 'clip-1': source } };
+        vi.mocked(getChordAtBeat).mockImplementation((beat) =>
+            beat === 0 ? (referenceChord as never) : (targetChord as never)
+        );
+        vi.mocked(transposeForChordTrack).mockReturnValueOnce(77);
+
+        await scheduleMidiNotes(16, 17, 16, -1, new Set<string>(), [], defaultTransportState, 120);
+
+        expect(getChordAtBeat).toHaveBeenNthCalledWith(1, 0);
+        expect(getChordAtBeat).toHaveBeenNthCalledWith(2, 16.25);
+        expect(transposeForChordTrack).toHaveBeenCalledWith(60, referenceChord, targetChord);
+        expect(vi.mocked(scheduleNote).mock.calls[0]?.[2]).toBe(77);
+    });
+
     it('does not chord-project live Toaster child notes', async () => {
         const toasterNoteOn = vi.fn();
         const parent = midiTrack({

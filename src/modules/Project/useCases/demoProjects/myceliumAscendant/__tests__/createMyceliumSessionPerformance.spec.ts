@@ -54,7 +54,7 @@ describe('createMyceliumAscendantBlueprint — live session performance', () => 
 
                 for (const note of clipNotes) {
                     noteCountsByTrack.set(track.name, (noteCountsByTrack.get(track.name) ?? 0) + 1);
-                    const startBeat = clip.startBeat + note.startBeat;
+                    const startBeat = clip.startBeat + note.startBeat - (clip.midiOffsetBeats ?? 0);
                     const endBeat = startBeat + note.duration;
                     const beatBucket = Math.floor(startBeat);
                     const quarterBeatBucket = Math.floor(startBeat * QUARTER_BEATS_PER_BEAT);

@@ -33,7 +33,7 @@ function getNotes(projectData: ProjectData, trackNames: readonly string[]): Abso
             track.clips.flatMap((clip) =>
                 (projectData.midi.notesByClipId[clip.id] ?? []).map((note) => ({
                     ...note,
-                    absoluteBeat: clip.startBeat + note.startBeat,
+                    absoluteBeat: clip.startBeat + note.startBeat - (clip.midiOffsetBeats ?? 0),
                     trackName: track.name,
                     clipId: clip.id,
                 }))
@@ -70,7 +70,8 @@ describe('createMyceliumVoicePerformance', () => {
         const invalidClipNotes = voiceClips.flatMap((clip) =>
             (first.midi.notesByClipId[clip.id] ?? []).flatMap((note) => {
                 const clipLength = clip.endBeat - clip.startBeat;
-                if (note.startBeat >= 0 && note.startBeat + note.duration <= clipLength + BEAT_EPSILON) {
+                const clipRelativeStartBeat = note.startBeat - (clip.midiOffsetBeats ?? 0);
+                if (clipRelativeStartBeat >= 0 && clipRelativeStartBeat + note.duration <= clipLength + BEAT_EPSILON) {
                     return [];
                 }
                 return [{ clip: clip.name, clipLength, note }];

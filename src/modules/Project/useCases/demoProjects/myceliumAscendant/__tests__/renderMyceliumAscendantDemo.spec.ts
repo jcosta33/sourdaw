@@ -219,7 +219,7 @@ function buildMotifComparisons(projectData: ProjectData): MotifComparison[] {
                 .flatMap((clip) =>
                     (projectData.midi.notesByClipId[clip.id] ?? []).map((note) => ({
                         ...note,
-                        absoluteBeat: clip.startBeat + note.startBeat,
+                        absoluteBeat: clip.startBeat + note.startBeat - (clip.midiOffsetBeats ?? 0),
                     }))
                 )
                 .filter((note) => note.absoluteBeat >= startBeat && note.absoluteBeat < endBeat)
@@ -252,7 +252,7 @@ function buildNoteSections(projectData: ProjectData): NoteEventReport['sections'
         for (const track of projectData.arrangement.tracks) {
             for (const clip of track.clips) {
                 for (const note of projectData.midi.notesByClipId[clip.id] ?? []) {
-                    const absoluteBeat = clip.startBeat + note.startBeat;
+                    const absoluteBeat = clip.startBeat + note.startBeat - (clip.midiOffsetBeats ?? 0);
                     if (absoluteBeat >= startBeat && absoluteBeat < endBeat) {
                         counts.set(track.name, (counts.get(track.name) ?? 0) + 1);
                     }

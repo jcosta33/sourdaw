@@ -632,7 +632,7 @@ export async function scheduleTrackClips({
                         id: note.id,
                         pitch: projectPitch({
                             pitch: note.pitch,
-                            referenceBeat: clip.startBeat,
+                            referenceBeat: clip.startBeat - midiOffsetBeats,
                             targetBeat: note.startBeat,
                         }),
                         velocity: note.velocity,
