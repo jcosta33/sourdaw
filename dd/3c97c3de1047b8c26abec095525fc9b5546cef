@@ -1,0 +1,21 @@
+scripts/agent-campaign/evidenceExecutor.ts
+  s_bc88af7d3b054c::t_17673f385b027f 125
+scripts/agent-campaign/__tests__/evidenceExecutor.spec.ts
+  s_bc88af7d3b054c::t_17673f385b027f 28-33,37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "dd3c97c3de1047b8c26abec095525fc9b5546cef",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
