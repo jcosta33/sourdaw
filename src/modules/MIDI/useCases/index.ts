@@ -34,7 +34,9 @@ export { readMidiFile } from './importMidiFile';
 export { formatChordName } from './formatChordName';
 
 // ── State Accessors ───────────────────────────────────────────────────────────
+export { getInstrumentCapabilities } from './getInstrumentCapabilities';
 export { getMidiStoreState } from './getMidiStoreState';
+export { registerInstrumentCapabilities } from './registerInstrumentCapabilities';
 export { mergeImportedMidiClipNotes } from './mergeImportedMidiClipNotes';
 export { setMidiStoreState } from './setMidiStoreState';
 export { hydrateMidiProjectState } from './hydrateMidiProjectState';
