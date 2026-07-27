@@ -1,0 +1,21 @@
+src/modules/ControlSurface/repositories/__tests__/pushDisplayProtocol.spec.ts
+  s_c2fca615e81f34::t_802bbba847f4ad 378-400
+src/modules/ControlSurface/repositories/pushDisplayProtocol.ts
+  s_c2fca615e81f34::t_eb3b0c40fbfae4 224-237,244
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "ed99fe28ce93aead22521f85d029a4b734ad84c8",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
