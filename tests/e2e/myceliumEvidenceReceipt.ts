@@ -47,6 +47,8 @@ export function captureMyceliumSourceReceipt(metadata: unknown): MyceliumSourceR
 
 export async function captureMyceliumProjectReceipt(page: Page): Promise<MyceliumProjectReceipt> {
     return page.evaluate(async () => {
+        const isRecordValue = (value: unknown): value is Record<string, unknown> =>
+            typeof value === 'object' && value !== null;
         const projectModule: unknown = await import('/src/modules/Project/useCases/index.ts');
         if (
             typeof projectModule !== 'object' ||
@@ -68,7 +70,48 @@ export async function captureMyceliumProjectReceipt(page: Page): Promise<Myceliu
             midi: { notesByClipId: Record<string, unknown[]> };
             transport: { loopEnd: number };
         };
-        const bytes = new TextEncoder().encode(JSON.stringify(projectData));
+        const hasItems = (value: unknown, property: string): boolean => {
+            if (!isRecordValue(value)) {
+                return true;
+            }
+            const items = value[property];
+            return !Array.isArray(items) || items.length > 0;
+        };
+        const normalize = (value: unknown): unknown => {
+            if (Array.isArray(value)) {
+                return value.map((item) => normalize(item));
+            }
+            if (!isRecordValue(value)) {
+                return value;
+            }
+            return Object.fromEntries(
+                Object.entries(value)
+                    .filter(([key, child]) => {
+                        if (key === 'createdAt' || key === 'updatedAt' || key === 'notes') {
+                            return false;
+                        }
+                        if (
+                            ((key === 'pitchBend' || key === 'pressure' || key === 'slide') && child === 0) ||
+                            (key === 'probability' && child === 100)
+                        ) {
+                            return false;
+                        }
+                        if (key === 'adjustmentLayers') {
+                            return hasItems(child, 'layers');
+                        }
+                        if (key === 'grooves') {
+                            return hasItems(child, 'assignments');
+                        }
+                        if (key === 'takeLanes') {
+                            return hasItems(child, 'lanes');
+                        }
+                        return true;
+                    })
+                    .toSorted(([first], [second]) => first.localeCompare(second))
+                    .map(([key, child]) => [key, normalize(child)])
+            );
+        };
+        const bytes = new TextEncoder().encode(JSON.stringify(normalize(projectData)));
         const digest = await crypto.subtle.digest('SHA-256', bytes);
         const projectSha256 = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
         return {

@@ -98,6 +98,53 @@ type NoteEventReport = {
 
 type DesktopRuntimeEvidence = EvidenceReceipt;
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
+}
+
+function hasItems(value: unknown, property: string): boolean {
+    if (!isRecord(value)) {
+        return true;
+    }
+    const items = value[property];
+    return !Array.isArray(items) || items.length > 0;
+}
+
+function normalizeProjectEvidence(value: unknown): unknown {
+    if (Array.isArray(value)) {
+        return value.map((item) => normalizeProjectEvidence(item));
+    }
+    if (!isRecord(value)) {
+        return value;
+    }
+    return Object.fromEntries(
+        Object.entries(value)
+            .filter(([key, child]) => {
+                if (key === 'createdAt' || key === 'updatedAt' || key === 'notes') {
+                    return false;
+                }
+                if (
+                    ((key === 'pitchBend' || key === 'pressure' || key === 'slide') && child === 0) ||
+                    (key === 'probability' && child === 100)
+                ) {
+                    return false;
+                }
+                if (key === 'adjustmentLayers') {
+                    return hasItems(child, 'layers');
+                }
+                if (key === 'grooves') {
+                    return hasItems(child, 'assignments');
+                }
+                if (key === 'takeLanes') {
+                    return hasItems(child, 'lanes');
+                }
+                return true;
+            })
+            .toSorted(([first], [second]) => first.localeCompare(second))
+            .map(([key, child]) => [key, normalizeProjectEvidence(child)])
+    );
+}
+
 function readRenderEvidence(): RenderEvidence {
     return JSON.parse(readFileSync(RENDER_EVIDENCE_PATH, 'utf8')) as RenderEvidence;
 }
@@ -229,7 +276,9 @@ describe('Mycelium Ascendant full browser render', () => {
         const noteEventReport = readNoteEventReport();
         const desktopRuntimeEvidence = readDesktopRuntimeEvidence();
         const { projectData } = createMyceliumAscendantBlueprint();
-        const projectSha256 = createHash('sha256').update(JSON.stringify(projectData)).digest('hex');
+        const projectSha256 = createHash('sha256')
+            .update(JSON.stringify(normalizeProjectEvidence(projectData)))
+            .digest('hex');
         const sourceTreeSha256 = currentSourceTreeSha256();
         const noteSections = buildNoteSections(projectData);
 

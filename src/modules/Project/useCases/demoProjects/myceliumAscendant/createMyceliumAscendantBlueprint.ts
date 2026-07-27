@@ -1,3 +1,5 @@
+import { LEGACY_MIDI_PROBABILITY_SEED } from '#/modules/MIDI/stores';
+
 import { CURRENT_PROJECT_VERSION, type ProjectData } from '../../../models/ProjectData';
 
 import { createMyceliumAutomation } from './createMyceliumAutomation';
@@ -116,7 +118,12 @@ export function createMyceliumAscendantBlueprint(): MyceliumAscendantBlueprint {
         },
         arrangement: { tracks: topology.tracks },
         automation: { lanes: [] },
-        midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
+        midi: {
+            probabilitySeed: LEGACY_MIDI_PROBABILITY_SEED,
+            notesByClipId: {},
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        },
         chordTrack: { enabled: true, events: chordEvents },
         sidechainRoutes: topology.sidechainRoutes,
         mixer: { master: { gain: 0.8, pan: 0 }, buses: [] },
@@ -151,7 +158,11 @@ export function createMyceliumAscendantBlueprint(): MyceliumAscendantBlueprint {
             name: 'Mycelium Ascendant',
             tracks: { tracks: projectData.arrangement.tracks, selectedTrackId: null },
             automation: projectData.automation,
-            midi: projectData.midi,
+            midi: {
+                notesByClipId: projectData.midi.notesByClipId,
+                ccByClipId: projectData.midi.ccByClipId,
+                pitchBendByClipId: projectData.midi.pitchBendByClipId,
+            },
             tempoMap: {
                 changes:
                     projectData.tempoMap?.changes.map((change, index) => ({

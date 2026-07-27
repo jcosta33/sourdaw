@@ -76,7 +76,12 @@ describe('createMyceliumVoicePerformance', () => {
         expect(ids.every((id) => UUID_PATTERN.test(id))).toBe(true);
         expect(new Set(ids).size).toBe(ids.length);
         expect(active?.tracks?.tracks).toBe(first.arrangement.tracks);
-        expect(active?.midi).toBe(first.midi);
+        expect(active?.midi).toEqual({
+            notesByClipId: first.midi.notesByClipId,
+            ccByClipId: first.midi.ccByClipId,
+            pitchBendByClipId: first.midi.pitchBendByClipId,
+        });
+        expect(active?.midi).not.toHaveProperty('probabilitySeed');
         expect(first).toEqual(second);
         createMyceliumVoicePerformance(first);
         expect(first).toEqual(sourceSnapshot);

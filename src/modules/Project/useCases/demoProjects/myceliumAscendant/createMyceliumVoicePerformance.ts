@@ -299,7 +299,11 @@ export function createMyceliumVoicePerformance(projectData: ProjectData): Projec
         return {
             ...arrangement,
             tracks: { tracks, selectedTrackId: arrangement.tracks?.selectedTrackId ?? null },
-            midi,
+            midi: {
+                notesByClipId: midi.notesByClipId,
+                ccByClipId: midi.ccByClipId,
+                pitchBendByClipId: midi.pitchBendByClipId,
+            },
         };
     });
     return { ...projectData, arrangement: { tracks }, midi, arrangements };
