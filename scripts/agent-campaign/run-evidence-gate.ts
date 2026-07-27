@@ -1,6 +1,6 @@
 /// <reference types="node" />
 
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFile, execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFile, realpath } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve } from 'node:path';
@@ -31,19 +31,33 @@ type Checkout = {
     dirty: (ignoredOutputRoot: string) => Promise<boolean>;
 };
 
-export type EvidenceExecutor = (input: {
-    targetId: string;
-    kind: 'gate' | 'suite';
+export type EvidenceExecutor = {
+    executable: string;
+    arguments: string[];
+    fixtureIds: string[];
+};
+export type ExecutorProcessInput = {
+    executable: string;
+    arguments: readonly string[];
+    cwd: string;
     timeoutMs: number;
-    signal: AbortSignal;
-}) => Promise<unknown>;
+    maxBuffer: number;
+};
+type ExecutorProcessResult = {
+    exitStatus: number | null;
+    stdout: string;
+    stderr: string;
+    failed: boolean;
+};
+type ExecutorSnapshot = Readonly<Omit<EvidenceExecutor, 'arguments' | 'fixtureIds'>> & {
+    arguments: readonly string[];
+    fixtureIds: readonly string[];
+};
 
-type ExecutorEntry = { fixtureIds: string[]; execute: EvidenceExecutor };
 type Target = {
     id: string;
     kind: 'gate' | 'suite';
     timeoutMs: number;
-    timeoutCompatible: boolean;
     capabilityDecision: string | null;
 };
 
@@ -54,7 +68,8 @@ export type EvidenceRunnerDependencies = {
     clock: { now: () => Date };
     monotonicClock: { now: () => number };
     environment: { observe: (signal: AbortSignal) => Promise<unknown>; timeoutMs?: number };
-    executors: { registry: Record<string, ExecutorEntry>; timeoutMs?: number };
+    executors: { registry: Record<string, EvidenceExecutor> };
+    executorProcess: (input: ExecutorProcessInput) => Promise<ExecutorProcessResult>;
     manifest: { validate: typeof validateEvidenceManifest };
 };
 
@@ -170,13 +185,6 @@ async function observeEnvironment(environment: EvidenceRunnerDependencies['envir
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
     typeof value === 'object' && value !== null && !Array.isArray(value);
-const hasExactKeys = (value: Record<string, unknown>, expected: string[]): boolean =>
-    Object.keys(value).sort().join(',') === [...expected].sort().join(',');
-const canonicalTime = (value: unknown): number => {
-    const parsed = typeof value === 'string' ? Date.parse(value) : Number.NaN;
-    return Number.isFinite(parsed) && new Date(parsed).toISOString() === value ? parsed : Number.NaN;
-};
-
 function pendingResult(target: Target, capturedAt: string): Record<string, unknown> {
     return {
         ...genericFailedResult(target, [], capturedAt, capturedAt),
@@ -188,9 +196,12 @@ function pendingResult(target: Target, capturedAt: string): Record<string, unkno
 
 function genericFailedResult(
     target: Target,
-    fixtureIds: string[],
+    fixtureIds: readonly string[],
     startedAt: string,
-    endedAt: string
+    endedAt: string,
+    exitStatus: number | null = 1,
+    stdout = '',
+    stderr = ''
 ): Record<string, unknown> {
     return {
         resultId: `result.${target.id}`,
@@ -199,9 +210,9 @@ function genericFailedResult(
         status: 'failed',
         startedAt,
         endedAt,
-        exitStatus: 1,
-        stdoutSha256: digest(''),
-        stderrSha256: digest(''),
+        exitStatus,
+        stdoutSha256: digest(stdout),
+        stderrSha256: digest(stderr),
         assertionTotals: { passed: 0, failed: 1, total: 1 },
         metricSamples: [],
         aggregates: {},
@@ -212,136 +223,63 @@ function genericFailedResult(
     };
 }
 
-function normalizeExecutorResult(input: {
-    value: unknown;
-    target: Target;
-    fixtureIds: string[];
-    startedAt: string;
-    endedAt: string;
-}): Record<string, unknown> | null {
-    let value: Record<string, unknown>;
-    try {
-        const parsed: unknown = JSON.parse(canonicalPlainJson(input.value));
-        if (!isRecord(parsed)) {
-            return null;
-        }
-        value = parsed;
-    } catch {
-        return null;
-    }
-    const fields = [
-        'status',
-        'exitStatus',
-        'stdout',
-        'stderr',
-        'assertionTotals',
-        'metricSamples',
-        'aggregates',
-        'rawSamplePaths',
-        'capabilityDecision',
-        'reviewerDisposition',
-    ];
-    const totals = value.assertionTotals;
-    const status = value.status;
-    const totalsAreValid =
-        isRecord(totals) &&
-        hasExactKeys(totals, ['passed', 'failed', 'total']) &&
-        [totals.passed, totals.failed, totals.total].every(Number.isSafeInteger) &&
-        Number(totals.passed) >= 0 &&
-        Number(totals.failed) >= 0 &&
-        Number(totals.total) > 0 &&
-        Number(totals.passed) + Number(totals.failed) === Number(totals.total);
-    const outcomeIsCoherent =
-        totalsAreValid &&
-        ((status === 'passed' && value.exitStatus === 0 && totals.failed === 0) ||
-            (status === 'failed' &&
-                Number.isSafeInteger(value.exitStatus) &&
-                Number(value.exitStatus) > 0 &&
-                Number(value.exitStatus) <= 255 &&
-                Number(totals.failed) > 0));
-    const streamsAreValid =
-        typeof value.stdout === 'string' &&
-        typeof value.stderr === 'string' &&
-        Buffer.byteLength(value.stdout) <= MAX_STREAM_BYTES &&
-        Buffer.byteLength(value.stderr) <= MAX_STREAM_BYTES;
-    const observationsAreValid =
-        Array.isArray(value.metricSamples) &&
-        value.metricSamples.length === 0 &&
-        isRecord(value.aggregates) &&
-        Object.keys(value.aggregates).length === 0 &&
-        Array.isArray(value.rawSamplePaths) &&
-        value.rawSamplePaths.length === 0;
+function snapshotExecutor(entry: EvidenceExecutor): ExecutorSnapshot | null {
     if (
-        !hasExactKeys(value, fields) ||
-        !outcomeIsCoherent ||
-        !streamsAreValid ||
-        value.reviewerDisposition !== null ||
-        !observationsAreValid ||
-        value.capabilityDecision !== input.target.capabilityDecision ||
-        !Number.isFinite(canonicalTime(input.startedAt)) ||
-        !Number.isFinite(canonicalTime(input.endedAt)) ||
-        canonicalTime(input.endedAt) < canonicalTime(input.startedAt)
+        !isAbsolute(entry.executable) ||
+        !Array.isArray(entry.arguments) ||
+        !entry.arguments.every((value) => typeof value === 'string') ||
+        !Array.isArray(entry.fixtureIds) ||
+        !entry.fixtureIds.every((value) => typeof value === 'string')
     ) {
         return null;
     }
-    return {
-        resultId: `result.${input.target.id}`,
-        gateOrSuiteId: input.target.id,
-        fixtureIds: [...input.fixtureIds],
-        status,
-        startedAt: input.startedAt,
-        endedAt: input.endedAt,
-        exitStatus: value.exitStatus,
-        stdoutSha256: digest(value.stdout as string),
-        stderrSha256: digest(value.stderr as string),
-        assertionTotals: totals,
-        metricSamples: value.metricSamples,
-        aggregates: value.aggregates,
-        rawSamplePaths: value.rawSamplePaths,
-        environmentMatch: true,
-        capabilityDecision: value.capabilityDecision,
-        reviewerDisposition: null,
-    };
+    return Object.freeze({
+        executable: entry.executable,
+        arguments: Object.freeze([...entry.arguments]),
+        fixtureIds: Object.freeze([...entry.fixtureIds]),
+    });
+}
+
+export function runExecutorProcess(input: ExecutorProcessInput): Promise<ExecutorProcessResult> {
+    return new Promise((resolve) => {
+        execFile(
+            input.executable,
+            [...input.arguments],
+            {
+                cwd: input.cwd,
+                encoding: 'utf8',
+                timeout: input.timeoutMs,
+                maxBuffer: input.maxBuffer,
+                killSignal: 'SIGKILL',
+            },
+            (error, stdout, stderr) => {
+                let exitStatus: number | null = 0;
+                if (error) {
+                    exitStatus = null;
+                    if (typeof error.code === 'number') {
+                        exitStatus = error.code;
+                    }
+                }
+                resolve({ exitStatus, stdout, stderr, failed: Boolean(error) && exitStatus === null });
+            }
+        );
+    });
 }
 
 async function executeTarget(
     target: Target,
-    entry: ExecutorEntry,
+    executor: ExecutorSnapshot,
     dependencies: EvidenceRunnerDependencies
-): Promise<{ value?: unknown; startedAt: string; endedAt: string; failed: boolean }> {
-    const requestedTimeout = dependencies.executors.timeoutMs;
-    const timeoutMs =
-        typeof requestedTimeout === 'number' && Number.isFinite(requestedTimeout) && requestedTimeout > 0
-            ? Math.min(requestedTimeout, target.timeoutMs)
-            : target.timeoutMs;
-    const controller = new AbortController();
-    const timeoutMarker = Symbol('executor-timeout');
+): Promise<ExecutorProcessResult & { startedAt: string; endedAt: string }> {
     const startedAt = dependencies.clock.now().toISOString();
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const timeout = new Promise<typeof timeoutMarker>((resolve) => {
-        timer = setTimeout(() => {
-            resolve(timeoutMarker);
-            controller.abort();
-        }, timeoutMs);
+    const processResult = await dependencies.executorProcess({
+        executable: executor.executable,
+        arguments: executor.arguments,
+        cwd: dependencies.root,
+        timeoutMs: target.timeoutMs,
+        maxBuffer: MAX_STREAM_BYTES,
     });
-    const execution = Promise.resolve().then(() =>
-        entry.execute({ targetId: target.id, kind: target.kind, timeoutMs, signal: controller.signal })
-    );
-    try {
-        const value = await Promise.race([execution, timeout]);
-        return {
-            value,
-            startedAt,
-            endedAt: dependencies.clock.now().toISOString(),
-            failed: value === timeoutMarker,
-        };
-    } catch {
-        return { startedAt, endedAt: dependencies.clock.now().toISOString(), failed: true };
-    } finally {
-        if (timer) {
-            clearTimeout(timer);
-        }
-    }
+    return { ...processResult, startedAt, endedAt: dependencies.clock.now().toISOString() };
 }
 
 function failure(
@@ -503,7 +441,6 @@ function validateTarget(mode: RunnerMode, policy: Policy): EvidenceRunnerResult 
             id: gate.gateId,
             kind: 'gate',
             timeoutMs: gate.timeoutMs,
-            timeoutCompatible: gate.timeoutMs <= EXECUTOR_TIMEOUT_MS && gate.timeoutMs <= CAPTURE_WINDOW_MS,
             capabilityDecision: null,
         };
     }
@@ -528,7 +465,6 @@ function validateTarget(mode: RunnerMode, policy: Policy): EvidenceRunnerResult 
         id: suite.id,
         kind: 'suite',
         timeoutMs: EXECUTOR_TIMEOUT_MS,
-        timeoutCompatible: true,
         capabilityDecision,
     };
 }
@@ -634,50 +570,47 @@ export async function runEvidenceGate(
     const mayExecute = target && envelopeFailures.length === 0 && environmentMatch && mode.kind !== 'release';
     const entry = mayExecute ? dependencies.executors.registry[target.id] : undefined;
     if (entry && target) {
+        const executor = snapshotExecutor(entry);
         const declaredFixtureIds = new Set(
             loaded.policy.inventories.fixtures.entries.map(({ fixtureId }) => fixtureId)
         );
         const fixtureIdsAreValid =
-            new Set(entry.fixtureIds).size === entry.fixtureIds.length &&
-            entry.fixtureIds.every((id) => declaredFixtureIds.has(id));
-        if (!target.timeoutCompatible) {
-            result = genericFailedResult(target, [], capturedAt, capturedAt);
-            terminalCode = 'executor-timeout-incompatible';
-            terminalExitCode = 2;
-        } else if (!fixtureIdsAreValid) {
+            executor !== null &&
+            new Set(executor.fixtureIds).size === executor.fixtureIds.length &&
+            executor.fixtureIds.every((id) => declaredFixtureIds.has(id));
+        if (!executor || !fixtureIdsAreValid) {
             result = genericFailedResult(target, [], capturedAt, capturedAt);
             terminalCode = 'invalid-executor-result';
             terminalExitCode = 2;
         } else {
             let execution: Awaited<ReturnType<typeof executeTarget>>;
             try {
-                execution = await executeTarget(target, entry, dependencies);
+                execution = await executeTarget(target, executor, dependencies);
             } catch {
-                execution = { startedAt: capturedAt, endedAt: capturedAt, failed: true };
+                execution = {
+                    startedAt: capturedAt,
+                    endedAt: capturedAt,
+                    exitStatus: null,
+                    stdout: '',
+                    stderr: '',
+                    failed: true,
+                };
             }
-            const normalized = execution.failed
-                ? null
-                : normalizeExecutorResult({
-                      value: execution.value,
-                      target,
-                      fixtureIds: entry.fixtureIds,
-                      startedAt: execution.startedAt,
-                      endedAt: execution.endedAt,
-                  });
-            result =
-                normalized ?? genericFailedResult(target, entry.fixtureIds, execution.startedAt, execution.endedAt);
+            result = genericFailedResult(
+                target,
+                executor.fixtureIds,
+                execution.startedAt,
+                execution.endedAt,
+                execution.exitStatus,
+                execution.stdout,
+                execution.stderr
+            );
             if (execution.failed) {
                 terminalCode = 'executor-failed';
                 terminalExitCode = 1;
-            } else if (!normalized) {
-                terminalCode = 'invalid-executor-result';
-                terminalExitCode = 2;
-            } else if (normalized.status === 'passed') {
-                terminalCode = 'persistence-unimplemented';
-                terminalExitCode = 3;
             } else {
-                terminalCode = 'executor-failed';
-                terminalExitCode = 1;
+                terminalCode = 'normalization-unimplemented';
+                terminalExitCode = 3;
             }
         }
     }
@@ -765,6 +698,7 @@ if (await isCliInvocation(process.argv[1])) {
             observe: (_signal) => Promise.reject(new Error('environment attestor is not registered')),
         },
         executors: { registry: {} },
+        executorProcess: runExecutorProcess,
         manifest: { validate: validateEvidenceManifest },
     });
     process.stdout.write(canonical(output));
