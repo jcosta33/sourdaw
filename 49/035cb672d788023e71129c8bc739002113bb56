@@ -1,0 +1,207 @@
+src/modules/Arrangement/handlers/device/__tests__/handleRemoveSend.spec.ts
+  s_bc88af7d3b054c::t_9499836b9efd5d 30-34,47-48
+  s_bc88af7d3b054c::t_db879b72edd8cb 36,38,62-78
+  s_bc88af7d3b054c::t_7b9e809d3ba4ff 102-108
+  s_bc88af7d3b054c::t_0fd430d09523da 29,40-41,45-46,52
+  s_bc88af7d3b054c::t_ab8c2af393e699 7-11,35,49,51,53-54,59-61,92
+  s_bc88af7d3b054c::t_a1ed961cbdd526 42-44
+  s_bc88af7d3b054c::t_2c2afaba2de957 101
+  s_bc88af7d3b054c::t_3f0cb0e187d696 37
+  s_bc88af7d3b054c::t_a99b08dcb0cd73 39
+  s_bc88af7d3b054c::t_0b6e5ecc70c25f 50
+src/modules/Arrangement/handlers/device/handleSetSend.ts
+  s_bc88af7d3b054c::t_42629185894258 16-18
+  s_bc88af7d3b054c::t_0b11a277cc64a6 31,38,41-45
+  s_bc88af7d3b054c::t_d08678ceb1d518 22-24,47-48,50-51,58-59,61,76-78,81-86,89-90
+  s_bc88af7d3b054c::t_b70cbbddc29ea2 25-30,35,52-57,60,87-88
+  s_bc88af7d3b054c::t_9f789f594b2beb 32-34,37
+  s_bc88af7d3b054c::t_21fc0bafeb3605 39-40
+  s_bc88af7d3b054c::t_d2fd681a261370 9-15,19-21,36
+  s_bc88af7d3b054c::t_adcfda0c9dc0df 93
+src/modules/Command/useCases/__tests__/executeAppActionBatch.spec.ts
+  s_bc88af7d3b054c::t_d8edebaec041b8 182,225-250,252-257,262,267-277,389
+  s_bc88af7d3b054c::t_f847c2741fad31 49,55,122,136,251
+  s_bc88af7d3b054c::t_c7847228c244d5 258-261,263-266
+  s_bc88af7d3b054c::t_f043927a47cf54 382-385,392-395
+  s_bc88af7d3b054c::t_5c04186d65eaf9 281-303,388
+  s_bc88af7d3b054c::t_0adf2961dbd028 369-373,378-381,390-391,413-415
+  s_bc88af7d3b054c::t_17a1d95b511e67 278-280,367-368,411-412
+src/modules/Arrangement/handlers/device/__tests__/handleAddSend.spec.ts
+  s_bc88af7d3b054c::t_9499836b9efd5d 7-8,27-31,44-45
+  s_bc88af7d3b054c::t_db879b72edd8cb 77-82
+  s_bc88af7d3b054c::t_0fd430d09523da 26,37-38,42-43,49,86,96-100,103-110
+  s_bc88af7d3b054c::t_a1ed961cbdd526 39-41
+  s_bc88af7d3b054c::t_ab8c2af393e699 48,55
+  s_bc88af7d3b054c::t_dd07189fd92903 68,88,101
+src/modules/Arrangement/handlers/track/discardCreatedTrack.ts
+  s_bc88af7d3b054c::t_adcfda0c9dc0df 48-49,57
+  s_bc88af7d3b054c::t_c7d0d0c6c4b3d6 1,5-6,29,32-47,50-53
+src/modules/AiRuntime/useCases/getProjectContext.ts
+  s_bc88af7d3b054c::t_38f890b4c10e94 76
+  s_bc88af7d3b054c::t_c90d31715c60e3 18,20
+  s_bc88af7d3b054c::t_fbeb1cd45afa36 119-123
+src/modules/Arrangement/useCases/toggleTrackState/__tests__/setTrackOutput.spec.ts
+  s_bc88af7d3b054c::t_12c168aa8462f0 56,63,65-67,69-70,73-74,79-90,134-137
+  s_bc88af7d3b054c::t_db879b72edd8cb 39,57-62,99-107,127-132
+  s_bc88af7d3b054c::t_cdbadb292db83f 64,68,71-72,75-78
+  s_bc88af7d3b054c::t_236b435f93fe49 133
+  s_bc88af7d3b054c::t_59b7d14464f1e4 138
+src/modules/Command/useCases/executeAppAction.ts
+  s_bc88af7d3b054c::t_88940cf6ac1cd7 126-135
+src/modules/Arrangement/useCases/__tests__/removeTrackModulationReferences.spec.ts
+  s_bc88af7d3b054c::t_f043927a47cf54 59,82,91,96-97
+  s_bc88af7d3b054c::t_54ea815ba9729d 101-125
+src/modules/Arrangement/handlers/track/duplicateTrack.ts
+  s_bc88af7d3b054c::t_995347da52ecdc 49,54
+  s_bc88af7d3b054c::t_b7e7e426e34e52 50-53,55-59
+  s_bc88af7d3b054c::t_adcfda0c9dc0df 84
+src/modules/Arrangement/handlers/track/__tests__/discardCreatedTrack.spec.ts
+  s_bc88af7d3b054c::t_c7847228c244d5 38-41
+  s_bc88af7d3b054c::t_07d6e3b8924b5d 8-9,13,16-24,77-99
+  s_bc88af7d3b054c::t_8ef395c2c5ea38 100-101
+src/utils/createHandler.ts
+  s_bc88af7d3b054c::t_786da2ddbf4238 20,27
+src/utils/handlerContract.ts
+  s_bc88af7d3b054c::t_f043927a47cf54 829-830
+  s_bc88af7d3b054c::t_fbeb1cd45afa36 476-479
+  s_bc88af7d3b054c::t_786da2ddbf4238 831,840-841
+  s_bc88af7d3b054c::t_5d14750e9f35c5 817-828
+  s_bc88af7d3b054c::t_be158b7e925859 364-373,471-475,480-482
+src/modules/Arrangement/handlers/restore/__tests__/handleRestoreTrack.spec.ts
+  s_bc88af7d3b054c::t_c4d731aeb67127 258,260-271
+  s_bc88af7d3b054c::t_e76692e069e410 36,78,233-257
+  s_bc88af7d3b054c::t_bee80a47d2eb9b 259
+src/modules/Arrangement/handlers/track/__tests__/setTrackOutput.spec.ts
+  s_bc88af7d3b054c::t_0fd430d09523da 24,35-36,40-41,47
+  s_bc88af7d3b054c::t_db879b72edd8cb 77,85-88,90-98
+  s_bc88af7d3b054c::t_9499836b9efd5d 25-29,42-43
+  s_bc88af7d3b054c::t_a1ed961cbdd526 37-39
+  s_bc88af7d3b054c::t_ab8c2af393e699 7,13-15,20,46,54,63-76,78-84
+  s_bc88af7d3b054c::t_06e13c3d65b1f1 89
+docs/architecture/decisions/0017-llm-routing-and-send-commands.md
+  s_bc88af7d3b054c::t_505efe402335e1 1-17,19,21,25-29
+  s_bc88af7d3b054c::t_45a24ad91cdadd 18,22
+  s_bc88af7d3b054c::t_f0d5fc9de9ad71 23-24
+  s_bc88af7d3b054c::t_5b46233f4903ca 20
+src/modules/Arrangement/handlers/device/__tests__/handleSetSend.spec.ts
+  s_bc88af7d3b054c::t_9499836b9efd5d 30-34,50-51,132-135
+  s_bc88af7d3b054c::t_a1ed961cbdd526 45-47,152-154
+  s_bc88af7d3b054c::t_db879b72edd8cb 91-97,130,142-151,167-186,191
+  s_bc88af7d3b054c::t_ab8c2af393e699 54,64,139-141,187-188
+  s_bc88af7d3b054c::t_0fd430d09523da 9,29,35-37,43-44,48-49,55-58,79,101,114,119,131,136-138,155-166,189-190
+  s_bc88af7d3b054c::t_fa7fa3f1488e74 192
+src/modules/Arrangement/handlers/device/handleAddSend.ts
+  s_bc88af7d3b054c::t_3efcaa9a070c37 16-18
+  s_bc88af7d3b054c::t_21fc0bafeb3605 33-34
+  s_bc88af7d3b054c::t_adcfda0c9dc0df 63
+  s_bc88af7d3b054c::t_d2fd681a261370 3,9-15,19-21,30
+  s_bc88af7d3b054c::t_2c2afaba2de957 26-29,31
+  s_bc88af7d3b054c::t_d08678ceb1d518 22-24,51
+  s_bc88af7d3b054c::t_b70cbbddc29ea2 52-60
+  s_bc88af7d3b054c::t_0b11a277cc64a6 25,32,35-39
+src/modules/Arrangement/handlers/track/__tests__/duplicateTrack.spec.ts
+  s_bc88af7d3b054c::t_54ea815ba9729d 25,78-98
+  s_bc88af7d3b054c::t_ec30233421588d 7
+  s_bc88af7d3b054c::t_c16ddddfd4da1d 99-100
+src/modules/Arrangement/useCases/removeTrackModulationReferences.ts
+  s_bc88af7d3b054c::t_7ddda7ea0fbbb1 10-14,18,21-24,42,47-50,56-67,71-77
+src/modules/Arrangement/handlers/track/handleAddTrack.ts
+  s_bc88af7d3b054c::t_b7e7e426e34e52 34-37,39-43
+  s_bc88af7d3b054c::t_995347da52ecdc 33,38
+  s_bc88af7d3b054c::t_adcfda0c9dc0df 63
+src/modules/AiRuntime/models/ProjectContext.ts
+  s_bc88af7d3b054c::t_fbeb1cd45afa36 42
+  s_bc88af7d3b054c::t_38f890b4c10e94 54
+src/modules/Arrangement/handlers/restore/handleRestoreTrack.ts
+  s_bc88af7d3b054c::t_995347da52ecdc 138,179
+  s_bc88af7d3b054c::t_a6192db9229474 139,141,143-151,169-178,180
+  s_bc88af7d3b054c::t_b0354466054850 142
+  s_bc88af7d3b054c::t_adcfda0c9dc0df 3,140,184
+  s_bc88af7d3b054c::t_5630bc1f062d2a 152-158
+  s_bc88af7d3b054c::t_bcd5af2e8ca8ab 159-168
+src/modules/Arrangement/handlers/track/__tests__/handleRemoveTrack.spec.ts
+  s_bc88af7d3b054c::t_c7847228c244d5 118-121,183
+  s_bc88af7d3b054c::t_07d6e3b8924b5d 45-46,68-70,95,165-182
+src/modules/Arrangement/useCases/device/sendManagement/removeSend.ts
+  s_bc88af7d3b054c::t_f6a31d676c7678 1,10-14,20,25,47-54,57-60
+  s_bc88af7d3b054c::t_21fc0bafeb3605 3,26-29,63
+  s_bc88af7d3b054c::t_f84ac1cda35caf 6-9,15-19,21-24,40-46,55-56,61-62
+src/modules/Arrangement/handlers/track/handleRemoveTrack.ts
+  s_bc88af7d3b054c::t_c7d0d0c6c4b3d6 3,11,40,43-58,61-64
+  s_bc88af7d3b054c::t_adcfda0c9dc0df 59-60,179
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_bc88af7d3b054c::t_aafc924b917484 24,85,101,208-236,242,252-258,265-292,536,538-539,565
+  s_bc88af7d3b054c::t_c37c9ecdeafc54 74,195-201,237-241,243-251,259-264,316-322,326-330
+  s_bc88af7d3b054c::t_c853d1e4e07061 293-315,323-325,331-346
+src/modules/Arrangement/useCases/device/sendManagement/setSend.ts
+  s_bc88af7d3b054c::t_f84ac1cda35caf 14-17,23-29,31-36,83-89,98-99,104-105
+  s_bc88af7d3b054c::t_f6a31d676c7678 2-6,18-22,30,37,90-97,100-103
+src/modules/Arrangement/useCases/device/sendManagement/__tests__/setSend.spec.ts
+  s_bc88af7d3b054c::t_cdbadb292db83f 10,29,58-62,71,75,78-79,82-85
+  s_bc88af7d3b054c::t_12c168aa8462f0 57,63-70,72-74,76-77,80-81,86-87
+src/modules/Arrangement/handlers/track/setTrackOutput.ts
+  s_bc88af7d3b054c::t_d2fd681a261370 3,9-15,19-20
+  s_bc88af7d3b054c::t_0b11a277cc64a6 24,27,30-34
+  s_bc88af7d3b054c::t_9f789f594b2beb 25-26
+  s_bc88af7d3b054c::t_fadd6c5ad4913b 28-29,45-47,50-51,57
+  s_bc88af7d3b054c::t_b70cbbddc29ea2 22-23,36,38-41,52-56
+  s_bc88af7d3b054c::t_42629185894258 16-18,21,37
+  s_bc88af7d3b054c::t_adcfda0c9dc0df 60
+  s_bc88af7d3b054c::t_21fc0bafeb3605 4,42-44,48-49,58-59
+src/modules/Arrangement/handlers/track/__tests__/handleAddTrack.spec.ts
+  s_bc88af7d3b054c::t_54ea815ba9729d 81-98
+  s_bc88af7d3b054c::t_ec30233421588d 5
+  s_bc88af7d3b054c::t_ccc7f52c95a7a2 99-100
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_bc88af7d3b054c::t_99c58f884d06aa 112-114
+  s_bc88af7d3b054c::t_55dc7e4d635b09 122,311,317-320,377-384,407-410,425-432
+  s_bc88af7d3b054c::t_2584d18332ff5e 17,22-23,115-121,123-132,305-310,312-316,321,356-358,361-364,385-406,411-424,455-459,525
+  s_bc88af7d3b054c::t_96aa89b548131a 322
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_bc88af7d3b054c::t_fbeb1cd45afa36 277-280
+  s_bc88af7d3b054c::t_be158b7e925859 181-190,273-276,281-284
+src/modules/Arrangement/handlers/device/handleRemoveSend.ts
+  s_bc88af7d3b054c::t_21fc0bafeb3605 38-42,44
+  s_bc88af7d3b054c::t_2c2afaba2de957 37
+  s_bc88af7d3b054c::t_fadd6c5ad4913b 21-22
+  s_bc88af7d3b054c::t_42629185894258 43
+  s_bc88af7d3b054c::t_adcfda0c9dc0df 49
+  s_bc88af7d3b054c::t_b70cbbddc29ea2 8-16
+  s_bc88af7d3b054c::t_9f789f594b2beb 18-19
+  s_bc88af7d3b054c::t_0b11a277cc64a6 17,20,23-27
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_bc88af7d3b054c::t_0d61320edd88af 53,131-132,137
+  s_bc88af7d3b054c::t_786da2ddbf4238 259-260
+  s_bc88af7d3b054c::t_88940cf6ac1cd7 52,87-101,120,354-358
+src/modules/Command/useCases/__tests__/executeAppAction.spec.ts
+  s_bc88af7d3b054c::t_2e90274a29de23 374-377,399
+  s_bc88af7d3b054c::t_f043927a47cf54 164,181,384-388
+src/modules/Arrangement/useCases/device/sendManagement/__tests__/removeSend.spec.ts
+  s_bc88af7d3b054c::t_ab8c2af393e699 7,16-18,34-37,65,86-91
+  s_bc88af7d3b054c::t_cdbadb292db83f 10,23,67,71,74-75,78-83
+  s_bc88af7d3b054c::t_12c168aa8462f0 66,68-70,72-73,76-77,84-85,92
+src/modules/Arrangement/useCases/toggleTrackState/setTrackOutput.ts
+  s_bc88af7d3b054c::t_12c168aa8462f0 34
+  s_bc88af7d3b054c::t_f84ac1cda35caf 11-14,22-26,28-31,65-76,89-90,96
+  s_bc88af7d3b054c::t_f6a31d676c7678 15-19,27,32,77-88,91-94
+  s_bc88af7d3b054c::t_b70cbbddc29ea2 20-21,39-41
+src/modules/AiRuntime/useCases/__tests__/getProjectContext.spec.ts
+  s_bc88af7d3b054c::t_9d79f6b1c8236b 206
+  s_bc88af7d3b054c::t_20f160ed93d5d2 92,113,178
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "49035cb672d788023e71129c8bc739002113bb56",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
