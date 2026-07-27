@@ -1,0 +1,237 @@
+src/modules/Arrangement/handlers/track/__tests__/handleAddTrack.spec.ts
+  s_bc88af7d3b054c::t_8f2469fe84439a 5,10,16-19,100-110
+  s_bc88af7d3b054c::t_12c9669a6e0dff 30,36,40,42-43,46,81,86,92-94,97-98
+  s_bc88af7d3b054c::t_afce462d2c11a0 26-27,29,82-85
+  s_bc88af7d3b054c::t_df76429b5bf821 6,11,35,37-38,44-45,48-56
+  s_bc88af7d3b054c::t_4eaa66365bc955 31-34,41,47,87-90,96,99
+  s_bc88af7d3b054c::t_f9b7904603fcfc 25,28,59-80,95
+  s_bc88af7d3b054c::t_4ecd9446090213 91
+src/modules/Arrangement/useCases/publishTrackAdded.ts
+  s_bc88af7d3b054c::t_120ec6b45ea9a9 1-12
+src/modules/Automation/useCases/index.ts
+  s_bc88af7d3b054c::t_3fb3e1da76d590 46
+src/modules/Routing/useCases/sidechain/removeSidechainRoute.ts
+  s_bc88af7d3b054c::t_4bb315da746815 5-8,12,17-19,25-28
+  s_bc88af7d3b054c::t_54e5f4b9396d0d 9,29-36
+src/modules/Arrangement/handlers/restore/handleRestoreTrack.ts
+  s_bc88af7d3b054c::t_9c630da7aa9a33 5,109-110,112-115,117-124,126,128-136
+  s_bc88af7d3b054c::t_2670a886685728 65-68,72
+  s_bc88af7d3b054c::t_3d861d36e401e3 1,9-10,28-29,36-38,42-43,63-64,69-70,73,99-108,137-138
+  s_bc88af7d3b054c::t_7a4658a351e7ac 3,26,30,45-62,111,116,143-162
+  s_bc88af7d3b054c::t_0516f3574b5ab1 71,125
+  s_bc88af7d3b054c::t_8e226cf561c33d 24-25
+  s_bc88af7d3b054c::t_0d09b859e58b7c 11,27
+  s_bc88af7d3b054c::t_4335b74ba89560 127
+src/modules/Routing/useCases/index.ts
+  s_bc88af7d3b054c::t_3fb3e1da76d590 8
+src/modules/Arrangement/handlers/track/__tests__/discardCreatedTrack.spec.ts
+  s_bc88af7d3b054c::t_59338b7e32a4ff 7,10,19-21,26,45,47-50,58,71
+  s_bc88af7d3b054c::t_d5cae1b229e6dc 1-5,8-9,11-18,22-25,27-29,34-39,46,51,55-56,59-62,64-70,72-78
+  s_bc88af7d3b054c::t_e1e872b2573327 6,30-33,40-44,57,63
+  s_bc88af7d3b054c::t_ec2473d89e7a4c 52-54
+src/modules/Arrangement/handlers/restore/__tests__/handleRestoreTrack.spec.ts
+  s_bc88af7d3b054c::t_8ff89661e065ef 31,60-63,97,250,284-287,373
+  s_bc88af7d3b054c::t_ecb947e469c437 296
+  s_bc88af7d3b054c::t_13f625c1c9abc0 28,35,74,76,96,100,249,253-259,267,282-283,288-289,341-359
+  s_bc88af7d3b054c::t_2f8cd8efd833e8 362-372,374-375
+  s_bc88af7d3b054c::t_c9832feffbe2de 376
+  s_bc88af7d3b054c::t_8e226cf561c33d 94-95,247-248
+  s_bc88af7d3b054c::t_8694bdda4eeff8 308-340
+  s_bc88af7d3b054c::t_8537f3c57f7fc4 3,27,29-30,33-34,52-59,66,73,75,77-78,98-99,106-108,128,131,145,177-186,204-209,211-217,227-246,251-252,260-266,268-275,277-281,360-361,377-383,385-386,400
+  s_bc88af7d3b054c::t_f625bfe60ee4fc 210,276
+  s_bc88af7d3b054c::t_9271b69a6ac436 384
+  s_bc88af7d3b054c::t_663708b17302c2 290-295,297-307
+src/modules/Arrangement/handlers/track/__tests__/handleSetTrackColor.spec.ts
+  s_bc88af7d3b054c::t_12c9669a6e0dff 61-71
+src/modules/Arrangement/handlers/track/handleSetTrackColor.ts
+  s_bc88af7d3b054c::t_cd59878a955e28 19-22
+src/modules/Routing/useCases/__tests__/sidechain.spec.ts
+  s_bc88af7d3b054c::t_4bb315da746815 173-192
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_bc88af7d3b054c::t_631ec8dc9540f4 13,51,102,239,355-356,359,367-388
+src/modules/Automation/useCases/modulation/__tests__/removeModulator.spec.ts
+  s_bc88af7d3b054c::t_59338b7e32a4ff 39-49
+src/modules/Automation/useCases/modulation/restoreTrackModulationReferences.ts
+  s_bc88af7d3b054c::t_3fb3e1da76d590 1-10,34-62,64-66,77-115
+  s_bc88af7d3b054c::t_8e226cf561c33d 11-33,63,67-76
+src/modules/Arrangement/useCases/duplicateTrack.ts
+  s_bc88af7d3b054c::t_9531ba6c9f1e33 5
+  s_bc88af7d3b054c::t_cd59878a955e28 41-42
+  s_bc88af7d3b054c::t_120ec6b45ea9a9 17-21,25,28,32,36-40,43,104,111,144-151
+  s_bc88af7d3b054c::t_4499ce0cb0a459 27
+src/modules/Automation/useCases/modulation/removeMapping.ts
+  s_bc88af7d3b054c::t_07727f44f5f471 9-11,21-25,28,42-45,54-58
+  s_bc88af7d3b054c::t_54e5f4b9396d0d 46,48-50,52
+  s_bc88af7d3b054c::t_133eb748713f28 47,51,53
+src/modules/Automation/useCases/modulation/__tests__/restoreTrackModulationReferences.spec.ts
+  s_bc88af7d3b054c::t_7516334ad42a93 1-87
+src/modules/Arrangement/handlers/track/__tests__/duplicateTrack.spec.ts
+  s_bc88af7d3b054c::t_9271b69a6ac436 110,130
+  s_bc88af7d3b054c::t_59338b7e32a4ff 109,129
+  s_bc88af7d3b054c::t_59fb1637824e85 8,18-20,38-45,48-50,52-56
+  s_bc88af7d3b054c::t_f9b7904603fcfc 28,31,72
+  s_bc88af7d3b054c::t_afce462d2c11a0 29,32,60,63
+  s_bc88af7d3b054c::t_c9832feffbe2de 98,121
+  s_bc88af7d3b054c::t_8f2469fe84439a 108,117
+  s_bc88af7d3b054c::t_b58c5bd1d88778 76-95
+  s_bc88af7d3b054c::t_4499ce0cb0a459 7,25,111-116,119-120,122-128
+  s_bc88af7d3b054c::t_4eaa66365bc955 34-37,47,65-68,73,75
+  s_bc88af7d3b054c::t_12c9669a6e0dff 15-17,21,33,59,64,69,71,74,96-97,99-107,118
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_bc88af7d3b054c::t_5ef0c16a95ae53 19-20,45-97
+  s_bc88af7d3b054c::t_7a4658a351e7ac 17,21-39
+  s_bc88af7d3b054c::t_0c4344d18c4898 8,169
+  s_bc88af7d3b054c::t_8e226cf561c33d 15-16
+  s_bc88af7d3b054c::t_0d09b859e58b7c 18
+src/modules/Arrangement/handlers/track/__tests__/reorderTrack.spec.ts
+  s_bc88af7d3b054c::t_895282f1663c57 25-27,29,32-33
+  s_bc88af7d3b054c::t_9531ba6c9f1e33 45,50
+  s_bc88af7d3b054c::t_4d4f6a0ec6de31 70-77,81-82
+  s_bc88af7d3b054c::t_b0c04ede86a0f9 78-80
+  s_bc88af7d3b054c::t_12c9669a6e0dff 59-69
+src/modules/AiRuntime/models/Tools/Track.ts
+  s_bc88af7d3b054c::t_8f2469fe84439a 73
+src/modules/Arrangement/useCases/getArrangementHandlers.ts
+  s_bc88af7d3b054c::t_0c4344d18c4898 40,102
+src/modules/Arrangement/useCases/__tests__/removeTrack.spec.ts
+  s_bc88af7d3b054c::t_663708b17302c2 159-192
+  s_bc88af7d3b054c::t_8e150c0c95243b 125-158
+src/modules/Arrangement/handlers/track/reorderTrack.ts
+  s_bc88af7d3b054c::t_cd59878a955e28 41-47,49,54-55
+  s_bc88af7d3b054c::t_fb1dd35d4fddf0 24-25
+  s_bc88af7d3b054c::t_b0c04ede86a0f9 8-19,21,48,52
+  s_bc88af7d3b054c::t_4d4f6a0ec6de31 28-32,36,50-51,53
+src/modules/Automation/useCases/modulation/__tests__/removeMapping.spec.ts
+  s_bc88af7d3b054c::t_1292dd7d7c4817 1
+  s_bc88af7d3b054c::t_59338b7e32a4ff 6-13,41-47,49-55
+  s_bc88af7d3b054c::t_9271b69a6ac436 16,48
+  s_bc88af7d3b054c::t_196aa6716a04ae 56-57
+src/modules/Routing/useCases/sidechain/restoreSidechainRoutes.ts
+  s_bc88af7d3b054c::t_3fb3e1da76d590 1-2,5-45,47-52
+  s_bc88af7d3b054c::t_3d861d36e401e3 3-4
+  s_bc88af7d3b054c::t_54e5f4b9396d0d 46
+src/utils/handlerContract.ts
+  s_bc88af7d3b054c::t_5ef0c16a95ae53 25-73,259-260,270-271,278-280,799
+  s_bc88af7d3b054c::t_0c4344d18c4898 255,257,351
+  s_bc88af7d3b054c::t_8e226cf561c33d 266-267
+  s_bc88af7d3b054c::t_631ec8dc9540f4 797-798,800-802
+  s_bc88af7d3b054c::t_7a4658a351e7ac 11-24,268,272
+  s_bc88af7d3b054c::t_0d09b859e58b7c 269
+src/modules/Routing/useCases/sidechain/__tests__/restoreSidechainRoutes.spec.ts
+  s_bc88af7d3b054c::t_7516334ad42a93 1-50
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_bc88af7d3b054c::t_8f2469fe84439a 249-263
+  s_bc88af7d3b054c::t_4499ce0cb0a459 90-104,228,230,241
+  s_bc88af7d3b054c::t_c86d4e4a7d64cd 226,238
+  s_bc88af7d3b054c::t_b0c04ede86a0f9 355-373
+  s_bc88af7d3b054c::t_f9b7904603fcfc 212-213
+  s_bc88af7d3b054c::t_12c9669a6e0dff 199-211,214-225,227,229,231-237,239-240,242-248
+  s_bc88af7d3b054c::t_27707a79b43039 376,380,383-384,406
+src/modules/Arrangement/handlers/track/duplicateTrack.ts
+  s_bc88af7d3b054c::t_4499ce0cb0a459 8,54-55,60,62
+  s_bc88af7d3b054c::t_b58c5bd1d88778 26-30,33-37
+  s_bc88af7d3b054c::t_0c4344d18c4898 7,61
+  s_bc88af7d3b054c::t_cd59878a955e28 4,9-17,50,65-66,69-71
+  s_bc88af7d3b054c::t_9531ba6c9f1e33 67
+  s_bc88af7d3b054c::t_120ec6b45ea9a9 5,31-32,38,40-49
+  s_bc88af7d3b054c::t_8f2469fe84439a 51-53,56-59,63-64
+  s_bc88af7d3b054c::t_076610a8111600 21-25,39,68
+  s_bc88af7d3b054c::t_5b702b805ea584 6
+src/modules/Arrangement/useCases/__tests__/removeTrackModulationReferences.spec.ts
+  s_bc88af7d3b054c::t_1292dd7d7c4817 1-100
+src/utils/runEffects.ts
+  s_bc88af7d3b054c::t_9c630da7aa9a33 1-36
+src/modules/Arrangement/handlers/track/discardCreatedTrack.ts
+  s_bc88af7d3b054c::t_9c630da7aa9a33 2,23-28
+  s_bc88af7d3b054c::t_a6949e36674e98 10-14
+  s_bc88af7d3b054c::t_076610a8111600 6,17-20
+  s_bc88af7d3b054c::t_0c4344d18c4898 1,3-5,7-9,21-22,29-33
+  s_bc88af7d3b054c::t_1c5051f73e63f4 15-16
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_bc88af7d3b054c::t_4499ce0cb0a459 102-108,201-203
+  s_bc88af7d3b054c::t_81d037bdb97b56 8,12,15-16,29,133-147,174-175,177-180,182-184,189-190,200,204,256-280,342-345,386,392-393
+  s_bc88af7d3b054c::t_b0c04ede86a0f9 206,349-351
+  s_bc88af7d3b054c::t_700d3d343bcae1 176
+  s_bc88af7d3b054c::t_0c4344d18c4898 181,205
+  s_bc88af7d3b054c::t_8f2469fe84439a 28,72-75,416-417
+  s_bc88af7d3b054c::t_b09c2ca313a343 207
+  s_bc88af7d3b054c::t_fc66f42e092fcb 394
+src/modules/Arrangement/useCases/publishTrackRemoved.ts
+  s_bc88af7d3b054c::t_15ee3191315f07 1-12
+src/modules/Arrangement/handlers/track/__tests__/handleRemoveTrack.spec.ts
+  s_bc88af7d3b054c::t_fc9343c8ad5743 186-194,302
+  s_bc88af7d3b054c::t_ed525101375bc8 42,60-62,116-117,128,134,138
+  s_bc88af7d3b054c::t_e1e872b2573327 43,108-111,122-124,126,136,139
+  s_bc88af7d3b054c::t_663708b17302c2 141-145,151-154
+  s_bc88af7d3b054c::t_ecb947e469c437 146
+  s_bc88af7d3b054c::t_8ff89661e065ef 300
+  s_bc88af7d3b054c::t_41f66d624c586e 48,88-91,107,240-275,277-279,301,328-332
+  s_bc88af7d3b054c::t_59338b7e32a4ff 44-45,63-65,112,127,129-131,137
+  s_bc88af7d3b054c::t_13f625c1c9abc0 276,297-299,303-309
+src/utils/__tests__/runEffects.spec.ts
+  s_bc88af7d3b054c::t_9c630da7aa9a33 1-43
+src/modules/Automation/useCases/modulation/removeModulator.ts
+  s_bc88af7d3b054c::t_0b5f3b200c9436 2
+  s_bc88af7d3b054c::t_54e5f4b9396d0d 1,32-46
+  s_bc88af7d3b054c::t_07727f44f5f471 7-11,14,21,27-31,47-51,53
+src/modules/Arrangement/useCases/removeTrack.ts
+  s_bc88af7d3b054c::t_15ee3191315f07 19,21-23,131-132
+  s_bc88af7d3b054c::t_54e5f4b9396d0d 6,108,110,113,122,124-126
+  s_bc88af7d3b054c::t_66cb571f487a29 20,24-30,33,36,41,80,89-91,103-107,111,114-121,123,128-129,134
+  s_bc88af7d3b054c::t_895282f1663c57 43,83-88,109,112
+src/modules/Arrangement/handlers/track/handleAddTrack.ts
+  s_bc88af7d3b054c::t_0c4344d18c4898 7,21,41
+  s_bc88af7d3b054c::t_cd59878a955e28 4,8-16,20,34,44-50
+  s_bc88af7d3b054c::t_8f2469fe84439a 35-40,42-43
+  s_bc88af7d3b054c::t_120ec6b45ea9a9 5,22-33
+  s_bc88af7d3b054c::t_6807f7bc3d8251 6
+docs/architecture/decisions/0016-llm-track-creation-and-organization.md
+  s_bc88af7d3b054c::t_bc29b4c0bd0f7b 18,20
+  s_bc88af7d3b054c::t_cd59878a955e28 1-8,10-15,23-26
+  s_bc88af7d3b054c::t_6ed10dbe4277f6 9,19,21-22
+  s_bc88af7d3b054c::t_b99f0777b13106 16-17
+src/modules/Arrangement/handlers/track/handleRemoveTrack.ts
+  s_bc88af7d3b054c::t_076610a8111600 13,30-33
+  s_bc88af7d3b054c::t_0d09b859e58b7c 140
+  s_bc88af7d3b054c::t_9c630da7aa9a33 5,36-41
+  s_bc88af7d3b054c::t_3d861d36e401e3 3,47-49,80,110-128,141-142,149-151
+  s_bc88af7d3b054c::t_7a4658a351e7ac 8,55-79,139,143
+  s_bc88af7d3b054c::t_15ee3191315f07 11,28-29,34-35,42
+  s_bc88af7d3b054c::t_a6949e36674e98 23-27
+  s_bc88af7d3b054c::t_8e226cf561c33d 137-138
+src/modules/Arrangement/useCases/__tests__/duplicateTrack.spec.ts
+  s_bc88af7d3b054c::t_4499ce0cb0a459 177-186
+  s_bc88af7d3b054c::t_d10c9ec4583b25 187-191,193-202
+  s_bc88af7d3b054c::t_59fb1637824e85 192
+src/modules/Command/useCases/__tests__/executeAppAction.spec.ts
+  s_bc88af7d3b054c::t_59eccba097459d 174-193
+  s_bc88af7d3b054c::t_dddbc2109e7483 160-173
+src/modules/Arrangement/useCases/__tests__/getArrangementHandlers.spec.ts
+  s_bc88af7d3b054c::t_62d3dd22327184 3,13-14
+  s_bc88af7d3b054c::t_9b8456e0c498d8 15-16
+src/modules/Command/useCases/executeAppAction.ts
+  s_bc88af7d3b054c::t_0d1873620a3cea 134,138,190-200
+src/modules/Arrangement/useCases/removeTrackModulationReferences.ts
+  s_bc88af7d3b054c::t_54e5f4b9396d0d 3,19-21,49
+  s_bc88af7d3b054c::t_07727f44f5f471 1-2,4-18,22-48,50
+src/modules/Command/useCases/__tests__/executeAppActionBatch.spec.ts
+  s_bc88af7d3b054c::t_655fd72658a6cf 132-152,172,180
+  s_bc88af7d3b054c::t_dddbc2109e7483 116-131
+  s_bc88af7d3b054c::t_2ff18bf2b624ba 220
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "ed69d66d949a8df41b2e0b9d8b7e284f45d9e7d8",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
