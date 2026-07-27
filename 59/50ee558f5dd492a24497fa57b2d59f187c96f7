@@ -1,0 +1,38 @@
+src/modules/MIDI/useCases/getInstrumentCapabilities.ts
+  s_c2fca615e81f34::t_99cd3c0f41cab3 3,7-8,10-19
+  s_c2fca615e81f34::t_28190b4db84069 1-2,4-6,9,20
+src/modules/MIDI/useCases/instrumentCapabilitiesState.ts
+  s_c2fca615e81f34::t_28190b4db84069 1-45
+src/modules/MIDI/useCases/registerInstrumentCapabilities.ts
+  s_c2fca615e81f34::t_99cd3c0f41cab3 1-5,7-22
+  s_c2fca615e81f34::t_28190b4db84069 6
+src/modules/MIDI/useCases/__tests__/instrumentCapabilitiesRegistry.spec.ts
+  s_c2fca615e81f34::t_649e78c6c11c29 135,144-155
+  s_c2fca615e81f34::t_4729248b83f057 3,25-29,42-73,81,84-85,91,94-134,136-143,156-227
+  s_c2fca615e81f34::t_28190b4db84069 1-2,4-24,30-41,74-80,82-83,86-90,92-93,228-229
+src/modules/MIDI/models/InstrumentCapabilities.ts
+  s_c2fca615e81f34::t_99cd3c0f41cab3 1-25,27-35,92-158,163-222,225-227,230-296,299-316,318-356
+  s_c2fca615e81f34::t_28190b4db84069 26,36-91,357-364,366-377
+  s_c2fca615e81f34::t_c8dd1d60f4c948 159-162,223-224,228-229,297-298,317,365
+src/modules/MIDI/useCases/index.ts
+  s_c2fca615e81f34::t_28190b4db84069 37,39
+src/modules/MIDI/useCases/__tests__/getInstrumentCapabilities.spec.ts
+  s_c2fca615e81f34::t_4729248b83f057 7-41,47-53,57-129
+  s_c2fca615e81f34::t_28190b4db84069 1-6,42-46,54-56,130-132
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "5950ee558f5dd492a24497fa57b2d59f187c96f7",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
