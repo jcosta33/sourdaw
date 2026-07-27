@@ -117,6 +117,20 @@ describe('processSupervisorSentinel', () => {
         expect(JSON.stringify(outcome)).not.toMatch(/private-token|missing|warning/);
     });
 
+    it('should flush forwarded bytes before reporting terminal IPC', async () => {
+        const sentinel = await startSentinel();
+        let byteCount = 0;
+        sentinel.stdout?.on('data', (chunk: Buffer) => {
+            byteCount += chunk.byteLength;
+        });
+        sendStart(sentinel, {
+            arguments: ['--eval', 'process.stdout.write(Buffer.alloc(4194304,97))'],
+        });
+
+        expect(await waitForMessage(sentinel)).toEqual({ kind: 'exit', code: 0 });
+        expect(byteCount).toBe(4_194_304);
+    });
+
     it.each([{ stream: 'stdout' }, { stream: 'stderr' }] as const)(
         'should drain executor $stream after the owner closes its pipe',
         async ({ stream }) => {

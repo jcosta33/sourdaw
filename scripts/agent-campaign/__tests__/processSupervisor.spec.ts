@@ -110,19 +110,21 @@ describe('superviseTrustedProcess', () => {
     });
 
     it('should return exact byte counts and SHA-256 digests without raw output', async () => {
-        const output = await run("process.stdout.write(Buffer.alloc(100000,97));process.stderr.write('world')");
+        const output = await run("process.stdout.write(Buffer.alloc(4194304,97));process.stderr.write('world')", {
+            combinedOutputByteCap: 4_194_309,
+        });
         expect(output).toEqual({
             reason: { kind: 'exit', code: 0 },
             streamEvidence: {
                 stdout: {
-                    byteCount: 100_000,
-                    sha256: '6d1cf22d7cc09b085dfc25ee1a1f3ae0265804c607bc2074ad253bcc82fd81ee',
+                    byteCount: 4_194_304,
+                    sha256: '299285fc41a44cdb038b9fdaf494c76ca9d0c866672b2b266c1a0c17dda60a05',
                 },
                 stderr: {
                     byteCount: 5,
                     sha256: '486ea46224d1bb4fb680f34f7c9ad96a8f24ec88be73ea8e5a6c65260e9cb8a7',
                 },
-                combinedByteCount: 100_005,
+                combinedByteCount: 4_194_309,
             },
         });
         expect(JSON.stringify(output)).not.toContain('world');
