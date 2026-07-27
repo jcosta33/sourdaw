@@ -243,12 +243,17 @@ function currentSourceTreeSha256(): string {
     return hash.digest('hex');
 }
 
-function expectValidReceipt(receipt: EvidenceReceipt, projectSha256: string, sourceTreeSha256: string): void {
+function expectValidReceipt(
+    receipt: EvidenceReceipt,
+    projectSha256: string,
+    sourceRevision: string,
+    sourceTreeSha256: string
+): void {
     const payload = { ...receipt };
     Reflect.deleteProperty(payload, 'receiptSha256');
     expect(receipt.receiptSha256).toBe(createHash('sha256').update(JSON.stringify(payload)).digest('hex'));
     expect(receipt.projectSha256).toBe(projectSha256);
-    expect(receipt.sourceRevision).toMatch(/^[0-9a-f]{40}$/);
+    expect(receipt.sourceRevision).toBe(sourceRevision);
     expect(receipt.sourceDirty).toBe(false);
     expect(receipt.sourceTreeSha256).toBe(sourceTreeSha256);
     expect(receipt.sourceTreeHashScope).toBe(SOURCE_PATHS.join('|'));
@@ -279,14 +284,18 @@ describe('Mycelium Ascendant full browser render', () => {
         const projectSha256 = createHash('sha256')
             .update(JSON.stringify(normalizeProjectEvidence(projectData)))
             .digest('hex');
+        const sourceRevision = execFileSync('git', ['rev-parse', 'HEAD'], {
+            cwd: process.cwd(),
+            encoding: 'utf8',
+        }).trim();
         const sourceTreeSha256 = currentSourceTreeSha256();
         const noteSections = buildNoteSections(projectData);
 
         expect(projectData.meta.name).toBe('Mycelium Ascendant');
         expect(projectData.transport.loopEnd).toBe(evidence.durationBeats);
-        expectValidReceipt(evidence, projectSha256, sourceTreeSha256);
-        expectValidReceipt(automationStemEvidence, projectSha256, sourceTreeSha256);
-        expectValidReceipt(desktopRuntimeEvidence, projectSha256, sourceTreeSha256);
+        expectValidReceipt(evidence, projectSha256, sourceRevision, sourceTreeSha256);
+        expectValidReceipt(automationStemEvidence, projectSha256, sourceRevision, sourceTreeSha256);
+        expectValidReceipt(desktopRuntimeEvidence, projectSha256, sourceRevision, sourceTreeSha256);
         expect(motifEventReport.projectSha256).toBe(projectSha256);
         expect(motifEventReport.comparisons).toEqual(buildMotifComparisons(projectData));
         expect(noteEventReport.projectSha256).toBe(projectSha256);
