@@ -1,0 +1,32 @@
+src/modules/Transport/useCases/scheduling/applyAutomation/restoreAutomationBaseValue.ts
+  s_ac9b259eab20ba::t_f72ceaa2aaabb6 9,92
+src/modules/Fermenter/useCases/index.ts
+  s_ac9b259eab20ba::t_f72ceaa2aaabb6 5
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomationDiscontinuity.spec.ts
+  s_ac9b259eab20ba::t_f72ceaa2aaabb6 55
+src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts
+  s_ac9b259eab20ba::t_f72ceaa2aaabb6 13,194,260
+src/modules/Fermenter/useCases/__tests__/updateFermenterMappedParamInEngine.spec.ts
+  s_ac9b259eab20ba::t_ab13c7c5c6c9fe 1-35
+src/modules/Fermenter/useCases/updateFermenterMappedParamInEngine.ts
+  s_ac9b259eab20ba::t_f72ceaa2aaabb6 1-4,6-33
+  s_ac9b259eab20ba::t_8ef3f47b919a23 5
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomation.spec.ts
+  s_ac9b259eab20ba::t_f72ceaa2aaabb6 15,89,185-186,208,253
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "06b3f22adfa35b177502b4e453f2286e663c27b6",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
