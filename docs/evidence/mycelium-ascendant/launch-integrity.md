@@ -1,8 +1,8 @@
 # Mycelium Ascendant — launch and dependency integrity
 
-Evidence refreshed: 2026-07-27 04:54 CEST
-Project fingerprint: `6d662a4bb6081fdeb500d888114705b83cd8e4be40df24a446c069362564adca`
-Source receipt: capture HEAD `61d6e195fa6d765b1009d96a6d61404ef79113bd`; tracked-source tree `4086c1cd22d5e8bc4b98fe4a491d50e44ff1ebe39ec9cc771a31cf05d97066f5` (8,845 files; generated evidence excluded); receipt `2fbd83da441e6efc5d9391dd528f5fc0a2afc87246079f5f1c0c49cfc0d4e5ae`
+Evidence refreshed: 2026-07-27 05:47 CEST
+Project fingerprint: `ba393156719bbefa59aba850d760326099fdbff48ac4a6c294043af1a3bd85e7`
+Source receipt: capture HEAD `2a22f163f41d9e7b3a4a6399ea0ecffc7bb5bcd9`; tracked-source tree `388d645ea5a4be6b502ec7fb6da7c5332e799b797d1f9b2202fe8075d5db0bab` (8,845 files; generated evidence excluded); receipt `a1b6a4abefa422a7c6184f3939571c66c2096b7755f86fbca33f247f32cda08a`
 
 ## Browser launch
 

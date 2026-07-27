@@ -1,6 +1,6 @@
 {
-    "capturedAt": "2026-07-27T01:52:14.000Z",
-    "projectSha256": "6d662a4bb6081fdeb500d888114705b83cd8e4be40df24a446c069362564adca",
+    "capturedAt": "2026-07-27T03:45:04.188Z",
+    "projectSha256": "ba393156719bbefa59aba850d760326099fdbff48ac4a6c294043af1a3bd85e7",
     "normalization": "Absolute clip-relative MIDI events grouped by half-open section range [startBeat, endBeat); beat is section-relative.",
     "comparisons": [
         {

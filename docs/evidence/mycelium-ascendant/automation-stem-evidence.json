@@ -1,15 +1,15 @@
 {
-    "sourceRevision": "61d6e195fa6d765b1009d96a6d61404ef79113bd",
+    "sourceRevision": "2a22f163f41d9e7b3a4a6399ea0ecffc7bb5bcd9",
     "sourceDirty": false,
-    "sourceTreeSha256": "4086c1cd22d5e8bc4b98fe4a491d50e44ff1ebe39ec9cc771a31cf05d97066f5",
+    "sourceTreeSha256": "388d645ea5a4be6b502ec7fb6da7c5332e799b797d1f9b2202fe8075d5db0bab",
     "sourceTreeHashScope": "git-ls-files-excluding:docs/evidence/mycelium-ascendant/**",
     "sourceTrackedFileCount": 8845,
-    "projectSha256": "6d662a4bb6081fdeb500d888114705b83cd8e4be40df24a446c069362564adca",
+    "projectSha256": "ba393156719bbefa59aba850d760326099fdbff48ac4a6c294043af1a3bd85e7",
     "projectSectionSha256": {
         "activeArrangementId": "9d8a81a9d6f2a4010fb41bfd648bf637537ba5534ac113d7d92264246392229f",
         "arrangement": "aa9c045ca60b4c5e1fb0817f51d54a4dd0ec85de95b88c09b3764416d75ed682",
-        "arrangements": "ee1f3b3b15ac4cc41eed5c8c29af122b095e5a86e3433e5eccc53dfdfb6d6079",
-        "automation": "49f77c1815b809e5d87cc2b45691002275f80595cf1b23118ba8a0bb4794825d",
+        "arrangements": "0db0eafd9b69b1ae7fe7261ed09ca05459876f42913774e2d95288d1ea63dbea",
+        "automation": "de01e93247862d363ea18320c4882ca9d82f0b486282e5bd8448ac2e10abdf1c",
         "chordTrack": "2cd02f5bf8a806c74b80dbd789dfc20a6ac6fec9201df73bfffb9c31dc33f236",
         "history": "d24ef7de1651fedd179be2ad504c999481b8e66d566953819749e64a3e958b34",
         "markers": "39d09fd3a71a70bad7a46ed1362b2addfa6f2554c454dd9a6f045437f4f0c74d",
@@ -27,9 +27,9 @@
     "clipCount": 119,
     "noteCount": 3818,
     "automationLaneCount": 115,
-    "automationPointCount": 1583,
+    "automationPointCount": 1651,
     "trackNotesMutationChangesDigest": true,
-    "capturedAt": "2026-07-27T02:56:27.115Z",
+    "capturedAt": "2026-07-27T03:47:10.952Z",
     "sampleRate": 44100,
     "windows": [
         {
@@ -80,8 +80,8 @@
                     "sampleRate": 44100,
                     "durationSeconds": 26.666666666666668,
                     "renderDurationSeconds": 26.666666666666668,
-                    "samplePeak": 2.716510534286499,
-                    "rms": 0.26986602683979577,
+                    "samplePeak": 2.7137434482574463,
+                    "rms": 0.2693716282518948,
                     "activeBlockRatio": 0.8626086956521739
                 },
                 {
@@ -103,7 +103,7 @@
                     "durationSeconds": 26.666666666666668,
                     "renderDurationSeconds": 26.666666666666668,
                     "samplePeak": 0.9008182287216187,
-                    "rms": 0.09404546125657016,
+                    "rms": 0.09404546125578254,
                     "activeBlockRatio": 0.5217391304347826
                 },
                 {
@@ -136,8 +136,8 @@
                     "durationSeconds": 26.666666666666668,
                     "renderDurationSeconds": 26.666666666666668,
                     "samplePeak": 0.0002811791200656444,
-                    "rms": 0.00021558642306536798,
-                    "activeBlockRatio": 1
+                    "rms": 0.00021518058233659275,
+                    "activeBlockRatio": 0.9930434782608696
                 },
                 {
                     "trackId": "014f1c1d-eb53-8fb9-867b-0c9faa4720cd",
@@ -217,17 +217,6 @@
                     "activeBlockRatio": 0
                 },
                 {
-                    "trackId": "2f66d62b-a78d-8867-9516-7eed04ddd73b",
-                    "trackName": "Dub Tunnel",
-                    "channels": 2,
-                    "sampleRate": 44100,
-                    "durationSeconds": 26.666666666666668,
-                    "renderDurationSeconds": 26.666666666666668,
-                    "samplePeak": 0,
-                    "rms": 0,
-                    "activeBlockRatio": 0
-                },
-                {
                     "trackId": "a568cd91-3d2e-83dd-9d14-e5d3c9a1a861",
                     "trackName": "Levain Answer",
                     "channels": 2,
@@ -241,6 +230,17 @@
                 {
                     "trackId": "2ddc9452-be5f-8d46-a5da-b2e8ddf9aba2",
                     "trackName": "Root Drone",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 26.666666666666668,
+                    "renderDurationSeconds": 26.666666666666668,
+                    "samplePeak": 0,
+                    "rms": 0,
+                    "activeBlockRatio": 0
+                },
+                {
+                    "trackId": "2f66d62b-a78d-8867-9516-7eed04ddd73b",
+                    "trackName": "Dub Tunnel",
                     "channels": 2,
                     "sampleRate": 44100,
                     "durationSeconds": 26.666666666666668,
@@ -278,6 +278,762 @@
                     "sampleRate": 44100,
                     "durationSeconds": 26.666666666666668,
                     "renderDurationSeconds": 26.666666666666668,
+                    "samplePeak": 0,
+                    "rms": 0,
+                    "activeBlockRatio": 0
+                }
+            ]
+        },
+        {
+            "name": "Drop I — Dry A",
+            "startBeat": 192,
+            "endBeat": 224,
+            "warnings": [],
+            "stemCount": 22,
+            "audibleStemCount": 11,
+            "stems": [
+                {
+                    "trackId": "9f02e4d9-06ca-83ad-a31b-03e7011dcc09",
+                    "trackName": "Psy Pluck",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 3.899000644683838,
+                    "rms": 0.4196133312578959,
+                    "activeBlockRatio": 0.6944444444444444
+                },
+                {
+                    "trackId": "158bb539-7164-85d5-b848-97035287f2a9",
+                    "trackName": "Acid Tendril",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 2.463505268096924,
+                    "rms": 0.37989036824427447,
+                    "activeBlockRatio": 1
+                },
+                {
+                    "trackId": "b1ea4add-ef2d-8341-b90f-b49362cae1ad",
+                    "trackName": "FM Spores",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 2.8178982734680176,
+                    "rms": 0.34833276910011873,
+                    "activeBlockRatio": 1
+                },
+                {
+                    "trackId": "d79aeea1-6617-8c55-875d-e027d4d9d051",
+                    "trackName": "Rolling Colony",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 4.085873126983643,
+                    "rms": 0.3437622234824264,
+                    "activeBlockRatio": 0.6215277777777778
+                },
+                {
+                    "trackId": "014f1c1d-eb53-8fb9-867b-0c9faa4720cd",
+                    "trackName": "Sub Mycelium",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 1.5533809661865234,
+                    "rms": 0.3386947621615117,
+                    "activeBlockRatio": 0.625
+                },
+                {
+                    "trackId": "10e74014-d48b-8130-8796-088ae68b0224",
+                    "trackName": "Counter Vision",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 2.1232681274414062,
+                    "rms": 0.1887021814345243,
+                    "activeBlockRatio": 0.9270833333333334
+                },
+                {
+                    "trackId": "4a4c4935-9c05-8201-8f3d-f9d36c832885",
+                    "trackName": "Pulse Engine",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 2.1932215690612793,
+                    "rms": 0.08928724734443837,
+                    "activeBlockRatio": 0.4270833333333333
+                },
+                {
+                    "trackId": "2dae11fb-0869-8837-a440-0c19b0873a0b",
+                    "trackName": "Main Vision",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0.6464058756828308,
+                    "rms": 0.04089491208696971,
+                    "activeBlockRatio": 0.6840277777777778
+                },
+                {
+                    "trackId": "1325cb33-2225-8b4f-b2af-0385208469a3",
+                    "trackName": "Glitch Spirits",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0.28843528032302856,
+                    "rms": 0.0194847228438945,
+                    "activeBlockRatio": 0.6631944444444444
+                },
+                {
+                    "trackId": "29cb271e-206c-81da-a8f0-76e4b826572e",
+                    "trackName": "Grand Boule Ritual",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 1.2663891315460205,
+                    "rms": 0.012637489920444821,
+                    "activeBlockRatio": 0.1701388888888889
+                },
+                {
+                    "trackId": "ce1e79f4-816f-8208-8280-430a7012cf04",
+                    "trackName": "Parallel Crush",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0.0002811356680467725,
+                    "rms": 0.00008302824559256464,
+                    "activeBlockRatio": 0.010416666666666666
+                },
+                {
+                    "trackId": "e6d61454-a61c-8478-bb11-65ca2f053c84",
+                    "trackName": "Triplet Helix",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0,
+                    "rms": 0,
+                    "activeBlockRatio": 0
+                },
+                {
+                    "trackId": "91af21ac-ed7a-8a18-a4cf-6422bbbc969c",
+                    "trackName": "Harmonic Mist",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0,
+                    "rms": 0,
+                    "activeBlockRatio": 0
+                },
+                {
+                    "trackId": "64da6c07-0f7d-8f5b-b1e2-0325774a3437",
+                    "trackName": "Levain Call",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0,
+                    "rms": 0,
+                    "activeBlockRatio": 0
+                },
+                {
+                    "trackId": "2f66d62b-a78d-8867-9516-7eed04ddd73b",
+                    "trackName": "Dub Tunnel",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0,
+                    "rms": 0,
+                    "activeBlockRatio": 0
+                },
+                {
+                    "trackId": "a568cd91-3d2e-83dd-9d14-e5d3c9a1a861",
+                    "trackName": "Levain Answer",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0,
+                    "rms": 0,
+                    "activeBlockRatio": 0
+                },
+                {
+                    "trackId": "2ddc9452-be5f-8d46-a5da-b2e8ddf9aba2",
+                    "trackName": "Root Drone",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0,
+                    "rms": 0,
+                    "activeBlockRatio": 0
+                },
+                {
+                    "trackId": "97d2a08b-abf6-8867-95d1-e3ddc41fba7b",
+                    "trackName": "Granular Voices",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0,
+                    "rms": 0,
+                    "activeBlockRatio": 0
+                },
+                {
+                    "trackId": "65921ae4-5dc4-8c88-af57-9d96955211d4",
+                    "trackName": "Fractal Riser",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0,
+                    "rms": 0,
+                    "activeBlockRatio": 0
+                },
+                {
+                    "trackId": "83a108ca-27da-8f06-8ce3-9f10d3f4113a",
+                    "trackName": "Impact Field",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0,
+                    "rms": 0,
+                    "activeBlockRatio": 0
+                },
+                {
+                    "trackId": "372f2daf-078e-8db3-920d-e2e9aeb93d3f",
+                    "trackName": "Temple Chamber",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0,
+                    "rms": 0,
+                    "activeBlockRatio": 0
+                },
+                {
+                    "trackId": "db61e517-df98-827b-8b9d-900527d2c407",
+                    "trackName": "Mutation Return",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0,
+                    "rms": 0,
+                    "activeBlockRatio": 0
+                }
+            ]
+        },
+        {
+            "name": "Drop I — Wet",
+            "startBeat": 224,
+            "endBeat": 256,
+            "warnings": [],
+            "stemCount": 22,
+            "audibleStemCount": 11,
+            "stems": [
+                {
+                    "trackId": "158bb539-7164-85d5-b848-97035287f2a9",
+                    "trackName": "Acid Tendril",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 1.9955404996871948,
+                    "rms": 0.285412211614721,
+                    "activeBlockRatio": 0.7986111111111112
+                },
+                {
+                    "trackId": "014f1c1d-eb53-8fb9-867b-0c9faa4720cd",
+                    "trackName": "Sub Mycelium",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 1.1948987245559692,
+                    "rms": 0.2821314139377286,
+                    "activeBlockRatio": 0.6215277777777778
+                },
+                {
+                    "trackId": "b1ea4add-ef2d-8341-b90f-b49362cae1ad",
+                    "trackName": "FM Spores",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 1.661178708076477,
+                    "rms": 0.2718456807934586,
+                    "activeBlockRatio": 0.8576388888888888
+                },
+                {
+                    "trackId": "9f02e4d9-06ca-83ad-a31b-03e7011dcc09",
+                    "trackName": "Psy Pluck",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 2.2369937896728516,
+                    "rms": 0.26060595499964884,
+                    "activeBlockRatio": 0.7152777777777778
+                },
+                {
+                    "trackId": "d79aeea1-6617-8c55-875d-e027d4d9d051",
+                    "trackName": "Rolling Colony",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 2.78670072555542,
+                    "rms": 0.21244150431244355,
+                    "activeBlockRatio": 0.6041666666666666
+                },
+                {
+                    "trackId": "10e74014-d48b-8130-8796-088ae68b0224",
+                    "trackName": "Counter Vision",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0.9984675645828247,
+                    "rms": 0.1249005268740929,
+                    "activeBlockRatio": 0.9270833333333334
+                },
+                {
+                    "trackId": "4a4c4935-9c05-8201-8f3d-f9d36c832885",
+                    "trackName": "Pulse Engine",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 1.4541677236557007,
+                    "rms": 0.05646206303084895,
+                    "activeBlockRatio": 0.4097222222222222
+                },
+                {
+                    "trackId": "2dae11fb-0869-8837-a440-0c19b0873a0b",
+                    "trackName": "Main Vision",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0.29167211055755615,
+                    "rms": 0.03045826659291153,
+                    "activeBlockRatio": 0.6770833333333334
+                },
+                {
+                    "trackId": "1325cb33-2225-8b4f-b2af-0385208469a3",
+                    "trackName": "Glitch Spirits",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0.3596567213535309,
+                    "rms": 0.027552321877550433,
+                    "activeBlockRatio": 0.7152777777777778
+                },
+                {
+                    "trackId": "29cb271e-206c-81da-a8f0-76e4b826572e",
+                    "trackName": "Grand Boule Ritual",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0.5168081521987915,
+                    "rms": 0.00670620542988956,
+                    "activeBlockRatio": 0.15625
+                },
+                {
+                    "trackId": "ce1e79f4-816f-8208-8280-430a7012cf04",
+                    "trackName": "Parallel Crush",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0.00034184035030193627,
+                    "rms": 0.00028056010854694905,
+                    "activeBlockRatio": 0.9965277777777778
+                },
+                {
+                    "trackId": "e6d61454-a61c-8478-bb11-65ca2f053c84",
+                    "trackName": "Triplet Helix",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0,
+                    "rms": 0,
+                    "activeBlockRatio": 0
+                },
+                {
+                    "trackId": "91af21ac-ed7a-8a18-a4cf-6422bbbc969c",
+                    "trackName": "Harmonic Mist",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0,
+                    "rms": 0,
+                    "activeBlockRatio": 0
+                },
+                {
+                    "trackId": "64da6c07-0f7d-8f5b-b1e2-0325774a3437",
+                    "trackName": "Levain Call",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0,
+                    "rms": 0,
+                    "activeBlockRatio": 0
+                },
+                {
+                    "trackId": "a568cd91-3d2e-83dd-9d14-e5d3c9a1a861",
+                    "trackName": "Levain Answer",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0,
+                    "rms": 0,
+                    "activeBlockRatio": 0
+                },
+                {
+                    "trackId": "2ddc9452-be5f-8d46-a5da-b2e8ddf9aba2",
+                    "trackName": "Root Drone",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0,
+                    "rms": 0,
+                    "activeBlockRatio": 0
+                },
+                {
+                    "trackId": "2f66d62b-a78d-8867-9516-7eed04ddd73b",
+                    "trackName": "Dub Tunnel",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0,
+                    "rms": 0,
+                    "activeBlockRatio": 0
+                },
+                {
+                    "trackId": "97d2a08b-abf6-8867-95d1-e3ddc41fba7b",
+                    "trackName": "Granular Voices",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0,
+                    "rms": 0,
+                    "activeBlockRatio": 0
+                },
+                {
+                    "trackId": "65921ae4-5dc4-8c88-af57-9d96955211d4",
+                    "trackName": "Fractal Riser",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0,
+                    "rms": 0,
+                    "activeBlockRatio": 0
+                },
+                {
+                    "trackId": "83a108ca-27da-8f06-8ce3-9f10d3f4113a",
+                    "trackName": "Impact Field",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0,
+                    "rms": 0,
+                    "activeBlockRatio": 0
+                },
+                {
+                    "trackId": "372f2daf-078e-8db3-920d-e2e9aeb93d3f",
+                    "trackName": "Temple Chamber",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0,
+                    "rms": 0,
+                    "activeBlockRatio": 0
+                },
+                {
+                    "trackId": "db61e517-df98-827b-8b9d-900527d2c407",
+                    "trackName": "Mutation Return",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0,
+                    "rms": 0,
+                    "activeBlockRatio": 0
+                }
+            ]
+        },
+        {
+            "name": "Drop I — Dry B",
+            "startBeat": 256,
+            "endBeat": 288,
+            "warnings": [],
+            "stemCount": 22,
+            "audibleStemCount": 11,
+            "stems": [
+                {
+                    "trackId": "9f02e4d9-06ca-83ad-a31b-03e7011dcc09",
+                    "trackName": "Psy Pluck",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 1.2638294696807861,
+                    "rms": 0.15358209693965194,
+                    "activeBlockRatio": 0.6979166666666666
+                },
+                {
+                    "trackId": "158bb539-7164-85d5-b848-97035287f2a9",
+                    "trackName": "Acid Tendril",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 1.2539539337158203,
+                    "rms": 0.1454262551713912,
+                    "activeBlockRatio": 0.6840277777777778
+                },
+                {
+                    "trackId": "b1ea4add-ef2d-8341-b90f-b49362cae1ad",
+                    "trackName": "FM Spores",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0.9699654579162598,
+                    "rms": 0.1404171693729065,
+                    "activeBlockRatio": 0.7083333333333334
+                },
+                {
+                    "trackId": "014f1c1d-eb53-8fb9-867b-0c9faa4720cd",
+                    "trackName": "Sub Mycelium",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0.6582708358764648,
+                    "rms": 0.12636093346238786,
+                    "activeBlockRatio": 0.5902777777777778
+                },
+                {
+                    "trackId": "d79aeea1-6617-8c55-875d-e027d4d9d051",
+                    "trackName": "Rolling Colony",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 1.3488527536392212,
+                    "rms": 0.09827567598619051,
+                    "activeBlockRatio": 0.5763888888888888
+                },
+                {
+                    "trackId": "10e74014-d48b-8130-8796-088ae68b0224",
+                    "trackName": "Counter Vision",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0.66507488489151,
+                    "rms": 0.07186147449393615,
+                    "activeBlockRatio": 0.9027777777777778
+                },
+                {
+                    "trackId": "1325cb33-2225-8b4f-b2af-0385208469a3",
+                    "trackName": "Glitch Spirits",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0.3581816852092743,
+                    "rms": 0.035758034897823456,
+                    "activeBlockRatio": 0.7118055555555556
+                },
+                {
+                    "trackId": "4a4c4935-9c05-8201-8f3d-f9d36c832885",
+                    "trackName": "Pulse Engine",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0.6401494741439819,
+                    "rms": 0.021035737388955544,
+                    "activeBlockRatio": 0.3993055555555556
+                },
+                {
+                    "trackId": "2dae11fb-0869-8837-a440-0c19b0873a0b",
+                    "trackName": "Main Vision",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0.16272607445716858,
+                    "rms": 0.014970513769381235,
+                    "activeBlockRatio": 0.6770833333333334
+                },
+                {
+                    "trackId": "29cb271e-206c-81da-a8f0-76e4b826572e",
+                    "trackName": "Grand Boule Ritual",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0.41934511065483093,
+                    "rms": 0.004918660842422831,
+                    "activeBlockRatio": 0.14930555555555555
+                },
+                {
+                    "trackId": "ce1e79f4-816f-8208-8280-430a7012cf04",
+                    "trackName": "Parallel Crush",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0.000244862399995327,
+                    "rms": 0.000082681829410354,
+                    "activeBlockRatio": 0.010416666666666666
+                },
+                {
+                    "trackId": "e6d61454-a61c-8478-bb11-65ca2f053c84",
+                    "trackName": "Triplet Helix",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0,
+                    "rms": 0,
+                    "activeBlockRatio": 0
+                },
+                {
+                    "trackId": "91af21ac-ed7a-8a18-a4cf-6422bbbc969c",
+                    "trackName": "Harmonic Mist",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0,
+                    "rms": 0,
+                    "activeBlockRatio": 0
+                },
+                {
+                    "trackId": "64da6c07-0f7d-8f5b-b1e2-0325774a3437",
+                    "trackName": "Levain Call",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0,
+                    "rms": 0,
+                    "activeBlockRatio": 0
+                },
+                {
+                    "trackId": "a568cd91-3d2e-83dd-9d14-e5d3c9a1a861",
+                    "trackName": "Levain Answer",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0,
+                    "rms": 0,
+                    "activeBlockRatio": 0
+                },
+                {
+                    "trackId": "2f66d62b-a78d-8867-9516-7eed04ddd73b",
+                    "trackName": "Dub Tunnel",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0,
+                    "rms": 0,
+                    "activeBlockRatio": 0
+                },
+                {
+                    "trackId": "2ddc9452-be5f-8d46-a5da-b2e8ddf9aba2",
+                    "trackName": "Root Drone",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0,
+                    "rms": 0,
+                    "activeBlockRatio": 0
+                },
+                {
+                    "trackId": "97d2a08b-abf6-8867-95d1-e3ddc41fba7b",
+                    "trackName": "Granular Voices",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0,
+                    "rms": 0,
+                    "activeBlockRatio": 0
+                },
+                {
+                    "trackId": "65921ae4-5dc4-8c88-af57-9d96955211d4",
+                    "trackName": "Fractal Riser",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0,
+                    "rms": 0,
+                    "activeBlockRatio": 0
+                },
+                {
+                    "trackId": "83a108ca-27da-8f06-8ce3-9f10d3f4113a",
+                    "trackName": "Impact Field",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0,
+                    "rms": 0,
+                    "activeBlockRatio": 0
+                },
+                {
+                    "trackId": "372f2daf-078e-8db3-920d-e2e9aeb93d3f",
+                    "trackName": "Temple Chamber",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0,
+                    "rms": 0,
+                    "activeBlockRatio": 0
+                },
+                {
+                    "trackId": "db61e517-df98-827b-8b9d-900527d2c407",
+                    "trackName": "Mutation Return",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
                     "samplePeak": 0,
                     "rms": 0,
                     "activeBlockRatio": 0
@@ -354,9 +1110,9 @@
                     "sampleRate": 44100,
                     "durationSeconds": 26.666666666666668,
                     "renderDurationSeconds": 26.666666666666668,
-                    "samplePeak": 0.452737420797348,
-                    "rms": 0.017370337845542386,
-                    "activeBlockRatio": 0.8417391304347827
+                    "samplePeak": 0.38019755482673645,
+                    "rms": 0.017335131452579342,
+                    "activeBlockRatio": 0.8069565217391305
                 },
                 {
                     "trackId": "4a4c4935-9c05-8201-8f3d-f9d36c832885",
@@ -376,9 +1132,9 @@
                     "sampleRate": 44100,
                     "durationSeconds": 26.666666666666668,
                     "renderDurationSeconds": 26.666666666666668,
-                    "samplePeak": 0.5499204993247986,
-                    "rms": 0.0030603136205422737,
-                    "activeBlockRatio": 0.09739130434782609
+                    "samplePeak": 0.5673238039016724,
+                    "rms": 0.0031859373346920608,
+                    "activeBlockRatio": 0.08869565217391304
                 },
                 {
                     "trackId": "ce1e79f4-816f-8208-8280-430a7012cf04",
@@ -551,9 +1307,9 @@
                     "sampleRate": 44100,
                     "durationSeconds": 26.483174603174604,
                     "renderDurationSeconds": 26.483174603174604,
-                    "samplePeak": 3.0439910888671875,
-                    "rms": 0.689892257477743,
-                    "activeBlockRatio": 0.8283712784588442
+                    "samplePeak": 3.0649588108062744,
+                    "rms": 0.6939721656403782,
+                    "activeBlockRatio": 0.8651488616462347
                 },
                 {
                     "trackId": "158bb539-7164-85d5-b848-97035287f2a9",
@@ -573,8 +1329,8 @@
                     "sampleRate": 44100,
                     "durationSeconds": 26.483174603174604,
                     "renderDurationSeconds": 26.483174603174604,
-                    "samplePeak": 4.404789447784424,
-                    "rms": 0.33913511867347285,
+                    "samplePeak": 4.405257701873779,
+                    "rms": 0.33715460696331645,
                     "activeBlockRatio": 0.6164623467600701
                 },
                 {
@@ -710,8 +1466,8 @@
                     "activeBlockRatio": 0
                 },
                 {
-                    "trackId": "29cb271e-206c-81da-a8f0-76e4b826572e",
-                    "trackName": "Grand Boule Ritual",
+                    "trackId": "a568cd91-3d2e-83dd-9d14-e5d3c9a1a861",
+                    "trackName": "Levain Answer",
                     "channels": 2,
                     "sampleRate": 44100,
                     "durationSeconds": 26.483174603174604,
@@ -721,8 +1477,8 @@
                     "activeBlockRatio": 0
                 },
                 {
-                    "trackId": "a568cd91-3d2e-83dd-9d14-e5d3c9a1a861",
-                    "trackName": "Levain Answer",
+                    "trackId": "29cb271e-206c-81da-a8f0-76e4b826572e",
+                    "trackName": "Grand Boule Ritual",
                     "channels": 2,
                     "sampleRate": 44100,
                     "durationSeconds": 26.483174603174604,
@@ -743,8 +1499,8 @@
                     "activeBlockRatio": 0
                 },
                 {
-                    "trackId": "2f66d62b-a78d-8867-9516-7eed04ddd73b",
-                    "trackName": "Dub Tunnel",
+                    "trackId": "97d2a08b-abf6-8867-95d1-e3ddc41fba7b",
+                    "trackName": "Granular Voices",
                     "channels": 2,
                     "sampleRate": 44100,
                     "durationSeconds": 26.483174603174604,
@@ -754,8 +1510,8 @@
                     "activeBlockRatio": 0
                 },
                 {
-                    "trackId": "97d2a08b-abf6-8867-95d1-e3ddc41fba7b",
-                    "trackName": "Granular Voices",
+                    "trackId": "2f66d62b-a78d-8867-9516-7eed04ddd73b",
+                    "trackName": "Dub Tunnel",
                     "channels": 2,
                     "sampleRate": 44100,
                     "durationSeconds": 26.483174603174604,
@@ -792,7 +1548,6 @@
             "name": "False Floor",
             "startBeat": 480,
             "endBeat": 484,
-            "renderStartBeat": 416,
             "warnings": [],
             "stemCount": 22,
             "audibleStemCount": 1,
@@ -859,8 +1614,8 @@
                     "sampleRate": 44100,
                     "durationSeconds": 1.6438321995464853,
                     "renderDurationSeconds": 27.945215419501135,
-                    "samplePeak": 3.5959241227040417e-12,
-                    "rms": 9.082513346067702e-14,
+                    "samplePeak": 4.241435674900984e-11,
+                    "rms": 1.290525824423825e-12,
                     "activeBlockRatio": 0
                 },
                 {
@@ -963,17 +1718,6 @@
                     "activeBlockRatio": 0
                 },
                 {
-                    "trackId": "2f66d62b-a78d-8867-9516-7eed04ddd73b",
-                    "trackName": "Dub Tunnel",
-                    "channels": 2,
-                    "sampleRate": 44100,
-                    "durationSeconds": 1.6438321995464853,
-                    "renderDurationSeconds": 27.945215419501135,
-                    "samplePeak": 0,
-                    "rms": 0,
-                    "activeBlockRatio": 0
-                },
-                {
                     "trackId": "2ddc9452-be5f-8d46-a5da-b2e8ddf9aba2",
                     "trackName": "Root Drone",
                     "channels": 2,
@@ -987,6 +1731,17 @@
                 {
                     "trackId": "97d2a08b-abf6-8867-95d1-e3ddc41fba7b",
                     "trackName": "Granular Voices",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 1.6438321995464853,
+                    "renderDurationSeconds": 27.945215419501135,
+                    "samplePeak": 0,
+                    "rms": 0,
+                    "activeBlockRatio": 0
+                },
+                {
+                    "trackId": "2f66d62b-a78d-8867-9516-7eed04ddd73b",
+                    "trackName": "Dub Tunnel",
                     "channels": 2,
                     "sampleRate": 44100,
                     "durationSeconds": 1.6438321995464853,
@@ -1056,9 +1811,9 @@
                     "sampleRate": 44100,
                     "durationSeconds": 13.241587301587302,
                     "renderDurationSeconds": 13.241587301587302,
-                    "samplePeak": 2.3978068828582764,
-                    "rms": 0.2357555066732587,
-                    "activeBlockRatio": 0.4965034965034965
+                    "samplePeak": 2.4094045162200928,
+                    "rms": 0.2643277224770953,
+                    "activeBlockRatio": 0.6713286713286714
                 },
                 {
                     "trackId": "014f1c1d-eb53-8fb9-867b-0c9faa4720cd",
@@ -1067,9 +1822,9 @@
                     "sampleRate": 44100,
                     "durationSeconds": 13.241587301587302,
                     "renderDurationSeconds": 13.241587301587302,
-                    "samplePeak": 1.652905821800232,
-                    "rms": 0.17226110972637257,
-                    "activeBlockRatio": 0.4965034965034965
+                    "samplePeak": 1.662129282951355,
+                    "rms": 0.18621351919073426,
+                    "activeBlockRatio": 0.6538461538461539
                 },
                 {
                     "trackId": "2ddc9452-be5f-8d46-a5da-b2e8ddf9aba2",
@@ -1089,9 +1844,9 @@
                     "sampleRate": 44100,
                     "durationSeconds": 13.241587301587302,
                     "renderDurationSeconds": 13.241587301587302,
-                    "samplePeak": 1.2508070468902588,
-                    "rms": 0.08112698150514114,
-                    "activeBlockRatio": 0.4230769230769231
+                    "samplePeak": 1.5080243349075317,
+                    "rms": 0.11904771938159746,
+                    "activeBlockRatio": 0.6363636363636364
                 },
                 {
                     "trackId": "97d2a08b-abf6-8867-95d1-e3ddc41fba7b",
@@ -1111,9 +1866,9 @@
                     "sampleRate": 44100,
                     "durationSeconds": 13.241587301587302,
                     "renderDurationSeconds": 13.241587301587302,
-                    "samplePeak": 0.5608662366867065,
-                    "rms": 0.028767844972057487,
-                    "activeBlockRatio": 0.28321678321678323
+                    "samplePeak": 0.5510830283164978,
+                    "rms": 0.02867037810774571,
+                    "activeBlockRatio": 0.27972027972027974
                 },
                 {
                     "trackId": "4a4c4935-9c05-8201-8f3d-f9d36c832885",
@@ -1122,9 +1877,9 @@
                     "sampleRate": 44100,
                     "durationSeconds": 13.241587301587302,
                     "renderDurationSeconds": 13.241587301587302,
-                    "samplePeak": 0.17984813451766968,
-                    "rms": 0.015329473866596551,
-                    "activeBlockRatio": 0.10139860139860139
+                    "samplePeak": 0.1797366887331009,
+                    "rms": 0.013615773157514057,
+                    "activeBlockRatio": 0.08741258741258741
                 },
                 {
                     "trackId": "29cb271e-206c-81da-a8f0-76e4b826572e",
@@ -1133,9 +1888,9 @@
                     "sampleRate": 44100,
                     "durationSeconds": 13.241587301587302,
                     "renderDurationSeconds": 13.241587301587302,
-                    "samplePeak": 1.3799751996994019,
-                    "rms": 0.012547331777029935,
-                    "activeBlockRatio": 0.17832167832167833
+                    "samplePeak": 1.3809658288955688,
+                    "rms": 0.012597294854768386,
+                    "activeBlockRatio": 0.21328671328671328
                 },
                 {
                     "trackId": "2dae11fb-0869-8837-a440-0c19b0873a0b",
@@ -1307,8 +2062,8 @@
                 484
             ],
             "durationSeconds": 1.6438321995464853,
-            "rms": 0.000047949470341076095,
-            "samplePeak": 0.00012050843361066654
+            "rms": 0.000047949471051778,
+            "samplePeak": 0.00012050442455802113
         },
         "returnStrike": {
             "beats": [
@@ -1316,9 +2071,9 @@
                 488
             ],
             "durationSeconds": 1.6438321995464853,
-            "rms": 0.13562427656855777,
-            "samplePeak": 0.7643018960952759
+            "rms": 0.1357960540658026,
+            "samplePeak": 0.7646607160568237
         }
     },
-    "receiptSha256": "b1bd393848514d13403aa7d3cd430eeded5eae6e1bdc39995f587c510d6c6421"
+    "receiptSha256": "a9c0fd1b9d7b182b2e3ad9a12a947fcfe9d42c6467f048219111ac8d900471fc"
 }
