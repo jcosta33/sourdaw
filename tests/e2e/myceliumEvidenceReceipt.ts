@@ -3,8 +3,6 @@ import type { Page } from '@playwright/test';
 export type MyceliumProjectReceipt = {
     projectSha256: string;
     projectSectionSha256: Record<string, string>;
-    debugNormalizedArrangement: unknown;
-    debugNormalizedArrangements: unknown;
     durationBeats: number;
     trackCount: number;
     clipCount: number;
@@ -63,11 +61,7 @@ export async function captureMyceliumProjectReceipt(page: Page): Promise<Myceliu
         const buildProjectData = Reflect.get(projectModule, 'buildProjectData') as (input: {
             includeAudioBuffers: boolean;
         }) => Promise<{ data: unknown } | null>;
-        const built = await buildProjectData({ includeAudioBuffers: false });
-        if (!built || typeof built.data !== 'object' || built.data === null) {
-            throw new TypeError('Mycelium evidence could not serialize the live project');
-        }
-        const projectData = built.data as {
+        type ProjectDataShape = {
             arrangement: { tracks: Array<{ clips: unknown[] }> };
             automation: { lanes: Array<{ points: unknown[] }> };
             midi: { notesByClipId: Record<string, unknown[]> };
@@ -130,9 +124,38 @@ export async function captureMyceliumProjectReceipt(page: Page): Promise<Myceliu
                     })
             );
         };
-        const normalizedProject = normalize(projectData);
-        if (!isRecordValue(normalizedProject)) {
-            throw new TypeError('Mycelium evidence normalization did not produce a project object');
+        let projectData: ProjectDataShape | undefined;
+        let normalizedProject: Record<string, unknown> | undefined;
+        let previousSerialized: string | undefined;
+        let stableSampleCount = 0;
+        for (let attempt = 0; attempt < 40; attempt++) {
+            const built = await buildProjectData({ includeAudioBuffers: false });
+            if (!built || typeof built.data !== 'object' || built.data === null) {
+                throw new TypeError('Mycelium evidence could not serialize the live project');
+            }
+            const candidateProjectData = built.data as ProjectDataShape;
+            const candidateNormalizedProject = normalize(candidateProjectData);
+            if (!isRecordValue(candidateNormalizedProject)) {
+                throw new TypeError('Mycelium evidence normalization did not produce a project object');
+            }
+            const serialized = JSON.stringify(candidateNormalizedProject);
+            if (serialized === previousSerialized) {
+                stableSampleCount++;
+            } else {
+                stableSampleCount = 0;
+            }
+            if (stableSampleCount >= 2) {
+                projectData = candidateProjectData;
+                normalizedProject = candidateNormalizedProject;
+                break;
+            }
+            previousSerialized = serialized;
+            await new Promise<void>((resolve) => {
+                setTimeout(resolve, 50);
+            });
+        }
+        if (!projectData || !normalizedProject) {
+            throw new Error('Mycelium evidence project did not stabilize across consecutive snapshots');
         }
         const bytes = new TextEncoder().encode(JSON.stringify(normalizedProject));
         const digest = await crypto.subtle.digest('SHA-256', bytes);
@@ -152,8 +175,6 @@ export async function captureMyceliumProjectReceipt(page: Page): Promise<Myceliu
         return {
             projectSha256,
             projectSectionSha256,
-            debugNormalizedArrangement: normalizedProject.arrangement,
-            debugNormalizedArrangements: normalizedProject.arrangements,
             durationBeats: projectData.transport.loopEnd,
             trackCount: projectData.arrangement.tracks.length,
             clipCount: projectData.arrangement.tracks.reduce((total, track) => total + track.clips.length, 0),
