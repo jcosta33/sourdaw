@@ -144,6 +144,7 @@ describe('processSupervisorSentinel', () => {
             const outcome = await waitForMessage(sentinel);
             expect(outcome).toEqual({ kind: 'spawn-error' });
             expect(JSON.stringify(outcome)).not.toContain(token);
+            await new Promise((resolve) => setTimeout(resolve, 25));
             expect(() => process.kill(Number(sentinel.pid), 0)).not.toThrow();
         }
     );

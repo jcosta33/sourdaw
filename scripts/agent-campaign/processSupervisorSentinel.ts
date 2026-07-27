@@ -75,7 +75,7 @@ function forwardExecutorStream({ source, destination, onFailure }: ForwardExecut
             source.off('end', onEnd);
             source.off('error', onSourceError);
             source.off('close', onClose);
-            destination.off('error', onDestinationError);
+            // Writable may emit a queued error after its write callback; this listener lives until sentinel termination.
             resolve();
         };
         const fail = () => {
