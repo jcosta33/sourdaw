@@ -12,6 +12,22 @@ vi.mock('#/utils/tauriBridge', () => ({
     tauriInvoke: mocks.tauriInvoke,
 }));
 
+function getInvocationArgs(callIndex: number): Record<string, unknown> {
+    const call: unknown = mocks.tauriInvoke.mock.calls[callIndex];
+    if (!Array.isArray(call)) {
+        throw new TypeError(`Expected invocation arguments for call ${String(callIndex)}`);
+    }
+    const args: unknown = call[1];
+    if (!isRecord(args)) {
+        throw new TypeError(`Expected invocation arguments for call ${String(callIndex)}`);
+    }
+    return args;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 describe('generateNativeToolCalls', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -42,12 +58,16 @@ describe('generateNativeToolCalls', () => {
             temperature: 0.1,
         });
 
-        expect(mocks.tauriInvoke).toHaveBeenCalledWith('native_tool_calling', {
+        expect(mocks.tauriInvoke.mock.calls[0]?.[0]).toBe('native_tool_calling');
+        const invocationArgs = getInvocationArgs(0);
+        expect(invocationArgs).toEqual({
             systemPrompt: 'system',
             userMessage: 'mute drums',
             tools: [{ name: 'mute_track', description: 'Mute a track', parameters: { type: 'object' } }],
             temperature: 0.1,
+            requestId: invocationArgs.requestId,
         });
+        expect(typeof invocationArgs.requestId).toBe('string');
         expect(result).toEqual([{ name: 'mute_track', arguments: { track_id: 'track-1', muted: true } }]);
     });
 
@@ -63,5 +83,29 @@ describe('generateNativeToolCalls', () => {
                 temperature: 0.1,
             })
         ).rejects.toThrow(/Invalid native_tool_calling response/);
+    });
+
+    it('should cancel native tool planning when the signal aborts', async () => {
+        mocks.isTauri.mockReturnValue(true);
+        mocks.tauriInvoke.mockImplementation((command: string) => {
+            if (command === 'native_tool_calling') {
+                return new Promise<never>(() => undefined);
+            }
+            return Promise.resolve(undefined);
+        });
+        const controller = new AbortController();
+        const pending = generateNativeToolCalls({
+            systemPrompt: 'system',
+            userMessage: 'mute drums',
+            tools: [{ name: 'mute_track', description: 'Mute a track', parameters: { type: 'object' } }],
+            temperature: 0.1,
+            signal: controller.signal,
+        });
+
+        controller.abort();
+
+        await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+        expect(mocks.tauriInvoke.mock.calls[1]?.[0]).toBe('cancel_native_llm_generation');
+        expect(getInvocationArgs(1).requestId).toBe(getInvocationArgs(0).requestId);
     });
 });

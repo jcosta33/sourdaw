@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { AiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { tryPresetMatch, tryParameterizedPath, tryCompoundFastPath } from '../../transformers/promptParser/parsing';
 import { getProjectContext } from '../getProjectContext';
@@ -140,6 +141,16 @@ describe('parsePromptToActions', () => {
         expect(mockLogger.warn).toHaveBeenCalledWith(
             '[AI] Rejected tool call 1 (removeTrack): Tool is not allowlisted'
         );
+    });
+
+    it('preserves configuration-change cancellation instead of reporting no actions', async () => {
+        vi.mocked(generateToolCalls).mockRejectedValue(new AiRuntimeConfigurationChangedError());
+
+        await expect(parsePromptToActions('mute the vocals', baseContext)).rejects.toMatchObject({
+            name: 'AiRuntimeConfigurationChangedError',
+        });
+
+        expect(mockLogger.warn).not.toHaveBeenCalledWith(expect.stringContaining('Provider tool planning failed'));
     });
 
     it('rejects multiple valid provider actions until atomic batch execution exists', async () => {

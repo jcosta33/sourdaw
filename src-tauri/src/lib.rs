@@ -26,7 +26,10 @@ pub fn run() {
             commands::native_llm::stream_native_completion,
             commands::native_llm::native_tool_calling,
             commands::native_llm::schema_constrained_generation,
+            commands::native_llm::cancel_native_llm_generation,
             commands::native_llm::unload_native_llm,
+            commands::native_llm::unload_native_llm_if_owned,
+            commands::native_llm::finalize_native_llm_initialization,
             commands::native_llm::get_native_llm_status,
             commands::native_llm::get_model_dir,
             // AI audio processing (DeepFilterNet + Demucs ONNX)

@@ -1,12 +1,20 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { MixHealthDialog } from '../MixHealthDialog';
 
+type CloudChatOutcome = { status: 'complete' } | { status: 'incomplete'; reason: string };
+
 const mocks = vi.hoisted(() => ({
-    mixHealthAnalysis: vi.fn<(onToken: (text: string) => void) => Promise<void>>(),
+    mixHealthAnalysis: vi.fn<(input: { onToken: (text: string) => void; signal?: AbortSignal }) => Promise<void>>(),
     streamCloudChatCompletion:
-        vi.fn<(messages: Array<{ role: string; content: string }>, onToken: (text: string) => void) => Promise<void>>(),
+        vi.fn<
+            (
+                messages: Array<{ role: string; content: string }>,
+                onToken: (text: string) => void,
+                options?: { signal?: AbortSignal }
+            ) => Promise<CloudChatOutcome>
+        >(),
 }));
 
 vi.mock('#/modules/AiRuntime/useCases', () => ({
@@ -18,7 +26,7 @@ describe('MixHealthDialog', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.mixHealthAnalysis.mockResolvedValue(undefined);
-        mocks.streamCloudChatCompletion.mockResolvedValue(undefined);
+        mocks.streamCloudChatCompletion.mockResolvedValue({ status: 'complete' });
     });
 
     it('does not run analysis or render dialog content while closed', () => {
@@ -31,7 +39,7 @@ describe('MixHealthDialog', () => {
     it('starts analysis and shows the loading state until it resolves', async () => {
         let resolveAnalysis: () => void = () => undefined;
         mocks.mixHealthAnalysis.mockImplementation(
-            (onToken) =>
+            ({ onToken }) =>
                 new Promise<void>((resolve) => {
                     resolveAnalysis = () => {
                         onToken('Mix looks balanced.');
@@ -46,7 +54,10 @@ describe('MixHealthDialog', () => {
         expect(screen.getByText('Mentor is thinking...')).toBeInTheDocument();
         expect(screen.getByText('Generating a fresh read on the current mix')).toBeInTheDocument();
 
-        resolveAnalysis();
+        await act(async () => {
+            resolveAnalysis();
+            await Promise.resolve();
+        });
         expect(await screen.findByText('Mix looks balanced.')).toBeInTheDocument();
         expect(screen.queryByText('Mentor is thinking...')).not.toBeInTheDocument();
         expect(screen.getByText('Cloud mentor report')).toBeInTheDocument();
@@ -64,11 +75,13 @@ describe('MixHealthDialog', () => {
     });
 
     it('requests an ELI5 explanation of the current report with the expected prompt', async () => {
-        mocks.mixHealthAnalysis.mockImplementation(async (onToken) => {
+        mocks.mixHealthAnalysis.mockImplementation(({ onToken }) => {
             onToken('Technical report body.');
+            return Promise.resolve();
         });
-        mocks.streamCloudChatCompletion.mockImplementation(async (_messages, onToken) => {
+        mocks.streamCloudChatCompletion.mockImplementation((_messages, onToken) => {
             onToken('Simple explanation.');
+            return Promise.resolve({ status: 'complete' });
         });
 
         render(<MixHealthDialog open onOpenChange={vi.fn()} />);
@@ -89,9 +102,29 @@ describe('MixHealthDialog', () => {
         expect(screen.getByText('ELI5 Translation')).toBeInTheDocument();
     });
 
+    it('marks a token-limited ELI5 response as incomplete', async () => {
+        mocks.mixHealthAnalysis.mockImplementation(({ onToken }) => {
+            onToken('Technical report body.');
+            return Promise.resolve();
+        });
+        mocks.streamCloudChatCompletion.mockImplementation((_messages, onToken) => {
+            onToken('Partial explanation.');
+            return Promise.resolve({ status: 'incomplete', reason: 'token limit' });
+        });
+
+        render(<MixHealthDialog open onOpenChange={vi.fn()} />);
+        await screen.findByText('Technical report body.');
+
+        fireEvent.click(screen.getByRole('button', { name: "Explain Like I'm 5" }));
+
+        expect(await screen.findByText(/Partial explanation/)).toBeInTheDocument();
+        expect(screen.getByText(/Hosted AI response incomplete: token limit/)).toBeInTheDocument();
+    });
+
     it('disables the ELI5 button until a report exists, and Close notifies the caller', async () => {
-        mocks.mixHealthAnalysis.mockImplementation(async (onToken) => {
+        mocks.mixHealthAnalysis.mockImplementation(({ onToken }) => {
             onToken('Report ready.');
+            return Promise.resolve();
         });
         const onOpenChange = vi.fn();
 
@@ -109,5 +142,41 @@ describe('MixHealthDialog', () => {
 
         fireEvent.click(footerCloseButton);
         expect(onOpenChange).toHaveBeenCalledWith(false);
+    });
+
+    it('aborts the active analysis when the dialog closes', () => {
+        let analysisSignal: AbortSignal | undefined;
+        mocks.mixHealthAnalysis.mockImplementation(
+            ({ signal }) =>
+                new Promise<void>(() => {
+                    analysisSignal = signal;
+                })
+        );
+        const { rerender } = render(<MixHealthDialog open onOpenChange={vi.fn()} />);
+
+        rerender(<MixHealthDialog open={false} onOpenChange={vi.fn()} />);
+
+        expect(analysisSignal?.aborted).toBe(true);
+    });
+
+    it('aborts an active ELI5 stream when the dialog closes', async () => {
+        mocks.mixHealthAnalysis.mockImplementation(({ onToken }) => {
+            onToken('Report ready.');
+            return Promise.resolve();
+        });
+        let eli5Signal: AbortSignal | undefined;
+        mocks.streamCloudChatCompletion.mockImplementation(
+            (_messages, _onToken, options) =>
+                new Promise<CloudChatOutcome>(() => {
+                    eli5Signal = options?.signal;
+                })
+        );
+        const { rerender } = render(<MixHealthDialog open onOpenChange={vi.fn()} />);
+        await screen.findByText('Report ready.');
+        fireEvent.click(screen.getByRole('button', { name: "Explain Like I'm 5" }));
+
+        rerender(<MixHealthDialog open={false} onOpenChange={vi.fn()} />);
+
+        expect(eli5Signal?.aborted).toBe(true);
     });
 });

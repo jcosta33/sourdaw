@@ -2,6 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { streamNativeCompletion } from '../streaming';
 
+type TestChannel = {
+    onmessage: ((event: { event: string; data: Record<string, unknown> }) => void) | null;
+};
+
 const mocks = vi.hoisted(() => ({
     isTauri: vi.fn(),
     tauriInvoke: vi.fn(),
@@ -17,6 +21,22 @@ vi.mock('#/utils/tauriBridge', () => ({
 
 vi.stubGlobal('fetch', mocks.fetch);
 
+function getInvocationArgs(callIndex: number): Record<string, unknown> {
+    const call: unknown = mocks.tauriInvoke.mock.calls[callIndex];
+    if (!Array.isArray(call)) {
+        throw new TypeError(`Expected invocation arguments for call ${String(callIndex)}`);
+    }
+    const args: unknown = call[1];
+    if (!isRecord(args)) {
+        throw new TypeError(`Expected invocation arguments for call ${String(callIndex)}`);
+    }
+    return args;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 describe('streamNativeCompletion', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -28,9 +48,14 @@ describe('streamNativeCompletion', () => {
         });
 
         it('creates a channel and invokes streaming command', async () => {
-            const mockChannel = { onmessage: null } as any;
+            const mockChannel: TestChannel = { onmessage: null };
             mocks.createChannel.mockResolvedValue(mockChannel);
-            mocks.tauriInvoke.mockResolvedValue(undefined);
+            mocks.tauriInvoke.mockImplementation((command: string) => {
+                if (command === 'stream_native_completion') {
+                    mockChannel.onmessage?.({ event: 'token', data: { text: 'Hi' } });
+                }
+                return Promise.resolve(undefined);
+            });
 
             const onToken = vi.fn();
             const messages = [
@@ -41,30 +66,25 @@ describe('streamNativeCompletion', () => {
             await streamNativeCompletion(messages, onToken);
 
             expect(mocks.createChannel).toHaveBeenCalled();
-            expect(mocks.tauriInvoke).toHaveBeenCalledWith('stream_native_completion', {
+            expect(mocks.tauriInvoke.mock.calls[0]?.[0]).toBe('stream_native_completion');
+            const invocationArgs = getInvocationArgs(0);
+            expect(invocationArgs).toEqual({
                 systemPrompt: 'You are a bot.',
                 messages: [{ role: 'user', content: 'Hello' }],
                 temperature: 0.7,
                 maxTokens: 2048,
                 onEvent: mockChannel,
+                requestId: invocationArgs.requestId,
             });
-
-            // Simulate events
-            mockChannel.onmessage({ event: 'token', data: { text: 'Hi' } });
+            expect(typeof invocationArgs.requestId).toBe('string');
             expect(onToken).toHaveBeenCalledWith('Hi');
-
-            // Error events are captured synchronously but rethrown after
-            // tauriInvoke resolves, so calling onmessage doesn't throw inline.
-            expect(() => {
-                mockChannel.onmessage({ event: 'error', data: { message: 'Boom' } });
-            }).not.toThrow();
         });
 
         it('propagates an abort thrown from inside onToken instead of swallowing it', async () => {
             // Regression: when onToken throws (e.g. the caller checks an abort
             // signal and throws), the throw escapes the Tauri channel dispatcher
             // and is lost. It must be captured and rethrown after the invoke.
-            const mockChannel = { onmessage: null } as any;
+            const mockChannel: TestChannel = { onmessage: null };
             mocks.createChannel.mockResolvedValue(mockChannel);
 
             // Faithfully model the Tauri channel dispatcher: it invokes
@@ -73,7 +93,7 @@ describe('streamNativeCompletion', () => {
             // captures it into streamState.error itself.
             mocks.tauriInvoke.mockImplementation(() => {
                 try {
-                    mockChannel.onmessage({ event: 'token', data: { text: 'partial' } });
+                    mockChannel.onmessage?.({ event: 'token', data: { text: 'partial' } });
                 } catch {
                     // dispatcher swallows — exactly the production behavior we guard against
                 }
@@ -92,7 +112,7 @@ describe('streamNativeCompletion', () => {
         it('rejects when the native invoke exceeds the watchdog timeout', async () => {
             vi.useFakeTimers();
             try {
-                const mockChannel = { onmessage: null } as any;
+                const mockChannel: TestChannel = { onmessage: null };
                 mocks.createChannel.mockResolvedValue(mockChannel);
                 // Invoke never resolves — simulate a hung backend.
                 mocks.tauriInvoke.mockReturnValue(new Promise<void>(() => undefined));
@@ -110,17 +130,23 @@ describe('streamNativeCompletion', () => {
         });
 
         it('rejects when the abort signal fires before the native invoke resolves', async () => {
-            const mockChannel = { onmessage: null } as any;
+            const mockChannel: TestChannel = { onmessage: null };
             mocks.createChannel.mockResolvedValue(mockChannel);
             mocks.tauriInvoke.mockReturnValue(new Promise<void>(() => undefined));
 
             const aborter = new AbortController();
-            const promise = streamNativeCompletion([{ role: 'user', content: 'hi' }], vi.fn(), {
+            const onToken = vi.fn();
+            const promise = streamNativeCompletion([{ role: 'user', content: 'hi' }], onToken, {
                 signal: aborter.signal,
             });
+            await vi.waitFor(() => expect(mocks.tauriInvoke).toHaveBeenCalledTimes(1));
             aborter.abort();
 
             await expect(promise).rejects.toThrow('aborted');
+            expect(mocks.tauriInvoke.mock.calls[1]?.[0]).toBe('cancel_native_llm_generation');
+            expect(getInvocationArgs(1).requestId).toBe(getInvocationArgs(0).requestId);
+            mockChannel.onmessage?.({ event: 'token', data: { text: 'late' } });
+            expect(onToken).not.toHaveBeenCalled();
         });
     });
 

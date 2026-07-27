@@ -5,10 +5,12 @@
 
 import { createStore } from '#/infra/store/createStore';
 
+import { type RunnableAiBackend } from '../models/LlmOrchestrationTypes';
+
 export type LlmEngineStatus =
     | { state: 'idle' }
     | { state: 'loading'; progress: number; text: string }
-    | { state: 'ready'; modelId: string }
+    | { state: 'ready'; backend: RunnableAiBackend; modelId: string }
     | { state: 'generating' }
     | { state: 'error'; message: string };
 

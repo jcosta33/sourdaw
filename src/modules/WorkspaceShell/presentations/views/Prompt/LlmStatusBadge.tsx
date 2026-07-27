@@ -6,27 +6,25 @@ import { DawChooserCard } from '#/components/daw/DawChooserCard';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { DawStatusDot } from '#/components/daw/DawStatusDot';
 import { Button } from '#/components/ui/button';
+import { useStore } from '#/infra/store/useStore';
+import {
+    aiBackendPreferenceStore,
+    hostedLlmProviderStatusStore,
+    type LlmEngineStatus,
+} from '#/modules/AiRuntime/stores';
 import {
     isLlmAvailable,
     resolveBackend,
     unloadEngine,
     NATIVE_MODEL_INFO,
-    CLOUD_MODEL_INFO,
     WEBLLM_MODELS,
     getActiveModelId,
 } from '#/modules/AiRuntime/useCases';
 
 type LlmStatusBadgeProps = {
-    status: BadgeLlmStatus;
+    status: LlmEngineStatus;
     onLoad: (modelId?: string) => void;
 };
-
-type BadgeLlmStatus =
-    | { state: 'idle' }
-    | { state: 'loading'; progress: number; text: string }
-    | { state: 'ready'; modelId: string }
-    | { state: 'generating' }
-    | { state: 'error'; message: string };
 
 type BadgeModelInfo = {
     id?: string;
@@ -67,15 +65,27 @@ const DropdownPanel = ({ children, onClose }: { children: React.ReactNode; onClo
     );
 };
 
+function getHostedProviderLabel(provider: 'anthropic' | 'openai' | 'openai-compatible'): string {
+    if (provider === 'anthropic') {
+        return 'Anthropic';
+    }
+    if (provider === 'openai') {
+        return 'OpenAI';
+    }
+    return 'OpenAI-compatible';
+}
+
 export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactElement | null => {
     const [showPanel, setShowPanel] = useState(false);
     const [selectedModelId, setSelectedModelId] = useState(getActiveModelId);
-    const backend = resolveBackend();
+    const backendPreference = useStore(aiBackendPreferenceStore, 'auto');
+    const hostedProviderStatus = useStore(hostedLlmProviderStatusStore, null);
+    const backend = status.state === 'ready' ? status.backend : resolveBackend();
     let backendLabel: string;
     if (backend === 'native') {
         backendLabel = 'Native';
     } else if (backend === 'cloud') {
-        backendLabel = 'Cloud';
+        backendLabel = hostedProviderStatus ? getHostedProviderLabel(hostedProviderStatus.provider) : 'Cloud';
     } else {
         backendLabel = 'Browser';
     }
@@ -92,30 +102,49 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
     if (backend === 'native') {
         modelInfo = NATIVE_MODEL_INFO;
     } else if (backend === 'cloud') {
-        modelInfo = CLOUD_MODEL_INFO;
+        const providerLabel = hostedProviderStatus
+            ? getHostedProviderLabel(hostedProviderStatus.provider)
+            : 'Hosted AI';
+        const model = hostedProviderStatus?.model ?? 'Not configured';
+        modelInfo = {
+            id: hostedProviderStatus?.model,
+            displayName: hostedProviderStatus ? `${providerLabel} · ${model}` : providerLabel,
+            description: hostedProviderStatus
+                ? `Direct browser connection to ${providerLabel} using ${model}.`
+                : 'Configure a hosted provider in Preferences.',
+            downloadSize: 'None',
+            ramUsage: 'None',
+            parameterCount: 'Hosted',
+        };
     } else {
         modelInfo = WEBLLM_MODELS.find((message) => message.id === selectedModelId) ?? WEBLLM_MODELS[1]!;
     }
 
     if (!isLlmAvailable()) {
+        let unavailableLabel = 'AI unavailable';
+        let unavailableTitle = 'No configured AI backend is available';
+        if (backendPreference === 'cloud') {
+            unavailableLabel = 'Configure hosted AI';
+            unavailableTitle = 'Configure a hosted AI provider in Preferences';
+        } else if (backendPreference === 'native') {
+            unavailableLabel = 'Native unavailable';
+            unavailableTitle = 'Native AI requires the desktop application';
+        } else if (backendPreference === 'webllm') {
+            unavailableLabel = 'WebGPU unavailable';
+            unavailableTitle = 'Browser WebLLM requires WebGPU support';
+        }
         return (
-            <span
-                className="text-[9px] text-muted-foreground/50 whitespace-nowrap"
-                title="WebGPU not available — complex commands disabled"
-            >
-                No GPU
+            <span className="text-[9px] text-muted-foreground/50 whitespace-nowrap" title={unavailableTitle}>
+                {unavailableLabel}
             </span>
         );
     }
 
     // ── Idle: model selector + load button ─────────────────────────────────
-    if (!status || status.state === 'idle') {
+    if (status.state === 'idle') {
         const renderIife_3 = () => {
             if (backend === 'native') {
                 return 'Start Native Engine';
-            }
-            if (backend === 'cloud') {
-                return 'Connect Cloud AI';
             }
             return `Load ${WEBLLM_MODELS.find((message) => message.id === selectedModelId)?.displayName ?? 'Model'}`;
         };
@@ -131,7 +160,7 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
                     title="Load AI model"
                 >
                     <Sparkles className="size-2.5" aria-hidden="true" />
-                    Load AI
+                    {backend === 'cloud' ? 'Hosted AI' : 'Load AI'}
                 </Button>
                 {showPanel ? (
                     <DropdownPanel onClose={() => setShowPanel(false)}>
@@ -181,17 +210,23 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
                                 </div>
                             )}
 
-                            <Button
-                                size="sm"
-                                className="w-full text-xs h-7 mt-1"
-                                onClick={() => {
-                                    setShowPanel(false);
-                                    onLoad(backend === 'webllm' ? selectedModelId : undefined);
-                                }}
-                            >
-                                <HardDrive className="size-3 mr-1.5" aria-hidden="true" />
-                                {renderIife_3()}
-                            </Button>
+                            {backend === 'cloud' ? (
+                                <p className="px-1 py-1 text-[10px] text-muted-foreground">
+                                    Configured credentials are verified on the first request.
+                                </p>
+                            ) : (
+                                <Button
+                                    size="sm"
+                                    className="w-full text-xs h-7 mt-1"
+                                    onClick={() => {
+                                        setShowPanel(false);
+                                        onLoad(backend === 'webllm' ? selectedModelId : undefined);
+                                    }}
+                                >
+                                    <HardDrive className="size-3 mr-1.5" aria-hidden="true" />
+                                    {renderIife_3()}
+                                </Button>
+                            )}
                         </div>
                     </DropdownPanel>
                 ) : null}
@@ -278,22 +313,18 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
     }
 
     // ── Error ───────────────────────────────────────────────────────────────
-    if (status.state === 'error') {
-        return (
-            <Button
-                variant="outline"
-                size="xs"
-                type="button"
-                onClick={() => onLoad()}
-                className="h-6 gap-1 px-2 text-[10px] font-medium border-destructive/30 text-destructive/80 hover:text-destructive hover:bg-destructive/10"
-                title={status.message}
-            >
-                AI Error — retry
-            </Button>
-        );
-    }
-
-    return null;
+    return (
+        <Button
+            variant="outline"
+            size="xs"
+            type="button"
+            onClick={() => onLoad()}
+            className="h-6 gap-1 px-2 text-[10px] font-medium border-destructive/30 text-destructive/80 hover:text-destructive hover:bg-destructive/10"
+            title={status.message}
+        >
+            AI Error — retry
+        </Button>
+    );
 };
 
 // ── Model option card ───────────────────────────────────────────────────

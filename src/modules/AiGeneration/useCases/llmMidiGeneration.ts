@@ -7,6 +7,7 @@ import {
 } from '#/modules/AiRuntime/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { createAiGenerationError } from '../errors/AiGenerationError';
 import { readBalancedObject } from '../services/readBalancedObject';
 
 import { type generateMidiAI } from './nativeAiBridge/generateMidiAI';
@@ -64,11 +65,14 @@ export async function generateMidiViaLlm(
         return fallbackToPatternMatch(prompt);
     }
 
-    if (backend === 'native' && isNativeEngineReady()) {
+    if (backend === 'native') {
+        if (!isNativeEngineReady()) {
+            throw createAiGenerationError('The selected native AI backend is not ready.');
+        }
         rawResponse = await generateNativeCompletion(MIDI_SYSTEM_PROMPT, userMessage);
     } else if (backend === 'cloud') {
         let accumulated = '';
-        await streamCloudChatCompletion(
+        const outcome = await streamCloudChatCompletion(
             [
                 { role: 'system', content: MIDI_SYSTEM_PROMPT },
                 { role: 'user', content: userMessage },
@@ -78,6 +82,9 @@ export async function generateMidiViaLlm(
             },
             { maxTokens: 2000 }
         );
+        if (outcome.status === 'incomplete') {
+            throw createAiGenerationError(`Hosted AI MIDI response was incomplete (${outcome.reason}).`);
+        }
         rawResponse = accumulated;
     } else {
         rawResponse = await generateWebLlmCompletion(MIDI_SYSTEM_PROMPT, userMessage);

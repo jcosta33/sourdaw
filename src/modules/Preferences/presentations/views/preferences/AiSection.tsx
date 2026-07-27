@@ -6,16 +6,68 @@ import { DawStatusDot } from '#/components/daw/DawStatusDot';
 import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
 import { Separator } from '#/components/ui/separator';
-import { configureCloudApi, removeCloudApi, isCloudAvailable, resolveBackend } from '#/modules/AiRuntime/useCases';
+import { useStore } from '#/infra/store/useStore';
+import { aiBackendPreferenceStore, hostedLlmProviderStatusStore, llmStatusStore } from '#/modules/AiRuntime/stores';
+import {
+    configureCloudProvider,
+    removeCloudApi,
+    resolveBackend,
+    setAiBackendPreference,
+} from '#/modules/AiRuntime/useCases';
 import { CapabilityReportPanel, ModelManagerPanel } from '#/modules/BrowserAi/presentations/views';
 import { cn } from '#/utils/Styles/cn';
 
 import { SectionTitle, FieldGroup } from '../preferencesShared';
 
+type HostedProviderSelection = 'anthropic' | 'openai' | 'openai-compatible';
+type BackendSelection = 'auto' | 'native' | 'webllm' | 'cloud';
+
+const DEFAULT_MODELS: Record<HostedProviderSelection, string> = {
+    anthropic: 'claude-sonnet-4-20250514',
+    openai: 'gpt-5.2',
+    'openai-compatible': '',
+};
+
+function isHostedProviderSelection(value: string): value is HostedProviderSelection {
+    return value === 'anthropic' || value === 'openai' || value === 'openai-compatible';
+}
+
+function isBackendSelection(value: string): value is BackendSelection {
+    return value === 'auto' || value === 'native' || value === 'webllm' || value === 'cloud';
+}
+
+function getProviderLabel(provider: HostedProviderSelection): string {
+    if (provider === 'anthropic') {
+        return 'Anthropic';
+    }
+    if (provider === 'openai') {
+        return 'OpenAI';
+    }
+    return 'OpenAI-compatible';
+}
+
+function getApiKeyPlaceholder(provider: HostedProviderSelection): string {
+    if (provider === 'anthropic') {
+        return 'sk-ant-...';
+    }
+    if (provider === 'openai') {
+        return 'sk-...';
+    }
+    return 'Provider API key (optional)';
+}
+
 export const AiSection = (): ReactElement => {
     const [apiKey, setApiKey] = useState('');
     const [showKey, setShowKey] = useState(false);
-    const backend = resolveBackend();
+    const [provider, setProvider] = useState<HostedProviderSelection>('anthropic');
+    const [model, setModel] = useState(DEFAULT_MODELS.anthropic);
+    const [baseUrl, setBaseUrl] = useState('');
+    const [configurationError, setConfigurationError] = useState<string | null>(null);
+    const backendPreference = useStore(aiBackendPreferenceStore, 'auto');
+    const configuredProvider = useStore(hostedLlmProviderStatusStore, null);
+    const llmStatus = useStore(llmStatusStore, { state: 'idle' });
+    const backend = llmStatus.state === 'ready' ? llmStatus.backend : resolveBackend();
+    const cloudAvailable = configuredProvider !== null;
     const renderIife_16 = () => {
         if (backend === 'native') {
             return 'success';
@@ -33,7 +85,10 @@ export const AiSection = (): ReactElement => {
             return 'Native (in-process)';
         }
         if (backend === 'cloud') {
-            return 'Cloud (Claude)';
+            if (configuredProvider) {
+                return `Cloud (${getProviderLabel(configuredProvider.provider)})`;
+            }
+            return 'Cloud (Hosted)';
         }
         if (backend === 'webllm') {
             return 'Browser (WebLLM)';
@@ -44,6 +99,27 @@ export const AiSection = (): ReactElement => {
     return (
         <>
             <SectionTitle icon={<Sparkles className="size-4" />} title="AI" />
+            <FieldGroup label="AI execution backend">
+                <select
+                    value={backendPreference}
+                    onChange={(event) => {
+                        const selection = event.target.value;
+                        if (isBackendSelection(selection)) {
+                            setAiBackendPreference(selection);
+                        }
+                    }}
+                    className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
+                    aria-label="AI execution backend"
+                >
+                    <option value="auto">Automatic</option>
+                    <option value="native">Native local</option>
+                    <option value="webllm">Browser WebLLM</option>
+                    <option value="cloud">Hosted provider</option>
+                </select>
+                <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
+                    Automatic prefers an already-running backend, then native local, WebLLM, and hosted AI.
+                </p>
+            </FieldGroup>
             <FieldGroup label="Active Backend">
                 <div className="flex items-center gap-2">
                     <span
@@ -63,20 +139,70 @@ export const AiSection = (): ReactElement => {
                 </div>
             </FieldGroup>
             <Separator />
-            <FieldGroup label="Cloud AI (Anthropic API)">
+            <FieldGroup label="Hosted AI provider">
                 <p className="text-[10px] text-muted-foreground mb-2 leading-relaxed">
-                    Enter your Anthropic API key to enable cloud AI features. Uses Claude Sonnet for the highest quality
-                    tool calling. Keys are stored in memory only — not persisted.
+                    Bring your own Anthropic, OpenAI, or OpenAI-compatible endpoint. Credentials stay in memory only and
+                    are sent directly to the selected provider; browser CORS policy still applies.
                 </p>
+                <div className="grid grid-cols-2 gap-1.5 mb-1.5">
+                    <select
+                        value={provider}
+                        onChange={(event) => {
+                            const nextProvider = event.target.value;
+                            if (!isHostedProviderSelection(nextProvider)) {
+                                return;
+                            }
+                            setProvider(nextProvider);
+                            setModel(DEFAULT_MODELS[nextProvider]);
+                            setBaseUrl('');
+                            setApiKey('');
+                            setShowKey(false);
+                            setConfigurationError(null);
+                        }}
+                        className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                        aria-label="Hosted AI provider"
+                    >
+                        <option value="anthropic">Anthropic</option>
+                        <option value="openai">OpenAI</option>
+                        <option value="openai-compatible">OpenAI-compatible</option>
+                    </select>
+                    <Input
+                        value={model}
+                        onChange={(event) => {
+                            setModel(event.target.value);
+                            setConfigurationError(null);
+                        }}
+                        placeholder="Model identifier"
+                        className="h-8 text-xs font-mono"
+                        aria-label="Hosted AI model"
+                    />
+                </div>
+                {provider === 'openai-compatible' ? (
+                    <Input
+                        value={baseUrl}
+                        onChange={(event) => {
+                            setBaseUrl(event.target.value);
+                            setApiKey('');
+                            setShowKey(false);
+                            setConfigurationError(null);
+                        }}
+                        placeholder="https://provider.example/v1"
+                        className="h-8 text-xs font-mono mb-1.5"
+                        aria-label="OpenAI-compatible base URL"
+                    />
+                ) : null}
                 <div className="flex gap-1.5">
                     <div className="relative flex-1">
                         <Input
                             type={showKey ? 'text' : 'password'}
                             value={apiKey}
-                            onChange={(event) => setApiKey(event.target.value)}
-                            placeholder="sk-ant-api03-..."
+                            onChange={(event) => {
+                                setApiKey(event.target.value);
+                                setConfigurationError(null);
+                            }}
+                            placeholder={getApiKeyPlaceholder(provider)}
                             className="h-8 text-xs font-mono pr-8"
-                            aria-label="Anthropic API key"
+                            aria-label={`${getProviderLabel(provider)} API key`}
                         />
                         <button
                             type="button"
@@ -90,35 +216,61 @@ export const AiSection = (): ReactElement => {
                     <Button
                         size="sm"
                         className="h-8 text-xs"
-                        disabled={!apiKey.trim()}
+                        disabled={
+                            (provider !== 'openai-compatible' && !apiKey.trim()) ||
+                            !model.trim() ||
+                            (provider === 'openai-compatible' && !baseUrl.trim())
+                        }
                         onClick={() => {
-                            configureCloudApi(apiKey.trim());
-                            setApiKey('');
+                            try {
+                                configureCloudProvider({
+                                    provider,
+                                    apiKey,
+                                    model,
+                                    baseUrl: provider === 'openai-compatible' ? baseUrl : undefined,
+                                });
+                                setApiKey('');
+                                setConfigurationError(null);
+                            } catch (error) {
+                                setConfigurationError(
+                                    error instanceof Error ? error.message : 'Hosted provider configuration failed'
+                                );
+                            }
                         }}
                     >
                         Save
                     </Button>
                 </div>
+                {configurationError ? (
+                    <p className="mt-1.5 text-[10px] text-destructive" role="alert">
+                        {configurationError}
+                    </p>
+                ) : null}
 
                 <div className="flex items-center justify-between mt-2">
                     <span className="text-[10px] text-muted-foreground">
                         Status:{' '}
                         <span
                             className={
-                                isCloudAvailable()
+                                cloudAvailable
                                     ? 'text-[var(--color-state-success)]'
                                     : 'text-[var(--color-state-warning)]'
                             }
                         >
-                            {isCloudAvailable() ? 'Connected' : 'Not configured'}
+                            {configuredProvider
+                                ? `Configured: ${getProviderLabel(configuredProvider.provider)} / ${configuredProvider.model}`
+                                : 'Not configured'}
                         </span>
                     </span>
-                    {isCloudAvailable() ? (
+                    {cloudAvailable ? (
                         <Button
                             variant="ghost"
                             size="xs"
                             className="text-destructive text-[10px]"
-                            onClick={removeCloudApi}
+                            onClick={() => {
+                                removeCloudApi();
+                                setConfigurationError(null);
+                            }}
                         >
                             Remove Key
                         </Button>

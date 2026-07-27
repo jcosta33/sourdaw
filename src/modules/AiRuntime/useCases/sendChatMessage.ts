@@ -6,16 +6,24 @@ import {
     isAppActionCommittedError,
 } from '#/modules/Command/useCases';
 
+import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
 import { createAiRuntimeError } from '../errors/AiRuntimeError';
 import { type ChatMessage } from '../models/Chat';
 import { CHAT_SYSTEM_PROMPT } from '../models/ChatSystemPrompt';
+import { type RunnableAiBackend } from '../models/LlmOrchestrationTypes';
 import { type RuntimeAction } from '../models/RuntimeAction';
-import { streamCloudChatCompletion } from '../repositories/cloudLlm/cloudInference/streamCloudChatCompletion';
+import {
+    type CloudChatCompletionOutcome,
+    streamCloudChatCompletion,
+} from '../repositories/cloudLlm/cloudInference/streamCloudChatCompletion';
+import { getCloudProviderInfo } from '../repositories/cloudLlm/getCloudProviderInfo';
 import { isCloudAvailable } from '../repositories/cloudLlm/isCloudAvailable';
 import { isNativeEngineReady } from '../repositories/nativeEngine/isNativeEngineReady';
 import { streamNativeCompletion } from '../repositories/nativeEngine/streaming';
+import { getActiveModelId } from '../repositories/webLlm/getActiveModelId';
 import { getLlmEngine } from '../repositories/webLlm/getLlmEngine';
 import { pushAiActionGroup, type AiActionGroup } from '../stores/aiActionHistoryStore';
+import { aiBackendPreferenceStore } from '../stores/aiBackendPreferenceStore';
 import {
     chatStore,
     appendChatMessage,
@@ -23,6 +31,7 @@ import {
     setChatGenerating,
     setActiveAborter,
 } from '../stores/chatStore';
+import { llmStatusStore } from '../stores/llmStatusStore';
 import { proposePendingActionConfirmation } from '../stores/pendingActionConfirmationStore';
 
 import { createThinkBlockParser } from './createThinkBlockParser';
@@ -30,6 +39,16 @@ import { getProjectContext } from './getProjectContext';
 import { resolveBackend } from './llmOrchestration/backendResolution/helpers';
 import { notifyAiChange } from './notifyAiChange';
 import { parsePromptToActions } from './parsePromptToActions';
+
+function getBackendModelId(backend: RunnableAiBackend): string {
+    if (backend === 'native') {
+        return 'native';
+    }
+    if (backend === 'cloud') {
+        return getCloudProviderInfo()?.model ?? 'cloud';
+    }
+    return getActiveModelId();
+}
 
 export async function sendChatMessage(userText: string): Promise<void> {
     const backend = resolveBackend();
@@ -192,10 +211,16 @@ export async function sendChatMessage(userText: string): Promise<void> {
             }
         } catch (error) {
             const reason = error instanceof Error ? error.message : String(error);
+            const configurationChanged = isAiRuntimeConfigurationChangedError(error);
+            const failureContent = configurationChanged
+                ? 'Prompt cancelled because the AI configuration changed.'
+                : 'Failed to process prompt command.';
             if (prompt_assistant_message_id) {
                 updateChatMessage(prompt_assistant_message_id, {
                     isStreaming: false,
-                    content: 'Failed to execute prompt command.',
+                    content: configurationChanged
+                        ? 'Prompt cancelled because the AI configuration changed.'
+                        : 'Failed to execute prompt command.',
                     error: reason,
                 });
             } else {
@@ -208,7 +233,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
                 appendChatMessage({
                     id: `msg-${crypto.randomUUID()}`,
                     role: 'assistant',
-                    content: 'Failed to process prompt command.',
+                    content: failureContent,
                     error: reason,
                     timestamp: Date.now(),
                 });
@@ -241,11 +266,15 @@ export async function sendChatMessage(userText: string): Promise<void> {
 
     const aborter = new AbortController();
     setActiveAborter(aborter);
+    const previousLlmStatus = llmStatusStore.value;
+    llmStatusStore.set({ state: 'generating' });
     // Incremental think-block parser: feeding each streamed token keeps the
     // boundary scan linear instead of re-scanning the whole buffer per token.
     // It also retains the full accumulated text internally, so no separate
     // buffer is needed.
     const thinkParser = createThinkBlockParser();
+    let cloudOutcome: CloudChatCompletionOutcome | null = null;
+    let webLlmIncompleteReason: string | null = null;
 
     try {
         const workspaceContext = getProjectContext();
@@ -262,9 +291,10 @@ export async function sendChatMessage(userText: string): Promise<void> {
                 content: message.content,
             }));
 
-        const completionMessages = [{ role: 'system' as const, content: systemPrompt }, ...conversationHistory].filter(
-            (message) => message.role === 'system' || message.role === 'user' || message.role === 'assistant'
-        ) as Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
+        const completionMessages: Array<{
+            role: 'system' | 'user' | 'assistant';
+            content: string;
+        }> = [{ role: 'system', content: systemPrompt }, ...conversationHistory];
 
         if (backend === 'native') {
             // Native: streaming completion via Tauri Channel API
@@ -286,7 +316,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
             );
         } else if (backend === 'cloud') {
             // Cloud: streaming completion via Claude API
-            await streamCloudChatCompletion(
+            cloudOutcome = await streamCloudChatCompletion(
                 completionMessages,
                 (token) => {
                     if (aborter.signal.aborted) {
@@ -295,7 +325,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
                     const parsed = thinkParser.push(token);
                     updateChatMessage(assistantMsgId, { content: parsed.content, reasoning: parsed.reasoning });
                 },
-                { temperature: 0.7, maxTokens: 2048 }
+                { temperature: 0.7, maxTokens: 2048, signal: aborter.signal }
             );
         } else {
             // WebLLM: streaming completion via the in-browser engine.
@@ -304,30 +334,72 @@ export async function sendChatMessage(userText: string): Promise<void> {
             // GPU (shared with the compositor). Without this yield, the browser
             // can't paint the "Thinking..." state before the GPU gets busy.
             await new Promise<void>((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+            aborter.signal.throwIfAborted();
 
             const engine = getLlmEngine()!;
-            const asyncChunkGenerator = (await engine.chat.completions.create({
-                messages: completionMessages,
-                temperature: 0.7,
-                max_tokens: 2048,
-                stream: true,
-            })) as AsyncIterable<{ choices: Array<{ delta: { content?: string } }> }>;
-
-            for await (const chunk of asyncChunkGenerator) {
-                if (aborter.signal.aborted) {
-                    break;
-                }
-                const deltaDesc = chunk.choices[0]?.delta.content;
-                if (deltaDesc !== undefined) {
-                    const parsed = thinkParser.push(deltaDesc);
-                    updateChatMessage(assistantMsgId, { content: parsed.content, reasoning: parsed.reasoning });
-                }
+            function interruptWebLlm(): void {
+                engine.interruptGenerate();
             }
+            aborter.signal.addEventListener('abort', interruptWebLlm, { once: true });
+
+            try {
+                const asyncChunkGenerator = (await engine.chat.completions.create({
+                    messages: completionMessages,
+                    temperature: 0.7,
+                    max_tokens: 2048,
+                    stream: true,
+                })) as AsyncIterable<{
+                    choices: Array<{ delta: { content?: string }; finish_reason?: string | null }>;
+                }>;
+                let sawTerminalReason = false;
+
+                for await (const chunk of asyncChunkGenerator) {
+                    if (aborter.signal.aborted) {
+                        break;
+                    }
+                    const choice = chunk.choices[0];
+                    const deltaDesc = choice?.delta.content;
+                    if (deltaDesc !== undefined) {
+                        const parsed = thinkParser.push(deltaDesc);
+                        updateChatMessage(assistantMsgId, { content: parsed.content, reasoning: parsed.reasoning });
+                    }
+                    if (choice?.finish_reason !== undefined && choice.finish_reason !== null) {
+                        sawTerminalReason = true;
+                        if (choice.finish_reason !== 'stop') {
+                            webLlmIncompleteReason = choice.finish_reason;
+                        }
+                    }
+                }
+                if (!aborter.signal.aborted && !sawTerminalReason) {
+                    throw new Error('WebLLM chat stream ended unexpectedly');
+                }
+            } finally {
+                aborter.signal.removeEventListener('abort', interruptWebLlm);
+            }
+        }
+
+        if (aborter.signal.aborted) {
+            throw aborter.signal.reason;
         }
 
         // Strip <think>…</think> reasoning block before storing the final message.
         const { reasoning, content: cleanContent } = thinkParser.snapshot();
-        updateChatMessage(assistantMsgId, { isStreaming: false, content: cleanContent, reasoning });
+        const incompleteReason = cloudOutcome?.status === 'incomplete' ? cloudOutcome.reason : webLlmIncompleteReason;
+        const incompleteNotice =
+            incompleteReason === null ? '' : `\n\n_Response incomplete: provider stopped at ${incompleteReason}._`;
+        let incompleteError: string | undefined;
+        if (cloudOutcome?.status === 'incomplete') {
+            incompleteError = `Hosted AI response incomplete (${cloudOutcome.reason})`;
+        } else if (webLlmIncompleteReason !== null) {
+            incompleteError = `WebLLM response incomplete (${webLlmIncompleteReason})`;
+        }
+        updateChatMessage(assistantMsgId, {
+            isStreaming: false,
+            content: `${cleanContent}${incompleteNotice}`,
+            reasoning,
+            error: incompleteError,
+        });
+        llmStatusStore.set({ state: 'ready', backend, modelId: getBackendModelId(backend) });
     } catch (error) {
         const errorMessage = (() => {
             if (isAppError(error)) {
@@ -338,7 +410,24 @@ export async function sendChatMessage(userText: string): Promise<void> {
             }
             return 'An unknown error occurred during generation.';
         })();
-        if (errorMessage === 'AbortedByUser' || errorMessage.includes('AbortError')) {
+        if (isAiRuntimeConfigurationChangedError(error)) {
+            const parsed = thinkParser.snapshot();
+            updateChatMessage(assistantMsgId, {
+                isStreaming: false,
+                content: parsed.content,
+                reasoning: parsed.reasoning,
+                error: 'Hosted AI configuration changed; this response was cancelled.',
+            });
+            llmStatusStore.set({ state: 'idle' });
+            return;
+        }
+
+        const wasAborted =
+            aborter.signal.aborted ||
+            (error instanceof Error && error.name === 'AbortError') ||
+            errorMessage === 'AbortedByUser' ||
+            errorMessage.includes('AbortError');
+        if (wasAborted) {
             // Clean abort, leave generated partial content intact and strip parsing blocks
             const parsed = thinkParser.snapshot();
             updateChatMessage(assistantMsgId, {
@@ -346,12 +435,30 @@ export async function sendChatMessage(userText: string): Promise<void> {
                 content: parsed.content,
                 reasoning: parsed.reasoning,
             });
+            const currentPreference = aiBackendPreferenceStore.value ?? 'auto';
+            if (currentPreference !== 'auto' && currentPreference !== backend) {
+                llmStatusStore.set({ state: 'idle' });
+            } else if (
+                previousLlmStatus?.state === 'ready' &&
+                previousLlmStatus.backend === 'cloud' &&
+                !isCloudAvailable()
+            ) {
+                llmStatusStore.set({ state: 'idle' });
+            } else {
+                llmStatusStore.set(previousLlmStatus ?? { state: 'idle' });
+            }
         } else {
+            const parsed = thinkParser.snapshot();
+            const hasPartialContent = parsed.content.length > 0 || (parsed.reasoning?.length ?? 0) > 0;
             updateChatMessage(assistantMsgId, {
                 isStreaming: false,
                 error: errorMessage,
-                content: 'Sorry, I encountered an error while thinking about that.',
+                content: hasPartialContent
+                    ? `${parsed.content}\n\n_Response incomplete because the provider stream failed._`
+                    : 'Sorry, I encountered an error while thinking about that.',
+                reasoning: parsed.reasoning,
             });
+            llmStatusStore.set({ state: 'error', message: errorMessage });
         }
     } finally {
         setActiveAborter(null);

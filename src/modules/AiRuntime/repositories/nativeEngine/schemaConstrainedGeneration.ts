@@ -1,4 +1,6 @@
-import { isTauri, tauriInvoke, createChannel } from '#/utils/tauriBridge';
+import { isTauri, createChannel } from '#/utils/tauriBridge';
+
+import { invokeCancelableNativeLlm } from './invokeCancelableNativeLlm';
 
 type SchemaConstrainedStreamEvent =
     { event: 'token'; data: { text: string } } | { event: 'done' } | { event: 'error'; data: { message: string } };
@@ -26,13 +28,16 @@ export async function generateSchemaConstrainedNativeCompletion(
     }
 
     let result = '';
-    let streamErrorMessage: string | null = null;
+    const streamState = { errorMessage: null as string | null };
 
     const channel = await createChannel<unknown>();
     channel.onmessage = (event: unknown) => {
+        if (input.signal?.aborted) {
+            return;
+        }
         const parsedEvent = narrowSchemaConstrainedStreamEvent(event);
         if (parsedEvent === null) {
-            streamErrorMessage = 'Invalid schema_constrained_generation event';
+            streamState.errorMessage = 'Invalid schema_constrained_generation event';
             return;
         }
 
@@ -43,27 +48,34 @@ export async function generateSchemaConstrainedNativeCompletion(
         }
 
         if (parsedEvent.event === 'error') {
-            streamErrorMessage = parsedEvent.data.message;
+            streamState.errorMessage = parsedEvent.data.message;
         }
     };
 
-    const invocation = tauriInvoke('schema_constrained_generation', {
-        systemPrompt: input.systemPrompt,
-        userMessage: input.userMessage,
-        jsonSchema: input.jsonSchema,
-        temperature: input.temperature ?? 0.1,
-        maxTokens: input.maxTokens ?? 2048,
-        onEvent: channel,
-    });
+    try {
+        await invokeCancelableNativeLlm({
+            command: 'schema_constrained_generation',
+            args: {
+                systemPrompt: input.systemPrompt,
+                userMessage: input.userMessage,
+                jsonSchema: input.jsonSchema,
+                temperature: input.temperature ?? 0.1,
+                maxTokens: input.maxTokens ?? 2048,
+                onEvent: channel,
+            },
+            timeoutMs: input.timeoutMs ?? DEFAULT_NATIVE_SCHEMA_TIMEOUT_MS,
+            signal: input.signal,
+            abortMessage: 'Native schema-constrained generation aborted',
+            timeoutMessage: `Native schema-constrained generation timed out after ${String(
+                input.timeoutMs ?? DEFAULT_NATIVE_SCHEMA_TIMEOUT_MS
+            )}ms`,
+        });
+    } finally {
+        channel.onmessage = () => undefined;
+    }
 
-    await raceWithWatchdog({
-        work: invocation,
-        timeoutMs: input.timeoutMs ?? DEFAULT_NATIVE_SCHEMA_TIMEOUT_MS,
-        signal: input.signal,
-    });
-
-    if (streamErrorMessage !== null) {
-        throw new Error(streamErrorMessage);
+    if (streamState.errorMessage !== null) {
+        throw new Error(streamState.errorMessage);
     }
 
     return result;
@@ -91,47 +103,6 @@ function narrowSchemaConstrainedStreamEvent(event: unknown): SchemaConstrainedSt
     }
 
     return null;
-}
-
-type RaceWithWatchdogInput<TWork> = {
-    work: Promise<TWork>;
-    timeoutMs: number;
-    signal?: AbortSignal;
-};
-
-type RaceWithWatchdogOutput<TWork> = Promise<TWork>;
-
-async function raceWithWatchdog<TWork>(input: RaceWithWatchdogInput<TWork>): RaceWithWatchdogOutput<TWork> {
-    if (input.signal?.aborted) {
-        throw new Error('Native schema-constrained generation aborted');
-    }
-
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let onAbort: (() => void) | undefined;
-
-    const guard = new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => {
-            reject(new Error(`Native schema-constrained generation timed out after ${String(input.timeoutMs)}ms`));
-        }, input.timeoutMs);
-
-        if (input.signal) {
-            onAbort = () => {
-                reject(new Error('Native schema-constrained generation aborted'));
-            };
-            input.signal.addEventListener('abort', onAbort, { once: true });
-        }
-    });
-
-    try {
-        return await Promise.race([input.work, guard]);
-    } finally {
-        if (timer !== undefined) {
-            clearTimeout(timer);
-        }
-        if (input.signal && onAbort) {
-            input.signal.removeEventListener('abort', onAbort);
-        }
-    }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

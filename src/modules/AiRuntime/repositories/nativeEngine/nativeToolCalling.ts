@@ -1,4 +1,6 @@
-import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
+import { isTauri } from '#/utils/tauriBridge';
+
+import { invokeCancelableNativeLlm } from './invokeCancelableNativeLlm';
 
 type NativeToolDefinition = {
     name: string;
@@ -16,6 +18,7 @@ type GenerateNativeToolCallsInput = {
     userMessage: string;
     tools: NativeToolDefinition[];
     temperature: number;
+    signal?: AbortSignal;
 };
 
 type GenerateNativeToolCallsOutput = Promise<NativeToolCallResult[] | null>;
@@ -25,11 +28,16 @@ export async function generateNativeToolCalls(input: GenerateNativeToolCallsInpu
         return null;
     }
 
-    const response = await tauriInvoke('native_tool_calling', {
-        systemPrompt: input.systemPrompt,
-        userMessage: input.userMessage,
-        tools: input.tools,
-        temperature: input.temperature,
+    const response = await invokeCancelableNativeLlm({
+        command: 'native_tool_calling',
+        args: {
+            systemPrompt: input.systemPrompt,
+            userMessage: input.userMessage,
+            tools: input.tools,
+            temperature: input.temperature,
+        },
+        signal: input.signal,
+        abortMessage: 'Native tool planning aborted',
     });
 
     return narrowNativeToolCallResults(response);

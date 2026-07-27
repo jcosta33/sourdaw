@@ -24,7 +24,7 @@ vi.mock('../../../../repositories/webLlm/unloadWebLlmEngine', () => ({
 describe('unloadEngine', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        llmStatusStore.set({ state: 'ready', modelId: 'test' });
+        llmStatusStore.set({ state: 'ready', backend: 'webllm', modelId: 'test' });
     });
 
     it('stops native engine if ready, unloads webllm, and sets state to idle', async () => {

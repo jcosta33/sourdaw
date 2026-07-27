@@ -1,5 +1,6 @@
-import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
+import { isTauri } from '#/utils/tauriBridge';
 
+import { invokeCancelableNativeLlm } from './invokeCancelableNativeLlm';
 import { BASE_URL } from './lifecycleState';
 
 /**
@@ -13,12 +14,21 @@ export async function generateNativeCompletion(
     options?: { temperature?: number; maxTokens?: number; signal?: AbortSignal }
 ): Promise<string> {
     if (isTauri()) {
-        return (await tauriInvoke('generate_native_completion', {
-            systemPrompt,
-            userMessage,
-            temperature: options?.temperature ?? 0.1,
-            maxTokens: options?.maxTokens ?? 2048,
-        })) as string;
+        const response = await invokeCancelableNativeLlm({
+            command: 'generate_native_completion',
+            args: {
+                systemPrompt,
+                userMessage,
+                temperature: options?.temperature ?? 0.1,
+                maxTokens: options?.maxTokens ?? 2048,
+            },
+            signal: options?.signal,
+            abortMessage: 'Native completion aborted',
+        });
+        if (typeof response !== 'string') {
+            throw new TypeError('Invalid generate_native_completion response: expected a string');
+        }
+        return response;
     }
 
     const response = await fetch(`${BASE_URL}/v1/chat/completions`, {

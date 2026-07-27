@@ -1,16 +1,19 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 
+import { isAiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
 import { createAiRuntimeError } from '../../errors/AiRuntimeError';
 import { WEBLLM_MODEL_ID } from '../../models/ModelInfo';
 import { DAW_TOOL_SCHEMAS, type ToolSchema } from '../../models/ToolDefinitions';
 import { generateCloudToolCalls } from '../../repositories/cloudLlm/cloudInference/generateCloudToolCalls';
+import { getCloudProviderInfo } from '../../repositories/cloudLlm/getCloudProviderInfo';
 import { generateNativeCompletion } from '../../repositories/nativeEngine/completions';
 import { isNativeEngineReady } from '../../repositories/nativeEngine/isNativeEngineReady';
 import { generateNativeToolCalls as generateNativeStructuredToolCalls } from '../../repositories/nativeEngine/nativeToolCalling';
 import { initWebLlmEngine } from '../../repositories/webLlm/initWebLlmEngine';
 import { isWebLlmLoaded } from '../../repositories/webLlm/isWebLlmLoaded';
 import { generateWebLlmToolCalls } from '../../repositories/webLlm/toolCalling';
+import { aiBackendPreferenceStore } from '../../stores/aiBackendPreferenceStore';
 import { llmStatusStore } from '../../stores/llmStatusStore';
 import { parseToolCallXml, type ToolCallResult } from '../../transformers/toolCallParser';
 import { selectToolsForPrompt } from '../../transformers/toolSelector';
@@ -82,11 +85,12 @@ export const generateToolCalls = inject({ logger })(({ logger }) => {
                     userMessage,
                     tools,
                     temperature: 0.1,
+                    signal,
                 }),
                 signal
             );
 
-            if (results !== null && results.length > 0) {
+            if (results !== null) {
                 logger.info(`[AI Engine] (native/structured) ${String(results.length)} tool call(s)`);
                 return results;
             }
@@ -168,7 +172,7 @@ export const generateToolCalls = inject({ logger })(({ logger }) => {
                     results = await waitForInference(cloudInference, signal);
                 } else if (backend === 'webllm') {
                     if (!isWebLlmLoaded()) {
-                        await waitForInference(initWebLlmEngine(), signal);
+                        await waitForInference(initWebLlmEngine(undefined, { signal }), signal);
                     }
                     const relevantTools =
                         toolSchemas === undefined
@@ -178,7 +182,7 @@ export const generateToolCalls = inject({ logger })(({ logger }) => {
                         `[AI Engine] (webllm) Using ${String(relevantTools.length)}/${String(availableTools.length)} tools`
                     );
                     results = await waitForInference(
-                        generateWebLlmToolCalls(systemPrompt, userMessage, relevantTools),
+                        generateWebLlmToolCalls(systemPrompt, userMessage, relevantTools, signal),
                         signal
                     );
                 } else {
@@ -198,15 +202,28 @@ export const generateToolCalls = inject({ logger })(({ logger }) => {
                         return 'native';
                     }
                     if (backend === 'cloud') {
-                        return 'claude';
+                        return getCloudProviderInfo()?.model ?? 'cloud';
                     }
                     return WEBLLM_MODEL_ID;
                 })();
-                llmStatusStore.set({ state: 'ready', modelId });
+                llmStatusStore.set({ state: 'ready', backend, modelId });
                 return results;
             } catch (error) {
+                if (isAiRuntimeConfigurationChangedError(error)) {
+                    llmStatusStore.set({ state: 'idle' });
+                    throw error;
+                }
                 if (signal?.aborted) {
-                    llmStatusStore.set(previousStatus);
+                    const currentPreference = aiBackendPreferenceStore.value ?? 'auto';
+                    if (
+                        currentPreference !== 'auto' &&
+                        previousStatus?.state === 'ready' &&
+                        previousStatus.backend !== currentPreference
+                    ) {
+                        llmStatusStore.set({ state: 'idle' });
+                    } else {
+                        llmStatusStore.set(previousStatus);
+                    }
                     throw createToolPlanningAbortError();
                 }
                 lastError = error instanceof Error ? error : new Error(String(error));

@@ -1,11 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-    CLOUD_MODEL_INFO as model_cloud_model_info,
     NATIVE_MODEL_INFO as model_native_model_info,
     WEBLLM_MODELS as model_webllm_models,
 } from '../../../models/ModelInfo';
-import { CLOUD_MODEL_INFO, NATIVE_MODEL_INFO, WEBLLM_MODELS } from '../modelInfo';
+import { NATIVE_MODEL_INFO, WEBLLM_MODELS } from '../modelInfo';
 
 describe('modelInfo', () => {
     it('should expose copied WebLLM model projections with every runtime field', () => {
@@ -17,10 +16,8 @@ describe('modelInfo', () => {
         }
     });
 
-    it('should expose copied native and cloud model projections with every runtime field', () => {
+    it('should expose a copied native model projection with every runtime field', () => {
         expect(NATIVE_MODEL_INFO).toEqual(model_native_model_info);
         expect(NATIVE_MODEL_INFO).not.toBe(model_native_model_info);
-        expect(CLOUD_MODEL_INFO).toEqual(model_cloud_model_info);
-        expect(CLOUD_MODEL_INFO).not.toBe(model_cloud_model_info);
     });
 });

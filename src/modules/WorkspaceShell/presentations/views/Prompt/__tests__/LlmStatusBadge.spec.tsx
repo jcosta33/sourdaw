@@ -14,15 +14,6 @@ const module_mocks = vi.hoisted(() => {
         huggingFaceId: 'Qwen/Qwen3-8B',
     };
 
-    const cloudModelInfo = {
-        id: 'claude-cloud',
-        displayName: 'Claude',
-        description: 'Cloud-hosted assistant.',
-        downloadSize: 'n/a',
-        ramUsage: 'n/a',
-        parameterCount: 'n/a',
-    };
-
     const webllmModels = [
         {
             id: 'Qwen3-1.7B-q4f16_1-MLC',
@@ -41,6 +32,7 @@ const module_mocks = vi.hoisted(() => {
             parameterCount: '4B',
         },
     ];
+    const backendPreference: { value: 'auto' | 'native' | 'webllm' | 'cloud' } = { value: 'auto' };
 
     return {
         is_llm_available: vi.fn(() => true),
@@ -48,10 +40,31 @@ const module_mocks = vi.hoisted(() => {
         unload_engine: vi.fn(() => Promise.resolve()),
         get_active_model_id: vi.fn(() => 'Qwen3-4B-q4f16_1-MLC'),
         native_model_info: nativeModelInfo,
-        cloud_model_info: cloudModelInfo,
         webllm_models: webllmModels,
+        hosted_provider_status: {
+            value: null as {
+                provider: 'anthropic' | 'openai' | 'openai-compatible';
+                model: string;
+                baseUrl: string | null;
+            } | null,
+        },
+        backend_preference: backendPreference,
+        backend_preference_store: {},
+        hosted_provider_status_store: {},
     };
 });
+
+vi.mock('#/infra/store/useStore', () => ({
+    useStore: (store: unknown) =>
+        store === module_mocks.backend_preference_store
+            ? module_mocks.backend_preference.value
+            : module_mocks.hosted_provider_status.value,
+}));
+
+vi.mock('#/modules/AiRuntime/stores', () => ({
+    aiBackendPreferenceStore: module_mocks.backend_preference_store,
+    hostedLlmProviderStatusStore: module_mocks.hosted_provider_status_store,
+}));
 
 vi.mock('#/modules/AiRuntime/useCases', () => ({
     isLlmAvailable: module_mocks.is_llm_available,
@@ -59,7 +72,6 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
     unloadEngine: module_mocks.unload_engine,
     getActiveModelId: module_mocks.get_active_model_id,
     NATIVE_MODEL_INFO: module_mocks.native_model_info,
-    CLOUD_MODEL_INFO: module_mocks.cloud_model_info,
     WEBLLM_MODELS: module_mocks.webllm_models,
 }));
 
@@ -70,15 +82,30 @@ describe('LlmStatusBadge', () => {
         module_mocks.resolve_backend.mockReturnValue('webllm');
         module_mocks.unload_engine.mockResolvedValue(undefined);
         module_mocks.get_active_model_id.mockReturnValue('Qwen3-4B-q4f16_1-MLC');
+        module_mocks.hosted_provider_status.value = null;
+        module_mocks.backend_preference.value = 'auto';
     });
 
-    it('renders a No GPU notice when no LLM backend is available', () => {
+    it('renders a generic unavailable notice in automatic mode', () => {
         module_mocks.is_llm_available.mockReturnValue(false);
 
         render(<LlmStatusBadge status={{ state: 'idle' }} onLoad={vi.fn()} />);
 
-        expect(screen.getByText('No GPU')).toBeInTheDocument();
+        expect(screen.getByText('AI unavailable')).toBeInTheDocument();
         expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    });
+
+    it.each([
+        ['cloud', 'Configure hosted AI'],
+        ['native', 'Native unavailable'],
+        ['webllm', 'WebGPU unavailable'],
+    ] as const)('shows the remedy for an unavailable %s preference', (preference, label) => {
+        module_mocks.backend_preference.value = preference;
+        module_mocks.is_llm_available.mockReturnValue(false);
+
+        render(<LlmStatusBadge status={{ state: 'idle' }} onLoad={vi.fn()} />);
+
+        expect(screen.getByText(label)).toBeInTheDocument();
     });
 
     it('shows a webllm load button naming the currently selected model', () => {
@@ -113,15 +140,15 @@ describe('LlmStatusBadge', () => {
         expect(onLoad).toHaveBeenCalledWith(undefined);
     });
 
-    it('connects to cloud AI without a model id when the backend is cloud', () => {
+    it('keeps hosted AI configured but unverified until the first request', () => {
         module_mocks.resolve_backend.mockReturnValue('cloud');
         const onLoad = vi.fn();
         render(<LlmStatusBadge status={{ state: 'idle' }} onLoad={onLoad} />);
 
-        fireEvent.click(screen.getByRole('button', { name: /Load AI/ }));
-        fireEvent.click(screen.getByRole('button', { name: 'Connect Cloud AI' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Hosted AI' }));
 
-        expect(onLoad).toHaveBeenCalledWith(undefined);
+        expect(screen.getByText('Configured credentials are verified on the first request.')).toBeInTheDocument();
+        expect(onLoad).not.toHaveBeenCalled();
     });
 
     it('shows a rounded loading percentage while a model downloads', () => {
@@ -136,7 +163,12 @@ describe('LlmStatusBadge', () => {
     });
 
     it('shows an AI Ready pill and unloads the engine from its panel', () => {
-        render(<LlmStatusBadge status={{ state: 'ready', modelId: 'Qwen3-4B-q4f16_1-MLC' }} onLoad={vi.fn()} />);
+        render(
+            <LlmStatusBadge
+                status={{ state: 'ready', backend: 'webllm', modelId: 'Qwen3-4B-q4f16_1-MLC' }}
+                onLoad={vi.fn()}
+            />
+        );
 
         fireEvent.click(screen.getByRole('button', { name: /AI Ready/ }));
         fireEvent.click(screen.getByRole('button', { name: 'Unload from Memory' }));
@@ -176,17 +208,45 @@ describe('LlmStatusBadge', () => {
 
         it('shows the cloud model description in the idle panel', () => {
             module_mocks.resolve_backend.mockReturnValue('cloud');
+            module_mocks.hosted_provider_status.value = {
+                provider: 'openai',
+                model: 'gpt-5.2',
+                baseUrl: 'https://api.openai.com/v1',
+            };
             render(<LlmStatusBadge status={{ state: 'idle' }} onLoad={vi.fn()} />);
 
-            fireEvent.click(screen.getByRole('button', { name: /Load AI/ }));
+            fireEvent.click(screen.getByRole('button', { name: 'Hosted AI' }));
 
-            expect(screen.getByText('Cloud-hosted assistant.')).toBeInTheDocument();
-            expect(screen.getByText('Connect Cloud AI')).toBeInTheDocument();
+            expect(screen.getByText('Direct browser connection to OpenAI using gpt-5.2.')).toBeInTheDocument();
+            expect(screen.getByText('OpenAI')).toBeInTheDocument();
+            expect(screen.getByText('Configured credentials are verified on the first request.')).toBeInTheDocument();
+        });
+
+        it('shows the configured hosted provider and model in the ready panel', () => {
+            module_mocks.resolve_backend.mockReturnValue('cloud');
+            module_mocks.hosted_provider_status.value = {
+                provider: 'openai-compatible',
+                model: 'qwen-local',
+                baseUrl: 'http://localhost:1234/v1',
+            };
+            render(
+                <LlmStatusBadge status={{ state: 'ready', backend: 'cloud', modelId: 'qwen-local' }} onLoad={vi.fn()} />
+            );
+
+            fireEvent.click(screen.getByRole('button', { name: /AI Ready/ }));
+
+            expect(screen.getByText('OpenAI-compatible · qwen-local')).toBeInTheDocument();
+            expect(screen.queryByText(/Claude/)).not.toBeInTheDocument();
         });
 
         it('shows the native display name and RAM in the ready panel', () => {
             module_mocks.resolve_backend.mockReturnValue('native');
-            render(<LlmStatusBadge status={{ state: 'ready', modelId: 'qwen3-8b-native' }} onLoad={vi.fn()} />);
+            render(
+                <LlmStatusBadge
+                    status={{ state: 'ready', backend: 'native', modelId: 'qwen3-8b-native' }}
+                    onLoad={vi.fn()}
+                />
+            );
 
             fireEvent.click(screen.getByRole('button', { name: /AI Ready/ }));
 
@@ -209,7 +269,12 @@ describe('LlmStatusBadge', () => {
         });
 
         it('closes the ready panel when clicking outside', () => {
-            render(<LlmStatusBadge status={{ state: 'ready', modelId: 'Qwen3-4B-q4f16_1-MLC' }} onLoad={vi.fn()} />);
+            render(
+                <LlmStatusBadge
+                    status={{ state: 'ready', backend: 'webllm', modelId: 'Qwen3-4B-q4f16_1-MLC' }}
+                    onLoad={vi.fn()}
+                />
+            );
 
             fireEvent.click(screen.getByRole('button', { name: /AI Ready/ }));
             expect(screen.getByText('Unload from Memory')).toBeInTheDocument();

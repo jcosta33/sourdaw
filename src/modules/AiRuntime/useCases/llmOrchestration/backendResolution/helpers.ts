@@ -1,8 +1,23 @@
+import { type AiBackend, type RunnableAiBackend } from '../../../models/LlmOrchestrationTypes';
 import { isCloudAvailable } from '../../../repositories/cloudLlm/isCloudAvailable';
+import { aiBackendPreferenceStore } from '../../../stores/aiBackendPreferenceStore';
+import { llmStatusStore } from '../../../stores/llmStatusStore';
 
 import { isNativeAiRuntimeAvailable } from './isNativeAiRuntimeAvailable';
 
-export type AiBackend = 'native' | 'webllm' | 'cloud' | 'none';
+function isWebLlmAvailable(): boolean {
+    return typeof navigator !== 'undefined' && 'gpu' in navigator;
+}
+
+function isBackendAvailable(backend: RunnableAiBackend): boolean {
+    if (backend === 'native') {
+        return isNativeAiRuntimeAvailable();
+    }
+    if (backend === 'webllm') {
+        return isWebLlmAvailable();
+    }
+    return isCloudAvailable();
+}
 
 /**
  * Resolve the primary backend for DSO edit planning.
@@ -16,10 +31,20 @@ export type AiBackend = 'native' | 'webllm' | 'cloud' | 'none';
  * No automatic fallback between model families.
  */
 export function resolveBackend(): AiBackend {
+    const preference = aiBackendPreferenceStore.value ?? 'auto';
+    if (preference !== 'auto') {
+        return isBackendAvailable(preference) ? preference : 'none';
+    }
+
+    const runtimeStatus = llmStatusStore.value;
+    if (runtimeStatus?.state === 'ready' && isBackendAvailable(runtimeStatus.backend)) {
+        return runtimeStatus.backend;
+    }
+
     if (isNativeAiRuntimeAvailable()) {
         return 'native';
     }
-    if (typeof navigator !== 'undefined' && 'gpu' in navigator) {
+    if (isWebLlmAvailable()) {
         return 'webllm';
     }
     if (isCloudAvailable()) {

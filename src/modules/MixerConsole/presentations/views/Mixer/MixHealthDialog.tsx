@@ -18,35 +18,56 @@ type MixHealthDialogProps = {
 };
 
 export const MixHealthDialog = ({ open, onOpenChange }: MixHealthDialogProps): ReactElement => {
-    const [isAnalyzing, setIsAnalyzing] = useState(false);
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            {open ? <MixHealthDialogContent onOpenChange={onOpenChange} /> : null}
+        </Dialog>
+    );
+};
+
+type MixHealthDialogContentProps = {
+    onOpenChange: (open: boolean) => void;
+};
+
+const MixHealthDialogContent = ({ onOpenChange }: MixHealthDialogContentProps): ReactElement => {
+    const [isAnalyzing, setIsAnalyzing] = useState(true);
     const [report, setReport] = useState('');
     const reportRef = useRef('');
+    const eli5ControllerRef = useRef<AbortController | null>(null);
 
     useEffect(() => {
-        if (open) {
-            setReport('');
-            reportRef.current = '';
-            setIsAnalyzing(true);
+        const controller = new AbortController();
 
-            const runAnalysis = async () => {
-                try {
-                    await mixHealthAnalysis((token) => {
+        const runAnalysis = async () => {
+            try {
+                await mixHealthAnalysis({
+                    signal: controller.signal,
+                    onToken: (token) => {
+                        if (controller.signal.aborted) {
+                            return;
+                        }
                         reportRef.current += token;
                         setReport(reportRef.current);
-                    });
-                } catch (error) {
+                    },
+                });
+            } catch (error) {
+                if (!controller.signal.aborted) {
                     logger.warn('Mix health analysis failed:', error);
                     setReport('Error generating mix health report. Make sure Cloud AI is connected.');
-                } finally {
+                }
+            } finally {
+                if (!controller.signal.aborted) {
                     setIsAnalyzing(false);
                 }
-            };
+            }
+        };
 
-            void runAnalysis();
-        } else {
-            setReport('');
-        }
-    }, [open]);
+        void runAnalysis();
+        return () => {
+            controller.abort();
+            eli5ControllerRef.current?.abort();
+        };
+    }, []);
 
     const handleELI5 = async () => {
         if (isAnalyzing || !report) {
@@ -54,12 +75,14 @@ export const MixHealthDialog = ({ open, onOpenChange }: MixHealthDialogProps): R
         }
 
         setIsAnalyzing(true);
+        const controller = new AbortController();
+        eli5ControllerRef.current = controller;
         const originalReport = report;
         reportRef.current = `${report}\n\n---\n\n### ELI5 Translation\n\n`;
         setReport(reportRef.current);
 
         try {
-            await streamCloudChatCompletion(
+            const outcome = await streamCloudChatCompletion(
                 [
                     { role: 'system', content: 'You are a patient music teacher for beginners.' },
                     {
@@ -68,66 +91,82 @@ export const MixHealthDialog = ({ open, onOpenChange }: MixHealthDialogProps): R
                     },
                 ],
                 (token) => {
+                    if (controller.signal.aborted) {
+                        return;
+                    }
                     reportRef.current += token;
                     setReport(reportRef.current);
-                }
+                },
+                { signal: controller.signal }
             );
+            if (controller.signal.aborted) {
+                return;
+            }
+            if (outcome.status === 'incomplete') {
+                reportRef.current += `\n[Hosted AI response incomplete: ${outcome.reason}]`;
+                setReport(reportRef.current);
+            }
         } catch (error) {
-            logger.warn('ELI5 generation failed:', error);
-            reportRef.current += '\n[Error generating ELI5 explanation]';
-            setReport(reportRef.current);
+            if (!controller.signal.aborted) {
+                logger.warn('ELI5 generation failed:', error);
+                reportRef.current += '\n[Error generating ELI5 explanation]';
+                setReport(reportRef.current);
+            }
         } finally {
-            setIsAnalyzing(false);
+            if (eli5ControllerRef.current === controller) {
+                eli5ControllerRef.current = null;
+            }
+            if (!controller.signal.aborted) {
+                setIsAnalyzing(false);
+            }
         }
     };
 
     return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="max-w-2xl gap-0 overflow-hidden p-0 text-foreground">
-                <DialogTitle className="sr-only">AI Music Mentor: Mix Health</DialogTitle>
-                <DawHeaderBand
-                    className="px-4 py-3"
-                    startSlot={<Sparkles className="size-3.5 text-[var(--color-accent-lavender)]" />}
-                    title="AI Music Mentor: Mix Health"
-                    titleClassName="text-[11px] text-foreground normal-case tracking-normal"
-                />
+        <DialogContent className="max-w-2xl gap-0 overflow-hidden p-0 text-foreground">
+            <DialogTitle className="sr-only">AI Music Mentor: Mix Health</DialogTitle>
+            <DawHeaderBand
+                className="px-4 py-3"
+                startSlot={<Sparkles className="size-3.5 text-[var(--color-accent-lavender)]" />}
+                title="AI Music Mentor: Mix Health"
+                titleClassName="text-[11px] text-foreground normal-case tracking-normal"
+            />
 
-                <DawDialogBody scrollable className="min-h-[200px] max-h-[500px] px-4 py-4 text-sm leading-relaxed">
-                    <DawDialogSection
-                        title="Analysis"
-                        detail={report ? 'Cloud mentor report' : 'Generating a fresh read on the current mix'}
-                    >
-                        {report ? (
-                            <div className="prose prose-invert prose-sm max-w-none">
-                                <ReactMarkdown>{report}</ReactMarkdown>
-                            </div>
-                        ) : null}
+            <DawDialogBody scrollable className="min-h-[200px] max-h-[500px] px-4 py-4 text-sm leading-relaxed">
+                <DawDialogSection
+                    title="Analysis"
+                    detail={report ? 'Cloud mentor report' : 'Generating a fresh read on the current mix'}
+                >
+                    {report ? (
+                        <div className="prose prose-invert prose-sm max-w-none">
+                            <ReactMarkdown>{report}</ReactMarkdown>
+                        </div>
+                    ) : null}
 
-                        {isAnalyzing ? (
-                            <div className="flex items-center gap-2 pt-4 text-muted-foreground">
-                                <Loader2 className="size-4 animate-spin" />
-                                <span>Mentor is thinking...</span>
-                            </div>
-                        ) : null}
-                    </DawDialogSection>
-                </DawDialogBody>
+                    {isAnalyzing ? (
+                        <div className="flex items-center gap-2 pt-4 text-muted-foreground">
+                            <Loader2 className="size-4 animate-spin" />
+                            <span>Mentor is thinking...</span>
+                        </div>
+                    ) : null}
+                </DawDialogSection>
+            </DawDialogBody>
 
-                <DawDialogFooter>
-                    <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={handleELI5}
-                        disabled={isAnalyzing || !report}
-                        className="bg-[var(--color-accent-lavender)]/10 text-[var(--color-accent-lavender)] hover:bg-[var(--color-accent-lavender)]/20 border-[var(--color-accent-lavender)]/20"
-                    >
-                        <GraduationCap className="size-4 mr-2" />
-                        Explain Like I'm 5
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
-                        Close
-                    </Button>
-                </DawDialogFooter>
-            </DialogContent>
-        </Dialog>
+            <DawDialogFooter>
+                <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleELI5}
+                    disabled={isAnalyzing || !report}
+                    className="bg-[var(--color-accent-lavender)]/10 text-[var(--color-accent-lavender)] hover:bg-[var(--color-accent-lavender)]/20 border-[var(--color-accent-lavender)]/20"
+                >
+                    <GraduationCap className="size-4 mr-2" />
+                    Explain Like I'm 5
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
+                    Close
+                </Button>
+            </DawDialogFooter>
+        </DialogContent>
     );
 };

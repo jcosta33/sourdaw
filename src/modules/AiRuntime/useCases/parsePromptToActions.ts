@@ -1,6 +1,7 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 
+import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
 import { type IntentResult } from '../models/IntentResult';
 import {
     bridgeLlmToolCalls,
@@ -114,6 +115,9 @@ export const parsePromptToActions = inject({ logger })(
                     logger.warn('[AI] Rejected LLM action batch because runtime validation removed an action');
                 }
             } catch (error) {
+                if (isAiRuntimeConfigurationChangedError(error)) {
+                    throw error;
+                }
                 if (signal?.aborted) {
                     return { actions: [], rawText: prompt, requiresConfirmation: false };
                 }

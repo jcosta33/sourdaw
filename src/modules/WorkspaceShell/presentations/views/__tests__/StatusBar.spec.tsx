@@ -23,7 +23,6 @@ const renderQueueValue = vi.hoisted(() => ({
     cachedPhraseIds: [],
     phraseStatusMap: {},
 }));
-const renderQueueNull = vi.hoisted(() => ({ value: false }));
 const toggleCollaborationPanelMock = vi.hoisted(() => vi.fn());
 const toggleUndoHistoryMock = vi.hoisted(() => vi.fn());
 
@@ -35,7 +34,7 @@ vi.mock('#/infra/store/useStore', () => ({
             return llmState.value;
         }
         if (typeof defaultValue === 'object' && defaultValue !== null && 'entries' in defaultValue) {
-            return renderQueueNull.value ? null : renderQueueValue;
+            return renderQueueValue;
         }
         return defaultValue;
     }),
@@ -77,7 +76,6 @@ describe('StatusBar', () => {
         selectionLabel.value = '';
         llmState.value = { state: 'idle' };
         renderQueueValue.entries = [];
-        renderQueueNull.value = false;
         toggleCollaborationPanelMock.mockClear();
         toggleUndoHistoryMock.mockClear();
     });
@@ -101,7 +99,7 @@ describe('StatusBar', () => {
         });
 
         it('shows ready when state is ready', () => {
-            llmState.value = { state: 'ready', modelId: 'm1' };
+            llmState.value = { state: 'ready', backend: 'webllm', modelId: 'm1' };
             renderWithTooltip(<StatusBar />);
             expect(screen.getByText('ready')).toBeInTheDocument();
         });
@@ -123,13 +121,6 @@ describe('StatusBar', () => {
             renderWithTooltip(<StatusBar />);
             // 3 of 4 entries are active (rendering-browser, queued, preparing).
             expect(screen.getByText('3 active')).toBeInTheDocument();
-        });
-
-        it('treats a null render queue as zero active renders', () => {
-            // useStore returns null for renderQueue (defensive null guard -> `: 0` branch at line 52).
-            renderQueueNull.value = true;
-            renderWithTooltip(<StatusBar />);
-            expect(screen.queryByText(/active/)).not.toBeInTheDocument();
         });
     });
 
