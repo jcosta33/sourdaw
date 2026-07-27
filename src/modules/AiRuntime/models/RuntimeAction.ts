@@ -178,7 +178,16 @@ export type RuntimeAction =
     | { type: 'setDeviceParameter'; payload: { deviceId: string; paramId: string; value: number } }
     | { type: 'createBus'; payload: { name: string } }
     | { type: 'createFolder'; payload: { name: string } }
-    | { type: 'setSend'; payload: { trackId: string; busId: string; level: number } }
+    | {
+          type: 'setSend';
+          payload: {
+              trackId: string;
+              busId: string;
+              level: number;
+              expectedLevel?: number;
+              expectedPreFader?: boolean;
+          };
+      }
     | { type: 'setWorkspaceMode'; payload: { mode: 'arrange' | 'clip' } }
     | { type: 'openPreferencesDialog'; payload?: undefined }
     | { type: 'openMixer'; payload?: undefined }
@@ -261,9 +270,18 @@ export type RuntimeAction =
     | { type: 'zoomTracksVertical'; payload: { delta: number } }
     | { type: 'addTimeSignatureChange'; payload: { beat: number; numerator: number; denominator: number } }
     | { type: 'removeTimeSignatureChange'; payload: { beat: number } }
-    | { type: 'setTrackOutput'; payload: { trackId: string; outputId: string } }
-    | { type: 'addSend'; payload: { trackId: string; busId: string; level: number } }
-    | { type: 'removeSend'; payload: { trackId: string; busId: string } }
+    | {
+          type: 'setTrackOutput';
+          payload: { trackId: string; outputId: string; expectedOutputId?: string };
+      }
+    | {
+          type: 'addSend';
+          payload: { trackId: string; busId: string; level: number; preFader?: boolean; expectedAbsent?: true };
+      }
+    | {
+          type: 'removeSend';
+          payload: { trackId: string; busId: string; expectedLevel?: number; expectedPreFader?: boolean };
+      }
     | { type: 'removeAutomationPoint'; payload: { laneId: string; pointIndex: number } }
     | { type: 'setAutomationMode'; payload: { trackId: string; mode: 'read' | 'write' | 'touch' | 'latch' | 'off' } }
     | { type: 'hideTrack'; payload: { trackId: string; hidden: boolean } }

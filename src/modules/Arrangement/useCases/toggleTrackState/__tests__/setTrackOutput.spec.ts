@@ -36,7 +36,7 @@ describe('setTrackOutput', () => {
             if (trackId === 't1') {
                 return { id: 't1', kind: 'audio' };
             }
-            return undefined;
+            return { id: 'bus-main', kind: 'bus' };
         });
 
         const didWrite = setTrackOutput('t1', 'bus-main');
@@ -53,6 +53,41 @@ describe('setTrackOutput', () => {
         expect(didWrite).toBe(true);
     });
 
+    it('defers the live engine route until the project transaction commits', () => {
+        mocks.getTrackById.mockImplementation((trackId: string) => {
+            if (trackId === 't1') {
+                return { id: 't1', kind: 'audio' };
+            }
+            return { id: 'bus-main', kind: 'bus' };
+        });
+
+        const runtimeEffect = setTrackOutput('t1', 'bus-main', { deferRuntimeEffect: true });
+
+        expect(mocks.updateTrack).toHaveBeenCalledWith('t1', expect.any(Function));
+        expect(mocks.engineSetTrackOutput).not.toHaveBeenCalled();
+        if (!runtimeEffect) {
+            throw new Error('expected a deferred runtime effect');
+        }
+        runtimeEffect.afterCommit();
+        runtimeEffect.afterCommit();
+        expect(mocks.engineSetTrackOutput).toHaveBeenCalledOnce();
+        expect(mocks.engineSetTrackOutput).toHaveBeenCalledWith('t1', 'bus-main');
+
+        mocks.getTrackById.mockReturnValue({ id: 't1', kind: 'audio', outputId: 'master' });
+        runtimeEffect.afterAmbiguousCommit();
+        expect(mocks.engineSetTrackOutput).toHaveBeenLastCalledWith('t1', 'master');
+    });
+
+    it('rejects a missing source before project or engine work', () => {
+        mocks.getTrackById.mockReturnValue(undefined);
+
+        const didWrite = setTrackOutput('missing', 'bus-main');
+
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(mocks.engineSetTrackOutput).not.toHaveBeenCalled();
+        expect(didWrite).toBe(false);
+    });
+
     it('preserves Toaster pad ownership across audible output round-trips', () => {
         const parent = {
             id: 'toaster-parent',
@@ -61,7 +96,15 @@ describe('setTrackOutput', () => {
         };
         const child = { id: 'pad-track', kind: 'audio', parentId: parent.id };
         mocks.getAllTracks.mockReturnValue([parent, child]);
-        mocks.getTrackById.mockImplementation((trackId: string) => (trackId === child.id ? child : undefined));
+        mocks.getTrackById.mockImplementation((trackId: string) => {
+            if (trackId === child.id) {
+                return child;
+            }
+            if (trackId === 'return-bus') {
+                return { id: 'return-bus', kind: 'bus' };
+            }
+            return undefined;
+        });
 
         setTrackOutput(child.id, 'return-bus');
         setTrackOutput(child.id, 'master');
@@ -75,6 +118,18 @@ describe('setTrackOutput', () => {
         mocks.getTrackById.mockReturnValue({ id: 'vca-1', kind: 'vca' });
 
         const didWrite = setTrackOutput('vca-1', 'bus-main');
+
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(mocks.engineSetTrackOutput).not.toHaveBeenCalled();
+        expect(didWrite).toBe(false);
+    });
+
+    it('rejects a missing non-terminal destination before project or engine work', () => {
+        mocks.getTrackById.mockImplementation((trackId: string) =>
+            trackId === 'audio-1' ? { id: 'audio-1', kind: 'audio' } : undefined
+        );
+
+        const didWrite = setTrackOutput('audio-1', 'deleted-bus');
 
         expect(mocks.updateTrack).not.toHaveBeenCalled();
         expect(mocks.engineSetTrackOutput).not.toHaveBeenCalled();

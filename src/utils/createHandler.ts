@@ -17,11 +17,13 @@ export function createHandler<ActionType extends AppAction['type']>(config: {
     ) => void | HandlerExecutionResult | Promise<void | HandlerExecutionResult>;
     describe: (action: Extract<AppAction, { type: ActionType }>) => HandlerDescribeResult;
     isNoop?: (action: Extract<AppAction, { type: ActionType }>) => boolean;
+    requiresAbortCompensation?: boolean;
 }): ActionHandler<Extract<AppAction, { type: ActionType }>> {
     return {
         undoable: config.undoable,
         execute: config.execute,
         describe: config.describe,
         isNoop: config.isNoop,
+        requiresAbortCompensation: config.requiresAbortCompensation,
     };
 }

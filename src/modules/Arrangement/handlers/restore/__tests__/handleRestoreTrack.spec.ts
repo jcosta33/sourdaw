@@ -33,6 +33,7 @@ const mocks = vi.hoisted(() => {
         restoreSidechainRoutes: vi.fn(),
         restoreTrackModulationReferences: vi.fn(),
         setBusGain: vi.fn(),
+        wireSidechainRoutes: vi.fn(),
         restoreMidiClipData: vi.fn<(input: RestoreMidiClipDataInput) => void>(),
         getTakeLaneStoreValue: vi.fn((): TakeLaneStoreState | null => takeLaneStoreState.value),
         setTakeLaneStore: vi.fn((nextState: TakeLaneStoreState): void => {
@@ -74,6 +75,7 @@ vi.mock('#/modules/Routing/useCases', () => ({
     ensureBusStrip: mocks.ensureBusStrip,
     restoreSidechainRoutes: mocks.restoreSidechainRoutes,
     setBusGain: mocks.setBusGain,
+    wireSidechainRoutes: mocks.wireSidechainRoutes,
 }));
 
 vi.mock('../../../stores/takeLaneStore', () => ({
@@ -226,6 +228,45 @@ describe('handleRestoreTrack', () => {
         expect(mocks.setTakeLaneStore).not.toHaveBeenCalled();
         expect(mocks.restoreTrackModulationReferences).not.toHaveBeenCalled();
         expect(mocks.restoreSidechainRoutes).not.toHaveBeenCalled();
+    });
+
+    it('rebuilds only a restored track present in durable truth after an ambiguous commit', async () => {
+        const restored = TrackDummy.create({ id: 'track-1', name: 'Committed', kind: 'audio' });
+        const initialState: TrackStoreState = { tracks: [], selectedTrackId: null, ghostClips: [] };
+        const action = createRestoreTrackAction({ trackSnapshot: restored });
+        mocks.getTrackStoreState.mockReturnValue(initialState);
+        const result = await handleRestoreTrack.execute(action);
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [restored],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+
+        await result?.afterAmbiguousCommit?.();
+
+        expect(mocks.projectTrackToLiveStrip).toHaveBeenCalledWith({
+            trackId: 'track-1',
+            deferSidechainWiring: true,
+            activateDormantExternalPlugins: true,
+        });
+        expect(mocks.wireSidechainRoutes).toHaveBeenCalledOnce();
+        expect(mocks.publishTrackAdded).toHaveBeenCalledWith({
+            trackId: 'track-1',
+            name: 'Committed',
+            kind: 'audio',
+        });
+    });
+
+    it('still reconciles durable sidechain truth when the track restore did not commit', async () => {
+        const initialState: TrackStoreState = { tracks: [], selectedTrackId: null, ghostClips: [] };
+        mocks.getTrackStoreState.mockReturnValue(initialState);
+        const result = await handleRestoreTrack.execute(createRestoreTrackAction());
+
+        await result?.afterAmbiguousCommit?.();
+
+        expect(mocks.wireSidechainRoutes).toHaveBeenCalledOnce();
+        expect(mocks.projectTrackToLiveStrip).not.toHaveBeenCalled();
+        expect(mocks.publishTrackAdded).not.toHaveBeenCalled();
     });
 
     it('restores original ordering, selection, and survivor routing snapshots', async () => {

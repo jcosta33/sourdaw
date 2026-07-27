@@ -1,6 +1,6 @@
 import { restoreAutomationLanes, restoreTrackModulationReferences } from '#/modules/Automation/useCases';
 import { restoreMidiClipData } from '#/modules/MIDI/useCases';
-import { ensureBusStrip, restoreSidechainRoutes, setBusGain } from '#/modules/Routing/useCases';
+import { ensureBusStrip, restoreSidechainRoutes, setBusGain, wireSidechainRoutes } from '#/modules/Routing/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { runAllAsyncEffects } from '#/utils/runEffects';
 
@@ -135,9 +135,53 @@ export const handleRestoreTrack = createHandler<'restoreTrack'>({
                 );
                 return runAllAsyncEffects(effects);
             },
+            afterAmbiguousCommit: async () => {
+                const committedState = getTrackStoreState();
+                const committedTrack = committedState?.tracks.find((track) => track.id === alpha.payload.trackId);
+                if (!committedState || !committedTrack) {
+                    wireSidechainRoutes();
+                    return;
+                }
+                const effects: Array<() => void | Promise<void>> = [];
+                if (committedTrack.kind === 'bus') {
+                    effects.push(
+                        () => ensureBusStrip(committedTrack.id),
+                        () => setBusGain(committedTrack.id, committedTrack.gain)
+                    );
+                }
+                effects.push(() =>
+                    projectTrackToLiveStrip({
+                        trackId: committedTrack.id,
+                        deferSidechainWiring: true,
+                        activateDormantExternalPlugins: true,
+                    })
+                );
+                for (const patch of routingPatches) {
+                    if (committedState.tracks.some((track) => track.id === patch.trackId)) {
+                        effects.push(() =>
+                            projectTrackToLiveStrip({
+                                trackId: patch.trackId,
+                                deferSidechainWiring: true,
+                            })
+                        );
+                    }
+                }
+                effects.push(
+                    () => refreshToasterPadBindings(committedState.tracks, committedTrack.parentId),
+                    () => wireSidechainRoutes(),
+                    () =>
+                        publishTrackAdded({
+                            trackId: committedTrack.id,
+                            name: committedTrack.name,
+                            kind: committedTrack.kind,
+                        })
+                );
+                await runAllAsyncEffects(effects);
+            },
         };
     },
     describe: () => ({ label: 'Restore track' }),
+    requiresAbortCompensation: false,
     undoable: false,
 });
 

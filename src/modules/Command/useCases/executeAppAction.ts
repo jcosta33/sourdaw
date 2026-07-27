@@ -123,7 +123,16 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                     );
                 }
                 if (error instanceof AutomergeStorageTransactionCommittedError) {
-                    const committed_error = new AppActionCommittedError(action.type, error.cause);
+                    let committedCause = error.cause;
+                    try {
+                        await execution_result?.afterAmbiguousCommit?.();
+                    } catch (reconciliationError) {
+                        committedCause = new AggregateError(
+                            [error.cause, reconciliationError],
+                            'Storage commit and runtime reconciliation both failed'
+                        );
+                    }
+                    const committed_error = new AppActionCommittedError(action.type, committedCause);
                     logger.error(committed_error);
                     throw committed_error;
                 }

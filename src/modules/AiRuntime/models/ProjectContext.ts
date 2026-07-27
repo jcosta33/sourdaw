@@ -39,6 +39,7 @@ export type ProjectContextDeviceParameter = {
 export type ProjectContextSend = {
     busId: string;
     level: number;
+    preFader: boolean;
 };
 
 export type ProjectContextTrack = {
@@ -50,6 +51,7 @@ export type ProjectContextTrack = {
     armed: boolean;
     gain: number;
     pan: number;
+    outputId?: string;
     clipCount: number;
     deviceCount: number;
     clips: ProjectContextClip[];

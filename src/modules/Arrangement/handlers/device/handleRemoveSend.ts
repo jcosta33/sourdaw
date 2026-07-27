@@ -5,13 +5,28 @@ import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 
 export const handleRemoveSend = createHandler<'removeSend'>({
     execute: (alpha) => {
-        removeSend(alpha.payload.trackId, alpha.payload.busId);
+        const existing = getTrackStoreState()
+            ?.tracks.find((track) => track.id === alpha.payload.trackId)
+            ?.sends.find((send) => send.busId === alpha.payload.busId);
+        if (
+            (alpha.payload.expectedLevel !== undefined && existing?.level !== alpha.payload.expectedLevel) ||
+            (alpha.payload.expectedPreFader !== undefined && existing?.preFader !== alpha.payload.expectedPreFader)
+        ) {
+            return { status: 'conflict' };
+        }
+        const runtimeEffect = removeSend(alpha.payload.trackId, alpha.payload.busId, {
+            deferRuntimeEffect: true,
+        });
+        if (!runtimeEffect) {
+            return { status: 'conflict' };
+        }
+        return {
+            status: 'written',
+            afterCommit: runtimeEffect.afterCommit,
+            afterAmbiguousCommit: runtimeEffect.afterAmbiguousCommit,
+        };
     },
     describe: (alpha) => {
-        // Undo re-creates the send at its captured level through setSend, which
-        // also re-wires the engine route. Known limitation: the action payload
-        // carries no preFader flag, so an undone pre-fader send returns as
-        // post-fader (setSend's default for new sends).
         const existing = getTrackStoreState()
             ?.tracks.find((time) => time.id === alpha.payload.trackId)
             ?.sends.find((state) => state.busId === alpha.payload.busId);
@@ -19,11 +34,18 @@ export const handleRemoveSend = createHandler<'removeSend'>({
             label: 'Remove send',
             inverseAction: existing
                 ? {
-                      type: 'setSend',
-                      payload: { trackId: alpha.payload.trackId, busId: alpha.payload.busId, level: existing.level },
+                      type: 'addSend',
+                      payload: {
+                          trackId: alpha.payload.trackId,
+                          busId: alpha.payload.busId,
+                          level: existing.level,
+                          preFader: existing.preFader,
+                          expectedAbsent: true,
+                      },
                   }
                 : null,
         };
     },
+    requiresAbortCompensation: false,
     undoable: true,
 });

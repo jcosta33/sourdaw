@@ -4,7 +4,11 @@ import { handleRemoveSend } from '../handleRemoveSend';
 
 const mocks = vi.hoisted(() => ({
     removeSend: vi.fn(),
-    getTrackStoreState: vi.fn<() => { tracks: { id: string; sends: { busId: string; level: number }[] }[] } | null>(),
+    getTrackStoreState: vi.fn<
+        () => {
+            tracks: { id: string; sends: { busId: string; level: number; preFader: boolean }[] }[];
+        } | null
+    >(),
 }));
 
 vi.mock('../../../useCases/device/sendManagement/removeSend', () => ({
@@ -22,12 +26,56 @@ describe('handleRemoveSend', () => {
     });
 
     it('executes removeSend with the provided payload', () => {
-        void handleRemoveSend.execute({
+        const finalizeRuntimeEffect = vi.fn();
+        const reconcileRuntimeEffect = vi.fn();
+        mocks.removeSend.mockReturnValue({
+            afterCommit: finalizeRuntimeEffect,
+            afterAmbiguousCommit: reconcileRuntimeEffect,
+        });
+        const result = handleRemoveSend.execute({
             type: 'removeSend',
             payload: { trackId: 't1', busId: 'bus-1' },
         });
 
-        expect(mocks.removeSend).toHaveBeenCalledWith('t1', 'bus-1');
+        expect(mocks.removeSend).toHaveBeenCalledWith('t1', 'bus-1', { deferRuntimeEffect: true });
+        expect(finalizeRuntimeEffect).not.toHaveBeenCalled();
+        if (!result || result instanceof Promise) {
+            throw new Error('expected a synchronous handler result');
+        }
+        result.afterCommit?.();
+        expect(finalizeRuntimeEffect).toHaveBeenCalledOnce();
+        result.afterAmbiguousCommit?.();
+        expect(reconcileRuntimeEffect).toHaveBeenCalledOnce();
+    });
+
+    it('reports a conflict when the send disappeared before execution', () => {
+        mocks.removeSend.mockReturnValue(null);
+
+        const result = handleRemoveSend.execute({
+            type: 'removeSend',
+            payload: { trackId: 't1', busId: 'bus-1' },
+        });
+
+        expect(result).toEqual({ status: 'conflict' });
+    });
+
+    it('rejects a conditional remove after the send changed again', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', sends: [{ busId: 'bus-1', level: 0.8, preFader: true }] }],
+        });
+
+        const result = handleRemoveSend.execute({
+            type: 'removeSend',
+            payload: {
+                trackId: 't1',
+                busId: 'bus-1',
+                expectedLevel: 0.5,
+                expectedPreFader: true,
+            },
+        });
+
+        expect(result).toEqual({ status: 'conflict' });
+        expect(mocks.removeSend).not.toHaveBeenCalled();
     });
 
     it('provides a description', () => {
@@ -41,7 +89,7 @@ describe('handleRemoveSend', () => {
 
     it('describes an inverse re-creating the send at its previous level', () => {
         mocks.getTrackStoreState.mockReturnValue({
-            tracks: [{ id: 't1', sends: [{ busId: 'bus-1', level: 0.7 }] }],
+            tracks: [{ id: 't1', sends: [{ busId: 'bus-1', level: 0.7, preFader: true }] }],
         });
 
         const desc = handleRemoveSend.describe({
@@ -50,8 +98,14 @@ describe('handleRemoveSend', () => {
         });
 
         expect(desc.inverseAction).toEqual({
-            type: 'setSend',
-            payload: { trackId: 't1', busId: 'bus-1', level: 0.7 },
+            type: 'addSend',
+            payload: {
+                trackId: 't1',
+                busId: 'bus-1',
+                level: 0.7,
+                preFader: true,
+                expectedAbsent: true,
+            },
         });
     });
 

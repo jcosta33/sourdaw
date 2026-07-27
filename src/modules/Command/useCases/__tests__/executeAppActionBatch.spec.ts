@@ -46,11 +46,13 @@ function createHandler<Action extends AppAction>(input: {
     execute: ActionHandler<Action>['execute'];
     describe?: ActionHandler<Action>['describe'];
     isNoop?: ActionHandler<Action>['isNoop'];
+    requiresAbortCompensation?: boolean;
 }): ActionHandler<Action> {
     return {
         execute: input.execute,
         describe: input.describe ?? ((action) => ({ label: 'Batch action', inverseAction: action })),
         isNoop: input.isNoop,
+        requiresAbortCompensation: input.requiresAbortCompensation,
         undoable: true,
     };
 }
@@ -117,7 +119,7 @@ describe('executeAppActionBatch', () => {
         const afterCommit = vi.fn();
         registerHandlerMap({
             setEditingTool: createHandler<SetEditingToolAction>({
-                execute: () => ({ status: 'written', afterCommit }),
+                execute: () => ({ status: 'written', afterCommit, afterAmbiguousCommit: afterCommit }),
             }),
         });
 
@@ -131,7 +133,7 @@ describe('executeAppActionBatch', () => {
         const afterCommit = vi.fn().mockRejectedValue(new Error('event unavailable'));
         registerHandlerMap({
             setEditingTool: createHandler<SetEditingToolAction>({
-                execute: () => ({ status: 'written', afterCommit }),
+                execute: () => ({ status: 'written', afterCommit, afterAmbiguousCommit: afterCommit }),
             }),
         });
 
@@ -177,7 +179,7 @@ describe('executeAppActionBatch', () => {
                 execute: (action) => {
                     runtimeEffects.editingTool = action.payload.tool;
                     editingToolStorage.set({ tool: action.payload.tool });
-                    return { status: 'written', afterCommit };
+                    return { status: 'written', afterCommit, afterAmbiguousCommit: afterCommit };
                 },
                 describe: () => ({
                     label: 'Set editing tool',
@@ -218,6 +220,85 @@ describe('executeAppActionBatch', () => {
         expect(mocks.recordAction).not.toHaveBeenCalled();
         expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
         expect(afterCommit).not.toHaveBeenCalled();
+    });
+
+    it('does not compensate a deferred-only action after storage abort restores its write', async () => {
+        const failure = new Error('second action failed');
+        const document: Record<string, unknown> = {
+            editingTool: { tool: 'select' },
+            snapValue: { value: 1 },
+        };
+        configureAutomergeStoragePort({
+            getDoc: () => document,
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: ({ changeFn }) => changeFn(document),
+        });
+        const editingToolStorage = createAutomergeStorage<{ tool: string }>('root', 'editingTool');
+        const afterCommit = vi.fn();
+        const executeEditingTool = vi.fn((action: SetEditingToolAction) => {
+            editingToolStorage.set({ tool: action.payload.tool });
+            return {
+                status: 'written' as const,
+                afterCommit,
+                afterAmbiguousCommit: afterCommit,
+            };
+        });
+        expect(editingToolStorage.hydrate?.()).toBe(true);
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({
+                execute: executeEditingTool,
+                requiresAbortCompensation: false,
+                describe: () => ({
+                    label: 'Set editing tool',
+                    inverseAction: { type: 'setEditingTool', payload: { tool: 'select' } },
+                }),
+            }),
+            setSnapValue: createHandler<SetSnapValueAction>({
+                execute: (action) => {
+                    if (action.payload.value === 0.5) {
+                        throw failure;
+                    }
+                },
+                describe: () => ({
+                    label: 'Set snap value',
+                    inverseAction: { type: 'setSnapValue', payload: { value: 1 } },
+                }),
+            }),
+        });
+
+        const result = await executeAppActionBatch([
+            { type: 'setEditingTool', payload: { tool: 'marquee' } },
+            { type: 'setSnapValue', payload: { value: 0.5 } },
+        ]);
+
+        expect(result).toEqual({ status: 'failed', reason: 'second action failed', actions: [] });
+        expect(editingToolStorage.get()).toEqual({ tool: 'select' });
+        expect(executeEditingTool).toHaveBeenCalledOnce();
+        expect(afterCommit).not.toHaveBeenCalled();
+    });
+
+    it('does not compensate a deferred-only action that rejects as stale', async () => {
+        const execute = vi.fn(() => ({ status: 'conflict' as const }));
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({
+                execute,
+                requiresAbortCompensation: false,
+                describe: () => ({
+                    label: 'Set editing tool',
+                    inverseAction: { type: 'setEditingTool', payload: { tool: 'select' } },
+                }),
+            }),
+        });
+
+        const result = await executeAppActionBatch([{ type: 'setEditingTool', payload: { tool: 'marquee' } }]);
+
+        expect(result).toEqual({
+            status: 'conflicted',
+            reason: 'Action conflicts with current project state: setEditingTool',
+            actions: [],
+        });
+        expect(execute).toHaveBeenCalledOnce();
     });
 
     it('reports compensation failure when an inverse action produces no write', async () => {
@@ -283,14 +364,35 @@ describe('executeAppActionBatch', () => {
         });
         const editingToolStorage = createAutomergeStorage<{ tool: string }>('first', 'editingTool');
         const snapValueStorage = createAutomergeStorage<{ value: number }>('second', 'snapValue');
+        const reconciledRuntime: Array<{ editingTool: unknown; snapValue: unknown }> = [];
+        const reconcileRuntime = vi.fn(() => {
+            reconciledRuntime.push({
+                editingTool: documents.first?.editingTool,
+                snapValue: documents.second?.snapValue,
+            });
+        });
         expect(editingToolStorage.hydrate?.()).toBe(true);
         expect(snapValueStorage.hydrate?.()).toBe(true);
         registerHandlerMap({
             setEditingTool: createHandler<SetEditingToolAction>({
-                execute: () => editingToolStorage.set({ tool: 'marquee' }),
+                execute: () => {
+                    editingToolStorage.set({ tool: 'marquee' });
+                    return {
+                        status: 'written',
+                        afterCommit: () => undefined,
+                        afterAmbiguousCommit: reconcileRuntime,
+                    };
+                },
             }),
             setSnapValue: createHandler<SetSnapValueAction>({
-                execute: () => snapValueStorage.set({ value: 0.5 }),
+                execute: () => {
+                    snapValueStorage.set({ value: 0.5 });
+                    return {
+                        status: 'written',
+                        afterCommit: () => undefined,
+                        afterAmbiguousCommit: reconcileRuntime,
+                    };
+                },
             }),
         });
 
@@ -306,6 +408,11 @@ describe('executeAppActionBatch', () => {
         });
         expect(documents.first).toEqual({ editingTool: { tool: 'marquee' } });
         expect(documents.second).toEqual({ snapValue: { value: 1 } });
+        expect(reconcileRuntime).toHaveBeenCalledTimes(2);
+        expect(reconciledRuntime).toEqual([
+            { editingTool: { tool: 'marquee' }, snapValue: { value: 1 } },
+            { editingTool: { tool: 'marquee' }, snapValue: { value: 1 } },
+        ]);
         expect(mocks.recordAction).not.toHaveBeenCalled();
         expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
     });

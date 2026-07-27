@@ -361,7 +361,16 @@ export type AppAction =
     | { type: 'setExternalPluginState'; payload: { deviceId: string; stateChunk: string } }
     | { type: 'createBus'; payload: { name: string } }
     | { type: 'createFolder'; payload: { name: string } }
-    | { type: 'setSend'; payload: { trackId: string; busId: string; level: number } }
+    | {
+          type: 'setSend';
+          payload: {
+              trackId: string;
+              busId: string;
+              level: number;
+              expectedLevel?: number;
+              expectedPreFader?: boolean;
+          };
+      }
     | { type: 'setWorkspaceMode'; payload: { mode: 'arrange' | 'clip' } }
     | { type: 'openPreferencesDialog'; payload?: undefined }
     | { type: 'openMixer'; payload?: undefined }
@@ -459,9 +468,18 @@ export type AppAction =
     | { type: 'zoomTracksVertical'; payload: { delta: number } }
     | { type: 'addTimeSignatureChange'; payload: { beat: number; numerator: number; denominator: number } }
     | { type: 'removeTimeSignatureChange'; payload: { beat: number } }
-    | { type: 'setTrackOutput'; payload: { trackId: string; outputId: string } }
-    | { type: 'addSend'; payload: { trackId: string; busId: string; level: number } }
-    | { type: 'removeSend'; payload: { trackId: string; busId: string } }
+    | {
+          type: 'setTrackOutput';
+          payload: { trackId: string; outputId: string; expectedOutputId?: string };
+      }
+    | {
+          type: 'addSend';
+          payload: { trackId: string; busId: string; level: number; preFader?: boolean; expectedAbsent?: true };
+      }
+    | {
+          type: 'removeSend';
+          payload: { trackId: string; busId: string; expectedLevel?: number; expectedPreFader?: boolean };
+      }
     | { type: 'removeAutomationPoint'; payload: { laneId: string; pointIndex: number } }
     | { type: 'setAutomationMode'; payload: { trackId: string; mode: AutomationMode } }
     | { type: 'hideTrack'; payload: { trackId: string; hidden: boolean } }
@@ -796,10 +814,21 @@ export type HandlerDescribeResult = {
 
 export type HandlerAfterCommit = () => void | Promise<void>;
 
-export type HandlerExecutionResult = ({ status: 'written' } | { status: 'no-write' } | { status: 'conflict' }) & {
-    /** External effects that must happen only after the owning project transaction commits. */
-    afterCommit?: HandlerAfterCommit;
-};
+type HandlerDeferredEffects =
+    | {
+          afterCommit?: undefined;
+          afterAmbiguousCommit?: undefined;
+      }
+    | {
+          /** External effects that must happen only after the owning project transaction commits. */
+          afterCommit: HandlerAfterCommit;
+          /** Reconcile external state from durable project truth after a partially committed transaction. */
+          afterAmbiguousCommit: HandlerAfterCommit;
+      };
+
+export type HandlerExecutionResult = {
+    status: 'written' | 'no-write' | 'conflict';
+} & HandlerDeferredEffects;
 
 /** One dispatchable action's handler. Built via `createHandler` and merged into a module
  *  handler map by each `get<Module>Handlers` factory. */
@@ -808,6 +837,8 @@ export type ActionHandler<Action extends AppAction = AppAction> = {
     describe: (action: Action) => HandlerDescribeResult;
     /** True when the canonical action is already reflected in project truth. */
     isNoop?: (action: Action) => boolean;
+    /** False when transaction abort fully rolls back the write and no pre-commit external effect can run. */
+    requiresAbortCompensation?: boolean;
     undoable: boolean;
 };
 

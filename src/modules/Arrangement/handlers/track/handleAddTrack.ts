@@ -30,6 +30,17 @@ export const handleAddTrack = createHandler<'addTrack'>({
                     name: track.name,
                     kind: track.kind,
                 }),
+            afterAmbiguousCommit: async () => {
+                const committedTrack = getTrackStoreState()?.tracks.find((candidate) => candidate.id === track.id);
+                if (!committedTrack) {
+                    return;
+                }
+                await publishTrackAdded({
+                    trackId: committedTrack.id,
+                    name: committedTrack.name,
+                    kind: committedTrack.kind,
+                });
+            },
         };
     },
     describe: (action) => {
@@ -49,5 +60,6 @@ export const handleAddTrack = createHandler<'addTrack'>({
         const trackId = action.payload.id;
         return trackId !== undefined && state.tracks.some((track) => track.id === trackId);
     },
+    requiresAbortCompensation: false,
     undoable: true,
 });

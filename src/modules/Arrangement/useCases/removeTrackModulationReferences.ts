@@ -7,13 +7,21 @@ type RemoveTrackModulationReferencesInput = {
     trackId: string;
 };
 
+type DeferredModulationRemoval = {
+    afterCommit: () => void;
+    afterAmbiguousCommit: () => void;
+};
+
 export function removeTrackModulationReferences({
     deferRuntimeEffects = false,
     trackId,
-}: RemoveTrackModulationReferencesInput): () => void {
+}: RemoveTrackModulationReferencesInput): DeferredModulationRemoval {
     const modulationState = modulationStore.value;
     if (!modulationState) {
-        return () => undefined;
+        return {
+            afterCommit: () => undefined,
+            afterAmbiguousCommit: () => undefined,
+        };
     }
 
     const ownedIds = modulationState.modulators
@@ -31,20 +39,40 @@ export function removeTrackModulationReferences({
                     targetParamId: mapping.targetParamId,
                 }))
         );
-    const deferredRuntimeEffects: Array<() => void> = [];
+    const deferredRuntimeEffects: Array<{ finalize: () => void; remainsRemoved: () => boolean }> = [];
 
     for (const id of ownedIds) {
         const deferredRuntimeEffect = removeModulator(id, { deferRuntimeEffects });
         if (deferredRuntimeEffect) {
-            deferredRuntimeEffects.push(deferredRuntimeEffect);
+            deferredRuntimeEffects.push({
+                finalize: deferredRuntimeEffect,
+                remainsRemoved: () => !modulationStore.value?.modulators.some((modulator) => modulator.id === id),
+            });
         }
     }
     for (const { modulatorId, ...target } of crossTrackMappings) {
         const deferredRuntimeEffect = removeMapping(modulatorId, target, { deferRuntimeEffects });
         if (deferredRuntimeEffect) {
-            deferredRuntimeEffects.push(deferredRuntimeEffect);
+            deferredRuntimeEffects.push({
+                finalize: deferredRuntimeEffect,
+                remainsRemoved: () => {
+                    const current = modulationStore.value?.modulators.find((modulator) => modulator.id === modulatorId);
+                    return !current?.mappings.some(
+                        (mapping) =>
+                            mapping.targetTrackId === target.targetTrackId &&
+                            mapping.targetDeviceId === target.targetDeviceId &&
+                            mapping.targetParamId === target.targetParamId
+                    );
+                },
+            });
         }
     }
 
-    return () => runAllEffects(deferredRuntimeEffects);
+    return {
+        afterCommit: () => runAllEffects(deferredRuntimeEffects.map(({ finalize }) => finalize)),
+        afterAmbiguousCommit: () =>
+            runAllEffects(
+                deferredRuntimeEffects.filter(({ remainsRemoved }) => remainsRemoved()).map(({ finalize }) => finalize)
+            ),
+    };
 }

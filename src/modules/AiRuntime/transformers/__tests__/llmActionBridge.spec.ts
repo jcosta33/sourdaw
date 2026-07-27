@@ -21,6 +21,7 @@ const projectContext: ProjectContext = {
             armed: false,
             gain: 0.8,
             pan: 0,
+            outputId: 'master',
             clipCount: 0,
             deviceCount: 1,
             clips: [],
@@ -70,7 +71,7 @@ const projectContext: ProjectContext = {
                     ],
                 },
             ],
-            sends: [{ busId: 'bus-reverb', level: 0.2 }],
+            sends: [{ busId: 'bus-reverb', level: 0.2, preFader: true }],
         },
         {
             id: 'bus-reverb',
@@ -81,6 +82,7 @@ const projectContext: ProjectContext = {
             armed: false,
             gain: 0.8,
             pan: 0,
+            outputId: 'master',
             clipCount: 0,
             deviceCount: 0,
             clips: [],
@@ -96,6 +98,7 @@ const projectContext: ProjectContext = {
             armed: false,
             gain: 0.8,
             pan: 0,
+            outputId: 'hw_out',
             clipCount: 0,
             deviceCount: 0,
             clips: [],
@@ -189,11 +192,156 @@ describe('bridgeLlmToolCalls', () => {
                 { type: 'bypassDevice', payload: { deviceId: 'device-eq', bypassed: true } },
                 {
                     type: 'setSend',
-                    payload: { trackId: 'track-vocals', busId: 'bus-reverb', level: 0.45 },
+                    payload: {
+                        trackId: 'track-vocals',
+                        busId: 'bus-reverb',
+                        level: 0.45,
+                        expectedLevel: 0.2,
+                        expectedPreFader: true,
+                    },
                 },
             ],
             rejections: [],
         });
+    });
+
+    it('converts exact output and send topology changes for available project routes', () => {
+        const withoutSend: ProjectContext = {
+            ...projectContext,
+            tracks: projectContext.tracks.map((track) => {
+                if (track.id !== 'track-vocals') {
+                    return track;
+                }
+                return { ...track, sends: [] };
+            }),
+        };
+        const topology = bridgeLlmToolCalls({
+            calls: [
+                {
+                    name: 'setTrackOutput',
+                    arguments: { trackId: 'track-vocals', outputId: 'bus-reverb' },
+                },
+                { name: 'removeSend', arguments: { trackId: 'track-vocals', busId: 'bus-reverb' } },
+            ],
+            context: projectContext,
+        });
+        const creation = bridgeLlmToolCalls({
+            calls: [{ name: 'addSend', arguments: { trackId: 'track-vocals', busId: 'bus-reverb', level: 0.35 } }],
+            context: withoutSend,
+        });
+
+        expect(topology).toEqual({
+            actions: [
+                {
+                    type: 'setTrackOutput',
+                    payload: {
+                        trackId: 'track-vocals',
+                        outputId: 'bus-reverb',
+                        expectedOutputId: 'master',
+                    },
+                },
+                {
+                    type: 'removeSend',
+                    payload: {
+                        trackId: 'track-vocals',
+                        busId: 'bus-reverb',
+                        expectedLevel: 0.2,
+                        expectedPreFader: true,
+                    },
+                },
+            ],
+            rejections: [],
+        });
+        expect(creation).toEqual({
+            actions: [
+                {
+                    type: 'addSend',
+                    payload: {
+                        trackId: 'track-vocals',
+                        busId: 'bus-reverb',
+                        level: 0.35,
+                        expectedAbsent: true,
+                    },
+                },
+            ],
+            rejections: [],
+        });
+    });
+
+    it('rejects invented, ambiguous, and state-incompatible routing changes', () => {
+        const result = bridgeLlmToolCalls({
+            calls: [
+                { name: 'setTrackOutput', arguments: { trackId: 'track-vocals', outputId: 'missing' } },
+                { name: 'setTrackOutput', arguments: { trackId: 'bus-reverb', outputId: 'bus-reverb' } },
+                { name: 'addSend', arguments: { trackId: 'track-vocals', busId: 'bus-reverb', level: 0.5 } },
+                { name: 'removeSend', arguments: { trackId: 'bus-reverb', busId: 'bus-reverb' } },
+                { name: 'setSend', arguments: { trackId: 'bus-reverb', busId: 'bus-reverb', level: 0.5 } },
+            ],
+            context: projectContext,
+        });
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections.map(({ name }) => name)).toEqual([
+            'setTrackOutput',
+            'setTrackOutput',
+            'addSend',
+            'removeSend',
+            'setSend',
+        ]);
+    });
+
+    it('allows only one mutation of the same send or output route per provider batch', () => {
+        const result = bridgeLlmToolCalls({
+            calls: [
+                {
+                    name: 'setSend',
+                    arguments: { trackId: 'track-vocals', busId: 'bus-reverb', level: 0.25 },
+                },
+                { name: 'removeSend', arguments: { trackId: 'track-vocals', busId: 'bus-reverb' } },
+                {
+                    name: 'setTrackOutput',
+                    arguments: { trackId: 'track-vocals', outputId: 'bus-reverb' },
+                },
+                {
+                    name: 'setTrackOutput',
+                    arguments: { trackId: 'track-vocals', outputId: 'master' },
+                },
+            ],
+            context: projectContext,
+        });
+
+        expect(result.actions).toEqual([
+            {
+                type: 'setSend',
+                payload: {
+                    trackId: 'track-vocals',
+                    busId: 'bus-reverb',
+                    level: 0.25,
+                    expectedLevel: 0.2,
+                    expectedPreFader: true,
+                },
+            },
+            {
+                type: 'setTrackOutput',
+                payload: {
+                    trackId: 'track-vocals',
+                    outputId: 'bus-reverb',
+                    expectedOutputId: 'master',
+                },
+            },
+        ]);
+        expect(result.rejections).toEqual([
+            {
+                index: 1,
+                name: 'removeSend',
+                reason: 'Provider batch writes the same target field more than once',
+            },
+            {
+                index: 3,
+                name: 'setTrackOutput',
+                reason: 'Provider batch writes the same target field more than once',
+            },
+        ]);
     });
 
     it('converts bounded track creation, duplication, ordering, and color calls', () => {
@@ -385,7 +533,10 @@ describe('bridgeLlmToolCalls', () => {
             'setTempo',
             'setDeviceParameter',
             'bypassDevice',
+            'addSend',
             'setSend',
+            'removeSend',
+            'setTrackOutput',
         ]);
         expect(
             LLM_EXECUTABLE_TOOL_SCHEMAS.every((schema) => schema.function.parameters.additionalProperties === false)
@@ -411,6 +562,7 @@ describe('bridgeLlmToolCalls', () => {
         expect(userMessage).toContain('"frequency"');
         expect(userMessage).toContain('"minValue":20');
         expect(userMessage).toContain('"sends"');
+        expect(userMessage).toContain('"outputId":"master"');
     });
 
     it('escapes framing characters from project-owned names', () => {

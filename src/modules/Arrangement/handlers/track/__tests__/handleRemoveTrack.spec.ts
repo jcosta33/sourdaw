@@ -42,6 +42,8 @@ const mocks = vi.hoisted(() => ({
     publishTrackRemoved: vi.fn(),
     finalizeRuntimeRemoval: vi.fn(),
     finalizeModulationRemoval: vi.fn(),
+    projectTrackToLiveStrip: vi.fn(),
+    wireSidechainRoutes: vi.fn(),
     removeTrackModulationReferences: vi.fn(),
     automationStoreValue: { value: null } as any,
     modulationStoreValue: { value: null } as any,
@@ -62,6 +64,9 @@ vi.mock('../../../useCases/publishTrackRemoved', () => ({
 }));
 vi.mock('../../../useCases/removeTrackModulationReferences', () => ({
     removeTrackModulationReferences: mocks.removeTrackModulationReferences,
+}));
+vi.mock('../../../useCases/projectTrackToLiveStrip', () => ({
+    projectTrackToLiveStrip: mocks.projectTrackToLiveStrip,
 }));
 
 vi.mock('#/modules/Automation/stores', () => ({
@@ -87,6 +92,7 @@ vi.mock('#/modules/MIDI/stores', () => ({
 
 vi.mock('#/modules/Routing/useCases', () => ({
     getAllSidechainRoutes: mocks.getAllSidechainRoutes,
+    wireSidechainRoutes: mocks.wireSidechainRoutes,
 }));
 
 vi.mock('../../../stores/takeLaneStore', () => ({
@@ -109,7 +115,10 @@ describe('handleRemoveTrack', () => {
             removed: true,
             finalizeRuntimeRemoval: mocks.finalizeRuntimeRemoval,
         });
-        mocks.removeTrackModulationReferences.mockReturnValue(mocks.finalizeModulationRemoval);
+        mocks.removeTrackModulationReferences.mockReturnValue({
+            afterCommit: mocks.finalizeModulationRemoval,
+            afterAmbiguousCommit: mocks.finalizeModulationRemoval,
+        });
     });
 
     describe('execute', () => {
@@ -152,6 +161,25 @@ describe('handleRemoveTrack', () => {
 
             expect(mocks.finalizeModulationRemoval).toHaveBeenCalledOnce();
             expect(mocks.publishTrackRemoved).toHaveBeenCalledWith({ trackId: 't1' });
+        });
+
+        it('rebuilds a track that remains in durable truth after an ambiguous commit', async () => {
+            const track = TrackDummy.create({ id: 't1' });
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [track], selectedTrackId: null });
+            const result = await handleRemoveTrack.execute({
+                type: 'removeTrack',
+                payload: { trackId: 't1' },
+            });
+
+            await result?.afterAmbiguousCommit?.();
+
+            expect(mocks.projectTrackToLiveStrip).toHaveBeenCalledWith({
+                trackId: 't1',
+                activateDormantExternalPlugins: true,
+            });
+            expect(mocks.finalizeRuntimeRemoval).not.toHaveBeenCalled();
+            expect(mocks.publishTrackRemoved).not.toHaveBeenCalled();
+            expect(mocks.wireSidechainRoutes).toHaveBeenCalledOnce();
         });
     });
 

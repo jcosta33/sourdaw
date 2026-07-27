@@ -4,7 +4,8 @@ import { handleAddSend } from '../handleAddSend';
 
 const mocks = vi.hoisted(() => ({
     setSend: vi.fn(),
-    getTrackStoreState: vi.fn<() => { tracks: { id: string; sends: { busId: string; level: number }[] }[] } | null>(),
+    getTrackStoreState:
+        vi.fn<() => { tracks: { id: string; kind: string; sends: { busId: string; level: number }[] }[] } | null>(),
 }));
 
 vi.mock('../../../useCases/device/sendManagement/setSend', () => ({
@@ -22,24 +23,36 @@ describe('handleAddSend', () => {
     });
 
     it('executes setSend with the provided payload', () => {
-        mocks.setSend.mockReturnValue(true);
+        const finalizeRuntimeEffect = vi.fn();
+        const reconcileRuntimeEffect = vi.fn();
+        mocks.setSend.mockReturnValue({
+            afterCommit: finalizeRuntimeEffect,
+            afterAmbiguousCommit: reconcileRuntimeEffect,
+        });
         const result = handleAddSend.execute({
             type: 'addSend',
             payload: { trackId: 't1', busId: 'bus-1', level: 0.5 },
         });
 
-        expect(mocks.setSend).toHaveBeenCalledWith('t1', 'bus-1', 0.5);
-        expect(result).toEqual({ status: 'written' });
+        expect(mocks.setSend).toHaveBeenCalledWith('t1', 'bus-1', 0.5, false, { deferRuntimeEffect: true });
+        expect(finalizeRuntimeEffect).not.toHaveBeenCalled();
+        if (!result || result instanceof Promise) {
+            throw new Error('expected a synchronous handler result');
+        }
+        result.afterCommit?.();
+        expect(finalizeRuntimeEffect).toHaveBeenCalledOnce();
+        result.afterAmbiguousCommit?.();
+        expect(reconcileRuntimeEffect).toHaveBeenCalledOnce();
     });
 
-    it('returns no-write when the send is rejected', () => {
-        mocks.setSend.mockReturnValue(false);
+    it('returns conflict when the send is rejected', () => {
+        mocks.setSend.mockReturnValue(null);
         const result = handleAddSend.execute({
             type: 'addSend',
             payload: { trackId: 't1', busId: 'vca-1', level: 0.5 },
         });
 
-        expect(result).toEqual({ status: 'no-write' });
+        expect(result).toEqual({ status: 'conflict' });
     });
 
     it('provides a description', () => {
@@ -52,7 +65,7 @@ describe('handleAddSend', () => {
     });
 
     it('describes a removeSend inverse when the send is genuinely new', () => {
-        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', sends: [] }] });
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', kind: 'audio', sends: [] }] });
 
         const desc = handleAddSend.describe({
             type: 'addSend',
@@ -61,13 +74,18 @@ describe('handleAddSend', () => {
 
         expect(desc.inverseAction).toEqual({
             type: 'removeSend',
-            payload: { trackId: 't1', busId: 'bus-1' },
+            payload: {
+                trackId: 't1',
+                busId: 'bus-1',
+                expectedLevel: 0.5,
+                expectedPreFader: false,
+            },
         });
     });
 
-    it('describes a level-restore inverse when the forward call updates an existing send', () => {
+    it('does not make a stale existing send compensable', () => {
         mocks.getTrackStoreState.mockReturnValue({
-            tracks: [{ id: 't1', sends: [{ busId: 'bus-1', level: 0.2 }] }],
+            tracks: [{ id: 't1', kind: 'audio', sends: [{ busId: 'bus-1', level: 0.2 }] }],
         });
 
         const desc = handleAddSend.describe({
@@ -75,12 +93,21 @@ describe('handleAddSend', () => {
             payload: { trackId: 't1', busId: 'bus-1', level: 0.9 },
         });
 
-        // setSend updates in place — removing the send on undo would destroy a
-        // route that existed before the action. Restore the old level instead.
-        expect(desc.inverseAction).toEqual({
-            type: 'setSend',
-            payload: { trackId: 't1', busId: 'bus-1', level: 0.2 },
+        expect(desc.inverseAction).toBeNull();
+    });
+
+    it('rejects a stale add when the send already exists', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', kind: 'audio', sends: [{ busId: 'bus-1', level: 0.2 }] }],
         });
+
+        const result = handleAddSend.execute({
+            type: 'addSend',
+            payload: { trackId: 't1', busId: 'bus-1', level: 0.9 },
+        });
+
+        expect(result).toEqual({ status: 'conflict' });
+        expect(mocks.setSend).not.toHaveBeenCalled();
     });
 
     it('is undoable', () => {

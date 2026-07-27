@@ -8,13 +8,37 @@ import { getTrackById } from '../../repositories/track/getTrackById';
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { getTrackEligibility } from '../../stores/trackEligibility';
 
-export function setTrackOutput(trackId: string, outputId: string): boolean {
+type SetTrackOutputOptions = {
+    deferRuntimeEffect?: boolean;
+};
+
+type DeferredTrackOutputRuntimeEffect = {
+    afterCommit: () => void;
+    afterAmbiguousCommit: () => void;
+};
+
+const TERMINAL_OUTPUT_IDS: ReadonlySet<string> = new Set(['master', 'hw_out']);
+
+export function setTrackOutput(trackId: string, outputId: string): boolean;
+export function setTrackOutput(
+    trackId: string,
+    outputId: string,
+    options: { deferRuntimeEffect: true }
+): DeferredTrackOutputRuntimeEffect | null;
+export function setTrackOutput(
+    trackId: string,
+    outputId: string,
+    options: SetTrackOutputOptions = {}
+): boolean | DeferredTrackOutputRuntimeEffect | null {
     const track = getTrackById(trackId);
-    if (track && !getTrackEligibility(track.kind).acceptsOutput) {
+    if (!track || !getTrackEligibility(track.kind).acceptsOutput) {
         return false;
     }
 
     const targetTrack = getTrackById(outputId);
+    if (!targetTrack && !TERMINAL_OUTPUT_IDS.has(outputId)) {
+        return false;
+    }
     if (targetTrack && !getTrackEligibility(targetTrack.kind).acceptsRoutingEndpoint) {
         return false;
     }
@@ -38,11 +62,37 @@ export function setTrackOutput(trackId: string, outputId: string): boolean {
         return false;
     }
     updateTrack(trackId, (time) => ({ ...time, outputId }));
-    const padBinding = resolveToasterPadBinding(getAllTracks(), trackId);
-    if (padBinding) {
-        engineSetTrackOutput(trackId, outputId, padBinding);
-    } else {
-        engineSetTrackOutput(trackId, outputId);
+    let runtimeEffectFinalized = false;
+    function finalizeRuntimeEffect(): void {
+        if (runtimeEffectFinalized) {
+            return;
+        }
+        const padBinding = resolveToasterPadBinding(getAllTracks(), trackId);
+        if (padBinding) {
+            engineSetTrackOutput(trackId, outputId, padBinding);
+        } else {
+            engineSetTrackOutput(trackId, outputId);
+        }
+        runtimeEffectFinalized = true;
     }
+    function reconcileRuntimeEffect(): void {
+        const committedTrack = getTrackById(trackId);
+        if (!committedTrack) {
+            return;
+        }
+        const padBinding = resolveToasterPadBinding(getAllTracks(), trackId);
+        if (padBinding) {
+            engineSetTrackOutput(trackId, committedTrack.outputId, padBinding);
+        } else {
+            engineSetTrackOutput(trackId, committedTrack.outputId);
+        }
+    }
+    if (options.deferRuntimeEffect) {
+        return {
+            afterCommit: finalizeRuntimeEffect,
+            afterAmbiguousCommit: reconcileRuntimeEffect,
+        };
+    }
+    finalizeRuntimeEffect();
     return true;
 }

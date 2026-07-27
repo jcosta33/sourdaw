@@ -56,7 +56,7 @@ describe('removeTrackModulationReferences', () => {
     });
 
     it('removes only owned modulators and incoming mappings while deferring their runtime effects', () => {
-        const finalizeRuntimeEffects = removeTrackModulationReferences({
+        const runtimeEffects = removeTrackModulationReferences({
             trackId: 'removed',
             deferRuntimeEffects: true,
         });
@@ -79,7 +79,7 @@ describe('removeTrackModulationReferences', () => {
         expect(mocks.finalizeOwnedModulator).not.toHaveBeenCalled();
         expect(mocks.finalizeTargetMapping).not.toHaveBeenCalled();
 
-        finalizeRuntimeEffects();
+        runtimeEffects.afterCommit();
 
         expect(mocks.finalizeOwnedModulator).toHaveBeenCalledOnce();
         expect(mocks.finalizeTargetMapping).toHaveBeenCalledOnce();
@@ -88,13 +88,39 @@ describe('removeTrackModulationReferences', () => {
     it('returns an inert finalizer when modulation state is unavailable', () => {
         mocks.modulationStoreValue.value = null;
 
-        const finalizeRuntimeEffects = removeTrackModulationReferences({
+        const runtimeEffects = removeTrackModulationReferences({
             trackId: 'removed',
             deferRuntimeEffects: true,
         });
 
-        expect(finalizeRuntimeEffects).not.toThrow();
+        expect(runtimeEffects.afterCommit).not.toThrow();
+        expect(runtimeEffects.afterAmbiguousCommit).not.toThrow();
         expect(mocks.removeModulator).not.toHaveBeenCalled();
         expect(mocks.removeMapping).not.toHaveBeenCalled();
+    });
+
+    it('reconciles only removals that are present in durable modulation truth', () => {
+        const runtimeEffects = removeTrackModulationReferences({
+            trackId: 'removed',
+            deferRuntimeEffects: true,
+        });
+
+        runtimeEffects.afterAmbiguousCommit();
+        expect(mocks.finalizeOwnedModulator).not.toHaveBeenCalled();
+        expect(mocks.finalizeTargetMapping).not.toHaveBeenCalled();
+
+        mocks.modulationStoreValue.value = {
+            modulators: [
+                {
+                    id: 'survivor',
+                    trackId: 'other',
+                    mappings: [{ targetTrackId: 'other', targetDeviceId: 'device-b', targetParamId: 'gain' }],
+                },
+            ],
+        };
+        runtimeEffects.afterAmbiguousCommit();
+
+        expect(mocks.finalizeOwnedModulator).toHaveBeenCalledOnce();
+        expect(mocks.finalizeTargetMapping).toHaveBeenCalledOnce();
     });
 });
