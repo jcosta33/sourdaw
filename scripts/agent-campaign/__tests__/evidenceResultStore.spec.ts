@@ -202,16 +202,51 @@ describe('immutable evidence result store', () => {
         expect([modeError, linkError, finalLinks]).toEqual([FIXED_ERROR, FIXED_ERROR, 2]);
         expect([await temporaryNames(modeRoot), await temporaryNames(linkRoot)]).toEqual([[], []]);
     });
-    it('should recover an exact digest-pending record before final publication', async () => {
+    it('should replace stale-stage nlink2 pending while retaining the harmless stale stage', async () => {
         const root = await repository();
         const record = bound();
+        const bytes = serializeContextBoundEvidenceResultRecordV1(record);
+        const finalPath = destination(root);
+        const directory = dirname(finalPath);
         const digest = digestContextBoundEvidenceResultRecordV1(record);
-        const pending = join(dirname(destination(root)), `.evidence-result-${digest}.pending`);
-        await mkdir(dirname(pending), { recursive: true });
-        await writeFile(pending, serializeContextBoundEvidenceResultRecordV1(record), { mode: 0o600 });
+        const pending = join(directory, `.evidence-result-${digest}.pending`);
+        const staleStage = join(directory, '.evidence-result-00000000-0000-4000-8000-000000000000.tmp');
+        await mkdir(directory, { recursive: true });
+        await writeFile(staleStage, bytes, { mode: 0o600 });
+        await link(staleStage, pending);
+        expect((await stat(pending)).nlink).toBe(2);
         const receipt = await publish(root, record);
-        const finalLinks = (await stat(destination(root))).nlink;
-        expect([receipt.disposition, finalLinks, await temporaryNames(root)]).toEqual(['created', 1, []]);
+        const finalStat = await stat(finalPath);
+        const staleStat = await stat(staleStage);
+        expect(receipt.disposition).toBe('created');
+        expect(await readFile(finalPath, 'utf8')).toBe(bytes);
+        expect(finalStat.nlink).toBe(1);
+        expect(staleStat.nlink).toBe(1);
+        expect(staleStat.ino).not.toBe(finalStat.ino);
+        expect(await readFile(staleStage, 'utf8')).toBe(bytes);
+        expect(await readdir(directory)).not.toContain(basename(pending));
+        expect(await temporaryNames(root)).toEqual([basename(staleStage)]);
+    });
+    it('should recover final and pending nlink2 while preserving the published inode', async () => {
+        const root = await repository();
+        const record = bound();
+        const bytes = serializeContextBoundEvidenceResultRecordV1(record);
+        const finalPath = destination(root);
+        const directory = dirname(finalPath);
+        const pending = join(directory, `.evidence-result-${digestContextBoundEvidenceResultRecordV1(record)}.pending`);
+        await publish(root, record);
+        const original = await stat(finalPath);
+        await link(finalPath, pending);
+        const linkedPending = await stat(pending);
+        expect([linkedPending.ino, linkedPending.nlink]).toEqual([original.ino, 2]);
+        const receipt = await publish(root, record);
+        const recovered = await stat(finalPath);
+        expect(receipt.disposition).toBe('existing');
+        expect(recovered.ino).toBe(original.ino);
+        expect(await readFile(finalPath, 'utf8')).toBe(bytes);
+        expect(recovered.nlink).toBe(1);
+        expect(await readdir(directory)).not.toContain(basename(pending));
+        expect(await temporaryNames(root)).toEqual([]);
     });
     it('should reject a structural-only cast and normalize real filesystem failures', async () => {
         const structural = validateEvidenceResultRecordV1(recordInput());
