@@ -221,16 +221,27 @@ export function createPushDisplayProtocol({
         });
     }
 
+    function cancelScheduledSubmission(): void {
+        const cancel = cancelScheduledStart;
+        cancelScheduledStart = undefined;
+        if (!cancel) {
+            return;
+        }
+
+        try {
+            cancel();
+        } catch {
+            return;
+        }
+    }
+
     function disconnect(): void {
         if (disconnected) {
             return;
         }
 
         disconnected = true;
-        if (cancelScheduledStart) {
-            cancelScheduledStart();
-            cancelScheduledStart = undefined;
-        }
+        cancelScheduledSubmission();
         if (queuedSubmission) {
             settleSubmission(queuedSubmission, DISCONNECTED_RESULT);
             queuedSubmission = undefined;

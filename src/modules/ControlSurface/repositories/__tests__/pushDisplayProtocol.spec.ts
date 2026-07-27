@@ -375,6 +375,29 @@ describe('createPushDisplayProtocol', () => {
         expect(writes).toHaveLength(2);
     });
 
+    it('settles scheduled work when scheduler cancellation throws', async () => {
+        const { transport, writes } = createSuccessfulTransport();
+        const scheduler: PushDisplayScheduler = {
+            now() {
+                return 0;
+            },
+            schedule() {
+                return () => {
+                    throw new Error('Cancellation failed');
+                };
+            },
+        };
+        const protocol = createPushDisplayProtocol({ transport, scheduler });
+
+        await expect(protocol.submitFrame(createRgbFrame())).resolves.toEqual({ status: 'written' });
+        const scheduled = protocol.submitFrame(createRgbFrame(255, 255, 255));
+
+        expect(() => protocol.disconnect()).not.toThrow();
+        await expect(scheduled).resolves.toEqual({ status: 'disconnected' });
+        await expect(protocol.submitFrame(createRgbFrame())).resolves.toEqual({ status: 'disconnected' });
+        expect(writes).toHaveLength(2);
+    });
+
     it('disconnects an active header transfer and never starts its payload', async () => {
         const headerWrite = createDeferred<Readonly<{ bytesWritten: number }>>();
         const writes: CapturedWrite[] = [];
