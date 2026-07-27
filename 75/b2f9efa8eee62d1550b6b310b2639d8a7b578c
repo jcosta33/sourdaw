@@ -1,0 +1,44 @@
+docs/evidence/mycelium-ascendant/motif-event-report.json
+  s_ac9b259eab20ba::t_c3494e80ae3b52 2-3
+docs/evidence/mycelium-ascendant/note-event-report.json
+  s_ac9b259eab20ba::t_c3494e80ae3b52 2-3
+docs/evidence/mycelium-ascendant/listening-conformance.md
+  s_ac9b259eab20ba::t_cfb1a571fb9277 3-6,8,14-23,27-33
+  s_ac9b259eab20ba::t_e6de6a2127176e 34-35
+docs/evidence/mycelium-ascendant/originality-review.md
+  s_ac9b259eab20ba::t_cc6a14c0ae3a3d 3-7,17-26,30
+docs/evidence/mycelium-ascendant/launch-integrity.md
+  s_ac9b259eab20ba::t_959f1123ed77ae 3-5
+docs/evidence/mycelium-ascendant/automation-audition.md
+  s_ac9b259eab20ba::t_03d2e05e806dfd 3-5,13-22,26,30
+docs/evidence/mycelium-ascendant/automation-stem-evidence.json
+  s_ac9b259eab20ba::t_cf07bed29d106d 2,4,7,11-12,30,32,83-84,106,139-325,329-637,640-674,680-681,684-685,691-692,695-784,788-852,859-926,936-937,947-948,954-955,958-959,969-970,976-977,980-981,987-988,991-992,998-999,1002-1014,1024-1025,1035-1036,1113-1115,1135-1137,1310-1312,1332-1333,1469-1470,1480-1481,1502-1503,1513-1514,1617-1618,1721-1722,1732-1733,1743-1744,1814-1816,1825-1827,1847-1849,1869-1871,1880-1882,1891-1893,2065-2066,2074-2075,2078
+docs/evidence/mycelium-ascendant/desktop-runtime-evidence.json
+  s_ac9b259eab20ba::t_6327edb4b3d639 2,4,7,11-12,30,32,39
+docs/evidence/mycelium-ascendant/render-evidence.json
+  s_1f392b6f825af9::t_f02a3ca4afa8e4 2,4,7,11-12,30,32-34,41-42,45-48,50-51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "75b2f9efa8eee62d1550b6b310b2639d8a7b578c",
+  "prompts": {},
+  "sessions": {
+    "s_1f392b6f825af9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fa047-bfd9-7572-b289-b27510453714",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
