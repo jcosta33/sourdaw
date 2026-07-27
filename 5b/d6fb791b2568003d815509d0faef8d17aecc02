@@ -1,0 +1,24 @@
+crates/daw-dsp/src/proof/crossover.rs
+  s_c2fca615e81f34::t_fc84e1339a00ad 491,493
+  s_c2fca615e81f34::t_d2d08c8af4a824 509,521
+  s_c2fca615e81f34::t_352a387116fdff 138
+  s_c2fca615e81f34::t_637512c0d6c258 122-124,126-129,134-137,139-250,252-261,263-266,272-298,300-307,309-333,335-363,365-366,368-409,415-459,461-466,470-482,484-490,492,497-508,510-516,518-520,522-615,617-627,630-705
+  s_c2fca615e81f34::t_5d90becff5bfc6 112,125,251,262,267-271,299,308,334,364,367,410-414,460,467-469,483,494-496,517,616,628-629
+  s_c2fca615e81f34::t_22b78c7df564a4 130-133
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "5bd6fb791b2568003d815509d0faef8d17aecc02",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
