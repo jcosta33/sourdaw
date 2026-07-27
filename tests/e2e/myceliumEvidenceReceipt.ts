@@ -9,6 +9,7 @@ export type MyceliumProjectReceipt = {
     noteCount: number;
     automationLaneCount: number;
     automationPointCount: number;
+    trackNotesMutationSha256: string;
 };
 
 export type MyceliumSourceReceipt = {
@@ -65,11 +66,17 @@ export async function captureMyceliumProjectReceipt(page: Page): Promise<Myceliu
             includeAudioBuffers: boolean;
         }) => Promise<{ data: unknown } | null>;
         type ProjectDataShape = {
-            arrangement: { tracks: Array<{ clips: unknown[] }> };
+            arrangement: { tracks: Array<{ clips: unknown[]; id: string; notes: string }> };
             automation: { lanes: Array<{ points: unknown[] }> };
             midi: { notesByClipId: Record<string, unknown[]> };
             transport: { loopEnd: number };
         };
+        const isSerializedProjectClip = (value: Record<string, unknown>): boolean =>
+            typeof value.id === 'string' &&
+            typeof value.trackId === 'string' &&
+            typeof value.startBeat === 'number' &&
+            typeof value.endBeat === 'number' &&
+            (value.type === 'audio' || value.type === 'midi');
         const hasItems = (value: unknown, property: string): boolean => {
             if (!isRecordValue(value)) {
                 return true;
@@ -88,7 +95,10 @@ export async function captureMyceliumProjectReceipt(page: Page): Promise<Myceliu
                 if (child === undefined) {
                     return false;
                 }
-                if (key === 'createdAt' || key === 'updatedAt' || key === 'notes') {
+                if (key === 'createdAt' || key === 'updatedAt') {
+                    return false;
+                }
+                if (key === 'notes' && Array.isArray(child) && isSerializedProjectClip(value)) {
                     return false;
                 }
                 if (
@@ -163,6 +173,21 @@ export async function captureMyceliumProjectReceipt(page: Page): Promise<Myceliu
         const bytes = new TextEncoder().encode(JSON.stringify(normalizedProject));
         const digest = await crypto.subtle.digest('SHA-256', bytes);
         const projectSha256 = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+        const trackNotesMutationProject = structuredClone(projectData);
+        const mutationTrack = trackNotesMutationProject.arrangement.tracks[0];
+        if (!mutationTrack) {
+            throw new Error('Mycelium evidence could not select a track-notes mutation probe');
+        }
+        mutationTrack.notes = `${mutationTrack.notes}\n[mycelium-evidence-track-notes-probe]`;
+        const normalizedTrackNotesMutation = normalize(trackNotesMutationProject);
+        const trackNotesMutationBytes = new TextEncoder().encode(JSON.stringify(normalizedTrackNotesMutation));
+        const trackNotesMutationDigest = await crypto.subtle.digest('SHA-256', trackNotesMutationBytes);
+        const trackNotesMutationSha256 = [...new Uint8Array(trackNotesMutationDigest)]
+            .map((byte) => byte.toString(16).padStart(2, '0'))
+            .join('');
+        if (trackNotesMutationSha256 === projectSha256) {
+            throw new Error('Mycelium evidence digest omitted persistent track notes');
+        }
         const projectSectionSha256 = Object.fromEntries(
             await Promise.all(
                 Object.entries(normalizedProject).map(async ([key, value]) => {
@@ -184,6 +209,7 @@ export async function captureMyceliumProjectReceipt(page: Page): Promise<Myceliu
             noteCount: Object.values(projectData.midi.notesByClipId).reduce((total, notes) => total + notes.length, 0),
             automationLaneCount: projectData.automation.lanes.length,
             automationPointCount: projectData.automation.lanes.reduce((total, lane) => total + lane.points.length, 0),
+            trackNotesMutationSha256,
         };
     });
 }

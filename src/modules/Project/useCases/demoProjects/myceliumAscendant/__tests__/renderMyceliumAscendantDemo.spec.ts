@@ -55,6 +55,7 @@ type EvidenceReceipt = {
     sourceTreeSha256: string;
     sourceTreeHashScope: string;
     sourceTrackedFileCount: number;
+    trackNotesMutationSha256: string;
     receiptSha256: string;
 };
 
@@ -102,6 +103,16 @@ function hasItems(value: unknown, property: string): boolean {
     return !Array.isArray(items) || items.length > 0;
 }
 
+function isSerializedProjectClip(value: Record<string, unknown>): boolean {
+    return (
+        typeof value.id === 'string' &&
+        typeof value.trackId === 'string' &&
+        typeof value.startBeat === 'number' &&
+        typeof value.endBeat === 'number' &&
+        (value.type === 'audio' || value.type === 'midi')
+    );
+}
+
 function normalizeProjectEvidence(value: unknown): unknown {
     if (Array.isArray(value)) {
         return value.map((item) => normalizeProjectEvidence(item));
@@ -113,7 +124,10 @@ function normalizeProjectEvidence(value: unknown): unknown {
         if (child === undefined) {
             return false;
         }
-        if (key === 'createdAt' || key === 'updatedAt' || key === 'notes') {
+        if (key === 'createdAt' || key === 'updatedAt') {
+            return false;
+        }
+        if (key === 'notes' && Array.isArray(child) && isSerializedProjectClip(value)) {
             return false;
         }
         if (
@@ -163,6 +177,18 @@ function projectSectionSha256(normalizedProject: unknown): Record<string, string
             createHash('sha256').update(JSON.stringify(value)).digest('hex'),
         ])
     );
+}
+
+function trackNotesMutationSha256(projectData: ProjectData): string {
+    const mutationProject = structuredClone(projectData);
+    const mutationTrack = mutationProject.arrangement.tracks[0];
+    if (!mutationTrack) {
+        throw new Error('Mycelium evidence could not select a track-notes mutation probe');
+    }
+    mutationTrack.notes = `${mutationTrack.notes}\n[mycelium-evidence-track-notes-probe]`;
+    return createHash('sha256')
+        .update(JSON.stringify(normalizeProjectEvidence(mutationProject)))
+        .digest('hex');
 }
 
 function readRenderEvidence(): RenderEvidence {
@@ -268,6 +294,7 @@ function expectValidReceipt(
     receipt: EvidenceReceipt,
     projectSha256: string,
     expectedProjectSectionSha256: Record<string, string>,
+    expectedTrackNotesMutationSha256: string,
     sourceRevision: string,
     sourceTreeManifest: { sha256: string; trackedFileCount: number }
 ): void {
@@ -276,6 +303,7 @@ function expectValidReceipt(
     expect(receipt.receiptSha256).toBe(createHash('sha256').update(JSON.stringify(payload)).digest('hex'));
     expect(receipt.projectSectionSha256).toEqual(expectedProjectSectionSha256);
     expect(receipt.projectSha256).toBe(projectSha256);
+    expect(receipt.trackNotesMutationSha256).toBe(expectedTrackNotesMutationSha256);
     expect(receipt.sourceRevision).toBe(sourceRevision);
     expect(receipt.sourceDirty).toBe(false);
     expect(receipt.sourceTreeSha256).toBe(sourceTreeManifest.sha256);
@@ -308,6 +336,7 @@ describe('Mycelium Ascendant full browser render', () => {
         const normalizedProject = normalizeProjectEvidence(projectData);
         const projectSha256 = createHash('sha256').update(JSON.stringify(normalizedProject)).digest('hex');
         const expectedProjectSectionSha256 = projectSectionSha256(normalizedProject);
+        const expectedTrackNotesMutationSha256 = trackNotesMutationSha256(projectData);
         const sourceRevision = evidence.sourceRevision;
         execFileSync('git', ['merge-base', '--is-ancestor', sourceRevision, 'HEAD'], {
             cwd: process.cwd(),
@@ -321,14 +350,23 @@ describe('Mycelium Ascendant full browser render', () => {
             desktopRuntimeEvidence,
             projectSha256,
             expectedProjectSectionSha256,
+            expectedTrackNotesMutationSha256,
             sourceRevision,
             sourceTreeManifest
         );
-        expectValidReceipt(evidence, projectSha256, expectedProjectSectionSha256, sourceRevision, sourceTreeManifest);
+        expectValidReceipt(
+            evidence,
+            projectSha256,
+            expectedProjectSectionSha256,
+            expectedTrackNotesMutationSha256,
+            sourceRevision,
+            sourceTreeManifest
+        );
         expectValidReceipt(
             automationStemEvidence,
             projectSha256,
             expectedProjectSectionSha256,
+            expectedTrackNotesMutationSha256,
             sourceRevision,
             sourceTreeManifest
         );
@@ -337,5 +375,14 @@ describe('Mycelium Ascendant full browser render', () => {
         expect(noteEventReport.projectSha256).toBe(projectSha256);
         expect(noteEventReport.totalNotes).toBe(noteSections.reduce((total, section) => total + section.noteCount, 0));
         expect(noteEventReport.sections).toEqual(noteSections);
+    });
+
+    it('includes persistent track notes in the project evidence digest', () => {
+        const { projectData } = createMyceliumAscendantBlueprint();
+        const projectSha256 = createHash('sha256')
+            .update(JSON.stringify(normalizeProjectEvidence(projectData)))
+            .digest('hex');
+
+        expect(trackNotesMutationSha256(projectData)).not.toBe(projectSha256);
     });
 });
