@@ -1,0 +1,53 @@
+docs/evidence/mycelium-ascendant/note-event-report.json
+  s_ac9b259eab20ba::t_ce13a1fcb3dcdb 94,108-109,133,136,145,152,155,157,159-160
+  s_ac9b259eab20ba::t_e589fb36f4f9b7 2-3,5,131,140,142-143,146,154
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/createMyceliumVoicePerformance.spec.ts
+  s_ac9b259eab20ba::t_fffa0df9e24e36 153,157,161,177-187
+  s_ac9b259eab20ba::t_c072a2f6cf24f8 64
+  s_ac9b259eab20ba::t_cefdc322159e72 65,103
+docs/evidence/mycelium-ascendant/automation-stem-evidence.json
+  s_ac9b259eab20ba::t_0aa0b258ba1847 2-3,9,17-18,23-24,30-31,58-59,64-66,76,78,136-138,142-143,172-174,215,236-259,306-307,318-319
+  s_ac9b259eab20ba::t_aed066fcfd48a5 52-53,100,112-114,144,228-229,234-235,308,320
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/createMyceliumAutomation.spec.ts
+  s_ac9b259eab20ba::t_cefdc322159e72 26
+  s_ac9b259eab20ba::t_8fc95ee97c7885 140
+src/modules/Project/useCases/demoProjects/myceliumAscendant/createMyceliumVoicePerformance.ts
+  s_ac9b259eab20ba::t_fffa0df9e24e36 88
+docs/evidence/mycelium-ascendant/motif-event-report.json
+  s_ac9b259eab20ba::t_e589fb36f4f9b7 2-3,393,457,489
+src/modules/Project/useCases/demoProjects/myceliumAscendant/createMyceliumAutomation.ts
+  s_ac9b259eab20ba::t_55cc29e4606383 7
+  s_ac9b259eab20ba::t_fffa0df9e24e36 25-26,192-201
+  s_ac9b259eab20ba::t_e6d25fac168ed9 147
+  s_ac9b259eab20ba::t_0fc2dacf1625c4 202-204
+  s_ac9b259eab20ba::t_174e703b01761b 205-206
+src/modules/Project/useCases/demoProjects/myceliumAscendant/createMyceliumRhythmPerformance.ts
+  s_ac9b259eab20ba::t_b77877415642e3 44,172,214-216
+tests/e2e/myceliumAutomationStems.spec.ts
+  s_ac9b259eab20ba::t_0aa0b258ba1847 356-358
+docs/evidence/mycelium-ascendant/render-evidence.json
+  s_ac9b259eab20ba::t_0aa0b258ba1847 2-4,13-15,17-19
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/createMyceliumAscendantDemo.spec.ts
+  s_ac9b259eab20ba::t_01858557092e15 44
+  s_ac9b259eab20ba::t_d8fd50945ed799 45
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/createMyceliumRhythmPerformance.spec.ts
+  s_ac9b259eab20ba::t_95de7638a97adb 129,152,157-159,167
+docs/evidence/mycelium-ascendant/desktop-runtime-evidence.json
+  s_ac9b259eab20ba::t_0aa0b258ba1847 2-3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "323eb8e7b2db30184fc57bd2ce5868b2aa42db93",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": null
+    }
+  }
+}
