@@ -9,12 +9,12 @@ import { getTrackEligibility } from '../../../stores/trackEligibility';
 
 export function setSend(trackId: string, busId: string, level: number, preFader = false): boolean {
     const track = getTrackById(trackId);
-    if (track && !getTrackEligibility(track.kind).acceptsSend) {
+    if (!track || !getTrackEligibility(track.kind).acceptsSend) {
         return false;
     }
 
     const targetTrack = getTrackById(busId);
-    if (targetTrack && !getTrackEligibility(targetTrack.kind).acceptsRoutingEndpoint) {
+    if (!targetTrack || !getTrackEligibility(targetTrack.kind).acceptsRoutingEndpoint) {
         return false;
     }
 

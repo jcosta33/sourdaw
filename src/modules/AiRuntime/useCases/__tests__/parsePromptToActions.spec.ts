@@ -126,6 +126,25 @@ describe('parsePromptToActions', () => {
         expect(result.executionMode).toBe('atomic');
     });
 
+    it('requires confirmation for a multi-action provider plan', async () => {
+        vi.mocked(generateToolCalls).mockResolvedValue([
+            { name: 'muteTrack', arguments: { trackId: 'track-vocals', muted: true } },
+            { name: 'setTrackGain', arguments: { trackId: 'track-guitar', gain: 0.6 } },
+        ]);
+        mockBridgeLlmToolCalls.mockReturnValue({
+            actions: [
+                { type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true } },
+                { type: 'setTrackGain', payload: { trackId: 'track-guitar', gain: 0.6 } },
+            ],
+            rejections: [],
+        });
+
+        const result = await parsePromptToActions('mute vocals and lower guitar', baseContext);
+
+        expect(result.requiresConfirmation).toBe(true);
+        expect(result.executionMode).toBe('atomic');
+    });
+
     it('does not partially accept a provider batch containing a rejected call', async () => {
         vi.mocked(generateToolCalls).mockResolvedValue([
             { name: 'muteTrack', arguments: { trackId: 'track-vocals', muted: true } },

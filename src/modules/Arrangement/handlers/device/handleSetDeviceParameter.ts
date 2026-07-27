@@ -10,6 +10,11 @@ export const handleSetDeviceParameter = createHandler<'setDeviceParameter'>({
             setDeviceParameter(alpha.payload.deviceId, alpha.payload.paramId, alpha.payload.value)
         );
     },
+    isNoop: (action) =>
+        getTrackStoreState()
+            ?.tracks.flatMap((track) => track.devices)
+            .find((device) => device.id === action.payload.deviceId)?.parameterValues[action.payload.paramId] ===
+        action.payload.value,
     describe: (alpha) => {
         const prev = getTrackStoreState()
             ?.tracks.flatMap((time) => time.devices)

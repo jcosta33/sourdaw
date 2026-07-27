@@ -1,3 +1,5 @@
+import { updateDeviceBypass } from '#/modules/AudioEngine/useCases';
+
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { mapAllTracks } from '../../repositories/track/mapAllTracks';
 import { getTrackEligibility } from '../../stores/trackEligibility';
@@ -10,16 +12,7 @@ export function bypassDevice(deviceId: string, bypassed: boolean): boolean {
                 if (!getTrackEligibility(track.kind).acceptsDeviceUpdate) {
                     return false;
                 }
-                // Forward bypass to live engine for native DSP devices
-                import('#/modules/AudioEngine/useCases')
-                    .then(({ updateDeviceBypass }) => {
-                        updateDeviceBypass(track.id, deviceId, bypassed);
-                        return null;
-                    })
-                    .catch(() => {
-                        // Engine bypass forwarding is best-effort
-                        return null;
-                    });
+                updateDeviceBypass(track.id, deviceId, bypassed);
                 break;
             }
         }

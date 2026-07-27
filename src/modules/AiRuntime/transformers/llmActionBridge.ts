@@ -11,6 +11,9 @@ const EXECUTABLE_ACTION_TYPES = [
     'setTrackGain',
     'setTrackPan',
     'setTempo',
+    'setDeviceParameter',
+    'bypassDevice',
+    'setSend',
 ] as const satisfies readonly RuntimeActionType[];
 
 const MAX_LLM_ACTIONS_PER_BATCH = 24;
@@ -60,8 +63,37 @@ function isFiniteNumber(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value);
 }
 
+function isValidParameterValue(
+    parameter: NonNullable<ProjectContext['tracks'][number]['devices'][number]['parameters']>[number],
+    value: number
+): boolean {
+    if (value < parameter.minValue || value > parameter.maxValue) {
+        return false;
+    }
+    if (parameter.type === 'bool') {
+        return value === 0 || value === 1;
+    }
+    if (parameter.type === 'int') {
+        return Number.isInteger(value);
+    }
+    if (parameter.type === 'choice') {
+        if (!Number.isInteger(value)) {
+            return false;
+        }
+        return parameter.choices ? value >= 0 && value < parameter.choices.length : true;
+    }
+    return true;
+}
+
 function hasTrack(context: ProjectContext, trackId: unknown): trackId is string {
     return typeof trackId === 'string' && context.tracks.some((track) => track.id === trackId);
+}
+
+function findDevice(context: ProjectContext, deviceId: unknown) {
+    if (typeof deviceId !== 'string') {
+        return undefined;
+    }
+    return context.tracks.flatMap((track) => track.devices).find((device) => device.id === deviceId);
 }
 
 function hasUnsafeProjectNameCharacters(name: string): boolean {
@@ -173,12 +205,79 @@ function bridgeToolCall({
         return { type: 'setTrackPan', payload: { trackId: args.trackId, pan: args.pan } };
     }
 
+    if (call.name === 'setDeviceParameter') {
+        if (
+            !hasExactKeys(args, ['deviceId', 'paramId', 'value']) ||
+            typeof args.deviceId !== 'string' ||
+            typeof args.paramId !== 'string' ||
+            !isFiniteNumber(args.value)
+        ) {
+            return rejection(index, call.name, 'Expected an available device parameter and finite value');
+        }
+        const device = findDevice(context, args.deviceId);
+        const parameter = (device?.parameters ?? []).find((candidate) => candidate.id === args.paramId);
+        if (!parameter || !isValidParameterValue(parameter, args.value)) {
+            return rejection(index, call.name, 'Expected a descriptor-backed parameter value within project bounds');
+        }
+        return {
+            type: 'setDeviceParameter',
+            payload: { deviceId: args.deviceId, paramId: args.paramId, value: args.value },
+        };
+    }
+
+    if (call.name === 'bypassDevice') {
+        if (
+            !hasExactKeys(args, ['deviceId', 'bypassed']) ||
+            !findDevice(context, args.deviceId) ||
+            typeof args.deviceId !== 'string' ||
+            typeof args.bypassed !== 'boolean'
+        ) {
+            return rejection(index, call.name, 'Expected an available deviceId and boolean bypassed value');
+        }
+        return { type: 'bypassDevice', payload: { deviceId: args.deviceId, bypassed: args.bypassed } };
+    }
+
+    if (call.name === 'setSend') {
+        const bus =
+            typeof args.busId === 'string'
+                ? context.tracks.find((track) => track.id === args.busId && track.kind === 'bus')
+                : undefined;
+        if (
+            !hasExactKeys(args, ['trackId', 'busId', 'level']) ||
+            !hasTrack(context, args.trackId) ||
+            !bus ||
+            args.trackId === args.busId ||
+            !isFiniteNumber(args.level) ||
+            args.level < 0 ||
+            args.level > 1
+        ) {
+            return rejection(
+                index,
+                call.name,
+                'Expected an available source track, distinct bus track, and finite level from 0 through 1'
+            );
+        }
+        return {
+            type: 'setSend',
+            payload: { trackId: args.trackId, busId: bus.id, level: args.level },
+        };
+    }
+
     return rejection(index, call.name, 'Tool is not in the executable LLM allowlist');
 }
 
 function getMutationKey(action: ExecutableRuntimeAction): string {
     if (action.type === 'setTempo') {
         return action.type;
+    }
+    if (action.type === 'setDeviceParameter') {
+        return `${action.type}:${action.payload.deviceId}:${action.payload.paramId}`;
+    }
+    if (action.type === 'bypassDevice') {
+        return `${action.type}:${action.payload.deviceId}`;
+    }
+    if (action.type === 'setSend') {
+        return `${action.type}:${action.payload.trackId}:${action.payload.busId}`;
     }
     return `${action.type}:${action.payload.trackId}`;
 }
@@ -241,6 +340,8 @@ export function buildLlmActionUserMessage({ prompt, context }: { prompt: string;
             soloed: track.soloed,
             gain: track.gain,
             pan: track.pan,
+            devices: track.devices,
+            sends: track.sends ?? [],
         })),
     };
 

@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
     transportStoreValue: { value: null } as any,
     workspaceStoreValue: { value: null } as any,
     clipSelectionStoreValue: { value: null } as any,
+    getPluginById: vi.fn(),
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
@@ -21,6 +22,10 @@ vi.mock('#/modules/Arrangement/stores', () => ({
             return mocks.clipSelectionStoreValue.value;
         },
     },
+}));
+
+vi.mock('#/modules/Arrangement/useCases', () => ({
+    getPluginById: mocks.getPluginById,
 }));
 
 vi.mock('#/modules/MIDI/stores', () => ({
@@ -55,6 +60,7 @@ describe('getProjectContext', () => {
         mocks.transportStoreValue.value = null;
         mocks.workspaceStoreValue.value = null;
         mocks.clipSelectionStoreValue.value = null;
+        mocks.getPluginById.mockReturnValue(undefined);
     });
 
     it('returns context with default values when stores are empty', () => {
@@ -84,7 +90,15 @@ describe('getProjectContext', () => {
                     gain: 0.8,
                     pan: -10,
                     clips: [{ id: 'c1', name: 'Vox 1', type: 'audio', startBeat: 0, endBeat: 4 }],
-                    devices: [{ id: 'd1', type: 'EQ', bypassed: false }],
+                    devices: [
+                        {
+                            id: 'd1',
+                            type: 'EQ',
+                            bypassed: false,
+                            parameterValues: { frequency: 1200, hidden: 0.5 },
+                        },
+                    ],
+                    sends: [{ busId: 'bus-1', level: 0.3, preFader: false }],
                 },
                 {
                     id: 't2',
@@ -97,6 +111,7 @@ describe('getProjectContext', () => {
                     pan: 0,
                     clips: [{ id: 'c2', name: 'Chords', type: 'midi', startBeat: 4, endBeat: 8 }],
                     devices: [],
+                    sends: [],
                 },
             ],
         };
@@ -119,6 +134,22 @@ describe('getProjectContext', () => {
             selectedClipIds: ['c2'],
         };
         mocks.workspaceStoreValue.value = { mode: 'mix' };
+        mocks.getPluginById.mockImplementation((pluginId: string) =>
+            pluginId === 'EQ'
+                ? {
+                      parameters: [
+                          {
+                              id: 'frequency',
+                              name: 'Frequency',
+                              type: 'float',
+                              minValue: 20,
+                              maxValue: 20_000,
+                              unit: 'Hz',
+                          },
+                      ],
+                  }
+                : undefined
+        );
 
         const context = getProjectContext();
 
@@ -157,7 +188,19 @@ describe('getProjectContext', () => {
             id: 'd1',
             type: 'EQ',
             bypassed: false,
+            parameters: [
+                {
+                    id: 'frequency',
+                    name: 'Frequency',
+                    type: 'float',
+                    value: 1200,
+                    minValue: 20,
+                    maxValue: 20_000,
+                    unit: 'Hz',
+                },
+            ],
         });
+        expect(context.tracks[0]?.sends).toEqual([{ busId: 'bus-1', level: 0.3 }]);
 
         // Second track (midi)
         expect(context.tracks[1]?.clips[0]).toMatchObject({

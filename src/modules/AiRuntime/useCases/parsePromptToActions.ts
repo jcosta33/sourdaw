@@ -105,7 +105,7 @@ export const parsePromptToActions = inject({ logger })(
                         return {
                             actions: validated,
                             rawText: prompt,
-                            requiresConfirmation: requiresConfirmation(validated),
+                            requiresConfirmation: validated.length > 1 || requiresConfirmation(validated),
                             executionMode: 'atomic',
                         };
                     }

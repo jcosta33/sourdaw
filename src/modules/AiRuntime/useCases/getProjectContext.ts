@@ -1,48 +1,19 @@
 import { clipSelectionStore, trackStore } from '#/modules/Arrangement/stores';
+import { getPluginById } from '#/modules/Arrangement/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { transportStore } from '#/modules/Transport/stores';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 
-export type ProjectContextClip = {
-    id: string;
-    name: string;
-    type: 'audio' | 'midi';
-    startBeat: number;
-    endBeat: number;
-    noteCount: number;
-};
+import { type ProjectContext } from '../models/ProjectContext';
 
-export type ProjectContextDevice = {
-    id: string;
-    type: string;
-    bypassed: boolean;
-};
-
-export type ProjectContextTrack = {
-    id: string;
-    name: string;
-    kind: string;
-    muted: boolean;
-    soloed: boolean;
-    armed: boolean;
-    gain: number;
-    pan: number;
-    clipCount: number;
-    deviceCount: number;
-    clips: ProjectContextClip[];
-    devices: ProjectContextDevice[];
-};
-
-export type ProjectContext = {
-    tempo: number;
-    timeSignature: [number, number];
-    tracks: ProjectContextTrack[];
-    selectedTrackId: string | null;
-    selectedClipId: string | null;
-    selectedClipIds: string[];
-    activeView: 'arrange' | 'automation' | 'clip' | 'mix';
-    playheadPosition: number;
-};
+export type {
+    ProjectContext,
+    ProjectContextClip,
+    ProjectContextDevice,
+    ProjectContextDeviceParameter,
+    ProjectContextSend,
+    ProjectContextTrack,
+} from '../models/ProjectContext';
 
 // §92.2 — Memoize the context by the identity of the four backing store
 // values. Stores use immutable replacement (.set(new object)), so
@@ -112,11 +83,39 @@ export function getProjectContext(): ProjectContext {
                 endBeat: context.endBeat,
                 noteCount: context.type === 'midi' ? (notesByClipId?.[context.id]?.length ?? 0) : 0,
             })),
-            devices: time.devices.map((data) => ({
-                id: data.id,
-                type: data.type,
-                bypassed: data.bypassed,
-            })),
+            devices: time.devices.map((data) => {
+                const descriptor = getPluginById(data.type);
+                const parameters = (descriptor?.parameters ?? []).flatMap((parameter) => {
+                    const value = data.parameterValues[parameter.id];
+                    if (
+                        typeof value !== 'number' ||
+                        !Number.isFinite(value) ||
+                        !Number.isFinite(parameter.minValue) ||
+                        !Number.isFinite(parameter.maxValue)
+                    ) {
+                        return [];
+                    }
+                    return [
+                        {
+                            id: parameter.id,
+                            name: parameter.name,
+                            type: parameter.type,
+                            value,
+                            minValue: parameter.minValue,
+                            maxValue: parameter.maxValue,
+                            unit: parameter.unit,
+                            ...(parameter.choices ? { choices: [...parameter.choices] } : {}),
+                        },
+                    ];
+                });
+                return {
+                    id: data.id,
+                    type: data.type,
+                    bypassed: data.bypassed,
+                    parameters,
+                };
+            }),
+            sends: time.sends.map((send) => ({ busId: send.busId, level: send.level })),
         })),
         selectedTrackId,
         selectedClipId,
