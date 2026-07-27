@@ -1,0 +1,19 @@
+src/modules/CrdtDocument/useCases/__tests__/loadCrdtProject.sanitization.integration.spec.ts
+  s_0920fcaedb5735::t_54ceac5e053a29 1,28,49,75,123,135,149-150,179
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "b6b1d35732b3fddbd232c5e304d35c08d332e359",
+  "prompts": {},
+  "sessions": {
+    "s_0920fcaedb5735": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fa298-e797-71d3-afd6-02227f73b1a9",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
