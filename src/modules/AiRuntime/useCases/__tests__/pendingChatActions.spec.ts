@@ -1,7 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { createAppActionCommittedError } from '#/modules/Command/useCases';
-
 import { type EditPlan } from '../../models/DsoTypes';
 import { type RuntimeAction } from '../../models/RuntimeAction';
 import {
@@ -13,14 +11,18 @@ import {
 import { cancelPendingChatActions } from '../cancelPendingChatActions';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 
+type ExecuteAppActionBatch = (typeof import('#/modules/Command/useCases'))['executeAppActionBatch'];
+type AppAction = Parameters<ExecuteAppActionBatch>[0][number];
+
 const mocks = vi.hoisted(() => ({
     executeAppAction: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
-    describeAction: vi.fn(() => 'Remove track'),
+    executeAppActionBatch: vi.fn<ExecuteAppActionBatch>(),
+    describeAction: vi.fn((_action: AppAction) => 'Remove track'),
     generateGroupId: vi.fn(() => ({ groupId: 'group-1', groupLabel: 'delete drums' })),
     pushAiActionGroup: vi.fn(),
     updateChatMessage: vi.fn(),
     notifyAiChange: vi.fn(),
-    commitDsoEditPlan: vi.fn(async () => ({ summaries: ['Removed track'], failures: [] })),
+    commitDsoEditPlan: vi.fn(() => Promise.resolve({ summaries: ['Removed track'], failures: [] })),
     trackStoreState: {
         value: {
             tracks: [
@@ -39,6 +41,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('#/modules/Command/useCases', async (import_original) => ({
     ...(await import_original<typeof import('#/modules/Command/useCases')>()),
     executeAppAction: mocks.executeAppAction,
+    executeAppActionBatch: mocks.executeAppActionBatch,
     describeAction: mocks.describeAction,
     generateGroupId: mocks.generateGroupId,
 }));
@@ -81,6 +84,15 @@ describe('pending chat action confirmation', () => {
         vi.clearAllMocks();
         clearPendingActionConfirmations();
         mocks.executeAppAction.mockResolvedValue(undefined);
+        mocks.executeAppActionBatch.mockImplementation((actions: Parameters<ExecuteAppActionBatch>[0]) =>
+            Promise.resolve({
+                status: 'committed',
+                actions: actions.map((action) => ({
+                    action,
+                    label: mocks.describeAction(action),
+                })),
+            })
+        );
         mocks.describeAction.mockReturnValue('Remove track');
         mocks.generateGroupId.mockReturnValue({ groupId: 'group-1', groupLabel: 'delete drums' });
         mocks.commitDsoEditPlan.mockResolvedValue({ summaries: ['Removed track'], failures: [] });
@@ -109,10 +121,11 @@ describe('pending chat action confirmation', () => {
         const result = await confirmPendingChatActions({ confirmationId: 'confirm-1' });
 
         expect(result).toEqual({ status: 'executed' });
-        expect(mocks.executeAppAction).toHaveBeenCalledWith(pendingAction, {
+        expect(mocks.executeAppActionBatch).toHaveBeenCalledWith([pendingAction], {
             groupId: 'group-1',
             groupLabel: 'delete drums',
             source: 'prompt',
+            requireCompensation: false,
         });
         expect(mocks.pushAiActionGroup).toHaveBeenCalledWith({
             id: 'group-1',
@@ -232,6 +245,7 @@ describe('pending chat action confirmation', () => {
 
         expect(result).toEqual({ status: 'cancelled' });
         expect(mocks.executeAppAction).not.toHaveBeenCalled();
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
         expect(mocks.pushAiActionGroup).not.toHaveBeenCalled();
         expect(mocks.notifyAiChange).not.toHaveBeenCalled();
         expect(mocks.updateChatMessage).toHaveBeenCalledWith(
@@ -246,46 +260,77 @@ describe('pending chat action confirmation', () => {
 
     it('should report a missing handler as not executed without dropping the proposal record', async () => {
         const missing_handler = new Error('No handler registered for action: removeClip');
-        mocks.executeAppAction.mockResolvedValueOnce(undefined).mockRejectedValueOnce(missing_handler);
-        mocks.describeAction.mockReturnValueOnce('Remove track');
+        mocks.executeAppActionBatch.mockResolvedValueOnce({
+            status: 'rejected',
+            reason: missing_handler.message,
+            actions: [],
+        });
         proposePendingActionConfirmation({
             id: 'confirm-1',
             prompt: 'delete drums',
             assistantMessageId: 'assistant-1',
             actions: [pendingAction, secondPendingAction],
             actionLabels: ['Remove track', 'Remove clip'],
+            executionMode: 'atomic',
         });
 
         const result = await confirmPendingChatActions({ confirmationId: 'confirm-1' });
 
         expect(result).toEqual({ status: 'failed', reason: missing_handler.message });
-        expect(mocks.pushAiActionGroup).toHaveBeenCalledWith(
-            expect.objectContaining({
-                actions: [{ kind: 'appAction', actionType: 'removeTrack', label: 'Remove track' }],
-            })
-        );
-        expect(mocks.notifyAiChange).toHaveBeenCalledWith('Confirmed: delete drums', ['removeTrack']);
+        expect(mocks.pushAiActionGroup).not.toHaveBeenCalled();
+        expect(mocks.notifyAiChange).not.toHaveBeenCalled();
         expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
             'assistant-1',
             expect.objectContaining({
                 error: missing_handler.message,
                 pendingActionConfirmationStatus: 'failed',
-                content: expect.stringMatching(/partially.*do not retry the whole command/is),
+                content: expect.stringMatching(/failed.*atomically/is),
             })
         );
         expect(getPendingActionConfirmation('confirm-1')?.status).toBe('failed');
         expect(getPendingActionConfirmation('confirm-1')?.error).toBe(missing_handler.message);
-        expect(getPendingActionConfirmation('confirm-1')?.executedActions).toEqual([
-            { actionType: 'removeTrack', label: 'Remove track' },
-        ]);
+        expect(getPendingActionConfirmation('confirm-1')?.executedActions).toEqual([]);
+    });
+
+    it('should preserve an ambiguous confirmed batch without claiming any action executed', async () => {
+        const reason = 'Automerge storage transaction committed before a later document failed';
+        mocks.executeAppActionBatch.mockResolvedValueOnce({
+            status: 'ambiguous',
+            reason,
+            actions: [],
+        });
+        proposePendingActionConfirmation({
+            id: 'confirm-1',
+            prompt: 'delete drums',
+            assistantMessageId: 'assistant-1',
+            actions: [pendingAction, secondPendingAction],
+            actionLabels: ['Remove track', 'Remove clip'],
+            executionMode: 'atomic',
+        });
+
+        const result = await confirmPendingChatActions({ confirmationId: 'confirm-1' });
+
+        expect(result).toEqual({ status: 'failed', reason });
+        expect(mocks.pushAiActionGroup).not.toHaveBeenCalled();
+        expect(mocks.notifyAiChange).not.toHaveBeenCalled();
+        expect(getPendingActionConfirmation('confirm-1')?.executedActions).toEqual([]);
+        expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+            'assistant-1',
+            expect.objectContaining({
+                error: reason,
+                pendingActionConfirmationStatus: 'failed',
+                content: expect.stringMatching(/uncertain partial commit.*do not retry/is),
+            })
+        );
     });
 
     it('should record a committed confirmation action as executed and warn against retrying', async () => {
-        const committed_failure = createAppActionCommittedError({
-            actionType: 'removeTrack',
-            cause: new Error('Action committed but history failed'),
+        const warning = 'Action committed but history failed';
+        mocks.executeAppActionBatch.mockResolvedValueOnce({
+            status: 'committed-with-warning',
+            actions: [{ action: pendingAction, label: 'Remove track' }],
+            warning,
         });
-        mocks.executeAppAction.mockRejectedValueOnce(committed_failure);
         proposePendingActionConfirmation({
             id: 'confirm-1',
             prompt: 'delete drums',
@@ -315,39 +360,79 @@ describe('pending chat action confirmation', () => {
         );
     });
 
-    it('should report committed history failure together with a later confirmation failure', async () => {
-        const committed_failure = createAppActionCommittedError({
-            actionType: 'removeTrack',
-            cause: new Error('first action history failed'),
+    it('keeps a confirmed action executed when AI history reporting throws after commit', async () => {
+        mocks.executeAppActionBatch.mockResolvedValueOnce({
+            status: 'committed',
+            actions: [{ action: pendingAction, label: 'Remove track' }],
         });
-        const later_failure = new Error('second action missing handler');
-        mocks.executeAppAction.mockRejectedValueOnce(committed_failure).mockRejectedValueOnce(later_failure);
+        mocks.pushAiActionGroup.mockImplementationOnce(() => {
+            throw new Error('AI history unavailable');
+        });
+        proposePendingActionConfirmation({
+            id: 'confirm-1',
+            prompt: 'delete drums',
+            assistantMessageId: 'assistant-1',
+            actions: [pendingAction],
+            actionLabels: ['Remove track'],
+        });
+
+        const result = await confirmPendingChatActions({ confirmationId: 'confirm-1' });
+
+        expect(result).toEqual({ status: 'executed' });
+        expect(getPendingActionConfirmation('confirm-1')?.status).toBe('executed');
+        expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+            'assistant-1',
+            expect.objectContaining({
+                pendingActionConfirmationStatus: 'executed',
+                error: 'AI history unavailable',
+                content: expect.stringMatching(/project change committed.*do not retry/is),
+            })
+        );
+    });
+
+    it('should execute a multi-action confirmation through one atomic batch', async () => {
+        mocks.executeAppActionBatch.mockResolvedValueOnce({
+            status: 'committed',
+            actions: [
+                { action: pendingAction, label: 'Remove track' },
+                { action: secondPendingAction, label: 'Remove clip' },
+            ],
+        });
         proposePendingActionConfirmation({
             id: 'confirm-1',
             prompt: 'delete drums and clip',
             assistantMessageId: 'assistant-1',
             actions: [pendingAction, secondPendingAction],
             actionLabels: ['Remove track', 'Remove clip'],
+            executionMode: 'atomic',
         });
 
         const result = await confirmPendingChatActions({ confirmationId: 'confirm-1' });
 
-        expect(result).toEqual({ status: 'failed', reason: later_failure.message });
+        expect(result).toEqual({ status: 'executed' });
         expect(getPendingActionConfirmation('confirm-1')?.executedActions).toEqual([
             { actionType: 'removeTrack', label: 'Remove track' },
+            { actionType: 'removeClip', label: 'Remove clip' },
         ]);
+        expect(mocks.executeAppActionBatch).toHaveBeenCalledWith([pendingAction, secondPendingAction], {
+            groupId: 'group-1',
+            groupLabel: 'delete drums',
+            source: 'prompt',
+            requireCompensation: true,
+        });
         expect(mocks.pushAiActionGroup).toHaveBeenCalledWith(
             expect.objectContaining({
-                actions: [{ kind: 'appAction', actionType: 'removeTrack', label: 'Remove track' }],
+                actions: [
+                    { kind: 'appAction', actionType: 'removeTrack', label: 'Remove track' },
+                    { kind: 'appAction', actionType: 'removeClip', label: 'Remove clip' },
+                ],
             })
         );
         expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
             'assistant-1',
             expect.objectContaining({
-                error: later_failure.message,
-                content: expect.stringMatching(
-                    /partially.*later action failed.*history.*do not retry the whole command/is
-                ),
+                pendingActionConfirmationStatus: 'executed',
+                content: expect.stringMatching(/executed.*remove track.*remove clip/is),
             })
         );
     });

@@ -7,6 +7,8 @@ export const handleSetTrackGain = createHandler<'setTrackGain'>({
     execute: (action) => {
         setTrackGain(action.payload.trackId, action.payload.gain);
     },
+    isNoop: (action) =>
+        getTrackStoreState()?.tracks.find((track) => track.id === action.payload.trackId)?.gain === action.payload.gain,
     describe: (alpha) => {
         const prev = getTrackStoreState()?.tracks.find((time) => time.id === alpha.payload.trackId);
         return {

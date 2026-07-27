@@ -24,6 +24,7 @@ type PendingActionConfirmationBase = {
 export type PendingAppActionConfirmation = PendingActionConfirmationBase & {
     kind: 'app_actions';
     actions: RuntimeAction[];
+    executionMode: 'atomic' | undefined;
 };
 
 export type PendingDsoEditConfirmation = PendingActionConfirmationBase & {
@@ -51,6 +52,7 @@ type ProposePendingActionConfirmationInput = {
     assistantMessageId: string;
     actions: RuntimeAction[];
     actionLabels: string[];
+    executionMode?: 'atomic';
 };
 
 export function proposePendingActionConfirmation(
@@ -67,6 +69,7 @@ export function proposePendingActionConfirmation(
         prompt: input.prompt,
         assistantMessageId: input.assistantMessageId,
         actions: [...input.actions],
+        executionMode: input.executionMode,
         actionLabels: [...input.actionLabels],
         executedActions: [],
         status: 'proposed',
@@ -144,22 +147,22 @@ export function recordPendingActionExecution(
         return null;
     }
 
-    let updated: PendingActionConfirmation | null = null;
+    const current = state.confirmations.find((confirmation) => confirmation.id === input.confirmationId);
+    if (!current) {
+        return null;
+    }
+
+    const updated: PendingActionConfirmation = {
+        ...current,
+        executedActions: [...current.executedActions, input.execution],
+    };
     const confirmations = state.confirmations.map((confirmation) => {
         if (confirmation.id !== input.confirmationId) {
             return confirmation;
         }
 
-        updated = {
-            ...confirmation,
-            executedActions: [...confirmation.executedActions, input.execution],
-        };
         return updated;
     });
-
-    if (!updated) {
-        return null;
-    }
 
     pendingActionConfirmationStore.set({ confirmations });
     return updated;
@@ -179,24 +182,24 @@ export function updatePendingActionConfirmationStatus(
         return null;
     }
 
-    let updated: PendingActionConfirmation | null = null;
+    const current = state.confirmations.find((confirmation) => confirmation.id === input.confirmationId);
+    if (!current) {
+        return null;
+    }
+
+    const updated: PendingActionConfirmation = {
+        ...current,
+        status: input.status,
+        error: input.error ?? null,
+        resolvedAt: input.status === 'proposed' || input.status === 'accepted' ? null : Date.now(),
+    };
     const confirmations = state.confirmations.map((confirmation) => {
         if (confirmation.id !== input.confirmationId) {
             return confirmation;
         }
 
-        updated = {
-            ...confirmation,
-            status: input.status,
-            error: input.error ?? null,
-            resolvedAt: input.status === 'proposed' || input.status === 'accepted' ? null : Date.now(),
-        };
         return updated;
     });
-
-    if (!updated) {
-        return null;
-    }
 
     pendingActionConfirmationStore.set({ confirmations });
     return updated;

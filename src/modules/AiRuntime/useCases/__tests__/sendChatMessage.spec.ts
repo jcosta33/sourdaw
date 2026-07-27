@@ -1,7 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { createAppActionCommittedError } from '#/modules/Command/useCases';
-
 import { AiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
 import { type ChatMessage, type ChatState } from '../../models/Chat';
 import { type IntentResult } from '../../models/IntentResult';
@@ -11,6 +9,8 @@ import { type ProjectContext } from '../getProjectContext';
 import { sendChatMessage } from '../sendChatMessage';
 
 type MockBackend = 'native' | 'cloud' | 'webllm' | 'none';
+type ExecuteAppActionBatch = (typeof import('#/modules/Command/useCases'))['executeAppActionBatch'];
+type AppAction = Parameters<ExecuteAppActionBatch>[0][number];
 type MockWebLlmEngine = {
     interruptGenerate: () => void;
     chat: { completions: { create: (payload: Record<string, unknown>) => Promise<unknown> } };
@@ -22,7 +22,8 @@ const mocks = vi.hoisted(() => {
     return {
         chatStoreValue: { value: null as ChatState | null },
         executeAppAction: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
-        describeAction: vi.fn(() => 'Remove track'),
+        executeAppActionBatch: vi.fn<ExecuteAppActionBatch>(),
+        describeAction: vi.fn((_action: AppAction) => 'Remove track'),
         generateGroupId: vi.fn(() => ({ groupId: 'group-1', groupLabel: 'delete drums' })),
         parsePromptToActions:
             vi.fn<(prompt: string, context: ProjectContext, signal?: AbortSignal) => Promise<IntentResult>>(),
@@ -77,6 +78,7 @@ vi.mock('../../repositories/webLlm/getActiveModelId', () => ({
 vi.mock('#/modules/Command/useCases', async (import_original) => ({
     ...(await import_original<typeof import('#/modules/Command/useCases')>()),
     executeAppAction: mocks.executeAppAction,
+    executeAppActionBatch: mocks.executeAppActionBatch,
     describeAction: mocks.describeAction,
     generateGroupId: mocks.generateGroupId,
 }));
@@ -121,6 +123,15 @@ describe('sendChatMessage injectables', () => {
         llmStatusStore.set({ state: 'idle' });
         mocks.streamCloudChatCompletion.mockResolvedValue({ status: 'complete' });
         mocks.executeAppAction.mockResolvedValue(undefined);
+        mocks.executeAppActionBatch.mockImplementation((actions: Parameters<ExecuteAppActionBatch>[0]) =>
+            Promise.resolve({
+                status: 'committed',
+                actions: actions.map((action) => ({
+                    action,
+                    label: mocks.describeAction(action),
+                })),
+            })
+        );
         mocks.describeAction.mockReturnValue('Remove track');
         mocks.generateGroupId.mockReturnValue({ groupId: 'group-1', groupLabel: 'delete drums' });
         mocks.parsePromptToActions.mockResolvedValue({
@@ -191,8 +202,9 @@ describe('sendChatMessage injectables', () => {
         );
     });
 
-    it('executes a validated provider action through executeAppAction', async () => {
+    it('executes validated provider actions through one atomic command batch', async () => {
         const action = { type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true } } as const;
+        const secondAction = { type: 'setTrackPan', payload: { trackId: 'track-guitar', pan: -20 } } as const;
         mocks.chatStoreValue.value = {
             messages: [],
             isGenerating: false,
@@ -200,20 +212,42 @@ describe('sendChatMessage injectables', () => {
             chatMode: 'prompt',
         };
         mocks.parsePromptToActions.mockResolvedValue({
-            actions: [action],
-            rawText: 'mute the vocals',
+            actions: [action, secondAction],
+            rawText: 'mute vocals and pan guitar left',
             requiresConfirmation: false,
+            executionMode: 'atomic',
+        });
+        mocks.executeAppActionBatch.mockResolvedValue({
+            status: 'committed',
+            actions: [
+                { action, label: 'Mute track' },
+                { action: secondAction, label: 'Set track pan' },
+            ],
         });
 
-        await sendChatMessage('mute the vocals');
+        await sendChatMessage('mute vocals and pan guitar left');
 
-        expect(mocks.executeAppAction).toHaveBeenCalledWith(
-            action,
+        expect(mocks.executeAppActionBatch).toHaveBeenCalledWith(
+            [action, secondAction],
             expect.objectContaining({
                 source: 'prompt',
+                requireCompensation: true,
+                shouldExecute: expect.any(Function),
             })
         );
-        expect(mocks.notifyAiChange).toHaveBeenCalledWith('Executed: mute the vocals', ['muteTrack']);
+        const activeAborter = mocks.setActiveAborter.mock.calls.find((call) => call[0] instanceof AbortController)?.[0];
+        const batchOptions = mocks.executeAppActionBatch.mock.calls[0]?.[1];
+        if (!activeAborter || !batchOptions?.shouldExecute) {
+            throw new Error('Expected prompt execution to preserve Stop authority');
+        }
+        expect(batchOptions.shouldExecute()).toBe(true);
+        activeAborter.abort();
+        expect(batchOptions.shouldExecute()).toBe(false);
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+        expect(mocks.notifyAiChange).toHaveBeenCalledWith('Executed: mute vocals and pan guitar left', [
+            'muteTrack',
+            'setTrackPan',
+        ]);
     });
 
     it('does not report a false command error when provider planning is stopped', async () => {
@@ -487,7 +521,11 @@ describe('sendChatMessage injectables', () => {
             rawText: 'delete drums',
             requiresConfirmation: false,
         });
-        mocks.executeAppAction.mockRejectedValueOnce(missing_handler);
+        mocks.executeAppActionBatch.mockResolvedValueOnce({
+            status: 'rejected',
+            reason: missing_handler.message,
+            actions: [],
+        });
 
         await sendChatMessage('delete drums');
 
@@ -498,7 +536,7 @@ describe('sendChatMessage injectables', () => {
             assistant_message?.id,
             expect.objectContaining({
                 isStreaming: false,
-                content: 'Failed to execute prompt command.',
+                content: `Failed to execute prompt command atomically: ${missing_handler.message}`,
                 error: missing_handler.message,
             })
         );
@@ -506,10 +544,8 @@ describe('sendChatMessage injectables', () => {
     });
 
     it('should record a committed prompt action as executed and warn against retrying', async () => {
-        const committed_failure = createAppActionCommittedError({
-            actionType: 'removeTrack',
-            cause: new Error('Action committed but history failed'),
-        });
+        const committedFailure = new Error('Action committed but history failed');
+        const action = { type: 'removeTrack', payload: { trackId: 'track-1' } } as const;
         mocks.chatStoreValue.value = {
             messages: [],
             isGenerating: false,
@@ -517,11 +553,15 @@ describe('sendChatMessage injectables', () => {
             chatMode: 'prompt',
         };
         mocks.parsePromptToActions.mockResolvedValue({
-            actions: [{ type: 'removeTrack', payload: { trackId: 'track-1' } }],
+            actions: [action],
             rawText: 'delete drums',
             requiresConfirmation: false,
         });
-        mocks.executeAppAction.mockRejectedValueOnce(committed_failure);
+        mocks.executeAppActionBatch.mockResolvedValueOnce({
+            status: 'committed-with-warning',
+            actions: [{ action, label: 'Remove track' }],
+            warning: committedFailure.message,
+        });
 
         await sendChatMessage('delete drums');
 
@@ -539,7 +579,40 @@ describe('sendChatMessage injectables', () => {
         expect(committedUpdate?.[1].content).toMatch(/applied.*history.*do not retry/is);
     });
 
-    it('should persist and report the executed subset when a later prompt action fails', async () => {
+    it('does not report execution failure when AI history reporting throws after commit', async () => {
+        const action = { type: 'removeTrack', payload: { trackId: 'track-1' } } as const;
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'prompt',
+        };
+        mocks.parsePromptToActions.mockResolvedValue({
+            actions: [action],
+            rawText: 'delete drums',
+            requiresConfirmation: false,
+        });
+        mocks.executeAppActionBatch.mockResolvedValueOnce({
+            status: 'committed',
+            actions: [{ action, label: 'Remove track' }],
+        });
+        mocks.pushAiActionGroup.mockImplementationOnce(() => {
+            throw new Error('AI history unavailable');
+        });
+
+        await sendChatMessage('delete drums');
+
+        const assistantMessage = mocks.appendChatMessage.mock.calls[1]?.[0];
+        expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+            assistantMessage?.id,
+            expect.objectContaining({
+                error: 'AI history unavailable',
+                content: expect.stringMatching(/project change committed.*do not retry/is),
+            })
+        );
+    });
+
+    it('does not persist or report a prefix when a later batch action fails', async () => {
         const later_failure = new Error('second action was not dispatched');
         mocks.chatStoreValue.value = {
             messages: [],
@@ -555,30 +628,28 @@ describe('sendChatMessage injectables', () => {
             rawText: 'delete drums and clip',
             requiresConfirmation: false,
         });
-        mocks.executeAppAction.mockResolvedValueOnce(undefined).mockRejectedValueOnce(later_failure);
+        mocks.executeAppActionBatch.mockResolvedValueOnce({
+            status: 'failed',
+            reason: later_failure.message,
+            actions: [],
+        });
 
         await sendChatMessage('delete drums and clip');
 
         expect(mocks.appendChatMessage).toHaveBeenCalledTimes(2);
-        expect(mocks.pushAiActionGroup).toHaveBeenCalledWith(
-            expect.objectContaining({
-                actions: [{ kind: 'appAction', actionType: 'removeTrack', label: 'Remove track' }],
-            })
-        );
-        expect(mocks.notifyAiChange).toHaveBeenCalledWith('Executed: delete drums and clip', ['removeTrack']);
+        expect(mocks.pushAiActionGroup).not.toHaveBeenCalled();
+        expect(mocks.notifyAiChange).not.toHaveBeenCalled();
         const assistant_message = mocks.appendChatMessage.mock.calls[1]?.[0];
         const partialUpdate = mocks.updateChatMessage.mock.lastCall;
         expect(partialUpdate?.[0]).toBe(assistant_message?.id);
         expect(partialUpdate?.[1].error).toBe(later_failure.message);
-        expect(partialUpdate?.[1].content).toMatch(/partially.*do not retry the whole command/is);
+        expect(partialUpdate?.[1].content).toBe(
+            `Failed to execute prompt command atomically: ${later_failure.message}`
+        );
     });
 
-    it('should report both earlier committed history failure and later dispatch failure', async () => {
-        const committed_failure = createAppActionCommittedError({
-            actionType: 'removeTrack',
-            cause: new Error('first action history failed'),
-        });
-        const later_failure = new Error('second action was not dispatched');
+    it('reports an ambiguous partial commit without creating AI history or suggesting retry', async () => {
+        const reason = 'Automerge storage transaction committed before a later document failed';
         mocks.chatStoreValue.value = {
             messages: [],
             isGenerating: false,
@@ -593,21 +664,64 @@ describe('sendChatMessage injectables', () => {
             rawText: 'delete drums and clip',
             requiresConfirmation: false,
         });
-        mocks.executeAppAction.mockRejectedValueOnce(committed_failure).mockRejectedValueOnce(later_failure);
+        mocks.executeAppActionBatch.mockResolvedValueOnce({
+            status: 'ambiguous',
+            reason,
+            actions: [],
+        });
+
+        await sendChatMessage('delete drums and clip');
+
+        expect(mocks.pushAiActionGroup).not.toHaveBeenCalled();
+        expect(mocks.notifyAiChange).not.toHaveBeenCalled();
+        const assistantMessage = mocks.appendChatMessage.mock.calls[1]?.[0];
+        expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+            assistantMessage?.id,
+            expect.objectContaining({
+                error: reason,
+                content: expect.stringMatching(/uncertain partial commit.*do not retry/is),
+            })
+        );
+    });
+
+    it('reports a full committed batch when post-commit history recording warns', async () => {
+        const warning = 'batch history failed';
+        const firstAction = { type: 'removeTrack', payload: { trackId: 'track-1' } } as const;
+        const secondAction = { type: 'removeClip', payload: { clipId: 'clip-1' } } as const;
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'prompt',
+        };
+        mocks.parsePromptToActions.mockResolvedValue({
+            actions: [firstAction, secondAction],
+            rawText: 'delete drums and clip',
+            requiresConfirmation: false,
+        });
+        mocks.executeAppActionBatch.mockResolvedValueOnce({
+            status: 'committed-with-warning',
+            actions: [
+                { action: firstAction, label: 'Remove track' },
+                { action: secondAction, label: 'Remove clip' },
+            ],
+            warning,
+        });
 
         await sendChatMessage('delete drums and clip');
 
         expect(mocks.pushAiActionGroup).toHaveBeenCalledWith(
             expect.objectContaining({
-                actions: [{ kind: 'appAction', actionType: 'removeTrack', label: 'Remove track' }],
+                actions: [
+                    { kind: 'appAction', actionType: 'removeTrack', label: 'Remove track' },
+                    { kind: 'appAction', actionType: 'removeClip', label: 'Remove clip' },
+                ],
             })
         );
         const assistant_message = mocks.appendChatMessage.mock.calls[1]?.[0];
         const combinedFailureUpdate = mocks.updateChatMessage.mock.lastCall;
         expect(combinedFailureUpdate?.[0]).toBe(assistant_message?.id);
-        expect(combinedFailureUpdate?.[1].error).toBe(later_failure.message);
-        expect(combinedFailureUpdate?.[1].content).toMatch(
-            /partially.*later action failed.*history.*do not retry the whole command/is
-        );
+        expect(combinedFailureUpdate?.[1].error).toBe(warning);
+        expect(combinedFailureUpdate?.[1].content).toMatch(/applied.*history.*do not retry/is);
     });
 });

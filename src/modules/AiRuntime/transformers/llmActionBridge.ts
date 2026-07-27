@@ -13,6 +13,10 @@ const EXECUTABLE_ACTION_TYPES = [
     'setTempo',
 ] as const satisfies readonly RuntimeActionType[];
 
+const MAX_LLM_ACTIONS_PER_BATCH = 24;
+type ExecutableActionType = (typeof EXECUTABLE_ACTION_TYPES)[number];
+type ExecutableRuntimeAction = Extract<RuntimeAction, { type: ExecutableActionType }>;
+
 const executableActionTypes: ReadonlySet<string> = new Set(EXECUTABLE_ACTION_TYPES);
 
 export const LLM_EXECUTABLE_TOOL_SCHEMAS: readonly ToolSchema[] = DAW_TOOL_SCHEMAS.filter((schema) =>
@@ -93,7 +97,7 @@ function bridgeToolCall({
     call: ToolCallResult;
     context: ProjectContext;
     index: number;
-}): RuntimeAction | LlmActionRejection {
+}): ExecutableRuntimeAction | LlmActionRejection {
     const args = call.arguments;
 
     if (call.name === 'setTempo') {
@@ -172,13 +176,42 @@ function bridgeToolCall({
     return rejection(index, call.name, 'Tool is not in the executable LLM allowlist');
 }
 
+function getMutationKey(action: ExecutableRuntimeAction): string {
+    if (action.type === 'setTempo') {
+        return action.type;
+    }
+    return `${action.type}:${action.payload.trackId}`;
+}
+
 export function bridgeLlmToolCalls({ calls, context }: BridgeLlmToolCallsInput): LlmActionBridgeResult {
+    if (calls.length > MAX_LLM_ACTIONS_PER_BATCH) {
+        return {
+            actions: [],
+            rejections: [
+                rejection(
+                    MAX_LLM_ACTIONS_PER_BATCH,
+                    '<batch>',
+                    `Provider batch exceeds the ${String(MAX_LLM_ACTIONS_PER_BATCH)}-action limit`
+                ),
+            ],
+        };
+    }
+
     const actions: RuntimeAction[] = [];
     const rejections: LlmActionRejection[] = [];
+    const mutationKeys = new Set<string>();
 
     for (const [index, call] of calls.entries()) {
         const result = bridgeToolCall({ call, context, index });
         if ('type' in result) {
+            const mutationKey = getMutationKey(result);
+            if (mutationKeys.has(mutationKey)) {
+                rejections.push(
+                    rejection(index, call.name, 'Provider batch writes the same target field more than once')
+                );
+                continue;
+            }
+            mutationKeys.add(mutationKey);
             actions.push(result);
         } else {
             rejections.push(result);

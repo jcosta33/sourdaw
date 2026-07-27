@@ -88,6 +88,44 @@ describe('bridgeLlmToolCalls', () => {
         ]);
     });
 
+    it('rejects an oversized provider batch before converting any action', () => {
+        const result = bridgeLlmToolCalls({
+            calls: Array.from({ length: 25 }, () => ({
+                name: 'muteTrack',
+                arguments: { trackId: 'track-vocals', muted: true },
+            })),
+            context: projectContext,
+        });
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toEqual([
+            {
+                index: 24,
+                name: '<batch>',
+                reason: 'Provider batch exceeds the 24-action limit',
+            },
+        ]);
+    });
+
+    it('rejects duplicate writes to the same target field instead of depending on ambiguous order', () => {
+        const result = bridgeLlmToolCalls({
+            calls: [
+                { name: 'setTrackGain', arguments: { trackId: 'track-vocals', gain: 0.6 } },
+                { name: 'setTrackGain', arguments: { trackId: 'track-vocals', gain: 0.7 } },
+            ],
+            context: projectContext,
+        });
+
+        expect(result.actions).toEqual([{ type: 'setTrackGain', payload: { trackId: 'track-vocals', gain: 0.6 } }]);
+        expect(result.rejections).toEqual([
+            {
+                index: 1,
+                name: 'setTrackGain',
+                reason: 'Provider batch writes the same target field more than once',
+            },
+        ]);
+    });
+
     it('exposes only actions accepted by the bridge to providers', () => {
         expect(LLM_EXECUTABLE_TOOL_SCHEMAS.map((schema) => schema.function.name)).toEqual([
             'renameTrack',

@@ -4,15 +4,27 @@ import { handleSoloTrack } from '../soloTrack';
 
 const mocks = vi.hoisted(() => ({
     soloTrack: vi.fn(),
+    trackStoreState: {
+        value: {
+            tracks: [{ id: 't1', soloed: false }],
+        },
+    },
 }));
 
 vi.mock('../../../useCases/toggleTrackState/soloTrack', () => ({
     soloTrack: mocks.soloTrack,
 }));
 
+vi.mock('../../../useCases/getTrackStoreState', () => ({
+    getTrackStoreState: () => mocks.trackStoreState.value,
+}));
+
 describe('handleSoloTrack', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.trackStoreState.value = {
+            tracks: [{ id: 't1', soloed: false }],
+        };
     });
 
     it('executes soloTrack with payload', () => {
@@ -35,6 +47,7 @@ describe('handleSoloTrack', () => {
             payload: { trackId: 't1', soloed: false },
         });
 
+        mocks.trackStoreState.value.tracks[0] = { id: 't1', soloed: true };
         const desc2 = handleSoloTrack.describe({
             type: 'soloTrack',
             payload: { trackId: 't1', soloed: false },
@@ -44,6 +57,17 @@ describe('handleSoloTrack', () => {
             type: 'soloTrack',
             payload: { trackId: 't1', soloed: true },
         });
+    });
+
+    it('does not manufacture an inverse for a missing track', () => {
+        mocks.trackStoreState.value = { tracks: [] };
+
+        const desc = handleSoloTrack.describe({
+            type: 'soloTrack',
+            payload: { trackId: 'missing', soloed: true },
+        });
+
+        expect(desc.inverseAction).toBeNull();
     });
 
     it('is undoable', () => {
