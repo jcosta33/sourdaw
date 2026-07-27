@@ -1,0 +1,25 @@
+scripts/agent-campaign/evidenceResultBinding.ts
+  s_bc88af7d3b054c::t_e670ed291c7372 131-135
+  s_bc88af7d3b054c::t_d08cc5a6398ccb 19-20,33,116-120,144
+  s_bc88af7d3b054c::t_75157aa3a71235 1-18,21-32,34-115,121-130,136-143,145-165
+scripts/agent-campaign/__tests__/evidenceResultBinding.spec.ts
+  s_bc88af7d3b054c::t_086ef76c889d7a 89-90,92-97,152-153,165-167,171-172
+  s_bc88af7d3b054c::t_015d68a73ef711 1-53,55-57,73-88,91,98-110,112-113,123-151,154-164,168-170,173-178
+  s_bc88af7d3b054c::t_392ea1ea2c3d18 54,58-72,111,114-122
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "b412d1ce5d3bbf81ef7bfc3866ea6b702d2cbf74",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": null
+    }
+  }
+}
