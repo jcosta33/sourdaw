@@ -266,8 +266,8 @@ function expectValidReceipt(receipt: EvidenceReceipt, projectSha256: string, sou
 //
 // Does NOT prove: that any audio was rendered, or that a render met its targets. Nothing in
 // this unit spec analyzes audio. The maintained E2E specs make the live assertions, attach
-// the complete receipts, and can write those exact receipt objects to the canonical evidence
-// paths when `MYCELIUM_EVIDENCE_DIRECTORY` is set.
+// the complete receipts; `scripts/capture-mycelium-evidence.mjs` extracts those attachments and
+// writes the exact receipt objects to the canonical evidence paths.
 describe('Mycelium Ascendant full browser render', () => {
     it('pins the blueprint against the recorded evidence artifacts', () => {
         const evidence = readRenderEvidence();
