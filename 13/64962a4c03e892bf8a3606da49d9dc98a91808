@@ -1,0 +1,30 @@
+src/modules/Arrangement/useCases/timeOperations/__tests__/globalTimeTransaction.spec.ts
+  s_c2fca615e81f34::t_a18f44988d1664 427-433
+src/modules/Arrangement/useCases/timeOperations/__tests__/prepareTimeOperationStateRestore.spec.ts
+  s_c2fca615e81f34::t_8bed584ca2d394 69,250,252,544-651
+  s_c2fca615e81f34::t_2dc10de39f4c02 652
+src/modules/Arrangement/useCases/timeOperations/timeOperationStateCodec.ts
+  s_c2fca615e81f34::t_c3deffa4b21f37 69-104,165-273,624-626,672-674,677,734-752
+src/modules/Arrangement/useCases/timeOperations/__tests__/globalTimeTransactionValidation.spec.ts
+  s_c2fca615e81f34::t_a18f44988d1664 698-704
+  s_c2fca615e81f34::t_75de300f2a7c04 707-741
+  s_c2fca615e81f34::t_3da4f5f93d9b9b 705-706
+src/modules/Arrangement/useCases/timeOperations/executeGlobalTimeOperation.ts
+  s_c2fca615e81f34::t_a18f44988d1664 970-985,1004,1025-1029,1038
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "1364962a4c03e892bf8a3606da49d9dc98a91808",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
