@@ -53,6 +53,13 @@ function createRgbFrame(red = 0, green = 0, blue = 0): Uint8Array {
     return pixels;
 }
 
+function rgbForBgr565(value: number): readonly [number, number, number] {
+    const red = (value & 0x1f) << 3;
+    const green = ((value >> 5) & 0x3f) << 2;
+    const blue = ((value >> 11) & 0x1f) << 3;
+    return [red, green, blue];
+}
+
 function captureWrite(input: PushDisplayTransportWriteInput): CapturedWrite {
     return {
         endpoint: input.endpoint,
@@ -164,6 +171,12 @@ describe('createPushDisplayProtocol', () => {
         const protocol = createPushDisplayProtocol({ transport, scheduler: manual.scheduler });
         const pixels = createRgbFrame();
         pixels.set([255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 255], 0);
+        pixels.set(rgbForBgr565(0xffff), (DISPLAY_WIDTH - 1) * 3);
+        for (let row = 1; row < DISPLAY_HEIGHT; row += 1) {
+            const sourceRowOffset = row * DISPLAY_WIDTH * 3;
+            pixels.set(rgbForBgr565(row + 1), sourceRowOffset);
+            pixels.set(rgbForBgr565(0xffff - row), sourceRowOffset + (DISPLAY_WIDTH - 1) * 3);
+        }
 
         await expect(protocol.submitFrame(pixels)).resolves.toEqual({ status: 'written' });
 
@@ -186,7 +199,32 @@ describe('createPushDisplayProtocol', () => {
         expect([...payloadWrite.data.slice(PIXEL_BYTES_PER_ROW, PIXEL_BYTES_PER_ROW + 8)]).toEqual([
             0xe7, 0xf3, 0xe7, 0xff, 0xe7, 0xf3, 0xe7, 0xff,
         ]);
-        expect([...payloadWrite.data.slice(ROW_BYTES, ROW_BYTES + 4)]).toEqual(XOR_MASK);
+
+        const actualRowBoundaries = Array.from({ length: DISPLAY_HEIGHT }, (_, row) => {
+            const rowOffset = row * ROW_BYTES;
+            const lastPixelOffset = rowOffset + PIXEL_BYTES_PER_ROW - 2;
+            const fillerOffset = rowOffset + PIXEL_BYTES_PER_ROW;
+            return {
+                firstPixel: [removeXor(payloadWrite.data, rowOffset), removeXor(payloadWrite.data, rowOffset + 1)],
+                lastPixel: [
+                    removeXor(payloadWrite.data, lastPixelOffset),
+                    removeXor(payloadWrite.data, lastPixelOffset + 1),
+                ],
+                filler: Array.from({ length: ROW_BYTES - PIXEL_BYTES_PER_ROW }, (_, fillerIndex) =>
+                    removeXor(payloadWrite.data, fillerOffset + fillerIndex)
+                ),
+            };
+        });
+        const expectedRowBoundaries = Array.from({ length: DISPLAY_HEIGHT }, (_, row) => {
+            const firstPixelValue = row === 0 ? 0x001f : row + 1;
+            const lastPixelValue = 0xffff - row;
+            return {
+                firstPixel: [firstPixelValue & 0xff, firstPixelValue >> 8],
+                lastPixel: [lastPixelValue & 0xff, lastPixelValue >> 8],
+                filler: Array.from({ length: ROW_BYTES - PIXEL_BYTES_PER_ROW }, () => 0),
+            };
+        });
+        expect(actualRowBoundaries).toEqual(expectedRowBoundaries);
     });
 
     it('rejects a wrong-sized RGB frame before transport I/O', async () => {
@@ -194,19 +232,21 @@ describe('createPushDisplayProtocol', () => {
         const manual = createManualScheduler();
         const protocol = createPushDisplayProtocol({ transport, scheduler: manual.scheduler });
 
-        await expect(protocol.submitFrame(new Uint8Array(RGB_FRAME_BYTES - 1))).resolves.toEqual({
-            status: 'failed',
-            reason: 'invalid-frame',
-        });
+        for (const invalidLength of [RGB_FRAME_BYTES - 1, RGB_FRAME_BYTES + 1]) {
+            await expect(protocol.submitFrame(new Uint8Array(invalidLength))).resolves.toEqual({
+                status: 'failed',
+                reason: 'invalid-frame',
+            });
+        }
         expect(writes).toHaveLength(0);
     });
 
-    it('rejects a short header write without submitting payload data', async () => {
+    it.each([15, 17])('rejects a header write count of %i without submitting payload data', async (bytesWritten) => {
         const writes: CapturedWrite[] = [];
         const transport: PushDisplayTransport = {
             write(input) {
                 writes.push(captureWrite(input));
-                return Promise.resolve({ bytesWritten: 15 });
+                return Promise.resolve({ bytesWritten });
             },
         };
         const manual = createManualScheduler();
@@ -214,12 +254,12 @@ describe('createPushDisplayProtocol', () => {
 
         await expect(protocol.submitFrame(createRgbFrame())).resolves.toEqual({
             status: 'failed',
-            reason: 'short-header-write',
+            reason: 'header-write-count-mismatch',
         });
         expect(writes).toHaveLength(1);
     });
 
-    it('rejects a short payload write', async () => {
+    it.each([-1, 1])('rejects a payload write count offset of %i', async (writeCountOffset) => {
         let writeIndex = 0;
         const transport: PushDisplayTransport = {
             write(input) {
@@ -227,7 +267,7 @@ describe('createPushDisplayProtocol', () => {
                 if (writeIndex === 1) {
                     return Promise.resolve({ bytesWritten: input.data.length });
                 }
-                return Promise.resolve({ bytesWritten: input.data.length - 1 });
+                return Promise.resolve({ bytesWritten: input.data.length + writeCountOffset });
             },
         };
         const manual = createManualScheduler();
@@ -235,7 +275,7 @@ describe('createPushDisplayProtocol', () => {
 
         await expect(protocol.submitFrame(createRgbFrame())).resolves.toEqual({
             status: 'failed',
-            reason: 'short-payload-write',
+            reason: 'payload-write-count-mismatch',
         });
         expect(writeIndex).toBe(2);
     });

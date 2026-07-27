@@ -19,7 +19,7 @@ export type PushDisplaySubmissionResult =
     | Readonly<{ status: 'disconnected' }>
     | Readonly<{
           status: 'failed';
-          reason: 'invalid-frame' | 'short-header-write' | 'short-payload-write' | 'transport-error';
+          reason: 'invalid-frame' | 'header-write-count-mismatch' | 'payload-write-count-mismatch' | 'transport-error';
       }>;
 
 export type PushDisplayProtocol = Readonly<{
@@ -53,13 +53,13 @@ const INVALID_FRAME_RESULT: PushDisplaySubmissionResult = Object.freeze({
     status: 'failed',
     reason: 'invalid-frame',
 });
-const SHORT_HEADER_RESULT: PushDisplaySubmissionResult = Object.freeze({
+const HEADER_WRITE_COUNT_MISMATCH_RESULT: PushDisplaySubmissionResult = Object.freeze({
     status: 'failed',
-    reason: 'short-header-write',
+    reason: 'header-write-count-mismatch',
 });
-const SHORT_PAYLOAD_RESULT: PushDisplaySubmissionResult = Object.freeze({
+const PAYLOAD_WRITE_COUNT_MISMATCH_RESULT: PushDisplaySubmissionResult = Object.freeze({
     status: 'failed',
-    reason: 'short-payload-write',
+    reason: 'payload-write-count-mismatch',
 });
 const TRANSPORT_ERROR_RESULT: PushDisplaySubmissionResult = Object.freeze({
     status: 'failed',
@@ -166,7 +166,7 @@ export function createPushDisplayProtocol({
                 return;
             }
             if (headerResult.bytesWritten !== FRAME_HEADER.length) {
-                settleSubmission(submission, SHORT_HEADER_RESULT);
+                settleSubmission(submission, HEADER_WRITE_COUNT_MISMATCH_RESULT);
                 return;
             }
 
@@ -179,7 +179,7 @@ export function createPushDisplayProtocol({
                 return;
             }
             if (payloadResult.bytesWritten !== payload.length) {
-                settleSubmission(submission, SHORT_PAYLOAD_RESULT);
+                settleSubmission(submission, PAYLOAD_WRITE_COUNT_MISMATCH_RESULT);
                 return;
             }
 
