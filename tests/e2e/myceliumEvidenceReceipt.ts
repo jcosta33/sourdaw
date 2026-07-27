@@ -1,5 +1,31 @@
 import type { Page } from '@playwright/test';
 
+type NodeHash = {
+    update(data: string | Uint8Array): NodeHash;
+    digest(encoding: 'hex'): string;
+};
+
+declare const process: {
+    cwd(): string;
+    getBuiltinModule(name: 'node:child_process'): {
+        execFileSync(file: string, args: readonly string[], options: { cwd: string; encoding: 'utf8' }): string;
+    };
+    getBuiltinModule(name: 'node:crypto'): {
+        createHash(algorithm: 'sha256'): NodeHash;
+    };
+    getBuiltinModule(name: 'node:fs'): {
+        lstatSync(path: string): { isSymbolicLink(): boolean };
+        readFileSync(path: string): Uint8Array;
+        readlinkSync(path: string): string;
+    };
+    getBuiltinModule(name: 'node:path'): {
+        resolve(...paths: string[]): string;
+    };
+};
+
+const EVIDENCE_PATHSPEC = ':(exclude)docs/evidence/mycelium-ascendant/**';
+const SOURCE_TREE_HASH_SCOPE = 'git-ls-files-excluding:docs/evidence/mycelium-ascendant/**';
+
 export type MyceliumProjectReceipt = {
     projectSha256: string;
     projectSectionSha256: Record<string, string>;
@@ -26,27 +52,41 @@ type BindMyceliumEvidenceInput = {
     measurements: Record<string, unknown>;
 };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null;
-}
-
-export function captureMyceliumSourceReceipt(metadata: unknown): MyceliumSourceReceipt {
-    if (
-        !isRecord(metadata) ||
-        typeof metadata.myceliumSourceRevision !== 'string' ||
-        typeof metadata.myceliumSourceDirty !== 'boolean' ||
-        typeof metadata.myceliumSourceTreeSha256 !== 'string' ||
-        typeof metadata.myceliumSourceTreeHashScope !== 'string' ||
-        typeof metadata.myceliumSourceTrackedFileCount !== 'number'
-    ) {
-        throw new TypeError('Mycelium evidence source receipt is missing from Playwright metadata');
+export function captureMyceliumSourceReceipt(): MyceliumSourceReceipt {
+    const { execFileSync } = process.getBuiltinModule('node:child_process');
+    const { createHash } = process.getBuiltinModule('node:crypto');
+    const { lstatSync, readFileSync, readlinkSync } = process.getBuiltinModule('node:fs');
+    const { resolve } = process.getBuiltinModule('node:path');
+    const root = process.cwd();
+    const sourceRevision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
+    const sourceDirty =
+        execFileSync('git', ['status', '--porcelain=v1', '--untracked-files=all', '--', '.', EVIDENCE_PATHSPEC], {
+            cwd: root,
+            encoding: 'utf8',
+        }).length > 0;
+    const sourceFiles = execFileSync('git', ['ls-files', '-z', '--', '.', EVIDENCE_PATHSPEC], {
+        cwd: root,
+        encoding: 'utf8',
+    })
+        .split('\0')
+        .filter((file) => file.length > 0)
+        .sort();
+    const sourceTreeHash = createHash('sha256');
+    for (const file of sourceFiles) {
+        const absolutePath = resolve(root, file);
+        sourceTreeHash.update(file);
+        sourceTreeHash.update('\0');
+        sourceTreeHash.update(
+            lstatSync(absolutePath).isSymbolicLink() ? readlinkSync(absolutePath) : readFileSync(absolutePath)
+        );
+        sourceTreeHash.update('\0');
     }
     return {
-        sourceRevision: metadata.myceliumSourceRevision,
-        sourceDirty: metadata.myceliumSourceDirty,
-        sourceTreeSha256: metadata.myceliumSourceTreeSha256,
-        sourceTreeHashScope: metadata.myceliumSourceTreeHashScope,
-        sourceTrackedFileCount: metadata.myceliumSourceTrackedFileCount,
+        sourceRevision,
+        sourceDirty,
+        sourceTreeSha256: sourceTreeHash.digest('hex'),
+        sourceTreeHashScope: SOURCE_TREE_HASH_SCOPE,
+        sourceTrackedFileCount: sourceFiles.length,
     };
 }
 
@@ -121,21 +161,18 @@ export async function captureMyceliumProjectReceipt(page: Page): Promise<Myceliu
                 }
                 return true;
             });
-            return Object.fromEntries(
-                entries
-                    .toSorted(([first], [second]) => first.localeCompare(second))
-                    .map(([key, child]) => {
-                        if (key === 'frequencies' && Array.isArray(child)) {
-                            return [
-                                key,
-                                child.map((frequency: unknown) =>
-                                    typeof frequency === 'number' ? Number(frequency.toPrecision(12)) : frequency
-                                ),
-                            ];
-                        }
-                        return [key, normalize(child)];
-                    })
-            );
+            const normalized: Record<string, unknown> = {};
+            entries.sort(([first], [second]) => first.localeCompare(second));
+            for (const [key, child] of entries) {
+                if (key === 'frequencies' && Array.isArray(child)) {
+                    normalized[key] = child.map((frequency: unknown) =>
+                        typeof frequency === 'number' ? Number(frequency.toPrecision(12)) : frequency
+                    );
+                    continue;
+                }
+                normalized[key] = normalize(child);
+            }
+            return normalized;
         };
         let projectData: ProjectDataShape | undefined;
         let normalizedProject: Record<string, unknown> | undefined;
@@ -190,18 +227,14 @@ export async function captureMyceliumProjectReceipt(page: Page): Promise<Myceliu
         if (trackNotesMutationSha256 === projectSha256) {
             throw new Error('Mycelium evidence digest omitted persistent track notes');
         }
-        const projectSectionSha256 = Object.fromEntries(
-            await Promise.all(
-                Object.entries(normalizedProject).map(async ([key, value]) => {
-                    const sectionBytes = new TextEncoder().encode(JSON.stringify(value));
-                    const sectionDigest = await crypto.subtle.digest('SHA-256', sectionBytes);
-                    const sectionSha256 = [...new Uint8Array(sectionDigest)]
-                        .map((byte) => byte.toString(16).padStart(2, '0'))
-                        .join('');
-                    return [key, sectionSha256];
-                })
-            )
-        );
+        const projectSectionSha256: Record<string, string> = {};
+        for (const [key, value] of Object.entries(normalizedProject)) {
+            const sectionBytes = new TextEncoder().encode(JSON.stringify(value));
+            const sectionDigest = await crypto.subtle.digest('SHA-256', sectionBytes);
+            projectSectionSha256[key] = [...new Uint8Array(sectionDigest)]
+                .map((byte) => byte.toString(16).padStart(2, '0'))
+                .join('');
+        }
         return {
             projectSha256,
             projectSectionSha256,

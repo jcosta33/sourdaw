@@ -85,7 +85,7 @@ const ALLOWED_WARNING_FRAGMENTS = [
 
 test('renders signal evidence for every required Mycelium automation audition window', async ({ page }, testInfo) => {
     test.setTimeout(1_200_000);
-    const sourceReceipt = captureMyceliumSourceReceipt(testInfo.config.metadata);
+    const sourceReceipt = captureMyceliumSourceReceipt();
     const configuredBaseUrl = testInfo.project.use.baseURL;
     if (typeof configuredBaseUrl !== 'string') {
         throw new TypeError('Mycelium stem E2E requires a configured Playwright baseURL');

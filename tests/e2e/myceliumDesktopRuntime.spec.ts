@@ -17,7 +17,7 @@ type RuntimeCall = { command: string; args: unknown };
 
 test('launches Mycelium through the Tauri v2 desktop-runtime contract', async ({ page }, testInfo) => {
     test.setTimeout(180_000);
-    const sourceReceipt = captureMyceliumSourceReceipt(testInfo.config.metadata);
+    const sourceReceipt = captureMyceliumSourceReceipt();
     const configuredBaseUrl = testInfo.project.use.baseURL;
     if (typeof configuredBaseUrl !== 'string') {
         throw new TypeError('Mycelium desktop-runtime E2E requires a configured Playwright baseURL');

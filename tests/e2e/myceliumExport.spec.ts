@@ -19,7 +19,7 @@ const ALLOWED_WARNING_FRAGMENTS = [
 
 test('exports the complete Mycelium Ascendant mix as a stereo WAV', async ({ page }, testInfo) => {
     test.setTimeout(900_000);
-    const sourceReceipt = captureMyceliumSourceReceipt(testInfo.config.metadata);
+    const sourceReceipt = captureMyceliumSourceReceipt();
     const configuredBaseUrl = testInfo.project.use.baseURL;
     if (typeof configuredBaseUrl !== 'string') {
         throw new TypeError('Mycelium export E2E requires a configured Playwright baseURL');
