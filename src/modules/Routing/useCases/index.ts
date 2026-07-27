@@ -5,6 +5,7 @@ export { removeSend } from './busControls/removeSend';
 export { hydrateSidechainRoutes } from './hydrateSidechainRoutes';
 export { addSidechainRoute } from './sidechain/addSidechainRoute';
 export { removeSidechainRoute } from './sidechain/removeSidechainRoute';
+export { restoreSidechainRoutes } from './sidechain/restoreSidechainRoutes';
 export { getSidechainRoutesForTrack } from './sidechain/getSidechainRoutesForTrack';
 export { getAllSidechainRoutes } from './sidechain/getAllSidechainRoutes';
 export { setSidechainRoutes } from './sidechain/setSidechainRoutes';

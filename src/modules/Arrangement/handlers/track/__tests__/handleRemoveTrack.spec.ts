@@ -39,10 +39,13 @@ function createTakeLane(id: string, trackId: string) {
 const mocks = vi.hoisted(() => ({
     getTrackStoreState: vi.fn(),
     removeTrack: vi.fn(),
-    removeModulator: vi.fn(),
-    removeMapping: vi.fn(),
+    publishTrackRemoved: vi.fn(),
+    finalizeRuntimeRemoval: vi.fn(),
+    finalizeModulationRemoval: vi.fn(),
+    removeTrackModulationReferences: vi.fn(),
     automationStoreValue: { value: null } as any,
     modulationStoreValue: { value: null } as any,
+    getAllSidechainRoutes: vi.fn(),
     midiStoreValue: { value: null } as any,
     takeLaneStoreValue: { value: null } as any,
 }));
@@ -53,6 +56,12 @@ vi.mock('../../../useCases/getTrackStoreState', () => ({
 
 vi.mock('../../../useCases/removeTrack', () => ({
     removeTrack: mocks.removeTrack,
+}));
+vi.mock('../../../useCases/publishTrackRemoved', () => ({
+    publishTrackRemoved: mocks.publishTrackRemoved,
+}));
+vi.mock('../../../useCases/removeTrackModulationReferences', () => ({
+    removeTrackModulationReferences: mocks.removeTrackModulationReferences,
 }));
 
 vi.mock('#/modules/Automation/stores', () => ({
@@ -68,17 +77,16 @@ vi.mock('#/modules/Automation/stores', () => ({
     },
 }));
 
-vi.mock('#/modules/Automation/useCases', () => ({
-    removeModulator: mocks.removeModulator,
-    removeMapping: mocks.removeMapping,
-}));
-
 vi.mock('#/modules/MIDI/stores', () => ({
     midiStore: {
         get value() {
             return mocks.midiStoreValue.value;
         },
     },
+}));
+
+vi.mock('#/modules/Routing/useCases', () => ({
+    getAllSidechainRoutes: mocks.getAllSidechainRoutes,
 }));
 
 vi.mock('../../../stores/takeLaneStore', () => ({
@@ -96,69 +104,54 @@ describe('handleRemoveTrack', () => {
         mocks.modulationStoreValue.value = null;
         mocks.midiStoreValue.value = null;
         mocks.takeLaneStoreValue.value = null;
+        mocks.getAllSidechainRoutes.mockReturnValue([]);
+        mocks.removeTrack.mockReturnValue({
+            removed: true,
+            finalizeRuntimeRemoval: mocks.finalizeRuntimeRemoval,
+        });
+        mocks.removeTrackModulationReferences.mockReturnValue(mocks.finalizeModulationRemoval);
     });
 
     describe('execute', () => {
-        it('calls removeTrack with the provided trackId', () => {
-            void handleRemoveTrack.execute({
+        it('removes the track and publishes only after commit', async () => {
+            const result = await handleRemoveTrack.execute({
                 type: 'removeTrack',
                 payload: { trackId: 't1' },
             });
-            expect(mocks.removeTrack).toHaveBeenCalledWith('t1');
+
+            expect(mocks.removeTrack).toHaveBeenCalledWith('t1', {
+                deferRuntimeEffects: true,
+                suppressRemovedEvent: true,
+            });
+            expect(mocks.finalizeRuntimeRemoval).not.toHaveBeenCalled();
+            expect(mocks.finalizeModulationRemoval).not.toHaveBeenCalled();
+            expect(mocks.publishTrackRemoved).not.toHaveBeenCalled();
+            expect(mocks.removeTrackModulationReferences).toHaveBeenCalledWith({
+                trackId: 't1',
+                deferRuntimeEffects: true,
+            });
+
+            await result?.afterCommit?.();
+
+            expect(mocks.finalizeRuntimeRemoval).toHaveBeenCalledOnce();
+            expect(mocks.finalizeModulationRemoval).toHaveBeenCalledOnce();
+            expect(mocks.publishTrackRemoved).toHaveBeenCalledWith({ trackId: 't1' });
         });
 
-        it('reconciles modulation: removes modulators owned by the track and mappings that target it', () => {
-            // m1 is owned by the removed track (t1) → its bindings can never resolve.
-            // m2 lives on another track (t2) but maps INTO t1 → that mapping dangles.
-            // m2 also has a mapping to t3 that must be left alone.
-            mocks.modulationStoreValue.value = {
-                modulators: [
-                    { id: 'm1', trackId: 't1', mappings: [] },
-                    {
-                        id: 'm2',
-                        trackId: 't2',
-                        mappings: [
-                            { targetTrackId: 't1', targetDeviceId: 'd1', targetParamId: 'cutoff' },
-                            { targetTrackId: 't3', targetDeviceId: 'd9', targetParamId: 'gain' },
-                        ],
-                    },
-                ],
-            };
-
-            void handleRemoveTrack.execute({
+        it('attempts every required post-commit effect when one fails', async () => {
+            const failure = new Error('strip cleanup failed');
+            mocks.finalizeRuntimeRemoval.mockImplementationOnce(() => {
+                throw failure;
+            });
+            const result = await handleRemoveTrack.execute({
                 type: 'removeTrack',
                 payload: { trackId: 't1' },
             });
 
-            // The owned modulator is removed by id.
-            expect(mocks.removeModulator).toHaveBeenCalledTimes(1);
-            expect(mocks.removeModulator).toHaveBeenCalledWith('m1');
+            await expect(result?.afterCommit?.()).rejects.toBe(failure);
 
-            // The cross-track mapping that targets t1 is removed by (modulatorId, target).
-            expect(mocks.removeMapping).toHaveBeenCalledTimes(1);
-            expect(mocks.removeMapping).toHaveBeenCalledWith('m2', {
-                targetTrackId: 't1',
-                targetDeviceId: 'd1',
-                targetParamId: 'cutoff',
-            });
-
-            // The mapping into the surviving track t3 is left intact.
-            expect(mocks.removeMapping).not.toHaveBeenCalledWith(
-                'm2',
-                expect.objectContaining({ targetTrackId: 't3' })
-            );
-        });
-
-        it('does not reconcile modulation when the modulation store is empty', () => {
-            mocks.modulationStoreValue.value = null;
-
-            void handleRemoveTrack.execute({
-                type: 'removeTrack',
-                payload: { trackId: 't1' },
-            });
-
-            expect(mocks.removeModulator).not.toHaveBeenCalled();
-            expect(mocks.removeMapping).not.toHaveBeenCalled();
+            expect(mocks.finalizeModulationRemoval).toHaveBeenCalledOnce();
+            expect(mocks.publishTrackRemoved).toHaveBeenCalledWith({ trackId: 't1' });
         });
     });
 
@@ -190,7 +183,15 @@ describe('handleRemoveTrack', () => {
                     { id: 'alt-inactive', name: 'Inactive', clips: [inactiveAlternativeClip, activeClip] },
                 ],
             });
-            mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
+            const routedSurvivor = TrackDummy.create({
+                id: 't2',
+                outputId: 't1',
+                sends: [{ busId: 't1', level: 0.5, preFader: false }],
+            });
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [track, routedSurvivor],
+                selectedTrackId: 't1',
+            });
 
             const removedAutomationLane = createAutomationLane('l1', 't1');
             const unrelatedAutomationLane = createAutomationLane('l2', 't2');
@@ -236,6 +237,46 @@ describe('handleRemoveTrack', () => {
             mocks.takeLaneStoreValue.value = {
                 lanes: [removedTakeLane, unrelatedTakeLane],
             };
+            const removedSidechainRoute = {
+                id: 'sidechain-removed',
+                sourceTrackId: 't2',
+                targetTrackId: 't1',
+                targetDeviceId: 'device-1',
+                targetParameterId: 'threshold',
+                gain: 0.75,
+            };
+            const unrelatedSidechainRoute = {
+                ...removedSidechainRoute,
+                id: 'sidechain-unrelated',
+                targetTrackId: 't3',
+            };
+            mocks.getAllSidechainRoutes.mockReturnValue([removedSidechainRoute, unrelatedSidechainRoute]);
+            const ownedModulator = {
+                id: 'mod-owned',
+                name: 'Owned LFO',
+                trackId: 't1',
+                kind: 'lfo',
+                config: { kind: 'lfo', waveform: 'sine', rate: 1, sync: true, phase: 0, depth: 1 },
+                mappings: [],
+                enabled: true,
+            };
+            const incomingMapping = {
+                targetTrackId: 't1',
+                targetDeviceId: 'device-1',
+                targetParamId: 'cutoff',
+                amount: 0.5,
+            };
+            mocks.modulationStoreValue.value = {
+                modulators: [
+                    ownedModulator,
+                    {
+                        ...ownedModulator,
+                        id: 'mod-survivor',
+                        trackId: 't2',
+                        mappings: [incomingMapping, { ...incomingMapping, targetTrackId: 't3', targetParamId: 'gain' }],
+                    },
+                ],
+            };
 
             const desc = handleRemoveTrack.describe({
                 type: 'removeTrack',
@@ -253,6 +294,19 @@ describe('handleRemoveTrack', () => {
             const payload = inverseAction.payload;
             expect(payload.trackId).toBe('t1');
             expect(payload.trackSnapshot).toEqual(track);
+            expect(payload.trackName).toBe(track.name);
+            expect(payload.trackKind).toBe(track.kind);
+            expect(payload.trackGain).toBe(track.gain);
+            expect(payload.trackParentId).toBe(track.parentId);
+            expect(payload.trackIndex).toBe(0);
+            expect(payload.wasSelected).toBe(true);
+            expect(payload.routingPatches).toEqual([
+                {
+                    trackId: routedSurvivor.id,
+                    expected: { outputId: track.outputId, sends: [] },
+                    replacement: { outputId: routedSurvivor.outputId, sends: routedSurvivor.sends },
+                },
+            ]);
             expect(payload.automationLaneSnapshots).toEqual([removedAutomationLane]);
             expect(payload.takeLaneSnapshots).toEqual([removedTakeLane]);
 
@@ -271,6 +325,11 @@ describe('handleRemoveTrack', () => {
                 c2: [pitchBendC2],
                 c3: [pitchBendC3],
             });
+            expect(payload.sidechainRouteSnapshots).toEqual([removedSidechainRoute]);
+            expect(payload.ownedModulatorSnapshots).toEqual([ownedModulator]);
+            expect(payload.incomingModulationMappingSnapshots).toEqual([
+                { modulatorId: 'mod-survivor', mapping: incomingMapping },
+            ]);
         });
 
         it('omits clip ids that have no midi data and skips automation when the store is empty', () => {

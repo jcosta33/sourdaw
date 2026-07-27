@@ -16,5 +16,9 @@ export const handleSetTrackColor = createHandler<'setTrackColor'>({
                 : null,
         };
     },
+    isNoop: (action) => {
+        const track = getTrackStoreState()?.tracks.find((candidate) => candidate.id === action.payload.trackId);
+        return !track || track.color === action.payload.color;
+    },
     undoable: true,
 });

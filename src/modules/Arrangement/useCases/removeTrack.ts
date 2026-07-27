@@ -3,6 +3,7 @@ import { removeBusStrip, removeTrackStrip, setTrackOutput } from '#/modules/Audi
 import { removeAutomationLanesForTrack } from '#/modules/Automation/useCases';
 import { removeMidiClipData } from '#/modules/MIDI/useCases';
 import { getAllSidechainRoutes, removeSidechainRoute } from '#/modules/Routing/useCases';
+import { runAllEffects } from '#/utils/runEffects';
 
 import { getTrackById } from '../repositories/track/getTrackById';
 import { getTrackState } from '../repositories/track/getTrackState';
@@ -15,18 +16,31 @@ import { shouldCreateLiveTrackStrip } from '../stores/trackEligibility';
 import { ArrangementEventBus } from './arrangementEventBus';
 import { refreshToasterPadBindings } from './refreshToasterPadBindings';
 
+type RemoveTrackOptions = {
+    deferRuntimeEffects?: boolean;
+    suppressRemovedEvent?: boolean;
+};
+
+type RemoveTrackResult =
+    | { removed: false }
+    | {
+          removed: true;
+          finalizeRuntimeRemoval: () => void;
+      };
+
 export const removeTrack = inject({ eventBus: ArrangementEventBus })(
     ({ eventBus }) =>
-        function removeTrack(trackId: string): void {
+        function removeTrack(trackId: string, options: RemoveTrackOptions = {}): RemoveTrackResult {
             const state = getTrackState();
             if (!state) {
-                return;
+                return { removed: false };
             }
 
             const track = getTrackById(trackId);
             if (!track) {
-                return;
+                return { removed: false };
             }
+            const removedTrack = track;
 
             const clipIds = collectTrackClipIds(track);
 
@@ -63,9 +77,18 @@ export const removeTrack = inject({ eventBus: ArrangementEventBus })(
 
             // Clean up sidechain routes referencing this track
             const routes = getAllSidechainRoutes();
+            const deferredSidechainRuntimeEffects: Array<() => void> = [];
             for (const route of routes) {
                 if (route.sourceTrackId === trackId || route.targetTrackId === trackId) {
-                    removeSidechainRoute(route.id);
+                    let deferredRuntimeEffect: (() => void) | null;
+                    if (options.deferRuntimeEffects) {
+                        deferredRuntimeEffect = removeSidechainRoute(route.id, { deferRuntimeEffect: true });
+                    } else {
+                        deferredRuntimeEffect = removeSidechainRoute(route.id);
+                    }
+                    if (deferredRuntimeEffect) {
+                        deferredSidechainRuntimeEffects.push(deferredRuntimeEffect);
+                    }
                 }
             }
 
@@ -77,22 +100,37 @@ export const removeTrack = inject({ eventBus: ArrangementEventBus })(
             // routing keyed on this id as the source — then dispose the BusNode,
             // which sweeps sends targeting the bus. Both engine methods no-op
             // when the node is absent.
-            if (shouldCreateLiveTrackStrip(track)) {
-                removeTrackStrip(trackId);
+            let runtimeRemovalFinalized = false;
+            function finalizeRuntimeRemoval(): void {
+                if (runtimeRemovalFinalized) {
+                    return;
+                }
+                const effects: Array<() => void> = [...deferredSidechainRuntimeEffects];
+                if (shouldCreateLiveTrackStrip(removedTrack)) {
+                    effects.push(() => removeTrackStrip(trackId));
+                }
+                if (removedTrack.kind === 'bus') {
+                    effects.push(() => removeBusStrip(trackId));
+                }
+                // FX-6: `removeTrackStrip` re-seats the engine's dependents on
+                // `hw_out`, which bypasses master entirely and disagrees with the
+                // destination project truth just inherited. Replay the reconciled
+                // outputs so the live graph matches the store. This runs after the
+                // teardown for the same reason the Toaster refresh below does — the
+                // strip sweep would otherwise overwrite it.
+                for (const repointed of repointedOutputs) {
+                    effects.push(() => setTrackOutput(repointed.trackId, repointed.outputId));
+                }
+                effects.push(() => refreshToasterPadBindings(tracks, removedTrack.parentId));
+                runAllEffects(effects);
+                runtimeRemovalFinalized = true;
             }
-            if (track.kind === 'bus') {
-                removeBusStrip(trackId);
+            if (!options.deferRuntimeEffects) {
+                finalizeRuntimeRemoval();
             }
-            // FX-6: `removeTrackStrip` re-seats the engine's dependents on
-            // `hw_out`, which bypasses master entirely and disagrees with the
-            // destination project truth just inherited. Replay the reconciled
-            // outputs so the live graph matches the store. This runs after the
-            // teardown for the same reason the Toaster refresh below does — the
-            // strip sweep would otherwise overwrite it.
-            for (const repointed of repointedOutputs) {
-                setTrackOutput(repointed.trackId, repointed.outputId);
+            if (!options.suppressRemovedEvent) {
+                void eventBus.emit('track.removed', { trackId });
             }
-            refreshToasterPadBindings(tracks, track.parentId);
-            void eventBus.emit('track.removed', { trackId });
+            return { removed: true, finalizeRuntimeRemoval };
         }
 );

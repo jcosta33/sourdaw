@@ -157,6 +157,40 @@ describe('executeAppAction', () => {
         expect(mocks.recordActionHistoryMetadata).toHaveBeenCalled();
     });
 
+    it('runs deferred external effects only after the action commits', async () => {
+        const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
+        const afterCommit = vi.fn();
+        const handler = create_mock_handler<SetEditingToolAction>({
+            execute: () => ({ status: 'written', afterCommit }),
+        });
+        registerHandlerMap({ [action.type]: handler });
+
+        await executeAppAction(action);
+
+        expect(afterCommit).toHaveBeenCalledOnce();
+        expect(mocks.recordActionHistoryMetadata).toHaveBeenCalledOnce();
+    });
+
+    it('classifies a deferred-effect failure as committed', async () => {
+        const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
+        const failure = new Error('event unavailable');
+        const handler = create_mock_handler<SetEditingToolAction>({
+            execute: () => ({
+                status: 'written',
+                afterCommit: () => Promise.reject(failure),
+            }),
+        });
+        registerHandlerMap({ [action.type]: handler });
+
+        const execution = executeAppAction(action);
+
+        await expect(execution).rejects.toBeInstanceOf(AppActionCommittedError);
+        expect(mocks.recordActionHistoryMetadata).toHaveBeenCalledOnce();
+        const reportedError = mocks.logger.error.mock.calls.at(-1)?.[0];
+        expect(reportedError).toBeInstanceOf(AppActionCommittedError);
+        expect(reportedError?.cause).toBe(failure);
+    });
+
     it('skips execution, macro recording, history metadata, and undo for a semantic no-op', async () => {
         const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
         const handler = create_mock_handler<SetEditingToolAction>({ isNoop: () => true });

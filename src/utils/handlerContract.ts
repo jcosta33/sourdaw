@@ -8,6 +8,69 @@
  * owned by other modules.
  */
 export type TrackSnapshot = { readonly id: string };
+export type TrackSendSnapshot = {
+    readonly busId: string;
+    readonly level: number;
+    readonly preFader: boolean;
+};
+export type TrackRoutingStateSnapshot = {
+    readonly outputId: string;
+    readonly sends: readonly TrackSendSnapshot[];
+};
+export type TrackRoutingPatchSnapshot = {
+    readonly trackId: string;
+    readonly expected: TrackRoutingStateSnapshot;
+    readonly replacement: TrackRoutingStateSnapshot;
+};
+export type SidechainRouteSnapshot = {
+    readonly id: string;
+    readonly sourceTrackId: string;
+    readonly targetTrackId: string;
+    readonly targetDeviceId: string;
+    readonly targetParameterId: string;
+    readonly gain: number;
+};
+export type ModulatorMappingSnapshot = {
+    readonly targetTrackId: string;
+    readonly targetDeviceId: string;
+    readonly targetParamId: string;
+    readonly amount: number;
+};
+export type ModulatorSnapshot = {
+    readonly id: string;
+    readonly name: string;
+    readonly trackId: string;
+    readonly enabled: boolean;
+    readonly mappings: readonly ModulatorMappingSnapshot[];
+    readonly kind: 'lfo' | 'envelope' | 'step';
+    readonly config:
+        | {
+              readonly kind: 'lfo';
+              readonly waveform: 'sine' | 'square' | 'saw' | 'triangle' | 'random';
+              readonly rate: number;
+              readonly sync: boolean;
+              readonly phase: number;
+              readonly depth: number;
+          }
+        | {
+              readonly kind: 'envelope';
+              readonly attack: number;
+              readonly decay: number;
+              readonly sustain: number;
+              readonly release: number;
+              readonly triggerMode: 'midi' | 'audio' | 'sync';
+          }
+        | {
+              readonly kind: 'step';
+              readonly steps: readonly number[];
+              readonly rate: number;
+              readonly smooth: number;
+          };
+};
+export type IncomingModulationMappingSnapshot = {
+    readonly modulatorId: string;
+    readonly mapping: ModulatorMappingSnapshot;
+};
 export type ClipSnapshot = {
     readonly id: string;
     readonly trackId: string;
@@ -189,21 +252,32 @@ type LegacyVcaTrackMembershipPatch = {
 };
 
 export type AppAction =
-    | { type: 'addTrack'; payload: { id?: string; name: string; kind: TrackKind } }
+    | { type: 'addTrack'; payload: { id?: string; name: string; kind: TrackKind; select?: boolean } }
     | { type: 'removeTrack'; payload: { trackId: string } }
+    | { type: 'discardCreatedTrack'; payload: { trackId: string } }
     | {
-          /** Inverse of `removeTrack`. Carries full snapshots of the removed track and its
-           *  satellite state (automation, MIDI, take lanes). Emitted only by the
+          /** Inverse of `removeTrack`. Carries the removed track, every project reference
+           *  rewritten by removal, and its satellite state. Emitted only by the
            *  `removeTrack` handler's `describe()` — not invoked directly. */
           type: 'restoreTrack';
           payload: {
               trackId: string;
               trackSnapshot: TrackSnapshot;
+              trackName: string;
+              trackKind: TrackKind;
+              trackGain: number;
+              trackParentId: string | null;
+              trackIndex: number;
+              wasSelected: boolean;
+              routingPatches: readonly TrackRoutingPatchSnapshot[];
               automationLaneSnapshots: readonly AutomationLaneSnapshot[];
               midiNotesByClipId: Record<string, MidiNotesSnapshot>;
               midiCcByClipId: Record<string, MidiCcSnapshot>;
               midiPitchBendByClipId: Record<string, MidiPitchBendSnapshot>;
               takeLaneSnapshots: readonly TakeLaneSnapshot[];
+              sidechainRouteSnapshots: readonly SidechainRouteSnapshot[];
+              ownedModulatorSnapshots: readonly ModulatorSnapshot[];
+              incomingModulationMappingSnapshots: readonly IncomingModulationMappingSnapshot[];
           };
       }
     | {
@@ -274,7 +348,7 @@ export type AppAction =
     | { type: 'moveClip'; payload: { clipId: string; trackId: string; startBeat: number } }
     | { type: 'duplicateClip'; payload: { clipId: string; targetClipId?: string } }
     | { type: 'duplicateClipToNextBar'; payload: { clipId: string; targetClipId?: string } }
-    | { type: 'duplicateTrack'; payload: { trackId: string } }
+    | { type: 'duplicateTrack'; payload: { trackId: string; targetTrackId?: string; select?: boolean } }
     | { type: 'removeClip'; payload: { clipId: string } }
     | { type: 'renameClip'; payload: { clipId: string; name: string } }
     | { type: 'splitClip'; payload: { clipId: string; beat: number } }
@@ -720,7 +794,12 @@ export type HandlerDescribeResult = {
     inverseAction?: AppAction | null;
 };
 
-export type HandlerExecutionResult = { status: 'written' } | { status: 'no-write' } | { status: 'conflict' };
+export type HandlerAfterCommit = () => void | Promise<void>;
+
+export type HandlerExecutionResult = ({ status: 'written' } | { status: 'no-write' } | { status: 'conflict' }) & {
+    /** External effects that must happen only after the owning project transaction commits. */
+    afterCommit?: HandlerAfterCommit;
+};
 
 /** One dispatchable action's handler. Built via `createHandler` and merged into a module
  *  handler map by each `get<Module>Handlers` factory. */

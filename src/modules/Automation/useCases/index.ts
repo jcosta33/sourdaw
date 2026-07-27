@@ -43,6 +43,7 @@ export { removeModulator } from './modulation/removeModulator';
 export { updateModulator } from './modulation/updateModulator';
 export { addMapping } from './modulation/addMapping';
 export { removeMapping } from './modulation/removeMapping';
+export { restoreTrackModulationReferences } from './modulation/restoreTrackModulationReferences';
 export { updateMapping } from './modulation/updateMapping';
 
 export { getAutomationLanes } from './getAutomationLanes';

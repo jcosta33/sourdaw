@@ -1,12 +1,16 @@
 import { automationStore, modulationStore } from '#/modules/Automation/stores';
-import { removeMapping, removeModulator } from '#/modules/Automation/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
+import { getAllSidechainRoutes } from '#/modules/Routing/useCases';
 import { createHandler } from '#/utils/createHandler';
+import { runAllAsyncEffects } from '#/utils/runEffects';
 
 import { collectTrackClipIds } from '../../services/collectTrackClipIds';
+import { reconcileRoutingAfterRemoval } from '../../services/reconcileRoutingAfterRemoval';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
+import { publishTrackRemoved } from '../../useCases/publishTrackRemoved';
 import { removeTrack } from '../../useCases/removeTrack';
+import { removeTrackModulationReferences } from '../../useCases/removeTrackModulationReferences';
 
 // Local structural shapes (AGENTS.md model isolation). These match the minimum
 // guarantees of MIDI's store entries — used purely to produce inverse-action snapshots.
@@ -14,61 +18,66 @@ type MidiNoteEntry = { readonly id: string };
 type MidiCcEntry = { readonly id: string };
 type MidiPitchBendEntry = { readonly id: string };
 
-/**
- * Drop every modulation reference to a removed track: modulators it owns become
- * dangling (their bindings can never resolve once the track is gone), and any
- * modulator on another track that maps INTO the removed track holds a mapping
- * that can never resolve. Removing both keeps the modulation store consistent
- * with `trackStore`. Reverting the engine param is a no-op here (the device is
- * already gone), but `removeModulator`/`removeMapping` still clean the store and
- * runtime values. Runs after `removeTrack` so the snapshot captured in
- * `describe` (pre-execute) is unaffected.
- *
- * Note: `restoreTrack` does not yet restore deleted modulators — the inverse
- * action snapshot covers automation/MIDI/take lanes but not modulation.
- */
-function reconcileModulatorsForRemovedTrack(trackId: string): void {
-    const modState = modulationStore.value;
-    if (!modState) {
-        return;
-    }
-    // Snapshot ids/targets first; both helpers mutate the store as they go.
-    const ownedIds = modState.modulators.filter((m) => m.trackId === trackId).map((m) => m.id);
-    const crossTrackMappings = modState.modulators
-        .filter((m) => m.trackId !== trackId)
-        .flatMap((m) =>
-            m.mappings
-                .filter((mapping) => mapping.targetTrackId === trackId)
-                .map((mapping) => ({
-                    modulatorId: m.id,
-                    targetTrackId: mapping.targetTrackId,
-                    targetDeviceId: mapping.targetDeviceId,
-                    targetParamId: mapping.targetParamId,
-                }))
-        );
-
-    for (const id of ownedIds) {
-        removeModulator(id);
-    }
-    for (const { modulatorId, ...target } of crossTrackMappings) {
-        removeMapping(modulatorId, target);
-    }
-}
-
 export const handleRemoveTrack = createHandler<'removeTrack'>({
     execute: (action) => {
-        removeTrack(action.payload.trackId);
-        reconcileModulatorsForRemovedTrack(action.payload.trackId);
+        const result = removeTrack(action.payload.trackId, {
+            deferRuntimeEffects: true,
+            suppressRemovedEvent: true,
+        });
+        if (!result.removed) {
+            return { status: 'no-write' };
+        }
+        const finalizeModulationRemoval = removeTrackModulationReferences({
+            trackId: action.payload.trackId,
+            deferRuntimeEffects: true,
+        });
+        return {
+            status: 'written',
+            afterCommit: () =>
+                runAllAsyncEffects([
+                    result.finalizeRuntimeRemoval,
+                    finalizeModulationRemoval,
+                    () => publishTrackRemoved({ trackId: action.payload.trackId }),
+                ]),
+        };
     },
     describe: (alpha) => {
         // Snapshot everything that removeTrack will delete, so the inverse
         // action (`restoreTrack`) can replay it. Runs pre-execute.
-        const track = getTrackStoreState()?.tracks.find((time) => time.id === alpha.payload.trackId);
+        const trackState = getTrackStoreState();
+        const trackIndex = trackState?.tracks.findIndex((track) => track.id === alpha.payload.trackId) ?? -1;
+        const track = trackIndex >= 0 ? trackState?.tracks[trackIndex] : undefined;
         if (!track) {
             return { label: 'Remove track' };
         }
 
         const trackSnapshot = structuredClone(track);
+        const remainingTracks = trackState?.tracks.filter((candidate) => candidate.id !== alpha.payload.trackId) ?? [];
+        const reconciledTracks = reconcileRoutingAfterRemoval({
+            removedTrackId: alpha.payload.trackId,
+            removedOutputId: track.outputId,
+            remainingTracks,
+        }).tracks;
+        const reconciledById = new Map(reconciledTracks.map((candidate) => [candidate.id, candidate]));
+        const routingPatches = structuredClone(
+            remainingTracks
+                .filter(
+                    (candidate) =>
+                        candidate.outputId === alpha.payload.trackId ||
+                        candidate.sends.some((send) => send.busId === alpha.payload.trackId)
+                )
+                .map((candidate) => {
+                    const reconciled = reconciledById.get(candidate.id);
+                    if (!reconciled) {
+                        throw new Error(`Missing reconciled routing state for track: ${candidate.id}`);
+                    }
+                    return {
+                        trackId: candidate.id,
+                        expected: { outputId: reconciled.outputId, sends: reconciled.sends },
+                        replacement: { outputId: candidate.outputId, sends: candidate.sends },
+                    };
+                })
+        );
 
         const autoState = automationStore.value;
         const autoLanes = autoState ? autoState.lanes.filter((length) => length.trackId === alpha.payload.trackId) : [];
@@ -98,6 +107,25 @@ export const handleRemoveTrack = createHandler<'removeTrack'>({
             ? takeLaneState.lanes.filter((length) => length.trackId === alpha.payload.trackId)
             : [];
         const takeLaneSnapshots = structuredClone(takeLanes);
+        const sidechainRouteSnapshots = structuredClone(
+            getAllSidechainRoutes().filter(
+                (route) =>
+                    route.sourceTrackId === alpha.payload.trackId || route.targetTrackId === alpha.payload.trackId
+            )
+        );
+        const modulationState = modulationStore.value;
+        const ownedModulatorSnapshots = structuredClone(
+            modulationState?.modulators.filter((modulator) => modulator.trackId === alpha.payload.trackId) ?? []
+        );
+        const incomingModulationMappingSnapshots = structuredClone(
+            modulationState?.modulators
+                .filter((modulator) => modulator.trackId !== alpha.payload.trackId)
+                .flatMap((modulator) =>
+                    modulator.mappings
+                        .filter((mapping) => mapping.targetTrackId === alpha.payload.trackId)
+                        .map((mapping) => ({ modulatorId: modulator.id, mapping }))
+                ) ?? []
+        );
 
         return {
             label: 'Remove track',
@@ -106,11 +134,21 @@ export const handleRemoveTrack = createHandler<'removeTrack'>({
                 payload: {
                     trackId: alpha.payload.trackId,
                     trackSnapshot,
+                    trackName: track.name,
+                    trackKind: track.kind,
+                    trackGain: track.gain,
+                    trackParentId: track.parentId,
+                    trackIndex,
+                    wasSelected: trackState?.selectedTrackId === alpha.payload.trackId,
+                    routingPatches,
                     automationLaneSnapshots,
                     midiNotesByClipId,
                     midiCcByClipId,
                     midiPitchBendByClipId,
                     takeLaneSnapshots,
+                    sidechainRouteSnapshots,
+                    ownedModulatorSnapshots,
+                    incomingModulationMappingSnapshots,
                 },
             },
         };

@@ -131,12 +131,11 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 throw error;
             }
 
+            let committed_failure: unknown;
             try {
                 clearSemanticContext();
             } catch (error) {
-                const committed_error = new AppActionCommittedError(action.type, error);
-                logger.error(committed_error);
-                throw committed_error;
+                committed_failure = error;
             }
 
             try {
@@ -188,7 +187,17 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                     }
                 }
             } catch (error) {
-                const committed_error = new AppActionCommittedError(action.type, error);
+                committed_failure ??= error;
+            }
+
+            try {
+                await execution_result?.afterCommit?.();
+            } catch (error) {
+                committed_failure ??= error;
+            }
+
+            if (committed_failure) {
+                const committed_error = new AppActionCommittedError(action.type, committed_failure);
                 logger.error(committed_error);
                 throw committed_error;
             }

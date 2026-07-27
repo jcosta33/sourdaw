@@ -70,7 +70,7 @@ export const trackTools: readonly ToolSchema[] = [
         'Color-code a track for visual organization.',
         {
             trackId: { type: 'string' },
-            color: { type: 'string', description: 'CSS color: hex (#ff5500), named (red), or hsl' },
+            color: { type: 'string', description: 'Six-digit hexadecimal color (for example #ff5500)' },
         },
         ['trackId', 'color']
     ),
