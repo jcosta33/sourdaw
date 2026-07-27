@@ -45,6 +45,7 @@ import {
     getAutomationHandlers,
     getAutomationValueAtBeat,
     prepareAutomationTimeOperation,
+    prepareAutomationTimeStateRestore,
     recordAutomationValue,
     setAutomationRecordingDependencies,
     setModulationDependencies,
@@ -87,6 +88,7 @@ import {
     getMidiNoteTransformHandlers,
     getPatternInstanceHandlers,
     prepareMidiGlobalTimeTransaction,
+    prepareMidiTimeStateRestore,
     createChordPitchProjector,
     createGrooveMidiEventProjector,
     shouldPlayMidiEvent,
@@ -120,6 +122,7 @@ import {
     createSamplePositionProjector,
     projectPpqEndpoints,
     prepareTimelineMapTimeOperation,
+    prepareTimelineMapStateRestore,
     setStopPlaybackCallback,
     stopPlayback,
 } from '#/modules/Transport/useCases';
@@ -191,8 +194,11 @@ setWebMidiRuntimeEventBus({ eventBus });
 setNotificationEventBus(eventBus);
 setTimeOperationDependencies({
     prepareAutomationTimeOperation,
+    prepareAutomationTimeStateRestore,
     prepareMidiGlobalTimeTransaction,
+    prepareMidiTimeStateRestore,
     prepareTimelineMapTimeOperation,
+    prepareTimelineMapStateRestore,
 });
 setProjectIdentityTransitionDependencies({ leaveCollaborationSession: leaveSession });
 

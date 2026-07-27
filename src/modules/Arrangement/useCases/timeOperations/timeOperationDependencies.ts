@@ -17,6 +17,10 @@ type PreparedTimeOperation = {
     revert: () => boolean;
 };
 
+type PreparedTimeOperationWithInversePlan = PreparedTimeOperation & {
+    inversePlan: Record<string, unknown> | null;
+};
+
 type AutomationOwnerSnapshot = {
     trackId: string;
     eligible: boolean;
@@ -73,21 +77,25 @@ type MidiReplayPlan = {
 
 type PreparedMidiTimeOperation = PreparedTimeOperation & {
     replayPlan: MidiReplayPlan;
+    inversePlan: Record<string, unknown> | null;
 };
 
 export type TimeOperationDependencies = {
     prepareAutomationTimeOperation: (input: {
         operation: InsertTimeOperation | DeleteTimeOperation;
         owners: readonly AutomationOwnerSnapshot[];
-    }) => PreparedTimeOperation;
+    }) => PreparedTimeOperationWithInversePlan;
+    prepareAutomationTimeStateRestore: (plan: unknown) => PreparedTimeOperation;
     prepareMidiGlobalTimeTransaction: (input: {
         operation: MidiTimeOperation;
         owners: readonly MidiOwnerSnapshot[];
         replayPlan?: MidiReplayPlan;
     }) => PreparedMidiTimeOperation;
+    prepareMidiTimeStateRestore: (plan: unknown) => PreparedTimeOperation;
     prepareTimelineMapTimeOperation: (input: {
         operation: InsertTimeOperation | DeleteTimeOperation;
-    }) => PreparedTimeOperation;
+    }) => PreparedTimeOperationWithInversePlan;
+    prepareTimelineMapStateRestore: (plan: unknown) => PreparedTimeOperation;
 };
 
 export let timeOperationDependencies: TimeOperationDependencies | null = null;

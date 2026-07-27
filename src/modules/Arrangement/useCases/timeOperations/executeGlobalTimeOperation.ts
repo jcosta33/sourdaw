@@ -7,6 +7,7 @@ import { markerStore, type MarkerStoreState } from '../../stores/markerStore';
 import { createClipWriteTargetIndex } from '../../stores/resolveEligibleClipWriteTarget';
 
 import { timeOperationDependencies, type TimeOperationDependencies } from './timeOperationDependencies';
+import { timeOperationStateCodec } from './timeOperationStateCodec';
 
 type InsertGlobalTimeOperation = {
     type: 'insert';
@@ -59,18 +60,21 @@ type AppliedGlobalTimeResult = {
     status: 'applied';
     hasChanges: true;
     replayPlan: GlobalTimeReplayPlan;
+    inversePlan: Record<string, unknown>;
 };
 
 type NoChangeGlobalTimeResult = {
     status: 'no-change';
     hasChanges: false;
     replayPlan: GlobalTimeReplayPlan;
+    inversePlan: null;
 };
 
 type RejectedGlobalTimeResult = {
     status: 'rejected';
     hasChanges: false;
     replayPlan: null;
+    inversePlan: null;
 };
 
 type GlobalTimeResult = AppliedGlobalTimeResult | NoChangeGlobalTimeResult | RejectedGlobalTimeResult;
@@ -1221,11 +1225,77 @@ function compensateAppliedHandles(applied: readonly PreparedHandle[]): unknown[]
     return failures;
 }
 
+function cloneOwnerInversePlan(preparation: {
+    hasChanges: boolean;
+    inversePlan: Record<string, unknown> | null;
+}): Record<string, unknown> | null | false {
+    if (!preparation.hasChanges) {
+        if (preparation.inversePlan !== null) {
+            return false;
+        }
+        return null;
+    }
+    if (preparation.inversePlan === null) {
+        return false;
+    }
+
+    const cloned = timeOperationStateCodec.cloneJsonPlan(preparation.inversePlan);
+    if (!cloned) {
+        return false;
+    }
+    return cloned;
+}
+
+function createCombinedInversePlan(input: {
+    expectedTrackState: TrackState;
+    replacementTrackState: TrackState;
+    expectedMarkerState: MarkerStoreState;
+    replacementMarkerState: MarkerStoreState;
+    automationPreparation: ReturnType<TimeOperationDependencies['prepareAutomationTimeOperation']>;
+    midiPreparation: ReturnType<TimeOperationDependencies['prepareMidiGlobalTimeTransaction']>;
+    timelineMapPreparation: ReturnType<TimeOperationDependencies['prepareTimelineMapTimeOperation']>;
+}): Record<string, unknown> | null {
+    const expectedTrackState = timeOperationStateCodec.encodeTrackState(input.expectedTrackState);
+    const replacementTrackState = timeOperationStateCodec.encodeTrackState(input.replacementTrackState);
+    const expectedMarkerState = timeOperationStateCodec.encodeMarkerState(input.expectedMarkerState);
+    const replacementMarkerState = timeOperationStateCodec.encodeMarkerState(input.replacementMarkerState);
+    if (!expectedTrackState || !replacementTrackState || !expectedMarkerState || !replacementMarkerState) {
+        return null;
+    }
+
+    const automation = cloneOwnerInversePlan(input.automationPreparation);
+    const midi = cloneOwnerInversePlan(input.midiPreparation);
+    const timelineMap = cloneOwnerInversePlan(input.timelineMapPreparation);
+    if (automation === false || midi === false || timelineMap === false) {
+        return null;
+    }
+
+    return {
+        version: 1,
+        scope: 'global',
+        local: {
+            version: 1,
+            expected: {
+                trackState: expectedTrackState,
+                markerState: expectedMarkerState,
+            },
+            replacement: {
+                trackState: replacementTrackState,
+                markerState: replacementMarkerState,
+            },
+        },
+        automation,
+        midi,
+        timelineMap,
+    };
+}
+
 function rejectResult(): RejectedGlobalTimeResult {
     return {
         status: 'rejected',
         hasChanges: false,
         replayPlan: null,
+        inversePlan: null,
     };
 }
 
@@ -1350,7 +1420,21 @@ export function executeGlobalTimeOperation(input: ExecuteGlobalTimeOperationInpu
             status: 'no-change',
             hasChanges: false,
             replayPlan,
+            inversePlan: null,
         };
+    }
+
+    const inversePlan = createCombinedInversePlan({
+        expectedTrackState: local.trackState,
+        replacementTrackState: trackState,
+        expectedMarkerState: local.markerState,
+        replacementMarkerState: markerState,
+        automationPreparation,
+        midiPreparation,
+        timelineMapPreparation: transportPreparation,
+    });
+    if (!inversePlan) {
+        return rejectResult();
     }
 
     const appliedAll = batchStoreUpdates(() => {
@@ -1387,5 +1471,6 @@ export function executeGlobalTimeOperation(input: ExecuteGlobalTimeOperationInpu
         status: 'applied',
         hasChanges: true,
         replayPlan,
+        inversePlan,
     };
 }

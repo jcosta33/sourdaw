@@ -5,6 +5,7 @@ import { getTrackState, type TrackState } from '../../repositories/track/getTrac
 import { setTrackState } from '../../repositories/track/setTrackState';
 import { createClipWriteTargetIndex } from '../../stores/resolveEligibleClipWriteTarget';
 import { timeOperationDependencies, type TimeOperationDependencies } from '../timeOperations/timeOperationDependencies';
+import { timeOperationStateCodec } from '../timeOperations/timeOperationStateCodec';
 
 type MidiPreparation = ReturnType<TimeOperationDependencies['prepareMidiGlobalTimeTransaction']>;
 type MidiReplayPlan = MidiPreparation['replayPlan'];
@@ -52,6 +53,7 @@ type AppliedSelectedTimeRangeDeletion = {
     status: 'applied';
     hasChanges: true;
     replayPlan: SelectedTimeRangeDeletionReplayPlan;
+    inversePlan: Record<string, unknown>;
     undo: () => boolean;
 };
 
@@ -59,12 +61,14 @@ type NoChangeSelectedTimeRangeDeletion = {
     status: 'no-change';
     hasChanges: false;
     replayPlan: SelectedTimeRangeDeletionReplayPlan;
+    inversePlan: null;
 };
 
 type RejectedSelectedTimeRangeDeletion = {
     status: 'rejected';
     hasChanges: false;
     replayPlan: null;
+    inversePlan: null;
 };
 
 type SelectedTimeRangeDeletionResult =
@@ -1004,11 +1008,56 @@ function undoAppliedHandles(handles: readonly PreparedHandle[]): boolean {
     });
 }
 
+function createCombinedInversePlan(input: {
+    expectedTrackState: TrackState;
+    replacementTrackState: TrackState;
+    midiPreparation: MidiPreparation;
+}): Record<string, unknown> | null {
+    const expectedTrackState = timeOperationStateCodec.encodeTrackState(input.expectedTrackState);
+    const replacementTrackState = timeOperationStateCodec.encodeTrackState(input.replacementTrackState);
+    if (!expectedTrackState || !replacementTrackState) {
+        return null;
+    }
+
+    let midi: Record<string, unknown> | null = null;
+    if (input.midiPreparation.hasChanges) {
+        if (input.midiPreparation.inversePlan === null) {
+            return null;
+        }
+        midi = timeOperationStateCodec.cloneJsonPlan(input.midiPreparation.inversePlan);
+        if (!midi) {
+            return null;
+        }
+    } else if (input.midiPreparation.inversePlan !== null) {
+        return null;
+    }
+
+    return {
+        version: 1,
+        scope: 'selected-range',
+        local: {
+            version: 1,
+            expected: {
+                trackState: expectedTrackState,
+                markerState: null,
+            },
+            replacement: {
+                trackState: replacementTrackState,
+                markerState: null,
+            },
+        },
+        automation: null,
+        midi,
+        timelineMap: null,
+    };
+}
+
 function rejectResult(): RejectedSelectedTimeRangeDeletion {
     return {
         status: 'rejected',
         hasChanges: false,
         replayPlan: null,
+        inversePlan: null,
     };
 }
 
@@ -1029,6 +1078,7 @@ export function executeSelectedTimeRangeDeletion(
             status: 'no-change',
             hasChanges: false,
             replayPlan,
+            inversePlan: null,
         };
     }
 
@@ -1120,7 +1170,17 @@ export function executeSelectedTimeRangeDeletion(
             status: 'no-change',
             hasChanges: false,
             replayPlan,
+            inversePlan: null,
         };
+    }
+
+    const inversePlan = createCombinedInversePlan({
+        expectedTrackState: local.trackState,
+        replacementTrackState: trackState,
+        midiPreparation,
+    });
+    if (!inversePlan) {
+        return rejectResult();
     }
 
     const applied = publishHandles(handles);
@@ -1131,6 +1191,7 @@ export function executeSelectedTimeRangeDeletion(
         status: 'applied',
         hasChanges: true,
         replayPlan,
+        inversePlan,
         undo: () => undoAppliedHandles(handles),
     };
 }

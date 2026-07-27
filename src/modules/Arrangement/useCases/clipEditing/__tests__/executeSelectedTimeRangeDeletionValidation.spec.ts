@@ -23,6 +23,7 @@ function noChangePreparation() {
         status: 'ready' as const,
         hasChanges: false,
         replayPlan: { version: 1 as const, notes: [] },
+        inversePlan: null,
         apply: () => false,
         revert: () => false,
     };
@@ -31,8 +32,11 @@ function noChangePreparation() {
 function installRealMidiPreparation() {
     setTimeOperationDependencies({
         prepareAutomationTimeOperation: noChangePreparation,
+        prepareAutomationTimeStateRestore: noChangePreparation,
         prepareMidiGlobalTimeTransaction,
+        prepareMidiTimeStateRestore: noChangePreparation,
         prepareTimelineMapTimeOperation: noChangePreparation,
+        prepareTimelineMapStateRestore: noChangePreparation,
     });
 }
 
@@ -70,7 +74,7 @@ function setArrangement(tracks: ReturnType<typeof createTrack>[]) {
     return state;
 }
 
-const REJECTED = { status: 'rejected', hasChanges: false, replayPlan: null };
+const REJECTED = { status: 'rejected', hasChanges: false, replayPlan: null, inversePlan: null };
 
 describe('executeSelectedTimeRangeDeletion store validation', () => {
     beforeEach(() => {
@@ -462,17 +466,23 @@ describe('executeSelectedTimeRangeDeletion midi preparation rejection', () => {
     });
 
     it('rejects when midi preparation reports not-ready', () => {
-        const rejectedMidi: TimeOperationDependencies['prepareMidiGlobalTimeTransaction'] = () => ({
-            status: 'rejected',
-            hasChanges: false,
-            replayPlan: { version: 1, notes: [] },
-            apply: () => false,
-            revert: () => false,
-        });
+        function rejectedMidi(): ReturnType<TimeOperationDependencies['prepareMidiGlobalTimeTransaction']> {
+            return {
+                status: 'rejected',
+                hasChanges: false,
+                replayPlan: { version: 1, notes: [] },
+                inversePlan: null,
+                apply: () => false,
+                revert: () => false,
+            };
+        }
         setTimeOperationDependencies({
             prepareAutomationTimeOperation: noChangePreparation,
+            prepareAutomationTimeStateRestore: noChangePreparation,
             prepareMidiGlobalTimeTransaction: rejectedMidi,
+            prepareMidiTimeStateRestore: noChangePreparation,
             prepareTimelineMapTimeOperation: noChangePreparation,
+            prepareTimelineMapStateRestore: noChangePreparation,
         });
         const clip = createClip({ id: 'span', trackId: 't1', startBeat: 0, endBeat: 10 });
         setArrangement([createTrack('t1', [clip])]);

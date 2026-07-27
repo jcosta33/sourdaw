@@ -42,27 +42,42 @@ vi.mock('../../../repositories/track/setTrackState', () => ({
     },
 }));
 
-vi.mock('../../../stores/markerStore', () => ({
-    markerStore: {
-        get value() {
-            return mocks.markerState.value;
+vi.mock('../../../stores/markerStore', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../../../stores/markerStore')>();
+    return {
+        ...actual,
+        markerStore: {
+            get value() {
+                return mocks.markerState.value;
+            },
+            set(state: unknown) {
+                mocks.writeDepths.push(mocks.batchDepth);
+                mocks.markerState.value = state;
+                mocks.setMarkerState(state);
+            },
         },
-        set(state: unknown) {
-            mocks.writeDepths.push(mocks.batchDepth);
-            mocks.markerState.value = state;
-            mocks.setMarkerState(state);
-        },
-    },
-}));
+    };
+});
 
+import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { executeGlobalTimeOperation, UnrecoveredGlobalTimeStateError } from '../executeGlobalTimeOperation';
 import { setTimeOperationDependencies } from '../timeOperationDependencies';
+import { timeOperationStateCodec } from '../timeOperationStateCodec';
 
 function createHandle(name: string, hasChanges = true) {
+    let inversePlan: Record<string, unknown> | null = null;
+    if (hasChanges) {
+        inversePlan = {
+            version: 1 as const,
+            expected: { owner: name, state: 'next' },
+            replacement: { owner: name, state: 'previous' },
+        };
+    }
     return {
         status: 'ready' as const,
         hasChanges,
         replayPlan: { version: 1 as const, notes: [] },
+        inversePlan,
         apply: vi.fn(() => {
             mocks.events.push(`apply:${name}`);
             expect(mocks.batchDepth).toBe(1);
@@ -105,14 +120,21 @@ function createClip(input: {
 
 function createTrack(
     id: string,
-    kind: 'audio' | 'midi' | 'bus' | 'master' | 'folder' | 'vca',
+    kind: 'audio' | 'midi' | 'bus' | 'master' | 'folder',
     clips: ReturnType<typeof createClip>[]
 ) {
-    return {
-        id,
-        kind,
-        clips,
-    };
+    return TrackDummy.create({ id, kind, clips });
+}
+
+function createDormantTrack(id: string, clips: ReturnType<typeof createClip>[]) {
+    const track = TrackDummy.create({ id, kind: 'folder', clips });
+    Object.defineProperty(track, 'kind', {
+        configurable: true,
+        enumerable: true,
+        value: 'vca',
+        writable: true,
+    });
+    return track;
 }
 
 function setStates(input?: {
@@ -123,8 +145,7 @@ function setStates(input?: {
     mocks.trackState.value = {
         tracks: input?.tracks ?? [],
         selectedTrackId: 'track-1',
-        ghostClips: [{ id: 'ghost-1' }],
-        futureState: { preserved: true },
+        ghostClips: [createClip({ id: 'ghost-1', trackId: 'ghost-track', startBeat: 0, endBeat: 1 })],
     };
     mocks.markerState.value = {
         markers: input?.markers ?? [],
@@ -146,8 +167,11 @@ function registerDependencies(input?: {
     const prepareMidiGlobalTimeTransaction = vi.fn(() => midi);
     setTimeOperationDependencies({
         prepareAutomationTimeOperation,
+        prepareAutomationTimeStateRestore: vi.fn(() => createHandle('automation-restore', false)),
         prepareTimelineMapTimeOperation,
+        prepareTimelineMapStateRestore: vi.fn(() => createHandle('transport-restore', false)),
         prepareMidiGlobalTimeTransaction,
+        prepareMidiTimeStateRestore: vi.fn(() => createHandle('midi-restore', false)),
     });
     return {
         automation,
@@ -172,6 +196,13 @@ function createMalformedInputs(): Array<Parameters<typeof executeGlobalTimeOpera
     ];
 }
 
+function requireRecord(value: unknown): Record<string, unknown> {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+        throw new Error('Expected an object record');
+    }
+    return value as Record<string, unknown>;
+}
+
 describe('executeGlobalTimeOperation', () => {
     beforeEach(() => {
         vi.restoreAllMocks();
@@ -194,7 +225,8 @@ describe('executeGlobalTimeOperation', () => {
             endBeat: 8,
         });
         const eligibleTrack = createTrack('track-1', 'midi', [before, straddler, after]);
-        const dormantTrack = createTrack('vca-1', 'vca', [dormantClip]);
+        eligibleTrack.pan = -0;
+        const dormantTrack = createDormantTrack('vca-1', [dormantClip]);
         setStates({
             tracks: [eligibleTrack, dormantTrack],
             markers: [
@@ -203,6 +235,7 @@ describe('executeGlobalTimeOperation', () => {
             ],
         });
         const capturedState = mocks.trackState.value;
+        const capturedMarkerState = mocks.markerState.value;
         const dependencies = registerDependencies();
 
         const result = executeGlobalTimeOperation({
@@ -210,12 +243,14 @@ describe('executeGlobalTimeOperation', () => {
         });
 
         expect(result.status).toBe('applied');
+        if (result.status !== 'applied') {
+            throw new Error('Expected applied global insert');
+        }
         expect(mocks.writeDepths.every((depth) => depth === 1)).toBe(true);
         const nextState = mocks.trackState.value as {
             tracks: Array<{ clips: ReturnType<typeof createClip>[] }>;
             selectedTrackId: string;
             ghostClips: unknown[];
-            futureState: unknown;
         };
         expect(nextState).not.toBe(capturedState);
         expect(nextState.tracks[0]!.clips).toEqual([
@@ -226,8 +261,9 @@ describe('executeGlobalTimeOperation', () => {
         expect(nextState.tracks[1]).toBe(dormantTrack);
         expect(nextState.tracks[1]!.clips[0]).toBe(dormantClip);
         expect(nextState.selectedTrackId).toBe('track-1');
-        expect(nextState.ghostClips).toEqual([{ id: 'ghost-1' }]);
-        expect(nextState.futureState).toEqual({ preserved: true });
+        expect(nextState.ghostClips).toEqual([
+            createClip({ id: 'ghost-1', trackId: 'ghost-track', startBeat: 0, endBeat: 1 }),
+        ]);
         expect(mocks.markerState.value).toMatchObject({
             markers: [
                 { id: 'before-marker', beat: 3 },
@@ -268,6 +304,42 @@ describe('executeGlobalTimeOperation', () => {
                 },
             ],
         });
+        expect(JSON.parse(JSON.stringify(result.inversePlan))).toEqual(result.inversePlan);
+        const inversePlan = requireRecord(result.inversePlan);
+        expect(inversePlan).toMatchObject({
+            version: 1,
+            scope: 'global',
+            automation: {
+                version: 1,
+                expected: { owner: 'automation', state: 'next' },
+                replacement: { owner: 'automation', state: 'previous' },
+            },
+            midi: {
+                version: 1,
+                expected: { owner: 'midi', state: 'next' },
+                replacement: { owner: 'midi', state: 'previous' },
+            },
+            timelineMap: {
+                version: 1,
+                expected: { owner: 'transport', state: 'next' },
+                replacement: { owner: 'transport', state: 'previous' },
+            },
+        });
+        const local = requireRecord(inversePlan.local);
+        const expected = requireRecord(local.expected);
+        const replacement = requireRecord(local.replacement);
+        const expectedTrackState = timeOperationStateCodec.decodeTrackState(expected.trackState);
+        const replacementTrackState = timeOperationStateCodec.decodeTrackState(replacement.trackState);
+        const expectedMarkers = timeOperationStateCodec.decodeMarkerState(expected.markerState);
+        const replacementMarkers = timeOperationStateCodec.decodeMarkerState(replacement.markerState);
+        expect(expectedTrackState).toEqual(nextState);
+        expect(expectedTrackState).not.toBe(nextState);
+        expect(replacementTrackState).toEqual(capturedState);
+        expect(replacementTrackState).not.toBe(capturedState);
+        expect(expectedMarkers).toEqual(mocks.markerState.value);
+        expect(replacementMarkers).toEqual(capturedMarkerState);
+        expect(Object.is(expectedTrackState?.tracks[0]?.pan, -0)).toBe(true);
+        expect(Object.is(replacementTrackState?.tracks[0]?.pan, -0)).toBe(true);
     });
 
     it('preserves delete clip, MIDI-plan, marker, and section geometry', () => {
@@ -367,7 +439,7 @@ describe('executeGlobalTimeOperation', () => {
             startBeat: 4,
             endBeat: 6,
         });
-        const dormantTrack = createTrack('vca-1', 'vca', [dormant]);
+        const dormantTrack = createDormantTrack('vca-1', [dormant]);
         setStates({
             tracks: [createTrack('track-1', 'midi', [inside, partial, after]), dormantTrack],
             markers: [{ id: 'marker', beat: 8, name: 'Marker', color: '' }],
@@ -433,13 +505,35 @@ describe('executeGlobalTimeOperation', () => {
             operation: { type: 'duplicate', startBeat: 4, endBeat: 6 },
         });
 
-        expect(result).toEqual({ status: 'rejected', hasChanges: false, replayPlan: null });
+        expect(result).toEqual({ status: 'rejected', hasChanges: false, replayPlan: null, inversePlan: null });
         expect(dependencies.prepareAutomationTimeOperation).not.toHaveBeenCalled();
         expect(dependencies.prepareTimelineMapTimeOperation).not.toHaveBeenCalled();
         expect(dependencies.prepareMidiGlobalTimeTransaction).not.toHaveBeenCalled();
         expect(randomUUID).not.toHaveBeenCalled();
         expect(mocks.setTrackState).not.toHaveBeenCalled();
         expect(mocks.setMarkerState).not.toHaveBeenCalled();
+    });
+
+    it('rejects a non-encodable local snapshot before publication', () => {
+        const track = createTrack('track-1', 'audio', [
+            createClip({ id: 'clip-1', startBeat: 0, endBeat: 4, type: 'audio' }),
+        ]);
+        Object.defineProperty(track, Symbol('unsupported'), {
+            enumerable: true,
+            value: true,
+        });
+        setStates({ tracks: [track] });
+        const dependencies = registerDependencies();
+
+        const result = executeGlobalTimeOperation({
+            operation: { type: 'insert', atBeat: 2, durationBeats: 1 },
+        });
+
+        expect(result).toEqual({ status: 'rejected', hasChanges: false, replayPlan: null, inversePlan: null });
+        expect(mocks.writeDepths).toEqual([]);
+        expect(dependencies.automation.apply).not.toHaveBeenCalled();
+        expect(dependencies.transport.apply).not.toHaveBeenCalled();
+        expect(dependencies.midi.apply).not.toHaveBeenCalled();
     });
 
     it('rejects computed insert clip overflow before writes or owner application', () => {
@@ -460,7 +554,7 @@ describe('executeGlobalTimeOperation', () => {
             },
         });
 
-        expect(result).toEqual({ status: 'rejected', hasChanges: false, replayPlan: null });
+        expect(result).toEqual({ status: 'rejected', hasChanges: false, replayPlan: null, inversePlan: null });
         expect(randomUUID).not.toHaveBeenCalled();
         expect(mocks.setTrackState).not.toHaveBeenCalled();
         expect(mocks.setMarkerState).not.toHaveBeenCalled();
@@ -487,7 +581,7 @@ describe('executeGlobalTimeOperation', () => {
             },
         });
 
-        expect(result).toEqual({ status: 'rejected', hasChanges: false, replayPlan: null });
+        expect(result).toEqual({ status: 'rejected', hasChanges: false, replayPlan: null, inversePlan: null });
         expect(randomUUID).not.toHaveBeenCalled();
         expect(mocks.setTrackState).not.toHaveBeenCalled();
         expect(mocks.setMarkerState).not.toHaveBeenCalled();
@@ -519,7 +613,7 @@ describe('executeGlobalTimeOperation', () => {
             },
         });
 
-        expect(result).toEqual({ status: 'rejected', hasChanges: false, replayPlan: null });
+        expect(result).toEqual({ status: 'rejected', hasChanges: false, replayPlan: null, inversePlan: null });
         expect(randomUUID).not.toHaveBeenCalled();
         expect(mocks.setTrackState).not.toHaveBeenCalled();
         expect(mocks.setMarkerState).not.toHaveBeenCalled();
@@ -551,7 +645,7 @@ describe('executeGlobalTimeOperation', () => {
             },
         });
 
-        expect(result).toEqual({ status: 'rejected', hasChanges: false, replayPlan: null });
+        expect(result).toEqual({ status: 'rejected', hasChanges: false, replayPlan: null, inversePlan: null });
         expect(randomUUID).not.toHaveBeenCalled();
         expect(dependencies.prepareAutomationTimeOperation).not.toHaveBeenCalled();
         expect(dependencies.prepareTimelineMapTimeOperation).not.toHaveBeenCalled();
@@ -565,7 +659,7 @@ describe('executeGlobalTimeOperation', () => {
 
         const result = executeGlobalTimeOperation(runtimeInput);
 
-        expect(result).toEqual({ status: 'rejected', hasChanges: false, replayPlan: null });
+        expect(result).toEqual({ status: 'rejected', hasChanges: false, replayPlan: null, inversePlan: null });
         expect(dependencies.prepareAutomationTimeOperation).not.toHaveBeenCalled();
         expect(mocks.setTrackState).not.toHaveBeenCalled();
     });
@@ -597,8 +691,11 @@ describe('executeGlobalTimeOperation', () => {
         }));
         setTimeOperationDependencies({
             prepareAutomationTimeOperation: vi.fn(() => automation),
+            prepareAutomationTimeStateRestore: vi.fn(() => createHandle('automation-restore', false)),
             prepareTimelineMapTimeOperation: vi.fn(() => transport),
+            prepareTimelineMapStateRestore: vi.fn(() => createHandle('transport-restore', false)),
             prepareMidiGlobalTimeTransaction,
+            prepareMidiTimeStateRestore: vi.fn(() => createHandle('midi-restore', false)),
         });
         const randomUUID = vi.spyOn(crypto, 'randomUUID').mockImplementation(() => {
             throw new Error('Replay must not allocate');
@@ -679,6 +776,52 @@ describe('executeGlobalTimeOperation', () => {
         expect(midi.apply).not.toHaveBeenCalled();
         expect(mocks.setTrackState).not.toHaveBeenCalled();
         expect(mocks.setMarkerState).not.toHaveBeenCalled();
+    });
+
+    it('rejects changed owners without an inverse plan and unchanged owners with one', () => {
+        const clip = createClip({ id: 'clip-1', startBeat: 4, endBeat: 6 });
+        const operation = { type: 'insert' as const, atBeat: 4, durationBeats: 2 };
+
+        setStates({ tracks: [createTrack('track-1', 'midi', [clip])] });
+        const missingInverse = createHandle('automation');
+        missingInverse.inversePlan = null;
+        const transportNoChange = createHandle('transport', false);
+        const midiNoChange = createHandle('midi', false);
+        registerDependencies({
+            automation: missingInverse,
+            transport: transportNoChange,
+            midi: midiNoChange,
+        });
+
+        expect(executeGlobalTimeOperation({ operation })).toEqual({
+            status: 'rejected',
+            hasChanges: false,
+            replayPlan: null,
+            inversePlan: null,
+        });
+        expect(mocks.writeDepths).toEqual([]);
+
+        vi.clearAllMocks();
+        setStates({ tracks: [createTrack('track-1', 'midi', [clip])] });
+        const unexpectedInverse = createHandle('automation', false);
+        unexpectedInverse.inversePlan = {
+            version: 1,
+            expected: { state: 'next' },
+            replacement: { state: 'previous' },
+        };
+        registerDependencies({
+            automation: unexpectedInverse,
+            transport: createHandle('transport', false),
+            midi: createHandle('midi', false),
+        });
+
+        expect(executeGlobalTimeOperation({ operation })).toEqual({
+            status: 'rejected',
+            hasChanges: false,
+            replayPlan: null,
+            inversePlan: null,
+        });
+        expect(mocks.writeDepths).toEqual([]);
     });
 
     it('fails missing dependency registration before identity allocation or writes', () => {

@@ -16,6 +16,7 @@ function noChangePreparation() {
         status: 'ready' as const,
         hasChanges: false,
         replayPlan: { version: 1 as const, notes: [] },
+        inversePlan: null,
         apply: () => false,
         revert: () => false,
     };
@@ -24,8 +25,11 @@ function noChangePreparation() {
 function installDependencies(): void {
     setTimeOperationDependencies({
         prepareAutomationTimeOperation: noChangePreparation,
+        prepareAutomationTimeStateRestore: noChangePreparation,
         prepareMidiGlobalTimeTransaction,
+        prepareMidiTimeStateRestore: noChangePreparation,
         prepareTimelineMapTimeOperation: noChangePreparation,
+        prepareTimelineMapStateRestore: noChangePreparation,
     });
 }
 

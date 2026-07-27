@@ -41,29 +41,43 @@ vi.mock('../../../repositories/track/setTrackState', () => ({
     },
 }));
 
-vi.mock('../../../stores/markerStore', () => ({
-    markerStore: {
-        get value() {
-            return mocks.markerState.value;
+vi.mock('../../../stores/markerStore', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../../../stores/markerStore')>();
+    return {
+        ...actual,
+        markerStore: {
+            get value() {
+                return mocks.markerState.value;
+            },
+            set(state: unknown) {
+                mocks.writeDepths.push(mocks.batchDepth);
+                mocks.markerState.value = state;
+                mocks.setMarkerState(state);
+            },
         },
-        set(state: unknown) {
-            mocks.writeDepths.push(mocks.batchDepth);
-            mocks.markerState.value = state;
-            mocks.setMarkerState(state);
-        },
-    },
-}));
+    };
+});
 
+import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { executeGlobalTimeOperation } from '../executeGlobalTimeOperation';
-import { setTimeOperationDependencies } from '../timeOperationDependencies';
+import { setTimeOperationDependencies, type TimeOperationDependencies } from '../timeOperationDependencies';
 
 type TestHandle = ReturnType<typeof createHandle> | ReturnType<typeof createRejectedHandle>;
 
-function createHandle(_name: string, hasChanges = true) {
+function createHandle(name: string, hasChanges = true) {
+    let inversePlan: Record<string, unknown> | null = null;
+    if (hasChanges) {
+        inversePlan = {
+            version: 1 as const,
+            expected: { owner: name, state: 'next' },
+            replacement: { owner: name, state: 'previous' },
+        };
+    }
     return {
         status: 'ready' as const,
         hasChanges,
         replayPlan: { version: 1 as const, notes: [] },
+        inversePlan,
         apply: vi.fn(() => true),
         revert: vi.fn(() => true),
     };
@@ -74,6 +88,7 @@ function createRejectedHandle() {
         status: 'rejected' as const,
         hasChanges: false,
         replayPlan: { version: 1 as const, notes: [] },
+        inversePlan: null,
         apply: vi.fn(() => false),
         revert: vi.fn(() => false),
     };
@@ -108,10 +123,10 @@ function createClip(input: {
 
 function createTrack(
     id: string,
-    kind: 'audio' | 'midi' | 'bus' | 'master' | 'folder' | 'vca',
+    kind: 'audio' | 'midi' | 'bus' | 'master' | 'folder',
     clips: ReturnType<typeof createClip>[]
 ) {
-    return { id, kind, clips };
+    return TrackDummy.create({ id, kind, clips });
 }
 
 // Construct a clip-shaped object that bypasses createClip's type narrowing so we can
@@ -127,11 +142,15 @@ function setStates(input?: {
     markers?: Array<{ id: string; beat: number; name: string; color: string }>;
     sections?: Array<{ id: string; startBeat: number; endBeat: number; name: string; color: string }>;
 }): void {
+    const tracks = input?.tracks ?? [];
+    let selectedTrackId: string | null = null;
+    if (tracks.some((track) => track.id === 'track-1')) {
+        selectedTrackId = 'track-1';
+    }
     mocks.trackState.value = {
-        tracks: input?.tracks ?? [],
-        selectedTrackId: 'track-1',
-        ghostClips: [{ id: 'ghost-1' }],
-        futureState: { preserved: true },
+        tracks,
+        selectedTrackId,
+        ghostClips: [createClip({ id: 'ghost-1', trackId: 'ghost-track', startBeat: 0, endBeat: 1 })],
     };
     mocks.markerState.value = {
         markers: input?.markers ?? [],
@@ -146,11 +165,16 @@ function registerDependencies(input?: { automation?: TestHandle; transport?: Tes
     const midi = input?.midi ?? createHandle('midi');
     const prepareAutomationTimeOperation = vi.fn(() => automation);
     const prepareTimelineMapTimeOperation = vi.fn(() => transport);
-    const prepareMidiGlobalTimeTransaction = vi.fn(() => midi);
+    const prepareMidiGlobalTimeTransaction = vi.fn<TimeOperationDependencies['prepareMidiGlobalTimeTransaction']>(
+        () => midi
+    );
     setTimeOperationDependencies({
         prepareAutomationTimeOperation,
+        prepareAutomationTimeStateRestore: vi.fn(() => createHandle('automation-restore', false)),
         prepareTimelineMapTimeOperation,
+        prepareTimelineMapStateRestore: vi.fn(() => createHandle('transport-restore', false)),
         prepareMidiGlobalTimeTransaction,
+        prepareMidiTimeStateRestore: vi.fn(() => createHandle('midi-restore', false)),
     });
     return {
         automation,
@@ -162,7 +186,7 @@ function registerDependencies(input?: { automation?: TestHandle; transport?: Tes
     };
 }
 
-const REJECTED = { status: 'rejected', hasChanges: false, replayPlan: null };
+const REJECTED = { status: 'rejected', hasChanges: false, replayPlan: null, inversePlan: null };
 
 describe('executeGlobalTimeOperation input validation', () => {
     beforeEach(() => {
@@ -567,11 +591,13 @@ describe('executeGlobalTimeOperation audio clip geometry (delete/duplicate appli
             'clip-dup-cccccccc-cccc-4ccc-8ccc-cccccccccccc',
         ]);
         // Audio clips produce no MIDI copies.
-        expect(deps.prepareMidiGlobalTimeTransaction).toHaveBeenCalledWith(
-            expect.objectContaining({
-                operation: expect.objectContaining({ type: 'duplicate', copies: [] }),
-            })
-        );
+        const midiPreparationInput = deps.prepareMidiGlobalTimeTransaction.mock.calls[0]?.[0];
+        expect(midiPreparationInput?.operation).toEqual({
+            type: 'duplicate',
+            startBeat: 4,
+            endBeat: 6,
+            copies: [],
+        });
     });
 
     it('insert shifts an after-clip and leaves a before-clip untouched', () => {
