@@ -113,6 +113,43 @@ describe('executeAppActionBatch', () => {
         expect(mocks.commitUndoEntry).toHaveBeenCalledTimes(2);
     });
 
+    it('runs deferred external effects after the project transaction commits', async () => {
+        const afterCommit = vi.fn();
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({
+                execute: () => ({ status: 'written', afterCommit }),
+            }),
+        });
+
+        const result = await executeAppActionBatch([{ type: 'setEditingTool', payload: { tool: 'marquee' } }]);
+
+        expect(result.status).toBe('committed');
+        expect(afterCommit).toHaveBeenCalledOnce();
+    });
+
+    it('reports a deferred-effect failure as committed truth instead of retryable failure', async () => {
+        const afterCommit = vi.fn().mockRejectedValue(new Error('event unavailable'));
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({
+                execute: () => ({ status: 'written', afterCommit }),
+            }),
+        });
+
+        const result = await executeAppActionBatch([{ type: 'setEditingTool', payload: { tool: 'marquee' } }]);
+
+        expect(result).toEqual({
+            status: 'committed-with-warning',
+            actions: [
+                {
+                    action: { type: 'setEditingTool', payload: { tool: 'marquee' } },
+                    label: 'Batch action',
+                },
+            ],
+            warning: 'setEditingTool post-commit effect failed: event unavailable',
+        });
+        expect(mocks.commitUndoEntry).toHaveBeenCalledOnce();
+    });
+
     it('aborts every pending write when a later action fails', async () => {
         const failure = new Error('second action failed');
         const document: Record<string, unknown> = {
@@ -132,6 +169,7 @@ describe('executeAppActionBatch', () => {
         const editingToolStorage = createAutomergeStorage<{ tool: string }>('root', 'editingTool');
         const snapValueStorage = createAutomergeStorage<{ value: number }>('root', 'snapValue');
         const runtimeEffects = { editingTool: 'select', snapValue: 1 };
+        const afterCommit = vi.fn();
         expect(editingToolStorage.hydrate?.()).toBe(true);
         expect(snapValueStorage.hydrate?.()).toBe(true);
         registerHandlerMap({
@@ -139,6 +177,7 @@ describe('executeAppActionBatch', () => {
                 execute: (action) => {
                     runtimeEffects.editingTool = action.payload.tool;
                     editingToolStorage.set({ tool: action.payload.tool });
+                    return { status: 'written', afterCommit };
                 },
                 describe: () => ({
                     label: 'Set editing tool',
@@ -178,6 +217,7 @@ describe('executeAppActionBatch', () => {
         expect(runtimeEffects).toEqual({ editingTool: 'select', snapValue: 1 });
         expect(mocks.recordAction).not.toHaveBeenCalled();
         expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+        expect(afterCommit).not.toHaveBeenCalled();
     });
 
     it('reports compensation failure when an inverse action produces no write', async () => {

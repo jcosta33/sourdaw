@@ -170,6 +170,26 @@ describe('sidechain use cases', () => {
         expect(mocks.storeSet).toHaveBeenCalledWith({ routes: [] });
     });
 
+    it('can defer the runtime unwire until after the owning transaction commits', () => {
+        const route = {
+            id: 'r1',
+            sourceTrackId: 'src',
+            targetTrackId: 'dst',
+            targetDeviceId: 'dev1',
+            targetParameterId: 'threshold',
+        };
+        mockStoreValue.value = { routes: [route] };
+
+        const afterCommit = removeSidechainRoute('r1', { deferRuntimeEffect: true });
+
+        expect(mocks.storeSet).toHaveBeenCalledWith({ routes: [] });
+        expect(mocks.unwireSidechainRoute).not.toHaveBeenCalled();
+
+        afterCommit?.();
+
+        expect(mocks.unwireSidechainRoute).toHaveBeenCalledWith('src', 'dev1');
+    });
+
     it('removeSidechainRoute is a no-op when the route id is not found', () => {
         const route = {
             id: 'r1',

@@ -4,32 +4,130 @@ import { handleDuplicateTrack } from '../duplicateTrack';
 
 const mocks = vi.hoisted(() => ({
     duplicateTrack: vi.fn(),
+    getTrackStoreState: vi.fn<() => { tracks: { id: string; kind: string }[] } | null>(),
+    publishTrackAdded: vi.fn(),
 }));
 
 vi.mock('../../../useCases/duplicateTrack', () => ({
     duplicateTrack: mocks.duplicateTrack,
 }));
 
+vi.mock('../../../useCases/getTrackStoreState', () => ({
+    getTrackStoreState: mocks.getTrackStoreState,
+}));
+vi.mock('../../../useCases/publishTrackAdded', () => ({
+    publishTrackAdded: mocks.publishTrackAdded,
+}));
+
 describe('handleDuplicateTrack', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', kind: 'audio' }] });
     });
 
-    it('executes duplicateTrack with the provided payload', () => {
-        void handleDuplicateTrack.execute({
+    it('honors an app-owned selection policy and publishes only after commit', async () => {
+        const action: Parameters<typeof handleDuplicateTrack.describe>[0] = {
             type: 'duplicateTrack',
-            payload: { trackId: 't1' },
-        });
+            payload: { trackId: 't1', select: false },
+        };
+        handleDuplicateTrack.describe(action);
+        const targetTrackId = action.payload.targetTrackId;
+        if (!targetTrackId) {
+            throw new Error('Expected describe to prepare a destination track id');
+        }
+        mocks.duplicateTrack.mockReturnValue({ id: targetTrackId, name: 'Copy', kind: 'audio' });
 
-        expect(mocks.duplicateTrack).toHaveBeenCalledWith('t1');
+        const result = await handleDuplicateTrack.execute(action);
+
+        expect(mocks.duplicateTrack).toHaveBeenCalledWith('t1', {
+            select: false,
+            suppressAddedEvent: true,
+            targetTrackId,
+        });
+        expect(targetTrackId).toMatch(/^track-dup-/);
+        expect(mocks.publishTrackAdded).not.toHaveBeenCalled();
+
+        await result?.afterCommit?.();
+
+        expect(mocks.publishTrackAdded).toHaveBeenCalledWith({
+            trackId: targetTrackId,
+            name: 'Copy',
+            kind: 'audio',
+        });
     });
 
-    it('provides a description', () => {
-        const desc = handleDuplicateTrack.describe({
+    it('provides an inverse that removes the exact duplicate', () => {
+        const action: Parameters<typeof handleDuplicateTrack.describe>[0] = {
             type: 'duplicateTrack',
             payload: { trackId: 't1' },
-        });
+        };
+        const desc = handleDuplicateTrack.describe(action);
+        const targetTrackId = action.payload.targetTrackId;
+        if (!targetTrackId) {
+            throw new Error('Expected describe to prepare a destination track id');
+        }
+
         expect(desc.label).toBe('Duplicate track');
+        expect(desc.inverseAction).toEqual({
+            type: 'discardCreatedTrack',
+            payload: { trackId: targetTrackId },
+        });
+        expect(targetTrackId).toMatch(/^track-dup-/);
+    });
+
+    it('preserves the default selection behavior for ordinary commands', async () => {
+        const action: Parameters<typeof handleDuplicateTrack.describe>[0] = {
+            type: 'duplicateTrack',
+            payload: { trackId: 't1' },
+        };
+        handleDuplicateTrack.describe(action);
+        const targetTrackId = action.payload.targetTrackId;
+        if (!targetTrackId) {
+            throw new Error('Expected describe to prepare a destination track id');
+        }
+        mocks.duplicateTrack.mockReturnValue({ id: targetTrackId, name: 'Copy', kind: 'audio' });
+
+        await handleDuplicateTrack.execute(action);
+
+        expect(mocks.duplicateTrack).toHaveBeenCalledWith('t1', {
+            suppressAddedEvent: true,
+            targetTrackId,
+        });
+    });
+
+    it('conflicts when the source is missing and no-ops only when the prepared target already exists', () => {
+        const missingSource = {
+            type: 'duplicateTrack',
+            payload: { trackId: 'missing' },
+        } as const;
+        const collidingTarget = {
+            type: 'duplicateTrack',
+            payload: { trackId: 't1', targetTrackId: 'existing' },
+        } as const;
+
+        expect(handleDuplicateTrack.describe(missingSource).inverseAction).toBeNull();
+        expect(handleDuplicateTrack.isNoop?.(missingSource)).toBe(false);
+        expect(handleDuplicateTrack.execute(missingSource)).toEqual({ status: 'conflict' });
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                { id: 't1', kind: 'audio' },
+                { id: 'existing', kind: 'audio' },
+            ],
+        });
+        expect(handleDuplicateTrack.describe(collidingTarget).inverseAction).toBeNull();
+        expect(handleDuplicateTrack.isNoop?.(collidingTarget)).toBe(true);
+    });
+
+    it('rejects the singleton master track as a conflict', () => {
+        const action = {
+            type: 'duplicateTrack',
+            payload: { trackId: 'master' },
+        } as const;
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 'master', kind: 'master' }] });
+
+        expect(handleDuplicateTrack.describe(action).inverseAction).toBeNull();
+        expect(handleDuplicateTrack.isNoop?.(action)).toBe(false);
+        expect(handleDuplicateTrack.execute(action)).toEqual({ status: 'conflict' });
     });
 
     it('is undoable', () => {

@@ -37,6 +37,7 @@ import { handleBounceToNewTrack } from '../handlers/track/bounceToNewTrack';
 import { handleClearSolos } from '../handlers/track/clearSolos';
 import { handleCreateFolder } from '../handlers/track/createFolder';
 import { handleDisableTrack } from '../handlers/track/disableTrack';
+import { handleDiscardCreatedTrack } from '../handlers/track/discardCreatedTrack';
 import { handleDuplicateTrack } from '../handlers/track/duplicateTrack';
 import { handleFlattenTrack } from '../handlers/track/flattenTrack';
 import { handleFoldTrack } from '../handlers/track/foldTrack';
@@ -98,6 +99,7 @@ export function getArrangementHandlers() {
         flattenTrack: handleFlattenTrack,
         bounceInPlace: handleBounceInPlace,
         duplicateTrack: handleDuplicateTrack,
+        discardCreatedTrack: handleDiscardCreatedTrack,
         reorderTrack: handleReorderTrack,
         setTrackGain: handleSetTrackGain,
         setTrackPan: handleSetTrackPan,

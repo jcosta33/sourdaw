@@ -22,12 +22,15 @@ describe('handleReorderTrack', () => {
     });
 
     it('executes reorderTrack with the provided payload', () => {
-        void handleReorderTrack.execute({
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't0' }, { id: 't1' }] });
+
+        const result = handleReorderTrack.execute({
             type: 'reorderTrack',
-            payload: { trackId: 't1', newIndex: 5 },
+            payload: { trackId: 't1', newIndex: 0 },
         });
 
-        expect(mocks.reorderTrack).toHaveBeenCalledWith('t1', 5);
+        expect(result).toEqual({ status: 'written' });
+        expect(mocks.reorderTrack).toHaveBeenCalledWith('t1', 0);
     });
 
     it('provides a description', () => {
@@ -39,20 +42,42 @@ describe('handleReorderTrack', () => {
         expect(desc.inverseAction).toBeNull();
     });
 
-    it('describes an inverse restoring the pre-move index even when the forward index clamps', () => {
+    it('describes an inverse restoring the pre-move index', () => {
         mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't0' }, { id: 't1' }, { id: 't2' }] });
 
         const desc = handleReorderTrack.describe({
             type: 'reorderTrack',
-            payload: { trackId: 't1', newIndex: 99 },
+            payload: { trackId: 't1', newIndex: 2 },
         });
 
-        // The forward reorder clamps 99 into range; the inverse restores the
-        // captured index 1, not anything derived from the payload.
         expect(desc.inverseAction).toEqual({
             type: 'reorderTrack',
             payload: { trackId: 't1', newIndex: 1 },
         });
+    });
+
+    it('is a no-op when the track is already at the requested index', () => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't0' }, { id: 't1' }] });
+
+        expect(
+            handleReorderTrack.isNoop?.({
+                type: 'reorderTrack',
+                payload: { trackId: 't1', newIndex: 1 },
+            })
+        ).toBe(true);
+    });
+
+    it('does not claim compensation when the requested index is stale', () => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't0' }, { id: 't1' }] });
+        const action = {
+            type: 'reorderTrack',
+            payload: { trackId: 't1', newIndex: 2 },
+        } as const;
+
+        expect(handleReorderTrack.describe(action).inverseAction).toBeNull();
+        expect(handleReorderTrack.isNoop?.(action)).toBe(false);
+        expect(handleReorderTrack.execute(action)).toEqual({ status: 'conflict' });
+        expect(mocks.reorderTrack).not.toHaveBeenCalled();
     });
 
     it('is undoable', () => {

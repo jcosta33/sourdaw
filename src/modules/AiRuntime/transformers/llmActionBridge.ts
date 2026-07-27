@@ -5,11 +5,15 @@ import { DAW_TOOL_SCHEMAS, type ToolSchema } from '../models/ToolDefinitions';
 import { type ToolCallResult } from './toolCallParser';
 
 const EXECUTABLE_ACTION_TYPES = [
+    'addTrack',
     'renameTrack',
     'muteTrack',
     'soloTrack',
+    'duplicateTrack',
     'setTrackGain',
     'setTrackPan',
+    'setTrackColor',
+    'reorderTrack',
     'setTempo',
     'setDeviceParameter',
     'bypassDevice',
@@ -21,6 +25,8 @@ type ExecutableActionType = (typeof EXECUTABLE_ACTION_TYPES)[number];
 type ExecutableRuntimeAction = Extract<RuntimeAction, { type: ExecutableActionType }>;
 
 const executableActionTypes: ReadonlySet<string> = new Set(EXECUTABLE_ACTION_TYPES);
+type ExecutableTrackKind = 'audio' | 'midi' | 'bus' | 'folder';
+const executableTrackKinds: ReadonlySet<string> = new Set(['audio', 'midi', 'bus', 'folder']);
 
 export const LLM_EXECUTABLE_TOOL_SCHEMAS: readonly ToolSchema[] = DAW_TOOL_SCHEMAS.filter((schema) =>
     executableActionTypes.has(schema.function.name)
@@ -63,6 +69,10 @@ function isFiniteNumber(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value);
 }
 
+function isExecutableTrackKind(value: unknown): value is ExecutableTrackKind {
+    return typeof value === 'string' && executableTrackKinds.has(value);
+}
+
 function isValidParameterValue(
     parameter: NonNullable<ProjectContext['tracks'][number]['devices'][number]['parameters']>[number],
     value: number
@@ -89,6 +99,13 @@ function hasTrack(context: ProjectContext, trackId: unknown): trackId is string 
     return typeof trackId === 'string' && context.tracks.some((track) => track.id === trackId);
 }
 
+function findTrack(context: ProjectContext, trackId: unknown) {
+    if (typeof trackId !== 'string') {
+        return undefined;
+    }
+    return context.tracks.find((track) => track.id === trackId);
+}
+
 function findDevice(context: ProjectContext, deviceId: unknown) {
     if (typeof deviceId !== 'string') {
         return undefined;
@@ -111,6 +128,21 @@ function hasUnsafeProjectNameCharacters(name: string): boolean {
         }
     }
     return false;
+}
+
+function normalizeProjectName(value: unknown): string | null {
+    if (typeof value !== 'string') {
+        return null;
+    }
+    const name = value.trim();
+    if (name.length === 0 || name.length > 120 || hasUnsafeProjectNameCharacters(name)) {
+        return null;
+    }
+    return name;
+}
+
+function isSafeTrackColor(value: unknown): value is string {
+    return typeof value === 'string' && /^#[\dA-Fa-f]{6}$/.test(value);
 }
 
 function serializePromptData(value: unknown): string {
@@ -139,15 +171,23 @@ function bridgeToolCall({
         return { type: 'setTempo', payload: { bpm: args.bpm } };
     }
 
+    if (call.name === 'addTrack') {
+        const name = normalizeProjectName(args.name);
+        if (!hasExactKeys(args, ['name', 'kind']) || !name || !isExecutableTrackKind(args.kind)) {
+            return rejection(index, call.name, 'Expected a safe name and one of audio, midi, bus, or folder');
+        }
+        return {
+            type: 'addTrack',
+            payload: { name, kind: args.kind, select: false },
+        };
+    }
+
     if (call.name === 'renameTrack') {
         if (!hasExactKeys(args, ['trackId', 'name']) || !hasTrack(context, args.trackId)) {
             return rejection(index, call.name, 'Expected an available trackId and name');
         }
-        if (typeof args.name !== 'string') {
-            return rejection(index, call.name, 'Expected name to be a string');
-        }
-        const name = args.name.trim();
-        if (name.length === 0 || name.length > 120 || hasUnsafeProjectNameCharacters(name)) {
+        const name = normalizeProjectName(args.name);
+        if (!name) {
             return rejection(
                 index,
                 call.name,
@@ -155,6 +195,14 @@ function bridgeToolCall({
             );
         }
         return { type: 'renameTrack', payload: { trackId: args.trackId, name } };
+    }
+
+    if (call.name === 'duplicateTrack') {
+        const source = findTrack(context, args.trackId);
+        if (!hasExactKeys(args, ['trackId']) || !source || !isExecutableTrackKind(source.kind)) {
+            return rejection(index, call.name, 'Expected one duplicable audio, MIDI, bus, or folder source trackId');
+        }
+        return { type: 'duplicateTrack', payload: { trackId: source.id, select: false } };
     }
 
     if (call.name === 'muteTrack') {
@@ -203,6 +251,31 @@ function bridgeToolCall({
             return rejection(index, call.name, 'Expected an available trackId and finite pan from -50 through 50');
         }
         return { type: 'setTrackPan', payload: { trackId: args.trackId, pan: args.pan } };
+    }
+
+    if (call.name === 'setTrackColor') {
+        if (
+            !hasExactKeys(args, ['trackId', 'color']) ||
+            !hasTrack(context, args.trackId) ||
+            !isSafeTrackColor(args.color)
+        ) {
+            return rejection(index, call.name, 'Expected an available trackId and six-digit hexadecimal color');
+        }
+        return { type: 'setTrackColor', payload: { trackId: args.trackId, color: args.color.toLowerCase() } };
+    }
+
+    if (call.name === 'reorderTrack') {
+        if (
+            !hasExactKeys(args, ['trackId', 'newIndex']) ||
+            !hasTrack(context, args.trackId) ||
+            !isFiniteNumber(args.newIndex) ||
+            !Number.isInteger(args.newIndex) ||
+            args.newIndex < 0 ||
+            args.newIndex >= context.tracks.length
+        ) {
+            return rejection(index, call.name, 'Expected an available trackId and an in-range integer newIndex');
+        }
+        return { type: 'reorderTrack', payload: { trackId: args.trackId, newIndex: args.newIndex } };
     }
 
     if (call.name === 'setDeviceParameter') {
@@ -266,8 +339,14 @@ function bridgeToolCall({
     return rejection(index, call.name, 'Tool is not in the executable LLM allowlist');
 }
 
-function getMutationKey(action: ExecutableRuntimeAction): string {
+function getMutationKey(action: ExecutableRuntimeAction): string | null {
+    if (action.type === 'addTrack' || action.type === 'duplicateTrack') {
+        return null;
+    }
     if (action.type === 'setTempo') {
+        return action.type;
+    }
+    if (action.type === 'reorderTrack') {
         return action.type;
     }
     if (action.type === 'setDeviceParameter') {
@@ -304,13 +383,15 @@ export function bridgeLlmToolCalls({ calls, context }: BridgeLlmToolCallsInput):
         const result = bridgeToolCall({ call, context, index });
         if ('type' in result) {
             const mutationKey = getMutationKey(result);
-            if (mutationKeys.has(mutationKey)) {
+            if (mutationKey !== null && mutationKeys.has(mutationKey)) {
                 rejections.push(
                     rejection(index, call.name, 'Provider batch writes the same target field more than once')
                 );
                 continue;
             }
-            mutationKeys.add(mutationKey);
+            if (mutationKey !== null) {
+                mutationKeys.add(mutationKey);
+            }
             actions.push(result);
         } else {
             rejections.push(result);
@@ -332,7 +413,8 @@ export function buildLlmActionUserMessage({ prompt, context }: { prompt: string;
         tempo: context.tempo,
         timeSignature: context.timeSignature,
         selectedTrackId: context.selectedTrackId,
-        tracks: context.tracks.map((track) => ({
+        tracks: context.tracks.map((track, index) => ({
+            index,
             id: track.id,
             name: track.name,
             kind: track.kind,

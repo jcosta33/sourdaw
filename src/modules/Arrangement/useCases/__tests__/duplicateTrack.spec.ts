@@ -174,6 +174,32 @@ describe('duplicateTrack', () => {
         expect(mocks.eventBus.emit).not.toHaveBeenCalled();
     });
 
+    it('does not duplicate the singleton master track', () => {
+        mocks.getTrackById.mockReturnValue(createTrack({ id: 'master', kind: 'master' }));
+
+        duplicateTrack('master');
+
+        expect(mocks.addTrack).not.toHaveBeenCalled();
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(mocks.eventBus.emit).not.toHaveBeenCalled();
+    });
+
+    it('uses a caller-prepared destination track id', () => {
+        const source = createTrack({ id: 'track-source' });
+        mocks.getTrackById.mockReturnValue(source);
+        returnCreatedTrack();
+
+        duplicateTrack(source.id, { targetTrackId: 'track-ai-copy' });
+
+        expect(mocks.addTrack).toHaveBeenCalledWith(
+            expect.objectContaining({
+                id: 'track-ai-copy',
+                suppressAddedEvent: true,
+            })
+        );
+        expect(mocks.updateTrack).toHaveBeenCalledWith('track-ai-copy', expect.any(Function));
+    });
+
     it('does not create satellite state when adding the duplicate track fails', () => {
         const source = createTrack({
             id: 'track-source',

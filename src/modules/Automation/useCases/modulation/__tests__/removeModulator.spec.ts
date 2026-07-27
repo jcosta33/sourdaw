@@ -36,6 +36,17 @@ describe('removeModulator', () => {
         expect(modulationRuntimeStore.value?.runtimeValues).toEqual({ b: 0.25 });
     });
 
+    it('defers runtime cleanup until project truth commits', () => {
+        const finalizeRuntimeEffects = removeModulator('a', { deferRuntimeEffects: true });
+
+        expect(modulationStore.value?.modulators.map((modulator) => modulator.id)).toEqual(['b']);
+        expect(modulationRuntimeStore.value?.runtimeValues).toEqual({ a: 0.5, b: 0.25 });
+
+        finalizeRuntimeEffects?.();
+
+        expect(modulationRuntimeStore.value?.runtimeValues).toEqual({ b: 0.25 });
+    });
+
     it('is a no-op when id is unknown', () => {
         removeModulator('zzz');
         expect(modulationStore.value?.modulators).toHaveLength(2);

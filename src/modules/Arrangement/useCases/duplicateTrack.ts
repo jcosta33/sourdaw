@@ -2,7 +2,7 @@ import { inject } from '#/infra/di/inject';
 import { duplicateClipAutomationBatch } from '#/modules/Automation/useCases';
 import { duplicateMidiClipData } from '#/modules/MIDI/useCases';
 
-import { type Clip } from '../models/Track';
+import { type Clip, type Track } from '../models/Track';
 import { getTrackById } from '../repositories/track/getTrackById';
 import { getTrackState } from '../repositories/track/getTrackState';
 import { setTrackState } from '../repositories/track/setTrackState';
@@ -14,21 +14,33 @@ import { ArrangementEventBus } from './arrangementEventBus';
 type ClipCopy = { sourceClipId: string; targetClipId: string };
 type AutomationClipCopy = ClipCopy & { targetTrackId: string };
 type Rollback = () => void;
+type DuplicateTrackOptions = {
+    select?: boolean;
+    suppressAddedEvent?: boolean;
+    targetTrackId?: string;
+};
 
 export const duplicateTrack = inject({ eventBus: ArrangementEventBus })(
     ({ eventBus }) =>
-        function duplicateTrack(trackId: string): void {
+        function duplicateTrack(trackId: string, options: DuplicateTrackOptions = {}): Track | null {
             const source = getTrackById(trackId);
-            if (!source) {
-                return;
+            if (!source || source.kind === 'master') {
+                return null;
             }
             const arrangementSnapshot = getTrackState();
             if (!arrangementSnapshot) {
-                return;
+                return null;
             }
             const previousArrangement = arrangementSnapshot;
 
-            const newTrackId = `track-dup-${crypto.randomUUID()}`;
+            if (
+                options.targetTrackId &&
+                arrangementSnapshot.tracks.some((track) => track.id === options.targetTrackId)
+            ) {
+                return null;
+            }
+
+            const newTrackId = options.targetTrackId ?? `track-dup-${crypto.randomUUID()}`;
             const snapshotTrackRefs = new Set(previousArrangement.tracks);
             const midiClipCopies: ClipCopy[] = [];
             const automationClipCopies: AutomationClipCopy[] = [];
@@ -89,13 +101,14 @@ export const duplicateTrack = inject({ eventBus: ArrangementEventBus })(
                     id: newTrackId,
                     name: `${source.name} (copy)`,
                     kind: source.kind,
+                    select: options.select,
                     suppressAddedEvent: true,
                 });
 
                 if (!newTrack) {
                     rollbacks.pop();
                     rollbackArrangement();
-                    return;
+                    return null;
                 }
 
                 // 4. Update track with copied devices, sends, and alternatives
@@ -128,11 +141,14 @@ export const duplicateTrack = inject({ eventBus: ArrangementEventBus })(
                 }
                 rollbacks.push(duplicateClipAutomationBatch({ copies: automationClipCopies }));
 
-                void eventBus.emit('track.added', {
-                    trackId: newTrack.id,
-                    name: newTrack.name,
-                    kind: newTrack.kind,
-                });
+                if (!options.suppressAddedEvent) {
+                    void eventBus.emit('track.added', {
+                        trackId: newTrack.id,
+                        name: newTrack.name,
+                        kind: newTrack.kind,
+                    });
+                }
+                return newTrack;
             } catch (error) {
                 for (let index = rollbacks.length - 1; index >= 0; index--) {
                     const rollback = rollbacks[index];

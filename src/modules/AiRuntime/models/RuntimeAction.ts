@@ -5,18 +5,96 @@ type RuntimeDocumentSnapshotEntry =
 type RuntimeDocumentSnapshot = Map<string, RuntimeDocumentSnapshotEntry>;
 
 export type RuntimeAction =
-    | { type: 'addTrack'; payload: { id?: string; name: string; kind: RuntimeTrackKind } }
+    | { type: 'addTrack'; payload: { id?: string; name: string; kind: RuntimeTrackKind; select?: boolean } }
     | { type: 'removeTrack'; payload: { trackId: string } }
     | {
           type: 'restoreTrack';
           payload: {
               trackId: string;
               trackSnapshot: { readonly id: string };
+              trackName: string;
+              trackKind: RuntimeTrackKind;
+              trackGain: number;
+              trackParentId: string | null;
+              trackIndex: number;
+              wasSelected: boolean;
+              routingPatches: readonly {
+                  readonly trackId: string;
+                  readonly expected: {
+                      readonly outputId: string;
+                      readonly sends: readonly {
+                          readonly busId: string;
+                          readonly level: number;
+                          readonly preFader: boolean;
+                      }[];
+                  };
+                  readonly replacement: {
+                      readonly outputId: string;
+                      readonly sends: readonly {
+                          readonly busId: string;
+                          readonly level: number;
+                          readonly preFader: boolean;
+                      }[];
+                  };
+              }[];
               automationLaneSnapshots: readonly { readonly id: string; readonly trackId: string }[];
               midiNotesByClipId: Record<string, readonly { readonly id: string }[]>;
               midiCcByClipId: Record<string, readonly { readonly id: string }[]>;
               midiPitchBendByClipId: Record<string, readonly { readonly id: string }[]>;
               takeLaneSnapshots: readonly { readonly id: string; readonly trackId: string }[];
+              sidechainRouteSnapshots: readonly {
+                  readonly id: string;
+                  readonly sourceTrackId: string;
+                  readonly targetTrackId: string;
+                  readonly targetDeviceId: string;
+                  readonly targetParameterId: string;
+                  readonly gain: number;
+              }[];
+              ownedModulatorSnapshots: readonly {
+                  readonly id: string;
+                  readonly name: string;
+                  readonly trackId: string;
+                  readonly enabled: boolean;
+                  readonly mappings: readonly {
+                      readonly targetTrackId: string;
+                      readonly targetDeviceId: string;
+                      readonly targetParamId: string;
+                      readonly amount: number;
+                  }[];
+                  readonly kind: 'lfo' | 'envelope' | 'step';
+                  readonly config:
+                      | {
+                            readonly kind: 'lfo';
+                            readonly waveform: 'sine' | 'square' | 'saw' | 'triangle' | 'random';
+                            readonly rate: number;
+                            readonly sync: boolean;
+                            readonly phase: number;
+                            readonly depth: number;
+                        }
+                      | {
+                            readonly kind: 'envelope';
+                            readonly attack: number;
+                            readonly decay: number;
+                            readonly sustain: number;
+                            readonly release: number;
+                            readonly triggerMode: 'midi' | 'audio' | 'sync';
+                        }
+                      | {
+                            readonly kind: 'step';
+                            readonly steps: readonly number[];
+                            readonly rate: number;
+                            readonly smooth: number;
+                        };
+              }[];
+              incomingModulationMappingSnapshots: readonly {
+                  readonly modulatorId: string;
+                  readonly mapping: {
+                      readonly targetTrackId: string;
+                      readonly targetDeviceId: string;
+                      readonly targetParamId: string;
+                      readonly amount: number;
+                  };
+              }[];
           };
       }
     | {
@@ -88,7 +166,7 @@ export type RuntimeAction =
     | { type: 'moveClip'; payload: { clipId: string; trackId: string; startBeat: number } }
     | { type: 'duplicateClip'; payload: { clipId: string } }
     | { type: 'duplicateClipToNextBar'; payload: { clipId: string } }
-    | { type: 'duplicateTrack'; payload: { trackId: string } }
+    | { type: 'duplicateTrack'; payload: { trackId: string; targetTrackId?: string; select?: boolean } }
     | { type: 'removeClip'; payload: { clipId: string } }
     | { type: 'renameClip'; payload: { clipId: string; name: string } }
     | { type: 'splitClip'; payload: { clipId: string; beat: number } }

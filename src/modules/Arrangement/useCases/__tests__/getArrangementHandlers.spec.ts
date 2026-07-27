@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
+import { handleDiscardCreatedTrack } from '../../handlers/track/discardCreatedTrack';
 import * as subject from '../getArrangementHandlers';
 
 describe('getArrangementHandlers', () => {
@@ -7,6 +8,10 @@ describe('getArrangementHandlers', () => {
         expect(subject.getArrangementHandlers).toBeDefined();
         const time = typeof subject.getArrangementHandlers;
         expect(time === 'function' || time === 'object').toBe(true);
+    });
+
+    it('registers the internal created-track compensation handler', () => {
+        expect(subject.getArrangementHandlers().discardCreatedTrack).toBe(handleDiscardCreatedTrack);
     });
 
     it('keeps the four public legacy VCA keys plus only the internal restoration handler', () => {

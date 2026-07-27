@@ -58,6 +58,17 @@ describe('handleSetTrackColor', () => {
         });
     });
 
+    it('is a no-op when the requested color is already applied', () => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', color: '#ff0000' }] });
+
+        expect(
+            handleSetTrackColor.isNoop?.({
+                type: 'setTrackColor',
+                payload: { trackId: 't1', color: '#ff0000' },
+            })
+        ).toBe(true);
+    });
+
     it('is undoable', () => {
         expect(handleSetTrackColor.undoable).toBe(true);
     });

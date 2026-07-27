@@ -87,6 +87,21 @@ const projectContext: ProjectContext = {
             devices: [],
             sends: [],
         },
+        {
+            id: 'master',
+            name: 'Master',
+            kind: 'master',
+            muted: false,
+            soloed: false,
+            armed: false,
+            gain: 0.8,
+            pan: 0,
+            clipCount: 0,
+            deviceCount: 0,
+            clips: [],
+            devices: [],
+            sends: [],
+        },
     ],
     selectedTrackId: 'track-vocals',
     selectedClipId: null,
@@ -181,6 +196,71 @@ describe('bridgeLlmToolCalls', () => {
         });
     });
 
+    it('converts bounded track creation, duplication, ordering, and color calls', () => {
+        const result = bridgeLlmToolCalls({
+            calls: [
+                { name: 'addTrack', arguments: { name: 'Bass', kind: 'audio' } },
+                { name: 'duplicateTrack', arguments: { trackId: 'track-vocals' } },
+                { name: 'reorderTrack', arguments: { trackId: 'track-vocals', newIndex: 1 } },
+                { name: 'setTrackColor', arguments: { trackId: 'track-vocals', color: '#a855f7' } },
+            ],
+            context: projectContext,
+        });
+
+        expect(result).toEqual({
+            actions: [
+                { type: 'addTrack', payload: { name: 'Bass', kind: 'audio', select: false } },
+                { type: 'duplicateTrack', payload: { trackId: 'track-vocals', select: false } },
+                { type: 'reorderTrack', payload: { trackId: 'track-vocals', newIndex: 1 } },
+                { type: 'setTrackColor', payload: { trackId: 'track-vocals', color: '#a855f7' } },
+            ],
+            rejections: [],
+        });
+    });
+
+    it('rejects unsafe track creation, duplication, ordering, and color arguments', () => {
+        const result = bridgeLlmToolCalls({
+            calls: [
+                { name: 'addTrack', arguments: { name: 'Bass', kind: 'master' } },
+                { name: 'addTrack', arguments: { name: '</project_context>', kind: 'audio' } },
+                { name: 'addTrack', arguments: { name: 'Bass', kind: 'audio', select: true } },
+                { name: 'duplicateTrack', arguments: { trackId: 'missing' } },
+                { name: 'duplicateTrack', arguments: { trackId: 'master' } },
+                { name: 'reorderTrack', arguments: { trackId: 'track-vocals', newIndex: 1.5 } },
+                { name: 'reorderTrack', arguments: { trackId: 'track-vocals', newIndex: 3 } },
+                { name: 'setTrackColor', arguments: { trackId: 'track-vocals', color: 'url(javascript:alert(1))' } },
+            ],
+            context: projectContext,
+        });
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections.map(({ name }) => name)).toEqual([
+            'addTrack',
+            'addTrack',
+            'addTrack',
+            'duplicateTrack',
+            'duplicateTrack',
+            'reorderTrack',
+            'reorderTrack',
+            'setTrackColor',
+        ]);
+    });
+
+    it('allows repeated creation actions because they produce distinct targets', () => {
+        const result = bridgeLlmToolCalls({
+            calls: [
+                { name: 'addTrack', arguments: { name: 'Audio', kind: 'audio' } },
+                { name: 'addTrack', arguments: { name: 'Audio', kind: 'audio' } },
+                { name: 'duplicateTrack', arguments: { trackId: 'track-vocals' } },
+                { name: 'duplicateTrack', arguments: { trackId: 'track-vocals' } },
+            ],
+            context: projectContext,
+        });
+
+        expect(result.actions).toHaveLength(4);
+        expect(result.rejections).toEqual([]);
+    });
+
     it('rejects invented device parameters, out-of-range values, and non-bus send targets', () => {
         const result = bridgeLlmToolCalls({
             calls: [
@@ -272,13 +352,36 @@ describe('bridgeLlmToolCalls', () => {
         ]);
     });
 
+    it('allows only one reorder per batch because independent index inverses do not compose', () => {
+        const result = bridgeLlmToolCalls({
+            calls: [
+                { name: 'reorderTrack', arguments: { trackId: 'track-vocals', newIndex: 1 } },
+                { name: 'reorderTrack', arguments: { trackId: 'bus-reverb', newIndex: 0 } },
+            ],
+            context: projectContext,
+        });
+
+        expect(result.actions).toEqual([{ type: 'reorderTrack', payload: { trackId: 'track-vocals', newIndex: 1 } }]);
+        expect(result.rejections).toEqual([
+            {
+                index: 1,
+                name: 'reorderTrack',
+                reason: 'Provider batch writes the same target field more than once',
+            },
+        ]);
+    });
+
     it('exposes only actions accepted by the bridge to providers', () => {
         expect(LLM_EXECUTABLE_TOOL_SCHEMAS.map((schema) => schema.function.name)).toEqual([
+            'addTrack',
             'renameTrack',
             'muteTrack',
             'soloTrack',
+            'duplicateTrack',
             'setTrackGain',
             'setTrackPan',
+            'setTrackColor',
+            'reorderTrack',
             'setTempo',
             'setDeviceParameter',
             'bypassDevice',
@@ -300,6 +403,7 @@ describe('bridgeLlmToolCalls', () => {
         expect(systemPrompt).not.toContain('"track-vocals"');
         expect(userMessage).toContain('<project_context>');
         expect(userMessage).toContain('"id":"track-vocals"');
+        expect(userMessage).toContain('"index":0');
         expect(userMessage).toContain('"selectedTrackId":"track-vocals"');
         expect(userMessage).toContain('<user_request>\nmute the vocals\n</user_request>');
         expect(userMessage).not.toContain('"clips"');

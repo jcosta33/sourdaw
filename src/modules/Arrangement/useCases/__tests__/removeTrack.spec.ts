@@ -122,6 +122,74 @@ describe('removeTrack', () => {
         expect(ownerUseCases.removeBusStrip).not.toHaveBeenCalled();
     });
 
+    it('can defer live-engine teardown until after the owning transaction commits', () => {
+        const track = {
+            id: 't1',
+            name: 'One',
+            kind: 'audio' as const,
+            clips: [],
+            outputId: 'master',
+            sends: [],
+            alternatives: [],
+            parentId: null,
+        };
+        vi.mocked(getTrackState).mockReturnValue({
+            tracks: [track as never],
+            selectedTrackId: 't1',
+        });
+        vi.mocked(getTrackById).mockReturnValue(track as never);
+
+        const result = removeTrack('t1', {
+            deferRuntimeEffects: true,
+            suppressRemovedEvent: true,
+        });
+
+        expect(setTrackState).toHaveBeenCalled();
+        expect(ownerUseCases.removeTrackStrip).not.toHaveBeenCalled();
+        expect(mockEventBus.emit).not.toHaveBeenCalled();
+        if (!result.removed) {
+            throw new Error('Expected the track removal to be staged');
+        }
+
+        result.finalizeRuntimeRemoval();
+
+        expect(ownerUseCases.removeTrackStrip).toHaveBeenCalledWith('t1');
+    });
+
+    it('attempts dependent runtime reconciliation when strip teardown fails', () => {
+        const failure = new Error('strip teardown failed');
+        const removed = {
+            id: 'bus-a',
+            name: 'Bus A',
+            kind: 'bus' as const,
+            clips: [],
+            outputId: 'master',
+            sends: [],
+            parentId: null,
+        };
+        const dependent = {
+            id: 'audio-1',
+            name: 'Audio',
+            kind: 'audio' as const,
+            clips: [],
+            outputId: 'bus-a',
+            sends: [],
+        };
+        vi.mocked(getTrackState).mockReturnValue({
+            tracks: [removed, dependent] as never,
+            selectedTrackId: null,
+        });
+        vi.mocked(getTrackById).mockReturnValue(removed as never);
+        ownerUseCases.removeTrackStrip.mockImplementationOnce(() => {
+            throw failure;
+        });
+
+        expect(() => removeTrack('bus-a')).toThrow(failure);
+
+        expect(ownerUseCases.removeBusStrip).toHaveBeenCalledWith('bus-a');
+        expect(ownerUseCases.setTrackOutput).toHaveBeenCalledWith('audio-1', 'master');
+    });
+
     it('refreshes surviving Toaster siblings after removing a child stem', () => {
         const parent = {
             id: 'parent',

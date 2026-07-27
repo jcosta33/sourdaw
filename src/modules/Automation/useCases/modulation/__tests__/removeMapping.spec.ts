@@ -1,10 +1,19 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 import { modulationStore } from '../../../stores/modulationStore';
 import { removeMapping } from '../removeMapping';
 
+const mocks = vi.hoisted(() => ({
+    revertMappingsToBase: vi.fn(),
+}));
+
+vi.mock('../revertMappingsToBase', () => ({
+    revertMappingsToBase: mocks.revertMappingsToBase,
+}));
+
 describe('removeMapping', () => {
     beforeEach(() => {
+        vi.clearAllMocks();
         modulationStore.set({
             modulators: [
                 {
@@ -27,6 +36,23 @@ describe('removeMapping', () => {
         removeMapping('a', { targetTrackId: 't1', targetDeviceId: 'd1', targetParamId: 'p1' });
         const mappings = modulationStore.value?.modulators[0]?.mappings ?? [];
         expect(mappings.map((x) => x.targetParamId)).toEqual(['p2']);
+    });
+
+    it('defers the live parameter reset until project truth commits', () => {
+        const finalizeRuntimeEffects = removeMapping(
+            'a',
+            { targetTrackId: 't1', targetDeviceId: 'd1', targetParamId: 'p1' },
+            { deferRuntimeEffects: true }
+        );
+
+        expect(modulationStore.value?.modulators[0]?.mappings.map((mapping) => mapping.targetParamId)).toEqual(['p2']);
+        expect(mocks.revertMappingsToBase).not.toHaveBeenCalled();
+
+        finalizeRuntimeEffects?.();
+
+        expect(mocks.revertMappingsToBase).toHaveBeenCalledWith([
+            { targetTrackId: 't1', targetDeviceId: 'd1', targetParamId: 'p1', amount: 0.5 },
+        ]);
     });
 
     it('is a no-op when the modulator id is unknown', () => {

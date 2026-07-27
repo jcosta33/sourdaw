@@ -10,6 +10,7 @@ import {
     type ActionHandler,
     type AppAction,
     type ExecuteOptions,
+    type HandlerAfterCommit,
     type HandlerDescribeResult,
     type HandlerExecutionResult,
 } from '#/utils/handlerContract';
@@ -47,6 +48,7 @@ type ExecuteAppActionBatch = (
 
 type PreparedBatchAction = {
     action: AppAction;
+    afterCommit: HandlerAfterCommit | null;
     handler: ActionHandler;
     description: HandlerDescribeResult | null;
     label: string;
@@ -97,6 +99,7 @@ async function executePreparedBatch(
         if (result?.status === 'no-write' || result?.status === 'conflict') {
             throw new AppActionConflictError(prepared.action.type);
         }
+        prepared.afterCommit = result?.afterCommit ?? null;
         executedActions.push(prepared);
     }
     assertExecutionAuthorized(shouldExecute);
@@ -233,6 +236,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 }
                 preparedActions.push({
                     action,
+                    afterCommit: null,
                     handler,
                     description,
                     label: description?.label ?? action.type,
@@ -347,15 +351,12 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 return { status: 'failed', reason, actions: [] };
             }
 
-            const semanticCleanupWarning = clearBatchSemanticContext();
             const executedBatchActions = executedActions.map(({ action, label }) => ({ action, label }));
+            const warnings: string[] = [];
+            const semanticCleanupWarning = clearBatchSemanticContext();
             if (semanticCleanupWarning) {
                 logger.error(new Error('Action batch semantic context cleanup failed'));
-                return {
-                    status: 'committed-with-warning',
-                    actions: executedBatchActions,
-                    warning: semanticCleanupWarning,
-                };
+                warnings.push(semanticCleanupWarning);
             }
 
             try {
@@ -363,7 +364,28 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
             } catch (error) {
                 const warning = failureReason(error);
                 logger.error(new Error('Action batch history recording failed after commit', { cause: error }));
-                return { status: 'committed-with-warning', actions: executedBatchActions, warning };
+                warnings.push(warning);
+            }
+
+            for (const executed of executedActions) {
+                if (!executed.afterCommit) {
+                    continue;
+                }
+                try {
+                    await executed.afterCommit();
+                } catch (error) {
+                    const warning = `${executed.action.type} post-commit effect failed: ${failureReason(error)}`;
+                    logger.error(new Error(warning, { cause: error }));
+                    warnings.push(warning);
+                }
+            }
+
+            if (warnings.length > 0) {
+                return {
+                    status: 'committed-with-warning',
+                    actions: executedBatchActions,
+                    warning: warnings.join('; '),
+                };
             }
 
             return { status: 'committed', actions: executedBatchActions };
