@@ -1,0 +1,19 @@
+crates/daw-dsp/src/proof/crossover.rs
+  s_c2fca615e81f34::t_c6d039a553ff58 125,129,329-376,382-383,651-758,778-796,836-837,846,848,856-863,866,872-879,881
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "df2c56a99cfd1535363252091fd9b19250d252df",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
