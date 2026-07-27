@@ -9,6 +9,7 @@ import {
     scheduleNoteOffline,
 } from '#/modules/Synth/useCases';
 import { type TempoMapStoreState } from '#/modules/Transport/stores';
+import { resolveToasterPadIndex, TOASTER_NEUTRAL_MIDI_NOTE } from '#/utils/toasterNoteProjection';
 import { getToasterSwingOffsetBeats } from '#/utils/toasterSwingProjection';
 
 import { scheduleTrackAutomation } from '../../repositories/offlineScheduler/automationScheduling';
@@ -179,6 +180,8 @@ export type ScheduleTrackClipsInput = {
     pendingWorkletEvents?: PendingWorkletEvent[];
     allTracks?: ReadonlyArray<Track>;
     deviceEntriesByTrack?: Map<string, DeviceNodeEntry[]>;
+    /** Full mix honors child-track mute; isolated stem/bounce renders include it. */
+    honorMuted?: boolean;
     regionStartBeat?: number;
     /**
      * False bakes the take without the track's automation moves — a bounce
@@ -210,6 +213,7 @@ export async function scheduleTrackClips({
     pendingWorkletEvents,
     allTracks,
     deviceEntriesByTrack,
+    honorMuted = true,
     regionStartBeat = 0,
     includeAutomation = true,
     vcaMultiplier = 1,
@@ -325,7 +329,7 @@ export async function scheduleTrackClips({
         const children = allTracks.filter((time) => time.parentId === track.id);
         for (let index = 0; index < children.length; index++) {
             const childTrack = children[index];
-            if (!childTrack || childTrack.muted || childTrack.disabled) {
+            if (!childTrack || (honorMuted && childTrack.muted) || childTrack.disabled) {
                 continue;
             }
             const childClips = resolveTrackClipsWithComping(childTrack.id, childTrack.clips);
@@ -416,22 +420,37 @@ export async function scheduleTrackClips({
             }
 
             if (instrumentControls) {
+                // Toaster selects a sound by pad: fixed children use their
+                // canonical sibling index, while direct parent clips use the
+                // supported GM banks. MIDI 60 remains the neutral tuning
+                // reference in both live and offline scheduling.
+                let toasterPadIndex = note.toasterPadIndex;
+                if (isToaster && toasterPadIndex < 0) {
+                    const resolvedPad = resolveToasterPadIndex(note.pitch);
+                    if (resolvedPad === null) {
+                        continue;
+                    }
+                    toasterPadIndex = resolvedPad;
+                }
+                const instrumentPitch = isToaster ? TOASTER_NEUTRAL_MIDI_NOTE : note.pitch;
                 workletEvents.push({
                     time: startTime,
                     type: 'on',
-                    pitch: note.pitch,
+                    pitch: instrumentPitch,
                     velocity: note.velocity,
                     duration,
-                    toasterPadIndex: note.toasterPadIndex,
+                    toasterPadIndex,
                 });
-                workletEvents.push({
-                    time: endTime,
-                    type: 'off',
-                    pitch: note.pitch,
-                    velocity: 0,
-                    duration: 0,
-                    toasterPadIndex: note.toasterPadIndex,
-                });
+                if (!isToaster) {
+                    workletEvents.push({
+                        time: endTime,
+                        type: 'off',
+                        pitch: instrumentPitch,
+                        velocity: 0,
+                        duration: 0,
+                        toasterPadIndex,
+                    });
+                }
             } else if (kitDef) {
                 scheduleDrumKitNote(offlineCtx, trackInputNode, kitDef, note.pitch, startTime, note.velocity);
             } else if (drumKit) {

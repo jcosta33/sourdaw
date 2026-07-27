@@ -22,6 +22,7 @@ import {
 } from '#/modules/MIDI/useCases';
 import { scheduleDrumKitNote, scheduleKitNote, scheduleNote } from '#/modules/Synth/useCases';
 import { toasterStore } from '#/modules/Toaster/stores';
+import { resolveToasterPadIndex, TOASTER_NEUTRAL_MIDI_NOTE } from '#/utils/toasterNoteProjection';
 import { getToasterSwingOffsetBeats } from '#/utils/toasterSwingProjection';
 
 import { beatToSamples } from '../../models/TempoMap';
@@ -325,50 +326,54 @@ export async function scheduleMidiNotes(
             let toasterRoute: {
                 controls: ToasterControls;
                 pad: number;
-                pitchFallback: number;
                 getSwingOffsetBeats: (noteStartBeat: number) => number;
             } | null = null;
+            let toasterOwnerTrack = track;
+            let toasterDevice = track.devices.find((data) => data.type === 'toaster');
+            let toasterPad = -1;
             if (track.parentId) {
                 const toasterParentTrack = tracks.find((time1) => time1.id === track.parentId);
-                const toasterDevice = toasterParentTrack?.devices.find((data) => data.type === 'toaster');
-                if (toasterParentTrack && toasterDevice) {
-                    const parentStrip = ensureTrackStrip(toasterParentTrack.id);
-                    const dn = parentStrip?.deviceNodes.find(
-                        (data) => data.deviceId === toasterDevice.id || data.type === 'toaster'
-                    );
-                    if (dn?.toasterControls) {
-                        let pad = -1;
-                        let childIdx = 0;
-                        for (const time1 of tracks) {
-                            if (time1.parentId === toasterParentTrack.id) {
-                                if (time1.id === track.id) {
-                                    pad = childIdx;
-                                    break;
-                                }
-                                childIdx++;
+                const parentToasterDevice = toasterParentTrack?.devices.find((data) => data.type === 'toaster');
+                if (toasterParentTrack && parentToasterDevice) {
+                    toasterOwnerTrack = toasterParentTrack;
+                    toasterDevice = parentToasterDevice;
+                    let childIndex = 0;
+                    for (const candidate of tracks) {
+                        if (candidate.parentId === toasterParentTrack.id) {
+                            if (candidate.id === track.id) {
+                                toasterPad = childIndex;
+                                break;
                             }
+                            childIndex++;
                         }
-                        toasterRoute = {
-                            controls: dn.toasterControls,
-                            pad,
-                            pitchFallback: 60,
-                            getSwingOffsetBeats: (noteStartBeat) =>
-                                getToasterSwingOffsetBeats({
-                                    parentTrackId: toasterParentTrack.id,
-                                    toasterDeviceId: toasterDevice.id,
-                                    automationMode: toasterParentTrack.automationMode,
-                                    devices: toasterParentTrack.devices,
-                                    lanes: automationLanes,
-                                    noteStartBeat,
-                                    evaluateAutomationValue: getAutomationValueAtBeat,
-                                    isAutomationRecording: isRecordingAutomation,
-                                    getCurrentSwingValue: (deviceId) =>
-                                        toasterStore.value?.[deviceId]?.kit.swing ??
-                                        toasterDevice.parameterValues.swing ??
-                                        0,
-                                }),
-                        };
                     }
+                }
+            }
+            if (toasterDevice) {
+                const toasterStrip = toasterOwnerTrack.id === track.id ? strip : ensureTrackStrip(toasterOwnerTrack.id);
+                const deviceNode = toasterStrip.deviceNodes.find(
+                    (data) => data.deviceId === toasterDevice.id || data.type === 'toaster'
+                );
+                if (deviceNode?.toasterControls) {
+                    toasterRoute = {
+                        controls: deviceNode.toasterControls,
+                        pad: toasterPad,
+                        getSwingOffsetBeats: (noteStartBeat) =>
+                            getToasterSwingOffsetBeats({
+                                parentTrackId: toasterOwnerTrack.id,
+                                toasterDeviceId: toasterDevice.id,
+                                automationMode: toasterOwnerTrack.automationMode,
+                                devices: toasterOwnerTrack.devices,
+                                lanes: automationLanes,
+                                noteStartBeat,
+                                evaluateAutomationValue: getAutomationValueAtBeat,
+                                isAutomationRecording: isRecordingAutomation,
+                                getCurrentSwingValue: (deviceId) =>
+                                    toasterStore.value?.[deviceId]?.kit.swing ??
+                                    toasterDevice.parameterValues.swing ??
+                                    0,
+                            }),
+                    };
                 }
             }
 
@@ -473,18 +478,10 @@ export async function scheduleMidiNotes(
                         const noteGain = isTrackScopedYeastNote ? 1 : clip.gain;
 
                         if (toasterRoute) {
-                            let pad = toasterRoute.pad;
-                            let pitchNote = pitch;
-                            if (pad === -1) {
-                                pad = pitch - 36;
-                                if (pad >= 24 && pad <= 39) {
-                                    pad = pad - 24;
-                                }
-                                pitchNote = toasterRoute.pitchFallback;
-                            }
-                            if (pad >= 0 && pad < 16) {
+                            const pad = toasterRoute.pad >= 0 ? toasterRoute.pad : resolveToasterPadIndex(pitch);
+                            if (pad !== null) {
                                 const safeVelocity = projectedNote.velocity;
-                                toasterRoute.controls.noteOn(pad, safeVelocity, pitchNote, sampleFrame);
+                                toasterRoute.controls.noteOn(pad, safeVelocity, TOASTER_NEUTRAL_MIDI_NOTE, sampleFrame);
                             }
                         } else if (drumKitDef) {
                             scheduleDrumKitNote(

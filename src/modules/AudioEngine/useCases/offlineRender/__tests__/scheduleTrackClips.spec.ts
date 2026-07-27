@@ -422,7 +422,46 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
         expect(events.filter((e) => e.type === 'on')).toHaveLength(0);
     });
 
-    it('keeps canonical Toaster pad indexes when earlier children are muted or disabled', async () => {
+    it('maps direct Toaster-track GM notes to pads with neutral one-shot tuning', async () => {
+        const track = makeMidiTrack();
+        const midi = makeMidi();
+        midi.notesByClipId['clip-1'] = [
+            { id: 'low-kick', pitch: 36, startBeat: 1, duration: 0.25, velocity: 100 },
+            { id: 'high-kick', pitch: 60, startBeat: 2, duration: 0.25, velocity: 90 },
+        ];
+        const entry = makeInstrumentEntry();
+        entry.deviceType = 'toaster';
+        const pendingWorkletEvents: PendingWorkletEvent[] = [];
+
+        await scheduleTrackClips({
+            offlineCtx: makeOfflineCtx(),
+            track,
+            midi,
+            trackInputNode: {} as GainNode,
+            trackGainNode: {} as GainNode,
+            trackPanNode: {} as StereoPannerNode,
+            destination: {} as AudioNode,
+            durationSeconds: 60,
+            defaultTempo: 120,
+            changes: [],
+            projections: {
+                projectMidiEvents,
+                projectPpqEndpoints,
+                processYeastMidi,
+                selectMidiEventProbability: mocks.shouldPlayMidiEvent,
+                projectChordPitch: mocks.projectChordPitch,
+                evaluateAutomationValue: mocks.evaluateAutomationValue,
+            },
+            pendingWorkletEvents,
+            deviceEntriesByTrack: new Map([[track.id, [entry]]]),
+        });
+
+        expect(pendingWorkletEvents.map((event) => event.toasterPadIndex)).toEqual([0, 0]);
+        expect(pendingWorkletEvents.map((event) => event.pitch)).toEqual([60, 60]);
+        expect(pendingWorkletEvents.map((event) => event.type)).toEqual(['on', 'on']);
+    });
+
+    it('keeps canonical Toaster pad indexes and neutral tuning while honoring the caller mute policy', async () => {
         const parent = TrackDummy.create({
             id: 'toaster-parent',
             kind: 'midi',
@@ -439,9 +478,9 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
         });
         const midi = makeMidi();
         midi.notesByClipId = Object.fromEntries(
-            children.map((child) => [
+            children.map((child, index) => [
                 child.clips[0]!.id,
-                [{ id: `${child.id}-note`, pitch: 60, startBeat: 1, duration: 1, velocity: 100 }],
+                [{ id: `${child.id}-note`, pitch: 36 + index, startBeat: 1, duration: 1, velocity: 100 }],
             ])
         );
         const entry = makeInstrumentEntry();
@@ -470,14 +509,43 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
             pendingWorkletEvents,
             allTracks: [parent, ...children],
             deviceEntriesByTrack: new Map([[parent.id, [entry]]]),
+            honorMuted: false,
         });
 
         const noteOns = pendingWorkletEvents.filter((event) => event.type === 'on');
-        expect(noteOns).toHaveLength(1);
-        expect(noteOns[0]?.toasterPadIndex).toBe(2);
+        expect(noteOns.map((event) => event.toasterPadIndex)).toEqual([0, 2]);
+        expect(noteOns.map((event) => event.pitch)).toEqual([60, 60]);
+        expect(pendingWorkletEvents.filter((event) => event.type === 'off')).toHaveLength(0);
+
+        const mixdownEvents: PendingWorkletEvent[] = [];
+        await scheduleTrackClips({
+            offlineCtx: makeOfflineCtx(),
+            track: parent,
+            midi,
+            trackInputNode: {} as GainNode,
+            trackGainNode: {} as GainNode,
+            trackPanNode: {} as StereoPannerNode,
+            destination: {} as AudioNode,
+            durationSeconds: 60,
+            defaultTempo: 120,
+            changes: [],
+            projections: {
+                projectMidiEvents,
+                projectPpqEndpoints,
+                processYeastMidi,
+                selectMidiEventProbability: mocks.shouldPlayMidiEvent,
+                projectChordPitch: mocks.projectChordPitch,
+                evaluateAutomationValue: mocks.evaluateAutomationValue,
+            },
+            pendingWorkletEvents: mixdownEvents,
+            allTracks: [parent, ...children],
+            deviceEntriesByTrack: new Map([[parent.id, [entry]]]),
+        });
+
+        expect(mixdownEvents.filter((event) => event.type === 'on').map((event) => event.toasterPadIndex)).toEqual([2]);
     });
 
-    it('applies the parent Toaster swing lane equally to offline child-note on/off timing', async () => {
+    it('applies the parent Toaster swing lane to the offline one-shot onset without adding a gate release', async () => {
         const parent = TrackDummy.create({
             id: 'toaster-parent',
             kind: 'midi',
@@ -555,7 +623,7 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
 
         expect(mocks.processYeastMidi).toHaveBeenCalled();
         expect(pendingWorkletEvents.find((event) => event.type === 'on')?.time).toBeCloseTo(0.65, 6);
-        expect(pendingWorkletEvents.find((event) => event.type === 'off')?.time).toBeCloseTo(0.775, 6);
+        expect(pendingWorkletEvents.filter((event) => event.type === 'off')).toHaveLength(0);
     });
 
     it('shifts instrument note on/off times by the track compensation delay', async () => {

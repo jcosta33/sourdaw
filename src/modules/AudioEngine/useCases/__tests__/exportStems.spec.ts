@@ -273,11 +273,11 @@ describe('exportStems', () => {
         expect(childOutput.connect).toHaveBeenCalledWith(parentInput);
         expect(offlineRenderMocks.scheduleTrackClips).toHaveBeenNthCalledWith(
             1,
-            expect.objectContaining({ track: toasterFolder, allTracks: groupedTracks })
+            expect.objectContaining({ track: toasterFolder, allTracks: groupedTracks, honorMuted: false })
         );
         expect(offlineRenderMocks.scheduleTrackClips).toHaveBeenNthCalledWith(
             2,
-            expect.objectContaining({ track: { ...padChild, clips: [] }, allTracks: groupedTracks })
+            expect.objectContaining({ track: { ...padChild, clips: [] }, allTracks: groupedTracks, honorMuted: false })
         );
         expect(stems).toEqual(new Map([['toaster-folder', renderedBuffer]]));
     });
