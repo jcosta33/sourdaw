@@ -18,11 +18,13 @@ import { logger } from '#/infra/logger/appLogger';
 
 import { createAiRuntimeError } from '../../errors/AiRuntimeError';
 import { type EditPlan, EDIT_PLAN_JSON_SCHEMA, classifyEditPlan } from '../../models/DsoTypes';
+import { type AiBackend } from '../../models/LlmOrchestrationTypes';
 import { isNativeEngineReady } from '../../repositories/nativeEngine/isNativeEngineReady';
 import { generateSchemaConstrainedNativeCompletion } from '../../repositories/nativeEngine/schemaConstrainedGeneration';
 import { streamNativeCompletion } from '../../repositories/nativeEngine/streaming';
 import { getActiveModelId } from '../../repositories/webLlm/getActiveModelId';
 import { getLlmEngine } from '../../repositories/webLlm/getLlmEngine';
+import { aiBackendPreferenceStore } from '../../stores/aiBackendPreferenceStore';
 import { appendChatMessage, updateChatMessage, setChatGenerating } from '../../stores/chatStore';
 import { llmStatusStore } from '../../stores/llmStatusStore';
 import { proposePendingDsoConfirmation } from '../../stores/pendingActionConfirmationStore';
@@ -87,12 +89,14 @@ export const executeDsoEdit = inject({ logger })(
                 isStreaming: true,
             });
 
+            const previousStatus = llmStatusStore.value;
             setChatGenerating(true);
             llmStatusStore.set({ state: 'generating' });
 
             try {
                 // 4. Invoke LLM — schema-constrained for native, regular for others
                 const rawResponse = await invokeLlm(backend, system, user, assistantMsgId, signal);
+                signal?.throwIfAborted();
 
                 // 5. Extract reasoning tokens (Qwen3 uses <think>...</think>) and parse EditPlan
                 const { reasoning, cleanResponse } = extractReasoning(rawResponse);
@@ -106,7 +110,7 @@ export const executeDsoEdit = inject({ logger })(
                         reasoning,
                         isDsoAction: true,
                     });
-                    finish();
+                    finish(backend);
                     return { success: true, plan, summaries: [] };
                 }
 
@@ -117,7 +121,7 @@ export const executeDsoEdit = inject({ logger })(
                         reasoning,
                         isDsoAction: true,
                     });
-                    finish();
+                    finish(backend);
                     return { success: true, plan, summaries: [] };
                 }
 
@@ -132,7 +136,7 @@ export const executeDsoEdit = inject({ logger })(
                         reasoning,
                         isDsoAction: true,
                     });
-                    finish();
+                    finish(backend);
                     return { success: false, plan, summaries: [], error: errorText };
                 }
 
@@ -145,7 +149,7 @@ export const executeDsoEdit = inject({ logger })(
                         isStreaming: false,
                         error: errorText,
                     });
-                    finish();
+                    finish(backend);
                     return { success: false, plan, summaries: [], error: errorText };
                 }
 
@@ -153,6 +157,7 @@ export const executeDsoEdit = inject({ logger })(
                 const classification = classifyEditPlan(plan);
 
                 if (classification === 'confirmation_required') {
+                    signal?.throwIfAborted();
                     const confirmationId = `dso-confirmation-${crypto.randomUUID()}`;
                     const confirmationMetadata = getDsoConfirmationTargets({ dsos: plan.dsos });
                     const confirmation = proposePendingDsoConfirmation({
@@ -179,7 +184,7 @@ export const executeDsoEdit = inject({ logger })(
                         pendingActionConfirmationId: confirmation.id,
                         pendingActionConfirmationStatus: 'proposed',
                     });
-                    finish();
+                    finish(backend);
                     return {
                         success: true,
                         plan,
@@ -189,6 +194,7 @@ export const executeDsoEdit = inject({ logger })(
                 }
 
                 // 10. Execute with undo support
+                signal?.throwIfAborted();
                 const { summaries, failures } = await commitDsoEditPlan({
                     plan,
                     userRequest,
@@ -196,7 +202,7 @@ export const executeDsoEdit = inject({ logger })(
                     reasoning,
                 });
 
-                finish();
+                finish(backend);
                 return {
                     success: failures.length === 0,
                     plan,
@@ -204,6 +210,17 @@ export const executeDsoEdit = inject({ logger })(
                     error: failures.length > 0 ? formatResultFailures(failures) : undefined,
                 };
             } catch (error) {
+                if (signal?.aborted) {
+                    updateChatMessage(assistantMsgId, {
+                        content: 'Edit cancelled.',
+                        isStreaming: false,
+                        error: 'Edit cancelled',
+                        isDsoAction: true,
+                    });
+                    setChatGenerating(false);
+                    restoreStatusAfterCancellation(previousStatus);
+                    throw signal.reason ?? new DOMException('Edit cancelled', 'AbortError');
+                }
                 const err = error instanceof Error ? error : new Error(String(error));
                 logger.error(err);
 
@@ -222,9 +239,26 @@ export const executeDsoEdit = inject({ logger })(
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function finish(): void {
+function finish(backend: AiBackend): void {
     setChatGenerating(false);
-    llmStatusStore.set({ state: 'ready', modelId: 'qwen3-8b' });
+    if (backend === 'native') {
+        llmStatusStore.set({ state: 'ready', backend, modelId: 'qwen3-8b' });
+        return;
+    }
+    if (backend === 'webllm') {
+        llmStatusStore.set({ state: 'ready', backend, modelId: getActiveModelId() });
+        return;
+    }
+    llmStatusStore.set({ state: 'idle' });
+}
+
+function restoreStatusAfterCancellation(previousStatus: typeof llmStatusStore.value): void {
+    const preference = aiBackendPreferenceStore.value ?? 'auto';
+    if (previousStatus?.state === 'ready' && (preference === 'auto' || previousStatus.backend === preference)) {
+        llmStatusStore.set(previousStatus);
+        return;
+    }
+    llmStatusStore.set({ state: 'idle' });
 }
 
 type FormatResultFailuresInput = Awaited<ReturnType<typeof commitDsoEditPlan>>['failures'];
@@ -251,6 +285,65 @@ function extractReasoning(raw: string): { reasoning: string | undefined; cleanRe
 }
 
 // ── LLM invocation per backend ───────────────────────────────────────────────
+
+class WebLlmEditPlanIncompleteError extends Error {
+    override readonly name = 'WebLlmEditPlanIncompleteError';
+}
+
+type StreamWebLlmEditPlanInput = {
+    engine: NonNullable<ReturnType<typeof getLlmEngine>>;
+    payload: Record<string, unknown>;
+    onProgress: () => void;
+    signal?: AbortSignal;
+};
+
+async function streamWebLlmEditPlan({
+    engine,
+    payload,
+    onProgress,
+    signal,
+}: StreamWebLlmEditPlanInput): Promise<string> {
+    signal?.throwIfAborted();
+
+    function interruptGeneration(): void {
+        engine.interruptGenerate();
+    }
+    signal?.addEventListener('abort', interruptGeneration, { once: true });
+
+    try {
+        let result = '';
+        let sawTerminalReason = false;
+        const stream = (await engine.chat.completions.create(payload)) as AsyncIterable<{
+            choices: Array<{ delta?: { content?: string }; finish_reason?: string | null }>;
+        }>;
+
+        for await (const chunk of stream) {
+            signal?.throwIfAborted();
+            const choice = chunk.choices[0];
+            const delta = choice?.delta?.content;
+            if (delta) {
+                result += delta;
+                onProgress();
+            }
+            if (choice?.finish_reason !== undefined && choice.finish_reason !== null) {
+                sawTerminalReason = true;
+                if (choice.finish_reason !== 'stop') {
+                    throw new WebLlmEditPlanIncompleteError(
+                        `WebLLM edit plan stopped with reason ${choice.finish_reason}`
+                    );
+                }
+            }
+        }
+
+        signal?.throwIfAborted();
+        if (!sawTerminalReason) {
+            throw new WebLlmEditPlanIncompleteError('WebLLM edit-plan stream ended unexpectedly');
+        }
+        return result;
+    } finally {
+        signal?.removeEventListener('abort', interruptGeneration);
+    }
+}
 
 async function invokeLlm(
     backend: string,
@@ -321,51 +414,47 @@ async function invokeLlm(
 
         // First attempt: with schema constraint.
         try {
-            let result = '';
-            const stream = (await engine.chat.completions.create({
-                messages,
-                temperature: 0.1,
-                max_tokens: 1024,
-                stream: true,
-                response_format: {
-                    type: 'json_object' as const,
-                    schema: EDIT_PLAN_JSON_SCHEMA,
+            return await streamWebLlmEditPlan({
+                engine,
+                onProgress,
+                signal,
+                payload: {
+                    messages,
+                    temperature: 0.1,
+                    max_tokens: 1024,
+                    stream: true,
+                    response_format: {
+                        type: 'json_object' as const,
+                        schema: EDIT_PLAN_JSON_SCHEMA,
+                    },
                 },
-            })) as AsyncIterable<{ choices: Array<{ delta?: { content?: string } }> }>;
-
-            for await (const chunk of stream) {
-                const delta = chunk.choices[0]?.delta?.content;
-                if (delta) {
-                    result += delta;
-                    onProgress();
-                }
-            }
-
-            return result;
+            });
         } catch (constraintError) {
+            signal?.throwIfAborted();
+            if (constraintError instanceof WebLlmEditPlanIncompleteError) {
+                throw constraintError;
+            }
             // Smaller WebLLM models may reject the grammar-constrained token stream.
             // The system prompt already instructs the model to emit JSON, so retry
             // once without the schema constraint before giving up. If the unconstrained
             // call also fails, surface a clear error including the original failure.
             try {
-                let result = '';
-                const stream = (await engine.chat.completions.create({
-                    messages,
-                    temperature: 0.1,
-                    max_tokens: 1024,
-                    stream: true,
-                })) as AsyncIterable<{ choices: Array<{ delta?: { content?: string } }> }>;
-
-                for await (const chunk of stream) {
-                    const delta = chunk.choices[0]?.delta?.content;
-                    if (delta) {
-                        result += delta;
-                        onProgress();
-                    }
-                }
-
-                return result;
+                return await streamWebLlmEditPlan({
+                    engine,
+                    onProgress,
+                    signal,
+                    payload: {
+                        messages,
+                        temperature: 0.1,
+                        max_tokens: 1024,
+                        stream: true,
+                    },
+                });
             } catch (fallbackError) {
+                signal?.throwIfAborted();
+                if (fallbackError instanceof WebLlmEditPlanIncompleteError) {
+                    throw fallbackError;
+                }
                 const activeModel = getActiveModelId();
                 const constraintMsg =
                     constraintError instanceof Error ? constraintError.message : String(constraintError);

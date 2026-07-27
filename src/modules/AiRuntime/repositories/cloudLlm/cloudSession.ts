@@ -1,9 +1,24 @@
+import { AiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
+import { type HostedLlmProviderInfo } from '../../models/HostedLlmProvider';
+import { hostedLlmProviderStatusStore } from '../../stores/hostedLlmProviderStatusStore';
+
 import type Anthropic from '@anthropic-ai/sdk';
 
-type CloudCredentials = Readonly<{
+export type AnthropicCloudRuntime = Readonly<{
+    provider: 'anthropic';
     api_key: string;
+    model: string;
     client: Anthropic;
 }>;
+
+export type OpenAiCompatibleCloudRuntime = Readonly<{
+    provider: 'openai' | 'openai-compatible';
+    api_key: string;
+    model: string;
+    base_url: string;
+}>;
+
+export type CloudProviderRuntime = AnthropicCloudRuntime | OpenAiCompatibleCloudRuntime;
 
 /**
  * Owns the complete volatile cloud session invariant. This is not a helper
@@ -11,7 +26,7 @@ type CloudCredentials = Readonly<{
  * and every transition that can couple them is enforced here.
  */
 class CloudSession {
-    #credentials: CloudCredentials | null = null;
+    #runtime: CloudProviderRuntime | null = null;
     #active_stream_controllers = new Set<AbortController>();
     #is_revoking = false;
     #transition_revision = 0;
@@ -20,11 +35,21 @@ class CloudSession {
         if (this.#is_revoking) {
             return null;
         }
-        return this.#credentials?.client ?? null;
+        if (this.#runtime?.provider !== 'anthropic') {
+            return null;
+        }
+        return this.#runtime.client;
+    }
+
+    get_runtime(): CloudProviderRuntime | null {
+        if (this.#is_revoking) {
+            return null;
+        }
+        return this.#runtime;
     }
 
     is_available(): boolean {
-        return !this.#is_revoking && this.#credentials !== null;
+        return !this.#is_revoking && this.#runtime !== null;
     }
 
     register_controller(controller: AbortController): AbortController {
@@ -42,30 +67,37 @@ class CloudSession {
 
     clear(): void {
         this.#transition_revision += 1;
-        this.#credentials = null;
+        this.#runtime = null;
+        hostedLlmProviderStatusStore.set(null);
         if (this.#is_revoking) {
             return;
         }
-        this.#revoke_active_streams();
+        this.#revoke_active_streams(new AiRuntimeConfigurationChangedError());
     }
 
-    replace_credentials({ api_key, client }: { api_key: string; client: Anthropic }): void {
+    replace_runtime(runtime: CloudProviderRuntime): void {
         if (this.#is_revoking) {
             throw new Error('Cloud credential replacement cannot run during session revocation');
         }
         const transition_revision = ++this.#transition_revision;
-        this.#revoke_active_streams();
+        this.#revoke_active_streams(new AiRuntimeConfigurationChangedError());
         if (transition_revision !== this.#transition_revision) {
             throw new Error('Cloud credential replacement was superseded');
         }
-        this.#credentials = { api_key, client };
+        this.#runtime = runtime;
+        const providerInfo: HostedLlmProviderInfo = {
+            provider: runtime.provider,
+            model: runtime.model,
+            baseUrl: runtime.provider === 'anthropic' ? null : runtime.base_url,
+        };
+        hostedLlmProviderStatusStore.set(providerInfo);
     }
 
-    #revoke_active_streams(): void {
+    #revoke_active_streams(reason: AiRuntimeConfigurationChangedError): void {
         this.#is_revoking = true;
         try {
             for (const controller of [...this.#active_stream_controllers]) {
-                controller.abort();
+                controller.abort(reason);
             }
         } finally {
             this.#active_stream_controllers.clear();

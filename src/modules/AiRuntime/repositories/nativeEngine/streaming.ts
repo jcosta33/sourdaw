@@ -1,5 +1,6 @@
-import { isTauri, tauriInvoke, createChannel } from '#/utils/tauriBridge';
+import { isTauri, createChannel } from '#/utils/tauriBridge';
 
+import { invokeCancelableNativeLlm } from './invokeCancelableNativeLlm';
 import { BASE_URL } from './lifecycleState';
 
 type LlmStreamEvent =
@@ -35,6 +36,9 @@ export async function streamNativeCompletion(
         // Tauri channel dispatcher and is swallowed, so the stream keeps running.
         const streamState = { error: null as Error | null };
         channel.onmessage = (event: LlmStreamEvent) => {
+            if (options?.signal?.aborted) {
+                return;
+            }
             try {
                 if (event.event === 'token') {
                     onToken(event.data.text);
@@ -50,19 +54,25 @@ export async function streamNativeCompletion(
         const systemPrompt = messages.find((message) => message.role === 'system')?.content ?? '';
         const nonSystemMessages = messages.filter((message) => message.role !== 'system');
 
-        const invocation = tauriInvoke('stream_native_completion', {
-            systemPrompt,
-            messages: nonSystemMessages,
-            temperature: options?.temperature ?? 0.7,
-            maxTokens: options?.maxTokens ?? 2048,
-            onEvent: channel,
-        });
-
-        // Watchdog: a hung native backend would otherwise keep this await pending
-        // forever (streamState.error is only inspected once the invoke resolves).
-        // Race the invoke against a timeout and an optional abort signal so the
-        // caller is not stuck waiting on a stalled stream.
-        await raceWithWatchdog(invocation, options?.timeoutMs ?? DEFAULT_NATIVE_TIMEOUT_MS, options?.signal);
+        const timeoutMs = options?.timeoutMs ?? DEFAULT_NATIVE_TIMEOUT_MS;
+        try {
+            await invokeCancelableNativeLlm({
+                command: 'stream_native_completion',
+                args: {
+                    systemPrompt,
+                    messages: nonSystemMessages,
+                    temperature: options?.temperature ?? 0.7,
+                    maxTokens: options?.maxTokens ?? 2048,
+                    onEvent: channel,
+                },
+                timeoutMs,
+                signal: options?.signal,
+                abortMessage: 'Native completion aborted',
+                timeoutMessage: `Native completion timed out after ${String(timeoutMs)}ms`,
+            });
+        } finally {
+            channel.onmessage = () => undefined;
+        }
 
         if (streamState.error) {
             throw streamState.error;
@@ -137,43 +147,5 @@ export async function streamNativeCompletion(
         // Release the underlying stream so an aborted/early-broken loop does not
         // leave the reader (and socket) dangling.
         await reader.cancel().catch(() => undefined);
-    }
-}
-
-/**
- * Race a promise against a timeout and an optional abort signal. Resolves when
- * the work settles first; rejects if the watchdog fires or the signal aborts.
- * Used to bound the native Tauri invoke, which has no built-in cancellation.
- */
-async function raceWithWatchdog<TWork>(work: Promise<TWork>, timeoutMs: number, signal?: AbortSignal): Promise<TWork> {
-    if (signal?.aborted) {
-        throw new Error('Native completion aborted');
-    }
-
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let onAbort: (() => void) | undefined;
-
-    const guard = new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => {
-            reject(new Error(`Native completion timed out after ${String(timeoutMs)}ms`));
-        }, timeoutMs);
-
-        if (signal) {
-            onAbort = () => {
-                reject(new Error('Native completion aborted'));
-            };
-            signal.addEventListener('abort', onAbort, { once: true });
-        }
-    });
-
-    try {
-        return await Promise.race([work, guard]);
-    } finally {
-        if (timer !== undefined) {
-            clearTimeout(timer);
-        }
-        if (signal && onAbort) {
-            signal.removeEventListener('abort', onAbort);
-        }
     }
 }

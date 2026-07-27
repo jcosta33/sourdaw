@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+type CloudChatOutcome = { status: 'complete' } | { status: 'incomplete'; reason: string };
+
 const { streamCloudChatCompletionMock, resolveBackendMock } = vi.hoisted(() => ({
-    streamCloudChatCompletionMock: vi.fn<(messages: unknown, onToken: (token: string) => void) => Promise<void>>(),
+    streamCloudChatCompletionMock:
+        vi.fn<(messages: unknown, onToken: (token: string) => void) => Promise<CloudChatOutcome>>(),
     resolveBackendMock: vi.fn<(...args: unknown[]) => unknown>(),
 }));
 
@@ -84,6 +87,7 @@ describe('generateMidiVariations', () => {
         midiStateMock.value = null;
         resolveBackendMock.mockReturnValue('cloud');
         getNotesForClipMock.mockReturnValue(validNotes);
+        streamCloudChatCompletionMock.mockResolvedValue({ status: 'complete' });
     });
 
     it('throws when track state is unavailable', async () => {
@@ -109,7 +113,7 @@ describe('generateMidiVariations', () => {
         streamCloudChatCompletionMock.mockImplementation((_messages: unknown, onToken: (token: string) => void) => {
             onToken(validVariationsJson);
             trackStateMock.value = trackSnapshotBefore;
-            return Promise.resolve();
+            return Promise.resolve({ status: 'complete' as const });
         });
 
         // Distinct lookup/before/after snapshots prove undo reads the owner getter
@@ -162,7 +166,7 @@ describe('generateMidiVariations', () => {
         });
         streamCloudChatCompletionMock.mockImplementation((_messages: unknown, onToken: (token: string) => void) => {
             onToken(mixedJson);
-            return Promise.resolve();
+            return Promise.resolve({ status: 'complete' as const });
         });
 
         const count = await generateMidiVariations('clip-1');
@@ -181,7 +185,7 @@ describe('generateMidiVariations', () => {
         const multiObject = `{"thinking":"about {nested} braces"}\n${validVariationsJson}\n{"trailing":"junk"}`;
         streamCloudChatCompletionMock.mockImplementation((_messages: unknown, onToken: (token: string) => void) => {
             onToken(multiObject);
-            return Promise.resolve();
+            return Promise.resolve({ status: 'complete' as const });
         });
 
         const count = await generateMidiVariations('clip-1');
@@ -231,11 +235,25 @@ describe('generateMidiVariations', () => {
         expect(streamCloudChatCompletionMock).not.toHaveBeenCalled();
     });
 
+    it('rejects incomplete hosted output before creating clips or undo history', async () => {
+        trackStateMock.value = midiClipState;
+        streamCloudChatCompletionMock.mockImplementation((_messages, onToken) => {
+            onToken(validVariationsJson);
+            return Promise.resolve({ status: 'incomplete', reason: 'max_tokens' });
+        });
+
+        await expect(generateMidiVariations('clip-1')).rejects.toThrow(
+            'Hosted AI MIDI variations were incomplete (max_tokens).'
+        );
+        expect(createAlternativeClipsMock).not.toHaveBeenCalled();
+        expect(pushUndoEntryMock).not.toHaveBeenCalled();
+    });
+
     it('throws when the model response contains no JSON object', async () => {
         trackStateMock.value = midiClipState;
         streamCloudChatCompletionMock.mockImplementation((_messages: unknown, onToken: (token: string) => void) => {
             onToken('sorry, I cannot help with that.');
-            return Promise.resolve();
+            return Promise.resolve({ status: 'complete' as const });
         });
 
         await expect(generateMidiVariations('clip-1')).rejects.toThrow(/No JSON object found/);
@@ -248,7 +266,7 @@ describe('generateMidiVariations', () => {
         const allInvalidJson = JSON.stringify({ variations: ['not-an-array', [null]] });
         streamCloudChatCompletionMock.mockImplementation((_messages: unknown, onToken: (token: string) => void) => {
             onToken(allInvalidJson);
-            return Promise.resolve();
+            return Promise.resolve({ status: 'complete' as const });
         });
 
         await expect(generateMidiVariations('clip-1')).rejects.toThrow(/no valid variation note arrays/);

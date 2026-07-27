@@ -3,17 +3,61 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { AiSection } from '../AiSection';
 
-const mockConfigureCloudApi = vi.fn();
-const mockRemoveCloudApi = vi.fn();
-const mockIsCloudAvailable = vi.fn(() => false);
+const mockConfigureCloudProvider = vi.fn<(configuration: unknown) => void>();
+const mockRemoveCloudApi = vi.fn<() => void>();
+const mockSetAiBackendPreference = vi.fn<(preference: string) => void>();
+const mockBackendPreference = { value: 'auto' };
+const mockLlmStatus = {
+    value: { state: 'idle' } as
+        { state: 'idle' } | { state: 'ready'; backend: 'native' | 'cloud' | 'webllm'; modelId: string },
+};
+const mockHostedProviderStatus: {
+    value: {
+        provider: 'anthropic' | 'openai' | 'openai-compatible';
+        model: string;
+        baseUrl: string | null;
+    } | null;
+} = { value: null };
 type MockAiBackend = 'native' | 'cloud' | 'webllm' | 'none';
 const mockResolveBackend = vi.fn((): MockAiBackend => 'none');
 
+vi.mock('#/infra/store/useStore', () => ({
+    useStore: (_store: unknown, fallback: unknown) => {
+        if (fallback === 'auto') {
+            return mockBackendPreference.value;
+        }
+        if (fallback === null) {
+            return mockHostedProviderStatus.value;
+        }
+        return mockLlmStatus.value;
+    },
+}));
+
+vi.mock('#/modules/AiRuntime/stores', () => ({
+    aiBackendPreferenceStore: {},
+    hostedLlmProviderStatusStore: {},
+    llmStatusStore: {},
+}));
+
 vi.mock('#/modules/AiRuntime/useCases', () => ({
-    configureCloudApi: (key: string) => mockConfigureCloudApi(key),
-    removeCloudApi: () => mockRemoveCloudApi(),
-    isCloudAvailable: () => mockIsCloudAvailable(),
+    configureCloudProvider: (configuration: unknown): void => {
+        mockConfigureCloudProvider(configuration);
+    },
+    removeCloudApi: (): void => {
+        mockRemoveCloudApi();
+    },
     resolveBackend: () => mockResolveBackend(),
+    setAiBackendPreference: (preference: string): void => {
+        mockSetAiBackendPreference(preference);
+        mockBackendPreference.value = preference;
+        if (
+            preference !== 'auto' &&
+            mockLlmStatus.value.state === 'ready' &&
+            mockLlmStatus.value.backend !== preference
+        ) {
+            mockLlmStatus.value = { state: 'idle' };
+        }
+    },
 }));
 
 vi.mock('#/modules/BrowserAi/presentations/views', () => ({
@@ -24,7 +68,9 @@ vi.mock('#/modules/BrowserAi/presentations/views', () => ({
 describe('AiSection', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mockIsCloudAvailable.mockReturnValue(false);
+        mockHostedProviderStatus.value = null;
+        mockBackendPreference.value = 'auto';
+        mockLlmStatus.value = { state: 'idle' };
         mockResolveBackend.mockReturnValue('none');
     });
 
@@ -50,11 +96,16 @@ describe('AiSection', () => {
         expect(screen.getByText('Native (in-process)')).toBeInTheDocument();
     });
 
-    it('shows "Cloud (Claude)" when the backend resolves to cloud', () => {
+    it('shows the configured hosted provider when the backend resolves to cloud', () => {
         mockResolveBackend.mockReturnValue('cloud');
+        mockHostedProviderStatus.value = {
+            provider: 'anthropic',
+            model: 'claude-sonnet-4-20250514',
+            baseUrl: null,
+        };
         render(<AiSection />);
 
-        expect(screen.getByText('Cloud (Claude)')).toBeInTheDocument();
+        expect(screen.getByText('Cloud (Anthropic)')).toBeInTheDocument();
     });
 
     it('shows "Browser (WebLLM)" when the backend resolves to webllm', () => {
@@ -64,14 +115,30 @@ describe('AiSection', () => {
         expect(screen.getByText('Browser (WebLLM)')).toBeInTheDocument();
     });
 
-    it('shows "Connected" and a Remove Key button when cloud is available', () => {
-        mockIsCloudAvailable.mockReturnValue(true);
+    it('shows a configured provider and a Remove Key button when cloud is available', () => {
+        mockHostedProviderStatus.value = {
+            provider: 'anthropic',
+            model: 'claude-sonnet-4-20250514',
+            baseUrl: null,
+        };
         render(<AiSection />);
 
-        expect(screen.getByText('Connected')).toBeInTheDocument();
+        expect(screen.getByText('Configured: Anthropic / claude-sonnet-4-20250514')).toBeInTheDocument();
         fireEvent.click(screen.getByRole('button', { name: 'Remove Key' }));
 
         expect(mockRemoveCloudApi).toHaveBeenCalled();
+    });
+
+    it('routes an explicit backend preference and clears an incompatible ready backend', () => {
+        mockLlmStatus.value = { state: 'ready', backend: 'webllm', modelId: 'local-browser-model' };
+        mockResolveBackend.mockReturnValue('cloud');
+        const { rerender } = render(<AiSection />);
+
+        fireEvent.change(screen.getByLabelText('AI execution backend'), { target: { value: 'cloud' } });
+        rerender(<AiSection />);
+
+        expect(mockSetAiBackendPreference).toHaveBeenCalledWith('cloud');
+        expect(screen.getByText('Cloud (Hosted)')).toBeInTheDocument();
     });
 
     it('keeps the Save button disabled until an API key is entered', () => {
@@ -87,15 +154,112 @@ describe('AiSection', () => {
         expect(saveButton).not.toBeDisabled();
     });
 
-    it('configures the cloud API with the trimmed key and clears the input on save', () => {
+    it('submits hosted configuration and clears the key input on save', () => {
         render(<AiSection />);
 
         const input = screen.getByLabelText('Anthropic API key') as HTMLInputElement;
         fireEvent.change(input, { target: { value: '  sk-ant-test  ' } });
         fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
-        expect(mockConfigureCloudApi).toHaveBeenCalledWith('sk-ant-test');
+        expect(mockConfigureCloudProvider).toHaveBeenCalledWith({
+            provider: 'anthropic',
+            apiKey: '  sk-ant-test  ',
+            model: 'claude-sonnet-4-20250514',
+            baseUrl: undefined,
+        });
         expect(input.value).toBe('');
+    });
+
+    it('configures OpenAI and an arbitrary compatible endpoint', () => {
+        render(<AiSection />);
+
+        fireEvent.change(screen.getByLabelText('Hosted AI provider'), { target: { value: 'openai' } });
+        expect(screen.getByLabelText('Hosted AI model')).toHaveValue('gpt-5.2');
+        fireEvent.change(screen.getByLabelText('OpenAI API key'), { target: { value: 'sk-openai' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+        expect(mockConfigureCloudProvider).toHaveBeenLastCalledWith({
+            provider: 'openai',
+            apiKey: 'sk-openai',
+            model: 'gpt-5.2',
+            baseUrl: undefined,
+        });
+
+        fireEvent.change(screen.getByLabelText('Hosted AI provider'), {
+            target: { value: 'openai-compatible' },
+        });
+        fireEvent.change(screen.getByLabelText('Hosted AI model'), { target: { value: 'qwen-local' } });
+        fireEvent.change(screen.getByLabelText('OpenAI-compatible base URL'), {
+            target: { value: 'http://localhost:1234/v1' },
+        });
+        fireEvent.change(screen.getByLabelText('OpenAI-compatible API key'), { target: { value: 'local-key' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+        expect(mockConfigureCloudProvider).toHaveBeenLastCalledWith({
+            provider: 'openai-compatible',
+            apiKey: 'local-key',
+            model: 'qwen-local',
+            baseUrl: 'http://localhost:1234/v1',
+        });
+    });
+
+    it('clears credential drafts when their provider or compatible endpoint changes', () => {
+        render(<AiSection />);
+
+        fireEvent.change(screen.getByLabelText('Anthropic API key'), { target: { value: 'anthropic-secret' } });
+        fireEvent.change(screen.getByLabelText('Hosted AI provider'), { target: { value: 'openai' } });
+
+        expect(screen.getByLabelText('OpenAI API key')).toHaveValue('');
+        expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+
+        fireEvent.change(screen.getByLabelText('Hosted AI provider'), {
+            target: { value: 'openai-compatible' },
+        });
+        fireEvent.change(screen.getByLabelText('Hosted AI model'), { target: { value: 'local-model' } });
+        fireEvent.change(screen.getByLabelText('OpenAI-compatible base URL'), {
+            target: { value: 'http://localhost:1234/v1' },
+        });
+        fireEvent.change(screen.getByLabelText('OpenAI-compatible API key'), {
+            target: { value: 'local-secret' },
+        });
+        fireEvent.change(screen.getByLabelText('OpenAI-compatible base URL'), {
+            target: { value: 'http://localhost:4321/v1' },
+        });
+
+        expect(screen.getByLabelText('OpenAI-compatible API key')).toHaveValue('');
+        expect(screen.getByRole('button', { name: 'Save' })).not.toBeDisabled();
+    });
+
+    it('allows an auth-free OpenAI-compatible endpoint', () => {
+        render(<AiSection />);
+
+        fireEvent.change(screen.getByLabelText('Hosted AI provider'), {
+            target: { value: 'openai-compatible' },
+        });
+        fireEvent.change(screen.getByLabelText('Hosted AI model'), { target: { value: 'qwen-local' } });
+        fireEvent.change(screen.getByLabelText('OpenAI-compatible base URL'), {
+            target: { value: 'http://localhost:1234/v1' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+        expect(mockConfigureCloudProvider).toHaveBeenLastCalledWith({
+            provider: 'openai-compatible',
+            apiKey: '',
+            model: 'qwen-local',
+            baseUrl: 'http://localhost:1234/v1',
+        });
+    });
+
+    it('renders provider configuration errors without crashing Preferences', () => {
+        mockConfigureCloudProvider.mockImplementationOnce(() => {
+            throw new Error('Provider base URL is invalid');
+        });
+        render(<AiSection />);
+
+        fireEvent.change(screen.getByLabelText('Anthropic API key'), { target: { value: 'sk-ant-test' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+        expect(screen.getByRole('alert')).toHaveTextContent('Provider base URL is invalid');
     });
 
     it('toggles the API key input between password and text when the eye button is clicked', () => {

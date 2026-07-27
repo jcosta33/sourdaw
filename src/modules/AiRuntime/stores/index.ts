@@ -10,8 +10,12 @@ export {
 } from './aiActionHistoryStore';
 export type { AiActionEntry, AiActionGroup, AiActionHistoryState } from './aiActionHistoryStore';
 
+export { aiBackendPreferenceStore } from './aiBackendPreferenceStore';
+
 export { llmStatusStore } from './llmStatusStore';
 export type { LlmEngineStatus } from './llmStatusStore';
+
+export { hostedLlmProviderStatusStore } from './hostedLlmProviderStatusStore';
 
 export { voiceStatusStore } from './voiceStatusStore';
 export type { VoiceStatus } from './voiceStatusStore';

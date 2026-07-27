@@ -5,6 +5,8 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { generateMidiViaLlm } from '../llmMidiGeneration';
 
+type CloudChatOutcome = { status: 'complete' } | { status: 'incomplete'; reason: string };
+
 const {
     resolveBackendMock,
     isNativeEngineReadyMock,
@@ -19,7 +21,7 @@ const {
     generateWebLlmCompletionMock:
         vi.fn<(systemPrompt: string, userMessage: string, options?: unknown) => Promise<string>>(),
     streamCloudChatCompletionMock:
-        vi.fn<(messages: unknown, onToken: (token: string) => void, options?: unknown) => Promise<void>>(),
+        vi.fn<(messages: unknown, onToken: (token: string) => void, options?: unknown) => Promise<CloudChatOutcome>>(),
 }));
 
 vi.mock('#/modules/AiRuntime/useCases', async (importOriginal) => {
@@ -73,17 +75,18 @@ describe('generateMidiViaLlm', () => {
         vi.clearAllMocks();
         resolveBackendMock.mockReturnValue('none');
         isNativeEngineReadyMock.mockReturnValue(false);
+        streamCloudChatCompletionMock.mockResolvedValue({ status: 'complete' });
     });
 
     it('uses pattern fallback when backend resolves to none', async () => {
         const notes = await generateMidiViaLlm('ambient pad');
 
         expect(notes.length).toBeGreaterThan(0);
-        expect(notes[0]).toMatchObject({
-            pitch: expect.any(Number),
-            velocity: expect.any(Number),
-            start_beat: expect.any(Number),
-            duration_beats: expect.any(Number),
+        expect(notes[0]).toEqual({
+            pitch: 60,
+            velocity: 100,
+            start_beat: 0,
+            duration_beats: 1,
         });
     });
 
@@ -104,9 +107,10 @@ describe('generateMidiViaLlm', () => {
 
     it('accumulates streamed tokens on the cloud backend into the parsed notes', async () => {
         resolveBackendMock.mockReturnValue('cloud');
-        streamCloudChatCompletionMock.mockImplementation(async (_messages, onToken) => {
+        streamCloudChatCompletionMock.mockImplementation((_messages, onToken) => {
             onToken(VALID_NOTES_JSON.slice(0, 10));
             onToken(VALID_NOTES_JSON.slice(10));
+            return Promise.resolve({ status: 'complete' });
         });
 
         const notes = await generateMidiViaLlm('a bassline');
@@ -115,25 +119,29 @@ describe('generateMidiViaLlm', () => {
         expect(notes[0]).toEqual({ pitch: 60, velocity: 80, start_beat: 0, duration_beats: 1 });
     });
 
-    it('falls back to webllm when native is unready, and to the hardcoded default pattern when nothing matches', async () => {
+    it('rejects incomplete hosted output instead of parsing or falling back', async () => {
+        resolveBackendMock.mockReturnValue('cloud');
+        streamCloudChatCompletionMock.mockImplementation((_messages, onToken) => {
+            onToken(VALID_NOTES_JSON);
+            return Promise.resolve({ status: 'incomplete', reason: 'token limit' });
+        });
+
+        await expect(generateMidiViaLlm('a bassline')).rejects.toThrow(
+            'Hosted AI MIDI response was incomplete (token limit).'
+        );
+        expect(mockNotificationEventBus.emit).not.toHaveBeenCalled();
+    });
+
+    it('does not fall through to WebLLM when the selected native backend is unready', async () => {
         resolveBackendMock.mockReturnValue('native');
         isNativeEngineReadyMock.mockReturnValue(false);
-        generateWebLlmCompletionMock.mockResolvedValue('not valid json at all');
 
-        const notes = await generateMidiViaLlm('a wholly unrelated prompt', 32, 0.45);
+        await expect(generateMidiViaLlm('a wholly unrelated prompt', 32, 0.45)).rejects.toThrow(
+            'The selected native AI backend is not ready.'
+        );
 
-        expect(generateWebLlmCompletionMock).toHaveBeenCalledTimes(1);
+        expect(generateWebLlmCompletionMock).not.toHaveBeenCalled();
         expect(generateNativeCompletionMock).not.toHaveBeenCalled();
-        expect(notes).toEqual([
-            { pitch: 60, velocity: 80, start_beat: 0, duration_beats: 0.5 },
-            { pitch: 64, velocity: 75, start_beat: 0.5, duration_beats: 0.5 },
-            { pitch: 67, velocity: 70, start_beat: 1, duration_beats: 0.5 },
-            { pitch: 72, velocity: 75, start_beat: 1.5, duration_beats: 0.5 },
-            { pitch: 67, velocity: 70, start_beat: 2, duration_beats: 0.5 },
-            { pitch: 64, velocity: 75, start_beat: 2.5, duration_beats: 0.5 },
-            { pitch: 60, velocity: 80, start_beat: 3, duration_beats: 0.5 },
-            { pitch: 64, velocity: 75, start_beat: 3.5, duration_beats: 0.5 },
-        ]);
     });
 
     it('treats a non-array "notes" field as an empty parse and falls back to the pattern match', async () => {

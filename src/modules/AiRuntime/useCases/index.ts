@@ -12,7 +12,7 @@ export { setVoiceTranscribingStatus } from './setVoiceTranscribingStatus';
 export { toggleAiHistoryPanel } from './toggleAiHistoryPanel';
 export { recordAiActionGroup } from './recordAiActionGroup';
 
-export { NATIVE_MODEL_INFO, CLOUD_MODEL_INFO, WEBLLM_MODELS } from './aiRuntimeQueries/modelInfo';
+export { NATIVE_MODEL_INFO, WEBLLM_MODELS } from './aiRuntimeQueries/modelInfo';
 export { isComplexPrompt } from './aiRuntimeQueries/isComplexPrompt';
 export { getActiveModelId } from './aiRuntimeQueries/getActiveModelId';
 export { streamCloudChatCompletion } from './aiRuntimeQueries/streamCloudChatCompletion';
@@ -24,6 +24,8 @@ export { getAvailablePresets } from './aiRuntimeQueries/getAvailablePresets';
 export { resolvePresetActions } from './aiRuntimeQueries/resolvePresetActions';
 
 export { configureCloudApi } from './cloudApiManagement/configureCloudApi';
+export { configureCloudProvider } from './cloudApiManagement/configureCloudProvider';
+export { getConfiguredCloudProvider } from './cloudApiManagement/getConfiguredCloudProvider';
 export { removeCloudApi } from './cloudApiManagement/removeCloudApi';
 export { isCloudAvailable } from './cloudApiManagement/isCloudAvailable';
 
@@ -31,6 +33,7 @@ export { getProjectContext } from './getProjectContext';
 
 export { resolveBackend } from './llmOrchestration/backendResolution/helpers';
 export { isLlmAvailable } from './llmOrchestration/backendResolution/isLlmAvailable';
+export { setAiBackendPreference } from './llmOrchestration/backendResolution/setAiBackendPreference';
 
 export { generateToolCalls } from './llmOrchestration/inference';
 

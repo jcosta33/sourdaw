@@ -1,76 +1,70 @@
 import { logger } from '#/infra/logger/appLogger';
 
 import { createAiRuntimeError } from '../../../errors/AiRuntimeError';
-import { isCloudAvailable } from '../../../repositories/cloudLlm/isCloudAvailable';
 import { initNativeEngine } from '../../../repositories/nativeEngine/initNativeEngine';
+import { getActiveModelId } from '../../../repositories/webLlm/getActiveModelId';
 import { initWebLlmEngine } from '../../../repositories/webLlm/initWebLlmEngine';
+import { engineInitializationState } from '../../../stores/engineInitializationState';
 import { llmStatusStore } from '../../../stores/llmStatusStore';
-import { resolveBackend } from '../backendResolution/helpers';
+import { getBackendChain } from '../backendResolution/getBackendChain';
 
 /**
- * Initialize the auto-detected backend. Throws on failure.
+ * Initialize the selected backend plan. Explicit preferences contain one
+ * backend; automatic mode may contain ordered fallbacks.
  */
 export async function initEngine(modelId?: string): Promise<void> {
-    const backend = resolveBackend();
+    const controller = engineInitializationState.begin();
+    const backends = getBackendChain();
 
-    if (backend === 'none') {
-        llmStatusStore.set({ state: 'error', message: 'No AI backend available' });
-        throw createAiRuntimeError(
-            'No AI backend available. Configure a cloud API key, or use a WebGPU-capable browser.'
-        );
-    }
-
-    llmStatusStore.set({ state: 'loading', progress: 0, text: `Starting ${backend} engine...` });
-
-    if (backend === 'native') {
-        try {
-            await initNativeEngine();
-            llmStatusStore.set({ state: 'ready', modelId: 'native' });
-            return;
-        } catch (error) {
-            const msg = error instanceof Error ? error.message : String(error);
-            logger.warn(`[AI Engine] Native AI backend failed: ${msg}`);
-
-            // Independent fallbacks: WebLLM and cloud are each tried in turn so a
-            // native failure can reach cloud even when WebGPU is present. WebLLM
-            // is wrapped in its own try/catch — previously its init was awaited
-            // unguarded, so a WebLLM failure threw past the cloud branch (which
-            // was only reachable when WebGPU was absent), leaving a configured
-            // cloud key unused on a native failure.
-            if (typeof navigator !== 'undefined' && 'gpu' in navigator) {
-                logger.info('[AI Engine] Falling back to WebLLM...');
-                llmStatusStore.set({
-                    state: 'loading',
-                    progress: 0,
-                    text: 'Native AI unavailable — loading WebLLM...',
-                });
-                try {
-                    await initWebLlmEngine(modelId);
-                    return;
-                } catch (webLlmError) {
-                    const webLlmMsg = webLlmError instanceof Error ? webLlmError.message : String(webLlmError);
-                    logger.warn(`[AI Engine] WebLLM fallback failed: ${webLlmMsg}`);
-                }
-            }
-
-            if (isCloudAvailable()) {
-                logger.info('[AI Engine] Falling back to cloud AI...');
-                llmStatusStore.set({ state: 'ready', modelId: 'claude' });
-                return;
-            }
-
-            llmStatusStore.set({
-                state: 'error',
-                message: 'Native AI engine failed to load. Check logs for details.',
-            });
-            throw createAiRuntimeError(`Native AI engine failed: ${msg}. No fallback available.`);
+    try {
+        if (backends.length === 0) {
+            llmStatusStore.set({ state: 'error', message: 'No AI backend available' });
+            throw createAiRuntimeError(
+                'No AI backend available. Configure a cloud API key, or use a WebGPU-capable browser.'
+            );
         }
-    }
 
-    if (backend === 'cloud') {
-        llmStatusStore.set({ state: 'ready', modelId: 'claude' });
-        return;
-    }
+        let lastError: Error | null = null;
 
-    await initWebLlmEngine(modelId);
+        for (const backend of backends) {
+            llmStatusStore.set({ state: 'loading', progress: 0, text: `Starting ${backend} engine...` });
+            try {
+                if (backend === 'native') {
+                    await initNativeEngine({ signal: controller.signal });
+                    if (controller.signal.aborted) {
+                        return;
+                    }
+                    llmStatusStore.set({ state: 'ready', backend: 'native', modelId: 'native' });
+                    return;
+                }
+
+                if (backend === 'webllm') {
+                    await initWebLlmEngine(modelId, { signal: controller.signal });
+                    if (controller.signal.aborted) {
+                        return;
+                    }
+                    llmStatusStore.set({ state: 'ready', backend: 'webllm', modelId: getActiveModelId() });
+                    return;
+                }
+
+                if (controller.signal.aborted) {
+                    return;
+                }
+                llmStatusStore.set({ state: 'idle' });
+                return;
+            } catch (error) {
+                if (controller.signal.aborted) {
+                    return;
+                }
+                lastError = error instanceof Error ? error : new Error(String(error));
+                logger.warn(`[AI Engine] ${backend} backend failed: ${lastError.message}`);
+            }
+        }
+
+        const message = lastError?.message ?? 'Unknown initialization failure';
+        llmStatusStore.set({ state: 'error', message: `AI engine failed to load: ${message}` });
+        throw createAiRuntimeError(`AI engine failed to load: ${message}`);
+    } finally {
+        engineInitializationState.finish(controller);
+    }
 }

@@ -17,7 +17,8 @@ export const generateWebLlmToolCalls = inject({ logger })(
         async function generateWebLlmToolCalls(
             systemPrompt: string,
             userMessage: string,
-            tools: ChatCompletionTool[]
+            tools: ChatCompletionTool[],
+            signal?: AbortSignal
         ): Promise<ToolCallResult[]> {
             const toolDescriptions = tools
                 .map((time) => {
@@ -37,7 +38,10 @@ export const generateWebLlmToolCalls = inject({ logger })(
                 'Output ONLY valid JSON. No markdown, no explanation.',
             ].join('\n');
 
-            const response = await generateWebLlmCompletion(fullSystemPrompt, userMessage, { temperature: 0.1 });
+            const response = await generateWebLlmCompletion(fullSystemPrompt, userMessage, {
+                temperature: 0.1,
+                signal,
+            });
             logger.info(`[WebLLM] Response (${String(response.length)} chars): ${response.slice(0, 200)}`);
             return parseToolCallXml(response);
         }

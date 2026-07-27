@@ -5,6 +5,7 @@ import { DEFAULT_WEBLLM_MODEL_ID } from '../../models/ModelInfo';
  * WebLLM bundle on the main thread at import time.
  */
 export type WebLlmEngine = {
+    interruptGenerate: () => void;
     chat: {
         completions: {
             create: (params: Record<string, unknown>) => Promise<unknown>;
@@ -17,11 +18,21 @@ export type WebLlmEngine = {
 export const engineState: {
     engine: WebLlmEngine | null;
     initPromise: Promise<WebLlmEngine> | null;
+    initAttemptId: string | null;
+    initModelId: string | null;
+    initController: AbortController | null;
+    initSignal: AbortSignal | null;
+    initWaiterCount: number;
     worker: Worker | null;
     activeModelId: string;
 } = {
     engine: null,
     initPromise: null,
+    initAttemptId: null,
+    initModelId: null,
+    initController: null,
+    initSignal: null,
+    initWaiterCount: 0,
     worker: null,
     activeModelId: DEFAULT_WEBLLM_MODEL_ID,
 };

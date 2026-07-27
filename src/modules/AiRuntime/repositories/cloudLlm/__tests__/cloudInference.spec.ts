@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { generateCloudToolCalls } from '../cloudInference/generateCloudToolCalls';
 import { getCloudClient } from '../getCloudClient';
+import { getCloudProviderRuntime } from '../getCloudProviderRuntime';
 
 const { mockLogger } = vi.hoisted(() => ({
     mockLogger: {
@@ -17,19 +18,25 @@ vi.mock('../getCloudClient', () => ({
     getCloudClient: vi.fn(),
 }));
 
+vi.mock('../getCloudProviderRuntime', () => ({
+    getCloudProviderRuntime: vi.fn(),
+}));
+
 describe('generateCloudToolCalls', () => {
     beforeEach(() => {
         vi.mocked(getCloudClient).mockReset();
+        vi.mocked(getCloudProviderRuntime).mockReset();
         vi.clearAllMocks();
     });
 
     it('should throw when cloud client is not configured', async () => {
         vi.mocked(getCloudClient).mockReturnValue(null);
+        vi.mocked(getCloudProviderRuntime).mockReturnValue(null);
         await expect(generateCloudToolCalls('state', 'hi')).rejects.toThrow(/Cloud AI not configured/);
     });
 
     it('should map tool_use blocks from Claude response', async () => {
-        vi.mocked(getCloudClient).mockReturnValue({
+        const client = {
             messages: {
                 create: vi.fn().mockResolvedValue({
                     content: [
@@ -39,9 +46,17 @@ describe('generateCloudToolCalls', () => {
                             input: { bpm: 120 },
                         },
                     ],
+                    stop_reason: 'tool_use',
                 }),
             },
-        } as unknown as ReturnType<typeof getCloudClient>);
+        } as unknown as NonNullable<ReturnType<typeof getCloudClient>>;
+        vi.mocked(getCloudClient).mockReturnValue(client);
+        vi.mocked(getCloudProviderRuntime).mockReturnValue({
+            provider: 'anthropic',
+            api_key: 'test-key',
+            model: 'test-model',
+            client,
+        });
 
         const results = await generateCloudToolCalls('{}', 'faster');
 

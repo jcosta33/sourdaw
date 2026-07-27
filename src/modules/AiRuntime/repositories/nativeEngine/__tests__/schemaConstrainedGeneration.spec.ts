@@ -18,6 +18,22 @@ vi.mock('#/utils/tauriBridge', () => ({
     createChannel: mocks.createChannel,
 }));
 
+function getInvocationArgs(callIndex: number): Record<string, unknown> {
+    const call: unknown = mocks.tauriInvoke.mock.calls[callIndex];
+    if (!Array.isArray(call)) {
+        throw new TypeError(`Expected invocation arguments for call ${String(callIndex)}`);
+    }
+    const args: unknown = call[1];
+    if (!isRecord(args)) {
+        throw new TypeError(`Expected invocation arguments for call ${String(callIndex)}`);
+    }
+    return args;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 describe('generateSchemaConstrainedNativeCompletion', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -59,14 +75,18 @@ describe('generateSchemaConstrainedNativeCompletion', () => {
         });
 
         expect(mocks.createChannel).toHaveBeenCalled();
-        expect(mocks.tauriInvoke).toHaveBeenCalledWith('schema_constrained_generation', {
+        expect(mocks.tauriInvoke.mock.calls[0]?.[0]).toBe('schema_constrained_generation');
+        const invocationArgs = getInvocationArgs(0);
+        expect(invocationArgs).toEqual({
             systemPrompt: 'system',
             userMessage: 'mute drums',
             jsonSchema: '{"type":"object"}',
             temperature: 0.1,
             maxTokens: 2048,
             onEvent: channel,
+            requestId: invocationArgs.requestId,
         });
+        expect(typeof invocationArgs.requestId).toBe('string');
         expect(onToken).toHaveBeenCalledTimes(2);
         expect(result).toBe('{"kind":"edit_plan"}');
     });
@@ -114,14 +134,21 @@ describe('generateSchemaConstrainedNativeCompletion', () => {
         mocks.tauriInvoke.mockReturnValue(new Promise<never>(() => undefined));
 
         const aborter = new AbortController();
+        const onToken = vi.fn();
         const promise = generateSchemaConstrainedNativeCompletion({
             systemPrompt: 'system',
             userMessage: 'mute drums',
             jsonSchema: '{"type":"object"}',
             signal: aborter.signal,
+            onToken,
         });
+        await vi.waitFor(() => expect(mocks.tauriInvoke).toHaveBeenCalledTimes(1));
         aborter.abort();
 
         await expect(promise).rejects.toThrow('aborted');
+        expect(mocks.tauriInvoke.mock.calls[1]?.[0]).toBe('cancel_native_llm_generation');
+        expect(getInvocationArgs(1).requestId).toBe(getInvocationArgs(0).requestId);
+        channel.onmessage?.({ event: 'token', data: { text: 'late' } });
+        expect(onToken).not.toHaveBeenCalled();
     });
 });

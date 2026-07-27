@@ -59,12 +59,3 @@ export const NATIVE_MODEL_INFO: NativeModelInfo = {
     ramUsage: '~6.0 GB',
     huggingFaceId: 'Qwen/Qwen3-8B',
 };
-
-export const CLOUD_MODEL_INFO: ModelInfo = {
-    id: 'claude-sonnet-cloud',
-    displayName: 'Claude Sonnet (Cloud)',
-    description: 'Cloud AI via Anthropic API. Fallback for chat only — not used for DSO edit planning.',
-    downloadSize: 'None',
-    ramUsage: 'None',
-    parameterCount: 'N/A',
-};

@@ -11,7 +11,12 @@ import { streamCloudChatCompletion } from '../repositories/cloudLlm/cloudInferen
  * AudioAnalysis for pure analysis primitives, but AudioAnalysis should not
  * statically reach into AiRuntime's LLM orchestration.
  */
-export async function mixHealthAnalysis(onToken: (text: string) => void): Promise<void> {
+type MixHealthAnalysisInput = {
+    onToken: (text: string) => void;
+    signal?: AbortSignal;
+};
+
+export async function mixHealthAnalysis({ onToken, signal }: MixHealthAnalysisInput): Promise<void> {
     const tracks = trackStore.value?.tracks;
     if (!tracks || tracks.length === 0) {
         onToken('No tracks found in the session to analyze.');
@@ -61,12 +66,15 @@ Format your response in Markdown with TWO main sections:
 
 Keep your response concise. Do not mention the raw numbers heavily unless necessary; focus on musical and mixing advice.`;
 
-    await streamCloudChatCompletion(
+    const outcome = await streamCloudChatCompletion(
         [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: reportPayload },
         ],
         onToken,
-        { maxTokens: 1000 }
+        { maxTokens: 1000, signal }
     );
+    if (outcome.status === 'incomplete') {
+        throw new Error(`Hosted AI mix analysis was incomplete (${outcome.reason}).`);
+    }
 }

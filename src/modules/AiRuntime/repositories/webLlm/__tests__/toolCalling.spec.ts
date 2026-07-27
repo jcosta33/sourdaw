@@ -41,4 +41,17 @@ describe('generateWebLlmToolCalls', () => {
         expect(result).toHaveLength(1);
         expect(result[0]?.name).toBe('addTrack');
     });
+
+    it('forwards cancellation to WebLLM completion', async () => {
+        vi.mocked(generateWebLlmCompletion).mockResolvedValue('[]');
+        const tools = [{ type: 'function' as const, function: { name: 'addTrack', description: '', parameters: {} } }];
+        const controller = new AbortController();
+
+        await generateWebLlmToolCalls('sys', 'user', tools, controller.signal);
+
+        expect(vi.mocked(generateWebLlmCompletion).mock.calls[0]?.[2]).toEqual({
+            temperature: 0.1,
+            signal: controller.signal,
+        });
+    });
 });

@@ -16,6 +16,22 @@ vi.mock('#/utils/tauriBridge', () => ({
 // Stub global fetch
 vi.stubGlobal('fetch', mocks.fetch);
 
+function getInvocationArgs(callIndex: number): Record<string, unknown> {
+    const call: unknown = mocks.tauriInvoke.mock.calls[callIndex];
+    if (!Array.isArray(call)) {
+        throw new TypeError(`Expected invocation arguments for call ${String(callIndex)}`);
+    }
+    const args: unknown = call[1];
+    if (!isRecord(args)) {
+        throw new TypeError(`Expected invocation arguments for call ${String(callIndex)}`);
+    }
+    return args;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 describe('generateNativeCompletion', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -31,13 +47,34 @@ describe('generateNativeCompletion', () => {
 
             const result = await generateNativeCompletion('system prompt', 'hello');
 
-            expect(mocks.tauriInvoke).toHaveBeenCalledWith('generate_native_completion', {
+            expect(mocks.tauriInvoke.mock.calls[0]?.[0]).toBe('generate_native_completion');
+            const invocationArgs = getInvocationArgs(0);
+            expect(invocationArgs).toEqual({
                 systemPrompt: 'system prompt',
                 userMessage: 'hello',
                 temperature: 0.1,
                 maxTokens: 2048,
+                requestId: invocationArgs.requestId,
             });
+            expect(typeof invocationArgs.requestId).toBe('string');
             expect(result).toBe('Tauri response');
+        });
+
+        it('cancels the native request when the signal aborts', async () => {
+            mocks.tauriInvoke.mockImplementation((command: string) => {
+                if (command === 'generate_native_completion') {
+                    return new Promise<never>(() => undefined);
+                }
+                return Promise.resolve(undefined);
+            });
+            const controller = new AbortController();
+            const pending = generateNativeCompletion('system prompt', 'hello', { signal: controller.signal });
+
+            controller.abort();
+
+            await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+            expect(mocks.tauriInvoke.mock.calls[1]?.[0]).toBe('cancel_native_llm_generation');
+            expect(getInvocationArgs(1).requestId).toBe(getInvocationArgs(0).requestId);
         });
     });
 

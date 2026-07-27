@@ -89,7 +89,7 @@ export async function generateMidiVariations(
     }
 
     const notes = getNotesForClip(targetClip.id);
-    if (!notes || notes.length === 0) {
+    if (notes.length === 0) {
         throw createAiGenerationError('MIDI clip has no notes to vary.');
     }
 
@@ -142,7 +142,7 @@ ONLY output raw JSON, no markdown blocks.`;
         responseStr = await generateWebLlmCompletion(VARIATIONS_SYSTEM_PROMPT, userMessage, { maxTokens: 4000 });
         onToken?.(responseStr);
     } else if (backend === 'cloud') {
-        await streamCloudChatCompletion(
+        const outcome = await streamCloudChatCompletion(
             [
                 { role: 'system', content: VARIATIONS_SYSTEM_PROMPT },
                 { role: 'user', content: userMessage },
@@ -153,6 +153,9 @@ ONLY output raw JSON, no markdown blocks.`;
             },
             { maxTokens: 4000 }
         );
+        if (outcome.status === 'incomplete') {
+            throw createAiGenerationError(`Hosted AI MIDI variations were incomplete (${outcome.reason}).`);
+        }
     } else {
         throw createAiGenerationError(
             'No AI backend available. Configure a cloud API key in Settings → AI, or use Chrome with WebGPU for the browser AI engine.'
@@ -170,9 +173,13 @@ ONLY output raw JSON, no markdown blocks.`;
 
     let variations: VariationNote[][];
     try {
-        const data = JSON.parse(jsonText) as Record<string, unknown>;
-        if (!data || !Array.isArray(data.variations)) {
-            throw new Error('Missing or invalid "variations" array in AI response');
+        const parsed: unknown = JSON.parse(jsonText);
+        if (typeof parsed !== 'object' || parsed === null) {
+            throw new TypeError('Missing or invalid "variations" array in AI response');
+        }
+        const data = parsed as Record<string, unknown>;
+        if (!Array.isArray(data.variations)) {
+            throw new TypeError('Missing or invalid "variations" array in AI response');
         }
         // Filter out any variation entries that don't match the expected note shape
         variations = (data.variations as unknown[]).filter(isVariationNoteArray);

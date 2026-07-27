@@ -1,29 +1,38 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { AiRuntimeConfigurationChangedError } from '../../../errors/AiRuntimeConfigurationChangedError';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
 import { generateToolCalls } from '../inference';
 
-const { mockLogger, mocks } = vi.hoisted(() => ({
-    mockLogger: {
-        warn: vi.fn(),
-        info: vi.fn(),
-        error: vi.fn(),
-        debug: vi.fn(),
-    },
-    mocks: {
-        backendChain: { value: Array<string>() },
-        nativeEngineReady: { value: false },
-        generateNativeToolCalls: vi.fn(),
-        generateNativeCompletion: vi.fn(),
-        parseToolCallXml: vi.fn(),
-        generateCloudToolCalls: vi.fn(),
-        generateWebLlmToolCalls: vi.fn(),
-        initWebLlmEngine: vi.fn(),
-        isWebLlmLoaded: vi.fn(),
-        llmStatusSet: vi.fn(),
-        llmStatusValue: { value: { state: 'ready' as const, modelId: 'test-model' } },
-    },
-}));
+const { mockLogger, mocks } = vi.hoisted(() => {
+    const backendPreference: { value: 'auto' | 'native' | 'webllm' | 'cloud' } = { value: 'auto' };
+
+    return {
+        mockLogger: {
+            warn: vi.fn(),
+            info: vi.fn(),
+            error: vi.fn(),
+            debug: vi.fn(),
+        },
+        mocks: {
+            backendChain: { value: Array<string>() },
+            nativeEngineReady: { value: false },
+            generateNativeToolCalls: vi.fn(),
+            generateNativeCompletion: vi.fn(),
+            parseToolCallXml: vi.fn(),
+            generateCloudToolCalls: vi.fn(),
+            getCloudProviderInfo: vi.fn(),
+            generateWebLlmToolCalls: vi.fn(),
+            initWebLlmEngine: vi.fn(),
+            isWebLlmLoaded: vi.fn(),
+            llmStatusSet: vi.fn(),
+            llmStatusValue: {
+                value: { state: 'ready' as const, backend: 'webllm' as const, modelId: 'test-model' },
+            },
+            backendPreference,
+        },
+    };
+});
 
 vi.mock('../backendResolution/getBackendChain', () => ({
     getBackendChain: () => mocks.backendChain.value,
@@ -49,6 +58,10 @@ vi.mock('../../../repositories/cloudLlm/cloudInference/generateCloudToolCalls', 
     generateCloudToolCalls: mocks.generateCloudToolCalls,
 }));
 
+vi.mock('../../../repositories/cloudLlm/getCloudProviderInfo', () => ({
+    getCloudProviderInfo: mocks.getCloudProviderInfo,
+}));
+
 vi.mock('../../../repositories/webLlm/initWebLlmEngine', () => ({
     initWebLlmEngine: mocks.initWebLlmEngine,
 }));
@@ -70,6 +83,10 @@ vi.mock('../../../stores/llmStatusStore', () => ({
     },
 }));
 
+vi.mock('../../../stores/aiBackendPreferenceStore', () => ({
+    aiBackendPreferenceStore: mocks.backendPreference,
+}));
+
 vi.mock('../../../transformers/toolCallParser', () => ({
     parseToolCallXml: mocks.parseToolCallXml,
 }));
@@ -82,7 +99,9 @@ describe('generateToolCalls', () => {
         mocks.generateNativeToolCalls.mockReset();
         mocks.generateNativeCompletion.mockReset();
         mocks.parseToolCallXml.mockReset();
-        mocks.llmStatusValue.value = { state: 'ready', modelId: 'test-model' };
+        mocks.getCloudProviderInfo.mockReturnValue(null);
+        mocks.llmStatusValue.value = { state: 'ready', backend: 'webllm', modelId: 'test-model' };
+        mocks.backendPreference.value = 'auto';
     });
 
     it('should throw when no backend chain is available', async () => {
@@ -108,6 +127,18 @@ describe('generateToolCalls', () => {
         expect(mocks.generateNativeCompletion).not.toHaveBeenCalled();
         expect(mocks.parseToolCallXml).not.toHaveBeenCalled();
         expect(result).toEqual([{ name: 'mute_track', arguments: { track_id: 'track-1', muted: true } }]);
+    });
+
+    it('preserves a terminal native structured no-op without retrying through text', async () => {
+        mocks.backendChain.value = ['native'];
+        mocks.nativeEngineReady.value = true;
+        mocks.generateNativeToolCalls.mockResolvedValue([]);
+
+        const result = await generateToolCalls('sys', 'leave the mix unchanged');
+
+        expect(result).toEqual([]);
+        expect(mocks.generateNativeCompletion).not.toHaveBeenCalled();
+        expect(mocks.parseToolCallXml).not.toHaveBeenCalled();
     });
 
     it('passes an explicit executable tool subset to every provider backend', async () => {
@@ -145,7 +176,37 @@ describe('generateToolCalls', () => {
 
         await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
         expect(mocks.generateNativeToolCalls).not.toHaveBeenCalled();
-        expect(mocks.llmStatusSet).toHaveBeenLastCalledWith({ state: 'ready', modelId: 'test-model' });
+        expect(mocks.llmStatusSet).toHaveBeenLastCalledWith({
+            state: 'ready',
+            backend: 'webllm',
+            modelId: 'test-model',
+        });
+    });
+
+    it('treats hosted session revocation as terminal without trying another backend', async () => {
+        mocks.backendChain.value = ['cloud', 'native'];
+        mocks.nativeEngineReady.value = true;
+        mocks.generateCloudToolCalls.mockRejectedValue(new AiRuntimeConfigurationChangedError());
+
+        await expect(generateToolCalls('sys', 'mute drums')).rejects.toMatchObject({
+            name: 'AiRuntimeConfigurationChangedError',
+        });
+
+        expect(mocks.generateNativeToolCalls).not.toHaveBeenCalled();
+        expect(mocks.llmStatusSet).toHaveBeenLastCalledWith({ state: 'idle' });
+    });
+
+    it('does not restore a stale backend after preference-switch cancellation', async () => {
+        mocks.backendChain.value = ['cloud'];
+        mocks.generateCloudToolCalls.mockReturnValue(new Promise(() => {}));
+        const controller = new AbortController();
+
+        const pending = generateToolCalls('sys', 'mute drums', undefined, controller.signal);
+        mocks.backendPreference.value = 'native';
+        controller.abort();
+
+        await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+        expect(mocks.llmStatusSet).toHaveBeenLastCalledWith({ state: 'idle' });
     });
 
     it('passes an explicit executable tool subset to WebLLM without widening it', async () => {
@@ -168,9 +229,22 @@ describe('generateToolCalls', () => {
         mocks.isWebLlmLoaded.mockReturnValue(true);
         mocks.generateWebLlmToolCalls.mockResolvedValue([]);
 
-        await generateToolCalls('sys', 'mute drums', tools);
+        const controller = new AbortController();
+        await generateToolCalls('sys', 'mute drums', tools, controller.signal);
 
-        expect(mocks.generateWebLlmToolCalls).toHaveBeenCalledWith('sys', 'mute drums', tools);
+        expect(mocks.generateWebLlmToolCalls).toHaveBeenCalledWith('sys', 'mute drums', tools, controller.signal);
+    });
+
+    it('passes cancellation into WebLLM initialization', async () => {
+        mocks.backendChain.value = ['webllm'];
+        mocks.isWebLlmLoaded.mockReturnValue(false);
+        mocks.initWebLlmEngine.mockResolvedValue({});
+        mocks.generateWebLlmToolCalls.mockResolvedValue([]);
+        const controller = new AbortController();
+
+        await generateToolCalls('sys', 'mute drums', [], controller.signal);
+
+        expect(mocks.initWebLlmEngine).toHaveBeenCalledWith(undefined, { signal: controller.signal });
     });
 
     it('passes an explicit executable tool subset to native structured calling', async () => {
