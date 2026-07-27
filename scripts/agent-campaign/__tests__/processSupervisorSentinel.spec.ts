@@ -53,16 +53,26 @@ function sendStart(sentinel: ChildProcess, overrides: Partial<SentinelStartMessa
 }
 
 async function stopSentinel(sentinel: ChildProcess): Promise<void> {
-    if (sentinel.pid !== undefined) {
+    if (sentinel.pid === undefined) {
+        return;
+    }
+    const processGroupId = sentinel.pid;
+    try {
+        process.kill(-processGroupId, 'SIGKILL');
+    } catch {
+        sentinel.unref();
+        return;
+    }
+    for (let index = 0; index < 400; index += 1) {
         try {
-            process.kill(-sentinel.pid, 'SIGKILL');
+            process.kill(-processGroupId, 0);
         } catch {
+            sentinel.unref();
             return;
         }
+        await new Promise((resolve) => setTimeout(resolve, 5));
     }
-    if (sentinel.exitCode === null && sentinel.signalCode === null) {
-        await new Promise<void>((resolve) => sentinel.once('close', () => resolve()));
-    }
+    throw new Error('sentinel group did not terminate');
 }
 
 afterEach(async () => {
@@ -105,6 +115,40 @@ describe('processSupervisorSentinel', () => {
         expect(Buffer.concat(stdout).toString()).toBe('missing');
         expect(Buffer.concat(stderr).toString()).toBe('warning');
         expect(JSON.stringify(outcome)).not.toMatch(/private-token|missing|warning/);
+    });
+
+    it.each([{ stream: 'stdout' }, { stream: 'stderr' }] as const)(
+        'should drain executor $stream after the owner closes its pipe',
+        async ({ stream }) => {
+            const sentinel = await startSentinel();
+            sentinel[stream]?.destroy();
+            const token = `private-${stream}-token`;
+            sendStart(sentinel, {
+                arguments: ['--eval', `process.${stream}.write(${JSON.stringify(token)}.repeat(200000))`],
+            });
+
+            const outcome = await waitForMessage(sentinel);
+            expect(outcome).toEqual({ kind: 'spawn-error' });
+            expect(JSON.stringify(outcome)).not.toContain(token);
+            expect(() => process.kill(Number(sentinel.pid), 0)).not.toThrow();
+        }
+    );
+
+    it('should remain alive when its owner disconnects before executor outcome', async () => {
+        const root = await mkdtemp(join(tmpdir(), 'sourdaw-sentinel-'));
+        const readyPath = join(root, 'ready.txt');
+        const outcomePath = join(root, 'outcome.txt');
+        roots.push(root);
+        const sentinel = await startSentinel();
+        const script = `const fs=require('node:fs');fs.writeFileSync(${JSON.stringify(readyPath)},'ready');setTimeout(()=>fs.writeFileSync(${JSON.stringify(outcomePath)},'done'),200)`;
+        sendStart(sentinel, { arguments: ['--eval', script] });
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        await expect(access(readyPath)).resolves.toBeUndefined();
+        sentinel.disconnect();
+
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        await expect(access(outcomePath)).resolves.toBeUndefined();
+        expect(() => process.kill(Number(sentinel.pid), 0)).not.toThrow();
     });
 
     it('should keep the sentinel as group leader after the executor exits', async () => {

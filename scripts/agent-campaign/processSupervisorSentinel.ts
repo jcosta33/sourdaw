@@ -35,8 +35,11 @@ function isStartMessage(value: unknown): value is SentinelStartMessage {
 }
 
 function sendMessage(message: SentinelMessage): void {
+    if (!process.connected) {
+        return;
+    }
     try {
-        process.send?.(message);
+        process.send?.(message, () => undefined);
     } catch {
         // The owner is responsible for terminating this sentinel process group.
     }
@@ -73,19 +76,32 @@ export function runProcessSupervisorSentinel(): void {
             return;
         }
         let terminal: SentinelOutcomeMessage | null = null;
+        const handleDestinationError = (source: typeof executor.stdout, destination: NodeJS.WriteStream) => {
+            terminal ??= { kind: 'spawn-error' };
+            source.unpipe(destination);
+            source.resume();
+        };
+        const stdoutError = () => handleDestinationError(executor.stdout, process.stdout);
+        const stderrError = () => handleDestinationError(executor.stderr, process.stderr);
+        process.stdout.on('error', stdoutError);
+        process.stderr.on('error', stderrError);
         executor.stdout.pipe(process.stdout, { end: false });
         executor.stderr.pipe(process.stderr, { end: false });
         executor.once('error', () => {
-            terminal = { kind: 'spawn-error' };
+            terminal ??= { kind: 'spawn-error' };
         });
         executor.once('exit', (code, signal) => {
             if (signal) {
-                terminal = { kind: 'signal', signal };
+                terminal ??= { kind: 'signal', signal };
                 return;
             }
-            terminal = { kind: 'exit', code: code ?? 1 };
+            terminal ??= { kind: 'exit', code: code ?? 1 };
         });
-        executor.once('close', () => report(terminal ?? { kind: 'spawn-error' }));
+        executor.once('close', () => {
+            process.stdout.off('error', stdoutError);
+            process.stderr.off('error', stderrError);
+            report(terminal ?? { kind: 'spawn-error' });
+        });
     });
 
     setInterval(() => undefined, 60_000);
