@@ -1,0 +1,32 @@
+src/modules/Arrangement/useCases/timeOperations/__tests__/globalTimeTransaction.spec.ts
+  s_c2fca615e81f34::t_34df1342dff254 3-9,71,222,354-357,381-414
+  s_c2fca615e81f34::t_89e31b6f8725c5 415-418
+  s_c2fca615e81f34::t_15ba9b12786d43 358-380
+  s_c2fca615e81f34::t_c168894177b71e 419-420
+src/modules/Arrangement/useCases/clipEditing/executeSelectedTimeRangeDeletion.ts
+  s_c2fca615e81f34::t_0e93faf38956df 1029-1030
+  s_c2fca615e81f34::t_9343f7abbf8865 1028
+src/modules/Arrangement/useCases/timeOperations/prepareTimeOperationStateRestore.ts
+  s_c2fca615e81f34::t_0e93faf38956df 166-170,782-786,794-817
+  s_c2fca615e81f34::t_c1e158f1eab96e 793
+src/modules/Arrangement/useCases/timeOperations/timeOperationStateCodec.ts
+  s_c2fca615e81f34::t_0e93faf38956df 843-861,864,867
+src/modules/Arrangement/useCases/timeOperations/executeGlobalTimeOperation.ts
+  s_c2fca615e81f34::t_0e93faf38956df 1266-1270,1273
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "37ec626732d273d02db430193407ff697e23af4f",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
