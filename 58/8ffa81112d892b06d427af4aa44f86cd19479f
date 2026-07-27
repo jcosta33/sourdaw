@@ -1,0 +1,130 @@
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_bc88af7d3b054c::t_81d55c9bb63086 126,176
+  s_bc88af7d3b054c::t_e0505ef47dc30f 157,172-175
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_bc88af7d3b054c::t_e65201ae6c2326 191,194-195
+  s_bc88af7d3b054c::t_7c1c64fb8b7a41 2,138-162,164-177
+  s_bc88af7d3b054c::t_e9ad5c89954dbc 116,129-132,134
+  s_bc88af7d3b054c::t_f590a73a16bf67 135-136,180,183-186,188,202-203
+  s_bc88af7d3b054c::t_d245aee02d09c0 133
+  s_bc88af7d3b054c::t_320291464a11ed 3
+  s_bc88af7d3b054c::t_3cb3539374a731 187
+src/modules/Transport/handlers/transport/__tests__/handleSetTempo.spec.ts
+  s_bc88af7d3b054c::t_4d0f836feddb0d 5
+  s_bc88af7d3b054c::t_a35e5e96b6c1ef 13-16,33-37
+  s_bc88af7d3b054c::t_22f3a8f6387169 38
+  s_bc88af7d3b054c::t_443f51f555a7cb 39-40
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_bc88af7d3b054c::t_e9ad5c89954dbc 109
+  s_bc88af7d3b054c::t_e6e5aeccd01825 102
+docs/architecture/decisions/0014-atomic-llm-action-batches.md
+  s_bc88af7d3b054c::t_e16672d5f7d424 16,21,31
+  s_bc88af7d3b054c::t_51f2c2d1e7c1a5 1-15,17-20,22-30,32-33
+src/modules/Arrangement/handlers/track/renameTrack.ts
+  s_bc88af7d3b054c::t_6ffeafbc536086 10-11
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_bc88af7d3b054c::t_e16672d5f7d424 36,329,331-333
+  s_bc88af7d3b054c::t_3d03b83ee20b0f 85,95,106-124,127-144,228-233,256,278-285,334-344
+  s_bc88af7d3b054c::t_4a68a4f2bd70a2 1-35,37-38,48-56,64-65,72-84,90,96-99,101,104-105,145-182,184-191,193-195,197-216,218-226,234-255,259-263,269-271,273,275-277,286,290-293,319-328,330,345-350,352-355,357-361,363-365,367-368,370-371
+  s_bc88af7d3b054c::t_9c184a206fca70 125-126
+  s_bc88af7d3b054c::t_c5f1ca527d298b 217
+  s_bc88af7d3b054c::t_2c958a04fe4b49 43-44,46-47,192
+  s_bc88af7d3b054c::t_e9ad5c89954dbc 39-42,45,227
+  s_bc88af7d3b054c::t_d245aee02d09c0 57-63,66-71,86-87,91,102,258,287-289,300-318
+  s_bc88af7d3b054c::t_8458ae387c48a0 88-89,92-94,100,103,183,257,264-268,272,274,294-299,351,356,362,366,369
+  s_bc88af7d3b054c::t_4d0f836feddb0d 196
+src/modules/AiRuntime/useCases/__tests__/pendingChatActions.spec.ts
+  s_bc88af7d3b054c::t_5236ef48be1099 25,293-324
+  s_bc88af7d3b054c::t_e074b8e7b8af16 274,421
+  s_bc88af7d3b054c::t_81d55c9bb63086 128
+  s_bc88af7d3b054c::t_6b3961ce7626f4 44,124,248,263-267,280-281,287,292,328-332,393-399,412,415,417-420,422,425-428,434-435
+  s_bc88af7d3b054c::t_ea9028e5941962 14,16,19
+  s_bc88af7d3b054c::t_99c15d340a4516 87
+  s_bc88af7d3b054c::t_3d98d7cca1bbd7 88-95
+  s_bc88af7d3b054c::t_6212811148843d 407
+  s_bc88af7d3b054c::t_82ea59b39344d4 363-392
+  s_bc88af7d3b054c::t_a9c8186fb42f8f 15,20
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  s_bc88af7d3b054c::t_e65201ae6c2326 144,148,152-153,155
+  s_bc88af7d3b054c::t_e9ad5c89954dbc 55-59
+  s_bc88af7d3b054c::t_7c1c64fb8b7a41 1,81-109,111-129
+  s_bc88af7d3b054c::t_65351b1e96770c 2,53-54,60-73,75-79,132,135-141,158-162,164-166,168
+src/modules/Arrangement/handlers/track/handleSetTrackPan.ts
+  s_bc88af7d3b054c::t_6ffeafbc536086 10-11
+src/modules/Arrangement/handlers/track/__tests__/muteTrack.spec.ts
+  s_bc88af7d3b054c::t_e41794b7b00aa2 7-11,18-21,23-28,45,51-60
+  s_bc88af7d3b054c::t_faa2082aa8da9c 61
+src/modules/AiRuntime/transformers/toolCallParser.ts
+  s_bc88af7d3b054c::t_9c184a206fca70 18-19,77,82,87,102
+  s_bc88af7d3b054c::t_6afd302105f839 34-35,38-43
+  s_bc88af7d3b054c::t_fcbf87f806eb7c 65-66
+  s_bc88af7d3b054c::t_e0ae12512d2bc6 31-33,37,46-52,103-108
+  s_bc88af7d3b054c::t_2e3ad4520fdd89 36
+  s_bc88af7d3b054c::t_2d98416a314e3d 109
+src/modules/AiRuntime/transformers/__tests__/toolCallParser.spec.ts
+  s_bc88af7d3b054c::t_e0ae12512d2bc6 90-103,116-129
+  s_bc88af7d3b054c::t_6afd302105f839 104-115
+  s_bc88af7d3b054c::t_6fe8d722412767 17-36
+src/modules/Command/useCases/index.ts
+  s_bc88af7d3b054c::t_4a68a4f2bd70a2 13
+src/modules/Arrangement/handlers/track/soloTrack.ts
+  s_bc88af7d3b054c::t_6ffeafbc536086 3,10-12
+  s_bc88af7d3b054c::t_e16672d5f7d424 13-24
+src/modules/AiRuntime/models/IntentResult.ts
+  s_bc88af7d3b054c::t_e9ad5c89954dbc 7-8
+src/modules/Command/useCases/__tests__/executeAppActionBatch.spec.ts
+  s_bc88af7d3b054c::t_03e1ac47d7cecc 192
+  s_bc88af7d3b054c::t_cdb4658d16793d 47,52,134,139-146,149-154,156-159,178,181-182,273-281,285-291
+  s_bc88af7d3b054c::t_51f2c2d1e7c1a5 1-2,4-46,48-51,53-133,135-138,147-148,155,160-177,179-180,292-293,327-356
+  s_bc88af7d3b054c::t_6fe8d722412767 183-191,193-199,204-218,220-224,312-314
+  s_bc88af7d3b054c::t_dde3bfa7649cad 200-203,219
+  s_bc88af7d3b054c::t_e41794b7b00aa2 225-272,282-284
+  s_bc88af7d3b054c::t_6fcf9939d8ed67 294-311,315-326
+  s_bc88af7d3b054c::t_2c958a04fe4b49 3
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_bc88af7d3b054c::t_da3851b04ad858 91-128
+src/modules/Transport/handlers/transport/handleSetTempo.ts
+  s_bc88af7d3b054c::t_a35e5e96b6c1ef 4,11-17
+  s_bc88af7d3b054c::t_6ffeafbc536086 10
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_bc88af7d3b054c::t_df5b573a12f9fc 12,25,238
+  s_bc88af7d3b054c::t_82ea59b39344d4 582-614,691-697,700
+  s_bc88af7d3b054c::t_4e91e79dcd3ee9 219,524-528,539,547-548,556,560-564,615,631-635,640-641,646-648,687-690,701-709,715-718,724-725
+  s_bc88af7d3b054c::t_5236ef48be1099 651-652,667-686
+  s_bc88af7d3b054c::t_a9c8186fb42f8f 13,26
+  s_bc88af7d3b054c::t_6fcf9939d8ed67 235,239-245
+  s_bc88af7d3b054c::t_81d55c9bb63086 218,234,698
+  s_bc88af7d3b054c::t_e0505ef47dc30f 81,205,207,215-216,220-225,228,230-231,246-250
+  s_bc88af7d3b054c::t_3d98d7cca1bbd7 127-134
+  s_bc88af7d3b054c::t_99c15d340a4516 126
+  s_bc88af7d3b054c::t_ced1c0defddc60 699
+src/modules/Arrangement/handlers/track/muteTrack.ts
+  s_bc88af7d3b054c::t_e16672d5f7d424 13-19
+  s_bc88af7d3b054c::t_6ffeafbc536086 3,10-12
+src/modules/Arrangement/handlers/track/handleSetTrackGain.ts
+  s_bc88af7d3b054c::t_6ffeafbc536086 10-11
+src/modules/AiRuntime/stores/pendingActionConfirmationStore.ts
+  s_bc88af7d3b054c::t_e9ad5c89954dbc 27,55,72
+  s_bc88af7d3b054c::t_132de4362befdb 150-158,185-195
+src/modules/Arrangement/handlers/track/__tests__/soloTrack.spec.ts
+  s_bc88af7d3b054c::t_e41794b7b00aa2 7-11,18-21,25-27,50,62-70
+  s_bc88af7d3b054c::t_a06553b9079822 71-72
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_bc88af7d3b054c::t_a0376a63e93145 16-19,100,179-185,187-199,202,207-214
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "588ffa81112d892b06d427af4aa44f86cd19479f",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
