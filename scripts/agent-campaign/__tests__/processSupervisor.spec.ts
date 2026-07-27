@@ -5,8 +5,10 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
+    selectProcessSupervisorReason,
     superviseTrustedProcess,
     type ProcessSupervisorDependencies,
+    type ProcessSupervisorReason,
     type TrustedProcessSupervisorInput,
 } from '../processSupervisor';
 
@@ -24,6 +26,7 @@ function run(
             arguments: ['--eval', script],
             cwd: process.cwd(),
             timeoutMs: 1_000,
+            combinedOutputByteCap: 1_000_000,
             ...overrides,
         },
         { sentinelPath: () => sentinelPath, ...dependencies }
@@ -43,16 +46,184 @@ afterEach(async () => {
 });
 
 describe('superviseTrustedProcess', () => {
-    it.each([0, 7])('should preserve exact exit %i without exposing ignored streams', async (code) => {
+    it.each<ProcessSupervisorReason>([
+        { kind: 'exit', code: 0 },
+        { kind: 'signal', signal: 'SIGTERM' },
+    ])('should promote a stream-read error after terminal IPC %#', (current) => {
+        expect(
+            selectProcessSupervisorReason({
+                current,
+                next: { kind: 'sentinel-failure' },
+                streamReadError: true,
+            })
+        ).toEqual({ kind: 'sentinel-failure' });
+    });
+
+    it.each<ProcessSupervisorReason>([
+        { kind: 'output-cap-exceeded' },
+        { kind: 'timeout' },
+        { kind: 'malformed-ipc' },
+        { kind: 'launch-error' },
+        { kind: 'spawn-error' },
+        { kind: 'termination-unconfirmed' },
+    ])('should preserve a stronger reason after a stream-read error %#', (current) => {
+        expect(
+            selectProcessSupervisorReason({
+                current,
+                next: { kind: 'sentinel-failure' },
+                streamReadError: true,
+            })
+        ).toEqual(current);
+    });
+
+    it.each<ProcessSupervisorReason>([
+        { kind: 'exit', code: 0 },
+        { kind: 'signal', signal: 'SIGTERM' },
+    ])('should preserve terminal IPC after ordinary sentinel shutdown %#', (current) => {
+        expect(
+            selectProcessSupervisorReason({
+                current,
+                next: { kind: 'sentinel-failure' },
+                streamReadError: false,
+            })
+        ).toEqual(current);
+    });
+
+    it('should select a stream-read failure when no reason exists', () => {
+        expect(
+            selectProcessSupervisorReason({
+                current: null,
+                next: { kind: 'sentinel-failure' },
+                streamReadError: true,
+            })
+        ).toEqual({ kind: 'sentinel-failure' });
+    });
+
+    it.each([0, 7])('should preserve exact exit %i without exposing raw streams', async (code) => {
         const token = `private-${code}`;
         const output = await run(
             `process.stdout.write(${JSON.stringify(token)});process.stderr.write(${JSON.stringify(token)});process.exitCode=${code}`
         );
+        expect(output.reason).toEqual({ kind: 'exit', code });
+        expect(output.streamEvidence?.combinedByteCount).toBe(Buffer.byteLength(token) * 2);
+        expect(JSON.stringify(output)).not.toContain(token);
+    });
+
+    it('should return exact byte counts and SHA-256 digests without raw output', async () => {
+        const output = await run("process.stdout.write(Buffer.alloc(4194304,97));process.stderr.write('world')", {
+            combinedOutputByteCap: 4_194_309,
+        });
         expect(output).toEqual({
-            reason: { kind: 'exit', code },
+            reason: { kind: 'exit', code: 0 },
+            streamEvidence: {
+                stdout: {
+                    byteCount: 4_194_304,
+                    sha256: '299285fc41a44cdb038b9fdaf494c76ca9d0c866672b2b266c1a0c17dda60a05',
+                },
+                stderr: {
+                    byteCount: 5,
+                    sha256: '486ea46224d1bb4fb680f34f7c9ad96a8f24ec88be73ea8e5a6c65260e9cb8a7',
+                },
+                combinedByteCount: 4_194_309,
+            },
+        });
+        expect(JSON.stringify(output)).not.toContain('world');
+    });
+
+    it('should hash split multibyte output as exact bytes', async () => {
+        const script =
+            "const value=Buffer.from('🥐');process.stdout.write(value.subarray(0,2));process.stdout.write(value.subarray(2))";
+        const output = await run(script, { combinedOutputByteCap: 4 });
+        expect(output.streamEvidence).toEqual({
+            stdout: {
+                byteCount: 4,
+                sha256: '2e037269436db82a4ce80082caade93628c8e37c1f967b6e03d3554c9d0aeba5',
+            },
+            stderr: {
+                byteCount: 0,
+                sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+            },
+            combinedByteCount: 4,
+        });
+    });
+
+    it('should enforce one combined byte cap across both streams', async () => {
+        const token = 'private-combined-cap';
+        const output = await run(
+            `process.stdout.write(${JSON.stringify(token)});process.stderr.write(${JSON.stringify(token)})`,
+            { combinedOutputByteCap: Buffer.byteLength(token) * 2 - 1 }
+        );
+        expect(output).toEqual({
+            reason: { kind: 'output-cap-exceeded' },
             streamEvidence: null,
         });
         expect(JSON.stringify(output)).not.toContain(token);
+    });
+
+    it('should reject a large crossing chunk without publishing prefix evidence', async () => {
+        const token = 'private-large-chunk';
+        const output = await run(`process.stdout.write(${JSON.stringify(token)}.repeat(8192))`, {
+            combinedOutputByteCap: 1_000,
+        });
+        expect(output).toEqual({
+            reason: { kind: 'output-cap-exceeded' },
+            streamEvidence: null,
+        });
+        expect(JSON.stringify(output)).not.toContain(token);
+    });
+
+    it('should let a delayed output-cap crossing replace terminal IPC', async () => {
+        const source =
+            "process.on('message',()=>process.send({kind:'exit',code:0},()=>setTimeout(()=>process.stdout.write('overflow',()=>process.exit(0)),20)));process.send({kind:'ready'})";
+        const injectedSentinel = await temporarySentinel(source);
+        const output = await run(
+            '',
+            { combinedOutputByteCap: 4 },
+            {
+                sentinelPath: () => injectedSentinel,
+                killGroup: () => undefined,
+                groupExists: () => false,
+            }
+        );
+        expect(output).toEqual({
+            reason: { kind: 'output-cap-exceeded' },
+            streamEvidence: null,
+        });
+    });
+
+    it('should let a delayed output-cap crossing replace signal IPC', async () => {
+        const source =
+            "process.on('message',()=>process.send({kind:'signal',signal:'SIGTERM'},()=>setTimeout(()=>process.stdout.write('overflow',()=>process.exit(0)),20)));process.send({kind:'ready'})";
+        const injectedSentinel = await temporarySentinel(source);
+        const output = await run(
+            '',
+            { combinedOutputByteCap: 4 },
+            {
+                sentinelPath: () => injectedSentinel,
+                killGroup: () => undefined,
+                groupExists: () => false,
+            }
+        );
+        expect(output).toEqual({
+            reason: { kind: 'output-cap-exceeded' },
+            streamEvidence: null,
+        });
+    });
+
+    it('should let cleanup uncertainty dominate output-cap overflow', async () => {
+        const output = await run(
+            "process.stdout.write('overflow');setInterval(()=>{},1000)",
+            { combinedOutputByteCap: 4 },
+            {
+                cleanupPollMs: 1,
+                cleanupTimeoutMs: 20,
+                groupExists: () => true,
+            }
+        );
+        expect(output).toEqual({
+            reason: { kind: 'termination-unconfirmed' },
+            streamEvidence: null,
+        });
     });
 
     it('should preserve exact signal termination', async () => {
@@ -70,7 +241,7 @@ describe('superviseTrustedProcess', () => {
             `require('node:fs').writeFileSync(${JSON.stringify(environmentPath)},process.env.SOURDAW_SUPERVISOR_SECRET??'missing')`
         );
         delete process.env.SOURDAW_SUPERVISOR_SECRET;
-        expect(output).toMatchObject({ reason: { kind: 'exit', code: 0 }, streamEvidence: null });
+        expect(output).toMatchObject({ reason: { kind: 'exit', code: 0 } });
         expect(await readFile(environmentPath, 'utf8')).toBe('missing');
         expect(JSON.stringify(output)).not.toContain('private-token');
     });
@@ -92,6 +263,20 @@ describe('superviseTrustedProcess', () => {
 
         expect(await run(child, { timeoutMs: 150 })).toMatchObject({ reason: { kind: 'timeout' } });
         await expect(access(readyPath)).resolves.toBeUndefined();
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        await expect(access(latePath)).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+
+    it('should kill an overflowing group before a grandchild late effect', async () => {
+        const root = await mkdtemp(join(tmpdir(), 'sourdaw-supervisor-'));
+        const latePath = join(root, 'late.txt');
+        roots.push(root);
+        const grandchild = `process.stdout.write('overflow');setTimeout(()=>require('node:fs').writeFileSync(${JSON.stringify(latePath)},'late'),100);setInterval(()=>{},1000)`;
+        const child = `require('node:child_process').spawn(process.execPath,['--eval',${JSON.stringify(grandchild)}],{stdio:['ignore','inherit','inherit']});setInterval(()=>{},1000)`;
+        expect(await run(child, { combinedOutputByteCap: 4 })).toEqual({
+            reason: { kind: 'output-cap-exceeded' },
+            streamEvidence: null,
+        });
         await new Promise((resolve) => setTimeout(resolve, 150));
         await expect(access(latePath)).rejects.toMatchObject({ code: 'ENOENT' });
     });
@@ -153,7 +338,7 @@ describe('superviseTrustedProcess', () => {
 
     it('should bound cleanup that cannot be confirmed', async () => {
         const output = await run(
-            'process.exitCode=0',
+            "process.stdout.write('private-incomplete')",
             {},
             {
                 cleanupPollMs: 1,
@@ -161,13 +346,15 @@ describe('superviseTrustedProcess', () => {
                 groupExists: () => true,
             }
         );
-        expect(output.reason).toEqual({ kind: 'termination-unconfirmed' });
+        expect(output).toEqual({ reason: { kind: 'termination-unconfirmed' }, streamEvidence: null });
     });
 
     it.each([
         [{ executable: 'relative-executor' }, {}],
         [{ arguments: ['invalid\u0000argument'] }, {}],
         [{ timeoutMs: 2_147_483_648 }, {}],
+        [{ combinedOutputByteCap: 0 }, {}],
+        [{ combinedOutputByteCap: 1.5 }, {}],
         [{}, { sentinelPath: () => `${sentinelPath}\u0000invalid` }],
     ])('should redact synchronous or NUL launch failure %#', async (overrides, dependencies) => {
         const output = await run('', overrides, dependencies);

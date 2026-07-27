@@ -1,6 +1,7 @@
 /// <reference types="node" />
 
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { constants as osConstants } from 'node:os';
 import { isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,21 +19,50 @@ export type TrustedProcessSupervisorInput = {
     arguments: readonly string[];
     cwd: string;
     timeoutMs: number;
+    combinedOutputByteCap: number;
 };
 
 export type ProcessSupervisorReason =
     | SentinelOutcomeMessage
     | { kind: 'timeout' }
     | { kind: 'malformed-ipc' }
+    | { kind: 'output-cap-exceeded' }
     | { kind: 'sentinel-failure' }
     | { kind: 'launch-error' }
     | { kind: 'unsupported-platform' }
     | { kind: 'termination-unconfirmed' };
 
+export type ProcessStreamEvidence = {
+    stdout: { byteCount: number; sha256: string };
+    stderr: { byteCount: number; sha256: string };
+    combinedByteCount: number;
+};
+
 export type ProcessSupervisorResult = {
     reason: ProcessSupervisorReason;
-    streamEvidence: null;
+    streamEvidence: ProcessStreamEvidence | null;
 };
+
+type SelectProcessSupervisorReasonInput = {
+    current: ProcessSupervisorReason | null;
+    next: ProcessSupervisorReason;
+    streamReadError: boolean;
+};
+
+export function selectProcessSupervisorReason({
+    current,
+    next,
+    streamReadError,
+}: SelectProcessSupervisorReasonInput): ProcessSupervisorReason {
+    if (!current || next.kind === 'output-cap-exceeded') {
+        return next;
+    }
+    const currentIsTerminalIpc = current.kind === 'exit' || current.kind === 'signal';
+    if (streamReadError && next.kind === 'sentinel-failure' && currentIsTerminalIpc) {
+        return next;
+    }
+    return current;
+}
 
 export type ProcessSupervisorDependencies = {
     platform: NodeJS.Platform;
@@ -87,6 +117,7 @@ function snapshotInput(input: TrustedProcessSupervisorInput): TrustedProcessSupe
             arguments: Object.freeze([...input.arguments]),
             cwd: input.cwd,
             timeoutMs: input.timeoutMs,
+            combinedOutputByteCap: input.combinedOutputByteCap,
         });
         if (
             !isAbsolutePath(snapshot.executable) ||
@@ -94,7 +125,9 @@ function snapshotInput(input: TrustedProcessSupervisorInput): TrustedProcessSupe
             !isAbsolutePath(snapshot.cwd) ||
             !Number.isSafeInteger(snapshot.timeoutMs) ||
             snapshot.timeoutMs <= 0 ||
-            snapshot.timeoutMs > MAX_TIMER_DELAY_MS
+            snapshot.timeoutMs > MAX_TIMER_DELAY_MS ||
+            !Number.isSafeInteger(snapshot.combinedOutputByteCap) ||
+            snapshot.combinedOutputByteCap <= 0
         ) {
             return null;
         }
@@ -176,7 +209,10 @@ export function superviseTrustedProcess(
     dependencyOverrides: Partial<ProcessSupervisorDependencies> = {}
 ): Promise<ProcessSupervisorResult> {
     const dependencies = { ...defaultDependencies, ...dependencyOverrides };
-    const result = (reason: ProcessSupervisorReason): ProcessSupervisorResult => ({ reason, streamEvidence: null });
+    const result = (
+        reason: ProcessSupervisorReason,
+        streamEvidence: ProcessStreamEvidence | null = null
+    ): ProcessSupervisorResult => ({ reason, streamEvidence });
     if (dependencies.platform !== 'darwin') {
         return Promise.resolve(result({ kind: 'unsupported-platform' }));
     }
@@ -204,7 +240,7 @@ export function superviseTrustedProcess(
                     detached: true,
                     env: EMPTY_ENV,
                     shell: false,
-                    stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
+                    stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
                 }
             );
         } catch {
@@ -219,6 +255,31 @@ export function superviseTrustedProcess(
         let settled = false;
         let executorTimer: ReturnType<typeof setTimeout> | undefined;
         let cleanupTimer: ReturnType<typeof setTimeout> | undefined;
+        let combinedByteCount = 0;
+        let streamTruncated = false;
+        const stdoutState = { byteCount: 0, hash: createHash('sha256') };
+        const stderrState = { byteCount: 0, hash: createHash('sha256') };
+
+        const consume = (state: typeof stdoutState, chunk: Buffer) => {
+            if (streamTruncated) {
+                return;
+            }
+            if (chunk.byteLength > snapshot.combinedOutputByteCap - combinedByteCount) {
+                streamTruncated = true;
+                stopGroup({ kind: 'output-cap-exceeded' });
+                return;
+            }
+            state.byteCount += chunk.byteLength;
+            combinedByteCount += chunk.byteLength;
+            state.hash.update(chunk);
+        };
+        const stdoutData = (chunk: Buffer) => consume(stdoutState, chunk);
+        const stderrData = (chunk: Buffer) => consume(stderrState, chunk);
+        const streamError = () => stopGroup({ kind: 'sentinel-failure' }, true);
+        sentinel.stdout.on('data', stdoutData);
+        sentinel.stderr.on('data', stderrData);
+        sentinel.stdout.once('error', streamError);
+        sentinel.stderr.once('error', streamError);
 
         const finish = (finalReason: ProcessSupervisorReason) => {
             if (settled) {
@@ -232,6 +293,30 @@ export function superviseTrustedProcess(
             if (cleanupTimer) {
                 clearTimeout(cleanupTimer);
             }
+            const streamsComplete =
+                sentinel.stdout.readableEnded &&
+                sentinel.stdout.closed &&
+                sentinel.stderr.readableEnded &&
+                sentinel.stderr.closed;
+            let streamEvidence: ProcessStreamEvidence | null = null;
+            if (
+                !streamTruncated &&
+                streamsComplete &&
+                finalReason.kind !== 'termination-unconfirmed' &&
+                finalReason.kind !== 'output-cap-exceeded'
+            ) {
+                streamEvidence = {
+                    stdout: { byteCount: stdoutState.byteCount, sha256: stdoutState.hash.digest('hex') },
+                    stderr: { byteCount: stderrState.byteCount, sha256: stderrState.hash.digest('hex') },
+                    combinedByteCount,
+                };
+            }
+            sentinel.stdout.off('data', stdoutData);
+            sentinel.stderr.off('data', stderrData);
+            sentinel.stdout.off('error', streamError);
+            sentinel.stderr.off('error', streamError);
+            sentinel.stdout.destroy();
+            sentinel.stderr.destroy();
             sentinel.removeAllListeners();
             try {
                 sentinel.disconnect();
@@ -239,7 +324,7 @@ export function superviseTrustedProcess(
                 // The sentinel may already have closed its IPC channel.
             }
             sentinel.unref();
-            resolve(result(finalReason));
+            resolve(result(finalReason, streamEvidence));
         };
         const maybeFinish = () => {
             if (cleanupConfirmed === false) {
@@ -248,8 +333,13 @@ export function superviseTrustedProcess(
                 finish(reason);
             }
         };
-        const stopGroup = (nextReason: ProcessSupervisorReason) => {
+        const stopGroup = (nextReason: ProcessSupervisorReason, streamReadError = false) => {
             if (reason) {
+                reason = selectProcessSupervisorReason({
+                    current: reason,
+                    next: nextReason,
+                    streamReadError,
+                });
                 return;
             }
             reason = nextReason;

@@ -3,6 +3,8 @@
 import { spawn } from 'node:child_process';
 import { isAbsolute } from 'node:path';
 
+import type { Readable, Writable } from 'node:stream';
+
 export const PROCESS_SUPERVISOR_SENTINEL_ROLE = '--process-supervisor-sentinel';
 
 // This protocol only runs trusted, code-owned executors. Process-group cleanup is not a sandbox:
@@ -50,6 +52,87 @@ function sendMessage(message: SentinelMessage): void {
     }
 }
 
+type ForwardExecutorStreamInput = {
+    source: Readable;
+    destination: Writable;
+    onFailure: () => void;
+};
+
+// Terminal IPC must wait for source end and every destination write callback; executor close alone
+// does not prove that userland destination buffers have flushed into the owner-visible descriptors.
+function forwardExecutorStream({ source, destination, onFailure }: ForwardExecutorStreamInput): Promise<void> {
+    return new Promise((resolve) => {
+        let failed = false;
+        let pendingWrite = false;
+        let sourceEnded = false;
+        let settled = false;
+        const finish = () => {
+            if (settled || !sourceEnded || pendingWrite) {
+                return;
+            }
+            settled = true;
+            source.off('data', onData);
+            source.off('end', onEnd);
+            source.off('error', onSourceError);
+            source.off('close', onClose);
+            // Writable may emit a queued error after its write callback; this listener lives until sentinel termination.
+            resolve();
+        };
+        const fail = () => {
+            if (!failed) {
+                failed = true;
+                onFailure();
+            }
+            source.off('data', onData);
+            source.resume();
+        };
+        const onData = (chunk: Buffer) => {
+            source.pause();
+            pendingWrite = true;
+            try {
+                destination.write(chunk, (error) => {
+                    pendingWrite = false;
+                    if (error) {
+                        fail();
+                    } else if (!failed) {
+                        source.resume();
+                    }
+                    finish();
+                });
+            } catch {
+                pendingWrite = false;
+                fail();
+                finish();
+            }
+        };
+        const onEnd = () => {
+            sourceEnded = true;
+            finish();
+        };
+        const onSourceError = () => {
+            sourceEnded = true;
+            fail();
+            finish();
+        };
+        const onClose = () => {
+            if (!source.readableEnded) {
+                sourceEnded = true;
+                fail();
+                finish();
+            }
+        };
+        const onDestinationError = () => {
+            fail();
+            finish();
+        };
+        source.on('data', onData);
+        source.once('end', onEnd);
+        source.once('error', onSourceError);
+        source.once('close', onClose);
+        destination.on('error', onDestinationError);
+    });
+}
+
 export function runProcessSupervisorSentinel(): void {
     let reported = false;
     let started = false;
@@ -81,17 +164,21 @@ export function runProcessSupervisorSentinel(): void {
             return;
         }
         let terminal: SentinelOutcomeMessage | null = null;
-        const handleDestinationError = (source: typeof trustedExecutor.stdout, destination: NodeJS.WriteStream) => {
+        const handleStreamFailure = () => {
             terminal = { kind: 'spawn-error' };
-            source.unpipe(destination);
-            source.resume();
         };
-        const stdoutError = () => handleDestinationError(trustedExecutor.stdout, process.stdout);
-        const stderrError = () => handleDestinationError(trustedExecutor.stderr, process.stderr);
-        process.stdout.on('error', stdoutError);
-        process.stderr.on('error', stderrError);
-        trustedExecutor.stdout.pipe(process.stdout, { end: false });
-        trustedExecutor.stderr.pipe(process.stderr, { end: false });
+        const streamsForwarded = Promise.all([
+            forwardExecutorStream({
+                source: trustedExecutor.stdout,
+                destination: process.stdout,
+                onFailure: handleStreamFailure,
+            }),
+            forwardExecutorStream({
+                source: trustedExecutor.stderr,
+                destination: process.stderr,
+                onFailure: handleStreamFailure,
+            }),
+        ]);
         trustedExecutor.once('error', () => {
             terminal = { kind: 'spawn-error' };
         });
@@ -103,9 +190,7 @@ export function runProcessSupervisorSentinel(): void {
             terminal ??= { kind: 'exit', code: code ?? 1 };
         });
         trustedExecutor.once('close', () => {
-            process.stdout.off('error', stdoutError);
-            process.stderr.off('error', stderrError);
-            report(terminal ?? { kind: 'spawn-error' });
+            void streamsForwarded.then(() => report(terminal ?? { kind: 'spawn-error' }));
         });
     });
 
