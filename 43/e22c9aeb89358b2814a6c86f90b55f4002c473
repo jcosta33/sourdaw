@@ -1,0 +1,19 @@
+tests/e2e/myceliumAutomationStems.spec.ts
+  s_ac9b259eab20ba::t_e4fb7b15045d8b 10-42,44,132,226,230-231,237-280,282-285,288-308,368
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "43e22c9aeb89358b2814a6c86f90b55f4002c473",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
