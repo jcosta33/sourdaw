@@ -1,0 +1,91 @@
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_bc88af7d3b054c::t_d8f325c4fd4cf7 20-25,27-32,34,37,39,44,47-48,53-55,69-70,79-87,94-96,133-134,138-141,156-158,171,180-182,189,208,210-211
+  s_bc88af7d3b054c::t_8f5331495cb5a2 6,66-68,71,73,130-132,135,137,173,178
+  s_bc88af7d3b054c::t_20e2374e02eae3 36,38,40-42,45,49-50,52
+  s_bc88af7d3b054c::t_37557ad00cd729 26,33,43,46,51
+  s_bc88af7d3b054c::t_03f057c1a90b44 102-116,174-176
+  s_bc88af7d3b054c::t_570f785b45ad7d 35
+  s_bc88af7d3b054c::t_4a76c2bc71238f 123,168
+  s_bc88af7d3b054c::t_106f6a9f3feaf7 117-122,162-167
+  s_bc88af7d3b054c::t_d46b1a735cd011 149,209
+  s_bc88af7d3b054c::t_2e10c92a81042a 179
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_bc88af7d3b054c::t_8f5331495cb5a2 1-19,30-62,87-116,123-193,202-216,221
+  s_bc88af7d3b054c::t_35ae4f57e98688 63-86,117-122,201,219
+  s_bc88af7d3b054c::t_26a491effcec41 20-29
+  s_bc88af7d3b054c::t_f4cbfd8384114c 194-200,217-218,220,222-223
+src/modules/AiRuntime/repositories/nativeEngine/completions.ts
+  s_bc88af7d3b054c::t_d8f325c4fd4cf7 13,26
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_bc88af7d3b054c::t_67e62429dc01a3 16,23-26,98-99,122
+  s_bc88af7d3b054c::t_2b26ed82caa33e 5,45-48,77,123,142-162
+  s_bc88af7d3b054c::t_f4cbfd8384114c 10-15,56,81,112,116-119,124
+  s_bc88af7d3b054c::t_377b9749ade636 113-114
+  s_bc88af7d3b054c::t_ae094046cdec4e 7,49-55,57-59,78-80,96-97,100-111,115,120-121
+  s_bc88af7d3b054c::t_cd158dfec56351 125-141,163-164
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_bc88af7d3b054c::t_7d0fcfffaed05f 68-71
+  s_bc88af7d3b054c::t_37f5392e383871 36-39,41-42,46,49,52
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_bc88af7d3b054c::t_ae094046cdec4e 1-3,10-69,74-85,87-99,103-105,145-146
+  s_bc88af7d3b054c::t_26a491effcec41 100-102
+  s_bc88af7d3b054c::t_f4cbfd8384114c 4-9,106-119
+  s_bc88af7d3b054c::t_69e353056b245a 123-126,131
+  s_bc88af7d3b054c::t_35ae4f57e98688 70-73,86,120-122,127-130,132-144
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_bc88af7d3b054c::t_73e4a970e9d1c3 228,245-247
+  s_bc88af7d3b054c::t_377b9749ade636 137-147,149-150
+  s_bc88af7d3b054c::t_03f057c1a90b44 224-227,248
+  s_bc88af7d3b054c::t_d46b1a735cd011 24,65-70,85,148
+  s_bc88af7d3b054c::t_ae094046cdec4e 3,113-134
+  s_bc88af7d3b054c::t_cd158dfec56351 135,151-213
+  s_bc88af7d3b054c::t_0c3dc5c57644d5 136
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateCloudToolCalls.ts
+  s_bc88af7d3b054c::t_8f5331495cb5a2 4,21-24,31,33,36
+  s_bc88af7d3b054c::t_6f4a92ae0ddb3a 25
+  s_bc88af7d3b054c::t_d8f325c4fd4cf7 34-35,42-56
+  s_bc88af7d3b054c::t_f4cbfd8384114c 32
+src/modules/AiRuntime/models/Tools/Types.ts
+  s_bc88af7d3b054c::t_26a491effcec41 13
+docs/architecture/decisions/0012-llm-command-execution-boundary.md
+  s_bc88af7d3b054c::t_57daa010884fc8 16-17,31
+  s_bc88af7d3b054c::t_174865c6766e0e 1-15,18-30,32-34
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_bc88af7d3b054c::t_7d0fcfffaed05f 15-16,148,173-195,197-205
+  s_bc88af7d3b054c::t_67e62429dc01a3 149-172,206-207
+  s_bc88af7d3b054c::t_37f5392e383871 24,32,74,132-146
+  s_bc88af7d3b054c::t_e5f5795eea9019 23,196
+  s_bc88af7d3b054c::t_4710918b138d7c 147
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateCloudToolCalls.spec.ts
+  s_bc88af7d3b054c::t_ae094046cdec4e 3,91-121
+  s_bc88af7d3b054c::t_37d7a93a5a49a6 6-13,15-16
+  s_bc88af7d3b054c::t_1218ea566f7d19 17-31,66
+  s_bc88af7d3b054c::t_f4cbfd8384114c 14,77
+  s_bc88af7d3b054c::t_d469df2d0e89aa 34,122-129
+  s_bc88af7d3b054c::t_f76722a2b4bc18 79-83,86-90
+src/modules/AiRuntime/useCases/llmOrchestration/backendResolution/getBackendChain.ts
+  s_bc88af7d3b054c::t_03f057c1a90b44 9
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_bc88af7d3b054c::t_d8f325c4fd4cf7 86-87
+  s_bc88af7d3b054c::t_2b26ed82caa33e 20,94,101-103
+  s_bc88af7d3b054c::t_f4cbfd8384114c 8,84-85
+  s_bc88af7d3b054c::t_8f5331495cb5a2 6-7,9-10,22,30-31,80-83,88-93,95-100,104-121
+  s_bc88af7d3b054c::t_71c9ec212b5605 5
+  s_bc88af7d3b054c::t_a6ab216211b0ff 122-123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "8efa0f718140e04b1019bb289709c036ac73e54b",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
