@@ -1,0 +1,30 @@
+scripts/capture-mycelium-evidence.mjs
+  s_ac9b259eab20ba::t_d1beb79a882b6f 3,47,50-52
+  s_ac9b259eab20ba::t_88641ed78ded56 1,11-12,31-46,48-49,53-63,88-91,111-118
+tests/e2e/myceliumEvidenceReceipt.ts
+  s_ac9b259eab20ba::t_972f6079492159 19,38-39,48
+tests/e2e/playwright.mycelium.config.cjs
+  s_ac9b259eab20ba::t_972f6079492159 10-12,14,18
+  s_ac9b259eab20ba::t_d1beb79a882b6f 3,27,30
+  s_ac9b259eab20ba::t_4ef9a282f74754 31-32
+  s_ac9b259eab20ba::t_d9f7ea38409560 41-42
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/renderMyceliumAscendantDemo.spec.ts
+  s_ac9b259eab20ba::t_abb87a6ec7eabb 47-48,57,248-249,264,272,281-283,311-312,314-315,325,327,333
+  s_ac9b259eab20ba::t_d1beb79a882b6f 3,258,261
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "5cff20174d54b38e831fa84b4f089bbaddbc5de4",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
