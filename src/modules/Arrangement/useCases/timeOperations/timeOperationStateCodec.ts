@@ -66,6 +66,42 @@ type DecodeValueResult = DecodedValue | RejectedValue;
 const REJECTED_VALUE: RejectedValue = { status: 'rejected' };
 const TRACK_STATE_KEYS = ['tracks', 'selectedTrackId'] as const;
 const TRACK_STATE_WITH_GHOSTS_KEYS = ['tracks', 'selectedTrackId', 'ghostClips'] as const;
+const NO_UNDEFINED_PROPERTIES = new Set<string>();
+const TRACK_UNDEFINED_PROPERTIES = new Set(['frozenBufferId', 'showVariationLanes']);
+const CLIP_UNDEFINED_PROPERTIES = new Set([
+    'audioBufferId',
+    'assetHash',
+    'audioOffsetBeats',
+    'midiOffsetBeats',
+    'stretchMode',
+    'stretchRatio',
+    'loopEnabled',
+    'loopLength',
+    'followAction',
+    'generating',
+    'isGhost',
+    'isInlineEditing',
+    'parentClipId',
+    'isLinkedInstance',
+    'sourceKeyRoot',
+    'sourceScaleName',
+    'overrides',
+    'kneadState',
+]);
+const FREEZE_STATE_UNDEFINED_PROPERTIES = new Set([
+    'freezeId',
+    'frozenBufferId',
+    'frozenAudioHash',
+    'sourceContentHash',
+    'deviceChainHash',
+    'renderSettings',
+    'compensationSeconds',
+    'renderProgress',
+    'errorMessage',
+    'renderedAt',
+]);
+const KNEAD_BLOB_UNDEFINED_PROPERTIES = new Set(['originalPitchCenterCents']);
+const DEVICE_UNDEFINED_PROPERTIES = new Set(['externalPluginId', 'externalInstanceId', 'externalStateChunk']);
 
 function readDataObject(value: unknown, expectedKeys: readonly string[]): Record<string, unknown> | null {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -124,6 +160,115 @@ function readDenseArray(value: unknown): readonly unknown[] | null {
     }
 
     return items;
+}
+
+function getAllowedUndefinedProperties(value: object): ReadonlySet<string> {
+    if (Object.hasOwn(value, 'trackId') && Object.hasOwn(value, 'startBeat') && Object.hasOwn(value, 'endBeat')) {
+        return CLIP_UNDEFINED_PROPERTIES;
+    }
+    if (
+        Object.hasOwn(value, 'kind') &&
+        Object.hasOwn(value, 'clips') &&
+        Object.hasOwn(value, 'devices') &&
+        Object.hasOwn(value, 'sends')
+    ) {
+        return TRACK_UNDEFINED_PROPERTIES;
+    }
+    if (Object.hasOwn(value, 'pitchCurveCents') && Object.hasOwn(value, 'voicedConfidence')) {
+        return KNEAD_BLOB_UNDEFINED_PROPERTIES;
+    }
+    if (Object.hasOwn(value, 'bypassed') && Object.hasOwn(value, 'parameterValues')) {
+        return DEVICE_UNDEFINED_PROPERTIES;
+    }
+    if (Object.hasOwn(value, 'status')) {
+        return FREEZE_STATE_UNDEFINED_PROPERTIES;
+    }
+    return NO_UNDEFINED_PROPERTIES;
+}
+
+function hasOnlyKnownUndefinedProperties(value: unknown): boolean {
+    if (Array.isArray(value)) {
+        const items = readDenseArray(value);
+        if (!items) {
+            return false;
+        }
+        return items.every(hasOnlyKnownUndefinedProperties);
+    }
+    if (value === null || typeof value !== 'object') {
+        return true;
+    }
+
+    const allowedUndefinedProperties = getAllowedUndefinedProperties(value);
+    for (const ownKey of Reflect.ownKeys(value)) {
+        if (typeof ownKey !== 'string') {
+            return false;
+        }
+        const descriptor = Object.getOwnPropertyDescriptor(value, ownKey);
+        if (!descriptor || !descriptor.enumerable || !Object.hasOwn(descriptor, 'value')) {
+            return false;
+        }
+        if (descriptor.value === undefined) {
+            if (!allowedUndefinedProperties.has(ownKey)) {
+                return false;
+            }
+            continue;
+        }
+        if (!hasOnlyKnownUndefinedProperties(descriptor.value)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+function hasValidClipGeometry(value: unknown): boolean {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+        return false;
+    }
+    const startBeat: unknown = Object.getOwnPropertyDescriptor(value, 'startBeat')?.value;
+    const endBeat: unknown = Object.getOwnPropertyDescriptor(value, 'endBeat')?.value;
+    return (
+        typeof startBeat === 'number' &&
+        Number.isFinite(startBeat) &&
+        startBeat >= 0 &&
+        typeof endBeat === 'number' &&
+        Number.isFinite(endBeat) &&
+        endBeat > startBeat
+    );
+}
+
+function clipArrayHasValidGeometry(value: unknown): boolean {
+    const clips = readDenseArray(value);
+    if (!clips) {
+        return false;
+    }
+    return clips.every(hasValidClipGeometry);
+}
+
+function tracksHaveValidClipGeometry(tracks: readonly unknown[]): boolean {
+    for (const track of tracks) {
+        if (track === null || typeof track !== 'object' || Array.isArray(track)) {
+            return false;
+        }
+        const clips: unknown = Object.getOwnPropertyDescriptor(track, 'clips')?.value;
+        if (!clipArrayHasValidGeometry(clips)) {
+            return false;
+        }
+        const alternativesValue: unknown = Object.getOwnPropertyDescriptor(track, 'alternatives')?.value;
+        const alternatives = readDenseArray(alternativesValue);
+        if (!alternatives) {
+            return false;
+        }
+        for (const alternative of alternatives) {
+            if (alternative === null || typeof alternative !== 'object' || Array.isArray(alternative)) {
+                return false;
+            }
+            const alternativeClips: unknown = Object.getOwnPropertyDescriptor(alternative, 'clips')?.value;
+            if (!clipArrayHasValidGeometry(alternativeClips)) {
+                return false;
+            }
+        }
+    }
+    return true;
 }
 
 function encodeArray(value: unknown[], ancestors: Set<object>): ArrayNode | null {
@@ -476,6 +621,9 @@ function normalizeGhostClips(value: unknown): unknown[] | null {
     if (!detachedGhostClips) {
         return null;
     }
+    if (!clipArrayHasValidGeometry(detachedGhostClips)) {
+        return null;
+    }
 
     const syntheticTrack = {
         id: '__time-operation-codec__',
@@ -521,9 +669,12 @@ function validateTrackState(value: unknown): value is TrackState {
     if (!properties) {
         return false;
     }
+    if (!hasOnlyKnownUndefinedProperties(value)) {
+        return false;
+    }
 
     const tracks = readDenseArray(properties.tracks);
-    if (!tracks) {
+    if (!tracks || !tracksHaveValidClipGeometry(tracks)) {
         return false;
     }
     if (properties.selectedTrackId !== null && typeof properties.selectedTrackId !== 'string') {
@@ -580,7 +731,25 @@ function validateTrackState(value: unknown): value is TrackState {
 
 function validateMarkerState(value: unknown): value is MarkerStoreState {
     const sanitized = sanitize_marker_store_state(value);
-    return sanitized === value;
+    if (sanitized !== value) {
+        return false;
+    }
+
+    const markerIds = new Set<string>();
+    for (const marker of sanitized.markers) {
+        if (marker.id.length === 0 || markerIds.has(marker.id)) {
+            return false;
+        }
+        markerIds.add(marker.id);
+    }
+    const sectionIds = new Set<string>();
+    for (const section of sanitized.sections) {
+        if (section.id.length === 0 || sectionIds.has(section.id)) {
+            return false;
+        }
+        sectionIds.add(section.id);
+    }
+    return true;
 }
 
 function decodeCanonicalValue(value: unknown): unknown {

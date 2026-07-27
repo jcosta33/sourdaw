@@ -66,6 +66,7 @@ vi.mock('../../../stores/markerStore', async (importOriginal) => {
     };
 });
 
+import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import {
     prepareTimeOperationStateRestore,
@@ -246,9 +247,9 @@ function installDependencies(input: InstallDependenciesInput = {}) {
     };
 }
 
-function createTrackState(gain: number, pan = 0) {
+function createTrackState(gain: number, pan = 0, overrides?: Parameters<typeof TrackDummy.create>[0]) {
     return {
-        tracks: [TrackDummy.create({ id: 'track-1', gain, pan })],
+        tracks: [TrackDummy.create({ id: 'track-1', gain, pan, ...overrides })],
         selectedTrackId: 'track-1',
         ghostClips: [],
     };
@@ -538,6 +539,115 @@ describe('prepareTimeOperationStateRestore', () => {
         expect(dependencies.prepareMidi).not.toHaveBeenCalled();
         expect(dependencies.prepareTimelineMap).not.toHaveBeenCalled();
         expect(mocks.writeDepths).toEqual([]);
+    });
+
+    it.each([
+        {
+            label: 'negative track clip',
+            createState: () =>
+                createTrackState(1, 0, {
+                    clips: [ClipDummy.create({ startBeat: -1, endBeat: 1 })],
+                }),
+        },
+        {
+            label: 'reversed track clip',
+            createState: () =>
+                createTrackState(1, 0, {
+                    clips: [ClipDummy.create({ startBeat: 4, endBeat: 2 })],
+                }),
+        },
+        {
+            label: 'negative ghost clip',
+            createState: () => ({
+                ...createTrackState(1),
+                ghostClips: [ClipDummy.create({ trackId: 'ghost-track', startBeat: -1, endBeat: 1 })],
+            }),
+        },
+        {
+            label: 'zero-length ghost clip',
+            createState: () => ({
+                ...createTrackState(1),
+                ghostClips: [ClipDummy.create({ trackId: 'ghost-track', startBeat: 2, endBeat: 2 })],
+            }),
+        },
+    ])('rejects $label geometry at the codec boundary', ({ createState }) => {
+        expect(timeOperationStateCodec.encodeTrackState(createState())).toBeNull();
+    });
+
+    it.each([
+        {
+            label: 'empty marker id',
+            state: {
+                markers: [{ id: '', beat: 1, name: 'Marker', color: '#fff' }],
+                sections: [],
+            },
+        },
+        {
+            label: 'duplicate marker id',
+            state: {
+                markers: [
+                    { id: 'duplicate', beat: 1, name: 'One', color: '#fff' },
+                    { id: 'duplicate', beat: 2, name: 'Two', color: '#fff' },
+                ],
+                sections: [],
+            },
+        },
+        {
+            label: 'empty section id',
+            state: {
+                markers: [],
+                sections: [{ id: '', startBeat: 1, endBeat: 2, name: 'Section', color: '#fff' }],
+            },
+        },
+        {
+            label: 'duplicate section id',
+            state: {
+                markers: [],
+                sections: [
+                    { id: 'duplicate', startBeat: 1, endBeat: 2, name: 'One', color: '#fff' },
+                    { id: 'duplicate', startBeat: 2, endBeat: 3, name: 'Two', color: '#fff' },
+                ],
+            },
+        },
+    ])('rejects a marker state with an $label', ({ state }) => {
+        expect(timeOperationStateCodec.encodeMarkerState(state)).toBeNull();
+    });
+
+    it.each(['track', 'clip'] as const)('rejects an unknown undefined property on a %s', (target) => {
+        const clip = ClipDummy.create();
+        const state = createTrackState(1, 0, { clips: [clip] });
+        if (target === 'track') {
+            Object.defineProperty(state.tracks[0]!, 'attackerOnly', {
+                configurable: true,
+                enumerable: true,
+                value: undefined,
+                writable: true,
+            });
+        } else {
+            Object.defineProperty(clip, 'attackerOnly', {
+                configurable: true,
+                enumerable: true,
+                value: undefined,
+                writable: true,
+            });
+        }
+
+        expect(timeOperationStateCodec.encodeTrackState(state)).toBeNull();
+    });
+
+    it('preserves a known optional property whose own value is undefined', () => {
+        const clip = ClipDummy.create();
+        Object.defineProperty(clip, 'audioOffsetBeats', {
+            configurable: true,
+            enumerable: true,
+            value: undefined,
+            writable: true,
+        });
+        const encoded = timeOperationStateCodec.encodeTrackState(createTrackState(1, 0, { clips: [clip] }));
+        const decoded = timeOperationStateCodec.decodeTrackState(encoded);
+
+        expect(encoded).not.toBeNull();
+        expect(decoded?.tracks[0]?.clips[0]).toHaveProperty('audioOffsetBeats', undefined);
     });
 
     it.each([

@@ -424,7 +424,13 @@ describe('executeGlobalTimeOperation', () => {
             markers: [{ id: 'after-marker', beat: 4, name: 'After', color: '' }],
             sections: [
                 { id: 'span-section', startBeat: 0, endBeat: 2, name: 'Span (L)', color: '' },
-                { id: 'span-section', startBeat: 2, endBeat: 6, name: 'Span (R)', color: '' },
+                {
+                    id: 'span-section:time-delete-right:2:6',
+                    startBeat: 2,
+                    endBeat: 6,
+                    name: 'Span (R)',
+                    color: '',
+                },
             ],
         });
     });

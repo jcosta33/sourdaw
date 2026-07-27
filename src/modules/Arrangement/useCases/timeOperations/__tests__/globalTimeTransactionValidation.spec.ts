@@ -695,7 +695,50 @@ describe('executeGlobalTimeOperation marker section geometry (applied paths)', (
         expect(result.status).toBe('applied');
         expect((mocks.markerState.value as { sections: Array<Record<string, unknown>> }).sections).toEqual([
             { id: 'span', startBeat: 0, endBeat: 2, name: 'Span (L)', color: '' },
-            { id: 'span', startBeat: 2, endBeat: 6, name: 'Span (R)', color: '' },
+            {
+                id: 'span:time-delete-right:2:6',
+                startBeat: 2,
+                endBeat: 6,
+                name: 'Span (R)',
+                color: '',
+            },
+        ]);
+    });
+
+    it('allocates a deterministic collision-free id for a right section fragment', () => {
+        setStates({
+            tracks: [],
+            sections: [
+                { id: 'span', startBeat: 0, endBeat: 10, name: 'Span', color: '' },
+                {
+                    id: 'span:time-delete-right:2:6',
+                    startBeat: 20,
+                    endBeat: 22,
+                    name: 'Existing',
+                    color: '',
+                },
+            ],
+        });
+        registerDependencies();
+        const result = executeGlobalTimeOperation({ operation: { type: 'delete', startBeat: 2, endBeat: 6 } });
+
+        expect(result.status).toBe('applied');
+        expect((mocks.markerState.value as { sections: Array<Record<string, unknown>> }).sections).toEqual([
+            { id: 'span', startBeat: 0, endBeat: 2, name: 'Span (L)', color: '' },
+            {
+                id: 'span:time-delete-right:2:6:1',
+                startBeat: 2,
+                endBeat: 6,
+                name: 'Span (R)',
+                color: '',
+            },
+            {
+                id: 'span:time-delete-right:2:6',
+                startBeat: 16,
+                endBeat: 18,
+                name: 'Existing',
+                color: '',
+            },
         ]);
     });
 });

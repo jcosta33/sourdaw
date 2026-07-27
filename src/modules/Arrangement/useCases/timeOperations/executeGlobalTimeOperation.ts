@@ -967,6 +967,22 @@ function prepareInsertedMarkerState(state: MarkerStoreState, operation: InsertGl
     return { ...state, markers };
 }
 
+function allocateRightSectionFragmentId(input: {
+    sourceId: string;
+    operation: DeleteGlobalTimeOperation;
+    usedIds: Set<string>;
+}): string {
+    const baseId = `${input.sourceId}:time-delete-right:${input.operation.startBeat}:${input.operation.endBeat}`;
+    let candidate = baseId;
+    let suffix = 1;
+    while (input.usedIds.has(candidate)) {
+        candidate = `${baseId}:${suffix}`;
+        suffix += 1;
+    }
+    input.usedIds.add(candidate);
+    return candidate;
+}
+
 function prepareDeletedMarkerState(state: MarkerStoreState, operation: DeleteGlobalTimeOperation): MarkerStoreState {
     const duration = operation.endBeat - operation.startBeat;
     let changed = false;
@@ -985,6 +1001,7 @@ function prepareDeletedMarkerState(state: MarkerStoreState, operation: DeleteGlo
     }
 
     const sections = [];
+    const usedSectionIds = new Set(state.sections.map((section) => section.id));
     for (const section of state.sections) {
         if (section.endBeat <= operation.startBeat) {
             sections.push(section);
@@ -1005,6 +1022,11 @@ function prepareDeletedMarkerState(state: MarkerStoreState, operation: DeleteGlo
         }
         if (section.startBeat < operation.startBeat && section.endBeat > operation.endBeat) {
             changed = true;
+            const rightSectionId = allocateRightSectionFragmentId({
+                sourceId: section.id,
+                operation,
+                usedIds: usedSectionIds,
+            });
             sections.push(
                 {
                     ...section,
@@ -1013,6 +1035,7 @@ function prepareDeletedMarkerState(state: MarkerStoreState, operation: DeleteGlo
                 },
                 {
                     ...section,
+                    id: rightSectionId,
                     startBeat: operation.startBeat,
                     endBeat: section.endBeat - duration,
                     name: `${section.name} (R)`,
