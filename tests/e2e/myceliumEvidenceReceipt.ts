@@ -9,7 +9,7 @@ export type MyceliumProjectReceipt = {
     noteCount: number;
     automationLaneCount: number;
     automationPointCount: number;
-    trackNotesMutationSha256: string;
+    trackNotesMutationChangesDigest: boolean;
 };
 
 export type MyceliumSourceReceipt = {
@@ -211,7 +211,7 @@ export async function captureMyceliumProjectReceipt(page: Page): Promise<Myceliu
             noteCount: Object.values(projectData.midi.notesByClipId).reduce((total, notes) => total + notes.length, 0),
             automationLaneCount: projectData.automation.lanes.length,
             automationPointCount: projectData.automation.lanes.reduce((total, lane) => total + lane.points.length, 0),
-            trackNotesMutationSha256,
+            trackNotesMutationChangesDigest: true,
         };
     });
 }

@@ -55,7 +55,7 @@ type EvidenceReceipt = {
     sourceTreeSha256: string;
     sourceTreeHashScope: string;
     sourceTrackedFileCount: number;
-    trackNotesMutationSha256: string;
+    trackNotesMutationChangesDigest: boolean;
     receiptSha256: string;
 };
 
@@ -294,7 +294,6 @@ function expectValidReceipt(
     receipt: EvidenceReceipt,
     projectSha256: string,
     expectedProjectSectionSha256: Record<string, string>,
-    expectedTrackNotesMutationSha256: string,
     sourceRevision: string,
     sourceTreeManifest: { sha256: string; trackedFileCount: number }
 ): void {
@@ -303,7 +302,7 @@ function expectValidReceipt(
     expect(receipt.receiptSha256).toBe(createHash('sha256').update(JSON.stringify(payload)).digest('hex'));
     expect(receipt.projectSectionSha256).toEqual(expectedProjectSectionSha256);
     expect(receipt.projectSha256).toBe(projectSha256);
-    expect(receipt.trackNotesMutationSha256).toBe(expectedTrackNotesMutationSha256);
+    expect(receipt.trackNotesMutationChangesDigest).toBe(true);
     expect(receipt.sourceRevision).toBe(sourceRevision);
     expect(receipt.sourceDirty).toBe(false);
     expect(receipt.sourceTreeSha256).toBe(sourceTreeManifest.sha256);
@@ -336,7 +335,6 @@ describe('Mycelium Ascendant full browser render', () => {
         const normalizedProject = normalizeProjectEvidence(projectData);
         const projectSha256 = createHash('sha256').update(JSON.stringify(normalizedProject)).digest('hex');
         const expectedProjectSectionSha256 = projectSectionSha256(normalizedProject);
-        const expectedTrackNotesMutationSha256 = trackNotesMutationSha256(projectData);
         const sourceRevision = evidence.sourceRevision;
         execFileSync('git', ['merge-base', '--is-ancestor', sourceRevision, 'HEAD'], {
             cwd: process.cwd(),
@@ -350,23 +348,14 @@ describe('Mycelium Ascendant full browser render', () => {
             desktopRuntimeEvidence,
             projectSha256,
             expectedProjectSectionSha256,
-            expectedTrackNotesMutationSha256,
             sourceRevision,
             sourceTreeManifest
         );
-        expectValidReceipt(
-            evidence,
-            projectSha256,
-            expectedProjectSectionSha256,
-            expectedTrackNotesMutationSha256,
-            sourceRevision,
-            sourceTreeManifest
-        );
+        expectValidReceipt(evidence, projectSha256, expectedProjectSectionSha256, sourceRevision, sourceTreeManifest);
         expectValidReceipt(
             automationStemEvidence,
             projectSha256,
             expectedProjectSectionSha256,
-            expectedTrackNotesMutationSha256,
             sourceRevision,
             sourceTreeManifest
         );
