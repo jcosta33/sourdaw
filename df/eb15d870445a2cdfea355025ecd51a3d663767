@@ -1,0 +1,31 @@
+scripts/agent-campaign/__tests__/run-evidence-gate.spec.ts
+  s_bc88af7d3b054c::t_c0916e170791ee 2,55,61,178-183,185-187,189-191,193,196-197,205,207,210,234,236-239,250-252,320
+  s_bc88af7d3b054c::t_6bb92e599069e7 275-287
+  s_bc88af7d3b054c::t_103a2bfc36bf05 195,199,204,206,208-209,213,215-217,219-222,226-230
+  s_bc88af7d3b054c::t_fff15ae24b0adc 14,49,57,63,67,69-70,72,241-249,253-255,257-259,292-295,299-300,313-314,316-317,319,321-322
+  s_bc88af7d3b054c::t_a51a39ed97588e 198,200,218,223,296,298,315,318,323
+  s_bc88af7d3b054c::t_dec5c397ff31ce 58-60,62
+  s_bc88af7d3b054c::t_67f032f0d2a234 203
+scripts/agent-campaign/run-evidence-gate.ts
+  s_bc88af7d3b054c::t_9d2924ae7ccbd0 3,34-42,44-51,71-72
+  s_bc88af7d3b054c::t_463302e03e5a8a 52-55,226,228-232,236-243,245-255,264-266,271,273,275-280,282
+  s_bc88af7d3b054c::t_7ae39561b5db98 244,256-263
+  s_bc88af7d3b054c::t_dea150dfbce169 573,578-581,588,590-597,599-607,612-613,701
+  s_bc88af7d3b054c::t_390a33453574c9 199,201-204,213-215
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "dfeb15d870445a2cdfea355025ecd51a3d663767",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
