@@ -92,7 +92,7 @@ export function createMyceliumAscendantBlueprint(): MyceliumAscendantBlueprint {
             createdAt: 0,
             updatedAt: 0,
             keyRoot: 9,
-            scaleName: 'harmonic-minor',
+            scaleName: 'harmonicMinor',
             tuning: {
                 name: 'Equal Temperament',
                 frequencies: Array.from({ length: 128 }, (_, index) => 440 * 2 ** ((index - 69) / 12)),

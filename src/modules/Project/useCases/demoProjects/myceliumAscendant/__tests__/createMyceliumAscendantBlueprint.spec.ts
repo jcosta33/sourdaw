@@ -24,7 +24,7 @@ describe('createMyceliumAscendantBlueprint', () => {
         expect(projectData.meta).toMatchObject({
             name: 'Mycelium Ascendant',
             keyRoot: 9,
-            scaleName: 'harmonic-minor',
+            scaleName: 'harmonicMinor',
         });
         expect(projectData.transport).toMatchObject({
             tempo: 144,

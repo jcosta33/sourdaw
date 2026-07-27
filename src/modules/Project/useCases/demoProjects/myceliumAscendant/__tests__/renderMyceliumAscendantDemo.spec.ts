@@ -137,6 +137,9 @@ function normalizeProjectEvidence(value: unknown): unknown {
         if (key === 'grooves') {
             return hasItems(child, 'assignments');
         }
+        if (key === 'ghostClips') {
+            return !Array.isArray(child) || child.length > 0;
+        }
         if (key === 'takeLanes') {
             return hasItems(child, 'lanes');
         }

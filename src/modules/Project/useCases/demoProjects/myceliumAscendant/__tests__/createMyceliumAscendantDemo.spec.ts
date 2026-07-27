@@ -21,7 +21,7 @@ describe('createMyceliumAscendantDemo', () => {
             loading: true,
             initialized: false,
             keyRoot: 9,
-            scaleName: 'harmonic-minor',
+            scaleName: 'harmonicMinor',
         });
         expect(transportStore.value).toMatchObject({
             tempo: 144,
