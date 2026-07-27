@@ -8,8 +8,16 @@ import { performance } from 'node:perf_hooks';
 import { pathToFileURL } from 'node:url';
 import { types as utilTypes } from 'node:util';
 
+import {
+    normalizeExecutorObservation,
+    productionExecutorRegistry,
+    resolveExecutorInvocation,
+    type CodeOwnedExecutorRegistry,
+    type ExecutorObservation,
+} from './evidenceExecutor.ts';
 import { validateEvidenceManifest, validateEvidencePolicy } from './evidenceManifest.ts';
 import { generateEvidenceManifest } from './generateEvidenceManifest.ts';
+import { superviseTrustedProcess, type ProcessSupervisorResult } from './processSupervisor.ts';
 
 import type { createEvidencePolicy } from './evidenceContract.ts';
 
@@ -39,6 +47,10 @@ export type EvidenceRunnerDependencies = {
     monotonicClock: { now: () => number };
     environment: { observe: (signal: AbortSignal) => Promise<unknown>; timeoutMs?: number };
     manifest: { validate: typeof validateEvidenceManifest };
+    executor: {
+        registry: CodeOwnedExecutorRegistry;
+        supervise: (input: Parameters<typeof superviseTrustedProcess>[0]) => Promise<ProcessSupervisorResult>;
+    };
 };
 
 export type EvidenceRunnerResult = {
@@ -51,6 +63,7 @@ export type EvidenceRunnerResult = {
     capturedAt?: string;
     runEnvelopeSha256?: string;
     environmentMatch?: boolean;
+    executorObservation?: ExecutorObservation;
 };
 
 const COMMIT = /^[a-f0-9]{40}$/;
@@ -400,6 +413,63 @@ export async function runEvidenceGate(
             environmentMatch,
         });
     }
+    const context = {
+        integratedCommit: head,
+        capturedAt,
+        runEnvelopeSha256,
+        environmentMatch,
+    };
+    let pendingResult: EvidenceRunnerResult;
+    if (envelopeFailures.length > 0) {
+        pendingResult = failure('invalid-run-envelope', 2, ['run envelope could not be verified'], context);
+    } else if (!environmentMatch) {
+        pendingResult = failure(
+            'environment-unavailable',
+            4,
+            ['environment attestation could not be verified'],
+            context
+        );
+    } else if (mode.kind === 'release') {
+        pendingResult = failure('release-unimplemented', 3, ['release aggregation is not registered'], context);
+    } else {
+        const targetId = target?.id ?? '';
+        const resolution = resolveExecutorInvocation(dependencies.executor.registry, targetId);
+        if (resolution.kind === 'unimplemented') {
+            pendingResult = failure('executor-unimplemented', 3, ['trusted executor is not registered'], {
+                ...context,
+                targetId,
+            });
+        } else if (resolution.kind === 'invalid-definition') {
+            pendingResult = failure('executor-definition-invalid', 4, ['trusted executor definition is invalid'], {
+                ...context,
+                targetId,
+            });
+        } else {
+            let supervisorResult: unknown;
+            try {
+                supervisorResult = await dependencies.executor.supervise(resolution.invocation);
+            } catch {
+                supervisorResult = null;
+            }
+            const executorObservation = normalizeExecutorObservation(supervisorResult);
+            const observationContext = { ...context, targetId, executorObservation };
+            if (executorObservation.classification === 'success') {
+                pendingResult = failure(
+                    'publication-unimplemented',
+                    3,
+                    ['executor succeeded but evidence publication is not implemented'],
+                    observationContext
+                );
+            } else {
+                pendingResult = failure(
+                    'executor-failed',
+                    4,
+                    [`executor failed: ${executorObservation.classification}`],
+                    observationContext
+                );
+            }
+        }
+    }
     try {
         const finalHeadBeforeDirty = await dependencies.checkout.head();
         if (finalHeadBeforeDirty !== head) {
@@ -434,25 +504,10 @@ export async function runEvidenceGate(
             environmentMatch,
         });
     }
-    const context = {
-        integratedCommit: head,
-        capturedAt,
-        runEnvelopeSha256,
-        environmentMatch,
-    };
     if (envelopeFailures.length > 0 || !finalCaptureIsFresh) {
         return failure('invalid-run-envelope', 2, ['run envelope could not be verified'], context);
     }
-    if (!environmentMatch) {
-        return failure('environment-unavailable', 4, ['environment attestation could not be verified'], context);
-    }
-    if (mode.kind === 'release') {
-        return failure('release-unimplemented', 3, ['release aggregation is not registered'], context);
-    }
-    return failure('executor-unimplemented', 3, ['trusted executor is not registered'], {
-        ...context,
-        targetId: target?.id,
-    });
+    return pendingResult;
 }
 
 async function isCliInvocation(entrypoint: string | undefined): Promise<boolean> {
@@ -481,6 +536,10 @@ if (await isCliInvocation(process.argv[1])) {
             observe: (_signal) => Promise.reject(new Error('environment attestor is not registered')),
         },
         manifest: { validate: validateEvidenceManifest },
+        executor: {
+            registry: productionExecutorRegistry,
+            supervise: (input) => superviseTrustedProcess(input),
+        },
     });
     process.stdout.write(canonical(output));
     process.exitCode = output.exitCode;

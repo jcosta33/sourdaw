@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { createEvidencePolicy } from '../evidenceContract';
+import { productionExecutorRegistry } from '../evidenceExecutor';
 import { validateEvidenceManifest } from '../evidenceManifest';
 import { createGitCheckout, runEvidenceGate, type EvidenceRunnerDependencies } from '../run-evidence-gate';
 
@@ -38,6 +39,10 @@ async function setup(overrides: Partial<EvidenceRunnerDependencies> = {}) {
         monotonicClock: { now: () => 0 },
         environment: { observe: (_signal: AbortSignal) => Promise.resolve(structuredClone(policy.environment)) },
         manifest: { validate: validateEvidenceManifest },
+        executor: {
+            registry: productionExecutorRegistry,
+            supervise: () => Promise.reject(new Error('unreachable empty registry')),
+        },
         ...overrides,
     };
 }
@@ -126,7 +131,75 @@ describe('runEvidenceGate', () => {
         const releaseResult = await runEvidenceGate(['--release', '--manifest', manifest], await setup());
         expect([suiteResult.code, releaseResult.code]).toEqual(['executor-unimplemented', 'release-unimplemented']);
     });
-
+    it('should execute only a snapshotted code-owned definition and defer publication', async () => {
+        const definition = {
+            executable: '/trusted/executor',
+            arguments: ['safe'],
+            cwd: '/trusted/cwd',
+            timeoutMs: 100,
+            combinedOutputByteCap: 1_000,
+        };
+        let invocation: unknown;
+        const dependencies = await setup({
+            executor: {
+                registry: { resolve: () => definition },
+                supervise: (input) => {
+                    invocation = input;
+                    definition.arguments[0] = 'mutated';
+                    return Promise.resolve({
+                        reason: { kind: 'exit', code: 0 },
+                        streamEvidence: {
+                            stdout: { byteCount: 0, sha256: '0'.repeat(64) },
+                            stderr: { byteCount: 0, sha256: '0'.repeat(64) },
+                            combinedByteCount: 0,
+                        },
+                    });
+                },
+            },
+        });
+        const published = await runEvidenceGate(gate, dependencies);
+        dependencies.executor.supervise = () =>
+            Promise.resolve({ reason: { kind: 'exit', code: 7 }, streamEvidence: null });
+        const failed = await runEvidenceGate(gate, dependencies);
+        expect([published.code, failed.code, failed.executorObservation?.classification]).toEqual([
+            'publication-unimplemented',
+            'executor-failed',
+            'nonzero-exit',
+        ]);
+        expect(invocation).toMatchObject({ executable: '/trusted/executor', arguments: ['safe'] });
+        expect(JSON.stringify([published, failed])).not.toContain('mutated');
+    });
+    it('should let post-execution checkout and freshness uncertainty dominate', async () => {
+        const run = async (mutation: 'head' | 'dirty' | 'stale') => {
+            let currentHead = head;
+            let dirty = false;
+            let now = new Date(captureTime);
+            const dependencies = await setup();
+            dependencies.checkout.head = () => Promise.resolve(currentHead);
+            dependencies.checkout.dirty = () => Promise.resolve(dirty);
+            dependencies.clock.now = () => now;
+            dependencies.executor = {
+                registry: {
+                    resolve: () => ({
+                        executable: '/x',
+                        arguments: [],
+                        cwd: '/x',
+                        timeoutMs: 1,
+                        combinedOutputByteCap: 1,
+                    }),
+                },
+                supervise: () => {
+                    currentHead = mutation === 'head' ? 'b'.repeat(40) : currentHead;
+                    dirty = mutation === 'dirty';
+                    now = mutation === 'stale' ? new Date(Date.parse(captureTime) + 60_001) : now;
+                    return Promise.resolve({ reason: { kind: 'exit', code: 0 }, streamEvidence: null });
+                },
+            };
+            return runEvidenceGate(gate, dependencies);
+        };
+        const results = await Promise.all([run('head'), run('dirty'), run('stale')]);
+        expect(results.map(({ code }) => code)).toEqual(['invalid-checkout', 'dirty-checkout', 'invalid-run-envelope']);
+    });
     it('should reject unknown, wrongly owned, and mechanically inapplicable targets', async () => {
         const argumentsByCase = [
             ['--task', 'TASK-SA-01-command-registry-and-outcomes', '--gate', 'AC-060', '--manifest', manifest],
