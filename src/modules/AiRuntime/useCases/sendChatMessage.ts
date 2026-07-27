@@ -33,24 +33,24 @@ import { parsePromptToActions } from './parsePromptToActions';
 
 export async function sendChatMessage(userText: string): Promise<void> {
     const backend = resolveBackend();
-
-    // Verify the appropriate engine is available
-    if (backend === 'none') {
-        throw createAiRuntimeError('No AI backend available. Configure an API key or use a WebGPU-capable browser.');
-    }
-    if (backend === 'native' && !isNativeEngineReady()) {
-        throw createAiRuntimeError('Native AI engine is not running. Load the AI engine first.');
-    }
-    if (backend === 'webllm' && !getLlmEngine()) {
-        throw createAiRuntimeError('AI Engine is not initialized or not supported on this device.');
-    }
-    if (backend === 'cloud' && !isCloudAvailable()) {
-        throw createAiRuntimeError('Cloud AI not configured. Set API key in settings.');
-    }
-
     const state = chatStore.value;
     if (!state || state.isGenerating) {
         return;
+    }
+
+    // Regular chat streams from one selected backend. Prompt mode delegates
+    // readiness and provider fallback to generateToolCalls.
+    if (backend === 'none') {
+        throw createAiRuntimeError('No AI backend available. Configure an API key or use a WebGPU-capable browser.');
+    }
+    if (state.chatMode !== 'prompt' && backend === 'native' && !isNativeEngineReady()) {
+        throw createAiRuntimeError('Native AI engine is not running. Load the AI engine first.');
+    }
+    if (state.chatMode !== 'prompt' && backend === 'webllm' && !getLlmEngine()) {
+        throw createAiRuntimeError('AI Engine is not initialized or not supported on this device.');
+    }
+    if (state.chatMode !== 'prompt' && backend === 'cloud' && !isCloudAvailable()) {
+        throw createAiRuntimeError('Cloud AI not configured. Set API key in settings.');
     }
 
     setChatGenerating(true);
@@ -64,6 +64,10 @@ export async function sendChatMessage(userText: string): Promise<void> {
         try {
             const context = getProjectContext();
             const result = await parsePromptToActions(userText, context, aborter.signal);
+
+            if (aborter.signal.aborted) {
+                return;
+            }
 
             if (result.actions.length > 0) {
                 // Manually inject messages for Fast-Path execution

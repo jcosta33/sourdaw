@@ -12,14 +12,16 @@ const mocks = vi.hoisted(() => ({
     executeAppAction: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     describeAction: vi.fn(() => 'Remove track'),
     generateGroupId: vi.fn(() => ({ groupId: 'group-1', groupLabel: 'delete drums' })),
-    parsePromptToActions: vi.fn<() => Promise<IntentResult>>(),
+    parsePromptToActions:
+        vi.fn<(prompt: string, context: ProjectContext, signal?: AbortSignal) => Promise<IntentResult>>(),
     getProjectContext: vi.fn<() => ProjectContext>(),
     notifyAiChange: vi.fn(),
     pushAiActionGroup: vi.fn(),
     setChatGenerating: vi.fn(),
     appendChatMessage: vi.fn(),
     updateChatMessage: vi.fn(),
-    setActiveAborter: vi.fn(),
+    setActiveAborter: vi.fn<(aborter: AbortController | null) => void>(),
+    nativeEngineReady: { value: true },
 }));
 
 vi.mock('../llmOrchestration/backendResolution/helpers', () => ({
@@ -27,7 +29,7 @@ vi.mock('../llmOrchestration/backendResolution/helpers', () => ({
 }));
 
 vi.mock('../../repositories/nativeEngine/isNativeEngineReady', () => ({
-    isNativeEngineReady: vi.fn(() => true),
+    isNativeEngineReady: vi.fn(() => mocks.nativeEngineReady.value),
 }));
 
 vi.mock('#/modules/Command/useCases', async (import_original) => ({
@@ -69,6 +71,7 @@ describe('sendChatMessage injectables', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.chatStoreValue.value = null;
+        mocks.nativeEngineReady.value = true;
         mocks.executeAppAction.mockResolvedValue(undefined);
         mocks.describeAction.mockReturnValue('Remove track');
         mocks.generateGroupId.mockReturnValue({ groupId: 'group-1', groupLabel: 'delete drums' });
@@ -124,6 +127,82 @@ describe('sendChatMessage injectables', () => {
                 pendingActionConfirmationStatus: 'proposed',
             })
         );
+    });
+
+    it('lets prompt mode use provider fallback when the preferred native engine is not ready', async () => {
+        mocks.nativeEngineReady.value = false;
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'prompt',
+        };
+
+        await sendChatMessage('mute the vocals');
+
+        expect(mocks.parsePromptToActions).toHaveBeenCalledWith(
+            'mute the vocals',
+            expect.any(Object),
+            expect.any(AbortSignal)
+        );
+    });
+
+    it('executes a validated provider action through executeAppAction', async () => {
+        const action = { type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true } } as const;
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'prompt',
+        };
+        mocks.parsePromptToActions.mockResolvedValue({
+            actions: [action],
+            rawText: 'mute the vocals',
+            requiresConfirmation: false,
+        });
+
+        await sendChatMessage('mute the vocals');
+
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+            action,
+            expect.objectContaining({
+                source: 'prompt',
+            })
+        );
+        expect(mocks.notifyAiChange).toHaveBeenCalledWith('Executed: mute the vocals', ['muteTrack']);
+    });
+
+    it('does not report a false command error when provider planning is stopped', async () => {
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'prompt',
+        };
+        mocks.parsePromptToActions.mockImplementation(
+            (_prompt, _context, signal) =>
+                new Promise((resolve) => {
+                    signal?.addEventListener(
+                        'abort',
+                        () => {
+                            resolve({ actions: [], rawText: '', requiresConfirmation: false });
+                        },
+                        { once: true }
+                    );
+                })
+        );
+
+        const pending = sendChatMessage('mute the vocals');
+        const activeAborter = mocks.setActiveAborter.mock.calls[0]?.[0];
+        if (!activeAborter) {
+            throw new Error('Expected prompt mode to expose an active aborter');
+        }
+        activeAborter.abort();
+        await pending;
+
+        expect(mocks.appendChatMessage).not.toHaveBeenCalled();
+        expect(mocks.updateChatMessage).not.toHaveBeenCalled();
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
     });
 
     it('should update the existing executing row when a prompt action is not dispatched', async () => {
