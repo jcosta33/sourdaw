@@ -12,7 +12,7 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationValueAtBeat, isRecordingAutomation, resolveAutoMatchValue } from '#/modules/Automation/useCases';
-import { setFermenterMappedParam } from '#/modules/Fermenter/useCases';
+import { updateFermenterMappedParamInEngine } from '#/modules/Fermenter/useCases';
 import { AUTOMATION_SLEW_ALPHA, slewStep } from '#/utils/automationSlew';
 
 import { applyAutomation } from '../applyAutomation';
@@ -86,7 +86,7 @@ vi.mock('#/modules/Fermenter/useCases', async (importOriginal) => {
     const mod = await importOriginal<typeof import('#/modules/Fermenter/useCases')>();
     return {
         ...mod,
-        setFermenterMappedParam: vi.fn(),
+        updateFermenterMappedParamInEngine: vi.fn(),
     };
 });
 
@@ -182,8 +182,8 @@ describe('applyAutomation', () => {
         // the camelCase→snake_case (`filterCutoff`→`cutoff`) DSP mapping that the
         // UI bridge applies, so the param reaches the engine instead of hitting
         // Rust's silent no-op arm.
-        expect(setFermenterMappedParam).toHaveBeenCalledTimes(1);
-        expect(setFermenterMappedParam).toHaveBeenCalledWith(
+        expect(updateFermenterMappedParamInEngine).toHaveBeenCalledTimes(1);
+        expect(updateFermenterMappedParamInEngine).toHaveBeenCalledWith(
             expect.objectContaining({ deviceId: 'device-f1', paramId: 'filterCutoff' })
         );
         // It must NOT forward the prefixed id straight to the raw engine call.
@@ -205,7 +205,7 @@ describe('applyAutomation', () => {
 
         expect(updateDeviceParam).toHaveBeenCalledTimes(1);
         expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'device-eq1', 'eq-low-gain', expect.any(Number));
-        expect(setFermenterMappedParam).not.toHaveBeenCalled();
+        expect(updateFermenterMappedParamInEngine).not.toHaveBeenCalled();
     });
 
     it.each<TargetCase>([
@@ -250,7 +250,7 @@ describe('applyAutomation', () => {
         applyAutomation(1);
 
         expect(updateDeviceParam).not.toHaveBeenCalled();
-        expect(setFermenterMappedParam).not.toHaveBeenCalled();
+        expect(updateFermenterMappedParamInEngine).not.toHaveBeenCalled();
     });
 
     describe('RT-5 compensation-aligned, sample-accurate gain/pan scheduling', () => {

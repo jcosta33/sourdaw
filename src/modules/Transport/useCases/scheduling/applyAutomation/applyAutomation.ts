@@ -10,7 +10,7 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationValueAtBeat, isRecordingAutomation, resolveAutoMatchValue } from '#/modules/Automation/useCases';
-import { setFermenterMappedParam } from '#/modules/Fermenter/useCases';
+import { updateFermenterMappedParamInEngine } from '#/modules/Fermenter/useCases';
 import { dbToGain } from '#/utils/audioLevelLaw';
 import {
     getDeviceAutomationParameterId,
@@ -191,7 +191,7 @@ export function applyAutomation(currentBeat: number): Set<string> {
         // places the compensated audio on — and ramps a-rate instead of stepping
         // at the tick grid. Device params (below) and MIDI-FX params reach their
         // DSP through worklet MessagePort writes (updateDeviceParam /
-        // setFermenterMappedParam / updateMidiFxParam), which apply on the next
+        // updateFermenterMappedParamInEngine / updateMidiFxParam), which apply on the next
         // render block and cannot be JS-scheduled a-rate here — they keep the
         // tick-grid apply + exponential slew (with the #746 discontinuity snap).
         // Offline export already schedules every family a-rate
@@ -257,7 +257,7 @@ export function applyAutomation(currentBeat: number): Set<string> {
                         // the same translation the UI bridge applies. Route through
                         // the public mapped use-case so automation and the UI share
                         // one mapping path instead of hitting Rust's silent no-op arm.
-                        setFermenterMappedParam({ deviceId: device.id, paramId, value: smoothed });
+                        updateFermenterMappedParamInEngine({ deviceId: device.id, paramId, value: smoothed });
                     } else {
                         updateDeviceParam(targetOwner.trackId, targetOwner.deviceId, paramId, smoothed);
                     }
