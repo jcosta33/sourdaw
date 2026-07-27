@@ -25,10 +25,6 @@ ADR numbers 0001 and 0002 are reserved and must not be reused.
 | [0009](0009-toaster-pattern-morph-determinism.md) | Toaster pattern-morph is deterministic at a 0.5 activation threshold |
 | [0010](0010-product-restraint-principles.md)      | Product restraint principles (candidate canon) — **status: proposed**, pending product-owner ratification |
 | [0011](0011-ddd-module-boundary-redraw.md)        | DDD module boundary redraw — decompose 7 god-modules into a 54 bounded-context set |
-| [0012](0012-agent-command-registry-packaging.md) | Agent command registry packaging and authoritative write boundary |
-| [0013](0013-agent-pure-transactions-and-sagas.md) | Agent pure transactions and external-effect sagas |
-| [0014](0014-agent-provider-credentials-and-endpoint-admission.md) | Agent provider credentials and endpoint admission |
-| [0015](0015-agent-run-retention-policy.md) | Agent run retention policy |
 
 Genuinely open decisions that are not yet ADRs live in the
 [open-decision docket](open-decision-docket.md).
