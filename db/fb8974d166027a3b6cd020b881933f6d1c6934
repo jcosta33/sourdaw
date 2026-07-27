@@ -1,0 +1,19 @@
+tests/e2e/myceliumEvidenceReceipt.ts
+  s_ac9b259eab20ba::t_d00192eeeb7cab 6,138
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "dbfb8974d166027a3b6cd020b881933f6d1c6934",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
