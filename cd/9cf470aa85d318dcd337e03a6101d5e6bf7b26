@@ -1,0 +1,27 @@
+scripts/agent-campaign/evidenceResultBinding.ts
+  s_bc88af7d3b054c::t_b8c25761261743 15,17,19,128
+  s_bc88af7d3b054c::t_d08cc5a6398ccb 22-23,36,119-123,148
+  s_bc88af7d3b054c::t_e670ed291c7372 135-139
+  s_bc88af7d3b054c::t_75157aa3a71235 1-14,16,18,20-21,24-35,37-118,124-127,129-134,140-147,149-169
+scripts/agent-campaign/__tests__/evidenceResultBinding.spec.ts
+  s_bc88af7d3b054c::t_392ea1ea2c3d18 56,60-74,113,116-124
+  s_bc88af7d3b054c::t_3d5b21f5e024f8 3,20,28,53
+  s_bc88af7d3b054c::t_086ef76c889d7a 91-92,94-99,154-155,167-169,173-174
+  s_bc88af7d3b054c::t_015d68a73ef711 1-2,4-19,21-27,29-52,54-55,57-59,75-90,93,100-112,114-115,125-153,156-166,170-172,175-180
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "cd9cf470aa85d318dcd337e03a6101d5e6bf7b26",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": null
+    }
+  }
+}
