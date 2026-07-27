@@ -1,0 +1,36 @@
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_ac9b259eab20ba::t_2930b9d16bfda8 354
+  s_ac9b259eab20ba::t_4a0dc2272432e3 25,331-333,336-345,347,352-353,355-378,481-482,484
+src/utils/toasterNoteProjection.ts
+  s_ac9b259eab20ba::t_4a0dc2272432e3 1-23
+src/modules/AudioEngine/useCases/offlineRender/__tests__/schedulePendingSuspends.spec.ts
+  s_ac9b259eab20ba::t_4a0dc2272432e3 61-87
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts
+  s_ac9b259eab20ba::t_69c0dbe6e7955f 425-463
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_ac9b259eab20ba::t_69c0dbe6e7955f 409-436
+src/utils/__tests__/toasterNoteProjection.spec.ts
+  s_ac9b259eab20ba::t_4a0dc2272432e3 1-25
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_ac9b259eab20ba::t_4a0dc2272432e3 427-435,442,451
+  s_ac9b259eab20ba::t_4a4028f118b705 12
+  s_ac9b259eab20ba::t_acc4cb268d3013 423-426
+src/modules/AudioEngine/useCases/offlineRender/schedulePendingSuspends.ts
+  s_ac9b259eab20ba::t_4a0dc2272432e3 1-2,34-37,44-47
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "3926eca38b89fa596bd6b698e794da5a30edee26",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
