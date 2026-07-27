@@ -12,7 +12,7 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationValueAtBeat, isRecordingAutomation } from '#/modules/Automation/useCases';
-import { midiStore } from '#/modules/MIDI/stores';
+import { midiStore, type MidiStoreState } from '#/modules/MIDI/stores';
 import {
     getChordAtBeat,
     projectClipMidiEvents,
@@ -78,6 +78,83 @@ type ScheduledMpeParams = {
     pitchBend?: number;
     pitchBendRangeSemitones?: number;
 };
+
+type ScheduledMidiNote = MidiStoreState['notesByClipId'][string][number];
+type ScheduledMidiNoteIndex = {
+    maxDurationBeats: number;
+    sortedNotes: ScheduledMidiNote[];
+};
+type SelectMidiNotesForSchedulerWindowInput = {
+    notes: ScheduledMidiNote[];
+    iterationStartBeat: number;
+    midiOffsetBeats: number;
+    fromBeat: number;
+    toBeat: number;
+    lastScheduledBeat: number;
+};
+
+// Clip and sequencer groove each move a note by at most 0.25 beats, so one beat
+// is twice their combined legal displacement and cannot discard a note that
+// either groove stage could move into the current scheduler grain.
+const MIDI_NOTE_GROOVE_LOOKAROUND_BEATS = 1;
+// MIDI writes replace note arrays rather than mutating them, so array identity
+// invalidates this cache whenever project truth changes.
+const scheduledMidiNoteIndexes = new WeakMap<ScheduledMidiNote[], ScheduledMidiNoteIndex>();
+
+function getScheduledMidiNoteIndex(notes: ScheduledMidiNote[]): ScheduledMidiNoteIndex {
+    const cached = scheduledMidiNoteIndexes.get(notes);
+    if (cached) {
+        return cached;
+    }
+
+    const indexedNotes = notes.map((note, index) => ({ index, note }));
+    indexedNotes.sort((left, right) => left.note.startBeat - right.note.startBeat || left.index - right.index);
+    const created = {
+        maxDurationBeats: notes.reduce((maximum, note) => Math.max(maximum, note.duration), 0),
+        sortedNotes: indexedNotes.map(({ note }) => note),
+    };
+    scheduledMidiNoteIndexes.set(notes, created);
+    return created;
+}
+
+function lowerBoundMidiNoteStart(notes: readonly ScheduledMidiNote[], startBeat: number): number {
+    let low = 0;
+    let high = notes.length;
+    while (low < high) {
+        const middle = low + Math.floor((high - low) / 2);
+        if (notes[middle]!.startBeat < startBeat) {
+            low = middle + 1;
+        } else {
+            high = middle;
+        }
+    }
+    return low;
+}
+
+function selectMidiNotesForSchedulerWindow({
+    notes,
+    iterationStartBeat,
+    midiOffsetBeats,
+    fromBeat,
+    toBeat,
+    lastScheduledBeat,
+}: SelectMidiNotesForSchedulerWindowInput): readonly ScheduledMidiNote[] {
+    const { maxDurationBeats, sortedNotes } = getScheduledMidiNoteIndex(notes);
+    const schedulerStartBeat = Math.max(fromBeat, lastScheduledBeat);
+    const schedulesClipBoundary =
+        iterationStartBeat >= fromBeat && iterationStartBeat < toBeat && iterationStartBeat > lastScheduledBeat;
+    const leadingIntervalLookbehindBeats = schedulesClipBoundary ? maxDurationBeats : 0;
+    const sourceStartBeat =
+        schedulerStartBeat -
+        iterationStartBeat +
+        midiOffsetBeats -
+        MIDI_NOTE_GROOVE_LOOKAROUND_BEATS -
+        leadingIntervalLookbehindBeats;
+    const sourceEndBeat = toBeat - iterationStartBeat + midiOffsetBeats + MIDI_NOTE_GROOVE_LOOKAROUND_BEATS;
+    const startIndex = lowerBoundMidiNoteStart(sortedNotes, sourceStartBeat);
+    const endIndex = lowerBoundMidiNoteStart(sortedNotes, sourceEndBeat);
+    return sortedNotes.slice(startIndex, endIndex);
+}
 
 /**
  * The built-in synth's MPE params for a scheduled note, or `undefined` when the
@@ -405,7 +482,19 @@ export async function scheduleMidiNotes(
                 const absoluteOccurrenceIndex = sourceOccurrenceOffset + iter;
                 const iterOffset = iter * loopLen;
                 const yeastRouteId = `live-yeast:${track.id}:${clip.id}:${absoluteOccurrenceIndex}`;
-                const iterNotes = yeastDevice ? (liveYeastNotesByRoute.get(yeastRouteId) ?? []) : notes;
+                let iterNotes: readonly LiveYeastNote[] = notes;
+                if (yeastDevice) {
+                    iterNotes = liveYeastNotesByRoute.get(yeastRouteId) ?? [];
+                } else if (!clip.loopEnabled) {
+                    iterNotes = selectMidiNotesForSchedulerWindow({
+                        notes,
+                        iterationStartBeat: clip.startBeat + iterOffset,
+                        midiOffsetBeats: clipMidiOffset,
+                        fromBeat,
+                        toBeat,
+                        lastScheduledBeat,
+                    });
+                }
                 const notesAreAbsolute = yeastDevice !== undefined;
 
                 for (const note of iterNotes) {
@@ -462,7 +551,7 @@ export async function scheduleMidiNotes(
                         const noteStartBeat = unswungStartBeat + swingOffsetBeats;
                         let pitch = note.pitch;
                         if (track.followChordTrack && !drumKitDef && !drumKit && !toasterRoute) {
-                            const refChord = getChordAtBeat(clip.startBeat - clipMidiOffset);
+                            const refChord = getChordAtBeat(clip.startBeat);
                             const targetChord = getChordAtBeat(noteStartBeat);
                             pitch = transposeForChordTrack(pitch, refChord, targetChord);
                         }

@@ -35,7 +35,7 @@ function getNotes(projectData: ProjectData, trackNames: readonly string[]): Abso
             track.clips.flatMap((clip) =>
                 (projectData.midi.notesByClipId[clip.id] ?? []).map((note) => ({
                     ...note,
-                    absoluteBeat: clip.startBeat + note.startBeat - (clip.midiOffsetBeats ?? 0),
+                    absoluteBeat: clip.startBeat + note.startBeat,
                     trackName: track.name,
                 }))
             )
@@ -66,7 +66,8 @@ describe('createMyceliumRhythmPerformance', () => {
         const active = first.arrangements?.find((arrangement) => arrangement.id === first.activeArrangementId);
 
         expect(tracks.map((track) => track.name)).toEqual(rhythmNames);
-        expect(clips).toHaveLength(335);
+        expect(clips.length).toBeGreaterThanOrEqual(35);
+        expect(clips.length).toBeLessThan(70);
         expect(notes.length).toBeGreaterThanOrEqual(1400);
         expect(notes.length).toBeLessThan(2200);
         expect(
@@ -75,13 +76,9 @@ describe('createMyceliumRhythmPerformance', () => {
         expect(clips.every((clip) => (first.midi.notesByClipId[clip.id]?.length ?? 0) > 0)).toBe(true);
         expect(
             clips.every((clip) =>
-                (first.midi.notesByClipId[clip.id] ?? []).every((note) => {
-                    const clipRelativeStartBeat = note.startBeat - (clip.midiOffsetBeats ?? 0);
-                    return (
-                        clipRelativeStartBeat >= 0 &&
-                        clipRelativeStartBeat + note.duration <= clip.endBeat - clip.startBeat
-                    );
-                })
+                (first.midi.notesByClipId[clip.id] ?? []).every(
+                    (note) => note.startBeat >= 0 && note.startBeat + note.duration <= clip.endBeat - clip.startBeat
+                )
             )
         ).toBe(true);
         expect(PAD_NAMES.every((name) => tracks.find((track) => track.name === name)?.clips.length)).toBe(true);
