@@ -133,6 +133,78 @@ function createNoChangePreparation() {
     };
 }
 
+function readOwnerStateTransition(plan: unknown): { expected: string; replacement: string } | null {
+    if (plan === null || typeof plan !== 'object') {
+        return null;
+    }
+    const expectedDescriptor = Object.getOwnPropertyDescriptor(plan, 'expected');
+    const replacementDescriptor = Object.getOwnPropertyDescriptor(plan, 'replacement');
+    if (!expectedDescriptor || !replacementDescriptor) {
+        return null;
+    }
+    const expected: unknown = expectedDescriptor.value;
+    const replacement: unknown = replacementDescriptor.value;
+    if (expected === null || typeof expected !== 'object' || replacement === null || typeof replacement !== 'object') {
+        return null;
+    }
+    const expectedState: unknown = Object.getOwnPropertyDescriptor(expected, 'state')?.value;
+    const replacementState: unknown = Object.getOwnPropertyDescriptor(replacement, 'state')?.value;
+    if (typeof expectedState !== 'string' || typeof replacementState !== 'string') {
+        return null;
+    }
+    return { expected: expectedState, replacement: replacementState };
+}
+
+function createStatefulOwnerPreparer(input: { failureMode: 'return-false' | 'throw'; failRecovery?: boolean }): {
+    prepare: RestorePreparer;
+    getState: () => string;
+    publicationFailure: Error;
+} {
+    let state = 'post';
+    let forwardFailurePending = true;
+    const publicationFailure = new Error('owner publication failed after mutation');
+    const prepare = vi.fn<RestorePreparer>((plan) => {
+        const transition = readOwnerStateTransition(plan);
+        if (!transition || transition.expected !== state || transition.expected === transition.replacement) {
+            return {
+                status: 'rejected',
+                hasChanges: false,
+                apply: () => false,
+                revert: () => false,
+            };
+        }
+
+        return {
+            status: 'ready',
+            hasChanges: true,
+            apply: vi.fn(() => {
+                mocks.events.push('apply:stateful-owner');
+                expect(mocks.batchDepth).toBe(1);
+                state = transition.replacement;
+                if (forwardFailurePending && transition.expected === 'post') {
+                    forwardFailurePending = false;
+                    if (input.failureMode === 'throw') {
+                        throw publicationFailure;
+                    }
+                    return false;
+                }
+                if (input.failRecovery && transition.expected === 'pre') {
+                    state = 'corrupt';
+                    return false;
+                }
+                return true;
+            }),
+            revert: vi.fn(() => false),
+        };
+    });
+
+    return {
+        prepare,
+        getState: () => state,
+        publicationFailure,
+    };
+}
+
 function installDependencies(input: InstallDependenciesInput = {}) {
     const prepareAutomation = vi.fn<RestorePreparer>(
         input.prepareAutomation ??
@@ -510,8 +582,8 @@ describe('prepareTimeOperationStateRestore', () => {
 
         expect(staleReference.apply()).toBe(false);
         expect(dependencies.prepareMidi).toHaveBeenCalledTimes(1);
-        expect(mocks.events).toContain('apply:midi');
-        expect(mocks.events).toContain('revert:midi');
+        expect(mocks.events).not.toContain('apply:midi');
+        expect(mocks.events).not.toContain('revert:midi');
         expect(mocks.writeDepths).toEqual([]);
 
         setCurrentState(expectedTrackState, markerState);
@@ -520,10 +592,39 @@ describe('prepareTimeOperationStateRestore', () => {
         expectedTrackState.tracks[0]!.gain = 9;
 
         expect(mutated.apply()).toBe(false);
-        expect(mocks.events).toContain('apply:midi');
-        expect(mocks.events).toContain('revert:midi');
+        expect(mocks.events).not.toContain('apply:midi');
+        expect(mocks.events).not.toContain('revert:midi');
         expect(mocks.writeDepths).toEqual([]);
     });
+
+    it.each(['track', 'marker'] as const)(
+        'runs a zero-write local preflight when only an owner changes and the %s reference becomes stale',
+        (staleAuthority) => {
+            const trackState = createTrackState(2);
+            const markerState = createMarkerState(8);
+            setCurrentState(trackState, markerState);
+            installDependencies();
+            const transaction = prepareTimeOperationStateRestore(
+                createPlan({
+                    scope: 'global',
+                    expectedTrackState: trackState,
+                    replacementTrackState: trackState,
+                    expectedMarkerState: markerState,
+                    replacementMarkerState: markerState,
+                    automation: OWNER_PLAN,
+                })
+            );
+            if (staleAuthority === 'track') {
+                mocks.trackState.value = structuredClone(trackState);
+            } else {
+                mocks.markerState.value = structuredClone(markerState);
+            }
+
+            expect(transaction.apply()).toBe(false);
+            expect(mocks.events).not.toContain('apply:automation');
+            expect(mocks.writeDepths).toEqual([]);
+        }
+    );
 
     it('detaches the accepted plan before caller mutation', () => {
         const expectedTrackState = createTrackState(2);
@@ -572,6 +673,62 @@ describe('prepareTimeOperationStateRestore', () => {
             'revert:automation',
         ]);
         expect(mocks.events.at(-1)).toBe('write:track');
+        expect(mocks.trackState.value).toEqual(expectedTrackState);
+    });
+
+    it.each(['return-false', 'throw'] as const)(
+        'restores the failing owner after it mutates and reports failure by %s',
+        (failureMode) => {
+            const expectedTrackState = createTrackState(2);
+            const replacementTrackState = createTrackState(1);
+            const markerState = createMarkerState(8);
+            const owner = createStatefulOwnerPreparer({ failureMode });
+            setCurrentState(expectedTrackState, markerState);
+            installDependencies({ prepareAutomation: owner.prepare });
+            const transaction = prepareTimeOperationStateRestore(
+                createPlan({
+                    scope: 'global',
+                    expectedTrackState,
+                    replacementTrackState,
+                    expectedMarkerState: markerState,
+                    replacementMarkerState: markerState,
+                    automation: OWNER_PLAN,
+                })
+            );
+
+            if (failureMode === 'throw') {
+                expect(() => transaction.apply()).toThrow(owner.publicationFailure);
+            } else {
+                expect(transaction.apply()).toBe(false);
+            }
+            expect(owner.getState()).toBe('post');
+            expect(mocks.trackState.value).toEqual(expectedTrackState);
+        }
+    );
+
+    it('reports unrecovered state when the failing owner cannot restore its captured value', () => {
+        const expectedTrackState = createTrackState(2);
+        const replacementTrackState = createTrackState(1);
+        const markerState = createMarkerState(8);
+        const owner = createStatefulOwnerPreparer({
+            failureMode: 'return-false',
+            failRecovery: true,
+        });
+        setCurrentState(expectedTrackState, markerState);
+        installDependencies({ prepareAutomation: owner.prepare });
+        const transaction = prepareTimeOperationStateRestore(
+            createPlan({
+                scope: 'global',
+                expectedTrackState,
+                replacementTrackState,
+                expectedMarkerState: markerState,
+                replacementMarkerState: markerState,
+                automation: OWNER_PLAN,
+            })
+        );
+
+        expect(() => transaction.apply()).toThrow(UnrecoveredTimeOperationStateError);
+        expect(owner.getState()).toBe('corrupt');
         expect(mocks.trackState.value).toEqual(expectedTrackState);
     });
 

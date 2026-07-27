@@ -12,6 +12,7 @@ type PreparedHandle = {
     hasChanges: boolean;
     apply: () => boolean;
     revert: () => boolean;
+    recoverAfterFailedApply: () => unknown[];
 };
 
 type LocalStatePair = {
@@ -51,6 +52,7 @@ type PreparedCombinedState = {
     plan: CombinedStateRestorePlan;
     handles: readonly PreparedHandle[];
     hasChanges: boolean;
+    preflight: () => boolean;
 };
 
 type TransactionPhase = 'prepared' | 'publishing' | 'applied' | 'closed';
@@ -505,11 +507,67 @@ function createLocalHandle(prepared: PreparedLocalState): PreparedHandle {
         hasChanges,
         apply,
         revert,
+        recoverAfterFailedApply: () => [],
     };
+}
+
+function prepareChangedOwner(
+    plan: Record<string, unknown>,
+    prepare: (plan: unknown) => ReturnType<TimeOperationDependencies['prepareAutomationTimeStateRestore']>
+): ReturnType<TimeOperationDependencies['prepareAutomationTimeStateRestore']> | null {
+    try {
+        const preparation = prepare(plan);
+        if (preparation.status !== 'ready' || !preparation.hasChanges) {
+            return null;
+        }
+        return preparation;
+    } catch {
+        return null;
+    }
+}
+
+function recoverOwnerAfterFailedApply(input: {
+    name: string;
+    plan: Record<string, unknown>;
+    prepare: (plan: unknown) => ReturnType<TimeOperationDependencies['prepareAutomationTimeStateRestore']>;
+}): unknown[] {
+    const expectedStatePreparation = prepareChangedOwner(input.plan, input.prepare);
+    if (expectedStatePreparation) {
+        return [];
+    }
+
+    const reversedPlan = reverseOwnerPlan(input.plan);
+    if (!reversedPlan) {
+        return [new Error(`${input.name} recovery could not reverse its state plan`)];
+    }
+    const recovery = prepareChangedOwner(reversedPlan, input.prepare);
+    if (!recovery) {
+        return [new Error(`${input.name} publication left an unexpected state`)];
+    }
+
+    let recoveryFailure: unknown = null;
+    try {
+        if (!recovery.apply()) {
+            recoveryFailure = new Error(`${input.name} recovery publication returned false`);
+        }
+    } catch (error) {
+        recoveryFailure = error;
+    }
+
+    const restoredStatePreparation = prepareChangedOwner(input.plan, input.prepare);
+    if (restoredStatePreparation) {
+        return [];
+    }
+    if (recoveryFailure === null) {
+        return [new Error(`${input.name} recovery did not restore its captured state`)];
+    }
+    return [recoveryFailure, new Error(`${input.name} recovery did not restore its captured state`)];
 }
 
 function toNamedHandle(
     name: string,
+    plan: Record<string, unknown>,
+    prepare: (plan: unknown) => ReturnType<TimeOperationDependencies['prepareAutomationTimeStateRestore']>,
     preparation: ReturnType<TimeOperationDependencies['prepareAutomationTimeStateRestore']>
 ): PreparedHandle {
     return {
@@ -517,6 +575,7 @@ function toNamedHandle(
         hasChanges: preparation.hasChanges,
         apply: preparation.apply,
         revert: preparation.revert,
+        recoverAfterFailedApply: () => recoverOwnerAfterFailedApply({ name, plan, prepare }),
     };
 }
 
@@ -533,7 +592,33 @@ function prepareOwner(
     if (preparation.status !== 'ready' || !preparation.hasChanges) {
         return false;
     }
-    return toNamedHandle(name, preparation);
+    return toNamedHandle(name, plan, prepare, preparation);
+}
+
+function localStateIsStillPrepared(prepared: PreparedLocalState): boolean {
+    if (
+        !trackMatches(getTrackState(), prepared.capturedTrackState, prepared.capturedTrackSnapshot) ||
+        !timeOperationStateCodec.trackStateMatchesSnapshot(
+            prepared.replacementTrackState,
+            prepared.replacementTrackSnapshot
+        )
+    ) {
+        return false;
+    }
+
+    if (prepared.capturedMarkerState === null && prepared.replacementMarkerState === null) {
+        return true;
+    }
+    if (prepared.capturedMarkerState === null || prepared.replacementMarkerState === null) {
+        return false;
+    }
+    return (
+        markerMatches(markerStore.value, prepared.capturedMarkerState, prepared.capturedMarkerSnapshot) &&
+        timeOperationStateCodec.markerStateMatchesSnapshot(
+            prepared.replacementMarkerState,
+            prepared.replacementMarkerSnapshot
+        )
+    );
 }
 
 function prepareCombinedStateUnchecked(value: unknown, deps: TimeOperationDependencies): PreparedCombinedState | null {
@@ -587,6 +672,7 @@ function prepareCombinedStateUnchecked(value: unknown, deps: TimeOperationDepend
         plan,
         handles,
         hasChanges: handles.length > 0,
+        preflight: () => localStateIsStillPrepared(localState),
     };
 }
 
@@ -620,15 +706,29 @@ function compensateAppliedHandles(applied: readonly PreparedHandle[]): unknown[]
     return failures;
 }
 
-function publishHandles(handles: readonly PreparedHandle[]): boolean {
+function collectFailedHandleRecoveryFailures(handle: PreparedHandle): unknown[] {
+    try {
+        return handle.recoverAfterFailedApply();
+    } catch (error) {
+        return [error];
+    }
+}
+
+function publishHandles(handles: readonly PreparedHandle[], preflight: () => boolean): boolean {
     return batchStoreUpdates(() => {
+        if (!preflight()) {
+            return false;
+        }
         const applied: PreparedHandle[] = [];
         for (const handle of handles) {
             let appliedSuccessfully: boolean;
             try {
                 appliedSuccessfully = handle.apply();
             } catch (error) {
-                const compensationFailures = compensateAppliedHandles(applied);
+                const compensationFailures = [
+                    ...collectFailedHandleRecoveryFailures(handle),
+                    ...compensateAppliedHandles(applied),
+                ];
                 if (error instanceof UnrecoveredTimeOperationStateError) {
                     if (compensationFailures.length === 0) {
                         throw error;
@@ -646,7 +746,10 @@ function publishHandles(handles: readonly PreparedHandle[]): boolean {
 
             if (!appliedSuccessfully) {
                 const failure = new Error(`${handle.name} publication returned false`);
-                const compensationFailures = compensateAppliedHandles(applied);
+                const compensationFailures = [
+                    ...collectFailedHandleRecoveryFailures(handle),
+                    ...compensateAppliedHandles(applied),
+                ];
                 if (compensationFailures.length > 0) {
                     throw new UnrecoveredTimeOperationStateError(failure, compensationFailures);
                 }
@@ -739,7 +842,7 @@ export function prepareTimeOperationStateRestore(plan: unknown) {
 
         phase = 'publishing';
         try {
-            const published = publishHandles(readyState.handles);
+            const published = publishHandles(readyState.handles, readyState.preflight);
             if (!published) {
                 phase = 'closed';
                 return false;
@@ -774,7 +877,7 @@ export function prepareTimeOperationStateRestore(plan: unknown) {
         }
 
         try {
-            const published = publishHandles(reversed.handles);
+            const published = publishHandles(reversed.handles, reversed.preflight);
             if (!published) {
                 phase = 'closed';
                 return false;
