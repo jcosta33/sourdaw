@@ -84,7 +84,8 @@ describe('createMyceliumTopology', () => {
         expect(isHydratableProjectData(projectData)).toBe(true);
     });
     it('builds the 16-child Toaster kit and supported device matrix', () => {
-        const tracks = createMyceliumAscendantBlueprint().projectData.arrangement.tracks;
+        const { projectData } = createMyceliumAscendantBlueprint();
+        const tracks = projectData.arrangement.tracks;
         const pulse = tracks.find((track) => track.name === 'Pulse Engine');
         const pads = tracks.filter((track) => track.parentId === pulse?.id);
         const deviceTypes = new Set(tracks.flatMap((track) => track.devices.map((device) => device.type)));
@@ -118,6 +119,36 @@ describe('createMyceliumTopology', () => {
         }
         expect(tracks.find((track) => track.name === 'Acid Tendril')?.devices[0]?.parameterValues.filterModel).toBe(5);
         expect(tracks.find((track) => track.name === 'Fractal Riser')?.devices[0]?.parameterValues.filterModel).toBe(5);
+        const bacteriaDevices = tracks
+            .flatMap((track) => track.devices.map((device) => ({ device, trackName: track.name })))
+            .filter(({ device }) => device.type === 'bacteria');
+        expect(
+            bacteriaDevices.map(({ device, trackName }) => ({
+                trackName,
+                mix: device.parameterValues.mix,
+                distortion: device.parameterValues.band0_distortionEnabled,
+                filter: device.parameterValues.band0_filterEnabled,
+                frequencyShift: device.parameterValues.band0_freqShiftEnabled,
+                lofi: device.parameterValues.band0_lofiEnabled,
+            }))
+        ).toEqual([
+            {
+                trackName: 'Acid Tendril',
+                mix: 0.45,
+                distortion: 1,
+                filter: 1,
+                frequencyShift: 1,
+                lofi: undefined,
+            },
+            {
+                trackName: 'Mutation Return',
+                mix: 1,
+                distortion: 1,
+                filter: undefined,
+                frequencyShift: undefined,
+                lofi: 1,
+            },
+        ]);
         expect(tracks.find((track) => track.name === 'Master')?.devices.map((device) => device.type)).toEqual([
             'builtin-eq',
             'gluten',
@@ -152,6 +183,17 @@ describe('createMyceliumTopology', () => {
                 'builtin-compressor',
             ])
         );
+        const yeastProcessors = projectData.yeast?.processors ?? [];
+        expect(yeastProcessors).toHaveLength(1);
+        expect(yeastProcessors[0]?.id).toMatch(UUID_PATTERN);
+        expect(yeastProcessors.map(({ id: _id, ...processor }) => processor)).toEqual([
+            {
+                type: 'velocity',
+                name: 'Triplet Helix Dynamics',
+                bypassed: false,
+                params: { mode: 2, compress_amount: 0.72 },
+            },
+        ]);
     });
     it('creates a closed routing graph with four returns and one kick sidechain', () => {
         const { projectData } = createMyceliumAscendantBlueprint();

@@ -10,6 +10,7 @@ export type MyceliumIdNamespace =
     | 'section'
     | 'chord'
     | 'sidechain'
+    | 'yeast-processor'
     | 'arrangement'
     | 'alternative'
     | 'tempo'

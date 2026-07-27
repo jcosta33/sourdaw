@@ -178,6 +178,45 @@ function createDeviceParams(type: string, kind: ProjectTrackKind, trackName: str
     if (type === 'builtin-delay' && kind !== 'bus') {
         return { 'delay-mix': 0.3, 'delay-feedback': 0.4 };
     }
+    if (type === 'bacteria' && trackName === 'Acid Tendril') {
+        return {
+            mix: 0.45,
+            inputGain: 0,
+            outputGain: 0,
+            bypass: 0,
+            bandCount: 1,
+            band0_enabled: 1,
+            band0_oversampling: 2,
+            band0_distortionEnabled: 1,
+            band0_distortionMode: 5,
+            band0_drive: 28,
+            band0_asymmetry: 0.15,
+            band0_filterEnabled: 1,
+            band0_filterMode: 0,
+            band0_filterCutoff: 6_200,
+            band0_filterResonance: 0.35,
+            band0_freqShiftEnabled: 1,
+            band0_freqShiftHz: 14,
+            band0_freqShiftMix: 0.18,
+        };
+    }
+    if (type === 'bacteria' && trackName === 'Mutation Return') {
+        return {
+            mix: 1,
+            inputGain: -2,
+            outputGain: -1,
+            bypass: 0,
+            bandCount: 1,
+            band0_enabled: 1,
+            band0_oversampling: 2,
+            band0_distortionEnabled: 1,
+            band0_distortionMode: 3,
+            band0_drive: 40,
+            band0_lofiEnabled: 1,
+            band0_lofiAmount: 35,
+            band0_codecArtifact: 0.22,
+        };
+    }
     if (kind !== 'bus') {
         return {};
     }
