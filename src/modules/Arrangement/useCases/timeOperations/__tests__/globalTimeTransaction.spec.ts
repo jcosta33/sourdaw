@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import {
+    getAutomationStoreState,
+    prepareAutomationTimeOperation,
+    prepareAutomationTimeStateRestore,
+    restoreAutomationSnapshot,
+} from '#/modules/Automation/useCases';
+
 const mocks = vi.hoisted(() => {
     const trackState = { value: null as unknown };
     const markerState = { value: null as unknown };
@@ -61,6 +68,7 @@ vi.mock('../../../stores/markerStore', async (importOriginal) => {
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { executeGlobalTimeOperation, UnrecoveredGlobalTimeStateError } from '../executeGlobalTimeOperation';
+import { prepareTimeOperationStateRestore } from '../prepareTimeOperationStateRestore';
 import { setTimeOperationDependencies } from '../timeOperationDependencies';
 import { timeOperationStateCodec } from '../timeOperationStateCodec';
 
@@ -211,6 +219,7 @@ describe('executeGlobalTimeOperation', () => {
         mocks.writeDepths.length = 0;
         mocks.batchDepth = 0;
         setStates();
+        restoreAutomationSnapshot({ lanes: [] });
         setTimeOperationDependencies(null);
     });
 
@@ -340,6 +349,73 @@ describe('executeGlobalTimeOperation', () => {
         expect(replacementMarkers).toEqual(capturedMarkerState);
         expect(Object.is(expectedTrackState?.tracks[0]?.pan, -0)).toBe(true);
         expect(Object.is(replacementTrackState?.tracks[0]?.pan, -0)).toBe(true);
+    });
+
+    it('round trips and restores exact negative zero from a real Automation owner plan', () => {
+        setStates({
+            tracks: [createTrack('track-1', 'audio', [])],
+        });
+        restoreAutomationSnapshot({
+            lanes: [
+                {
+                    id: 'lane-negative-zero',
+                    trackId: 'track-1',
+                    parameterId: 'gain',
+                    parameterName: 'Gain',
+                    points: [
+                        {
+                            beat: 4,
+                            value: -0,
+                            curve: 'linear',
+                            tension: 0,
+                        },
+                    ],
+                    objects: [],
+                    visible: true,
+                    enabled: true,
+                    collapsed: false,
+                    minValue: 0,
+                    maxValue: 1,
+                },
+            ],
+        });
+        const transport = createHandle('transport', false);
+        const midi = createHandle('midi', false);
+        setTimeOperationDependencies({
+            prepareAutomationTimeOperation,
+            prepareAutomationTimeStateRestore,
+            prepareTimelineMapTimeOperation: vi.fn(() => transport),
+            prepareTimelineMapStateRestore: vi.fn(() => createHandle('transport-restore', false)),
+            prepareMidiGlobalTimeTransaction: vi.fn(() => midi),
+            prepareMidiTimeStateRestore: vi.fn(() => createHandle('midi-restore', false)),
+        });
+
+        const result = executeGlobalTimeOperation({
+            operation: { type: 'insert', atBeat: 4, durationBeats: 2 },
+        });
+
+        expect(result.status).toBe('applied');
+        if (result.status !== 'applied') {
+            throw new Error('Expected applied global insert');
+        }
+        const appliedPoint = getAutomationStoreState()?.lanes[0]?.points[0];
+        expect(appliedPoint?.beat).toBe(6);
+        expect(Object.is(appliedPoint?.value, -0)).toBe(true);
+
+        const roundTrippedPlan: unknown = JSON.parse(JSON.stringify(result.inversePlan));
+        expect(roundTrippedPlan).toEqual(result.inversePlan);
+        const restore = prepareTimeOperationStateRestore(roundTrippedPlan);
+        expect(restore.status).toBe('ready');
+        expect(restore.hasChanges).toBe(true);
+        expect(restore.apply()).toBe(true);
+
+        const restoredPoint = getAutomationStoreState()?.lanes[0]?.points[0];
+        expect(restoredPoint?.beat).toBe(4);
+        expect(Object.is(restoredPoint?.value, -0)).toBe(true);
+        expect(restore.revert()).toBe(true);
+        const redonePoint = getAutomationStoreState()?.lanes[0]?.points[0];
+        expect(redonePoint?.beat).toBe(6);
+        expect(Object.is(redonePoint?.value, -0)).toBe(true);
     });
 
     it('preserves delete clip, MIDI-plan, marker, and section geometry', () => {

@@ -840,10 +840,31 @@ function cloneJsonPlan(value: unknown): Record<string, unknown> | null {
     }
 }
 
+function encodeOpaqueJsonPlan(value: unknown): ObjectNode | null {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+        return null;
+    }
+    const encoded = encodeCanonicalValue(value);
+    if (!encoded || encoded.type !== 'object') {
+        return null;
+    }
+    return encoded;
+}
+
+function decodeOpaqueJsonPlan(value: unknown): Record<string, unknown> | null {
+    const decoded = decodeCanonicalValue(value);
+    if (decoded === null || typeof decoded !== 'object' || Array.isArray(decoded)) {
+        return null;
+    }
+    return readDataObject(decoded, Object.keys(decoded));
+}
+
 export const timeOperationStateCodec = {
     cloneJsonPlan,
+    decodeOpaqueJsonPlan,
     decodeMarkerState,
     decodeTrackState,
+    encodeOpaqueJsonPlan,
     encodeMarkerState,
     encodeTrackState,
     markerStateMatchesSnapshot: stateMatchesSnapshot,

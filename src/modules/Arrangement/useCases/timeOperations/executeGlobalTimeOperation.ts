@@ -1263,10 +1263,14 @@ function cloneOwnerInversePlan(preparation: {
     }
 
     const cloned = timeOperationStateCodec.cloneJsonPlan(preparation.inversePlan);
-    if (!cloned) {
+    if (cloned) {
+        return cloned;
+    }
+    const encoded = timeOperationStateCodec.encodeOpaqueJsonPlan(preparation.inversePlan);
+    if (!encoded) {
         return false;
     }
-    return cloned;
+    return encoded;
 }
 
 function createCombinedInversePlan(input: {

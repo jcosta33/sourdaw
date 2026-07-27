@@ -1026,6 +1026,9 @@ function createCombinedInversePlan(input: {
         }
         midi = timeOperationStateCodec.cloneJsonPlan(input.midiPreparation.inversePlan);
         if (!midi) {
+            midi = timeOperationStateCodec.encodeOpaqueJsonPlan(input.midiPreparation.inversePlan);
+        }
+        if (!midi) {
             return null;
         }
     } else if (input.midiPreparation.inversePlan !== null) {

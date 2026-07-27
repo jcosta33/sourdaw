@@ -163,7 +163,11 @@ function validateOwnerPlan(value: unknown): Record<string, unknown> | null {
         return null;
     }
 
-    const properties = readDataObject(value, OWNER_PLAN_KEYS);
+    let properties = readDataObject(value, OWNER_PLAN_KEYS);
+    if (!properties) {
+        const decoded = timeOperationStateCodec.decodeOpaqueJsonPlan(value);
+        properties = readDataObject(decoded, OWNER_PLAN_KEYS);
+    }
     if (!properties || properties.version !== 1) {
         return null;
     }
@@ -775,17 +779,42 @@ function reverseOwnerPlan(value: Record<string, unknown> | null): Record<string,
         expected: properties.replacement,
         replacement: properties.expected,
     };
-    const cloned = timeOperationStateCodec.cloneJsonPlan(reversed);
+    const encoded = timeOperationStateCodec.encodeOpaqueJsonPlan(reversed);
+    if (!encoded) {
+        return false;
+    }
+    const cloned = timeOperationStateCodec.decodeOpaqueJsonPlan(encoded);
     if (!cloned) {
         return false;
     }
     return cloned;
 }
 
-function reversePlan(plan: CombinedStateRestorePlan): CombinedStateRestorePlan | null {
-    const automation = reverseOwnerPlan(plan.automation);
-    const midi = reverseOwnerPlan(plan.midi);
-    const timelineMap = reverseOwnerPlan(plan.timelineMap);
+function serializeOwnerPlan(value: Record<string, unknown> | null): unknown {
+    if (value === null) {
+        return null;
+    }
+    const cloned = timeOperationStateCodec.cloneJsonPlan(value);
+    if (cloned) {
+        return cloned;
+    }
+    const encoded = timeOperationStateCodec.encodeOpaqueJsonPlan(value);
+    if (!encoded) {
+        return false;
+    }
+    return encoded;
+}
+
+function reversePlan(plan: CombinedStateRestorePlan): Record<string, unknown> | null {
+    const reversedAutomation = reverseOwnerPlan(plan.automation);
+    const reversedMidi = reverseOwnerPlan(plan.midi);
+    const reversedTimelineMap = reverseOwnerPlan(plan.timelineMap);
+    if (reversedAutomation === false || reversedMidi === false || reversedTimelineMap === false) {
+        return null;
+    }
+    const automation = serializeOwnerPlan(reversedAutomation);
+    const midi = serializeOwnerPlan(reversedMidi);
+    const timelineMap = serializeOwnerPlan(reversedTimelineMap);
     if (automation === false || midi === false || timelineMap === false) {
         return null;
     }
