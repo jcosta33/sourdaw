@@ -308,16 +308,16 @@ describe('Mycelium Ascendant full browser render', () => {
 
         expect(projectData.meta.name).toBe('Mycelium Ascendant');
         expect(projectData.transport.loopEnd).toBe(evidence.durationBeats);
-        expectValidReceipt(evidence, projectSha256, expectedProjectSectionSha256, sourceRevision, sourceTreeSha256);
         expectValidReceipt(
-            automationStemEvidence,
+            desktopRuntimeEvidence,
             projectSha256,
             expectedProjectSectionSha256,
             sourceRevision,
             sourceTreeSha256
         );
+        expectValidReceipt(evidence, projectSha256, expectedProjectSectionSha256, sourceRevision, sourceTreeSha256);
         expectValidReceipt(
-            desktopRuntimeEvidence,
+            automationStemEvidence,
             projectSha256,
             expectedProjectSectionSha256,
             sourceRevision,
