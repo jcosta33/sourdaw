@@ -1,0 +1,21 @@
+scripts/agent-campaign/__tests__/processSupervisor.spec.ts
+  s_bc88af7d3b054c::t_c397d2b1870c1a 170
+scripts/agent-campaign/processSupervisor.ts
+  s_bc88af7d3b054c::t_c397d2b1870c1a 48,96-97
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "74dab022819e378774963a9b35d1dae862d1114f",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
