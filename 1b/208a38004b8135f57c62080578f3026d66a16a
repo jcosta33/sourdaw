@@ -1,0 +1,51 @@
+docs/evidence/mycelium-ascendant/automation-audition.md
+  s_ac9b259eab20ba::t_0e29b5ac715ff3 3-5,15-19,23,32
+docs/evidence/mycelium-ascendant/originality-review.md
+  s_ac9b259eab20ba::t_90c2e7eaee078f 3-6,30
+docs/evidence/mycelium-ascendant/motif-event-report.json
+  s_ac9b259eab20ba::t_7e80cd0d66b022 2-3
+docs/evidence/mycelium-ascendant/note-event-report.json
+  s_ac9b259eab20ba::t_7e80cd0d66b022 2-3
+docs/evidence/mycelium-ascendant/launch-integrity.md
+  s_ac9b259eab20ba::t_5f3c655fecefbf 3-5,21,27
+docs/evidence/mycelium-ascendant/listening-conformance.md
+  s_ac9b259eab20ba::t_204d5b61bebf20 3-6,20,22,33,47,49,55-56
+docs/evidence/mycelium-ascendant/automation-stem-evidence.json
+  s_1f75b81a16986c::t_e42a6f0d6c65c3 2-22,24-31,35-37,40,42-47,49,53-58,60,64-71,75-83,86-91,93,97-102,104,108-113,115,119-124,126,128-281,287-289,292,294-299,301,305-310,312,316-321,323,327-332,334,338-343,345,349-357,360-533,539-541,544,546-551,553,557-562,564,568-576,579-584,586,590-598,601-606,608,612-617,619,623-628,630,632-785,791-794,797,799-804,806-828,832-904,906-914,916,920-927,931-937,939-947,949,953-960,964-970,972-980,982,986-1037,1044-1046,1049,1051-1056,1058,1062-1067,1069,1073-1081,1084-1089,1091,1095-1100,1102,1106-1113,1117-1122,1124,1128-1136,1139-1144,1146,1148-1290,1294-1321
+docs/evidence/mycelium-ascendant/desktop-runtime-evidence.json
+  s_1f75b81a16986c::t_4b19204ce34f19 2-30,37
+docs/evidence/mycelium-ascendant/render-evidence.json
+  s_bc88af7d3b054c::t_4e763109c8ba5a 2-23,25-31,33,35,37-49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "1b208a38004b8135f57c62080578f3026d66a16a",
+  "prompts": {},
+  "sessions": {
+    "s_1f75b81a16986c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fa14c-7ede-79f1-9f6c-37d3fa536ad7",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
