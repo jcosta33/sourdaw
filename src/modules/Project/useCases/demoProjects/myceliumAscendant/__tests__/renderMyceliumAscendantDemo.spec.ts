@@ -284,7 +284,7 @@ describe('Mycelium Ascendant full browser render', () => {
         const projectSha256 = createHash('sha256')
             .update(JSON.stringify(normalizeProjectEvidence(projectData)))
             .digest('hex');
-        const sourceRevision = execFileSync('git', ['rev-parse', 'HEAD'], {
+        const sourceRevision = execFileSync('git', ['log', '-1', '--format=%H', '--', ...SOURCE_PATHS], {
             cwd: process.cwd(),
             encoding: 'utf8',
         }).trim();

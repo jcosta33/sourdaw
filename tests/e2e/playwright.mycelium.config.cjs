@@ -19,7 +19,10 @@ const sourcePaths = [
     'tests/e2e/myceliumExport.spec.ts',
     'tests/e2e/playwright.mycelium.config.cjs',
 ];
-const sourceRevision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
+const sourceRevision = execFileSync('git', ['log', '-1', '--format=%H', '--', ...sourcePaths], {
+    cwd: root,
+    encoding: 'utf8',
+}).trim();
 const sourceDirty =
     execFileSync('git', ['status', '--porcelain', '--untracked-files=all', '--', ...sourcePaths], {
         cwd: root,
