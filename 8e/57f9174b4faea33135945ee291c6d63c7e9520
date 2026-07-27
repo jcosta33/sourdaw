@@ -1,0 +1,28 @@
+src/modules/AudioEngine/repositories/devices/modulation/__tests__/applyModulationParams.spec.ts
+  s_ac9b259eab20ba::t_90954a3af7e898 102-117
+  s_ac9b259eab20ba::t_c3ee64cc8c665c 73
+  s_ac9b259eab20ba::t_5c1c9931657ac4 118
+src/modules/AudioEngine/repositories/devices/modulation/createPhaser.ts
+  s_ac9b259eab20ba::t_c3ee64cc8c665c 44-45,49,63-71
+  s_ac9b259eab20ba::t_3e24aba793031b 72
+src/modules/AudioEngine/repositories/devices/reverbDelay/createReverb.ts
+  s_ac9b259eab20ba::t_79f5966196c60d 5-30,43
+src/modules/AudioEngine/repositories/devices/reverbDelay/__tests__/createReverb.spec.ts
+  s_ac9b259eab20ba::t_ee000cc1680131 1-64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "8e57f9174b4faea33135945ee291c6d63c7e9520",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
