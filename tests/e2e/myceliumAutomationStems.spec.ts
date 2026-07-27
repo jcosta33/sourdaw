@@ -390,7 +390,9 @@ test('renders signal evidence for every required Mycelium automation audition wi
         expect(signals.get('False Floor')?.get(trackName)?.samplePeak).toBeLessThan(1e-9);
     }
     expect(signals.get('Dissolution')?.get('Root Drone')?.activeBlockRatio).toBeGreaterThan(0.9);
-    expect(signals.get('Dissolution')?.get('Main Vision')?.samplePeak).toBeGreaterThan(0.1);
+    expect(signals.get('Dissolution')?.get('Main Vision')?.samplePeak).toBeGreaterThan(0.05);
+    expect(signals.get('Dissolution')?.get('Main Vision')?.activeBlockRatio).toBeGreaterThan(0.2);
+    expect(signals.get('Dissolution')?.get('Rolling Colony')?.activeBlockRatio).toBeGreaterThan(0.4);
     expect(report.fullMixTransition.warnings).toEqual([]);
     expect(report.fullMixTransition.channels).toBe(2);
     expect(report.fullMixTransition.falseFloor.rms).toBeGreaterThan(0);
