@@ -1,0 +1,68 @@
+src/modules/Arrangement/handlers/device/__tests__/handleSetDeviceParameter.spec.ts
+  s_bc88af7d3b054c::t_7d077a86f4735c 90-102
+src/modules/Arrangement/handlers/device/__tests__/handleBypassDevice.spec.ts
+  s_bc88af7d3b054c::t_7d077a86f4735c 103-115
+src/modules/Arrangement/useCases/device/__tests__/bypassDevice.spec.ts
+  s_bc88af7d3b054c::t_7d077a86f4735c 27,44
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_bc88af7d3b054c::t_7d077a86f4735c 25-35,37-41,70-84,88,152-209,283-285,306-309
+  s_bc88af7d3b054c::t_f3926e3ac0126b 36,42-69,211-235
+  s_bc88af7d3b054c::t_9d1d881ddef9c6 210
+  s_bc88af7d3b054c::t_8ac1e060884e99 236
+src/modules/AiRuntime/useCases/__tests__/getProjectContext.spec.ts
+  s_bc88af7d3b054c::t_f3926e3ac0126b 144,195
+  s_bc88af7d3b054c::t_7d077a86f4735c 11,27-30,63,93-101,114,137-143,145-152,191-194,196-201,203
+src/modules/AiRuntime/models/ProjectContext.ts
+  s_bc88af7d3b054c::t_321ed0db0bd549 26,28-30,32-35,37-41
+  s_bc88af7d3b054c::t_638199efba41bc 31,36
+  s_bc88af7d3b054c::t_8de547341a81a0 25,57
+  s_bc88af7d3b054c::t_9902aff33792d8 27
+src/modules/Arrangement/useCases/device/bypassDevice.ts
+  s_bc88af7d3b054c::t_321ed0db0bd549 1-2,15
+docs/architecture/decisions/0015-llm-device-and-send-controls.md
+  s_bc88af7d3b054c::t_638199efba41bc 16-17,21
+  s_bc88af7d3b054c::t_28e4f3b858aa00 1-15,18-20,22-29
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_bc88af7d3b054c::t_f3926e3ac0126b 129-147
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_bc88af7d3b054c::t_638199efba41bc 108
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_bc88af7d3b054c::t_8de547341a81a0 218,344
+  s_bc88af7d3b054c::t_321ed0db0bd549 14-16,92-98,208-217,220-265,273-281,343
+  s_bc88af7d3b054c::t_638199efba41bc 66-87,219
+src/modules/AiRuntime/useCases/getProjectContext.ts
+  s_bc88af7d3b054c::t_321ed0db0bd549 2,86-90,92-101,103-106,108-118
+  s_bc88af7d3b054c::t_8de547341a81a0 91
+  s_bc88af7d3b054c::t_638199efba41bc 102,107
+  s_bc88af7d3b054c::t_de4a180b8afa62 7,9-16
+src/modules/Arrangement/handlers/device/handleBypassDevice.ts
+  s_bc88af7d3b054c::t_321ed0db0bd549 11-14
+src/modules/Arrangement/handlers/device/__tests__/handleSetSend.spec.ts
+  s_bc88af7d3b054c::t_7d077a86f4735c 96-97,99-106,120-121
+  s_bc88af7d3b054c::t_a0e79d0b474f21 7-11,60-63,78-83,98,107-119
+src/modules/Arrangement/handlers/device/handleSetSend.ts
+  s_bc88af7d3b054c::t_d03a963efa64bc 3,20-28
+  s_bc88af7d3b054c::t_321ed0db0bd549 12-15
+src/modules/Arrangement/handlers/device/handleSetDeviceParameter.ts
+  s_bc88af7d3b054c::t_321ed0db0bd549 13-17
+src/modules/Arrangement/useCases/device/sendManagement/setSend.ts
+  s_bc88af7d3b054c::t_c58951c2d66872 12,17
+src/modules/Arrangement/useCases/device/sendManagement/__tests__/setSend.spec.ts
+  s_bc88af7d3b054c::t_5b4d62dd9e5618 102-115
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "7f16df1a4063dcdbc51b4490a1a54781f53d3880",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
