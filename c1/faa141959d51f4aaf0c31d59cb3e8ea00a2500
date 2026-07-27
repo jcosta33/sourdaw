@@ -1,0 +1,24 @@
+scripts/agent-campaign/processSupervisor.ts
+  s_bc88af7d3b054c::t_0b35f12c5157d5 238-239,270-281
+  s_bc88af7d3b054c::t_d9b561416d1bf4 4,22,29,35-40,43,99,107-109,191-194,222,237,240-255,269,282-287,295
+scripts/agent-campaign/__tests__/processSupervisor.spec.ts
+  s_bc88af7d3b054c::t_1a675ce29689f2 58,63-64,70,73
+  s_bc88af7d3b054c::t_df1ea03b64d918 144,148-150
+  s_bc88af7d3b054c::t_1b7d390448feba 27,47,52-57,60-62,65-69,71,74-99,118,145-147,151-156,214,222,229-230
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "c1faa141959d51f4aaf0c31d59cb3e8ea00a2500",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
