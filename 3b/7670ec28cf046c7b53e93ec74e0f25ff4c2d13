@@ -1,0 +1,46 @@
+src/modules/Project/useCases/demoProjects/myceliumAscendant/createMyceliumRhythmPerformance.ts
+  s_ac9b259eab20ba::t_17c48b31970c77 2,249,252-254,266-268
+  s_ac9b259eab20ba::t_02bb6b511d6fc9 250-251,255-263,269-270,278-279
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/createMyceliumAscendantDemo.spec.ts
+  s_ac9b259eab20ba::t_62821ad0e36cd7 44
+src/modules/Project/useCases/demoProjects/myceliumAscendant/createMyceliumVoicePerformance.ts
+  s_ac9b259eab20ba::t_17c48b31970c77 2,263,266-268,280-282
+  s_ac9b259eab20ba::t_02bb6b511d6fc9 264-265,269-277,283-284,292-293
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/createMyceliumVoicePerformance.spec.ts
+  s_ac9b259eab20ba::t_bcd76429c39145 70-72,74-79
+  s_ac9b259eab20ba::t_5da5f465082507 10,73
+  s_ac9b259eab20ba::t_62821ad0e36cd7 65
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/createMyceliumRhythmPerformance.spec.ts
+  s_ac9b259eab20ba::t_62821ad0e36cd7 69
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_ac9b259eab20ba::t_5d25128f782aa8 173-184
+  s_ac9b259eab20ba::t_215b63620dec2b 185-187
+  s_ac9b259eab20ba::t_f4da9bc270c594 195,299
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/createMyceliumSessionPerformance.spec.ts
+  s_ac9b259eab20ba::t_d465a49d0a9005 7
+  s_ac9b259eab20ba::t_8fc34899cd4217 31,43-48,52-54,117-119
+  s_ac9b259eab20ba::t_c2ea8073e9f816 30,33-35,38-40,55,67,72,111-113
+  s_ac9b259eab20ba::t_832ae4af234b0a 1-6,8-29,36-37,41-42,56-66,68-71,73-86,90-101,107-110,114-116,120-127
+  s_ac9b259eab20ba::t_623f22f24cc358 32,49-51,87-89,102-106
+src/modules/Project/useCases/demoProjects/myceliumAscendant/segmentMyceliumDenseSeeds.ts
+  s_ac9b259eab20ba::t_17c48b31970c77 1-57
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_ac9b259eab20ba::t_2f24d584596e87 1276-1278
+  s_ac9b259eab20ba::t_21fce97ac284b7 1279
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "3b7670ec28cf046c7b53e93ec74e0f25ff4c2d13",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
