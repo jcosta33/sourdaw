@@ -1,9 +1,5 @@
-import {
-    describeAction,
-    executeAppAction,
-    generateGroupId,
-    isAppActionCommittedError,
-} from '#/modules/Command/useCases';
+import { logger } from '#/infra/logger/appLogger';
+import { executeAppActionBatch, generateGroupId } from '#/modules/Command/useCases';
 
 import { type ChatActionConfirmationStatus } from '../models/Chat';
 import { type DsoConfirmationTarget } from '../models/DsoTypes';
@@ -54,74 +50,122 @@ export async function confirmPendingChatActions(
     }
 
     const group = generateGroupId(confirmation.prompt);
-    const executedLabels: Array<{ actionType: string; label: string }> = [];
-    let action_history_failed_after_commit = false;
-    let execution_failure_reason: string | null = null;
-
-    for (const action of confirmation.actions) {
-        try {
-            await executeAppAction(action, { ...group, source: 'prompt' });
-        } catch (error) {
-            if (!isAppActionCommittedError(error)) {
-                execution_failure_reason = error instanceof Error ? error.message : String(error);
-                break;
-            }
-            action_history_failed_after_commit = true;
-        }
-        const execution = { actionType: action.type, label: describeAction(action) };
-        executedLabels.push(execution);
-        recordPendingActionExecution({ confirmationId: confirmation.id, execution });
-    }
-
-    if (executedLabels.length > 0) {
-        const historyGroup: AiActionGroup = {
-            id: group.groupId,
-            prompt: confirmation.prompt,
-            actions: executedLabels.map((entry) => ({
-                kind: 'appAction',
-                actionType: entry.actionType,
-                label: entry.label,
-            })),
-            groupId: group.groupId,
-            timestamp: Date.now(),
-            reverted: false,
-        };
-        pushAiActionGroup(historyGroup);
-        notifyAiChange(
-            `Confirmed: ${confirmation.prompt}`,
-            executedLabels.map((entry) => entry.actionType)
-        );
-    }
-
-    if (execution_failure_reason) {
-        const history_failure_warning = action_history_failed_after_commit
-            ? ' Action history also failed for an earlier applied action.'
-            : '';
+    let batchResult: Awaited<ReturnType<typeof executeAppActionBatch>>;
+    try {
+        batchResult = await executeAppActionBatch(confirmation.actions, {
+            ...group,
+            source: 'prompt',
+            requireCompensation: confirmation.executionMode === 'atomic',
+        });
+    } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
         updatePendingActionConfirmationStatus({
             confirmationId: confirmation.id,
             status: 'failed',
-            error: execution_failure_reason,
+            error: reason,
         });
         updateChatMessage(confirmation.assistantMessageId, {
             pendingActionConfirmationStatus: 'failed',
-            error: execution_failure_reason,
-            content:
-                executedLabels.length > 0
-                    ? `Partially executed after confirmation:\n\n${executedLabels.map((entry) => `- **${entry.actionType}**: ${entry.label}`).join('\n')}\n\nA later action failed: ${execution_failure_reason}.${history_failure_warning} Do not retry the whole command.`
-                    : `Failed to execute confirmed actions:\n\n${execution_failure_reason}`,
+            error: reason,
+            content: `Failed to execute confirmed actions atomically:\n\n${reason}`,
         });
-        return { status: 'failed', reason: execution_failure_reason };
+        return { status: 'failed', reason };
     }
 
-    updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed' });
-    updateChatMessage(confirmation.assistantMessageId, {
-        pendingActionConfirmationStatus: 'executed',
-        content: action_history_failed_after_commit
-            ? `Applied after confirmation:\n\n${executedLabels.map((entry) => `- **${entry.actionType}**: ${entry.label}`).join('\n')}\n\nAction history failed after the change was applied. Do not retry these confirmed actions.`
-            : `Executed after confirmation:\n\n${executedLabels.map((entry) => `- **${entry.actionType}**: ${entry.label}`).join('\n')}`,
-    });
+    if (batchResult.status === 'committed' || batchResult.status === 'committed-with-warning') {
+        const executedLabels = batchResult.actions.map(({ action, label }) => ({
+            actionType: action.type,
+            label,
+        }));
+        try {
+            for (const execution of executedLabels) {
+                recordPendingActionExecution({ confirmationId: confirmation.id, execution });
+            }
+            const historyGroup: AiActionGroup = {
+                id: group.groupId,
+                prompt: confirmation.prompt,
+                actions: executedLabels.map((entry) => ({
+                    kind: 'appAction',
+                    actionType: entry.actionType,
+                    label: entry.label,
+                })),
+                groupId: group.groupId,
+                timestamp: Date.now(),
+                reverted: false,
+            };
+            pushAiActionGroup(historyGroup);
+            notifyAiChange(
+                `Confirmed: ${confirmation.prompt}`,
+                executedLabels.map((entry) => entry.actionType)
+            );
+            updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed' });
+            updateChatMessage(confirmation.assistantMessageId, {
+                pendingActionConfirmationStatus: 'executed',
+                error: batchResult.status === 'committed-with-warning' ? batchResult.warning : undefined,
+                content:
+                    batchResult.status === 'committed-with-warning'
+                        ? `Applied after confirmation:\n\n${executedLabels.map((entry) => `- **${entry.actionType}**: ${entry.label}`).join('\n')}\n\nThe project change committed, but its history record failed: ${batchResult.warning}. Do not retry these confirmed actions.`
+                        : `Executed after confirmation:\n\n${executedLabels.map((entry) => `- **${entry.actionType}**: ${entry.label}`).join('\n')}`,
+            });
+        } catch (error) {
+            const warning = error instanceof Error ? error.message : String(error);
+            logger.error(new Error('Confirmed AI action reporting failed after commit', { cause: error }));
+            try {
+                updatePendingActionConfirmationStatus({
+                    confirmationId: confirmation.id,
+                    status: 'executed',
+                    error: warning,
+                });
+                updateChatMessage(confirmation.assistantMessageId, {
+                    pendingActionConfirmationStatus: 'executed',
+                    error: warning,
+                    content: `The confirmed project change committed, but reporting it failed: ${warning}. Do not retry these actions.`,
+                });
+            } catch (reportingError) {
+                logger.error(
+                    new Error('Confirmed AI post-commit warning could not be persisted', {
+                        cause: reportingError,
+                    })
+                );
+            }
+        }
+        return { status: 'executed' };
+    }
 
-    return { status: 'executed' };
+    if (batchResult.status === 'no-op') {
+        updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed' });
+        updateChatMessage(confirmation.assistantMessageId, {
+            pendingActionConfirmationStatus: 'executed',
+            content: 'No project changes were needed after confirmation.',
+        });
+        return { status: 'executed' };
+    }
+
+    if (batchResult.status === 'ambiguous') {
+        updatePendingActionConfirmationStatus({
+            confirmationId: confirmation.id,
+            status: 'failed',
+            error: batchResult.reason,
+        });
+        updateChatMessage(confirmation.assistantMessageId, {
+            pendingActionConfirmationStatus: 'failed',
+            error: batchResult.reason,
+            content: `The confirmed command stopped after an uncertain partial commit: ${batchResult.reason}. Do not retry it; inspect the project first.`,
+        });
+        return { status: 'failed', reason: batchResult.reason };
+    }
+
+    updatePendingActionConfirmationStatus({
+        confirmationId: confirmation.id,
+        status: 'failed',
+        error: batchResult.reason,
+    });
+    updateChatMessage(confirmation.assistantMessageId, {
+        pendingActionConfirmationStatus: 'failed',
+        error: batchResult.reason,
+        content: `Failed to execute confirmed actions atomically:\n\n${batchResult.reason}`,
+    });
+    return { status: 'failed', reason: batchResult.reason };
 }
 
 async function confirmPendingDsoEdit(confirmation: PendingDsoEditConfirmation): ConfirmPendingChatActionsOutput {

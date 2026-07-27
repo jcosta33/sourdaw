@@ -99,17 +99,14 @@ export const parsePromptToActions = inject({ logger })(
                     );
                 }
 
-                if (bridged.actions.length > 1) {
-                    logger.warn(
-                        '[AI] Rejected LLM action batch because atomic multi-action execution is not available'
-                    );
-                } else if (bridged.actions.length === 1 && bridged.rejections.length === 0) {
+                if (bridged.actions.length > 0 && bridged.rejections.length === 0) {
                     const validated = validateActions(bridged.actions);
                     if (validated.length === bridged.actions.length) {
                         return {
                             actions: validated,
                             rawText: prompt,
                             requiresConfirmation: requiresConfirmation(validated),
+                            executionMode: 'atomic',
                         };
                     }
                     logger.warn('[AI] Rejected LLM action batch because runtime validation removed an action');

@@ -123,6 +123,7 @@ describe('parsePromptToActions', () => {
             context: currentContext,
         });
         expect(result.actions).toEqual([{ type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true } }]);
+        expect(result.executionMode).toBe('atomic');
     });
 
     it('does not partially accept a provider batch containing a rejected call', async () => {
@@ -153,7 +154,7 @@ describe('parsePromptToActions', () => {
         expect(mockLogger.warn).not.toHaveBeenCalledWith(expect.stringContaining('Provider tool planning failed'));
     });
 
-    it('rejects multiple valid provider actions until atomic batch execution exists', async () => {
+    it('returns multiple valid provider actions as one complete batch proposal', async () => {
         vi.mocked(generateToolCalls).mockResolvedValue([
             { name: 'muteTrack', arguments: { trackId: 'track-vocals', muted: true } },
             { name: 'setTrackPan', arguments: { trackId: 'track-guitar', pan: -20 } },
@@ -168,9 +169,10 @@ describe('parsePromptToActions', () => {
 
         const result = await parsePromptToActions('mute vocals and pan guitar left', baseContext);
 
-        expect(result.actions).toEqual([]);
-        expect(mockLogger.warn).toHaveBeenCalledWith(
-            '[AI] Rejected LLM action batch because atomic multi-action execution is not available'
-        );
+        expect(result.actions).toEqual([
+            { type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true } },
+            { type: 'setTrackPan', payload: { trackId: 'track-guitar', pan: -20 } },
+        ]);
+        expect(result.executionMode).toBe('atomic');
     });
 });

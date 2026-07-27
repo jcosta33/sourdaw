@@ -7,6 +7,8 @@ export const handleRenameTrack = createHandler<'renameTrack'>({
     execute: (action) => {
         renameTrack(action.payload.trackId, action.payload.name);
     },
+    isNoop: (action) =>
+        getTrackStoreState()?.tracks.find((track) => track.id === action.payload.trackId)?.name === action.payload.name,
     describe: (alpha) => {
         const prev = getTrackStoreState()?.tracks.find((time) => time.id === alpha.payload.trackId);
         return {

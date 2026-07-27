@@ -10,6 +10,7 @@ export { createUndoEntry } from './createUndoEntry';
 export { generateGroupId } from './generateGroupId';
 
 export { executeAppAction } from './executeAppAction';
+export { executeAppActionBatch } from './executeAppActionBatch';
 export { createAppActionCommittedError } from './createAppActionCommittedError';
 export { isAppActionCommittedError } from './isAppActionCommittedError';
 

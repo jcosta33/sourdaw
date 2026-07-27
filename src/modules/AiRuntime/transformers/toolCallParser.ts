@@ -15,6 +15,8 @@ export type ToolCallResult = {
     arguments: Record<string, unknown>;
 };
 
+const INVALID_TOOL_CALL_NAME = '<invalid>';
+
 /**
  * Parse tool calls from model response content.
  * Handles all observed model output formats (see module docstring).
@@ -26,26 +28,28 @@ export function parseToolCallXml(content: string): ToolCallResult[] {
         return jsonResults;
     }
 
-    // 2. Fall back to XML-based parsing (Hermes / Llama format)
-    const results: ToolCallResult[] = [];
-    const segments = content.split(/<\/?tool_call>|<\/?function>/);
-
-    for (const segment of segments) {
-        const lines = segment.split('\n');
-
-        for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed.startsWith('{')) {
-                continue;
-            }
-            const parsed = tryParseToolCallJson(trimmed);
-            if (parsed) {
-                results.push(parsed);
-            }
-        }
+    // 2. Fall back to XML-based parsing (Hermes / Llama format). Every
+    // identified tag is preserved so malformed calls cannot disappear before
+    // all-or-nothing bridge validation and batch-size enforcement.
+    const taggedMatches = [...content.matchAll(/<(tool_call|function)>([\s\S]*?)<\/\1>/g)];
+    const taggedResults = taggedMatches.map(
+        (match) => tryParseToolCallJson(String(match[2]).trim()) ?? invalidToolCall()
+    );
+    const openingTagCount = [...content.matchAll(/<(?:tool_call|function)>/g)].length;
+    const closingTagCount = [...content.matchAll(/<\/(?:tool_call|function)>/g)].length;
+    const identifiedTagCount = Math.max(openingTagCount, closingTagCount);
+    if (identifiedTagCount > 0) {
+        const unmatchedTagCount = identifiedTagCount - taggedMatches.length;
+        return [...taggedResults, ...Array.from({ length: unmatchedTagCount }, invalidToolCall)];
     }
 
-    return results;
+    // 3. JSONL fallback. Preserve every object-shaped candidate line for the
+    // same reason as tagged calls.
+    return content
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line.startsWith('{'))
+        .map((line) => tryParseToolCallJson(line) ?? invalidToolCall());
 }
 
 /**
@@ -58,8 +62,8 @@ function tryParseJsonMode(content: string): ToolCallResult[] {
     const trimmed = content.trim();
 
     // Try to extract JSON from potential markdown fencing
-    const jsonMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/) ?? [null, trimmed];
-    const candidate = (jsonMatch[1] ?? trimmed).trim();
+    const fencedJson = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/)?.[1];
+    const candidate = (fencedJson ?? trimmed).trim();
 
     if (!candidate.startsWith('{') && !candidate.startsWith('[')) {
         return [];
@@ -70,17 +74,17 @@ function tryParseJsonMode(content: string): ToolCallResult[] {
 
         // {"actions":[...]} wrapper
         if (isObject(parsed) && Array.isArray(parsed.actions)) {
-            return (parsed.actions as unknown[]).map(coerceToolCall).filter((r): r is ToolCallResult => r !== null);
+            return parsed.actions.map(coerceArrayToolCall);
         }
 
         // {"tool_calls":[...]} wrapper
         if (isObject(parsed) && Array.isArray(parsed.tool_calls)) {
-            return (parsed.tool_calls as unknown[]).map(coerceToolCall).filter((r): r is ToolCallResult => r !== null);
+            return parsed.tool_calls.map(coerceArrayToolCall);
         }
 
         // Top-level array
         if (Array.isArray(parsed)) {
-            return (parsed as unknown[]).map(coerceToolCall).filter((r): r is ToolCallResult => r !== null);
+            return parsed.map(coerceArrayToolCall);
         }
 
         // Single tool call object
@@ -93,6 +97,14 @@ function tryParseJsonMode(content: string): ToolCallResult[] {
     }
 
     return [];
+}
+
+function coerceArrayToolCall(raw: unknown): ToolCallResult {
+    return coerceToolCall(raw) ?? invalidToolCall();
+}
+
+function invalidToolCall(): ToolCallResult {
+    return { name: INVALID_TOOL_CALL_NAME, arguments: {} };
 }
 
 function isObject(val: unknown): val is Record<string, unknown> {

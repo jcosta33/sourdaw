@@ -14,6 +14,26 @@ describe('toolCallParser', () => {
         });
     });
 
+    it('preserves malformed JSON array slots for all-or-nothing bridge rejection', () => {
+        const input = `[{"name":"muteTrack","arguments":{"trackId":"t1"}},{"arguments":{}},null]`;
+
+        const result = parseToolCallXml(input);
+
+        expect(result).toEqual([
+            { name: 'muteTrack', arguments: { trackId: 't1' } },
+            { name: '<invalid>', arguments: {} },
+            { name: '<invalid>', arguments: {} },
+        ]);
+    });
+
+    it('preserves the raw JSON array length so malformed calls count toward the batch cap', () => {
+        const input = JSON.stringify(Array.from({ length: 25 }, () => null));
+
+        const result = parseToolCallXml(input);
+
+        expect(result).toHaveLength(25);
+    });
+
     it('parses wrapped JSON mode {"actions": [...]}', () => {
         const input = `{"actions": [{"name": "muteTrack", "arguments": {"trackId": "t1"}}]}`;
         const result = parseToolCallXml(input);
@@ -65,6 +85,46 @@ Some thought
         expect(result).toHaveLength(2);
         expect(result[0]!.arguments).toEqual({ name: 'T1' });
         expect(result[1]!.arguments).toEqual({ name: 'T2' });
+    });
+
+    it('preserves malformed XML tool-call slots for bridge rejection', () => {
+        const input = `
+<tool_call>{"name":"muteTrack","arguments":{"trackId":"t1"}}</tool_call>
+<tool_call>{"arguments":{}}</tool_call>
+`;
+
+        const result = parseToolCallXml(input);
+
+        expect(result).toEqual([
+            { name: 'muteTrack', arguments: { trackId: 't1' } },
+            { name: '<invalid>', arguments: {} },
+        ]);
+    });
+
+    it('preserves an unclosed trailing XML call instead of executing a valid prefix', () => {
+        const input = `<tool_call>{"name":"muteTrack","arguments":{"trackId":"t1"}}</tool_call>
+<tool_call>{"name":"soloTrack","arguments":{`;
+
+        const result = parseToolCallXml(input);
+
+        expect(result).toEqual([
+            { name: 'muteTrack', arguments: { trackId: 't1' } },
+            { name: '<invalid>', arguments: {} },
+        ]);
+    });
+
+    it('preserves malformed JSONL candidate slots for bridge rejection', () => {
+        const input = `{"name":"muteTrack","arguments":{"trackId":"t1"}}
+{"arguments":{}}
+{malformed}`;
+
+        const result = parseToolCallXml(input);
+
+        expect(result).toEqual([
+            { name: 'muteTrack', arguments: { trackId: 't1' } },
+            { name: '<invalid>', arguments: {} },
+            { name: '<invalid>', arguments: {} },
+        ]);
     });
 
     it('falls back to Llama function XML tags', () => {

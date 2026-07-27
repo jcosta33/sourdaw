@@ -1,0 +1,371 @@
+import { inject } from '#/infra/di/inject';
+import { logger } from '#/infra/logger/appLogger';
+import {
+    AutomergeStorageTransactionCommittedError,
+    runWithAutomergeStorageTransaction,
+    waitForAutomergeSnapshotTransaction,
+} from '#/infra/store/storage/createAutomergeStorage';
+import { clearSemanticContext, setSemanticContext } from '#/modules/CrdtDocument/stores';
+import {
+    type ActionHandler,
+    type AppAction,
+    type ExecuteOptions,
+    type HandlerDescribeResult,
+    type HandlerExecutionResult,
+} from '#/utils/handlerContract';
+
+import { AppActionConflictError } from '../errors/AppActionExecutionError';
+import { registerActionReplayCapability, revokeActionReplayCapability } from '../stores/actionReplayCapabilities';
+import { getHandler } from '../stores/handlerRegistry';
+
+import { actionHistoryMetadataPort } from './actionHistoryMetadataPort';
+import { commitUndoEntry } from './commitUndoEntry';
+import { createUndoEntry } from './createUndoEntry';
+import { recordAction } from './macro/recording/recordAction';
+import { traceAppAction } from './traceAppAction';
+
+type ExecutedBatchAction = {
+    action: AppAction;
+    label: string;
+};
+
+type ExecuteAppActionBatchResult =
+    | { status: 'committed'; actions: ExecutedBatchAction[] }
+    | { status: 'committed-with-warning'; actions: ExecutedBatchAction[]; warning: string }
+    | { status: 'no-op'; actions: [] }
+    | { status: 'ambiguous'; reason: string; actions: [] }
+    | { status: 'rejected' | 'conflicted' | 'cancelled' | 'failed'; reason: string; actions: [] };
+
+type ExecuteAppActionBatchOptions = ExecuteOptions & {
+    requireCompensation?: boolean;
+};
+
+type ExecuteAppActionBatch = (
+    actions: readonly AppAction[],
+    options?: ExecuteAppActionBatchOptions
+) => Promise<ExecuteAppActionBatchResult>;
+
+type PreparedBatchAction = {
+    action: AppAction;
+    handler: ActionHandler;
+    description: HandlerDescribeResult | null;
+    label: string;
+};
+
+type AutomergeStorageTransactionScope = <Result>(callback: () => Result) => Result;
+
+class AppActionBatchCancelledError extends Error {
+    constructor() {
+        super('Batch execution authority was revoked');
+        this.name = 'AppActionBatchCancelledError';
+    }
+}
+
+function failureReason(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+}
+
+function assertExecutionAuthorized(shouldExecute: ExecuteOptions['shouldExecute'] | undefined): void {
+    if (shouldExecute && !shouldExecute()) {
+        throw new AppActionBatchCancelledError();
+    }
+}
+
+function clearBatchSemanticContext(): string | null {
+    try {
+        clearSemanticContext();
+        return null;
+    } catch (error) {
+        return failureReason(error);
+    }
+}
+
+async function executePreparedBatch(
+    preparedActions: readonly PreparedBatchAction[],
+    scope: AutomergeStorageTransactionScope,
+    attemptedActions: PreparedBatchAction[],
+    shouldExecute: ExecuteOptions['shouldExecute'] | undefined
+): Promise<PreparedBatchAction[]> {
+    const executedActions: PreparedBatchAction[] = [];
+    for (const prepared of preparedActions) {
+        assertExecutionAuthorized(shouldExecute);
+        if (prepared.handler.isNoop?.(prepared.action)) {
+            continue;
+        }
+        attemptedActions.push(prepared);
+        const result: HandlerExecutionResult | void = await scope(() => prepared.handler.execute(prepared.action));
+        if (result?.status === 'no-write' || result?.status === 'conflict') {
+            throw new AppActionConflictError(prepared.action.type);
+        }
+        executedActions.push(prepared);
+    }
+    assertExecutionAuthorized(shouldExecute);
+    return executedActions;
+}
+
+async function compensateAttemptedBatch(
+    attemptedActions: readonly PreparedBatchAction[],
+    snapshotTransaction: object | undefined
+): Promise<string | null> {
+    if (attemptedActions.length === 0) {
+        return null;
+    }
+
+    const compensationTransaction = runWithAutomergeStorageTransaction(snapshotTransaction, async (scope) => {
+        for (const prepared of [...attemptedActions].reverse()) {
+            const inverseAction = prepared.description?.inverseAction;
+            if (!inverseAction) {
+                throw new Error(`No inverse action available for ${prepared.action.type}`);
+            }
+            const inverseHandler = getHandler(inverseAction);
+            if (!inverseHandler) {
+                throw new Error(`No registered handler for inverse action: ${inverseAction.type}`);
+            }
+            const result: HandlerExecutionResult | void = await scope(() => inverseHandler.execute(inverseAction));
+            if (result?.status === 'conflict' || result?.status === 'no-write') {
+                throw new Error(`Runtime compensation did not apply for ${inverseAction.type}`);
+            }
+        }
+    });
+
+    if (compensationTransaction.status === 'threw') {
+        compensationTransaction.abort();
+        return failureReason(compensationTransaction.error);
+    }
+    try {
+        await compensationTransaction.value;
+        return null;
+    } catch (error) {
+        return failureReason(error);
+    } finally {
+        compensationTransaction.abort();
+    }
+}
+
+function recordCommittedBatch(
+    preparedActions: readonly PreparedBatchAction[],
+    options: ExecuteOptions | undefined
+): void {
+    const timestamp = Date.now();
+    for (const prepared of preparedActions) {
+        const { action, description, handler, label } = prepared;
+        if (!options?.skipMacroRecording) {
+            recordAction(action);
+        }
+        if (options?.skipUndo || !handler.undoable || !description) {
+            continue;
+        }
+
+        const entryId = crypto.randomUUID();
+        const inverseAction = description.inverseAction ?? null;
+        const metadata = {
+            id: entryId,
+            label,
+            actionKind: action.type,
+            source: options?.source ?? 'manual',
+            timestamp,
+            groupId: options?.groupId,
+            groupLabel: options?.groupLabel,
+            reverted: false,
+        };
+        const evictedEntryIds = actionHistoryMetadataPort.record(metadata);
+        for (const evictedEntryId of evictedEntryIds) {
+            revokeActionReplayCapability(evictedEntryId);
+        }
+        if (inverseAction) {
+            registerActionReplayCapability({
+                entryId,
+                inverseAction,
+                metadata,
+            });
+        }
+
+        const undoEntry = createUndoEntry(description.label, action, inverseAction, options?.source ?? 'manual');
+        if (options?.groupId) {
+            undoEntry.groupId = options.groupId;
+            undoEntry.groupLabel = options.groupLabel;
+        }
+        commitUndoEntry(undoEntry);
+    }
+}
+
+export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
+    ({ logger }) =>
+        async function executeAppActionBatch(
+            actions: readonly AppAction[],
+            options?: ExecuteAppActionBatchOptions
+        ): Promise<ExecuteAppActionBatchResult> {
+            if (actions.length === 0) {
+                return { status: 'no-op', actions: [] };
+            }
+
+            await waitForAutomergeSnapshotTransaction(options?.snapshotTransaction);
+            if (options?.shouldExecute && !options.shouldExecute()) {
+                return { status: 'cancelled', reason: 'Batch execution authority was revoked', actions: [] };
+            }
+
+            const preparedActions: PreparedBatchAction[] = [];
+            for (const action of actions) {
+                const handler = getHandler(action);
+                if (!handler) {
+                    return {
+                        status: 'rejected',
+                        reason: `No registered handler for action: ${action.type}`,
+                        actions: [],
+                    };
+                }
+                let description: HandlerDescribeResult | null;
+                try {
+                    description = handler.undoable ? handler.describe(action) : null;
+                } catch (error) {
+                    return {
+                        status: 'rejected',
+                        reason: `Could not preflight ${action.type}: ${failureReason(error)}`,
+                        actions: [],
+                    };
+                }
+                if (options?.requireCompensation && !description?.inverseAction) {
+                    return {
+                        status: 'rejected',
+                        reason: `Action is not compensable inside an atomic batch: ${action.type}`,
+                        actions: [],
+                    };
+                }
+                preparedActions.push({
+                    action,
+                    handler,
+                    description,
+                    label: description?.label ?? action.type,
+                });
+            }
+
+            if (preparedActions.length === 0) {
+                return { status: 'no-op', actions: [] };
+            }
+
+            for (const prepared of preparedActions) {
+                traceAppAction(prepared.action.type, options?.source ?? 'manual');
+            }
+
+            setSemanticContext({
+                message: options?.groupLabel ?? `Execute ${String(preparedActions.length)} actions`,
+                actionKind: 'appActionBatch',
+                entityRefs: [],
+            });
+
+            const attemptedActions: PreparedBatchAction[] = [];
+            const storageTransaction = runWithAutomergeStorageTransaction(options?.snapshotTransaction, (scope) =>
+                executePreparedBatch(preparedActions, scope, attemptedActions, options?.shouldExecute)
+            );
+            if (storageTransaction.status === 'threw') {
+                storageTransaction.abort();
+                clearBatchSemanticContext();
+                const reason = failureReason(storageTransaction.error);
+                logger.error(
+                    new Error('Action batch rejected before asynchronous execution', {
+                        cause: storageTransaction.error,
+                    })
+                );
+                return { status: 'failed', reason, actions: [] };
+            }
+
+            let executedActions: PreparedBatchAction[];
+            try {
+                executedActions = await storageTransaction.value;
+            } catch (error) {
+                storageTransaction.abort();
+                clearBatchSemanticContext();
+                const compensationFailure = await compensateAttemptedBatch(
+                    attemptedActions,
+                    options?.snapshotTransaction
+                );
+                const baseReason = failureReason(error);
+                const reason = compensationFailure
+                    ? `${baseReason}; runtime compensation failed: ${compensationFailure}`
+                    : baseReason;
+                logger.error(new Error('Action batch handler failed', { cause: error }));
+                if (error instanceof AppActionBatchCancelledError && !compensationFailure) {
+                    return { status: 'cancelled', reason: error.message, actions: [] };
+                }
+                if (error instanceof AppActionConflictError) {
+                    return { status: 'conflicted', reason, actions: [] };
+                }
+                return { status: 'failed', reason, actions: [] };
+            }
+
+            if (executedActions.length === 0) {
+                storageTransaction.abort();
+                clearBatchSemanticContext();
+                return { status: 'no-op', actions: [] };
+            }
+
+            try {
+                assertExecutionAuthorized(options?.shouldExecute);
+            } catch (error) {
+                storageTransaction.abort();
+                clearBatchSemanticContext();
+                const compensationFailure = await compensateAttemptedBatch(
+                    attemptedActions,
+                    options?.snapshotTransaction
+                );
+                if (compensationFailure) {
+                    return {
+                        status: 'failed',
+                        reason: `${failureReason(error)}; runtime compensation failed: ${compensationFailure}`,
+                        actions: [],
+                    };
+                }
+                return { status: 'cancelled', reason: failureReason(error), actions: [] };
+            }
+
+            try {
+                storageTransaction.commit();
+            } catch (error) {
+                storageTransaction.abort();
+                const cleanupWarning = clearBatchSemanticContext();
+                const reason = failureReason(error);
+                logger.error(new Error('Action batch storage commit failed', { cause: error }));
+                if (error instanceof AutomergeStorageTransactionCommittedError) {
+                    const ambiguousReason = cleanupWarning ? `${reason}; ${cleanupWarning}` : reason;
+                    return {
+                        status: 'ambiguous',
+                        actions: [],
+                        reason: ambiguousReason,
+                    };
+                }
+                const compensationFailure = await compensateAttemptedBatch(
+                    attemptedActions,
+                    options?.snapshotTransaction
+                );
+                if (compensationFailure) {
+                    return {
+                        status: 'failed',
+                        reason: `${reason}; runtime compensation failed: ${compensationFailure}`,
+                        actions: [],
+                    };
+                }
+                return { status: 'failed', reason, actions: [] };
+            }
+
+            const semanticCleanupWarning = clearBatchSemanticContext();
+            const executedBatchActions = executedActions.map(({ action, label }) => ({ action, label }));
+            if (semanticCleanupWarning) {
+                logger.error(new Error('Action batch semantic context cleanup failed'));
+                return {
+                    status: 'committed-with-warning',
+                    actions: executedBatchActions,
+                    warning: semanticCleanupWarning,
+                };
+            }
+
+            try {
+                recordCommittedBatch(executedActions, options);
+            } catch (error) {
+                const warning = failureReason(error);
+                logger.error(new Error('Action batch history recording failed after commit', { cause: error }));
+                return { status: 'committed-with-warning', actions: executedBatchActions, warning };
+            }
+
+            return { status: 'committed', actions: executedBatchActions };
+        }
+);

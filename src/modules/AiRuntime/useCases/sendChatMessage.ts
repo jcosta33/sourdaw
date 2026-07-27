@@ -1,17 +1,12 @@
 import { isAppError } from '#/infra/errors/isAppError';
-import {
-    describeAction,
-    executeAppAction,
-    generateGroupId,
-    isAppActionCommittedError,
-} from '#/modules/Command/useCases';
+import { logger } from '#/infra/logger/appLogger';
+import { describeAction, executeAppActionBatch, generateGroupId } from '#/modules/Command/useCases';
 
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
 import { createAiRuntimeError } from '../errors/AiRuntimeError';
 import { type ChatMessage } from '../models/Chat';
 import { CHAT_SYSTEM_PROMPT } from '../models/ChatSystemPrompt';
 import { type RunnableAiBackend } from '../models/LlmOrchestrationTypes';
-import { type RuntimeAction } from '../models/RuntimeAction';
 import {
     type CloudChatCompletionOutcome,
     streamCloudChatCompletion,
@@ -118,6 +113,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
                         assistantMessageId: assistantMsgId,
                         actions: result.actions,
                         actionLabels,
+                        executionMode: result.executionMode,
                     });
 
                     updateChatMessage(assistantMsgId, {
@@ -130,63 +126,81 @@ export async function sendChatMessage(userText: string): Promise<void> {
                 }
 
                 const group = generateGroupId(userText);
-                const executedLabels: Array<{ action: RuntimeAction; label: string }> = [];
-                let action_history_failed_after_commit = false;
-                let execution_failure_reason: string | null = null;
-
-                for (const action of result.actions) {
+                const batchResult = await executeAppActionBatch(result.actions, {
+                    ...group,
+                    source: 'prompt',
+                    requireCompensation: result.executionMode === 'atomic',
+                    shouldExecute: () => !aborter.signal.aborted,
+                });
+                if (batchResult.status === 'committed' || batchResult.status === 'committed-with-warning') {
+                    const executedLabels = batchResult.actions;
                     try {
-                        await executeAppAction(action, { ...group, source: 'prompt' });
+                        const historyGroup: AiActionGroup = {
+                            id: group.groupId,
+                            prompt: userText,
+                            actions: executedLabels.map((entry) => ({
+                                kind: 'appAction',
+                                actionType: entry.action.type,
+                                label: entry.label,
+                            })),
+                            groupId: group.groupId,
+                            timestamp: Date.now(),
+                            reverted: false,
+                        };
+                        pushAiActionGroup(historyGroup);
+                        notifyAiChange(
+                            `Executed: ${userText}`,
+                            executedLabels.map((entry) => entry.action.type)
+                        );
+                        updateChatMessage(assistantMsgId, {
+                            isStreaming: false,
+                            error: batchResult.status === 'committed-with-warning' ? batchResult.warning : undefined,
+                            content:
+                                batchResult.status === 'committed-with-warning'
+                                    ? `Applied:\n\n${executedLabels.map((entry) => `- **${entry.action.type.replaceAll('_', ' ')}**: ${entry.label}`).join('\n')}\n\nThe project change committed, but its history record failed: ${batchResult.warning}. Do not retry this command.`
+                                    : `Executed:\n\n${executedLabels.map((entry) => `- **${entry.action.type.replaceAll('_', ' ')}**: ${entry.label}`).join('\n')}`,
+                        });
                     } catch (error) {
-                        if (!isAppActionCommittedError(error)) {
-                            execution_failure_reason = error instanceof Error ? error.message : String(error);
-                            break;
+                        const warning = error instanceof Error ? error.message : String(error);
+                        logger.error(new Error('AI post-commit reporting failed', { cause: error }));
+                        try {
+                            updateChatMessage(assistantMsgId, {
+                                isStreaming: false,
+                                error: warning,
+                                content: `The project change committed, but reporting it failed: ${warning}. Do not retry this command.`,
+                            });
+                        } catch (reportingError) {
+                            logger.error(
+                                new Error('AI post-commit warning could not be displayed', {
+                                    cause: reportingError,
+                                })
+                            );
                         }
-                        action_history_failed_after_commit = true;
                     }
-                    executedLabels.push({ action, label: describeAction(action) });
+                    return;
                 }
 
-                if (executedLabels.length > 0) {
-                    const historyGroup: AiActionGroup = {
-                        id: group.groupId,
-                        prompt: userText,
-                        actions: executedLabels.map((entry) => ({
-                            kind: 'appAction',
-                            actionType: entry.action.type,
-                            label: entry.label,
-                        })),
-                        groupId: group.groupId,
-                        timestamp: Date.now(),
-                        reverted: false,
-                    };
-                    pushAiActionGroup(historyGroup);
-                    notifyAiChange(
-                        `Executed: ${userText}`,
-                        executedLabels.map((entry) => entry.action.type)
-                    );
-                }
-
-                if (execution_failure_reason) {
-                    const history_failure_warning = action_history_failed_after_commit
-                        ? ' Action history also failed for an earlier applied action.'
-                        : '';
+                if (batchResult.status === 'no-op') {
                     updateChatMessage(assistantMsgId, {
                         isStreaming: false,
-                        error: execution_failure_reason,
-                        content:
-                            executedLabels.length > 0
-                                ? `Partially executed:\n\n${executedLabels.map((entry) => `- **${entry.action.type.replaceAll('_', ' ')}**: ${entry.label}`).join('\n')}\n\nA later action failed: ${execution_failure_reason}.${history_failure_warning} Do not retry the whole command.`
-                                : 'Failed to execute prompt command.',
+                        content: 'No project changes were needed.',
+                    });
+                    return;
+                }
+
+                if (batchResult.status === 'ambiguous') {
+                    updateChatMessage(assistantMsgId, {
+                        isStreaming: false,
+                        error: batchResult.reason,
+                        content: `The command stopped after an uncertain partial commit: ${batchResult.reason}. Do not retry it; inspect the project first.`,
                     });
                     return;
                 }
 
                 updateChatMessage(assistantMsgId, {
                     isStreaming: false,
-                    content: action_history_failed_after_commit
-                        ? `Applied:\n\n${executedLabels.map((length) => `- **${length.action.type.replaceAll('_', ' ')}**: ${length.label}`).join('\n')}\n\nAction history failed after the change was applied. Do not retry this command.`
-                        : `Executed:\n\n${executedLabels.map((length) => `- **${length.action.type.replaceAll('_', ' ')}**: ${length.label}`).join('\n')}`,
+                    error: batchResult.reason,
+                    content: `Failed to execute prompt command atomically: ${batchResult.reason}`,
                 });
             } else if (result._jsonEditApplied) {
                 // executeDsoEdit already injected the user message and the assistant streaming message.
