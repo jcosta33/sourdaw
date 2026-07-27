@@ -8,6 +8,10 @@ export const handleBypassDevice = createHandler<'bypassDevice'>({
     execute: (alpha) => {
         return toHandlerExecutionResult(bypassDevice(alpha.payload.deviceId, alpha.payload.bypassed));
     },
+    isNoop: (action) =>
+        getTrackStoreState()
+            ?.tracks.flatMap((track) => track.devices)
+            .find((device) => device.id === action.payload.deviceId)?.bypassed === action.payload.bypassed,
     describe: (alpha) => {
         // Re-bypassing an already-bypassed device is a forward no-op, so the
         // inverse restores the captured pre-state instead of negating the

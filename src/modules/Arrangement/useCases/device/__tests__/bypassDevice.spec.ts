@@ -24,7 +24,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 describe('bypassDevice', () => {
     beforeEach(() => vi.clearAllMocks());
 
-    it('updates bypass state in store and engine', async () => {
+    it('updates bypass state in store and engine before returning', () => {
         mocks.getTrackState.mockReturnValue({
             tracks: [{ id: 't1', kind: 'audio', devices: [{ id: 'd1' }] }],
         });
@@ -41,11 +41,7 @@ describe('bypassDevice', () => {
             devices: [{ id: 'd1', bypassed: true }],
         });
 
-        // Note: The dynamic import might be tricky to test perfectly here,
-        // but let's assume it calls updateDeviceBypass.
-        await vi.waitFor(() => {
-            expect(mocks.updateDeviceBypass).toHaveBeenCalledWith('t1', 'd1', true);
-        });
+        expect(mocks.updateDeviceBypass).toHaveBeenCalledWith('t1', 'd1', true);
         expect(didWrite).toBe(true);
     });
 

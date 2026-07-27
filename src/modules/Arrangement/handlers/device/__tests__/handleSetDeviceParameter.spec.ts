@@ -87,6 +87,19 @@ describe('handleSetDeviceParameter', () => {
         expect(desc.inverseAction).toBeNull();
     });
 
+    it('detects an unchanged parameter value as a semantic no-op', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', devices: [{ id: 'd1', parameterValues: { gain: 0.5 } }] }],
+        });
+
+        const isNoop = handleSetDeviceParameter.isNoop?.({
+            type: 'setDeviceParameter',
+            payload: { deviceId: 'd1', paramId: 'gain', value: 0.5 },
+        });
+
+        expect(isNoop).toBe(true);
+    });
+
     it('is undoable', () => {
         expect(handleSetDeviceParameter.undoable).toBe(true);
     });

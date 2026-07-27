@@ -100,6 +100,19 @@ describe('handleBypassDevice', () => {
         expect(desc.inverseAction).toBeNull();
     });
 
+    it('detects an unchanged bypass state as a semantic no-op', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', devices: [{ id: 'd1', bypassed: true }] }],
+        });
+
+        const isNoop = handleBypassDevice.isNoop?.({
+            type: 'bypassDevice',
+            payload: { deviceId: 'd1', bypassed: true },
+        });
+
+        expect(isNoop).toBe(true);
+    });
+
     it('is undoable', () => {
         expect(handleBypassDevice.undoable).toBe(true);
     });

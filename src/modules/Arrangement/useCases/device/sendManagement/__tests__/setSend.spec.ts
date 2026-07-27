@@ -99,6 +99,20 @@ describe('setSend', () => {
         expect(didWrite).toBe(false);
     });
 
+    it('rejects a missing source or destination before project or engine work', () => {
+        mocks.getTrackById.mockImplementation((trackId: string) =>
+            trackId === 'audio-1' ? { id: 'audio-1', kind: 'audio', sends: [] } : undefined
+        );
+
+        const missingDestination = setSend('audio-1', 'missing-bus', 0.5);
+        const missingSource = setSend('missing-track', 'audio-1', 0.5);
+
+        expect(missingDestination).toBe(false);
+        expect(missingSource).toBe(false);
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(mocks.engineSetSend).not.toHaveBeenCalled();
+    });
+
     // FX-2: a Web Audio cycle with no DelayNode in it is muted by the spec's
     // rendering algorithm, so an unguarded self-send silently kills the track
     // rather than howling. The invariant lives here, at the mutation boundary.

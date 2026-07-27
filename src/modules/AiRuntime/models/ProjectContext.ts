@@ -22,6 +22,23 @@ export type ProjectContextDevice = {
     id: string;
     type: string;
     bypassed: boolean;
+    parameters?: ProjectContextDeviceParameter[];
+};
+
+export type ProjectContextDeviceParameter = {
+    id: string;
+    name: string;
+    type: 'float' | 'int' | 'bool' | 'choice';
+    value: number;
+    minValue: number;
+    maxValue: number;
+    unit: string;
+    choices?: string[];
+};
+
+export type ProjectContextSend = {
+    busId: string;
+    level: number;
 };
 
 export type ProjectContextTrack = {
@@ -37,4 +54,5 @@ export type ProjectContextTrack = {
     deviceCount: number;
     clips: ProjectContextClip[];
     devices: ProjectContextDevice[];
+    sends?: ProjectContextSend[];
 };

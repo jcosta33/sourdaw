@@ -22,9 +22,70 @@ const projectContext: ProjectContext = {
             gain: 0.8,
             pan: 0,
             clipCount: 0,
+            deviceCount: 1,
+            clips: [],
+            devices: [
+                {
+                    id: 'device-eq',
+                    type: 'EQ',
+                    bypassed: false,
+                    parameters: [
+                        {
+                            id: 'frequency',
+                            name: 'Frequency',
+                            type: 'float',
+                            value: 1200,
+                            minValue: 20,
+                            maxValue: 20_000,
+                            unit: 'Hz',
+                        },
+                        {
+                            id: 'enabled',
+                            name: 'Enabled',
+                            type: 'bool',
+                            value: 1,
+                            minValue: 0,
+                            maxValue: 1,
+                            unit: '',
+                        },
+                        {
+                            id: 'bands',
+                            name: 'Bands',
+                            type: 'int',
+                            value: 4,
+                            minValue: 1,
+                            maxValue: 8,
+                            unit: '',
+                        },
+                        {
+                            id: 'mode',
+                            name: 'Mode',
+                            type: 'choice',
+                            value: 0,
+                            minValue: 0,
+                            maxValue: 2,
+                            unit: '',
+                            choices: ['Clean', 'Warm', 'Aggressive'],
+                        },
+                    ],
+                },
+            ],
+            sends: [{ busId: 'bus-reverb', level: 0.2 }],
+        },
+        {
+            id: 'bus-reverb',
+            name: 'Reverb Bus',
+            kind: 'bus',
+            muted: false,
+            soloed: false,
+            armed: false,
+            gain: 0.8,
+            pan: 0,
+            clipCount: 0,
             deviceCount: 0,
             clips: [],
             devices: [],
+            sends: [],
         },
     ],
     selectedTrackId: 'track-vocals',
@@ -88,6 +149,91 @@ describe('bridgeLlmToolCalls', () => {
         ]);
     });
 
+    it('converts bounded device and send calls for existing project targets', () => {
+        const result = bridgeLlmToolCalls({
+            calls: [
+                {
+                    name: 'setDeviceParameter',
+                    arguments: { deviceId: 'device-eq', paramId: 'frequency', value: 2400 },
+                },
+                { name: 'bypassDevice', arguments: { deviceId: 'device-eq', bypassed: true } },
+                {
+                    name: 'setSend',
+                    arguments: { trackId: 'track-vocals', busId: 'bus-reverb', level: 0.45 },
+                },
+            ],
+            context: projectContext,
+        });
+
+        expect(result).toEqual({
+            actions: [
+                {
+                    type: 'setDeviceParameter',
+                    payload: { deviceId: 'device-eq', paramId: 'frequency', value: 2400 },
+                },
+                { type: 'bypassDevice', payload: { deviceId: 'device-eq', bypassed: true } },
+                {
+                    type: 'setSend',
+                    payload: { trackId: 'track-vocals', busId: 'bus-reverb', level: 0.45 },
+                },
+            ],
+            rejections: [],
+        });
+    });
+
+    it('rejects invented device parameters, out-of-range values, and non-bus send targets', () => {
+        const result = bridgeLlmToolCalls({
+            calls: [
+                {
+                    name: 'setDeviceParameter',
+                    arguments: { deviceId: 'device-eq', paramId: 'invented', value: 1 },
+                },
+                {
+                    name: 'setDeviceParameter',
+                    arguments: { deviceId: 'device-eq', paramId: 'frequency', value: 40_000 },
+                },
+                { name: 'bypassDevice', arguments: { deviceId: 'missing', bypassed: true } },
+                {
+                    name: 'setSend',
+                    arguments: { trackId: 'track-vocals', busId: 'track-vocals', level: 0.5 },
+                },
+            ],
+            context: projectContext,
+        });
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections.map(({ name }) => name)).toEqual([
+            'setDeviceParameter',
+            'setDeviceParameter',
+            'bypassDevice',
+            'setSend',
+        ]);
+    });
+
+    it('enforces boolean, integer, and choice parameter semantics', () => {
+        const valid = bridgeLlmToolCalls({
+            calls: [
+                { name: 'setDeviceParameter', arguments: { deviceId: 'device-eq', paramId: 'enabled', value: 0 } },
+                { name: 'setDeviceParameter', arguments: { deviceId: 'device-eq', paramId: 'bands', value: 6 } },
+                { name: 'setDeviceParameter', arguments: { deviceId: 'device-eq', paramId: 'mode', value: 2 } },
+            ],
+            context: projectContext,
+        });
+        const invalid = bridgeLlmToolCalls({
+            calls: [
+                { name: 'setDeviceParameter', arguments: { deviceId: 'device-eq', paramId: 'enabled', value: 0.5 } },
+                { name: 'setDeviceParameter', arguments: { deviceId: 'device-eq', paramId: 'bands', value: 2.5 } },
+                { name: 'setDeviceParameter', arguments: { deviceId: 'device-eq', paramId: 'mode', value: 1.5 } },
+            ],
+            context: projectContext,
+        });
+
+        expect(valid.actions).toHaveLength(3);
+        expect(valid.rejections).toEqual([]);
+        expect(invalid.actions).toEqual([]);
+        expect(invalid.rejections).toHaveLength(3);
+    });
+
     it('rejects an oversized provider batch before converting any action', () => {
         const result = bridgeLlmToolCalls({
             calls: Array.from({ length: 25 }, () => ({
@@ -134,6 +280,9 @@ describe('bridgeLlmToolCalls', () => {
             'setTrackGain',
             'setTrackPan',
             'setTempo',
+            'setDeviceParameter',
+            'bypassDevice',
+            'setSend',
         ]);
         expect(
             LLM_EXECUTABLE_TOOL_SCHEMAS.every((schema) => schema.function.parameters.additionalProperties === false)
@@ -154,7 +303,10 @@ describe('bridgeLlmToolCalls', () => {
         expect(userMessage).toContain('"selectedTrackId":"track-vocals"');
         expect(userMessage).toContain('<user_request>\nmute the vocals\n</user_request>');
         expect(userMessage).not.toContain('"clips"');
-        expect(userMessage).not.toContain('"devices"');
+        expect(userMessage).toContain('"devices"');
+        expect(userMessage).toContain('"frequency"');
+        expect(userMessage).toContain('"minValue":20');
+        expect(userMessage).toContain('"sends"');
     });
 
     it('escapes framing characters from project-owned names', () => {
