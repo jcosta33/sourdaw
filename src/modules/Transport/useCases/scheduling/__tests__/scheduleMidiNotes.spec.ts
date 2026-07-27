@@ -402,6 +402,7 @@ describe('scheduleMidiNotes', () => {
         await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
 
         expect(toasterNoteOn).toHaveBeenCalledTimes(1);
+        expect(toasterNoteOn).toHaveBeenCalledWith(0, 100, 60, expect.any(Number));
         expect(transposeForChordTrack).not.toHaveBeenCalled();
     });
 

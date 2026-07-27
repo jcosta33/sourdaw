@@ -474,13 +474,12 @@ export async function scheduleMidiNotes(
 
                         if (toasterRoute) {
                             let pad = toasterRoute.pad;
-                            let pitchNote = pitch;
+                            const pitchNote = toasterRoute.pitchFallback;
                             if (pad === -1) {
                                 pad = pitch - 36;
                                 if (pad >= 24 && pad <= 39) {
                                     pad = pad - 24;
                                 }
-                                pitchNote = toasterRoute.pitchFallback;
                             }
                             if (pad >= 0 && pad < 16) {
                                 const safeVelocity = projectedNote.velocity;
