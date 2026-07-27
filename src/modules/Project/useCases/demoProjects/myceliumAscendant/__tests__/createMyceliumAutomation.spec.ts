@@ -135,6 +135,7 @@ describe('createMyceliumAutomation', () => {
             expect(valueAt(lane?.points ?? [], 480)).toBe(0);
             expect(lane?.points.find((point) => point.beat === 480)?.curve).toBe('step');
             expect(valueAt(lane?.points ?? [], 483.75)).toBe(0);
+            expect(lane?.points.find((point) => point.beat === 483.75)?.curve).toBe('step');
             expect(valueAt(lane?.points ?? [], 484)).toBeGreaterThan(0);
             expect(lane?.points.find((point) => point.beat === 484)?.curve).toBe('step');
         }

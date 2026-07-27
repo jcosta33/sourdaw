@@ -296,7 +296,7 @@ function createPoints(profile: Profile, min: number, max: number, invert = false
     return PROFILES[profile].map(([beat, normalized]) => ({
         beat,
         value: min + (max - min) * (invert ? 1 - normalized : normalized),
-        curve: [191.75, 224, 256, 415.75, 480, 484].includes(beat) ? 'step' : 'linear',
+        curve: [191.75, 224, 256, 415.75, 480, 483.75, 484].includes(beat) ? 'step' : 'linear',
         tension: 0,
     }));
 }
