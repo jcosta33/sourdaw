@@ -66,7 +66,7 @@ export async function captureMyceliumProjectReceipt(page: Page): Promise<Myceliu
             includeAudioBuffers: boolean;
         }) => Promise<{ data: unknown } | null>;
         type ProjectDataShape = {
-            arrangement: { tracks: Array<{ clips: unknown[]; id: string; notes: string }> };
+            arrangement: { tracks: Array<{ clips: unknown[]; id: string; name: string; notes: string }> };
             automation: { lanes: Array<{ points: unknown[] }> };
             midi: { notesByClipId: Record<string, unknown[]> };
             transport: { loopEnd: number };
@@ -174,9 +174,11 @@ export async function captureMyceliumProjectReceipt(page: Page): Promise<Myceliu
         const digest = await crypto.subtle.digest('SHA-256', bytes);
         const projectSha256 = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
         const trackNotesMutationProject = structuredClone(projectData);
-        const mutationTrack = trackNotesMutationProject.arrangement.tracks[0];
+        const mutationTrack = trackNotesMutationProject.arrangement.tracks.find(
+            (track) => track.name === 'Pulse Engine'
+        );
         if (!mutationTrack) {
-            throw new Error('Mycelium evidence could not select a track-notes mutation probe');
+            throw new Error('Mycelium evidence could not select Pulse Engine for the track-notes mutation probe');
         }
         mutationTrack.notes = `${mutationTrack.notes}\n[mycelium-evidence-track-notes-probe]`;
         const normalizedTrackNotesMutation = normalize(trackNotesMutationProject);

@@ -181,9 +181,9 @@ function projectSectionSha256(normalizedProject: unknown): Record<string, string
 
 function trackNotesMutationSha256(projectData: ProjectData): string {
     const mutationProject = structuredClone(projectData);
-    const mutationTrack = mutationProject.arrangement.tracks[0];
+    const mutationTrack = mutationProject.arrangement.tracks.find((track) => track.name === 'Pulse Engine');
     if (!mutationTrack) {
-        throw new Error('Mycelium evidence could not select a track-notes mutation probe');
+        throw new Error('Mycelium evidence could not select Pulse Engine for the track-notes mutation probe');
     }
     mutationTrack.notes = `${mutationTrack.notes}\n[mycelium-evidence-track-notes-probe]`;
     return createHash('sha256')
