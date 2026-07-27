@@ -43,6 +43,27 @@ export type ProcessSupervisorResult = {
     streamEvidence: ProcessStreamEvidence | null;
 };
 
+type SelectProcessSupervisorReasonInput = {
+    current: ProcessSupervisorReason | null;
+    next: ProcessSupervisorReason;
+    streamReadError: boolean;
+};
+
+export function selectProcessSupervisorReason({
+    current,
+    next,
+    streamReadError,
+}: SelectProcessSupervisorReasonInput): ProcessSupervisorReason {
+    if (!current || next.kind === 'output-cap-exceeded') {
+        return next;
+    }
+    const currentIsTerminalIpc = current.kind === 'exit' || current.kind === 'signal';
+    if (streamReadError && next.kind === 'sentinel-failure' && currentIsTerminalIpc) {
+        return next;
+    }
+    return current;
+}
+
 export type ProcessSupervisorDependencies = {
     platform: NodeJS.Platform;
     sentinelPath: () => string;
@@ -254,7 +275,7 @@ export function superviseTrustedProcess(
         };
         const stdoutData = (chunk: Buffer) => consume(stdoutState, chunk);
         const stderrData = (chunk: Buffer) => consume(stderrState, chunk);
-        const streamError = () => stopGroup({ kind: 'sentinel-failure' });
+        const streamError = () => stopGroup({ kind: 'sentinel-failure' }, true);
         sentinel.stdout.on('data', stdoutData);
         sentinel.stderr.on('data', stderrData);
         sentinel.stdout.once('error', streamError);
@@ -312,11 +333,13 @@ export function superviseTrustedProcess(
                 finish(reason);
             }
         };
-        const stopGroup = (nextReason: ProcessSupervisorReason) => {
+        const stopGroup = (nextReason: ProcessSupervisorReason, streamReadError = false) => {
             if (reason) {
-                if (nextReason.kind === 'output-cap-exceeded') {
-                    reason = nextReason;
-                }
+                reason = selectProcessSupervisorReason({
+                    current: reason,
+                    next: nextReason,
+                    streamReadError,
+                });
                 return;
             }
             reason = nextReason;

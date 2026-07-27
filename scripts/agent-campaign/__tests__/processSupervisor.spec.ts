@@ -5,8 +5,10 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
+    selectProcessSupervisorReason,
     superviseTrustedProcess,
     type ProcessSupervisorDependencies,
+    type ProcessSupervisorReason,
     type TrustedProcessSupervisorInput,
 } from '../processSupervisor';
 
@@ -44,6 +46,59 @@ afterEach(async () => {
 });
 
 describe('superviseTrustedProcess', () => {
+    it.each<ProcessSupervisorReason>([
+        { kind: 'exit', code: 0 },
+        { kind: 'signal', signal: 'SIGTERM' },
+    ])('should promote a stream-read error after terminal IPC %#', (current) => {
+        expect(
+            selectProcessSupervisorReason({
+                current,
+                next: { kind: 'sentinel-failure' },
+                streamReadError: true,
+            })
+        ).toEqual({ kind: 'sentinel-failure' });
+    });
+
+    it.each<ProcessSupervisorReason>([
+        { kind: 'output-cap-exceeded' },
+        { kind: 'timeout' },
+        { kind: 'malformed-ipc' },
+        { kind: 'launch-error' },
+        { kind: 'spawn-error' },
+        { kind: 'termination-unconfirmed' },
+    ])('should preserve a stronger reason after a stream-read error %#', (current) => {
+        expect(
+            selectProcessSupervisorReason({
+                current,
+                next: { kind: 'sentinel-failure' },
+                streamReadError: true,
+            })
+        ).toEqual(current);
+    });
+
+    it.each<ProcessSupervisorReason>([
+        { kind: 'exit', code: 0 },
+        { kind: 'signal', signal: 'SIGTERM' },
+    ])('should preserve terminal IPC after ordinary sentinel shutdown %#', (current) => {
+        expect(
+            selectProcessSupervisorReason({
+                current,
+                next: { kind: 'sentinel-failure' },
+                streamReadError: false,
+            })
+        ).toEqual(current);
+    });
+
+    it('should select a stream-read failure when no reason exists', () => {
+        expect(
+            selectProcessSupervisorReason({
+                current: null,
+                next: { kind: 'sentinel-failure' },
+                streamReadError: true,
+            })
+        ).toEqual({ kind: 'sentinel-failure' });
+    });
+
     it.each([0, 7])('should preserve exact exit %i without exposing raw streams', async (code) => {
         const token = `private-${code}`;
         const output = await run(
