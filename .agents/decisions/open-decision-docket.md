@@ -72,9 +72,6 @@ code: no (all dormant).
   Options: build a multi-key CRDT transaction vs document and accept the risk.
   Blocks code: no, but gates any feature relying on cross-store invariants.
   Source: `src/infra/store/createStore.ts:35-45`.
-  **RESOLVED 2026-07-26 (ADR 0013): pure same-document batches commit as one
-  logical edit; cross-document atomic work waits for rollback-capable
-  prepare/commit/finalize or becomes an explicitly approved saga.**
 - **`LocalStorageKeys` legacy-key legal review (I-28).** The file header
   requires every key addition/deletion/change be reported to the legal
   department for Cookie-Policy transparency — out of scope for an agent to alter
@@ -205,9 +202,6 @@ code: no (all dormant).
   contract vs migrate consumers. Blocks code: no, but shapes every new action.
   Source: `src/utils/handlerContract.ts`,
   `useCases/undoTree/branchOperations/switchBranch.ts`; ADR 0007.
-  **RESOLVED 2026-07-26 (ADR 0012): keep `AppAction` as the migration primitive,
-  wrap it in the versioned command envelope, derive both from one descriptor
-  registry, and never require obsolete-command replay to load canonical state.**
 - **Canvas-editor Delete routing for non-focusable editors.** The
   `data-canvas-editor` gate works for PianoRoll (focusable canvas) but cannot
   reach the Elastic editor (window-level keydown, non-focusable canvas — its
