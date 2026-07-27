@@ -70,7 +70,7 @@ describe('applyPhaserParams', () => {
     it('resolves nodes through the nodes[] fallback when namedNodes is absent', () => {
         const ctx = createMockAudioContext();
         const base = createPhaser(asBaseAudioContext(ctx));
-        // nodes layout: [splitter(0), dry(1), wet(2), filter0(3), filter1(4), filter2(5), filter3(6), lfo(7), lfoGain(8), feedback(9), dry(10), wet(11)]
+        // nodes layout: [splitter(0), dry(1), wet(2), filter0(3), filter1(4), filter2(5), filter3(6), lfo(7), lfoGain(8), feedback(9), merger(10)]
         const fallback = deviceFromNodesOnly(base.nodes);
 
         applyPhaserParams(fallback, {
@@ -98,6 +98,23 @@ describe('applyPhaserParams', () => {
         applyPhaserParams(device, {});
         expect(param(device.namedNodes!.lfo, 'frequency').value).toBe(beforeLfo);
         device.dispose?.();
+    });
+
+    it('stops the LFO and disconnects every unique node exactly once on repeated disposal', () => {
+        const ctx = createMockAudioContext();
+        const device = createPhaser(asBaseAudioContext(ctx));
+        const lfo = device.namedNodes!.lfo as OscillatorNode;
+
+        device.dispose?.();
+        device.dispose?.();
+
+        expect(device.dispose).toBeTypeOf('function');
+        expect(new Set(device.nodes).size).toBe(device.nodes.length);
+        expect(device.nodes).toContain(device.namedNodes!.merger);
+        expect(lfo.stop).toHaveBeenCalledTimes(1);
+        for (const node of device.nodes) {
+            expect(node.disconnect).toHaveBeenCalledTimes(1);
+        }
     });
 });
 
