@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { access, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -9,7 +9,7 @@ import {
     PROCESS_SUPERVISOR_SENTINEL_ROLE,
     type SentinelMessage,
     type SentinelOutcomeMessage,
-    type SentinelStartMessage,
+    type TrustedCodeOwnedExecutorStartMessage,
 } from '../processSupervisorSentinel';
 
 const sentinelPath = join(process.cwd(), 'scripts/agent-campaign/processSupervisorSentinel.ts');
@@ -42,9 +42,9 @@ async function startSentinel() {
     return sentinel;
 }
 
-function sendStart(sentinel: ChildProcess, overrides: Partial<SentinelStartMessage> = {}): void {
+function sendStart(sentinel: ChildProcess, overrides: Partial<TrustedCodeOwnedExecutorStartMessage> = {}): void {
     sentinel.send({
-        kind: 'start',
+        kind: 'start-trusted-code-owned-executor',
         executable: process.execPath,
         arguments: ['--eval', 'process.exitCode=0'],
         cwd: process.cwd(),
@@ -134,6 +134,17 @@ describe('processSupervisorSentinel', () => {
         }
     );
 
+    it('should let a destination error override an earlier executor exit', async () => {
+        const sentinel = await startSentinel();
+        sentinel.stdout?.destroy();
+        sendStart(sentinel, {
+            arguments: ['--eval', "process.stdout.write('private-token');process.exit(0)"],
+        });
+        const outcome = await waitForMessage(sentinel);
+        expect(outcome).toEqual({ kind: 'spawn-error' });
+        expect(JSON.stringify(outcome)).not.toContain('private-token');
+    });
+
     it('should remain alive when its owner disconnects before executor outcome', async () => {
         const root = await mkdtemp(join(tmpdir(), 'sourdaw-sentinel-'));
         const readyPath = join(root, 'ready.txt');
@@ -165,18 +176,34 @@ describe('processSupervisorSentinel', () => {
         expect(() => process.kill(Number(sentinel.pid), 0)).not.toThrow();
     });
 
-    it.each([
-        ['/definitely/missing/sourdaw-executor', []],
-        [process.execPath, ['invalid\u0000argument']],
-    ])('should redact spawn failure %#', async (executable, arguments_) => {
+    it('should redact spawn failure', async () => {
         const sentinel = await startSentinel();
-        sendStart(sentinel, { executable, arguments: arguments_ });
+        sendStart(sentinel, { executable: '/definitely/missing/sourdaw-executor' });
         expect(await waitForMessage(sentinel)).toEqual({ kind: 'spawn-error' });
+    });
+
+    it.each([
+        ['empty executable', { executable: '' }],
+        ['relative executable', { executable: relative(process.cwd(), process.execPath) }],
+        ['NUL executable', { executable: `${process.execPath}\u0000invalid` }],
+        ['empty cwd', { cwd: '' }],
+        ['relative cwd', { cwd: '.' }],
+        ['NUL cwd', { cwd: `${process.cwd()}\u0000invalid` }],
+        ['NUL argument', { arguments: ['invalid\u0000argument'] }],
+    ])('should reject %s before spawn', async (_case, overrides) => {
+        const root = await mkdtemp(join(tmpdir(), 'sourdaw-sentinel-'));
+        const forbiddenPath = join(root, 'forbidden.txt');
+        roots.push(root);
+        const sentinel = await startSentinel();
+        const script = `require('node:fs').writeFileSync(${JSON.stringify(forbiddenPath)},'bad')`;
+        sendStart(sentinel, { arguments: ['--eval', script], ...overrides });
+        expect(await waitForMessage(sentinel)).toEqual({ kind: 'spawn-error' });
+        await expect(access(forbiddenPath)).rejects.toMatchObject({ code: 'ENOENT' });
     });
 
     it('should reject malformed IPC and remain alive', async () => {
         const sentinel = await startSentinel();
-        sentinel.send({ kind: 'start', executable: 42 });
+        sentinel.send({ kind: 'start-trusted-code-owned-executor', executable: 42 });
         expect(await waitForMessage(sentinel)).toEqual({ kind: 'spawn-error' });
         expect(() => process.kill(Number(sentinel.pid), 0)).not.toThrow();
     });

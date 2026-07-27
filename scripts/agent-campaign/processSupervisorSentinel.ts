@@ -5,8 +5,10 @@ import { isAbsolute } from 'node:path';
 
 export const PROCESS_SUPERVISOR_SENTINEL_ROLE = '--process-supervisor-sentinel';
 
-export type SentinelStartMessage = {
-    kind: 'start';
+// This protocol only runs trusted, code-owned executors. Process-group cleanup is not a sandbox:
+// executors must not detach descendants or signal the owning sentinel.
+export type TrustedCodeOwnedExecutorStartMessage = {
+    kind: 'start-trusted-code-owned-executor';
     executable: string;
     arguments: readonly string[];
     cwd: string;
@@ -19,18 +21,21 @@ export type SentinelMessage = { kind: 'ready' } | SentinelOutcomeMessage;
 
 const EMPTY_ENV = Object.freeze({});
 
-function isStartMessage(value: unknown): value is SentinelStartMessage {
+function isAbsolutePath(value: unknown): value is string {
+    return typeof value === 'string' && value.length > 0 && !value.includes('\0') && isAbsolute(value);
+}
+
+function isTrustedStartMessage(value: unknown): value is TrustedCodeOwnedExecutorStartMessage {
     if (typeof value !== 'object' || value === null) {
         return false;
     }
-    const candidate = value as Partial<SentinelStartMessage>;
+    const candidate = value as Partial<TrustedCodeOwnedExecutorStartMessage>;
     return (
-        candidate.kind === 'start' &&
-        typeof candidate.executable === 'string' &&
-        isAbsolute(candidate.executable) &&
+        candidate.kind === 'start-trusted-code-owned-executor' &&
+        isAbsolutePath(candidate.executable) &&
         Array.isArray(candidate.arguments) &&
-        candidate.arguments.every((argument) => typeof argument === 'string') &&
-        typeof candidate.cwd === 'string'
+        candidate.arguments.every((argument) => typeof argument === 'string' && !argument.includes('\0')) &&
+        isAbsolutePath(candidate.cwd)
     );
 }
 
@@ -56,15 +61,15 @@ export function runProcessSupervisorSentinel(): void {
     };
 
     process.on('message', (value) => {
-        if (started || !isStartMessage(value)) {
+        if (started || !isTrustedStartMessage(value)) {
             started = true;
             report({ kind: 'spawn-error' });
             return;
         }
         started = true;
-        let executor;
+        let trustedExecutor;
         try {
-            executor = spawn(value.executable, [...value.arguments], {
+            trustedExecutor = spawn(value.executable, [...value.arguments], {
                 cwd: value.cwd,
                 detached: false,
                 env: EMPTY_ENV,
@@ -76,28 +81,28 @@ export function runProcessSupervisorSentinel(): void {
             return;
         }
         let terminal: SentinelOutcomeMessage | null = null;
-        const handleDestinationError = (source: typeof executor.stdout, destination: NodeJS.WriteStream) => {
-            terminal ??= { kind: 'spawn-error' };
+        const handleDestinationError = (source: typeof trustedExecutor.stdout, destination: NodeJS.WriteStream) => {
+            terminal = { kind: 'spawn-error' };
             source.unpipe(destination);
             source.resume();
         };
-        const stdoutError = () => handleDestinationError(executor.stdout, process.stdout);
-        const stderrError = () => handleDestinationError(executor.stderr, process.stderr);
+        const stdoutError = () => handleDestinationError(trustedExecutor.stdout, process.stdout);
+        const stderrError = () => handleDestinationError(trustedExecutor.stderr, process.stderr);
         process.stdout.on('error', stdoutError);
         process.stderr.on('error', stderrError);
-        executor.stdout.pipe(process.stdout, { end: false });
-        executor.stderr.pipe(process.stderr, { end: false });
-        executor.once('error', () => {
-            terminal ??= { kind: 'spawn-error' };
+        trustedExecutor.stdout.pipe(process.stdout, { end: false });
+        trustedExecutor.stderr.pipe(process.stderr, { end: false });
+        trustedExecutor.once('error', () => {
+            terminal = { kind: 'spawn-error' };
         });
-        executor.once('exit', (code, signal) => {
+        trustedExecutor.once('exit', (code, signal) => {
             if (signal) {
                 terminal ??= { kind: 'signal', signal };
                 return;
             }
             terminal ??= { kind: 'exit', code: code ?? 1 };
         });
-        executor.once('close', () => {
+        trustedExecutor.once('close', () => {
             process.stdout.off('error', stdoutError);
             process.stderr.off('error', stderrError);
             report(terminal ?? { kind: 'spawn-error' });
