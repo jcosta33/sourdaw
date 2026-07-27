@@ -3,6 +3,8 @@ import type { Page } from '@playwright/test';
 export type MyceliumProjectReceipt = {
     projectSha256: string;
     projectSectionSha256: Record<string, string>;
+    debugNormalizedMeta: unknown;
+    debugNormalizedArrangements: unknown;
     durationBeats: number;
     trackCount: number;
     clipCount: number;
@@ -147,6 +149,8 @@ export async function captureMyceliumProjectReceipt(page: Page): Promise<Myceliu
         return {
             projectSha256,
             projectSectionSha256,
+            debugNormalizedMeta: normalizedProject.meta,
+            debugNormalizedArrangements: normalizedProject.arrangements,
             durationBeats: projectData.transport.loopEnd,
             trackCount: projectData.arrangement.tracks.length,
             clipCount: projectData.arrangement.tracks.reduce((total, track) => total + track.clips.length, 0),
