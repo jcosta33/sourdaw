@@ -3,7 +3,6 @@ import type { Page } from '@playwright/test';
 export type MyceliumProjectReceipt = {
     projectSha256: string;
     projectSectionSha256: Record<string, string>;
-    debugNormalizedMeta: unknown;
     durationBeats: number;
     trackCount: number;
     clipCount: number;
@@ -86,31 +85,44 @@ export async function captureMyceliumProjectReceipt(page: Page): Promise<Myceliu
             if (!isRecordValue(value)) {
                 return value;
             }
+            const entries = Object.entries(value).filter(([key, child]) => {
+                if (child === undefined) {
+                    return false;
+                }
+                if (key === 'createdAt' || key === 'updatedAt' || key === 'notes') {
+                    return false;
+                }
+                if (
+                    ((key === 'pitchBend' || key === 'pressure' || key === 'slide') && child === 0) ||
+                    (key === 'probability' && child === 100)
+                ) {
+                    return false;
+                }
+                if (key === 'adjustmentLayers') {
+                    return hasItems(child, 'layers');
+                }
+                if (key === 'grooves') {
+                    return hasItems(child, 'assignments');
+                }
+                if (key === 'takeLanes') {
+                    return hasItems(child, 'lanes');
+                }
+                return true;
+            });
             return Object.fromEntries(
-                Object.entries(value)
-                    .filter(([key, child]) => {
-                        if (key === 'createdAt' || key === 'updatedAt' || key === 'notes') {
-                            return false;
-                        }
-                        if (
-                            ((key === 'pitchBend' || key === 'pressure' || key === 'slide') && child === 0) ||
-                            (key === 'probability' && child === 100)
-                        ) {
-                            return false;
-                        }
-                        if (key === 'adjustmentLayers') {
-                            return hasItems(child, 'layers');
-                        }
-                        if (key === 'grooves') {
-                            return hasItems(child, 'assignments');
-                        }
-                        if (key === 'takeLanes') {
-                            return hasItems(child, 'lanes');
-                        }
-                        return true;
-                    })
+                entries
                     .toSorted(([first], [second]) => first.localeCompare(second))
-                    .map(([key, child]) => [key, normalize(child)])
+                    .map(([key, child]) => {
+                        if (key === 'frequencies' && Array.isArray(child)) {
+                            return [
+                                key,
+                                child.map((frequency: unknown) =>
+                                    typeof frequency === 'number' ? Number(frequency.toPrecision(12)) : frequency
+                                ),
+                            ];
+                        }
+                        return [key, normalize(child)];
+                    })
             );
         };
         const normalizedProject = normalize(projectData);
@@ -135,7 +147,6 @@ export async function captureMyceliumProjectReceipt(page: Page): Promise<Myceliu
         return {
             projectSha256,
             projectSectionSha256,
-            debugNormalizedMeta: normalizedProject.meta,
             durationBeats: projectData.transport.loopEnd,
             trackCount: projectData.arrangement.tracks.length,
             clipCount: projectData.arrangement.tracks.reduce((total, track) => total + track.clips.length, 0),

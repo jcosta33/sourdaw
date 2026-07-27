@@ -118,31 +118,44 @@ function normalizeProjectEvidence(value: unknown): unknown {
     if (!isRecord(value)) {
         return value;
     }
+    const entries = Object.entries(value).filter(([key, child]) => {
+        if (child === undefined) {
+            return false;
+        }
+        if (key === 'createdAt' || key === 'updatedAt' || key === 'notes') {
+            return false;
+        }
+        if (
+            ((key === 'pitchBend' || key === 'pressure' || key === 'slide') && child === 0) ||
+            (key === 'probability' && child === 100)
+        ) {
+            return false;
+        }
+        if (key === 'adjustmentLayers') {
+            return hasItems(child, 'layers');
+        }
+        if (key === 'grooves') {
+            return hasItems(child, 'assignments');
+        }
+        if (key === 'takeLanes') {
+            return hasItems(child, 'lanes');
+        }
+        return true;
+    });
     return Object.fromEntries(
-        Object.entries(value)
-            .filter(([key, child]) => {
-                if (key === 'createdAt' || key === 'updatedAt' || key === 'notes') {
-                    return false;
-                }
-                if (
-                    ((key === 'pitchBend' || key === 'pressure' || key === 'slide') && child === 0) ||
-                    (key === 'probability' && child === 100)
-                ) {
-                    return false;
-                }
-                if (key === 'adjustmentLayers') {
-                    return hasItems(child, 'layers');
-                }
-                if (key === 'grooves') {
-                    return hasItems(child, 'assignments');
-                }
-                if (key === 'takeLanes') {
-                    return hasItems(child, 'lanes');
-                }
-                return true;
-            })
+        entries
             .toSorted(([first], [second]) => first.localeCompare(second))
-            .map(([key, child]) => [key, normalizeProjectEvidence(child)])
+            .map(([key, child]) => {
+                if (key === 'frequencies' && Array.isArray(child)) {
+                    return [
+                        key,
+                        child.map((frequency: unknown) =>
+                            typeof frequency === 'number' ? Number(frequency.toPrecision(12)) : frequency
+                        ),
+                    ];
+                }
+                return [key, normalizeProjectEvidence(child)];
+            })
     );
 }
 
