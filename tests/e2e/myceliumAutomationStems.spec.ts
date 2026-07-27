@@ -353,7 +353,7 @@ test('renders signal evidence for every required Mycelium automation audition wi
         clipCount: 119,
         noteCount: 3_818,
         automationLaneCount: 115,
-        automationPointCount: 1_622,
+        automationPointCount: 1_651,
     });
     expect(report.windows).toHaveLength(AUDITION_WINDOWS.length);
     for (const window of report.windows) {

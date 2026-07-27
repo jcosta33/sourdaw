@@ -23,7 +23,7 @@ describe('createMyceliumAutomation', () => {
         const laneKeys = lanes.map((lane) => `${lane.trackId}:${lane.parameterId}`);
 
         expect(lanes).toHaveLength(115);
-        expect(lanes.reduce((total, lane) => total + lane.points.length, 0)).toBe(1_622);
+        expect(lanes.reduce((total, lane) => total + lane.points.length, 0)).toBe(1_651);
         expect(new Set(lanes.map((lane) => lane.trackId)).size).toBe(39);
         expect(lanes.every((lane) => UUID_PATTERN.test(lane.id))).toBe(true);
         expect(new Set(lanes.map((lane) => lane.id)).size).toBe(lanes.length);
@@ -134,7 +134,9 @@ describe('createMyceliumAutomation', () => {
             expect(valueAt(lane?.points ?? [], 479.75)).toBeGreaterThan(0);
             expect(valueAt(lane?.points ?? [], 480)).toBe(0);
             expect(lane?.points.find((point) => point.beat === 480)?.curve).toBe('step');
+            expect(valueAt(lane?.points ?? [], 483.75)).toBe(0);
             expect(valueAt(lane?.points ?? [], 484)).toBeGreaterThan(0);
+            expect(lane?.points.find((point) => point.beat === 484)?.curve).toBe('step');
         }
         expect(valueAt(gainLane('Sub Mycelium')?.points ?? [], 288)).toBe(0);
         expect(valueAt(gainLane('Sub Mycelium')?.points ?? [], 316)).toBe(0);

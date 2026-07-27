@@ -131,6 +131,7 @@ const PROFILES: Readonly<Record<Profile, readonly (readonly [number, number])[]>
         [416, 1],
         [479.75, 1],
         [480, 0],
+        [483.75, 0],
         [484, 1],
         [544, 0.38],
         [560, 0],
@@ -152,6 +153,7 @@ const PROFILES: Readonly<Record<Profile, readonly (readonly [number, number])[]>
         [416, 0.96],
         [479.75, 0.96],
         [480, 0],
+        [483.75, 0],
         [484, 0.96],
         [544, 0.32],
         [560, 0.24],
@@ -172,6 +174,7 @@ const PROFILES: Readonly<Record<Profile, readonly (readonly [number, number])[]>
         [416, 0.9],
         [479.75, 0.9],
         [480, 0],
+        [483.75, 0],
         [484, 0.88],
         [544, 0.48],
         [568, 0],
@@ -201,6 +204,7 @@ const PROFILES: Readonly<Record<Profile, readonly (readonly [number, number])[]>
         [416, 0.38],
         [479.75, 0.38],
         [480, 0],
+        [483.75, 0],
         [484, 0.42],
         [544, 0.68],
         [568, 0.28],
@@ -292,7 +296,7 @@ function createPoints(profile: Profile, min: number, max: number, invert = false
     return PROFILES[profile].map(([beat, normalized]) => ({
         beat,
         value: min + (max - min) * (invert ? 1 - normalized : normalized),
-        curve: [191.75, 224, 256, 415.75, 480].includes(beat) ? 'step' : 'linear',
+        curve: [191.75, 224, 256, 415.75, 480, 484].includes(beat) ? 'step' : 'linear',
         tension: 0,
     }));
 }
