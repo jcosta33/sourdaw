@@ -284,7 +284,7 @@ function hasCoherentModels(input: {
     return true;
 }
 
-export function normalizeInstrumentCapabilitiesDescriptor(
+function normalizeInstrumentCapabilitiesDescriptorUnchecked(
     value: unknown
 ): InstrumentCapabilitiesDescriptorInput | null {
     const properties = readDataObject(value, DESCRIPTOR_KEYS);
@@ -329,12 +329,22 @@ export function normalizeInstrumentCapabilitiesDescriptor(
     return Object.freeze(normalized);
 }
 
-export function normalizeRegisteredInstrumentCapabilities(value: unknown): RegisteredInstrumentCapabilities | null {
+export function normalizeInstrumentCapabilitiesDescriptor(
+    value: unknown
+): InstrumentCapabilitiesDescriptorInput | null {
+    try {
+        return normalizeInstrumentCapabilitiesDescriptorUnchecked(value);
+    } catch {
+        return null;
+    }
+}
+
+function normalizeRegisteredInstrumentCapabilitiesUnchecked(value: unknown): RegisteredInstrumentCapabilities | null {
     const properties = readDataObject(value, REGISTERED_DESCRIPTOR_KEYS);
     if (!properties || properties.availability !== 'registered') {
         return null;
     }
-    const normalized = normalizeInstrumentCapabilitiesDescriptor({
+    const normalized = normalizeInstrumentCapabilitiesDescriptorUnchecked({
         schemaVersion: properties.schemaVersion,
         instrumentId: properties.instrumentId,
         semanticsRevision: properties.semanticsRevision,
@@ -353,6 +363,14 @@ export function normalizeRegisteredInstrumentCapabilities(value: unknown): Regis
         ...normalized,
         availability: 'registered',
     });
+}
+
+export function normalizeRegisteredInstrumentCapabilities(value: unknown): RegisteredInstrumentCapabilities | null {
+    try {
+        return normalizeRegisteredInstrumentCapabilitiesUnchecked(value);
+    } catch {
+        return null;
+    }
 }
 
 export function createGenericInstrumentCapabilities(instrumentId: string): GenericInstrumentCapabilities {

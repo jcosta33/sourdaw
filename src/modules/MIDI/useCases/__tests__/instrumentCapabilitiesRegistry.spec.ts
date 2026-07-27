@@ -82,6 +82,9 @@ describe('registerInstrumentCapabilities', () => {
         registerInstrumentCapabilities(createDescriptor());
 
         const stored = instrumentCapabilitiesState.read('test-instrument');
+        if (!stored) {
+            throw new Error('Expected registered capabilities');
+        }
         expect(stored).toMatchObject({
             schemaVersion: 1,
             trusted: true,
@@ -91,6 +94,7 @@ describe('registerInstrumentCapabilities', () => {
                 semanticsRevision: 1,
             },
         });
+        expect(Reflect.set(stored, 'trusted', false)).toBe(false);
         expect(getInstrumentCapabilities('test-instrument').expressionLanes).toHaveLength(3);
     });
 
@@ -224,6 +228,14 @@ describe('registerInstrumentCapabilities', () => {
         mutate(malformed);
 
         expect(() => registerUnknown(malformed)).toThrow('Invalid instrument capabilities descriptor');
+        expect(instrumentCapabilitiesState.read('test-instrument')).toBeUndefined();
+    });
+
+    it('rejects reflection-throwing input before registry mutation', () => {
+        const revocable = Proxy.revocable({}, {});
+        revocable.revoke();
+
+        expect(() => registerUnknown(revocable.proxy)).toThrow('Invalid instrument capabilities descriptor');
         expect(instrumentCapabilitiesState.read('test-instrument')).toBeUndefined();
     });
 });

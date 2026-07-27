@@ -97,6 +97,7 @@ describe('getInstrumentCapabilities', () => {
         instrumentCapabilitiesState.seedForTests({
             instrumentId: 'future-instrument',
             schemaVersion: 2,
+            trusted: false,
             descriptor: {
                 schemaVersion: 2,
                 instrumentId: 'future-instrument',
@@ -116,6 +117,7 @@ describe('getInstrumentCapabilities', () => {
         instrumentCapabilitiesState.seedForTests({
             instrumentId: 'malformed-instrument',
             schemaVersion: 1,
+            trusted: true,
             descriptor: {
                 availability: 'registered',
                 schemaVersion: 1,
@@ -127,6 +129,43 @@ describe('getInstrumentCapabilities', () => {
             availability: 'unavailable',
             unavailableReason: 'unknown-or-incompatible',
             instrumentId: 'malformed-instrument',
+        });
+    });
+
+    it('fails closed when trusted private state throws during reflection', () => {
+        const revocable = Proxy.revocable({}, {});
+        revocable.revoke();
+        instrumentCapabilitiesState.seedForTests({
+            instrumentId: 'throwing-instrument',
+            schemaVersion: 1,
+            trusted: true,
+            descriptor: revocable.proxy,
+        });
+
+        expect(getInstrumentCapabilities('throwing-instrument')).toMatchObject({
+            availability: 'unavailable',
+            unavailableReason: 'unknown-or-incompatible',
+            instrumentId: 'throwing-instrument',
+        });
+    });
+
+    it('fails closed when a trusted descriptor does not match its registry key', () => {
+        registerKnownInstrument();
+        const stored = instrumentCapabilitiesState.read('known-instrument');
+        if (!stored) {
+            throw new Error('Expected registered capabilities');
+        }
+        instrumentCapabilitiesState.seedForTests({
+            instrumentId: 'mismatched-instrument',
+            schemaVersion: 1,
+            trusted: true,
+            descriptor: stored.descriptor,
+        });
+
+        expect(getInstrumentCapabilities('mismatched-instrument')).toMatchObject({
+            availability: 'unavailable',
+            unavailableReason: 'unknown-or-incompatible',
+            instrumentId: 'mismatched-instrument',
         });
     });
 });

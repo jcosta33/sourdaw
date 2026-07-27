@@ -13,7 +13,7 @@ export function getInstrumentCapabilities(instrumentId: string): InstrumentCapab
     }
 
     const registered = normalizeRegisteredInstrumentCapabilities(stored.descriptor);
-    if (!registered) {
+    if (!registered || registered.instrumentId !== instrumentId) {
         return createGenericInstrumentCapabilities(instrumentId);
     }
     return registered;

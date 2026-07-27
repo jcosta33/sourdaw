@@ -17,11 +17,14 @@ export const instrumentCapabilitiesState = Object.freeze({
             return false;
         }
 
-        descriptors.set(instrumentId, {
-            schemaVersion: 1,
-            trusted: true,
-            descriptor,
-        });
+        descriptors.set(
+            instrumentId,
+            Object.freeze({
+                schemaVersion: 1,
+                trusted: true,
+                descriptor,
+            })
+        );
         return true;
     },
     resetForTests(): void {
@@ -30,16 +33,21 @@ export const instrumentCapabilitiesState = Object.freeze({
     seedForTests({
         instrumentId,
         schemaVersion,
+        trusted,
         descriptor,
     }: Readonly<{
         instrumentId: string;
         schemaVersion: number;
+        trusted: boolean;
         descriptor: unknown;
     }>): void {
-        descriptors.set(instrumentId, {
-            schemaVersion,
-            trusted: false,
-            descriptor,
-        });
+        descriptors.set(
+            instrumentId,
+            Object.freeze({
+                schemaVersion,
+                trusted,
+                descriptor,
+            })
+        );
     },
 });
