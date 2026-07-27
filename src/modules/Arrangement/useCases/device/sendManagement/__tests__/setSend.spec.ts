@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
     getAllTracks: vi.fn(),
     updateTrack: vi.fn(),
     engineSetSend: vi.fn(),
+    engineRemoveSend: vi.fn(),
     getAllSidechainRoutes: vi.fn(),
 }));
 
@@ -25,6 +26,7 @@ vi.mock('../../../../repositories/track/updateTrack', () => ({
 vi.mock('#/modules/Routing/useCases', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     setSend: mocks.engineSetSend,
+    removeSend: mocks.engineRemoveSend,
     getAllSidechainRoutes: mocks.getAllSidechainRoutes,
 }));
 
@@ -50,6 +52,37 @@ describe('setSend', () => {
 
         expect(mocks.engineSetSend).toHaveBeenCalledWith('t1', 'bus1', 0.5, true);
         expect(didWrite).toBe(true);
+    });
+
+    it('defers the live engine send until the project transaction commits', () => {
+        const source: {
+            id: string;
+            kind: 'audio';
+            sends: Array<{ busId: string; level: number; preFader: boolean }>;
+        } = { id: 't1', kind: 'audio', sends: [] };
+        const target = { id: 'bus1', kind: 'bus', sends: [] };
+        mocks.getTrackById.mockImplementation((trackId: string) => {
+            if (trackId === source.id) {
+                return source;
+            }
+            return target;
+        });
+
+        const runtimeEffect = setSend('t1', 'bus1', 0.5, false, { deferRuntimeEffect: true });
+
+        expect(mocks.updateTrack).toHaveBeenCalledWith('t1', expect.any(Function));
+        expect(mocks.engineSetSend).not.toHaveBeenCalled();
+        if (!runtimeEffect) {
+            throw new Error('expected a deferred runtime effect');
+        }
+        runtimeEffect.afterCommit();
+        runtimeEffect.afterCommit();
+        expect(mocks.engineSetSend).toHaveBeenCalledOnce();
+        expect(mocks.engineSetSend).toHaveBeenCalledWith('t1', 'bus1', 0.5, false);
+
+        source.sends = [{ busId: 'bus1', level: 0.7, preFader: true }];
+        runtimeEffect.afterAmbiguousCommit();
+        expect(mocks.engineSetSend).toHaveBeenLastCalledWith('t1', 'bus1', 0.7, true);
     });
 
     it('updates an existing send maintaining preFader state', () => {

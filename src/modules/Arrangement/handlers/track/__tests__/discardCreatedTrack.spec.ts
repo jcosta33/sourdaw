@@ -5,11 +5,23 @@ import { handleDiscardCreatedTrack } from '../discardCreatedTrack';
 const mocks = vi.hoisted(() => ({
     finalizeRuntimeRemoval: vi.fn(),
     finalizeModulationRemoval: vi.fn(),
+    getTrackStoreState: vi.fn(),
+    projectTrackToLiveStrip: vi.fn(),
     publishTrackRemoved: vi.fn(),
     removeTrack: vi.fn(),
     removeTrackModulationReferences: vi.fn(),
+    wireSidechainRoutes: vi.fn(),
 }));
 
+vi.mock('#/modules/Routing/useCases', () => ({
+    wireSidechainRoutes: mocks.wireSidechainRoutes,
+}));
+vi.mock('../../../useCases/getTrackStoreState', () => ({
+    getTrackStoreState: mocks.getTrackStoreState,
+}));
+vi.mock('../../../useCases/projectTrackToLiveStrip', () => ({
+    projectTrackToLiveStrip: mocks.projectTrackToLiveStrip,
+}));
 vi.mock('../../../useCases/publishTrackRemoved', () => ({
     publishTrackRemoved: mocks.publishTrackRemoved,
 }));
@@ -23,7 +35,10 @@ vi.mock('../../../useCases/removeTrackModulationReferences', () => ({
 describe('handleDiscardCreatedTrack', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.removeTrackModulationReferences.mockReturnValue(mocks.finalizeModulationRemoval);
+        mocks.removeTrackModulationReferences.mockReturnValue({
+            afterCommit: mocks.finalizeModulationRemoval,
+            afterAmbiguousCommit: mocks.finalizeModulationRemoval,
+        });
     });
 
     it('removes a committed created track and publishes after commit', async () => {
@@ -57,6 +72,31 @@ describe('handleDiscardCreatedTrack', () => {
         expect(mocks.finalizeRuntimeRemoval).toHaveBeenCalledOnce();
         expect(mocks.finalizeModulationRemoval).toHaveBeenCalledOnce();
         expect(mocks.publishTrackRemoved).toHaveBeenCalledWith({ trackId: 'created' });
+    });
+
+    it('rebuilds a created track that remains in durable truth after an ambiguous commit', async () => {
+        mocks.removeTrack.mockReturnValue({
+            removed: true,
+            finalizeRuntimeRemoval: mocks.finalizeRuntimeRemoval,
+        });
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 'created' }] });
+
+        const result = await handleDiscardCreatedTrack.execute({
+            type: 'discardCreatedTrack',
+            payload: { trackId: 'created' },
+        });
+        if (!result) {
+            throw new Error('Expected a written execution result');
+        }
+        await result.afterAmbiguousCommit?.();
+
+        expect(mocks.projectTrackToLiveStrip).toHaveBeenCalledWith({
+            trackId: 'created',
+            activateDormantExternalPlugins: true,
+        });
+        expect(mocks.finalizeRuntimeRemoval).not.toHaveBeenCalled();
+        expect(mocks.publishTrackRemoved).not.toHaveBeenCalled();
+        expect(mocks.wireSidechainRoutes).toHaveBeenCalledOnce();
     });
 
     it('succeeds idempotently when an aborted transaction already removed the track', async () => {

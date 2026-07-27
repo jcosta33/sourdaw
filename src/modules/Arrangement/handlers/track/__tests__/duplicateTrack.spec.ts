@@ -4,7 +4,7 @@ import { handleDuplicateTrack } from '../duplicateTrack';
 
 const mocks = vi.hoisted(() => ({
     duplicateTrack: vi.fn(),
-    getTrackStoreState: vi.fn<() => { tracks: { id: string; kind: string }[] } | null>(),
+    getTrackStoreState: vi.fn<() => { tracks: { id: string; name?: string; kind: string }[] } | null>(),
     publishTrackAdded: vi.fn(),
 }));
 
@@ -22,7 +22,7 @@ vi.mock('../../../useCases/publishTrackAdded', () => ({
 describe('handleDuplicateTrack', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', kind: 'audio' }] });
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', name: 'Source', kind: 'audio' }] });
     });
 
     it('honors an app-owned selection policy and publishes only after commit', async () => {
@@ -73,6 +73,29 @@ describe('handleDuplicateTrack', () => {
             payload: { trackId: targetTrackId },
         });
         expect(targetTrackId).toMatch(/^track-dup-/);
+    });
+
+    it('publishes only a duplicate found in durable truth after an ambiguous commit', async () => {
+        const action = {
+            type: 'duplicateTrack',
+            payload: { trackId: 't1', targetTrackId: 'copy' },
+        } as const;
+        mocks.duplicateTrack.mockReturnValue({ id: 'copy', name: 'Requested Copy', kind: 'audio' });
+        const result = await handleDuplicateTrack.execute(action);
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                { id: 't1', name: 'Source', kind: 'audio' },
+                { id: 'copy', name: 'Committed Copy', kind: 'audio' },
+            ],
+        });
+
+        await result?.afterAmbiguousCommit?.();
+
+        expect(mocks.publishTrackAdded).toHaveBeenCalledWith({
+            trackId: 'copy',
+            name: 'Committed Copy',
+            kind: 'audio',
+        });
     });
 
     it('preserves the default selection behavior for ordinary commands', async () => {

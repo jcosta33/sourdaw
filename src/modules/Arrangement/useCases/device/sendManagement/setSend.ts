@@ -1,5 +1,9 @@
 import { logger } from '#/infra/logger/appLogger';
-import { getAllSidechainRoutes, setSend as engineSetSend } from '#/modules/Routing/useCases';
+import {
+    getAllSidechainRoutes,
+    removeSend as engineRemoveSend,
+    setSend as engineSetSend,
+} from '#/modules/Routing/useCases';
 import { wouldCreateRoutingCycle } from '#/utils/routingCycle';
 
 import { getAllTracks } from '../../../repositories/track/getAllTracks';
@@ -7,7 +11,30 @@ import { getTrackById } from '../../../repositories/track/getTrackById';
 import { updateTrack } from '../../../repositories/track/updateTrack';
 import { getTrackEligibility } from '../../../stores/trackEligibility';
 
-export function setSend(trackId: string, busId: string, level: number, preFader = false): boolean {
+type SetSendOptions = {
+    deferRuntimeEffect?: boolean;
+};
+
+type DeferredSendRuntimeEffect = {
+    afterCommit: () => void;
+    afterAmbiguousCommit: () => void;
+};
+
+export function setSend(trackId: string, busId: string, level: number, preFader?: boolean): boolean;
+export function setSend(
+    trackId: string,
+    busId: string,
+    level: number,
+    preFader: boolean,
+    options: { deferRuntimeEffect: true }
+): DeferredSendRuntimeEffect | null;
+export function setSend(
+    trackId: string,
+    busId: string,
+    level: number,
+    preFader = false,
+    options: SetSendOptions = {}
+): boolean | DeferredSendRuntimeEffect | null {
     const track = getTrackById(trackId);
     if (!track || !getTrackEligibility(track.kind).acceptsSend) {
         return false;
@@ -53,6 +80,28 @@ export function setSend(trackId: string, busId: string, level: number, preFader 
         return { ...time, sends };
     });
 
-    engineSetSend(trackId, busId, level, resolvedPreFader);
+    let runtimeEffectFinalized = false;
+    function finalizeRuntimeEffect(): void {
+        if (runtimeEffectFinalized) {
+            return;
+        }
+        engineSetSend(trackId, busId, level, resolvedPreFader);
+        runtimeEffectFinalized = true;
+    }
+    function reconcileRuntimeEffect(): void {
+        const committedSend = getTrackById(trackId)?.sends.find((send) => send.busId === busId);
+        if (!committedSend) {
+            engineRemoveSend(trackId, busId);
+            return;
+        }
+        engineSetSend(trackId, busId, committedSend.level, committedSend.preFader);
+    }
+    if (options.deferRuntimeEffect) {
+        return {
+            afterCommit: finalizeRuntimeEffect,
+            afterAmbiguousCommit: reconcileRuntimeEffect,
+        };
+    }
+    finalizeRuntimeEffect();
     return true;
 }

@@ -161,7 +161,7 @@ describe('executeAppAction', () => {
         const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
         const afterCommit = vi.fn();
         const handler = create_mock_handler<SetEditingToolAction>({
-            execute: () => ({ status: 'written', afterCommit }),
+            execute: () => ({ status: 'written', afterCommit, afterAmbiguousCommit: afterCommit }),
         });
         registerHandlerMap({ [action.type]: handler });
 
@@ -178,6 +178,7 @@ describe('executeAppAction', () => {
             execute: () => ({
                 status: 'written',
                 afterCommit: () => Promise.reject(failure),
+                afterAmbiguousCommit: () => undefined,
             }),
         });
         registerHandlerMap({ [action.type]: handler });
@@ -370,12 +371,21 @@ describe('executeAppAction', () => {
         });
         const primaryStorage = createAutomergeStorage<{ tool: string }>('primary', 'editingTool');
         const secondaryStorage = createAutomergeStorage<{ value: number }>('secondary', 'snap');
+        let reconciledRuntime: unknown;
+        const reconcileRuntime = vi.fn(() => {
+            reconciledRuntime = docs.primary?.editingTool;
+        });
         expect(primaryStorage.hydrate?.()).toBe(true);
         expect(secondaryStorage.hydrate?.()).toBe(true);
         const handler = create_mock_handler<SetEditingToolAction>({
             execute: () => {
                 primaryStorage.set({ tool: 'marquee' });
                 secondaryStorage.set({ value: 1 });
+                return {
+                    status: 'written',
+                    afterCommit: () => undefined,
+                    afterAmbiguousCommit: reconcileRuntime,
+                };
             },
         });
         registerHandlerMap({ [action.type]: handler });
@@ -386,6 +396,7 @@ describe('executeAppAction', () => {
         const reportedError = mocks.logger.error.mock.calls.at(-1)?.[0];
         expect(reportedError).toBeInstanceOf(AppActionCommittedError);
         expect(reportedError?.cause).toBe(commitFailure);
+        expect(reconciledRuntime).toEqual({ tool: 'marquee' });
         expect(primaryStorage.get()).toEqual({ tool: 'marquee' });
         expect(docs.primary?.editingTool).toEqual({ tool: 'marquee' });
         expect(secondaryStorage.get()).toEqual({ value: 0 });

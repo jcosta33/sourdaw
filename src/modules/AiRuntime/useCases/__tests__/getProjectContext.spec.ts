@@ -89,6 +89,7 @@ describe('getProjectContext', () => {
                     armed: false,
                     gain: 0.8,
                     pan: -10,
+                    outputId: 'master',
                     clips: [{ id: 'c1', name: 'Vox 1', type: 'audio', startBeat: 0, endBeat: 4 }],
                     devices: [
                         {
@@ -109,6 +110,7 @@ describe('getProjectContext', () => {
                     armed: true,
                     gain: 1.0,
                     pan: 0,
+                    outputId: 'bus-1',
                     clips: [{ id: 'c2', name: 'Chords', type: 'midi', startBeat: 4, endBeat: 8 }],
                     devices: [],
                     sends: [],
@@ -173,6 +175,7 @@ describe('getProjectContext', () => {
             armed: false,
             gain: 0.8,
             pan: -10,
+            outputId: 'master',
             clipCount: 1,
             deviceCount: 1,
         });
@@ -200,7 +203,7 @@ describe('getProjectContext', () => {
                 },
             ],
         });
-        expect(context.tracks[0]?.sends).toEqual([{ busId: 'bus-1', level: 0.3 }]);
+        expect(context.tracks[0]?.sends).toEqual([{ busId: 'bus-1', level: 0.3, preFader: false }]);
 
         // Second track (midi)
         expect(context.tracks[1]?.clips[0]).toMatchObject({

@@ -46,6 +46,17 @@ export const handleDuplicateTrack = createHandler<'duplicateTrack'>({
                     name: track.name,
                     kind: track.kind,
                 }),
+            afterAmbiguousCommit: async () => {
+                const committedTrack = getTrackStoreState()?.tracks.find((candidate) => candidate.id === track.id);
+                if (!committedTrack) {
+                    return;
+                }
+                await publishTrackAdded({
+                    trackId: committedTrack.id,
+                    name: committedTrack.name,
+                    kind: committedTrack.kind,
+                });
+            },
         };
     },
     describe: (action) => {
@@ -70,5 +81,6 @@ export const handleDuplicateTrack = createHandler<'duplicateTrack'>({
         const targetTrackId = action.payload.targetTrackId;
         return targetTrackId !== undefined && tracks.some((track) => track.id === targetTrackId);
     },
+    requiresAbortCompensation: false,
     undoable: true,
 });

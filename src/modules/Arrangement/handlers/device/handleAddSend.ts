@@ -1,18 +1,45 @@
 import { createHandler } from '#/utils/createHandler';
 
+import { getTrackEligibility } from '../../stores/trackEligibility';
 import { setSend } from '../../useCases/device/sendManagement/setSend';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
-import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
 export const handleAddSend = createHandler<'addSend'>({
     execute: (alpha) => {
-        return toHandlerExecutionResult(setSend(alpha.payload.trackId, alpha.payload.busId, alpha.payload.level));
+        const state = getTrackStoreState();
+        const track = state?.tracks.find((candidate) => candidate.id === alpha.payload.trackId);
+        const target = state?.tracks.find((candidate) => candidate.id === alpha.payload.busId);
+        if (
+            (track && !getTrackEligibility(track.kind).acceptsSend) ||
+            (target && !getTrackEligibility(target.kind).acceptsRoutingEndpoint)
+        ) {
+            if (alpha.payload.expectedAbsent) {
+                return { status: 'conflict' };
+            }
+            return { status: 'no-write' };
+        }
+        const existing = track?.sends.some((send) => send.busId === alpha.payload.busId);
+        if (existing) {
+            return { status: 'conflict' };
+        }
+        const runtimeEffect = setSend(
+            alpha.payload.trackId,
+            alpha.payload.busId,
+            alpha.payload.level,
+            alpha.payload.preFader ?? false,
+            { deferRuntimeEffect: true }
+        );
+        if (!runtimeEffect) {
+            return { status: 'conflict' };
+        }
+        return {
+            status: 'written',
+            afterCommit: runtimeEffect.afterCommit,
+            afterAmbiguousCommit: runtimeEffect.afterAmbiguousCommit,
+        };
     },
     describe: (alpha) => {
         const label = 'Add send';
-        // setSend updates in place when the send already exists — undoing a
-        // genuine add removes the send, but undoing an in-place update must
-        // restore the previous level instead of removing the send.
         const track = getTrackStoreState()?.tracks.find((time) => time.id === alpha.payload.trackId);
         if (!track) {
             return { label, inverseAction: null };
@@ -21,12 +48,18 @@ export const handleAddSend = createHandler<'addSend'>({
         return {
             label,
             inverseAction: existing
-                ? {
-                      type: 'setSend',
-                      payload: { trackId: alpha.payload.trackId, busId: alpha.payload.busId, level: existing.level },
-                  }
-                : { type: 'removeSend', payload: { trackId: alpha.payload.trackId, busId: alpha.payload.busId } },
+                ? null
+                : {
+                      type: 'removeSend',
+                      payload: {
+                          trackId: alpha.payload.trackId,
+                          busId: alpha.payload.busId,
+                          expectedLevel: alpha.payload.level,
+                          expectedPreFader: alpha.payload.preFader ?? false,
+                      },
+                  },
         };
     },
+    requiresAbortCompensation: false,
     undoable: true,
 });

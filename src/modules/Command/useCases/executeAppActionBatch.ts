@@ -49,6 +49,8 @@ type ExecuteAppActionBatch = (
 type PreparedBatchAction = {
     action: AppAction;
     afterCommit: HandlerAfterCommit | null;
+    afterAmbiguousCommit: HandlerAfterCommit | null;
+    requiresAbortCompensation: boolean;
     handler: ActionHandler;
     description: HandlerDescribeResult | null;
     label: string;
@@ -82,6 +84,21 @@ function clearBatchSemanticContext(): string | null {
     }
 }
 
+async function reconcileAmbiguousRuntime(actions: readonly PreparedBatchAction[]): Promise<string | null> {
+    const failures: string[] = [];
+    for (const action of actions) {
+        if (!action.afterAmbiguousCommit) {
+            continue;
+        }
+        try {
+            await action.afterAmbiguousCommit();
+        } catch (error) {
+            failures.push(`${action.action.type}: ${failureReason(error)}`);
+        }
+    }
+    return failures.length > 0 ? `runtime reconciliation failed: ${failures.join('; ')}` : null;
+}
+
 async function executePreparedBatch(
     preparedActions: readonly PreparedBatchAction[],
     scope: AutomergeStorageTransactionScope,
@@ -100,6 +117,7 @@ async function executePreparedBatch(
             throw new AppActionConflictError(prepared.action.type);
         }
         prepared.afterCommit = result?.afterCommit ?? null;
+        prepared.afterAmbiguousCommit = result?.afterAmbiguousCommit ?? null;
         executedActions.push(prepared);
     }
     assertExecutionAuthorized(shouldExecute);
@@ -110,12 +128,13 @@ async function compensateAttemptedBatch(
     attemptedActions: readonly PreparedBatchAction[],
     snapshotTransaction: object | undefined
 ): Promise<string | null> {
-    if (attemptedActions.length === 0) {
+    const compensableActions = attemptedActions.filter((action) => action.requiresAbortCompensation);
+    if (compensableActions.length === 0) {
         return null;
     }
 
     const compensationTransaction = runWithAutomergeStorageTransaction(snapshotTransaction, async (scope) => {
-        for (const prepared of [...attemptedActions].reverse()) {
+        for (const prepared of [...compensableActions].reverse()) {
             const inverseAction = prepared.description?.inverseAction;
             if (!inverseAction) {
                 throw new Error(`No inverse action available for ${prepared.action.type}`);
@@ -237,6 +256,8 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 preparedActions.push({
                     action,
                     afterCommit: null,
+                    afterAmbiguousCommit: null,
+                    requiresAbortCompensation: handler.requiresAbortCompensation ?? true,
                     handler,
                     description,
                     label: description?.label ?? action.type,
@@ -330,7 +351,11 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 const reason = failureReason(error);
                 logger.error(new Error('Action batch storage commit failed', { cause: error }));
                 if (error instanceof AutomergeStorageTransactionCommittedError) {
-                    const ambiguousReason = cleanupWarning ? `${reason}; ${cleanupWarning}` : reason;
+                    const reconciliationWarning = await reconcileAmbiguousRuntime(executedActions);
+                    const warnings = [cleanupWarning, reconciliationWarning].filter(
+                        (warning): warning is string => warning !== null
+                    );
+                    const ambiguousReason = warnings.length > 0 ? `${reason}; ${warnings.join('; ')}` : reason;
                     return {
                         status: 'ambiguous',
                         actions: [],

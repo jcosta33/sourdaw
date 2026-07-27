@@ -15,9 +15,9 @@ export type {
     ProjectContextTrack,
 } from '../models/ProjectContext';
 
-// §92.2 — Memoize the context by the identity of the four backing store
+// §92.2 — Memoize the context by the identity of the five backing store
 // values. Stores use immutable replacement (.set(new object)), so
-// reference equality is enough: if all four have the same identity as
+// reference equality is enough: if all five have the same identity as
 // the last call, we can return the cached context without rebuilding
 // the entire track/clip/device graph for the AI chat pipeline.
 const contextCache: {
@@ -73,6 +73,7 @@ export function getProjectContext(): ProjectContext {
             armed: time.armed,
             gain: time.gain,
             pan: time.pan,
+            outputId: time.outputId,
             clipCount: time.clips.length,
             deviceCount: time.devices.length,
             clips: time.clips.map((context) => ({
@@ -115,7 +116,11 @@ export function getProjectContext(): ProjectContext {
                     parameters,
                 };
             }),
-            sends: time.sends.map((send) => ({ busId: send.busId, level: send.level })),
+            sends: time.sends.map((send) => ({
+                busId: send.busId,
+                level: send.level,
+                preFader: send.preFader,
+            })),
         })),
         selectedTrackId,
         selectedClipId,

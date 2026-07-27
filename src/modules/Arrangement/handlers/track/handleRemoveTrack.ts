@@ -1,6 +1,6 @@
 import { automationStore, modulationStore } from '#/modules/Automation/stores';
 import { midiStore } from '#/modules/MIDI/stores';
-import { getAllSidechainRoutes } from '#/modules/Routing/useCases';
+import { getAllSidechainRoutes, wireSidechainRoutes } from '#/modules/Routing/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { runAllAsyncEffects } from '#/utils/runEffects';
 
@@ -8,6 +8,7 @@ import { collectTrackClipIds } from '../../services/collectTrackClipIds';
 import { reconcileRoutingAfterRemoval } from '../../services/reconcileRoutingAfterRemoval';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
+import { projectTrackToLiveStrip } from '../../useCases/projectTrackToLiveStrip';
 import { publishTrackRemoved } from '../../useCases/publishTrackRemoved';
 import { removeTrack } from '../../useCases/removeTrack';
 import { removeTrackModulationReferences } from '../../useCases/removeTrackModulationReferences';
@@ -36,9 +37,31 @@ export const handleRemoveTrack = createHandler<'removeTrack'>({
             afterCommit: () =>
                 runAllAsyncEffects([
                     result.finalizeRuntimeRemoval,
-                    finalizeModulationRemoval,
+                    finalizeModulationRemoval.afterCommit,
                     () => publishTrackRemoved({ trackId: action.payload.trackId }),
                 ]),
+            afterAmbiguousCommit: () => {
+                const committedTrack = getTrackStoreState()?.tracks.find(
+                    (candidate) => candidate.id === action.payload.trackId
+                );
+                const effects: Array<() => void | Promise<void>> = [
+                    finalizeModulationRemoval.afterAmbiguousCommit,
+                    () => wireSidechainRoutes(),
+                ];
+                if (committedTrack) {
+                    effects.unshift(() =>
+                        projectTrackToLiveStrip({
+                            trackId: committedTrack.id,
+                            activateDormantExternalPlugins: true,
+                        })
+                    );
+                } else {
+                    effects.unshift(result.finalizeRuntimeRemoval, () =>
+                        publishTrackRemoved({ trackId: action.payload.trackId })
+                    );
+                }
+                return runAllAsyncEffects(effects);
+            },
         };
     },
     describe: (alpha) => {
@@ -153,5 +176,6 @@ export const handleRemoveTrack = createHandler<'removeTrack'>({
             },
         };
     },
+    requiresAbortCompensation: false,
     undoable: true,
 });

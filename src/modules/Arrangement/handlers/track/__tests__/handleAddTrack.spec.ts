@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     addTrack: vi.fn(),
-    getTrackStoreState: vi.fn<() => { tracks: { id: string }[] } | null>(),
+    getTrackStoreState: vi.fn<() => { tracks: { id: string; name?: string; kind?: string }[] } | null>(),
     publishTrackAdded: vi.fn(),
 }));
 
@@ -75,6 +75,26 @@ describe('handleAddTrack', () => {
             name: 'Guitar',
             kind: 'audio',
             suppressAddedEvent: true,
+        });
+    });
+
+    it('publishes only a track found in durable truth after an ambiguous commit', async () => {
+        const action = {
+            type: 'addTrack',
+            payload: { id: 'created', name: 'Requested', kind: 'audio' },
+        } as const;
+        mocks.addTrack.mockReturnValue({ id: 'created', name: 'Requested', kind: 'audio' });
+        const result = await handleAddTrack.execute(action);
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 'created', name: 'Committed', kind: 'audio' }],
+        });
+
+        await result?.afterAmbiguousCommit?.();
+
+        expect(mocks.publishTrackAdded).toHaveBeenCalledWith({
+            trackId: 'created',
+            name: 'Committed',
+            kind: 'audio',
         });
     });
 

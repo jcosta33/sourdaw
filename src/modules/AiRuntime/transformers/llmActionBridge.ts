@@ -14,10 +14,13 @@ const EXECUTABLE_ACTION_TYPES = [
     'setTrackPan',
     'setTrackColor',
     'reorderTrack',
+    'setTrackOutput',
     'setTempo',
     'setDeviceParameter',
     'bypassDevice',
     'setSend',
+    'addSend',
+    'removeSend',
 ] as const satisfies readonly RuntimeActionType[];
 
 const MAX_LLM_ACTIONS_PER_BATCH = 24;
@@ -104,6 +107,27 @@ function findTrack(context: ProjectContext, trackId: unknown) {
         return undefined;
     }
     return context.tracks.find((track) => track.id === trackId);
+}
+
+function isProviderRoutableSource(
+    track: ProjectContext['tracks'][number] | undefined
+): track is ProjectContext['tracks'][number] {
+    return track?.kind === 'audio' || track?.kind === 'midi' || track?.kind === 'bus';
+}
+
+function findProviderOutputTarget(context: ProjectContext, outputId: unknown) {
+    if (typeof outputId !== 'string') {
+        return undefined;
+    }
+    return context.tracks.find((track) => track.id === outputId && (track.kind === 'bus' || track.kind === 'master'));
+}
+
+function findSend(context: ProjectContext, trackId: unknown, busId: unknown) {
+    const source = findTrack(context, trackId);
+    if (!source || typeof busId !== 'string') {
+        return undefined;
+    }
+    return source.sends?.find((send) => send.busId === busId);
 }
 
 function findDevice(context: ProjectContext, deviceId: unknown) {
@@ -278,6 +302,24 @@ function bridgeToolCall({
         return { type: 'reorderTrack', payload: { trackId: args.trackId, newIndex: args.newIndex } };
     }
 
+    if (call.name === 'setTrackOutput') {
+        const source = findTrack(context, args.trackId);
+        const target = findProviderOutputTarget(context, args.outputId);
+        if (
+            !hasExactKeys(args, ['trackId', 'outputId']) ||
+            !isProviderRoutableSource(source) ||
+            typeof source.outputId !== 'string' ||
+            !target ||
+            source?.id === target.id
+        ) {
+            return rejection(index, call.name, 'Expected a routable source track and a distinct bus or master output');
+        }
+        return {
+            type: 'setTrackOutput',
+            payload: { trackId: source.id, outputId: target.id, expectedOutputId: source.outputId },
+        };
+    }
+
     if (call.name === 'setDeviceParameter') {
         if (
             !hasExactKeys(args, ['deviceId', 'paramId', 'value']) ||
@@ -311,15 +353,15 @@ function bridgeToolCall({
     }
 
     if (call.name === 'setSend') {
-        const bus =
-            typeof args.busId === 'string'
-                ? context.tracks.find((track) => track.id === args.busId && track.kind === 'bus')
-                : undefined;
+        const source = findTrack(context, args.trackId);
+        const bus = findProviderOutputTarget(context, args.busId);
+        const existing = findSend(context, args.trackId, args.busId);
         if (
             !hasExactKeys(args, ['trackId', 'busId', 'level']) ||
-            !hasTrack(context, args.trackId) ||
-            !bus ||
-            args.trackId === args.busId ||
+            !isProviderRoutableSource(source) ||
+            bus?.kind !== 'bus' ||
+            source?.id === bus.id ||
+            !existing ||
             !isFiniteNumber(args.level) ||
             args.level < 0 ||
             args.level > 1
@@ -332,7 +374,62 @@ function bridgeToolCall({
         }
         return {
             type: 'setSend',
-            payload: { trackId: args.trackId, busId: bus.id, level: args.level },
+            payload: {
+                trackId: source.id,
+                busId: bus.id,
+                level: args.level,
+                expectedLevel: existing.level,
+                expectedPreFader: existing.preFader,
+            },
+        };
+    }
+
+    if (call.name === 'addSend') {
+        const source = findTrack(context, args.trackId);
+        const bus = findProviderOutputTarget(context, args.busId);
+        const existing = findSend(context, args.trackId, args.busId);
+        if (
+            !hasExactKeys(args, ['trackId', 'busId', 'level']) ||
+            !isProviderRoutableSource(source) ||
+            bus?.kind !== 'bus' ||
+            source?.id === bus.id ||
+            existing ||
+            !isFiniteNumber(args.level) ||
+            args.level < 0 ||
+            args.level > 1
+        ) {
+            return rejection(
+                index,
+                call.name,
+                'Expected an available source, a distinct bus without an existing send, and a finite level from 0 through 1'
+            );
+        }
+        return {
+            type: 'addSend',
+            payload: { trackId: source.id, busId: bus.id, level: args.level, expectedAbsent: true },
+        };
+    }
+
+    if (call.name === 'removeSend') {
+        const source = findTrack(context, args.trackId);
+        const bus = findProviderOutputTarget(context, args.busId);
+        const existing = findSend(context, args.trackId, args.busId);
+        if (
+            !hasExactKeys(args, ['trackId', 'busId']) ||
+            !isProviderRoutableSource(source) ||
+            bus?.kind !== 'bus' ||
+            !existing
+        ) {
+            return rejection(index, call.name, 'Expected an existing send from an available source to a bus');
+        }
+        return {
+            type: 'removeSend',
+            payload: {
+                trackId: source.id,
+                busId: bus.id,
+                expectedLevel: existing.level,
+                expectedPreFader: existing.preFader,
+            },
         };
     }
 
@@ -355,8 +452,11 @@ function getMutationKey(action: ExecutableRuntimeAction): string | null {
     if (action.type === 'bypassDevice') {
         return `${action.type}:${action.payload.deviceId}`;
     }
-    if (action.type === 'setSend') {
-        return `${action.type}:${action.payload.trackId}:${action.payload.busId}`;
+    if (action.type === 'setSend' || action.type === 'addSend' || action.type === 'removeSend') {
+        return `send:${action.payload.trackId}:${action.payload.busId}`;
+    }
+    if (action.type === 'setTrackOutput') {
+        return `output:${action.payload.trackId}`;
     }
     return `${action.type}:${action.payload.trackId}`;
 }
@@ -422,6 +522,7 @@ export function buildLlmActionUserMessage({ prompt, context }: { prompt: string;
             soloed: track.soloed,
             gain: track.gain,
             pan: track.pan,
+            outputId: track.outputId,
             devices: track.devices,
             sends: track.sends ?? [],
         })),
