@@ -1,0 +1,23 @@
+scripts/agent-campaign/evidenceResultBinding.ts
+  s_bc88af7d3b054c::t_75157aa3a71235 1-123,129-158
+  s_bc88af7d3b054c::t_e670ed291c7372 124-128
+scripts/agent-campaign/__tests__/evidenceResultBinding.spec.ts
+  s_bc88af7d3b054c::t_015d68a73ef711 1-72,75,82-125,128-138,142-144,147-152
+  s_bc88af7d3b054c::t_086ef76c889d7a 73-74,76-81,126-127,139-141,145-146
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "b8ea1ae1aa43dc32716c97c734ef709fe3288b75",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
