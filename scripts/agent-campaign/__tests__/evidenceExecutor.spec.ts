@@ -25,13 +25,16 @@ describe('evidence executor boundary', () => {
     it('should keep production empty and snapshot a definition by normalized target ID', () => {
         expect(resolveExecutorInvocation(productionExecutorRegistry, 'AC-060')).toEqual({ kind: 'unimplemented' });
         const mutable = definition();
-        const seen: string[] = [];
-        const targetRegistry = { resolve: (targetId: string) => (seen.push(targetId), mutable) };
-        const resolution = resolveExecutorInvocation(targetRegistry, 'AC-060');
+        const seen: unknown[] = [];
+        function resolve(this: unknown, targetId: string) {
+            seen.push(targetId, this);
+            return mutable;
+        }
+        const resolution = resolveExecutorInvocation({ secret: 'private', resolve }, 'AC-060');
         mutable.executable = '/mutated';
         mutable.arguments[0] = 'mutated';
         expect([seen, resolution]).toEqual([
-            ['AC-060'],
+            ['AC-060', undefined],
             {
                 kind: 'ready',
                 invocation: {

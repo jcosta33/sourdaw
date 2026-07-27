@@ -131,7 +131,6 @@ describe('runEvidenceGate', () => {
         const releaseResult = await runEvidenceGate(['--release', '--manifest', manifest], await setup());
         expect([suiteResult.code, releaseResult.code]).toEqual(['executor-unimplemented', 'release-unimplemented']);
     });
-
     it('should execute only a snapshotted code-owned definition and defer publication', async () => {
         const definition = {
             executable: '/trusted/executor',
@@ -170,7 +169,6 @@ describe('runEvidenceGate', () => {
         expect(invocation).toMatchObject({ executable: '/trusted/executor', arguments: ['safe'] });
         expect(JSON.stringify([published, failed])).not.toContain('mutated');
     });
-
     it('should let post-execution checkout and freshness uncertainty dominate', async () => {
         const run = async (mutation: 'head' | 'dirty' | 'stale') => {
             let currentHead = head;
@@ -202,7 +200,6 @@ describe('runEvidenceGate', () => {
         const results = await Promise.all([run('head'), run('dirty'), run('stale')]);
         expect(results.map(({ code }) => code)).toEqual(['invalid-checkout', 'dirty-checkout', 'invalid-run-envelope']);
     });
-
     it('should reject unknown, wrongly owned, and mechanically inapplicable targets', async () => {
         const argumentsByCase = [
             ['--task', 'TASK-SA-01-command-registry-and-outcomes', '--gate', 'AC-060', '--manifest', manifest],

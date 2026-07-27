@@ -122,7 +122,7 @@ export function resolveExecutorInvocation(
         if (typeof resolveDefinition !== 'function') {
             return { kind: 'invalid-definition' };
         }
-        const definition = Reflect.apply(resolveDefinition as (...arguments_: unknown[]) => unknown, registry, [
+        const definition = Reflect.apply(resolveDefinition as (...arguments_: unknown[]) => unknown, undefined, [
             normalizedTargetId,
         ]);
         if (definition === undefined) {
