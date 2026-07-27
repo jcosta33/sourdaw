@@ -134,6 +134,41 @@ describe('superviseTrustedProcess', () => {
         });
     });
 
+    it('should let a delayed output-cap crossing replace signal IPC', async () => {
+        const source =
+            "process.on('message',()=>process.send({kind:'signal',signal:'SIGTERM'},()=>setTimeout(()=>process.stdout.write('overflow',()=>process.exit(0)),20)));process.send({kind:'ready'})";
+        const injectedSentinel = await temporarySentinel(source);
+        const output = await run(
+            '',
+            { combinedOutputByteCap: 4 },
+            {
+                sentinelPath: () => injectedSentinel,
+                killGroup: () => undefined,
+                groupExists: () => false,
+            }
+        );
+        expect(output).toEqual({
+            reason: { kind: 'output-cap-exceeded' },
+            streamEvidence: null,
+        });
+    });
+
+    it('should let cleanup uncertainty dominate output-cap overflow', async () => {
+        const output = await run(
+            "process.stdout.write('overflow');setInterval(()=>{},1000)",
+            { combinedOutputByteCap: 4 },
+            {
+                cleanupPollMs: 1,
+                cleanupTimeoutMs: 20,
+                groupExists: () => true,
+            }
+        );
+        expect(output).toEqual({
+            reason: { kind: 'termination-unconfirmed' },
+            streamEvidence: null,
+        });
+    });
+
     it('should preserve exact signal termination', async () => {
         expect(await run("process.kill(process.pid,'SIGTERM')")).toMatchObject({
             reason: { kind: 'signal', signal: 'SIGTERM' },
