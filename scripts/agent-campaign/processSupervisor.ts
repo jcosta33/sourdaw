@@ -45,6 +45,7 @@ export type ProcessSupervisorDependencies = {
 };
 
 const EMPTY_ENV = Object.freeze({});
+const MAX_TIMER_DELAY_MS = 2_147_483_647;
 
 function groupExists(processGroupId: number): boolean {
     try {
@@ -92,7 +93,8 @@ function snapshotInput(input: TrustedProcessSupervisorInput): TrustedProcessSupe
             !snapshot.arguments.every((argument) => typeof argument === 'string' && !argument.includes('\0')) ||
             !isAbsolutePath(snapshot.cwd) ||
             !Number.isSafeInteger(snapshot.timeoutMs) ||
-            snapshot.timeoutMs <= 0
+            snapshot.timeoutMs <= 0 ||
+            snapshot.timeoutMs > MAX_TIMER_DELAY_MS
         ) {
             return null;
         }

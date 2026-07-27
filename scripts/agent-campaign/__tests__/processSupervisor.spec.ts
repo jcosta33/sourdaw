@@ -167,6 +167,7 @@ describe('superviseTrustedProcess', () => {
     it.each([
         [{ executable: 'relative-executor' }, {}],
         [{ arguments: ['invalid\u0000argument'] }, {}],
+        [{ timeoutMs: 2_147_483_648 }, {}],
         [{}, { sentinelPath: () => `${sentinelPath}\u0000invalid` }],
     ])('should redact synchronous or NUL launch failure %#', async (overrides, dependencies) => {
         const output = await run('', overrides, dependencies);
