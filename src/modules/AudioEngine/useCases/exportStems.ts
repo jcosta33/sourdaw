@@ -336,6 +336,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                     pendingWorkletEvents,
                     allTracks: groupedTopology,
                     deviceEntriesByTrack,
+                    honorMuted: false,
                     regionStartBeat: startBeat,
                     vcaMultiplier: deriveVcaMultiplier({ vcaGroupId: groupedTrack.vcaGroupId, groups: vcaGroups }),
                 });
@@ -370,6 +371,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                     pendingWorkletEvents,
                     allTracks: tracks.tracks,
                     deviceEntriesByTrack,
+                    honorMuted: false,
                     regionStartBeat: startBeat,
                     vcaMultiplier: deriveVcaMultiplier({ vcaGroupId: keySourceTrack.vcaGroupId, groups: vcaGroups }),
                 });

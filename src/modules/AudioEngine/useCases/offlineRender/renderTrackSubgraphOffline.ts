@@ -271,6 +271,7 @@ export async function renderTrackSubgraphOffline({
             pendingWorkletEvents,
             allTracks: renderTracks,
             deviceEntriesByTrack,
+            honorMuted: false,
             regionStartBeat: startBeat,
             includeAutomation: track.id === targetTrackId ? includeAutomation : true,
             // Same rule the strip was seeded with, so a gain lane on an upstream
