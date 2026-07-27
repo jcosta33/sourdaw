@@ -28,8 +28,11 @@ const {
     trackStoreMock,
     setTimeOperationDependenciesMock,
     prepareAutomationTimeOperationMock,
+    prepareAutomationTimeStateRestoreMock,
     prepareMidiGlobalTimeTransactionMock,
+    prepareMidiTimeStateRestoreMock,
     prepareTimelineMapTimeOperationMock,
+    prepareTimelineMapStateRestoreMock,
 } = vi.hoisted(() => {
     const noop = vi.fn();
     const sentinelHandlers = (moduleId: string) => vi.fn<() => HandlerMapSentinel>(() => ({ moduleId }));
@@ -45,8 +48,11 @@ const {
         trackStoreMock: { subscribe: vi.fn() },
         setTimeOperationDependenciesMock: vi.fn(),
         prepareAutomationTimeOperationMock: vi.fn(),
+        prepareAutomationTimeStateRestoreMock: vi.fn(),
         prepareMidiGlobalTimeTransactionMock: vi.fn(),
+        prepareMidiTimeStateRestoreMock: vi.fn(),
         prepareTimelineMapTimeOperationMock: vi.fn(),
+        prepareTimelineMapStateRestoreMock: vi.fn(),
     };
 });
 
@@ -112,6 +118,7 @@ vi.mock('#/modules/Automation/useCases', () => ({
     getAutomationHandlers: sentinelHandlers('Automation'),
     getAutomationValueAtBeat: () => null,
     prepareAutomationTimeOperation: prepareAutomationTimeOperationMock,
+    prepareAutomationTimeStateRestore: prepareAutomationTimeStateRestoreMock,
     recordAutomationValue: noop,
     setAutomationRecordingDependencies: noop,
     setModulationDependencies: noop,
@@ -198,6 +205,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     getMidiNoteTransformHandlers: sentinelHandlers('MidiNoteTransform'),
     getPatternInstanceHandlers: sentinelHandlers('PatternInstance'),
     prepareMidiGlobalTimeTransaction: prepareMidiGlobalTimeTransactionMock,
+    prepareMidiTimeStateRestore: prepareMidiTimeStateRestoreMock,
     createChordPitchProjector: noop,
     createGrooveMidiEventProjector: noop,
     shouldPlayMidiEvent: () => true,
@@ -259,6 +267,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
     createSamplePositionProjector: noop,
     projectPpqEndpoints: noop,
     prepareTimelineMapTimeOperation: prepareTimelineMapTimeOperationMock,
+    prepareTimelineMapStateRestore: prepareTimelineMapStateRestoreMock,
     setStopPlaybackCallback: noop,
     stopPlayback: noop,
 }));
@@ -360,11 +369,14 @@ describe('bootstrap', () => {
         expect(registerGlobalErrorHandlersMock).toHaveBeenCalledExactlyOnceWith({ logger: loggerMock });
     });
 
-    it('registers the exact three global-time owner preparations', () => {
+    it('registers the exact forward and restore global-time owner preparations', () => {
         expect(setTimeOperationDependenciesMock).toHaveBeenCalledExactlyOnceWith({
             prepareAutomationTimeOperation: prepareAutomationTimeOperationMock,
+            prepareAutomationTimeStateRestore: prepareAutomationTimeStateRestoreMock,
             prepareMidiGlobalTimeTransaction: prepareMidiGlobalTimeTransactionMock,
+            prepareMidiTimeStateRestore: prepareMidiTimeStateRestoreMock,
             prepareTimelineMapTimeOperation: prepareTimelineMapTimeOperationMock,
+            prepareTimelineMapStateRestore: prepareTimelineMapStateRestoreMock,
         });
     });
 

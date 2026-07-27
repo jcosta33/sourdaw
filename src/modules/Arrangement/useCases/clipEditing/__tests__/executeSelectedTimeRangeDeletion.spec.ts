@@ -10,6 +10,7 @@ import {
     setTimeOperationDependencies,
     type TimeOperationDependencies,
 } from '../../timeOperations/timeOperationDependencies';
+import { timeOperationStateCodec } from '../../timeOperations/timeOperationStateCodec';
 import { executeSelectedTimeRangeDeletion } from '../executeSelectedTimeRangeDeletion';
 
 const EMPTY_MIDI_STATE = {
@@ -19,22 +20,52 @@ const EMPTY_MIDI_STATE = {
 };
 
 const CANONICAL_TRACK_KINDS = ['audio', 'midi', 'bus', 'master', 'folder'] as const;
+const TEST_OWNER_INVERSE_PLAN = {
+    version: 1 as const,
+    expected: { state: 'next' },
+    replacement: { state: 'previous' },
+};
+
+type MidiPreparation = ReturnType<TimeOperationDependencies['prepareMidiGlobalTimeTransaction']>;
+type TestMidiPreparation = Omit<MidiPreparation, 'inversePlan'> & {
+    inversePlan?: Record<string, unknown> | null;
+};
+type TestMidiPreparer = (
+    input: Parameters<TimeOperationDependencies['prepareMidiGlobalTimeTransaction']>[0]
+) => TestMidiPreparation;
 
 function noChangePreparation() {
     return {
         status: 'ready' as const,
         hasChanges: false,
         replayPlan: { version: 1 as const, notes: [] },
+        inversePlan: null,
         apply: () => false,
         revert: () => false,
     };
 }
 
-function installMidiPreparation(prepareMidi: TimeOperationDependencies['prepareMidiGlobalTimeTransaction']): void {
+function installMidiPreparation(prepareMidi: TestMidiPreparer): void {
+    function prepareMidiWithInversePlan(
+        input: Parameters<TimeOperationDependencies['prepareMidiGlobalTimeTransaction']>[0]
+    ): MidiPreparation {
+        const preparation = prepareMidi(input);
+        let inversePlan: Record<string, unknown> | null = preparation.inversePlan ?? null;
+        if (preparation.hasChanges && preparation.inversePlan === undefined) {
+            inversePlan = TEST_OWNER_INVERSE_PLAN;
+        }
+        return {
+            ...preparation,
+            inversePlan,
+        };
+    }
     setTimeOperationDependencies({
         prepareAutomationTimeOperation: noChangePreparation,
-        prepareMidiGlobalTimeTransaction: prepareMidi,
+        prepareAutomationTimeStateRestore: noChangePreparation,
+        prepareMidiGlobalTimeTransaction: prepareMidiWithInversePlan,
+        prepareMidiTimeStateRestore: noChangePreparation,
         prepareTimelineMapTimeOperation: noChangePreparation,
+        prepareTimelineMapStateRestore: noChangePreparation,
     });
 }
 
@@ -68,8 +99,13 @@ function createTrack(
 }
 
 function createDormantTrack(id: string, clips: ReturnType<typeof createClip>[]) {
-    const track = createTrack(id, clips);
-    Reflect.set(track, 'kind', 'vca');
+    const track = createTrack(id, clips, 'folder');
+    Object.defineProperty(track, 'kind', {
+        configurable: true,
+        enumerable: true,
+        value: 'vca',
+        writable: true,
+    });
     return track;
 }
 
@@ -96,6 +132,13 @@ function requireApplied(result: ReturnType<typeof executeSelectedTimeRangeDeleti
         throw new Error('Expected applied selected-range transaction');
     }
     return result;
+}
+
+function requireRecord(value: unknown): Record<string, unknown> {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+        throw new Error('Expected an object record');
+    }
+    return value as Record<string, unknown>;
 }
 
 describe('executeSelectedTimeRangeDeletion', () => {
@@ -346,6 +389,87 @@ describe('executeSelectedTimeRangeDeletion', () => {
         expect(midiStore.value).toBe(originalMidi);
     });
 
+    it('rejects a non-encodable selected-range snapshot without publication or identity allocation', () => {
+        const drop = createClip({
+            id: 'drop',
+            trackId: 'target',
+            startBeat: 2,
+            endBeat: 4,
+        });
+        const track = createTrack('target', [drop]);
+        Object.defineProperty(track, Symbol('unsupported'), {
+            enumerable: true,
+            value: true,
+        });
+        const originalState = setArrangement([track]);
+        const randomUuid = vi.spyOn(crypto, 'randomUUID');
+
+        const result = executeSelectedTimeRangeDeletion({
+            startBeat: 1,
+            endBeat: 5,
+            trackIds: ['target'],
+        });
+
+        expect(result).toEqual({ status: 'rejected', hasChanges: false, replayPlan: null, inversePlan: null });
+        expect(trackStore.value).toBe(originalState);
+        expect(randomUuid).not.toHaveBeenCalled();
+    });
+
+    it('rejects a changed MIDI owner without an inverse plan and an unchanged owner with one', () => {
+        const drop = createClip({
+            id: 'drop',
+            trackId: 'target',
+            startBeat: 2,
+            endBeat: 4,
+            type: 'midi',
+        });
+        const operation = {
+            startBeat: 1,
+            endBeat: 5,
+            trackIds: ['target'],
+        };
+        let originalState = setArrangement([createTrack('target', [drop], 'midi')]);
+        const changedApply = vi.fn(() => true);
+        installMidiPreparation(() => ({
+            status: 'ready',
+            hasChanges: true,
+            replayPlan: { version: 1, notes: [] },
+            inversePlan: null,
+            apply: changedApply,
+            revert: () => true,
+        }));
+
+        expect(executeSelectedTimeRangeDeletion(operation)).toEqual({
+            status: 'rejected',
+            hasChanges: false,
+            replayPlan: null,
+            inversePlan: null,
+        });
+        expect(trackStore.value).toBe(originalState);
+        expect(changedApply).not.toHaveBeenCalled();
+
+        vi.clearAllMocks();
+        originalState = setArrangement([createTrack('target', [drop], 'midi')]);
+        const unchangedApply = vi.fn(() => false);
+        installMidiPreparation(() => ({
+            status: 'ready',
+            hasChanges: false,
+            replayPlan: { version: 1, notes: [] },
+            inversePlan: TEST_OWNER_INVERSE_PLAN,
+            apply: unchangedApply,
+            revert: () => false,
+        }));
+
+        expect(executeSelectedTimeRangeDeletion(operation)).toEqual({
+            status: 'rejected',
+            hasChanges: false,
+            replayPlan: null,
+            inversePlan: null,
+        });
+        expect(trackStore.value).toBe(originalState);
+        expect(unchangedApply).not.toHaveBeenCalled();
+    });
+
     it('rejects generated clip IDs that collide with existing Arrangement identities', () => {
         const span = createClip({ id: 'span', trackId: 'target', startBeat: 0, endBeat: 10 });
         const collision = createClip({
@@ -409,6 +533,60 @@ describe('executeSelectedTimeRangeDeletion', () => {
         ]);
         expect(trackStore.value?.tracks[0]?.clips[1]?.id).toBe('clip-dtr-11111111');
         expect(trackStore.value?.tracks[1]?.clips[1]?.id).toBe('clip-dtr-22222222');
+    });
+
+    it('returns a detached JSON inverse plan with the selected-range owner matrix and unchanged callback undo', () => {
+        const span = createClip({
+            id: 'span',
+            trackId: 'target',
+            startBeat: 0,
+            endBeat: 10,
+            type: 'midi',
+        });
+        const track = createTrack('target', [span], 'midi');
+        track.pan = -0;
+        const originalState = setArrangement([track]);
+        installMidiPreparation(() => ({
+            status: 'ready',
+            hasChanges: true,
+            replayPlan: { version: 1, notes: [] },
+            inversePlan: TEST_OWNER_INVERSE_PLAN,
+            apply: () => true,
+            revert: () => true,
+        }));
+
+        const result = requireApplied(
+            executeSelectedTimeRangeDeletion({
+                startBeat: 3,
+                endBeat: 7,
+                trackIds: ['target'],
+            })
+        );
+
+        expect(JSON.parse(JSON.stringify(result.inversePlan))).toEqual(result.inversePlan);
+        const inversePlan = requireRecord(result.inversePlan);
+        expect(inversePlan).toMatchObject({
+            version: 1,
+            scope: 'selected-range',
+            automation: null,
+            midi: TEST_OWNER_INVERSE_PLAN,
+            timelineMap: null,
+        });
+        const local = requireRecord(inversePlan.local);
+        const expected = requireRecord(local.expected);
+        const replacement = requireRecord(local.replacement);
+        expect(expected.markerState).toBeNull();
+        expect(replacement.markerState).toBeNull();
+        const expectedTrackState = timeOperationStateCodec.decodeTrackState(expected.trackState);
+        const replacementTrackState = timeOperationStateCodec.decodeTrackState(replacement.trackState);
+        expect(expectedTrackState).toEqual(trackStore.value);
+        expect(expectedTrackState).not.toBe(trackStore.value);
+        expect(replacementTrackState).toEqual(originalState);
+        expect(replacementTrackState).not.toBe(originalState);
+        expect(Object.is(expectedTrackState?.tracks[0]?.pan, -0)).toBe(true);
+        expect(Object.is(replacementTrackState?.tracks[0]?.pan, -0)).toBe(true);
+        expect(result.undo()).toBe(true);
+        expect(trackStore.value).toBe(originalState);
     });
 
     it.each(CANONICAL_TRACK_KINDS)(
