@@ -3,6 +3,12 @@ import { logger } from '#/infra/logger/appLogger';
 
 import { type IntentResult } from '../models/IntentResult';
 import {
+    bridgeLlmToolCalls,
+    buildLlmActionSystemPrompt,
+    buildLlmActionUserMessage,
+    LLM_EXECUTABLE_TOOL_SCHEMAS,
+} from '../transformers/llmActionBridge';
+import {
     tryPresetMatch,
     buildPresetContext,
     tryParameterizedPath,
@@ -11,8 +17,9 @@ import {
 } from '../transformers/promptParser/parsing';
 
 import { executeDsoEdit } from './dsoEditor/executeDsoEdit';
-import { type ProjectContext } from './getProjectContext';
+import { getProjectContext, type ProjectContext } from './getProjectContext';
 import { isDsoBackendAvailable } from './llmOrchestration/backendResolution/isDsoBackendAvailable';
+import { generateToolCalls } from './llmOrchestration/inference';
 import { validateActions } from './validateActions';
 
 /**
@@ -20,7 +27,8 @@ import { validateActions } from './validateActions';
  * 1. Fast-path: fuzzy-match against preset action registry (instant, no LLM)
  * 2. Parameterized fast-path: regex for commands that need values (tempo N, transpose N)
  * 3. Compound fast-path: multi-track creation etc.
- * 4. LLM path: DSO editor — Qwen emits typed Domain-Specific Operations via schema-constrained generation
+ * 4. Provider-neutral LLM tool path: tool calls cross a strict app-owned action bridge
+ * 5. DSO fallback: Qwen emits typed Domain-Specific Operations via schema-constrained generation
  */
 export const parsePromptToActions = inject({ logger })(
     ({ logger }) =>
@@ -69,8 +77,50 @@ export const parsePromptToActions = inject({ logger })(
                 return { actions: [], rawText: prompt, requiresConfirmation: false };
             }
 
-            // 4. LLM path: DSO editor — Qwen3-8B emits typed Domain-Specific Operations
-            // Cloud is NOT used for DSO planning (chat only). No model fallback.
+            // 4. Provider-neutral LLM path. This only proposes typed actions;
+            // sendChatMessage remains responsible for confirmation and execution.
+            try {
+                const toolCalls = await generateToolCalls(
+                    buildLlmActionSystemPrompt(),
+                    buildLlmActionUserMessage({ prompt, context }),
+                    LLM_EXECUTABLE_TOOL_SCHEMAS,
+                    signal
+                );
+
+                if (signal?.aborted) {
+                    return { actions: [], rawText: prompt, requiresConfirmation: false };
+                }
+
+                const bridged = bridgeLlmToolCalls({ calls: toolCalls, context: getProjectContext() });
+                for (const rejected of bridged.rejections) {
+                    logger.warn(
+                        `[AI] Rejected tool call ${String(rejected.index)} (${rejected.name}): ${rejected.reason}`
+                    );
+                }
+
+                if (bridged.actions.length > 1) {
+                    logger.warn(
+                        '[AI] Rejected LLM action batch because atomic multi-action execution is not available'
+                    );
+                } else if (bridged.actions.length === 1 && bridged.rejections.length === 0) {
+                    const validated = validateActions(bridged.actions);
+                    if (validated.length === bridged.actions.length) {
+                        return {
+                            actions: validated,
+                            rawText: prompt,
+                            requiresConfirmation: requiresConfirmation(validated),
+                        };
+                    }
+                    logger.warn('[AI] Rejected LLM action batch because runtime validation removed an action');
+                }
+            } catch (error) {
+                if (signal?.aborted) {
+                    return { actions: [], rawText: prompt, requiresConfirmation: false };
+                }
+                logger.warn(`[AI] Provider tool planning failed: ${String(error)}`);
+            }
+
+            // 5. DSO fallback — Qwen3-8B emits typed Domain-Specific Operations.
             if (isDsoBackendAvailable()) {
                 try {
                     const result = await executeDsoEdit(prompt, signal);

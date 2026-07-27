@@ -1,8 +1,8 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 
+import { DAW_TOOL_SCHEMAS, type ToolSchema } from '../../../models/ToolDefinitions';
 import { type ToolCallResult } from '../../../transformers/toolCallParser';
-import { mcpToOpenAiTools } from '../../mcpToolAdapter/mcpToOpenAiTools';
 import { getCloudClient } from '../getCloudClient';
 
 import { CLOUD_MODEL } from './helpers';
@@ -18,34 +18,42 @@ Key rules:
 - Bar 1 = beat 0, bar N = beat (N-1)*4 in 4/4 time
 - MIDI: C4=60, 0.25=16th, 0.5=8th, 1=quarter, 4=whole note`;
 
-function getClaudeTools(): Anthropic.Messages.Tool[] {
-    return mcpToOpenAiTools().map((time) => ({
-        name: time.function.name,
-        description: time.function.description,
-        input_schema: time.function.parameters as Anthropic.Messages.Tool.InputSchema,
+function getClaudeTools(toolSchemas: readonly ToolSchema[]): Anthropic.Messages.Tool[] {
+    return toolSchemas.map((schema) => ({
+        name: schema.function.name,
+        description: schema.function.description,
+        input_schema: schema.function.parameters,
     }));
 }
 
 export const generateCloudToolCalls = inject({ logger })(
     ({ logger }) =>
-        async function generateCloudToolCalls(projectState: string, userMessage: string): Promise<ToolCallResult[]> {
+        async function generateCloudToolCalls(
+            systemPrompt: string,
+            userMessage: string,
+            toolSchemas: readonly ToolSchema[] = DAW_TOOL_SCHEMAS,
+            signal?: AbortSignal
+        ): Promise<ToolCallResult[]> {
             const client = getCloudClient();
             if (!client) {
                 throw new Error('Cloud AI not configured. Set API key first.');
             }
 
-            const response = await client.messages.create({
-                model: CLOUD_MODEL,
-                max_tokens: 2048,
-                system: CLOUD_SYSTEM_PROMPT,
-                tools: getClaudeTools(),
-                messages: [
-                    {
-                        role: 'user',
-                        content: `${projectState}\n\nUser request: ${userMessage}`,
-                    },
-                ],
-            });
+            const response = await client.messages.create(
+                {
+                    model: CLOUD_MODEL,
+                    max_tokens: 2048,
+                    system: `${CLOUD_SYSTEM_PROMPT}\n\n${systemPrompt}`,
+                    tools: getClaudeTools(toolSchemas),
+                    messages: [
+                        {
+                            role: 'user',
+                            content: userMessage,
+                        },
+                    ],
+                },
+                { signal }
+            );
 
             const results: ToolCallResult[] = [];
             for (const block of response.content) {

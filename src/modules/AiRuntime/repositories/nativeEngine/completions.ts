@@ -10,7 +10,7 @@ import { BASE_URL } from './lifecycleState';
 export async function generateNativeCompletion(
     systemPrompt: string,
     userMessage: string,
-    options?: { temperature?: number; maxTokens?: number }
+    options?: { temperature?: number; maxTokens?: number; signal?: AbortSignal }
 ): Promise<string> {
     if (isTauri()) {
         return (await tauriInvoke('generate_native_completion', {
@@ -23,6 +23,7 @@ export async function generateNativeCompletion(
 
     const response = await fetch(`${BASE_URL}/v1/chat/completions`, {
         method: 'POST',
+        signal: options?.signal,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             messages: [

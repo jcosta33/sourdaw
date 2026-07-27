@@ -6,7 +6,7 @@ import type { AiBackend } from './helpers';
 
 /**
  * Returns the ordered fallback chain for inference.
- * Used by the old tool-calling system (chat, not DSO editing).
+ * Used by provider-neutral structured tool planning.
  */
 export function getBackendChain(): AiBackend[] {
     const chain: AiBackend[] = [];
