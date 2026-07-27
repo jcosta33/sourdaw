@@ -1,0 +1,43 @@
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/renderMyceliumAscendantDemo.spec.ts
+  s_ac9b259eab20ba::t_87b48a4b18ae45 222,255
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_ac9b259eab20ba::t_030b85b41ea63e 635
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_ac9b259eab20ba::t_810395e6904119 15,82-95,99,102-110,112-143,147-151,154-158,485-497
+  s_ac9b259eab20ba::t_f293f2a829fc9b 96-98,100-101,111,153
+  s_ac9b259eab20ba::t_4afefbb318e3be 554
+  s_ac9b259eab20ba::t_511d3a8373b78f 144-146,152
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/createMyceliumRhythmPerformance.spec.ts
+  s_ac9b259eab20ba::t_87b48a4b18ae45 38,69-70,79-81
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/createMyceliumAscendantDemo.spec.ts
+  s_ac9b259eab20ba::t_87b48a4b18ae45 44
+src/modules/Project/useCases/demoProjects/myceliumAscendant/createMyceliumVoicePerformance.ts
+  s_ac9b259eab20ba::t_ec95f95d86e09e 261,263-271,274-276,284-285
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_ac9b259eab20ba::t_ebda8615f722fc 1265-1270,1272,1274-1280,1299-1300
+  s_ac9b259eab20ba::t_511d3a8373b78f 1271,1281-1290,1294-1298
+  s_ac9b259eab20ba::t_f293f2a829fc9b 1273
+  s_ac9b259eab20ba::t_367244baaa3668 1291-1293
+src/modules/Project/useCases/demoProjects/myceliumAscendant/createMyceliumRhythmPerformance.ts
+  s_ac9b259eab20ba::t_ec95f95d86e09e 248-257,260-262,270-271
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/createMyceliumVoicePerformance.spec.ts
+  s_ac9b259eab20ba::t_87b48a4b18ae45 35,64,69-75
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/createMyceliumSessionPerformance.spec.ts
+  s_ac9b259eab20ba::t_ac26a30d4c84dd 7,12-13,80,97,106-107
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "65ed98998742aab36f92bb322955cbc07b0e92cf",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
