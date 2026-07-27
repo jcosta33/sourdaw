@@ -1,0 +1,21 @@
+scripts/agent-campaign/__tests__/evidenceResultStore.spec.ts
+  s_bc88af7d3b054c::t_e1f7fe6466ee52 205,208-210,212-217,219-227,229-235,237-248
+  s_bc88af7d3b054c::t_da68c273041cba 228,249
+  s_bc88af7d3b054c::t_b168b8cf6430b6 236
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "6ba50bf4900b1f2622bc76b0ff6c1205c980bee1",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": null
+    }
+  }
+}
