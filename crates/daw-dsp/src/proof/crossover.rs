@@ -122,10 +122,11 @@ impl FourBandSplitter {
 
 #[cfg(test)]
 mod tests {
-    use super::{BiquadCoeffs, FourBandSplitter, Lr4Crossover, BUTTERWORTH_Q};
+    use super::{BiquadCoeffs, FourBandSplitter, Lr4Crossover};
     use std::f64::consts::{PI, TAU};
 
     const SAMPLE_RATES: [f64; 3] = [44_100.0, 48_000.0, 96_000.0];
+    const REFERENCE_BUTTERWORTH_Q: f64 = std::f64::consts::FRAC_1_SQRT_2;
     const SOURCE_MAGNITUDE_TOLERANCE_DB: f64 = 0.5;
     /// The full f64-reference/f32-transport corpus measures at most 1.692e-7
     /// complex error. 1e-5 leaves 59x platform headroom while corresponding to
@@ -325,13 +326,61 @@ mod tests {
         numerator.divide(denominator)
     }
 
+    fn normalize_reference_coefficients(
+        b0: f64,
+        b1: f64,
+        b2: f64,
+        a0: f64,
+        a1: f64,
+        a2: f64,
+    ) -> BiquadCoeffs {
+        let inverse_a0 = 1.0 / a0;
+        BiquadCoeffs {
+            b0: b0 * inverse_a0,
+            b1: b1 * inverse_a0,
+            b2: b2 * inverse_a0,
+            a1: a1 * inverse_a0,
+            a2: a2 * inverse_a0,
+        }
+    }
+
+    /// Independent RBJ Butterworth design: the oracle deliberately does not
+    /// call the production coefficient constructors.
+    fn reference_lowpass_coefficients(frequency: f64, sample_rate: f64) -> BiquadCoeffs {
+        let omega = 2.0 * PI * frequency / sample_rate;
+        let cosine = omega.cos();
+        let alpha = omega.sin() / (2.0 * REFERENCE_BUTTERWORTH_Q);
+        normalize_reference_coefficients(
+            (1.0 - cosine) / 2.0,
+            1.0 - cosine,
+            (1.0 - cosine) / 2.0,
+            1.0 + alpha,
+            -2.0 * cosine,
+            1.0 - alpha,
+        )
+    }
+
+    fn reference_highpass_coefficients(frequency: f64, sample_rate: f64) -> BiquadCoeffs {
+        let omega = 2.0 * PI * frequency / sample_rate;
+        let cosine = omega.cos();
+        let alpha = omega.sin() / (2.0 * REFERENCE_BUTTERWORTH_Q);
+        normalize_reference_coefficients(
+            (1.0 + cosine) / 2.0,
+            -(1.0 + cosine),
+            (1.0 + cosine) / 2.0,
+            1.0 + alpha,
+            -2.0 * cosine,
+            1.0 - alpha,
+        )
+    }
+
     fn lr4_responses(
         crossover_frequency: f64,
         frequency: f64,
         sample_rate: f64,
     ) -> (Complex, Complex) {
-        let lowpass = BiquadCoeffs::lowpass(crossover_frequency, BUTTERWORTH_Q, sample_rate);
-        let highpass = BiquadCoeffs::highpass(crossover_frequency, BUTTERWORTH_Q, sample_rate);
+        let lowpass = reference_lowpass_coefficients(crossover_frequency, sample_rate);
+        let highpass = reference_highpass_coefficients(crossover_frequency, sample_rate);
         let lowpass_response = biquad_response(lowpass, frequency, sample_rate);
         let highpass_response = biquad_response(highpass, frequency, sample_rate);
         (
@@ -599,12 +648,114 @@ mod tests {
         }
     }
 
-    fn assert_coefficients_exact(actual: BiquadCoeffs, expected: BiquadCoeffs) {
-        assert_eq!(actual.b0.to_bits(), expected.b0.to_bits());
-        assert_eq!(actual.b1.to_bits(), expected.b1.to_bits());
-        assert_eq!(actual.b2.to_bits(), expected.b2.to_bits());
-        assert_eq!(actual.a1.to_bits(), expected.a1.to_bits());
-        assert_eq!(actual.a2.to_bits(), expected.a2.to_bits());
+    fn assert_coefficients_exact(
+        actual: BiquadCoeffs,
+        expected: BiquadCoeffs,
+        crossover_index: usize,
+        filter_kind: &str,
+        ramp_step: usize,
+    ) {
+        assert_eq!(
+            actual.b0.to_bits(),
+            expected.b0.to_bits(),
+            "crossover={crossover_index} filter={filter_kind} step={ramp_step} b0"
+        );
+        assert_eq!(
+            actual.b1.to_bits(),
+            expected.b1.to_bits(),
+            "crossover={crossover_index} filter={filter_kind} step={ramp_step} b1"
+        );
+        assert_eq!(
+            actual.b2.to_bits(),
+            expected.b2.to_bits(),
+            "crossover={crossover_index} filter={filter_kind} step={ramp_step} b2"
+        );
+        assert_eq!(
+            actual.a1.to_bits(),
+            expected.a1.to_bits(),
+            "crossover={crossover_index} filter={filter_kind} step={ramp_step} a1"
+        );
+        assert_eq!(
+            actual.a2.to_bits(),
+            expected.a2.to_bits(),
+            "crossover={crossover_index} filter={filter_kind} step={ramp_step} a2"
+        );
+    }
+
+    fn counted_linear_coefficients(
+        start: BiquadCoeffs,
+        target: BiquadCoeffs,
+        ramp_step: usize,
+        ramp_samples: usize,
+    ) -> BiquadCoeffs {
+        if ramp_step == ramp_samples {
+            return target;
+        }
+
+        let remaining = ramp_samples - ramp_step;
+        let progress = 1.0 - remaining as f64 / ramp_samples as f64;
+        BiquadCoeffs {
+            b0: start.b0 + (target.b0 - start.b0) * progress,
+            b1: start.b1 + (target.b1 - start.b1) * progress,
+            b2: start.b2 + (target.b2 - start.b2) * progress,
+            a1: start.a1 + (target.a1 - start.a1) * progress,
+            a2: start.a2 + (target.a2 - start.a2) * progress,
+        }
+    }
+
+    fn assert_intermediate_crossover_coefficients(
+        splitter: &mut FourBandSplitter,
+        initial: [f64; 3],
+        target: [f64; 3],
+        sample_rate: f64,
+        ramp_step: usize,
+        ramp_samples: usize,
+    ) {
+        let initial_frequencies = [
+            initial[0], initial[1], initial[2], initial[1], initial[2], initial[2],
+        ];
+        let target_frequencies = [
+            target[0], target[1], target[2], target[1], target[2], target[2],
+        ];
+        let crossovers: [&mut Lr4Crossover; 6] = [
+            &mut splitter.xover1,
+            &mut splitter.xover2,
+            &mut splitter.xover3,
+            &mut splitter.ap_low_2,
+            &mut splitter.ap_low_3,
+            &mut splitter.ap_low_mid_3,
+        ];
+
+        for (crossover_index, crossover) in crossovers.into_iter().enumerate() {
+            let initial_frequency = initial_frequencies[crossover_index];
+            let target_frequency = target_frequencies[crossover_index];
+            let expected_lowpass = counted_linear_coefficients(
+                reference_lowpass_coefficients(initial_frequency, sample_rate),
+                reference_lowpass_coefficients(target_frequency, sample_rate),
+                ramp_step,
+                ramp_samples,
+            );
+            let expected_highpass = counted_linear_coefficients(
+                reference_highpass_coefficients(initial_frequency, sample_rate),
+                reference_highpass_coefficients(target_frequency, sample_rate),
+                ramp_step,
+                ramp_samples,
+            );
+            assert_coefficients_exact(
+                crossover.lp_coeffs.next(),
+                expected_lowpass,
+                crossover_index,
+                "lowpass",
+                ramp_step,
+            );
+            assert_coefficients_exact(
+                crossover.hp_coeffs.next(),
+                expected_highpass,
+                crossover_index,
+                "highpass",
+                ramp_step,
+            );
+        }
     }
 
     fn assert_exact_crossover_targets(
@@ -624,11 +775,25 @@ mod tests {
             &mut splitter.ap_low_mid_3,
         ];
 
-        for (crossover, frequency) in crossovers.into_iter().zip(frequencies) {
-            let expected_lowpass = BiquadCoeffs::lowpass(frequency, BUTTERWORTH_Q, sample_rate);
-            let expected_highpass = BiquadCoeffs::highpass(frequency, BUTTERWORTH_Q, sample_rate);
-            assert_coefficients_exact(crossover.lp_coeffs.next(), expected_lowpass);
-            assert_coefficients_exact(crossover.hp_coeffs.next(), expected_highpass);
+        for (crossover_index, (crossover, frequency)) in
+            crossovers.into_iter().zip(frequencies).enumerate()
+        {
+            let expected_lowpass = reference_lowpass_coefficients(frequency, sample_rate);
+            let expected_highpass = reference_highpass_coefficients(frequency, sample_rate);
+            assert_coefficients_exact(
+                crossover.lp_coeffs.next(),
+                expected_lowpass,
+                crossover_index,
+                "lowpass",
+                (0.005 * sample_rate).round() as usize,
+            );
+            assert_coefficients_exact(
+                crossover.hp_coeffs.next(),
+                expected_highpass,
+                crossover_index,
+                "highpass",
+                (0.005 * sample_rate).round() as usize,
+            );
         }
     }
 
@@ -668,6 +833,8 @@ mod tests {
         for sample_rate in SAMPLE_RATES {
             let mut splitter =
                 FourBandSplitter::new(initial[0], initial[1], initial[2], sample_rate);
+            let mut interpolation_splitter =
+                FourBandSplitter::new(initial[0], initial[1], initial[2], sample_rate);
             for sample_index in 0..4_096 {
                 let (left, right) = transition_input(sample_index, sample_rate);
                 let output = splitter.process(left, right);
@@ -676,7 +843,9 @@ mod tests {
 
             assert_all_smoothers_settled(&splitter, true);
             splitter.set_freqs(target[0], target[1], target[2], sample_rate);
+            interpolation_splitter.set_freqs(target[0], target[1], target[2], sample_rate);
             assert_all_smoothers_settled(&splitter, false);
+            assert_all_smoothers_settled(&interpolation_splitter, false);
 
             let ramp_samples = (0.005 * sample_rate).round() as usize;
             for ramp_index in 0..ramp_samples - 1 {
@@ -684,14 +853,32 @@ mod tests {
                 let (left, right) = transition_input(sample_index, sample_rate);
                 let output = splitter.process(left, right);
                 assert_transition_output_is_bounded(output, sample_rate, sample_index);
+                assert_intermediate_crossover_coefficients(
+                    &mut interpolation_splitter,
+                    initial,
+                    target,
+                    sample_rate,
+                    ramp_index + 1,
+                    ramp_samples,
+                );
             }
             assert_all_smoothers_settled(&splitter, false);
+            assert_all_smoothers_settled(&interpolation_splitter, false);
 
             let settlement_index = 4_096 + ramp_samples - 1;
             let (left, right) = transition_input(settlement_index, sample_rate);
             let output = splitter.process(left, right);
             assert_transition_output_is_bounded(output, sample_rate, settlement_index);
+            assert_intermediate_crossover_coefficients(
+                &mut interpolation_splitter,
+                initial,
+                target,
+                sample_rate,
+                ramp_samples,
+                ramp_samples,
+            );
             assert_all_smoothers_settled(&splitter, true);
+            assert_all_smoothers_settled(&interpolation_splitter, true);
             assert_exact_crossover_targets(&mut splitter, target, sample_rate);
 
             for tail_index in 0..4_096 {
