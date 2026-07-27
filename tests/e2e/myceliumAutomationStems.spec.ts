@@ -15,12 +15,18 @@ const AUDITION_RENDERS = [
     },
     {
         startBeat: 192,
+        endBeat: 224,
+        windows: [{ name: 'Drop I — Dry A', startBeat: 192, endBeat: 224 }],
+    },
+    {
+        startBeat: 224,
+        endBeat: 256,
+        windows: [{ name: 'Drop I — Wet', startBeat: 224, endBeat: 256 }],
+    },
+    {
+        startBeat: 256,
         endBeat: 288,
-        windows: [
-            { name: 'Drop I — Dry A', startBeat: 192, endBeat: 224 },
-            { name: 'Drop I — Wet', startBeat: 224, endBeat: 256 },
-            { name: 'Drop I — Dry B', startBeat: 256, endBeat: 288 },
-        ],
+        windows: [{ name: 'Drop I — Dry B', startBeat: 256, endBeat: 288 }],
     },
     {
         startBeat: 288,
@@ -29,11 +35,13 @@ const AUDITION_RENDERS = [
     },
     {
         startBeat: 352,
+        endBeat: 416,
+        windows: [{ name: 'Singularity Build', startBeat: 352, endBeat: 416 }],
+    },
+    {
+        startBeat: 416,
         endBeat: 484,
-        windows: [
-            { name: 'Singularity Build', startBeat: 352, endBeat: 416 },
-            { name: 'False Floor', startBeat: 480, endBeat: 484 },
-        ],
+        windows: [{ name: 'False Floor', startBeat: 480, endBeat: 484 }],
     },
     {
         startBeat: 544,
@@ -42,6 +50,7 @@ const AUDITION_RENDERS = [
     },
 ] as const;
 const AUDITION_WINDOWS = AUDITION_RENDERS.flatMap((auditionRender) => auditionRender.windows);
+const AUDITION_RENDER_BATCHES = [AUDITION_RENDERS.slice(0, 4), AUDITION_RENDERS.slice(4)] as const;
 
 const ELIGIBLE_STEM_NAMES = [
     'Acid Tendril',
@@ -129,243 +138,263 @@ test('renders signal evidence for every required Mycelium automation audition wi
     await expect(page.getByRole('button', { name: 'Mycelium Ascendant' })).toBeVisible();
     const projectReceipt = await captureMyceliumProjectReceipt(page);
 
-    const report = await page.evaluate(async (auditionRenders) => {
-        type AudioEngineModule = {
-            exportStems: (options: {
-                startBeat: number;
-                durationBeats: number;
-                sampleRate: number;
-                tailSeconds: number;
-                onWarning: (warning: string) => void;
-            }) => Promise<Map<string, AudioBuffer>>;
-            renderOffline: (options: {
-                startBeat: number;
-                durationBeats: number;
-                sampleRate: number;
-                tailSeconds: number;
-                onWarning: (warning: string) => void;
-            }) => Promise<AudioBuffer>;
-        };
-        type TrackStoreModule = {
-            trackStore: { value: { tracks: { id: string; name: string }[] } | null };
-        };
-        type TempoChange = { beat: number; tempo: number; curve: 'instant' | 'linear' };
-        type TransportStoreModule = {
-            tempoMapStore: { value: { changes: TempoChange[] } | null };
-            transportStore: { value: { tempo: number } | null };
-        };
-        type TransportUseCasesModule = {
-            projectPpqEndpoints: (input: {
-                startPpq: number;
-                endPpq: number;
-                defaultTempo: number;
-                sampleRate: number;
-                changes: readonly TempoChange[];
-            }) => { durationSamples: number };
-        };
-        const isRecord = (value: unknown): value is Record<string, unknown> =>
-            typeof value === 'object' && value !== null;
-        const isAudioEngineModule = (value: unknown): value is AudioEngineModule =>
-            isRecord(value) && typeof value.exportStems === 'function' && typeof value.renderOffline === 'function';
-        const isTrackStoreModule = (value: unknown): value is TrackStoreModule => {
-            if (!isRecord(value) || !isRecord(value.trackStore)) {
-                return false;
-            }
-            const state = value.trackStore.value;
-            if (!isRecord(state) || !Array.isArray(state.tracks)) {
-                return false;
-            }
-            return state.tracks.every(
-                (track: unknown) => isRecord(track) && typeof track.id === 'string' && typeof track.name === 'string'
-            );
-        };
-        const isTransportStoreModule = (value: unknown): value is TransportStoreModule => {
-            if (!isRecord(value) || !isRecord(value.tempoMapStore) || !isRecord(value.transportStore)) {
-                return false;
-            }
-            const tempoMap = value.tempoMapStore.value;
-            const transport = value.transportStore.value;
-            if (!isRecord(tempoMap) || !Array.isArray(tempoMap.changes) || !isRecord(transport)) {
-                return false;
-            }
-            return (
-                typeof transport.tempo === 'number' &&
-                tempoMap.changes.every(
-                    (change: unknown) =>
-                        isRecord(change) &&
-                        typeof change.beat === 'number' &&
-                        typeof change.tempo === 'number' &&
-                        (change.curve === 'instant' || change.curve === 'linear')
-                )
-            );
-        };
-        const isTransportUseCasesModule = (value: unknown): value is TransportUseCasesModule =>
-            isRecord(value) && typeof value.projectPpqEndpoints === 'function';
-        const audioEngineModule: unknown = await import('/src/modules/AudioEngine/useCases/index.ts');
-        const arrangementStoreModule: unknown = await import('/src/modules/Arrangement/stores/index.ts');
-        const transportStoreModule: unknown = await import('/src/modules/Transport/stores/index.ts');
-        const transportUseCasesModule: unknown = await import('/src/modules/Transport/useCases/index.ts');
-        if (!isAudioEngineModule(audioEngineModule) || !isTrackStoreModule(arrangementStoreModule)) {
-            throw new TypeError('Mycelium stem E2E could not resolve the browser render contracts');
-        }
-        if (!isTransportStoreModule(transportStoreModule) || !isTransportUseCasesModule(transportUseCasesModule)) {
-            throw new TypeError('Mycelium stem E2E could not resolve the browser tempo contracts');
-        }
-        const { exportStems, renderOffline } = audioEngineModule;
-        const { trackStore } = arrangementStoreModule;
-        const { tempoMapStore, transportStore } = transportStoreModule;
-        const { projectPpqEndpoints } = transportUseCasesModule;
-        const tempoMap = tempoMapStore.value;
-        const transport = transportStore.value;
-        if (!tempoMap || !transport) {
-            throw new TypeError('Mycelium stem E2E found empty tempo state');
-        }
-        const trackNames = new Map(trackStore.value?.tracks.map((track) => [track.id, track.name]) ?? []);
-        const windows = [];
-
-        for (const auditionRender of auditionRenders) {
-            const warnings: string[] = [];
-            const sampleRate = 44_100;
-            const stems = await exportStems({
-                startBeat: auditionRender.startBeat,
-                durationBeats: auditionRender.endBeat - auditionRender.startBeat,
-                sampleRate,
-                tailSeconds: 0,
-                onWarning: (warning: string) => warnings.push(warning),
-            });
-
-            for (const auditionWindow of auditionRender.windows) {
-                const analysisStartFrame = projectPpqEndpoints({
-                    startPpq: auditionRender.startBeat,
-                    endPpq: auditionWindow.startBeat,
-                    defaultTempo: transport.tempo,
-                    sampleRate,
-                    changes: tempoMap.changes,
-                }).durationSamples;
-                const analysisEndFrame = projectPpqEndpoints({
-                    startPpq: auditionRender.startBeat,
-                    endPpq: auditionWindow.endBeat,
-                    defaultTempo: transport.tempo,
-                    sampleRate,
-                    changes: tempoMap.changes,
-                }).durationSamples;
-                const stemMetrics = [...stems.entries()].map(([trackId, buffer]) => {
-                    let samplePeak = 0;
-                    let sumSquares = 0;
-                    let sampleCount = 0;
-                    let activeBlocks = 0;
-                    let blockCount = 0;
-                    const blockFrames = 2_048;
-                    const firstAnalysisFrame = Math.max(0, analysisStartFrame);
-                    const lastAnalysisFrame = Math.min(buffer.length, analysisEndFrame);
-
-                    for (
-                        let blockStart = firstAnalysisFrame;
-                        blockStart < lastAnalysisFrame;
-                        blockStart += blockFrames
-                    ) {
-                        const blockEnd = Math.min(lastAnalysisFrame, blockStart + blockFrames);
-                        let blockSquares = 0;
-                        let blockSamples = 0;
-                        for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
-                            const samples = buffer.getChannelData(channel);
-                            for (let index = blockStart; index < blockEnd; index++) {
-                                const sample = samples[index];
-                                samplePeak = Math.max(samplePeak, Math.abs(sample));
-                                const square = sample * sample;
-                                sumSquares += square;
-                                blockSquares += square;
-                                sampleCount++;
-                                blockSamples++;
-                            }
-                        }
-                        if (Math.sqrt(blockSquares / blockSamples) > 0.0001) {
-                            activeBlocks++;
-                        }
-                        blockCount++;
-                    }
-
-                    return {
-                        trackId,
-                        trackName: trackNames.get(trackId) ?? trackId,
-                        channels: buffer.numberOfChannels,
-                        sampleRate: buffer.sampleRate,
-                        durationSeconds: (lastAnalysisFrame - firstAnalysisFrame) / buffer.sampleRate,
-                        renderDurationSeconds: buffer.duration,
-                        samplePeak,
-                        rms: Math.sqrt(sumSquares / sampleCount),
-                        activeBlockRatio: activeBlocks / blockCount,
-                    };
-                });
-                stemMetrics.sort((first, second) => second.rms - first.rms);
-                windows.push({
-                    ...auditionWindow,
-                    warnings,
-                    stemCount: stemMetrics.length,
-                    audibleStemCount: stemMetrics.filter((stem) => stem.rms > 0.00001).length,
-                    stems: stemMetrics,
-                });
-            }
-            stems.clear();
-        }
-        const falseFloorWarnings: string[] = [];
-        const falseFloorRenderStartBeat = 416;
-        const falseFloorStartBeat = 480;
-        const returnStrikeEndBeat = 488;
-        const fullMix = await renderOffline({
-            startBeat: falseFloorRenderStartBeat,
-            durationBeats: returnStrikeEndBeat - falseFloorRenderStartBeat,
-            sampleRate: 44_100,
-            tailSeconds: 0,
-            onWarning: (warning: string) => falseFloorWarnings.push(warning),
-        });
-        const measureFullMixWindow = (startBeat: number, endBeat: number) => {
-            const startFrame = projectPpqEndpoints({
-                startPpq: falseFloorRenderStartBeat,
-                endPpq: startBeat,
-                defaultTempo: transport.tempo,
-                sampleRate: fullMix.sampleRate,
-                changes: tempoMap.changes,
-            }).durationSamples;
-            const endFrame = projectPpqEndpoints({
-                startPpq: falseFloorRenderStartBeat,
-                endPpq: endBeat,
-                defaultTempo: transport.tempo,
-                sampleRate: fullMix.sampleRate,
-                changes: tempoMap.changes,
-            }).durationSamples;
-            let samplePeak = 0;
-            let sumSquares = 0;
-            let sampleCount = 0;
-            for (let channel = 0; channel < fullMix.numberOfChannels; channel++) {
-                const samples = fullMix.getChannelData(channel);
-                for (let index = startFrame; index < Math.min(endFrame, samples.length); index++) {
-                    const sample = samples[index];
-                    samplePeak = Math.max(samplePeak, Math.abs(sample));
-                    sumSquares += sample * sample;
-                    sampleCount++;
-                }
-            }
-            return {
-                beats: [startBeat, endBeat],
-                durationSeconds: (endFrame - startFrame) / fullMix.sampleRate,
-                rms: Math.sqrt(sumSquares / sampleCount),
-                samplePeak,
+    const batchReports = [];
+    for (const [batchIndex, auditionRenders] of AUDITION_RENDER_BATCHES.entries()) {
+        const batchReport = await page.evaluate(async (auditionRenders) => {
+            type AudioEngineModule = {
+                exportStems: (options: {
+                    startBeat: number;
+                    durationBeats: number;
+                    sampleRate: number;
+                    tailSeconds: number;
+                    onWarning: (warning: string) => void;
+                }) => Promise<Map<string, AudioBuffer>>;
+                renderOffline: (options: {
+                    startBeat: number;
+                    durationBeats: number;
+                    sampleRate: number;
+                    tailSeconds: number;
+                    onWarning: (warning: string) => void;
+                }) => Promise<AudioBuffer>;
             };
-        };
-        return {
-            capturedAt: new Date().toISOString(),
-            sampleRate: 44_100,
-            windows,
-            fullMixTransition: {
-                renderBeats: [falseFloorRenderStartBeat, returnStrikeEndBeat],
-                channels: fullMix.numberOfChannels,
-                warnings: falseFloorWarnings,
-                falseFloor: measureFullMixWindow(falseFloorStartBeat, 484),
-                returnStrike: measureFullMixWindow(484, returnStrikeEndBeat),
-            },
-        };
-    }, AUDITION_RENDERS);
+            type TrackStoreModule = {
+                trackStore: { value: { tracks: { id: string; name: string }[] } | null };
+            };
+            type TempoChange = { beat: number; tempo: number; curve: 'instant' | 'linear' };
+            type TransportStoreModule = {
+                tempoMapStore: { value: { changes: TempoChange[] } | null };
+                transportStore: { value: { tempo: number } | null };
+            };
+            type TransportUseCasesModule = {
+                projectPpqEndpoints: (input: {
+                    startPpq: number;
+                    endPpq: number;
+                    defaultTempo: number;
+                    sampleRate: number;
+                    changes: readonly TempoChange[];
+                }) => { durationSamples: number };
+            };
+            const isRecord = (value: unknown): value is Record<string, unknown> =>
+                typeof value === 'object' && value !== null;
+            const isAudioEngineModule = (value: unknown): value is AudioEngineModule =>
+                isRecord(value) && typeof value.exportStems === 'function' && typeof value.renderOffline === 'function';
+            const isTrackStoreModule = (value: unknown): value is TrackStoreModule => {
+                if (!isRecord(value) || !isRecord(value.trackStore)) {
+                    return false;
+                }
+                const state = value.trackStore.value;
+                if (!isRecord(state) || !Array.isArray(state.tracks)) {
+                    return false;
+                }
+                return state.tracks.every(
+                    (track: unknown) =>
+                        isRecord(track) && typeof track.id === 'string' && typeof track.name === 'string'
+                );
+            };
+            const isTransportStoreModule = (value: unknown): value is TransportStoreModule => {
+                if (!isRecord(value) || !isRecord(value.tempoMapStore) || !isRecord(value.transportStore)) {
+                    return false;
+                }
+                const tempoMap = value.tempoMapStore.value;
+                const transport = value.transportStore.value;
+                if (!isRecord(tempoMap) || !Array.isArray(tempoMap.changes) || !isRecord(transport)) {
+                    return false;
+                }
+                return (
+                    typeof transport.tempo === 'number' &&
+                    tempoMap.changes.every(
+                        (change: unknown) =>
+                            isRecord(change) &&
+                            typeof change.beat === 'number' &&
+                            typeof change.tempo === 'number' &&
+                            (change.curve === 'instant' || change.curve === 'linear')
+                    )
+                );
+            };
+            const isTransportUseCasesModule = (value: unknown): value is TransportUseCasesModule =>
+                isRecord(value) && typeof value.projectPpqEndpoints === 'function';
+            const audioEngineModule: unknown = await import('/src/modules/AudioEngine/useCases/index.ts');
+            const arrangementStoreModule: unknown = await import('/src/modules/Arrangement/stores/index.ts');
+            const transportStoreModule: unknown = await import('/src/modules/Transport/stores/index.ts');
+            const transportUseCasesModule: unknown = await import('/src/modules/Transport/useCases/index.ts');
+            if (!isAudioEngineModule(audioEngineModule) || !isTrackStoreModule(arrangementStoreModule)) {
+                throw new TypeError('Mycelium stem E2E could not resolve the browser render contracts');
+            }
+            if (!isTransportStoreModule(transportStoreModule) || !isTransportUseCasesModule(transportUseCasesModule)) {
+                throw new TypeError('Mycelium stem E2E could not resolve the browser tempo contracts');
+            }
+            const { exportStems, renderOffline } = audioEngineModule;
+            const { trackStore } = arrangementStoreModule;
+            const { tempoMapStore, transportStore } = transportStoreModule;
+            const { projectPpqEndpoints } = transportUseCasesModule;
+            const tempoMap = tempoMapStore.value;
+            const transport = transportStore.value;
+            if (!tempoMap || !transport) {
+                throw new TypeError('Mycelium stem E2E found empty tempo state');
+            }
+            const trackNames = new Map(trackStore.value?.tracks.map((track) => [track.id, track.name]) ?? []);
+            const windows = [];
+
+            for (const auditionRender of auditionRenders) {
+                const warnings: string[] = [];
+                const sampleRate = 44_100;
+                const stems = await exportStems({
+                    startBeat: auditionRender.startBeat,
+                    durationBeats: auditionRender.endBeat - auditionRender.startBeat,
+                    sampleRate,
+                    tailSeconds: 0,
+                    onWarning: (warning: string) => warnings.push(warning),
+                });
+
+                for (const auditionWindow of auditionRender.windows) {
+                    const analysisStartFrame = projectPpqEndpoints({
+                        startPpq: auditionRender.startBeat,
+                        endPpq: auditionWindow.startBeat,
+                        defaultTempo: transport.tempo,
+                        sampleRate,
+                        changes: tempoMap.changes,
+                    }).durationSamples;
+                    const analysisEndFrame = projectPpqEndpoints({
+                        startPpq: auditionRender.startBeat,
+                        endPpq: auditionWindow.endBeat,
+                        defaultTempo: transport.tempo,
+                        sampleRate,
+                        changes: tempoMap.changes,
+                    }).durationSamples;
+                    const stemMetrics = [...stems.entries()].map(([trackId, buffer]) => {
+                        let samplePeak = 0;
+                        let sumSquares = 0;
+                        let sampleCount = 0;
+                        let activeBlocks = 0;
+                        let blockCount = 0;
+                        const blockFrames = 2_048;
+                        const firstAnalysisFrame = Math.max(0, analysisStartFrame);
+                        const lastAnalysisFrame = Math.min(buffer.length, analysisEndFrame);
+
+                        for (
+                            let blockStart = firstAnalysisFrame;
+                            blockStart < lastAnalysisFrame;
+                            blockStart += blockFrames
+                        ) {
+                            const blockEnd = Math.min(lastAnalysisFrame, blockStart + blockFrames);
+                            let blockSquares = 0;
+                            let blockSamples = 0;
+                            for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
+                                const samples = buffer.getChannelData(channel);
+                                for (let index = blockStart; index < blockEnd; index++) {
+                                    const sample = samples[index];
+                                    samplePeak = Math.max(samplePeak, Math.abs(sample));
+                                    const square = sample * sample;
+                                    sumSquares += square;
+                                    blockSquares += square;
+                                    sampleCount++;
+                                    blockSamples++;
+                                }
+                            }
+                            if (Math.sqrt(blockSquares / blockSamples) > 0.0001) {
+                                activeBlocks++;
+                            }
+                            blockCount++;
+                        }
+
+                        return {
+                            trackId,
+                            trackName: trackNames.get(trackId) ?? trackId,
+                            channels: buffer.numberOfChannels,
+                            sampleRate: buffer.sampleRate,
+                            durationSeconds: (lastAnalysisFrame - firstAnalysisFrame) / buffer.sampleRate,
+                            renderDurationSeconds: buffer.duration,
+                            samplePeak,
+                            rms: Math.sqrt(sumSquares / sampleCount),
+                            activeBlockRatio: activeBlocks / blockCount,
+                        };
+                    });
+                    stemMetrics.sort((first, second) => second.rms - first.rms);
+                    windows.push({
+                        ...auditionWindow,
+                        warnings,
+                        stemCount: stemMetrics.length,
+                        audibleStemCount: stemMetrics.filter((stem) => stem.rms > 0.00001).length,
+                        stems: stemMetrics,
+                    });
+                }
+                stems.clear();
+            }
+            const falseFloorWarnings: string[] = [];
+            const falseFloorRenderStartBeat = 416;
+            const falseFloorStartBeat = 480;
+            const returnStrikeEndBeat = 488;
+            const fullMix = await renderOffline({
+                startBeat: falseFloorRenderStartBeat,
+                durationBeats: returnStrikeEndBeat - falseFloorRenderStartBeat,
+                sampleRate: 44_100,
+                tailSeconds: 0,
+                onWarning: (warning: string) => falseFloorWarnings.push(warning),
+            });
+            const measureFullMixWindow = (startBeat: number, endBeat: number) => {
+                const startFrame = projectPpqEndpoints({
+                    startPpq: falseFloorRenderStartBeat,
+                    endPpq: startBeat,
+                    defaultTempo: transport.tempo,
+                    sampleRate: fullMix.sampleRate,
+                    changes: tempoMap.changes,
+                }).durationSamples;
+                const endFrame = projectPpqEndpoints({
+                    startPpq: falseFloorRenderStartBeat,
+                    endPpq: endBeat,
+                    defaultTempo: transport.tempo,
+                    sampleRate: fullMix.sampleRate,
+                    changes: tempoMap.changes,
+                }).durationSamples;
+                let samplePeak = 0;
+                let sumSquares = 0;
+                let sampleCount = 0;
+                for (let channel = 0; channel < fullMix.numberOfChannels; channel++) {
+                    const samples = fullMix.getChannelData(channel);
+                    for (let index = startFrame; index < Math.min(endFrame, samples.length); index++) {
+                        const sample = samples[index];
+                        samplePeak = Math.max(samplePeak, Math.abs(sample));
+                        sumSquares += sample * sample;
+                        sampleCount++;
+                    }
+                }
+                return {
+                    beats: [startBeat, endBeat],
+                    durationSeconds: (endFrame - startFrame) / fullMix.sampleRate,
+                    rms: Math.sqrt(sumSquares / sampleCount),
+                    samplePeak,
+                };
+            };
+            return {
+                capturedAt: new Date().toISOString(),
+                sampleRate: 44_100,
+                windows,
+                fullMixTransition: {
+                    renderBeats: [falseFloorRenderStartBeat, returnStrikeEndBeat],
+                    channels: fullMix.numberOfChannels,
+                    warnings: falseFloorWarnings,
+                    falseFloor: measureFullMixWindow(falseFloorStartBeat, 484),
+                    returnStrike: measureFullMixWindow(484, returnStrikeEndBeat),
+                },
+            };
+        }, auditionRenders);
+        batchReports.push(batchReport);
+        if (batchIndex < AUDITION_RENDER_BATCHES.length - 1) {
+            await page.reload();
+            await wait_for_workspace_ready(page);
+            await expect(page.getByRole('button', { name: 'Mycelium Ascendant' })).toBeVisible();
+        }
+    }
+    const lastBatchReport = batchReports.at(-1);
+    if (!lastBatchReport) {
+        throw new TypeError('Mycelium stem E2E did not capture an audition batch');
+    }
+    const report = {
+        capturedAt: lastBatchReport.capturedAt,
+        sampleRate: lastBatchReport.sampleRate,
+        windows: batchReports.flatMap((batchReport) => batchReport.windows),
+        fullMixTransition: lastBatchReport.fullMixTransition,
+    };
     const evidence = bindMyceliumEvidence({
         source: sourceReceipt,
         project: projectReceipt,
