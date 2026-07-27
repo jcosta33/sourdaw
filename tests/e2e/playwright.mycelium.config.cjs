@@ -1,34 +1,21 @@
 const { execFileSync } = require('node:child_process');
 const { createHash } = require('node:crypto');
-const { readFileSync } = require('node:fs');
+const { lstatSync, readFileSync, readlinkSync } = require('node:fs');
 const path = require('node:path');
 
 const { defineConfig, devices } = require('@playwright/test');
 
 const port = 52_743;
 const root = path.resolve(__dirname, '../..');
-const sourcePaths = [
-    'scripts/capture-mycelium-evidence.mjs',
-    'src/modules/AudioEngine',
-    'src/modules/Project/useCases/demoProjects/myceliumAscendant',
-    'tests/e2e/analyzePcmWav.ts',
-    'tests/e2e/e2eUtils.ts',
-    'tests/e2e/myceliumAutomationStems.spec.ts',
-    'tests/e2e/myceliumDesktopRuntime.spec.ts',
-    'tests/e2e/myceliumEvidenceReceipt.ts',
-    'tests/e2e/myceliumExport.spec.ts',
-    'tests/e2e/playwright.mycelium.config.cjs',
-];
-const sourceRevision = execFileSync('git', ['log', '-1', '--format=%H', '--', ...sourcePaths], {
-    cwd: root,
-    encoding: 'utf8',
-}).trim();
+const evidencePathspec = ':(exclude)docs/evidence/mycelium-ascendant/**';
+const sourceTreeHashScope = 'git-ls-files-excluding:docs/evidence/mycelium-ascendant/**';
+const sourceRevision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
 const sourceDirty =
-    execFileSync('git', ['status', '--porcelain', '--untracked-files=all', '--', ...sourcePaths], {
+    execFileSync('git', ['status', '--porcelain=v1', '--untracked-files=all', '--', '.', evidencePathspec], {
         cwd: root,
         encoding: 'utf8',
     }).length > 0;
-const sourceFiles = execFileSync('git', ['ls-files', '-z', '--', ...sourcePaths], {
+const sourceFiles = execFileSync('git', ['ls-files', '-z', '--', '.', evidencePathspec], {
     cwd: root,
     encoding: 'utf8',
 })
@@ -37,9 +24,12 @@ const sourceFiles = execFileSync('git', ['ls-files', '-z', '--', ...sourcePaths]
     .sort();
 const sourceTreeHash = createHash('sha256');
 for (const file of sourceFiles) {
+    const absolutePath = path.resolve(root, file);
     sourceTreeHash.update(file);
     sourceTreeHash.update('\0');
-    sourceTreeHash.update(readFileSync(path.resolve(root, file)));
+    sourceTreeHash.update(
+        lstatSync(absolutePath).isSymbolicLink() ? readlinkSync(absolutePath) : readFileSync(absolutePath)
+    );
     sourceTreeHash.update('\0');
 }
 
@@ -48,7 +38,8 @@ module.exports = defineConfig({
         myceliumSourceRevision: sourceRevision,
         myceliumSourceDirty: sourceDirty,
         myceliumSourceTreeSha256: sourceTreeHash.digest('hex'),
-        myceliumSourceTreeHashScope: sourcePaths.join('|'),
+        myceliumSourceTreeHashScope: sourceTreeHashScope,
+        myceliumSourceTrackedFileCount: sourceFiles.length,
     },
     testDir: '.',
     timeout: 60_000,

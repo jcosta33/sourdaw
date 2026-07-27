@@ -16,6 +16,7 @@ export type MyceliumSourceReceipt = {
     sourceDirty: boolean;
     sourceTreeSha256: string;
     sourceTreeHashScope: string;
+    sourceTrackedFileCount: number;
 };
 
 type BindMyceliumEvidenceInput = {
@@ -34,7 +35,8 @@ export function captureMyceliumSourceReceipt(metadata: unknown): MyceliumSourceR
         typeof metadata.myceliumSourceRevision !== 'string' ||
         typeof metadata.myceliumSourceDirty !== 'boolean' ||
         typeof metadata.myceliumSourceTreeSha256 !== 'string' ||
-        typeof metadata.myceliumSourceTreeHashScope !== 'string'
+        typeof metadata.myceliumSourceTreeHashScope !== 'string' ||
+        typeof metadata.myceliumSourceTrackedFileCount !== 'number'
     ) {
         throw new TypeError('Mycelium evidence source receipt is missing from Playwright metadata');
     }
@@ -43,6 +45,7 @@ export function captureMyceliumSourceReceipt(metadata: unknown): MyceliumSourceR
         sourceDirty: metadata.myceliumSourceDirty,
         sourceTreeSha256: metadata.myceliumSourceTreeSha256,
         sourceTreeHashScope: metadata.myceliumSourceTreeHashScope,
+        sourceTrackedFileCount: metadata.myceliumSourceTrackedFileCount,
     };
 }
 

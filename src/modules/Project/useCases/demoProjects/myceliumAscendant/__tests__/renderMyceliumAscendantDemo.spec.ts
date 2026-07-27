@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { lstatSync, readFileSync, readlinkSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -44,18 +44,8 @@ const NOTE_SECTIONS = [
     ['Drop II — Fractal Bloom', 416, 544],
     ['Dissolution', 544, 576],
 ] as const;
-const SOURCE_PATHS = [
-    'scripts/capture-mycelium-evidence.mjs',
-    'src/modules/AudioEngine',
-    'src/modules/Project/useCases/demoProjects/myceliumAscendant',
-    'tests/e2e/analyzePcmWav.ts',
-    'tests/e2e/e2eUtils.ts',
-    'tests/e2e/myceliumAutomationStems.spec.ts',
-    'tests/e2e/myceliumDesktopRuntime.spec.ts',
-    'tests/e2e/myceliumEvidenceReceipt.ts',
-    'tests/e2e/myceliumExport.spec.ts',
-    'tests/e2e/playwright.mycelium.config.cjs',
-] as const;
+const EVIDENCE_PATHSPEC = ':(exclude)docs/evidence/mycelium-ascendant/**';
+const SOURCE_TREE_HASH_SCOPE = 'git-ls-files-excluding:docs/evidence/mycelium-ascendant/**';
 
 type EvidenceReceipt = {
     projectSha256: string;
@@ -64,6 +54,7 @@ type EvidenceReceipt = {
     sourceDirty: boolean;
     sourceTreeSha256: string;
     sourceTreeHashScope: string;
+    sourceTrackedFileCount: number;
     receiptSha256: string;
 };
 
@@ -254,8 +245,8 @@ function buildNoteSections(projectData: ProjectData): NoteEventReport['sections'
     });
 }
 
-function currentSourceTreeSha256(): string {
-    const files = execFileSync('git', ['ls-files', '-z', '--', ...SOURCE_PATHS], {
+function currentSourceTreeManifest(): { sha256: string; trackedFileCount: number } {
+    const files = execFileSync('git', ['ls-files', '-z', '--', '.', EVIDENCE_PATHSPEC], {
         cwd: process.cwd(),
         encoding: 'utf8',
     })
@@ -264,12 +255,13 @@ function currentSourceTreeSha256(): string {
         .toSorted();
     const hash = createHash('sha256');
     for (const path of files) {
+        const absolutePath = resolve(process.cwd(), path);
         hash.update(path);
         hash.update('\0');
-        hash.update(readFileSync(resolve(process.cwd(), path)));
+        hash.update(lstatSync(absolutePath).isSymbolicLink() ? readlinkSync(absolutePath) : readFileSync(absolutePath));
         hash.update('\0');
     }
-    return hash.digest('hex');
+    return { sha256: hash.digest('hex'), trackedFileCount: files.length };
 }
 
 function expectValidReceipt(
@@ -277,7 +269,7 @@ function expectValidReceipt(
     projectSha256: string,
     expectedProjectSectionSha256: Record<string, string>,
     sourceRevision: string,
-    sourceTreeSha256: string
+    sourceTreeManifest: { sha256: string; trackedFileCount: number }
 ): void {
     const payload = { ...receipt };
     Reflect.deleteProperty(payload, 'receiptSha256');
@@ -286,8 +278,9 @@ function expectValidReceipt(
     expect(receipt.projectSha256).toBe(projectSha256);
     expect(receipt.sourceRevision).toBe(sourceRevision);
     expect(receipt.sourceDirty).toBe(false);
-    expect(receipt.sourceTreeSha256).toBe(sourceTreeSha256);
-    expect(receipt.sourceTreeHashScope).toBe(SOURCE_PATHS.join('|'));
+    expect(receipt.sourceTreeSha256).toBe(sourceTreeManifest.sha256);
+    expect(receipt.sourceTreeHashScope).toBe(SOURCE_TREE_HASH_SCOPE);
+    expect(receipt.sourceTrackedFileCount).toBe(sourceTreeManifest.trackedFileCount);
 }
 
 // Scope of this spec.
@@ -315,11 +308,11 @@ describe('Mycelium Ascendant full browser render', () => {
         const normalizedProject = normalizeProjectEvidence(projectData);
         const projectSha256 = createHash('sha256').update(JSON.stringify(normalizedProject)).digest('hex');
         const expectedProjectSectionSha256 = projectSectionSha256(normalizedProject);
-        const sourceRevision = execFileSync('git', ['log', '-1', '--format=%H', '--', ...SOURCE_PATHS], {
+        const sourceRevision = evidence.sourceRevision;
+        execFileSync('git', ['merge-base', '--is-ancestor', sourceRevision, 'HEAD'], {
             cwd: process.cwd(),
-            encoding: 'utf8',
-        }).trim();
-        const sourceTreeSha256 = currentSourceTreeSha256();
+        });
+        const sourceTreeManifest = currentSourceTreeManifest();
         const noteSections = buildNoteSections(projectData);
 
         expect(projectData.meta.name).toBe('Mycelium Ascendant');
@@ -329,15 +322,15 @@ describe('Mycelium Ascendant full browser render', () => {
             projectSha256,
             expectedProjectSectionSha256,
             sourceRevision,
-            sourceTreeSha256
+            sourceTreeManifest
         );
-        expectValidReceipt(evidence, projectSha256, expectedProjectSectionSha256, sourceRevision, sourceTreeSha256);
+        expectValidReceipt(evidence, projectSha256, expectedProjectSectionSha256, sourceRevision, sourceTreeManifest);
         expectValidReceipt(
             automationStemEvidence,
             projectSha256,
             expectedProjectSectionSha256,
             sourceRevision,
-            sourceTreeSha256
+            sourceTreeManifest
         );
         expect(motifEventReport.projectSha256).toBe(projectSha256);
         expect(motifEventReport.comparisons).toEqual(buildMotifComparisons(projectData));

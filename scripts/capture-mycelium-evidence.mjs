@@ -1,6 +1,6 @@
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { lstatSync, mkdirSync, readFileSync, readlinkSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -8,6 +8,8 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const outputDirectory = resolve(root, 'docs/evidence/mycelium-ascendant');
 const playwright = resolve(root, 'node_modules/.bin/playwright');
 const config = 'tests/e2e/playwright.mycelium.config.cjs';
+const evidencePathspec = ':(exclude)docs/evidence/mycelium-ascendant/**';
+const sourceTreeHashScope = 'git-ls-files-excluding:docs/evidence/mycelium-ascendant/**';
 const targets = {
     render: {
         spec: 'tests/e2e/myceliumExport.spec.ts',
@@ -25,6 +27,39 @@ const targets = {
         output: 'desktop-runtime-evidence.json',
     },
 };
+
+function sourceManifest() {
+    const sourceRevision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
+    const sourceDirty =
+        execFileSync('git', ['status', '--porcelain=v1', '--untracked-files=all', '--', '.', evidencePathspec], {
+            cwd: root,
+            encoding: 'utf8',
+        }).length > 0;
+    const sourceFiles = execFileSync('git', ['ls-files', '-z', '--', '.', evidencePathspec], {
+        cwd: root,
+        encoding: 'utf8',
+    })
+        .split('\0')
+        .filter((file) => file.length > 0)
+        .sort();
+    const sourceTreeHash = createHash('sha256');
+    for (const file of sourceFiles) {
+        const absolutePath = resolve(root, file);
+        sourceTreeHash.update(file);
+        sourceTreeHash.update('\0');
+        sourceTreeHash.update(
+            lstatSync(absolutePath).isSymbolicLink() ? readlinkSync(absolutePath) : readFileSync(absolutePath)
+        );
+        sourceTreeHash.update('\0');
+    }
+    return {
+        sourceRevision,
+        sourceDirty,
+        sourceTreeSha256: sourceTreeHash.digest('hex'),
+        sourceTreeHashScope,
+        sourceTrackedFileCount: sourceFiles.length,
+    };
+}
 
 function attachmentBodies(report, name) {
     const bodies = [];
@@ -50,6 +85,10 @@ function attachmentBodies(report, name) {
 
 function capture(name) {
     const target = targets[name];
+    const sourceBeforeRun = sourceManifest();
+    if (sourceBeforeRun.sourceDirty) {
+        throw new Error(`${name} evidence source is dirty before capture`);
+    }
     const run = spawnSync(playwright, ['test', target.spec, `--config=${config}`, '--workers=1', '--reporter=json'], {
         cwd: root,
         encoding: 'utf8',
@@ -69,8 +108,14 @@ function capture(name) {
         throw new Error(`${name} evidence E2E produced ${bodies.length} matching receipts`);
     }
     const payload = JSON.parse(Buffer.from(bodies[0], 'base64').toString('utf8'));
-    if (payload.sourceDirty !== false) {
-        throw new Error(`${name} evidence was captured from a dirty source scope`);
+    const sourceAfterRun = sourceManifest();
+    if (JSON.stringify(sourceAfterRun) !== JSON.stringify(sourceBeforeRun)) {
+        throw new Error(`${name} evidence source changed during capture`);
+    }
+    for (const [property, expected] of Object.entries(sourceBeforeRun)) {
+        if (payload[property] !== expected) {
+            throw new Error(`${name} evidence source receipt differs at ${property}`);
+        }
     }
     const receipt = {
         ...payload,
