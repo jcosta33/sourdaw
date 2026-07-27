@@ -235,16 +235,22 @@ export function superviseTrustedProcess(
         let executorTimer: ReturnType<typeof setTimeout> | undefined;
         let cleanupTimer: ReturnType<typeof setTimeout> | undefined;
         let combinedByteCount = 0;
+        let streamTruncated = false;
         const stdoutState = { byteCount: 0, hash: createHash('sha256') };
         const stderrState = { byteCount: 0, hash: createHash('sha256') };
 
         const consume = (state: typeof stdoutState, chunk: Buffer) => {
+            if (streamTruncated) {
+                return;
+            }
+            if (chunk.byteLength > snapshot.combinedOutputByteCap - combinedByteCount) {
+                streamTruncated = true;
+                stopGroup({ kind: 'output-cap-exceeded' });
+                return;
+            }
             state.byteCount += chunk.byteLength;
             combinedByteCount += chunk.byteLength;
             state.hash.update(chunk);
-            if (combinedByteCount > snapshot.combinedOutputByteCap) {
-                stopGroup({ kind: 'output-cap-exceeded' });
-            }
         };
         const stdoutData = (chunk: Buffer) => consume(stdoutState, chunk);
         const stderrData = (chunk: Buffer) => consume(stderrState, chunk);
@@ -272,7 +278,12 @@ export function superviseTrustedProcess(
                 sentinel.stderr.readableEnded &&
                 sentinel.stderr.closed;
             let streamEvidence: ProcessStreamEvidence | null = null;
-            if (streamsComplete && finalReason.kind !== 'termination-unconfirmed') {
+            if (
+                !streamTruncated &&
+                streamsComplete &&
+                finalReason.kind !== 'termination-unconfirmed' &&
+                finalReason.kind !== 'output-cap-exceeded'
+            ) {
                 streamEvidence = {
                     stdout: { byteCount: stdoutState.byteCount, sha256: stdoutState.hash.digest('hex') },
                     stderr: { byteCount: stderrState.byteCount, sha256: stderrState.hash.digest('hex') },

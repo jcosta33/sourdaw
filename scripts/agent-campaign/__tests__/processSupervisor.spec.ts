@@ -96,7 +96,22 @@ describe('superviseTrustedProcess', () => {
             `process.stdout.write(${JSON.stringify(token)});process.stderr.write(${JSON.stringify(token)})`,
             { combinedOutputByteCap: Buffer.byteLength(token) * 2 - 1 }
         );
-        expect(output.reason).toEqual({ kind: 'output-cap-exceeded' });
+        expect(output).toEqual({
+            reason: { kind: 'output-cap-exceeded' },
+            streamEvidence: null,
+        });
+        expect(JSON.stringify(output)).not.toContain(token);
+    });
+
+    it('should reject a large crossing chunk without publishing prefix evidence', async () => {
+        const token = 'private-large-chunk';
+        const output = await run(`process.stdout.write(${JSON.stringify(token)}.repeat(8192))`, {
+            combinedOutputByteCap: 1_000,
+        });
+        expect(output).toEqual({
+            reason: { kind: 'output-cap-exceeded' },
+            streamEvidence: null,
+        });
         expect(JSON.stringify(output)).not.toContain(token);
     });
 
@@ -147,8 +162,9 @@ describe('superviseTrustedProcess', () => {
         roots.push(root);
         const grandchild = `process.stdout.write('overflow');setTimeout(()=>require('node:fs').writeFileSync(${JSON.stringify(latePath)},'late'),100);setInterval(()=>{},1000)`;
         const child = `require('node:child_process').spawn(process.execPath,['--eval',${JSON.stringify(grandchild)}],{stdio:['ignore','inherit','inherit']});setInterval(()=>{},1000)`;
-        expect(await run(child, { combinedOutputByteCap: 4 })).toMatchObject({
+        expect(await run(child, { combinedOutputByteCap: 4 })).toEqual({
             reason: { kind: 'output-cap-exceeded' },
+            streamEvidence: null,
         });
         await new Promise((resolve) => setTimeout(resolve, 150));
         await expect(access(latePath)).rejects.toMatchObject({ code: 'ENOENT' });
