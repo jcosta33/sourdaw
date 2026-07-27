@@ -1,9 +1,9 @@
 # Mycelium Ascendant — render and score conformance sheet
 
-Score/stereo evidence captured: 2026-07-27 04:31 CEST; routed-mix evidence captured: 2026-07-27 04:28 CEST
-Project fingerprint: `6a446b6627bc3dfeeb6a0b4c2dadca8bb32bd5be055665d97ba8d5f2b928e856`
-Source receipt: capture HEAD `5cff20174d54b38e831fa84b4f089bbaddbc5de4`; tracked-source tree `d3e590c0cc09850126ccd26ea6ea09e6fb680300d516d7a1896c6e953cfc117e` (8,845 files; generated evidence excluded); receipt `b4f256b8a1d18365df5852d666a93ad6928969e605a753f96b6f7eb98dd80af0`
-Stereo artifact: `a45219cdb69d0f6f31b7284747452914fb1542e9ea46e8ecea120087210e780b`
+Score/stereo evidence captured: 2026-07-27 04:59 CEST; routed-mix evidence captured: 2026-07-27 04:56 CEST
+Project fingerprint: `6d662a4bb6081fdeb500d888114705b83cd8e4be40df24a446c069362564adca`
+Source receipt: capture HEAD `61d6e195fa6d765b1009d96a6d61404ef79113bd`; tracked-source tree `4086c1cd22d5e8bc4b98fe4a491d50e44ff1ebe39ec9cc771a31cf05d97066f5` (8,845 files; generated evidence excluded); receipt `9a340dfe51d02697123256f2399a83087c6685e0d0cbbfe62c163fcdc663006b`
+Stereo artifact: `698d5fc5d392309aee9595bbde574ea01899de7e3dc4a310daafa43848805662`
 
 Reviewer/method: Codex automated render, score, cue, and stem conformance; no loudspeaker/headphone subjective-listening claim is made. A decoded complete stereo export was attached only to the local Playwright run, not persisted on PR #837 because GitHub Actions did not start under the repository billing restriction. The mix is active for 96.68% of measured blocks and ends at 03:58.994 before its two-second export tail.
 
@@ -52,6 +52,6 @@ Events are converted from clip-relative positions to absolute beats and grouped 
 ## Delivery checks
 
 - Complete export: stereo, 44.1 kHz, 24-bit PCM WAV, 240.994 seconds including two-second tail.
-- Integrated loudness: -9.770 LUFS; true peak: -2.212 dBTP; clipped samples: 0.
+- Integrated loudness: -9.766 LUFS; true peak: -2.212 dBTP; clipped samples: 0.
 - DC offsets remain below 0.004; low-frequency mono compatibility is -0.005 dB with positive correlation.
 - The stem run reloaded the saved project before offline export; export and stem runs observed no console errors, page errors, failed requests, external requests, HTTP errors, missing assets, or renderer warnings.

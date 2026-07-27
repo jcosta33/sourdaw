@@ -1,14 +1,14 @@
 {
-    "sourceRevision": "5cff20174d54b38e831fa84b4f089bbaddbc5de4",
+    "sourceRevision": "61d6e195fa6d765b1009d96a6d61404ef79113bd",
     "sourceDirty": false,
-    "sourceTreeSha256": "d3e590c0cc09850126ccd26ea6ea09e6fb680300d516d7a1896c6e953cfc117e",
+    "sourceTreeSha256": "4086c1cd22d5e8bc4b98fe4a491d50e44ff1ebe39ec9cc771a31cf05d97066f5",
     "sourceTreeHashScope": "git-ls-files-excluding:docs/evidence/mycelium-ascendant/**",
     "sourceTrackedFileCount": 8845,
-    "projectSha256": "6a446b6627bc3dfeeb6a0b4c2dadca8bb32bd5be055665d97ba8d5f2b928e856",
+    "projectSha256": "6d662a4bb6081fdeb500d888114705b83cd8e4be40df24a446c069362564adca",
     "projectSectionSha256": {
         "activeArrangementId": "9d8a81a9d6f2a4010fb41bfd648bf637537ba5534ac113d7d92264246392229f",
-        "arrangement": "207d40fbad20bffe239b410398115b9c96ac31903ef0b6e5a1ac966d2fd1c1a8",
-        "arrangements": "59adc90b16dfa58c08111cf9cb9b9ccf14c9fefad8999b68c0e8f8a2a969a224",
+        "arrangement": "aa9c045ca60b4c5e1fb0817f51d54a4dd0ec85de95b88c09b3764416d75ed682",
+        "arrangements": "ee1f3b3b15ac4cc41eed5c8c29af122b095e5a86e3433e5eccc53dfdfb6d6079",
         "automation": "49f77c1815b809e5d87cc2b45691002275f80595cf1b23118ba8a0bb4794825d",
         "chordTrack": "2cd02f5bf8a806c74b80dbd789dfc20a6ac6fec9201df73bfffb9c31dc33f236",
         "history": "d24ef7de1651fedd179be2ad504c999481b8e66d566953819749e64a3e958b34",
@@ -28,7 +28,8 @@
     "noteCount": 3818,
     "automationLaneCount": 115,
     "automationPointCount": 1583,
-    "capturedAt": "2026-07-27T02:28:07.492Z",
+    "trackNotesMutationChangesDigest": true,
+    "capturedAt": "2026-07-27T02:56:27.115Z",
     "sampleRate": 44100,
     "windows": [
         {
@@ -79,9 +80,9 @@
                     "sampleRate": 44100,
                     "durationSeconds": 26.666666666666668,
                     "renderDurationSeconds": 26.666666666666668,
-                    "samplePeak": 2.708798885345459,
-                    "rms": 0.26603709577346024,
-                    "activeBlockRatio": 0.8643478260869565
+                    "samplePeak": 2.716510534286499,
+                    "rms": 0.26986602683979577,
+                    "activeBlockRatio": 0.8626086956521739
                 },
                 {
                     "trackId": "9f02e4d9-06ca-83ad-a31b-03e7011dcc09",
@@ -102,8 +103,8 @@
                     "durationSeconds": 26.666666666666668,
                     "renderDurationSeconds": 26.666666666666668,
                     "samplePeak": 0.9008182287216187,
-                    "rms": 0.09287173504498886,
-                    "activeBlockRatio": 0.5095652173913043
+                    "rms": 0.09404546125657016,
+                    "activeBlockRatio": 0.5217391304347826
                 },
                 {
                     "trackId": "65921ae4-5dc4-8c88-af57-9d96955211d4",
@@ -314,17 +315,6 @@
                     "activeBlockRatio": 0.40695652173913044
                 },
                 {
-                    "trackId": "1325cb33-2225-8b4f-b2af-0385208469a3",
-                    "trackName": "Glitch Spirits",
-                    "channels": 2,
-                    "sampleRate": 44100,
-                    "durationSeconds": 26.666666666666668,
-                    "renderDurationSeconds": 26.666666666666668,
-                    "samplePeak": 1.1912422180175781,
-                    "rms": 0.05888571119767942,
-                    "activeBlockRatio": 0.8608695652173913
-                },
-                {
                     "trackId": "97d2a08b-abf6-8867-95d1-e3ddc41fba7b",
                     "trackName": "Granular Voices",
                     "channels": 2,
@@ -334,6 +324,17 @@
                     "samplePeak": 1.6398519277572632,
                     "rms": 0.05297084197941731,
                     "activeBlockRatio": 0.8139130434782609
+                },
+                {
+                    "trackId": "1325cb33-2225-8b4f-b2af-0385208469a3",
+                    "trackName": "Glitch Spirits",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 26.666666666666668,
+                    "renderDurationSeconds": 26.666666666666668,
+                    "samplePeak": 1.104958415031433,
+                    "rms": 0.050532941614802755,
+                    "activeBlockRatio": 0.8226086956521739
                 },
                 {
                     "trackId": "9f02e4d9-06ca-83ad-a31b-03e7011dcc09",
@@ -353,9 +354,9 @@
                     "sampleRate": 44100,
                     "durationSeconds": 26.666666666666668,
                     "renderDurationSeconds": 26.666666666666668,
-                    "samplePeak": 0.45647984743118286,
-                    "rms": 0.018190997747680026,
-                    "activeBlockRatio": 0.8382608695652174
+                    "samplePeak": 0.452737420797348,
+                    "rms": 0.017370337845542386,
+                    "activeBlockRatio": 0.8417391304347827
                 },
                 {
                     "trackId": "4a4c4935-9c05-8201-8f3d-f9d36c832885",
@@ -365,8 +366,8 @@
                     "durationSeconds": 26.666666666666668,
                     "renderDurationSeconds": 26.666666666666668,
                     "samplePeak": 0.09162262827157974,
-                    "rms": 0.0076615878662288864,
-                    "activeBlockRatio": 0.22434782608695653
+                    "rms": 0.007661572952154981,
+                    "activeBlockRatio": 0.21913043478260869
                 },
                 {
                     "trackId": "29cb271e-206c-81da-a8f0-76e4b826572e",
@@ -375,9 +376,9 @@
                     "sampleRate": 44100,
                     "durationSeconds": 26.666666666666668,
                     "renderDurationSeconds": 26.666666666666668,
-                    "samplePeak": 0.5695586204528809,
-                    "rms": 0.0032083534317214205,
-                    "activeBlockRatio": 0.09565217391304348
+                    "samplePeak": 0.5499204993247986,
+                    "rms": 0.0030603136205422737,
+                    "activeBlockRatio": 0.09739130434782609
                 },
                 {
                     "trackId": "ce1e79f4-816f-8208-8280-430a7012cf04",
@@ -501,8 +502,8 @@
                     "activeBlockRatio": 0
                 },
                 {
-                    "trackId": "372f2daf-078e-8db3-920d-e2e9aeb93d3f",
-                    "trackName": "Temple Chamber",
+                    "trackId": "83a108ca-27da-8f06-8ce3-9f10d3f4113a",
+                    "trackName": "Impact Field",
                     "channels": 2,
                     "sampleRate": 44100,
                     "durationSeconds": 26.666666666666668,
@@ -512,8 +513,8 @@
                     "activeBlockRatio": 0
                 },
                 {
-                    "trackId": "83a108ca-27da-8f06-8ce3-9f10d3f4113a",
-                    "trackName": "Impact Field",
+                    "trackId": "372f2daf-078e-8db3-920d-e2e9aeb93d3f",
+                    "trackName": "Temple Chamber",
                     "channels": 2,
                     "sampleRate": 44100,
                     "durationSeconds": 26.666666666666668,
@@ -550,9 +551,9 @@
                     "sampleRate": 44100,
                     "durationSeconds": 26.483174603174604,
                     "renderDurationSeconds": 26.483174603174604,
-                    "samplePeak": 3.0649588108062744,
-                    "rms": 0.6939721656403782,
-                    "activeBlockRatio": 0.8651488616462347
+                    "samplePeak": 3.0439910888671875,
+                    "rms": 0.689892257477743,
+                    "activeBlockRatio": 0.8283712784588442
                 },
                 {
                     "trackId": "158bb539-7164-85d5-b848-97035287f2a9",
@@ -572,9 +573,9 @@
                     "sampleRate": 44100,
                     "durationSeconds": 26.483174603174604,
                     "renderDurationSeconds": 26.483174603174604,
-                    "samplePeak": 3.7454447746276855,
-                    "rms": 0.3282628854348827,
-                    "activeBlockRatio": 0.5796847635726795
+                    "samplePeak": 4.404789447784424,
+                    "rms": 0.33913511867347285,
+                    "activeBlockRatio": 0.6164623467600701
                 },
                 {
                     "trackId": "b1ea4add-ef2d-8341-b90f-b49362cae1ad",
@@ -709,6 +710,17 @@
                     "activeBlockRatio": 0
                 },
                 {
+                    "trackId": "29cb271e-206c-81da-a8f0-76e4b826572e",
+                    "trackName": "Grand Boule Ritual",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 26.483174603174604,
+                    "renderDurationSeconds": 26.483174603174604,
+                    "samplePeak": 0,
+                    "rms": 0,
+                    "activeBlockRatio": 0
+                },
+                {
                     "trackId": "a568cd91-3d2e-83dd-9d14-e5d3c9a1a861",
                     "trackName": "Levain Answer",
                     "channels": 2,
@@ -731,30 +743,19 @@
                     "activeBlockRatio": 0
                 },
                 {
-                    "trackId": "97d2a08b-abf6-8867-95d1-e3ddc41fba7b",
-                    "trackName": "Granular Voices",
-                    "channels": 2,
-                    "sampleRate": 44100,
-                    "durationSeconds": 26.483174603174604,
-                    "renderDurationSeconds": 26.483174603174604,
-                    "samplePeak": 0,
-                    "rms": 0,
-                    "activeBlockRatio": 0
-                },
-                {
-                    "trackId": "29cb271e-206c-81da-a8f0-76e4b826572e",
-                    "trackName": "Grand Boule Ritual",
-                    "channels": 2,
-                    "sampleRate": 44100,
-                    "durationSeconds": 26.483174603174604,
-                    "renderDurationSeconds": 26.483174603174604,
-                    "samplePeak": 0,
-                    "rms": 0,
-                    "activeBlockRatio": 0
-                },
-                {
                     "trackId": "2f66d62b-a78d-8867-9516-7eed04ddd73b",
                     "trackName": "Dub Tunnel",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 26.483174603174604,
+                    "renderDurationSeconds": 26.483174603174604,
+                    "samplePeak": 0,
+                    "rms": 0,
+                    "activeBlockRatio": 0
+                },
+                {
+                    "trackId": "97d2a08b-abf6-8867-95d1-e3ddc41fba7b",
+                    "trackName": "Granular Voices",
                     "channels": 2,
                     "sampleRate": 44100,
                     "durationSeconds": 26.483174603174604,
@@ -858,8 +859,8 @@
                     "sampleRate": 44100,
                     "durationSeconds": 1.6438321995464853,
                     "renderDurationSeconds": 27.945215419501135,
-                    "samplePeak": 1.0090106701554635e-11,
-                    "rms": 1.9606986547183857e-13,
+                    "samplePeak": 3.5959241227040417e-12,
+                    "rms": 9.082513346067702e-14,
                     "activeBlockRatio": 0
                 },
                 {
@@ -880,8 +881,8 @@
                     "sampleRate": 44100,
                     "durationSeconds": 1.6438321995464853,
                     "renderDurationSeconds": 27.945215419501135,
-                    "samplePeak": 1.0497052734009154e-15,
-                    "rms": 2.8042088785190396e-17,
+                    "samplePeak": 1.0288812860300236e-15,
+                    "rms": 2.750574411011161e-17,
                     "activeBlockRatio": 0
                 },
                 {
@@ -1077,9 +1078,9 @@
                     "sampleRate": 44100,
                     "durationSeconds": 13.241587301587302,
                     "renderDurationSeconds": 13.241587301587302,
-                    "samplePeak": 0.5604926347732544,
-                    "rms": 0.1170858435986692,
-                    "activeBlockRatio": 0.9230769230769231
+                    "samplePeak": 0.5989459156990051,
+                    "rms": 0.1301120542258609,
+                    "activeBlockRatio": 0.9965034965034965
                 },
                 {
                     "trackId": "158bb539-7164-85d5-b848-97035287f2a9",
@@ -1088,9 +1089,9 @@
                     "sampleRate": 44100,
                     "durationSeconds": 13.241587301587302,
                     "renderDurationSeconds": 13.241587301587302,
-                    "samplePeak": 1.557859182357788,
-                    "rms": 0.10529842352665862,
-                    "activeBlockRatio": 0.4965034965034965
+                    "samplePeak": 1.2508070468902588,
+                    "rms": 0.08112698150514114,
+                    "activeBlockRatio": 0.4230769230769231
                 },
                 {
                     "trackId": "97d2a08b-abf6-8867-95d1-e3ddc41fba7b",
@@ -1110,9 +1111,9 @@
                     "sampleRate": 44100,
                     "durationSeconds": 13.241587301587302,
                     "renderDurationSeconds": 13.241587301587302,
-                    "samplePeak": 0.5477277636528015,
-                    "rms": 0.028092296121071912,
-                    "activeBlockRatio": 0.27972027972027974
+                    "samplePeak": 0.5608662366867065,
+                    "rms": 0.028767844972057487,
+                    "activeBlockRatio": 0.28321678321678323
                 },
                 {
                     "trackId": "4a4c4935-9c05-8201-8f3d-f9d36c832885",
@@ -1132,9 +1133,9 @@
                     "sampleRate": 44100,
                     "durationSeconds": 13.241587301587302,
                     "renderDurationSeconds": 13.241587301587302,
-                    "samplePeak": 1.3420050144195557,
-                    "rms": 0.01227578957858451,
-                    "activeBlockRatio": 0.21328671328671328
+                    "samplePeak": 1.3799751996994019,
+                    "rms": 0.012547331777029935,
+                    "activeBlockRatio": 0.17832167832167833
                 },
                 {
                     "trackId": "2dae11fb-0869-8837-a440-0c19b0873a0b",
@@ -1306,8 +1307,8 @@
                 484
             ],
             "durationSeconds": 1.6438321995464853,
-            "rms": 0.000047949470535303013,
-            "samplePeak": 0.00012050869554514065
+            "rms": 0.000047949470341076095,
+            "samplePeak": 0.00012050843361066654
         },
         "returnStrike": {
             "beats": [
@@ -1315,9 +1316,9 @@
                 488
             ],
             "durationSeconds": 1.6438321995464853,
-            "rms": 0.13562427197476998,
-            "samplePeak": 0.7643019556999207
+            "rms": 0.13562427656855777,
+            "samplePeak": 0.7643018960952759
         }
     },
-    "receiptSha256": "508d8556fb42a49a2e2c9cfe2b1d585787683de25ab847748a1d54de50d4dc8d"
+    "receiptSha256": "b1bd393848514d13403aa7d3cd430eeded5eae6e1bdc39995f587c510d6c6421"
 }
