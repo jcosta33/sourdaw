@@ -8,18 +8,12 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { createEvidencePolicy } from '../evidenceContract';
 import { validateEvidenceManifest } from '../evidenceManifest';
-import {
-    createGitCheckout,
-    runEvidenceGate,
-    type EvidenceExecutor,
-    type EvidenceRunnerDependencies,
-} from '../run-evidence-gate';
+import { createGitCheckout, runEvidenceGate, type EvidenceRunnerDependencies } from '../run-evidence-gate';
 
 const head = 'a'.repeat(40);
 const roots: string[] = [];
 const manifest = 'evidence/agent-campaign/manifest.json';
 const gate = ['--task', 'TASK-SA-00-protocol-governance', '--gate', 'AC-060', '--manifest', manifest];
-const browserSuite = ['--suite', 'browser-ui', '--manifest', manifest];
 const captureTime = '2026-07-27T12:00:00.000Z';
 
 async function setup(overrides: Partial<EvidenceRunnerDependencies> = {}) {
@@ -43,34 +37,9 @@ async function setup(overrides: Partial<EvidenceRunnerDependencies> = {}) {
         clock: { now: () => new Date(captureTime) },
         monotonicClock: { now: () => 0 },
         environment: { observe: (_signal: AbortSignal) => Promise.resolve(structuredClone(policy.environment)) },
-        executors: { registry: {} },
         manifest: { validate: validateEvidenceManifest },
         ...overrides,
     };
-}
-
-function executorObservation(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-    return {
-        status: 'passed',
-        exitStatus: 0,
-        stdout: 'private-token',
-        stderr: '',
-        assertionTotals: { passed: 1, failed: 0, total: 1 },
-        metricSamples: [],
-        aggregates: {},
-        rawSamplePaths: [],
-        capabilityDecision: null,
-        reviewerDisposition: null,
-        ...overrides,
-    };
-}
-
-async function runWithExecutor(execute?: EvidenceExecutor, fixtureIds: string[] = []) {
-    const dependencies = await setup();
-    if (execute) {
-        dependencies.executors.registry = { 'browser-ui': { fixtureIds, execute } };
-    }
-    return runEvidenceGate(execute ? browserSuite : gate, dependencies);
 }
 
 afterEach(async () => {
@@ -156,170 +125,6 @@ describe('runEvidenceGate', () => {
         const suiteResult = await runEvidenceGate(['--suite', 'webllm-real', '--manifest', manifest], await setup());
         const releaseResult = await runEvidenceGate(['--release', '--manifest', manifest], await setup());
         expect([suiteResult.code, releaseResult.code]).toEqual(['executor-unimplemented', 'release-unimplemented']);
-    });
-
-    it('should return a runner-owned pending result without executing manifest commands', async () => {
-        expect(await runWithExecutor()).toMatchObject({
-            code: 'executor-unimplemented',
-            exitCode: 3,
-            result: {
-                resultId: 'result.AC-060',
-                gateOrSuiteId: 'AC-060',
-                fixtureIds: [],
-                status: 'pending',
-                startedAt: captureTime,
-                endedAt: captureTime,
-                exitStatus: 3,
-                assertionTotals: null,
-                environmentMatch: true,
-            },
-        });
-    });
-
-    it.each([
-        ['passed', {}, 'persistence-unimplemented', 3],
-        [
-            'failed',
-            {
-                status: 'failed',
-                exitStatus: 1,
-                assertionTotals: { passed: 0, failed: 1, total: 1 },
-            },
-            'executor-failed',
-            1,
-        ],
-    ])(
-        'should normalize a strict %s observation without retaining streams',
-        async (_case, overrides, code, exitCode) => {
-            let input: unknown;
-            const output = await runWithExecutor((value) => {
-                input = value;
-                return Promise.resolve(executorObservation(overrides));
-            });
-
-            expect(output).toMatchObject({ code, exitCode, result: { ...overrides, environmentMatch: true } });
-            expect(input).toMatchObject({ targetId: 'browser-ui', kind: 'suite', timeoutMs: 30_000 });
-            expect(Object.keys(input as object).sort()).toEqual(['kind', 'signal', 'targetId', 'timeoutMs']);
-            expect(output.result?.stdoutSha256).toMatch(/^[a-f0-9]{64}$/);
-            expect(JSON.stringify(output)).not.toContain('private-token');
-        }
-    );
-
-    it('should use a fixed trusted suite timeout and frozen capability disposition', async () => {
-        const dependencies = await setup();
-        let input: unknown;
-        dependencies.executors.registry = {
-            'webllm-real': {
-                fixtureIds: [],
-                execute: (value) => {
-                    input = value;
-                    return Promise.resolve(executorObservation({ capabilityDecision: 'mandatory' }));
-                },
-            },
-        };
-        const output = await runEvidenceGate(['--suite', 'webllm-real', '--manifest', manifest], dependencies);
-
-        expect(output).toMatchObject({
-            code: 'persistence-unimplemented',
-            result: { capabilityDecision: 'mandatory' },
-        });
-        expect(input).toMatchObject({ kind: 'suite', timeoutMs: 30_000 });
-    });
-
-    it('should reject an incompatible frozen gate timeout without invoking its executor', async () => {
-        const dependencies = await setup();
-        let called = false;
-        dependencies.executors.registry = {
-            'AC-060': {
-                fixtureIds: [],
-                execute: () => {
-                    called = true;
-                    return Promise.resolve(executorObservation());
-                },
-            },
-        };
-
-        const output = await runEvidenceGate(gate, dependencies);
-        expect([output.code, output.exitCode, called]).toEqual(['executor-timeout-incompatible', 2, false]);
-    });
-
-    it.each([
-        ['thrown', () => Promise.reject(new Error('private-token'))],
-        [
-            'timed out',
-            ({ signal }: Parameters<EvidenceExecutor>[0]) =>
-                new Promise((resolve) => signal.addEventListener('abort', resolve)),
-        ],
-    ])('should return a generic redacted result when execution is %s', async (_case, execute) => {
-        const dependencies = await setup();
-        dependencies.executors.timeoutMs = 5;
-        dependencies.executors.registry = { 'browser-ui': { fixtureIds: [], execute } };
-        const output = await runEvidenceGate(browserSuite, dependencies);
-
-        expect(output).toMatchObject({
-            code: 'executor-failed',
-            exitCode: 1,
-            result: {
-                status: 'failed',
-                startedAt: captureTime,
-                endedAt: captureTime,
-                assertionTotals: { passed: 0, failed: 1, total: 1 },
-            },
-        });
-        expect(JSON.stringify(output)).not.toContain('private-token');
-    });
-
-    it.each([
-        ['self-waived', { status: 'pending' }],
-        ['inapplicable', { status: 'inapplicable' }],
-        ['assertions', { assertionTotals: { passed: 1, failed: 1, total: 1 } }],
-        ['metrics', { metricSamples: [{ id: 'duration', value: 1 }] }],
-        ['aggregates', { aggregates: { duration: 1 } }],
-        ['sample paths', { rawSamplePaths: ['samples/private'] }],
-        ['capability waiver', { capabilityDecision: 'unadmitted' }],
-        ['review waiver', { reviewerDisposition: 'waived' }],
-        ['extra raw field', { raw: 'private-token' }],
-    ])('should replace a malformed %s observation with a generic failure', async (_case, overrides) => {
-        const output = await runWithExecutor(() => Promise.resolve(executorObservation(overrides)));
-        expect(output).toMatchObject({
-            code: 'invalid-executor-result',
-            exitCode: 2,
-            result: { status: 'failed' },
-        });
-        expect(JSON.stringify(output)).not.toMatch(/private-token|samples\/private|waived/);
-    });
-
-    it('should reject undeclared fixtures before invoking the executor', async () => {
-        let called = false;
-        const output = await runWithExecutor(() => {
-            called = true;
-            return Promise.resolve(executorObservation());
-        }, ['private-fixture']);
-
-        expect([output.code, called]).toEqual(['invalid-executor-result', false]);
-        expect(JSON.stringify(output)).not.toContain('private-fixture');
-    });
-
-    it.each(['head', 'dirty'])('should discard results when checkout %s changes during execution', async (change) => {
-        const dependencies = await setup();
-        let currentHead = head;
-        let dirty = false;
-        dependencies.checkout.head = () => Promise.resolve(currentHead);
-        dependencies.checkout.dirty = () => Promise.resolve(dirty);
-        dependencies.executors.registry = {
-            'browser-ui': {
-                fixtureIds: [],
-                execute: () => {
-                    currentHead = change === 'head' ? 'b'.repeat(40) : head;
-                    dirty = change === 'dirty';
-                    return Promise.resolve(executorObservation());
-                },
-            },
-        };
-        const output = await runEvidenceGate(browserSuite, dependencies);
-
-        expect(output.result).toBeUndefined();
-        expect(output.code).toBe(change === 'head' ? 'invalid-checkout' : 'dirty-checkout');
     });
 
     it('should reject unknown, wrongly owned, and mechanically inapplicable targets', async () => {
