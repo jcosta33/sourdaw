@@ -1,6 +1,11 @@
 import { expect, test } from '@playwright/test';
 
 import { setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
+import {
+    bindMyceliumEvidence,
+    captureMyceliumProjectReceipt,
+    captureMyceliumSourceReceipt,
+} from './myceliumEvidenceReceipt';
 
 const AUDITION_WINDOWS = [
     { name: 'Pressure Bloom', startBeat: 128, endBeat: 192 },
@@ -43,6 +48,7 @@ const ALLOWED_WARNING_FRAGMENTS = [
 
 test('renders signal evidence for every required Mycelium automation audition window', async ({ page }, testInfo) => {
     test.setTimeout(1_200_000);
+    const sourceReceipt = captureMyceliumSourceReceipt(testInfo.config.metadata);
     const configuredBaseUrl = testInfo.project.use.baseURL;
     if (typeof configuredBaseUrl !== 'string') {
         throw new TypeError('Mycelium stem E2E requires a configured Playwright baseURL');
@@ -93,6 +99,7 @@ test('renders signal evidence for every required Mycelium automation audition wi
     await page.reload();
     await wait_for_workspace_ready(page);
     await expect(page.getByRole('button', { name: 'Mycelium Ascendant' })).toBeVisible();
+    const projectReceipt = await captureMyceliumProjectReceipt(page);
 
     const report = await page.evaluate(async (auditionWindows) => {
         type AudioEngineModule = {
@@ -326,11 +333,25 @@ test('renders signal evidence for every required Mycelium automation audition wi
             },
         };
     }, AUDITION_WINDOWS);
+    const evidence = bindMyceliumEvidence({
+        source: sourceReceipt,
+        project: projectReceipt,
+        measurements: report,
+    });
     await testInfo.attach('mycelium-automation-stem-evidence', {
-        body: JSON.stringify(report),
+        body: JSON.stringify(evidence),
         contentType: 'application/json',
     });
 
+    expect(sourceReceipt.sourceDirty).toBe(false);
+    expect(projectReceipt).toMatchObject({
+        durationBeats: 576,
+        trackCount: 43,
+        clipCount: 119,
+        noteCount: 3_818,
+        automationLaneCount: 115,
+        automationPointCount: 1_583,
+    });
     expect(report.windows).toHaveLength(AUDITION_WINDOWS.length);
     for (const window of report.windows) {
         expect(window.warnings).toEqual([]);

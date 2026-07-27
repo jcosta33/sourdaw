@@ -1,6 +1,7 @@
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
@@ -14,6 +15,7 @@ const AUTOMATION_STEM_EVIDENCE_PATH = join(
     'docs/evidence/mycelium-ascendant/automation-stem-evidence.json'
 );
 const MOTIF_EVENT_REPORT_PATH = join(process.cwd(), 'docs/evidence/mycelium-ascendant/motif-event-report.json');
+const NOTE_EVENT_REPORT_PATH = join(process.cwd(), 'docs/evidence/mycelium-ascendant/note-event-report.json');
 const DESKTOP_RUNTIME_EVIDENCE_PATH = join(
     process.cwd(),
     'docs/evidence/mycelium-ascendant/desktop-runtime-evidence.json'
@@ -32,15 +34,43 @@ const MOTIF_TRACK_NAMES = [
     'Levain Answer',
     'Grand Boule Ritual',
 ] as const;
+const NOTE_SECTIONS = [
+    ['Sporefall', 0, 64],
+    ['First Germination', 64, 128],
+    ['Pressure Bloom', 128, 192],
+    ['Drop I — Hyphal Drive', 192, 288],
+    ['Psilocybin Chapel', 288, 352],
+    ['Singularity Build', 352, 416],
+    ['Drop II — Fractal Bloom', 416, 544],
+    ['Dissolution', 544, 576],
+] as const;
+const SOURCE_PATHS = [
+    'scripts/capture-mycelium-evidence.mjs',
+    'src/modules/AudioEngine',
+    'src/modules/Project/useCases/demoProjects/myceliumAscendant',
+    'tests/e2e/analyzePcmWav.ts',
+    'tests/e2e/e2eUtils.ts',
+    'tests/e2e/myceliumAutomationStems.spec.ts',
+    'tests/e2e/myceliumDesktopRuntime.spec.ts',
+    'tests/e2e/myceliumEvidenceReceipt.ts',
+    'tests/e2e/myceliumExport.spec.ts',
+    'tests/e2e/playwright.mycelium.config.cjs',
+] as const;
 
-type RenderEvidence = {
+type EvidenceReceipt = {
+    projectSha256: string;
+    sourceRevision: string;
+    sourceDirty: boolean;
+    sourceTreeSha256: string;
+    sourceTreeHashScope: string;
+    receiptSha256: string;
+};
+
+type RenderEvidence = EvidenceReceipt & {
     durationBeats: number;
-    projectSha256: string;
 };
 
-type AutomationStemEvidence = {
-    projectSha256: string;
-};
+type AutomationStemEvidence = EvidenceReceipt;
 
 type MotifComparison = {
     section: string;
@@ -55,9 +85,18 @@ type MotifEventReport = {
     comparisons: MotifComparison[];
 };
 
-type DesktopRuntimeEvidence = {
+type NoteEventReport = {
     projectSha256: string;
+    totalNotes: number;
+    sections: Array<{
+        name: string;
+        beats: number[];
+        noteCount: number;
+        tracks: Record<string, number>;
+    }>;
 };
+
+type DesktopRuntimeEvidence = EvidenceReceipt;
 
 function readRenderEvidence(): RenderEvidence {
     return JSON.parse(readFileSync(RENDER_EVIDENCE_PATH, 'utf8')) as RenderEvidence;
@@ -69,6 +108,10 @@ function readAutomationStemEvidence(): AutomationStemEvidence {
 
 function readMotifEventReport(): MotifEventReport {
     return JSON.parse(readFileSync(MOTIF_EVENT_REPORT_PATH, 'utf8')) as MotifEventReport;
+}
+
+function readNoteEventReport(): NoteEventReport {
+    return JSON.parse(readFileSync(NOTE_EVENT_REPORT_PATH, 'utf8')) as NoteEventReport;
 }
 
 function readDesktopRuntimeEvidence(): DesktopRuntimeEvidence {
@@ -110,35 +153,95 @@ function buildMotifComparisons(projectData: ProjectData): MotifComparison[] {
     );
 }
 
+function buildNoteSections(projectData: ProjectData): NoteEventReport['sections'] {
+    return NOTE_SECTIONS.map(([name, startBeat, endBeat]) => {
+        const counts = new Map<string, number>();
+        for (const track of projectData.arrangement.tracks) {
+            for (const clip of track.clips) {
+                for (const note of projectData.midi.notesByClipId[clip.id] ?? []) {
+                    const absoluteBeat = clip.startBeat + note.startBeat;
+                    if (absoluteBeat >= startBeat && absoluteBeat < endBeat) {
+                        counts.set(track.name, (counts.get(track.name) ?? 0) + 1);
+                    }
+                }
+            }
+        }
+        const tracks = Object.fromEntries(
+            [...counts.entries()].toSorted(([first], [second]) => first.localeCompare(second))
+        );
+        return {
+            name,
+            beats: [startBeat, endBeat],
+            noteCount: [...counts.values()].reduce((total, count) => total + count, 0),
+            tracks,
+        };
+    });
+}
+
+function currentSourceTreeSha256(): string {
+    const files = execFileSync('git', ['ls-files', '-z', '--', ...SOURCE_PATHS], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+    })
+        .split('\0')
+        .filter((path) => path.length > 0)
+        .toSorted();
+    const hash = createHash('sha256');
+    for (const path of files) {
+        hash.update(path);
+        hash.update('\0');
+        hash.update(readFileSync(resolve(process.cwd(), path)));
+        hash.update('\0');
+    }
+    return hash.digest('hex');
+}
+
+function expectValidReceipt(receipt: EvidenceReceipt, projectSha256: string, sourceTreeSha256: string): void {
+    const payload = { ...receipt };
+    Reflect.deleteProperty(payload, 'receiptSha256');
+    expect(receipt.receiptSha256).toBe(createHash('sha256').update(JSON.stringify(payload)).digest('hex'));
+    expect(receipt.projectSha256).toBe(projectSha256);
+    expect(receipt.sourceRevision).toMatch(/^[0-9a-f]{40}$/);
+    expect(receipt.sourceDirty).toBe(false);
+    expect(receipt.sourceTreeSha256).toBe(sourceTreeSha256);
+    expect(receipt.sourceTreeHashScope).toBe(SOURCE_PATHS.join('|'));
+}
+
 // Scope of this spec.
 //
 // Proves: the demo blueprint still has the identity the recorded evidence files were
 // written against. `projectSha256` is recomputed from `createMyceliumAscendantBlueprint()`
-// on every run and compared to the digest stored in all four artifacts, so any edit to the
-// demo project turns them stale together and this test red. The motif comparisons and
-// `loopEnd` are likewise derived from the blueprint here, not read back from JSON.
+// on every run and compared to the live-project digest stored in all three runtime receipts,
+// so any edit to the demo project turns them stale together and this test red. Receipt hashes
+// bind their full persisted payloads, while the source-tree digest binds the generator,
+// renderer, analyzer, and evidence tests that produced them. Motif and note reports are
+// independently rebuilt from the blueprint and deep-compared here.
 //
 // Does NOT prove: that any audio was rendered, or that a render met its targets. Nothing in
-// this repository writes `docs/evidence/mycelium-ascendant/*.json` — the e2e specs only call
-// `testInfo.attach`, which lands in the Playwright report. The files are transcribed by hand.
-// An assertion that reads a measurement out of one and compares it to a literal here would
-// only confirm that a human typed what a human typed, so none are made. The live audio and
-// runtime assertions live in `tests/e2e/mycelium*.spec.ts`, which is not a CI health gate.
+// this unit spec analyzes audio. The maintained E2E specs make the live assertions, attach
+// the complete receipts, and can write those exact receipt objects to the canonical evidence
+// paths when `MYCELIUM_EVIDENCE_DIRECTORY` is set.
 describe('Mycelium Ascendant full browser render', () => {
     it('pins the blueprint against the recorded evidence artifacts', () => {
         const evidence = readRenderEvidence();
         const automationStemEvidence = readAutomationStemEvidence();
         const motifEventReport = readMotifEventReport();
+        const noteEventReport = readNoteEventReport();
         const desktopRuntimeEvidence = readDesktopRuntimeEvidence();
         const { projectData } = createMyceliumAscendantBlueprint();
         const projectSha256 = createHash('sha256').update(JSON.stringify(projectData)).digest('hex');
+        const sourceTreeSha256 = currentSourceTreeSha256();
+        const noteSections = buildNoteSections(projectData);
 
         expect(projectData.meta.name).toBe('Mycelium Ascendant');
         expect(projectData.transport.loopEnd).toBe(evidence.durationBeats);
-        expect(projectSha256).toBe(evidence.projectSha256);
-        expect(automationStemEvidence.projectSha256).toBe(projectSha256);
+        expectValidReceipt(evidence, projectSha256, sourceTreeSha256);
+        expectValidReceipt(automationStemEvidence, projectSha256, sourceTreeSha256);
+        expectValidReceipt(desktopRuntimeEvidence, projectSha256, sourceTreeSha256);
         expect(motifEventReport.projectSha256).toBe(projectSha256);
         expect(motifEventReport.comparisons).toEqual(buildMotifComparisons(projectData));
-        expect(desktopRuntimeEvidence.projectSha256).toBe(projectSha256);
+        expect(noteEventReport.projectSha256).toBe(projectSha256);
+        expect(noteEventReport.totalNotes).toBe(noteSections.reduce((total, section) => total + section.noteCount, 0));
+        expect(noteEventReport.sections).toEqual(noteSections);
     });
 });

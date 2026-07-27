@@ -5,6 +5,11 @@ import { expect, test } from '@playwright/test';
 
 import { analyzePcmWav } from './analyzePcmWav';
 import { setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
+import {
+    bindMyceliumEvidence,
+    captureMyceliumProjectReceipt,
+    captureMyceliumSourceReceipt,
+} from './myceliumEvidenceReceipt';
 
 const ALLOWED_WARNING_FRAGMENTS = [
     'using deprecated parameters for `initSync()`',
@@ -14,6 +19,7 @@ const ALLOWED_WARNING_FRAGMENTS = [
 
 test('exports the complete Mycelium Ascendant mix as a stereo WAV', async ({ page }, testInfo) => {
     test.setTimeout(600_000);
+    const sourceReceipt = captureMyceliumSourceReceipt(testInfo.config.metadata);
     const configuredBaseUrl = testInfo.project.use.baseURL;
     if (typeof configuredBaseUrl !== 'string') {
         throw new TypeError('Mycelium export E2E requires a configured Playwright baseURL');
@@ -67,6 +73,7 @@ test('exports the complete Mycelium Ascendant mix as a stereo WAV', async ({ pag
     await card.click();
     await wait_for_workspace_ready(page);
     await expect(page.getByRole('button', { name: 'Mycelium Ascendant' })).toBeVisible();
+    const projectReceipt = await captureMyceliumProjectReceipt(page);
 
     const isMac = await page.evaluate(() => navigator.platform.toUpperCase().includes('MAC'));
     await page.keyboard.press(isMac ? 'Meta+Shift+E' : 'Control+Shift+E');
@@ -110,13 +117,27 @@ test('exports the complete Mycelium Ascendant mix as a stereo WAV', async ({ pag
     expect(wav.activeBlockRatio).toBeGreaterThan(0.5);
     const wavSha256 = createHash('sha256').update(wavBytes).digest('hex');
     expect(wavSha256).toMatch(/^[0-9a-f]{64}$/);
+    const evidence = bindMyceliumEvidence({
+        source: sourceReceipt,
+        project: projectReceipt,
+        measurements: { capturedAt: new Date().toISOString(), wavSha256, ...wav },
+    });
     await testInfo.attach('mycelium-wav-evidence', {
-        body: JSON.stringify({ capturedAt: new Date().toISOString(), wavSha256, ...wav }),
+        body: JSON.stringify(evidence),
         contentType: 'application/json',
     });
     await testInfo.attach('mycelium-stereo-wav', {
         path: downloadPath,
         contentType: 'audio/wav',
+    });
+    expect(sourceReceipt.sourceDirty).toBe(false);
+    expect(projectReceipt).toMatchObject({
+        durationBeats: 576,
+        trackCount: 43,
+        clipCount: 119,
+        noteCount: 3_818,
+        automationLaneCount: 115,
+        automationPointCount: 1_583,
     });
     expect(consoleErrors).toEqual([]);
     expect(unexpectedWarnings).toEqual([]);

@@ -1,0 +1,92 @@
+import type { Page } from '@playwright/test';
+
+export type MyceliumProjectReceipt = {
+    projectSha256: string;
+    durationBeats: number;
+    trackCount: number;
+    clipCount: number;
+    noteCount: number;
+    automationLaneCount: number;
+    automationPointCount: number;
+};
+
+export type MyceliumSourceReceipt = {
+    sourceRevision: string;
+    sourceDirty: boolean;
+    sourceTreeSha256: string;
+    sourceTreeHashScope: string;
+};
+
+type BindMyceliumEvidenceInput = {
+    source: MyceliumSourceReceipt;
+    project: MyceliumProjectReceipt;
+    measurements: Record<string, unknown>;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
+}
+
+export function captureMyceliumSourceReceipt(metadata: unknown): MyceliumSourceReceipt {
+    if (
+        !isRecord(metadata) ||
+        typeof metadata.myceliumSourceRevision !== 'string' ||
+        typeof metadata.myceliumSourceDirty !== 'boolean' ||
+        typeof metadata.myceliumSourceTreeSha256 !== 'string' ||
+        typeof metadata.myceliumSourceTreeHashScope !== 'string'
+    ) {
+        throw new TypeError('Mycelium evidence source receipt is missing from Playwright metadata');
+    }
+    return {
+        sourceRevision: metadata.myceliumSourceRevision,
+        sourceDirty: metadata.myceliumSourceDirty,
+        sourceTreeSha256: metadata.myceliumSourceTreeSha256,
+        sourceTreeHashScope: metadata.myceliumSourceTreeHashScope,
+    };
+}
+
+export async function captureMyceliumProjectReceipt(page: Page): Promise<MyceliumProjectReceipt> {
+    return page.evaluate(async () => {
+        const projectModule: unknown = await import('/src/modules/Project/useCases/index.ts');
+        if (
+            typeof projectModule !== 'object' ||
+            projectModule === null ||
+            typeof Reflect.get(projectModule, 'buildProjectData') !== 'function'
+        ) {
+            throw new TypeError('Mycelium evidence could not resolve the project serialization contract');
+        }
+        const buildProjectData = Reflect.get(projectModule, 'buildProjectData') as (input: {
+            includeAudioBuffers: boolean;
+        }) => Promise<{ data: unknown } | null>;
+        const built = await buildProjectData({ includeAudioBuffers: false });
+        if (!built || typeof built.data !== 'object' || built.data === null) {
+            throw new TypeError('Mycelium evidence could not serialize the live project');
+        }
+        const projectData = built.data as {
+            arrangement: { tracks: Array<{ clips: unknown[] }> };
+            automation: { lanes: Array<{ points: unknown[] }> };
+            midi: { notesByClipId: Record<string, unknown[]> };
+            transport: { loopEnd: number };
+        };
+        const bytes = new TextEncoder().encode(JSON.stringify(projectData));
+        const digest = await crypto.subtle.digest('SHA-256', bytes);
+        const projectSha256 = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+        return {
+            projectSha256,
+            durationBeats: projectData.transport.loopEnd,
+            trackCount: projectData.arrangement.tracks.length,
+            clipCount: projectData.arrangement.tracks.reduce((total, track) => total + track.clips.length, 0),
+            noteCount: Object.values(projectData.midi.notesByClipId).reduce((total, notes) => total + notes.length, 0),
+            automationLaneCount: projectData.automation.lanes.length,
+            automationPointCount: projectData.automation.lanes.reduce((total, lane) => total + lane.points.length, 0),
+        };
+    });
+}
+
+export function bindMyceliumEvidence({
+    source,
+    project,
+    measurements,
+}: BindMyceliumEvidenceInput): Record<string, unknown> {
+    return { ...source, ...project, ...measurements };
+}

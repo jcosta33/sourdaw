@@ -1,6 +1,11 @@
 import { expect, test } from '@playwright/test';
 
 import { setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
+import {
+    bindMyceliumEvidence,
+    captureMyceliumProjectReceipt,
+    captureMyceliumSourceReceipt,
+} from './myceliumEvidenceReceipt';
 
 const ALLOWED_WARNING_FRAGMENTS = [
     'using deprecated parameters for `initSync()`',
@@ -12,6 +17,7 @@ type RuntimeCall = { command: string; args: unknown };
 
 test('launches Mycelium through the Tauri v2 desktop-runtime contract', async ({ page }, testInfo) => {
     test.setTimeout(180_000);
+    const sourceReceipt = captureMyceliumSourceReceipt(testInfo.config.metadata);
     const configuredBaseUrl = testInfo.project.use.baseURL;
     if (typeof configuredBaseUrl !== 'string') {
         throw new TypeError('Mycelium desktop-runtime E2E requires a configured Playwright baseURL');
@@ -99,6 +105,7 @@ test('launches Mycelium through the Tauri v2 desktop-runtime contract', async ({
     await expect(card).toBeVisible();
     await card.click();
     await wait_for_workspace_ready(page);
+    const projectReceipt = await captureMyceliumProjectReceipt(page);
 
     await expect(page.getByRole('button', { name: /^Mycelium Ascendant/ })).toBeVisible();
     const trackList = page.getByRole('grid', { name: /Track list/i });
@@ -117,11 +124,25 @@ test('launches Mycelium through the Tauri v2 desktop-runtime contract', async ({
                 typeof call === 'object' && call !== null && typeof Reflect.get(call, 'command') === 'string'
         );
     });
+    const evidence = bindMyceliumEvidence({
+        source: sourceReceipt,
+        project: projectReceipt,
+        measurements: { capturedAt: new Date().toISOString(), runtimeCalls },
+    });
     await testInfo.attach('mycelium-desktop-runtime-log', {
-        body: JSON.stringify({ capturedAt: new Date().toISOString(), runtimeCalls }),
+        body: JSON.stringify(evidence),
         contentType: 'application/json',
     });
 
+    expect(sourceReceipt.sourceDirty).toBe(false);
+    expect(projectReceipt).toMatchObject({
+        durationBeats: 576,
+        trackCount: 43,
+        clipCount: 119,
+        noteCount: 3_818,
+        automationLaneCount: 115,
+        automationPointCount: 1_583,
+    });
     expect(runtimeCalls).toEqual([{ command: 'list_midi_inputs', args: {} }]);
     expect(consoleErrors).toEqual([]);
     expect(unexpectedWarnings).toEqual([]);
