@@ -422,7 +422,7 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
         expect(events.filter((e) => e.type === 'on')).toHaveLength(0);
     });
 
-    it('keeps canonical Toaster pad indexes when earlier children are muted or disabled', async () => {
+    it('keeps canonical Toaster pad indexes and neutral tuning when earlier children are muted or disabled', async () => {
         const parent = TrackDummy.create({
             id: 'toaster-parent',
             kind: 'midi',
@@ -439,9 +439,9 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
         });
         const midi = makeMidi();
         midi.notesByClipId = Object.fromEntries(
-            children.map((child) => [
+            children.map((child, index) => [
                 child.clips[0]!.id,
-                [{ id: `${child.id}-note`, pitch: 60, startBeat: 1, duration: 1, velocity: 100 }],
+                [{ id: `${child.id}-note`, pitch: 36 + index, startBeat: 1, duration: 1, velocity: 100 }],
             ])
         );
         const entry = makeInstrumentEntry();
@@ -475,6 +475,7 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
         const noteOns = pendingWorkletEvents.filter((event) => event.type === 'on');
         expect(noteOns).toHaveLength(1);
         expect(noteOns[0]?.toasterPadIndex).toBe(2);
+        expect(noteOns[0]?.pitch).toBe(60);
     });
 
     it('applies the parent Toaster swing lane equally to offline child-note on/off timing', async () => {

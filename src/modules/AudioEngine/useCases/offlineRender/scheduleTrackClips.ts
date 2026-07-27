@@ -416,10 +416,15 @@ export async function scheduleTrackClips({
             }
 
             if (instrumentControls) {
+                // Fixed Toaster child tracks select their sound by sibling pad
+                // index. Live playback sends MIDI 60 as the neutral tuning
+                // reference; forwarding the child's GM note (36 + pad) here
+                // transposes the synthesized kit by up to two octaves.
+                const instrumentPitch = isToaster && note.toasterPadIndex >= 0 ? 60 : note.pitch;
                 workletEvents.push({
                     time: startTime,
                     type: 'on',
-                    pitch: note.pitch,
+                    pitch: instrumentPitch,
                     velocity: note.velocity,
                     duration,
                     toasterPadIndex: note.toasterPadIndex,
@@ -427,7 +432,7 @@ export async function scheduleTrackClips({
                 workletEvents.push({
                     time: endTime,
                     type: 'off',
-                    pitch: note.pitch,
+                    pitch: instrumentPitch,
                     velocity: 0,
                     duration: 0,
                     toasterPadIndex: note.toasterPadIndex,
