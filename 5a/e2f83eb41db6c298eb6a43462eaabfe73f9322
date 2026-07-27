@@ -1,0 +1,26 @@
+scripts/agent-campaign/processSupervisor.ts
+  s_bc88af7d3b054c::t_f61a6bfabbcb05 269
+  s_bc88af7d3b054c::t_901c85198d8daf 33,94,175,203,256,314
+  s_bc88af7d3b054c::t_c6afcb0417289a 1-32,34-93,95-174,176-202,204-255,257-268,270-313,315-316
+scripts/agent-campaign/__tests__/processSupervisor.spec.ts
+  s_bc88af7d3b054c::t_401e7ddca63434 131-136
+  s_bc88af7d3b054c::t_c9c6679539ea2c 24
+  s_bc88af7d3b054c::t_136622cd554203 1-23,25-45,48,50-52,54,56-64,68,72,75-125,129-130,137-143,153-165
+  s_bc88af7d3b054c::t_c7e91aa50103b6 46-47,49,53,55,65-67,69-71,73-74,126-128,144-152
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "5ae2f83eb41db6c298eb6a43462eaabfe73f9322",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
