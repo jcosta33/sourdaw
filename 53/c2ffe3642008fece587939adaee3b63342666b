@@ -1,0 +1,22 @@
+scripts/agent-campaign/processSupervisorSentinel.ts
+  s_bc88af7d3b054c::t_3c34c9418e37eb 4,6-9,15-16,18,22-24,26-34,37,39-41,45-53,55-79,81,83,86,88,90-96
+scripts/agent-campaign/__tests__/processSupervisorSentinel.spec.ts
+  s_bc88af7d3b054c::t_3c34c9418e37eb 1,8-13,16,19-47,49,55-67,69,73-76,78-79,82-85,88-107,110-112,114-121,124-130,133-137,140-147,150-152
+  s_bc88af7d3b054c::t_c216677ee7d162 15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "53c2ffe3642008fece587939adaee3b63342666b",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
