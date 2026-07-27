@@ -7,16 +7,41 @@ import {
     captureMyceliumSourceReceipt,
 } from './myceliumEvidenceReceipt';
 
-const AUDITION_WINDOWS = [
-    { name: 'Pressure Bloom', startBeat: 128, endBeat: 192 },
-    { name: 'Drop I — Dry A', startBeat: 192, endBeat: 224 },
-    { name: 'Drop I — Wet', startBeat: 224, endBeat: 256 },
-    { name: 'Drop I — Dry B', startBeat: 256, endBeat: 288 },
-    { name: 'Psilocybin Chapel', startBeat: 288, endBeat: 352 },
-    { name: 'Singularity Build', startBeat: 352, endBeat: 416 },
-    { name: 'False Floor', startBeat: 480, endBeat: 484, renderStartBeat: 416 },
-    { name: 'Dissolution', startBeat: 544, endBeat: 576 },
+const AUDITION_RENDERS = [
+    {
+        startBeat: 128,
+        endBeat: 192,
+        windows: [{ name: 'Pressure Bloom', startBeat: 128, endBeat: 192 }],
+    },
+    {
+        startBeat: 192,
+        endBeat: 288,
+        windows: [
+            { name: 'Drop I — Dry A', startBeat: 192, endBeat: 224 },
+            { name: 'Drop I — Wet', startBeat: 224, endBeat: 256 },
+            { name: 'Drop I — Dry B', startBeat: 256, endBeat: 288 },
+        ],
+    },
+    {
+        startBeat: 288,
+        endBeat: 352,
+        windows: [{ name: 'Psilocybin Chapel', startBeat: 288, endBeat: 352 }],
+    },
+    {
+        startBeat: 352,
+        endBeat: 484,
+        windows: [
+            { name: 'Singularity Build', startBeat: 352, endBeat: 416 },
+            { name: 'False Floor', startBeat: 480, endBeat: 484 },
+        ],
+    },
+    {
+        startBeat: 544,
+        endBeat: 576,
+        windows: [{ name: 'Dissolution', startBeat: 544, endBeat: 576 }],
+    },
 ] as const;
+const AUDITION_WINDOWS = AUDITION_RENDERS.flatMap((auditionRender) => auditionRender.windows);
 
 const ELIGIBLE_STEM_NAMES = [
     'Acid Tendril',
@@ -104,7 +129,7 @@ test('renders signal evidence for every required Mycelium automation audition wi
     await expect(page.getByRole('button', { name: 'Mycelium Ascendant' })).toBeVisible();
     const projectReceipt = await captureMyceliumProjectReceipt(page);
 
-    const report = await page.evaluate(async (auditionWindows) => {
+    const report = await page.evaluate(async (auditionRenders) => {
         type AudioEngineModule = {
             exportStems: (options: {
                 startBeat: number;
@@ -198,84 +223,89 @@ test('renders signal evidence for every required Mycelium automation audition wi
         const trackNames = new Map(trackStore.value?.tracks.map((track) => [track.id, track.name]) ?? []);
         const windows = [];
 
-        for (const auditionWindow of auditionWindows) {
+        for (const auditionRender of auditionRenders) {
             const warnings: string[] = [];
             const sampleRate = 44_100;
-            const renderStartBeat =
-                'renderStartBeat' in auditionWindow ? auditionWindow.renderStartBeat : auditionWindow.startBeat;
-            const analysisStartFrame = projectPpqEndpoints({
-                startPpq: renderStartBeat,
-                endPpq: auditionWindow.startBeat,
-                defaultTempo: transport.tempo,
-                sampleRate,
-                changes: tempoMap.changes,
-            }).durationSamples;
-            const analysisEndFrame = projectPpqEndpoints({
-                startPpq: renderStartBeat,
-                endPpq: auditionWindow.endBeat,
-                defaultTempo: transport.tempo,
-                sampleRate,
-                changes: tempoMap.changes,
-            }).durationSamples;
             const stems = await exportStems({
-                startBeat: renderStartBeat,
-                durationBeats: auditionWindow.endBeat - renderStartBeat,
+                startBeat: auditionRender.startBeat,
+                durationBeats: auditionRender.endBeat - auditionRender.startBeat,
                 sampleRate,
                 tailSeconds: 0,
                 onWarning: (warning: string) => warnings.push(warning),
             });
-            const stemMetrics = [...stems.entries()].map(([trackId, buffer]) => {
-                let samplePeak = 0;
-                let sumSquares = 0;
-                let sampleCount = 0;
-                let activeBlocks = 0;
-                let blockCount = 0;
-                const blockFrames = 2_048;
-                const firstAnalysisFrame = Math.max(0, analysisStartFrame);
-                const lastAnalysisFrame = Math.min(buffer.length, analysisEndFrame);
 
-                for (let blockStart = firstAnalysisFrame; blockStart < lastAnalysisFrame; blockStart += blockFrames) {
-                    const blockEnd = Math.min(lastAnalysisFrame, blockStart + blockFrames);
-                    let blockSquares = 0;
-                    let blockSamples = 0;
-                    for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
-                        const samples = buffer.getChannelData(channel);
-                        for (let index = blockStart; index < blockEnd; index++) {
-                            const sample = samples[index];
-                            samplePeak = Math.max(samplePeak, Math.abs(sample));
-                            const square = sample * sample;
-                            sumSquares += square;
-                            blockSquares += square;
-                            sampleCount++;
-                            blockSamples++;
+            for (const auditionWindow of auditionRender.windows) {
+                const analysisStartFrame = projectPpqEndpoints({
+                    startPpq: auditionRender.startBeat,
+                    endPpq: auditionWindow.startBeat,
+                    defaultTempo: transport.tempo,
+                    sampleRate,
+                    changes: tempoMap.changes,
+                }).durationSamples;
+                const analysisEndFrame = projectPpqEndpoints({
+                    startPpq: auditionRender.startBeat,
+                    endPpq: auditionWindow.endBeat,
+                    defaultTempo: transport.tempo,
+                    sampleRate,
+                    changes: tempoMap.changes,
+                }).durationSamples;
+                const stemMetrics = [...stems.entries()].map(([trackId, buffer]) => {
+                    let samplePeak = 0;
+                    let sumSquares = 0;
+                    let sampleCount = 0;
+                    let activeBlocks = 0;
+                    let blockCount = 0;
+                    const blockFrames = 2_048;
+                    const firstAnalysisFrame = Math.max(0, analysisStartFrame);
+                    const lastAnalysisFrame = Math.min(buffer.length, analysisEndFrame);
+
+                    for (
+                        let blockStart = firstAnalysisFrame;
+                        blockStart < lastAnalysisFrame;
+                        blockStart += blockFrames
+                    ) {
+                        const blockEnd = Math.min(lastAnalysisFrame, blockStart + blockFrames);
+                        let blockSquares = 0;
+                        let blockSamples = 0;
+                        for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
+                            const samples = buffer.getChannelData(channel);
+                            for (let index = blockStart; index < blockEnd; index++) {
+                                const sample = samples[index];
+                                samplePeak = Math.max(samplePeak, Math.abs(sample));
+                                const square = sample * sample;
+                                sumSquares += square;
+                                blockSquares += square;
+                                sampleCount++;
+                                blockSamples++;
+                            }
                         }
+                        if (Math.sqrt(blockSquares / blockSamples) > 0.0001) {
+                            activeBlocks++;
+                        }
+                        blockCount++;
                     }
-                    if (Math.sqrt(blockSquares / blockSamples) > 0.0001) {
-                        activeBlocks++;
-                    }
-                    blockCount++;
-                }
 
-                return {
-                    trackId,
-                    trackName: trackNames.get(trackId) ?? trackId,
-                    channels: buffer.numberOfChannels,
-                    sampleRate: buffer.sampleRate,
-                    durationSeconds: (lastAnalysisFrame - firstAnalysisFrame) / buffer.sampleRate,
-                    renderDurationSeconds: buffer.duration,
-                    samplePeak,
-                    rms: Math.sqrt(sumSquares / sampleCount),
-                    activeBlockRatio: activeBlocks / blockCount,
-                };
-            });
-            stemMetrics.sort((first, second) => second.rms - first.rms);
-            windows.push({
-                ...auditionWindow,
-                warnings,
-                stemCount: stemMetrics.length,
-                audibleStemCount: stemMetrics.filter((stem) => stem.rms > 0.00001).length,
-                stems: stemMetrics,
-            });
+                    return {
+                        trackId,
+                        trackName: trackNames.get(trackId) ?? trackId,
+                        channels: buffer.numberOfChannels,
+                        sampleRate: buffer.sampleRate,
+                        durationSeconds: (lastAnalysisFrame - firstAnalysisFrame) / buffer.sampleRate,
+                        renderDurationSeconds: buffer.duration,
+                        samplePeak,
+                        rms: Math.sqrt(sumSquares / sampleCount),
+                        activeBlockRatio: activeBlocks / blockCount,
+                    };
+                });
+                stemMetrics.sort((first, second) => second.rms - first.rms);
+                windows.push({
+                    ...auditionWindow,
+                    warnings,
+                    stemCount: stemMetrics.length,
+                    audibleStemCount: stemMetrics.filter((stem) => stem.rms > 0.00001).length,
+                    stems: stemMetrics,
+                });
+            }
             stems.clear();
         }
         const falseFloorWarnings: string[] = [];
@@ -335,7 +365,7 @@ test('renders signal evidence for every required Mycelium automation audition wi
                 returnStrike: measureFullMixWindow(484, returnStrikeEndBeat),
             },
         };
-    }, AUDITION_WINDOWS);
+    }, AUDITION_RENDERS);
     const evidence = bindMyceliumEvidence({
         source: sourceReceipt,
         project: projectReceipt,
