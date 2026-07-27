@@ -1,6 +1,7 @@
 /// <reference types="node" />
 
 import { spawn } from 'node:child_process';
+import { constants as osConstants } from 'node:os';
 import { isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -117,7 +118,8 @@ function parseSentinelMessage(value: unknown): { kind: 'ready' } | SentinelOutco
         candidate.kind === 'exit' &&
         keys.length === 2 &&
         Number.isSafeInteger(candidate.code) &&
-        Number(candidate.code) >= 0
+        Number(candidate.code) >= 0 &&
+        Number(candidate.code) <= 255
     ) {
         return { kind: 'exit', code: Number(candidate.code) };
     }
@@ -125,7 +127,7 @@ function parseSentinelMessage(value: unknown): { kind: 'ready' } | SentinelOutco
         candidate.kind === 'signal' &&
         keys.length === 2 &&
         typeof candidate.signal === 'string' &&
-        /^SIG[A-Z0-9]+$/.test(candidate.signal)
+        Object.hasOwn(osConstants.signals, candidate.signal)
     ) {
         return { kind: 'signal', signal: candidate.signal as NodeJS.Signals };
     }
@@ -299,6 +301,7 @@ export function superviseTrustedProcess(
             stopGroup(message);
         });
         sentinel.once('error', () => stopGroup({ kind: started ? 'sentinel-failure' : 'launch-error' }));
+        sentinel.once('disconnect', () => stopGroup({ kind: started ? 'sentinel-failure' : 'launch-error' }));
         sentinel.once('exit', () => {
             if (!reason) {
                 stopGroup({ kind: 'sentinel-failure' });

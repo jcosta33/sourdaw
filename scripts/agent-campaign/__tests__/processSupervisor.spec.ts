@@ -109,16 +109,27 @@ describe('superviseTrustedProcess', () => {
     });
 
     it.each([
-        ["process.send({kind:'unexpected'});setInterval(()=>{},1000)", 'malformed-ipc'],
-        [
-            "process.on('message',()=>{});process.send({kind:'ready'});process.send({kind:'ready'});setInterval(()=>{},1000)",
-            'malformed-ipc',
-        ],
-    ])('should reject invalid sentinel IPC %#', async (source, reason) => {
+        "process.send({kind:'unexpected'});setInterval(()=>{},1000)",
+        "process.on('message',()=>{});process.send({kind:'ready'});process.send({kind:'ready'});setInterval(()=>{},1000)",
+        "process.on('message',()=>process.send({kind:'signal',signal:'SIGBOGUS'}));process.send({kind:'ready'})",
+    ])('should reject invalid sentinel IPC %#', async (source) => {
         const injectedSentinel = await temporarySentinel(source);
         expect(await run('', {}, { sentinelPath: () => injectedSentinel })).toMatchObject({
-            reason: { kind: reason },
+            reason: { kind: 'malformed-ipc' },
         });
+    });
+
+    it('should kill a disconnected sentinel before its late effect', async () => {
+        const root = await mkdtemp(join(tmpdir(), 'sourdaw-supervisor-'));
+        const latePath = join(root, 'late.txt');
+        roots.push(root);
+        const source = `process.on('message',()=>{setTimeout(()=>require('node:fs').writeFileSync(${JSON.stringify(latePath)},'late'),100);process.disconnect()});process.send({kind:'ready'});setInterval(()=>{},1000)`;
+        const injectedSentinel = await temporarySentinel(source);
+        expect(await run('', {}, { sentinelPath: () => injectedSentinel })).toMatchObject({
+            reason: { kind: 'sentinel-failure' },
+        });
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        await expect(access(latePath)).rejects.toMatchObject({ code: 'ENOENT' });
     });
 
     it('should fail a sentinel that never becomes ready', async () => {
