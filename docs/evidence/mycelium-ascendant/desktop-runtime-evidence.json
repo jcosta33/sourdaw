@@ -1,8 +1,9 @@
 {
-    "sourceRevision": "bf4a2be71ddb315aee04bfc2e7cbf21223d74925",
+    "sourceRevision": "5cff20174d54b38e831fa84b4f089bbaddbc5de4",
     "sourceDirty": false,
-    "sourceTreeSha256": "6e1d4df627945ebf6662dfa3cb1c8abb8ea9a5aa31271848348db79d0c8192a2",
-    "sourceTreeHashScope": "scripts/capture-mycelium-evidence.mjs|src/modules/AudioEngine|src/modules/Project/useCases/demoProjects/myceliumAscendant|tests/e2e/analyzePcmWav.ts|tests/e2e/e2eUtils.ts|tests/e2e/myceliumAutomationStems.spec.ts|tests/e2e/myceliumDesktopRuntime.spec.ts|tests/e2e/myceliumEvidenceReceipt.ts|tests/e2e/myceliumExport.spec.ts|tests/e2e/playwright.mycelium.config.cjs",
+    "sourceTreeSha256": "d3e590c0cc09850126ccd26ea6ea09e6fb680300d516d7a1896c6e953cfc117e",
+    "sourceTreeHashScope": "git-ls-files-excluding:docs/evidence/mycelium-ascendant/**",
+    "sourceTrackedFileCount": 8845,
     "projectSha256": "6a446b6627bc3dfeeb6a0b4c2dadca8bb32bd5be055665d97ba8d5f2b928e856",
     "projectSectionSha256": {
         "activeArrangementId": "9d8a81a9d6f2a4010fb41bfd648bf637537ba5534ac113d7d92264246392229f",
@@ -27,12 +28,12 @@
     "noteCount": 3818,
     "automationLaneCount": 115,
     "automationPointCount": 1583,
-    "capturedAt": "2026-07-27T02:01:22.232Z",
+    "capturedAt": "2026-07-27T02:26:23.292Z",
     "runtimeCalls": [
         {
             "command": "list_midi_inputs",
             "args": {}
         }
     ],
-    "receiptSha256": "25344c5d789310bc13cd153092f3be9b4e089793178302dda3b67f30ad45caf6"
+    "receiptSha256": "3e1a30c1ea43db510473ba4d24c35b166470647ad3b036703c4aa6db85b4bfea"
 }

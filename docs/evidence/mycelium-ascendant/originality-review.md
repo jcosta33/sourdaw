@@ -1,9 +1,9 @@
 # Mycelium Ascendant — originality review
 
-Review captured: 2026-07-27 04:06 CEST
+Review captured: 2026-07-27 04:31 CEST
 Project fingerprint: `6a446b6627bc3dfeeb6a0b4c2dadca8bb32bd5be055665d97ba8d5f2b928e856`
-Source receipt: revision `bf4a2be71ddb315aee04bfc2e7cbf21223d74925`; scoped tree `6e1d4df627945ebf6662dfa3cb1c8abb8ea9a5aa31271848348db79d0c8192a2`; receipt `25d0052c9f75a4dd6c55276ba9d0cfe6897f008ddfc0bc400ba9a07dcd90545f`
-Stereo artifact: `249b186c425fc21417494c0eae30f9fd538c860e318061f9e39e8bcf3bc089bc`
+Source receipt: capture HEAD `5cff20174d54b38e831fa84b4f089bbaddbc5de4`; tracked-source tree `d3e590c0cc09850126ccd26ea6ea09e6fb680300d516d7a1896c6e953cfc117e` (8,845 files; generated evidence excluded); receipt `b4f256b8a1d18365df5852d666a93ad6928969e605a753f96b6f7eb98dd80af0`
+Stereo artifact: `a45219cdb69d0f6f31b7284747452914fb1542e9ea46e8ecea120087210e780b`
 Review basis: decoded 24-bit/44.1 kHz stereo export metrics and hash, normalized MIDI-note and motif-event reports, automation report, and five 44.1 kHz stereo stem windows. The WAV was attached only to the local Playwright result and is not a persistent PR artifact.
 
 ## Scope and verdict

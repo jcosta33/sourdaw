@@ -1,8 +1,9 @@
 {
-    "sourceRevision": "bf4a2be71ddb315aee04bfc2e7cbf21223d74925",
+    "sourceRevision": "5cff20174d54b38e831fa84b4f089bbaddbc5de4",
     "sourceDirty": false,
-    "sourceTreeSha256": "6e1d4df627945ebf6662dfa3cb1c8abb8ea9a5aa31271848348db79d0c8192a2",
-    "sourceTreeHashScope": "scripts/capture-mycelium-evidence.mjs|src/modules/AudioEngine|src/modules/Project/useCases/demoProjects/myceliumAscendant|tests/e2e/analyzePcmWav.ts|tests/e2e/e2eUtils.ts|tests/e2e/myceliumAutomationStems.spec.ts|tests/e2e/myceliumDesktopRuntime.spec.ts|tests/e2e/myceliumEvidenceReceipt.ts|tests/e2e/myceliumExport.spec.ts|tests/e2e/playwright.mycelium.config.cjs",
+    "sourceTreeSha256": "d3e590c0cc09850126ccd26ea6ea09e6fb680300d516d7a1896c6e953cfc117e",
+    "sourceTreeHashScope": "git-ls-files-excluding:docs/evidence/mycelium-ascendant/**",
+    "sourceTrackedFileCount": 8845,
     "projectSha256": "6a446b6627bc3dfeeb6a0b4c2dadca8bb32bd5be055665d97ba8d5f2b928e856",
     "projectSectionSha256": {
         "activeArrangementId": "9d8a81a9d6f2a4010fb41bfd648bf637537ba5534ac113d7d92264246392229f",
@@ -27,8 +28,8 @@
     "noteCount": 3818,
     "automationLaneCount": 115,
     "automationPointCount": 1583,
-    "capturedAt": "2026-07-27T02:06:14.094Z",
-    "wavSha256": "249b186c425fc21417494c0eae30f9fd538c860e318061f9e39e8bcf3bc089bc",
+    "capturedAt": "2026-07-27T02:31:20.457Z",
+    "wavSha256": "a45219cdb69d0f6f31b7284747452914fb1542e9ea46e8ecea120087210e780b",
     "activeBlockRatio": 0.966804979253112,
     "audioFormat": 1,
     "bitsPerSample": 24,
@@ -36,15 +37,15 @@
     "clippedSampleCount": 0,
     "dataBytes": 63767058,
     "dcOffsets": [
-        0.003956583851325261,
-        0.003957633587337469
+        0.003955012980066516,
+        0.003955765034913615
     ],
     "durationSeconds": 240.9941723356009,
-    "integratedLufs": -9.76630483122232,
-    "lowCorrelation": 0.9974943852466978,
-    "lowMonoCompatibilityDb": -0.005472690778263977,
+    "integratedLufs": -9.769689526311288,
+    "lowCorrelation": 0.9975807722265654,
+    "lowMonoCompatibilityDb": -0.005278960318298086,
     "samplePeak": 0.7750214338302612,
     "sampleRate": 44100,
-    "truePeakDbTp": -2.211761241068229,
-    "receiptSha256": "25d0052c9f75a4dd6c55276ba9d0cfe6897f008ddfc0bc400ba9a07dcd90545f"
+    "truePeakDbTp": -2.2117611862832116,
+    "receiptSha256": "b4f256b8a1d18365df5852d666a93ad6928969e605a753f96b6f7eb98dd80af0"
 }

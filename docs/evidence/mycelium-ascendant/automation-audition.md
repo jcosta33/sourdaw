@@ -1,8 +1,8 @@
 # Mycelium Ascendant — automation render-conformance sheet
 
-Stem and routed-mix evidence captured: 2026-07-27 04:03 CEST
+Stem and routed-mix evidence captured: 2026-07-27 04:28 CEST
 Project fingerprint: `6a446b6627bc3dfeeb6a0b4c2dadca8bb32bd5be055665d97ba8d5f2b928e856`
-Source receipt: revision `bf4a2be71ddb315aee04bfc2e7cbf21223d74925`; scoped tree `6e1d4df627945ebf6662dfa3cb1c8abb8ea9a5aa31271848348db79d0c8192a2`; receipt `fbc2ce0f1fb22fb5c97da246191232607a9927a5c7908f772753b85b5461e4a8`
+Source receipt: capture HEAD `5cff20174d54b38e831fa84b4f089bbaddbc5de4`; tracked-source tree `d3e590c0cc09850126ccd26ea6ea09e6fb680300d516d7a1896c6e953cfc117e` (8,845 files; generated evidence excluded); receipt `508d8556fb42a49a2e2c9cfe2b1d585787683de25ab847748a1d54de50d4dc8d`
 
 After launching and reloading the saved demo, each required window was rendered through the app's real offline stem exporter at 44.1 kHz, stereo, with all 22 eligible track/bus stems. The false floor is additionally checked through a continuous, fully routed mix render against its return strike. Signal metrics are in `automation-stem-evidence.json`; the mastered stereo result is in `render-evidence.json`. Stem peaks are intentionally pre-master and are not delivery-level assertions.
 
