@@ -41,7 +41,7 @@ describe('createMyceliumAscendantDemo', () => {
         const noteCount = Object.values(data.midi.notesByClipId).reduce((total, notes) => total + notes.length, 0);
 
         expect(data.arrangement.tracks).toHaveLength(43);
-        expect(clipCount).toBe(119);
+        expect(clipCount).toBe(643);
         expect(noteCount).toBe(3818);
         expect(data.automation.lanes).toHaveLength(115);
         expect(data.sidechainRoutes).toHaveLength(1);

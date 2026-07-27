@@ -7,6 +7,7 @@ import { createMyceliumVoicePerformance } from '../createMyceliumVoicePerformanc
 import type { ProjectData, ProjectMidiNote } from '../../../../models/ProjectData';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const BEAT_EPSILON = 1e-9;
 const VOICE_NAMES =
     'Triplet Helix|Psy Pluck|Main Vision|Counter Vision|Harmonic Mist|FM Spores|Levain Call|Levain Answer|Grand Boule Ritual|Root Drone|Granular Voices|Fractal Riser|Impact Field|Glitch Spirits'.split(
         '|'
@@ -61,18 +62,21 @@ describe('createMyceliumVoicePerformance', () => {
         const sourceSnapshot = structuredClone(first);
 
         expect(voiceTracks.map((track) => track.name)).toEqual(VOICE_NAMES);
-        expect(allClips).toHaveLength(119);
+        expect(allClips).toHaveLength(643);
         expect(allNotes).toHaveLength(3_818);
         expect(
             allNotes.every((note) => Number.isInteger(note.velocity) && note.velocity >= 1 && note.velocity <= 127)
         ).toBe(true);
-        expect(
-            voiceClips.every((clip) =>
-                (first.midi.notesByClipId[clip.id] ?? []).every(
-                    (note) => note.startBeat >= 0 && note.startBeat + note.duration <= clip.endBeat - clip.startBeat
-                )
-            )
-        ).toBe(true);
+        const invalidClipNotes = voiceClips.flatMap((clip) =>
+            (first.midi.notesByClipId[clip.id] ?? []).flatMap((note) => {
+                const clipLength = clip.endBeat - clip.startBeat;
+                if (note.startBeat >= 0 && note.startBeat + note.duration <= clipLength + BEAT_EPSILON) {
+                    return [];
+                }
+                return [{ clip: clip.name, clipLength, note }];
+            })
+        );
+        expect(invalidClipNotes).toEqual([]);
         expect(ids.every((id) => UUID_PATTERN.test(id))).toBe(true);
         expect(new Set(ids).size).toBe(ids.length);
         expect(active?.tracks?.tracks).toBe(first.arrangement.tracks);

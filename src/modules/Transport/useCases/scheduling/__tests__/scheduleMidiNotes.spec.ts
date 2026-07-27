@@ -1273,6 +1273,10 @@ describe('scheduleMidiNotes', () => {
             await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
 
             expect(scheduleNote).not.toHaveBeenCalled();
+            expect(projectClipMidiEvents).not.toHaveBeenCalled();
+            expect(getSynthParamsForTrack).not.toHaveBeenCalled();
+            expect(ensureTrackStrip).not.toHaveBeenCalled();
+            expect(resolveClipsWithComping).not.toHaveBeenCalled();
         });
 
         it('skips a clip whose loopLen collapses to <= 0 (startBeat === endBeat)', async () => {

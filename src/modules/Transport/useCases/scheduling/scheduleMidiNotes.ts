@@ -170,18 +170,29 @@ export async function scheduleMidiNotes(
             continue;
         }
 
+        const windowMidiClips = track.clips.filter(
+            (clip) => !clip.muted && clip.type === 'midi' && clip.endBeat > fromBeat && clip.startBeat < toBeat
+        );
+        if (windowMidiClips.length === 0) {
+            continue;
+        }
+
+        const resolvedClips = resolveClipsWithComping(track.id, windowMidiClips);
+        const activeMidiClips = resolvedClips.filter(
+            (clip) => !clip.muted && clip.type === 'midi' && clip.endBeat > fromBeat && clip.startBeat < toBeat
+        );
+        if (activeMidiClips.length === 0) {
+            continue;
+        }
+
         const drumKitDef = resolveDrumKitDef(track.devices);
         const drumKit = drumKitDef ? null : resolveDrumKit(track.devices);
-        const resolvedClips = resolveClipsWithComping(track.id, track.clips);
         const yeastDevice = track.devices.find((device) => device.type === 'yeast');
         const liveYeastIterations: LiveYeastIteration[] = [];
         let activeYeastCarrierRouteId: string | undefined;
 
         if (yeastDevice) {
-            for (const clip of resolvedClips) {
-                if (clip.muted || clip.type !== 'midi') {
-                    continue;
-                }
+            for (const clip of activeMidiClips) {
                 const sourceNotes = midiState.notesByClipId[clip.id];
                 if (!sourceNotes) {
                     continue;
@@ -285,13 +296,7 @@ export async function scheduleMidiNotes(
             }
         }
 
-        for (const clip of resolvedClips) {
-            if (clip.muted) {
-                continue;
-            }
-            if (clip.type !== 'midi') {
-                continue;
-            }
+        for (const clip of activeMidiClips) {
             const notes = midiState.notesByClipId[clip.id];
             if (!notes) {
                 continue;

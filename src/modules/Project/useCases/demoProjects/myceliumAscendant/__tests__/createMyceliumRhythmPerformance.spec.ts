@@ -66,8 +66,7 @@ describe('createMyceliumRhythmPerformance', () => {
         const active = first.arrangements?.find((arrangement) => arrangement.id === first.activeArrangementId);
 
         expect(tracks.map((track) => track.name)).toEqual(rhythmNames);
-        expect(clips.length).toBeGreaterThanOrEqual(35);
-        expect(clips.length).toBeLessThan(70);
+        expect(clips).toHaveLength(335);
         expect(notes.length).toBeGreaterThanOrEqual(1400);
         expect(notes.length).toBeLessThan(2200);
         expect(

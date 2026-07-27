@@ -1,4 +1,5 @@
 import { createMyceliumId } from './createMyceliumId';
+import { segmentMyceliumDenseSeeds } from './segmentMyceliumDenseSeeds';
 
 import type { ProjectClip, ProjectData, ProjectMidiNote, ProjectTrack } from '../../../models/ProjectData';
 
@@ -245,21 +246,28 @@ function createTrackPerformance(track: ProjectTrack, notesByClipId: Record<strin
         if (seeds.length === 0) {
             return [];
         }
-        const clipId = createMyceliumId('rhythm-clip', `${track.name}:${section.key}`);
-        notesByClipId[clipId] = seeds.map((seed, index) => ({
-            id: createMyceliumId('rhythm-note', `${track.name}:${section.key}:${index}`),
-            pitch,
-            startBeat: seed.beat - section.startBeat,
-            duration: seed.duration,
-            velocity: seed.velocity,
-        }));
-        return [
-            {
+        const segments = segmentMyceliumDenseSeeds(seeds, section);
+        const segmented = segments.length > 1;
+        return segments.map((segment): ProjectClip => {
+            const clipKey = segmented
+                ? `${track.name}:${section.key}:${segment.index}`
+                : `${track.name}:${section.key}`;
+            const clipId = createMyceliumId('rhythm-clip', clipKey);
+            notesByClipId[clipId] = segment.seeds.map(({ index, seed }) => ({
+                id: createMyceliumId('rhythm-note', `${track.name}:${section.key}:${index}`),
+                pitch,
+                startBeat: seed.beat - segment.startBeat,
+                duration: seed.duration,
+                velocity: seed.velocity,
+            }));
+            return {
                 id: clipId,
                 trackId: track.id,
-                name: `${track.name} — ${section.name}`,
-                startBeat: section.startBeat,
-                endBeat: section.endBeat,
+                name: segmented
+                    ? `${track.name} — ${section.name} ${segment.index + 1}`
+                    : `${track.name} — ${section.name}`,
+                startBeat: segment.startBeat,
+                endBeat: segment.endBeat,
                 type: 'midi',
                 fadeInBeats: 0,
                 fadeOutBeats: 0,
@@ -267,8 +275,8 @@ function createTrackPerformance(track: ProjectTrack, notesByClipId: Record<strin
                 color: track.color,
                 locked: false,
                 muted: false,
-            },
-        ];
+            };
+        });
     });
     return { ...track, clips };
 }
