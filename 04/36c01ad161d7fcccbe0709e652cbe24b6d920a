@@ -1,0 +1,20 @@
+scripts/agent-campaign/__tests__/evidenceResultStore.spec.ts
+  s_bc88af7d3b054c::t_b168b8cf6430b6 235
+  s_bc88af7d3b054c::t_e1f7fe6466ee52 205,208-210,212-217,219-234,236-247
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "0436c01ad161d7fcccbe0709e652cbe24b6d920a",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
