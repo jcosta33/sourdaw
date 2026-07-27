@@ -1,5 +1,4 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -11,7 +10,6 @@ import { createEvidencePolicy } from '../evidenceContract';
 import { validateEvidenceManifest } from '../evidenceManifest';
 import {
     createGitCheckout,
-    runExecutorProcess,
     runEvidenceGate,
     type EvidenceExecutor,
     type EvidenceRunnerDependencies,
@@ -46,30 +44,33 @@ async function setup(overrides: Partial<EvidenceRunnerDependencies> = {}) {
         monotonicClock: { now: () => 0 },
         environment: { observe: (_signal: AbortSignal) => Promise.resolve(structuredClone(policy.environment)) },
         executors: { registry: {} },
-        executorProcess: runExecutorProcess,
         manifest: { validate: validateEvidenceManifest },
         ...overrides,
     };
 }
 
-function executorDescriptor(stdout = 'private-token', exitStatus = 0, stderr = 'private-error'): EvidenceExecutor {
+function executorObservation(overrides: Record<string, unknown> = {}): Record<string, unknown> {
     return {
-        executable: process.execPath,
-        arguments: [
-            '--input-type=module',
-            '--eval',
-            `process.stdout.write(${JSON.stringify(stdout)});process.stderr.write(${JSON.stringify(stderr)});process.exitCode=${exitStatus}`,
-        ],
-        fixtureIds: [],
+        status: 'passed',
+        exitStatus: 0,
+        stdout: 'private-token',
+        stderr: '',
+        assertionTotals: { passed: 1, failed: 0, total: 1 },
+        metricSamples: [],
+        aggregates: {},
+        rawSamplePaths: [],
+        capabilityDecision: null,
+        reviewerDisposition: null,
+        ...overrides,
     };
 }
 
-async function runWithExecutor(executor?: EvidenceExecutor) {
+async function runWithExecutor(execute?: EvidenceExecutor, fixtureIds: string[] = []) {
     const dependencies = await setup();
-    if (executor) {
-        dependencies.executors.registry = { 'browser-ui': executor };
+    if (execute) {
+        dependencies.executors.registry = { 'browser-ui': { fixtureIds, execute } };
     }
-    return runEvidenceGate(executor ? browserSuite : gate, dependencies);
+    return runEvidenceGate(execute ? browserSuite : gate, dependencies);
 }
 
 afterEach(async () => {
@@ -175,88 +176,84 @@ describe('runEvidenceGate', () => {
         });
     });
 
-    it('should retain only hashes and process status until normalization is implemented', async () => {
-        const output = await runWithExecutor(executorDescriptor());
-        expect(output).toMatchObject({
-            code: 'normalization-unimplemented',
-            exitCode: 3,
-            result: {
+    it.each([
+        ['passed', {}, 'persistence-unimplemented', 3],
+        [
+            'failed',
+            {
                 status: 'failed',
-                exitStatus: 0,
-                stdoutSha256: createHash('sha256').update('private-token').digest('hex'),
-                stderrSha256: createHash('sha256').update('private-error').digest('hex'),
+                exitStatus: 1,
+                assertionTotals: { passed: 0, failed: 1, total: 1 },
             },
+            'executor-failed',
+            1,
+        ],
+    ])(
+        'should normalize a strict %s observation without retaining streams',
+        async (_case, overrides, code, exitCode) => {
+            let input: unknown;
+            const output = await runWithExecutor((value) => {
+                input = value;
+                return Promise.resolve(executorObservation(overrides));
+            });
+
+            expect(output).toMatchObject({ code, exitCode, result: { ...overrides, environmentMatch: true } });
+            expect(input).toMatchObject({ targetId: 'browser-ui', kind: 'suite', timeoutMs: 30_000 });
+            expect(Object.keys(input as object).sort()).toEqual(['kind', 'signal', 'targetId', 'timeoutMs']);
+            expect(output.result?.stdoutSha256).toMatch(/^[a-f0-9]{64}$/);
+            expect(JSON.stringify(output)).not.toContain('private-token');
+        }
+    );
+
+    it('should use a fixed trusted suite timeout and frozen capability disposition', async () => {
+        const dependencies = await setup();
+        let input: unknown;
+        dependencies.executors.registry = {
+            'webllm-real': {
+                fixtureIds: [],
+                execute: (value) => {
+                    input = value;
+                    return Promise.resolve(executorObservation({ capabilityDecision: 'mandatory' }));
+                },
+            },
+        };
+        const output = await runEvidenceGate(['--suite', 'webllm-real', '--manifest', manifest], dependencies);
+
+        expect(output).toMatchObject({
+            code: 'persistence-unimplemented',
+            result: { capabilityDecision: 'mandatory' },
         });
-        expect(JSON.stringify(output)).not.toMatch(/private-token|private-error/);
+        expect(input).toMatchObject({ kind: 'suite', timeoutMs: 30_000 });
     });
 
-    it('should invoke the code-owned descriptor with the exact frozen gate timeout', async () => {
+    it('should reject an incompatible frozen gate timeout without invoking its executor', async () => {
         const dependencies = await setup();
-        let invocation: unknown[] = [];
-        const executor = executorDescriptor();
-        dependencies.executors.registry = { 'AC-060': executor };
-        dependencies.executorProcess = (input) => {
-            invocation = [input.executable, input.arguments, input.timeoutMs, input.maxBuffer];
-            return Promise.resolve({ exitStatus: 0, stdout: '', stderr: '', failed: false });
+        let called = false;
+        dependencies.executors.registry = {
+            'AC-060': {
+                fixtureIds: [],
+                execute: () => {
+                    called = true;
+                    return Promise.resolve(executorObservation());
+                },
+            },
         };
 
         const output = await runEvidenceGate(gate, dependencies);
-        expect([output.code, ...invocation]).toEqual([
-            'normalization-unimplemented',
-            executor.executable,
-            executor.arguments,
-            120_000,
-            1_000_000,
-        ]);
-    });
-
-    it('should use immutable argument and fixture snapshots during execution', async () => {
-        const dependencies = await setup();
-        const executor = executorDescriptor('original');
-        const expectedArguments = [...executor.arguments];
-        dependencies.executors.registry = { 'browser-ui': executor };
-        dependencies.executorProcess = (input) => {
-            executor.arguments.splice(0, executor.arguments.length, 'mutated');
-            executor.fixtureIds.push('private-fixture');
-            expect(Object.isFrozen(input.arguments)).toBe(true);
-            expect(input.arguments).toEqual(expectedArguments);
-            return Promise.resolve({ exitStatus: 0, stdout: '', stderr: '', failed: false });
-        };
-
-        const output = await runEvidenceGate(browserSuite, dependencies);
-        expect(output).toMatchObject({
-            code: 'normalization-unimplemented',
-            result: { fixtureIds: [] },
-        });
+        expect([output.code, output.exitCode, called]).toEqual(['executor-timeout-incompatible', 2, false]);
     });
 
     it.each([
-        ['timeout', ['--eval', 'process.stdout.write(`${process.pid}:`);setInterval(() => {}, 1000)'], 25, 1_000],
+        ['thrown', () => Promise.reject(new Error('private-token'))],
         [
-            'max buffer',
-            ['--eval', 'process.stdout.write(`${process.pid}:`+"x".repeat(1000));setInterval(() => {}, 1000)'],
-            1_000,
-            32,
+            'timed out',
+            ({ signal }: Parameters<EvidenceExecutor>[0]) =>
+                new Promise((resolve) => signal.addEventListener('abort', resolve)),
         ],
-    ])('should forcefully bound child process %s', async (_case, arguments_, timeoutMs, maxBuffer) => {
-        const result = await runExecutorProcess({
-            executable: process.execPath,
-            arguments: arguments_,
-            cwd: process.cwd(),
-            timeoutMs,
-            maxBuffer,
-        });
-        expect(result).toMatchObject({ exitStatus: null, failed: true });
-        const pid = Number(result.stdout.split(':', 1)[0]);
-        expect(Number.isSafeInteger(pid)).toBe(true);
-        expect(() => process.kill(pid, 0)).toThrow();
-    });
-
-    it('should return a generic redacted result when process launch fails', async () => {
+    ])('should return a generic redacted result when execution is %s', async (_case, execute) => {
         const dependencies = await setup();
-        dependencies.executors.registry = {
-            'browser-ui': { ...executorDescriptor(), executable: '/definitely/missing/evidence-executor' },
-        };
+        dependencies.executors.timeoutMs = 5;
+        dependencies.executors.registry = { 'browser-ui': { fixtureIds: [], execute } };
         const output = await runEvidenceGate(browserSuite, dependencies);
 
         expect(output).toMatchObject({
@@ -272,32 +269,32 @@ describe('runEvidenceGate', () => {
         expect(JSON.stringify(output)).not.toContain('private-token');
     });
 
-    it('should reject a relative executor before invoking it', async () => {
-        const dependencies = await setup();
-        let called = false;
-        dependencies.executors.registry = {
-            'browser-ui': { ...executorDescriptor(), executable: 'node' },
-        };
-        dependencies.executorProcess = () => {
-            called = true;
-            return Promise.resolve({ exitStatus: 0, stdout: '', stderr: '', failed: false });
-        };
-
-        const output = await runEvidenceGate(browserSuite, dependencies);
-        expect([output.code, called]).toEqual(['invalid-executor-result', false]);
+    it.each([
+        ['self-waived', { status: 'pending' }],
+        ['inapplicable', { status: 'inapplicable' }],
+        ['assertions', { assertionTotals: { passed: 1, failed: 1, total: 1 } }],
+        ['metrics', { metricSamples: [{ id: 'duration', value: 1 }] }],
+        ['aggregates', { aggregates: { duration: 1 } }],
+        ['sample paths', { rawSamplePaths: ['samples/private'] }],
+        ['capability waiver', { capabilityDecision: 'unadmitted' }],
+        ['review waiver', { reviewerDisposition: 'waived' }],
+        ['extra raw field', { raw: 'private-token' }],
+    ])('should replace a malformed %s observation with a generic failure', async (_case, overrides) => {
+        const output = await runWithExecutor(() => Promise.resolve(executorObservation(overrides)));
+        expect(output).toMatchObject({
+            code: 'invalid-executor-result',
+            exitCode: 2,
+            result: { status: 'failed' },
+        });
+        expect(JSON.stringify(output)).not.toMatch(/private-token|samples\/private|waived/);
     });
 
     it('should reject undeclared fixtures before invoking the executor', async () => {
         let called = false;
-        const executor = executorDescriptor();
-        executor.fixtureIds = ['private-fixture'];
-        const dependencies = await setup();
-        dependencies.executors.registry = { 'browser-ui': executor };
-        dependencies.executorProcess = () => {
+        const output = await runWithExecutor(() => {
             called = true;
-            return Promise.resolve({ exitStatus: 0, stdout: '', stderr: '', failed: false });
-        };
-        const output = await runEvidenceGate(browserSuite, dependencies);
+            return Promise.resolve(executorObservation());
+        }, ['private-fixture']);
 
         expect([output.code, called]).toEqual(['invalid-executor-result', false]);
         expect(JSON.stringify(output)).not.toContain('private-fixture');
@@ -310,17 +307,14 @@ describe('runEvidenceGate', () => {
         dependencies.checkout.head = () => Promise.resolve(currentHead);
         dependencies.checkout.dirty = () => Promise.resolve(dirty);
         dependencies.executors.registry = {
-            'browser-ui': executorDescriptor(),
-        };
-        dependencies.executorProcess = () => {
-            currentHead = change === 'head' ? 'b'.repeat(40) : head;
-            dirty = change === 'dirty';
-            return Promise.resolve({
-                exitStatus: 0,
-                stdout: 'private-token',
-                stderr: '',
-                failed: false,
-            });
+            'browser-ui': {
+                fixtureIds: [],
+                execute: () => {
+                    currentHead = change === 'head' ? 'b'.repeat(40) : head;
+                    dirty = change === 'dirty';
+                    return Promise.resolve(executorObservation());
+                },
+            },
         };
         const output = await runEvidenceGate(browserSuite, dependencies);
 
