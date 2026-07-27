@@ -1,0 +1,27 @@
+docs/evidence/mycelium-ascendant/launch-integrity.md
+  s_ac9b259eab20ba::t_7606d740034e72 3,5
+docs/evidence/mycelium-ascendant/automation-audition.md
+  s_ac9b259eab20ba::t_7606d740034e72 3,5
+docs/evidence/mycelium-ascendant/listening-conformance.md
+  s_ac9b259eab20ba::t_7606d740034e72 3,5-6,55
+docs/evidence/mycelium-ascendant/originality-review.md
+  s_ac9b259eab20ba::t_7606d740034e72 3,5-6
+docs/evidence/mycelium-ascendant/automation-stem-evidence.json
+  s_ac9b259eab20ba::t_8bc04511286353 2,4-6,31,82-84,105-106,197-198,208-209,219-220,230-231,317-318,323-325,328-329,334-336,356-358,368-369,378-380,504-505,515-516,575-576,597-599,701-702,712-713,723-724,734-735,745-746,861-862,954-955,965-966,1091-1093,1113-1114,1135-1137,1261-1262,1272-1273,1309-1310,1318-1319,1322
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "379dc295a5b221740b43376158fb8ebc4326e674",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
