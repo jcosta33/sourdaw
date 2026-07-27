@@ -314,6 +314,9 @@ export function superviseTrustedProcess(
         };
         const stopGroup = (nextReason: ProcessSupervisorReason) => {
             if (reason) {
+                if (nextReason.kind === 'output-cap-exceeded') {
+                    reason = nextReason;
+                }
                 return;
             }
             reason = nextReason;

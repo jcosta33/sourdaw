@@ -115,6 +115,25 @@ describe('superviseTrustedProcess', () => {
         expect(JSON.stringify(output)).not.toContain(token);
     });
 
+    it('should let a delayed output-cap crossing replace terminal IPC', async () => {
+        const source =
+            "process.on('message',()=>process.send({kind:'exit',code:0},()=>setTimeout(()=>process.stdout.write('overflow',()=>process.exit(0)),20)));process.send({kind:'ready'})";
+        const injectedSentinel = await temporarySentinel(source);
+        const output = await run(
+            '',
+            { combinedOutputByteCap: 4 },
+            {
+                sentinelPath: () => injectedSentinel,
+                killGroup: () => undefined,
+                groupExists: () => false,
+            }
+        );
+        expect(output).toEqual({
+            reason: { kind: 'output-cap-exceeded' },
+            streamEvidence: null,
+        });
+    });
+
     it('should preserve exact signal termination', async () => {
         expect(await run("process.kill(process.pid,'SIGTERM')")).toMatchObject({
             reason: { kind: 'signal', signal: 'SIGTERM' },
