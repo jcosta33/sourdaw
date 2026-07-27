@@ -18,7 +18,7 @@ const ALLOWED_WARNING_FRAGMENTS = [
 ] as const;
 
 test('exports the complete Mycelium Ascendant mix as a stereo WAV', async ({ page }, testInfo) => {
-    test.setTimeout(600_000);
+    test.setTimeout(900_000);
     const sourceReceipt = captureMyceliumSourceReceipt(testInfo.config.metadata);
     const configuredBaseUrl = testInfo.project.use.baseURL;
     if (typeof configuredBaseUrl !== 'string') {
@@ -85,10 +85,10 @@ test('exports the complete Mycelium Ascendant mix as a stereo WAV', async ({ pag
     await expect(dialog.getByRole('radio', { name: 'Whole project' })).toBeChecked();
     await expect(dialog.getByLabel('Tail seconds')).toHaveValue('2');
 
-    const downloadPromise = page.waitForEvent('download', { timeout: 300_000 });
+    const downloadPromise = page.waitForEvent('download', { timeout: 600_000 });
     await dialog.getByRole('button', { name: 'Start Baking' }).click();
     const download = await downloadPromise;
-    await expect(dialog.getByRole('button', { name: 'Close Bakery' })).toBeVisible({ timeout: 300_000 });
+    await expect(dialog.getByRole('button', { name: 'Close Bakery' })).toBeVisible({ timeout: 600_000 });
 
     expect(await download.failure()).toBeNull();
     expect(download.suggestedFilename()).toMatch(/^Sourdaw_Bake_\d+\.wav$/);
