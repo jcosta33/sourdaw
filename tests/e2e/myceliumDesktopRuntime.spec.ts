@@ -141,7 +141,7 @@ test('launches Mycelium through the Tauri v2 desktop-runtime contract', async ({
         clipCount: 119,
         noteCount: 3_818,
         automationLaneCount: 115,
-        automationPointCount: 1_583,
+        automationPointCount: 1_622,
     });
     expect(runtimeCalls).toEqual([{ command: 'list_midi_inputs', args: {} }]);
     expect(consoleErrors).toEqual([]);

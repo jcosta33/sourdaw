@@ -180,6 +180,8 @@ describe('createMyceliumRhythmPerformance', () => {
         const buildBass = inRange(getNotes(projectData, BASS_NAMES), 352, 415.75);
         const rolls = getNotes(projectData, ['Hi Tom']);
         const allRhythm = getNotes(projectData, [...PAD_NAMES, ...BASS_NAMES]);
+        const lateDrums = inRange(getNotes(projectData, PAD_NAMES), 560, 576);
+        const lateBass = inRange(getNotes(projectData, BASS_NAMES), 560, 576);
         const rollCounts = [
             inRange(rolls, 352, 384).length,
             inRange(rolls, 384, 400).length,
@@ -193,5 +195,7 @@ describe('createMyceliumRhythmPerformance', () => {
         expect(peelCounts[0]).toBeGreaterThan(peelCounts[1]!);
         expect(peelCounts[1]).toBeGreaterThan(peelCounts[2]!);
         expect(peelCounts[2]).toBeGreaterThan(peelCounts[3]!);
+        expect(lateDrums.length).toBeGreaterThan(0);
+        expect(lateBass.length).toBeGreaterThan(0);
     });
 });

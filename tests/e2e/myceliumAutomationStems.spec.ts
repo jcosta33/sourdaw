@@ -9,6 +9,9 @@ import {
 
 const AUDITION_WINDOWS = [
     { name: 'Pressure Bloom', startBeat: 128, endBeat: 192 },
+    { name: 'Drop I — Dry A', startBeat: 192, endBeat: 224 },
+    { name: 'Drop I — Wet', startBeat: 224, endBeat: 256 },
+    { name: 'Drop I — Dry B', startBeat: 256, endBeat: 288 },
     { name: 'Psilocybin Chapel', startBeat: 288, endBeat: 352 },
     { name: 'Singularity Build', startBeat: 352, endBeat: 416 },
     { name: 'False Floor', startBeat: 480, endBeat: 484, renderStartBeat: 416 },
@@ -350,7 +353,7 @@ test('renders signal evidence for every required Mycelium automation audition wi
         clipCount: 119,
         noteCount: 3_818,
         automationLaneCount: 115,
-        automationPointCount: 1_583,
+        automationPointCount: 1_622,
     });
     expect(report.windows).toHaveLength(AUDITION_WINDOWS.length);
     for (const window of report.windows) {
@@ -367,6 +370,13 @@ test('renders signal evidence for every required Mycelium automation audition wi
     );
     expect(signals.get('Pressure Bloom')?.get('Rolling Colony')?.rms).toBeGreaterThan(0.1);
     expect(signals.get('Pressure Bloom')?.get('Fractal Riser')?.activeBlockRatio).toBeGreaterThan(0.5);
+    const dropOneReturnRms = (windowName: string): number =>
+        ['Temple Chamber', 'Dub Tunnel', 'Mutation Return', 'Parallel Crush'].reduce(
+            (total, trackName) => total + (signals.get(windowName)?.get(trackName)?.rms ?? 0),
+            0
+        );
+    expect(dropOneReturnRms('Drop I — Wet')).toBeGreaterThan(dropOneReturnRms('Drop I — Dry A') * 1.5);
+    expect(dropOneReturnRms('Drop I — Wet')).toBeGreaterThan(dropOneReturnRms('Drop I — Dry B') * 1.5);
     expect(signals.get('Psilocybin Chapel')?.get('Root Drone')?.activeBlockRatio).toBeGreaterThan(0.9);
     expect(signals.get('Psilocybin Chapel')?.get('Grand Boule Ritual')?.samplePeak).toBeGreaterThan(0.1);
     expect(signals.get('Singularity Build')?.get('Triplet Helix')?.activeBlockRatio).toBeGreaterThan(0.5);

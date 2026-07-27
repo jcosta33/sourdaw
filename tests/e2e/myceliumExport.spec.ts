@@ -137,7 +137,7 @@ test('exports the complete Mycelium Ascendant mix as a stereo WAV', async ({ pag
         clipCount: 119,
         noteCount: 3_818,
         automationLaneCount: 115,
-        automationPointCount: 1_583,
+        automationPointCount: 1_622,
     });
     expect(consoleErrors).toEqual([]);
     expect(unexpectedWarnings).toEqual([]);
