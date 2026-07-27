@@ -1,0 +1,40 @@
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/renderMyceliumAscendantDemo.spec.ts
+  s_ac9b259eab20ba::t_6a648240387b87 222,255
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_ac9b259eab20ba::t_deac0c98f5383f 465
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/createMyceliumVoicePerformance.spec.ts
+  s_ac9b259eab20ba::t_6a648240387b87 36,73-74
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/createMyceliumRhythmPerformance.spec.ts
+  s_ac9b259eab20ba::t_6a648240387b87 38,78-84
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts
+  s_ac9b259eab20ba::t_6c62bbdd9bb225 282,296,302-308,795-797,799
+  s_ac9b259eab20ba::t_157c719a2e5218 798
+  s_ac9b259eab20ba::t_f17e179be8e9ee 800-801
+src/modules/Project/useCases/demoProjects/myceliumAscendant/createMyceliumVoicePerformance.ts
+  s_ac9b259eab20ba::t_deac0c98f5383f 273,292-294
+src/modules/Project/useCases/demoProjects/myceliumAscendant/createMyceliumRhythmPerformance.ts
+  s_ac9b259eab20ba::t_deac0c98f5383f 259,278-280
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_ac9b259eab20ba::t_deac0c98f5383f 635
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/createMyceliumSessionPerformance.spec.ts
+  s_ac9b259eab20ba::t_6a648240387b87 57
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_ac9b259eab20ba::t_157c719a2e5218 385,392
+  s_ac9b259eab20ba::t_6c62bbdd9bb225 372-384,386-391,393-394
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "5a451231051564f96c9fb721341cd8095ea86bf2",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
