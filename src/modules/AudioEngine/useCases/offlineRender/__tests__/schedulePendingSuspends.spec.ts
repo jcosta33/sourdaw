@@ -58,6 +58,33 @@ describe('schedulePendingSuspends', () => {
         expect(noteOn).toHaveBeenCalledWith(4, 0.9, 60, 24_000);
     });
 
+    it('resolves legacy Toaster events through the canonical GM pad banks', () => {
+        const noteOn = vi.fn();
+        const noteOff = vi.fn();
+        const instrumentControls = { noteOn, noteOff };
+        const lowBank: PendingWorkletEvent = {
+            time: 0.5,
+            type: 'on',
+            pitch: 36,
+            velocity: 0.9,
+            instrumentControls,
+            isToaster: true,
+            toasterPadIndex: -1,
+        };
+        const highBank: PendingWorkletEvent = { ...lowBank, time: 1, pitch: 60 };
+        const invalid: PendingWorkletEvent = { ...lowBank, time: 1.5, pitch: 52 };
+        const offlineCtx = {
+            sampleRate: 48_000,
+        } as unknown as OfflineAudioContext;
+
+        schedulePendingSuspends(offlineCtx, [invalid, highBank, lowBank], 10);
+
+        expect(noteOn).toHaveBeenNthCalledWith(1, 0, 0.9, 36, 24_000);
+        expect(noteOn).toHaveBeenNthCalledWith(2, 0, 0.9, 60, 48_000);
+        expect(noteOn).toHaveBeenCalledTimes(2);
+        expect(noteOff).not.toHaveBeenCalled();
+    });
+
     it('should sort events correctly (off before on at same time)', () => {
         const noteOn = vi.fn();
         const noteOff = vi.fn();

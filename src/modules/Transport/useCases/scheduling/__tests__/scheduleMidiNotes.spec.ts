@@ -402,7 +402,36 @@ describe('scheduleMidiNotes', () => {
         await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
 
         expect(toasterNoteOn).toHaveBeenCalledTimes(1);
+        expect(toasterNoteOn).toHaveBeenCalledWith(0, 100, 60, expect.any(Number));
         expect(transposeForChordTrack).not.toHaveBeenCalled();
+    });
+
+    it('maps direct Toaster-track GM notes to pads with neutral tuning', async () => {
+        const toasterNoteOn = vi.fn();
+        const parent = midiTrack({
+            id: 'toaster-parent',
+            clips: [midiClip()],
+            devices: [{ id: 'toaster', type: 'toaster' }],
+        });
+        (trackStore as { value: unknown }).value = { tracks: [parent] };
+        (midiStore as { value: unknown }).value = {
+            notesByClipId: {
+                'clip-1': [
+                    { id: 'n1', pitch: 36, startBeat: 1, duration: 0.25, velocity: 100 },
+                    { id: 'n2', pitch: 60, startBeat: 2, duration: 0.25, velocity: 90 },
+                ],
+            },
+        };
+        vi.mocked(ensureTrackStrip).mockReturnValue({
+            gainNode: {},
+            preFaderTap: { connect: vi.fn() },
+            deviceNodes: [{ deviceId: 'toaster', type: 'toaster', toasterControls: { noteOn: toasterNoteOn } }],
+        } as never);
+
+        await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+
+        expect(toasterNoteOn).toHaveBeenNthCalledWith(1, 0, 100, 60, expect.any(Number));
+        expect(toasterNoteOn).toHaveBeenNthCalledWith(2, 0, 90, 60, expect.any(Number));
     });
 
     it('applies the parent Toaster swing lane to live child-note timing', async () => {

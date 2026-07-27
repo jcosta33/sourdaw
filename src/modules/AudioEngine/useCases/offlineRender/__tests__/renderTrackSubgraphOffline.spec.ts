@@ -364,6 +364,48 @@ describe('renderTrackSubgraphOffline', () => {
         expect(mocks.instrumentNoteOff).toHaveBeenCalledWith(69, Math.round(0.5 * SAMPLE_RATE));
     });
 
+    it('includes muted Toaster child content in a deliverable subgraph render', async () => {
+        const parent = TrackDummy.create({
+            id: 'toaster-parent',
+            kind: 'folder',
+            clips: [],
+            devices: [{ id: 'toaster-1', name: 'Toaster', type: 'toaster', bypassed: false, parameterValues: {} }],
+        });
+        const child = TrackDummy.create({
+            id: 'toaster-kick',
+            kind: 'midi',
+            parentId: parent.id,
+            muted: true,
+            clips: [midiClip({ id: 'kick-clip', trackId: 'toaster-kick' })],
+        });
+        const { midiStore } = await import('#/modules/MIDI/stores');
+        midiStore.set({
+            probabilitySeed: 1,
+            notesByClipId: {
+                'kick-clip': [{ id: 'kick-note', pitch: 36, startBeat: 0, duration: 0.25, velocity: 100 }],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        mocks.buildDeviceChain.mockImplementation((_context: OfflineAudioContext, devices: Track['devices']) =>
+            Promise.resolve(
+                devices.some((device) => device.type === 'toaster')
+                    ? [createInstrumentEntry('toaster-1', 'toaster')]
+                    : []
+            )
+        );
+
+        await renderTrackSubgraphOffline({
+            targetTrackId: parent.id,
+            renderTracks: [parent, child],
+            startBeat: 0,
+            endBeat: 4,
+        });
+
+        expect(mocks.instrumentNoteOn).toHaveBeenCalledWith(0, 100, 60, 0);
+        expect(mocks.instrumentNoteOff).not.toHaveBeenCalled();
+    });
+
     it('builds the target device chain from the project devices and captures its strip output', async () => {
         const track = TrackDummy.create({
             id: 'track-1',
