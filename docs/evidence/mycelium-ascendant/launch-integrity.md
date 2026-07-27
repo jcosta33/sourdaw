@@ -1,7 +1,8 @@
 # Mycelium Ascendant — launch and dependency integrity
 
-Evidence refreshed: 2026-07-26 18:05 CEST
-Project fingerprint: `1cea829dfa15f1e3ac94e611606cc3ef2ac3c4a2bccdfe1cc5707412565ffd9c`
+Evidence refreshed: 2026-07-27 04:01 CEST
+Project fingerprint: `6a446b6627bc3dfeeb6a0b4c2dadca8bb32bd5be055665d97ba8d5f2b928e856`
+Source receipt: revision `bf4a2be71ddb315aee04bfc2e7cbf21223d74925`; scoped tree `6e1d4df627945ebf6662dfa3cb1c8abb8ea9a5aa31271848348db79d0c8192a2`; receipt `25344c5d789310bc13cd153092f3be9b4e089793178302dda3b67f30ad45caf6`
 
 ## Browser launch
 
@@ -17,11 +18,11 @@ This is a desktop-runtime contract simulation in Chromium, not a native-shell/We
 
 ## Bundled-only dependency proof
 
-The deterministic blueprint has 118 MIDI clips, no audio clips, no `audioBuffers`, no `bufferId`, `audioBufferId`, or `assetHash`, and no Crumbs device. Its 59 devices are built-in Sourdaw instruments/effects. Launch, reload, stem, and stereo-export E2Es require no external network request, file, sample, plugin, microphone, or MIDI device.
+The deterministic blueprint has 119 MIDI clips, no audio clips, no `audioBuffers`, no `bufferId`, `audioBufferId`, or `assetHash`, and no Crumbs device. Its 59 devices are built-in Sourdaw instruments/effects. Launch, reload, stem, and stereo-export E2Es require no external network request, file, sample, plugin, microphone, or MIDI device.
 
 Reproduction:
 
 ```sh
 node_modules/.bin/playwright test tests/e2e/launchFlows.spec.ts -g "Mycelium Ascendant" --config=tests/e2e/playwright.mycelium.config.cjs
-node_modules/.bin/playwright test tests/e2e/myceliumDesktopRuntime.spec.ts --config=tests/e2e/playwright.mycelium.config.cjs
+node scripts/capture-mycelium-evidence.mjs desktop
 ```

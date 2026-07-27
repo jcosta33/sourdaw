@@ -1,8 +1,9 @@
 # Mycelium Ascendant — originality review
 
-Review captured: 2026-07-26 17:28 CEST
-Project fingerprint: `1cea829dfa15f1e3ac94e611606cc3ef2ac3c4a2bccdfe1cc5707412565ffd9c`
-Stereo artifact: `52b0b2203c0fdcdd549721e5a0d98510d48b47a683344d36b6fb3571b25a616b`
+Review captured: 2026-07-27 04:06 CEST
+Project fingerprint: `6a446b6627bc3dfeeb6a0b4c2dadca8bb32bd5be055665d97ba8d5f2b928e856`
+Source receipt: revision `bf4a2be71ddb315aee04bfc2e7cbf21223d74925`; scoped tree `6e1d4df627945ebf6662dfa3cb1c8abb8ea9a5aa31271848348db79d0c8192a2`; receipt `25d0052c9f75a4dd6c55276ba9d0cfe6897f008ddfc0bc400ba9a07dcd90545f`
+Stereo artifact: `249b186c425fc21417494c0eae30f9fd538c860e318061f9e39e8bcf3bc089bc`
 Review basis: decoded 24-bit/44.1 kHz stereo export metrics and hash, normalized MIDI-note and motif-event reports, automation report, and five 44.1 kHz stereo stem windows. The WAV was attached only to the local Playwright result and is not a persistent PR artifact.
 
 ## Scope and verdict
@@ -26,7 +27,7 @@ Verdict: the specification's source/asset originality boundary passes. Subjectiv
 
 ## Rhythm and performance originality checks
 
-- Generated score: 118 clips and 3,784 notes across 43 tracks; 39 tracks carry 115 automation lanes and 1,579 points.
+- Generated score: 119 clips and 3,818 notes across 43 tracks; 39 tracks carry 115 automation lanes and 1,583 points.
 - Voice material spans 103 semitones and contains six distinct first-four-note interval signatures, including the opposed cells `3,4,-5` and `-3,-4,5`.
 - Voice attacks use multiple straight, triplet, and displaced subdivisions rather than one repeated grid.
 - The 7/8 chapel alternates call and answer bars and removes the normal kick/rolling-bass grid through beat 316.
