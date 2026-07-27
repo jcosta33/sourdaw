@@ -31,6 +31,22 @@ type Checkout = {
     dirty: (ignoredOutputRoot: string) => Promise<boolean>;
 };
 
+export type EvidenceExecutor = (input: {
+    targetId: string;
+    kind: 'gate' | 'suite';
+    timeoutMs: number;
+    signal: AbortSignal;
+}) => Promise<unknown>;
+
+type ExecutorEntry = { fixtureIds: string[]; execute: EvidenceExecutor };
+type Target = {
+    id: string;
+    kind: 'gate' | 'suite';
+    timeoutMs: number;
+    timeoutCompatible: boolean;
+    capabilityDecision: string | null;
+};
+
 export type EvidenceRunnerDependencies = {
     root: string;
     fileSystem: RunnerFileSystem;
@@ -38,6 +54,7 @@ export type EvidenceRunnerDependencies = {
     clock: { now: () => Date };
     monotonicClock: { now: () => number };
     environment: { observe: (signal: AbortSignal) => Promise<unknown>; timeoutMs?: number };
+    executors: { registry: Record<string, ExecutorEntry>; timeoutMs?: number };
     manifest: { validate: typeof validateEvidenceManifest };
 };
 
@@ -51,11 +68,14 @@ export type EvidenceRunnerResult = {
     capturedAt?: string;
     runEnvelopeSha256?: string;
     environmentMatch?: boolean;
+    result?: Record<string, unknown>;
 };
 
 const COMMIT = /^[a-f0-9]{40}$/;
 const CAPTURE_WINDOW_MS = 60_000;
 const ENVIRONMENT_TIMEOUT_MS = 5_000;
+const EXECUTOR_TIMEOUT_MS = 30_000;
+const MAX_STREAM_BYTES = 1_000_000;
 const manifestRelativePath = 'evidence/agent-campaign/manifest.json';
 const outputRootRelativePath = 'evidence/agent-campaign/runs';
 
@@ -141,6 +161,182 @@ async function observeEnvironment(environment: EvidenceRunnerDependencies['envir
             throw new Error('environment attestation timed out');
         }
         return result;
+    } finally {
+        if (timer) {
+            clearTimeout(timer);
+        }
+    }
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+    typeof value === 'object' && value !== null && !Array.isArray(value);
+const hasExactKeys = (value: Record<string, unknown>, expected: string[]): boolean =>
+    Object.keys(value).sort().join(',') === [...expected].sort().join(',');
+const canonicalTime = (value: unknown): number => {
+    const parsed = typeof value === 'string' ? Date.parse(value) : Number.NaN;
+    return Number.isFinite(parsed) && new Date(parsed).toISOString() === value ? parsed : Number.NaN;
+};
+
+function pendingResult(target: Target, capturedAt: string): Record<string, unknown> {
+    return {
+        ...genericFailedResult(target, [], capturedAt, capturedAt),
+        status: 'pending',
+        exitStatus: 3,
+        assertionTotals: null,
+    };
+}
+
+function genericFailedResult(
+    target: Target,
+    fixtureIds: string[],
+    startedAt: string,
+    endedAt: string
+): Record<string, unknown> {
+    return {
+        resultId: `result.${target.id}`,
+        gateOrSuiteId: target.id,
+        fixtureIds,
+        status: 'failed',
+        startedAt,
+        endedAt,
+        exitStatus: 1,
+        stdoutSha256: digest(''),
+        stderrSha256: digest(''),
+        assertionTotals: { passed: 0, failed: 1, total: 1 },
+        metricSamples: [],
+        aggregates: {},
+        rawSamplePaths: [],
+        environmentMatch: true,
+        capabilityDecision: target.capabilityDecision,
+        reviewerDisposition: null,
+    };
+}
+
+function normalizeExecutorResult(input: {
+    value: unknown;
+    target: Target;
+    fixtureIds: string[];
+    startedAt: string;
+    endedAt: string;
+}): Record<string, unknown> | null {
+    let value: Record<string, unknown>;
+    try {
+        const parsed: unknown = JSON.parse(canonicalPlainJson(input.value));
+        if (!isRecord(parsed)) {
+            return null;
+        }
+        value = parsed;
+    } catch {
+        return null;
+    }
+    const fields = [
+        'status',
+        'exitStatus',
+        'stdout',
+        'stderr',
+        'assertionTotals',
+        'metricSamples',
+        'aggregates',
+        'rawSamplePaths',
+        'capabilityDecision',
+        'reviewerDisposition',
+    ];
+    const totals = value.assertionTotals;
+    const status = value.status;
+    const totalsAreValid =
+        isRecord(totals) &&
+        hasExactKeys(totals, ['passed', 'failed', 'total']) &&
+        [totals.passed, totals.failed, totals.total].every(Number.isSafeInteger) &&
+        Number(totals.passed) >= 0 &&
+        Number(totals.failed) >= 0 &&
+        Number(totals.total) > 0 &&
+        Number(totals.passed) + Number(totals.failed) === Number(totals.total);
+    const outcomeIsCoherent =
+        totalsAreValid &&
+        ((status === 'passed' && value.exitStatus === 0 && totals.failed === 0) ||
+            (status === 'failed' &&
+                Number.isSafeInteger(value.exitStatus) &&
+                Number(value.exitStatus) > 0 &&
+                Number(value.exitStatus) <= 255 &&
+                Number(totals.failed) > 0));
+    const streamsAreValid =
+        typeof value.stdout === 'string' &&
+        typeof value.stderr === 'string' &&
+        Buffer.byteLength(value.stdout) <= MAX_STREAM_BYTES &&
+        Buffer.byteLength(value.stderr) <= MAX_STREAM_BYTES;
+    const observationsAreValid =
+        Array.isArray(value.metricSamples) &&
+        value.metricSamples.length === 0 &&
+        isRecord(value.aggregates) &&
+        Object.keys(value.aggregates).length === 0 &&
+        Array.isArray(value.rawSamplePaths) &&
+        value.rawSamplePaths.length === 0;
+    if (
+        !hasExactKeys(value, fields) ||
+        !outcomeIsCoherent ||
+        !streamsAreValid ||
+        value.reviewerDisposition !== null ||
+        !observationsAreValid ||
+        value.capabilityDecision !== input.target.capabilityDecision ||
+        !Number.isFinite(canonicalTime(input.startedAt)) ||
+        !Number.isFinite(canonicalTime(input.endedAt)) ||
+        canonicalTime(input.endedAt) < canonicalTime(input.startedAt)
+    ) {
+        return null;
+    }
+    return {
+        resultId: `result.${input.target.id}`,
+        gateOrSuiteId: input.target.id,
+        fixtureIds: [...input.fixtureIds],
+        status,
+        startedAt: input.startedAt,
+        endedAt: input.endedAt,
+        exitStatus: value.exitStatus,
+        stdoutSha256: digest(value.stdout as string),
+        stderrSha256: digest(value.stderr as string),
+        assertionTotals: totals,
+        metricSamples: value.metricSamples,
+        aggregates: value.aggregates,
+        rawSamplePaths: value.rawSamplePaths,
+        environmentMatch: true,
+        capabilityDecision: value.capabilityDecision,
+        reviewerDisposition: null,
+    };
+}
+
+async function executeTarget(
+    target: Target,
+    entry: ExecutorEntry,
+    dependencies: EvidenceRunnerDependencies
+): Promise<{ value?: unknown; startedAt: string; endedAt: string; failed: boolean }> {
+    const requestedTimeout = dependencies.executors.timeoutMs;
+    const timeoutMs =
+        typeof requestedTimeout === 'number' && Number.isFinite(requestedTimeout) && requestedTimeout > 0
+            ? Math.min(requestedTimeout, target.timeoutMs)
+            : target.timeoutMs;
+    const controller = new AbortController();
+    const timeoutMarker = Symbol('executor-timeout');
+    const startedAt = dependencies.clock.now().toISOString();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<typeof timeoutMarker>((resolve) => {
+        timer = setTimeout(() => {
+            resolve(timeoutMarker);
+            controller.abort();
+        }, timeoutMs);
+    });
+    const execution = Promise.resolve().then(() =>
+        entry.execute({ targetId: target.id, kind: target.kind, timeoutMs, signal: controller.signal })
+    );
+    try {
+        const value = await Promise.race([execution, timeout]);
+        return {
+            value,
+            startedAt,
+            endedAt: dependencies.clock.now().toISOString(),
+            failed: value === timeoutMarker,
+        };
+    } catch {
+        return { startedAt, endedAt: dependencies.clock.now().toISOString(), failed: true };
     } finally {
         if (timer) {
             clearTimeout(timer);
@@ -290,7 +486,7 @@ function isRequired(requiredWhen: string, policy: Policy): boolean {
     return Boolean(match && capability?.status === 'admitted');
 }
 
-function validateTarget(mode: RunnerMode, policy: Policy): EvidenceRunnerResult | { id: string } | null {
+function validateTarget(mode: RunnerMode, policy: Policy): EvidenceRunnerResult | Target | null {
     if (mode.kind === 'release') {
         return null;
     }
@@ -299,7 +495,17 @@ function validateTarget(mode: RunnerMode, policy: Policy): EvidenceRunnerResult 
         if (!gate || gate.owningTask !== mode.taskId) {
             return failure('unknown-target', 2, ['gate and owning task must match the frozen inventory']);
         }
-        return { id: gate.gateId };
+        const pending = policy.inventories.results.entries.find(({ gateOrSuiteId }) => gateOrSuiteId === gate.gateId);
+        if (!pending) {
+            return failure('unknown-target', 2, ['gate result must exist in the frozen inventory']);
+        }
+        return {
+            id: gate.gateId,
+            kind: 'gate',
+            timeoutMs: gate.timeoutMs,
+            timeoutCompatible: gate.timeoutMs <= EXECUTOR_TIMEOUT_MS && gate.timeoutMs <= CAPTURE_WINDOW_MS,
+            capabilityDecision: null,
+        };
     }
     const suite = policy.suites.find(({ id }) => id === mode.targetId);
     if (!suite) {
@@ -308,7 +514,23 @@ function validateTarget(mode: RunnerMode, policy: Policy): EvidenceRunnerResult 
     if (!isRequired(suite.requiredWhen, policy)) {
         return failure('target-inapplicable', 2, ['frozen requiredWhen mechanically evaluates false']);
     }
-    return { id: suite.id };
+    const pending = policy.inventories.results.entries.find(({ gateOrSuiteId }) => gateOrSuiteId === suite.id);
+    if (!pending) {
+        return failure('unknown-target', 2, ['suite result must exist in the frozen inventory']);
+    }
+    const capability = policy.capabilities.find(({ id }) => id === suite.capabilityId);
+    const capabilityValue: unknown = capability;
+    let capabilityDecision: string | null = null;
+    if (isRecord(capabilityValue) && typeof capabilityValue.status === 'string') {
+        capabilityDecision = capabilityValue.status;
+    }
+    return {
+        id: suite.id,
+        kind: 'suite',
+        timeoutMs: EXECUTOR_TIMEOUT_MS,
+        timeoutCompatible: true,
+        capabilityDecision,
+    };
 }
 
 export async function runEvidenceGate(
@@ -400,6 +622,66 @@ export async function runEvidenceGate(
             environmentMatch,
         });
     }
+    const context = {
+        integratedCommit: head,
+        capturedAt,
+        runEnvelopeSha256,
+        environmentMatch,
+    };
+    let result = target ? pendingResult(target, capturedAt) : {};
+    let terminalCode = 'executor-unimplemented';
+    let terminalExitCode = 3;
+    const mayExecute = target && envelopeFailures.length === 0 && environmentMatch && mode.kind !== 'release';
+    const entry = mayExecute ? dependencies.executors.registry[target.id] : undefined;
+    if (entry && target) {
+        const declaredFixtureIds = new Set(
+            loaded.policy.inventories.fixtures.entries.map(({ fixtureId }) => fixtureId)
+        );
+        const fixtureIdsAreValid =
+            new Set(entry.fixtureIds).size === entry.fixtureIds.length &&
+            entry.fixtureIds.every((id) => declaredFixtureIds.has(id));
+        if (!target.timeoutCompatible) {
+            result = genericFailedResult(target, [], capturedAt, capturedAt);
+            terminalCode = 'executor-timeout-incompatible';
+            terminalExitCode = 2;
+        } else if (!fixtureIdsAreValid) {
+            result = genericFailedResult(target, [], capturedAt, capturedAt);
+            terminalCode = 'invalid-executor-result';
+            terminalExitCode = 2;
+        } else {
+            let execution: Awaited<ReturnType<typeof executeTarget>>;
+            try {
+                execution = await executeTarget(target, entry, dependencies);
+            } catch {
+                execution = { startedAt: capturedAt, endedAt: capturedAt, failed: true };
+            }
+            const normalized = execution.failed
+                ? null
+                : normalizeExecutorResult({
+                      value: execution.value,
+                      target,
+                      fixtureIds: entry.fixtureIds,
+                      startedAt: execution.startedAt,
+                      endedAt: execution.endedAt,
+                  });
+            result =
+                normalized ?? genericFailedResult(target, entry.fixtureIds, execution.startedAt, execution.endedAt);
+            if (execution.failed) {
+                terminalCode = 'executor-failed';
+                terminalExitCode = 1;
+            } else if (!normalized) {
+                terminalCode = 'invalid-executor-result';
+                terminalExitCode = 2;
+            } else if (normalized.status === 'passed') {
+                terminalCode = 'persistence-unimplemented';
+                terminalExitCode = 3;
+            } else {
+                terminalCode = 'executor-failed';
+                terminalExitCode = 1;
+            }
+        }
+    }
+
     try {
         const finalHeadBeforeDirty = await dependencies.checkout.head();
         if (finalHeadBeforeDirty !== head) {
@@ -434,12 +716,6 @@ export async function runEvidenceGate(
             environmentMatch,
         });
     }
-    const context = {
-        integratedCommit: head,
-        capturedAt,
-        runEnvelopeSha256,
-        environmentMatch,
-    };
     if (envelopeFailures.length > 0 || !finalCaptureIsFresh) {
         return failure('invalid-run-envelope', 2, ['run envelope could not be verified'], context);
     }
@@ -449,10 +725,18 @@ export async function runEvidenceGate(
     if (mode.kind === 'release') {
         return failure('release-unimplemented', 3, ['release aggregation is not registered'], context);
     }
-    return failure('executor-unimplemented', 3, ['trusted executor is not registered'], {
+    if (!target) {
+        return failure('unknown-target', 2, ['target must exist in the frozen inventory'], context);
+    }
+    return {
+        ok: false,
+        exitCode: terminalExitCode,
+        code: terminalCode,
+        failures: [terminalCode],
         ...context,
-        targetId: target?.id,
-    });
+        targetId: target.id,
+        result,
+    };
 }
 
 async function isCliInvocation(entrypoint: string | undefined): Promise<boolean> {
@@ -480,6 +764,7 @@ if (await isCliInvocation(process.argv[1])) {
         environment: {
             observe: (_signal) => Promise.reject(new Error('environment attestor is not registered')),
         },
+        executors: { registry: {} },
         manifest: { validate: validateEvidenceManifest },
     });
     process.stdout.write(canonical(output));
