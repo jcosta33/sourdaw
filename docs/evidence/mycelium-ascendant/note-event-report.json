@@ -1,5 +1,5 @@
 {
-    "capturedAt": "2026-07-27T03:45:04.188Z",
+    "capturedAt": "2026-07-27T04:02:10.565Z",
     "projectSha256": "ba393156719bbefa59aba850d760326099fdbff48ac4a6c294043af1a3bd85e7",
     "normalization": "Absolute clip-relative MIDI events grouped by half-open section range [startBeat, endBeat), then by owning track name.",
     "totalNotes": 3818,

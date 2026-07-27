@@ -1,7 +1,7 @@
 {
-    "sourceRevision": "2a22f163f41d9e7b3a4a6399ea0ecffc7bb5bcd9",
+    "sourceRevision": "3398838a221b15438f91fbb879b8805163811061",
     "sourceDirty": false,
-    "sourceTreeSha256": "388d645ea5a4be6b502ec7fb6da7c5332e799b797d1f9b2202fe8075d5db0bab",
+    "sourceTreeSha256": "145d728c59c8fa428106f5de6099941cdc65aebae42b63bb548dba42e0f3396a",
     "sourceTreeHashScope": "git-ls-files-excluding:docs/evidence/mycelium-ascendant/**",
     "sourceTrackedFileCount": 8845,
     "projectSha256": "ba393156719bbefa59aba850d760326099fdbff48ac4a6c294043af1a3bd85e7",
@@ -29,12 +29,12 @@
     "automationLaneCount": 115,
     "automationPointCount": 1651,
     "trackNotesMutationChangesDigest": true,
-    "capturedAt": "2026-07-27T03:47:49.433Z",
+    "capturedAt": "2026-07-27T04:02:56.680Z",
     "runtimeCalls": [
         {
             "command": "list_midi_inputs",
             "args": {}
         }
     ],
-    "receiptSha256": "a1b6a4abefa422a7c6184f3939571c66c2096b7755f86fbca33f247f32cda08a"
+    "receiptSha256": "40292fd985f8bb5f374d17b54ffd08275c07a7838dba7df86ea5d4e828cf0784"
 }

@@ -1,7 +1,7 @@
 {
-    "sourceRevision": "2a22f163f41d9e7b3a4a6399ea0ecffc7bb5bcd9",
+    "sourceRevision": "3398838a221b15438f91fbb879b8805163811061",
     "sourceDirty": false,
-    "sourceTreeSha256": "388d645ea5a4be6b502ec7fb6da7c5332e799b797d1f9b2202fe8075d5db0bab",
+    "sourceTreeSha256": "145d728c59c8fa428106f5de6099941cdc65aebae42b63bb548dba42e0f3396a",
     "sourceTreeHashScope": "git-ls-files-excluding:docs/evidence/mycelium-ascendant/**",
     "sourceTrackedFileCount": 8845,
     "projectSha256": "ba393156719bbefa59aba850d760326099fdbff48ac4a6c294043af1a3bd85e7",
@@ -29,7 +29,7 @@
     "automationLaneCount": 115,
     "automationPointCount": 1651,
     "trackNotesMutationChangesDigest": true,
-    "capturedAt": "2026-07-27T03:47:10.952Z",
+    "capturedAt": "2026-07-27T03:59:31.486Z",
     "sampleRate": 44100,
     "windows": [
         {
@@ -80,9 +80,9 @@
                     "sampleRate": 44100,
                     "durationSeconds": 26.666666666666668,
                     "renderDurationSeconds": 26.666666666666668,
-                    "samplePeak": 2.7137434482574463,
-                    "rms": 0.2693716282518948,
-                    "activeBlockRatio": 0.8626086956521739
+                    "samplePeak": 2.714082956314087,
+                    "rms": 0.2684794410080737,
+                    "activeBlockRatio": 0.8643478260869565
                 },
                 {
                     "trackId": "9f02e4d9-06ca-83ad-a31b-03e7011dcc09",
@@ -103,7 +103,7 @@
                     "durationSeconds": 26.666666666666668,
                     "renderDurationSeconds": 26.666666666666668,
                     "samplePeak": 0.9008182287216187,
-                    "rms": 0.09404546125578254,
+                    "rms": 0.09404546125541573,
                     "activeBlockRatio": 0.5217391304347826
                 },
                 {
@@ -195,8 +195,8 @@
                     "activeBlockRatio": 0
                 },
                 {
-                    "trackId": "64da6c07-0f7d-8f5b-b1e2-0325774a3437",
-                    "trackName": "Levain Call",
+                    "trackId": "29cb271e-206c-81da-a8f0-76e4b826572e",
+                    "trackName": "Grand Boule Ritual",
                     "channels": 2,
                     "sampleRate": 44100,
                     "durationSeconds": 26.666666666666668,
@@ -206,8 +206,8 @@
                     "activeBlockRatio": 0
                 },
                 {
-                    "trackId": "29cb271e-206c-81da-a8f0-76e4b826572e",
-                    "trackName": "Grand Boule Ritual",
+                    "trackId": "64da6c07-0f7d-8f5b-b1e2-0325774a3437",
+                    "trackName": "Levain Call",
                     "channels": 2,
                     "sampleRate": 44100,
                     "durationSeconds": 26.666666666666668,
@@ -321,8 +321,8 @@
                     "sampleRate": 44100,
                     "durationSeconds": 13.333333333333334,
                     "renderDurationSeconds": 13.333333333333334,
-                    "samplePeak": 2.8178982734680176,
-                    "rms": 0.34833276910011873,
+                    "samplePeak": 3.2037949562072754,
+                    "rms": 0.3730632438321999,
                     "activeBlockRatio": 1
                 },
                 {
@@ -366,7 +366,7 @@
                     "durationSeconds": 13.333333333333334,
                     "renderDurationSeconds": 13.333333333333334,
                     "samplePeak": 2.1932215690612793,
-                    "rms": 0.08928724734443837,
+                    "rms": 0.08928724732414227,
                     "activeBlockRatio": 0.4270833333333333
                 },
                 {
@@ -398,9 +398,9 @@
                     "sampleRate": 44100,
                     "durationSeconds": 13.333333333333334,
                     "renderDurationSeconds": 13.333333333333334,
-                    "samplePeak": 1.2663891315460205,
-                    "rms": 0.012637489920444821,
-                    "activeBlockRatio": 0.1701388888888889
+                    "samplePeak": 1.322000503540039,
+                    "rms": 0.013119549285626395,
+                    "activeBlockRatio": 0.16666666666666666
                 },
                 {
                     "trackId": "ce1e79f4-816f-8208-8280-430a7012cf04",
@@ -447,8 +447,8 @@
                     "activeBlockRatio": 0
                 },
                 {
-                    "trackId": "2f66d62b-a78d-8867-9516-7eed04ddd73b",
-                    "trackName": "Dub Tunnel",
+                    "trackId": "a568cd91-3d2e-83dd-9d14-e5d3c9a1a861",
+                    "trackName": "Levain Answer",
                     "channels": 2,
                     "sampleRate": 44100,
                     "durationSeconds": 13.333333333333334,
@@ -458,8 +458,8 @@
                     "activeBlockRatio": 0
                 },
                 {
-                    "trackId": "a568cd91-3d2e-83dd-9d14-e5d3c9a1a861",
-                    "trackName": "Levain Answer",
+                    "trackId": "2f66d62b-a78d-8867-9516-7eed04ddd73b",
+                    "trackName": "Dub Tunnel",
                     "channels": 2,
                     "sampleRate": 44100,
                     "durationSeconds": 13.333333333333334,
@@ -618,8 +618,19 @@
                     "durationSeconds": 13.333333333333334,
                     "renderDurationSeconds": 13.333333333333334,
                     "samplePeak": 1.4541677236557007,
-                    "rms": 0.05646206303084895,
+                    "rms": 0.05646206302486925,
                     "activeBlockRatio": 0.4097222222222222
+                },
+                {
+                    "trackId": "1325cb33-2225-8b4f-b2af-0385208469a3",
+                    "trackName": "Glitch Spirits",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 13.333333333333334,
+                    "renderDurationSeconds": 13.333333333333334,
+                    "samplePeak": 0.3914385735988617,
+                    "rms": 0.030833635818056617,
+                    "activeBlockRatio": 0.7916666666666666
                 },
                 {
                     "trackId": "2dae11fb-0869-8837-a440-0c19b0873a0b",
@@ -633,25 +644,14 @@
                     "activeBlockRatio": 0.6770833333333334
                 },
                 {
-                    "trackId": "1325cb33-2225-8b4f-b2af-0385208469a3",
-                    "trackName": "Glitch Spirits",
-                    "channels": 2,
-                    "sampleRate": 44100,
-                    "durationSeconds": 13.333333333333334,
-                    "renderDurationSeconds": 13.333333333333334,
-                    "samplePeak": 0.3596567213535309,
-                    "rms": 0.027552321877550433,
-                    "activeBlockRatio": 0.7152777777777778
-                },
-                {
                     "trackId": "29cb271e-206c-81da-a8f0-76e4b826572e",
                     "trackName": "Grand Boule Ritual",
                     "channels": 2,
                     "sampleRate": 44100,
                     "durationSeconds": 13.333333333333334,
                     "renderDurationSeconds": 13.333333333333334,
-                    "samplePeak": 0.5168081521987915,
-                    "rms": 0.00670620542988956,
+                    "samplePeak": 0.5253390669822693,
+                    "rms": 0.006796457206465226,
                     "activeBlockRatio": 0.15625
                 },
                 {
@@ -881,7 +881,7 @@
                     "durationSeconds": 13.333333333333334,
                     "renderDurationSeconds": 13.333333333333334,
                     "samplePeak": 0.6401494741439819,
-                    "rms": 0.021035737388955544,
+                    "rms": 0.02103573738055375,
                     "activeBlockRatio": 0.3993055555555556
                 },
                 {
@@ -902,9 +902,9 @@
                     "sampleRate": 44100,
                     "durationSeconds": 13.333333333333334,
                     "renderDurationSeconds": 13.333333333333334,
-                    "samplePeak": 0.41934511065483093,
-                    "rms": 0.004918660842422831,
-                    "activeBlockRatio": 0.14930555555555555
+                    "samplePeak": 0.4258166551589966,
+                    "rms": 0.00505295977000555,
+                    "activeBlockRatio": 0.1527777777777778
                 },
                 {
                     "trackId": "ce1e79f4-816f-8208-8280-430a7012cf04",
@@ -1006,8 +1006,8 @@
                     "activeBlockRatio": 0
                 },
                 {
-                    "trackId": "83a108ca-27da-8f06-8ce3-9f10d3f4113a",
-                    "trackName": "Impact Field",
+                    "trackId": "372f2daf-078e-8db3-920d-e2e9aeb93d3f",
+                    "trackName": "Temple Chamber",
                     "channels": 2,
                     "sampleRate": 44100,
                     "durationSeconds": 13.333333333333334,
@@ -1017,8 +1017,8 @@
                     "activeBlockRatio": 0
                 },
                 {
-                    "trackId": "372f2daf-078e-8db3-920d-e2e9aeb93d3f",
-                    "trackName": "Temple Chamber",
+                    "trackId": "83a108ca-27da-8f06-8ce3-9f10d3f4113a",
+                    "trackName": "Impact Field",
                     "channels": 2,
                     "sampleRate": 44100,
                     "durationSeconds": 13.333333333333334,
@@ -1110,9 +1110,9 @@
                     "sampleRate": 44100,
                     "durationSeconds": 26.666666666666668,
                     "renderDurationSeconds": 26.666666666666668,
-                    "samplePeak": 0.38019755482673645,
-                    "rms": 0.017335131452579342,
-                    "activeBlockRatio": 0.8069565217391305
+                    "samplePeak": 0.45680442452430725,
+                    "rms": 0.01794690153559062,
+                    "activeBlockRatio": 0.84
                 },
                 {
                     "trackId": "4a4c4935-9c05-8201-8f3d-f9d36c832885",
@@ -1132,9 +1132,9 @@
                     "sampleRate": 44100,
                     "durationSeconds": 26.666666666666668,
                     "renderDurationSeconds": 26.666666666666668,
-                    "samplePeak": 0.5673238039016724,
-                    "rms": 0.0031859373346920608,
-                    "activeBlockRatio": 0.08869565217391304
+                    "samplePeak": 0.5635965466499329,
+                    "rms": 0.0031663741654500872,
+                    "activeBlockRatio": 0.09739130434782609
                 },
                 {
                     "trackId": "ce1e79f4-816f-8208-8280-430a7012cf04",
@@ -1329,8 +1329,8 @@
                     "sampleRate": 44100,
                     "durationSeconds": 26.483174603174604,
                     "renderDurationSeconds": 26.483174603174604,
-                    "samplePeak": 4.405257701873779,
-                    "rms": 0.33715460696331645,
+                    "samplePeak": 4.3766279220581055,
+                    "rms": 0.3391273154927297,
                     "activeBlockRatio": 0.6164623467600701
                 },
                 {
@@ -1351,9 +1351,9 @@
                     "sampleRate": 44100,
                     "durationSeconds": 26.483174603174604,
                     "renderDurationSeconds": 26.483174603174604,
-                    "samplePeak": 2.5094733238220215,
-                    "rms": 0.12414397522868087,
-                    "activeBlockRatio": 0.8756567425569177
+                    "samplePeak": 1.998557209968567,
+                    "rms": 0.11647742194365195,
+                    "activeBlockRatio": 0.8388791593695272
                 },
                 {
                     "trackId": "4a4c4935-9c05-8201-8f3d-f9d36c832885",
@@ -1455,6 +1455,17 @@
                     "activeBlockRatio": 0
                 },
                 {
+                    "trackId": "29cb271e-206c-81da-a8f0-76e4b826572e",
+                    "trackName": "Grand Boule Ritual",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 26.483174603174604,
+                    "renderDurationSeconds": 26.483174603174604,
+                    "samplePeak": 0,
+                    "rms": 0,
+                    "activeBlockRatio": 0
+                },
+                {
                     "trackId": "64da6c07-0f7d-8f5b-b1e2-0325774a3437",
                     "trackName": "Levain Call",
                     "channels": 2,
@@ -1468,17 +1479,6 @@
                 {
                     "trackId": "a568cd91-3d2e-83dd-9d14-e5d3c9a1a861",
                     "trackName": "Levain Answer",
-                    "channels": 2,
-                    "sampleRate": 44100,
-                    "durationSeconds": 26.483174603174604,
-                    "renderDurationSeconds": 26.483174603174604,
-                    "samplePeak": 0,
-                    "rms": 0,
-                    "activeBlockRatio": 0
-                },
-                {
-                    "trackId": "29cb271e-206c-81da-a8f0-76e4b826572e",
-                    "trackName": "Grand Boule Ritual",
                     "channels": 2,
                     "sampleRate": 44100,
                     "durationSeconds": 26.483174603174604,
@@ -1597,6 +1597,17 @@
                     "activeBlockRatio": 0
                 },
                 {
+                    "trackId": "29cb271e-206c-81da-a8f0-76e4b826572e",
+                    "trackName": "Grand Boule Ritual",
+                    "channels": 2,
+                    "sampleRate": 44100,
+                    "durationSeconds": 1.6438321995464853,
+                    "renderDurationSeconds": 27.945215419501135,
+                    "samplePeak": 2.5075408416341816e-10,
+                    "rms": 5.117100424852834e-12,
+                    "activeBlockRatio": 0
+                },
+                {
                     "trackId": "1325cb33-2225-8b4f-b2af-0385208469a3",
                     "trackName": "Glitch Spirits",
                     "channels": 2,
@@ -1605,17 +1616,6 @@
                     "renderDurationSeconds": 27.945215419501135,
                     "samplePeak": 1.4529720482325814e-10,
                     "rms": 2.4628485681068363e-12,
-                    "activeBlockRatio": 0
-                },
-                {
-                    "trackId": "29cb271e-206c-81da-a8f0-76e4b826572e",
-                    "trackName": "Grand Boule Ritual",
-                    "channels": 2,
-                    "sampleRate": 44100,
-                    "durationSeconds": 1.6438321995464853,
-                    "renderDurationSeconds": 27.945215419501135,
-                    "samplePeak": 4.241435674900984e-11,
-                    "rms": 1.290525824423825e-12,
                     "activeBlockRatio": 0
                 },
                 {
@@ -1636,8 +1636,8 @@
                     "sampleRate": 44100,
                     "durationSeconds": 1.6438321995464853,
                     "renderDurationSeconds": 27.945215419501135,
-                    "samplePeak": 1.0288812860300236e-15,
-                    "rms": 2.750574411011161e-17,
+                    "samplePeak": 1.0497052734009154e-15,
+                    "rms": 2.8042088785190396e-17,
                     "activeBlockRatio": 0
                 },
                 {
@@ -1729,8 +1729,8 @@
                     "activeBlockRatio": 0
                 },
                 {
-                    "trackId": "97d2a08b-abf6-8867-95d1-e3ddc41fba7b",
-                    "trackName": "Granular Voices",
+                    "trackId": "2f66d62b-a78d-8867-9516-7eed04ddd73b",
+                    "trackName": "Dub Tunnel",
                     "channels": 2,
                     "sampleRate": 44100,
                     "durationSeconds": 1.6438321995464853,
@@ -1740,8 +1740,8 @@
                     "activeBlockRatio": 0
                 },
                 {
-                    "trackId": "2f66d62b-a78d-8867-9516-7eed04ddd73b",
-                    "trackName": "Dub Tunnel",
+                    "trackId": "97d2a08b-abf6-8867-95d1-e3ddc41fba7b",
+                    "trackName": "Granular Voices",
                     "channels": 2,
                     "sampleRate": 44100,
                     "durationSeconds": 1.6438321995464853,
@@ -1866,8 +1866,8 @@
                     "sampleRate": 44100,
                     "durationSeconds": 13.241587301587302,
                     "renderDurationSeconds": 13.241587301587302,
-                    "samplePeak": 0.5510830283164978,
-                    "rms": 0.02867037810774571,
+                    "samplePeak": 0.5464408993721008,
+                    "rms": 0.02895023107673642,
                     "activeBlockRatio": 0.27972027972027974
                 },
                 {
@@ -1888,9 +1888,9 @@
                     "sampleRate": 44100,
                     "durationSeconds": 13.241587301587302,
                     "renderDurationSeconds": 13.241587301587302,
-                    "samplePeak": 1.3809658288955688,
-                    "rms": 0.012597294854768386,
-                    "activeBlockRatio": 0.21328671328671328
+                    "samplePeak": 1.3263086080551147,
+                    "rms": 0.012059231619041497,
+                    "activeBlockRatio": 0.2062937062937063
                 },
                 {
                     "trackId": "2dae11fb-0869-8837-a440-0c19b0873a0b",
@@ -2014,8 +2014,8 @@
                     "activeBlockRatio": 0
                 },
                 {
-                    "trackId": "1325cb33-2225-8b4f-b2af-0385208469a3",
-                    "trackName": "Glitch Spirits",
+                    "trackId": "372f2daf-078e-8db3-920d-e2e9aeb93d3f",
+                    "trackName": "Temple Chamber",
                     "channels": 2,
                     "sampleRate": 44100,
                     "durationSeconds": 13.241587301587302,
@@ -2025,8 +2025,8 @@
                     "activeBlockRatio": 0
                 },
                 {
-                    "trackId": "372f2daf-078e-8db3-920d-e2e9aeb93d3f",
-                    "trackName": "Temple Chamber",
+                    "trackId": "1325cb33-2225-8b4f-b2af-0385208469a3",
+                    "trackName": "Glitch Spirits",
                     "channels": 2,
                     "sampleRate": 44100,
                     "durationSeconds": 13.241587301587302,
@@ -2062,8 +2062,8 @@
                 484
             ],
             "durationSeconds": 1.6438321995464853,
-            "rms": 0.000047949471051778,
-            "samplePeak": 0.00012050442455802113
+            "rms": 0.00004794947039335665,
+            "samplePeak": 0.00012050785153405741
         },
         "returnStrike": {
             "beats": [
@@ -2071,9 +2071,9 @@
                 488
             ],
             "durationSeconds": 1.6438321995464853,
-            "rms": 0.1357960540658026,
+            "rms": 0.13579605423988708,
             "samplePeak": 0.7646607160568237
         }
     },
-    "receiptSha256": "a9c0fd1b9d7b182b2e3ad9a12a947fcfe9d42c6467f048219111ac8d900471fc"
+    "receiptSha256": "bee049f0b474bf3f93cf363c9a282c250021aa43aa0fd21fac72fed62bdf9494"
 }

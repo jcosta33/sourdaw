@@ -1,9 +1,9 @@
 # Mycelium Ascendant — render and score conformance sheet
 
-Score/stereo evidence captured: 2026-07-27 05:45 CEST; routed-mix evidence captured: 2026-07-27 05:47 CEST
+Score/stereo evidence captured: 2026-07-27 06:02 CEST; routed-mix evidence captured: 2026-07-27 05:59 CEST
 Project fingerprint: `ba393156719bbefa59aba850d760326099fdbff48ac4a6c294043af1a3bd85e7`
-Source receipt: capture HEAD `2a22f163f41d9e7b3a4a6399ea0ecffc7bb5bcd9`; tracked-source tree `388d645ea5a4be6b502ec7fb6da7c5332e799b797d1f9b2202fe8075d5db0bab` (8,845 files; generated evidence excluded); receipt `b45512ea0a4040a9be0ec2b1d39c8b7da144f76c7532140db535e836464390d5`
-Stereo artifact: `bd28169a62a8eabe5497e5bad0718cc32ce4bc1b64cb0320f89a611ded1defc5`
+Source receipt: capture HEAD `3398838a221b15438f91fbb879b8805163811061`; tracked-source tree `145d728c59c8fa428106f5de6099941cdc65aebae42b63bb548dba42e0f3396a` (8,845 files; generated evidence excluded); receipt `d9c42366fc254cb0c700167fd4b964b12c445bcfced61a88f004ef38b60c4653`
+Stereo artifact: `608a70c0f857e2f92c766c70812423526b4ff3a431e6b19a9508877c43768415`
 
 Reviewer/method: Codex automated render, score, cue, and stem conformance; no loudspeaker/headphone subjective-listening claim is made. A decoded complete stereo export was attached only to the local Playwright run, not persisted in Git because GitHub Actions cannot currently start under the repository billing restriction. The mix is active for 95.85% of measured blocks and ends at 03:58.994 before its two-second export tail.
 
@@ -30,7 +30,7 @@ Reviewer/method: Codex automated render, score, cue, and stem conformance; no lo
 | Vacuum I      |  188 | 01:18.333 | Pressure automation reaches maximum filter/FX values at beat 188; bass and pad events vacate 191.75–192 before Drop I.                                                                                                   | Pass     |
 | Grid Restored |  316 | 02:11.667 | Alternating 7/8 ritual ends and the normal kick/rolling grid resumes for the chapel's final 36 beats.                                                                                                                    | Pass     |
 | Vacuum II     |  412 | 02:51.505 | Build automation peaks at beat 412; bass/pad events vacate 415.75–416 before Drop II.                                                                                                                                    | Pass     |
-| False Floor   |  480 | 03:19.451 | Fully routed 416→488 render: floor RMS `0.0000479495`/peak `0.000120504`; return RMS `0.135796`/peak `0.764661`. Representative rhythm and voice stems are effectively zero while their Drop II MIDI remains continuous. | Verified |
+| False Floor   |  480 | 03:19.451 | Fully routed 416→488 render: floor RMS `0.0000479495`/peak `0.000120508`; return RMS `0.135796`/peak `0.764661`. Representative rhythm and voice stems are effectively zero while their Drop II MIDI remains continuous. | Verified |
 | Return Strike |  484 | 03:21.095 | Automation restores bass gain, drum master, filters, space and width at the boundary; Drop II events resume from beat 484.                                                                                               | Pass     |
 | Last Signal   |  568 | 03:55.667 | Root Drone and late organic voices mark the final eight beats while rhythm/bass and FX automation continue toward zero.                                                                                                  | Pass     |
 
@@ -52,6 +52,6 @@ Events are converted from clip-relative positions to absolute beats and grouped 
 ## Delivery checks
 
 - Complete export: stereo, 44.1 kHz, 24-bit PCM WAV, 240.994 seconds including two-second tail.
-- Integrated loudness: -9.766 LUFS; true peak: -2.212 dBTP; clipped samples: 0.
+- Integrated loudness: -9.761 LUFS; true peak: -2.212 dBTP; clipped samples: 0.
 - DC offsets remain below 0.004; low-frequency mono compatibility is -0.005 dB with positive correlation.
 - The stem run reloaded the saved project before offline export; export and stem runs observed no console errors, page errors, failed requests, external requests, HTTP errors, missing assets, or renderer warnings.
