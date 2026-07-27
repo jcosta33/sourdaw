@@ -24,6 +24,7 @@ function run(
             arguments: ['--eval', script],
             cwd: process.cwd(),
             timeoutMs: 1_000,
+            combinedOutputByteCap: 1_000_000,
             ...overrides,
         },
         { sentinelPath: () => sentinelPath, ...dependencies }
@@ -43,15 +44,59 @@ afterEach(async () => {
 });
 
 describe('superviseTrustedProcess', () => {
-    it.each([0, 7])('should preserve exact exit %i without exposing ignored streams', async (code) => {
+    it.each([0, 7])('should preserve exact exit %i without exposing raw streams', async (code) => {
         const token = `private-${code}`;
         const output = await run(
             `process.stdout.write(${JSON.stringify(token)});process.stderr.write(${JSON.stringify(token)});process.exitCode=${code}`
         );
+        expect(output.reason).toEqual({ kind: 'exit', code });
+        expect(output.streamEvidence?.combinedByteCount).toBe(Buffer.byteLength(token) * 2);
+        expect(JSON.stringify(output)).not.toContain(token);
+    });
+
+    it('should return exact byte counts and SHA-256 digests without raw output', async () => {
+        const output = await run("process.stdout.write(Buffer.alloc(100000,97));process.stderr.write('world')");
         expect(output).toEqual({
-            reason: { kind: 'exit', code },
-            streamEvidence: null,
+            reason: { kind: 'exit', code: 0 },
+            streamEvidence: {
+                stdout: {
+                    byteCount: 100_000,
+                    sha256: '6d1cf22d7cc09b085dfc25ee1a1f3ae0265804c607bc2074ad253bcc82fd81ee',
+                },
+                stderr: {
+                    byteCount: 5,
+                    sha256: '486ea46224d1bb4fb680f34f7c9ad96a8f24ec88be73ea8e5a6c65260e9cb8a7',
+                },
+                combinedByteCount: 100_005,
+            },
         });
+        expect(JSON.stringify(output)).not.toContain('world');
+    });
+
+    it('should hash split multibyte output as exact bytes', async () => {
+        const script =
+            "const value=Buffer.from('🥐');process.stdout.write(value.subarray(0,2));process.stdout.write(value.subarray(2))";
+        const output = await run(script, { combinedOutputByteCap: 4 });
+        expect(output.streamEvidence).toEqual({
+            stdout: {
+                byteCount: 4,
+                sha256: '2e037269436db82a4ce80082caade93628c8e37c1f967b6e03d3554c9d0aeba5',
+            },
+            stderr: {
+                byteCount: 0,
+                sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+            },
+            combinedByteCount: 4,
+        });
+    });
+
+    it('should enforce one combined byte cap across both streams', async () => {
+        const token = 'private-combined-cap';
+        const output = await run(
+            `process.stdout.write(${JSON.stringify(token)});process.stderr.write(${JSON.stringify(token)})`,
+            { combinedOutputByteCap: Buffer.byteLength(token) * 2 - 1 }
+        );
+        expect(output.reason).toEqual({ kind: 'output-cap-exceeded' });
         expect(JSON.stringify(output)).not.toContain(token);
     });
 
@@ -70,7 +115,7 @@ describe('superviseTrustedProcess', () => {
             `require('node:fs').writeFileSync(${JSON.stringify(environmentPath)},process.env.SOURDAW_SUPERVISOR_SECRET??'missing')`
         );
         delete process.env.SOURDAW_SUPERVISOR_SECRET;
-        expect(output).toMatchObject({ reason: { kind: 'exit', code: 0 }, streamEvidence: null });
+        expect(output).toMatchObject({ reason: { kind: 'exit', code: 0 } });
         expect(await readFile(environmentPath, 'utf8')).toBe('missing');
         expect(JSON.stringify(output)).not.toContain('private-token');
     });
@@ -92,6 +137,19 @@ describe('superviseTrustedProcess', () => {
 
         expect(await run(child, { timeoutMs: 150 })).toMatchObject({ reason: { kind: 'timeout' } });
         await expect(access(readyPath)).resolves.toBeUndefined();
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        await expect(access(latePath)).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+
+    it('should kill an overflowing group before a grandchild late effect', async () => {
+        const root = await mkdtemp(join(tmpdir(), 'sourdaw-supervisor-'));
+        const latePath = join(root, 'late.txt');
+        roots.push(root);
+        const grandchild = `process.stdout.write('overflow');setTimeout(()=>require('node:fs').writeFileSync(${JSON.stringify(latePath)},'late'),100);setInterval(()=>{},1000)`;
+        const child = `require('node:child_process').spawn(process.execPath,['--eval',${JSON.stringify(grandchild)}],{stdio:['ignore','inherit','inherit']});setInterval(()=>{},1000)`;
+        expect(await run(child, { combinedOutputByteCap: 4 })).toMatchObject({
+            reason: { kind: 'output-cap-exceeded' },
+        });
         await new Promise((resolve) => setTimeout(resolve, 150));
         await expect(access(latePath)).rejects.toMatchObject({ code: 'ENOENT' });
     });
@@ -153,7 +211,7 @@ describe('superviseTrustedProcess', () => {
 
     it('should bound cleanup that cannot be confirmed', async () => {
         const output = await run(
-            'process.exitCode=0',
+            "process.stdout.write('private-incomplete')",
             {},
             {
                 cleanupPollMs: 1,
@@ -161,13 +219,15 @@ describe('superviseTrustedProcess', () => {
                 groupExists: () => true,
             }
         );
-        expect(output.reason).toEqual({ kind: 'termination-unconfirmed' });
+        expect(output).toEqual({ reason: { kind: 'termination-unconfirmed' }, streamEvidence: null });
     });
 
     it.each([
         [{ executable: 'relative-executor' }, {}],
         [{ arguments: ['invalid\u0000argument'] }, {}],
         [{ timeoutMs: 2_147_483_648 }, {}],
+        [{ combinedOutputByteCap: 0 }, {}],
+        [{ combinedOutputByteCap: 1.5 }, {}],
         [{}, { sentinelPath: () => `${sentinelPath}\u0000invalid` }],
     ])('should redact synchronous or NUL launch failure %#', async (overrides, dependencies) => {
         const output = await run('', overrides, dependencies);
