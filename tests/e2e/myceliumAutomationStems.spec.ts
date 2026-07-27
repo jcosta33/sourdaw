@@ -429,6 +429,10 @@ test('renders signal evidence for every required Mycelium automation audition wi
     );
     expect(signals.get('Pressure Bloom')?.get('Rolling Colony')?.rms).toBeGreaterThan(0.1);
     expect(signals.get('Pressure Bloom')?.get('Fractal Riser')?.activeBlockRatio).toBeGreaterThan(0.5);
+    for (const windowName of ['Drop I — Dry A', 'Drop I — Wet', 'Drop I — Dry B']) {
+        expect(signals.get(windowName)?.get('Pulse Engine')?.activeBlockRatio).toBeGreaterThan(0.35);
+        expect(signals.get(windowName)?.get('Rolling Colony')?.activeBlockRatio).toBeGreaterThan(0.5);
+    }
     const dropOneReturnRms = (windowName: string): number =>
         ['Temple Chamber', 'Dub Tunnel', 'Mutation Return', 'Parallel Crush'].reduce(
             (total, trackName) => total + (signals.get(windowName)?.get(trackName)?.rms ?? 0),
