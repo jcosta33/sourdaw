@@ -1,3 +1,5 @@
+import { resolveToasterPadIndex } from '#/utils/toasterNoteProjection';
+
 import { comparePendingWorkletEvents } from './comparePendingWorkletEvents';
 import { type PendingWorkletEvent } from './types';
 
@@ -29,14 +31,20 @@ export function schedulePendingSuspends(
 
         if (evt.type === 'on') {
             if (evt.isToaster) {
-                const pad = evt.toasterPadIndex >= 0 ? evt.toasterPadIndex : evt.pitch % 16;
+                const pad = evt.toasterPadIndex >= 0 ? evt.toasterPadIndex : resolveToasterPadIndex(evt.pitch);
+                if (pad === null) {
+                    continue;
+                }
                 evt.instrumentControls.noteOn(pad, evt.velocity, evt.pitch, sampleFrame);
             } else {
                 evt.instrumentControls.noteOn(evt.pitch, evt.velocity, undefined, sampleFrame);
             }
         } else {
             if (evt.isToaster) {
-                const pad = evt.toasterPadIndex >= 0 ? evt.toasterPadIndex : evt.pitch % 16;
+                const pad = evt.toasterPadIndex >= 0 ? evt.toasterPadIndex : resolveToasterPadIndex(evt.pitch);
+                if (pad === null) {
+                    continue;
+                }
                 evt.instrumentControls.noteOff(pad, sampleFrame);
             } else {
                 evt.instrumentControls.noteOff(evt.pitch, sampleFrame);

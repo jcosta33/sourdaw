@@ -9,6 +9,7 @@ import {
     scheduleNoteOffline,
 } from '#/modules/Synth/useCases';
 import { type TempoMapStoreState } from '#/modules/Transport/stores';
+import { resolveToasterPadIndex, TOASTER_NEUTRAL_MIDI_NOTE } from '#/utils/toasterNoteProjection';
 import { getToasterSwingOffsetBeats } from '#/utils/toasterSwingProjection';
 
 import { scheduleTrackAutomation } from '../../repositories/offlineScheduler/automationScheduling';
@@ -419,18 +420,26 @@ export async function scheduleTrackClips({
             }
 
             if (instrumentControls) {
-                // Fixed Toaster child tracks select their sound by sibling pad
-                // index. Live playback sends MIDI 60 as the neutral tuning
-                // reference; forwarding the child's GM note (36 + pad) here
-                // transposes the synthesized kit by up to two octaves.
-                const instrumentPitch = isToaster && note.toasterPadIndex >= 0 ? 60 : note.pitch;
+                // Toaster selects a sound by pad: fixed children use their
+                // canonical sibling index, while direct parent clips use the
+                // supported GM banks. MIDI 60 remains the neutral tuning
+                // reference in both live and offline scheduling.
+                let toasterPadIndex = note.toasterPadIndex;
+                if (isToaster && toasterPadIndex < 0) {
+                    const resolvedPad = resolveToasterPadIndex(note.pitch);
+                    if (resolvedPad === null) {
+                        continue;
+                    }
+                    toasterPadIndex = resolvedPad;
+                }
+                const instrumentPitch = isToaster ? TOASTER_NEUTRAL_MIDI_NOTE : note.pitch;
                 workletEvents.push({
                     time: startTime,
                     type: 'on',
                     pitch: instrumentPitch,
                     velocity: note.velocity,
                     duration,
-                    toasterPadIndex: note.toasterPadIndex,
+                    toasterPadIndex,
                 });
                 if (!isToaster) {
                     workletEvents.push({
@@ -439,7 +448,7 @@ export async function scheduleTrackClips({
                         pitch: instrumentPitch,
                         velocity: 0,
                         duration: 0,
-                        toasterPadIndex: note.toasterPadIndex,
+                        toasterPadIndex,
                     });
                 }
             } else if (kitDef) {

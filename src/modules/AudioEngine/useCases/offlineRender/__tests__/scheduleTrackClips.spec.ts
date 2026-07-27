@@ -422,6 +422,45 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
         expect(events.filter((e) => e.type === 'on')).toHaveLength(0);
     });
 
+    it('maps direct Toaster-track GM notes to pads with neutral one-shot tuning', async () => {
+        const track = makeMidiTrack();
+        const midi = makeMidi();
+        midi.notesByClipId['clip-1'] = [
+            { id: 'low-kick', pitch: 36, startBeat: 1, duration: 0.25, velocity: 100 },
+            { id: 'high-kick', pitch: 60, startBeat: 2, duration: 0.25, velocity: 90 },
+        ];
+        const entry = makeInstrumentEntry();
+        entry.deviceType = 'toaster';
+        const pendingWorkletEvents: PendingWorkletEvent[] = [];
+
+        await scheduleTrackClips({
+            offlineCtx: makeOfflineCtx(),
+            track,
+            midi,
+            trackInputNode: {} as GainNode,
+            trackGainNode: {} as GainNode,
+            trackPanNode: {} as StereoPannerNode,
+            destination: {} as AudioNode,
+            durationSeconds: 60,
+            defaultTempo: 120,
+            changes: [],
+            projections: {
+                projectMidiEvents,
+                projectPpqEndpoints,
+                processYeastMidi,
+                selectMidiEventProbability: mocks.shouldPlayMidiEvent,
+                projectChordPitch: mocks.projectChordPitch,
+                evaluateAutomationValue: mocks.evaluateAutomationValue,
+            },
+            pendingWorkletEvents,
+            deviceEntriesByTrack: new Map([[track.id, [entry]]]),
+        });
+
+        expect(pendingWorkletEvents.map((event) => event.toasterPadIndex)).toEqual([0, 0]);
+        expect(pendingWorkletEvents.map((event) => event.pitch)).toEqual([60, 60]);
+        expect(pendingWorkletEvents.map((event) => event.type)).toEqual(['on', 'on']);
+    });
+
     it('keeps canonical Toaster pad indexes and neutral tuning while honoring the caller mute policy', async () => {
         const parent = TrackDummy.create({
             id: 'toaster-parent',
