@@ -164,13 +164,15 @@ type DiagnosticTestDevice = BuiltinDeviceNode & {
     diagnosticLoadState?: 'ready' | 'pending' | 'failed';
 };
 
-function createDiagnosticDevice(input: {
+type DiagnosticDeviceInput = {
     context: MockAudioContext;
     deviceId: string;
     deviceType: string;
     nodeCount?: number;
     loadState?: DiagnosticTestDevice['diagnosticLoadState'];
-}): DiagnosticTestDevice {
+};
+
+function createDiagnosticDevice(input: DiagnosticDeviceInput): DiagnosticTestDevice {
     const nodes = Array.from({ length: input.nodeCount ?? 1 }, () => input.context.createGain());
     const device: DiagnosticTestDevice = {
         deviceId: input.deviceId,
@@ -264,20 +266,30 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
     });
 
     it('reports the live graph and runtime load without touching the render path', async () => {
-        expect(engine.getDiagnostics()).toMatchObject({
-            context: {
-                state: 'running',
-                sampleRate: 48_000,
-                baseLatency: 0.01,
-                outputLatency: 0.01,
-            },
-            graph: {
-                trackStrips: 0,
-                busStrips: 0,
-                deviceInstances: 0,
-                stripMeterWorklets: 0,
-                masterMeterWorklets: 0,
-            },
+        const expectedContext = {
+            state: 'running' as const,
+            sampleRate: 48_000,
+            baseLatency: 0.01,
+            outputLatency: 0.01,
+        };
+        const emptyGraph = {
+            trackStrips: 0,
+            busStrips: 0,
+            sends: 0,
+            sidechains: 0,
+            deviceInstances: 0,
+            pendingDeviceInstances: 0,
+            failedDeviceInstances: 0,
+            deviceInstancesByType: {},
+            deviceAudioNodes: 0,
+            stripMeterWorklets: 0,
+            masterMeterWorklets: 0,
+            adjustmentLayerBuses: 1,
+        };
+        expect(engine.getDiagnostics()).toEqual({
+            context: expectedContext,
+            graph: emptyGraph,
+            runtime: { trackedAudioScheduledSources: 0 },
         });
 
         await engine.initialize();
@@ -288,46 +300,23 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
 
         track.meterNode = new FakeWorkletNode() as unknown as AudioWorkletNode;
         busTrack.meterNode = null;
-        const fermenter = createDiagnosticDevice({
-            context: mockCtx,
-            deviceId: 'fermenter-1',
-            deviceType: 'fermenter',
-        });
-        const bacteria = createDiagnosticDevice({
-            context: mockCtx,
-            deviceId: 'bacteria-1',
-            deviceType: 'bacteria',
-            nodeCount: 2,
-        });
-        const sidechain = createDiagnosticDevice({
-            context: mockCtx,
+        const createDevice = (input: Omit<DiagnosticDeviceInput, 'context'>) =>
+            createDiagnosticDevice({ context: mockCtx, ...input });
+        const fermenter = createDevice({ deviceId: 'fermenter-1', deviceType: 'fermenter' });
+        const bacteria = createDevice({ deviceId: 'bacteria-1', deviceType: 'bacteria', nodeCount: 2 });
+        const sidechain = createDevice({
             deviceId: 'sidechain-1',
             deviceType: 'builtin-sidechain-compressor',
         });
-        const pending = createDiagnosticDevice({
-            context: mockCtx,
-            deviceId: 'pending-1',
-            deviceType: 'levain',
-            loadState: 'pending',
-        });
-        const failed = createDiagnosticDevice({
-            context: mockCtx,
-            deviceId: 'failed-1',
-            deviceType: 'grand-boule',
-            loadState: 'failed',
-        });
+        const pending = createDevice({ deviceId: 'pending-1', deviceType: 'levain', loadState: 'pending' });
+        const failed = createDevice({ deviceId: 'failed-1', deviceType: 'grand-boule', loadState: 'failed' });
         track.deviceNodes.push(fermenter, bacteria, pending, failed);
         busTrack.deviceNodes.push(sidechain);
         engine.wireSidechainRoute('t1', 'bus-1', 'sidechain-1');
         engine.registerScheduledSource(mockCtx.createOscillator());
 
         expect(engine.getDiagnostics()).toEqual({
-            context: {
-                state: 'running',
-                sampleRate: 48_000,
-                baseLatency: 0.01,
-                outputLatency: 0.01,
-            },
+            context: expectedContext,
             graph: {
                 trackStrips: 1,
                 busStrips: 1,
@@ -346,36 +335,18 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
                 masterMeterWorklets: 1,
                 adjustmentLayerBuses: 1,
             },
-            runtime: {
-                trackedAudioScheduledSources: 1,
-            },
+            runtime: { trackedAudioScheduledSources: 1 },
         });
 
         engine.resetGraph();
         expect(engine.getDiagnostics()).toEqual({
-            context: {
-                state: 'running',
-                sampleRate: 48_000,
-                baseLatency: 0.01,
-                outputLatency: 0.01,
-            },
+            context: expectedContext,
             graph: {
-                trackStrips: 0,
-                busStrips: 0,
-                sends: 0,
-                sidechains: 0,
-                deviceInstances: 0,
-                pendingDeviceInstances: 0,
-                failedDeviceInstances: 0,
-                deviceInstancesByType: {},
-                deviceAudioNodes: 0,
-                stripMeterWorklets: 0,
+                ...emptyGraph,
                 masterMeterWorklets: 1,
                 adjustmentLayerBuses: 0,
             },
-            runtime: {
-                trackedAudioScheduledSources: 0,
-            },
+            runtime: { trackedAudioScheduledSources: 0 },
         });
 
         await engine.dispose();
