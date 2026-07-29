@@ -1,0 +1,40 @@
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useStatusBarMetrics.spec.ts
+  s_ac9b259eab20ba::t_df85671c92c76a 237,260,293
+  s_ac9b259eab20ba::t_6ea10c7fafa372 54-81,95,282-284,288
+src/modules/AudioEngine/engine/__tests__/TrackNodeDevices.spec.ts
+  s_ac9b259eab20ba::t_df85671c92c76a 478,491,499-510
+  s_ac9b259eab20ba::t_81aa8cf2b128fa 511-512
+src/modules/WorkspaceShell/presentations/hooks/useStatusBarMetrics.ts
+  s_ac9b259eab20ba::t_6ea10c7fafa372 65-68
+  s_ac9b259eab20ba::t_df85671c92c76a 70-81
+src/modules/AudioEngine/models/AudioEngineState.ts
+  s_ac9b259eab20ba::t_6ea10c7fafa372 60,62-63
+src/modules/AudioEngine/engine/TrackNode.ts
+  s_ac9b259eab20ba::t_6ea10c7fafa372 46-47,505,509-514
+  s_ac9b259eab20ba::t_da037a682029de 506-508
+  s_ac9b259eab20ba::t_90bad2c1a906c9 515-516
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngineDelegation.spec.ts
+  s_ac9b259eab20ba::t_df85671c92c76a 575
+  s_ac9b259eab20ba::t_6ea10c7fafa372 87-92
+  s_ac9b259eab20ba::t_03a69b7459b549 183-186,280-316,330-333,336,339,350-356,363-366,369
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_ac9b259eab20ba::t_6ea10c7fafa372 376-377,391-392,401-409,430-431
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngine.spec.ts
+  s_ac9b259eab20ba::t_6ea10c7fafa372 858-859
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "fcfd202d3453d2d0145d7fb7c02fbf371f0ae9af",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
