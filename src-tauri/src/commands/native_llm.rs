@@ -623,10 +623,11 @@ fn validate_native_tool_finish(
     has_tool_calls: bool,
     content: Option<&str>,
 ) -> Result<(), String> {
+    if content.is_some_and(|text| !text.trim().is_empty()) {
+        return Err("Native tool calling returned non-tool assistant text".to_string());
+    }
     match (finish_reason, has_tool_calls) {
-        ("tool_calls", true) => Ok(()),
-        ("stop", false) if content.map(str::trim).unwrap_or_default().is_empty() => Ok(()),
-        ("stop", false) => Err("Native tool calling returned non-tool assistant text".to_string()),
+        ("tool_calls", true) | ("stop", false) => Ok(()),
         (reason, _) => Err(format!(
             "Native tool calling returned inconsistent finish reason {reason}"
         )),
@@ -1033,10 +1034,8 @@ mod tests {
 
     #[test]
     fn should_classify_native_tool_finish_states() {
-        assert_eq!(
-            validate_native_tool_finish("tool_calls", true, Some("")),
-            Ok(())
-        );
+        assert!(validate_native_tool_finish("tool_calls", true, Some("")).is_ok());
+        assert!(validate_native_tool_finish("tool_calls", true, Some("I cannot do that")).is_err());
         assert_eq!(
             validate_native_tool_finish("length", true, None),
             Err("Native tool calling returned inconsistent finish reason length".to_string())
