@@ -71,7 +71,7 @@ export const generateCloudToolCalls = inject({ logger })(
                     throw new Error('Anthropic client unavailable');
                 }
 
-                const response = await client.messages.create(
+                const response: unknown = await client.messages.create(
                     {
                         model: runtime.model || CLOUD_MODEL,
                         max_tokens: 2048,
@@ -88,29 +88,40 @@ export const generateCloudToolCalls = inject({ logger })(
                 );
                 controller.signal.throwIfAborted();
 
-                const results: ToolCallResult[] = [];
-                for (const block of response.content) {
-                    if (block.type === 'tool_use') {
-                        if (
-                            typeof block.name !== 'string' ||
-                            block.name.trim().length === 0 ||
-                            !isRecord(block.input)
-                        ) {
-                            throw new ToolPlanningRejectedError('Hosted AI returned an invalid tool-call batch');
-                        }
-                        results.push({
-                            name: block.name,
-                            arguments: block.input,
-                        });
-                    }
+                if (!isRecord(response) || !Array.isArray(response.content)) {
+                    throw new ToolPlanningRejectedError('Hosted AI returned an invalid tool-planning response');
                 }
-                const hasValidToolStop = response.stop_reason === 'tool_use' && results.length > 0;
-                const hasNonToolText = response.content.some(
-                    (block) => block.type === 'text' && block.text.trim().length > 0
-                );
-                const hasValidEmptyStop =
-                    response.stop_reason === 'end_turn' && results.length === 0 && !hasNonToolText;
-                if (response.stop_reason === 'end_turn' && results.length === 0 && hasNonToolText) {
+
+                const results: ToolCallResult[] = [];
+                let hasNonToolText = false;
+                for (const block of response.content) {
+                    if (!isRecord(block)) {
+                        throw new ToolPlanningRejectedError('Hosted AI returned an invalid tool-planning response');
+                    }
+                    if (block.type === 'text') {
+                        if (typeof block.text !== 'string') {
+                            throw new ToolPlanningRejectedError('Hosted AI returned an invalid tool-planning response');
+                        }
+                        if (block.text.trim().length > 0) {
+                            hasNonToolText = true;
+                        }
+                        continue;
+                    }
+                    if (block.type !== 'tool_use') {
+                        throw new ToolPlanningRejectedError('Hosted AI returned an invalid tool-planning response');
+                    }
+                    if (typeof block.name !== 'string' || block.name.trim().length === 0 || !isRecord(block.input)) {
+                        throw new ToolPlanningRejectedError('Hosted AI returned an invalid tool-call batch');
+                    }
+                    results.push({
+                        name: block.name,
+                        arguments: block.input,
+                    });
+                }
+                const stopReason = response.stop_reason;
+                const hasValidToolStop = stopReason === 'tool_use' && results.length > 0;
+                const hasValidEmptyStop = stopReason === 'end_turn' && results.length === 0 && !hasNonToolText;
+                if (stopReason === 'end_turn' && results.length === 0 && hasNonToolText) {
                     throw new ToolPlanningRejectedError(
                         'Hosted AI returned a non-tool response instead of a tool-call batch'
                     );
