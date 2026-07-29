@@ -1,0 +1,48 @@
+src/modules/AudioEngine/useCases/offlineRender/__tests__/createOfflineTrackStrip.spec.ts
+  s_66d4924c65dcd2::t_48057b16f01795 36
+  s_66d4924c65dcd2::t_43e952c0ed1d85 1,6
+  s_66d4924c65dcd2::t_15fa85e325873a 94
+  s_66d4924c65dcd2::t_2937e9839b7620 50
+  s_66d4924c65dcd2::t_7f671e81da5ba7 21-25
+  s_66d4924c65dcd2::t_ecdc0f26785836 60-91
+src/modules/AudioEngine/useCases/__tests__/exportStems.spec.ts
+  s_66d4924c65dcd2::t_6ed85381ea9c50 853-912
+src/modules/AudioEngine/useCases/renderOffline.ts
+  s_66d4924c65dcd2::t_2b759b49b4cec9 156-187
+  s_66d4924c65dcd2::t_1d0768d660ac60 197-201
+src/modules/AudioEngine/useCases/__tests__/renderOffline.spec.ts
+  s_66d4924c65dcd2::t_db54cca0696bb2 362-426
+  s_66d4924c65dcd2::t_370a6e0d976a00 361
+src/modules/AudioEngine/useCases/offlineRender/renderTrackSubgraphOffline.ts
+  s_66d4924c65dcd2::t_dfa7103ccb196c 171
+src/modules/AudioEngine/useCases/offlineRender/__tests__/offlineVcaGainParity.spec.ts
+  s_66d4924c65dcd2::t_f95ea550fe4e32 106
+  s_66d4924c65dcd2::t_0ff9f69b94f752 157
+  s_66d4924c65dcd2::t_d581a4f5895e8d 174
+src/modules/AudioEngine/useCases/offlineRender/createOfflineTrackStrip.ts
+  s_66d4924c65dcd2::t_d642460b33f56e 45-53
+  s_66d4924c65dcd2::t_600ad1308263e1 91,93
+  s_66d4924c65dcd2::t_d268839d9dcddc 9-15
+src/modules/AudioEngine/useCases/exportStems.ts
+  s_66d4924c65dcd2::t_5e5c101328c22c 272
+  s_66d4924c65dcd2::t_911f1d52bc2fed 215-219
+  s_66d4924c65dcd2::t_ca5d451b4901b2 426-428,430-438,441,444-461,470-481
+  s_66d4924c65dcd2::t_3076a7bb1013a4 305
+  s_66d4924c65dcd2::t_92b752855745b8 482
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "f5b9b8ac0ec91d678de1ec59e028f6ff92ab155e",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}

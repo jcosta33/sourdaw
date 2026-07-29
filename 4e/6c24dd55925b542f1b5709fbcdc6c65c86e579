@@ -1,0 +1,68 @@
+src/modules/AudioEngine/repositories/deviceStrategy/__tests__/WebAudioDeviceStrategy.spec.ts
+  s_0d39f3a4a4357a::t_da2b0961502329 67-78
+  s_0d39f3a4a4357a::t_0519ab84bc67a9 23
+src/modules/AudioEngine/useCases/buildDeviceChain.ts
+  s_0d39f3a4a4357a::t_e928d136bef916 217-227,238-239,244-245,247
+  s_0d39f3a4a4357a::t_f2513d6cd508f9 240-243,246
+  s_0d39f3a4a4357a::t_3875e1438334bd 7,10,12
+  s_0d39f3a4a4357a::t_fc21ed8fc2d707 130-136,145-161,169-170,172-179
+src/modules/Arrangement/repositories/getPlatformPlugins.ts
+  s_0d39f3a4a4357a::t_147aa124493f84 1,4-12,15
+src/modules/AudioEngine/repositories/deviceStrategy/AudioDeviceStrategy.ts
+  s_0d39f3a4a4357a::t_c9bb79e0b843fc 4-5
+  s_0d39f3a4a4357a::t_ccec07da18ba10 72
+src/modules/AudioEngine/useCases/offlineRender/isOfflineInstrumentDevice.ts
+  s_0d39f3a4a4357a::t_d422aaa004fbb6 17-20
+src/modules/AudioEngine/useCases/__tests__/buildDeviceChain.spec.ts
+  s_0d39f3a4a4357a::t_d26abd2328805b 95-99,112-114,117-120,123-128,131-135,140-143,145-195,199
+  s_0d39f3a4a4357a::t_93601a8c7a6777 116,144
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClipsAudio.spec.ts
+  s_0d39f3a4a4357a::t_ae40b81eb9dcd5 504-513
+src/modules/AudioEngine/repositories/deviceStrategy/unsupportedDeviceTypeError.ts
+  s_0d39f3a4a4357a::t_41a015a6fd7b82 1-32
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_0d39f3a4a4357a::t_be43fa13bf2a44 299-302
+src/modules/Arrangement/repositories/__tests__/getPlatformPlugins.spec.ts
+  s_0d39f3a4a4357a::t_51651352cae922 1,5-19,22-40,42-47,49-51
+src/modules/AudioEngine/repositories/deviceStrategy/WebAudioDeviceStrategy.ts
+  s_0d39f3a4a4357a::t_49551a3e3b7c57 7
+  s_0d39f3a4a4357a::t_d63162d12ebc8a 35-42
+src/modules/AudioEngine/repositories/deviceStrategy/__tests__/offlineDeviceCoverage.spec.ts
+  s_0d39f3a4a4357a::t_e997f6d8f42a25 1-2,4-30,35-37,43-60,62-63,65-68,84-155
+  s_0d39f3a4a4357a::t_4b90f57adc103a 61
+  s_0d39f3a4a4357a::t_ee7a45d58f80b2 31-34,38-42
+  s_0d39f3a4a4357a::t_2e3353f448b65b 69-83
+  s_0d39f3a4a4357a::t_5ccb0b4c9fa6c3 3
+  s_0d39f3a4a4357a::t_106eab5f74dc4a 64
+src/modules/AudioEngine/useCases/offlineRender/__tests__/isOfflineInstrumentDevice.spec.ts
+  s_0d39f3a4a4357a::t_be509d61e7504a 19-22
+src/modules/AudioEngine/repositories/deviceStrategy/__tests__/setupDeviceStrategies.spec.ts
+  s_0d39f3a4a4357a::t_16a102d88a10c7 26
+  s_0d39f3a4a4357a::t_143f621ea7eb7c 101-106
+src/modules/AudioEngine/useCases/offlineRender/createOfflineTrackStrip.ts
+  s_0d39f3a4a4357a::t_a37c9182ebd9f2 36-39
+  s_0d39f3a4a4357a::t_346dbc248ee400 76-79
+src/modules/AudioEngine/repositories/deviceStrategy/nodelessOfflineDeviceTypes.ts
+  s_0d39f3a4a4357a::t_3b7560013c0ad8 1-71
+src/modules/Arrangement/models/PluginDescriptors/CrumbsDescriptor.ts
+  s_0d39f3a4a4357a::t_0b68e6295ef12c 14-17
+src/modules/AudioEngine/repositories/deviceStrategy/__tests__/AudioDeviceStrategy.spec.ts
+  s_0d39f3a4a4357a::t_6cce9082c03c7e 4
+  s_0d39f3a4a4357a::t_cfc07bb3cf7042 34-37,41-46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "4e6c24dd55925b542f1b5709fbcdc6c65c86e579",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
