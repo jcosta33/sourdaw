@@ -22,23 +22,19 @@ import { isBuiltinSynthDevice, isDrumDevice } from '#/utils/deviceTypeMatching';
  * "starts with builtin-" catch-all: `builtin-crumbs` shipped unrenderable for
  * exactly as long as its failure looked like every other `builtin-` failure.
  */
-type NodelessOfflineDeviceType = {
-    /** Exact device type. */
-    readonly match: string;
-    /** Which offline path renders this device instead of the device chain. */
-    readonly renderedBy: string;
+/**
+ * Individually declared node-less types, keyed by device type, valued by the
+ * offline path that renders them instead of the device chain. Exported so the
+ * coverage guard can require every exemption to name a renderer — an exempted
+ * id nothing voices renders nowhere at all.
+ */
+export const DECLARED_NODELESS_OFFLINE_RENDERERS: Readonly<Record<string, string>> = {
+    // Yeast is a MIDI FX rack: it transforms notes and produces no audio.
+    // `scheduleTrackClips` discovers it on `track.devices` and routes the
+    // track's notes through `projectOfflineYeastTrackNotes`, so it must be
+    // absent from the audio chain rather than merely tolerated in it.
+    yeast: 'scheduleTrackClips → projectOfflineYeastTrackNotes (MIDI only, emits no audio)',
 };
-
-const NODELESS_OFFLINE_DEVICE_TYPES: readonly NodelessOfflineDeviceType[] = [
-    {
-        match: 'yeast',
-        // Yeast is a MIDI FX rack: it transforms notes and produces no audio.
-        // `scheduleTrackClips` discovers it on `track.devices` and routes the
-        // track's notes through `projectOfflineYeastTrackNotes`, so it must be
-        // absent from the audio chain rather than merely tolerated in it.
-        renderedBy: 'scheduleTrackClips → projectOfflineYeastTrackNotes (MIDI only, emits no audio)',
-    },
-];
 
 /**
  * True when this device type is rendered offline by a path other than the
@@ -55,5 +51,5 @@ export function isNodelessOfflineDeviceType(deviceType: string): boolean {
     if (isDrumDevice(deviceType)) {
         return true;
     }
-    return NODELESS_OFFLINE_DEVICE_TYPES.some((entry) => deviceType === entry.match);
+    return DECLARED_NODELESS_OFFLINE_RENDERERS[deviceType] !== undefined;
 }

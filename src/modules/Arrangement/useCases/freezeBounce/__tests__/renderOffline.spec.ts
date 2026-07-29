@@ -10,6 +10,7 @@ import type { renderTrackSubgraphOffline } from '#/modules/AudioEngine/useCases'
 type RenderOfflineMocks = {
     renderTrackSubgraphOffline: Mock<typeof renderTrackSubgraphOffline>;
     getUpstreamSubgraph: Mock<() => Set<string>>;
+    notifyUser: Mock<(message: string, level?: string) => void>;
     trackStore: { value: unknown };
     sidechainStore: { value: unknown };
 };
@@ -17,8 +18,13 @@ type RenderOfflineMocks = {
 const mocks = vi.hoisted<RenderOfflineMocks>(() => ({
     renderTrackSubgraphOffline: vi.fn<typeof renderTrackSubgraphOffline>(),
     getUpstreamSubgraph: vi.fn<() => Set<string>>(),
+    notifyUser: vi.fn<(message: string, level?: string) => void>(),
     trackStore: { value: null },
     sidechainStore: { value: null },
+}));
+
+vi.mock('#/utils/Notification/notifyUser', () => ({
+    notifyUser: mocks.notifyUser,
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
@@ -208,6 +214,40 @@ describe('renderTrackOffline', () => {
         }
     );
 
+    // Freeze and bounce are the paths whose output is *persisted*: the buffer
+    // becomes a frozen track or a project clip that later enters exports. A
+    // device the offline chain has to drop is therefore baked in as an absence.
+    // `renderTrackSubgraphOffline` has always accepted `onWarning`, but no
+    // production caller could supply one — `RenderOfflineOptions` had no such
+    // field — so on these two paths the message reached `logger.warn` and
+    // stopped. It now defaults to the user-facing channel, so a caller cannot
+    // omit it by accident the way every export call site did.
+    it('routes a dropped-device warning to the user by default, not only to the log', async () => {
+        const track = TrackDummy.create({ id: 'track-midi', kind: 'midi' });
+        mocks.trackStore.value = { tracks: [track], selectedTrackId: track.id, ghostClips: [] };
+
+        await renderTrackOffline(track, 0, 4);
+        const forwarded = mocks.renderTrackSubgraphOffline.mock.calls[0]?.[0].onWarning;
+        forwarded?.('Device "external-plugin" on track "Keys" could not be loaded');
+
+        expect(mocks.notifyUser).toHaveBeenCalledWith(
+            'Device "external-plugin" on track "Keys" could not be loaded',
+            'warning'
+        );
+    });
+
+    it('lets a caller collect dropped-device warnings instead of notifying', async () => {
+        const track = TrackDummy.create({ id: 'track-midi', kind: 'midi' });
+        mocks.trackStore.value = { tracks: [track], selectedTrackId: track.id, ghostClips: [] };
+        const onWarning = vi.fn();
+
+        await renderTrackOffline(track, 0, 4, { onWarning });
+        mocks.renderTrackSubgraphOffline.mock.calls[0]?.[0].onWarning?.('dropped');
+
+        expect(onWarning).toHaveBeenCalledWith('dropped');
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+    });
+
     it('renders the target region through the real instrument graph with the bounce options applied', async () => {
         const track = TrackDummy.create({
             id: 'track-midi',
@@ -239,6 +279,9 @@ describe('renderTrackOffline', () => {
             includeAutomation: false,
             abortSignal,
             onProgress,
+            // Defaulted rather than omitted: a persisted buffer must not be able
+            // to drop a device with only a console line to show for it.
+            onWarning: expect.any(Function),
         });
     });
 

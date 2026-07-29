@@ -249,10 +249,13 @@ export const buildDeviceChain = inject({ logger })(
                         contributesAudio &&
                         isUnrenderableCatalogDeviceType(device.type)
                     ) {
+                        // Name it both ways: the rack chip the user has to find
+                        // is labelled with the display name, while the type is
+                        // what a bug report or a project file will show.
                         throw createExportError(
-                            `Track "${trackLabel}" uses the device "${device.type}", which this build cannot render ` +
-                                `offline. Export stopped rather than producing a file without it. ` +
-                                `Remove the device from the track to export.`,
+                            `Track "${trackLabel}" uses the device "${device.name}" (${device.type}), which this ` +
+                                `build cannot render offline. Export stopped rather than producing a file without ` +
+                                `it. Remove the device from the track to export.`,
                             error
                         );
                     }

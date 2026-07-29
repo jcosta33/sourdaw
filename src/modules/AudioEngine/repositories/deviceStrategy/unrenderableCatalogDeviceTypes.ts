@@ -24,19 +24,36 @@
  *
  * It is the same table `offlineDeviceCoverage.spec.ts` already owned, moved
  * here so the runtime gate and the guard read one source. That guard pins it
- * from both sides, against real product data:
+ * from both sides, against real product data — but the strength of the
+ * *outward* side differs by device family, and it is worth being exact about
+ * that rather than claiming a uniform "everything is built for real":
  *
- * - Every catalog id that is *not* listed here and not node-less is built for
- *   real through the offline registry, and must not raise
- *   `UnsupportedDeviceTypeError`. A new catalog device with no offline path
- *   turns that suite red immediately.
- * - Every id listed here must still raise it, and must still be a real catalog
- *   id. An entry cannot rot into a permanent excuse or a stale string.
+ * - **WebAudio builtins** not listed here are built for real against a capable
+ *   mock context and must hand back a node. This is a full check.
+ * - **Native DSP devices** cannot be built off a real audio device (their
+ *   `create` fetches wasm). The guard instead requires each to resolve in both
+ *   `NATIVE_DSP_DEVICE_FACTORIES` and the live `wasmDeviceRegistry`, so a
+ *   device claimed by one and not the other — the divergence that made
+ *   GrandBoule silent in every device chain while playback was fine — cannot
+ *   pass. It does not prove the wasm loads.
+ * - **Faust devices** cannot be compiled under Node. The guard requires the
+ *   catalog id to be registered in the Faust engine the app primes at startup.
+ *   It does not prove the DSP compiles.
+ * - **Every id listed here** must still raise `UnsupportedDeviceTypeError`, and
+ *   must still be a real catalog id. An entry cannot rot into a permanent
+ *   excuse or a stale string.
+ *
+ * So the honest summary of what this table's *absence* buys you: a new catalog
+ * device wired to no factory at all, or to a WebAudio factory that does not
+ * build, turns the suite red immediately. A new native or Faust device whose
+ * engine is broken at runtime does not — that class degrades with a warning
+ * rather than refusing, and is caught by the cross-registry checks only to the
+ * extent that it shows up as a missing claim on one side.
  *
  * `UnsupportedDeviceTypeError` is raised purely on type dispatch — a registry
- * miss, or a `builtin-` prefix match that resolves to no node — so the guard's
- * verdict for a given id is the runtime's verdict. Environment failures
- * (missing WASM asset, unavailable worklet, Faust compile error) are a
+ * miss, or a `builtin-` prefix match that resolves to no node — so for any id
+ * the guard *can* decide, its verdict is the runtime's verdict. Environment
+ * failures (missing WASM asset, unavailable worklet, Faust compile error) are a
  * different class and stay degradable everywhere.
  */
 export const UNRENDERABLE_CATALOG_DEVICE_TYPES: Readonly<Record<string, string>> = {

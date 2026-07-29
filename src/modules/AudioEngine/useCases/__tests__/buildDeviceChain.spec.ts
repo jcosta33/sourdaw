@@ -146,6 +146,30 @@ describe('buildDeviceChain', () => {
         expect((failure as Error).message).not.toContain('freeze');
     });
 
+    // The user has to find the device in the rack, and the chip there shows the
+    // display name, not the raw type. Naming only the type asks them to
+    // translate `builtin-crumbs` into "Crumbs" themselves.
+    it('names the device the way the rack labels it, as well as by type', async () => {
+        vi.stubGlobal('AudioWorkletNode', undefined);
+        const input = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
+        const output = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
+        mocks.isFaustModule.mockReturnValue(false);
+        const crumbs: Device = {
+            id: 'd1',
+            name: 'Crumbs',
+            type: 'builtin-crumbs',
+            bypassed: false,
+            parameterValues: {},
+        };
+
+        const failure = await buildDeviceChain({} as BaseAudioContext, [crumbs], input, output, {
+            trackName: 'Sampler',
+        }).catch((error: unknown) => error);
+
+        expect((failure as Error).message).toContain('"Crumbs"');
+        expect((failure as Error).message).toContain('builtin-crumbs');
+    });
+
     // `addDevice` stores an unmatched string verbatim as the device type, so
     // saved projects carry types the product never claimed — factory presets
     // wrote effect *display names* like `Drum Comp`. Such a device is silent in
