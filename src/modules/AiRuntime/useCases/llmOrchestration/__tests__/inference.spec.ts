@@ -164,18 +164,19 @@ describe('generateToolPlanningOutcome', () => {
         expect(mocks.generateWebLlmToolCalls).not.toHaveBeenCalled();
     });
 
-    it('does not bypass a hosted refusal through provider fallback', async () => {
-        mocks.backendChain.value = ['cloud', 'native'];
-        mocks.nativeEngineReady.value = true;
-        mocks.generateCloudToolCalls.mockRejectedValue(
-            new ToolPlanningRejectedError('Hosted AI refused tool planning')
-        );
+    it.each(['Hosted AI refused tool planning', 'Hosted AI returned an invalid tool-planning response'])(
+        'does not bypass terminal hosted rejection %s through provider fallback',
+        async (reason) => {
+            mocks.backendChain.value = ['cloud', 'native'];
+            mocks.nativeEngineReady.value = true;
+            mocks.generateCloudToolCalls.mockRejectedValue(new ToolPlanningRejectedError(reason));
 
-        const result = await generateToolCalls('sys', 'mute drums');
+            const result = await generateToolCalls('sys', 'mute drums');
 
-        expect(result).toEqual({ status: 'rejected', reason: 'Hosted AI refused tool planning' });
-        expect(mocks.generateNativeToolCalls).not.toHaveBeenCalled();
-    });
+            expect(result).toEqual({ status: 'rejected', reason });
+            expect(mocks.generateNativeToolCalls).not.toHaveBeenCalled();
+        }
+    );
 
     it('passes an explicit executable tool subset to every provider backend', async () => {
         const tools: ToolSchema[] = [

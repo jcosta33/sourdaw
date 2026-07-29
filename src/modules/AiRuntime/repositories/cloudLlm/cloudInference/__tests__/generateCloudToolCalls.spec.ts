@@ -13,11 +13,6 @@ type CloudCreateInput = {
     messages: Array<{ content: string }>;
 };
 
-type CloudCreateOutput = {
-    content: Array<{ type: 'text'; text: string } | { type: 'tool_use'; name: unknown; input: unknown }>;
-    stop_reason: string | null;
-};
-
 type CompatibleToolInput = {
     runtime: OpenAiCompatibleCloudRuntime;
     systemPrompt: string;
@@ -45,7 +40,7 @@ const mocks = vi.hoisted(() => ({
     getCloudClient: vi.fn(),
     getCloudProviderRuntime: vi.fn(),
     generateOpenAiCompatibleToolCalls: vi.fn<(input: CompatibleToolInput) => Promise<ToolCallResult[]>>(),
-    create: vi.fn<(input: CloudCreateInput, options?: { signal?: AbortSignal }) => Promise<CloudCreateOutput>>(),
+    create: vi.fn<(input: CloudCreateInput, options?: { signal?: AbortSignal }) => Promise<unknown>>(),
     info: vi.fn(),
 }));
 
@@ -242,6 +237,21 @@ describe('generateCloudToolCalls', () => {
         await expect(generateCloudToolCalls('state', 'msg')).rejects.toThrow(
             'Hosted AI returned an incomplete tool-call batch'
         );
+    });
+
+    it.each([
+        { label: 'null response', response: null },
+        { label: 'null content', response: { content: null, stop_reason: 'end_turn' } },
+        { label: 'null block', response: { content: [null], stop_reason: 'end_turn' } },
+        { label: 'scalar block', response: { content: [42], stop_reason: 'end_turn' } },
+        { label: 'unsupported block', response: { content: [{ type: 'thinking' }], stop_reason: 'end_turn' } },
+        { label: 'non-string text', response: { content: [{ type: 'text', text: null }], stop_reason: 'end_turn' } },
+    ])('terminally rejects an Anthropic response with $label', async ({ response }) => {
+        mocks.create.mockResolvedValue(response);
+
+        await expect(generateCloudToolCalls('state', 'msg')).rejects.toMatchObject({
+            name: 'ToolPlanningRejectedError',
+        });
     });
 
     it.each([
