@@ -1,5 +1,6 @@
 import { isTauri } from '#/utils/tauriBridge';
 
+import { NativeToolCallingProtocolError } from '../../errors/NativeToolCallingProtocolError';
 import { ToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedError';
 
 import { invokeCancelableNativeLlm } from './invokeCancelableNativeLlm';
@@ -47,28 +48,28 @@ export async function generateNativeToolCalls(input: GenerateNativeToolCallsInpu
 
 function narrowNativeToolCallingResponse(response: unknown): NativeToolCallResult[] {
     if (!isRecord(response)) {
-        throw new ToolPlanningRejectedError('Invalid native_tool_calling response envelope');
+        throw new NativeToolCallingProtocolError('Invalid native_tool_calling response envelope');
     }
     if (response.status === 'rejected') {
         if (typeof response.reason !== 'string' || response.reason.trim().length === 0) {
-            throw new ToolPlanningRejectedError('Invalid native_tool_calling response envelope');
+            throw new NativeToolCallingProtocolError('Invalid native_tool_calling response envelope');
         }
         throw new ToolPlanningRejectedError(response.reason);
     }
     if (response.status !== 'complete' || !Array.isArray(response.toolCalls)) {
-        throw new ToolPlanningRejectedError('Invalid native_tool_calling response envelope');
+        throw new NativeToolCallingProtocolError('Invalid native_tool_calling response envelope');
     }
     return narrowNativeToolCallResults(response.toolCalls);
 }
 
 function narrowNativeToolCallResults(response: unknown): NativeToolCallResult[] {
     if (!Array.isArray(response)) {
-        throw new ToolPlanningRejectedError('Invalid native_tool_calling response: expected an array');
+        throw new NativeToolCallingProtocolError('Invalid native_tool_calling response: expected an array');
     }
 
     return response.map((item, index) => {
         if (!isRecord(item)) {
-            throw new ToolPlanningRejectedError(
+            throw new NativeToolCallingProtocolError(
                 `Invalid native_tool_calling response: item ${String(index)} is not an object`
             );
         }
@@ -77,12 +78,12 @@ function narrowNativeToolCallResults(response: unknown): NativeToolCallResult[] 
         const args = item.arguments;
 
         if (typeof name !== 'string' || name.length === 0) {
-            throw new ToolPlanningRejectedError(
+            throw new NativeToolCallingProtocolError(
                 `Invalid native_tool_calling response: item ${String(index)} has no name`
             );
         }
         if (!isRecord(args)) {
-            throw new ToolPlanningRejectedError(
+            throw new NativeToolCallingProtocolError(
                 `Invalid native_tool_calling response: item ${String(index)} has invalid arguments`
             );
         }

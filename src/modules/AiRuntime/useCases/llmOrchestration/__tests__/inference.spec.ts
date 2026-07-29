@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { AiRuntimeConfigurationChangedError } from '../../../errors/AiRuntimeConfigurationChangedError';
+import { NativeToolCallingProtocolError } from '../../../errors/NativeToolCallingProtocolError';
 import { ToolPlanningRejectedError } from '../../../errors/ToolPlanningRejectedError';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
 import { generateToolCalls as generateCompatibleToolCalls } from '../generateToolCalls';
@@ -162,6 +163,28 @@ describe('generateToolPlanningOutcome', () => {
         });
         expect(mocks.generateNativeCompletion).not.toHaveBeenCalled();
         expect(mocks.generateWebLlmToolCalls).not.toHaveBeenCalled();
+    });
+
+    it('marks malformed native DTOs unhealthy and tries another provider without text fallback', async () => {
+        mocks.backendChain.value = ['native', 'webllm'];
+        mocks.nativeEngineReady.value = true;
+        mocks.isWebLlmLoaded.mockReturnValue(true);
+        mocks.generateNativeToolCalls.mockRejectedValue(
+            new NativeToolCallingProtocolError('Invalid native_tool_calling response envelope')
+        );
+        mocks.generateNativeCompletion.mockResolvedValue('<tool name="mute_track" />');
+        mocks.parseToolPlanningOutcome.mockReturnValue(completePlan([{ name: 'mute_track', arguments: {} }]));
+        mocks.generateWebLlmToolCalls.mockResolvedValue(completePlan([{ name: 'soloTrack', arguments: {} }]));
+
+        await expect(generateToolCalls('sys', 'solo drums')).resolves.toEqual(
+            completePlan([{ name: 'soloTrack', arguments: {} }])
+        );
+        expect(mocks.generateNativeCompletion).not.toHaveBeenCalled();
+        expect(mocks.generateWebLlmToolCalls).toHaveBeenCalledOnce();
+        expect(mocks.llmStatusSet).not.toHaveBeenCalledWith({ state: 'ready', backend: 'native', modelId: 'native' });
+        expect(mocks.llmStatusSet).toHaveBeenLastCalledWith(
+            expect.objectContaining({ state: 'ready', backend: 'webllm' })
+        );
     });
 
     it.each(['Hosted AI refused tool planning', 'Hosted AI returned an invalid tool-planning response'])(

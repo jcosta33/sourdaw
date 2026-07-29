@@ -89,7 +89,7 @@ describe('generateNativeToolCalls', () => {
                 temperature: 0.1,
             })
         ).rejects.toMatchObject({
-            name: 'ToolPlanningRejectedError',
+            name: 'NativeToolCallingProtocolError',
             message: 'Invalid native_tool_calling response: item 0 has invalid arguments',
         });
     });
@@ -120,7 +120,7 @@ describe('generateNativeToolCalls', () => {
         { status: 'complete' },
         { status: 'rejected', reason: null },
         { status: 'unknown', toolCalls: [] },
-    ])('should terminally reject malformed native protocol envelope %#', async (response) => {
+    ])('should report malformed native protocol envelope %# as an operational failure', async (response) => {
         mocks.isTauri.mockReturnValue(true);
         mocks.tauriInvoke.mockResolvedValue(response);
 
@@ -132,7 +132,7 @@ describe('generateNativeToolCalls', () => {
                 temperature: 0.1,
             })
         ).rejects.toMatchObject({
-            name: 'ToolPlanningRejectedError',
+            name: 'NativeToolCallingProtocolError',
             message: 'Invalid native_tool_calling response envelope',
         });
     });

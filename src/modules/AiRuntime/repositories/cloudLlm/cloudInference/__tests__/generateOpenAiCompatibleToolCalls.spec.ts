@@ -46,6 +46,22 @@ function respondWith(payload: unknown): void {
     );
 }
 
+function validToolChoice() {
+    return {
+        finish_reason: 'tool_calls',
+        message: {
+            tool_calls: [
+                {
+                    function: {
+                        name: 'muteTrack',
+                        arguments: '{"trackId":"track-1","muted":true}',
+                    },
+                },
+            ],
+        },
+    };
+}
+
 describe('generateOpenAiCompatibleToolCalls', () => {
     afterEach(() => {
         vi.unstubAllGlobals();
@@ -101,6 +117,20 @@ describe('generateOpenAiCompatibleToolCalls', () => {
         const body = JSON.parse(request.body) as Record<string, unknown>;
         expect(body.tools).toEqual(tools);
         expect(body.tool_choice).toBe('auto');
+        expect(body.n).toBe(1);
+    });
+
+    it.each([
+        { label: 'no choices', choices: [] },
+        {
+            label: 'a refused second choice',
+            choices: [validToolChoice(), { finish_reason: 'stop', message: { refusal: 'cannot comply' } }],
+        },
+        { label: 'a malformed second choice', choices: [validToolChoice(), null] },
+    ])('rejects $label instead of selecting the first choice', async ({ choices }) => {
+        respondWith({ choices });
+
+        await expect(generateToolCalls()).rejects.toThrow('Hosted AI returned an invalid tool-planning response');
     });
 
     it('rejects the entire declared batch when any tool call is malformed', async () => {

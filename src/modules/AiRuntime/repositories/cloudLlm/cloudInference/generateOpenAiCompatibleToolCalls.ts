@@ -56,7 +56,7 @@ function parseArguments(value: unknown): Record<string, unknown> | null {
 }
 
 function parseToolCalls(response: unknown): ToolCallResult[] {
-    if (!isRecord(response) || !Array.isArray(response.choices)) {
+    if (!isRecord(response) || !Array.isArray(response.choices) || response.choices.length !== 1) {
         throw new ToolPlanningRejectedError('Hosted AI returned an invalid tool-planning response');
     }
     const choices: unknown[] = response.choices;
@@ -133,6 +133,7 @@ export async function generateOpenAiCompatibleToolCalls({
             ],
             tools: toolSchemas,
             tool_choice: 'auto',
+            n: 1,
             stream: false,
         }),
     });

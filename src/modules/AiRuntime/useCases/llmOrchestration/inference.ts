@@ -3,6 +3,7 @@ import { logger } from '#/infra/logger/appLogger';
 
 import { isAiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
 import { createAiRuntimeError } from '../../errors/AiRuntimeError';
+import { isNativeToolCallingProtocolError } from '../../errors/NativeToolCallingProtocolError';
 import { isToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedError';
 import { type RunnableAiBackend } from '../../models/LlmOrchestrationTypes';
 import { WEBLLM_MODEL_ID } from '../../models/ModelInfo';
@@ -114,7 +115,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
             if (signal?.aborted) {
                 throw createToolPlanningAbortError();
             }
-            if (isToolPlanningRejectedError(error)) {
+            if (isToolPlanningRejectedError(error) || isNativeToolCallingProtocolError(error)) {
                 throw error;
             }
             const msg = error instanceof Error ? error.message : String(error);
