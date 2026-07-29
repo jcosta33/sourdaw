@@ -4,6 +4,8 @@ export type IntentResult = {
     actions: RuntimeAction[];
     rawText: string;
     requiresConfirmation: boolean;
+    /** Present when a recognized command was rejected before execution. */
+    rejectionReason?: string;
     /** Provider-originated actions that require the atomic, compensable Command batch path. */
     executionMode?: 'atomic';
     /** Set when the JSON editor flow was used and changes were already applied */

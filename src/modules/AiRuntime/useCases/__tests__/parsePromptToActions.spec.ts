@@ -95,6 +95,20 @@ describe('parsePromptToActions', () => {
         });
     });
 
+    it('returns a truthful rejection when a recognized preset action is not admitted', async () => {
+        vi.mocked(tryPresetMatch).mockReturnValue([{ type: 'saveProject' }]);
+
+        const result = await parsePromptToActions('save project', baseContext);
+
+        expect(result).toEqual({
+            actions: [],
+            rawText: 'save project',
+            requiresConfirmation: false,
+            rejectionReason: 'Recognized command failed runtime validation: saveProject',
+        });
+        expect(generateToolCalls).not.toHaveBeenCalled();
+    });
+
     it('turns provider tool calls into validated action proposals', async () => {
         const currentContext = { ...baseContext, tempo: 121 };
         vi.mocked(getProjectContext).mockReturnValue(currentContext);
@@ -161,6 +175,44 @@ describe('parsePromptToActions', () => {
         expect(mockLogger.warn).toHaveBeenCalledWith(
             '[AI] Rejected tool call 1 (removeTrack): Tool is not allowlisted'
         );
+    });
+
+    it('returns the provider bridge rejection reason without falling through to DSO', async () => {
+        vi.mocked(generateToolCalls).mockResolvedValue([
+            { name: 'removeTrack', arguments: { trackId: 'track-vocals' } },
+        ]);
+        mockBridgeLlmToolCalls.mockReturnValue({
+            actions: [],
+            rejections: [{ index: 0, name: 'removeTrack', reason: 'Tool is not allowlisted' }],
+        });
+        vi.mocked(isDsoBackendAvailable).mockReturnValue(true);
+
+        const result = await parsePromptToActions('delete the vocals', baseContext);
+
+        expect(result).toEqual({
+            actions: [],
+            rawText: 'delete the vocals',
+            requiresConfirmation: false,
+            rejectionReason: 'Provider action rejected: removeTrack: Tool is not allowlisted',
+        });
+    });
+
+    it('returns a rejection when runtime validation filters a provider batch', async () => {
+        vi.mocked(generateToolCalls).mockResolvedValue([{ name: 'saveProject', arguments: {} }]);
+        mockBridgeLlmToolCalls.mockReturnValue({
+            actions: [{ type: 'saveProject' }],
+            rejections: [],
+        });
+        vi.mocked(isDsoBackendAvailable).mockReturnValue(true);
+
+        const result = await parsePromptToActions('save the project', baseContext);
+
+        expect(result).toEqual({
+            actions: [],
+            rawText: 'save the project',
+            requiresConfirmation: false,
+            rejectionReason: 'Provider action failed runtime validation: saveProject',
+        });
     });
 
     it('preserves configuration-change cancellation instead of reporting no actions', async () => {

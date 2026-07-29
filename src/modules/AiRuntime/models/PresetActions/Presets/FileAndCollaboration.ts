@@ -2,41 +2,6 @@ import { type PresetAction } from './Types';
 
 export const filePresets: readonly PresetAction[] = [
     {
-        id: 'save',
-        label: 'Save Project',
-        keywords: ['save', 'save project', 'ctrl s'],
-        category: 'File',
-        buildAction: () => ({ type: 'saveProject' }),
-    },
-    {
-        id: 'new-project',
-        label: 'New Project',
-        keywords: ['new project', 'new', 'fresh project'],
-        category: 'File',
-        buildAction: () => ({ type: 'newProject' }),
-    },
-    {
-        id: 'export',
-        label: 'Export / Bounce / Render',
-        keywords: ['export', 'bounce', 'render', 'mixdown', 'wav', 'mp3', 'export audio'],
-        category: 'File',
-        buildAction: () => ({ type: 'exportProject' }),
-    },
-    {
-        id: 'import-audio',
-        label: 'Import Audio File',
-        keywords: ['import audio', 'import wav', 'import mp3', 'import file', 'open audio'],
-        category: 'File',
-        buildAction: () => ({ type: 'importAudioFile' }),
-    },
-    {
-        id: 'import-midi',
-        label: 'Import MIDI File',
-        keywords: ['import midi', 'open midi'],
-        category: 'File',
-        buildAction: () => ({ type: 'importMidiFile' }),
-    },
-    {
         id: 'scan-plugins',
         label: 'Scan Plugins',
         keywords: ['scan plugins', 'rescan plugins', 'plugin scan'],
@@ -66,12 +31,5 @@ export const collaborationPresets: readonly PresetAction[] = [
         keywords: ['collaboration', 'collab', 'start session', 'multiplayer'],
         category: 'Collaboration',
         buildAction: () => ({ type: 'createCollabSession', payload: { name: 'Host' } }),
-    },
-    {
-        id: 'leave-collab',
-        label: 'Leave Collaboration',
-        keywords: ['leave session', 'stop collaboration', 'disconnect'],
-        category: 'Collaboration',
-        buildAction: () => ({ type: 'leaveCollabSession' }),
     },
 ];

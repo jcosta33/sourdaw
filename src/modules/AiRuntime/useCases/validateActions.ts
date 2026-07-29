@@ -251,6 +251,15 @@ const KNOWN_ACTION_TYPES: ReadonlySet<RuntimeActionType> = new Set(
     Object.keys(KNOWN_ACTION_TYPES_MAP) as RuntimeActionType[]
 );
 
+const UNAWAITED_AI_ACTION_TYPES: ReadonlySet<RuntimeActionType> = new Set([
+    'exportProject',
+    'importAudioFile',
+    'importMidiFile',
+    'leaveCollabSession',
+    'newProject',
+    'saveProject',
+]);
+
 function hasAvailableVcaTargets(action: RuntimeAction): boolean {
     const tracks = trackStore.value?.tracks ?? [];
     const groups = vcaGroupStore.value?.groups ?? [];
@@ -282,6 +291,11 @@ export const validateActions = inject({ logger })(
             return actions.filter((action) => {
                 if (!KNOWN_ACTION_TYPES.has(action.type)) {
                     logger.warn(`Unknown action type rejected: ${action.type}`);
+                    return false;
+                }
+
+                if (UNAWAITED_AI_ACTION_TYPES.has(action.type)) {
+                    logger.warn(`Unawaited AI action rejected: ${action.type}`);
                     return false;
                 }
 

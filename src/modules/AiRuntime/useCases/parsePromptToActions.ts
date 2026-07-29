@@ -3,6 +3,7 @@ import { logger } from '#/infra/logger/appLogger';
 
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
 import { type IntentResult } from '../models/IntentResult';
+import { type RuntimeAction } from '../models/RuntimeAction';
 import {
     bridgeLlmToolCalls,
     buildLlmActionSystemPrompt,
@@ -22,6 +23,33 @@ import { getProjectContext, type ProjectContext } from './getProjectContext';
 import { isDsoBackendAvailable } from './llmOrchestration/backendResolution/isDsoBackendAvailable';
 import { generateToolCalls } from './llmOrchestration/inference';
 import { validateActions } from './validateActions';
+
+type CreateFastPathResultInput = {
+    actions: RuntimeAction[];
+    prompt: string;
+};
+
+function createFastPathResult(input: CreateFastPathResultInput): IntentResult {
+    const validated = validateActions(input.actions);
+    if (validated.length !== input.actions.length) {
+        const rejectedTypes = input.actions
+            .filter((action) => !validated.includes(action))
+            .map((action) => action.type)
+            .join(', ');
+        return {
+            actions: [],
+            rawText: input.prompt,
+            requiresConfirmation: false,
+            rejectionReason: `Recognized command failed runtime validation: ${rejectedTypes}`,
+        };
+    }
+
+    return {
+        actions: validated,
+        rawText: input.prompt,
+        requiresConfirmation: requiresConfirmation(validated),
+    };
+}
 
 /**
  * Two-tier prompt parsing:
@@ -44,34 +72,19 @@ export const parsePromptToActions = inject({ logger })(
             const presetCtx = buildPresetContext(context);
             const presetResult = tryPresetMatch(normalized, presetCtx);
             if (presetResult.length > 0) {
-                const validated = validateActions(presetResult);
-                return {
-                    actions: validated,
-                    rawText: prompt,
-                    requiresConfirmation: requiresConfirmation(validated),
-                };
+                return createFastPathResult({ actions: presetResult, prompt });
             }
 
             // 2. Try parameterized patterns (need value extraction)
             const paramResult = tryParameterizedPath(normalized, context);
             if (paramResult.length > 0) {
-                const validated = validateActions(paramResult);
-                return {
-                    actions: validated,
-                    rawText: prompt,
-                    requiresConfirmation: requiresConfirmation(validated),
-                };
+                return createFastPathResult({ actions: paramResult, prompt });
             }
 
             // 3. Try compound fast path (multi-track creation etc.)
             const compoundResult = tryCompoundFastPath(normalized, context);
             if (compoundResult !== null) {
-                const validated = validateActions(compoundResult);
-                return {
-                    actions: validated,
-                    rawText: prompt,
-                    requiresConfirmation: requiresConfirmation(validated),
-                };
+                return createFastPathResult({ actions: compoundResult, prompt });
             }
 
             if (signal?.aborted) {
@@ -99,17 +112,40 @@ export const parsePromptToActions = inject({ logger })(
                     );
                 }
 
-                if (bridged.actions.length > 0 && bridged.rejections.length === 0) {
+                if (bridged.rejections.length > 0) {
+                    const reason = bridged.rejections
+                        .map((rejection) => `${rejection.name}: ${rejection.reason}`)
+                        .join('; ');
+                    return {
+                        actions: [],
+                        rawText: prompt,
+                        requiresConfirmation: false,
+                        rejectionReason: `Provider action rejected: ${reason}`,
+                    };
+                }
+
+                if (bridged.actions.length > 0) {
                     const validated = validateActions(bridged.actions);
-                    if (validated.length === bridged.actions.length) {
+                    if (validated.length !== bridged.actions.length) {
+                        const rejectedTypes = bridged.actions
+                            .filter((action) => !validated.includes(action))
+                            .map((action) => action.type)
+                            .join(', ');
+                        logger.warn('[AI] Rejected LLM action batch because runtime validation removed an action');
                         return {
-                            actions: validated,
+                            actions: [],
                             rawText: prompt,
-                            requiresConfirmation: validated.length > 1 || requiresConfirmation(validated),
-                            executionMode: 'atomic',
+                            requiresConfirmation: false,
+                            rejectionReason: `Provider action failed runtime validation: ${rejectedTypes}`,
                         };
                     }
-                    logger.warn('[AI] Rejected LLM action batch because runtime validation removed an action');
+
+                    return {
+                        actions: validated,
+                        rawText: prompt,
+                        requiresConfirmation: validated.length > 1 || requiresConfirmation(validated),
+                        executionMode: 'atomic',
+                    };
                 }
             } catch (error) {
                 if (isAiRuntimeConfigurationChangedError(error)) {
