@@ -13,7 +13,7 @@ import { type Device } from '../../../models/TrackViewTypes';
 import { createFaustDevice } from '../../faustDeviceFactory';
 import { isNodelessOfflineDeviceType } from '../nodelessOfflineDeviceTypes';
 import { createDeviceRegistry } from '../setupDeviceStrategies';
-import { getUnrenderableCatalogDeviceTypes } from '../unrenderableCatalogDeviceTypes';
+import { UNRENDERABLE_CATALOG_DEVICE_TYPES } from '../unrenderableCatalogDeviceTypes';
 import { isUnsupportedDeviceTypeError } from '../unsupportedDeviceTypeError';
 
 /**
@@ -60,7 +60,7 @@ import { isUnsupportedDeviceTypeError } from '../unsupportedDeviceTypeError';
  * an id that *gains* an implementation fails here until its entry is removed,
  * and any catalog id *missing* from it must build for real.
  */
-const NO_OFFLINE_IMPLEMENTATION = getUnrenderableCatalogDeviceTypes();
+const NO_OFFLINE_IMPLEMENTATION = UNRENDERABLE_CATALOG_DEVICE_TYPES;
 
 /**
  * The whole catalog: `getPlatformPlugins` hides `platform: 'native'` entries

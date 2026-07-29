@@ -442,17 +442,17 @@ export const exportStems: ExportStemsFn = async function exportStems(
                             return null;
                         })
                         .catch((error: unknown) => {
+                            let failure = new Error(String(error));
+                            if (error instanceof Error) {
+                                failure = error;
+                            }
                             // A cancel is the whole export stopping, not this
                             // stem failing, so it still rejects the pool.
                             if (isCancelRequested()) {
-                                reject(error);
+                                reject(failure);
                                 return;
                             }
-                            let reason = String(error);
-                            if (error instanceof Error) {
-                                reason = error.message;
-                            }
-                            failures.push({ trackId: stemTrackId, reason });
+                            failures.push({ trackId: stemTrackId, reason: failure.message });
                             // This stem's slot is spent either way; without this
                             // the progress bar stalls short of 1 on a failure.
                             done++;

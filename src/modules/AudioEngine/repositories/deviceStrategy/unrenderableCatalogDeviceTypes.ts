@@ -39,7 +39,7 @@
  * (missing WASM asset, unavailable worklet, Faust compile error) are a
  * different class and stay degradable everywhere.
  */
-const UNRENDERABLE_CATALOG_DEVICE_TYPES: Record<string, string> = {
+export const UNRENDERABLE_CATALOG_DEVICE_TYPES: Readonly<Record<string, string>> = {
     'builtin-crumbs':
         'Crumbs runs in the Rust backend behind the live `crumbs_*` Tauri commands. There is no WebAudio node and ' +
         'no offline bridge to the native engine, so no render path exists on either platform.',
@@ -47,11 +47,6 @@ const UNRENDERABLE_CATALOG_DEVICE_TYPES: Record<string, string> = {
         'Crust is catalog-only: `addDevice` refuses to place it ("Crust is not fully implemented"), so it can ' +
         'never reach a track or a device chain.',
 };
-
-/** The declared ids, for the guard that pins this table against the catalog. */
-export function getUnrenderableCatalogDeviceTypes(): Record<string, string> {
-    return { ...UNRENDERABLE_CATALOG_DEVICE_TYPES };
-}
 
 /**
  * True when the product claims this device type and the offline renderer has no
