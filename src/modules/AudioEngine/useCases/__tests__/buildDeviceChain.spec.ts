@@ -92,32 +92,116 @@ describe('buildDeviceChain', () => {
         expect(faustOutput.connect).toHaveBeenCalledWith(output);
     });
 
-    // A device type nothing can build is a coverage hole in our own code. The
-    // export used to warn and continue, so the render came back missing the
-    // device — and, for an instrument, came back as the fallback synth instead.
-    // A render must contain what playback contains, so this now fails loudly.
-    it('fails the export when no offline implementation exists for a device type', async () => {
+    // A catalog device with no offline implementation is a coverage hole in our
+    // own code. The export used to warn and continue, so the render came back
+    // missing the device — and, for an instrument, came back as the fallback
+    // synth instead. A render must contain what playback contains, so this now
+    // fails loudly.
+    it('fails the export for a catalog device with no offline implementation', async () => {
         vi.stubGlobal('AudioWorkletNode', undefined);
         const input = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
         const output = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
         mocks.isFaustModule.mockReturnValue(false);
-        const unclaimed: Device = {
+        const unrenderable: Device = {
             id: 'd1',
-            name: 'Unclaimed instrument',
-            type: 'no-matcher-claims-this',
+            name: 'Crust',
+            type: 'crust',
             bypassed: false,
             parameterValues: {},
         };
 
-        const failure = await buildDeviceChain({} as BaseAudioContext, [unclaimed], input, output, {
+        const failure = await buildDeviceChain({} as BaseAudioContext, [unrenderable], input, output, {
             trackName: 'Lead',
         }).catch((error: unknown) => error);
 
         expect(failure).toMatchObject({ _tag: 'Export' });
-        expect((failure as Error).message).toContain('no-matcher-claims-this');
+        expect((failure as Error).message).toContain('crust');
         expect((failure as Error).message).toContain('Lead');
         // The partially wired chain must not be handed back as a usable render.
         expect(input.connect).not.toHaveBeenCalledWith(output);
+    });
+
+    // The remedy has to be one the user can actually carry out. Freezing runs
+    // this same chain build for the target *and* every upstream contributor, so
+    // "freeze the track" throws exactly the same error — and freezing an
+    // unrelated track fails too whenever a contributor holds the device.
+    it('offers no remedy the failing chain build would itself reject', async () => {
+        vi.stubGlobal('AudioWorkletNode', undefined);
+        const input = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
+        const output = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
+        mocks.isFaustModule.mockReturnValue(false);
+        const unrenderable: Device = {
+            id: 'd1',
+            name: 'Crumbs',
+            type: 'builtin-crumbs',
+            bypassed: false,
+            parameterValues: {},
+        };
+
+        const failure = await buildDeviceChain({} as BaseAudioContext, [unrenderable], input, output, {
+            trackName: 'Sampler',
+        }).catch((error: unknown) => error);
+
+        expect((failure as Error).message).toContain('Remove the device from the track to export.');
+        expect((failure as Error).message).not.toContain('freeze');
+    });
+
+    // `addDevice` stores an unmatched string verbatim as the device type, so
+    // saved projects carry types the product never claimed — factory presets
+    // wrote effect *display names* like `Drum Comp`. Such a device is silent in
+    // live playback too (no descriptor matches, so `TrackNode` builds no node),
+    // so dropping it offline reproduces playback rather than diverging from it.
+    // Refusing would make those projects permanently unexportable.
+    it.each([
+        ['Drum Comp', 'a stale factory-preset display name'],
+        ['external-plugin', 'a third-party plugin an OfflineAudioContext cannot host'],
+    ])('degrades %s (%s) instead of failing the export', async (deviceType) => {
+        vi.stubGlobal('AudioWorkletNode', undefined);
+        const input = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
+        const output = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
+        const onWarning = vi.fn();
+        mocks.isFaustModule.mockReturnValue(false);
+        const device: Device = { id: 'd1', name: deviceType, type: deviceType, bypassed: false, parameterValues: {} };
+
+        const entries = await buildDeviceChain({} as BaseAudioContext, [device], input, output, {
+            trackName: 'Drums',
+            onWarning,
+        });
+
+        expect(entries).toEqual([]);
+        const warning = onWarning.mock.calls[0]?.[0] as string;
+        expect(warning).toContain(deviceType);
+        expect(warning).toContain('Drums');
+        expect(input.connect).toHaveBeenCalledWith(output);
+    });
+
+    // A mixdown builds a strip for every non-disabled track so the routing
+    // graph matches live, but only schedules the audible ones and the cue-send
+    // feeders. A strip that is never scheduled contributes silence, so an
+    // unrenderable device on it cannot make the file differ from the session.
+    it('degrades an unrenderable catalog device on a track that contributes no audio', async () => {
+        vi.stubGlobal('AudioWorkletNode', undefined);
+        const input = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
+        const output = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
+        const onWarning = vi.fn();
+        mocks.isFaustModule.mockReturnValue(false);
+        const crumbs: Device = {
+            id: 'd1',
+            name: 'Crumbs',
+            type: 'builtin-crumbs',
+            bypassed: false,
+            parameterValues: {},
+        };
+
+        const entries = await buildDeviceChain({} as BaseAudioContext, [crumbs], input, output, {
+            trackName: 'Muted sampler',
+            onWarning,
+            contributesAudio: false,
+        });
+
+        expect(entries).toEqual([]);
+        expect(onWarning.mock.calls[0]?.[0]).toContain('builtin-crumbs');
+        expect(input.connect).toHaveBeenCalledWith(output);
     });
 
     // The `builtin-` prefix matcher claims every `builtin-*` id, so a builtin
@@ -186,6 +270,11 @@ describe('buildDeviceChain', () => {
         ['builtin-synth-strings', 'synth-2'],
         ['builtin-drum-kit', 'kit-1'],
         ['builtin-drum-machine-808', 'kit-2'],
+        // The bare arm `isDrumDevice` has always matched and the node-less
+        // table had dropped: `scheduleTrackClips` resolves it through
+        // `getDrumKitDefByIndex` and renders it, so it must not warn.
+        ['drum-kit', 'kit-3'],
+        ['synth', 'synth-3'],
     ])('routes %s around the chain without warning or failing', async (type, id) => {
         const input = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
         const output = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;

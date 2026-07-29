@@ -13,6 +13,7 @@ import { type Device } from '../../../models/TrackViewTypes';
 import { createFaustDevice } from '../../faustDeviceFactory';
 import { isNodelessOfflineDeviceType } from '../nodelessOfflineDeviceTypes';
 import { createDeviceRegistry } from '../setupDeviceStrategies';
+import { getUnrenderableCatalogDeviceTypes } from '../unrenderableCatalogDeviceTypes';
 import { isUnsupportedDeviceTypeError } from '../unsupportedDeviceTypeError';
 
 /**
@@ -48,23 +49,18 @@ import { isUnsupportedDeviceTypeError } from '../unsupportedDeviceTypeError';
  */
 
 /**
- * Catalog ids with no offline render path, each with the reason. An entry here
- * is a declared defect, not a dispensation: `buildDeviceChain` fails the export
- * outright when one of these reaches a track, so the user is told rather than
- * handed a file missing the device.
+ * Catalog ids with no offline render path, read from the production table that
+ * `buildDeviceChain` gates its refusal on. It is deliberately the same object
+ * rather than a copy: the runtime decision and this guard must be the same
+ * claim, and a second list would be free to drift from the first.
  *
- * The suite asserts in both directions — an id listed here that *gains* an
- * implementation fails this file until the entry is removed. The list cannot
- * rot into a permanent excuse.
+ * An entry there is a declared defect, not a dispensation — the export fails
+ * outright when one of these reaches a track, so the user is told rather than
+ * handed a file missing the device. This suite pins the table from both sides:
+ * an id that *gains* an implementation fails here until its entry is removed,
+ * and any catalog id *missing* from it must build for real.
  */
-const NO_OFFLINE_IMPLEMENTATION: Record<string, string> = {
-    'builtin-crumbs':
-        'Crumbs runs in the Rust backend behind the live `crumbs_*` Tauri commands. There is no WebAudio node and ' +
-        'no offline bridge to the native engine, so no render path exists on either platform.',
-    crust:
-        'Crust is catalog-only: `addDevice` refuses to place it ("Crust is not fully implemented"), so it can ' +
-        'never reach a track or a device chain.',
-};
+const NO_OFFLINE_IMPLEMENTATION = getUnrenderableCatalogDeviceTypes();
 
 /**
  * The whole catalog: `getPlatformPlugins` hides `platform: 'native'` entries

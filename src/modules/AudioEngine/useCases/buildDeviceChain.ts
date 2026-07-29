@@ -9,6 +9,7 @@ import { type Device } from '../models/TrackViewTypes';
 import { type OfflineDeviceNode } from '../repositories/devices/types';
 import { isNodelessOfflineDeviceType } from '../repositories/deviceStrategy/nodelessOfflineDeviceTypes';
 import { createDeviceRegistry, type AudioDeviceStrategy } from '../repositories/deviceStrategy/setupDeviceStrategies';
+import { isUnrenderableCatalogDeviceType } from '../repositories/deviceStrategy/unrenderableCatalogDeviceTypes';
 import { isUnsupportedDeviceTypeError } from '../repositories/deviceStrategy/unsupportedDeviceTypeError';
 import { createFaustDevice } from '../repositories/faustDeviceFactory';
 
@@ -132,6 +133,19 @@ export type BuildDeviceChainContext = {
     trackName?: string;
     /** The export's user-visible warning channel, for degraded devices. */
     onWarning?: (message: string) => void;
+    /**
+     * Whether anything this chain produces can reach the rendered file.
+     *
+     * A mixdown builds a strip for every non-disabled track so the routing
+     * graph matches live, but only schedules the tracks that are audible or
+     * feed a pre-fader cue send. A strip that is built and never scheduled
+     * contributes silence by construction, so an unrenderable device on it
+     * cannot make the file differ from the session — there is nothing to
+     * refuse over. Pass `false` for those and the failure degrades to a
+     * warning. Defaults to `true`: a caller that says nothing is assumed to be
+     * rendering the track.
+     */
+    contributesAudio?: boolean;
 };
 
 /**
@@ -142,20 +156,25 @@ export type BuildDeviceChainContext = {
  * 2. Faust DSP devices (async compilation + AudioWorkletNode)
  * 3. Native Rust/WASM DSP devices (async WASM init + AudioWorkletNode)
  *
- * Device failures split two ways, and the split is about *why* the device is
- * missing, not about which line threw:
+ * Device failures split two ways, and the split is about what the user loses,
+ * not about which line threw:
  *
- * - No offline implementation exists for the type (`UnsupportedDeviceTypeError`)
- *   — a coverage hole in this codebase. The export fails. It used to warn and
+ * - The product claims this device and we cannot render it offline
+ *   (`UnsupportedDeviceTypeError` on a type listed in
+ *   `unrenderableCatalogDeviceTypes`). The export fails. It used to warn and
  *   continue, which produced a file that did not contain what the session
  *   plays: the device was dropped, and because `scheduleTrackClips` then found
  *   no `instrumentControls`, an unrenderable *instrument* came back as the
  *   builtin fallback synth (sawtooth at 0.3) — wrong in a way that sounds
  *   deliberate. A render must contain what playback contains.
- * - A real implementation failed at runtime (missing WASM asset, unavailable
- *   worklet, Faust compile error) — an environment problem. That still
- *   degrades, but it now reaches the user through the export warning channel
- *   instead of only the log.
+ * - Everything else degrades and reaches the user through the export warning
+ *   channel instead of only the log: a real implementation that failed at
+ *   runtime (missing WASM asset, unavailable worklet, Faust compile error), and
+ *   a device type the product does not claim at all. The latter is silent in
+ *   live playback too — `TrackNode` returns without a node when no descriptor
+ *   matches — so dropping it offline matches playback rather than diverging
+ *   from it. Refusing there would make a project unexportable over a device it
+ *   never sounded.
  *
  * Device types rendered by another offline path never reach either branch; see
  * `isNodelessOfflineDeviceType`.
@@ -170,6 +189,7 @@ export const buildDeviceChain = inject({ logger })(
             context: BuildDeviceChainContext = {}
         ): Promise<BuildDeviceChainOutput> {
             const trackLabel = context.trackName ?? 'unknown track';
+            const contributesAudio = context.contributesAudio ?? true;
             // Some devices render offline through the note or kit scheduler and
             // deliberately have no audio-node factory. They are named and
             // justified individually — an unlisted type that cannot be built is
@@ -214,14 +234,25 @@ export const buildDeviceChain = inject({ logger })(
                         await runOfflineInstrumentSetup({ device, port: workletPort, logger });
                     }
                 } catch (error) {
-                    if (isUnsupportedDeviceTypeError(error)) {
-                        // Nothing in this build can render this device. Dropping
-                        // it would hand back a file the session does not play,
-                        // so refuse to produce one at all.
+                    // Refuse only when the product claims this device and we
+                    // cannot render it — that is the case where dropping it
+                    // hands back a file the session does not play. A type the
+                    // catalog does not know (a stale preset string, a
+                    // third-party plugin an OfflineAudioContext cannot host) is
+                    // already silent in live playback, so dropping it offline
+                    // reproduces playback exactly and degrades instead.
+                    //
+                    // A track whose audio cannot reach the file at all is never
+                    // worth refusing over; see `contributesAudio`.
+                    if (
+                        isUnsupportedDeviceTypeError(error) &&
+                        contributesAudio &&
+                        isUnrenderableCatalogDeviceType(device.type)
+                    ) {
                         throw createExportError(
                             `Track "${trackLabel}" uses the device "${device.type}", which this build cannot render ` +
                                 `offline. Export stopped rather than producing a file without it. ` +
-                                `Remove the device from the track, or freeze the track, to export.`,
+                                `Remove the device from the track to export.`,
                             error
                         );
                     }
