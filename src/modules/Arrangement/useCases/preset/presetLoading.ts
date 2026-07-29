@@ -32,7 +32,16 @@ function isInstrumentDevice(type: string): boolean {
 }
 
 function attachEffectDevice(trackId: string, dp: DevicePreset): void {
-    const added = addDevice(trackId, dp.name);
+    // `dp.type`, never `dp.name`. `addDevice` resolves by name *or* id and, on
+    // a miss, stores the string it was handed as the device type. Factory
+    // presets label their effects — `comp('Drum Comp', …)` is
+    // `type: 'builtin-compressor'` under a name no catalog plugin carries — so
+    // passing the label minted a device typed `Drum Comp`, which no descriptor
+    // matches. `TrackNode.addDevice` then bails on it, meaning the effect was
+    // silent in playback as well as absent from a render.
+    // `attachInstrumentDevice` below already used `dp.type`; this is the same
+    // rule, applied on the branch that had drifted from it.
+    const added = addDevice(trackId, dp.type);
     if (!added) {
         return;
     }
