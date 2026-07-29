@@ -347,9 +347,14 @@ describe('generateToolPlanningOutcome', () => {
         expect(mocks.generateNativeToolCalls).toHaveBeenCalledTimes(1);
         expect(mocks.generateNativeCompletion).toHaveBeenCalledWith(
             expect.stringContaining('Available tools:'),
-            'mute drums'
+            'mute drums',
+            { requireComplete: true }
         );
-        expect(mocks.generateNativeCompletion).toHaveBeenCalledWith(expect.stringContaining('muteTrack'), 'mute drums');
+        expect(mocks.generateNativeCompletion).toHaveBeenCalledWith(
+            expect.stringContaining('muteTrack'),
+            'mute drums',
+            { requireComplete: true }
+        );
         expect(mocks.parseToolPlanningOutcome).toHaveBeenCalledWith('<tool name="mute_track" />');
         expect(result).toEqual(completePlan([{ name: 'mute_track', arguments: {} }]));
     });
@@ -375,6 +380,29 @@ describe('generateToolPlanningOutcome', () => {
         });
     });
 
+    it('treats an incomplete native text finish as a terminal planning rejection', async () => {
+        mocks.backendChain.value = ['native', 'cloud'];
+        mocks.nativeEngineReady.value = true;
+        mocks.generateNativeToolCalls.mockResolvedValue(null);
+        mocks.generateNativeCompletion.mockRejectedValue(
+            new ToolPlanningRejectedError('Native text tool planning did not complete (finish_reason: length)')
+        );
+
+        const result = await generateToolCalls('sys', 'mute drums');
+
+        expect(result).toEqual({
+            status: 'rejected',
+            reason: 'Native text tool planning did not complete (finish_reason: length)',
+        });
+        expect(mocks.generateNativeCompletion).toHaveBeenCalledWith(
+            expect.stringContaining('Available tools:'),
+            'mute drums',
+            { requireComplete: true }
+        );
+        expect(mocks.parseToolPlanningOutcome).not.toHaveBeenCalled();
+        expect(mocks.generateCloudToolCalls).not.toHaveBeenCalled();
+    });
+
     it('should fall back to native text completion when structured native calls fail', async () => {
         mocks.backendChain.value = ['native'];
         mocks.nativeEngineReady.value = true;
@@ -389,7 +417,8 @@ describe('generateToolPlanningOutcome', () => {
         );
         expect(mocks.generateNativeCompletion).toHaveBeenCalledWith(
             expect.stringContaining('Available tools:'),
-            'mute drums'
+            'mute drums',
+            { requireComplete: true }
         );
         expect(result).toEqual(completePlan([{ name: 'mute_track', arguments: {} }]));
     });

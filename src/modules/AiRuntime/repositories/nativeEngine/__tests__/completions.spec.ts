@@ -76,6 +76,15 @@ describe('generateNativeCompletion', () => {
             expect(mocks.tauriInvoke.mock.calls[1]?.[0]).toBe('cancel_native_llm_generation');
             expect(getInvocationArgs(1).requestId).toBe(getInvocationArgs(0).requestId);
         });
+
+        it('preserves the Tauri string contract when completion metadata is unavailable', async () => {
+            mocks.tauriInvoke.mockResolvedValue('Tauri response');
+
+            await expect(generateNativeCompletion('system prompt', 'hello', { requireComplete: true })).resolves.toBe(
+                'Tauri response'
+            );
+            expect(getInvocationArgs(0)).not.toHaveProperty('requireComplete');
+        });
     });
 
     describe('when running in browser (dev mode)', () => {
@@ -117,6 +126,48 @@ describe('generateNativeCompletion', () => {
             await expect(generateNativeCompletion('sys', 'user')).rejects.toThrow(
                 'llama-server error 500: Internal Server Error'
             );
+        });
+
+        it('returns a terminal browser completion when strict completion is required', async () => {
+            mocks.fetch.mockResolvedValue({
+                ok: true,
+                json: () =>
+                    Promise.resolve({
+                        choices: [{ finish_reason: 'stop', message: { content: '[{"name":"muteTrack"}]' } }],
+                    }),
+            });
+
+            await expect(generateNativeCompletion('sys', 'user', { requireComplete: true })).resolves.toBe(
+                '[{"name":"muteTrack"}]'
+            );
+        });
+
+        it.each([
+            {
+                label: 'length finish',
+                payload: {
+                    choices: [{ finish_reason: 'length', message: { content: '[{"name":"muteTrack"}]' } }],
+                },
+            },
+            { label: 'missing choice', payload: { choices: [] } },
+            { label: 'missing message', payload: { choices: [{ finish_reason: 'stop' }] } },
+            {
+                label: 'null content',
+                payload: { choices: [{ finish_reason: 'stop', message: { content: null } }] },
+            },
+            {
+                label: 'missing finish state',
+                payload: { choices: [{ message: { content: '[{"name":"muteTrack"}]' } }] },
+            },
+        ])('rejects a strict browser completion with $label', async ({ payload }) => {
+            mocks.fetch.mockResolvedValue({
+                ok: true,
+                json: () => Promise.resolve(payload),
+            });
+
+            await expect(generateNativeCompletion('sys', 'user', { requireComplete: true })).rejects.toMatchObject({
+                name: 'ToolPlanningRejectedError',
+            });
         });
     });
 });

@@ -9,6 +9,8 @@ Structured native and hosted tool-planning adapters reported malformed payloads,
 ## Decision
 
 - Structured native and hosted adapters throw `ToolPlanningRejectedError` for refusal, malformed or inconsistent payloads, non-tool assistant content, and incomplete tool-call batches.
+- Browser-dev native text planning requires exactly one llama-server choice with string message content and `finish_reason: stop`; invalid or non-terminal completion metadata throws `ToolPlanningRejectedError`.
+- The Tauri native completion command still exposes only a string, so finish-state validation cannot be claimed there until the bridge returns metadata; strict text syntax validation remains in effect.
 - HTTP status failures, transport errors, provider configuration changes, and backend initialization failures retain their existing retry or cancellation behavior.
 - Provider orchestration converts `ToolPlanningRejectedError` into a rejected planning outcome immediately and does not try another backend or native text fallback.
 - A terminal planning rejection leaves the responding backend ready because the request completed and the failure concerns the model response, not backend availability.

@@ -139,9 +139,14 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
         ].join('\n');
         let nativeCompletion: Promise<string>;
         if (signal === undefined) {
-            nativeCompletion = generateNativeCompletion(textFallbackSystemPrompt, userMessage);
+            nativeCompletion = generateNativeCompletion(textFallbackSystemPrompt, userMessage, {
+                requireComplete: true,
+            });
         } else {
-            nativeCompletion = generateNativeCompletion(textFallbackSystemPrompt, userMessage, { signal });
+            nativeCompletion = generateNativeCompletion(textFallbackSystemPrompt, userMessage, {
+                signal,
+                requireComplete: true,
+            });
         }
         const content = await waitForInference(nativeCompletion, signal);
         logger.info(
