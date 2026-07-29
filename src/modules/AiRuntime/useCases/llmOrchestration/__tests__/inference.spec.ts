@@ -93,6 +93,10 @@ vi.mock('../../../transformers/toolCallParser', () => ({
     parseToolPlanningOutcome: mocks.parseToolPlanningOutcome,
 }));
 
+function completePlan<TToolCall>(toolCalls: TToolCall[]) {
+    return { status: 'complete' as const, toolCalls };
+}
+
 describe('generateToolPlanningOutcome', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -128,10 +132,7 @@ describe('generateToolPlanningOutcome', () => {
         );
         expect(mocks.generateNativeCompletion).not.toHaveBeenCalled();
         expect(mocks.parseToolPlanningOutcome).not.toHaveBeenCalled();
-        expect(result).toEqual({
-            status: 'complete',
-            toolCalls: [{ name: 'mute_track', arguments: { track_id: 'track-1', muted: true } }],
-        });
+        expect(result).toEqual(completePlan([{ name: 'mute_track', arguments: { track_id: 'track-1', muted: true } }]));
     });
 
     it('preserves a terminal native structured no-op without retrying through text', async () => {
@@ -141,7 +142,7 @@ describe('generateToolPlanningOutcome', () => {
 
         const result = await generateToolCalls('sys', 'leave the mix unchanged');
 
-        expect(result).toEqual({ status: 'complete', toolCalls: [] });
+        expect(result).toEqual(completePlan([]));
         expect(mocks.generateNativeCompletion).not.toHaveBeenCalled();
         expect(mocks.parseToolPlanningOutcome).not.toHaveBeenCalled();
     });
@@ -262,7 +263,7 @@ describe('generateToolPlanningOutcome', () => {
 
         mocks.backendChain.value = ['webllm'];
         mocks.isWebLlmLoaded.mockReturnValue(true);
-        mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'complete', toolCalls: [] });
+        mocks.generateWebLlmToolCalls.mockResolvedValue(completePlan([]));
 
         const controller = new AbortController();
         await generateToolCalls('sys', 'mute drums', tools, controller.signal);
@@ -274,7 +275,7 @@ describe('generateToolPlanningOutcome', () => {
         mocks.backendChain.value = ['webllm'];
         mocks.isWebLlmLoaded.mockReturnValue(false);
         mocks.initWebLlmEngine.mockResolvedValue({});
-        mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'complete', toolCalls: [] });
+        mocks.generateWebLlmToolCalls.mockResolvedValue(completePlan([]));
         const controller = new AbortController();
 
         await generateToolCalls('sys', 'mute drums', [], controller.signal);
@@ -284,10 +285,9 @@ describe('generateToolPlanningOutcome', () => {
     it('preserves the direct-consumer array contract and fails fast on rejection', async () => {
         mocks.backendChain.value = ['webllm'];
         mocks.isWebLlmLoaded.mockReturnValue(true);
-        mocks.generateWebLlmToolCalls.mockResolvedValue({
-            status: 'complete',
-            toolCalls: [{ name: 'muteTrack', arguments: { trackId: 'track-1' } }],
-        });
+        mocks.generateWebLlmToolCalls.mockResolvedValue(
+            completePlan([{ name: 'muteTrack', arguments: { trackId: 'track-1' } }])
+        );
 
         await expect(generateCompatibleToolCalls('sys', 'mute drums')).resolves.toEqual([
             { name: 'muteTrack', arguments: { trackId: 'track-1' } },
@@ -340,10 +340,7 @@ describe('generateToolPlanningOutcome', () => {
         mocks.nativeEngineReady.value = true;
         mocks.generateNativeToolCalls.mockResolvedValue(null);
         mocks.generateNativeCompletion.mockResolvedValue('<tool name="mute_track" />');
-        mocks.parseToolPlanningOutcome.mockReturnValue({
-            status: 'complete',
-            toolCalls: [{ name: 'mute_track', arguments: {} }],
-        });
+        mocks.parseToolPlanningOutcome.mockReturnValue(completePlan([{ name: 'mute_track', arguments: {} }]));
 
         const result = await generateToolCalls('sys', 'mute drums');
 
@@ -354,10 +351,7 @@ describe('generateToolPlanningOutcome', () => {
         );
         expect(mocks.generateNativeCompletion).toHaveBeenCalledWith(expect.stringContaining('muteTrack'), 'mute drums');
         expect(mocks.parseToolPlanningOutcome).toHaveBeenCalledWith('<tool name="mute_track" />');
-        expect(result).toEqual({
-            status: 'complete',
-            toolCalls: [{ name: 'mute_track', arguments: {} }],
-        });
+        expect(result).toEqual(completePlan([{ name: 'mute_track', arguments: {} }]));
     });
 
     it.each([
@@ -386,10 +380,7 @@ describe('generateToolPlanningOutcome', () => {
         mocks.nativeEngineReady.value = true;
         mocks.generateNativeToolCalls.mockRejectedValue(new Error('structured unavailable'));
         mocks.generateNativeCompletion.mockResolvedValue('<tool name="mute_track" />');
-        mocks.parseToolPlanningOutcome.mockReturnValue({
-            status: 'complete',
-            toolCalls: [{ name: 'mute_track', arguments: {} }],
-        });
+        mocks.parseToolPlanningOutcome.mockReturnValue(completePlan([{ name: 'mute_track', arguments: {} }]));
 
         const result = await generateToolCalls('sys', 'mute drums');
 
@@ -400,9 +391,6 @@ describe('generateToolPlanningOutcome', () => {
             expect.stringContaining('Available tools:'),
             'mute drums'
         );
-        expect(result).toEqual({
-            status: 'complete',
-            toolCalls: [{ name: 'mute_track', arguments: {} }],
-        });
+        expect(result).toEqual(completePlan([{ name: 'mute_track', arguments: {} }]));
     });
 });

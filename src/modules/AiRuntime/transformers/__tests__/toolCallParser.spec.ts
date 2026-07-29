@@ -5,6 +5,8 @@ import { parseToolCallXml, parseToolPlanningOutcome } from '../toolCallParser';
 const MALFORMED_OUTCOME = { status: 'rejected', reason: 'Model returned a malformed tool-call batch.' };
 const EMPTY_REASON = 'Model returned an empty tool-planning response.';
 const NON_TOOL_REASON = 'Model returned a non-tool response instead of a complete tool-call batch.';
+const LIST_TRACKS_CALL = { name: 'listTracks', arguments: {} };
+const ANNOTATION_CALL = { name: 'annotate', arguments: { text: '{"name":1,"name":2}' } };
 
 describe('toolCallParser', () => {
     it('parses valid JSON array directly', () => {
@@ -165,46 +167,48 @@ Some thought
         '{"name":"muteTrack"}\n{"name":"soloTrack","extra":true}',
         '{"actions":[{"name":"muteTrack"}],"metadata":{}}',
         '```json\n{"tool_calls":[{"name":"muteTrack"}],"metadata":{}}\n```',
-    ])('rejects unconsumed or conflicting tool-call content: %s', (content) => {
-        expect(parseToolPlanningOutcome(content)).toEqual(MALFORMED_OUTCOME);
-    });
-
-    it.each([
+        '{"actions":[],"actions":[{"name":"muteTrack"}]}',
+        '{"name":"muteTrack","name":"soloTrack"}',
+        '{"name":"muteTrack","arguments":{},"arguments":{"trackId":"t1"}}',
+        '{"name":"muteTrack","parameters":{},"parameters":{"trackId":"t1"}}',
+        '{"name":"muteTrack","arguments":{"trackId":"t1","trackId":"t2"}}',
+        '{"name":"muteTrack","arguments":{"routing":[{"gain":1,"gain":2}]}}',
+        '{"name":"muteTrack","arguments":{"na\\u006de":1,"name":2}}',
+        '```json\n{"name":"muteTrack","name":"soloTrack"}\n```',
+        '<tool_call>{"name":"muteTrack","arguments":{},"arguments":{"trackId":"t1"}}</tool_call>',
+        '{"name":"muteTrack"}\n{"name":"soloTrack","arguments":{"trackId":"t1","trackId":"t2"}}',
         '[{"name":"muteTrack","arguments":[]}]',
         '{"actions":[{"name":"muteTrack","arguments":"{}"}]}',
         '<tool_call>{"name":"muteTrack","arguments":7}</tool_call>',
         '<function>{"name":"muteTrack","parameters":[]}</function>',
         '{"name":"muteTrack","arguments":null}',
         '<function>{"name":"muteTrack","parameters":null}</function>',
-    ])('rejects non-object tool arguments: %s', (content) => {
+        '[{"name":"muteTrack","arguments":{',
+        '<tool_call>{"name":"muteTrack"}',
+    ])('rejects malformed or ambiguous tool-call content: %s', (content) => {
         expect(parseToolPlanningOutcome(content)).toEqual(MALFORMED_OUTCOME);
     });
 
     it.each([
-        { content: '{"name":"listTracks"}', count: 1 },
-        { content: '```json\n{"name":"listTracks"}\n```', count: 1 },
-        { content: '<tool_call>{"name":"listTracks"}</tool_call>', count: 1 },
-        { content: '{"name":"listTracks"}\n{"name":"listTracks"}', count: 2 },
-    ])('accepts one fully consumed $content representation', ({ content, count }) => {
-        expect(parseToolPlanningOutcome(content)).toEqual({
-            status: 'complete',
-            toolCalls: Array.from({ length: count }, () => ({ name: 'listTracks', arguments: {} })),
-        });
+        { content: '{"name":"listTracks"}', toolCalls: [LIST_TRACKS_CALL] },
+        { content: '```json\n{"name":"listTracks"}\n```', toolCalls: [LIST_TRACKS_CALL] },
+        { content: '<tool_call>{"name":"listTracks"}</tool_call>', toolCalls: [LIST_TRACKS_CALL] },
+        { content: '{"name":"listTracks"}\n{"name":"listTracks"}', toolCalls: [LIST_TRACKS_CALL, LIST_TRACKS_CALL] },
+        {
+            content: '{"name":"annotate","arguments":{"text":"{\\"name\\":1,\\"name\\":2}"}}',
+            toolCalls: [ANNOTATION_CALL],
+        },
+        { content: '[]', toolCalls: [] },
+        { content: '{"actions":[]}', toolCalls: [] },
+        { content: '```json\n{"tool_calls":[]}\n```', toolCalls: [] },
+    ])('accepts one fully consumed $content representation', ({ content, toolCalls }) => {
+        expect(parseToolPlanningOutcome(content)).toEqual({ status: 'complete', toolCalls });
     });
 
     it.each([
         { content: '', expectedReason: EMPTY_REASON },
         { content: 'I cannot change the project.', expectedReason: NON_TOOL_REASON },
-        { content: '[{"name":"muteTrack","arguments":{', expectedReason: MALFORMED_OUTCOME.reason },
-        { content: '<tool_call>{"name":"muteTrack"}', expectedReason: MALFORMED_OUTCOME.reason },
     ])('rejects ambiguous planning text: $expectedReason', ({ content, expectedReason }) => {
         expect(parseToolPlanningOutcome(content)).toEqual({ status: 'rejected', reason: expectedReason });
     });
-
-    it.each(['[]', '{"actions":[]}', '```json\n{"tool_calls":[]}\n```'])(
-        'accepts an explicitly valid empty tool-call batch: %s',
-        (content) => {
-            expect(parseToolPlanningOutcome(content)).toEqual({ status: 'complete', toolCalls: [] });
-        }
-    );
 });

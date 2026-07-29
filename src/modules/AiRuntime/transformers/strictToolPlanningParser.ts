@@ -1,5 +1,4 @@
-import type { ToolCallResult } from './toolCallTypes';
-
+export type ToolCallResult = { name: string; arguments: Record<string, unknown> };
 export type ToolPlanningOutcome =
     { status: 'complete'; toolCalls: ToolCallResult[] } | { status: 'rejected'; reason: string };
 const MALFORMED_REASON = 'Model returned a malformed tool-call batch.';
@@ -90,12 +89,46 @@ function parseCall(value: unknown): ToolCallResult | null {
     const argumentsValue = argumentKey === undefined ? {} : value[argumentKey];
     return isRecord(argumentsValue) ? { name: value.name, arguments: argumentsValue } : null;
 }
-function tryParseJson(content: string | undefined): unknown {
+function tryParseJson(content = ''): unknown {
     try {
-        return JSON.parse(content ?? '');
+        if (hasDuplicateObjectKeys(content)) {
+            return undefined;
+        }
+        return JSON.parse(content);
     } catch {
         return undefined;
     }
+}
+function hasDuplicateObjectKeys(content: string): boolean {
+    const keyScopes: Array<Set<string> | null> = [];
+    let previousToken = '';
+    for (let index = 0; index < content.length; index += 1) {
+        const token = content[index];
+        if (token === '"') {
+            let end = index + 1;
+            while (end < content.length && content[end] !== '"') {
+                end += content[end] === '\\' ? 2 : 1;
+            }
+            const keys = keyScopes.at(-1);
+            if (keys && (previousToken === '{' || previousToken === ',')) {
+                const key = JSON.parse(content.slice(index, end + 1)) as unknown;
+                if (typeof key !== 'string' || keys.has(key)) {
+                    return true;
+                }
+                keys.add(key);
+            }
+            index = end;
+            previousToken = '"';
+        } else if (token === '{' || token === '[') {
+            keyScopes.push(token === '{' ? new Set() : null);
+        } else if (token === '}' || token === ']') {
+            keyScopes.pop();
+        }
+        if (token !== undefined && token.trim().length > 0) {
+            previousToken = token;
+        }
+    }
+    return false;
 }
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
