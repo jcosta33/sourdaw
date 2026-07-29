@@ -603,6 +603,19 @@ describe('AudioEngine', () => {
             expect(mockCtx.audioWorklet.addModule.mock.calls.length).toBe(addModuleCallsBefore + 5);
         });
 
+        it('does not restore worklet state when initialization completes after disposal', async () => {
+            const workletLoad = Promise.withResolvers<void>();
+            mockCtx.audioWorklet.addModule.mockReturnValue(workletLoad.promise);
+
+            const initialization = engine.initialize();
+            await engine.dispose();
+            workletLoad.resolve();
+            await initialization;
+
+            expect(engine.getHealth().workletReady).toBe(false);
+            expect(engine.getDiagnostics().graph.masterMeterWorklets).toBe(0);
+        });
+
         it('posts a shutdown message to live track worklet ports before teardown', async () => {
             const strip = engine.ensureTrackStrip('t1');
             const meterPort = (strip.meterNode as unknown as { port: { postMessage: Mock } }).port;
@@ -830,6 +843,24 @@ describe('AudioEngine', () => {
                 sampleRate: 44_100,
                 baseLatency: 0,
                 outputLatency: 0,
+            });
+        });
+
+        it('does not report fallback shim strips as a live graph', () => {
+            fbEngine.ensureTrackStrip('track-1');
+            fbEngine.ensureBusStrip('bus-1');
+
+            expect(fbEngine.getDiagnostics().graph).toEqual({
+                trackStrips: 0,
+                busStrips: 0,
+                sends: 0,
+                sidechains: 0,
+                deviceInstances: 0,
+                deviceInstancesByType: {},
+                deviceAudioNodes: 0,
+                stripMeterWorklets: 0,
+                masterMeterWorklets: 0,
+                adjustmentLayerBuses: 0,
             });
         });
 

@@ -182,6 +182,7 @@ class AudioEngineImpl implements AudioEngine {
     private transportView: Float64Array | null;
     private transportSeqView: Int32Array | null;
     private initPromise: Promise<void> | null = null;
+    private initializationGeneration = 0;
     private lastInitError: Error | null = null;
     private lastResumeError: Error | null = null;
     private adjustmentRuntime: AdjustmentLayerRuntime;
@@ -256,19 +257,26 @@ class AudioEngineImpl implements AudioEngine {
         if (this.fallbackMode) {
             return Promise.resolve();
         }
+        if (this.initPromise) {
+            return this.initPromise;
+        }
         // Cache the in-flight/successful load so concurrent callers share it, but
         // do NOT cache a rejection: a failed worklet load (e.g. one addModule
         // 404s) must not poison the engine forever. On rejection we clear the
         // cached promise so the next initialize() retries the load.
-        this.initPromise ??= this.loadWorklets().catch((error: unknown) => {
-            this.initPromise = null;
-            this.lastInitError = error instanceof Error ? error : new Error(String(error));
-            throw this.lastInitError;
+        const generation = this.initializationGeneration;
+        this.initPromise = this.loadWorklets(generation).catch((error: unknown) => {
+            const initError = error instanceof Error ? error : new Error(String(error));
+            if (generation === this.initializationGeneration) {
+                this.initPromise = null;
+                this.lastInitError = initError;
+            }
+            throw initError;
         });
         return this.initPromise;
     }
 
-    private async loadWorklets(): Promise<void> {
+    private async loadWorklets(generation: number): Promise<void> {
         await Promise.all([
             this.context.audioWorklet.addModule('/audio/worklets/sidechain-compressor-processor.js'),
             this.context.audioWorklet.addModule('/audio/worklets/native-plugin-host-processor.js'),
@@ -276,6 +284,9 @@ class AudioEngineImpl implements AudioEngine {
             this.context.audioWorklet.addModule(recordingProcessorUrl),
             this.context.audioWorklet.addModule(meteringProcessorUrl),
         ]);
+        if (generation !== this.initializationGeneration) {
+            return;
+        }
         // The metering-processor module is now registered, so the master meter
         // can be inserted into the master chain. This cannot happen in the
         // constructor — the master nodes are built before any worklet module is
@@ -342,6 +353,32 @@ class AudioEngineImpl implements AudioEngine {
 
     public getDiagnostics(): AudioEngineDiagnostics {
         const engineState = this.getState();
+        const context = {
+            state: engineState.state,
+            sampleRate: engineState.sampleRate,
+            baseLatency: engineState.baseLatency,
+            outputLatency: this.fallbackMode ? 0 : this.context.outputLatency,
+        };
+        if (this.fallbackMode) {
+            return {
+                context,
+                graph: {
+                    trackStrips: 0,
+                    busStrips: 0,
+                    sends: 0,
+                    sidechains: 0,
+                    deviceInstances: 0,
+                    deviceInstancesByType: {},
+                    deviceAudioNodes: 0,
+                    stripMeterWorklets: 0,
+                    masterMeterWorklets: 0,
+                    adjustmentLayerBuses: 0,
+                },
+                runtime: {
+                    trackedAudioScheduledSources: 0,
+                },
+            };
+        }
         const deviceInstancesByType = new Map<string, number>();
         let deviceInstances = 0;
         let deviceAudioNodes = 0;
@@ -363,12 +400,7 @@ class AudioEngineImpl implements AudioEngine {
             typeof AudioWorkletNode !== 'undefined' && this.masterMeterNode instanceof AudioWorkletNode ? 1 : 0;
 
         return {
-            context: {
-                state: engineState.state,
-                sampleRate: engineState.sampleRate,
-                baseLatency: engineState.baseLatency,
-                outputLatency: this.fallbackMode ? 0 : this.context.outputLatency,
-            },
+            context,
             graph: {
                 // Buses own a backing TrackNode, so subtract them to keep these
                 // two public counters disjoint.
@@ -1304,6 +1336,13 @@ class AudioEngineImpl implements AudioEngine {
     }
 
     public async dispose(): Promise<void> {
+        // Invalidate any loadWorklets continuation before teardown starts. Module
+        // registration may finish after close(), but stale initialization must not
+        // rebuild the master meter or mark the disposed graph ready.
+        this.initializationGeneration++;
+        this.initPromise = null;
+        this.workletReady = false;
+
         // Tell every live worklet processor to shut down before we tear down the
         // graph and close the context, so processors stop their RT work cleanly.
         this.postShutdownToWorklets();
@@ -1331,11 +1370,6 @@ class AudioEngineImpl implements AudioEngine {
         this.transportSAB = null;
         this.transportView = null;
         this.transportSeqView = null;
-
-        // Reset the worklet-load latch so a re-initialize() after dispose() will
-        // reload the modules rather than resolve the stale cached promise.
-        this.initPromise = null;
-        this.workletReady = false;
 
         // Await the close so callers can sequence teardown; the dropped promise
         // previously hid close() failures and left the context not-yet-closed.
