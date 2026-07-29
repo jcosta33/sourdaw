@@ -16,7 +16,10 @@ describe('isOfflineInstrumentDevice', () => {
         mocks.isFaustInstrumentModule.mockReturnValue(false);
     });
 
-    it.each(['fermenter', 'grand-boule', 'levain', 'toaster', 'crumbs', 'builtin-drum-machine-808'])(
+    // The catalog id is `builtin-crumbs` (CrumbsDescriptor), never bare
+    // `crumbs`. The set held the bare string, so the match never fired and a
+    // dry bounce stripped the sampler out of the track entirely.
+    it.each(['fermenter', 'grand-boule', 'levain', 'toaster', 'builtin-crumbs', 'builtin-drum-machine-808'])(
         'keeps %s, which is what makes the sound on a dry bounce',
         (deviceType) => {
             expect(isOfflineInstrumentDevice(deviceType)).toBe(true);

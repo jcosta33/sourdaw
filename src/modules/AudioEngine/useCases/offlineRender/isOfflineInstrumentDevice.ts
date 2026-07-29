@@ -14,7 +14,10 @@ const OFFLINE_INSTRUMENT_DEVICE_TYPES = new Set([
     'grand-boule',
     'levain',
     'toaster',
-    'crumbs',
+    // The catalog id carries the `builtin-` prefix (CrumbsDescriptor). This
+    // entry read bare `crumbs`, which no device ever has, so the guard never
+    // fired and a dry bounce dropped the sampler instead of keeping it.
+    'builtin-crumbs',
     'drum-kit',
     'builtin-drum-kit',
     // Yeast produces no audio, but the offline scheduler keys note projection

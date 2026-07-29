@@ -296,7 +296,10 @@ export async function scheduleTrackClips({
         if (deviceEntriesByTrack && deviceEntriesByTrack.has(track.id)) {
             deviceEntries = deviceEntriesByTrack.get(track.id)!;
         } else {
-            deviceEntries = await buildDeviceChain(offlineCtx, track.devices, trackInputNode, trackPanNode);
+            deviceEntries = await buildDeviceChain(offlineCtx, track.devices, trackInputNode, trackPanNode, {
+                trackName: track.name,
+                onWarning,
+            });
             trackPanNode.connect(destination);
         }
     }

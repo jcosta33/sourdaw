@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 
 import { DeviceFactoryRegistry } from '../AudioDeviceStrategy';
+import { isUnsupportedDeviceTypeError, type UnsupportedDeviceTypeError } from '../unsupportedDeviceTypeError';
 
 describe('DeviceFactoryRegistry', () => {
     it('should register and use a string prefix matcher', async () => {
@@ -30,13 +31,19 @@ describe('DeviceFactoryRegistry', () => {
         expect(result).toBe('mock-strategy');
     });
 
-    it('should throw if no matcher matches', async () => {
+    // The type, not the message, is the contract: `buildDeviceChain` fails the
+    // export on this class and degrades past every other failure, so a plain
+    // Error here would be silently downgraded to a skipped device.
+    it('should throw a typed unsupported-device error if no matcher matches', async () => {
         const registry = new DeviceFactoryRegistry();
         registry.register('builtin-', vi.fn());
 
-        await expect(registry.createDevice({} as any, { type: 'vst-plugin' } as any)).rejects.toThrow(
-            'No device factory registered for type: vst-plugin'
-        );
+        const failure = await registry
+            .createDevice({} as any, { type: 'vst-plugin' } as any)
+            .catch((error: unknown) => error);
+
+        expect(isUnsupportedDeviceTypeError(failure)).toBe(true);
+        expect((failure as UnsupportedDeviceTypeError).deviceType).toBe('vst-plugin');
     });
 
     it('should use the first matching factory', async () => {

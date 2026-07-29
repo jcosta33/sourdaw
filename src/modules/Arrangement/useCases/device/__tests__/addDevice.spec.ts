@@ -12,6 +12,12 @@ const mocks = vi.hoisted(() => ({
     loadPlugin: vi.fn(),
     projectTrackToLiveStrip: vi.fn(),
     notifyUser: vi.fn(),
+    isDeviceSupportedOnCurrentPlatform: vi.fn<(deviceType: string) => boolean>(() => true),
+}));
+
+vi.mock('../../../models/DeviceParameter', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../../../models/DeviceParameter')>()),
+    isDeviceSupportedOnCurrentPlatform: mocks.isDeviceSupportedOnCurrentPlatform,
 }));
 
 vi.mock('../../../repositories/track/getTrackState', () => ({
@@ -51,6 +57,7 @@ describe('addDevice', () => {
         vi.clearAllMocks();
         mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', kind: 'audio', devices: [] }] });
         mocks.getPlatformPlugins.mockReturnValue([]);
+        mocks.isDeviceSupportedOnCurrentPlatform.mockReturnValue(true);
     });
 
     it('adds a generic device if plugin is not found', () => {
@@ -81,6 +88,34 @@ describe('addDevice', () => {
             'error'
         );
         expect(mocks.updateTrack).not.toHaveBeenCalled();
+    });
+
+    // `getPlatformPlugins()` is platform-filtered, so in a browser build a
+    // native-only id resolves to no plugin and falls into the generic branch —
+    // writing a device with no parameters whose type is on the export refusal
+    // table. The project then cannot be exported over a device that was never
+    // properly placed. This is the same class as the `crust` guard beside it.
+    it('refuses a device the current platform cannot host, instead of writing a malformed one', () => {
+        mocks.isDeviceSupportedOnCurrentPlatform.mockReturnValue(false);
+
+        const result = addDevice('t1', 'builtin-crumbs');
+
+        expect(result).toBeNull();
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(String(mocks.notifyUser.mock.calls[0]?.[0])).toContain('builtin-crumbs');
+        expect(mocks.notifyUser.mock.calls[0]?.[1]).toBe('error');
+    });
+
+    // The pass-through the platform helper already guarantees: a type the
+    // catalog does not know is not a platform decision, and must still be
+    // placeable — external plugins and older projects depend on it.
+    it('still places a device type the catalog does not know', () => {
+        mocks.isDeviceSupportedOnCurrentPlatform.mockReturnValue(true);
+
+        const result = addDevice('t1', 'Drum Comp');
+
+        expect(result).toMatchObject({ type: 'Drum Comp' });
+        expect(mocks.updateTrack).toHaveBeenCalledWith('t1', expect.any(Function));
     });
 
     it('adds a registered plugin and notifies engine', () => {
