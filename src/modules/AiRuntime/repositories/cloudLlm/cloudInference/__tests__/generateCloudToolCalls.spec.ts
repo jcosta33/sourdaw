@@ -246,6 +246,9 @@ describe('generateCloudToolCalls', () => {
 
     it.each([
         { label: 'empty name', name: '', input: { name: 'Vocals', kind: 'audio' } },
+        { label: 'null name', name: null, input: { name: 'Vocals', kind: 'audio' } },
+        { label: 'numeric name', name: 42, input: { name: 'Vocals', kind: 'audio' } },
+        { label: 'object name', name: { value: 'addTrack' }, input: { name: 'Vocals', kind: 'audio' } },
         { label: 'null input', name: 'addTrack', input: null },
         { label: 'array input', name: 'addTrack', input: [] },
     ])('terminally rejects an Anthropic tool_use block with $label', async ({ name, input }) => {
