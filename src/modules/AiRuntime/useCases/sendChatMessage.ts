@@ -202,6 +202,20 @@ export async function sendChatMessage(userText: string): Promise<void> {
                     error: batchResult.reason,
                     content: `Failed to execute prompt command atomically: ${batchResult.reason}`,
                 });
+            } else if (result.rejectionReason) {
+                appendChatMessage({
+                    id: `msg-${crypto.randomUUID()}`,
+                    role: 'user',
+                    content: userText,
+                    timestamp: Date.now(),
+                });
+                appendChatMessage({
+                    id: `msg-${crypto.randomUUID()}`,
+                    role: 'assistant',
+                    content: `Command not executed: ${result.rejectionReason}`,
+                    timestamp: Date.now(),
+                    error: result.rejectionReason,
+                });
             } else if (result._jsonEditApplied) {
                 // executeDsoEdit already injected the user message and the assistant streaming message.
                 // We just need to trigger the toast notification.

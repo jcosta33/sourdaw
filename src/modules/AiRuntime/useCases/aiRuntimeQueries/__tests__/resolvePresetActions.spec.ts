@@ -15,9 +15,16 @@ describe('resolvePresetActions', () => {
         expect(result).toEqual([]);
     });
 
-    it('wraps a single preset action in an array', () => {
-        const result = resolvePresetActions({ presetId: 'save', context });
-        expect(result).toEqual([{ type: 'saveProject' }]);
+    it.each(['save', 'new-project', 'export', 'import-audio', 'import-midi', 'leave-collab'])(
+        'does not expose fire-and-forget preset %s',
+        (presetId) => {
+            expect(resolvePresetActions({ presetId, context })).toEqual([]);
+        }
+    );
+
+    it('wraps a single admitted preset action in an array', () => {
+        const result = resolvePresetActions({ presetId: 'scan-plugins', context });
+        expect(result).toEqual([{ type: 'scanPlugins' }]);
     });
 
     it('returns an empty array if buildAction returns null', () => {

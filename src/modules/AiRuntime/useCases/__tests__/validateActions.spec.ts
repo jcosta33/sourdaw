@@ -49,6 +49,20 @@ describe('validateActions', () => {
         expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('Unknown action type'));
     });
 
+    it.each([
+        'exportProject',
+        'importAudioFile',
+        'importMidiFile',
+        'leaveCollabSession',
+        'newProject',
+        'saveProject',
+    ] as const)('should reject fire-and-forget action $type from AI admission', (type) => {
+        const actions = [{ type }] as RuntimeAction[];
+
+        expect(validateActions(actions)).toEqual([]);
+        expect(mockLogger.warn).toHaveBeenCalledWith(`Unawaited AI action rejected: ${type}`);
+    });
+
     it('should reject the Command-only punch-region inverse as unavailable to AI', () => {
         const actions = [
             { type: 'restorePunchRegion', payload: { punchInBeat: 4, punchOutBeat: 12 } },

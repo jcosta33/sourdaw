@@ -202,6 +202,41 @@ describe('sendChatMessage injectables', () => {
         );
     });
 
+    it('reports a rejected prompt distinctly and executes nothing', async () => {
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'prompt',
+        };
+        mocks.parsePromptToActions.mockResolvedValue({
+            actions: [],
+            rawText: 'save project',
+            requiresConfirmation: false,
+            rejectionReason: 'Recognized command failed runtime validation: saveProject',
+        });
+
+        await sendChatMessage('save project');
+
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+        expect(mocks.appendChatMessage).toHaveBeenCalledWith(
+            expect.objectContaining({ role: 'user', content: 'save project' })
+        );
+        const rejectionUserMessage = mocks.appendChatMessage.mock.calls
+            .map(([message]) => message)
+            .find((message) => message.role === 'user' && message.content === 'save project');
+        expect(rejectionUserMessage).toEqual(expect.objectContaining({ role: 'user', content: 'save project' }));
+        expect(rejectionUserMessage).not.toHaveProperty('isDsoAction');
+        expect(mocks.appendChatMessage).toHaveBeenCalledWith(
+            expect.objectContaining({
+                role: 'assistant',
+                content: 'Command not executed: Recognized command failed runtime validation: saveProject',
+                error: 'Recognized command failed runtime validation: saveProject',
+            })
+        );
+    });
+
     it('executes validated provider actions through one atomic command batch', async () => {
         const action = { type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true } } as const;
         const secondAction = { type: 'setTrackPan', payload: { trackId: 'track-guitar', pan: -20 } } as const;

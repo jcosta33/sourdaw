@@ -3,12 +3,14 @@ import { logger } from '#/infra/logger/appLogger';
 
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
 import { type IntentResult } from '../models/IntentResult';
+import { type RuntimeAction } from '../models/RuntimeAction';
 import {
     bridgeLlmToolCalls,
     buildLlmActionSystemPrompt,
     buildLlmActionUserMessage,
     LLM_EXECUTABLE_TOOL_SCHEMAS,
 } from '../transformers/llmActionBridge';
+import { findDeniedPromptIntent } from '../transformers/promptParser/findDeniedPromptIntent';
 import {
     tryPresetMatch,
     buildPresetContext,
@@ -23,13 +25,41 @@ import { isDsoBackendAvailable } from './llmOrchestration/backendResolution/isDs
 import { generateToolCalls } from './llmOrchestration/inference';
 import { validateActions } from './validateActions';
 
+type CreateFastPathResultInput = {
+    actions: RuntimeAction[];
+    prompt: string;
+};
+
+function createFastPathResult(input: CreateFastPathResultInput): IntentResult {
+    const validated = validateActions(input.actions);
+    if (validated.length !== input.actions.length) {
+        const rejectedTypes = input.actions
+            .filter((action) => !validated.includes(action))
+            .map((action) => action.type)
+            .join(', ');
+        return {
+            actions: [],
+            rawText: input.prompt,
+            requiresConfirmation: false,
+            rejectionReason: `Recognized command failed runtime validation: ${rejectedTypes}`,
+        };
+    }
+
+    return {
+        actions: validated,
+        rawText: input.prompt,
+        requiresConfirmation: requiresConfirmation(validated),
+    };
+}
+
 /**
- * Two-tier prompt parsing:
- * 1. Fast-path: fuzzy-match against preset action registry (instant, no LLM)
- * 2. Parameterized fast-path: regex for commands that need values (tempo N, transpose N)
- * 3. Compound fast-path: multi-track creation etc.
- * 4. Provider-neutral LLM tool path: tool calls cross a strict app-owned action bridge
- * 5. DSO fallback: Qwen emits typed Domain-Specific Operations via schema-constrained generation
+ * Prompt parsing order:
+ * 1. Non-executable recognition for explicitly denied action intents
+ * 2. Fast-path: fuzzy-match against executable preset action registry
+ * 3. Parameterized fast-path: regex for commands that need values (tempo N, transpose N)
+ * 4. Compound fast-path: multi-track creation etc.
+ * 5. Provider-neutral LLM tool path: tool calls cross a strict app-owned action bridge
+ * 6. DSO fallback: only after successful provider planning returns no tool calls
  */
 export const parsePromptToActions = inject({ logger })(
     ({ logger }) =>
@@ -40,45 +70,40 @@ export const parsePromptToActions = inject({ logger })(
         ): Promise<IntentResult> {
             const normalized = prompt.toLowerCase().trim();
 
-            // 1. Try preset actions via fuzzy match
+            const deniedActionType = findDeniedPromptIntent(normalized);
+            if (deniedActionType !== null) {
+                return {
+                    actions: [],
+                    rawText: prompt,
+                    requiresConfirmation: false,
+                    rejectionReason: `Action ${deniedActionType} cannot be executed by AI because it does not report completion.`,
+                };
+            }
+
+            // 2. Try executable preset actions via fuzzy match
             const presetCtx = buildPresetContext(context);
             const presetResult = tryPresetMatch(normalized, presetCtx);
             if (presetResult.length > 0) {
-                const validated = validateActions(presetResult);
-                return {
-                    actions: validated,
-                    rawText: prompt,
-                    requiresConfirmation: requiresConfirmation(validated),
-                };
+                return createFastPathResult({ actions: presetResult, prompt });
             }
 
-            // 2. Try parameterized patterns (need value extraction)
+            // 3. Try parameterized patterns (need value extraction)
             const paramResult = tryParameterizedPath(normalized, context);
             if (paramResult.length > 0) {
-                const validated = validateActions(paramResult);
-                return {
-                    actions: validated,
-                    rawText: prompt,
-                    requiresConfirmation: requiresConfirmation(validated),
-                };
+                return createFastPathResult({ actions: paramResult, prompt });
             }
 
-            // 3. Try compound fast path (multi-track creation etc.)
+            // 4. Try compound fast path (multi-track creation etc.)
             const compoundResult = tryCompoundFastPath(normalized, context);
             if (compoundResult !== null) {
-                const validated = validateActions(compoundResult);
-                return {
-                    actions: validated,
-                    rawText: prompt,
-                    requiresConfirmation: requiresConfirmation(validated),
-                };
+                return createFastPathResult({ actions: compoundResult, prompt });
             }
 
             if (signal?.aborted) {
                 return { actions: [], rawText: prompt, requiresConfirmation: false };
             }
 
-            // 4. Provider-neutral LLM path. This only proposes typed actions;
+            // 5. Provider-neutral LLM path. This only proposes typed actions;
             // sendChatMessage remains responsible for confirmation and execution.
             try {
                 const toolCalls = await generateToolCalls(
@@ -99,17 +124,51 @@ export const parsePromptToActions = inject({ logger })(
                     );
                 }
 
-                if (bridged.actions.length > 0 && bridged.rejections.length === 0) {
+                if (bridged.rejections.length > 0) {
+                    const reason = bridged.rejections
+                        .map((rejection) => `${rejection.name}: ${rejection.reason}`)
+                        .join('; ');
+                    return {
+                        actions: [],
+                        rawText: prompt,
+                        requiresConfirmation: false,
+                        rejectionReason: `Provider action rejected: ${reason}`,
+                    };
+                }
+
+                if (bridged.actions.length > 0) {
                     const validated = validateActions(bridged.actions);
-                    if (validated.length === bridged.actions.length) {
+                    if (validated.length !== bridged.actions.length) {
+                        const rejectedTypes = bridged.actions
+                            .filter((action) => !validated.includes(action))
+                            .map((action) => action.type)
+                            .join(', ');
+                        logger.warn('[AI] Rejected LLM action batch because runtime validation removed an action');
                         return {
-                            actions: validated,
+                            actions: [],
                             rawText: prompt,
-                            requiresConfirmation: validated.length > 1 || requiresConfirmation(validated),
-                            executionMode: 'atomic',
+                            requiresConfirmation: false,
+                            rejectionReason: `Provider action failed runtime validation: ${rejectedTypes}`,
                         };
                     }
-                    logger.warn('[AI] Rejected LLM action batch because runtime validation removed an action');
+
+                    return {
+                        actions: validated,
+                        rawText: prompt,
+                        requiresConfirmation: validated.length > 1 || requiresConfirmation(validated),
+                        executionMode: 'atomic',
+                    };
+                }
+
+                if (toolCalls.length > 0) {
+                    const reason = 'Provider planning returned tool calls that did not produce executable actions.';
+                    logger.warn(`[AI] ${reason}`);
+                    return {
+                        actions: [],
+                        rawText: prompt,
+                        requiresConfirmation: false,
+                        rejectionReason: reason,
+                    };
                 }
             } catch (error) {
                 if (isAiRuntimeConfigurationChangedError(error)) {
@@ -118,10 +177,17 @@ export const parsePromptToActions = inject({ logger })(
                 if (signal?.aborted) {
                     return { actions: [], rawText: prompt, requiresConfirmation: false };
                 }
-                logger.warn(`[AI] Provider tool planning failed: ${String(error)}`);
+                const reason = error instanceof Error ? error.message : String(error);
+                logger.warn(`[AI] Provider tool planning failed: ${reason}`);
+                return {
+                    actions: [],
+                    rawText: prompt,
+                    requiresConfirmation: false,
+                    rejectionReason: `Provider planning failed: ${reason}`,
+                };
             }
 
-            // 5. DSO fallback — Qwen3-8B emits typed Domain-Specific Operations.
+            // 6. DSO fallback — every non-empty or failed provider plan returned above.
             if (isDsoBackendAvailable()) {
                 try {
                     const result = await executeDsoEdit(prompt, signal);
