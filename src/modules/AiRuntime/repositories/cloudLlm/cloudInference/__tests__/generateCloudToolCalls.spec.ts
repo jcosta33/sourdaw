@@ -13,11 +13,6 @@ type CloudCreateInput = {
     messages: Array<{ content: string }>;
 };
 
-type CloudCreateOutput = {
-    content: Array<{ type: 'text'; text: string } | { type: 'tool_use'; name: string; input: Record<string, unknown> }>;
-    stop_reason: string | null;
-};
-
 type CompatibleToolInput = {
     runtime: OpenAiCompatibleCloudRuntime;
     systemPrompt: string;
@@ -45,7 +40,7 @@ const mocks = vi.hoisted(() => ({
     getCloudClient: vi.fn(),
     getCloudProviderRuntime: vi.fn(),
     generateOpenAiCompatibleToolCalls: vi.fn<(input: CompatibleToolInput) => Promise<ToolCallResult[]>>(),
-    create: vi.fn<(input: CloudCreateInput, options?: { signal?: AbortSignal }) => Promise<CloudCreateOutput>>(),
+    create: vi.fn<(input: CloudCreateInput, options?: { signal?: AbortSignal }) => Promise<unknown>>(),
     info: vi.fn(),
 }));
 
@@ -216,14 +211,21 @@ describe('generateCloudToolCalls', () => {
         });
     });
 
-    it('handles empty tool blocks safely', async () => {
+    it('rejects a text refusal instead of treating it as an explicit empty tool batch', async () => {
         mocks.create.mockResolvedValue({
             content: [{ type: 'text', text: 'I cannot do that.' }],
             stop_reason: 'end_turn',
         });
 
-        const results = await generateCloudToolCalls('state', 'msg');
-        expect(results).toHaveLength(0);
+        await expect(generateCloudToolCalls('state', 'msg')).rejects.toThrow(
+            'Hosted AI returned a non-tool response instead of a tool-call batch'
+        );
+    });
+
+    it('preserves an explicit empty structured tool batch', async () => {
+        mocks.create.mockResolvedValue({ content: [], stop_reason: 'end_turn' });
+
+        await expect(generateCloudToolCalls('state', 'msg')).resolves.toEqual([]);
     });
 
     it('rejects tool blocks from a token-limited response', async () => {
@@ -235,6 +237,39 @@ describe('generateCloudToolCalls', () => {
         await expect(generateCloudToolCalls('state', 'msg')).rejects.toThrow(
             'Hosted AI returned an incomplete tool-call batch'
         );
+    });
+
+    it.each([
+        { label: 'null response', response: null },
+        { label: 'null content', response: { content: null, stop_reason: 'end_turn' } },
+        { label: 'null block', response: { content: [null], stop_reason: 'end_turn' } },
+        { label: 'scalar block', response: { content: [42], stop_reason: 'end_turn' } },
+        { label: 'unsupported block', response: { content: [{ type: 'thinking' }], stop_reason: 'end_turn' } },
+        { label: 'non-string text', response: { content: [{ type: 'text', text: null }], stop_reason: 'end_turn' } },
+    ])('terminally rejects an Anthropic response with $label', async ({ response }) => {
+        mocks.create.mockResolvedValue(response);
+
+        await expect(generateCloudToolCalls('state', 'msg')).rejects.toMatchObject({
+            name: 'ToolPlanningRejectedError',
+        });
+    });
+
+    it.each([
+        { label: 'empty name', name: '', input: { name: 'Vocals', kind: 'audio' } },
+        { label: 'null name', name: null, input: { name: 'Vocals', kind: 'audio' } },
+        { label: 'numeric name', name: 42, input: { name: 'Vocals', kind: 'audio' } },
+        { label: 'object name', name: { value: 'addTrack' }, input: { name: 'Vocals', kind: 'audio' } },
+        { label: 'null input', name: 'addTrack', input: null },
+        { label: 'array input', name: 'addTrack', input: [] },
+    ])('terminally rejects an Anthropic tool_use block with $label', async ({ name, input }) => {
+        mocks.create.mockResolvedValue({
+            content: [{ type: 'tool_use', name, input }],
+            stop_reason: 'tool_use',
+        });
+
+        await expect(generateCloudToolCalls('state', 'msg')).rejects.toMatchObject({
+            name: 'ToolPlanningRejectedError',
+        });
     });
 
     it('rejects a token-limited response before the first tool call completes', async () => {

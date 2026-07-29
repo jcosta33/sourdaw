@@ -1,5 +1,7 @@
 import { isTauri } from '#/utils/tauriBridge';
 
+import { ToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedError';
+
 import { invokeCancelableNativeLlm } from './invokeCancelableNativeLlm';
 
 type NativeToolDefinition = {
@@ -45,22 +47,28 @@ export async function generateNativeToolCalls(input: GenerateNativeToolCallsInpu
 
 function narrowNativeToolCallResults(response: unknown): NativeToolCallResult[] {
     if (!Array.isArray(response)) {
-        throw new TypeError('Invalid native_tool_calling response: expected an array');
+        throw new ToolPlanningRejectedError('Invalid native_tool_calling response: expected an array');
     }
 
     return response.map((item, index) => {
         if (!isRecord(item)) {
-            throw new TypeError(`Invalid native_tool_calling response: item ${String(index)} is not an object`);
+            throw new ToolPlanningRejectedError(
+                `Invalid native_tool_calling response: item ${String(index)} is not an object`
+            );
         }
 
         const name = item.name;
         const args = item.arguments;
 
         if (typeof name !== 'string' || name.length === 0) {
-            throw new TypeError(`Invalid native_tool_calling response: item ${String(index)} has no name`);
+            throw new ToolPlanningRejectedError(
+                `Invalid native_tool_calling response: item ${String(index)} has no name`
+            );
         }
         if (!isRecord(args)) {
-            throw new TypeError(`Invalid native_tool_calling response: item ${String(index)} has invalid arguments`);
+            throw new ToolPlanningRejectedError(
+                `Invalid native_tool_calling response: item ${String(index)} has invalid arguments`
+            );
         }
 
         return { name, arguments: args };

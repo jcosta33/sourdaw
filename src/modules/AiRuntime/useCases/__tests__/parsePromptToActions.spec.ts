@@ -247,7 +247,7 @@ describe('parsePromptToActions', () => {
     it('returns a rejected provider planning outcome without bridging or falling through to DSO', async () => {
         vi.mocked(generateToolCalls).mockResolvedValue({
             status: 'rejected',
-            reason: 'Model returned a non-tool response instead of a complete tool-call batch.',
+            reason: 'Native text tool planning did not complete (finish_reason: length)',
         });
         vi.mocked(isDsoBackendAvailable).mockReturnValue(true);
 
@@ -258,7 +258,7 @@ describe('parsePromptToActions', () => {
             rawText: 'mute the vocals',
             requiresConfirmation: false,
             rejectionReason:
-                'Provider planning rejected: Model returned a non-tool response instead of a complete tool-call batch.',
+                'Provider planning rejected: Native text tool planning did not complete (finish_reason: length)',
         });
         expect(mockBridgeLlmToolCalls).not.toHaveBeenCalled();
         expect(executeDsoEdit).not.toHaveBeenCalled();

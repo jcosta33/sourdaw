@@ -1,17 +1,28 @@
 import { isTauri } from '#/utils/tauriBridge';
 
+import { ToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedError';
+
 import { invokeCancelableNativeLlm } from './invokeCancelableNativeLlm';
 import { BASE_URL } from './lifecycleState';
+
+type GenerateNativeCompletionOptions = {
+    temperature?: number;
+    maxTokens?: number;
+    signal?: AbortSignal;
+    requireComplete?: boolean;
+};
 
 /**
  * Non-streaming completion.
  * In Tauri: in-process inference via mistral.rs.
  * In browser dev mode: direct fetch to localhost llama-server.
+ * `requireComplete` validates browser llama-server metadata only; the Tauri
+ * command currently returns text without finish metadata and keeps its string contract.
  */
 export async function generateNativeCompletion(
     systemPrompt: string,
     userMessage: string,
-    options?: { temperature?: number; maxTokens?: number; signal?: AbortSignal }
+    options?: GenerateNativeCompletionOptions
 ): Promise<string> {
     if (isTauri()) {
         const response = await invokeCancelableNativeLlm({
@@ -26,6 +37,11 @@ export async function generateNativeCompletion(
             abortMessage: 'Native completion aborted',
         });
         if (typeof response !== 'string') {
+            if (options?.requireComplete) {
+                throw new ToolPlanningRejectedError(
+                    'Invalid native text tool-planning response: expected a string from Tauri'
+                );
+            }
             throw new TypeError('Invalid generate_native_completion response: expected a string');
         }
         return response;
@@ -51,6 +67,44 @@ export async function generateNativeCompletion(
         throw new Error(`llama-server error ${String(response.status)}: ${text}`);
     }
 
-    const data = (await response.json()) as { choices: Array<{ message: { content: string | null } }> };
-    return data.choices[0]?.message.content ?? '';
+    let data: unknown;
+    try {
+        data = (await response.json()) as unknown;
+    } catch (error) {
+        if (options?.requireComplete && hasErrorName(error, 'SyntaxError')) {
+            throw new ToolPlanningRejectedError('Invalid native text tool-planning response: malformed JSON');
+        }
+        throw error;
+    }
+    if (options?.requireComplete) {
+        return readCompleteBrowserResponse(data);
+    }
+    const compatibleData = data as { choices: Array<{ message: { content: string | null } }> };
+    return compatibleData.choices[0]?.message.content ?? '';
+}
+
+function readCompleteBrowserResponse(data: unknown): string {
+    if (!isRecord(data) || !Array.isArray(data.choices) || data.choices.length !== 1) {
+        throw new ToolPlanningRejectedError('Invalid native text tool-planning response: expected one choice');
+    }
+    const choice: unknown = data.choices[0];
+    if (!isRecord(choice) || !isRecord(choice.message) || typeof choice.message.content !== 'string') {
+        throw new ToolPlanningRejectedError(
+            'Invalid native text tool-planning response: expected a message with string content'
+        );
+    }
+    if (choice.finish_reason !== 'stop') {
+        throw new ToolPlanningRejectedError(
+            `Native text tool planning did not complete (finish_reason: ${String(choice.finish_reason)})`
+        );
+    }
+    return choice.message.content;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function hasErrorName(value: unknown, name: string): boolean {
+    return isRecord(value) && value.name === name;
 }
