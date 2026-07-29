@@ -46,7 +46,8 @@ export function parseToolPlanningOutcome(content: string): ToolPlanningOutcome {
 }
 
 function isExplicitEmptyToolCallBatch(content: string): boolean {
-    const candidate = getJsonCandidate(content);
+    const trimmed = content.trim();
+    const candidate = (trimmed.match(/^```(?:json)?\s*([\s\S]*?)```$/)?.[1] ?? trimmed).trim();
     try {
         const parsed = JSON.parse(candidate) as unknown;
         if (Array.isArray(parsed)) {
@@ -55,10 +56,14 @@ function isExplicitEmptyToolCallBatch(content: string): boolean {
         if (!isObject(parsed)) {
             return false;
         }
-        if (Array.isArray(parsed.actions)) {
+        const keys = Object.keys(parsed);
+        if (keys.length !== 1) {
+            return false;
+        }
+        if (keys[0] === 'actions' && Array.isArray(parsed.actions)) {
             return parsed.actions.length === 0;
         }
-        if (Array.isArray(parsed.tool_calls)) {
+        if (keys[0] === 'tool_calls' && Array.isArray(parsed.tool_calls)) {
             return parsed.tool_calls.length === 0;
         }
         return false;
@@ -68,14 +73,26 @@ function isExplicitEmptyToolCallBatch(content: string): boolean {
 }
 
 function looksLikeToolCallSyntax(content: string): boolean {
-    const candidate = getJsonCandidate(content);
-    return candidate.startsWith('{') || candidate.startsWith('[') || /<\/?(?:tool_call|function)>/.test(content);
+    return (
+        /<\/?(?:tool_call|function)>/.test(content) ||
+        /```(?:json)?/.test(content) ||
+        /"(?:actions|tool_calls|name|arguments|parameters)"\s*:/.test(content) ||
+        /(?:^|\n)\s*[[{]/.test(content)
+    );
 }
 
-function getJsonCandidate(content: string): string {
-    const trimmed = content.trim();
-    const fencedJson = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/)?.[1];
-    return (fencedJson ?? trimmed).trim();
+function accountForFencedResidual(toolCalls: ToolCallResult[], residual: string): ToolCallResult[] {
+    if (looksLikeToolCallSyntax(residual)) {
+        return [...toolCalls, invalidToolCall()];
+    }
+    return toolCalls;
+}
+
+function parseJsonLineCandidate(line: string): ToolCallResult {
+    if (!line.startsWith('{')) {
+        return invalidToolCall();
+    }
+    return tryParseToolCallJson(line) ?? invalidToolCall();
 }
 
 /**
@@ -101,7 +118,9 @@ export function parseToolCallXml(content: string): ToolCallResult[] {
     const identifiedTagCount = Math.max(openingTagCount, closingTagCount);
     if (identifiedTagCount > 0) {
         const unmatchedTagCount = identifiedTagCount - taggedMatches.length;
-        return [...taggedResults, ...Array.from({ length: unmatchedTagCount }, invalidToolCall)];
+        const residual = content.replaceAll(/<(tool_call|function)>[\s\S]*?<\/\1>/g, '');
+        const residualCount = unmatchedTagCount === 0 && looksLikeToolCallSyntax(residual) ? 1 : 0;
+        return [...taggedResults, ...Array.from({ length: unmatchedTagCount + residualCount }, invalidToolCall)];
     }
 
     // 3. JSONL fallback. Preserve every object-shaped candidate line for the
@@ -109,8 +128,8 @@ export function parseToolCallXml(content: string): ToolCallResult[] {
     return content
         .split('\n')
         .map((line) => line.trim())
-        .filter((line) => line.startsWith('{'))
-        .map((line) => tryParseToolCallJson(line) ?? invalidToolCall());
+        .filter((line) => line.startsWith('{') || line.startsWith('['))
+        .map(parseJsonLineCandidate);
 }
 
 /**
@@ -122,42 +141,49 @@ export function parseToolCallXml(content: string): ToolCallResult[] {
 function tryParseJsonMode(content: string): ToolCallResult[] {
     const trimmed = content.trim();
 
-    // Try to extract JSON from potential markdown fencing
-    const fencedJson = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/)?.[1];
+    const fencedMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
+    const fencedJson = fencedMatch?.[1];
     const candidate = (fencedJson ?? trimmed).trim();
+    const residual = fencedMatch ? trimmed.replace(fencedMatch[0], '') : '';
 
     if (!candidate.startsWith('{') && !candidate.startsWith('[')) {
-        return [];
+        return fencedMatch ? [invalidToolCall()] : [];
     }
 
     try {
         const parsed = JSON.parse(candidate) as unknown;
 
+        if (isObject(parsed) && Object.hasOwn(parsed, 'actions') && Object.hasOwn(parsed, 'tool_calls')) {
+            return [invalidToolCall()];
+        }
+
         // {"actions":[...]} wrapper
         if (isObject(parsed) && Array.isArray(parsed.actions)) {
-            return parsed.actions.map(coerceArrayToolCall);
+            return accountForFencedResidual(parsed.actions.map(coerceArrayToolCall), residual);
         }
 
         // {"tool_calls":[...]} wrapper
         if (isObject(parsed) && Array.isArray(parsed.tool_calls)) {
-            return parsed.tool_calls.map(coerceArrayToolCall);
+            return accountForFencedResidual(parsed.tool_calls.map(coerceArrayToolCall), residual);
         }
 
         // Top-level array
         if (Array.isArray(parsed)) {
-            return parsed.map(coerceArrayToolCall);
+            return accountForFencedResidual(parsed.map(coerceArrayToolCall), residual);
         }
 
         // Single tool call object
         const single = coerceToolCall(parsed);
         if (single) {
-            return [single];
+            return accountForFencedResidual([single], residual);
         }
     } catch {
-        // Not valid JSON, fall through to XML parsing
+        if (fencedMatch) {
+            return [invalidToolCall()];
+        }
     }
 
-    return [];
+    return fencedMatch ? [invalidToolCall()] : [];
 }
 
 function coerceArrayToolCall(raw: unknown): ToolCallResult {
@@ -181,7 +207,10 @@ function coerceToolCall(raw: unknown): ToolCallResult | null {
     if (typeof name !== 'string' || name.length === 0) {
         return null;
     }
-    const args = (obj.arguments ?? obj.parameters ?? {}) as Record<string, unknown>;
+    const args = obj.arguments ?? obj.parameters ?? {};
+    if (!isObject(args)) {
+        return null;
+    }
     return { name, arguments: args };
 }
 

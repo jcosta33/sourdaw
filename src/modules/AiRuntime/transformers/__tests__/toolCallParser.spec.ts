@@ -143,6 +143,33 @@ Some thought
     });
 
     it.each([
+        '```json\n[{"name":"muteTrack","arguments":{"trackId":"t1"}}]\n```\n<tool_call>{"name":"soloTrack","arguments":{',
+        '```json\n[{"name":"muteTrack","arguments":{"trackId":"t1"}}]\n```\n<tool_call>{"name":"soloTrack","arguments":{"trackId":"t2"}}</tool_call>',
+        '{"actions":[],"tool_calls":[{"name":"muteTrack","arguments":{"trackId":"t1"}}]}',
+        '{"actions":[],"tool_calls":[]}',
+        '{"actions":[],"tool_calls":"truncated"}',
+        '```json\n[]\n```\n<tool_call>{"name":"muteTrack","arguments":{',
+        '[]\n{"name":"muteTrack","arguments":{"trackId":"t1"}}',
+    ])('rejects unconsumed or conflicting tool-call content: %s', (content) => {
+        expect(parseToolPlanningOutcome(content)).toEqual({
+            status: 'rejected',
+            reason: 'Model returned a malformed tool-call batch.',
+        });
+    });
+
+    it.each([
+        '[{"name":"muteTrack","arguments":[]}]',
+        '{"actions":[{"name":"muteTrack","arguments":"{}"}]}',
+        '<tool_call>{"name":"muteTrack","arguments":7}</tool_call>',
+        '<function>{"name":"muteTrack","parameters":[]}</function>',
+    ])('rejects non-object tool arguments: %s', (content) => {
+        expect(parseToolPlanningOutcome(content)).toEqual({
+            status: 'rejected',
+            reason: 'Model returned a malformed tool-call batch.',
+        });
+    });
+
+    it.each([
         { content: '', expectedReason: 'Model returned an empty tool-planning response.' },
         {
             content: 'I cannot change the project.',

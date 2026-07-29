@@ -44,6 +44,20 @@ describe('generateWebLlmToolCalls', () => {
         expect(result).toEqual({ status: 'rejected', reason: expectedReason });
     });
 
+    it('rejects a valid fenced tool-call prefix followed by truncated tool syntax', async () => {
+        vi.mocked(generateWebLlmCompletion).mockResolvedValue(
+            '```json\n[{"name":"addTrack","arguments":{"kind":"audio"}}]\n```\n<tool_call>{"name":"muteTrack","arguments":{'
+        );
+
+        const tools = [{ type: 'function' as const, function: { name: 'addTrack', description: '', parameters: {} } }];
+        const result = await generateWebLlmToolCalls('sys', 'user', tools);
+
+        expect(result).toEqual({
+            status: 'rejected',
+            reason: 'Model returned a malformed tool-call batch.',
+        });
+    });
+
     it('distinguishes an explicit empty tool-call batch from a rejected response', async () => {
         vi.mocked(generateWebLlmCompletion).mockResolvedValue('[]');
 
