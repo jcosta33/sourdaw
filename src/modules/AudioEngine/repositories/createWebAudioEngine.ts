@@ -183,6 +183,8 @@ class AudioEngineImpl implements AudioEngine {
     private transportSeqView: Int32Array | null;
     private initPromise: Promise<void> | null = null;
     private initializationGeneration = 0;
+    private disposed = false;
+    private disposalPromise: Promise<void> | null = null;
     private lastInitError: Error | null = null;
     private lastResumeError: Error | null = null;
     private adjustmentRuntime: AdjustmentLayerRuntime;
@@ -254,6 +256,9 @@ class AudioEngineImpl implements AudioEngine {
     }
 
     public initialize(): Promise<void> {
+        if (this.disposed) {
+            return Promise.reject(new Error('Audio engine has been disposed.'));
+        }
         if (this.fallbackMode) {
             return Promise.resolve();
         }
@@ -285,7 +290,7 @@ class AudioEngineImpl implements AudioEngine {
             this.context.audioWorklet.addModule(meteringProcessorUrl),
         ]);
         if (generation !== this.initializationGeneration) {
-            return;
+            throw new Error('Audio engine was disposed during initialization.');
         }
         // The metering-processor module is now registered, so the master meter
         // can be inserted into the master chain. This cannot happen in the
@@ -1335,10 +1340,16 @@ class AudioEngineImpl implements AudioEngine {
         return this.adjustmentRuntime.listLiveBusKeys();
     }
 
-    public async dispose(): Promise<void> {
+    public dispose(): Promise<void> {
+        this.disposalPromise ??= this.disposeOnce();
+        return this.disposalPromise;
+    }
+
+    private async disposeOnce(): Promise<void> {
         // Invalidate any loadWorklets continuation before teardown starts. Module
         // registration may finish after close(), but stale initialization must not
         // rebuild the master meter or mark the disposed graph ready.
+        this.disposed = true;
         this.initializationGeneration++;
         this.initPromise = null;
         this.workletReady = false;

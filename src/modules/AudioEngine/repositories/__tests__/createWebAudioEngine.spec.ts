@@ -585,7 +585,7 @@ describe('AudioEngine', () => {
 
     // ── Fix 2: dispose() teardown contract ───────────────────────────────────────
     describe('dispose', () => {
-        it('awaits context.close, resets the worklet latch, and releases the transport SAB', async () => {
+        it('awaits context.close, makes disposal terminal, and releases the transport SAB', async () => {
             await engine.initialize();
             expect(engine.getHealth().workletReady).toBe(true);
 
@@ -597,10 +597,9 @@ describe('AudioEngine', () => {
             // SAB released: a post-dispose transport write must not throw.
             expect(() => engine.setTransportInfo(1, 120, true)).not.toThrow();
 
-            // initPromise reset: a re-initialize reloads the worklet modules.
             const addModuleCallsBefore = mockCtx.audioWorklet.addModule.mock.calls.length;
-            await engine.initialize();
-            expect(mockCtx.audioWorklet.addModule.mock.calls.length).toBe(addModuleCallsBefore + 5);
+            await expect(engine.initialize()).rejects.toThrow('Audio engine has been disposed');
+            expect(mockCtx.audioWorklet.addModule.mock.calls.length).toBe(addModuleCallsBefore);
         });
 
         it('does not restore worklet state when initialization completes after disposal', async () => {
@@ -610,7 +609,7 @@ describe('AudioEngine', () => {
             const initialization = engine.initialize();
             await engine.dispose();
             workletLoad.resolve();
-            await initialization;
+            await expect(initialization).rejects.toThrow('Audio engine was disposed during initialization');
 
             expect(engine.getHealth().workletReady).toBe(false);
             expect(engine.getDiagnostics().graph.masterMeterWorklets).toBe(0);
