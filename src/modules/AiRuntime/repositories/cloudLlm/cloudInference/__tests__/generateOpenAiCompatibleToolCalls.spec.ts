@@ -59,6 +59,7 @@ describe('generateOpenAiCompatibleToolCalls', () => {
                         {
                             finish_reason: 'tool_calls',
                             message: {
+                                content: 'I changed the track.',
                                 tool_calls: [
                                     {
                                         function: {
@@ -305,21 +306,14 @@ describe('generateOpenAiCompatibleToolCalls', () => {
         await expect(generateToolCalls()).resolves.toEqual([]);
     });
 
-    it('rejects non-empty content paired with tool calls', async () => {
+    it('rejects non-empty content without tool calls', async () => {
         respondWith({
             choices: [
                 {
-                    finish_reason: 'tool_calls',
+                    finish_reason: 'stop',
                     message: {
                         content: [{ type: 'text', text: 'I changed the track.' }],
-                        tool_calls: [
-                            {
-                                function: {
-                                    name: 'muteTrack',
-                                    arguments: '{"trackId":"track-1","muted":true}',
-                                },
-                            },
-                        ],
+                        tool_calls: [],
                     },
                 },
             ],

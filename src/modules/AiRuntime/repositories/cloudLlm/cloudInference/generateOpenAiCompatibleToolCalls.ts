@@ -71,15 +71,15 @@ function parseToolCalls(response: unknown): ToolCallResult[] {
     if (firstChoice.message.refusal !== undefined && firstChoice.message.refusal !== null) {
         throw new ToolPlanningRejectedError('Hosted AI refused tool planning');
     }
-    if (contentState.hasContent) {
-        throw new ToolPlanningRejectedError('Hosted AI returned a non-tool response instead of a tool-call batch');
-    }
     const finishReason = firstChoice.finish_reason;
     const hasValidFinishReason = finishReason === 'tool_calls' || finishReason === 'stop';
     if (!hasValidFinishReason) {
         throw new ToolPlanningRejectedError('Hosted AI returned an incomplete tool-call batch');
     }
     if (!Array.isArray(firstChoice.message.tool_calls)) {
+        if (contentState.hasContent) {
+            throw new ToolPlanningRejectedError('Hosted AI returned a non-tool response instead of a tool-call batch');
+        }
         if (finishReason === 'stop') {
             return [];
         }
@@ -87,6 +87,9 @@ function parseToolCalls(response: unknown): ToolCallResult[] {
     }
     if (finishReason === 'stop' && firstChoice.message.tool_calls.length > 0) {
         throw new ToolPlanningRejectedError('Hosted AI returned an inconsistent tool-call batch');
+    }
+    if (contentState.hasContent && firstChoice.message.tool_calls.length === 0) {
+        throw new ToolPlanningRejectedError('Hosted AI returned a non-tool response instead of a tool-call batch');
     }
 
     const results: ToolCallResult[] = [];
