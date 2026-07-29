@@ -11,6 +11,7 @@ import {
 } from '#/modules/AiRuntime/useCases';
 import { persistDeviceParam, resolveEligibleDeviceWriteTarget, trackStore } from '#/modules/Arrangement/stores';
 import {
+    clampDeviceParameterValue,
     getAllTracks,
     getPluginById,
     persistDevicePatch,
@@ -225,6 +226,7 @@ import.meta.hot?.dispose(() => {
 });
 
 setFermenterDependencies({
+    clampDeviceParameterValue,
     getAllTracks,
     persistDeviceParam,
     persistDevicePatch,
@@ -256,7 +258,12 @@ setModulationDependencies({
         if (!paramDef) {
             return null;
         }
-        return { min: paramDef.minValue, max: paramDef.maxValue, defaultValue: paramDef.defaultValue };
+        return {
+            min: paramDef.minValue,
+            max: paramDef.maxValue,
+            defaultValue: paramDef.defaultValue,
+            automatable: paramDef.automatable,
+        };
     },
 });
 

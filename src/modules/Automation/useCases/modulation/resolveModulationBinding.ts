@@ -28,6 +28,13 @@ export function resolveModulationBinding(mapping: ModulatorMapping): ResolveModu
     if (!paramDef) {
         return null;
     }
+    // A stored mapping is one of the routes that reaches a parameter without
+    // ever passing the picker, so the declared flag has to be read here too.
+    // Refusing the binding leaves the parameter wherever the user last put it,
+    // which is what "not automatable" is supposed to mean.
+    if (!paramDef.automatable) {
+        return null;
+    }
     return {
         baseValue: device.parameterValues[mapping.targetParamId] ?? paramDef.defaultValue,
         paramMin: paramDef.min,

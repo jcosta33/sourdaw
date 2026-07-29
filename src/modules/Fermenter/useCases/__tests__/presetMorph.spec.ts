@@ -4,6 +4,8 @@ vi.mock('../../stores/fermenterStore', () => ({
     loadFermenterPatch: vi.fn(),
 }));
 
+import { clampDeviceParameterValue } from '#/modules/Arrangement/useCases';
+
 import { DEFAULT_PATCH, type FermenterPatch } from '../../models/FermenterPatch';
 import { loadFermenterPatch } from '../../stores/fermenterStore';
 import { setFermenterDependencies } from '../fermenterDependencies';
@@ -41,6 +43,7 @@ describe('presetMorph', () => {
         persistDevicePatch.mockClear();
         getAllTracks.mockReturnValue([{ id: 't1', devices: [{ id: 'd1' }] }] as never);
         setFermenterDependencies({
+            clampDeviceParameterValue,
             getAllTracks,
             resolveEligibleDeviceWriteTarget: () => ({ status: 'eligible', trackId: 't1', deviceId: 'd1' }),
             updateDeviceParam: updateDeviceParam as never,
@@ -211,6 +214,7 @@ describe('presetMorph', () => {
 
     it('applyMorphedPatch is a no-op when the device write target is ineligible', () => {
         setFermenterDependencies({
+            clampDeviceParameterValue,
             getAllTracks,
             resolveEligibleDeviceWriteTarget: () => ({ status: 'ineligible' }),
             updateDeviceParam: updateDeviceParam as never,
@@ -230,6 +234,7 @@ describe('presetMorph', () => {
 
     it('applyMorphedPatch is a no-op when the device write target is missing', () => {
         setFermenterDependencies({
+            clampDeviceParameterValue,
             getAllTracks,
             resolveEligibleDeviceWriteTarget: () => ({ status: 'missing' }),
             updateDeviceParam: updateDeviceParam as never,
@@ -249,6 +254,7 @@ describe('presetMorph', () => {
         // Only persistence is wired (updateDevicePatch omitted) — the flush must
         // still persist the raw patch but skip the engine write.
         setFermenterDependencies({
+            clampDeviceParameterValue,
             getAllTracks,
             resolveEligibleDeviceWriteTarget: () => ({ status: 'eligible', trackId: 't1', deviceId: 'd1' }),
             updateDeviceParam: updateDeviceParam as never,
@@ -265,6 +271,7 @@ describe('presetMorph', () => {
 
     it('flushMorph skips persistence when persistDevicePatch is not provided', () => {
         setFermenterDependencies({
+            clampDeviceParameterValue,
             getAllTracks,
             resolveEligibleDeviceWriteTarget: () => ({ status: 'eligible', trackId: 't1', deviceId: 'd1' }),
             updateDeviceParam: updateDeviceParam as never,
@@ -284,6 +291,7 @@ describe('presetMorph', () => {
         // but by the time the rAF flush runs the target is ineligible.
         let callCount = 0;
         setFermenterDependencies({
+            clampDeviceParameterValue,
             getAllTracks,
             resolveEligibleDeviceWriteTarget: () => {
                 callCount++;

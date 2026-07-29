@@ -26,6 +26,7 @@ export type { TimelineViewState } from './timelineViewStore';
 export { trackStore, defaultTrackState } from './trackStore';
 export type { TrackStoreState, Track, Device, Clip } from './trackStore';
 export { persistDeviceParam } from './persistDeviceParam';
+export { clampDeviceParamWrite } from './clampDeviceParamWrite';
 export { resolveEligibleDeviceWriteTarget } from './resolveEligibleDeviceWriteTarget';
 export type { DeviceWriteTargetResolution } from './resolveEligibleDeviceWriteTarget';
 export { resolveEligibleClipWriteTarget } from './resolveEligibleClipWriteTarget';

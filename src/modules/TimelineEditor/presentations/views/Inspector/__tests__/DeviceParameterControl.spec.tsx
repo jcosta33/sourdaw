@@ -143,8 +143,12 @@ describe('DeviceParameterControl', () => {
     });
 
     it('should display parameter value', () => {
+        // Three decimals, was two. Precision now follows the step rather than
+        // the declared span, and a 0..1 parameter steps by 0.005 — the third
+        // decimal is the one the knob actually moves in, so hiding it rounded
+        // away real changes. Deliberate; capped at three.
         render(<DeviceParameterControl param={mockParam} device={mockDevice} trackId="track-1" />);
-        expect(screen.getByText('0.50')).toBeInTheDocument();
+        expect(screen.getByText('0.500')).toBeInTheDocument();
     });
 
     it('should render rotary knob for float parameters', () => {
@@ -168,6 +172,52 @@ describe('DeviceParameterControl', () => {
                 deviceId: 'device-1',
             })
         );
+    });
+
+    it('spans the full engine range so a sub-0.1 shipped rate is not clamped away by the knob', () => {
+        // Nebula Drift's `Sweep Phase` sits at 0.05 Hz and `factory-bass-sub`
+        // ships `filterResonance: 0`. `RotaryKnob` clamps to its `min`, so any
+        // control floor above a stored value rewrites that value on the first
+        // drag — one-way, since neither Home nor alt-click can return to it.
+        // The control's range must therefore be the range a write is held to.
+        render(
+            <DeviceParameterControl
+                param={{ ...mockParam, id: 'phaser-rate', name: 'Rate', minValue: 0, maxValue: 10, value: 0.05 }}
+                device={mockDevice}
+                trackId="track-1"
+            />
+        );
+
+        expect(mockMidiLearnRotaryKnob).toHaveBeenCalledWith(expect.objectContaining({ min: 0, max: 10 }));
+        // Precision comes from the 0.05 step, so the shipped value reads as
+        // itself rather than rounding to a floor it never had.
+        expect(screen.getByText('0.05')).toBeInTheDocument();
+    });
+
+    it('never hands the knob a floor above a shipped value, for any of the widened params', () => {
+        // `RotaryKnob.clamp` is `Math.max(min, Math.min(max, v))`, so this one
+        // relation is the whole guard: if `min` ever exceeds a stored value,
+        // the first drag rewrites it and nothing can bring it back. Checked
+        // against the real shipped sub-floor values rather than a fixture.
+        const shipped: Array<[string, number, number, number]> = [
+            ['phaser-rate', 0, 10, 0.05],
+            ['autopan-rate', 0, 10, 0.06],
+            ['filterResonance', 0, 20, 0],
+        ];
+
+        for (const [id, minValue, maxValue, value] of shipped) {
+            mockMidiLearnRotaryKnob.mockClear();
+            render(
+                <DeviceParameterControl
+                    param={{ ...mockParam, id, name: id, minValue, maxValue, value }}
+                    device={mockDevice}
+                    trackId="track-1"
+                />
+            );
+
+            const props = mockMidiLearnRotaryKnob.mock.calls[0]![0] as { min: number };
+            expect(props.min).toBeLessThanOrEqual(value);
+        }
     });
 
     it('should call setDeviceParameter when knob value changes', () => {

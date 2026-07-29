@@ -4,6 +4,7 @@ type MockParamRange = {
     min: number;
     max: number;
     defaultValue: number;
+    automatable: boolean;
 };
 
 type MockTrackStoreValue = {
@@ -119,7 +120,7 @@ describe('revertMappingsToBase', () => {
     beforeEach(() => {
         mocks.updateDeviceParam.mockReset();
         mocks.getPluginParamRange.mockReset();
-        mocks.getPluginParamRange.mockReturnValue({ min: 0, max: 1000, defaultValue: 500 });
+        mocks.getPluginParamRange.mockReturnValue({ min: 0, max: 1000, defaultValue: 500, automatable: true });
         mocks.trackStore.value = null;
     });
 

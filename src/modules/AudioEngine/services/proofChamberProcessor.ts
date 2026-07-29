@@ -67,13 +67,17 @@ class ProofChamberProcessor extends AudioWorkletProcessor {
                     this._instance.set_param(msg.name, msg.value);
                 }
             } catch (error) {
+                // Same policy as the process() catch below. A throw at the wasm
+                // boundary may leave the instance trapped, and a trap carries no
+                // message, so it cannot be told apart from a recoverable error.
+                // Reporting only while `!_ready` left a post-startup fault in a
+                // worklet console, with the device still accepting work after.
                 console.error('ProofChamberProcessor error:', error);
-                if (!this._ready) {
-                    this.port.postMessage({
-                        type: 'error',
-                        message: error instanceof Error ? error.message : String(error),
-                    });
-                }
+                this._faulted = true;
+                this.port.postMessage({
+                    type: 'error',
+                    message: error instanceof Error ? error.message : String(error),
+                });
             }
         };
     }

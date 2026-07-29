@@ -17,6 +17,7 @@ describe('getFermenterDependencies', () => {
 
     it('returns the dependencies set via setFermenterDependencies', () => {
         const deps = {
+            clampDeviceParameterValue: ({ value }: { value: number }) => value,
             persistDeviceParam: () => {},
             updateDeviceParam: () => {},
             getAllTracks: (() => []) as never,

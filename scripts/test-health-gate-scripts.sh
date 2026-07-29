@@ -54,9 +54,11 @@ case "$lint_output" in
     *) exit 1 ;;
 esac
 printf '%s\n' \
+    'pnpm wasm:verify' \
     'pnpm deps:validate' \
     'pnpm typecheck' \
     'pnpm typecheck:test' \
+    'pnpm typecheck:scripts' \
     'pnpm lint --quiet' \
     > "$temp_root/expected-lint-failure.log"
 diff -u "$temp_root/expected-lint-failure.log" "$temp_root/lint-failure.log"
@@ -65,9 +67,11 @@ PATH="$fake_bin:$PATH" \
     COMMAND_LOG="$temp_root/web-success.log" \
     sh "$temp_root/scripts/health-gates-web.sh" >/dev/null
 printf '%s\n' \
+    'pnpm wasm:verify' \
     'pnpm deps:validate' \
     'pnpm typecheck' \
     'pnpm typecheck:test' \
+    'pnpm typecheck:scripts' \
     'pnpm lint --quiet' \
     'pnpm test:run --reporter=dot --silent=passed-only' \
     'pnpm build' \

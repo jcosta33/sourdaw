@@ -28,6 +28,7 @@ const memory: GrowableMemory = createGrowableMemory(HEAP_BYTES);
 
 const calls: Array<{ method: string; args: unknown[] }> = [];
 let processShouldThrow = false;
+let addSampleShouldThrow = false;
 
 class LevainInstanceMock {
     note_on(note: number, velocity: number): void {
@@ -52,6 +53,12 @@ class LevainInstanceMock {
         calls.push({ method: 'set_instrument', args: [id] });
     }
     add_sample(data: Float32Array, frameCount: number, channels: number, sampleRate: number): void {
+        if (addSampleShouldThrow) {
+            // Sample loading is the likeliest place for this device to fail
+            // after startup: the copy into linear memory is hundreds of MiB for
+            // a single instrument, with no dedup between instances.
+            throw new Error('memory allocation failed');
+        }
         calls.push({ method: 'add_sample', args: [Array.from(data), frameCount, channels, sampleRate] });
     }
     add_zone(...args: unknown[]): void {
@@ -109,6 +116,7 @@ describe('LevainProcessor message handling', () => {
         resetGrowableMemory(memory, HEAP_BYTES);
         calls.length = 0;
         processShouldThrow = false;
+        addSampleShouldThrow = false;
     });
 
     it('buffers messages that arrive before init and replays them once ready', async () => {
@@ -328,6 +336,39 @@ describe('LevainProcessor message handling', () => {
         // After faulting, process() short-circuits.
         calls.length = 0;
         processShouldThrow = false;
+        proc.process([], [makeChannels(2, FRAMES)]);
+        expect(calls.find((c) => c.method === 'process')).toBeUndefined();
+    });
+
+    it('faults and posts an error when a message handled after ready throws', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        calls.length = 0;
+        proc.port.postMessage.mockClear();
+        addSampleShouldThrow = true;
+
+        send(proc, {
+            type: 'addSample',
+            sampleId: 1,
+            data: new RealFloat32Array(8),
+            frameCount: 8,
+            channels: 1,
+            sampleRate: 48000,
+        });
+
+        // The main thread has to hear about it. Before, the report was gated on
+        // `!_ready`, so a post-startup throw reached only a worklet console.
+        const errors = proc.port.postMessage.mock.calls.filter((c) => (c[0] as { type?: string }).type === 'error');
+        expect(errors).toHaveLength(1);
+        expect((errors[0]![0] as { message: string }).message).toBe('memory allocation failed');
+
+        // And the instance stops taking work, exactly as the process() catch
+        // already does. Before, `_faulted` stayed false and the next message
+        // was handed to a possibly-trapped instance.
+        addSampleShouldThrow = false;
+        send(proc, { type: 'noteOn', note: 60, velocity: 90 });
+        expect(calls.find((c) => c.method === 'note_on')).toBeUndefined();
+
         proc.process([], [makeChannels(2, FRAMES)]);
         expect(calls.find((c) => c.method === 'process')).toBeUndefined();
     });

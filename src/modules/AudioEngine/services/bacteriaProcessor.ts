@@ -97,7 +97,16 @@ class BacteriaProcessor extends AudioWorkletProcessor {
                     }
                 }
             } catch (error) {
+                // Same policy as the process() catch below. A throw at the wasm
+                // boundary may leave the instance trapped, and a trap carries no
+                // message, so it cannot be told apart from a recoverable error.
+                // Report it and stop taking work; a worklet console reaches nobody.
                 console.error('BacteriaProcessor error:', error);
+                this._faulted = true;
+                this.port.postMessage({
+                    type: 'error',
+                    message: error instanceof Error ? error.message : String(error),
+                });
             }
         };
     }

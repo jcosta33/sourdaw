@@ -17,6 +17,10 @@ function flushParam(_compositeKey: string, entry: FermenterBatchEntry): void {
         return;
     }
 
+    // `entry.value` was already resolved against the declared range in
+    // `setFermenterParamWithAudio`, on the camelCase key the descriptor
+    // declares. Both writes send that one number: the engine cannot re-resolve
+    // it, because the DSP key it receives matches no descriptor entry.
     updateDeviceParam(target.trackId, target.deviceId, entry.dspKey, entry.value);
     persistDeviceParam(target.deviceId, entry.key, entry.value);
 }
@@ -26,14 +30,21 @@ function flushParam(_compositeKey: string, entry: FermenterBatchEntry): void {
  * and throttles audio engine updates to once per animation frame.
  */
 export function setFermenterParamWithAudio(deviceId: string, key: keyof FermenterPatch, value: number): void {
-    const target = getFermenterDependencies().resolveEligibleDeviceWriteTarget(deviceId);
+    const { resolveEligibleDeviceWriteTarget, clampDeviceParameterValue } = getFermenterDependencies();
+    const target = resolveEligibleDeviceWriteTarget(deviceId);
     if (target.status !== 'eligible') {
         return;
     }
 
-    setFermenterParam(deviceId, key, value);
+    // Resolved once, here, before the key is mapped — the panel store, the
+    // track store and the DSP then all hold the same number. Resolving it
+    // downstream instead would clamp only the two writes that still carry the
+    // camelCase key and leave the engine, which gets the DSP key, unbounded.
+    const boundedValue = clampDeviceParameterValue({ deviceType: 'fermenter', paramId: key, value });
+
+    setFermenterParam(deviceId, key, boundedValue);
 
     const compositeKey = `${deviceId}:${key}`;
     const dspKey = mapFermenterParamToDspParam({ paramId: key });
-    paramBatcher.schedule(compositeKey, { deviceId: target.deviceId, dspKey, key, value }, flushParam);
+    paramBatcher.schedule(compositeKey, { deviceId: target.deviceId, dspKey, key, value: boundedValue }, flushParam);
 }

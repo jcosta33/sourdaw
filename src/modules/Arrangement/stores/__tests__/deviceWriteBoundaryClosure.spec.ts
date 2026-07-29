@@ -54,6 +54,15 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
     'persistence-runtime': {
         'src/app/bootstrap.ts': 9,
         'src/modules/Arrangement/stores/index.ts': 2,
+        // Count provenance: measured 3, all three doc-comment mentions — this
+        // file holds no write at all. `clampDeviceParamWrite` resolves a device
+        // type from the store and returns the value the declared range allows.
+        // Its header names `updateDeviceParam` (the caller the law binds at) and
+        // `persistDeviceParam` (the store-side twin it explains itself against),
+        // and the device-type index cites `persistDeviceParam` again as the
+        // writer that establishes the replace-don't-mutate invariant the index
+        // keys on. Neither identifier is called here.
+        'src/modules/Arrangement/stores/clampDeviceParamWrite.ts': 3,
         'src/modules/Arrangement/stores/persistDeviceParam.ts': 1,
         'src/modules/Arrangement/useCases/device/addDevice.ts': 2,
         'src/modules/Arrangement/useCases/device/setDeviceParameter/persistDevicePatch.ts': 1,
@@ -66,7 +75,13 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Arrangement/useCases/setTrackGainPan/setTrackPan.ts': 2,
         'src/modules/AudioEngine/models/AudioEngineState.ts': 2,
         'src/modules/AudioEngine/repositories/createWebAudioEngine.ts': 2,
-        'src/modules/AudioEngine/useCases/deviceControls/updateDeviceParam.ts': 2,
+        // Count provenance: measured 3, was 2. The declared-range law now binds
+        // at this use case — the single door every device-param write reaches
+        // the DSP through — so the file gained a doc-comment mention of the
+        // store-side twin `persistDeviceParam`. The executable surface is
+        // unchanged and still singular: the function declaration plus its one
+        // `audioEngine.updateDeviceParam` call.
+        'src/modules/AudioEngine/useCases/deviceControls/updateDeviceParam.ts': 3,
         'src/modules/AudioEngine/useCases/deviceControls/updateDevicePatch.ts': 2,
         'src/modules/AudioEngine/useCases/index.ts': 4,
         // Count provenance: pre-#597 this file scored 2 — a doc-comment mention
@@ -86,7 +101,17 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Bacteria/useCases/bacteriaParamBridge/setBacteriaParamWithAudio.ts': 2,
         'src/modules/Crust/useCases/crustParamBridge/createFlushHandlers.ts': 4,
         'src/modules/Crust/useCases/crustParamBridge/helpers.ts': 8,
-        'src/modules/Fermenter/useCases/fermenterDependencies.ts': 4,
+        // Count provenance: measured 5, was 4. This file is a type declaration
+        // plus the holder — it performs no write, and all five matches are the
+        // declared DI signatures and prose about them. The new one is a
+        // doc-comment mention of `updateDeviceParam` on the added
+        // `clampDeviceParameterValue` port, explaining why the range has to be
+        // resolved before Fermenter's camelCase key is mapped to its snake_case
+        // DSP key: `updateDeviceParam`'s own clamp looks the parameter up on
+        // the descriptor and the DSP key matches no entry there. Measured with
+        // `grep -o` over the four sink identifiers: persistDeviceParam 1,
+        // persistDevicePatch 1, updateDevicePatch 1, updateDeviceParam 2.
+        'src/modules/Fermenter/useCases/fermenterDependencies.ts': 5,
         'src/modules/Fermenter/useCases/fermenterParamBridge/helpers.ts': 2,
         'src/modules/Fermenter/useCases/fermenterParamBridge/loadFermenterPatchWithAudio.ts': 6,
         'src/modules/Fermenter/useCases/fermenterParamBridge/setFermenterParamWithAudio.ts': 4,

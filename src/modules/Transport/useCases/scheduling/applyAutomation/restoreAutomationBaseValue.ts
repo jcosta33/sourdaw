@@ -1,5 +1,5 @@
 import { resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
-import { getEffectiveGain } from '#/modules/Arrangement/useCases';
+import { getEffectiveGain, isDeviceParameterAutomatable } from '#/modules/Arrangement/useCases';
 import {
     scheduleTrackGain,
     scheduleTrackPan,
@@ -19,7 +19,7 @@ type RestoreTargetTrack = {
     gain: number;
     pan: number;
     devices: RestoreTargetDevice[];
-    midiFx: { id: string; parameterValues: Record<string, number> }[];
+    midiFx: { id: string; type: string; parameterValues: Record<string, number> }[];
 };
 
 export type RestoreAutomationBaseValueInput = {
@@ -29,8 +29,16 @@ export type RestoreAutomationBaseValueInput = {
     landTime: number;
 };
 
-function deviceAcceptsAutomationParameter(device: { parameterValues: Record<string, number> }, id: string): boolean {
-    return device.parameterValues[id] !== undefined;
+/** Same acceptance law as the apply path: a lane that may not drive it may not restore it either. */
+function deviceAcceptsAutomationParameter(
+    device: { type: string; parameterValues: Record<string, number> },
+    id: string
+): boolean {
+    if (device.parameterValues[id] === undefined) {
+        return false;
+    }
+
+    return isDeviceParameterAutomatable({ deviceType: device.type, paramId: id });
 }
 
 /**
@@ -102,9 +110,15 @@ export function restoreAutomationBaseValue({ lane, track, landTime }: RestoreAut
 
     for (const fx of track.midiFx) {
         const baseValue = fx.parameterValues[lane.parameterId];
-        if (baseValue !== undefined) {
-            updateMidiFxParam(lane.trackId, fx.id, lane.parameterId, baseValue);
-            return;
+        if (baseValue === undefined) {
+            continue;
         }
+
+        // Same acceptance law as the MIDI-FX apply branch: a lane that may not
+        // drive the parameter may not restore it either.
+        if (isDeviceParameterAutomatable({ deviceType: fx.type, paramId: lane.parameterId })) {
+            updateMidiFxParam(lane.trackId, fx.id, lane.parameterId, baseValue);
+        }
+        return;
     }
 }
