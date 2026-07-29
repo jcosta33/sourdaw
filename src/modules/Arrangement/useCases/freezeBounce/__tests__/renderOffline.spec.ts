@@ -232,6 +232,8 @@ describe('renderTrackOffline', () => {
             startBeat: 2,
             endBeat: 6,
             tailSeconds: 0,
+            // Bounce output is finished audio: its fader and pan run once, here.
+            targetMixer: 'bake',
             includeInserts: false,
             includeSends: false,
             includeAutomation: false,

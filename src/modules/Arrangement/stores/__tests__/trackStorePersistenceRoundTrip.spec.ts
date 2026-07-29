@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { FREEZE_BAKE_VERSION } from '#/utils/frozenBufferTail';
+
 import { sanitizeTrackSnapshot } from '../trackStore';
 
 /**
@@ -294,6 +296,155 @@ describe('sanitizeTrackSnapshot — freeze state render settings round-trip', ()
 
         expect(result.tracks[0]?.freezeState?.status).toBe('frozen');
         expect(result.tracks[0]?.freezeState?.renderSettings).toBeUndefined();
+    });
+
+    /**
+     * `bakeVersion` is what tells staleness detection that a buffer was printed
+     * under the current freeze rules. If the projection drops it, a correctly
+     * frozen track reads as older than the current version on every reload and
+     * is marked `stale` — freeze silently undoes itself on project open, and the
+     * track falls back to the live device chain the freeze existed to replace.
+     */
+    it('preserves bakeVersion through the round-trip so a current freeze does not read as legacy', () => {
+        const result = sanitizeTrackSnapshot(
+            snapshotWithTrack({
+                ...validTrackBase,
+                freezeState: {
+                    status: 'frozen',
+                    renderSettings: {
+                        sampleRate: 48000,
+                        bitDepth: 32,
+                        channelCount: 2,
+                        tailLengthSeconds: 3.5,
+                        bakeVersion: FREEZE_BAKE_VERSION,
+                    },
+                },
+            })
+        );
+
+        expect(result.tracks[0]?.freezeState?.renderSettings?.bakeVersion).toBe(FREEZE_BAKE_VERSION);
+    });
+
+    it('leaves bakeVersion absent for a legacy buffer rather than inventing a version', () => {
+        const result = sanitizeTrackSnapshot(
+            snapshotWithTrack({
+                ...validTrackBase,
+                freezeState: {
+                    status: 'frozen',
+                    renderSettings: { sampleRate: 48000, bitDepth: 32, channelCount: 2, tailLengthSeconds: 3.5 },
+                },
+            })
+        );
+
+        const restored = result.tracks[0]?.freezeState?.renderSettings;
+        expect(restored?.tailLengthSeconds).toBe(3.5);
+        expect(restored?.bakeVersion).toBeUndefined();
+    });
+
+    it('drops a non-numeric bakeVersion but keeps the render settings it travelled with', () => {
+        const result = sanitizeTrackSnapshot(
+            snapshotWithTrack({
+                ...validTrackBase,
+                freezeState: {
+                    status: 'frozen',
+                    renderSettings: {
+                        sampleRate: 48000,
+                        bitDepth: 32,
+                        channelCount: 2,
+                        tailLengthSeconds: 3.5,
+                        bakeVersion: 'one',
+                    },
+                },
+            })
+        );
+
+        const restored = result.tracks[0]?.freezeState?.renderSettings;
+        expect(restored?.sampleRate).toBe(48000);
+        expect(restored?.bakeVersion).toBeUndefined();
+    });
+
+    /**
+     * `compensationSeconds` is the plugin-delay figure the chain carried at the
+     * moment the buffer was printed, and it is the only one that matches the
+     * buffer's content. `scheduleFrozenTrack` falls back to the *live* chain's
+     * current latency when it is absent — a fallback its comment scopes to
+     * buffers frozen before the field existed. Dropping the field in the
+     * projection puts every reloaded track on that legacy path, and since a
+     * plugin latency change never marks a frozen track stale, the resulting
+     * drift is silent and never self-corrects.
+     */
+    it('preserves compensationSeconds through the round-trip so playback shifts by the baked figure', () => {
+        const result = sanitizeTrackSnapshot(
+            snapshotWithTrack({
+                ...validTrackBase,
+                freezeState: { status: 'frozen', compensationSeconds: 0.032 },
+            })
+        );
+
+        expect(result.tracks[0]?.freezeState?.compensationSeconds).toBe(0.032);
+    });
+
+    it('leaves compensationSeconds absent for a buffer frozen before the field existed', () => {
+        const result = sanitizeTrackSnapshot(
+            snapshotWithTrack({ ...validTrackBase, freezeState: { status: 'frozen' } })
+        );
+
+        expect(result.tracks[0]?.freezeState?.compensationSeconds).toBeUndefined();
+    });
+
+    it('drops a non-numeric compensationSeconds rather than persisting it as garbage', () => {
+        const result = sanitizeTrackSnapshot(
+            snapshotWithTrack({
+                ...validTrackBase,
+                freezeState: { status: 'frozen', compensationSeconds: 'late' },
+            })
+        );
+
+        expect(result.tracks[0]?.freezeState?.status).toBe('frozen');
+        expect(result.tracks[0]?.freezeState?.compensationSeconds).toBeUndefined();
+    });
+
+    /**
+     * A negative compensation does not merely shift playback the wrong way, it
+     * silences the track. `scheduleFrozenTrack` computes
+     * `startTime = now + offset + compensation`, so a negative value puts
+     * `startTime` behind `now`; once the resulting `elapsed` passes the buffer
+     * duration the function returns `true` without ever starting a source, and
+     * the caller reads that as handled and skips live scheduling too.
+     *
+     * `is_finite_number` does not look at sign — the same gap this branch
+     * already closed for `tailLengthSeconds`, where `resolveFrozenBufferTail`
+     * routes a negative to unknown rather than laundering it to a trusted zero.
+     * The rule belongs on every field it applies to, not only the one that
+     * happened to be under the microscope.
+     */
+    it('drops a negative compensationSeconds, which would silence the track rather than shift it', () => {
+        const result = sanitizeTrackSnapshot(
+            snapshotWithTrack({
+                ...validTrackBase,
+                freezeState: { status: 'frozen', compensationSeconds: -0.032 },
+            })
+        );
+
+        expect(result.tracks[0]?.freezeState?.status).toBe('frozen');
+        expect(result.tracks[0]?.freezeState?.compensationSeconds).toBeUndefined();
+    });
+
+    /**
+     * Zero is the legitimate value for the highest-latency track in a project —
+     * `getCompensationDelay` returns `(max - own) / 1000`. It must survive, and
+     * it must not be confused with absent: `scheduleFrozenTrack` uses `??`, so
+     * absent falls back to the live chain while `0` correctly means no shift.
+     */
+    it('keeps a zero compensationSeconds, which is the highest-latency track s real value', () => {
+        const result = sanitizeTrackSnapshot(
+            snapshotWithTrack({
+                ...validTrackBase,
+                freezeState: { status: 'frozen', compensationSeconds: 0 },
+            })
+        );
+
+        expect(result.tracks[0]?.freezeState?.compensationSeconds).toBe(0);
     });
 });
 

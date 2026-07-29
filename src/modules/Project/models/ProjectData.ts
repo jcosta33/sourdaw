@@ -340,7 +340,21 @@ export type ProjectFreezeState = {
         bitDepth: number;
         channelCount: number;
         tailLengthSeconds: number;
+        /**
+         * Which set of freeze rules printed this buffer (`FREEZE_BAKE_VERSION`).
+         * Absent means it predates the field. Declared here so a future
+         * field-by-field load mapping cannot drop it with a green typecheck —
+         * losing it makes a current freeze read as legacy and unfreeze itself.
+         */
+        bakeVersion?: number;
     };
+    /**
+     * Plugin-delay compensation the chain carried when the buffer was printed.
+     * Frozen playback must shift by this baked figure, not the live chain's
+     * current latency — a latency change never marks a frozen track stale, so
+     * compensating against the current chain drifts silently and permanently.
+     */
+    compensationSeconds?: number;
     renderProgress?: number;
     errorMessage?: string;
     renderedAt?: number;

@@ -298,7 +298,11 @@ function isFreezeState(value: unknown): boolean {
             ],
             type: 'string',
         }) ||
-        !hasOptionalType({ record: value, keys: ['renderProgress', 'renderedAt'], type: 'number' })
+        !hasOptionalType({
+            record: value,
+            keys: ['renderProgress', 'renderedAt', 'compensationSeconds'],
+            type: 'number',
+        })
     ) {
         return false;
     }
@@ -311,7 +315,11 @@ function isFreezeState(value: unknown): boolean {
             record: value.renderSettings,
             keys: ['sampleRate', 'bitDepth', 'channelCount', 'tailLengthSeconds'],
             type: 'number',
-        })
+        }) &&
+        // Optional: absent means the buffer predates the field, which is the
+        // documented meaning of version 0. Validating it keeps a hand-edited or
+        // foreign `.sdaw` from smuggling a non-numeric version past hydration.
+        hasOptionalType({ record: value.renderSettings, keys: ['bakeVersion'], type: 'number' })
     );
 }
 

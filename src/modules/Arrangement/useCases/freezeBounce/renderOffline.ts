@@ -17,6 +17,23 @@ export type RenderOfflineOptions = {
     includeAutomation?: boolean;
     normalization?: 'off' | 'protection' | 'full';
     autoTail?: boolean;
+    /**
+     * Seconds of tail to render past the region, for a caller that has already
+     * worked out how long its chain rings. Ignored when `autoTail` is set, which
+     * is the bounce path's own fixed reservation plus a silence trim.
+     *
+     * Freeze passes this. Expressing the tail in *seconds* rather than beats
+     * bolted onto `endBeat` is load-bearing: a beat count shortens as the
+     * session's tempo rises, so the same reverb was cut progressively harder the
+     * faster the project ran.
+     */
+    tailSeconds?: number;
+    /**
+     * Whether the target track's own fader and panner belong in the rendered
+     * buffer. Freeze passes `'keepLive'` because its buffer is replayed through
+     * that very strip; every other caller's output is finished audio.
+     */
+    targetMixer?: 'bake' | 'keepLive';
 };
 
 /**
@@ -72,7 +89,8 @@ export async function renderTrackOffline(
         renderTracks,
         startBeat,
         endBeat,
-        tailSeconds: options?.autoTail ? AUTO_TAIL_SECONDS : 0,
+        tailSeconds: options?.autoTail ? AUTO_TAIL_SECONDS : (options?.tailSeconds ?? 0),
+        targetMixer: options?.targetMixer ?? 'bake',
         includeInserts: options?.includeInserts ?? true,
         includeAutomation: options?.includeAutomation ?? true,
         includeSends: options?.includeSends ?? true,

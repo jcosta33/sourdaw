@@ -26,7 +26,7 @@ import { audioBufferCache } from '../../stores/audioBufferCache';
 import { type DeviceNodeEntry, buildDeviceChain } from '../buildDeviceChain';
 import { getCompensationDelay } from '../latencyCompensation/compensation/getCompensationDelay';
 
-import { MICRO_FADE_SECONDS, YIELD_EVERY_N_NOTES } from './constants';
+import { MICRO_FADE_SECONDS, MIXER_AUTOMATION_PARAMETER_IDS, YIELD_EVERY_N_NOTES } from './constants';
 import { projectOfflineYeastTrackNotes } from './projectOfflineYeastTrackNotes';
 import { type PendingWorkletEvent } from './types';
 import { yieldToMain } from './yieldToMain';
@@ -195,6 +195,16 @@ export type ScheduleTrackClipsInput = {
      * bounces at the level it plays.
      */
     vcaMultiplier?: number;
+    /**
+     * False drops this track's own `gain` and `pan` lanes from the render.
+     *
+     * Freeze passes false for its target: the fader and panner those lanes drive
+     * stay live and are re-driven by `applyAutomation` when the frozen buffer is
+     * replayed through them, so scheduling them here would apply every move
+     * twice. Device lanes are unaffected — the device chain *is* bypassed at
+     * replay, so its automation only survives if it is in the samples.
+     */
+    includeMixerAutomation?: boolean;
 };
 
 export async function scheduleTrackClips({
@@ -217,6 +227,7 @@ export async function scheduleTrackClips({
     regionStartBeat = 0,
     includeAutomation = true,
     vcaMultiplier = 1,
+    includeMixerAutomation = true,
 }: ScheduleTrackClipsInput): Promise<void> {
     const {
         evaluateAutomationValue,
@@ -238,7 +249,15 @@ export async function scheduleTrackClips({
     const regionStartSec = projectBeatToSeconds(regionStartBeat);
     const compensationDelay = getCompensationDelay(track.id);
 
-    const automationLanes = automationStore.value?.lanes ?? [];
+    const allAutomationLanes = automationStore.value?.lanes ?? [];
+    const automationLanes = includeMixerAutomation
+        ? allAutomationLanes
+        : allAutomationLanes.filter((lane) => {
+              const drivesThisTracksMixer =
+                  lane.trackId === track.id &&
+                  MIXER_AUTOMATION_PARAMETER_IDS.some((parameterId) => parameterId === lane.parameterId);
+              return !drivesThisTracksMixer;
+          });
     let deviceEntries: DeviceNodeEntry[] = [];
 
     if (track.freezeState.status === 'frozen' && track.freezeState.frozenBufferId) {
