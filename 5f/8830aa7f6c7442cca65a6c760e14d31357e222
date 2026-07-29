@@ -1,0 +1,19 @@
+docs/architecture/decisions/0018-awaited-ai-action-admission.md
+  s_eac9f65d8989d9::t_0fd2d31c7cd8e2 1-22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "5f8830aa7f6c7442cca65a6c760e14d31357e222",
+  "prompts": {},
+  "sessions": {
+    "s_eac9f65d8989d9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019faf10-4c4c-7e72-a72d-af5ae5d446ec",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
