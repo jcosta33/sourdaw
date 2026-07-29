@@ -56,6 +56,7 @@ export class TrackNode {
     private _rebuildScheduled = false;
     private _disposed = false;
     private _outputDestination: AudioNode | null = null;
+    private readonly _failedDeviceLoads = new Set<string>();
     private readonly _pendingDeviceLoads = new Map<string, PendingDeviceLoad>();
 
     constructor(
@@ -454,6 +455,9 @@ export class TrackNode {
         void loadPromise.finally(() => {
             this.deps.pendingDevicePromises.delete(loadPromise);
             if (this._pendingDeviceLoads.get(deviceId) === pendingLoad) {
+                if (!pendingLoad.resolved) {
+                    this._failedDeviceLoads.add(deviceId);
+                }
                 this._pendingDeviceLoads.delete(deviceId);
                 pendingLoad.parameterWrites.length = 0;
             }
@@ -461,6 +465,7 @@ export class TrackNode {
     }
 
     private invalidatePendingDeviceLoad(deviceId: string): void {
+        this._failedDeviceLoads.delete(deviceId);
         const pendingLoad = this._pendingDeviceLoads.get(deviceId);
         if (!pendingLoad) {
             return;
@@ -506,6 +511,9 @@ export class TrackNode {
         const pendingLoad = this._pendingDeviceLoads.get(deviceId);
         if (pendingLoad) {
             return pendingLoad.resolved ? 'ready' : 'pending';
+        }
+        if (this._failedDeviceLoads.has(deviceId)) {
+            return 'failed';
         }
         const device = this.strip.deviceNodes.find((candidate) => candidate.deviceId === deviceId);
         if (device?.controller?.ready === false) {
@@ -769,6 +777,7 @@ export class TrackNode {
         for (const deviceId of this._pendingDeviceLoads.keys()) {
             this.invalidatePendingDeviceLoad(deviceId);
         }
+        this._failedDeviceLoads.clear();
         this.strip.preFaderTap.disconnect();
         this.strip.gainNode.disconnect();
         this.strip.faderNode.disconnect();

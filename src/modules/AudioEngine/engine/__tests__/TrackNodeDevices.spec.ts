@@ -496,8 +496,8 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             expect(pendingDevicePromises.size).toBe(0);
         });
 
-        it('reports a settled placeholder that never loaded as failed', async () => {
-            const deferred = installDeferredWasmDevice();
+        it('reports a settled descriptor-owned placeholder that never loaded as failed', async () => {
+            const deferred = installDeferredWasmDevice({ controller: { setParam: vi.fn() } });
             const track = new TrackNode('t1', makeDeps(ctx));
 
             track.addDevice('wasm-1', 'levain');

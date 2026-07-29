@@ -53,12 +53,7 @@ function makeElements(refs: StatusBarMetricRefs): void {
 
 function makeEngineDiagnostics(deviceInstances = 24): ReturnType<typeof getEngineDiagnostics> {
     return {
-        context: {
-            state: 'running',
-            sampleRate: 48_000,
-            baseLatency: 0.005,
-            outputLatency: 0.005,
-        },
+        context: { state: 'running', sampleRate: 48_000, baseLatency: 0.005, outputLatency: 0.005 },
         graph: {
             trackStrips: 43,
             busStrips: 8,
@@ -73,9 +68,7 @@ function makeEngineDiagnostics(deviceInstances = 24): ReturnType<typeof getEngin
             masterMeterWorklets: 1,
             adjustmentLayerBuses: 0,
         },
-        runtime: {
-            trackedAudioScheduledSources: 0,
-        },
+        runtime: { trackedAudioScheduledSources: 0 },
     };
 }
 
