@@ -266,12 +266,7 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
     });
 
     it('reports the live graph and runtime load without touching the render path', async () => {
-        const expectedContext = {
-            state: 'running' as const,
-            sampleRate: 48_000,
-            baseLatency: 0.01,
-            outputLatency: 0.01,
-        };
+        const expectedCtx = { state: 'running' as const, sampleRate: 48_000, baseLatency: 0.01, outputLatency: 0.01 };
         const emptyGraph = {
             trackStrips: 0,
             busStrips: 0,
@@ -287,7 +282,7 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
             adjustmentLayerBuses: 1,
         };
         expect(engine.getDiagnostics()).toEqual({
-            context: expectedContext,
+            context: expectedCtx,
             graph: emptyGraph,
             runtime: { trackedAudioScheduledSources: 0 },
         });
@@ -317,7 +312,7 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
         engine.registerScheduledSource(mockCtx.createOscillator());
 
         expect(engine.getDiagnostics()).toEqual({
-            context: expectedContext,
+            context: expectedCtx,
             graph: {
                 trackStrips: 1,
                 busStrips: 1,
@@ -341,7 +336,7 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
 
         engine.resetGraph();
         expect(engine.getDiagnostics()).toEqual({
-            context: expectedContext,
+            context: expectedCtx,
             graph: {
                 ...emptyGraph,
                 masterMeterWorklets: 1,

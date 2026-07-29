@@ -255,6 +255,12 @@ class AudioEngineImpl implements AudioEngine {
         this.masterMeterBuffer = new Float32Array(1);
     }
 
+    private assertActive(): void {
+        if (this.disposed) {
+            throw new Error('Audio engine has been disposed.');
+        }
+    }
+
     public initialize(): Promise<void> {
         if (this.disposed) {
             return Promise.reject(new Error('Audio engine has been disposed.'));
@@ -381,9 +387,7 @@ class AudioEngineImpl implements AudioEngine {
                     masterMeterWorklets: 0,
                     adjustmentLayerBuses: 0,
                 },
-                runtime: {
-                    trackedAudioScheduledSources: 0,
-                },
+                runtime: { trackedAudioScheduledSources: 0 },
             };
         }
         const deviceInstancesByType = new Map<string, number>();
@@ -420,8 +424,7 @@ class AudioEngineImpl implements AudioEngine {
         return {
             context,
             graph: {
-                // Buses own a backing TrackNode, so subtract them to keep these
-                // two public counters disjoint.
+                // A bus owns a backing TrackNode; keep the public counters disjoint.
                 trackStrips: this.trackNodes.size - this.busNodes.size,
                 busStrips: this.busNodes.size,
                 sends: this.sendNodes.size,
@@ -435,9 +438,7 @@ class AudioEngineImpl implements AudioEngine {
                 masterMeterWorklets,
                 adjustmentLayerBuses: this.adjustmentRuntime.listLiveBusKeys().length,
             },
-            runtime: {
-                trackedAudioScheduledSources: this.scheduledNodes.length,
-            },
+            runtime: { trackedAudioScheduledSources: this.scheduledNodes.length },
         };
     }
 
@@ -607,6 +608,7 @@ class AudioEngineImpl implements AudioEngine {
     }
 
     public ensureTrackStrip(trackId: string): TrackChannelStrip {
+        this.assertActive();
         let node = this.trackNodes.get(trackId);
         if (!node) {
             if (this.fallbackMode) {
@@ -1235,6 +1237,7 @@ class AudioEngineImpl implements AudioEngine {
     }
 
     public scheduleOscillator(frequency: number, startTime: number, duration: number, gain = 0.3): void {
+        this.assertActive();
         if (this.fallbackMode) {
             return;
         }
@@ -1301,6 +1304,7 @@ class AudioEngineImpl implements AudioEngine {
     }
 
     public registerScheduledSource(node: AudioScheduledSourceNode): void {
+        this.assertActive();
         if (this.fallbackMode) {
             return;
         }
@@ -1344,6 +1348,7 @@ class AudioEngineImpl implements AudioEngine {
     }
 
     public applyAdjustmentLayerTick(records: AdjustmentLayerTickInput[]): void {
+        this.assertActive();
         this.adjustmentRuntime.applyTick(records);
     }
 
@@ -1361,9 +1366,7 @@ class AudioEngineImpl implements AudioEngine {
     }
 
     private async disposeOnce(): Promise<void> {
-        // Invalidate any loadWorklets continuation before teardown starts. Module
-        // registration may finish after close(), but stale initialization must not
-        // rebuild the master meter or mark the disposed graph ready.
+        // Invalidate loadWorklets before a stale continuation can rebuild the disposed graph.
         this.disposed = true;
         this.initializationGeneration++;
         this.initPromise = null;
