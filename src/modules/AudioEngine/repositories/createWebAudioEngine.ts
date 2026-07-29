@@ -373,6 +373,8 @@ class AudioEngineImpl implements AudioEngine {
                     sends: 0,
                     sidechains: 0,
                     deviceInstances: 0,
+                    pendingDeviceInstances: 0,
+                    failedDeviceInstances: 0,
                     deviceInstancesByType: {},
                     deviceAudioNodes: 0,
                     stripMeterWorklets: 0,
@@ -386,6 +388,8 @@ class AudioEngineImpl implements AudioEngine {
         }
         const deviceInstancesByType = new Map<string, number>();
         let deviceInstances = 0;
+        let pendingDeviceInstances = 0;
+        let failedDeviceInstances = 0;
         let deviceAudioNodes = 0;
         let stripMeterWorklets = 0;
 
@@ -394,6 +398,15 @@ class AudioEngineImpl implements AudioEngine {
                 stripMeterWorklets++;
             }
             for (const device of trackNode.strip.deviceNodes) {
+                const loadState = trackNode.getDeviceLoadState(device.deviceId);
+                if (loadState === 'pending') {
+                    pendingDeviceInstances++;
+                    continue;
+                }
+                if (loadState === 'failed') {
+                    failedDeviceInstances++;
+                    continue;
+                }
                 deviceInstances++;
                 deviceAudioNodes += device.nodes.length;
                 deviceInstancesByType.set(device.type, (deviceInstancesByType.get(device.type) ?? 0) + 1);
@@ -414,6 +427,8 @@ class AudioEngineImpl implements AudioEngine {
                 sends: this.sendNodes.size,
                 sidechains: this.sidechainConnections.size,
                 deviceInstances,
+                pendingDeviceInstances,
+                failedDeviceInstances,
                 deviceInstancesByType: Object.fromEntries(sortedDeviceInstances),
                 deviceAudioNodes,
                 stripMeterWorklets,

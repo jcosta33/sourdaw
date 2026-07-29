@@ -43,6 +43,8 @@ type PendingDeviceLoad = {
     resolved: boolean;
 };
 
+type DeviceLoadState = 'ready' | 'pending' | 'failed';
+
 export class TrackNode {
     public strip: TrackChannelStrip;
     /** When SAB is unavailable, getPeakLevel falls back to AnalyserNode time-domain data. */
@@ -498,6 +500,18 @@ export class TrackNode {
         this.deps.onDeviceLoaded?.(this.trackId, finalDn);
         this.scheduleRebuildChain();
         return true;
+    }
+
+    public getDeviceLoadState(deviceId: string): DeviceLoadState {
+        const pendingLoad = this._pendingDeviceLoads.get(deviceId);
+        if (pendingLoad) {
+            return pendingLoad.resolved ? 'ready' : 'pending';
+        }
+        const device = this.strip.deviceNodes.find((candidate) => candidate.deviceId === deviceId);
+        if (device?.controller?.ready === false) {
+            return 'failed';
+        }
+        return 'ready';
     }
 
     private destroyRejectedDeviceNode(device: BuiltinDeviceNode): void {

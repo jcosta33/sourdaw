@@ -57,7 +57,10 @@ export type AudioEngineDiagnostics = {
         busStrips: number;
         sends: number;
         sidechains: number;
+        /** Fully loaded device instances; pending and failed placeholders are excluded. */
         deviceInstances: number;
+        pendingDeviceInstances: number;
+        failedDeviceInstances: number;
         deviceInstancesByType: Record<string, number>;
         deviceAudioNodes: number;
         stripMeterWorklets: number;

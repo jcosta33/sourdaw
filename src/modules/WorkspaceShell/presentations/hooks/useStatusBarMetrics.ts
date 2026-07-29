@@ -62,12 +62,23 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
             const masterLevel = getMasterPeakLevel();
             if (now - lastDiagnosticsAtRef.current >= 1_000) {
                 const diagnostics = getEngineDiagnostics();
-                const meterWorklets = diagnostics.graph.stripMeterWorklets + diagnostics.graph.masterMeterWorklets;
+                const deviceTypes = Object.entries(diagnostics.graph.deviceInstancesByType)
+                    .map(([type, count]) => `${type}: ${String(count)}`)
+                    .join(', ');
+                const deviceTypeSummary = deviceTypes.length > 0 ? ` (${deviceTypes})` : '';
                 engineDiagnosticsTitleRef.current =
-                    ` · ${String(diagnostics.graph.trackStrips)} tracks` +
-                    ` · ${String(diagnostics.graph.busStrips)} buses` +
-                    ` · ${String(diagnostics.graph.deviceInstances)} devices` +
-                    ` · ${String(meterWorklets)} meter worklets`;
+                    ` · audio track strips: ${String(diagnostics.graph.trackStrips)}` +
+                    ` · bus strips: ${String(diagnostics.graph.busStrips)}` +
+                    ` · sends: ${String(diagnostics.graph.sends)}` +
+                    ` · sidechains: ${String(diagnostics.graph.sidechains)}` +
+                    ` · ready device instances: ${String(diagnostics.graph.deviceInstances)}${deviceTypeSummary}` +
+                    ` · pending device instances: ${String(diagnostics.graph.pendingDeviceInstances)}` +
+                    ` · failed device instances: ${String(diagnostics.graph.failedDeviceInstances)}` +
+                    ` · device audio nodes: ${String(diagnostics.graph.deviceAudioNodes)}` +
+                    ` · strip meter worklets: ${String(diagnostics.graph.stripMeterWorklets)}` +
+                    ` · master meter worklets: ${String(diagnostics.graph.masterMeterWorklets)}` +
+                    ` · adjustment-layer buses: ${String(diagnostics.graph.adjustmentLayerBuses)}` +
+                    ` · tracked AudioScheduledSources: ${String(diagnostics.runtime.trackedAudioScheduledSources)}`;
                 lastDiagnosticsAtRef.current = now;
             }
 

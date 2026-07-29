@@ -855,6 +855,8 @@ describe('AudioEngine', () => {
                 sends: 0,
                 sidechains: 0,
                 deviceInstances: 0,
+                pendingDeviceInstances: 0,
+                failedDeviceInstances: 0,
                 deviceInstancesByType: {},
                 deviceAudioNodes: 0,
                 stripMeterWorklets: 0,

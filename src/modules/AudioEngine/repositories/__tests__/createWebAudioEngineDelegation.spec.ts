@@ -84,6 +84,12 @@ vi.mock('../../engine/TrackNode', () => ({
             this.mocks.getPeakLevel!();
             return 0.5;
         }
+        getDeviceLoadState(deviceId: string): 'ready' | 'pending' | 'failed' {
+            const device = this.strip.deviceNodes.find(
+                (candidate) => (candidate as { deviceId?: string }).deviceId === deviceId
+            ) as { diagnosticLoadState?: 'ready' | 'pending' | 'failed' } | undefined;
+            return device?.diagnosticLoadState ?? 'ready';
+        }
         setOutput(...args: unknown[]) {
             this.mocks.setOutput!(...args);
         }
@@ -174,6 +180,10 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        runtimeMocks.listLiveBusKeys.mockReturnValue(['adj:t1']);
+        runtimeMocks.reset.mockImplementation(() => {
+            runtimeMocks.listLiveBusKeys.mockReturnValue([]);
+        });
         trackNodeInstances.length = 0;
         mockCtx = createMockAudioContext();
         vi.stubGlobal('AudioWorkletNode', FakeWorkletNode);
@@ -267,7 +277,43 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
             inputNode: bacteriaInput,
             outputNode: bacteriaOutput,
         } satisfies BuiltinDeviceNode;
-        track.deviceNodes.push(fermenter, bacteria);
+        const sidechainNode = mockCtx.createGain();
+        const sidechain = {
+            deviceId: 'sidechain-1',
+            type: 'builtin-sidechain-compressor',
+            nodes: [sidechainNode],
+            inputNode: sidechainNode,
+            outputNode: sidechainNode,
+        } satisfies BuiltinDeviceNode;
+        const pendingNode = mockCtx.createGain();
+        const pending = {
+            deviceId: 'pending-1',
+            type: 'levain',
+            nodes: [pendingNode],
+            inputNode: pendingNode,
+            outputNode: pendingNode,
+            controller: {
+                ready: false,
+                setParam: vi.fn(),
+            },
+            diagnosticLoadState: 'pending',
+        } satisfies BuiltinDeviceNode & { diagnosticLoadState: 'pending' };
+        const failedNode = mockCtx.createGain();
+        const failed = {
+            deviceId: 'failed-1',
+            type: 'grand-boule',
+            nodes: [failedNode],
+            inputNode: failedNode,
+            outputNode: failedNode,
+            controller: {
+                ready: false,
+                setParam: vi.fn(),
+            },
+            diagnosticLoadState: 'failed',
+        } satisfies BuiltinDeviceNode & { diagnosticLoadState: 'failed' };
+        track.deviceNodes.push(fermenter, bacteria, pending, failed);
+        busTrack.deviceNodes.push(sidechain);
+        engine.wireSidechainRoute('t1', 'bus-1', 'sidechain-1');
         engine.registerScheduledSource(mockCtx.createOscillator());
 
         expect(engine.getDiagnostics()).toEqual({
@@ -281,13 +327,16 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
                 trackStrips: 1,
                 busStrips: 1,
                 sends: 1,
-                sidechains: 0,
-                deviceInstances: 2,
+                sidechains: 1,
+                deviceInstances: 3,
+                pendingDeviceInstances: 1,
+                failedDeviceInstances: 1,
                 deviceInstancesByType: {
                     bacteria: 1,
+                    'builtin-sidechain-compressor': 1,
                     fermenter: 1,
                 },
-                deviceAudioNodes: 3,
+                deviceAudioNodes: 4,
                 stripMeterWorklets: 1,
                 masterMeterWorklets: 1,
                 adjustmentLayerBuses: 1,
@@ -298,15 +347,26 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
         });
 
         engine.resetGraph();
-        expect(engine.getDiagnostics()).toMatchObject({
+        expect(engine.getDiagnostics()).toEqual({
+            context: {
+                state: 'running',
+                sampleRate: 48_000,
+                baseLatency: 0.01,
+                outputLatency: 0.01,
+            },
             graph: {
                 trackStrips: 0,
                 busStrips: 0,
                 sends: 0,
                 sidechains: 0,
                 deviceInstances: 0,
+                pendingDeviceInstances: 0,
+                failedDeviceInstances: 0,
+                deviceInstancesByType: {},
+                deviceAudioNodes: 0,
                 stripMeterWorklets: 0,
                 masterMeterWorklets: 1,
+                adjustmentLayerBuses: 0,
             },
             runtime: {
                 trackedAudioScheduledSources: 0,
@@ -512,7 +572,7 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
         engine.resetAdjustmentLayers?.();
         expect(runtimeMocks.reset).toHaveBeenCalledTimes(1);
 
-        expect(engine.listLiveAdjustmentBusKeys?.()).toEqual(['adj:t1']);
+        expect(engine.listLiveAdjustmentBusKeys?.()).toEqual([]);
     });
 
     it('resetGraph tears down tracks, buses, sends, and the adjustment runtime but keeps the context', () => {
