@@ -85,6 +85,22 @@ describe('generateNativeCompletion', () => {
             );
             expect(getInvocationArgs(0)).not.toHaveProperty('requireComplete');
         });
+
+        it('terminally rejects a non-string Tauri tool-planning response', async () => {
+            mocks.tauriInvoke.mockResolvedValue({ content: 'unexpected envelope' });
+
+            await expect(
+                generateNativeCompletion('system prompt', 'hello', { requireComplete: true })
+            ).rejects.toMatchObject({ name: 'ToolPlanningRejectedError' });
+        });
+
+        it('preserves the non-planning TypeError for a non-string Tauri response', async () => {
+            mocks.tauriInvoke.mockResolvedValue({ content: 'unexpected envelope' });
+
+            await expect(generateNativeCompletion('system prompt', 'hello')).rejects.toMatchObject({
+                name: 'TypeError',
+            });
+        });
     });
 
     describe('when running in browser (dev mode)', () => {
@@ -168,6 +184,31 @@ describe('generateNativeCompletion', () => {
             await expect(generateNativeCompletion('sys', 'user', { requireComplete: true })).rejects.toMatchObject({
                 name: 'ToolPlanningRejectedError',
             });
+        });
+
+        it('terminally rejects malformed JSON from a successful strict response', async () => {
+            const syntaxError = new Error('Unexpected token');
+            syntaxError.name = 'SyntaxError';
+            mocks.fetch.mockResolvedValue({
+                ok: true,
+                json: () => Promise.reject(syntaxError),
+            });
+
+            await expect(generateNativeCompletion('sys', 'user', { requireComplete: true })).rejects.toMatchObject({
+                name: 'ToolPlanningRejectedError',
+            });
+        });
+
+        it.each([
+            { label: 'body stream failure', error: new TypeError('Body stream failed') },
+            { label: 'abort', error: new DOMException('Aborted', 'AbortError') },
+        ])('preserves a strict response $label as an operational failure', async ({ error }) => {
+            mocks.fetch.mockResolvedValue({
+                ok: true,
+                json: () => Promise.reject(error),
+            });
+
+            await expect(generateNativeCompletion('sys', 'user', { requireComplete: true })).rejects.toBe(error);
         });
     });
 });

@@ -33,6 +33,10 @@ function getClaudeTools(toolSchemas: readonly ToolSchema[]): Anthropic.Messages.
     }));
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 export const generateCloudToolCalls = inject({ logger })(
     ({ logger }) =>
         async function generateCloudToolCalls(
@@ -87,9 +91,12 @@ export const generateCloudToolCalls = inject({ logger })(
                 const results: ToolCallResult[] = [];
                 for (const block of response.content) {
                     if (block.type === 'tool_use') {
+                        if (block.name.trim().length === 0 || !isRecord(block.input)) {
+                            throw new ToolPlanningRejectedError('Hosted AI returned an invalid tool-call batch');
+                        }
                         results.push({
                             name: block.name,
-                            arguments: (block.input ?? {}) as Record<string, unknown>,
+                            arguments: block.input,
                         });
                     }
                 }

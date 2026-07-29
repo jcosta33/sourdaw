@@ -14,7 +14,7 @@ type CloudCreateInput = {
 };
 
 type CloudCreateOutput = {
-    content: Array<{ type: 'text'; text: string } | { type: 'tool_use'; name: string; input: Record<string, unknown> }>;
+    content: Array<{ type: 'text'; text: string } | { type: 'tool_use'; name: unknown; input: unknown }>;
     stop_reason: string | null;
 };
 
@@ -242,6 +242,21 @@ describe('generateCloudToolCalls', () => {
         await expect(generateCloudToolCalls('state', 'msg')).rejects.toThrow(
             'Hosted AI returned an incomplete tool-call batch'
         );
+    });
+
+    it.each([
+        { label: 'empty name', name: '', input: { name: 'Vocals', kind: 'audio' } },
+        { label: 'null input', name: 'addTrack', input: null },
+        { label: 'array input', name: 'addTrack', input: [] },
+    ])('terminally rejects an Anthropic tool_use block with $label', async ({ name, input }) => {
+        mocks.create.mockResolvedValue({
+            content: [{ type: 'tool_use', name, input }],
+            stop_reason: 'tool_use',
+        });
+
+        await expect(generateCloudToolCalls('state', 'msg')).rejects.toMatchObject({
+            name: 'ToolPlanningRejectedError',
+        });
     });
 
     it('rejects a token-limited response before the first tool call completes', async () => {

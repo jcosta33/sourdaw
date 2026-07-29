@@ -37,6 +37,11 @@ export async function generateNativeCompletion(
             abortMessage: 'Native completion aborted',
         });
         if (typeof response !== 'string') {
+            if (options?.requireComplete) {
+                throw new ToolPlanningRejectedError(
+                    'Invalid native text tool-planning response: expected a string from Tauri'
+                );
+            }
             throw new TypeError('Invalid generate_native_completion response: expected a string');
         }
         return response;
@@ -62,7 +67,15 @@ export async function generateNativeCompletion(
         throw new Error(`llama-server error ${String(response.status)}: ${text}`);
     }
 
-    const data = (await response.json()) as unknown;
+    let data: unknown;
+    try {
+        data = (await response.json()) as unknown;
+    } catch (error) {
+        if (options?.requireComplete && hasErrorName(error, 'SyntaxError')) {
+            throw new ToolPlanningRejectedError('Invalid native text tool-planning response: malformed JSON');
+        }
+        throw error;
+    }
     if (options?.requireComplete) {
         return readCompleteBrowserResponse(data);
     }
@@ -90,4 +103,8 @@ function readCompleteBrowserResponse(data: unknown): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function hasErrorName(value: unknown, name: string): boolean {
+    return isRecord(value) && value.name === name;
 }
