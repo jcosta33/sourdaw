@@ -60,6 +60,7 @@ type TrackOverrides = {
     frozenWithoutRenderSettings?: boolean;
     kind?: string;
     id?: string;
+    outputId?: string;
     sends?: Array<{ busId: string; preFader: boolean }>;
 };
 
@@ -90,6 +91,7 @@ function makeTrack(
         soloed: overrides.soloed ?? false,
         disabled: overrides.disabled ?? false,
         freezeState: makeFreezeState(overrides),
+        outputId: overrides.outputId,
         sends: overrides.sends ?? [],
         devices: devices.map((d) => ({
             type: d.type,
@@ -383,6 +385,25 @@ describe('getAutoDetectedTailSeconds', () => {
         expect(getAutoDetectedTailSeconds({ tailForDeviceType, honorMuted: true }).seconds).toBe(0);
     });
 
+    it('reserves a track’s chain plus the bus chain it plays through', () => {
+        // The reason routing is projected at all. A track carrying a delay into
+        // a bus carrying a reverb needs both to resolve: the bus reverb only
+        // starts decaying the delay's last echo when that echo arrives. Scored
+        // as two independent chains this reserved 2 s and cut the rest.
+        mockTrackStore.value = {
+            tracks: [
+                makeTrack([{ type: 'builtin-delay' }], { id: 'track-1', outputId: 'bus-1' }),
+                makeTrack([{ type: 'builtin-reverb' }], { id: 'bus-1', kind: 'bus', outputId: 'master' }),
+            ],
+        };
+
+        const delaySeconds = 0.25 * (Math.log(0.001) / Math.log(0.4));
+        expect(getAutoDetectedTailSeconds({ tailForDeviceType, honorMuted: true }).seconds).toBeCloseTo(
+            delaySeconds + 2,
+            6
+        );
+    });
+
     it('forwards the device projection together with the descriptor-declared tail', () => {
         const spy = vi.spyOn(estimateMod, 'estimateRenderTailSeconds');
         mockTrackStore.value = {
@@ -394,9 +415,14 @@ describe('getAutoDetectedTailSeconds', () => {
         const projected = spy.mock.calls[0]![0];
         // The tail declaration has to come from the device's own descriptor —
         // the estimator is pure and cannot look it up itself, so a missing
-        // lookup here silently turns every tail into zero.
+        // lookup here silently turns every tail into zero. The routing edges
+        // travel by the same rule: without them the estimator cannot follow a
+        // track into the bus chain it plays through.
         expect(projected).toEqual([
             {
+                id: 'track-1',
+                outputId: undefined,
+                sends: [],
                 devices: [
                     {
                         type: 'builtin-delay',

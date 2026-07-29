@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { cacheAudioBuffer, getCompensationDelay } from '#/modules/AudioEngine/useCases';
+import { FREEZE_BAKE_VERSION } from '#/utils/frozenBufferTail';
 
 import { createTrack } from '../../../models/Track';
 import { updateTrack } from '../../../repositories/track/updateTrack';
@@ -20,7 +21,11 @@ vi.mock('../renderOffline', () => ({
     renderTrackOffline: vi.fn(),
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
+// Only the two I/O helpers are replaced. `getDeviceChainTailSeconds` runs for
+// real: freeze's tail is meant to be the declarations' answer, and a stub would
+// let this file agree with a freeze that had stopped consulting them.
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     cacheAudioBuffer: vi.fn(),
     getCompensationDelay: vi.fn(() => 0),
 }));
@@ -132,13 +137,22 @@ describe('freezeTrack', () => {
                 sampleRate: 44100,
                 bitDepth: 32,
                 channelCount: 2,
-                tailLengthSeconds: 2,
+                // No devices, so nothing declares a tail and nothing rings past
+                // the content. The old heuristic reserved 4 beats here anyway.
+                tailLengthSeconds: 0,
+                bakeVersion: FREEZE_BAKE_VERSION,
             },
             renderedAt: 1234567890,
         });
 
         expect(cacheAudioBuffer).toHaveBeenCalledWith({ buffer: renderedBuffer, bufferId: expectedBufferId });
-        expect(renderTrackOffline).toHaveBeenCalledWith(expect.any(Object), 2, 6 + 4, expect.any(Object)); // 6 end + 4 tail
+        // The region is the clip bounds; the tail travels as seconds beside it.
+        expect(renderTrackOffline).toHaveBeenCalledWith(
+            expect.any(Object),
+            2,
+            6,
+            expect.objectContaining({ tailSeconds: 0, targetMixer: 'keepLive' })
+        );
         expect(didWrite).toBe(true);
     });
 
@@ -231,7 +245,12 @@ describe('freezeTrack', () => {
 
         await freezeTrack('t1');
 
-        expect(renderTrackOffline).toHaveBeenCalledWith(expect.any(Object), 0, 1 + 4, expect.any(Object));
+        expect(renderTrackOffline).toHaveBeenCalledWith(
+            expect.any(Object),
+            0,
+            1,
+            expect.objectContaining({ tailSeconds: 0 })
+        );
     });
 
     it('rejects dormant VCA freeze before task, render, cache, or project work', async () => {
@@ -273,18 +292,18 @@ describe('freezeTrack', () => {
 
         await freezeTrack('t1');
 
-        // startBeat stays 2, endBeat stays 6; tail 4 → render end 10
-        expect(renderTrackOffline).toHaveBeenCalledWith(expect.any(Object), 2, 10, expect.any(Object));
+        // startBeat stays 2, endBeat stays 6; the tail rides alongside in seconds
+        expect(renderTrackOffline).toHaveBeenCalledWith(expect.any(Object), 2, 6, expect.any(Object));
     });
 
-    it('adds an 8-beat tail when the device chain contains a reverb or delay', async () => {
+    it('reserves no tail for a device whose name reads like a reverb but declares none', async () => {
         trackStore.set({
             tracks: [
                 {
                     id: 't1',
                     kind: 'audio',
                     clips: [{ startBeat: 0, endBeat: 4 }],
-                    devices: [{ type: 'Reverb' }],
+                    devices: [{ type: 'Reverb', parameterValues: {}, bypassed: false }],
                     freezeState: { status: 'unfrozen' },
                 } as any,
             ],
@@ -298,33 +317,16 @@ describe('freezeTrack', () => {
 
         await freezeTrack('t1');
 
-        // reverb tail = 8 → render end 4 + 8 = 12
-        expect(renderTrackOffline).toHaveBeenCalledWith(expect.any(Object), 0, 12, expect.any(Object));
-    });
-
-    it('adds an 8-beat tail when the device chain contains a delay', async () => {
-        trackStore.set({
-            tracks: [
-                {
-                    id: 't1',
-                    kind: 'audio',
-                    clips: [{ startBeat: 0, endBeat: 4 }],
-                    devices: [{ type: 'TapeDelay' }],
-                    freezeState: { status: 'unfrozen' },
-                } as any,
-            ],
-            selectedTrackId: null,
-        });
-
-        vi.mocked(renderTrackOffline).mockResolvedValue({
-            sampleRate: 44100,
-            numberOfChannels: 2,
-        } as any);
-
-        await freezeTrack('t1');
-
-        // delay tail = 8 → render end 4 + 8 = 12
-        expect(renderTrackOffline).toHaveBeenCalledWith(expect.any(Object), 0, 12, expect.any(Object));
+        // The tail used to come from `type.includes('reverb')`, so this
+        // descriptor-less type scored 8 beats on its name alone while the Dutch
+        // Oven — a real reverb — scored 4. Names decide nothing now; only a
+        // `DeviceTailDeclaration` does, and this type has none.
+        expect(renderTrackOffline).toHaveBeenCalledWith(
+            expect.any(Object),
+            0,
+            4,
+            expect.objectContaining({ tailSeconds: 0 })
+        );
     });
 
     it('throws and marks an error when the offline render returns no buffer', async () => {
@@ -489,7 +491,7 @@ describe('freezeTrack', () => {
         expect(progressTrack.freezeState.renderProgress).toBe(0.5);
     });
 
-    it('derives the tail length from the transport tempo when it is present', async () => {
+    it('records a tail length the transport tempo cannot move', async () => {
         transportMock.value = { tempo: 60 };
         trackStore.set({
             tracks: [
@@ -520,7 +522,9 @@ describe('freezeTrack', () => {
             throw new Error('expected track in store');
         }
         const frozenTrack = frozenCall[1](storedTrack);
-        // tailBeats 4 at 60 BPM = 4*60/60 = 4 seconds (not the 120-BPM fallback of 2)
-        expect(frozenTrack.freezeState.renderSettings?.tailLengthSeconds).toBe(4);
+        // A beat-denominated tail read 4 s here and 2 s at 120 BPM for the same
+        // empty chain. A declared tail is a duration: this chain declares none,
+        // and the tempo has no say in that.
+        expect(frozenTrack.freezeState.renderSettings?.tailLengthSeconds).toBe(0);
     });
 });

@@ -81,7 +81,7 @@ import { setGrandBouleEventBus } from '#/modules/GrandBoule/useCases';
 import { updateGrinderTelemetry } from '#/modules/Grinder/stores';
 import { getPitchHandlers, setPitchEditDependencies } from '#/modules/Knead/useCases';
 import { setEngineReady } from '#/modules/Levain/stores';
-import { registerLevainDevice, unregisterLevainDevice } from '#/modules/Levain/useCases';
+import { prepareOfflineLevain, registerLevainDevice, unregisterLevainDevice } from '#/modules/Levain/useCases';
 import {
     getChordTrackHandlers,
     getMidiGrooveHandlers,
@@ -286,6 +286,15 @@ configureAudioDeviceRuntimeSink({
     unregisterLevainDevice,
     setLevainEngineReady: ({ deviceId, isReady }) => {
         setEngineReady(deviceId, isReady);
+    },
+    // The offline render builds instrument nodes through a different
+    // registry than live playback, so nothing here ran for an export and Levain
+    // bounced silence. Dispatch stays in the composition root; each module owns
+    // what its own instrument needs.
+    prepareOfflineInstrument: async ({ deviceId, deviceType, port, signal }) => {
+        if (deviceType === 'levain') {
+            await prepareOfflineLevain({ deviceId, port, signal });
+        }
     },
     setFermenterTelemetry: (deviceId, telemetry) => {
         setFermenterTelemetry(deviceId, telemetry.peakL, telemetry.peakR, telemetry.scopeBuffer);

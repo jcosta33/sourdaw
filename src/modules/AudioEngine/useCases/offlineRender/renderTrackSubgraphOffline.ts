@@ -9,17 +9,13 @@ import { getSidechainKeyDelay } from '../latencyCompensation/compensation/getSid
 import { connectOfflineToasterPadRoutes } from './connectOfflineToasterPadRoutes';
 import { MAX_OFFLINE_FRAMES, MIN_RENDER_TIMEOUT_MS, RENDER_TIMEOUT_MULTIPLIER } from './constants';
 import { createOfflineTrackStrip } from './createOfflineTrackStrip';
-import { isOfflineInstrumentDevice } from './isOfflineInstrumentDevice';
+import { projectStripTrack, type TargetMixerDisposition } from './projectStripTrack';
 import { renderInSegments } from './renderInSegments';
 import { resolveRenderContext } from './resolveRenderContext';
 import { schedulePendingSuspends } from './schedulePendingSuspends';
 import { scheduleTrackClips } from './scheduleTrackClips';
 import { type OfflineTrackStrip, type PendingWorkletEvent } from './types';
 import { yieldToMain } from './yieldToMain';
-
-/** Fader/pan values a bounce uses when the caller asks for the take without mixer moves. */
-const NEUTRAL_GAIN = 0.8;
-const NEUTRAL_PAN = 0;
 
 /** Stand-in note tables for a render started before the MIDI store is hydrated. */
 const EMPTY_MIDI_STATE = {
@@ -78,38 +74,19 @@ type RenderTrackSubgraphOfflineInput = {
     includeAutomation?: boolean;
     /** False drops the target track's bus sends from the render graph. */
     includeSends?: boolean;
+    /**
+     * Whether the target track's own fader and panner belong in the print.
+     *
+     * Defaults to `'bake'`, which is right for every caller whose output is
+     * finished audio. Freeze passes `'keepLive'`: its buffer is replayed through
+     * that very strip, so baking those values applies them twice. See
+     * `projectStripTrack` for the rule.
+     */
+    targetMixer?: TargetMixerDisposition;
     onProgress?: (fraction: number) => void;
     onWarning?: (message: string) => void;
     abortSignal?: AbortSignal;
 };
-
-type StripTrackInput = {
-    track: Track;
-    isTarget: boolean;
-    includeInserts: boolean;
-    includeAutomation: boolean;
-};
-
-/**
- * Shape the track the *strip* is built from. Only the target honours the
- * bounce options; upstream tracks always render as the session has them, since
- * their contribution is what the target's chain is fed.
- */
-function projectStripTrack({ track, isTarget, includeInserts, includeAutomation }: StripTrackInput): Track {
-    if (!isTarget) {
-        return track;
-    }
-
-    let devices = track.devices;
-    if (!includeInserts) {
-        devices = track.devices.filter((device) => isOfflineInstrumentDevice(device.type));
-    }
-
-    if (includeAutomation) {
-        return { ...track, devices };
-    }
-    return { ...track, devices, gain: NEUTRAL_GAIN, pan: NEUTRAL_PAN };
-}
 
 /**
  * Render one track (plus everything routed into it) offline through the *real*
@@ -131,6 +108,7 @@ export async function renderTrackSubgraphOffline({
     includeInserts = true,
     includeAutomation = true,
     includeSends = true,
+    targetMixer = 'bake',
     onProgress,
     onWarning,
     abortSignal,
@@ -172,6 +150,7 @@ export async function renderTrackSubgraphOffline({
                 isTarget: track.id === targetTrackId,
                 includeInserts,
                 includeAutomation,
+                targetMixer,
             }),
             // Freeze and bounce produce deliverable audio, not a monitoring
             // snapshot — the same reason exportStems opts out. Baking mute in
@@ -274,6 +253,13 @@ export async function renderTrackSubgraphOffline({
             honorMuted: false,
             regionStartBeat: startBeat,
             includeAutomation: track.id === targetTrackId ? includeAutomation : true,
+            // Same rule as the strip seed: a `gain` or `pan` lane drives the very
+            // nodes the frozen buffer is replayed through, and live
+            // `applyAutomation` keeps driving them after the freeze, so baking
+            // those lanes doubles them exactly as the static values were.
+            // Device lanes are untouched — the chain is bypassed at replay, so
+            // their moves exist only if they are in the samples.
+            includeMixerAutomation: !(track.id === targetTrackId && targetMixer === 'keepLive'),
             // Same rule the strip was seeded with, so a gain lane on an upstream
             // contributor rides its group instead of nullifying it.
             vcaMultiplier: resolveContributorVcaMultiplier({

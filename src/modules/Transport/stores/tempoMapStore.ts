@@ -14,8 +14,24 @@ export type TempoMapStoreState = {
     changes: TempoChange[];
 };
 
-const MIN_TEMPO = 20;
-const MAX_TEMPO = 999;
+/**
+ * Tempo range a stored *tempo-map change* must fall in.
+ *
+ * Deliberately its own name and not Transport's `MIN_TEMPO`/`MAX_TEMPO`, because
+ * the two ranges are genuinely different: the transport's base tempo is capped
+ * at 300, a tempo-map change at 999. They already disagree, so collapsing them
+ * would be wrong.
+ *
+ * The minimum is exported because it is one of the two floors the
+ * unknown-frozen-tail derivation has to clear — a project's slowest legal tempo
+ * is the slowest either validator will accept, and that derivation used to be
+ * checked against Transport's copy alone. `frozenTailAnchor.spec.ts` pins it
+ * against both. That cross-check is the point: a value duplicated across a
+ * boundary with no test spanning it is invisible precisely while the copies
+ * agree.
+ */
+export const MIN_TEMPO_MAP_TEMPO = 20;
+const MAX_TEMPO_MAP_TEMPO = 999;
 const TEMPO_MAP_KEYS = ['changes'] as const;
 const TEMPO_CHANGE_KEYS = ['id', 'beat', 'tempo', 'curve'] as const;
 
@@ -65,8 +81,8 @@ function is_valid_tempo_change(value: unknown): value is TempoChange {
         'tempo' in value &&
         typeof value.tempo === 'number' &&
         Number.isFinite(value.tempo) &&
-        value.tempo >= MIN_TEMPO &&
-        value.tempo <= MAX_TEMPO &&
+        value.tempo >= MIN_TEMPO_MAP_TEMPO &&
+        value.tempo <= MAX_TEMPO_MAP_TEMPO &&
         'curve' in value &&
         is_tempo_curve(value.curve)
     );
