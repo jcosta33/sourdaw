@@ -501,7 +501,16 @@ describe('scheduleTrackClips — audio clip scheduling', () => {
 
         const { trackInputNode, trackPanNode, destination } = await run({ track, ctx, withPrebuiltChain: false });
 
-        expect(mocks.buildDeviceChain).toHaveBeenCalledWith(ctx, track.devices, trackInputNode, trackPanNode);
+        // The chain is handed the track name and the export's warning channel:
+        // a device that fails to load has to be reportable against the track
+        // the user has to go and fix.
+        expect(mocks.buildDeviceChain).toHaveBeenCalledWith(
+            ctx,
+            track.devices,
+            trackInputNode,
+            trackPanNode,
+            expect.objectContaining({ trackName: track.name })
+        );
         expect(trackPanNode.connect).toHaveBeenCalledWith(destination);
     });
 });

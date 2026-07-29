@@ -2,6 +2,7 @@ import { addDeviceToStrip, updateDeviceParam } from '#/modules/AudioEngine/useCa
 import { compileFaustDSP } from '#/modules/PluginHost/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { isDeviceSupportedOnCurrentPlatform } from '../../models/DeviceParameter';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { getTrackEligibility, shouldCreateLiveTrackStrip } from '../../stores/trackEligibility';
@@ -29,6 +30,18 @@ export function addDevice(trackId: string, deviceType: string): Device | null {
 
     if (deviceType.toLowerCase() === 'crust') {
         notifyUser('PluginNotImplementedError: Crust is not fully implemented', 'error');
+        return null;
+    }
+
+    // Same class as the guard above: a device this runtime cannot host must not
+    // be half-placed. `getPlatformPlugins()` below is platform-filtered, so in a
+    // browser build a native-only id resolves to no plugin and falls into the
+    // generic branch, writing a device with no parameters whose type is on the
+    // export refusal table — the project then refuses to export over a device
+    // that was never properly added. The helper passes unknown types through, so
+    // external plugins and older projects' device strings are unaffected.
+    if (!isDeviceSupportedOnCurrentPlatform(deviceType)) {
+        notifyUser(`"${deviceType}" is not available on this platform and was not added.`, 'error');
         return null;
     }
 

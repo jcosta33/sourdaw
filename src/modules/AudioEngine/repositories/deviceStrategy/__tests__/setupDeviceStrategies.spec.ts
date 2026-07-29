@@ -23,6 +23,7 @@ vi.mock('../nativeDspDeviceFactories', () => ({
 
 import { createNativeDspStrategy } from '../NativeDspDeviceStrategy';
 import { createDeviceRegistry } from '../setupDeviceStrategies';
+import { isUnsupportedDeviceTypeError, type UnsupportedDeviceTypeError } from '../unsupportedDeviceTypeError';
 import { createWebAudioDevice } from '../WebAudioDeviceStrategy';
 
 describe('setupDeviceStrategies', () => {
@@ -97,9 +98,12 @@ describe('setupDeviceStrategies', () => {
             createFaustDevice: vi.fn(),
         });
 
-        await expect(
-            registry.createDevice({} as BaseAudioContext, createDevice({ type: 'not-a-native-device' }))
-        ).rejects.toThrow('No device factory registered for type: not-a-native-device');
+        const failure = await registry
+            .createDevice({} as BaseAudioContext, createDevice({ type: 'not-a-native-device' }))
+            .catch((error: unknown) => error);
+
+        expect(isUnsupportedDeviceTypeError(failure)).toBe(true);
+        expect((failure as UnsupportedDeviceTypeError).deviceType).toBe('not-a-native-device');
         expect(createNativeDspStrategy).not.toHaveBeenCalled();
     });
 });

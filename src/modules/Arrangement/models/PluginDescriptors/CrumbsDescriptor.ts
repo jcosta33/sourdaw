@@ -11,6 +11,10 @@ export const CRUMBS_DESCRIPTOR: PluginDescriptor = {
     vendor: 'Sourdaw',
     format: 'builtin',
     category: 'instrument',
+    // Crumbs has no WebAudio implementation. Its engine lives in the Rust
+    // backend and is reached only through the `crumbs_*` Tauri commands, so a
+    // browser build was offering a device that could not make a sound anywhere.
+    platform: 'native',
     hasCustomUI: true,
     // An instrument keeps sounding for its amp-envelope release after the last
     // note ends, which the export has to capture like any other tail.
