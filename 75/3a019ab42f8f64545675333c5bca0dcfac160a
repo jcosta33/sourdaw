@@ -1,0 +1,43 @@
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_bc88af7d3b054c::t_eb9ab15fb655f5 74,84,153
+docs/architecture/decisions/0019-provider-tool-planning-outcomes.md
+  s_bc88af7d3b054c::t_9b5478646cef44 11,13,15,19
+src/modules/AiGeneration/handlers/aiMidi/__tests__/llmNoteHelpers.spec.ts
+  s_bc88af7d3b054c::t_16f676b513603d 47-51,53-54,77
+src/modules/AiGeneration/handlers/aiMidi/llmNoteHelpers.ts
+  s_bc88af7d3b054c::t_3af8c13a4d1b9f 52-53
+src/modules/AiRuntime/transformers/__tests__/toolCallParser.spec.ts
+  s_bc88af7d3b054c::t_88525f6e9d3b21 5-8,157-167,169,180,183-189,191,196-199
+src/modules/AiRuntime/transformers/strictToolPlanningParser.ts
+  s_bc88af7d3b054c::t_a266ec1ad6187a 1-102
+src/modules/AiRuntime/transformers/toolCallParser.ts
+  s_bc88af7d3b054c::t_2aa5824dd5a2bf 13,15-16,43,51-52,64-65,69,77,82,87,93,96,99,123
+src/modules/AiRuntime/transformers/toolCallTypes.ts
+  s_bc88af7d3b054c::t_ef7f31fb591b35 1-4
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_bc88af7d3b054c::t_49059adb0cc82c 9,52
+src/modules/AiRuntime/useCases/index.ts
+  s_bc88af7d3b054c::t_c061fae5da31ca 38
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_bc88af7d3b054c::t_9e72efb39cdff8 6-7,96,284-298
+src/modules/AiRuntime/useCases/llmOrchestration/generateToolCalls.ts
+  s_bc88af7d3b054c::t_fbfc951307a631 1-19
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_bc88af7d3b054c::t_c86fcefc6171a7 25,109
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "753a019ab42f8f64545675333c5bca0dcfac160a",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
