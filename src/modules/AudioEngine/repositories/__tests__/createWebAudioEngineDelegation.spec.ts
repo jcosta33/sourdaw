@@ -160,6 +160,35 @@ function asAudioContext(ctx: MockAudioContext): AudioContext {
     return ctx as unknown as AudioContext;
 }
 
+type DiagnosticTestDevice = BuiltinDeviceNode & {
+    diagnosticLoadState?: 'ready' | 'pending' | 'failed';
+};
+
+function createDiagnosticDevice(input: {
+    context: MockAudioContext;
+    deviceId: string;
+    deviceType: string;
+    nodeCount?: number;
+    loadState?: DiagnosticTestDevice['diagnosticLoadState'];
+}): DiagnosticTestDevice {
+    const nodes = Array.from({ length: input.nodeCount ?? 1 }, () => input.context.createGain());
+    const device: DiagnosticTestDevice = {
+        deviceId: input.deviceId,
+        type: input.deviceType,
+        nodes,
+        inputNode: nodes[0]!,
+        outputNode: nodes.at(-1)!,
+    };
+    if (input.loadState && input.loadState !== 'ready') {
+        device.controller = {
+            ready: false,
+            setParam: vi.fn(),
+        };
+        device.diagnosticLoadState = input.loadState;
+    }
+    return device;
+}
+
 function trackMocks(trackId: string): Record<string, (...args: unknown[]) => void> {
     const instance = trackNodeInstances.find((candidate) => candidate.trackId === trackId);
     if (!instance) {
@@ -259,58 +288,34 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
 
         track.meterNode = new FakeWorkletNode() as unknown as AudioWorkletNode;
         busTrack.meterNode = null;
-        const fermenterInput = mockCtx.createGain();
-        const fermenterOutput = mockCtx.createGain();
-        const fermenter = {
+        const fermenter = createDiagnosticDevice({
+            context: mockCtx,
             deviceId: 'fermenter-1',
-            type: 'fermenter',
-            nodes: [fermenterOutput],
-            inputNode: fermenterInput,
-            outputNode: fermenterOutput,
-        } satisfies BuiltinDeviceNode;
-        const bacteriaInput = mockCtx.createGain();
-        const bacteriaOutput = mockCtx.createGain();
-        const bacteria = {
+            deviceType: 'fermenter',
+        });
+        const bacteria = createDiagnosticDevice({
+            context: mockCtx,
             deviceId: 'bacteria-1',
-            type: 'bacteria',
-            nodes: [bacteriaInput, bacteriaOutput],
-            inputNode: bacteriaInput,
-            outputNode: bacteriaOutput,
-        } satisfies BuiltinDeviceNode;
-        const sidechainNode = mockCtx.createGain();
-        const sidechain = {
+            deviceType: 'bacteria',
+            nodeCount: 2,
+        });
+        const sidechain = createDiagnosticDevice({
+            context: mockCtx,
             deviceId: 'sidechain-1',
-            type: 'builtin-sidechain-compressor',
-            nodes: [sidechainNode],
-            inputNode: sidechainNode,
-            outputNode: sidechainNode,
-        } satisfies BuiltinDeviceNode;
-        const pendingNode = mockCtx.createGain();
-        const pending = {
+            deviceType: 'builtin-sidechain-compressor',
+        });
+        const pending = createDiagnosticDevice({
+            context: mockCtx,
             deviceId: 'pending-1',
-            type: 'levain',
-            nodes: [pendingNode],
-            inputNode: pendingNode,
-            outputNode: pendingNode,
-            controller: {
-                ready: false,
-                setParam: vi.fn(),
-            },
-            diagnosticLoadState: 'pending',
-        } satisfies BuiltinDeviceNode & { diagnosticLoadState: 'pending' };
-        const failedNode = mockCtx.createGain();
-        const failed = {
+            deviceType: 'levain',
+            loadState: 'pending',
+        });
+        const failed = createDiagnosticDevice({
+            context: mockCtx,
             deviceId: 'failed-1',
-            type: 'grand-boule',
-            nodes: [failedNode],
-            inputNode: failedNode,
-            outputNode: failedNode,
-            controller: {
-                ready: false,
-                setParam: vi.fn(),
-            },
-            diagnosticLoadState: 'failed',
-        } satisfies BuiltinDeviceNode & { diagnosticLoadState: 'failed' };
+            deviceType: 'grand-boule',
+            loadState: 'failed',
+        });
         track.deviceNodes.push(fermenter, bacteria, pending, failed);
         busTrack.deviceNodes.push(sidechain);
         engine.wireSidechainRoute('t1', 'bus-1', 'sidechain-1');
