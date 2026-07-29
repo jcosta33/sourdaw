@@ -1,0 +1,45 @@
+src/modules/WorkspaceShell/presentations/hooks/useStatusBarMetrics.ts
+  s_ac9b259eab20ba::t_0426fbbe0da5c8 65
+  s_ac9b259eab20ba::t_a18e9e2440fbd0 4,38-39,63-64,66-72,154
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useStatusBarMetrics.spec.ts
+  s_ac9b259eab20ba::t_b0745040753da6 59
+  s_ac9b259eab20ba::t_749314ab2d18b3 7,15,67-89,230-232,253-282
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngineDelegation.spec.ts
+  s_ac9b259eab20ba::t_e17ef66fbb953e 228-243,297-309,311-313,315-317
+  s_ac9b259eab20ba::t_b70455694cbf58 281
+  s_ac9b259eab20ba::t_749314ab2d18b3 7,252-270,296
+  s_ac9b259eab20ba::t_f9ec2275890865 227,244-251,272-280,282-295,310,314,318-319
+  s_ac9b259eab20ba::t_7a1ec25a3702f1 271
+src/modules/AudioEngine/useCases/engineAccess/getEngineDiagnostics.ts
+  s_ac9b259eab20ba::t_46e8d10528b6a6 1-7
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngine.spec.ts
+  s_ac9b259eab20ba::t_e17ef66fbb953e 828-833
+src/modules/AudioEngine/models/AudioEngineState.ts
+  s_ac9b259eab20ba::t_a18e9e2440fbd0 68
+  s_ac9b259eab20ba::t_46e8d10528b6a6 48-67,69-71,312
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_ac9b259eab20ba::t_3a3cbfded143d2 156,1325
+  s_ac9b259eab20ba::t_46e8d10528b6a6 15,343,345-366,371-372,376-386,388
+  s_ac9b259eab20ba::t_c3ee5d2b343d7b 344,367-370
+  s_ac9b259eab20ba::t_e76d98df82b3cd 373-375
+  s_ac9b259eab20ba::t_a18e9e2440fbd0 387
+  s_ac9b259eab20ba::t_efb4e9473c2c9b 389-391
+src/modules/AudioEngine/useCases/index.ts
+  s_ac9b259eab20ba::t_46e8d10528b6a6 68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "63ace239bcaaf205ed6eeb9220ddbbe33feda4df",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
