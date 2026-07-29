@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { tryPresetMatch, tryParameterizedPath, tryCompoundFastPath } from '../../transformers/promptParser/parsing';
+import { executeDsoEdit } from '../dsoEditor/executeDsoEdit';
 import { getProjectContext } from '../getProjectContext';
 import { isDsoBackendAvailable } from '../llmOrchestration/backendResolution/isDsoBackendAvailable';
 import { generateToolCalls } from '../llmOrchestration/inference';
@@ -51,6 +52,10 @@ vi.mock('../llmOrchestration/inference', () => ({
     generateToolCalls: vi.fn(),
 }));
 
+vi.mock('../dsoEditor/executeDsoEdit', () => ({
+    executeDsoEdit: vi.fn(),
+}));
+
 vi.mock('../../transformers/llmActionBridge', () => ({
     bridgeLlmToolCalls: mockBridgeLlmToolCalls,
     buildLlmActionSystemPrompt: mockBuildLlmActionSystemPrompt,
@@ -71,12 +76,20 @@ const baseContext: ProjectContext = {
 
 describe('parsePromptToActions', () => {
     beforeEach(() => {
+        vi.clearAllMocks();
         vi.mocked(tryPresetMatch).mockReturnValue([]);
         vi.mocked(tryParameterizedPath).mockReturnValue([]);
         vi.mocked(tryCompoundFastPath).mockReturnValue(null);
         vi.mocked(isDsoBackendAvailable).mockReturnValue(false);
         vi.mocked(getProjectContext).mockReturnValue(baseContext);
         vi.mocked(generateToolCalls).mockReset();
+        vi.mocked(executeDsoEdit).mockReset();
+        vi.mocked(executeDsoEdit).mockResolvedValue({
+            success: false,
+            plan: null,
+            summaries: [],
+            error: 'No DSO match',
+        });
         mockBridgeLlmToolCalls.mockReset();
         mockBuildLlmActionSystemPrompt.mockClear();
         mockBuildLlmActionUserMessage.mockClear();
@@ -95,18 +108,26 @@ describe('parsePromptToActions', () => {
         });
     });
 
-    it('returns a truthful rejection when a recognized preset action is not admitted', async () => {
-        vi.mocked(tryPresetMatch).mockReturnValue([{ type: 'saveProject' }]);
+    it.each([
+        { prompt: 'save project', actionType: 'saveProject' },
+        { prompt: 'new project', actionType: 'newProject' },
+        { prompt: 'export', actionType: 'exportProject' },
+        { prompt: 'import audio', actionType: 'importAudioFile' },
+        { prompt: 'import midi', actionType: 'importMidiFile' },
+        { prompt: 'leave session', actionType: 'leaveCollabSession' },
+    ] as const)('recognizes denied intent $prompt without provider or DSO planning', async ({ prompt, actionType }) => {
+        vi.mocked(isDsoBackendAvailable).mockReturnValue(true);
 
-        const result = await parsePromptToActions('save project', baseContext);
+        const result = await parsePromptToActions(prompt, baseContext);
 
         expect(result).toEqual({
             actions: [],
-            rawText: 'save project',
+            rawText: prompt,
             requiresConfirmation: false,
-            rejectionReason: 'Recognized command failed runtime validation: saveProject',
+            rejectionReason: `Action ${actionType} cannot be executed by AI because it does not report completion.`,
         });
         expect(generateToolCalls).not.toHaveBeenCalled();
+        expect(executeDsoEdit).not.toHaveBeenCalled();
     });
 
     it('turns provider tool calls into validated action proposals', async () => {
@@ -212,6 +233,41 @@ describe('parsePromptToActions', () => {
             rawText: 'save the project',
             requiresConfirmation: false,
             rejectionReason: 'Provider action failed runtime validation: saveProject',
+        });
+    });
+
+    it.each([
+        'Provider refused tool planning',
+        'Provider returned an invalid tool plan',
+        'Provider returned an incomplete tool plan',
+    ])('returns provider planning failure %s without falling through to DSO', async (reason) => {
+        vi.mocked(generateToolCalls).mockRejectedValue(new Error(reason));
+        vi.mocked(isDsoBackendAvailable).mockReturnValue(true);
+
+        const result = await parsePromptToActions('mute the vocals', baseContext);
+
+        expect(result).toEqual({
+            actions: [],
+            rawText: 'mute the vocals',
+            requiresConfirmation: false,
+            rejectionReason: `Provider planning failed: ${reason}`,
+        });
+        expect(executeDsoEdit).not.toHaveBeenCalled();
+    });
+
+    it('allows DSO fallback after successful provider planning returns no tool calls', async () => {
+        vi.mocked(generateToolCalls).mockResolvedValue([]);
+        mockBridgeLlmToolCalls.mockReturnValue({ actions: [], rejections: [] });
+        vi.mocked(isDsoBackendAvailable).mockReturnValue(true);
+
+        const result = await parsePromptToActions('make the mix warmer', baseContext);
+
+        expect(executeDsoEdit).toHaveBeenCalledWith('make the mix warmer', undefined);
+        expect(result).toEqual({
+            actions: [],
+            rawText: 'make the mix warmer',
+            requiresConfirmation: false,
+            _jsonEditAttempted: true,
         });
     });
 
