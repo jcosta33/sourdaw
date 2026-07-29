@@ -35,6 +35,12 @@ describe('generateWebLlmCompletion', () => {
         await expect(generateWebLlmCompletion('system', 'user')).resolves.toBe('Final answer');
     });
 
+    it('returns a normally completed strict tool-planning answer', async () => {
+        await expect(generateWebLlmCompletion('system', 'user', { requireComplete: true })).resolves.toBe(
+            'Final answer'
+        );
+    });
+
     it('rejects a token-limited response before structured consumers can parse it', async () => {
         mocks.createCompletion.mockResolvedValue({
             choices: [{ finish_reason: 'length', message: { content: '[{"name":"muteTrack"}]' } }],
@@ -43,6 +49,32 @@ describe('generateWebLlmCompletion', () => {
         await expect(generateWebLlmCompletion('system', 'user')).rejects.toThrow(
             'WebLLM returned an incomplete completion'
         );
+    });
+
+    it.each([
+        {
+            label: 'length finish',
+            response: {
+                choices: [{ finish_reason: 'length', message: { content: '[{"name":"muteTrack"}]' } }],
+            },
+        },
+        { label: 'missing choice', response: { choices: [] } },
+        { label: 'missing finish', response: { choices: [{ message: { content: '[]' } }] } },
+        { label: 'missing message', response: { choices: [{ finish_reason: 'stop' }] } },
+        { label: 'non-string content', response: { choices: [{ finish_reason: 'stop', message: { content: null } }] } },
+    ])('terminally rejects strict tool planning with $label', async ({ response }) => {
+        mocks.createCompletion.mockResolvedValue(response);
+
+        await expect(generateWebLlmCompletion('system', 'user', { requireComplete: true })).rejects.toMatchObject({
+            name: 'ToolPlanningRejectedError',
+        });
+    });
+
+    it('preserves WebLLM runtime errors during strict tool planning', async () => {
+        const error = new TypeError('WebGPU device lost');
+        mocks.createCompletion.mockRejectedValue(error);
+
+        await expect(generateWebLlmCompletion('system', 'user', { requireComplete: true })).rejects.toBe(error);
     });
 
     it('interrupts active inference when the caller aborts', async () => {
@@ -57,7 +89,10 @@ describe('generateWebLlmCompletion', () => {
             rejectCompletion(new DOMException('Aborted', 'AbortError'));
         });
         const controller = new AbortController();
-        const pending = generateWebLlmCompletion('system', 'user', { signal: controller.signal });
+        const pending = generateWebLlmCompletion('system', 'user', {
+            signal: controller.signal,
+            requireComplete: true,
+        });
         await vi.waitFor(() => expect(mocks.createCompletion).toHaveBeenCalledTimes(1));
 
         controller.abort();

@@ -15,11 +15,29 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function hasAssistantContent(value: unknown): boolean {
-    if (typeof value === 'string') {
-        return value.trim().length > 0;
+type AssistantContentState = { valid: true; hasContent: boolean } | { valid: false };
+
+function inspectAssistantContent(value: unknown): AssistantContentState {
+    if (value === undefined || value === null) {
+        return { valid: true, hasContent: false };
     }
-    return Array.isArray(value) && value.length > 0;
+    if (typeof value === 'string') {
+        return { valid: true, hasContent: value.trim().length > 0 };
+    }
+    if (!Array.isArray(value)) {
+        return { valid: false };
+    }
+
+    let hasContent = false;
+    for (const part of value) {
+        if (!isRecord(part) || part.type !== 'text' || typeof part.text !== 'string') {
+            return { valid: false };
+        }
+        if (part.text.trim().length > 0) {
+            hasContent = true;
+        }
+    }
+    return { valid: true, hasContent };
 }
 
 function parseArguments(value: unknown): Record<string, unknown> | null {
@@ -46,6 +64,10 @@ function parseToolCalls(response: unknown): ToolCallResult[] {
     if (!isRecord(firstChoice) || !isRecord(firstChoice.message)) {
         throw new ToolPlanningRejectedError('Hosted AI returned an invalid tool-planning response');
     }
+    const contentState = inspectAssistantContent(firstChoice.message.content);
+    if (!contentState.valid) {
+        throw new ToolPlanningRejectedError('Hosted AI returned an invalid tool-planning response');
+    }
     if (firstChoice.message.refusal !== undefined && firstChoice.message.refusal !== null) {
         throw new ToolPlanningRejectedError('Hosted AI refused tool planning');
     }
@@ -54,10 +76,10 @@ function parseToolCalls(response: unknown): ToolCallResult[] {
     if (!hasValidFinishReason) {
         throw new ToolPlanningRejectedError('Hosted AI returned an incomplete tool-call batch');
     }
-    if (finishReason === 'stop' && hasAssistantContent(firstChoice.message.content)) {
-        throw new ToolPlanningRejectedError('Hosted AI returned a non-tool response instead of a tool-call batch');
-    }
     if (!Array.isArray(firstChoice.message.tool_calls)) {
+        if (contentState.hasContent) {
+            throw new ToolPlanningRejectedError('Hosted AI returned a non-tool response instead of a tool-call batch');
+        }
         if (finishReason === 'stop') {
             return [];
         }
@@ -65,6 +87,9 @@ function parseToolCalls(response: unknown): ToolCallResult[] {
     }
     if (finishReason === 'stop' && firstChoice.message.tool_calls.length > 0) {
         throw new ToolPlanningRejectedError('Hosted AI returned an inconsistent tool-call batch');
+    }
+    if (contentState.hasContent && firstChoice.message.tool_calls.length === 0) {
+        throw new ToolPlanningRejectedError('Hosted AI returned a non-tool response instead of a tool-call batch');
     }
 
     const results: ToolCallResult[] = [];
@@ -122,8 +147,15 @@ export async function generateOpenAiCompatibleToolCalls({
     let payload: unknown;
     try {
         payload = (await response.json()) as unknown;
-    } catch {
-        throw new ToolPlanningRejectedError('Hosted AI returned an invalid tool-planning response');
+    } catch (error) {
+        if (hasErrorName(error, 'SyntaxError')) {
+            throw new ToolPlanningRejectedError('Hosted AI returned an invalid tool-planning response');
+        }
+        throw error;
     }
     return parseToolCalls(payload);
+}
+
+function hasErrorName(value: unknown, name: string): boolean {
+    return isRecord(value) && value.name === name;
 }

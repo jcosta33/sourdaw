@@ -42,7 +42,23 @@ export async function generateNativeToolCalls(input: GenerateNativeToolCallsInpu
         abortMessage: 'Native tool planning aborted',
     });
 
-    return narrowNativeToolCallResults(response);
+    return narrowNativeToolCallingResponse(response);
+}
+
+function narrowNativeToolCallingResponse(response: unknown): NativeToolCallResult[] {
+    if (!isRecord(response)) {
+        throw new ToolPlanningRejectedError('Invalid native_tool_calling response envelope');
+    }
+    if (response.status === 'rejected') {
+        if (typeof response.reason !== 'string' || response.reason.trim().length === 0) {
+            throw new ToolPlanningRejectedError('Invalid native_tool_calling response envelope');
+        }
+        throw new ToolPlanningRejectedError(response.reason);
+    }
+    if (response.status !== 'complete' || !Array.isArray(response.toolCalls)) {
+        throw new ToolPlanningRejectedError('Invalid native_tool_calling response envelope');
+    }
+    return narrowNativeToolCallResults(response.toolCalls);
 }
 
 function narrowNativeToolCallResults(response: unknown): NativeToolCallResult[] {
