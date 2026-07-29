@@ -1,0 +1,21 @@
+src/modules/WorkspaceShell/presentations/hooks/__tests__/usePromptExecution.spec.ts
+  s_eac9f65d8989d9::t_5bc07041d5f52e 271-295
+src/modules/WorkspaceShell/presentations/hooks/usePromptExecution.ts
+  s_eac9f65d8989d9::t_5f789a91e2ed34 305-307
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "5a8319109ca705ee5b6b07b08e6b6ee34a9f7e78",
+  "prompts": {},
+  "sessions": {
+    "s_eac9f65d8989d9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019faf10-4c4c-7e72-a72d-af5ae5d446ec",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
