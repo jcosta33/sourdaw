@@ -10,10 +10,9 @@
 
 import { logger } from '#/infra/logger/appLogger';
 
-export type ToolCallResult = {
-    name: string;
-    arguments: Record<string, unknown>;
-};
+import type { ToolCallResult } from './strictToolPlanningParser';
+
+export { parseToolPlanningOutcome, type ToolCallResult, type ToolPlanningOutcome } from './strictToolPlanningParser';
 
 const INVALID_TOOL_CALL_NAME = '<invalid>';
 

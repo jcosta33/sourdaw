@@ -6,7 +6,7 @@ import { tryPresetMatch, tryParameterizedPath, tryCompoundFastPath } from '../..
 import { executeDsoEdit } from '../dsoEditor/executeDsoEdit';
 import { getProjectContext } from '../getProjectContext';
 import { isDsoBackendAvailable } from '../llmOrchestration/backendResolution/isDsoBackendAvailable';
-import { generateToolCalls } from '../llmOrchestration/inference';
+import { generateToolPlanningOutcome as generateToolCalls } from '../llmOrchestration/inference';
 import { parsePromptToActions } from '../parsePromptToActions';
 
 const {
@@ -49,7 +49,7 @@ vi.mock('../getProjectContext', () => ({
 }));
 
 vi.mock('../llmOrchestration/inference', () => ({
-    generateToolCalls: vi.fn(),
+    generateToolPlanningOutcome: vi.fn(),
 }));
 
 vi.mock('../dsoEditor/executeDsoEdit', () => ({
@@ -73,6 +73,10 @@ const baseContext: ProjectContext = {
     activeView: 'arrange',
     playheadPosition: 0,
 };
+
+function completePlan<TToolCall>(toolCalls: TToolCall[]) {
+    return { status: 'complete' as const, toolCalls };
+}
 
 describe('parsePromptToActions', () => {
     beforeEach(() => {
@@ -133,9 +137,9 @@ describe('parsePromptToActions', () => {
     it('turns provider tool calls into validated action proposals', async () => {
         const currentContext = { ...baseContext, tempo: 121 };
         vi.mocked(getProjectContext).mockReturnValue(currentContext);
-        vi.mocked(generateToolCalls).mockResolvedValue([
-            { name: 'muteTrack', arguments: { trackId: 'track-vocals', muted: true } },
-        ]);
+        vi.mocked(generateToolCalls).mockResolvedValue(
+            completePlan([{ name: 'muteTrack', arguments: { trackId: 'track-vocals', muted: true } }])
+        );
         mockBridgeLlmToolCalls.mockReturnValue({
             actions: [{ type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true } }],
             rejections: [],
@@ -162,10 +166,12 @@ describe('parsePromptToActions', () => {
     });
 
     it('requires confirmation for a multi-action provider plan', async () => {
-        vi.mocked(generateToolCalls).mockResolvedValue([
-            { name: 'muteTrack', arguments: { trackId: 'track-vocals', muted: true } },
-            { name: 'setTrackGain', arguments: { trackId: 'track-guitar', gain: 0.6 } },
-        ]);
+        vi.mocked(generateToolCalls).mockResolvedValue(
+            completePlan([
+                { name: 'muteTrack', arguments: { trackId: 'track-vocals', muted: true } },
+                { name: 'setTrackGain', arguments: { trackId: 'track-guitar', gain: 0.6 } },
+            ])
+        );
         mockBridgeLlmToolCalls.mockReturnValue({
             actions: [
                 { type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true } },
@@ -181,10 +187,12 @@ describe('parsePromptToActions', () => {
     });
 
     it('does not partially accept a provider batch containing a rejected call', async () => {
-        vi.mocked(generateToolCalls).mockResolvedValue([
-            { name: 'muteTrack', arguments: { trackId: 'track-vocals', muted: true } },
-            { name: 'removeTrack', arguments: { trackId: 'track-vocals' } },
-        ]);
+        vi.mocked(generateToolCalls).mockResolvedValue(
+            completePlan([
+                { name: 'muteTrack', arguments: { trackId: 'track-vocals', muted: true } },
+                { name: 'removeTrack', arguments: { trackId: 'track-vocals' } },
+            ])
+        );
         mockBridgeLlmToolCalls.mockReturnValue({
             actions: [{ type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true } }],
             rejections: [{ index: 1, name: 'removeTrack', reason: 'Tool is not allowlisted' }],
@@ -199,9 +207,9 @@ describe('parsePromptToActions', () => {
     });
 
     it('returns the provider bridge rejection reason without falling through to DSO', async () => {
-        vi.mocked(generateToolCalls).mockResolvedValue([
-            { name: 'removeTrack', arguments: { trackId: 'track-vocals' } },
-        ]);
+        vi.mocked(generateToolCalls).mockResolvedValue(
+            completePlan([{ name: 'removeTrack', arguments: { trackId: 'track-vocals' } }])
+        );
         mockBridgeLlmToolCalls.mockReturnValue({
             actions: [],
             rejections: [{ index: 0, name: 'removeTrack', reason: 'Tool is not allowlisted' }],
@@ -219,7 +227,7 @@ describe('parsePromptToActions', () => {
     });
 
     it('returns a rejection when runtime validation filters a provider batch', async () => {
-        vi.mocked(generateToolCalls).mockResolvedValue([{ name: 'saveProject', arguments: {} }]);
+        vi.mocked(generateToolCalls).mockResolvedValue(completePlan([{ name: 'saveProject', arguments: {} }]));
         mockBridgeLlmToolCalls.mockReturnValue({
             actions: [{ type: 'saveProject' }],
             rejections: [],
@@ -234,6 +242,26 @@ describe('parsePromptToActions', () => {
             requiresConfirmation: false,
             rejectionReason: 'Provider action failed runtime validation: saveProject',
         });
+    });
+
+    it('returns a rejected provider planning outcome without bridging or falling through to DSO', async () => {
+        vi.mocked(generateToolCalls).mockResolvedValue({
+            status: 'rejected',
+            reason: 'Model returned a non-tool response instead of a complete tool-call batch.',
+        });
+        vi.mocked(isDsoBackendAvailable).mockReturnValue(true);
+
+        const result = await parsePromptToActions('mute the vocals', baseContext);
+
+        expect(result).toEqual({
+            actions: [],
+            rawText: 'mute the vocals',
+            requiresConfirmation: false,
+            rejectionReason:
+                'Provider planning rejected: Model returned a non-tool response instead of a complete tool-call batch.',
+        });
+        expect(mockBridgeLlmToolCalls).not.toHaveBeenCalled();
+        expect(executeDsoEdit).not.toHaveBeenCalled();
     });
 
     it.each([
@@ -256,7 +284,7 @@ describe('parsePromptToActions', () => {
     });
 
     it('allows DSO fallback after successful provider planning returns no tool calls', async () => {
-        vi.mocked(generateToolCalls).mockResolvedValue([]);
+        vi.mocked(generateToolCalls).mockResolvedValue(completePlan([]));
         mockBridgeLlmToolCalls.mockReturnValue({ actions: [], rejections: [] });
         vi.mocked(isDsoBackendAvailable).mockReturnValue(true);
 
@@ -282,10 +310,12 @@ describe('parsePromptToActions', () => {
     });
 
     it('returns multiple valid provider actions as one complete batch proposal', async () => {
-        vi.mocked(generateToolCalls).mockResolvedValue([
-            { name: 'muteTrack', arguments: { trackId: 'track-vocals', muted: true } },
-            { name: 'setTrackPan', arguments: { trackId: 'track-guitar', pan: -20 } },
-        ]);
+        vi.mocked(generateToolCalls).mockResolvedValue(
+            completePlan([
+                { name: 'muteTrack', arguments: { trackId: 'track-vocals', muted: true } },
+                { name: 'setTrackPan', arguments: { trackId: 'track-guitar', pan: -20 } },
+            ])
+        );
         mockBridgeLlmToolCalls.mockReturnValue({
             actions: [
                 { type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true } },

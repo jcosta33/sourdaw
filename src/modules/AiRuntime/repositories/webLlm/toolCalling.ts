@@ -3,7 +3,7 @@ import { type ChatCompletionTool } from '@mlc-ai/web-llm';
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 
-import { parseToolCallXml, type ToolCallResult } from '../../transformers/toolCallParser';
+import { parseToolPlanningOutcome, type ToolPlanningOutcome } from '../../transformers/toolCallParser';
 
 import { generateWebLlmCompletion } from './generateWebLlmCompletion';
 
@@ -19,7 +19,7 @@ export const generateWebLlmToolCalls = inject({ logger })(
             userMessage: string,
             tools: ChatCompletionTool[],
             signal?: AbortSignal
-        ): Promise<ToolCallResult[]> {
+        ): Promise<ToolPlanningOutcome> {
             const toolDescriptions = tools
                 .map((time) => {
                     const params = time.function.parameters;
@@ -43,6 +43,6 @@ export const generateWebLlmToolCalls = inject({ logger })(
                 signal,
             });
             logger.info(`[WebLLM] Response (${String(response.length)} chars): ${response.slice(0, 200)}`);
-            return parseToolCallXml(response);
+            return parseToolPlanningOutcome(response);
         }
 );
