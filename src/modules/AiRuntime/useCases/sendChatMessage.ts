@@ -208,7 +208,6 @@ export async function sendChatMessage(userText: string): Promise<void> {
                     role: 'user',
                     content: userText,
                     timestamp: Date.now(),
-                    isDsoAction: true,
                 });
                 appendChatMessage({
                     id: `msg-${crypto.randomUUID()}`,

@@ -8,16 +8,15 @@ AI actions must report whether project control actually completed. Six existing 
 
 The prompt parser also currently conflates recognized-but-rejected commands with an unrecognized prompt. That can hide validation or provider-bridge rejection behind a no-match fallback, and it can incorrectly continue into the legacy DSO path after the strict bridge has rejected a provider plan.
 
-Removing unsafe presets from the executable registry must not make their established phrases look unrecognized. Provider refusal or malformed/incomplete tool planning is also a terminal rejection, not evidence that the user intended the legacy DSO language.
+Removing unsafe presets from the executable registry must not make their established phrases look unrecognized. Rejection receipts must also retain truthful provenance so the UI does not describe strict action admission as a DSO edit.
 
 ## Decision
 
 - AI runtime validation denies the six proven fire-and-forget action types before payload validation.
 - Fast-path presets stop advertising those denied actions, while a separate non-executable recognizer retains their deterministic phrases without constructing actions.
 - A recognized fast-path batch is admitted as a whole or rejected as a whole when validation filters any action.
-- Provider-bridge, provider-batch validation, refusal, and malformed or incomplete planning failures return a human-readable rejection reason and never fall through to DSO parsing.
-- DSO fallback is available only after provider tool planning completes successfully with zero proposed calls.
-- Prompt execution renders recognized rejection as an error receipt distinct from a no-match response and executes no action.
+- Provider-bridge and provider-batch runtime validation failures return a human-readable rejection reason and never fall through to DSO parsing.
+- AI chat prompt mode renders recognized rejection as an error receipt distinct from a no-match response, executes no action, and does not label the rejected user message as a DSO action.
 - Configuration-change and genuinely unrecognized prompt behavior remain unchanged.
 
 ## Consequences

@@ -223,6 +223,11 @@ describe('sendChatMessage injectables', () => {
         expect(mocks.appendChatMessage).toHaveBeenCalledWith(
             expect.objectContaining({ role: 'user', content: 'save project' })
         );
+        const rejectionUserMessage = mocks.appendChatMessage.mock.calls
+            .map(([message]) => message)
+            .find((message) => message.role === 'user' && message.content === 'save project');
+        expect(rejectionUserMessage).toEqual(expect.objectContaining({ role: 'user', content: 'save project' }));
+        expect(rejectionUserMessage).not.toHaveProperty('isDsoAction');
         expect(mocks.appendChatMessage).toHaveBeenCalledWith(
             expect.objectContaining({
                 role: 'assistant',
