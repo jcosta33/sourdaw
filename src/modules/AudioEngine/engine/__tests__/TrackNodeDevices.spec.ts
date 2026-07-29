@@ -510,6 +510,21 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             expect(track.getDeviceLoadState('wasm-1')).toBe('failed');
         });
 
+        it('marks a timed-out descriptor load failed and rejects its late result', () => {
+            const deferred = installDeferredWasmDevice({ controller: { setParam: vi.fn() } });
+            const pendingDevicePromises = new Set<Promise<unknown>>();
+            const track = new TrackNode('t1', makeDeps(ctx, { pendingDevicePromises }));
+            track.addDevice('wasm-1', 'levain');
+
+            track.timeoutPendingDeviceLoads();
+
+            expect(track.getDeviceLoadState('wasm-1')).toBe('failed');
+            expect(pendingDevicePromises.size).toBe(0);
+            const loaded = createLoadedDevice();
+            deferred.resolve(loaded.device);
+            expect(loaded.dispose).toHaveBeenCalledTimes(1);
+        });
+
         it('preserves the descriptor-owned Proof parameter barrier', () => {
             const pendingParams: Array<[string, number]> = [];
             const order: string[] = [];

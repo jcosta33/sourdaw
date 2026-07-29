@@ -51,6 +51,7 @@ vi.mock('../../engine/TrackNode', () => ({
             this.outputDestination = destination ?? this.deps.masterGainNode;
         });
         getPeakLevel = vi.fn().mockReturnValue(0.5);
+        timeoutPendingDeviceLoads = vi.fn();
         // default-destination / route-output hooks the adjustment runtime reads.
         defaultDestinationNode: ReturnType<typeof makeNode>;
         getDefaultDestination = vi.fn(() => this.defaultDestinationNode);
@@ -540,30 +541,23 @@ describe('AudioEngineImpl — residual branch coverage', () => {
 
     // ── waitForDevices: deadline exceeded.
     describe('waitForDevices timeout', () => {
-        it('clears pending devices and warns when the deadline passes', async () => {
-            // The deadline branch fires when Date.now() inside the loop exceeds
-            // the deadline computed at entry. The first Date.now() call computes
-            // the deadline (returns 0 → deadline = 0 + 10 = 10); every subsequent
-            // call returns 100, so the very first loop iteration exceeds it.
-            let dateNowCalls = 0;
-            const dateNowSpy = vi.spyOn(Date, 'now').mockImplementation(() => {
-                dateNowCalls += 1;
-                return dateNowCalls === 1 ? 0 : 100;
-            });
+        it('clears pending devices and warns when a load never settles', async () => {
+            vi.useFakeTimers();
+            engine.ensureTrackStrip('t1');
             const set = (engine as unknown as { pendingDevicePromises: Set<Promise<unknown>> }).pendingDevicePromises;
-            // A never-resolving promise in the set (size > 0 so the loop enters).
             set.add(new Promise(() => {}));
-
             const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
 
-            await expect(
-                (engine as unknown as { waitForDevices: (t: number) => Promise<void> }).waitForDevices(10)
-            ).resolves.toBeUndefined();
+            const waiting = (
+                engine as unknown as { waitForDevices: (timeoutMs: number) => Promise<void> }
+            ).waitForDevices(10);
+            await vi.advanceTimersByTimeAsync(11);
 
+            await expect(waiting).resolves.toBeUndefined();
             expect(set.size).toBe(0);
             expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('timed out'));
             warnSpy.mockRestore();
-            dateNowSpy.mockRestore();
+            vi.useRealTimers();
         });
     });
 

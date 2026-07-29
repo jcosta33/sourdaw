@@ -453,19 +453,20 @@ export class TrackNode {
         this._pendingDeviceLoads.set(deviceId, pendingLoad);
         this.deps.pendingDevicePromises.add(loadPromise);
         void loadPromise.finally(() => {
-            this.deps.pendingDevicePromises.delete(loadPromise);
             if (this._pendingDeviceLoads.get(deviceId) === pendingLoad) {
-                if (!pendingLoad.resolved) {
-                    this._failedDeviceLoads.add(deviceId);
-                }
-                this._pendingDeviceLoads.delete(deviceId);
-                pendingLoad.parameterWrites.length = 0;
+                this.invalidatePendingDeviceLoad(deviceId, !pendingLoad.resolved);
+            } else {
+                this.deps.pendingDevicePromises.delete(loadPromise);
             }
         });
     }
 
-    private invalidatePendingDeviceLoad(deviceId: string): void {
-        this._failedDeviceLoads.delete(deviceId);
+    private invalidatePendingDeviceLoad(deviceId: string, failed = false): void {
+        if (failed) {
+            this._failedDeviceLoads.add(deviceId);
+        } else {
+            this._failedDeviceLoads.delete(deviceId);
+        }
         const pendingLoad = this._pendingDeviceLoads.get(deviceId);
         if (!pendingLoad) {
             return;
@@ -505,6 +506,12 @@ export class TrackNode {
         this.deps.onDeviceLoaded?.(this.trackId, finalDn);
         this.scheduleRebuildChain();
         return true;
+    }
+
+    public timeoutPendingDeviceLoads(): void {
+        for (const deviceId of this._pendingDeviceLoads.keys()) {
+            this.invalidatePendingDeviceLoad(deviceId, true);
+        }
     }
 
     public getDeviceLoadState(deviceId: string): DeviceLoadState {

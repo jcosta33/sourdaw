@@ -1084,12 +1084,25 @@ class AudioEngineImpl implements AudioEngine {
     public async waitForDevices(timeoutMs = 10000): Promise<void> {
         const deadline = Date.now() + timeoutMs;
         while (this.pendingDevicePromises.size > 0) {
-            if (Date.now() > deadline) {
+            const remainingMs = Math.max(0, deadline - Date.now());
+            let timeoutId: ReturnType<typeof setTimeout> | undefined;
+            const timedOut = await Promise.race([
+                Promise.allSettled(this.pendingDevicePromises).then(() => false),
+                new Promise<true>((resolve) => {
+                    timeoutId = setTimeout(() => resolve(true), remainingMs);
+                }),
+            ]);
+            if (timeoutId !== undefined) {
+                clearTimeout(timeoutId);
+            }
+            if (timedOut) {
                 logger.warn(`[AudioEngine] Device loading timed out (${this.pendingDevicePromises.size} pending)`);
+                for (const trackNode of this.trackNodes.values()) {
+                    trackNode.timeoutPendingDeviceLoads();
+                }
                 this.pendingDevicePromises.clear();
                 return;
             }
-            await Promise.all(Array.from(this.pendingDevicePromises));
         }
     }
 
