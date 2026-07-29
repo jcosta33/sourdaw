@@ -13,7 +13,7 @@ Structured native and hosted tool-planning adapters reported malformed payloads,
 - The Tauri native completion command still exposes only a string, so finish-state validation cannot be claimed there until the bridge returns metadata; strict text syntax validation remains in effect.
 - Tauri native structured planning returns a minimal tagged `complete` or `rejected` DTO; command errors remain reserved for model availability, runtime, and cancellation failures, while the TypeScript repository validates and classifies the DTO.
 - Only a validated native `rejected` DTO becomes `ToolPlanningRejectedError`; malformed native envelopes, complete payloads, and result items raise `NativeToolCallingProtocolError`, bypass native text fallback, and leave the native attempt unhealthy while another configured provider may run.
-- Qwen-native tool-call responses may include additional assistant content when every tool call validates; `stop` responses without calls complete only when assistant content is absent or blank.
+- Qwen-native and OpenAI-compatible tool-call responses may include protocol-valid assistant content when every non-empty tool-call batch validates; `stop` responses without calls complete only when assistant content is absent or blank.
 - Anthropic planning responses require an array containing only `text` blocks with string text or `tool_use` blocks with a non-empty string name and record input.
 - OpenAI-compatible requests set `n: 1` and accept exactly one response choice; zero or multiple choices are terminal protocol rejections.
 - HTTP status failures, body-stream and transport failures, aborts, provider configuration changes, and backend initialization or runtime failures retain their existing retry or cancellation behavior.
