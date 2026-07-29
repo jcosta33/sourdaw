@@ -1,0 +1,39 @@
+docs/architecture/decisions/0020-terminal-provider-planning-rejections.md
+  s_eac9f65d8989d9::t_f457a38cafd034 1-21
+src/modules/AiRuntime/errors/ToolPlanningRejectedError.ts
+  s_eac9f65d8989d9::t_1584ccdaedb367 1-7
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateCloudToolCalls.spec.ts
+  s_eac9f65d8989d9::t_e84a35f86f2bce 219,225-233
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateCloudToolCalls.ts
+  s_eac9f65d8989d9::t_3234feda2caab4 5,97-106,108
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateOpenAiCompatibleToolCalls.ts
+  s_eac9f65d8989d9::t_e81030a003f914 1,18-24,42,47,50,55-58,64,67,73,78,83,122-128
+src/modules/AiRuntime/repositories/nativeEngine/__tests__/nativeToolCalling.spec.ts
+  s_eac9f65d8989d9::t_52d3badd034c35 85-88
+src/modules/AiRuntime/repositories/nativeEngine/nativeToolCalling.ts
+  s_eac9f65d8989d9::t_174b2ac22bed3e 3-4,50,55-57,64-66,69-71
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_eac9f65d8989d9::t_64072393ed4f74 4,148-177
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_eac9f65d8989d9::t_5dbb5bd468b74a 6-7,75-83,116-118,222,242-245
+src/modules/WorkspaceShell/presentations/hooks/__tests__/usePromptExecution.spec.ts
+  s_eac9f65d8989d9::t_888b5da531708c 271-295
+src/modules/WorkspaceShell/presentations/hooks/usePromptExecution.ts
+  s_eac9f65d8989d9::t_54a89beb1caefd 305-307
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "422fb3eaed3eb7579b1b16af17f5888ab2a6390c",
+  "prompts": {},
+  "sessions": {
+    "s_eac9f65d8989d9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019faf10-4c4c-7e72-a72d-af5ae5d446ec",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
