@@ -35,6 +35,12 @@ describe('generateWebLlmToolCalls', () => {
             label: 'malformed',
             expectedReason: 'Model returned a malformed tool-call batch.',
         },
+        {
+            response:
+                '```json\n[{"name":"addTrack","arguments":{"kind":"audio"}}]\n```\n<tool_call>{"name":"muteTrack","arguments":{',
+            label: 'trailing truncated',
+            expectedReason: 'Model returned a malformed tool-call batch.',
+        },
     ])('rejects a $label text planning response', async ({ response, expectedReason }) => {
         vi.mocked(generateWebLlmCompletion).mockResolvedValue(response);
 
@@ -44,39 +50,17 @@ describe('generateWebLlmToolCalls', () => {
         expect(result).toEqual({ status: 'rejected', reason: expectedReason });
     });
 
-    it('rejects a valid fenced tool-call prefix followed by truncated tool syntax', async () => {
-        vi.mocked(generateWebLlmCompletion).mockResolvedValue(
-            '```json\n[{"name":"addTrack","arguments":{"kind":"audio"}}]\n```\n<tool_call>{"name":"muteTrack","arguments":{'
-        );
-
-        const tools = [{ type: 'function' as const, function: { name: 'addTrack', description: '', parameters: {} } }];
-        const result = await generateWebLlmToolCalls('sys', 'user', tools);
-
-        expect(result).toEqual({
-            status: 'rejected',
-            reason: 'Model returned a malformed tool-call batch.',
-        });
-    });
-
-    it('distinguishes an explicit empty tool-call batch from a rejected response', async () => {
-        vi.mocked(generateWebLlmCompletion).mockResolvedValue('[]');
-
-        const tools = [{ type: 'function' as const, function: { name: 'addTrack', description: '', parameters: {} } }];
-        const result = await generateWebLlmToolCalls('sys', 'user', tools);
-
-        expect(result).toEqual({ status: 'complete', toolCalls: [] });
-    });
-
-    it('parses JSON tool calls from model response', async () => {
-        vi.mocked(generateWebLlmCompletion).mockResolvedValue('[{"name":"addTrack","arguments":{"kind":"audio"}}]');
-
-        const tools = [{ type: 'function' as const, function: { name: 'addTrack', description: '', parameters: {} } }];
-        const result = await generateWebLlmToolCalls('sys', 'user', tools);
-
-        expect(result).toEqual({
-            status: 'complete',
+    it.each([
+        { response: '[]', toolCalls: [] },
+        {
+            response: '[{"name":"addTrack","arguments":{"kind":"audio"}}]',
             toolCalls: [{ name: 'addTrack', arguments: { kind: 'audio' } }],
-        });
+        },
+    ])('parses a complete JSON tool-call response', async ({ response, toolCalls }) => {
+        vi.mocked(generateWebLlmCompletion).mockResolvedValue(response);
+        const tools = [{ type: 'function' as const, function: { name: 'addTrack', description: '', parameters: {} } }];
+        const result = await generateWebLlmToolCalls('sys', 'user', tools);
+        expect(result).toEqual({ status: 'complete', toolCalls });
     });
 
     it('forwards cancellation to WebLLM completion', async () => {
