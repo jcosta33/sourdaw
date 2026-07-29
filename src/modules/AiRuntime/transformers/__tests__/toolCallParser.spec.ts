@@ -162,10 +162,19 @@ Some thought
         '{"actions":[{"name":"muteTrack","arguments":"{}"}]}',
         '<tool_call>{"name":"muteTrack","arguments":7}</tool_call>',
         '<function>{"name":"muteTrack","parameters":[]}</function>',
+        '{"name":"muteTrack","arguments":null}',
+        '<function>{"name":"muteTrack","parameters":null}</function>',
     ])('rejects non-object tool arguments: %s', (content) => {
         expect(parseToolPlanningOutcome(content)).toEqual({
             status: 'rejected',
             reason: 'Model returned a malformed tool-call batch.',
+        });
+    });
+
+    it('defaults an actually absent argument field to an empty object', () => {
+        expect(parseToolPlanningOutcome('{"name":"listTracks"}')).toEqual({
+            status: 'complete',
+            toolCalls: [{ name: 'listTracks', arguments: {} }],
         });
     });
 
