@@ -71,7 +71,7 @@ async function waitForInference<TResult>(inference: Promise<TResult>, signal?: A
  * - webllm: Hermes-3 native OpenAI tool calling API (structured tool calls)
  * - native: mistral.rs structured tool calling (preferred) or text completion + XML parsing (fallback)
  */
-export const generateToolCalls = inject({ logger })(({ logger }) => {
+export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
     function getBackendModelId(backend: RunnableAiBackend): string {
         if (backend === 'native') {
             return 'native';
@@ -81,6 +81,7 @@ export const generateToolCalls = inject({ logger })(({ logger }) => {
         }
         return WEBLLM_MODEL_ID;
     }
+
     async function generateNativeToolCalls(
         systemPrompt: string,
         userMessage: string,
@@ -149,7 +150,7 @@ export const generateToolCalls = inject({ logger })(({ logger }) => {
         return parseToolPlanningOutcome(content);
     }
 
-    return async function generateToolCalls(
+    return async function generateToolPlanningOutcome(
         systemPrompt: string,
         userMessage: string,
         toolSchemas?: readonly ToolSchema[],

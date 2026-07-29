@@ -10,90 +10,12 @@
 
 import { logger } from '#/infra/logger/appLogger';
 
-export type ToolCallResult = {
-    name: string;
-    arguments: Record<string, unknown>;
-};
+import type { ToolCallResult } from './toolCallTypes';
 
-export type ToolPlanningOutcome =
-    { status: 'complete'; toolCalls: ToolCallResult[] } | { status: 'rejected'; reason: string };
+export { parseToolPlanningOutcome, type ToolPlanningOutcome } from './strictToolPlanningParser';
+export type { ToolCallResult } from './toolCallTypes';
 
 const INVALID_TOOL_CALL_NAME = '<invalid>';
-
-export function parseToolPlanningOutcome(content: string): ToolPlanningOutcome {
-    if (isExplicitEmptyToolCallBatch(content)) {
-        return { status: 'complete', toolCalls: [] };
-    }
-
-    const toolCalls = parseToolCallXml(content);
-    if (toolCalls.some((call) => call.name === INVALID_TOOL_CALL_NAME)) {
-        return { status: 'rejected', reason: 'Model returned a malformed tool-call batch.' };
-    }
-    if (toolCalls.length > 0) {
-        return { status: 'complete', toolCalls };
-    }
-
-    if (content.trim().length === 0) {
-        return { status: 'rejected', reason: 'Model returned an empty tool-planning response.' };
-    }
-    if (looksLikeToolCallSyntax(content)) {
-        return { status: 'rejected', reason: 'Model returned a malformed tool-call batch.' };
-    }
-    return {
-        status: 'rejected',
-        reason: 'Model returned a non-tool response instead of a complete tool-call batch.',
-    };
-}
-
-function isExplicitEmptyToolCallBatch(content: string): boolean {
-    const trimmed = content.trim();
-    const candidate = (trimmed.match(/^```(?:json)?\s*([\s\S]*?)```$/)?.[1] ?? trimmed).trim();
-    try {
-        const parsed = JSON.parse(candidate) as unknown;
-        if (Array.isArray(parsed)) {
-            return parsed.length === 0;
-        }
-        if (!isObject(parsed)) {
-            return false;
-        }
-        const keys = Object.keys(parsed);
-        if (keys.length !== 1) {
-            return false;
-        }
-        if (keys[0] === 'actions' && Array.isArray(parsed.actions)) {
-            return parsed.actions.length === 0;
-        }
-        if (keys[0] === 'tool_calls' && Array.isArray(parsed.tool_calls)) {
-            return parsed.tool_calls.length === 0;
-        }
-        return false;
-    } catch {
-        return false;
-    }
-}
-
-function looksLikeToolCallSyntax(content: string): boolean {
-    return (
-        /<\/?(?:tool_call|function)>/.test(content) ||
-        /```(?:json)?/.test(content) ||
-        /"(?:actions|tool_calls|name|arguments|parameters)"\s*:/.test(content) ||
-        /(?:^|\n)\s*[[{]/.test(content)
-    );
-}
-
-function accountForFencedResidual(toolCalls: ToolCallResult[], residual: string): ToolCallResult[] {
-    if (looksLikeToolCallSyntax(residual)) {
-        return [...toolCalls, invalidToolCall()];
-    }
-    return toolCalls;
-}
-
-function parseJsonLineCandidate(line: string): ToolCallResult {
-    if (!line.startsWith('{')) {
-        return invalidToolCall();
-    }
-    return tryParseToolCallJson(line) ?? invalidToolCall();
-}
 
 /**
  * Parse tool calls from model response content.
@@ -118,9 +40,7 @@ export function parseToolCallXml(content: string): ToolCallResult[] {
     const identifiedTagCount = Math.max(openingTagCount, closingTagCount);
     if (identifiedTagCount > 0) {
         const unmatchedTagCount = identifiedTagCount - taggedMatches.length;
-        const residual = content.replaceAll(/<(tool_call|function)>[\s\S]*?<\/\1>/g, '');
-        const residualCount = unmatchedTagCount === 0 && looksLikeToolCallSyntax(residual) ? 1 : 0;
-        return [...taggedResults, ...Array.from({ length: unmatchedTagCount + residualCount }, invalidToolCall)];
+        return [...taggedResults, ...Array.from({ length: unmatchedTagCount }, invalidToolCall)];
     }
 
     // 3. JSONL fallback. Preserve every object-shaped candidate line for the
@@ -128,8 +48,8 @@ export function parseToolCallXml(content: string): ToolCallResult[] {
     return content
         .split('\n')
         .map((line) => line.trim())
-        .filter((line) => line.startsWith('{') || line.startsWith('['))
-        .map(parseJsonLineCandidate);
+        .filter((line) => line.startsWith('{'))
+        .map((line) => tryParseToolCallJson(line) ?? invalidToolCall());
 }
 
 /**
@@ -141,49 +61,42 @@ export function parseToolCallXml(content: string): ToolCallResult[] {
 function tryParseJsonMode(content: string): ToolCallResult[] {
     const trimmed = content.trim();
 
-    const fencedMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
-    const fencedJson = fencedMatch?.[1];
+    // Try to extract JSON from potential markdown fencing
+    const fencedJson = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/)?.[1];
     const candidate = (fencedJson ?? trimmed).trim();
-    const residual = fencedMatch ? trimmed.replace(fencedMatch[0], '') : '';
 
     if (!candidate.startsWith('{') && !candidate.startsWith('[')) {
-        return fencedMatch ? [invalidToolCall()] : [];
+        return [];
     }
 
     try {
         const parsed = JSON.parse(candidate) as unknown;
 
-        if (isObject(parsed) && Object.hasOwn(parsed, 'actions') && Object.hasOwn(parsed, 'tool_calls')) {
-            return [invalidToolCall()];
-        }
-
         // {"actions":[...]} wrapper
         if (isObject(parsed) && Array.isArray(parsed.actions)) {
-            return accountForFencedResidual(parsed.actions.map(coerceArrayToolCall), residual);
+            return parsed.actions.map(coerceArrayToolCall);
         }
 
         // {"tool_calls":[...]} wrapper
         if (isObject(parsed) && Array.isArray(parsed.tool_calls)) {
-            return accountForFencedResidual(parsed.tool_calls.map(coerceArrayToolCall), residual);
+            return parsed.tool_calls.map(coerceArrayToolCall);
         }
 
         // Top-level array
         if (Array.isArray(parsed)) {
-            return accountForFencedResidual(parsed.map(coerceArrayToolCall), residual);
+            return parsed.map(coerceArrayToolCall);
         }
 
         // Single tool call object
         const single = coerceToolCall(parsed);
         if (single) {
-            return accountForFencedResidual([single], residual);
+            return [single];
         }
     } catch {
-        if (fencedMatch) {
-            return [invalidToolCall()];
-        }
+        // Not valid JSON, fall through to XML parsing
     }
 
-    return fencedMatch ? [invalidToolCall()] : [];
+    return [];
 }
 
 function coerceArrayToolCall(raw: unknown): ToolCallResult {
@@ -207,15 +120,7 @@ function coerceToolCall(raw: unknown): ToolCallResult | null {
     if (typeof name !== 'string' || name.length === 0) {
         return null;
     }
-    let args: unknown = {};
-    if (Object.hasOwn(obj, 'arguments')) {
-        args = obj.arguments;
-    } else if (Object.hasOwn(obj, 'parameters')) {
-        args = obj.parameters;
-    }
-    if (!isObject(args)) {
-        return null;
-    }
+    const args = (obj.arguments ?? obj.parameters ?? {}) as Record<string, unknown>;
     return { name, arguments: args };
 }
 

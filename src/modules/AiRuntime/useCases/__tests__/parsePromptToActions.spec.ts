@@ -6,7 +6,7 @@ import { tryPresetMatch, tryParameterizedPath, tryCompoundFastPath } from '../..
 import { executeDsoEdit } from '../dsoEditor/executeDsoEdit';
 import { getProjectContext } from '../getProjectContext';
 import { isDsoBackendAvailable } from '../llmOrchestration/backendResolution/isDsoBackendAvailable';
-import { generateToolCalls } from '../llmOrchestration/inference';
+import { generateToolPlanningOutcome as generateToolCalls } from '../llmOrchestration/inference';
 import { parsePromptToActions } from '../parsePromptToActions';
 
 const {
@@ -49,7 +49,7 @@ vi.mock('../getProjectContext', () => ({
 }));
 
 vi.mock('../llmOrchestration/inference', () => ({
-    generateToolCalls: vi.fn(),
+    generateToolPlanningOutcome: vi.fn(),
 }));
 
 vi.mock('../dsoEditor/executeDsoEdit', () => ({

@@ -3,7 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AiRuntimeConfigurationChangedError } from '../../../errors/AiRuntimeConfigurationChangedError';
 import { ToolPlanningRejectedError } from '../../../errors/ToolPlanningRejectedError';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
-import { generateToolCalls } from '../inference';
+import { generateToolCalls as generateCompatibleToolCalls } from '../generateToolCalls';
+import { generateToolPlanningOutcome as generateToolCalls } from '../inference';
 
 const { mockLogger, mocks } = vi.hoisted(() => {
     const backendPreference: { value: 'auto' | 'native' | 'webllm' | 'cloud' } = { value: 'auto' };
@@ -92,7 +93,7 @@ vi.mock('../../../transformers/toolCallParser', () => ({
     parseToolPlanningOutcome: mocks.parseToolPlanningOutcome,
 }));
 
-describe('generateToolCalls', () => {
+describe('generateToolPlanningOutcome', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.backendChain.value = [];
@@ -279,6 +280,21 @@ describe('generateToolCalls', () => {
         await generateToolCalls('sys', 'mute drums', [], controller.signal);
 
         expect(mocks.initWebLlmEngine).toHaveBeenCalledWith(undefined, { signal: controller.signal });
+    });
+    it('preserves the direct-consumer array contract and fails fast on rejection', async () => {
+        mocks.backendChain.value = ['webllm'];
+        mocks.isWebLlmLoaded.mockReturnValue(true);
+        mocks.generateWebLlmToolCalls.mockResolvedValue({
+            status: 'complete',
+            toolCalls: [{ name: 'muteTrack', arguments: { trackId: 'track-1' } }],
+        });
+
+        await expect(generateCompatibleToolCalls('sys', 'mute drums')).resolves.toEqual([
+            { name: 'muteTrack', arguments: { trackId: 'track-1' } },
+        ]);
+        mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'rejected', reason: 'Refused tool planning' });
+
+        await expect(generateCompatibleToolCalls('sys', 'mute drums')).rejects.toThrow('Refused tool planning');
     });
 
     it('passes an explicit executable tool subset to native structured calling', async () => {

@@ -2,6 +2,10 @@ import { describe, it, expect } from 'vitest';
 
 import { parseToolCallXml, parseToolPlanningOutcome } from '../toolCallParser';
 
+const MALFORMED_OUTCOME = { status: 'rejected', reason: 'Model returned a malformed tool-call batch.' };
+const EMPTY_REASON = 'Model returned an empty tool-planning response.';
+const NON_TOOL_REASON = 'Model returned a non-tool response instead of a complete tool-call batch.';
+
 describe('toolCallParser', () => {
     it('parses valid JSON array directly', () => {
         const input = `[{"name": "addTrack", "arguments": {"name": "Vocals", "kind": "audio"}}]`;
@@ -150,11 +154,19 @@ Some thought
         '{"actions":[],"tool_calls":"truncated"}',
         '```json\n[]\n```\n<tool_call>{"name":"muteTrack","arguments":{',
         '[]\n{"name":"muteTrack","arguments":{"trackId":"t1"}}',
+        'Planning follows:\n[{"name":"muteTrack","arguments":{"trackId":"t1"}}]',
+        '<tool_call>{"name":"muteTrack","arguments":{"trackId":"t1"}}</tool_call>\nDone.',
+        '<tool_call>{"name":"muteTrack"}</tool_call>\nthinking\n<function>{"name":"soloTrack"}</function>',
+        '{"name":"muteTrack"}\nthinking\n{"name":"soloTrack"}',
+        '{"name":"muteTrack","arguments":{},"parameters":{}}',
+        '<tool_call>{"name":"muteTrack","arguments":{},"parameters":{}}</tool_call>',
+        '{"name":"muteTrack","arguments":{},"extra":true}',
+        '<tool_call>{"name":"muteTrack","extra":true}</tool_call>',
+        '{"name":"muteTrack"}\n{"name":"soloTrack","extra":true}',
+        '{"actions":[{"name":"muteTrack"}],"metadata":{}}',
+        '```json\n{"tool_calls":[{"name":"muteTrack"}],"metadata":{}}\n```',
     ])('rejects unconsumed or conflicting tool-call content: %s', (content) => {
-        expect(parseToolPlanningOutcome(content)).toEqual({
-            status: 'rejected',
-            reason: 'Model returned a malformed tool-call batch.',
-        });
+        expect(parseToolPlanningOutcome(content)).toEqual(MALFORMED_OUTCOME);
     });
 
     it.each([
@@ -165,33 +177,26 @@ Some thought
         '{"name":"muteTrack","arguments":null}',
         '<function>{"name":"muteTrack","parameters":null}</function>',
     ])('rejects non-object tool arguments: %s', (content) => {
-        expect(parseToolPlanningOutcome(content)).toEqual({
-            status: 'rejected',
-            reason: 'Model returned a malformed tool-call batch.',
-        });
+        expect(parseToolPlanningOutcome(content)).toEqual(MALFORMED_OUTCOME);
     });
 
-    it('defaults an actually absent argument field to an empty object', () => {
-        expect(parseToolPlanningOutcome('{"name":"listTracks"}')).toEqual({
+    it.each([
+        { content: '{"name":"listTracks"}', count: 1 },
+        { content: '```json\n{"name":"listTracks"}\n```', count: 1 },
+        { content: '<tool_call>{"name":"listTracks"}</tool_call>', count: 1 },
+        { content: '{"name":"listTracks"}\n{"name":"listTracks"}', count: 2 },
+    ])('accepts one fully consumed $content representation', ({ content, count }) => {
+        expect(parseToolPlanningOutcome(content)).toEqual({
             status: 'complete',
-            toolCalls: [{ name: 'listTracks', arguments: {} }],
+            toolCalls: Array.from({ length: count }, () => ({ name: 'listTracks', arguments: {} })),
         });
     });
 
     it.each([
-        { content: '', expectedReason: 'Model returned an empty tool-planning response.' },
-        {
-            content: 'I cannot change the project.',
-            expectedReason: 'Model returned a non-tool response instead of a complete tool-call batch.',
-        },
-        {
-            content: '[{"name":"muteTrack","arguments":{',
-            expectedReason: 'Model returned a malformed tool-call batch.',
-        },
-        {
-            content: '<tool_call>{"name":"muteTrack"}',
-            expectedReason: 'Model returned a malformed tool-call batch.',
-        },
+        { content: '', expectedReason: EMPTY_REASON },
+        { content: 'I cannot change the project.', expectedReason: NON_TOOL_REASON },
+        { content: '[{"name":"muteTrack","arguments":{', expectedReason: MALFORMED_OUTCOME.reason },
+        { content: '<tool_call>{"name":"muteTrack"}', expectedReason: MALFORMED_OUTCOME.reason },
     ])('rejects ambiguous planning text: $expectedReason', ({ content, expectedReason }) => {
         expect(parseToolPlanningOutcome(content)).toEqual({ status: 'rejected', reason: expectedReason });
     });

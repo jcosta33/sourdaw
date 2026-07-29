@@ -35,7 +35,7 @@ export { resolveBackend } from './llmOrchestration/backendResolution/helpers';
 export { isLlmAvailable } from './llmOrchestration/backendResolution/isLlmAvailable';
 export { setAiBackendPreference } from './llmOrchestration/backendResolution/setAiBackendPreference';
 
-export { generateToolCalls } from './llmOrchestration/inference';
+export { generateToolCalls } from './llmOrchestration/generateToolCalls';
 
 export { initEngine } from './llmOrchestration/lifecycle/initEngine';
 export { unloadEngine } from './llmOrchestration/lifecycle/unloadEngine';
