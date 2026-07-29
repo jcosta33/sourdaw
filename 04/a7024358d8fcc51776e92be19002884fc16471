@@ -1,0 +1,33 @@
+docs/architecture/decisions/0018-awaited-ai-action-admission.md
+  s_eac9f65d8989d9::t_548073fc8174f3 11-12,16,18-19
+src/modules/AiRuntime/transformers/promptParser/findDeniedPromptIntent.ts
+  s_bc88af7d3b054c::t_52e920f39a6e86 1-42
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_eac9f65d8989d9::t_52f2cea0549a81 6,55-58,79,86-92,111-119,121,125,127,130,239-273
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_eac9f65d8989d9::t_a7768661964b58 13,56-62,73-83,90,96,106,162-172,180-187,190
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "04a7024358d8fcc51776e92be19002884fc16471",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_eac9f65d8989d9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019faf10-4c4c-7e72-a72d-af5ae5d446ec",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
