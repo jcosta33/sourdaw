@@ -1,0 +1,35 @@
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_bc88af7d3b054c::t_b5ff5b7d6cb133 142-144,146-149
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_bc88af7d3b054c::t_0fb1b5148b837b 350-356,420-421
+  s_bc88af7d3b054c::t_ade23f7e1f8e28 383-403
+  s_bc88af7d3b054c::t_7a0fafe171c29e 404-405
+src/modules/AiRuntime/repositories/nativeEngine/completions.ts
+  s_bc88af7d3b054c::t_b5ff5b7d6cb133 3-4,8-14,19-20,25,65-76,78-92
+  s_bc88af7d3b054c::t_daad7dd4dd571a 77
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_bc88af7d3b054c::t_ade23f7e1f8e28 250,261
+docs/architecture/decisions/0020-terminal-provider-planning-rejections.md
+  s_bc88af7d3b054c::t_b5ff5b7d6cb133 12-13
+src/modules/AiRuntime/repositories/nativeEngine/__tests__/completions.spec.ts
+  s_bc88af7d3b054c::t_0032fde58818a5 168
+  s_bc88af7d3b054c::t_daad7dd4dd571a 83-85,140-142,169-170
+  s_bc88af7d3b054c::t_ade23f7e1f8e28 79-82,87,130-139,143-167,171
+  s_bc88af7d3b054c::t_6fe72c656f8e2c 86
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "39bba1d8f504b93398eab24f51b3044ddb679232",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
