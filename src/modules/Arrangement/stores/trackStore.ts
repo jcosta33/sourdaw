@@ -469,7 +469,19 @@ function normalize_freeze_state(value: unknown): FreezeState | null {
     // buffers frozen before the field existed; dropping it here put every
     // reloaded track on that path, and since a latency change never marks a
     // frozen track stale, the drift was silent and permanent.
-    if (is_finite_number(value.compensationSeconds)) {
+    //
+    // Sign is checked for the same reason `resolveFrozenBufferTail` checks it:
+    // `is_finite_number` never looks at sign, and a negative compensation is
+    // not merely wrong, it is silencing. `scheduleFrozenTrack` computes
+    // `startTime = now + offset + compensation`; a negative value drops
+    // `startTime` below `now`, and once the resulting `elapsed` exceeds the
+    // buffer duration the function returns `true` without starting a source —
+    // which the caller reads as handled, so it skips live scheduling too. The
+    // track goes silent with no error. Unreachable from in-app writes, since
+    // `getCompensationDelay` maxes over all tracks including the subject and
+    // is therefore structurally non-negative; reachable from a hand-edited or
+    // foreign document, which is exactly what this projection guards.
+    if (is_finite_number(value.compensationSeconds) && value.compensationSeconds >= 0) {
         freeze_state.compensationSeconds = value.compensationSeconds;
     }
 

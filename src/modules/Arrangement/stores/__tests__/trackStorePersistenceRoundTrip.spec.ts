@@ -403,6 +403,49 @@ describe('sanitizeTrackSnapshot — freeze state render settings round-trip', ()
         expect(result.tracks[0]?.freezeState?.status).toBe('frozen');
         expect(result.tracks[0]?.freezeState?.compensationSeconds).toBeUndefined();
     });
+
+    /**
+     * A negative compensation does not merely shift playback the wrong way, it
+     * silences the track. `scheduleFrozenTrack` computes
+     * `startTime = now + offset + compensation`, so a negative value puts
+     * `startTime` behind `now`; once the resulting `elapsed` passes the buffer
+     * duration the function returns `true` without ever starting a source, and
+     * the caller reads that as handled and skips live scheduling too.
+     *
+     * `is_finite_number` does not look at sign — the same gap this branch
+     * already closed for `tailLengthSeconds`, where `resolveFrozenBufferTail`
+     * routes a negative to unknown rather than laundering it to a trusted zero.
+     * The rule belongs on every field it applies to, not only the one that
+     * happened to be under the microscope.
+     */
+    it('drops a negative compensationSeconds, which would silence the track rather than shift it', () => {
+        const result = sanitizeTrackSnapshot(
+            snapshotWithTrack({
+                ...validTrackBase,
+                freezeState: { status: 'frozen', compensationSeconds: -0.032 },
+            })
+        );
+
+        expect(result.tracks[0]?.freezeState?.status).toBe('frozen');
+        expect(result.tracks[0]?.freezeState?.compensationSeconds).toBeUndefined();
+    });
+
+    /**
+     * Zero is the legitimate value for the highest-latency track in a project —
+     * `getCompensationDelay` returns `(max - own) / 1000`. It must survive, and
+     * it must not be confused with absent: `scheduleFrozenTrack` uses `??`, so
+     * absent falls back to the live chain while `0` correctly means no shift.
+     */
+    it('keeps a zero compensationSeconds, which is the highest-latency track s real value', () => {
+        const result = sanitizeTrackSnapshot(
+            snapshotWithTrack({
+                ...validTrackBase,
+                freezeState: { status: 'frozen', compensationSeconds: 0 },
+            })
+        );
+
+        expect(result.tracks[0]?.freezeState?.compensationSeconds).toBe(0);
+    });
 });
 
 describe('sanitizeTrackSnapshot — track-level optional field round-trip', () => {
