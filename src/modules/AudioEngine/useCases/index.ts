@@ -102,6 +102,7 @@ export { clearReportedLatency } from './latencyCompensation/compensation/clearRe
 export { cancelExport } from './offlineRender/exportCancellation';
 export { isExportActive } from './offlineRender/isExportActive';
 export { getAutoDetectedTailSeconds } from './offlineRender/getAutoDetectedTailSeconds';
+export { getDeviceChainTailSeconds } from './offlineRender/getDeviceChainTailSeconds';
 export { renderOffline } from './renderOffline';
 export { exportStems } from './exportStems';
 export { configureOfflineMidiEventProjection } from './configureOfflineMidiEventProjection';

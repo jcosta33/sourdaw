@@ -35,11 +35,26 @@ const automatedBaseByDevice = new Map<string, Map<string, AutomatedBaseSlot>>();
 const automatedBaseSlots: AutomatedBaseSlot[] = [];
 const automationVisited = new Set<string>();
 
+/**
+ * Same acceptance law as the Transport apply path. Reached through the DI port
+ * rather than by importing Arrangement's use cases directly, because that edge
+ * is the static cycle this seam exists to break. A device that declares nothing
+ * is unconstrained, as before.
+ */
 function deviceAcceptsAutomationParameter(
-    device: { parameterValues: Record<string, number> },
+    device: { type: string; parameterValues: Record<string, number> },
     parameterId: string
 ): boolean {
-    return device.parameterValues[parameterId] !== undefined;
+    if (device.parameterValues[parameterId] === undefined) {
+        return false;
+    }
+
+    const declared = getModulationDependencies().getPluginParamRange(device.type, parameterId);
+    if (!declared) {
+        return true;
+    }
+
+    return declared.automatable;
 }
 
 function clamp(value: number, min: number, max: number): number {

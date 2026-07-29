@@ -172,26 +172,25 @@ describe('ProofChamberProcessor message handling', () => {
         expect((errorMsg![0] as { message: string }).message).toBe('chamber-boom');
     });
 
-    it('does not post an error when set_param throws while already ready', async () => {
+    it('posts an error and stops taking work when set_param throws while already ready', async () => {
         const proc = await loadProcessor();
         send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
         resetRecording();
+        proc.port.postMessage.mockClear();
 
-        const beforeErrorCount = proc.port.postMessage.mock.calls.filter(
-            (c) => (c[0] as { type?: string }).type === 'error'
-        ).length;
-        // set_param is called for a 'param' message; make it throw while ready so
-        // the onmessage catch hits the `!this._ready` false arm (no error posted).
         const spy = vi.spyOn(ProofChamberInstanceMock.prototype, 'set_param').mockImplementation(() => {
             throw new Error('param trap while ready');
         });
         send(proc, { type: 'param', name: 'decay', value: 2 });
         spy.mockRestore();
 
-        const afterErrorCount = proc.port.postMessage.mock.calls.filter(
-            (c) => (c[0] as { type?: string }).type === 'error'
-        ).length;
-        expect(afterErrorCount).toBe(beforeErrorCount);
+        const errors = proc.port.postMessage.mock.calls.filter((c) => (c[0] as { type?: string }).type === 'error');
+        expect(errors).toHaveLength(1);
+        expect((errors[0]![0] as { message: string }).message).toBe('param trap while ready');
+
+        // A throw here may mean the instance is trapped, so it stops being fed.
+        send(proc, { type: 'param', name: 'decay', value: 4 });
+        expect(paramCalls).toEqual([]);
     });
 });
 

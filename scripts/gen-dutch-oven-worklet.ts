@@ -17,8 +17,8 @@
  */
 
 import { readFileSync, writeFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { WORKLET_POLYFILLS } from './workletPolyfills.ts';
 

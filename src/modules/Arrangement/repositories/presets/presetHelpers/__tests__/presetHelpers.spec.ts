@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
+import { getPluginById } from '../../../../models/DeviceParameter';
 import { autopan } from '../autopan';
 import { bitcrusher } from '../bitcrusher';
 import { chorus } from '../chorus';
@@ -72,7 +73,22 @@ describe('presetHelpers', () => {
         const param = limiter('Ceiling', { 'lim-threshold': -0.5 });
         expect(param.type).toBe('builtin-limiter');
         expect(param.parameterValues['lim-threshold']).toBe(-0.5);
-        expect(param.parameterValues['lim-release']).toBe(0.1); // default
+        // 100 ms. Was 0.1, which was seconds against a millisecond parameter —
+        // the engine divides by 1000, so it reached the limiter as 0.1 ms.
+        expect(param.parameterValues['lim-release']).toBe(100);
+    });
+
+    it('keeps the limiter release inside the range the engine is held to', () => {
+        // The unit bug above was invisible because nothing compared a preset
+        // value to the declared range. Now that the range binds at the write,
+        // a value outside it is silently rewritten rather than merely odd.
+        const declared = getPluginById('builtin-limiter')?.parameters.find(
+            (parameter) => parameter.id === 'lim-release'
+        );
+        const release = limiter('Ceiling', {}).parameterValues['lim-release']!;
+
+        expect(release).toBeGreaterThanOrEqual(declared!.minValue);
+        expect(release).toBeLessThanOrEqual(declared!.maxValue);
     });
 
     it('phaser should create a phaser preset with overrides', () => {

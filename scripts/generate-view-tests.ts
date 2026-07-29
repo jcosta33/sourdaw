@@ -3,8 +3,9 @@
  * Script to generate test files for all views in the codebase
  */
 import { readFileSync, writeFileSync, existsSync } from 'fs';
-import { globSync } from 'glob';
 import { basename, dirname, join } from 'path';
+
+import { globSync } from 'glob';
 
 const views = globSync('src/**/presentations/views/**/*.tsx', {
     ignore: ['**/*.spec.tsx'],

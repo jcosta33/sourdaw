@@ -19,6 +19,27 @@ export type DeviceParameter = {
     type: DeviceParameterType;
     value: number;
     defaultValue: number;
+    /**
+     * The narrowest and widest value the engine will accept for this parameter.
+     *
+     * This is a **write law**, not a display hint: every device-parameter write
+     * is held to it (see `DeviceParameterLaw`). It therefore has to describe
+     * what the DSP actually accepts, and it can no longer double as the
+     * convenient span for a knob.
+     *
+     * Before the law bound at the write, tightening this pair was free: it
+     * changed the parameter picker and the knob and nothing else. It is not
+     * free now. Narrowing it silently rewrites every value outside the new
+     * range, including ones already shipped in demo projects, factory presets
+     * and saved user projects.
+     *
+     * There is deliberately no separate "floor the knob offers" field. One was
+     * tried and reintroduced the same defect one layer out: `RotaryKnob` clamps
+     * to its `min`, so a knob floor above a stored value rewrites that value on
+     * the first drag, one-way — the store keeps 0.05 forever and the user has
+     * no way back to it. A control that needs usable resolution near the bottom
+     * wants `scaling: 'log'`, which gives resolution without exclusion.
+     */
     minValue: number;
     maxValue: number;
     unit: string;

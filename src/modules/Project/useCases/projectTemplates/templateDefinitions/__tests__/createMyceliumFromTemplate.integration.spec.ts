@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { markerStore, trackStore } from '#/modules/Arrangement/stores';
+import { clampDeviceParameterValue } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { collaborationStore } from '#/modules/Collaboration/stores';
 import { createSession, leaveSession } from '#/modules/Collaboration/useCases';
@@ -118,6 +119,7 @@ describe('Mycelium Ascendant template replacement', () => {
             leaveCollaborationSession: mocks.leaveCollaborationSession,
         });
         setFermenterDependencies({
+            clampDeviceParameterValue,
             getAllTracks: () => [],
             resolveEligibleDeviceWriteTarget: (deviceId) => ({
                 status: 'eligible',

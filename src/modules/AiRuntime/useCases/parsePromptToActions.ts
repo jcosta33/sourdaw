@@ -22,7 +22,7 @@ import {
 import { executeDsoEdit } from './dsoEditor/executeDsoEdit';
 import { getProjectContext, type ProjectContext } from './getProjectContext';
 import { isDsoBackendAvailable } from './llmOrchestration/backendResolution/isDsoBackendAvailable';
-import { generateToolCalls } from './llmOrchestration/inference';
+import { generateToolPlanningOutcome } from './llmOrchestration/inference';
 import { validateActions } from './validateActions';
 
 type CreateFastPathResultInput = {
@@ -106,7 +106,7 @@ export const parsePromptToActions = inject({ logger })(
             // 5. Provider-neutral LLM path. This only proposes typed actions;
             // sendChatMessage remains responsible for confirmation and execution.
             try {
-                const toolCalls = await generateToolCalls(
+                const planningOutcome = await generateToolPlanningOutcome(
                     buildLlmActionSystemPrompt(),
                     buildLlmActionUserMessage({ prompt, context }),
                     LLM_EXECUTABLE_TOOL_SCHEMAS,
@@ -117,6 +117,15 @@ export const parsePromptToActions = inject({ logger })(
                     return { actions: [], rawText: prompt, requiresConfirmation: false };
                 }
 
+                if (planningOutcome.status === 'rejected') {
+                    return {
+                        actions: [],
+                        rawText: prompt,
+                        requiresConfirmation: false,
+                        rejectionReason: `Provider planning rejected: ${planningOutcome.reason}`,
+                    };
+                }
+                const toolCalls = planningOutcome.toolCalls;
                 const bridged = bridgeLlmToolCalls({ calls: toolCalls, context: getProjectContext() });
                 for (const rejected of bridged.rejections) {
                     logger.warn(

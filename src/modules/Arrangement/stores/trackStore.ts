@@ -463,6 +463,27 @@ function normalize_freeze_state(value: unknown): FreezeState | null {
     if (is_finite_number(value.renderedAt)) {
         freeze_state.renderedAt = value.renderedAt;
     }
+    // The plugin-delay figure the chain carried when the buffer was printed —
+    // the only one that matches its content. `scheduleFrozenTrack` falls back
+    // to the live chain's current latency when this is absent, a path scoped to
+    // buffers frozen before the field existed; dropping it here put every
+    // reloaded track on that path, and since a latency change never marks a
+    // frozen track stale, the drift was silent and permanent.
+    //
+    // Sign is checked for the same reason `resolveFrozenBufferTail` checks it:
+    // `is_finite_number` never looks at sign, and a negative compensation is
+    // not merely wrong, it is silencing. `scheduleFrozenTrack` computes
+    // `startTime = now + offset + compensation`; a negative value drops
+    // `startTime` below `now`, and once the resulting `elapsed` exceeds the
+    // buffer duration the function returns `true` without starting a source —
+    // which the caller reads as handled, so it skips live scheduling too. The
+    // track goes silent with no error. Unreachable from in-app writes, since
+    // `getCompensationDelay` maxes over all tracks including the subject and
+    // is therefore structurally non-negative; reachable from a hand-edited or
+    // foreign document, which is exactly what this projection guards.
+    if (is_finite_number(value.compensationSeconds) && value.compensationSeconds >= 0) {
+        freeze_state.compensationSeconds = value.compensationSeconds;
+    }
 
     if (is_plain_object(value.renderSettings)) {
         const render_settings = value.renderSettings;
@@ -478,6 +499,14 @@ function normalize_freeze_state(value: unknown): FreezeState | null {
                 channelCount: render_settings.channelCount,
                 tailLengthSeconds: render_settings.tailLengthSeconds,
             };
+            // Optional on purpose: a document written before the field existed
+            // must project without gaining a version it never had, because
+            // version 0 is exactly what "absent" is defined to mean. Dropping
+            // it instead would be worse than not migrating — a correctly frozen
+            // track would read as legacy on every reload and unfreeze itself.
+            if (is_finite_number(render_settings.bakeVersion)) {
+                freeze_state.renderSettings.bakeVersion = render_settings.bakeVersion;
+            }
         }
     }
 

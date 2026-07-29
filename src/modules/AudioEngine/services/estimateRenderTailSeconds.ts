@@ -64,6 +64,17 @@ type TrackLike = {
      * is what still needs room at the end of the render.
      */
     bakedTailSeconds?: number;
+    /**
+     * This track's identity and routing edges, projected in by the caller so the
+     * service can follow them without looking anything up.
+     *
+     * All three are optional, and a caller that supplies none gets the
+     * single-chain answer — which is what freeze wants, since it evaluates one
+     * track's devices and has no routing to give.
+     */
+    id?: string;
+    outputId?: string;
+    sends?: ReadonlyArray<{ busId: string }>;
 };
 
 function readParameter(device: DeviceLike, parameterId: string, fallback: number): number {
@@ -158,13 +169,14 @@ function evaluateDeclaration(device: DeviceLike, tail: TailDeclarationLike): num
  * Tracks are taken as a maximum, not a sum: they render in parallel, so the
  * export must last as long as the slowest one, not their total.
  *
- * Known limit — routing cascades are not summed. A track feeding a bus whose own
- * chain has a reverb is also a cascade, but this service receives only each
- * track's device list, with no routing edges, so track-into-bus is scored as two
- * independent chains. That under-reserves the same way a flat maximum did, on
- * send/bus-heavy sessions specifically. Closing it needs routing in the
- * projection and a cycle-safe walk, which is a larger change than the defect
- * being fixed here.
+ * **The same cascade runs across routing edges, and is summed too.** A track
+ * feeding a bus plays into that bus's own chain, so a bus reverb needs its full
+ * decay to resolve the last of the track's ringing — a delay at ~1.885 s into a
+ * 2 s bus reverb genuinely needs ~3.885 s, where scoring the two as independent
+ * chains reserved 2 and cut the difference off the end. Sends are edges exactly
+ * as outputs are. Across a track's several destinations the answer is the
+ * longest path, not the total, because those are alternative routes for one
+ * signal; see `longestTotalFrom`.
  */
 export type EstimateRenderTailSecondsOutput = {
     /** Tail to reserve, already bounded by `MAX_AUTO_TAIL_SECONDS`. */
@@ -184,24 +196,92 @@ export type EstimateRenderTailSecondsOutput = {
     clamped: boolean;
 };
 
-export function estimateRenderTailSeconds(tracks: ReadonlyArray<TrackLike>): EstimateRenderTailSecondsOutput {
-    let longestChain = 0;
-
-    for (const track of tracks) {
-        let chainTail = Math.max(0, track.bakedTailSeconds ?? 0);
-        for (const device of track.devices) {
-            if (device.bypassed || !device.tail) {
-                continue;
-            }
-
-            const tailSeconds = evaluateDeclaration(device, device.tail);
-            if (Number.isFinite(tailSeconds) && tailSeconds > 0) {
-                chainTail += tailSeconds;
-            }
+/** What one track's own chain adds, before anything downstream of it. */
+function chainTailSeconds(track: TrackLike): number {
+    let chainTail = Math.max(0, track.bakedTailSeconds ?? 0);
+    for (const device of track.devices) {
+        if (device.bypassed || !device.tail) {
+            continue;
         }
 
-        if (chainTail > longestChain) {
-            longestChain = chainTail;
+        const tailSeconds = evaluateDeclaration(device, device.tail);
+        if (Number.isFinite(tailSeconds) && tailSeconds > 0) {
+            chainTail += tailSeconds;
+        }
+    }
+    return chainTail;
+}
+
+export function estimateRenderTailSeconds(tracks: ReadonlyArray<TrackLike>): EstimateRenderTailSecondsOutput {
+    const trackById = new Map<string, TrackLike>();
+    for (const track of tracks) {
+        if (track.id !== undefined) {
+            trackById.set(track.id, track);
+        }
+    }
+
+    /**
+     * Where this track's signal goes: its output, plus every send.
+     *
+     * An id that names nothing in the set contributes no edge. `outputId` is
+     * routinely `hw_out`, which is never a track, or `master` in a project that
+     * carries no master track record — both are genuine ends of the line.
+     */
+    function destinationsOf(track: TrackLike): TrackLike[] {
+        const destinations: TrackLike[] = [];
+        if (track.outputId !== undefined) {
+            const output = trackById.get(track.outputId);
+            if (output) {
+                destinations.push(output);
+            }
+        }
+        for (const send of track.sends ?? []) {
+            const bus = trackById.get(send.busId);
+            if (bus) {
+                destinations.push(bus);
+            }
+        }
+        return destinations;
+    }
+
+    /**
+     * The longest total this track can produce: its own chain plus the longest
+     * of the chains it feeds.
+     *
+     * A **maximum** over destinations, not a sum. A track feeds its output and
+     * each of its sends simultaneously, so those are alternative routes for one
+     * signal; adding them would reserve time no single path needs.
+     *
+     * The visited set is scoped to the current path and unwound on the way out,
+     * so a node genuinely reachable by two routes is still scored on both. It
+     * exists to terminate: routing cycles are rejected at the mutation boundary,
+     * but a document written before that guard can still hold one, so the walk
+     * must not trust the invariant. Graphs here are session-sized, and this is
+     * the same shape `getTrackLatency` already walks for the same reason.
+     */
+    function longestTotalFrom(track: TrackLike, onPath: Set<TrackLike>): number {
+        if (onPath.has(track)) {
+            return 0;
+        }
+
+        onPath.add(track);
+        let longestDownstream = 0;
+        for (const destination of destinationsOf(track)) {
+            const candidate = longestTotalFrom(destination, onPath);
+            if (candidate > longestDownstream) {
+                longestDownstream = candidate;
+            }
+        }
+        onPath.delete(track);
+
+        return chainTailSeconds(track) + longestDownstream;
+    }
+
+    let longestChain = 0;
+    for (const track of tracks) {
+        const total = longestTotalFrom(track, new Set());
+        if (total > longestChain) {
+            longestChain = total;
         }
     }
 

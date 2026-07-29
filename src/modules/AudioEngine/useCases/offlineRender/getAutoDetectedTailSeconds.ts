@@ -4,6 +4,7 @@ import { resolveFrozenBufferTail } from '#/utils/frozenBufferTail';
 
 import { estimateRenderTailSeconds, type TailDeclarationLike } from '../../services/estimateRenderTailSeconds';
 
+import { projectDeviceTails } from './projectDeviceTails';
 import { shouldCreateOfflineStrip } from './shouldCreateOfflineStrip';
 
 type DeviceTailLookup = (deviceType: string) => TailDeclarationLike | undefined;
@@ -36,22 +37,32 @@ type GetAutoDetectedTailSecondsInput = {
  * the buffer actually carries.
  */
 function projectDevices(track: Track, tailForDeviceType: DeviceTailLookup) {
-    return track.devices.map((device) => ({
-        type: device.type,
-        parameterValues: device.parameterValues,
-        bypassed: device.bypassed,
-        tail: tailForDeviceType(device.type),
-    }));
+    return projectDeviceTails({ devices: track.devices, tailForDeviceType });
+}
+
+/**
+ * The track's routing edges, carried in so the estimator can follow the
+ * cascade from a track into the bus chain it plays through.
+ *
+ * Projected here rather than looked up there for the same reason the tail
+ * declarations are: the service stays pure and evaluates only what it is handed.
+ */
+function projectRouting(track: Track) {
+    return {
+        id: track.id,
+        outputId: track.outputId,
+        sends: track.sends.map((send) => ({ busId: send.busId })),
+    };
 }
 
 function projectTrack(track: Track, tailForDeviceType: DeviceTailLookup) {
     if (track.freezeState.status !== 'frozen') {
-        return { devices: projectDevices(track, tailForDeviceType) };
+        return { ...projectRouting(track), devices: projectDevices(track, tailForDeviceType) };
     }
 
     const baked = resolveFrozenBufferTail(track.freezeState.renderSettings);
     if (baked.known) {
-        return { devices: [], bakedTailSeconds: baked.seconds };
+        return { ...projectRouting(track), devices: [], bakedTailSeconds: baked.seconds };
     }
 
     // Unknown baked tail. The device chain is a proxy — freeze bypasses the
@@ -67,7 +78,11 @@ function projectTrack(track: Track, tailForDeviceType: DeviceTailLookup) {
     const chainOnly = estimateRenderTailSeconds([
         { devices: projectDevices(track, tailForDeviceType) },
     ]).uncappedSeconds;
-    return { devices: [], bakedTailSeconds: Math.max(chainOnly, baked.atLeastSeconds) };
+    return {
+        ...projectRouting(track),
+        devices: [],
+        bakedTailSeconds: Math.max(chainOnly, baked.atLeastSeconds),
+    };
 }
 
 /**
