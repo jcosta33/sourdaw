@@ -744,7 +744,8 @@ export const EXPANDED_FX_PRESETS: SoundPreset[] = [
                 'comp-release': 250,
                 'comp-makeup': 1,
             }),
-            limiter('Brick Wall', { 'lim-threshold': -1, 'lim-release': 0.15 }),
+            // 150 ms, not 0.15 s — see the unit note in the `limiter` helper.
+            limiter('Brick Wall', { 'lim-threshold': -1, 'lim-release': 150 }),
         ],
         tags: ['mastering', 'bus', 'polish', 'limiter'],
         author: AUTHOR,

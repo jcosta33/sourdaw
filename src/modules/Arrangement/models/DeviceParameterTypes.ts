@@ -25,31 +25,23 @@ export type DeviceParameter = {
      * This is a **write law**, not a display hint: every device-parameter write
      * is held to it (see `DeviceParameterLaw`). It therefore has to describe
      * what the DSP actually accepts, and it can no longer double as the
-     * convenient span for a knob — those are now two different questions, and
-     * `uiMinValue` answers the second one.
+     * convenient span for a knob.
      *
      * Before the law bound at the write, tightening this pair was free: it
      * changed the parameter picker and the knob and nothing else. It is not
      * free now. Narrowing it silently rewrites every value outside the new
      * range, including ones already shipped in demo projects, factory presets
      * and saved user projects.
+     *
+     * There is deliberately no separate "floor the knob offers" field. One was
+     * tried and reintroduced the same defect one layer out: `RotaryKnob` clamps
+     * to its `min`, so a knob floor above a stored value rewrites that value on
+     * the first drag, one-way — the store keeps 0.05 forever and the user has
+     * no way back to it. A control that needs usable resolution near the bottom
+     * wants `scaling: 'log'`, which gives resolution without exclusion.
      */
     minValue: number;
     maxValue: number;
-    /**
-     * The floor the panel control offers, when that is tighter than the
-     * engine's.
-     *
-     * Some declared floors were authored for a slider — a rate knob that
-     * bottoms out at a usable value rather than at a stopped LFO. That is a
-     * reasonable default for dragging a knob and a wrong answer for what the
-     * engine accepts, and while `minValue` was advisory the one field could be
-     * both. Now that it binds at the write, a floor that exists for the knob's
-     * benefit has to say so here instead, or it clips real content.
-     *
-     * Omitted means the control uses `minValue`, which is the common case.
-     */
-    uiMinValue?: number;
     unit: string;
     scaling?: 'log' | 'linear';
     choices?: string[];

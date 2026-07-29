@@ -110,7 +110,6 @@ export const BUILTIN_INSTRUMENT_DESCRIPTORS: PluginDescriptor[] = [
                 // `filterResonance: 0` for a deliberately unresonant sub.
                 minValue: 0,
                 maxValue: 20,
-                uiMinValue: 0.1,
                 unit: '',
                 automatable: true,
                 hasAutomation: false,
