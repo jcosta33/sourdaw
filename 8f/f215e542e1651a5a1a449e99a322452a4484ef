@@ -1,0 +1,39 @@
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateOpenAiCompatibleToolCalls.spec.ts
+  s_bc88af7d3b054c::t_a299b371430186 29-40,46-48,286-309,324,326-348
+  s_bc88af7d3b054c::t_a9d9164fc97bc9 41-45,310-323,325
+  s_bc88af7d3b054c::t_10bcc8ccf2e191 349
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_bc88af7d3b054c::t_a299b371430186 180-195
+src/modules/AiRuntime/repositories/webLlm/__tests__/toolCalling.spec.ts
+  s_bc88af7d3b054c::t_a299b371430186 76
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateOpenAiCompatibleToolCalls.ts
+  s_bc88af7d3b054c::t_a9d9164fc97bc9 18
+  s_bc88af7d3b054c::t_9733bced8d15a6 19-23,25-28,30-40,67-70,74-76,147-151,155-157
+  s_bc88af7d3b054c::t_7531f3883e14d9 158
+src/modules/AiRuntime/repositories/webLlm/generateWebLlmCompletion.ts
+  s_bc88af7d3b054c::t_a9d9164fc97bc9 51
+  s_bc88af7d3b054c::t_9733bced8d15a6 3-4,8-14,17-18,23,49,57-68,75-96
+src/modules/AiRuntime/repositories/webLlm/toolCalling.ts
+  s_bc88af7d3b054c::t_9733bced8d15a6 44
+src/modules/AiRuntime/repositories/webLlm/__tests__/generateWebLlmCompletion.spec.ts
+  s_bc88af7d3b054c::t_a9d9164fc97bc9 68-70
+  s_bc88af7d3b054c::t_a299b371430186 54-67,71-79
+  s_bc88af7d3b054c::t_2c3909826ae398 38,42-43,92-95
+  s_bc88af7d3b054c::t_7f274c9125fb65 39-41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "8ff215e542e1651a5a1a449e99a322452a4484ef",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
