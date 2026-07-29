@@ -1,0 +1,22 @@
+src/modules/Arrangement/stores/__tests__/trackStorePersistenceRoundTrip.spec.ts
+  s_66d4924c65dcd2::t_d9af5180b060f7 406-448
+src/modules/Arrangement/stores/trackStore.ts
+  s_66d4924c65dcd2::t_1bc4f1845a47d2 472-483
+  s_66d4924c65dcd2::t_6e850c472e2e74 484
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "796edb4ff6fe158f8626a01ed7c14176384b4c0f",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
