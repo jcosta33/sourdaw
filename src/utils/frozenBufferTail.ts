@@ -17,12 +17,49 @@
  */
 
 /**
+ * Beats of tail the **pre-declaration** freeze mechanism rendered past a track's
+ * content: 8 for a chain whose device type contained "reverb" or "delay", 4 for
+ * anything else.
+ *
+ * Freeze no longer works this way — it reserves the seconds its devices declare
+ * — so these are not current behaviour. They are kept, and named for what they
+ * are, because they describe the buffers already on disk: a frozen track whose
+ * `tailLengthSeconds` is missing can only have been written by that mechanism,
+ * since the current one always records the figure it rendered. They are the
+ * derivation of `UNKNOWN_FROZEN_TAIL_SECONDS` and nothing else.
+ */
+export const LEGACY_FREEZE_MAX_TAIL_BEATS = 8;
+export const LEGACY_FREEZE_MIN_TAIL_BEATS = 4;
+
+/**
+ * What freeze bakes into a buffer, as a version number.
+ *
+ * Correcting freeze's arithmetic does nothing for buffers already rendered:
+ * they stay physically short, and they stay printed with their own fader and pan
+ * position folded in. No export-side change can recover either — the samples
+ * were never rendered, and a doubled gain cannot be unmixed. The only remedy is
+ * to render again, so a buffer that predates the current rules has to be *told*
+ * it is out of date rather than silently trusted.
+ *
+ * Bump this whenever the content of a frozen buffer changes meaning. Staleness
+ * detection marks any frozen track carrying an older version `stale`, which is
+ * the state the UI already offers a re-freeze from — so the migration is the
+ * existing re-freeze affordance, not a new one.
+ *
+ * Version 1 is the first that (a) sizes its tail from device tail declarations
+ * rather than a device-name substring test and (b) prints at unity fader and
+ * centre pan. Absent means version 0: everything written before either rule.
+ */
+export const FREEZE_BAKE_VERSION = 1;
+
+/**
  * Floor for an unknown baked tail, in seconds.
  *
- * Derived from what freeze can actually have baked, not from a plausible-looking
- * constant. Freeze renders `FREEZE_MAX_TAIL_BEATS` (8) beats past the content
- * for a chain containing a reverb or delay, and beats convert to seconds by the
- * project tempo, so the longest tail the mechanism can produce is at the slowest
+ * Derived from what can actually have been baked, not from a plausible-looking
+ * constant. An absent `tailLengthSeconds` means the buffer predates freeze
+ * recording one, so the mechanism that wrote it is the legacy one:
+ * `LEGACY_FREEZE_MAX_TAIL_BEATS` (8) beats past the content, and beats convert
+ * to seconds by the project tempo, so the longest such tail is at the slowest
  * legal tempo: 8 beats * 60 / MIN_TEMPO (20 BPM) = 24 s.
  *
  * Being an upper bound is the whole point. The floor exists to stop an unknown

@@ -237,6 +237,21 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Levain/useCases/levainParamBridge/helpers.ts': 3,
         'src/modules/Levain/useCases/levainParamBridge/loadSamplesForInstrument.ts': 2,
         'src/modules/Levain/useCases/loadPreset.ts': 4,
+        // Count provenance: 1 = the single word `loadSamplesForInstrument` in this
+        // file's JSDoc, under the **Order.** heading. It is a deliberate
+        // cross-reference, not an incidental mention: the offline path must post
+        // `setInstrument` and only then start the load, and that ordering is only
+        // legible next to the live bridge function it copies. Deleting the word
+        // would drop this row to 0 and the census would go green — so a future
+        // change here is a debt retired only if the *cross-reference* was retired
+        // (the offline path stopped mirroring the live order, or that function was
+        // renamed). If the count falls and the ordering requirement still holds,
+        // the comment was lost, not the debt.
+        //
+        // The file holds no device write of its own: it posts one worklet message
+        // and delegates the load to `autoLoadLevainSamples`, whose sinks stay
+        // censused on `autoLoadSamples.ts`.
+        'src/modules/Levain/useCases/prepareOfflineLevain.ts': 1,
         'src/modules/Levain/presentations/views/LevainPanel.tsx': 2,
         'src/modules/PluginHost/useCases/faustEngine/compileAllFaustModules.ts': 4,
         'src/modules/PluginHost/useCases/faustEngine/compileFaustDSP.ts': 1,
@@ -280,6 +295,14 @@ const DEVICE_DATA_COUNTS = {
         'src/modules/Arrangement/useCases/duplicateTrack.ts': 1,
         'src/modules/Arrangement/useCases/freezeBounce/bounceTrack.ts': 2,
         'src/modules/Arrangement/useCases/freezeBounce/flattenTrack.ts': 1,
+        // Count provenance: 0 -> 1. Freeze now sizes its tail from the device
+        // tail declarations instead of a substring test on the device type, so
+        // it passes `devices: track.devices` to `getDeviceChainTailSeconds` — a
+        // pure calculator that returns a number of seconds. This does not undo
+        // the retirement noted below: freeze still does not build its own
+        // device chain from `track.devices`, it only measures how long that
+        // chain rings. Read, not write; no live device is touched.
+        'src/modules/Arrangement/useCases/freezeBounce/freezeTrack.ts': 1,
         // MD-4 (#716) retired the two sinks this file used to carry: the freeze/
         // bounce renderer no longer reads `track.devices` to build its own device
         // chain — it hands the render subgraph to the AudioEngine offline graph,

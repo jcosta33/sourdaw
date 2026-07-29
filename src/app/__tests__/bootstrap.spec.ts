@@ -16,6 +16,20 @@ import { describe, it, expect, vi } from 'vitest';
 
 type HandlerMapSentinel = { moduleId: string };
 
+/**
+ * The one sink member this spec asserts on. The offline render's device chain
+ * calls it for every worklet-backed device it builds; bootstrap is the only place
+ * that decides which device types have anything to prepare.
+ */
+type RuntimeSinkUnderTest = {
+    prepareOfflineInstrument: (input: {
+        deviceId: string;
+        deviceType: string;
+        port: MessagePort;
+        signal?: AbortSignal;
+    }) => Promise<void>;
+};
+
 const {
     noop,
     sentinelHandlers,
@@ -33,6 +47,8 @@ const {
     prepareMidiTimeStateRestoreMock,
     prepareTimelineMapTimeOperationMock,
     prepareTimelineMapStateRestoreMock,
+    configureAudioDeviceRuntimeSinkMock,
+    prepareOfflineLevainMock,
 } = vi.hoisted(() => {
     const noop = vi.fn();
     const sentinelHandlers = (moduleId: string) => vi.fn<() => HandlerMapSentinel>(() => ({ moduleId }));
@@ -53,6 +69,8 @@ const {
         prepareMidiTimeStateRestoreMock: vi.fn(),
         prepareTimelineMapTimeOperationMock: vi.fn(),
         prepareTimelineMapStateRestoreMock: vi.fn(),
+        configureAudioDeviceRuntimeSinkMock: vi.fn<(sink: RuntimeSinkUnderTest) => void>(),
+        prepareOfflineLevainMock: vi.fn(() => Promise.resolve()),
     };
 });
 
@@ -107,7 +125,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getCompensationDelay: noop,
     getFinalFeatureHandlers: sentinelHandlers('FinalFeature'),
     commitPitchEdit: noop,
-    configureAudioDeviceRuntimeSink: noop,
+    configureAudioDeviceRuntimeSink: configureAudioDeviceRuntimeSinkMock,
     configureOfflineMidiEventProjection: noop,
     configureOfflinePpqEndpointProjection: noop,
     configureOfflineYeastMidiProcessing: noop,
@@ -197,6 +215,7 @@ vi.mock('#/modules/Levain/stores', () => ({ setEngineReady: noop }));
 vi.mock('#/modules/Levain/useCases', () => ({
     registerLevainDevice: noop,
     unregisterLevainDevice: noop,
+    prepareOfflineLevain: prepareOfflineLevainMock,
 }));
 
 vi.mock('#/modules/MIDI/useCases', () => ({
@@ -377,6 +396,51 @@ describe('bootstrap', () => {
             prepareMidiTimeStateRestore: prepareMidiTimeStateRestoreMock,
             prepareTimelineMapTimeOperation: prepareTimelineMapTimeOperationMock,
             prepareTimelineMapStateRestore: prepareTimelineMapStateRestoreMock,
+        });
+    });
+
+    describe('offline instrument setup dispatch', () => {
+        // The offline device chain hands every worklet-backed device to this sink
+        // member; bootstrap is the only place that knows which device types have
+        // anything to prepare. Until this spec named `prepareOfflineLevain` in the
+        // Levain mock, the binding bootstrap closed over was `undefined` here and
+        // nothing noticed.
+        function getSink(): RuntimeSinkUnderTest {
+            const call = configureAudioDeviceRuntimeSinkMock.mock.calls[0];
+            if (!call) {
+                throw new Error('bootstrap never configured the audio device runtime sink');
+            }
+            return call[0];
+        }
+
+        const port = { postMessage: () => {} } as unknown as MessagePort;
+
+        it('routes a levain device to the Levain module, passing its id, port and signal', async () => {
+            prepareOfflineLevainMock.mockClear();
+            const controller = new AbortController();
+
+            await getSink().prepareOfflineInstrument({
+                deviceId: 'levain-1',
+                deviceType: 'levain',
+                port,
+                signal: controller.signal,
+            });
+
+            expect(prepareOfflineLevainMock).toHaveBeenCalledExactlyOnceWith({
+                deviceId: 'levain-1',
+                port,
+                signal: controller.signal,
+            });
+        });
+
+        it('resolves without preparing anything for a device type that owns no offline setup', async () => {
+            prepareOfflineLevainMock.mockClear();
+
+            // Gluten is a bus compressor: worklet-backed, but nothing to load.
+            await expect(
+                getSink().prepareOfflineInstrument({ deviceId: 'gluten-1', deviceType: 'gluten', port })
+            ).resolves.toBeUndefined();
+            expect(prepareOfflineLevainMock).not.toHaveBeenCalled();
         });
     });
 

@@ -24,6 +24,16 @@ export type FreezeState = {
         bitDepth: number; // Always 32 for freeze
         channelCount: number;
         tailLengthSeconds: number;
+        /**
+         * Which set of freeze rules produced this buffer (`FREEZE_BAKE_VERSION`).
+         *
+         * Absent means it predates the field, and therefore predates both the
+         * declaration-sized tail and the unity-fader print. Such a buffer is
+         * physically short and carries its own fader and pan folded in, neither
+         * of which any later fix can recover — so staleness detection marks it
+         * for re-freezing rather than trusting it.
+         */
+        bakeVersion?: number;
     };
     /**
      * Seconds of plugin-delay compensation the track carried when the buffer
