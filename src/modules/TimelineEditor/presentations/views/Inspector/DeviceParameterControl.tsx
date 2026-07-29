@@ -69,19 +69,18 @@ function formatDisplayValue(value: number, param: DeviceParameter): string {
     if (param.type === 'int') {
         return String(Math.round(value));
     }
-    const range = param.maxValue - param.minValue;
-    // For large ranges (>10), show 1 decimal. For small ranges, show 2-3 decimals.
-    let decimals: number;
-    if (range >= 100) {
-        decimals = 0;
-    } else if (range >= 10) {
-        decimals = 1;
-    } else if (range >= 1) {
-        decimals = 2;
-    } else {
-        decimals = 3;
-    }
-    return value.toFixed(decimals);
+    // Precision follows the step the knob actually moves in, not the declared
+    // span. Deriving it from the span made the readout hostage to the floor:
+    // widening `phaser-rate` from 0.1 to 0 moved its range 9.9 → 10 and tipped
+    // it across a `range >= 10` boundary, so a 0.05 Hz preset value would have
+    // rendered as "0.1". The step is 0.05 under either floor, and a control
+    // that steps by 0.05 wants two decimals whatever its endpoints are.
+    //
+    // This does shift 0..1 parameters (step 0.005) from 2 decimals to 3 — a
+    // deliberate call: those are the controls whose steps were being rounded
+    // away. The cap keeps it at three.
+    const step = deriveStep(param);
+    return value.toFixed(Math.min(3, Math.max(0, Math.ceil(-Math.log10(step)))));
 }
 
 export const DeviceParameterControl = ({ param, device, trackId }: DeviceParameterControlProps): ReactElement => {
@@ -159,19 +158,21 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
             );
         }
 
+        // The control spans exactly the range a write is held to. It must not
+        // narrow it: `RotaryKnob` clamps to `min`, so a tighter floor here
+        // would rewrite any stored value below it on the first drag, one-way.
         const min = isLog ? 0 : param.minValue;
         const max = isLog ? 1 : param.maxValue;
         const mappedStep = isLog ? 0.001 : step;
         const mappedFineStep = isLog ? 0.0001 : fineStep;
 
+        const logFloor = param.minValue || 0.001;
         const toLinear = (logVal: number) => {
-            const clampVal = Math.max(param.minValue || 0.001, Math.min(param.maxValue, logVal));
-            return (
-                Math.log(clampVal / (param.minValue || 0.001)) / Math.log(param.maxValue / (param.minValue || 0.001))
-            );
+            const clampVal = Math.max(logFloor, Math.min(param.maxValue, logVal));
+            return Math.log(clampVal / logFloor) / Math.log(param.maxValue / logFloor);
         };
         const toLog = (linearVal: number) => {
-            return (param.minValue || 0.001) * (param.maxValue / (param.minValue || 0.001)) ** linearVal;
+            return logFloor * (param.maxValue / logFloor) ** linearVal;
         };
 
         const mappedValue = isLog ? toLinear(value) : value;

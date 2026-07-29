@@ -880,4 +880,181 @@ describe('applyAutomation', () => {
             });
         });
     });
+
+    describe("the parameter descriptor's declared contract", () => {
+        // `dutch-oven` is used because it declares both halves of the contract
+        // against real product data: `shimmer_pitch` is automatable: false, and
+        // `mix` declares minValue 0 / maxValue 1.
+        function seedDescriptorLane(options: {
+            laneId: string;
+            deviceId: string;
+            paramId: string;
+            curveValue: number;
+            /**
+             * The value the first tick reads. The per-param slew only dispatches
+             * once the smoothed value has moved past SLEW_EPSILON, so the lane
+             * has to be seeded at something other than where it lands.
+             */
+            primeValue?: number;
+        }): void {
+            mutableTrackStore.value = {
+                tracks: [
+                    {
+                        id: 'track-1',
+                        kind: 'audio',
+                        automationMode: 'read',
+                        clips: [],
+                        midiFx: [],
+                        devices: [
+                            {
+                                id: options.deviceId,
+                                type: 'dutch-oven',
+                                parameterValues: { [options.paramId]: 0.2 },
+                            },
+                        ],
+                        gain: 0.5,
+                        pan: 0,
+                    },
+                ],
+            };
+            mutableAutomationStore.value = {
+                lanes: [
+                    {
+                        id: options.laneId,
+                        trackId: 'track-1',
+                        parameterId: `${options.deviceId}:${options.paramId}`,
+                        minValue: 0,
+                        points: [{ beat: 0, value: options.curveValue }],
+                    },
+                ],
+            };
+            vi.mocked(getAutomationValueAtBeat).mockReset();
+            vi.mocked(getAutomationValueAtBeat)
+                .mockReturnValueOnce(options.primeValue ?? 0)
+                .mockReturnValue(options.curveValue);
+        }
+
+        it('refuses to drive a parameter the descriptor marks non-automatable', () => {
+            seedDescriptorLane({
+                laneId: 'lane-non-automatable',
+                deviceId: 'ov-shimmer',
+                paramId: 'shimmer_pitch',
+                curveValue: 0.75,
+            });
+
+            applyAutomation(0);
+            applyAutomation(1);
+
+            // Key presence alone used to be the whole test, and the key is
+            // present here — a stored lane, a preset or a project file puts it
+            // there whether or not the picker would ever have offered it.
+            expect(updateDeviceParam).not.toHaveBeenCalled();
+        });
+
+        it('drives an automatable parameter on the same device', () => {
+            seedDescriptorLane({
+                laneId: 'lane-automatable',
+                deviceId: 'ov-mix',
+                paramId: 'mix',
+                curveValue: 0.75,
+            });
+
+            applyAutomation(0);
+            applyAutomation(1);
+
+            expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'ov-mix', 'mix', expect.any(Number));
+        });
+
+        it('holds an out-of-range curve value to the declared maximum before it reaches the engine', () => {
+            // Lane data is validated on load for finiteness and
+            // `maxValue >= minValue` only, never against the descriptor, so a
+            // stored curve can ask for 4.2 on a 0..1 control.
+            seedDescriptorLane({
+                laneId: 'lane-overshoot',
+                deviceId: 'ov-clamp-high',
+                paramId: 'mix',
+                curveValue: 4.2,
+            });
+
+            applyAutomation(0);
+            applyAutomation(1);
+
+            expect(updateDeviceParam).toHaveBeenLastCalledWith('track-1', 'ov-clamp-high', 'mix', 1);
+        });
+
+        it('holds an under-range curve value to the declared minimum', () => {
+            seedDescriptorLane({
+                laneId: 'lane-undershoot',
+                deviceId: 'ov-clamp-low',
+                paramId: 'mix',
+                curveValue: -3,
+                primeValue: 1,
+            });
+
+            applyAutomation(0);
+            applyAutomation(1);
+
+            expect(updateDeviceParam).toHaveBeenLastCalledWith('track-1', 'ov-clamp-low', 'mix', 0);
+        });
+
+        // The MIDI-FX branch reaches its DSP through updateMidiFxParam, not the
+        // device write surface, so it carries its own copy of the acceptance
+        // predicate. No shipped MIDI FX type declares a descriptor yet, so
+        // `dutch-oven` stands in for the day one does — the branch reads
+        // `fx.type` generically, and these lock it to the same law rather than
+        // to the absence of data.
+        function seedMidiFxLane(options: { laneId: string; paramId: string; curveValue: number }): void {
+            mutableTrackStore.value = {
+                tracks: [
+                    {
+                        id: 'track-1',
+                        kind: 'midi',
+                        automationMode: 'read',
+                        clips: [],
+                        devices: [],
+                        midiFx: [
+                            {
+                                id: 'fx-descriptor',
+                                type: 'dutch-oven',
+                                parameterValues: { [options.paramId]: 0.2 },
+                            },
+                        ],
+                        gain: 0.5,
+                        pan: 0,
+                    },
+                ],
+            };
+            mutableAutomationStore.value = {
+                lanes: [
+                    {
+                        id: options.laneId,
+                        trackId: 'track-1',
+                        parameterId: options.paramId,
+                        minValue: 0,
+                        points: [{ beat: 0, value: options.curveValue }],
+                    },
+                ],
+            };
+            vi.mocked(getAutomationValueAtBeat).mockReset();
+            vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(0).mockReturnValue(options.curveValue);
+        }
+
+        it('refuses to drive a non-automatable MIDI-FX parameter', () => {
+            seedMidiFxLane({ laneId: 'lane-fx-non-automatable', paramId: 'shimmer_pitch', curveValue: 0.75 });
+
+            applyAutomation(0);
+            applyAutomation(1);
+
+            expect(updateMidiFxParam).not.toHaveBeenCalled();
+        });
+
+        it('holds an out-of-range MIDI-FX curve value to the declared maximum', () => {
+            seedMidiFxLane({ laneId: 'lane-fx-overshoot', paramId: 'mix', curveValue: 4.2 });
+
+            applyAutomation(0);
+            applyAutomation(1);
+
+            expect(updateMidiFxParam).toHaveBeenLastCalledWith('track-1', 'fx-descriptor', 'mix', 1);
+        });
+    });
 });

@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { clampDeviceParameterValue } from '#/modules/Arrangement/useCases';
+
 import { setFermenterDependencies } from '../fermenterDependencies';
 import { loadFermenterPatchWithAudio } from '../fermenterParamBridge/loadFermenterPatchWithAudio';
 import { setFermenterParamWithAudio } from '../fermenterParamBridge/setFermenterParamWithAudio';
@@ -13,6 +15,7 @@ describe('fermenterParamBridge', () => {
         vi.clearAllMocks();
         getAllTracks.mockReturnValue([]);
         setFermenterDependencies({
+            clampDeviceParameterValue,
             getAllTracks,
             persistDeviceParam: persistDeviceParam as never,
             resolveEligibleDeviceWriteTarget: () => ({ status: 'missing' }),

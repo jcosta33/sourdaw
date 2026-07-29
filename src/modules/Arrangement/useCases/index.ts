@@ -231,6 +231,8 @@ export { stripSilence } from './stripSilence';
 export { getBuiltinPlugins } from './getBuiltinPlugins';
 export { getPlatformPlugins } from './getPlatformPlugins';
 export { getPluginById } from './getPluginById';
+export { clampDeviceParameterValue } from './clampDeviceParameterValue';
+export { isDeviceParameterAutomatable } from './isDeviceParameterAutomatable';
 
 // ── Command handler access ────────────────────────────────────────────────────
 

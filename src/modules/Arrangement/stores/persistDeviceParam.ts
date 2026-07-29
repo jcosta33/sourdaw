@@ -1,3 +1,5 @@
+import { clampDeviceParameterValue } from '../models/DeviceParameterLaw';
+
 import { resolveEligibleDeviceWriteTarget } from './resolveEligibleDeviceWriteTarget';
 import { type Track, trackStore } from './trackStore';
 
@@ -37,9 +39,17 @@ export function persistDeviceParam(deviceId: string, paramId: string, value: num
                     return device;
                 }
 
+                // Clamped here, at the write, for the same reason
+                // `setDeviceParameter` clamps: the descriptor's declared range
+                // is only a contract if something holds a write to it, and the
+                // bridges that call this reach the store without passing
+                // through the use-case layer at all.
                 return {
                     ...device,
-                    parameterValues: { ...device.parameterValues, [paramId]: value },
+                    parameterValues: {
+                        ...device.parameterValues,
+                        [paramId]: clampDeviceParameterValue({ deviceType: device.type, paramId, value }),
+                    },
                 };
             });
 

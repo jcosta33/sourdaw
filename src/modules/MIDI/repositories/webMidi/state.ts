@@ -33,6 +33,12 @@ export const webMidiRuntime = {
     mpeEnabled: false,
     tauriMode: false,
     tauriEventUnlisten: null as (() => void) | null,
+    /**
+     * Milliseconds to add to a native MIDI stamp to express it on the
+     * `performance.now()` clock. Null until the first message on a port teaches
+     * it; see `mapNativeMidiTimestamp`.
+     */
+    nativeMidiTimeAnchorMs: null as number | null,
 };
 
 export const webMidiState: { current: WebMidiState } = {
