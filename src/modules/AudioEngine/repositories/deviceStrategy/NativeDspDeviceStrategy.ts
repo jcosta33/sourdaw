@@ -83,5 +83,10 @@ export async function createNativeDspStrategy(ctx: BaseAudioContext, device: Dev
         strategy.setParam(key, val);
     }
 
+    // `parameterValues` is only the numeric half of a device's state: the setup an
+    // instrument needs beyond plain params — Levain's instrument identity and
+    // sample zones, Toaster's kit — is not reachable from a repository, which may
+    // not orchestrate module use cases. `buildDeviceChain` performs it against the
+    // returned worklet port instead.
     return strategy;
 }
