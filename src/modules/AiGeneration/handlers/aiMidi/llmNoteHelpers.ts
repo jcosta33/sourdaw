@@ -49,11 +49,8 @@ ${noteContext}
 
 Generate the MIDI notes now. Output ONLY the tool call.`;
 
-    const outcome = await runToolCalls(systemPrompt, userMessage);
-    if (outcome.status === 'rejected') {
-        return [];
-    }
-    const addNotesCall = outcome.toolCalls.find((result) => result.name === 'addNotes');
+    const results = await runToolCalls(systemPrompt, userMessage);
+    const addNotesCall = results.find((r) => r.name === 'addNotes');
     if (addNotesCall && Array.isArray(addNotesCall.arguments.notes)) {
         const candidates = addNotesCall.arguments.notes as Array<{
             pitch: number;
