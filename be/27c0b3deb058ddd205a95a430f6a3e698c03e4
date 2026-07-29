@@ -1,0 +1,19 @@
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngineDelegation.spec.ts
+  s_ac9b259eab20ba::t_701a5a8b0dedaf 163-191,291-292,294-297,299-303,305-308,310-314,316-318
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "be27c0b3deb058ddd205a95a430f6a3e698c03e4",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
