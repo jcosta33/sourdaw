@@ -1,0 +1,23 @@
+src/modules/AiRuntime/repositories/webLlm/__tests__/toolCalling.spec.ts
+  s_ac9b259eab20ba::t_4d8b95da1a70af 47-60
+src/modules/AiRuntime/transformers/__tests__/toolCallParser.spec.ts
+  s_ac9b259eab20ba::t_82f7b2c0348da7 145-171
+src/modules/AiRuntime/transformers/toolCallParser.ts
+  s_ac9b259eab20ba::t_dd184ef5411165 49-50,59-63,66,76-81,84-95,121-123,131-132,144-145,147,150,156-159,162,167,172,178,181-183,186,210-213
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "cb2589f44cd2af17466a3fc81c39ce1089d026f5",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
