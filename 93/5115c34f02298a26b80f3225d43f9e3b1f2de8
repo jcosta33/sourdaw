@@ -1,0 +1,42 @@
+src/modules/Arrangement/repositories/presets/presetHelpers/limiter.ts
+  s_66d4924c65dcd2::t_e666f6c7fa74e4 7-13
+src/modules/TimelineEditor/presentations/views/Inspector/DeviceParameterControl.tsx
+  s_66d4924c65dcd2::t_ba5c52b4927621 169
+  s_66d4924c65dcd2::t_046b159416f47c 55
+  s_66d4924c65dcd2::t_13ee553561a80d 72-83
+  s_66d4924c65dcd2::t_a30d2c4b7245b1 161-164
+  s_66d4924c65dcd2::t_21da174f5ab596 217
+src/modules/Arrangement/models/PluginDescriptors/BuiltinEffectDescriptors.ts
+  s_66d4924c65dcd2::t_bc29fcb4d4ca71 590,592-593
+src/modules/Arrangement/repositories/presets/expandedPresets.ts
+  s_66d4924c65dcd2::t_33ae33998c35e6 747-748
+src/components/daw/visualizers/FilterResponse.tsx
+  s_66d4924c65dcd2::t_3e53f3b59e47a1 14
+  s_66d4924c65dcd2::t_c4318fe241fec1 255-262,264
+src/modules/Arrangement/repositories/presets/presetHelpers/__tests__/presetHelpers.spec.ts
+  s_66d4924c65dcd2::t_53f3dc23d5064b 76-91
+  s_66d4924c65dcd2::t_11bcaecd59f9f5 3
+src/modules/Arrangement/models/DeviceParameterTypes.ts
+  s_66d4924c65dcd2::t_d3abe16a68b07a 35-41
+  s_66d4924c65dcd2::t_a0e4f9572877cc 28
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/DeviceParameterControl.spec.tsx
+  s_66d4924c65dcd2::t_edb9d85a235d71 197-216,218-220
+  s_66d4924c65dcd2::t_73132274235968 177-182,185,191-194,217
+  s_66d4924c65dcd2::t_a72ab2dedbd6aa 146-149,151
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "935115c34f02298a26b80f3225d43f9e3b1f2de8",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
