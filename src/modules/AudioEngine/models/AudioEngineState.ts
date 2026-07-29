@@ -45,6 +45,30 @@ export type AudioEngineHealth = {
     dropouts: AudioEngineDropoutStats;
 };
 
+export type AudioEngineDiagnostics = {
+    context: {
+        state: AudioContextState;
+        sampleRate: number;
+        baseLatency: number;
+        outputLatency: number;
+    };
+    graph: {
+        trackStrips: number;
+        busStrips: number;
+        sends: number;
+        sidechains: number;
+        deviceInstances: number;
+        deviceInstancesByType: Record<string, number>;
+        deviceAudioNodes: number;
+        stripMeterWorklets: number;
+        masterMeterWorklets: number;
+        adjustmentLayerBuses: number;
+    };
+    runtime: {
+        trackedAudioScheduledSources: number;
+    };
+};
+
 type ToasterScheduledPadParam = {
     name: string;
     value: number;
@@ -285,6 +309,7 @@ export type AudioEngine = {
     getMasterGain(): number;
     getState(): AudioEngineState;
     getHealth(): AudioEngineHealth;
+    getDiagnostics(): AudioEngineDiagnostics;
     dispose(): Promise<void>;
     resetGraph(): void;
     ensureTrackStrip(trackId: string): TrackChannelStrip;

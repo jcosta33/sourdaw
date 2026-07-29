@@ -825,6 +825,12 @@ describe('AudioEngine', () => {
         it('reports fallback state (engine did not get a live context)', () => {
             expect(fbEngine.getState().isReady).toBe(false);
             expect(fbEngine.getState().state).toBe('closed');
+            expect(fbEngine.getDiagnostics().context).toEqual({
+                state: 'closed',
+                sampleRate: 44_100,
+                baseLatency: 0,
+                outputLatency: 0,
+            });
         });
 
         it('addDeviceToStrip does not build a track node on the shim in fallback mode', () => {

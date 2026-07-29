@@ -12,6 +12,7 @@ import recordingProcessorUrl from '../services/recordingProcessor.ts?worker&url'
 import type {
     AdjustmentLayerTickInput,
     AudioEngine,
+    AudioEngineDiagnostics,
     AudioEngineHealth,
     AudioEngineState,
     BusStrip,
@@ -152,7 +153,7 @@ class AudioEngineImpl implements AudioEngine {
     public context!: AudioContext;
     public masterGainNode!: GainNode;
     public masterAnalyser!: AnalyserNode;
-    public masterMeterNode!: AudioWorkletNode | NoopMeterNode;
+    public masterMeterNode: AudioWorkletNode | NoopMeterNode | undefined;
 
     private trackNodes = new Map<string, TrackNode>();
     private busNodes = new Map<string, BusNode>();
@@ -336,6 +337,55 @@ class AudioEngineImpl implements AudioEngine {
             // round-trip, no polling of the audio thread. See dropoutCounter.ts
             // for exactly which dropouts this does and does not capture.
             dropouts: dropoutCounters.read(),
+        };
+    }
+
+    public getDiagnostics(): AudioEngineDiagnostics {
+        const engineState = this.getState();
+        const deviceInstancesByType = new Map<string, number>();
+        let deviceInstances = 0;
+        let deviceAudioNodes = 0;
+        let stripMeterWorklets = 0;
+
+        for (const trackNode of this.trackNodes.values()) {
+            if (trackNode.strip.meterNode) {
+                stripMeterWorklets++;
+            }
+            for (const device of trackNode.strip.deviceNodes) {
+                deviceInstances++;
+                deviceAudioNodes += device.nodes.length;
+                deviceInstancesByType.set(device.type, (deviceInstancesByType.get(device.type) ?? 0) + 1);
+            }
+        }
+
+        const sortedDeviceInstances = [...deviceInstancesByType].sort(([left], [right]) => left.localeCompare(right));
+        const masterMeterWorklets =
+            typeof AudioWorkletNode !== 'undefined' && this.masterMeterNode instanceof AudioWorkletNode ? 1 : 0;
+
+        return {
+            context: {
+                state: engineState.state,
+                sampleRate: engineState.sampleRate,
+                baseLatency: engineState.baseLatency,
+                outputLatency: this.fallbackMode ? 0 : this.context.outputLatency,
+            },
+            graph: {
+                // Buses own a backing TrackNode, so subtract them to keep these
+                // two public counters disjoint.
+                trackStrips: this.trackNodes.size - this.busNodes.size,
+                busStrips: this.busNodes.size,
+                sends: this.sendNodes.size,
+                sidechains: this.sidechainConnections.size,
+                deviceInstances,
+                deviceInstancesByType: Object.fromEntries(sortedDeviceInstances),
+                deviceAudioNodes,
+                stripMeterWorklets,
+                masterMeterWorklets,
+                adjustmentLayerBuses: this.adjustmentRuntime.listLiveBusKeys().length,
+            },
+            runtime: {
+                trackedAudioScheduledSources: this.scheduledNodes.length,
+            },
         };
     }
 
@@ -1272,6 +1322,7 @@ class AudioEngineImpl implements AudioEngine {
                 // already disconnected
             }
         }
+        this.masterMeterNode = undefined;
         this.masterAnalyser.disconnect();
 
         // Release the transport SAB / its view so the buffer can be GC'd and a

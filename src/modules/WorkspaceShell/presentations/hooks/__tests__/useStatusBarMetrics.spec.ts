@@ -4,7 +4,7 @@ import { renderHook } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { getDawStatusDotClassName } from '#/components/daw/DawStatusDot';
-import { getEngineState, getMasterPeakLevel } from '#/modules/AudioEngine/useCases';
+import { getEngineDiagnostics, getEngineState, getMasterPeakLevel } from '#/modules/AudioEngine/useCases';
 import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
 
 import { useStatusBarMetrics, type StatusBarMetricRefs } from '../useStatusBarMetrics';
@@ -12,6 +12,7 @@ import { useStatusBarMetrics, type StatusBarMetricRefs } from '../useStatusBarMe
 type TickFn = () => void;
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    getEngineDiagnostics: vi.fn(),
     getEngineState: vi.fn(),
     getMasterPeakLevel: vi.fn(),
 }));
@@ -55,6 +56,7 @@ describe('useStatusBarMetrics', () => {
     const originalCancelIdle = globalThis.cancelIdleCallback;
 
     beforeEach(() => {
+        vi.clearAllMocks();
         vi.useFakeTimers();
         vi.stubGlobal('performance', { now: vi.fn(() => 0) });
         // No requestIdleCallback by default — exercises the feature-detect branch.
@@ -62,6 +64,29 @@ describe('useStatusBarMetrics', () => {
         delete (globalThis as { cancelIdleCallback?: unknown }).cancelIdleCallback;
         capturedTick = null;
         capturedId = null;
+        vi.mocked(getEngineDiagnostics).mockReturnValue({
+            context: {
+                state: 'running',
+                sampleRate: 48_000,
+                baseLatency: 0.005,
+                outputLatency: 0.005,
+            },
+            graph: {
+                trackStrips: 43,
+                busStrips: 8,
+                sends: 12,
+                sidechains: 2,
+                deviceInstances: 24,
+                deviceInstancesByType: { fermenter: 14 },
+                deviceAudioNodes: 31,
+                stripMeterWorklets: 39,
+                masterMeterWorklets: 1,
+                adjustmentLayerBuses: 0,
+            },
+            runtime: {
+                trackedAudioScheduledSources: 0,
+            },
+        });
     });
 
     afterEach(() => {
@@ -202,7 +227,9 @@ describe('useStatusBarMetrics', () => {
 
         const expectedClass = getDawStatusDotClassName({ tone: 'success' });
         expect(refs.engineState.current!.className).toContain(expectedClass);
-        expect(refs.engineState.current!.title).toBe('Engine: running');
+        expect(refs.engineState.current!.title).toBe(
+            'Engine: running · 43 tracks · 8 buses · 24 devices · 40 meter worklets'
+        );
     });
 
     it('sets the engine-state dot to muted when the engine is suspended', () => {
@@ -223,7 +250,36 @@ describe('useStatusBarMetrics', () => {
 
         const expectedClass = getDawStatusDotClassName({ tone: 'muted' });
         expect(refs.engineState.current!.className).toContain(expectedClass);
-        expect(refs.engineState.current!.title).toBe('Engine: suspended');
+        expect(refs.engineState.current!.title).toBe(
+            'Engine: suspended · 43 tracks · 8 buses · 24 devices · 40 meter worklets'
+        );
+    });
+
+    it('samples graph diagnostics at most once per second', () => {
+        let now = 0;
+        vi.stubGlobal('performance', { now: () => now });
+        vi.mocked(getEngineState).mockReturnValue({
+            isReady: true,
+            sampleRate: 48_000,
+            state: 'running',
+            masterGain: 1,
+            currentTime: 0,
+            baseLatency: 0.005,
+        });
+        vi.mocked(getMasterPeakLevel).mockReturnValue(0);
+
+        const refs = makeRefs();
+        makeElements(refs);
+        renderHook(() => useStatusBarMetrics(refs));
+
+        capturedTick!();
+        now = 500;
+        capturedTick!();
+        expect(getEngineDiagnostics).toHaveBeenCalledTimes(1);
+
+        now = 1_000;
+        capturedTick!();
+        expect(getEngineDiagnostics).toHaveBeenCalledTimes(2);
     });
 
     it('writes a CPU percentage text and applies the success color when CPU is low', () => {

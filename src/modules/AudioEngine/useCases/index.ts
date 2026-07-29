@@ -65,6 +65,7 @@ export { updateMidiFxParam } from './deviceControls/updateMidiFxParam';
 
 export { getAudioContext, audioEngine } from './engineAccess/getAudioContext';
 export { getEngineState } from './engineAccess/getEngineState';
+export { getEngineDiagnostics } from './engineAccess/getEngineDiagnostics';
 export { resumeEngine } from './engineAccess/resumeEngine';
 export { waitForDevices } from './engineAccess/waitForDevices';
 export { resetAudioGraph } from './engineAccess/resetAudioGraph';

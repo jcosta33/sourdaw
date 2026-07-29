@@ -1,7 +1,7 @@
 import { type RefObject, useEffect, useRef } from 'react';
 
 import { getDawStatusDotClassName } from '#/components/daw/DawStatusDot';
-import { getEngineState, getMasterPeakLevel } from '#/modules/AudioEngine/useCases';
+import { getEngineDiagnostics, getEngineState, getMasterPeakLevel } from '#/modules/AudioEngine/useCases';
 import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
 
 /**
@@ -35,6 +35,8 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
     const cpuHeadRef = useRef(0);
     const cpuFilledRef = useRef(0);
     const idleDeadlineRef = useRef(-1);
+    const lastDiagnosticsAtRef = useRef(Number.NEGATIVE_INFINITY);
+    const engineDiagnosticsTitleRef = useRef('');
 
     useEffect(() => {
         lastFrameRef.current = performance.now();
@@ -58,6 +60,16 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
 
             const engineInfo = getEngineState();
             const masterLevel = getMasterPeakLevel();
+            if (now - lastDiagnosticsAtRef.current >= 1_000) {
+                const diagnostics = getEngineDiagnostics();
+                const meterWorklets = diagnostics.graph.stripMeterWorklets + diagnostics.graph.masterMeterWorklets;
+                engineDiagnosticsTitleRef.current =
+                    ` · ${String(diagnostics.graph.trackStrips)} tracks` +
+                    ` · ${String(diagnostics.graph.busStrips)} buses` +
+                    ` · ${String(diagnostics.graph.deviceInstances)} devices` +
+                    ` · ${String(meterWorklets)} meter worklets`;
+                lastDiagnosticsAtRef.current = now;
+            }
 
             // ── CPU load estimate ───────────────────────────────────────
             // Uses requestIdleCallback to measure how much of each frame is
@@ -139,7 +151,7 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
                 refs.engineState.current.className = getDawStatusDotClassName({
                     tone: engineInfo.state === 'running' ? 'success' : 'muted',
                 });
-                refs.engineState.current.title = `Engine: ${engineInfo.state}`;
+                refs.engineState.current.title = `Engine: ${engineInfo.state}${engineDiagnosticsTitleRef.current}`;
             }
 
             // ── Master level ────────────────────────────────────────────

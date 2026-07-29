@@ -4,7 +4,7 @@ import { createMockAudioContext, type MockAudioContext } from '../../../../helpe
 import { DROPOUT_IDX, dropoutCounters } from '../../engine/dropoutCounter';
 import { createAudioEngine } from '../createWebAudioEngine';
 
-import type { AdjustmentLayerTickInput, AudioEngine } from '../../models/AudioEngineState';
+import type { AdjustmentLayerTickInput, AudioEngine, BuiltinDeviceNode } from '../../models/AudioEngineState';
 
 const runtimeMocks = vi.hoisted(() => ({
     applyTick: vi.fn(),
@@ -222,6 +222,99 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
 
         dropoutCounters.reset();
         expect(engine.getHealth().dropouts.detectedUnderrunBlocks).toBe(0);
+    });
+
+    it('reports the live graph and runtime load without touching the render path', async () => {
+        expect(engine.getDiagnostics()).toMatchObject({
+            context: {
+                state: 'running',
+                sampleRate: 48_000,
+                baseLatency: 0.01,
+                outputLatency: 0.01,
+            },
+            graph: {
+                trackStrips: 0,
+                busStrips: 0,
+                deviceInstances: 0,
+                stripMeterWorklets: 0,
+                masterMeterWorklets: 0,
+            },
+        });
+
+        await engine.initialize();
+        const track = engine.ensureTrackStrip('t1');
+        const busTrack = engine.ensureTrackStrip('bus-1');
+        engine.ensureBusStrip('bus-1');
+        engine.setSend('t1', 'bus-1', 0.5, false);
+
+        track.meterNode = new FakeWorkletNode() as unknown as AudioWorkletNode;
+        busTrack.meterNode = null;
+        const fermenterInput = mockCtx.createGain();
+        const fermenterOutput = mockCtx.createGain();
+        const fermenter = {
+            deviceId: 'fermenter-1',
+            type: 'fermenter',
+            nodes: [fermenterOutput],
+            inputNode: fermenterInput,
+            outputNode: fermenterOutput,
+        } satisfies BuiltinDeviceNode;
+        const bacteriaInput = mockCtx.createGain();
+        const bacteriaOutput = mockCtx.createGain();
+        const bacteria = {
+            deviceId: 'bacteria-1',
+            type: 'bacteria',
+            nodes: [bacteriaInput, bacteriaOutput],
+            inputNode: bacteriaInput,
+            outputNode: bacteriaOutput,
+        } satisfies BuiltinDeviceNode;
+        track.deviceNodes.push(fermenter, bacteria);
+        engine.registerScheduledSource(mockCtx.createOscillator());
+
+        expect(engine.getDiagnostics()).toEqual({
+            context: {
+                state: 'running',
+                sampleRate: 48_000,
+                baseLatency: 0.01,
+                outputLatency: 0.01,
+            },
+            graph: {
+                trackStrips: 1,
+                busStrips: 1,
+                sends: 1,
+                sidechains: 0,
+                deviceInstances: 2,
+                deviceInstancesByType: {
+                    bacteria: 1,
+                    fermenter: 1,
+                },
+                deviceAudioNodes: 3,
+                stripMeterWorklets: 1,
+                masterMeterWorklets: 1,
+                adjustmentLayerBuses: 1,
+            },
+            runtime: {
+                trackedAudioScheduledSources: 1,
+            },
+        });
+
+        engine.resetGraph();
+        expect(engine.getDiagnostics()).toMatchObject({
+            graph: {
+                trackStrips: 0,
+                busStrips: 0,
+                sends: 0,
+                sidechains: 0,
+                deviceInstances: 0,
+                stripMeterWorklets: 0,
+                masterMeterWorklets: 1,
+            },
+            runtime: {
+                trackedAudioScheduledSources: 0,
+            },
+        });
+
+        await engine.dispose();
+        expect(engine.getDiagnostics().graph.masterMeterWorklets).toBe(0);
     });
 
     it('suspend suspends a running context and skips an already-suspended one', async () => {
