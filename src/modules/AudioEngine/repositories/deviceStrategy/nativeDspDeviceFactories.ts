@@ -10,7 +10,11 @@ import { isProofDevice, createProofNode } from '../../engine/ProofNode';
 import { isScoringDevice, createScoringNode } from '../../engine/ScoringNode';
 import { isToasterDevice, createToasterNode } from '../../engine/ToasterNode';
 
-import { type OfflineAutomationSegment } from './AudioDeviceStrategy';
+import {
+    type DeviceNoteOffRequest,
+    type DeviceNoteOnRequest,
+    type OfflineAutomationSegment,
+} from './AudioDeviceStrategy';
 
 export type NativeDspNode = {
     workletNode: AudioWorkletNode;
@@ -18,14 +22,51 @@ export type NativeDspNode = {
     acceptsScheduledParam?: (name: string) => boolean;
     scheduleParam?: (name: string, segments: readonly OfflineAutomationSegment[]) => void;
     setBypass?: (bypassed: boolean) => void;
-    noteOn?: (noteOrPad: number, velocity: number, midiNote?: number, sampleFrame?: number) => void;
-    noteOff?: (noteOrPad: number, sampleFrame?: number) => void;
+    noteOn?: (request: DeviceNoteOnRequest) => void;
+    noteOff?: (request: DeviceNoteOffRequest) => void;
     connectPadOutput?: (pad: number, destination: AudioNode) => void;
     disconnectPadOutput?: (pad: number, destination: AudioNode) => void;
     setPadDryRouted?: (pad: number, routed: boolean) => void;
     destroy?: () => void;
     ready: Promise<Record<string, unknown>>;
 };
+
+/** A node whose note surface has been mapped onto the named request contract. */
+type NoteBoundNode<TNode> = Omit<TNode, 'noteOn' | 'noteOff'> & Required<Pick<NativeDspNode, 'noteOn' | 'noteOff'>>;
+
+/**
+ * The melodic instruments — Fermenter, Levain, Grand Boule — all publish
+ * `(note, velocity, sampleFrame?, channel?)`. Grand Boule's `noteOff` carries a
+ * release velocity in slot 3, which this path has no value for and omits.
+ */
+type MelodicNoteNode = {
+    noteOn: (note: number, velocity: number, sampleFrame?: number, channel?: number) => void;
+    noteOff: (note: number, sampleFrame?: number) => void;
+};
+
+/** Toaster is pad-addressed: `(pad, velocity, midiNote?, sampleFrame?)`. */
+type PadNoteNode = {
+    noteOn: (pad: number, velocity: number, midiNote?: number, sampleFrame?: number) => void;
+    noteOff: (pad: number, sampleFrame?: number) => void;
+};
+
+function bindMelodicNotes<TNode extends MelodicNoteNode>(node: TNode): NoteBoundNode<TNode> {
+    return {
+        ...node,
+        noteOn: ({ noteOrPad, velocity, sampleFrame, channel }) =>
+            node.noteOn(noteOrPad, velocity, sampleFrame, channel),
+        noteOff: ({ noteOrPad, sampleFrame }) => node.noteOff(noteOrPad, sampleFrame),
+    };
+}
+
+function bindPadNotes<TNode extends PadNoteNode>(node: TNode): NoteBoundNode<TNode> {
+    return {
+        ...node,
+        noteOn: ({ noteOrPad, velocity, midiNote, sampleFrame }) =>
+            node.noteOn(noteOrPad, velocity, midiNote, sampleFrame),
+        noteOff: ({ noteOrPad, sampleFrame }) => node.noteOff(noteOrPad, sampleFrame),
+    };
+}
 
 type NativeDspDeviceFactory = {
     readonly matches: (deviceType: string) => boolean;
@@ -43,12 +84,16 @@ type NativeDspDeviceFactory = {
  * through `wasmDeviceRegistry`), which is why the gap survived. Both the matcher
  * and the factory now read this table, so a device cannot be buildable yet
  * unreachable (MD-4 review).
+ *
+ * The note-voicing entries wrap their node in the adapter for that device's own
+ * note API. This is the only place a positional note call is still written, and
+ * each one sits beside the device whose signature it encodes.
  */
 export const NATIVE_DSP_DEVICE_FACTORIES: readonly NativeDspDeviceFactory[] = [
-    { matches: isFermenterDevice, create: createFermenterNode },
-    { matches: isToasterDevice, create: createToasterNode },
-    { matches: isLevainDevice, create: createLevainNode },
-    { matches: isGrandBouleDevice, create: createGrandBouleNode },
+    { matches: isFermenterDevice, create: async (ctx) => bindMelodicNotes(await createFermenterNode(ctx)) },
+    { matches: isToasterDevice, create: async (ctx) => bindPadNotes(await createToasterNode(ctx)) },
+    { matches: isLevainDevice, create: async (ctx) => bindMelodicNotes(await createLevainNode(ctx)) },
+    { matches: isGrandBouleDevice, create: async (ctx) => bindMelodicNotes(await createGrandBouleNode(ctx)) },
     { matches: isGlutenDevice, create: createGlutenNode },
     { matches: isBacteriaDevice, create: createBacteriaNode },
     { matches: isGrinderDevice, create: createGrinderNode },

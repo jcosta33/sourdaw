@@ -150,15 +150,21 @@ describe('NativeDspDeviceStrategy', () => {
         );
 
         strategy.setBypass(true);
-        strategy.noteOn(60, 100);
-        strategy.noteOn(60, 100, 72);
-        strategy.noteOff(60);
+        strategy.noteOn({ noteOrPad: 60, velocity: 100 });
+        strategy.noteOn({ noteOrPad: 60, velocity: 100, midiNote: 72, sampleFrame: 480, channel: 3 });
+        strategy.noteOff({ noteOrPad: 60, sampleFrame: 960 });
         strategy.destroy();
 
         expect(setBypass).toHaveBeenCalledWith(true);
-        expect(noteOn).toHaveBeenNthCalledWith(1, 60, 100, undefined, undefined);
-        expect(noteOn).toHaveBeenNthCalledWith(2, 60, 100, 72, undefined);
-        expect(noteOff).toHaveBeenCalledWith(60, undefined);
+        expect(noteOn).toHaveBeenNthCalledWith(1, { noteOrPad: 60, velocity: 100 });
+        expect(noteOn).toHaveBeenNthCalledWith(2, {
+            noteOrPad: 60,
+            velocity: 100,
+            midiNote: 72,
+            sampleFrame: 480,
+            channel: 3,
+        });
+        expect(noteOff).toHaveBeenCalledWith({ noteOrPad: 60, sampleFrame: 960 });
         expect(destroy).toHaveBeenCalled();
     });
 
@@ -166,8 +172,8 @@ describe('NativeDspDeviceStrategy', () => {
         const strategy = new NativeDspDeviceStrategy(make_dsp_node());
         const destination = {} as AudioNode;
         expect(() => strategy.setBypass(false)).not.toThrow();
-        expect(() => strategy.noteOn(0, 0)).not.toThrow();
-        expect(() => strategy.noteOff(0)).not.toThrow();
+        expect(() => strategy.noteOn({ noteOrPad: 0, velocity: 0 })).not.toThrow();
+        expect(() => strategy.noteOff({ noteOrPad: 0 })).not.toThrow();
         expect(() => strategy.connectPadOutput(0, destination)).not.toThrow();
         expect(() => strategy.disconnectPadOutput(0, destination)).not.toThrow();
         expect(() => strategy.setPadDryRouted(0, false)).not.toThrow();

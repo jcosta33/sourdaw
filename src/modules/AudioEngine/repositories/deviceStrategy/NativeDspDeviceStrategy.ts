@@ -3,6 +3,8 @@ import { type OfflineDeviceNode } from '../devices/types';
 
 import {
     type AudioDeviceStrategy,
+    type DeviceNoteOffRequest,
+    type DeviceNoteOnRequest,
     type OfflineAutomationBinding,
     type OfflineAutomationSegment,
 } from './AudioDeviceStrategy';
@@ -43,12 +45,12 @@ export class NativeDspDeviceStrategy implements AudioDeviceStrategy {
         this.dspNode.setBypass?.(bypassed);
     }
 
-    noteOn(noteOrPad: number, velocity: number, midiNote?: number, sampleFrame?: number): void {
-        this.dspNode.noteOn?.(noteOrPad, velocity, midiNote, sampleFrame);
+    noteOn(request: DeviceNoteOnRequest): void {
+        this.dspNode.noteOn?.(request);
     }
 
-    noteOff(noteOrPad: number, sampleFrame?: number): void {
-        this.dspNode.noteOff?.(noteOrPad, sampleFrame);
+    noteOff(request: DeviceNoteOffRequest): void {
+        this.dspNode.noteOff?.(request);
     }
 
     connectPadOutput(pad: number, destination: AudioNode): void {
