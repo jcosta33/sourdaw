@@ -359,6 +359,72 @@ describe('renderOffline effective audibility (OE-4)', () => {
             expect(scheduledTrackIds()).toContain('lead');
         });
 
+        // The mixdown builds a strip for every non-disabled track so the routing
+        // graph matches live, but schedules only the audible ones and the
+        // cue-send feeders. An unrenderable device on a strip that is never
+        // scheduled cannot make the file differ from the session, so it must not
+        // be able to fail the export — mute has to be an escape from the refusal
+        // as well as from the mix.
+        describe('device-failure scope follows the scheduling set', () => {
+            const stripCallFor = (trackId: string): Record<string, unknown> | undefined => {
+                const call = offlineRenderMocks.createOfflineTrackStrip.mock.calls.find(
+                    (candidate) => candidate[1].id === trackId
+                );
+                return call?.[2];
+            };
+
+            it('marks a muted, non-contributing track as producing no audio for the render', async () => {
+                offlineRenderMocks.resolveRenderContext.mockReturnValue(
+                    renderContext([
+                        busTrack('reverb-bus'),
+                        withSend(audioTrack({ id: 'fx', muted: true }), { busId: 'reverb-bus', preFader: false }),
+                    ])
+                );
+                primeRender();
+
+                await renderOffline(4);
+
+                expect(scheduledTrackIds()).not.toContain('fx');
+                expect(stripCallFor('fx')).toMatchObject({ contributesAudio: false });
+            });
+
+            it('keeps a muted cue-send feeder contributing, because its bus still receives it', async () => {
+                offlineRenderMocks.resolveRenderContext.mockReturnValue(
+                    renderContext([
+                        busTrack('reverb-bus'),
+                        withSend(audioTrack({ id: 'cue', muted: true }), { busId: 'reverb-bus', preFader: true }),
+                    ])
+                );
+                primeRender();
+
+                await renderOffline(4);
+
+                expect(stripCallFor('cue')).toMatchObject({ contributesAudio: true });
+            });
+
+            it('keeps an audible track contributing', async () => {
+                offlineRenderMocks.resolveRenderContext.mockReturnValue(renderContext([audioTrack({ id: 'lead' })]));
+                primeRender();
+
+                await renderOffline(4);
+
+                expect(stripCallFor('lead')).toMatchObject({ contributesAudio: true });
+            });
+
+            // Every production caller omitted the warning channel, so a degraded
+            // device reached `logger.warn` and nothing else — the export UI never
+            // heard about it.
+            it('hands every strip the export warning channel', async () => {
+                const onWarning = vi.fn();
+                offlineRenderMocks.resolveRenderContext.mockReturnValue(renderContext([audioTrack({ id: 'lead' })]));
+                primeRender();
+
+                await renderOffline({ durationBeats: 4, onWarning });
+
+                expect(stripCallFor('lead')).toMatchObject({ onWarning });
+            });
+        });
+
         it('drops a track that is both muted and solo-gated despite its pre-fader send', async () => {
             offlineRenderMocks.resolveRenderContext.mockReturnValue(
                 renderContext([

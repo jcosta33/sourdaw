@@ -6,6 +6,13 @@ import { buildDeviceChain } from '../buildDeviceChain';
 import { type OfflineTrackStrip } from './types';
 
 type CreateOfflineTrackStripTrackInput = {
+    /**
+     * Names the track in every device-failure message and degraded-device
+     * warning the chain build emits. It travels on the track rather than in the
+     * options because it describes the track: as an option every production
+     * caller simply omitted it, and every message read `Track "unknown track"`.
+     */
+    name: string;
     gain: number;
     muted: boolean;
     pan: number;
@@ -33,10 +40,17 @@ type CreateOfflineTrackStripOptions = {
      * crosses unity.
      */
     vcaMultiplier?: number;
-    /** Track name, so a device failure names the track the user has to fix. */
-    trackName?: string;
     /** The export's user-visible warning channel, for degraded devices. */
     onWarning?: (message: string) => void;
+    /**
+     * Whether this strip's audio can reach the rendered file. The mixdown
+     * builds a strip for every non-disabled track to keep the routing graph
+     * faithful, but schedules only the audible tracks and the pre-fader cue
+     * feeders; an unrenderable device on an unscheduled strip cannot make the
+     * file differ from the session, so it degrades instead of failing the
+     * export. Defaults to true.
+     */
+    contributesAudio?: boolean;
 };
 
 export async function createOfflineTrackStrip(
@@ -74,8 +88,9 @@ export async function createOfflineTrackStrip(
     outputNode.gain.value = 1;
 
     const deviceEntries = await buildDeviceChain(offlineCtx, track.devices, inputNode, preFaderTap, {
-        trackName: options.trackName,
+        trackName: track.name,
         onWarning: options.onWarning,
+        contributesAudio: options.contributesAudio,
     });
 
     preFaderTap.connect(faderNode);

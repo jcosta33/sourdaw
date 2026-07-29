@@ -850,6 +850,66 @@ describe('exportStems — option parsing, validation & control flow', () => {
         vi.unstubAllGlobals();
     });
 
+    // The render pool used to hand every task's rejection straight to the
+    // enclosing promise's `reject`, so one unrenderable track discarded every
+    // stem that had already rendered — including stems from tracks that had
+    // nothing to do with the failure. A stem set is per-track by construction;
+    // a per-track failure has to stay per-track.
+    describe('one failing stem does not discard the rest', () => {
+        const stemTrack = (id: string) => ({ id, kind: 'midi', disabled: false, muted: false, devices: [] });
+
+        function primeStemPool(failingTrackId: string): void {
+            offlineRenderMocks.createOfflineTrackStrip.mockImplementation((_ctx: unknown, track: { id: string }) => {
+                if (track.id === failingTrackId) {
+                    return Promise.reject(
+                        new Error(`Track "${track.id}" uses the device "builtin-crumbs", which this build cannot render`)
+                    );
+                }
+                return Promise.resolve({
+                    inputNode: {},
+                    faderNode: {},
+                    panNode: {},
+                    outputNode: { connect: vi.fn() },
+                    deviceEntries: [],
+                });
+            });
+            offlineRenderMocks.renderWithTimeout.mockImplementation(() => Promise.resolve({ id: 'buffer' }));
+            vi.stubGlobal(
+                'OfflineAudioContext',
+                vi.fn(function OfflineContext() {
+                    return { destination: {} };
+                })
+            );
+        }
+
+        it('delivers the stems that rendered and names the track that failed', async () => {
+            const onWarning = vi.fn();
+            offlineRenderMocks.resolveRenderContext.mockReturnValue(
+                createRenderContext([stemTrack('keys'), stemTrack('broken'), stemTrack('bass')])
+            );
+            primeStemPool('broken');
+
+            const stems = await exportStems({ durationBeats: 4, onWarning });
+
+            expect([...stems.keys()].sort()).toEqual(['bass', 'keys']);
+            const warnings = onWarning.mock.calls.map((call) => String(call[0])).join('\n');
+            expect(warnings).toContain('broken');
+            vi.unstubAllGlobals();
+        });
+
+        // Delivering an empty set silently would repeat the defect this branch
+        // exists to stop: a dialog reporting success over a file that contains
+        // nothing the session plays.
+        it('fails the export when every stem failed, rather than returning nothing', async () => {
+            const onWarning = vi.fn();
+            offlineRenderMocks.resolveRenderContext.mockReturnValue(createRenderContext([stemTrack('broken')]));
+            primeStemPool('broken');
+
+            await expect(exportStems({ durationBeats: 4, onWarning })).rejects.toMatchObject({ _tag: 'Export' });
+            vi.unstubAllGlobals();
+        });
+    });
+
     it('rejects when a cancel is requested before the render pool starts', async () => {
         const track = { id: 't1', kind: 'midi', disabled: false, devices: [] };
         // resolveRenderContext runs AFTER resetCancelFlag (line 38) clears the

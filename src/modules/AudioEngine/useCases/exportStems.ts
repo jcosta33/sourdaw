@@ -212,6 +212,11 @@ export const exportStems: ExportStemsFn = async function exportStems(
         const MAX_CONCURRENT_RENDERS =
             typeof navigator !== 'undefined' ? Math.max(1, Math.min(navigator.hardwareConcurrency || 4, 8)) : 4;
 
+        // A stem set is per-track by construction, so a per-track failure stays
+        // per-track: the pool records it and carries on rather than discarding
+        // every stem that already rendered.
+        const failures: { trackId: string; reason: string }[] = [];
+
         const tasks = eligible.map((track) => async () => {
             checkCancel();
 
@@ -264,6 +269,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                 const groupedStrip = await createOfflineTrackStrip(offlineCtx, groupedTrack, {
                     honorMuted: false,
                     vcaMultiplier: deriveVcaMultiplier({ vcaGroupId: groupedTrack.vcaGroupId, groups: vcaGroups }),
+                    onWarning,
                 });
                 trackStripsById.set(groupedTrack.id, groupedStrip);
                 deviceEntriesByTrack.set(groupedTrack.id, groupedStrip.deviceEntries);
@@ -296,6 +302,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                 const keyStrip = await createOfflineTrackStrip(offlineCtx, keySourceTrack, {
                     honorMuted: false,
                     vcaMultiplier: deriveVcaMultiplier({ vcaGroupId: keySourceTrack.vcaGroupId, groups: vcaGroups }),
+                    onWarning,
                 });
                 trackStripsById.set(keySourceTrack.id, keyStrip);
                 deviceEntriesByTrack.set(keySourceTrack.id, keyStrip.deviceEntries);
@@ -416,20 +423,42 @@ export const exportStems: ExportStemsFn = async function exportStems(
                     return;
                 }
                 while (activeTasks < MAX_CONCURRENT_RENDERS && taskIndex < tasks.length) {
-                    const task = tasks[taskIndex++];
+                    const task = tasks[taskIndex];
+                    const stemTrackId = eligible[taskIndex]!.id;
+                    taskIndex++;
                     activeTasks++;
+                    function settle(): void {
+                        activeTasks--;
+                        if (taskIndex >= tasks.length && activeTasks === 0) {
+                            resolve();
+                            return;
+                        }
+                        // eslint-disable-next-line promise/no-callback-in-promise -- `next` is an internal concurrent-pool scheduler, not a Node-style callback; it re-enters the loop to start the next pending task
+                        next();
+                    }
                     task!()
                         .then(() => {
-                            activeTasks--;
-                            if (taskIndex >= tasks.length && activeTasks === 0) {
-                                resolve();
-                            } else {
-                                // eslint-disable-next-line promise/no-callback-in-promise -- `next` is an internal concurrent-pool scheduler, not a Node-style callback; it re-enters the loop to start the next pending task
-                                next();
-                            }
+                            settle();
                             return null;
                         })
-                        .catch(reject);
+                        .catch((error: unknown) => {
+                            // A cancel is the whole export stopping, not this
+                            // stem failing, so it still rejects the pool.
+                            if (isCancelRequested()) {
+                                reject(error);
+                                return;
+                            }
+                            let reason = String(error);
+                            if (error instanceof Error) {
+                                reason = error.message;
+                            }
+                            failures.push({ trackId: stemTrackId, reason });
+                            // This stem's slot is spent either way; without this
+                            // the progress bar stalls short of 1 on a failure.
+                            done++;
+                            onProgress?.(done / eligible.length);
+                            settle();
+                        });
                 }
                 if (taskIndex >= tasks.length && activeTasks === 0) {
                     resolve();
@@ -437,6 +466,19 @@ export const exportStems: ExportStemsFn = async function exportStems(
             }
             next();
         });
+
+        if (failures.length > 0) {
+            const detail = failures.map((failure) => `${failure.trackId} (${failure.reason})`).join('; ');
+            // Nothing rendered: returning an empty set would let the dialog
+            // report success over an export that contains none of the session.
+            if (stems.size === 0) {
+                throw createExportError(`No stem could be rendered. Failed tracks: ${detail}`);
+            }
+            onWarning?.(
+                `${failures.length} of ${eligible.length} stems could not be rendered and are missing from this ` +
+                    `export. Failed tracks: ${detail}`
+            );
+        }
 
         return stems;
     } finally {
