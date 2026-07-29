@@ -207,7 +207,12 @@ function coerceToolCall(raw: unknown): ToolCallResult | null {
     if (typeof name !== 'string' || name.length === 0) {
         return null;
     }
-    const args = obj.arguments ?? obj.parameters ?? {};
+    let args: unknown = {};
+    if (Object.hasOwn(obj, 'arguments')) {
+        args = obj.arguments;
+    } else if (Object.hasOwn(obj, 'parameters')) {
+        args = obj.parameters;
+    }
     if (!isObject(args)) {
         return null;
     }
