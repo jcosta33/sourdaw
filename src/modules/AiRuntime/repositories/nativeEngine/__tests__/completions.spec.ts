@@ -76,6 +76,31 @@ describe('generateNativeCompletion', () => {
             expect(mocks.tauriInvoke.mock.calls[1]?.[0]).toBe('cancel_native_llm_generation');
             expect(getInvocationArgs(1).requestId).toBe(getInvocationArgs(0).requestId);
         });
+
+        it('preserves the Tauri string contract when completion metadata is unavailable', async () => {
+            mocks.tauriInvoke.mockResolvedValue('Tauri response');
+
+            await expect(generateNativeCompletion('system prompt', 'hello', { requireComplete: true })).resolves.toBe(
+                'Tauri response'
+            );
+            expect(getInvocationArgs(0)).not.toHaveProperty('requireComplete');
+        });
+
+        it('terminally rejects a non-string Tauri tool-planning response', async () => {
+            mocks.tauriInvoke.mockResolvedValue({ content: 'unexpected envelope' });
+
+            await expect(
+                generateNativeCompletion('system prompt', 'hello', { requireComplete: true })
+            ).rejects.toMatchObject({ name: 'ToolPlanningRejectedError' });
+        });
+
+        it('preserves the non-planning TypeError for a non-string Tauri response', async () => {
+            mocks.tauriInvoke.mockResolvedValue({ content: 'unexpected envelope' });
+
+            await expect(generateNativeCompletion('system prompt', 'hello')).rejects.toMatchObject({
+                name: 'TypeError',
+            });
+        });
     });
 
     describe('when running in browser (dev mode)', () => {
@@ -117,6 +142,73 @@ describe('generateNativeCompletion', () => {
             await expect(generateNativeCompletion('sys', 'user')).rejects.toThrow(
                 'llama-server error 500: Internal Server Error'
             );
+        });
+
+        it('returns a terminal browser completion when strict completion is required', async () => {
+            mocks.fetch.mockResolvedValue({
+                ok: true,
+                json: () =>
+                    Promise.resolve({
+                        choices: [{ finish_reason: 'stop', message: { content: '[{"name":"muteTrack"}]' } }],
+                    }),
+            });
+
+            await expect(generateNativeCompletion('sys', 'user', { requireComplete: true })).resolves.toBe(
+                '[{"name":"muteTrack"}]'
+            );
+        });
+
+        it.each([
+            {
+                label: 'length finish',
+                payload: {
+                    choices: [{ finish_reason: 'length', message: { content: '[{"name":"muteTrack"}]' } }],
+                },
+            },
+            { label: 'missing choice', payload: { choices: [] } },
+            { label: 'missing message', payload: { choices: [{ finish_reason: 'stop' }] } },
+            {
+                label: 'null content',
+                payload: { choices: [{ finish_reason: 'stop', message: { content: null } }] },
+            },
+            {
+                label: 'missing finish state',
+                payload: { choices: [{ message: { content: '[{"name":"muteTrack"}]' } }] },
+            },
+        ])('rejects a strict browser completion with $label', async ({ payload }) => {
+            mocks.fetch.mockResolvedValue({
+                ok: true,
+                json: () => Promise.resolve(payload),
+            });
+
+            await expect(generateNativeCompletion('sys', 'user', { requireComplete: true })).rejects.toMatchObject({
+                name: 'ToolPlanningRejectedError',
+            });
+        });
+
+        it('terminally rejects malformed JSON from a successful strict response', async () => {
+            const syntaxError = new Error('Unexpected token');
+            syntaxError.name = 'SyntaxError';
+            mocks.fetch.mockResolvedValue({
+                ok: true,
+                json: () => Promise.reject(syntaxError),
+            });
+
+            await expect(generateNativeCompletion('sys', 'user', { requireComplete: true })).rejects.toMatchObject({
+                name: 'ToolPlanningRejectedError',
+            });
+        });
+
+        it.each([
+            { label: 'body stream failure', error: new TypeError('Body stream failed') },
+            { label: 'abort', error: new DOMException('Aborted', 'AbortError') },
+        ])('preserves a strict response $label as an operational failure', async ({ error }) => {
+            mocks.fetch.mockResolvedValue({
+                ok: true,
+                json: () => Promise.reject(error),
+            });
+
+            await expect(generateNativeCompletion('sys', 'user', { requireComplete: true })).rejects.toBe(error);
         });
     });
 });

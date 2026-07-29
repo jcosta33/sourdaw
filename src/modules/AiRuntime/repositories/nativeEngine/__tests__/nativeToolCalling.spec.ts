@@ -82,7 +82,10 @@ describe('generateNativeToolCalls', () => {
                 tools: [{ name: 'mute_track', description: 'Mute a track', parameters: { type: 'object' } }],
                 temperature: 0.1,
             })
-        ).rejects.toThrow(/Invalid native_tool_calling response/);
+        ).rejects.toMatchObject({
+            name: 'ToolPlanningRejectedError',
+            message: 'Invalid native_tool_calling response: item 0 has invalid arguments',
+        });
     });
 
     it('should cancel native tool planning when the signal aborts', async () => {

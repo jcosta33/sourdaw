@@ -3,6 +3,8 @@ import { logger } from '#/infra/logger/appLogger';
 
 import { isAiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
 import { createAiRuntimeError } from '../../errors/AiRuntimeError';
+import { isToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedError';
+import { type RunnableAiBackend } from '../../models/LlmOrchestrationTypes';
 import { WEBLLM_MODEL_ID } from '../../models/ModelInfo';
 import { DAW_TOOL_SCHEMAS, type ToolSchema } from '../../models/ToolDefinitions';
 import { generateCloudToolCalls } from '../../repositories/cloudLlm/cloudInference/generateCloudToolCalls';
@@ -70,6 +72,16 @@ async function waitForInference<TResult>(inference: Promise<TResult>, signal?: A
  * - native: mistral.rs structured tool calling (preferred) or text completion + XML parsing (fallback)
  */
 export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
+    function getBackendModelId(backend: RunnableAiBackend): string {
+        if (backend === 'native') {
+            return 'native';
+        }
+        if (backend === 'cloud') {
+            return getCloudProviderInfo()?.model ?? 'cloud';
+        }
+        return WEBLLM_MODEL_ID;
+    }
+
     async function generateNativeToolCalls(
         systemPrompt: string,
         userMessage: string,
@@ -102,6 +114,9 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
             if (signal?.aborted) {
                 throw createToolPlanningAbortError();
             }
+            if (isToolPlanningRejectedError(error)) {
+                throw error;
+            }
             const msg = error instanceof Error ? error.message : String(error);
             logger.warn(`[AI Engine] Structured tool calling failed, falling back to text: ${msg}`);
         }
@@ -124,9 +139,14 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
         ].join('\n');
         let nativeCompletion: Promise<string>;
         if (signal === undefined) {
-            nativeCompletion = generateNativeCompletion(textFallbackSystemPrompt, userMessage);
+            nativeCompletion = generateNativeCompletion(textFallbackSystemPrompt, userMessage, {
+                requireComplete: true,
+            });
         } else {
-            nativeCompletion = generateNativeCompletion(textFallbackSystemPrompt, userMessage, { signal });
+            nativeCompletion = generateNativeCompletion(textFallbackSystemPrompt, userMessage, {
+                signal,
+                requireComplete: true,
+            });
         }
         const content = await waitForInference(nativeCompletion, signal);
         logger.info(
@@ -205,16 +225,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     logger.warn(`[AI Engine] (${backend}) tool planning rejected: ${outcome.reason}`);
                 }
 
-                const modelId = (() => {
-                    if (backend === 'native') {
-                        return 'native';
-                    }
-                    if (backend === 'cloud') {
-                        return getCloudProviderInfo()?.model ?? 'cloud';
-                    }
-                    return WEBLLM_MODEL_ID;
-                })();
-                llmStatusStore.set({ state: 'ready', backend, modelId });
+                llmStatusStore.set({ state: 'ready', backend, modelId: getBackendModelId(backend) });
                 return outcome;
             } catch (error) {
                 if (isAiRuntimeConfigurationChangedError(error)) {
@@ -233,6 +244,10 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                         llmStatusStore.set(previousStatus);
                     }
                     throw createToolPlanningAbortError();
+                }
+                if (isToolPlanningRejectedError(error)) {
+                    llmStatusStore.set({ state: 'ready', backend, modelId: getBackendModelId(backend) });
+                    return { status: 'rejected', reason: error.message };
                 }
                 lastError = error instanceof Error ? error : new Error(String(error));
                 logger.warn(`[AI Engine] Backend "${backend}" failed: ${lastError.message}. Trying next...`);
