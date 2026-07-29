@@ -11,6 +11,7 @@ Structured native and hosted tool-planning adapters reported malformed payloads,
 - Structured native and hosted adapters throw `ToolPlanningRejectedError` for refusal, malformed or inconsistent payloads, non-tool assistant content, and incomplete tool-call batches.
 - Browser-dev native text planning requires exactly one choice, string message content, and `finish_reason: stop`. Malformed successful-response JSON, malformed envelopes, and non-string Tauri tool-planning output are terminal rejections.
 - The Tauri native completion command still exposes only a string, so finish-state validation cannot be claimed there until the bridge returns metadata; strict text syntax validation remains in effect.
+- Tauri native structured planning returns a minimal tagged `complete` or `rejected` DTO; command errors remain reserved for model availability, runtime, and cancellation failures, while the TypeScript repository validates and classifies the DTO.
 - Anthropic planning responses require an array containing only `text` blocks with string text or `tool_use` blocks with a non-empty string name and record input.
 - HTTP status failures, body-stream and transport failures, aborts, provider configuration changes, and backend initialization or runtime failures retain their existing retry or cancellation behavior.
 - Provider orchestration converts `ToolPlanningRejectedError` into a rejected planning outcome immediately and does not try another backend or native text fallback.

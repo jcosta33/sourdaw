@@ -49,7 +49,10 @@ describe('generateNativeToolCalls', () => {
 
     it('should invoke native_tool_calling and narrow valid tool-call payloads', async () => {
         mocks.isTauri.mockReturnValue(true);
-        mocks.tauriInvoke.mockResolvedValue([{ name: 'mute_track', arguments: { track_id: 'track-1', muted: true } }]);
+        mocks.tauriInvoke.mockResolvedValue({
+            status: 'complete',
+            toolCalls: [{ name: 'mute_track', arguments: { track_id: 'track-1', muted: true } }],
+        });
 
         const result = await generateNativeToolCalls({
             systemPrompt: 'system',
@@ -73,7 +76,10 @@ describe('generateNativeToolCalls', () => {
 
     it('should reject malformed native_tool_calling payloads before use cases consume them', async () => {
         mocks.isTauri.mockReturnValue(true);
-        mocks.tauriInvoke.mockResolvedValue([{ name: 'mute_track', arguments: null }]);
+        mocks.tauriInvoke.mockResolvedValue({
+            status: 'complete',
+            toolCalls: [{ name: 'mute_track', arguments: null }],
+        });
 
         await expect(
             generateNativeToolCalls({
@@ -86,6 +92,64 @@ describe('generateNativeToolCalls', () => {
             name: 'ToolPlanningRejectedError',
             message: 'Invalid native_tool_calling response: item 0 has invalid arguments',
         });
+    });
+
+    it('should surface a native protocol rejection without treating it as invoke failure', async () => {
+        mocks.isTauri.mockReturnValue(true);
+        mocks.tauriInvoke.mockResolvedValue({
+            status: 'rejected',
+            reason: 'Native tool calling returned inconsistent finish reason length',
+        });
+
+        await expect(
+            generateNativeToolCalls({
+                systemPrompt: 'system',
+                userMessage: 'mute drums',
+                tools: [{ name: 'mute_track', description: 'Mute a track', parameters: { type: 'object' } }],
+                temperature: 0.1,
+            })
+        ).rejects.toMatchObject({
+            name: 'ToolPlanningRejectedError',
+            message: 'Native tool calling returned inconsistent finish reason length',
+        });
+    });
+
+    it.each([
+        null,
+        [],
+        { status: 'complete' },
+        { status: 'rejected', reason: null },
+        { status: 'unknown', toolCalls: [] },
+    ])('should terminally reject malformed native protocol envelope %#', async (response) => {
+        mocks.isTauri.mockReturnValue(true);
+        mocks.tauriInvoke.mockResolvedValue(response);
+
+        await expect(
+            generateNativeToolCalls({
+                systemPrompt: 'system',
+                userMessage: 'mute drums',
+                tools: [],
+                temperature: 0.1,
+            })
+        ).rejects.toMatchObject({
+            name: 'ToolPlanningRejectedError',
+            message: 'Invalid native_tool_calling response envelope',
+        });
+    });
+
+    it('should preserve native invoke failures for orchestration fallback', async () => {
+        mocks.isTauri.mockReturnValue(true);
+        const invokeError = new Error('Native model unavailable');
+        mocks.tauriInvoke.mockRejectedValue(invokeError);
+
+        await expect(
+            generateNativeToolCalls({
+                systemPrompt: 'system',
+                userMessage: 'mute drums',
+                tools: [],
+                temperature: 0.1,
+            })
+        ).rejects.toBe(invokeError);
     });
 
     it('should cancel native tool planning when the signal aborts', async () => {

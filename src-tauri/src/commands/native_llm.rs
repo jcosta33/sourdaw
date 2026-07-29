@@ -66,10 +66,22 @@ pub struct ToolDef {
     pub parameters: serde_json::Value,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct ToolCallResult {
     pub name: String,
     pub arguments: serde_json::Value,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "status", rename_all = "camelCase")]
+pub enum NativeToolCallingResponse {
+    Complete {
+        #[serde(rename = "toolCalls")]
+        tool_calls: Vec<ToolCallResult>,
+    },
+    Rejected {
+        reason: String,
+    },
 }
 
 // ── Model config ─────────────────────────────────────────────────────────
@@ -517,7 +529,7 @@ pub async fn native_tool_calling(
     tools: Vec<ToolDef>,
     temperature: Option<f32>,
     state: tauri::State<'_, NativeLlmState>,
-) -> Result<Vec<ToolCallResult>, String> {
+) -> Result<NativeToolCallingResponse, String> {
     let mut cancellation = register_generation_cancellation(&state, &request_id).await;
     let result = async {
         let model = get_model(&state).await?;
@@ -558,50 +570,71 @@ pub async fn native_tool_calling(
             }
         };
 
-        let choice = response.choices.first().ok_or("No tool-calling response")?;
+        let Some(choice) = response.choices.first() else {
+            return Ok(rejected_native_tool_calling(
+                "Native tool calling returned no choice",
+            ));
+        };
         let message = &choice.message;
         let has_tool_calls = message
             .tool_calls
             .as_ref()
             .is_some_and(|tool_calls| !tool_calls.is_empty());
-        match choice.finish_reason.as_str() {
-            "tool_calls" if has_tool_calls => {}
-            "stop" if !has_tool_calls => return Ok(Vec::new()),
-            reason => {
-                return Err(format!(
-                    "Native tool calling returned inconsistent finish reason {reason}"
-                ))
-            }
+        if let Err(reason) = validate_native_tool_finish(&choice.finish_reason, has_tool_calls) {
+            return Ok(rejected_native_tool_calling(reason));
+        }
+        if !has_tool_calls {
+            return Ok(NativeToolCallingResponse::Complete {
+                tool_calls: Vec::new(),
+            });
         }
         let mut results = Vec::new();
 
         if let Some(ref tool_calls) = message.tool_calls {
             for call in tool_calls {
-                let arguments: serde_json::Value = serde_json::from_str(&call.function.arguments)
-                    .map_err(|error| {
-                    format!(
-                        "Native tool {} returned malformed arguments: {error}",
-                        call.function.name
-                    )
-                })?;
-                if !arguments.is_object() {
-                    return Err(format!(
-                        "Native tool {} arguments must be a JSON object",
-                        call.function.name
-                    ));
+                match parse_native_tool_call(&call.function.name, &call.function.arguments) {
+                    Ok(result) => results.push(result),
+                    Err(reason) => return Ok(rejected_native_tool_calling(reason)),
                 }
-                results.push(ToolCallResult {
-                    name: call.function.name.clone(),
-                    arguments,
-                });
             }
         }
 
-        Ok(results)
+        Ok(NativeToolCallingResponse::Complete {
+            tool_calls: results,
+        })
     }
     .await;
     clear_generation_cancellation(&state, &request_id).await;
     result
+}
+
+fn rejected_native_tool_calling(reason: impl Into<String>) -> NativeToolCallingResponse {
+    NativeToolCallingResponse::Rejected {
+        reason: reason.into(),
+    }
+}
+
+fn validate_native_tool_finish(finish_reason: &str, has_tool_calls: bool) -> Result<(), String> {
+    match (finish_reason, has_tool_calls) {
+        ("tool_calls", true) | ("stop", false) => Ok(()),
+        (reason, _) => Err(format!(
+            "Native tool calling returned inconsistent finish reason {reason}"
+        )),
+    }
+}
+
+fn parse_native_tool_call(name: &str, raw_arguments: &str) -> Result<ToolCallResult, String> {
+    let arguments: serde_json::Value = serde_json::from_str(raw_arguments)
+        .map_err(|error| format!("Native tool {name} returned malformed arguments: {error}"))?;
+    if !arguments.is_object() {
+        return Err(format!(
+            "Native tool {name} arguments must be a JSON object"
+        ));
+    }
+    Ok(ToolCallResult {
+        name: name.to_string(),
+        arguments,
+    })
 }
 
 /// Parse the IPC schema argument into the constraint value llguidance
@@ -970,6 +1003,64 @@ mod tests {
             .count();
 
         assert_eq!(tombstone_count, MAX_CANCELLATION_TOMBSTONES);
+    }
+
+    #[test]
+    fn should_serialize_native_tool_calling_response_with_camel_case_fields() {
+        let complete = NativeToolCallingResponse::Complete {
+            tool_calls: vec![ToolCallResult {
+                name: "muteTrack".to_string(),
+                arguments: serde_json::json!({"trackId": "track-1"}),
+            }],
+        };
+        let rejected = rejected_native_tool_calling("Native planning rejected");
+        let complete_value =
+            serde_json::to_value(complete).expect("complete tool-planning DTO must serialize");
+        let rejected_value =
+            serde_json::to_value(rejected).expect("rejected tool-planning DTO must serialize");
+
+        assert_eq!(
+            complete_value,
+            serde_json::json!({
+                "status": "complete",
+                "toolCalls": [{"name": "muteTrack", "arguments": {"trackId": "track-1"}}]
+            })
+        );
+        assert_eq!(
+            rejected_value,
+            serde_json::json!({
+                "status": "rejected",
+                "reason": "Native planning rejected"
+            })
+        );
+    }
+
+    #[test]
+    fn should_classify_native_tool_finish_states() {
+        assert_eq!(validate_native_tool_finish("tool_calls", true), Ok(()));
+        assert_eq!(validate_native_tool_finish("stop", false), Ok(()));
+        assert_eq!(
+            validate_native_tool_finish("length", true),
+            Err("Native tool calling returned inconsistent finish reason length".to_string())
+        );
+        assert_eq!(
+            validate_native_tool_finish("stop", true),
+            Err("Native tool calling returned inconsistent finish reason stop".to_string())
+        );
+    }
+
+    #[test]
+    fn should_reject_malformed_or_non_object_native_tool_arguments() {
+        let malformed = parse_native_tool_call("muteTrack", "{");
+        let non_object = parse_native_tool_call("muteTrack", "[]");
+
+        assert!(malformed
+            .as_ref()
+            .is_err_and(|reason| reason.contains("returned malformed arguments")));
+        assert_eq!(
+            non_object,
+            Err("Native tool muteTrack arguments must be a JSON object".to_string())
+        );
     }
 
     #[test]

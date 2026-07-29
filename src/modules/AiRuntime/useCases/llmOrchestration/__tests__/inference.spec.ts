@@ -147,18 +147,18 @@ describe('generateToolPlanningOutcome', () => {
         expect(mocks.parseToolPlanningOutcome).not.toHaveBeenCalled();
     });
 
-    it('does not bypass a malformed native structured plan through text or provider fallback', async () => {
+    it('does not bypass a rejected native invoke outcome through text or provider fallback', async () => {
         mocks.backendChain.value = ['native', 'webllm'];
         mocks.nativeEngineReady.value = true;
         mocks.generateNativeToolCalls.mockRejectedValue(
-            new ToolPlanningRejectedError('Invalid native_tool_calling response: expected an array')
+            new ToolPlanningRejectedError('Native tool calling returned inconsistent finish reason length')
         );
 
         const result = await generateToolCalls('sys', 'mute drums');
 
         expect(result).toEqual({
             status: 'rejected',
-            reason: 'Invalid native_tool_calling response: expected an array',
+            reason: 'Native tool calling returned inconsistent finish reason length',
         });
         expect(mocks.generateNativeCompletion).not.toHaveBeenCalled();
         expect(mocks.generateWebLlmToolCalls).not.toHaveBeenCalled();
