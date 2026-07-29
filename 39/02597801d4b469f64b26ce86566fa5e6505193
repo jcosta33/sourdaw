@@ -1,0 +1,54 @@
+src/modules/AudioEngine/services/fermenterProcessor.ts
+  s_0d39f3a4a4357a::t_ea3c0a7b4fa105 146-150,152-156
+src/modules/AudioEngine/services/scoringProcessor.ts
+  s_0d39f3a4a4357a::t_0da5676cca20c8 63-67,69-73
+src/modules/AudioEngine/services/__tests__/proofChamberProcessor.spec.ts
+  s_0d39f3a4a4357a::t_c12947efcaee80 175,179,187-193
+src/modules/AudioEngine/services/__tests__/glutenProcessor.spec.ts
+  s_0d39f3a4a4357a::t_835ce725c89c03 221,225,233-239
+src/modules/AudioEngine/services/glutenProcessor.ts
+  s_0d39f3a4a4357a::t_56225cc52f48ad 112-116,118-122
+src/modules/AudioEngine/services/__tests__/toasterProcessor.spec.ts
+  s_0d39f3a4a4357a::t_2ebbc8b080e7f5 543,546-547,555,557-563
+src/modules/AudioEngine/services/__tests__/levainProcessor.spec.ts
+  s_0d39f3a4a4357a::t_2e2e61d80c5ad3 342-362,364-374
+  s_0d39f3a4a4357a::t_3684ca1c3c33f4 363
+  s_0d39f3a4a4357a::t_abd38da9521a00 57-60
+  s_0d39f3a4a4357a::t_3b024b9b459042 56,61
+  s_0d39f3a4a4357a::t_4e5d53c5fcf74b 31
+  s_0d39f3a4a4357a::t_82ad330f20a6eb 119
+src/modules/AudioEngine/services/toasterProcessor.ts
+  s_0d39f3a4a4357a::t_7fb02d50f1df86 173-177,179-183
+src/modules/AudioEngine/services/__tests__/proofProcessor.spec.ts
+  s_0d39f3a4a4357a::t_f16f3dcaeedd79 335-337
+  s_0d39f3a4a4357a::t_62a3404e6da1dc 338,341-342,350,352-358
+src/modules/AudioEngine/services/levainProcessor.ts
+  s_0d39f3a4a4357a::t_a8a88793658aaf 127-135,137-141
+src/modules/AudioEngine/services/grinderProcessor.ts
+  s_0d39f3a4a4357a::t_84f14f6c154384 289-292,294-298
+src/modules/AudioEngine/services/proofChamberProcessor.ts
+  s_0d39f3a4a4357a::t_51e72089c4abb7 70-74,76-80
+src/modules/AudioEngine/services/proofProcessor.ts
+  s_0d39f3a4a4357a::t_6eb3fe7532b713 58-62,64-68
+src/modules/AudioEngine/services/bacteriaProcessor.ts
+  s_0d39f3a4a4357a::t_aec24e25934ded 100-103,105-109
+src/modules/AudioEngine/services/kneadProcessor.ts
+  s_0d39f3a4a4357a::t_deedf5121f9d5a 102-106,108
+  s_0d39f3a4a4357a::t_cd2a1ccbbbabc1 94
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "3902597801d4b469f64b26ce86566fa5e6505193",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}

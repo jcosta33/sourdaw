@@ -1,0 +1,55 @@
+scripts/tsconfig.json
+  s_0d39f3a4a4357a::t_152cf4529b624e 1-3,5-10,15,27-29,31-34
+  s_0d39f3a4a4357a::t_ba644b32fde6a0 11-14,16-26,30
+  s_0d39f3a4a4357a::t_2299e4179e28f2 4
+tsconfig.scripts.json
+  s_0d39f3a4a4357a::t_33c293dec267f8 1-30
+scripts/wasm-artifacts.ts
+  s_0d39f3a4a4357a::t_1f328fe4a3d890 502-503
+  s_0d39f3a4a4357a::t_9195d4a9c3a4d8 516
+  s_0d39f3a4a4357a::t_f23118a0005b72 437
+  s_0d39f3a4a4357a::t_a5c306f637f538 466-469
+  s_0d39f3a4a4357a::t_aaa02063618a3b 417
+  s_0d39f3a4a4357a::t_f613ffff8b6287 221-237
+  s_0d39f3a4a4357a::t_1962d86e1bdcb8 554
+  s_0d39f3a4a4357a::t_d68ff338e1b94f 257-258
+  s_0d39f3a4a4357a::t_82506d4f182630 427
+  s_0d39f3a4a4357a::t_418e703f3d1fd3 280
+scripts/gen-wasm-manifest.ts
+  s_0d39f3a4a4357a::t_433868c9073fa0 25-26,29
+.oxlintrc.json
+  s_0d39f3a4a4357a::t_306f463a9cccf8 31-49
+scripts/test-health-gate-scripts.sh
+  s_0d39f3a4a4357a::t_2955c402e71b6a 57,61
+  s_0d39f3a4a4357a::t_635669f0748129 70,74
+scripts/health-gates-web.sh
+  s_0d39f3a4a4357a::t_9dcc1253b99891 41
+package.json
+  s_0d39f3a4a4357a::t_12dc2ed45bd45b 20,22-23
+scripts/download-levain-samples-direct.ts
+  s_0d39f3a4a4357a::t_5d84224b792dd9 17
+scripts/download-levain-samples.ts
+  s_0d39f3a4a4357a::t_7a48372183192c 17
+scripts/gen-dutch-oven-worklet.ts
+  s_0d39f3a4a4357a::t_917c9b0a6d0da5 21
+scripts/generate-view-tests.ts
+  s_0d39f3a4a4357a::t_71da2fa48760ce 8-9
+scripts/verify-remove-inject-output.ts
+  s_0d39f3a4a4357a::t_eaa083360cfcbb 11-12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "13726aa752283b7273ae9438943f83baf287431a",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
