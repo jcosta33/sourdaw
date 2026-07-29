@@ -1,0 +1,29 @@
+src/modules/AudioEngine/engine/TrackNode.ts
+  s_9f5d8ea53109ab::t_e4efa336bc57b4 59,458-460,468,515-517,780
+src/modules/AudioEngine/engine/__tests__/TrackNodeDevices.spec.ts
+  s_ac9b259eab20ba::t_4ab109c7c82daa 499-500
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "ee839ee3a0b474581ffa5f6a1e037d1773a7dd7c",
+  "prompts": {},
+  "sessions": {
+    "s_9f5d8ea53109ab": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fb036-9fe7-77e1-9524-134b73505338",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
