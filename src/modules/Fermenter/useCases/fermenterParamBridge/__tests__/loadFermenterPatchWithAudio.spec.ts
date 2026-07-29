@@ -4,6 +4,8 @@ vi.mock('../../../stores/fermenterStore', () => ({
     loadFermenterPatch: vi.fn(),
 }));
 
+import { clampDeviceParameterValue } from '#/modules/Arrangement/useCases';
+
 import { DEFAULT_PATCH } from '../../../models/FermenterPatch';
 import { loadFermenterPatch } from '../../../stores/fermenterStore';
 import { setFermenterDependencies } from '../../fermenterDependencies';
@@ -31,6 +33,7 @@ describe('loadFermenterPatchWithAudio', () => {
             })
         );
         setFermenterDependencies({
+            clampDeviceParameterValue,
             getAllTracks: () => [{ id: 't1', devices: [{ id: 'd1' }] }] as never,
             resolveEligibleDeviceWriteTarget: () => ({ status: 'eligible', trackId: 't1', deviceId: 'd1' }),
             updateDeviceParam,
