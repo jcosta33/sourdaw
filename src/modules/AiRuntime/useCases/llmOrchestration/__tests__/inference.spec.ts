@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { AiRuntimeConfigurationChangedError } from '../../../errors/AiRuntimeConfigurationChangedError';
+import { ToolPlanningRejectedError } from '../../../errors/ToolPlanningRejectedError';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
 import { generateToolCalls } from '../inference';
 
@@ -142,6 +143,36 @@ describe('generateToolCalls', () => {
         expect(result).toEqual({ status: 'complete', toolCalls: [] });
         expect(mocks.generateNativeCompletion).not.toHaveBeenCalled();
         expect(mocks.parseToolPlanningOutcome).not.toHaveBeenCalled();
+    });
+
+    it('does not bypass a malformed native structured plan through text or provider fallback', async () => {
+        mocks.backendChain.value = ['native', 'webllm'];
+        mocks.nativeEngineReady.value = true;
+        mocks.generateNativeToolCalls.mockRejectedValue(
+            new ToolPlanningRejectedError('Invalid native_tool_calling response: expected an array')
+        );
+
+        const result = await generateToolCalls('sys', 'mute drums');
+
+        expect(result).toEqual({
+            status: 'rejected',
+            reason: 'Invalid native_tool_calling response: expected an array',
+        });
+        expect(mocks.generateNativeCompletion).not.toHaveBeenCalled();
+        expect(mocks.generateWebLlmToolCalls).not.toHaveBeenCalled();
+    });
+
+    it('does not bypass a hosted refusal through provider fallback', async () => {
+        mocks.backendChain.value = ['cloud', 'native'];
+        mocks.nativeEngineReady.value = true;
+        mocks.generateCloudToolCalls.mockRejectedValue(
+            new ToolPlanningRejectedError('Hosted AI refused tool planning')
+        );
+
+        const result = await generateToolCalls('sys', 'mute drums');
+
+        expect(result).toEqual({ status: 'rejected', reason: 'Hosted AI refused tool planning' });
+        expect(mocks.generateNativeToolCalls).not.toHaveBeenCalled();
     });
 
     it('passes an explicit executable tool subset to every provider backend', async () => {

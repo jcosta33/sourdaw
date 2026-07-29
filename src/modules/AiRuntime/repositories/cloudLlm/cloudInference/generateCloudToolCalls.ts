@@ -2,6 +2,7 @@ import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 
 import { isAiRuntimeConfigurationChangedError } from '../../../errors/AiRuntimeConfigurationChangedError';
+import { ToolPlanningRejectedError } from '../../../errors/ToolPlanningRejectedError';
 import { DAW_TOOL_SCHEMAS, type ToolSchema } from '../../../models/ToolDefinitions';
 import { type ToolCallResult } from '../../../transformers/toolCallParser';
 import { getCloudClient } from '../getCloudClient';
@@ -93,9 +94,18 @@ export const generateCloudToolCalls = inject({ logger })(
                     }
                 }
                 const hasValidToolStop = response.stop_reason === 'tool_use' && results.length > 0;
-                const hasValidEmptyStop = response.stop_reason === 'end_turn' && results.length === 0;
+                const hasNonToolText = response.content.some(
+                    (block) => block.type === 'text' && block.text.trim().length > 0
+                );
+                const hasValidEmptyStop =
+                    response.stop_reason === 'end_turn' && results.length === 0 && !hasNonToolText;
+                if (response.stop_reason === 'end_turn' && results.length === 0 && hasNonToolText) {
+                    throw new ToolPlanningRejectedError(
+                        'Hosted AI returned a non-tool response instead of a tool-call batch'
+                    );
+                }
                 if (!hasValidToolStop && !hasValidEmptyStop) {
-                    throw new Error('Hosted AI returned an incomplete tool-call batch');
+                    throw new ToolPlanningRejectedError('Hosted AI returned an incomplete tool-call batch');
                 }
 
                 logger.info(

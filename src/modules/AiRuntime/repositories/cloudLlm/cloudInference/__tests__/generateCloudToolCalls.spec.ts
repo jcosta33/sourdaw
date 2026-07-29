@@ -216,14 +216,21 @@ describe('generateCloudToolCalls', () => {
         });
     });
 
-    it('handles empty tool blocks safely', async () => {
+    it('rejects a text refusal instead of treating it as an explicit empty tool batch', async () => {
         mocks.create.mockResolvedValue({
             content: [{ type: 'text', text: 'I cannot do that.' }],
             stop_reason: 'end_turn',
         });
 
-        const results = await generateCloudToolCalls('state', 'msg');
-        expect(results).toHaveLength(0);
+        await expect(generateCloudToolCalls('state', 'msg')).rejects.toThrow(
+            'Hosted AI returned a non-tool response instead of a tool-call batch'
+        );
+    });
+
+    it('preserves an explicit empty structured tool batch', async () => {
+        mocks.create.mockResolvedValue({ content: [], stop_reason: 'end_turn' });
+
+        await expect(generateCloudToolCalls('state', 'msg')).resolves.toEqual([]);
     });
 
     it('rejects tool blocks from a token-limited response', async () => {

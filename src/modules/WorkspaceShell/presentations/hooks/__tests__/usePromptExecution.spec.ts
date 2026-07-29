@@ -268,6 +268,31 @@ describe('usePromptExecution', () => {
         );
     });
 
+    it('surfaces a rejected prompt receipt without executing or showing a no-match notice', async () => {
+        vi.mocked(parsePromptToActions).mockResolvedValue({
+            actions: [],
+            rawText: 'save project',
+            requiresConfirmation: false,
+            rejectionReason: 'Action saveProject cannot be executed by AI because it does not report completion.',
+        });
+        const { result } = renderHook(() => usePromptExecution());
+
+        act(() => result.current.setValue('save project'));
+        await act(async () => {
+            await result.current.handleSubmit(formEvent as never);
+        });
+
+        expect(vi.mocked(executeAppAction)).not.toHaveBeenCalled();
+        expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith(
+            'Command not executed: Action saveProject cannot be executed by AI because it does not report completion.',
+            []
+        );
+        expect(vi.mocked(notifyAiChange)).not.toHaveBeenCalledWith(
+            'No actions matched. Try rephrasing, or use the AI Chat panel for open-ended help.',
+            []
+        );
+    });
+
     it('ignores blank submissions and recovers after a parsing failure', async () => {
         const { result } = renderHook(() => usePromptExecution());
 

@@ -302,8 +302,9 @@ export const usePromptExecution = (): PromptExecutionState => {
                 return;
             }
 
-            // If the JSON editor already applied changes, we're done
-            if (result._jsonEditApplied) {
+            if (result.rejectionReason) {
+                notifyAiChange(`Command not executed: ${result.rejectionReason}`, []);
+            } else if (result._jsonEditApplied) {
                 notifyAiChange(result._jsonEditSummaries?.join('. ') ?? `Executed: ${value}`, []);
             } else if (result.actions.length > 0) {
                 await executeWithGroup(result.actions, value);
