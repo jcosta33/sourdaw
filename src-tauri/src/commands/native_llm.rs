@@ -580,7 +580,11 @@ pub async fn native_tool_calling(
             .tool_calls
             .as_ref()
             .is_some_and(|tool_calls| !tool_calls.is_empty());
-        if let Err(reason) = validate_native_tool_finish(&choice.finish_reason, has_tool_calls) {
+        if let Err(reason) = validate_native_tool_finish(
+            &choice.finish_reason,
+            has_tool_calls,
+            message.content.as_deref(),
+        ) {
             return Ok(rejected_native_tool_calling(reason));
         }
         if !has_tool_calls {
@@ -614,9 +618,15 @@ fn rejected_native_tool_calling(reason: impl Into<String>) -> NativeToolCallingR
     }
 }
 
-fn validate_native_tool_finish(finish_reason: &str, has_tool_calls: bool) -> Result<(), String> {
+fn validate_native_tool_finish(
+    finish_reason: &str,
+    has_tool_calls: bool,
+    content: Option<&str>,
+) -> Result<(), String> {
     match (finish_reason, has_tool_calls) {
-        ("tool_calls", true) | ("stop", false) => Ok(()),
+        ("tool_calls", true) => Ok(()),
+        ("stop", false) if content.map(str::trim).unwrap_or_default().is_empty() => Ok(()),
+        ("stop", false) => Err("Native tool calling returned non-tool assistant text".to_string()),
         (reason, _) => Err(format!(
             "Native tool calling returned inconsistent finish reason {reason}"
         )),
@@ -1007,46 +1017,48 @@ mod tests {
 
     #[test]
     fn should_serialize_native_tool_calling_response_with_camel_case_fields() {
-        let complete = NativeToolCallingResponse::Complete {
-            tool_calls: vec![ToolCallResult {
-                name: "muteTrack".to_string(),
-                arguments: serde_json::json!({"trackId": "track-1"}),
-            }],
-        };
-        let rejected = rejected_native_tool_calling("Native planning rejected");
-        let complete_value =
-            serde_json::to_value(complete).expect("complete tool-planning DTO must serialize");
-        let rejected_value =
-            serde_json::to_value(rejected).expect("rejected tool-planning DTO must serialize");
-
         assert_eq!(
-            complete_value,
-            serde_json::json!({
-                "status": "complete",
-                "toolCalls": [{"name": "muteTrack", "arguments": {"trackId": "track-1"}}]
+            serde_json::to_value(NativeToolCallingResponse::Complete {
+                tool_calls: Vec::new(),
             })
+            .expect("complete tool-planning DTO must serialize"),
+            serde_json::json!({"status": "complete", "toolCalls": []})
         );
         assert_eq!(
-            rejected_value,
-            serde_json::json!({
-                "status": "rejected",
-                "reason": "Native planning rejected"
-            })
+            serde_json::to_value(rejected_native_tool_calling("Native planning rejected"))
+                .expect("rejected tool-planning DTO must serialize"),
+            serde_json::json!({"status": "rejected", "reason": "Native planning rejected"})
         );
     }
 
     #[test]
     fn should_classify_native_tool_finish_states() {
-        assert_eq!(validate_native_tool_finish("tool_calls", true), Ok(()));
-        assert_eq!(validate_native_tool_finish("stop", false), Ok(()));
         assert_eq!(
-            validate_native_tool_finish("length", true),
+            validate_native_tool_finish("tool_calls", true, Some("")),
+            Ok(())
+        );
+        assert_eq!(
+            validate_native_tool_finish("length", true, None),
             Err("Native tool calling returned inconsistent finish reason length".to_string())
         );
         assert_eq!(
-            validate_native_tool_finish("stop", true),
+            validate_native_tool_finish("stop", true, None),
             Err("Native tool calling returned inconsistent finish reason stop".to_string())
         );
+        for (content, expected) in [
+            (None, Ok(())),
+            (Some(""), Ok(())),
+            (Some(" \n"), Ok(())),
+            (
+                Some("I cannot do that"),
+                Err("Native tool calling returned non-tool assistant text".to_string()),
+            ),
+        ] {
+            assert_eq!(
+                validate_native_tool_finish("stop", false, content),
+                expected
+            );
+        }
     }
 
     #[test]
