@@ -26,6 +26,26 @@ const tools = [
     },
 ];
 
+function generateToolCalls() {
+    return generateOpenAiCompatibleToolCalls({
+        runtime,
+        systemPrompt: 'system',
+        userMessage: 'mute drums',
+        toolSchemas: tools,
+    });
+}
+
+function respondWith(payload: unknown): void {
+    vi.stubGlobal(
+        'fetch',
+        vi
+            .fn<typeof fetch>()
+            .mockResolvedValue(
+                new Response(JSON.stringify(payload), { status: 200, headers: { 'Content-Type': 'application/json' } })
+            )
+    );
+}
+
 describe('generateOpenAiCompatibleToolCalls', () => {
     afterEach(() => {
         vi.unstubAllGlobals();
@@ -261,6 +281,70 @@ describe('generateOpenAiCompatibleToolCalls', () => {
                 toolSchemas: tools,
             })
         ).rejects.toThrow('Hosted AI returned an invalid tool-planning response');
+    });
+
+    it.each([
+        { label: 'number', content: 42 },
+        { label: 'object', content: { text: '' } },
+        { label: 'unsupported array', content: [{ type: 'image_url', image_url: { url: 'https://invalid' } }] },
+    ])('rejects protocol-invalid $label assistant content', async ({ content }) => {
+        respondWith({ choices: [{ finish_reason: 'stop', message: { content, tool_calls: [] } }] });
+
+        await expect(generateToolCalls()).rejects.toThrow('Hosted AI returned an invalid tool-planning response');
+    });
+
+    it.each([
+        { label: 'absent', content: undefined },
+        { label: 'null', content: null },
+        { label: 'empty string', content: '' },
+        { label: 'empty array', content: [] },
+        { label: 'empty text array', content: [{ type: 'text', text: '' }] },
+    ])('preserves protocol-valid $label assistant content as an empty batch', async ({ content }) => {
+        respondWith({ choices: [{ finish_reason: 'stop', message: { content, tool_calls: [] } }] });
+
+        await expect(generateToolCalls()).resolves.toEqual([]);
+    });
+
+    it('rejects non-empty content paired with tool calls', async () => {
+        respondWith({
+            choices: [
+                {
+                    finish_reason: 'tool_calls',
+                    message: {
+                        content: [{ type: 'text', text: 'I changed the track.' }],
+                        tool_calls: [
+                            {
+                                function: {
+                                    name: 'muteTrack',
+                                    arguments: '{"trackId":"track-1","muted":true}',
+                                },
+                            },
+                        ],
+                    },
+                },
+            ],
+        });
+
+        await expect(generateToolCalls()).rejects.toThrow(
+            'Hosted AI returned a non-tool response instead of a tool-call batch'
+        );
+    });
+
+    it('terminally rejects malformed JSON syntax', async () => {
+        vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValue(new Response('{', { status: 200 })));
+
+        await expect(generateToolCalls()).rejects.toMatchObject({ name: 'ToolPlanningRejectedError' });
+    });
+
+    it.each([
+        { label: 'body stream failure', error: new TypeError('Body stream failed') },
+        { label: 'abort', error: new DOMException('Aborted', 'AbortError') },
+    ])('preserves a response $label for fallback handling', async ({ error }) => {
+        const response = new Response('{}', { status: 200 });
+        vi.spyOn(response, 'json').mockRejectedValue(error);
+        vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValue(response));
+
+        await expect(generateToolCalls()).rejects.toBe(error);
     });
 
     it('omits authorization for an auth-free compatible endpoint', async () => {

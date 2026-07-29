@@ -41,6 +41,7 @@ export const generateWebLlmToolCalls = inject({ logger })(
             const response = await generateWebLlmCompletion(fullSystemPrompt, userMessage, {
                 temperature: 0.1,
                 signal,
+                requireComplete: true,
             });
             logger.info(`[WebLLM] Response (${String(response.length)} chars): ${response.slice(0, 200)}`);
             return parseToolPlanningOutcome(response);

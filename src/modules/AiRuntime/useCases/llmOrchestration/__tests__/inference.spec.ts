@@ -177,6 +177,22 @@ describe('generateToolPlanningOutcome', () => {
         expect(mocks.generateNativeToolCalls).not.toHaveBeenCalled();
     });
 
+    it('does not bypass a token-limited WebLLM plan through native fallback', async () => {
+        mocks.backendChain.value = ['webllm', 'native'];
+        mocks.isWebLlmLoaded.mockReturnValue(true);
+        mocks.nativeEngineReady.value = true;
+        mocks.generateWebLlmToolCalls.mockRejectedValue(
+            new ToolPlanningRejectedError('WebLLM tool planning did not complete (finish_reason: length)')
+        );
+
+        await expect(generateToolCalls('sys', 'mute drums')).resolves.toEqual({
+            status: 'rejected',
+            reason: 'WebLLM tool planning did not complete (finish_reason: length)',
+        });
+        expect(mocks.generateNativeToolCalls).not.toHaveBeenCalled();
+        expect(mocks.generateNativeCompletion).not.toHaveBeenCalled();
+    });
+
     it('passes an explicit executable tool subset to every provider backend', async () => {
         const tools: ToolSchema[] = [
             {

@@ -73,6 +73,7 @@ describe('generateWebLlmToolCalls', () => {
         expect(vi.mocked(generateWebLlmCompletion).mock.calls[0]?.[2]).toEqual({
             temperature: 0.1,
             signal: controller.signal,
+            requireComplete: true,
         });
     });
 });
