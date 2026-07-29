@@ -300,8 +300,9 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
 
         track.meterNode = new FakeWorkletNode() as unknown as AudioWorkletNode;
         busTrack.meterNode = null;
-        const createDevice = (input: Omit<DiagnosticDeviceInput, 'context'>) =>
-            createDiagnosticDevice({ context: mockCtx, ...input });
+        function createDevice(input: Omit<DiagnosticDeviceInput, 'context'>): DiagnosticTestDevice {
+            return createDiagnosticDevice({ context: mockCtx, ...input });
+        }
         const fermenter = createDevice({ deviceId: 'fermenter-1', deviceType: 'fermenter' });
         const bacteria = createDevice({ deviceId: 'bacteria-1', deviceType: 'bacteria', nodeCount: 2 });
         const sidechain = createDevice({
