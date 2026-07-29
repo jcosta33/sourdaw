@@ -1,0 +1,21 @@
+docs/architecture/decisions/0018-awaited-ai-action-admission.md
+  s_eac9f65d8989d9::t_065b26ea1fbfd0 11,18-19
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_eac9f65d8989d9::t_454f2852815154 226-230
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "bd8024be5cc9ab7f61123c5866ade0ce78aa802f",
+  "prompts": {},
+  "sessions": {
+    "s_eac9f65d8989d9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019faf10-4c4c-7e72-a72d-af5ae5d446ec",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
