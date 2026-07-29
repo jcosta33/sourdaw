@@ -15,6 +15,12 @@ export type DeviceParameterView = {
     defaultValue: number;
     minValue: number;
     maxValue: number;
+    /**
+     * Floor the control should offer when the engine accepts more than the
+     * knob usefully spans. Falls back to `minValue`. See the model's
+     * `DeviceParameter.uiMinValue` for why the two are separate.
+     */
+    uiMinValue?: number;
     unit: string;
     scaling?: 'log' | 'linear';
     choices?: string[];

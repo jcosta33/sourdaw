@@ -46,9 +46,5 @@ export function setFermenterParamWithAudio(deviceId: string, key: keyof Fermente
 
     const compositeKey = `${deviceId}:${key}`;
     const dspKey = mapFermenterParamToDspParam({ paramId: key });
-    paramBatcher.schedule(
-        compositeKey,
-        { deviceId: target.deviceId, dspKey, key, value: boundedValue },
-        flushParam
-    );
+    paramBatcher.schedule(compositeKey, { deviceId: target.deviceId, dspKey, key, value: boundedValue }, flushParam);
 }

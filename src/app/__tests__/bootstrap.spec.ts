@@ -78,6 +78,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    clampDeviceParameterValue: noop,
     getAllTracks: noop,
     getPluginById: noop,
     persistDevicePatch: noop,

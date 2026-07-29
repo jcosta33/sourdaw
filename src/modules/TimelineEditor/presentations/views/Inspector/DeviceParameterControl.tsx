@@ -47,12 +47,25 @@ function buildLaneLookup(lanes: DeviceAutomationState['lanes']): Map<string, Dev
     return map;
 }
 
+/**
+ * The floor this control works from, which is not always the engine's.
+ *
+ * `minValue` is the range a write is held to. A parameter whose declared floor
+ * was authored for a knob rather than for the DSP declares `uiMinValue`, and
+ * only the presentation layer reads it — step size and display precision
+ * included, so widening a floor to the engine's real domain does not coarsen
+ * the readout of a control that still spans the narrower range.
+ */
+function controlFloor(param: DeviceParameter): number {
+    return param.uiMinValue ?? param.minValue;
+}
+
 /** Compute a sensible step from the parameter range and type. */
 function deriveStep(param: DeviceParameter): number {
     if (param.type === 'int') {
         return 1;
     }
-    const range = param.maxValue - param.minValue;
+    const range = param.maxValue - controlFloor(param);
     // Aim for ~200 discrete positions across the full range
     const raw = range / 200;
     // Snap to a "nice" precision: find the order of magnitude and round
@@ -69,7 +82,7 @@ function formatDisplayValue(value: number, param: DeviceParameter): string {
     if (param.type === 'int') {
         return String(Math.round(value));
     }
-    const range = param.maxValue - param.minValue;
+    const range = param.maxValue - controlFloor(param);
     // For large ranges (>10), show 1 decimal. For small ranges, show 2-3 decimals.
     let decimals: number;
     if (range >= 100) {
@@ -159,19 +172,20 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
             );
         }
 
-        const min = isLog ? 0 : param.minValue;
+        const controlMinValue = controlFloor(param);
+
+        const min = isLog ? 0 : controlMinValue;
         const max = isLog ? 1 : param.maxValue;
         const mappedStep = isLog ? 0.001 : step;
         const mappedFineStep = isLog ? 0.0001 : fineStep;
 
+        const logFloor = controlMinValue || 0.001;
         const toLinear = (logVal: number) => {
-            const clampVal = Math.max(param.minValue || 0.001, Math.min(param.maxValue, logVal));
-            return (
-                Math.log(clampVal / (param.minValue || 0.001)) / Math.log(param.maxValue / (param.minValue || 0.001))
-            );
+            const clampVal = Math.max(logFloor, Math.min(param.maxValue, logVal));
+            return Math.log(clampVal / logFloor) / Math.log(param.maxValue / logFloor);
         };
         const toLog = (linearVal: number) => {
-            return (param.minValue || 0.001) * (param.maxValue / (param.minValue || 0.001)) ** linearVal;
+            return logFloor * (param.maxValue / logFloor) ** linearVal;
         };
 
         const mappedValue = isLog ? toLinear(value) : value;
@@ -213,7 +227,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                 fineStep={mappedFineStep}
                 defaultValue={mappedDefaultValue}
                 aria-label={param.name}
-                bipolar={!isLog && param.minValue < 0 && param.maxValue > 0}
+                bipolar={!isLog && controlMinValue < 0 && param.maxValue > 0}
                 modulations={
                     modulation !== 0
                         ? [{ id: param.name, amount: modulation, color: 'var(--color-accent-cyan)' }]

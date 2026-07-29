@@ -170,6 +170,36 @@ describe('DeviceParameterControl', () => {
         );
     });
 
+    it('bottoms the knob out at the declared UI floor, not the wider engine floor', () => {
+        // `minValue` is the range a write is held to and has to describe what
+        // the DSP accepts; `uiMinValue` is the floor this knob offers. A rate
+        // whose engine domain reaches 0 Hz still bottoms out at 0.1 on the
+        // control — and keeps the display precision that narrower span implies,
+        // so a sub-floor value from a preset does not read as a rounded one.
+        render(
+            <DeviceParameterControl
+                param={{ ...mockParam, id: 'rate', name: 'Rate', minValue: 0, maxValue: 10, uiMinValue: 0.1, value: 2 }}
+                device={mockDevice}
+                trackId="track-1"
+            />
+        );
+
+        expect(mockMidiLearnRotaryKnob).toHaveBeenCalledWith(expect.objectContaining({ min: 0.1, max: 10 }));
+        expect(screen.getByText('2.00')).toBeInTheDocument();
+    });
+
+    it('falls back to the engine floor when no UI floor is declared', () => {
+        render(
+            <DeviceParameterControl
+                param={{ ...mockParam, id: 'rate', name: 'Rate', minValue: 0, maxValue: 10, value: 2 }}
+                device={mockDevice}
+                trackId="track-1"
+            />
+        );
+
+        expect(mockMidiLearnRotaryKnob).toHaveBeenCalledWith(expect.objectContaining({ min: 0, max: 10 }));
+    });
+
     it('should call setDeviceParameter when knob value changes', () => {
         render(<DeviceParameterControl param={mockParam} device={mockDevice} trackId="track-1" />);
         fireEvent.click(screen.getByTestId('rotary-knob'));

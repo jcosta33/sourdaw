@@ -103,8 +103,14 @@ export const BUILTIN_INSTRUMENT_DESCRIPTORS: PluginDescriptor[] = [
                 type: 'float',
                 value: 1,
                 defaultValue: 1,
-                minValue: 0.1,
+                // `scheduleBuiltinSynthNote` assigns this to a
+                // `BiquadFilterNode.Q`, and its own MPE-slide branch computes
+                // `(slide / 127) * 20` — 0 at rest. The engine already produces
+                // the value 0.1 claimed to forbid, and `factory-bass-sub` ships
+                // `filterResonance: 0` for a deliberately unresonant sub.
+                minValue: 0,
                 maxValue: 20,
+                uiMinValue: 0.1,
                 unit: '',
                 automatable: true,
                 hasAutomation: false,

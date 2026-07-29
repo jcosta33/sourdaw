@@ -585,8 +585,16 @@ export const BUILTIN_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
                 type: 'float',
                 value: 0.5,
                 defaultValue: 0.5,
-                minValue: 0.1,
+                // `applyPhaserParams` assigns this to the sweep
+                // `OscillatorNode.frequency`, which accepts any rate down to a
+                // stopped LFO at 0 Hz; the old 0.1 was the knob's floor, and it
+                // sat above values this repo already ships (Nebula Drift's
+                // 0.05/0.06 and an 0.08 automation point, `synth-pad-dark-drone`'s
+                // 0.05). Kept as `uiMinValue` so the knob still bottoms out
+                // somewhere useful.
+                minValue: 0,
                 maxValue: 10,
+                uiMinValue: 0.1,
                 unit: 'Hz',
                 automatable: true,
                 hasAutomation: false,
@@ -970,8 +978,12 @@ export const BUILTIN_EFFECT_DESCRIPTORS: PluginDescriptor[] = [
                 type: 'float',
                 value: 2,
                 defaultValue: 2,
-                minValue: 0.1,
+                // Same story as `phaser-rate`: `applyAutoPanParams` writes it
+                // to an `OscillatorNode.frequency`, and Nebula Drift ships a
+                // 0.06 pan rate with a lane riding it to 0.07.
+                minValue: 0,
                 maxValue: 10,
+                uiMinValue: 0.1,
                 unit: 'Hz',
                 automatable: true,
                 hasAutomation: false,
