@@ -1,0 +1,27 @@
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateCloudToolCalls.spec.ts
+  s_bc88af7d3b054c::t_5030af004a705c 43,242-254
+  s_bc88af7d3b054c::t_d8c736aa2cd808 255-256
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateCloudToolCalls.ts
+  s_bc88af7d3b054c::t_4590d90354b557 74,91-94,96,98-106,108,110-112,114-119,121-124
+  s_bc88af7d3b054c::t_1e7fd425a13bc7 113
+docs/architecture/decisions/0020-terminal-provider-planning-rejections.md
+  s_bc88af7d3b054c::t_4590d90354b557 14
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_bc88af7d3b054c::t_1e7fd425a13bc7 167-179
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "12fcac175a44afed20fa60b3bac60c6f49545b27",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
