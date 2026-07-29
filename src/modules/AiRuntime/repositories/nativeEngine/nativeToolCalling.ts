@@ -51,12 +51,20 @@ function narrowNativeToolCallingResponse(response: unknown): NativeToolCallResul
         throw new NativeToolCallingProtocolError('Invalid native_tool_calling response envelope');
     }
     if (response.status === 'rejected') {
-        if (typeof response.reason !== 'string' || response.reason.trim().length === 0) {
+        if (
+            !hasExactKeys(response, ['status', 'reason']) ||
+            typeof response.reason !== 'string' ||
+            response.reason.trim().length === 0
+        ) {
             throw new NativeToolCallingProtocolError('Invalid native_tool_calling response envelope');
         }
         throw new ToolPlanningRejectedError(response.reason);
     }
-    if (response.status !== 'complete' || !Array.isArray(response.toolCalls)) {
+    if (
+        response.status !== 'complete' ||
+        !hasExactKeys(response, ['status', 'toolCalls']) ||
+        !Array.isArray(response.toolCalls)
+    ) {
         throw new NativeToolCallingProtocolError('Invalid native_tool_calling response envelope');
     }
     return narrowNativeToolCallResults(response.toolCalls);
@@ -71,6 +79,11 @@ function narrowNativeToolCallResults(response: unknown): NativeToolCallResult[] 
         if (!isRecord(item)) {
             throw new NativeToolCallingProtocolError(
                 `Invalid native_tool_calling response: item ${String(index)} is not an object`
+            );
+        }
+        if (!hasExactKeys(item, ['name', 'arguments'])) {
+            throw new NativeToolCallingProtocolError(
+                `Invalid native_tool_calling response: item ${String(index)} has unexpected fields`
             );
         }
 
@@ -94,4 +107,9 @@ function narrowNativeToolCallResults(response: unknown): NativeToolCallResult[] 
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function hasExactKeys(value: Record<string, unknown>, expectedKeys: readonly string[]): boolean {
+    const actualKeys = Object.keys(value);
+    return actualKeys.length === expectedKeys.length && expectedKeys.every((key) => Object.hasOwn(value, key));
 }

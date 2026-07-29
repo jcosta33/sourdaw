@@ -178,6 +178,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
         const previousStatus = llmStatusStore.value;
         llmStatusStore.set({ state: 'generating' });
 
+        const failedBackends = new Set<RunnableAiBackend>();
         let lastError: Error | null = null;
 
         for (const backend of chain) {
@@ -235,11 +236,13 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                 }
                 if (signal?.aborted) {
                     const currentPreference = aiBackendPreferenceStore.value ?? 'auto';
-                    if (
+                    const previousBackendFailed =
+                        previousStatus?.state === 'ready' && failedBackends.has(previousStatus.backend);
+                    const preferenceChangedBackend =
                         currentPreference !== 'auto' &&
                         previousStatus?.state === 'ready' &&
-                        previousStatus.backend !== currentPreference
-                    ) {
+                        previousStatus.backend !== currentPreference;
+                    if (previousBackendFailed || preferenceChangedBackend) {
                         llmStatusStore.set({ state: 'idle' });
                     } else {
                         llmStatusStore.set(previousStatus);
@@ -250,6 +253,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     llmStatusStore.set({ state: 'ready', backend, modelId: getBackendModelId(backend) });
                     return { status: 'rejected', reason: error.message };
                 }
+                failedBackends.add(backend);
                 lastError = error instanceof Error ? error : new Error(String(error));
                 logger.warn(`[AI Engine] Backend "${backend}" failed: ${lastError.message}. Trying next...`);
             }

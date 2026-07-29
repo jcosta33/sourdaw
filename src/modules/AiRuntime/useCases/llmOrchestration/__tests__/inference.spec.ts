@@ -7,8 +7,17 @@ import { type ToolSchema } from '../../../models/ToolDefinitions';
 import { generateToolCalls as generateCompatibleToolCalls } from '../generateToolCalls';
 import { generateToolPlanningOutcome as generateToolCalls } from '../inference';
 
+type ReadyStatus = {
+    state: 'ready';
+    backend: 'native' | 'webllm' | 'cloud';
+    modelId: string;
+};
+
 const { mockLogger, mocks } = vi.hoisted(() => {
     const backendPreference: { value: 'auto' | 'native' | 'webllm' | 'cloud' } = { value: 'auto' };
+    const llmStatusValue: { value: ReadyStatus } = {
+        value: { state: 'ready', backend: 'webllm', modelId: 'test-model' },
+    };
 
     return {
         mockLogger: {
@@ -29,9 +38,7 @@ const { mockLogger, mocks } = vi.hoisted(() => {
             initWebLlmEngine: vi.fn(),
             isWebLlmLoaded: vi.fn(),
             llmStatusSet: vi.fn(),
-            llmStatusValue: {
-                value: { state: 'ready' as const, backend: 'webllm' as const, modelId: 'test-model' },
-            },
+            llmStatusValue,
             backendPreference,
         },
     };
@@ -180,11 +187,26 @@ describe('generateToolPlanningOutcome', () => {
             completePlan([{ name: 'soloTrack', arguments: {} }])
         );
         expect(mocks.generateNativeCompletion).not.toHaveBeenCalled();
+        expect(mocks.parseToolPlanningOutcome).not.toHaveBeenCalled();
         expect(mocks.generateWebLlmToolCalls).toHaveBeenCalledOnce();
         expect(mocks.llmStatusSet).not.toHaveBeenCalledWith({ state: 'ready', backend: 'native', modelId: 'native' });
         expect(mocks.llmStatusSet).toHaveBeenLastCalledWith(
             expect.objectContaining({ state: 'ready', backend: 'webllm' })
         );
+    });
+
+    it('does not convert a malformed native DTO into a compatible empty plan', async () => {
+        mocks.backendChain.value = ['native'];
+        mocks.nativeEngineReady.value = true;
+        mocks.generateNativeToolCalls.mockRejectedValue(
+            new NativeToolCallingProtocolError('Invalid native_tool_calling response envelope')
+        );
+
+        await expect(generateCompatibleToolCalls('sys', 'mute drums')).rejects.toMatchObject({
+            name: 'NativeToolCallingProtocolError',
+        });
+        expect(mocks.generateNativeCompletion).not.toHaveBeenCalled();
+        expect(mocks.parseToolPlanningOutcome).not.toHaveBeenCalled();
     });
 
     it.each(['Hosted AI refused tool planning', 'Hosted AI returned an invalid tool-planning response'])(
@@ -257,6 +279,26 @@ describe('generateToolPlanningOutcome', () => {
             backend: 'webllm',
             modelId: 'test-model',
         });
+    });
+
+    it('does not restore a ready backend that failed before fallback was aborted', async () => {
+        mocks.llmStatusValue.value = { state: 'ready', backend: 'native', modelId: 'native' };
+        mocks.backendChain.value = ['native', 'webllm'];
+        mocks.nativeEngineReady.value = true;
+        mocks.isWebLlmLoaded.mockReturnValue(true);
+        mocks.generateNativeToolCalls.mockRejectedValue(
+            new NativeToolCallingProtocolError('Invalid native_tool_calling response envelope')
+        );
+        mocks.generateWebLlmToolCalls.mockReturnValue(new Promise(() => {}));
+        const controller = new AbortController();
+
+        const pending = generateToolCalls('sys', 'mute drums', undefined, controller.signal);
+        await vi.waitFor(() => expect(mocks.generateWebLlmToolCalls).toHaveBeenCalledOnce());
+        controller.abort();
+
+        await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+        expect(mocks.llmStatusSet).toHaveBeenLastCalledWith({ state: 'idle' });
+        expect(mocks.generateNativeCompletion).not.toHaveBeenCalled();
     });
 
     it('treats hosted session revocation as terminal without trying another backend', async () => {

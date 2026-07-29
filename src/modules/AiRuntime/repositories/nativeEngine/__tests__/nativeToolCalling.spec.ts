@@ -28,6 +28,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function generateToolCalls() {
+    return generateNativeToolCalls({
+        systemPrompt: 'system',
+        userMessage: 'mute drums',
+        tools: [],
+        temperature: 0.1,
+    });
+}
+
 describe('generateNativeToolCalls', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -134,6 +143,49 @@ describe('generateNativeToolCalls', () => {
         ).rejects.toMatchObject({
             name: 'NativeToolCallingProtocolError',
             message: 'Invalid native_tool_calling response envelope',
+        });
+    });
+
+    it.each([
+        {
+            label: 'complete envelope with a reason',
+            response: { status: 'complete', toolCalls: [], reason: 'contradictory' },
+        },
+        {
+            label: 'complete envelope with an unknown field',
+            response: { status: 'complete', toolCalls: [], extra: true },
+        },
+        {
+            label: 'rejected envelope with tool calls',
+            response: { status: 'rejected', reason: 'Rejected', toolCalls: [] },
+        },
+        {
+            label: 'rejected envelope with an unknown field',
+            response: { status: 'rejected', reason: 'Rejected', extra: true },
+        },
+    ])('should reject a $label', async ({ response }) => {
+        mocks.isTauri.mockReturnValue(true);
+        mocks.tauriInvoke.mockResolvedValue(response);
+
+        await expect(generateToolCalls()).rejects.toMatchObject({
+            name: 'NativeToolCallingProtocolError',
+            message: 'Invalid native_tool_calling response envelope',
+        });
+    });
+
+    it.each([
+        { label: 'provider id', extra: { id: 'call-1' } },
+        { label: 'provider type', extra: { type: 'function' } },
+    ])('should reject a tool-call item with an extra $label field', async ({ extra }) => {
+        mocks.isTauri.mockReturnValue(true);
+        mocks.tauriInvoke.mockResolvedValue({
+            status: 'complete',
+            toolCalls: [{ name: 'mute_track', arguments: { nested: { provider: true } }, ...extra }],
+        });
+
+        await expect(generateToolCalls()).rejects.toMatchObject({
+            name: 'NativeToolCallingProtocolError',
+            message: 'Invalid native_tool_calling response: item 0 has unexpected fields',
         });
     });
 
