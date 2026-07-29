@@ -15,7 +15,68 @@ export type ToolCallResult = {
     arguments: Record<string, unknown>;
 };
 
+export type ToolPlanningOutcome =
+    { status: 'complete'; toolCalls: ToolCallResult[] } | { status: 'rejected'; reason: string };
+
 const INVALID_TOOL_CALL_NAME = '<invalid>';
+
+export function parseToolPlanningOutcome(content: string): ToolPlanningOutcome {
+    if (isExplicitEmptyToolCallBatch(content)) {
+        return { status: 'complete', toolCalls: [] };
+    }
+
+    const toolCalls = parseToolCallXml(content);
+    if (toolCalls.some((call) => call.name === INVALID_TOOL_CALL_NAME)) {
+        return { status: 'rejected', reason: 'Model returned a malformed tool-call batch.' };
+    }
+    if (toolCalls.length > 0) {
+        return { status: 'complete', toolCalls };
+    }
+
+    if (content.trim().length === 0) {
+        return { status: 'rejected', reason: 'Model returned an empty tool-planning response.' };
+    }
+    if (looksLikeToolCallSyntax(content)) {
+        return { status: 'rejected', reason: 'Model returned a malformed tool-call batch.' };
+    }
+    return {
+        status: 'rejected',
+        reason: 'Model returned a non-tool response instead of a complete tool-call batch.',
+    };
+}
+
+function isExplicitEmptyToolCallBatch(content: string): boolean {
+    const candidate = getJsonCandidate(content);
+    try {
+        const parsed = JSON.parse(candidate) as unknown;
+        if (Array.isArray(parsed)) {
+            return parsed.length === 0;
+        }
+        if (!isObject(parsed)) {
+            return false;
+        }
+        if (Array.isArray(parsed.actions)) {
+            return parsed.actions.length === 0;
+        }
+        if (Array.isArray(parsed.tool_calls)) {
+            return parsed.tool_calls.length === 0;
+        }
+        return false;
+    } catch {
+        return false;
+    }
+}
+
+function looksLikeToolCallSyntax(content: string): boolean {
+    const candidate = getJsonCandidate(content);
+    return candidate.startsWith('{') || candidate.startsWith('[') || /<\/?(?:tool_call|function)>/.test(content);
+}
+
+function getJsonCandidate(content: string): string {
+    const trimmed = content.trim();
+    const fencedJson = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/)?.[1];
+    return (fencedJson ?? trimmed).trim();
+}
 
 /**
  * Parse tool calls from model response content.

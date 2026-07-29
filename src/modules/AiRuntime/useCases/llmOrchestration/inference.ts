@@ -15,7 +15,11 @@ import { isWebLlmLoaded } from '../../repositories/webLlm/isWebLlmLoaded';
 import { generateWebLlmToolCalls } from '../../repositories/webLlm/toolCalling';
 import { aiBackendPreferenceStore } from '../../stores/aiBackendPreferenceStore';
 import { llmStatusStore } from '../../stores/llmStatusStore';
-import { parseToolCallXml, type ToolCallResult } from '../../transformers/toolCallParser';
+import {
+    parseToolPlanningOutcome,
+    type ToolCallResult,
+    type ToolPlanningOutcome,
+} from '../../transformers/toolCallParser';
 import { selectToolsForPrompt } from '../../transformers/toolSelector';
 
 import { getBackendChain } from './backendResolution/getBackendChain';
@@ -71,7 +75,7 @@ export const generateToolCalls = inject({ logger })(({ logger }) => {
         userMessage: string,
         toolSchemas: readonly ToolSchema[],
         signal?: AbortSignal
-    ): Promise<ToolCallResult[]> {
+    ): Promise<ToolPlanningOutcome> {
         try {
             const tools = toolSchemas.map((tool) => ({
                 name: tool.function.name,
@@ -92,7 +96,7 @@ export const generateToolCalls = inject({ logger })(({ logger }) => {
 
             if (results !== null) {
                 logger.info(`[AI Engine] (native/structured) ${String(results.length)} tool call(s)`);
-                return results;
+                return { status: 'complete', toolCalls: results };
             }
         } catch (error) {
             if (signal?.aborted) {
@@ -128,7 +132,7 @@ export const generateToolCalls = inject({ logger })(({ logger }) => {
         logger.info(
             `[AI Engine] (native/text) Raw response (${String(content.length)} chars): ${content.slice(0, 500)}`
         );
-        return parseToolCallXml(content);
+        return parseToolPlanningOutcome(content);
     }
 
     return async function generateToolCalls(
@@ -136,7 +140,7 @@ export const generateToolCalls = inject({ logger })(({ logger }) => {
         userMessage: string,
         toolSchemas?: readonly ToolSchema[],
         signal?: AbortSignal
-    ): Promise<ToolCallResult[]> {
+    ): Promise<ToolPlanningOutcome> {
         const chain = getBackendChain();
         const availableTools = toolSchemas ?? DAW_TOOL_SCHEMAS;
 
@@ -160,7 +164,7 @@ export const generateToolCalls = inject({ logger })(({ logger }) => {
                 if (signal?.aborted) {
                     throw createToolPlanningAbortError();
                 }
-                let results: ToolCallResult[];
+                let outcome: ToolPlanningOutcome;
 
                 if (backend === 'cloud') {
                     let cloudInference: Promise<ToolCallResult[]>;
@@ -169,7 +173,8 @@ export const generateToolCalls = inject({ logger })(({ logger }) => {
                     } else {
                         cloudInference = generateCloudToolCalls(systemPrompt, userMessage, availableTools, signal);
                     }
-                    results = await waitForInference(cloudInference, signal);
+                    const toolCalls = await waitForInference(cloudInference, signal);
+                    outcome = { status: 'complete', toolCalls };
                 } else if (backend === 'webllm') {
                     if (!isWebLlmLoaded()) {
                         await waitForInference(initWebLlmEngine(undefined, { signal }), signal);
@@ -181,21 +186,24 @@ export const generateToolCalls = inject({ logger })(({ logger }) => {
                     logger.info(
                         `[AI Engine] (webllm) Using ${String(relevantTools.length)}/${String(availableTools.length)} tools`
                     );
-                    results = await waitForInference(
+                    outcome = await waitForInference(
                         generateWebLlmToolCalls(systemPrompt, userMessage, relevantTools, signal),
                         signal
                     );
                 } else {
-                    // Native backend: prefer structured tool calling via mistral.rs
                     if (!isNativeEngineReady()) {
                         throw createAiRuntimeError('Native AI engine not running');
                     }
-                    results = await generateNativeToolCalls(systemPrompt, userMessage, availableTools, signal);
+                    outcome = await generateNativeToolCalls(systemPrompt, userMessage, availableTools, signal);
                 }
 
-                logger.info(
-                    `[AI Engine] (${backend}) ${String(results.length)} tool call(s): ${results.map((r) => r.name).join(', ')}`
-                );
+                if (outcome.status === 'complete') {
+                    logger.info(
+                        `[AI Engine] (${backend}) ${String(outcome.toolCalls.length)} tool call(s): ${outcome.toolCalls.map((call) => call.name).join(', ')}`
+                    );
+                } else {
+                    logger.warn(`[AI Engine] (${backend}) tool planning rejected: ${outcome.reason}`);
+                }
 
                 const modelId = (() => {
                     if (backend === 'native') {
@@ -207,7 +215,7 @@ export const generateToolCalls = inject({ logger })(({ logger }) => {
                     return WEBLLM_MODEL_ID;
                 })();
                 llmStatusStore.set({ state: 'ready', backend, modelId });
-                return results;
+                return outcome;
             } catch (error) {
                 if (isAiRuntimeConfigurationChangedError(error)) {
                     llmStatusStore.set({ state: 'idle' });

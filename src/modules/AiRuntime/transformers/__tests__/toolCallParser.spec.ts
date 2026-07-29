@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { parseToolCallXml } from '../toolCallParser';
+import { parseToolCallXml, parseToolPlanningOutcome } from '../toolCallParser';
 
 describe('toolCallParser', () => {
     it('parses valid JSON array directly', () => {
@@ -141,4 +141,29 @@ Some thought
         const result = parseToolCallXml(input);
         expect(result).toEqual([]);
     });
+
+    it.each([
+        { content: '', expectedReason: 'Model returned an empty tool-planning response.' },
+        {
+            content: 'I cannot change the project.',
+            expectedReason: 'Model returned a non-tool response instead of a complete tool-call batch.',
+        },
+        {
+            content: '[{"name":"muteTrack","arguments":{',
+            expectedReason: 'Model returned a malformed tool-call batch.',
+        },
+        {
+            content: '<tool_call>{"name":"muteTrack"}',
+            expectedReason: 'Model returned a malformed tool-call batch.',
+        },
+    ])('rejects ambiguous planning text: $expectedReason', ({ content, expectedReason }) => {
+        expect(parseToolPlanningOutcome(content)).toEqual({ status: 'rejected', reason: expectedReason });
+    });
+
+    it.each(['[]', '{"actions":[]}', '```json\n{"tool_calls":[]}\n```'])(
+        'accepts an explicitly valid empty tool-call batch: %s',
+        (content) => {
+            expect(parseToolPlanningOutcome(content)).toEqual({ status: 'complete', toolCalls: [] });
+        }
+    );
 });

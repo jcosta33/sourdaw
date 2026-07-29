@@ -44,14 +44,17 @@ describe('llmNoteHelpers', () => {
 
     describe('llmGenerateNotes', () => {
         it('requests tool calls via LLM and returns note array', async () => {
-            const mockRunToolCalls = vi.fn().mockResolvedValue([
-                {
-                    name: 'addNotes',
-                    arguments: {
-                        notes: [{ pitch: 60, startBeat: 0, duration: 1, velocity: 100 }],
+            const mockRunToolCalls = vi.fn().mockResolvedValue({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        name: 'addNotes',
+                        arguments: {
+                            notes: [{ pitch: 60, startBeat: 0, duration: 1, velocity: 100 }],
+                        },
                     },
-                },
-            ]);
+                ],
+            });
 
             const result = await llmGenerateNotes(
                 asInjectable(mockRunToolCalls),
@@ -74,7 +77,21 @@ describe('llmNoteHelpers', () => {
         });
 
         it('returns empty array if LLM tool call has no notes or is not addNotes', async () => {
-            const mockRunToolCalls = vi.fn().mockResolvedValue([{ name: 'otherTool', arguments: {} }]);
+            const mockRunToolCalls = vi.fn().mockResolvedValue({
+                status: 'complete',
+                toolCalls: [{ name: 'otherTool', arguments: {} }],
+            });
+
+            const result = await llmGenerateNotes(asInjectable(mockRunToolCalls), 'instruction', [], 'c1');
+
+            expect(result).toEqual([]);
+        });
+
+        it('returns no notes for rejected tool planning', async () => {
+            const mockRunToolCalls = vi.fn().mockResolvedValue({
+                status: 'rejected',
+                reason: 'Model returned a malformed tool-call batch.',
+            });
 
             const result = await llmGenerateNotes(asInjectable(mockRunToolCalls), 'instruction', [], 'c1');
 
