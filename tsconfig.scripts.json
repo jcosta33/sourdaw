@@ -1,0 +1,30 @@
+{
+    // Build-tooling typecheck gate (`pnpm typecheck:scripts`).
+    //
+    // `tsconfig.app.json` and `tsconfig.test.json` both scope themselves to
+    // `src`, so until this gate existed nothing ran `tsc` over `scripts/` at
+    // all — including the generators that write the shipped worklet glue into
+    // `src/modules/AudioEngine/wasm/`. Those generators are the reason this
+    // gate exists: a type error in one of them used to ship unnoticed.
+    //
+    // Scope is default-IN. A new script is gated the moment it is added, which
+    // is the whole point — an allowlist would let the next generator escape the
+    // same way these did.
+    //
+    // `exclude` below is pre-existing debt, exact and reviewable, carried over
+    // from the day the gate was introduced. It is a list that only shrinks:
+    // deleting an entry and fixing its errors is the intended move, adding one
+    // is not. Counts are as measured when the gate landed.
+    "extends": "./scripts/tsconfig.json",
+    "include": ["scripts"],
+    "exclude": [
+        "scripts/__tests__/layoutPrimitivesCensus.spec.ts", // 83
+        "scripts/download-levain-samples-direct.ts", // 27
+        "scripts/download-levain-samples.ts", // 25
+        "scripts/generate-missing-use-case-specs.ts", // 12
+        "scripts/__tests__/check-dependency-boundaries.spec.ts", // 11
+        "scripts/layoutPrimitivesCensus.ts", // 10
+        "scripts/verify-remove-inject-output.ts", // 8
+        "scripts/generate-view-tests.ts" // 6
+    ]
+}

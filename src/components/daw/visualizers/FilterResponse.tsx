@@ -11,7 +11,7 @@ import { resolveToken } from '#/utils/UI/resolveToken';
 
 type FilterResponseProps = {
     cutoff: number; // Hz (20–20000)
-    resonance: number; // Q (0.1–20)
+    resonance: number; // Q (0–20)
     filterType: number; // 0=LP, 1=HP, 2=BP, 3=Notch
     width?: number;
     height?: number;
@@ -252,9 +252,16 @@ export const FilterResponse = ({
         const freq = Math.max(MIN_FREQ, Math.min(MAX_FREQ, xToFreq(xPos, width)));
         onParamChange('filterCutoff', Math.round(freq));
 
-        // Vertical → resonance (inverted: top = high Q)
+        // Vertical → resonance (inverted: top = high Q).
+        //
+        // This spans `builtin-synth:filterResonance`'s declared range, 0 to 20.
+        // It is a second, independently-authored copy of that range — this is a
+        // shared `src/components/` component and cannot read a descriptor — so
+        // it is the drift risk, not the source of truth. It previously bottomed
+        // out at 0.1 and so could not express `factory-bass-sub`'s shipped
+        // `filterResonance: 0`; dragging anywhere on the pad silently raised it.
         const normalizedY = 1 - Math.max(0, Math.min(1, yPos / height));
-        const query = 0.1 + normalizedY * 19.9; // 0.1 to 20
+        const query = normalizedY * 20; // 0 to 20
         onParamChange('filterResonance', Math.round(query * 10) / 10);
     };
 

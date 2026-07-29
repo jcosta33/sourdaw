@@ -2,6 +2,7 @@ import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { recordAutomationValue } from '#/modules/Automation/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 
+import { clampDeviceParameterValue } from '../../../models/DeviceParameterLaw';
 import { getTrackState } from '../../../repositories/track/getTrackState';
 import { updateTrack } from '../../../repositories/track/updateTrack';
 import { resolveEligibleDeviceWriteTarget } from '../../../stores/resolveEligibleDeviceWriteTarget';
@@ -30,8 +31,21 @@ export function setDeviceParameter(deviceId: string, paramId: string, value: num
         return false;
     }
 
+    const targetDevice = track.devices.find((candidate) => candidate.id === target.deviceId);
+    if (!targetDevice) {
+        return false;
+    }
+
+    // The declared range is enforced here rather than trusted upstream. This is
+    // the door every direct write comes through — a knob, a model action, MIDI
+    // learn, an undo — and none of them checked. `Number.isFinite` above was the
+    // only guard the whole path carried, so a control declared 0..1 could be
+    // driven to any finite number, leaving the engine's own fallbacks to decide
+    // what that meant.
+    const clamped = clampDeviceParameterValue({ deviceType: targetDevice.type, paramId, value });
+
     // Update audio engine (non-blocking)
-    updateDeviceParam(target.trackId, target.deviceId, paramId, value);
+    updateDeviceParam(target.trackId, target.deviceId, paramId, clamped);
 
     // Update only the affected track's store state (not all tracks)
     updateTrack(target.trackId, (currentTrack) => ({
@@ -43,7 +57,7 @@ export function setDeviceParameter(deviceId: string, paramId: string, value: num
 
             return {
                 ...device,
-                parameterValues: { ...device.parameterValues, [paramId]: value },
+                parameterValues: { ...device.parameterValues, [paramId]: clamped },
             };
         }),
     }));
@@ -51,7 +65,7 @@ export function setDeviceParameter(deviceId: string, paramId: string, value: num
     // Record automation if playing in a recording mode
     const transport = transportStore.value;
     if (transport?.isPlaying && RECORDING_MODES.has(track.automationMode)) {
-        recordAutomationValue(target.trackId, `${target.deviceId}:${paramId}`, value, transport.playheadPosition);
+        recordAutomationValue(target.trackId, `${target.deviceId}:${paramId}`, clamped, transport.playheadPosition);
     }
 
     return true;

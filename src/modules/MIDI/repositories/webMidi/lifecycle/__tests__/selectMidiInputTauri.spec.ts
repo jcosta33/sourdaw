@@ -96,4 +96,77 @@ describe('selectMidiInputTauri', () => {
         expect(firstCallback.mock.calls[0]![0].data).toEqual(new Uint8Array([144, 60, 127]));
         expect(secondCallback.mock.calls[0]![0].data).toEqual(new Uint8Array([144, 61, 127]));
     });
+
+    // midir stamps every message in microseconds since a platform-defined
+    // origin that has nothing to do with `performance.now()`. Forwarding it raw
+    // would imply a wait of hours and `resolveInputEventTime` would refuse it,
+    // fall back to "now", and hand back exactly the jitter it exists to remove.
+    // So the bytes are not the only thing that has to survive the trip.
+    it('maps the native timestamp onto our clock so a delayed message keeps its arrival instant', async () => {
+        const onMidiMessageMock = vi.fn<(event: MIDIMessageEvent) => void>();
+        const nowSpy = vi.spyOn(performance, 'now');
+
+        await selectMidiInputTauri({ portIndex: 1, onMidiMessage: onMidiMessageMock });
+        const listener = tauriListenMock.mock.calls[0]![1];
+
+        // First message establishes the offset between the two clocks.
+        nowSpy.mockReturnValue(5000);
+        listener({ payload: { data: [144, 60, 127], timestamp: 1_000_000 } });
+
+        // Second message was played 20ms after the first on the device clock,
+        // but the handler only got a turn 100ms later — 80ms of event-loop delay.
+        nowSpy.mockReturnValue(5100);
+        listener({ payload: { data: [144, 62, 127], timestamp: 1_020_000 } });
+
+        // It must resolve to when it was played, not when we got round to it.
+        expect(onMidiMessageMock.mock.calls[1]![0].timeStamp).toBe(5020);
+    });
+
+    it('keeps the mapped stamp inside the window resolveInputEventTime will accept', async () => {
+        const onMidiMessageMock = vi.fn<(event: MIDIMessageEvent) => void>();
+        const nowSpy = vi.spyOn(performance, 'now');
+
+        await selectMidiInputTauri({ portIndex: 1, onMidiMessage: onMidiMessageMock });
+        const listener = tauriListenMock.mock.calls[0]![1];
+
+        // A CoreMIDI stamp is host-uptime microseconds: hours ahead of our
+        // origin. Unmapped, `performance.now() - timeStamp` is hugely negative
+        // and the guard drops it.
+        nowSpy.mockReturnValue(5000);
+        listener({ payload: { data: [144, 60, 127], timestamp: 9_000_000_000 } });
+        nowSpy.mockReturnValue(5050);
+        listener({ payload: { data: [144, 62, 127], timestamp: 9_000_030_000 } });
+
+        const mapped = onMidiMessageMock.mock.calls[1]![0].timeStamp;
+        const waitedSeconds = (5050 - mapped) / 1000;
+        expect(waitedSeconds).toBeGreaterThan(0);
+        expect(waitedSeconds).toBeLessThanOrEqual(1);
+    });
+
+    it('re-anchors on a port reopen, because the native epoch can restart with the port', async () => {
+        const firstCallback = vi.fn<(event: MIDIMessageEvent) => void>();
+        const secondCallback = vi.fn<(event: MIDIMessageEvent) => void>();
+        const nowSpy = vi.spyOn(performance, 'now');
+
+        await selectMidiInputTauri({ portIndex: 1, onMidiMessage: firstCallback });
+        nowSpy.mockReturnValue(5000);
+        tauriListenMock.mock.calls[0]![1]({ payload: { data: [144, 60, 127], timestamp: 8_000_000 } });
+
+        // Reopening resets the offset. A port whose clock restarts at zero must
+        // not be read through the previous port's anchor.
+        await selectMidiInputTauri({ portIndex: 2, onMidiMessage: secondCallback });
+        nowSpy.mockReturnValue(9000);
+        tauriListenMock.mock.calls[1]![1]({ payload: { data: [144, 62, 127], timestamp: 0 } });
+
+        expect(secondCallback.mock.calls[0]![0].timeStamp).toBe(9000);
+    });
+
+    it('leaves timeStamp undefined when the payload carries no native stamp', async () => {
+        const onMidiMessageMock = vi.fn<(event: MIDIMessageEvent) => void>();
+
+        await selectMidiInputTauri({ portIndex: 1, onMidiMessage: onMidiMessageMock });
+        tauriListenMock.mock.calls[0]![1]({ payload: { data: [144, 60, 127] } });
+
+        expect(onMidiMessageMock.mock.calls[0]![0].timeStamp).toBeUndefined();
+    });
 });

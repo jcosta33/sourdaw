@@ -22,10 +22,11 @@ function installedWasmPackVersion(): string {
     const raw = execFileSync('wasm-pack', ['--version'], { encoding: 'utf8' }).trim();
     // `wasm-pack 0.14.0` → `0.14.0`
     const match = /wasm-pack\s+(\S+)/.exec(raw);
-    if (!match) {
+    const version = match?.[1];
+    if (version === undefined) {
         throw new Error(`Could not parse wasm-pack version from: ${raw}`);
     }
-    return match[1];
+    return version;
 }
 
 const pinned = wasmArtifacts.pinnedToolchain;

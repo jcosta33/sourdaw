@@ -210,6 +210,47 @@ describe('loadPresetToTrack', () => {
         expect(mocks.notifyUser).not.toHaveBeenCalled();
     });
 
+    it('leaves an effect preset value to setDeviceParameter instead of writing past it', () => {
+        vi.mocked(getTrackById).mockReturnValue(makeTrack('t5'));
+        vi.mocked(addDevice).mockReturnValue({
+            id: 'ov-1',
+            name: 'Dutch Oven',
+            type: 'dutch-oven',
+            bypassed: false,
+            parameterValues: {},
+        });
+
+        loadPresetToTrack(
+            't5',
+            basePreset([{ type: 'dutch-oven', name: 'Dutch Oven', parameterValues: { mix: 4.2 } }])
+        );
+
+        // `setDeviceParameter` clamps and pushes the clamped value to the
+        // engine itself. A second, raw `updateDeviceParam` here wrote after it
+        // and therefore won, handing the DSP the 4.2 the store had refused.
+        expect(setDeviceParameter).toHaveBeenCalledWith('ov-1', 'mix', 4.2);
+        expect(updateDeviceParam).not.toHaveBeenCalled();
+    });
+
+    it('holds an instrument preset value to the declared range before it lands in the track', () => {
+        vi.mocked(getTrackById).mockReturnValue(makeTrack('t6'));
+
+        // `fermenter` declares `filterCutoff` over 20..20000 Hz. An instrument
+        // preset is written straight into the track by updateTrack, so nothing
+        // upstream holds it to the descriptor, and the store row is what the
+        // project saves and reloads.
+        loadPresetToTrack(
+            't6',
+            basePreset([{ type: 'fermenter', name: 'Lead', parameterValues: { filterCutoff: 99000 } }])
+        );
+
+        // Call 0 clears the strip; call 1 appends the preset's instrument.
+        const appendDevice = vi.mocked(updateTrack).mock.calls[1]?.[1];
+        const appended = appendDevice?.({ ...makeTrack('t6'), devices: [] });
+        expect(appended?.devices[0]?.parameterValues).toEqual({ filterCutoff: 20000 });
+        expect(updateDeviceParam).toHaveBeenCalledWith('t6', expect.any(String), 'filterCutoff', 20000);
+    });
+
     it('skips parameter wiring for an effect device that fails to attach', () => {
         vi.mocked(getTrackById).mockReturnValue(makeTrack('t4'));
         // addDevice returns null (e.g. ineligible target) -> attachEffectDevice

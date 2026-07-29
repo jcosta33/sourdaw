@@ -13,8 +13,8 @@
  * License: CC0 (public domain — no attribution required)
  */
 
-import { writeFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
+import { writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const BASE_URL = 'https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master';
