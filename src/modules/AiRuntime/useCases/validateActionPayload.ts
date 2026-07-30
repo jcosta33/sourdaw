@@ -133,7 +133,8 @@ function isDocumentSnapshot(
 const validators = {
     // Track lifecycle
     addTrack: (param): param is PayloadOf<'addTrack'> => isObj(param) && isString(param.name) && isString(param.kind),
-    removeTrack: hasTrackId,
+    removeTrack: (param): param is PayloadOf<'removeTrack'> =>
+        isObj(param) && hasExactKeys(param, ['trackId']) && isNonEmptyString(param.trackId),
     renameTrack: (param): param is PayloadOf<'renameTrack'> =>
         isObj(param) && isString(param.trackId) && isString(param.name),
     duplicateTrack: hasTrackId,

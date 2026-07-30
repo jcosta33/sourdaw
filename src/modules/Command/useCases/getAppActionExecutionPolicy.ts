@@ -56,6 +56,7 @@ const authoritySensitivePolicy: AppActionExecutionPolicy = {
 const executablePolicyByRisk: Record<ExecutableAppActionRisk, AppActionExecutionPolicy> = {
     'bounded-reversible': boundedPolicy,
     'broad-reversible': broadPolicy,
+    'destructive-reversible': destructivePolicy,
     'authority-sensitive': authoritySensitivePolicy,
 };
 

@@ -1,5 +1,4 @@
 import { isAppError } from '#/infra/errors/isAppError';
-import { describeAction } from '#/modules/Command/useCases';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
@@ -29,6 +28,7 @@ import { llmStatusStore } from '../stores/llmStatusStore';
 import { proposePendingActionConfirmation } from '../stores/pendingActionConfirmationStore';
 
 import { createThinkBlockParser } from './createThinkBlockParser';
+import { describePlannedAction } from './describePlannedAction';
 import { executePlannedActions } from './executePlannedActions';
 import { getProjectContext } from './getProjectContext';
 import { resolveBackend } from './llmOrchestration/backendResolution/helpers';
@@ -76,7 +76,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
         setActiveAborter(aborter);
 
         try {
-            const { result, projectRevision } = await planPromptActions({
+            const { context, result, projectRevision } = await planPromptActions({
                 prompt: userText,
                 signal: aborter.signal,
             });
@@ -108,7 +108,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
 
                 if (result.requiresConfirmation) {
                     const confirmationId = `prompt-confirmation-${crypto.randomUUID()}`;
-                    const actionLabels = result.actions.map((action) => describeAction(action));
+                    const actionLabels = result.actions.map((action) => describePlannedAction({ action, context }));
                     proposePendingActionConfirmation({
                         id: confirmationId,
                         prompt: userText,

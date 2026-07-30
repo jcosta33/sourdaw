@@ -6,6 +6,7 @@ import { useStore } from '#/infra/store/useStore';
 import { llmStatusStore } from '#/modules/AiRuntime/stores';
 import {
     executePlannedActions,
+    describePlannedAction,
     getProjectContext,
     parsePromptToActions,
     planPromptActions,
@@ -31,6 +32,17 @@ vi.mock('#/infra/store/useStore', () => ({ useStore: vi.fn() }));
 vi.mock('#/modules/AiRuntime/stores', () => ({ llmStatusStore: { value: { state: 'idle' } } }));
 vi.mock('#/modules/AiRuntime/useCases', () => ({
     executePlannedActions: vi.fn(),
+    describePlannedAction: vi.fn((input: Parameters<typeof describePlannedAction>[0]) => {
+        const action = input.action;
+        if (action.type === 'removeTrack') {
+            const trackId = action.payload.trackId;
+            const track = input.context.tracks.find((candidate) => candidate.id === trackId);
+            if (track) {
+                return `Remove track "${track.name}"`;
+            }
+        }
+        return action.type;
+    }),
     planPromptActions: vi.fn(),
     parsePromptToActions: vi.fn().mockResolvedValue({ actions: [], rawText: '', requiresConfirmation: false }),
     isComplexPrompt: vi.fn(() => false),
@@ -96,10 +108,14 @@ describe('usePromptExecution', () => {
         // that persist a custom mockReturnValue/mockResolvedValue must be
         // re-defaulted here rather than leaking into the next test.
         vi.mocked(parsePromptToActions).mockResolvedValue({ actions: [], rawText: '', requiresConfirmation: false });
-        vi.mocked(planPromptActions).mockImplementation(async (input) => ({
-            result: await parsePromptToActions(input.prompt, getProjectContext(), input.signal),
-            projectRevision: 'revision-1',
-        }));
+        vi.mocked(planPromptActions).mockImplementation(async (input) => {
+            const context = getProjectContext();
+            return {
+                context,
+                result: await parsePromptToActions(input.prompt, context, input.signal),
+                projectRevision: 'revision-1',
+            };
+        });
         vi.mocked(executePlannedActions).mockImplementation((input) => {
             const actions = input.actions.map((action) => ({ actionType: action.type, label: action.type }));
             notifyAiChange(
@@ -316,24 +332,51 @@ describe('usePromptExecution', () => {
         expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith('Executed: stop playback', ['stopPlayback']);
         expect(result.current.value).toBe('');
 
-        const deleteAction: AppAction = { type: 'removeAllTracks' };
+        const deleteAction: AppAction = { type: 'removeTrack', payload: { trackId: 'track-drums' } };
+        vi.mocked(getProjectContext).mockReturnValue({
+            tempo: 120,
+            timeSignature: [4, 4],
+            tracks: [
+                {
+                    id: 'track-drums',
+                    name: 'Drums',
+                    kind: 'audio',
+                    muted: false,
+                    soloed: false,
+                    armed: false,
+                    gain: 0.8,
+                    pan: 0,
+                    outputId: 'master',
+                    clipCount: 0,
+                    deviceCount: 0,
+                    clips: [],
+                    devices: [],
+                    sends: [],
+                },
+            ],
+            selectedTrackId: 'track-drums',
+            selectedClipId: null,
+            selectedClipIds: [],
+            activeView: 'arrange',
+            playheadPosition: 0,
+        });
         vi.mocked(parsePromptToActions).mockResolvedValue({
             actions: [deleteAction],
-            rawText: 'delete all',
+            rawText: 'delete Drums',
             requiresConfirmation: true,
         });
-        act(() => result.current.setValue('delete all'));
+        act(() => result.current.setValue('delete Drums'));
         await act(async () => {
             await result.current.handleSubmit(formEvent as never);
         });
         expect(result.current.preview).toEqual({
             actions: [deleteAction],
-            rawText: 'delete all',
+            rawText: 'delete Drums',
             requiresConfirmation: true,
-            actionLabels: ['removeAllTracks'],
+            actionLabels: ['Remove track "Drums"'],
             projectRevision: 'revision-1',
         });
-        expect(result.current.value).toBe('delete all');
+        expect(result.current.value).toBe('delete Drums');
         expect(vi.mocked(executePlannedActions)).toHaveBeenCalledTimes(1);
     });
 

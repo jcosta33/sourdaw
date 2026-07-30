@@ -221,6 +221,57 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(ineligible.actions).toEqual([]);
     });
 
+    it('grounds destructive deletion only to an explicit non-master track target', () => {
+        const named = bridge([{ name: 'removeTrack', arguments: { trackId: vocals.id } }], 'delete Vocals');
+        const selected = bridge([{ name: 'removeTrack', arguments: { trackId: vocals.id } }], 'remove selected track');
+        const qualifiedSelection = bridge(
+            [{ name: 'removeTrack', arguments: { trackId: vocals.id } }],
+            'delete selected audio track'
+        );
+        const mismatched = bridge([{ name: 'removeTrack', arguments: { trackId: guitar.id } }], 'delete Vocals');
+        const protectedMaster = bridge([{ name: 'removeTrack', arguments: { trackId: master.id } }], 'delete Master');
+        const negated = bridge([{ name: 'removeTrack', arguments: { trackId: vocals.id } }], 'do not delete Vocals');
+        const deviceByName = bridge([{ name: 'removeTrack', arguments: { trackId: vocals.id } }], 'remove Vocals EQ');
+        const deviceByDescription = bridge(
+            [{ name: 'removeTrack', arguments: { trackId: vocals.id } }],
+            'remove the Vocals compressor'
+        );
+        const crossIntent = bridge(
+            [{ name: 'removeTrack', arguments: { trackId: vocals.id } }],
+            'remove the compressor from Vocals'
+        );
+        const masterNamedBus = createTrack({ id: 'bus-master-name', name: 'Master', kind: 'bus' });
+        const duplicateMasterNameContext = {
+            ...projectContext,
+            tracks: [...projectContext.tracks, masterNamedBus],
+            selectedTrackId: masterNamedBus.id,
+        };
+        const ambiguousMasterName = bridge(
+            [{ name: 'removeTrack', arguments: { trackId: masterNamedBus.id } }],
+            'delete Master',
+            duplicateMasterNameContext
+        );
+        const selectedMasterNamedBus = bridge(
+            [{ name: 'removeTrack', arguments: { trackId: masterNamedBus.id } }],
+            'delete selected bus track',
+            duplicateMasterNameContext
+        );
+
+        expect(named.actions).toEqual([{ type: 'removeTrack', payload: { trackId: vocals.id } }]);
+        expect(selected.actions).toEqual([{ type: 'removeTrack', payload: { trackId: vocals.id } }]);
+        expect(qualifiedSelection.actions).toEqual([{ type: 'removeTrack', payload: { trackId: vocals.id } }]);
+        expect(mismatched.actions).toEqual([]);
+        expect(protectedMaster.actions).toEqual([]);
+        expect(negated.actions).toEqual([]);
+        expect(deviceByName.actions).toEqual([]);
+        expect(deviceByDescription.actions).toEqual([]);
+        expect(crossIntent.actions).toEqual([]);
+        expect(ambiguousMasterName.actions).toEqual([]);
+        expect(selectedMasterNamedBus.actions).toEqual([
+            { type: 'removeTrack', payload: { trackId: masterNamedBus.id } },
+        ]);
+    });
+
     it('grounds time signatures as an explicit paired value', () => {
         const valid = bridge(
             [{ name: 'setTimeSignature', arguments: { numerator: 7, denominator: 8 } }],

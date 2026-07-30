@@ -260,6 +260,44 @@ describe('parsePromptToActions', () => {
         expect(result.executionMode).toBe('atomic');
     });
 
+    it('proposes grounded provider track deletion as one confirmable atomic action', async () => {
+        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
+            '../agentReference/bridgeGroundedLlmToolCalls'
+        );
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        const providerContext: ProjectContext = {
+            ...baseContext,
+            tracks: [
+                {
+                    id: 'track-vocals',
+                    name: 'Vocals',
+                    kind: 'audio',
+                    muted: false,
+                    soloed: false,
+                    armed: false,
+                    gain: 0.8,
+                    pan: 0,
+                    outputId: 'master',
+                    clipCount: 0,
+                    deviceCount: 0,
+                    clips: [],
+                    devices: [],
+                    sends: [],
+                },
+            ],
+            selectedTrackId: 'track-vocals',
+        };
+        vi.mocked(generateToolCalls).mockResolvedValue(
+            completePlan([{ name: 'removeTrack', arguments: { trackId: 'track-vocals' } }])
+        );
+
+        const result = await parsePromptToActions('delete the Vocals track', providerContext);
+
+        expect(result.actions).toEqual([{ type: 'removeTrack', payload: { trackId: 'track-vocals' } }]);
+        expect(result.requiresConfirmation).toBe(true);
+        expect(result.executionMode).toBe('atomic');
+    });
+
     it('rejects a provider time signature that does not match the prompt', async () => {
         const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
             '../agentReference/bridgeGroundedLlmToolCalls'
@@ -323,38 +361,36 @@ describe('parsePromptToActions', () => {
         vi.mocked(generateToolCalls).mockResolvedValue(
             completePlan([
                 { name: 'muteTrack', arguments: { trackId: 'track-vocals', muted: true } },
-                { name: 'removeTrack', arguments: { trackId: 'track-vocals' } },
+                { name: 'saveProject', arguments: {} },
             ])
         );
         mockBridgeGroundedLlmToolCalls.mockReturnValue({
             actions: [{ type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true } }],
-            rejections: [{ index: 1, name: 'removeTrack', reason: 'Tool is not allowlisted' }],
+            rejections: [{ index: 1, name: 'saveProject', reason: 'Tool is not allowlisted' }],
         });
 
-        const result = await parsePromptToActions('mute and delete the vocals', baseContext);
+        const result = await parsePromptToActions('mute the vocals and save the project', baseContext);
 
         expect(result.actions).toEqual([]);
         expect(mockLogger.warn).toHaveBeenCalledWith(
-            '[AI] Rejected tool call 1 (removeTrack): Tool is not allowlisted'
+            '[AI] Rejected tool call 1 (saveProject): Tool is not allowlisted'
         );
     });
 
     it('returns the provider bridge rejection reason without falling through to DSO', async () => {
-        vi.mocked(generateToolCalls).mockResolvedValue(
-            completePlan([{ name: 'removeTrack', arguments: { trackId: 'track-vocals' } }])
-        );
+        vi.mocked(generateToolCalls).mockResolvedValue(completePlan([{ name: 'saveProject', arguments: {} }]));
         mockBridgeGroundedLlmToolCalls.mockReturnValue({
             actions: [],
-            rejections: [{ index: 0, name: 'removeTrack', reason: 'Tool is not allowlisted' }],
+            rejections: [{ index: 0, name: 'saveProject', reason: 'Tool is not allowlisted' }],
         });
 
-        const result = await parsePromptToActions('delete the vocals', baseContext);
+        const result = await parsePromptToActions('save the project', baseContext);
 
         expect(result).toEqual({
             actions: [],
-            rawText: 'delete the vocals',
+            rawText: 'save the project',
             requiresConfirmation: false,
-            rejectionReason: 'Provider action rejected: removeTrack: Tool is not allowlisted',
+            rejectionReason: 'Provider action rejected: saveProject: Tool is not allowlisted',
         });
     });
 

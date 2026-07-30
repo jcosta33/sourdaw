@@ -39,6 +39,14 @@ const EXPECTED_COMMANDS = [
         false
     ),
     expectedCommand(
+        'removeTrack',
+        'Delete a track and its project-owned contents.',
+        { trackId: { type: 'string', description: 'Existing non-master track ID' } },
+        ['trackId'],
+        'destructive-reversible',
+        true
+    ),
+    expectedCommand(
         'renameTrack',
         'Rename a track.',
         { trackId: { type: 'string' }, name: { type: 'string' } },
@@ -243,6 +251,12 @@ const EXPECTED_GROUNDING = [
         ],
         targetRules: [],
         valueRules: [{ argument: 'name', kind: 'text-after-keyword-if-present', keywords: ['named', 'called'] }],
+    },
+    {
+        actionType: 'removeTrack',
+        intentPhrases: ['delete track', 'remove track', 'delete', 'remove'],
+        targetRules: [{ argument: 'trackId', capability: 'removable-track' }],
+        valueRules: [],
     },
     {
         actionType: 'renameTrack',

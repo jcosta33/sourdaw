@@ -176,6 +176,14 @@ function bridgeToolCall({
         return { type: 'createBus', payload: { name } };
     }
 
+    if (call.name === 'removeTrack') {
+        const track = findTrack(context, args.trackId);
+        if (!hasExactKeys(args, ['trackId']) || !track || track.kind === 'master') {
+            return rejection(index, call.name, 'Expected only an available non-master trackId');
+        }
+        return { type: 'removeTrack', payload: { trackId: track.id } };
+    }
+
     if (call.name === 'renameTrack') {
         if (!hasExactKeys(args, ['trackId', 'name']) || !hasTrack(context, args.trackId)) {
             return rejection(index, call.name, 'Expected an available trackId and name');
@@ -446,6 +454,7 @@ function getMutationKey(action: RuntimeAction): string | null {
         action.type === 'muteTrack' ||
         action.type === 'soloTrack' ||
         action.type === 'armTrack' ||
+        action.type === 'removeTrack' ||
         action.type === 'setTrackGain' ||
         action.type === 'setTrackPan' ||
         action.type === 'setTrackColor'

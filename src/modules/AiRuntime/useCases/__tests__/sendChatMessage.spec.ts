@@ -182,6 +182,33 @@ describe('sendChatMessage injectables', () => {
             rawText: 'delete drums',
             requiresConfirmation: true,
         });
+        mocks.getProjectContext.mockReturnValue({
+            tempo: 120,
+            timeSignature: [4, 4],
+            tracks: [
+                {
+                    id: 'track-1',
+                    name: 'Drums',
+                    kind: 'audio',
+                    muted: false,
+                    soloed: false,
+                    armed: false,
+                    gain: 0.8,
+                    pan: 0,
+                    outputId: 'master',
+                    clipCount: 0,
+                    deviceCount: 0,
+                    clips: [],
+                    devices: [],
+                    sends: [],
+                },
+            ],
+            selectedTrackId: 'track-1',
+            selectedClipId: null,
+            selectedClipIds: [],
+            activeView: 'arrange',
+            playheadPosition: 0,
+        });
 
         await sendChatMessage('delete drums');
 
@@ -189,11 +216,15 @@ describe('sendChatMessage injectables', () => {
         expect(mocks.pushAiActionGroup).not.toHaveBeenCalled();
         expect(mocks.notifyAiChange).not.toHaveBeenCalled();
         expect(mocks.proposePendingActionConfirmation).toHaveBeenCalledWith(
-            expect.objectContaining({ projectRevision: 'revision-1' })
+            expect.objectContaining({
+                projectRevision: 'revision-1',
+                actionLabels: ['Remove track "Drums"'],
+            })
         );
         const confirmationUpdate = mocks.updateChatMessage.mock.calls[0]?.[1];
         expect(confirmationUpdate?.isStreaming).toBe(false);
         expect(confirmationUpdate?.content).toContain('requires confirmation');
+        expect(confirmationUpdate?.content).toContain('Remove track "Drums"');
         expect(confirmationUpdate?.pendingActionConfirmationId).toMatch(/^prompt-confirmation-/);
         expect(confirmationUpdate?.pendingActionConfirmationStatus).toBe('proposed');
     });

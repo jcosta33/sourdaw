@@ -4,6 +4,7 @@ import { type ProjectContext } from '../../../models/ProjectContext';
 import {
     isComplexPrompt,
     buildPresetContext,
+    tryPresetMatch,
     tryParameterizedPath,
     tryCompoundFastPath,
     matchSoundDesignRecipe,
@@ -61,6 +62,7 @@ describe('promptParser parsing', () => {
 
             const presetContext = buildPresetContext(context);
             expect(presetContext.selectedTrackId).toBe('t1');
+            expect(presetContext.selectedTrackKind).toBe('audio');
             expect(presetContext.selectedClipId).toBe('c1');
             expect(presetContext.selectedClipType).toBe('audio');
             expect(presetContext.trackCount).toBe(1);
@@ -115,6 +117,40 @@ describe('promptParser parsing', () => {
         it('parses add device to track by name', () => {
             const actions = tryParameterizedPath('add compressor to vocals', context);
             expect(actions).toEqual([{ type: 'addDevice', payload: { trackId: 't1', deviceType: 'Compressor' } }]);
+        });
+
+        it('parses deletion for a normal track and protects the master track', () => {
+            const master = {
+                ...context.tracks[0]!,
+                id: 'master',
+                name: 'Master',
+                kind: 'master' as const,
+            };
+            const contextWithMaster = { ...context, tracks: [...context.tracks, master] };
+
+            expect(tryParameterizedPath('delete vocals', contextWithMaster)).toEqual([
+                { type: 'removeTrack', payload: { trackId: 't1' } },
+            ]);
+            expect(tryParameterizedPath('delete master', contextWithMaster)).toEqual([]);
+
+            const selectedMasterContext = { ...contextWithMaster, selectedTrackId: 'master' };
+            expect(tryPresetMatch('delete track', buildPresetContext(selectedMasterContext))).toEqual([]);
+        });
+
+        it('rejects partial and duplicate-name deletion while accepting a literal track ID', () => {
+            const bassGuitar = { ...context.tracks[0]!, id: 'bass-guitar', name: 'Bass Guitar' };
+            const bassSynth = { ...context.tracks[0]!, id: 'bass-synth', name: 'Bass Synth' };
+            const duplicateVocals = { ...context.tracks[0]!, id: 'vocals-copy' };
+            const ambiguousContext = {
+                ...context,
+                tracks: [context.tracks[0]!, duplicateVocals, bassGuitar, bassSynth],
+            };
+
+            expect(tryParameterizedPath('delete bass', ambiguousContext)).toEqual([]);
+            expect(tryParameterizedPath('delete vocals', ambiguousContext)).toEqual([]);
+            expect(tryParameterizedPath('delete t1', ambiguousContext)).toEqual([
+                { type: 'removeTrack', payload: { trackId: 't1' } },
+            ]);
         });
     });
 
