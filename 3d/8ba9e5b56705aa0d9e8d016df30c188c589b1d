@@ -1,0 +1,37 @@
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_bc88af7d3b054c::t_bcc672bb476cd4 32,137,140
+src/modules/Arrangement/handlers/track/__tests__/armTrack.spec.ts
+  s_bc88af7d3b054c::t_94d3f44ef6ab9f 8,43,55-60,66,95,101-119,141,151-181,185-186,195-200
+src/modules/Arrangement/handlers/track/armTrack.ts
+  s_bc88af7d3b054c::t_e9ad48c0f20717 12,25-39,43-57,66-67
+src/modules/Arrangement/useCases/recording/__tests__/armTrack.spec.ts
+  s_bc88af7d3b054c::t_71dccd3cac52ca 141,155-196
+src/modules/Arrangement/useCases/recording/armTrack.ts
+  s_bc88af7d3b054c::t_53494f513870eb 10,18-19,24,32,37-38,40-47,50-60
+src/utils/handlerContract.ts
+  s_ac9b259eab20ba::t_5ad4062fd33d78 326,328
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "3d8ba9e5b56705aa0d9e8d016df30c188c589b1d",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
