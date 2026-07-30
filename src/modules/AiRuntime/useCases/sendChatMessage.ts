@@ -141,11 +141,19 @@ export async function sendChatMessage(userText: string): Promise<void> {
                 }
 
                 const group = generateGroupId(userText);
+                const admissionState = { revisionInvalidated: false };
+                function shouldExecuteBatch(): boolean {
+                    if (aborter.signal.aborted) {
+                        return false;
+                    }
+                    admissionState.revisionInvalidated = captureProjectRevision() !== projectRevision;
+                    return !admissionState.revisionInvalidated;
+                }
                 const batchResult = await executeAppActionBatch(result.actions, {
                     ...group,
                     source: 'prompt',
                     requireCompensation: result.executionMode === 'atomic',
-                    shouldExecute: () => !aborter.signal.aborted,
+                    shouldExecute: shouldExecuteBatch,
                 });
                 if (batchResult.status === 'committed' || batchResult.status === 'committed-with-warning') {
                     const executedLabels = batchResult.actions;
@@ -192,6 +200,24 @@ export async function sendChatMessage(userText: string): Promise<void> {
                             );
                         }
                     }
+                    return;
+                }
+
+                if (batchResult.status === 'cancelled') {
+                    if (admissionState.revisionInvalidated) {
+                        const error = new AiProposalInvalidatedError();
+                        updateChatMessage(assistantMsgId, {
+                            isStreaming: false,
+                            error: error.message,
+                            content:
+                                'The project changed before this command could commit. Review it and submit the command again.',
+                        });
+                        return;
+                    }
+                    updateChatMessage(assistantMsgId, {
+                        isStreaming: false,
+                        content: 'Command cancelled before it committed. No project changes were applied.',
+                    });
                     return;
                 }
 

@@ -280,7 +280,7 @@ describe('sendChatMessage injectables', () => {
         );
     });
 
-    it('executes validated provider actions through one atomic command batch', async () => {
+    it('binds validated provider actions and admission to one project revision', async () => {
         const action = { type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true } } as const;
         const secondAction = { type: 'setTrackPan', payload: { trackId: 'track-guitar', pan: -20 } } as const;
         mocks.chatStoreValue.value = {
@@ -326,6 +326,22 @@ describe('sendChatMessage injectables', () => {
             'muteTrack',
             'setTrackPan',
         ]);
+
+        mocks.executeAppActionBatch.mockImplementationOnce((_actions, options) => {
+            mocks.projectRevision.value = 'revision-2';
+            expect(options?.shouldExecute?.()).toBe(false);
+            return Promise.resolve({ status: 'cancelled', reason: 'Execution authority revoked', actions: [] });
+        });
+
+        await sendChatMessage('mute vocals and pan guitar left');
+
+        expect(mocks.pushAiActionGroup).toHaveBeenCalledTimes(1);
+        expect(mocks.notifyAiChange).toHaveBeenCalledTimes(1);
+        expect(mocks.updateChatMessage.mock.lastCall?.[1]).toEqual({
+            isStreaming: false,
+            error: 'The project changed after this proposal was created. Review and submit the command again.',
+            content: 'The project changed before this command could commit. Review it and submit the command again.',
+        });
     });
 
     it('does not report a false command error when provider planning is stopped', async () => {
