@@ -198,12 +198,15 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Proof/useCases/proofParamBridge/syncImager.ts': 3,
         'src/modules/Toaster/useCases/getToasterControls.ts': 2,
         'src/modules/Toaster/useCases/loadToasterKit.ts': 23,
-        // Count provenance: measured 2, both doc-comment mentions on one line
+        // Count provenance: measured 4, every one a doc-comment mention and not a
+        // write — this file calls nothing. Two name the message shape it returns
         // ("in the shape `ToasterNode` already posts for `setParam` and
-        // `setPadParam`") — this file holds no write at all. It is the pure
-        // kit → control-write projection the live subscriber and the offline
-        // render now share; it returns message objects and calls nothing.
-        'src/modules/Toaster/useCases/projectToasterKitToEngineMessages.ts': 2,
+        // `setPadParam`"); two more explain why the projection filters non-finite
+        // values ("`ToasterNode`'s `setParam`/`setPadParam` already refuse them"),
+        // which the offline path needs because it posts at the port directly. It is
+        // the pure kit → control-write projection the live subscriber and the
+        // offline render now share; it returns message objects.
+        'src/modules/Toaster/useCases/projectToasterKitToEngineMessages.ts': 4,
         'src/modules/Toaster/useCases/setPadParamImmediate.ts': 1,
         'src/modules/Toaster/useCases/toasterParamBridge/setPadEngineImmediate.ts': 1,
         'src/modules/Toaster/useCases/toasterParamBridge/setToasterKitParam.ts': 1,

@@ -87,5 +87,14 @@ export function projectToasterKitToEngineMessages({
         }
     }
 
-    return messages;
+    // Drop non-finite values here rather than at either call site. `ToasterNode`'s
+    // `setParam`/`setPadParam` already refuse them, so the live path was protected
+    // by the wrapper it writes through — but the offline path posts these messages
+    // straight at the worklet port and never touches that wrapper. Filtering in the
+    // projection gives both runtimes the same guarantee instead of leaving the
+    // offline one to reach the engine with a NaN a live session would have swallowed.
+    // A kit field can be non-finite in practice: `engineParams` is an untyped
+    // `Record<string, number>` and `engineType` can fall outside its union in a
+    // project written by a different build, which makes the map lookup `undefined`.
+    return messages.filter((message) => Number.isFinite(message.value));
 }

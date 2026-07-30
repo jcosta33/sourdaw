@@ -181,6 +181,26 @@ describe('prepareOfflineToaster', () => {
         expect(padValue(sent, 0, 'noise_level')).toBe(1.4);
     });
 
+    it('never posts a non-finite value at the worklet port', () => {
+        // The live path writes through `ToasterNode.setParam`/`setPadParam`, which
+        // refuse a non-finite value. The offline path posts at the port directly and
+        // never touches that wrapper, so without a guard in the projection a NaN a
+        // live session would have swallowed reaches the engine only on export.
+        const kit = makeProjectKit();
+        kit.pads[0] = { ...kit.pads[0]!, decay: Number.NaN, engineParams: { snappy: Number.POSITIVE_INFINITY } };
+        toasterStore.set({ 'toaster-1': { ...defaultToasterState, kit } });
+        const { port, sent } = makeRecordingPort();
+
+        prepareOfflineToaster({ deviceId: 'toaster-1', port });
+
+        expect(sent.every((message) => Number.isFinite(message.value))).toBe(true);
+        expect(padValue(sent, 0, 'decay')).toBeUndefined();
+        expect(padValue(sent, 0, 'snappy')).toBeUndefined();
+        // The rest of the pad still travels — one bad field does not silence a pad.
+        expect(padValue(sent, 0, 'engine_type')).toBe(TOASTER_ENGINE_MAP['cr78-metallic']);
+        expect(padValue(sent, 0, 'tone')).toBe(0.91);
+    });
+
     it('falls back to the default kit for a device with no store record, which still is not the engine default', () => {
         const { port, sent } = makeRecordingPort();
 
