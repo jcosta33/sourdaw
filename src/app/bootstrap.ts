@@ -113,6 +113,7 @@ import { getSessionLauncherHandlers } from '#/modules/SessionLauncher/useCases';
 import { getSetlistHandlers, setSetlistEventBus } from '#/modules/Setlist/useCases';
 import {
     initToasterSubscribers,
+    prepareOfflineToaster,
     setToasterEventBus,
     setToasterGrooveAssignmentExecutor,
 } from '#/modules/Toaster/useCases';
@@ -295,12 +296,17 @@ configureAudioDeviceRuntimeSink({
         setEngineReady(deviceId, isReady);
     },
     // The offline render builds instrument nodes through a different
-    // registry than live playback, so nothing here ran for an export and Levain
-    // bounced silence. Dispatch stays in the composition root; each module owns
-    // what its own instrument needs.
+    // registry than live playback, so nothing here ran for an export: Levain
+    // bounced silence and Toaster bounced its engine's built-in kit — the right
+    // notes on the wrong drums. Dispatch stays in the composition root; each
+    // module owns what its own instrument needs.
     prepareOfflineInstrument: async ({ deviceId, deviceType, port, signal }) => {
         if (deviceType === 'levain') {
             await prepareOfflineLevain({ deviceId, port, signal });
+        }
+        if (deviceType === 'toaster') {
+            // Synchronous by nature: no fetch, so no signal to honour.
+            prepareOfflineToaster({ deviceId, port });
         }
     },
     setFermenterTelemetry: (deviceId, telemetry) => {

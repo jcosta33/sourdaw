@@ -198,11 +198,24 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Proof/useCases/proofParamBridge/syncImager.ts': 3,
         'src/modules/Toaster/useCases/getToasterControls.ts': 2,
         'src/modules/Toaster/useCases/loadToasterKit.ts': 23,
+        // Count provenance: measured 2, both doc-comment mentions on one line
+        // ("in the shape `ToasterNode` already posts for `setParam` and
+        // `setPadParam`") — this file holds no write at all. It is the pure
+        // kit → control-write projection the live subscriber and the offline
+        // render now share; it returns message objects and calls nothing.
+        'src/modules/Toaster/useCases/projectToasterKitToEngineMessages.ts': 2,
         'src/modules/Toaster/useCases/setPadParamImmediate.ts': 1,
         'src/modules/Toaster/useCases/toasterParamBridge/setPadEngineImmediate.ts': 1,
         'src/modules/Toaster/useCases/toasterParamBridge/setToasterKitParam.ts': 1,
         'src/modules/Toaster/useCases/toasterParamBridge/setToasterPadParam.ts': 1,
-        'src/modules/Toaster/useCases/toasterSubscriber.ts': 22,
+        // Count provenance: measured 2, down from 22. The 22 were one unrolled
+        // `setParam`/`setPadParam` write per kit field, inlined in the subscriber.
+        // They now come from `projectToasterKitToEngineMessages`, so the subscriber
+        // holds a single `setParam` and a single `setPadParam` dispatch inside the
+        // loop that walks the projected messages. Same writes, same ownership guard
+        // (`resolveEligibleDeviceWriteTarget` is still here, and this path stays in
+        // GUARDED_EXECUTABLE_PATHS) — one call site each instead of twenty-two.
+        'src/modules/Toaster/useCases/toasterSubscriber.ts': 2,
     },
     'load-compile-hydration': {
         'src/app/bootstrap.ts': 1,

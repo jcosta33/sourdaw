@@ -49,6 +49,7 @@ const {
     prepareTimelineMapStateRestoreMock,
     configureAudioDeviceRuntimeSinkMock,
     prepareOfflineLevainMock,
+    prepareOfflineToasterMock,
 } = vi.hoisted(() => {
     const noop = vi.fn();
     const sentinelHandlers = (moduleId: string) => vi.fn<() => HandlerMapSentinel>(() => ({ moduleId }));
@@ -71,6 +72,7 @@ const {
         prepareTimelineMapStateRestoreMock: vi.fn(),
         configureAudioDeviceRuntimeSinkMock: vi.fn<(sink: RuntimeSinkUnderTest) => void>(),
         prepareOfflineLevainMock: vi.fn(() => Promise.resolve()),
+        prepareOfflineToasterMock: vi.fn(),
     };
 });
 
@@ -278,6 +280,7 @@ vi.mock('#/modules/Toaster/useCases', () => ({
     initToasterSubscribers: noop,
     setToasterEventBus: noop,
     setToasterGrooveAssignmentExecutor: noop,
+    prepareOfflineToaster: prepareOfflineToasterMock,
 }));
 
 vi.mock('#/modules/Transport/useCases', () => ({
@@ -434,14 +437,33 @@ describe('bootstrap', () => {
             });
         });
 
+        it('routes a toaster device to the Toaster module, passing its id and port', async () => {
+            prepareOfflineToasterMock.mockClear();
+
+            await getSink().prepareOfflineInstrument({
+                deviceId: 'toaster-1',
+                deviceType: 'toaster',
+                port,
+            });
+
+            // No signal: the kit push is a bounded run of postMessage calls with
+            // nothing to abort, unlike Levain's sample fetch.
+            expect(prepareOfflineToasterMock).toHaveBeenCalledExactlyOnceWith({
+                deviceId: 'toaster-1',
+                port,
+            });
+        });
+
         it('resolves without preparing anything for a device type that owns no offline setup', async () => {
             prepareOfflineLevainMock.mockClear();
+            prepareOfflineToasterMock.mockClear();
 
             // Gluten is a bus compressor: worklet-backed, but nothing to load.
             await expect(
                 getSink().prepareOfflineInstrument({ deviceId: 'gluten-1', deviceType: 'gluten', port })
             ).resolves.toBeUndefined();
             expect(prepareOfflineLevainMock).not.toHaveBeenCalled();
+            expect(prepareOfflineToasterMock).not.toHaveBeenCalled();
         });
     });
 

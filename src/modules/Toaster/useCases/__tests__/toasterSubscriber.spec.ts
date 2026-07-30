@@ -168,6 +168,38 @@ describe('initToasterSubscribers', () => {
         expect(lookupOrder).toBeLessThan(runtimeOrder);
     });
 
+    // The live and offline paths must answer "what does this kit send?" identically,
+    // so the live side is held to the same discriminating standard as the offline
+    // guard: the engine index has to be the project's choice, not the engine's
+    // built-in default for that pad (generic Kick = 0, generic Snare = 1).
+    it("sends the project's engine selection and engine-specific voicing, not the engine's built-in kit", () => {
+        const setParam = vi.fn();
+        const setPadParam = vi.fn();
+        hydrationMocks.getToasterDeviceControls.mockReturnValue({ setParam, setPadParam });
+        const base = createDefaultKit();
+        const kit = {
+            ...base,
+            pads: [
+                { ...base.pads[0]!, engineType: 'cr78-metallic' as const, engineParams: { snappy: 0.93 } },
+                { ...base.pads[1]!, engineType: 'hihat-open' as const },
+            ],
+        };
+        hydrationMocks.readToasterStore.mockReturnValue({ 'toast-1': { kit } });
+
+        const eventBus = createMock<EventBusShape>();
+        eventBus.on.mockReturnValue(vi.fn<() => void>());
+        initToasterSubscribers({ eventBus, logger: createMock<Logger>() });
+
+        handlerFor(eventBus, 'audioDevice.loaded')({ deviceId: 'toast-1', deviceType: 'toaster' });
+
+        expect(setPadParam).toHaveBeenCalledWith(0, 'engine_type', 28);
+        expect(setPadParam).not.toHaveBeenCalledWith(0, 'engine_type', 0);
+        expect(setPadParam).toHaveBeenCalledWith(0, 'snappy', 0.93);
+        // Open and closed hats share engine index 16; only this flag separates them.
+        expect(setPadParam).toHaveBeenCalledWith(1, 'engine_type', 16);
+        expect(setPadParam).toHaveBeenCalledWith(1, 'open', 1);
+    });
+
     it.each(['missing', 'ineligible'] as const)(
         'rejects loaded hydration for a %s owner before log, store, lookup, or runtime effects',
         (status) => {
