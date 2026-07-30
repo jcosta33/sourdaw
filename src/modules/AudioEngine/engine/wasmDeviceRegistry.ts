@@ -129,7 +129,7 @@ const fermenterDescriptor: WasmDeviceDescriptor = {
             setBypass: () => {},
             destroy: () => {},
         };
-        const loadPromise = createFermenterNode(context)
+        const loadPromise = createFermenterNode(context, undefined, signal)
             .then(async (result: FermenterNodeResult) => {
                 if ((await waitForDeviceReady({ deviceType, result, signal })) === null) {
                     return;
@@ -203,7 +203,7 @@ const toasterDescriptor: WasmDeviceDescriptor = {
             setBypass: () => {},
             destroy: () => {},
         };
-        const loadPromise = createToasterNode(context)
+        const loadPromise = createToasterNode(context, undefined, signal)
             .then(async (result: ToasterNodeResult) => {
                 if ((await waitForDeviceReady({ deviceType, result, signal })) === null) {
                     return;
@@ -295,13 +295,18 @@ const levainDescriptor: WasmDeviceDescriptor = {
             setBypass: () => {},
             destroy: () => {},
         };
-        const loadPromise = createLevainNode(context, undefined, () => {
-            // A post-ready worklet fault (WASM panic) silences the processor while
-            // the node stays alive. Reflect it into engineReady so the panel LED
-            // stops showing "Ready"; the Levain sink no-ops if the device was
-            // already torn down.
-            getAudioDeviceRuntimeSink().setLevainEngineReady({ deviceId, isReady: false });
-        })
+        const loadPromise = createLevainNode(
+            context,
+            undefined,
+            () => {
+                // A post-ready worklet fault (WASM panic) silences the processor while
+                // the node stays alive. Reflect it into engineReady so the panel LED
+                // stops showing "Ready"; the Levain sink no-ops if the device was
+                // already torn down.
+                getAudioDeviceRuntimeSink().setLevainEngineReady({ deviceId, isReady: false });
+            },
+            signal
+        )
             .then(async (result: LevainNodeResult) => {
                 if ((await waitForDeviceReady({ deviceType, result, signal })) === null) {
                     return;
@@ -380,7 +385,7 @@ const proofChamberDescriptor: WasmDeviceDescriptor = {
             },
             setBypass: () => {},
         };
-        const loadPromise = createProofChamberNode(context)
+        const loadPromise = createProofChamberNode(context, signal)
             .then(async (result: ProofChamberNodeResult) => {
                 const readyData = await waitForDeviceReady({ deviceType, result, signal });
                 if (!readyData) {
@@ -431,7 +436,7 @@ const glutenDescriptor: WasmDeviceDescriptor = {
             },
             setBypass: () => {},
         };
-        const loadPromise = createGlutenNode(context)
+        const loadPromise = createGlutenNode(context, undefined, signal)
             .then(async (result: GlutenNodeResult) => {
                 if ((await waitForDeviceReady({ deviceType, result, signal })) === null) {
                     return;
@@ -489,7 +494,7 @@ const bacteriaDescriptor: WasmDeviceDescriptor = {
             },
             setBypass: () => {},
         };
-        const loadPromise = createBacteriaNode(context)
+        const loadPromise = createBacteriaNode(context, undefined, signal)
             .then(async (result: BacteriaNodeResult) => {
                 const readyData = await waitForDeviceReady({ deviceType, result, signal });
                 if (!readyData) {
@@ -564,7 +569,7 @@ const grinderDescriptor: WasmDeviceDescriptor = {
                 pendingBypass = bypassed;
             },
         };
-        const loadPromise = createGrinderNode(context)
+        const loadPromise = createGrinderNode(context, undefined, signal)
             .then(async (result: GrinderNodeResult) => {
                 const readyData = await waitForDeviceReady({ deviceType, result, signal });
                 if (!readyData) {
@@ -647,7 +652,7 @@ const proofDescriptor: WasmDeviceDescriptor = {
         };
         placeholder.nativeDspControls = loadingControls;
         placeholder.controller = loadingControls;
-        const loadPromise = createProofNode(context)
+        const loadPromise = createProofNode(context, undefined, signal)
             .then(async (result: ProofNodeResult) => {
                 const readyData = await waitForDeviceReady({ deviceType, result, signal });
                 if (!readyData) {
@@ -734,7 +739,7 @@ const scoringDescriptor: WasmDeviceDescriptor = {
     create({ context, deviceId, deviceType, signal, onLoaded }) {
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.nativeDspControls = { setParam: () => {}, setBypass: () => {} };
-        const loadPromise = createScoringNode(context)
+        const loadPromise = createScoringNode(context, signal)
             .then(async (result: ScoringNodeResult) => {
                 if ((await waitForDeviceReady({ deviceType, result, signal })) === null) {
                     return;
@@ -793,7 +798,7 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
             setBypass: () => {},
             destroy: () => {},
         };
-        const loadPromise = createGrandBouleNode(context)
+        const loadPromise = createGrandBouleNode(context, undefined, signal)
             .then(async (result: GrandBouleNodeResult) => {
                 if ((await waitForDeviceReady({ deviceType, result, signal })) === null) {
                     return;
@@ -948,7 +953,7 @@ const kneadDescriptor: WasmDeviceDescriptor = {
             setBypass: () => {},
             destroy: () => {},
         };
-        const loadPromise = createKneadNode(context, transportSAB)
+        const loadPromise = createKneadNode(context, transportSAB, signal)
             .then(async (result: KneadNodeResult) => {
                 if ((await waitForDeviceReady({ deviceType, result, signal })) === null) {
                     return;

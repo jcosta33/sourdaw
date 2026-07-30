@@ -253,4 +253,50 @@ describe('createFermenterNode message surface & lifecycle', () => {
         await createFermenterNode(suspendedCtx);
         expect(resume).toHaveBeenCalledTimes(1);
     });
+
+    it('aborts WASM fetching before allocating an AudioWorkletNode', async () => {
+        const workletInit = await import('#/infra/audioWorklet/workletInitShared');
+        vi.mocked(workletInit.fetchWasmBinary).mockImplementationOnce(() => new Promise<ArrayBuffer>(() => {}));
+        const allocation = vi.fn();
+        class CountingWorkletNode {
+            constructor() {
+                allocation();
+            }
+        }
+        vi.stubGlobal('AudioWorkletNode', CountingWorkletNode);
+        const abortController = new AbortController();
+        const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
+
+        const pending = createFermenterNode(ctx, undefined, abortController.signal);
+        abortController.abort(new DOMException('Timed out', 'AbortError'));
+
+        await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+        expect(allocation).not.toHaveBeenCalled();
+    });
+
+    it('rechecks cancellation at the resource-allocation boundary', async () => {
+        const allocation = vi.fn();
+        class CountingWorkletNode {
+            constructor() {
+                allocation();
+            }
+        }
+        vi.stubGlobal('AudioWorkletNode', CountingWorkletNode);
+        const boundaryAbort = new DOMException('Cancelled at boundary', 'AbortError');
+        const throwIfAborted = vi.fn(() => {
+            throw boundaryAbort;
+        });
+        const signal = {
+            aborted: false,
+            reason: undefined,
+            addEventListener: vi.fn(),
+            removeEventListener: vi.fn(),
+            throwIfAborted,
+        } as unknown as AbortSignal;
+        const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
+
+        await expect(createFermenterNode(ctx, undefined, signal)).rejects.toBe(boundaryAbort);
+        expect(throwIfAborted).toHaveBeenCalledTimes(1);
+        expect(allocation).not.toHaveBeenCalled();
+    });
 });

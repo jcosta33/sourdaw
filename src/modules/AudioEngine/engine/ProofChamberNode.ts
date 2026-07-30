@@ -3,6 +3,7 @@
  * Stereo effect: audio in → reverb processing → audio out.
  */
 
+import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from '#/infra/audioWorklet/workletInitShared';
 
 import proofChamberProcessorUrl from '../services/proofChamberProcessor.ts?worker&url';
@@ -36,12 +37,18 @@ export function isProofChamberDevice(deviceType: string): boolean {
     return deviceType === 'dutch-oven';
 }
 
-export async function createProofChamberNode(ctx: BaseAudioContext): Promise<ProofChamberNodeResult> {
+export async function createProofChamberNode(
+    ctx: BaseAudioContext,
+    signal?: AbortSignal
+): Promise<ProofChamberNodeResult> {
     if (ctx instanceof AudioContext && ctx.state === 'suspended') {
-        await ctx.resume();
+        await raceAbortSignal(ctx.resume(), signal);
     }
 
-    await ensureWorkletRegistered(ctx, proofChamberProcessorUrl);
+    await raceAbortSignal(ensureWorkletRegistered(ctx, proofChamberProcessorUrl), signal);
+    const wasmBytes = await raceAbortSignal(fetchWasmBinary(DEFAULT_WASM_URL), signal);
+
+    signal?.throwIfAborted();
 
     const node = new AudioWorkletNode(ctx, 'proof-chamber-processor', {
         numberOfInputs: 1,
@@ -57,7 +64,6 @@ export async function createProofChamberNode(ctx: BaseAudioContext): Promise<Pro
     };
     const readyPromise = handshake.promise;
 
-    const wasmBytes = await fetchWasmBinary(DEFAULT_WASM_URL);
     const copy = wasmBytes.slice(0);
     node.port.postMessage({ type: 'init', wasmBytes: copy }, [copy]);
 
