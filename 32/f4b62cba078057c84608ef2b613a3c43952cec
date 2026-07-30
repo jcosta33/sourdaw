@@ -1,0 +1,23 @@
+src/modules/WorkspaceShell/presentations/hooks/__tests__/usePromptExecution.spec.ts
+  s_66d4924c65dcd2::t_dd2230a420ab1f 8-9,11,32-33,54-56,97-108,194,196-198,204,211-217,224-270,284-289,309,312,355,385-403,405-409,415,423,425-428,430-439,441-455,477,498-515,583-589,647,663
+src/modules/WorkspaceShell/presentations/hooks/usePromptExecution.ts
+  s_66d4924c65dcd2::t_5c228bda65c206 7-8,24-25,68-69,75-83,127,129-139,191-194,233-236,238-247,249-253,258-260,265,271,276,283-284,288-293,295-297,299-301,310,314-315,321,326-329,336,339,351-357,362-369,371-373,382-383,386-406,410-414,418
+src/modules/WorkspaceShell/presentations/views/__tests__/PromptBar.spec.tsx
+  s_66d4924c65dcd2::t_e046ed3b00672a 145,158-164,175-181
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "32f4b62cba078057c84608ef2b613a3c43952cec",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
