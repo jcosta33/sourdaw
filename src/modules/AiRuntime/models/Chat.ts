@@ -1,6 +1,7 @@
 export type ChatRole = 'user' | 'assistant' | 'system';
 
-export type ChatActionConfirmationStatus = 'proposed' | 'accepted' | 'executed' | 'failed' | 'cancelled';
+export type ChatActionConfirmationStatus =
+    'proposed' | 'accepted' | 'executed' | 'failed' | 'cancelled' | 'invalidated';
 
 export type ChatMessage = {
     id: string;
