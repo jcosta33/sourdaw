@@ -704,6 +704,7 @@ describe('wasmDeviceRegistry descriptors', () => {
             expect(emitDeviceLoaded).toHaveBeenCalledWith({ deviceId: 'gb-1', deviceType: 'grand-boule' });
             const loaded = lastLoadedNode(deps.onLoaded);
             expect(loaded.grandBouleControls?.ready).toBe(true);
+            expect(loaded.workerInstances).toBe(1);
         });
     });
 

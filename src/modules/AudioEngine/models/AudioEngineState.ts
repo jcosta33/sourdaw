@@ -45,6 +45,20 @@ export type AudioEngineHealth = {
     dropouts: AudioEngineDropoutStats;
 };
 
+/**
+ * Current-Chrome playback quality counters sampled from `AudioContext.playbackStats`.
+ * Durations and latencies are seconds; Chrome refreshes the underlying counters at
+ * most once per second while the context is running and the document is observable.
+ */
+export type AudioEnginePlaybackStats = {
+    underrunDuration: number;
+    underrunEvents: number;
+    totalDuration: number;
+    averageLatency: number;
+    minimumLatency: number;
+    maximumLatency: number;
+};
+
 export type AudioEngineDiagnostics = {
     context: {
         state: AudioContextState;
@@ -52,6 +66,8 @@ export type AudioEngineDiagnostics = {
         baseLatency: number;
         outputLatency: number;
     };
+    /** Null only when the engine has no live AudioContext and is running its fallback shim. */
+    playback: AudioEnginePlaybackStats | null;
     graph: {
         trackStrips: number;
         busStrips: number;
@@ -63,12 +79,28 @@ export type AudioEngineDiagnostics = {
         failedDeviceInstances: number;
         deviceInstancesByType: Record<string, number>;
         deviceAudioNodes: number;
+        /** AudioWorklet processor instances owned by devices; meter worklets are reported separately. */
+        deviceAudioWorkletProcessors: number;
+        deviceAudioWorkletProcessorsByType: Record<string, number>;
         stripMeterWorklets: number;
         masterMeterWorklets: number;
+        /** Device processors plus strip and master meter processors. */
+        graphAudioWorkletProcessors: number;
+        /** Dedicated Workers owned by loaded graph devices; excludes transient recording/export workers. */
+        workerInstances: number;
+        workerInstancesByType: Record<string, number>;
         adjustmentLayerBuses: number;
     };
     runtime: {
         trackedAudioScheduledSources: number;
+        /** Device processors are unmanaged until the lifecycle protocol lands in Wave 1. */
+        processorLifecycle: {
+            unmanaged: number;
+            continue: number;
+            continueIfNotQuiet: number;
+            tail: number;
+            sleep: number;
+        };
     };
 };
 
@@ -118,6 +150,8 @@ export type BuiltinDeviceNode = {
     nodes: AudioNode[];
     inputNode: AudioNode;
     outputNode: AudioNode;
+    /** Dedicated Worker instances owned by this loaded device, separate from AudioWorklet processors. */
+    workerInstances?: number;
     /** Treat a stable proxy as a source even though GainNode accepts input. */
     isGenerator?: boolean;
     bypassed?: boolean;

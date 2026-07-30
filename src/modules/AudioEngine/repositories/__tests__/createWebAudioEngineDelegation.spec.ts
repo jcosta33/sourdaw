@@ -160,6 +160,12 @@ function asAudioContext(ctx: MockAudioContext): AudioContext {
     return ctx as unknown as AudioContext;
 }
 
+class FakeWorkletNode {
+    port = { postMessage: vi.fn() };
+    connect = vi.fn();
+    disconnect = vi.fn();
+}
+
 type DiagnosticTestDevice = BuiltinDeviceNode & {
     diagnosticLoadState?: 'ready' | 'pending' | 'failed';
 };
@@ -169,17 +175,30 @@ type DiagnosticDeviceInput = {
     deviceId: string;
     deviceType: string;
     nodeCount?: number;
+    workletNodeCount?: number;
+    workerInstances?: number;
     loadState?: DiagnosticTestDevice['diagnosticLoadState'];
 };
 
 function createDiagnosticDevice(input: DiagnosticDeviceInput): DiagnosticTestDevice {
-    const nodes = Array.from({ length: input.nodeCount ?? 1 }, () => input.context.createGain());
+    const nodeCount = input.nodeCount ?? 1;
+    const workletNodeCount = input.workletNodeCount ?? 0;
+    if (workletNodeCount > nodeCount) {
+        throw new Error('workletNodeCount cannot exceed nodeCount');
+    }
+    const workletNodes = Array.from(
+        { length: workletNodeCount },
+        () => new FakeWorkletNode() as unknown as AudioWorkletNode
+    );
+    const gainNodes = Array.from({ length: nodeCount - workletNodeCount }, () => input.context.createGain());
+    const nodes: AudioNode[] = [...workletNodes, ...gainNodes];
     const device: DiagnosticTestDevice = {
         deviceId: input.deviceId,
         type: input.deviceType,
         nodes,
         inputNode: nodes[0]!,
         outputNode: nodes.at(-1)!,
+        workerInstances: input.workerInstances,
     };
     if (input.loadState && input.loadState !== 'ready') {
         device.controller = {
@@ -202,12 +221,6 @@ function trackMocks(trackId: string): Record<string, (...args: unknown[]) => voi
 describe('AudioEngine — public API delegation and lifecycle', () => {
     let engine: AudioEngine;
     let mockCtx: MockAudioContext;
-
-    class FakeWorkletNode {
-        port = { postMessage: vi.fn() };
-        connect = vi.fn();
-        disconnect = vi.fn();
-    }
 
     beforeEach(() => {
         vi.clearAllMocks();
@@ -267,6 +280,14 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
 
     it('reports the live graph and runtime load without touching the render path', async () => {
         const expectedCtx = { state: 'running' as const, sampleRate: 48_000, baseLatency: 0.01, outputLatency: 0.01 };
+        const expectedPlayback = {
+            underrunDuration: 0.002,
+            underrunEvents: 2,
+            totalDuration: 30,
+            averageLatency: 0.015,
+            minimumLatency: 0.01,
+            maximumLatency: 0.02,
+        };
         const emptyGraph = {
             trackStrips: 0,
             busStrips: 0,
@@ -277,14 +298,23 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
             failedDeviceInstances: 0,
             deviceInstancesByType: {},
             deviceAudioNodes: 0,
+            deviceAudioWorkletProcessors: 0,
+            deviceAudioWorkletProcessorsByType: {},
             stripMeterWorklets: 0,
             masterMeterWorklets: 0,
+            graphAudioWorkletProcessors: 0,
+            workerInstances: 0,
+            workerInstancesByType: {},
             adjustmentLayerBuses: 1,
         };
         expect(engine.getDiagnostics()).toEqual({
             context: expectedCtx,
+            playback: expectedPlayback,
             graph: emptyGraph,
-            runtime: { trackedAudioScheduledSources: 0 },
+            runtime: {
+                trackedAudioScheduledSources: 0,
+                processorLifecycle: { unmanaged: 0, continue: 0, continueIfNotQuiet: 0, tail: 0, sleep: 0 },
+            },
         });
 
         await engine.initialize();
@@ -298,55 +328,91 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
         function createDevice(input: Omit<DiagnosticDeviceInput, 'context'>): DiagnosticTestDevice {
             return createDiagnosticDevice({ context: mockCtx, ...input });
         }
-        const fermenter = createDevice({ deviceId: 'fermenter-1', deviceType: 'fermenter' });
-        const bacteria = createDevice({ deviceId: 'bacteria-1', deviceType: 'bacteria', nodeCount: 2 });
+        const fermenter = createDevice({
+            deviceId: 'fermenter-1',
+            deviceType: 'fermenter',
+            workletNodeCount: 1,
+        });
+        const bacteria = createDevice({
+            deviceId: 'bacteria-1',
+            deviceType: 'bacteria',
+            nodeCount: 2,
+            workletNodeCount: 1,
+        });
+        const grandBoule = createDevice({
+            deviceId: 'grand-boule-1',
+            deviceType: 'grand-boule',
+            workletNodeCount: 1,
+            workerInstances: 1,
+        });
         const sidechain = createDevice({
             deviceId: 'sidechain-1',
             deviceType: 'builtin-sidechain-compressor',
         });
         const pending = createDevice({ deviceId: 'pending-1', deviceType: 'levain', loadState: 'pending' });
-        const failed = createDevice({ deviceId: 'failed-1', deviceType: 'grand-boule', loadState: 'failed' });
-        track.deviceNodes.push(fermenter, bacteria, pending, failed);
+        const failed = createDevice({ deviceId: 'failed-1', deviceType: 'proof', loadState: 'failed' });
+        track.deviceNodes.push(fermenter, bacteria, grandBoule, pending, failed);
         busTrack.deviceNodes.push(sidechain);
         engine.wireSidechainRoute('t1', 'bus-1', 'sidechain-1');
         engine.registerScheduledSource(mockCtx.createOscillator());
 
         expect(engine.getDiagnostics()).toEqual({
             context: expectedCtx,
+            playback: expectedPlayback,
             graph: {
                 trackStrips: 1,
                 busStrips: 1,
                 sends: 1,
                 sidechains: 1,
-                deviceInstances: 3,
+                deviceInstances: 4,
                 pendingDeviceInstances: 1,
                 failedDeviceInstances: 1,
                 deviceInstancesByType: {
                     bacteria: 1,
                     'builtin-sidechain-compressor': 1,
                     fermenter: 1,
+                    'grand-boule': 1,
                 },
-                deviceAudioNodes: 6,
+                deviceAudioNodes: 7,
+                deviceAudioWorkletProcessors: 3,
+                deviceAudioWorkletProcessorsByType: { bacteria: 1, fermenter: 1, 'grand-boule': 1 },
                 stripMeterWorklets: 1,
                 masterMeterWorklets: 1,
+                graphAudioWorkletProcessors: 5,
+                workerInstances: 1,
+                workerInstancesByType: { 'grand-boule': 1 },
                 adjustmentLayerBuses: 1,
             },
-            runtime: { trackedAudioScheduledSources: 1 },
+            runtime: {
+                trackedAudioScheduledSources: 1,
+                processorLifecycle: { unmanaged: 3, continue: 0, continueIfNotQuiet: 0, tail: 0, sleep: 0 },
+            },
         });
 
         engine.resetGraph();
         expect(engine.getDiagnostics()).toEqual({
             context: expectedCtx,
+            playback: expectedPlayback,
             graph: {
                 ...emptyGraph,
                 masterMeterWorklets: 1,
+                graphAudioWorkletProcessors: 1,
                 adjustmentLayerBuses: 0,
             },
-            runtime: { trackedAudioScheduledSources: 0 },
+            runtime: {
+                trackedAudioScheduledSources: 0,
+                processorLifecycle: { unmanaged: 0, continue: 0, continueIfNotQuiet: 0, tail: 0, sleep: 0 },
+            },
         });
 
         await engine.dispose();
         expect(engine.getDiagnostics().graph.masterMeterWorklets).toBe(0);
+    });
+
+    it('rejects a live context without the required current-Chrome playback statistics API', () => {
+        Object.defineProperty(mockCtx, 'playbackStats', { value: undefined, configurable: true });
+
+        expect(() => engine.getDiagnostics()).toThrow('Audio diagnostics require AudioContext.playbackStats');
     });
 
     it('suspend suspends a running context and skips an already-suspended one', async () => {
