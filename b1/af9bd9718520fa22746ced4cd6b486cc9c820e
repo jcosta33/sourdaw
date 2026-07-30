@@ -1,0 +1,65 @@
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_af318c00446f5f::t_63782a2ed43da3 33-34,136,140-141,145-146
+src/modules/Arrangement/handlers/track/__tests__/armTrack.spec.ts
+  s_af318c00446f5f::t_56a3c505e0e5f0 8,22,29,40,47-48,65-66,74-75,110,119-120,125,130-133,156,159,163,173-174,179,182,191-192,203-204,214,224-225
+src/modules/Arrangement/useCases/recording/__tests__/armTrack.spec.ts
+  s_bc88af7d3b054c::t_d111c5f7ec4967 10,25,33,63,93,110,137,147,150,152,154,158-165,176-178,205,211-212,223,247-271,290,307,317,320,322,324,328-335,346-348
+src/modules/Arrangement/useCases/recording/armTrack.ts
+  s_6261c27a487084::t_0222f0a73ca5d2 1-6,16-17,46,48-49,52-56,58,62,65,68,73-74,85-86,89,95,100,109,121,134
+src/modules/MIDI/repositories/webMidi/__tests__/targetTrackRevision.spec.ts
+  s_66d4924c65dcd2::t_02225e5dbd1d91 3,8,11,15-18,23
+src/modules/MIDI/repositories/webMidi/getTargetTrackOwnerId.ts
+  s_bc88af7d3b054c::t_f34304f7c404e8 1-5
+src/modules/MIDI/repositories/webMidi/lifecycle/setMidiInputTrack.ts
+  s_bc88af7d3b054c::t_16fda5663df5e9 3-4
+src/modules/MIDI/repositories/webMidi/setTargetTrackId.ts
+  s_bc88af7d3b054c::t_08c80345680003 3,5
+src/modules/MIDI/repositories/webMidi/state.ts
+  s_bc88af7d3b054c::t_3a89956f303d1e 33
+src/modules/MIDI/useCases/index.ts
+  s_bc88af7d3b054c::t_3d32425be0bda0 150
+src/modules/MIDI/useCases/webMidiInput/getMidiInputTrackOwnerId.ts
+  s_bc88af7d3b054c::t_658b17ab0ba10e 1-5
+src/utils/handlerContract.ts
+  s_bc88af7d3b054c::t_581372c7873c80 326,329-330
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "b1af9bd9718520fa22746ced4cd6b486cc9c820e",
+  "prompts": {},
+  "sessions": {
+    "s_6261c27a487084": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fb293-5cbc-7620-bdb0-8ad300311b99",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_af318c00446f5f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fb295-d84d-7c22-a880-8b995da8acb0",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
