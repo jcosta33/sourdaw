@@ -1,0 +1,21 @@
+src/modules/Arrangement/useCases/recording/__tests__/armTrack.spec.ts
+  s_ac9b259eab20ba::t_c61748ed2c620e 134-154,235-258,277-278
+src/modules/Arrangement/useCases/recording/armTrack.ts
+  s_ac9b259eab20ba::t_1a9fcd0df3b1a6 37-39,74-76,82,85-88
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "a69f0aa5b2e99683d2cc20ce651dd1a00a3b5902",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
