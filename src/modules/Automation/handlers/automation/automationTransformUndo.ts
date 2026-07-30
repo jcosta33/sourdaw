@@ -1,31 +1,34 @@
-import { type HandlerDescribeResult } from '#/utils/handlerContract';
+import { type HandlerDescribeResult, type AutomationPointSnapshot } from '#/utils/handlerContract';
 
+import { transformAutomationPoints } from '../../useCases/automation/transformAutomationPoints';
 import { getAutomationStoreState } from '../../useCases/getAutomationStoreState';
 
-/**
- * Shared `describe()` body for the automation transform handlers
- * (reverse/scale/stretch/thin/quantize/invert). Each of these mutates one lane's
- * `points` in place; their lossless inverse is to restore the lane's points to a
- * pre-execute snapshot.
- *
- * Runs PRE-execute (see executeAppAction), so it reads the lane's current points
- * before the transform changes them, deep-copies them (so a later CRDT/store
- * mutation cannot alias the snapshot), and emits a `restoreAutomationLanePoints`
- * inverse carrying that snapshot. When the lane is missing — execute will be a
- * no-op — the inverse is omitted rather than emitted lossy.
- */
-export function describeLaneTransformUndo(laneId: string, label: string): HandlerDescribeResult {
+function clonePoint(point: AutomationPointSnapshot): AutomationPointSnapshot {
+    return {
+        ...point,
+        ...(point.cp1 ? { cp1: { ...point.cp1 } } : {}),
+        ...(point.cp2 ? { cp2: { ...point.cp2 } } : {}),
+    };
+}
+
+/** Capture both sides of a lane transform so an old inverse can reject stale state. */
+export function describeLaneTransformUndo(
+    laneId: string,
+    label: string,
+    transform: Parameters<typeof transformAutomationPoints>[1]
+): HandlerDescribeResult {
     const state = getAutomationStoreState();
     const lane = state?.lanes.find((candidate) => candidate.id === laneId);
     if (!lane) {
         return { label };
     }
-    const points = lane.points.map((point) => ({ ...point }));
+    const points = lane.points.map(clonePoint);
+    const expectedPoints = transformAutomationPoints(lane, transform).map(clonePoint);
     return {
         label,
         inverseAction: {
             type: 'restoreAutomationLanePoints',
-            payload: { laneId, points },
+            payload: { laneId, points, expectedPoints },
         },
     };
 }

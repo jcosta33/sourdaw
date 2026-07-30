@@ -34,6 +34,9 @@ describe('RuntimeAction', () => {
             { type: 'addAutomationPoint', payload: { laneId: 'lane-1', beat: 4, value: 0.5 } },
             { type: 'removeAutomationPoint', payload: { laneId: 'lane-1', pointIndex: 0 } },
             { type: 'setAutomationLaneEnabled', payload: { laneId: 'lane-1', enabled: false } },
+            { type: 'setAutomationMode', payload: { trackId: 'track-1', mode: 'touch' } },
+            { type: 'scaleAutomation', payload: { laneId: 'lane-1', factor: 1.5 } },
+            { type: 'stretchAutomation', payload: { laneId: 'lane-1', factor: 2 } },
             { type: 'createVcaGroup', payload: { name: 'Band', trackIds: ['track-1'] } },
             { type: 'createCollabSession', payload: { name: 'Mix review' } },
         ];
@@ -44,6 +47,9 @@ describe('RuntimeAction', () => {
             'addAutomationPoint',
             'removeAutomationPoint',
             'setAutomationLaneEnabled',
+            'setAutomationMode',
+            'scaleAutomation',
+            'stretchAutomation',
             'createVcaGroup',
             'createCollabSession',
         ]);
@@ -51,6 +57,9 @@ describe('RuntimeAction', () => {
         expectTypeOf<PayloadHasKey<'addAutomationLane', 'laneId'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'addAutomationPoint', 'pointId'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'removeAutomationPoint', 'pointId'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'setAutomationMode', 'expectedMode'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'scaleAutomation', 'anchor'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'stretchAutomation', 'anchorBeat'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'createVcaGroup', 'vcaGroupId'>>().toEqualTypeOf<false>();
         expectTypeOf<EmptyCollabSessionPayloadAllowed>().toEqualTypeOf<false>();
     });

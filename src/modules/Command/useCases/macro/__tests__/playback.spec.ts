@@ -153,6 +153,102 @@ describe('playMacro', () => {
         expect(macroStore.value?.macros[0]?.actions).toEqual(automationMacro.actions);
     });
 
+    it('remaps point IDs embedded in recorded automation restore snapshots', async () => {
+        const restoreMacro: Macro = {
+            id: 'automation-restore',
+            name: 'Automation restore',
+            actions: [
+                {
+                    type: 'addAutomationLane',
+                    payload: {
+                        trackId: 'track-1',
+                        parameterId: 'gain',
+                        parameterName: 'Gain',
+                        laneId: 'recorded-lane',
+                    },
+                },
+                {
+                    type: 'addAutomationPoint',
+                    payload: {
+                        laneId: 'recorded-lane',
+                        pointId: 'recorded-point',
+                        beat: 4,
+                        value: 0.5,
+                    },
+                },
+                {
+                    type: 'restoreAutomationLanePoints',
+                    payload: {
+                        laneId: 'recorded-lane',
+                        points: [
+                            {
+                                id: 'recorded-point',
+                                beat: 4,
+                                value: 0.5,
+                                curve: 'linear',
+                                tension: 0,
+                            },
+                        ],
+                        expectedPoints: [
+                            {
+                                id: 'recorded-point',
+                                beat: 4,
+                                value: 0.75,
+                                curve: 'linear',
+                                tension: 0,
+                            },
+                        ],
+                    },
+                },
+                {
+                    type: 'removeAutomationPoint',
+                    payload: { laneId: 'recorded-lane', pointIndex: 0, pointId: 'recorded-point' },
+                },
+            ],
+            createdAt: 0,
+        };
+        macroStore.set({ macros: [restoreMacro], recording: false, currentRecording: [] });
+        executeAppActionMock.mockImplementation((action) => {
+            if (action.type === 'addAutomationLane') {
+                action.payload.laneId = 'replayed-lane';
+            }
+            if (action.type === 'addAutomationPoint') {
+                action.payload.pointId = 'replayed-point';
+            }
+            return Promise.resolve();
+        });
+
+        await playMacro(restoreMacro.id);
+
+        expect(executeAppActionMock.mock.calls[2]?.[0]).toEqual({
+            type: 'restoreAutomationLanePoints',
+            payload: {
+                laneId: 'replayed-lane',
+                points: [
+                    {
+                        id: 'replayed-point',
+                        beat: 4,
+                        value: 0.5,
+                        curve: 'linear',
+                        tension: 0,
+                    },
+                ],
+                expectedPoints: [
+                    {
+                        id: 'replayed-point',
+                        beat: 4,
+                        value: 0.75,
+                        curve: 'linear',
+                        tension: 0,
+                    },
+                ],
+            },
+        });
+        expect(executeAppActionMock.mock.calls[3]?.[0]).toMatchObject({
+            payload: { laneId: 'replayed-lane', pointId: 'replayed-point' },
+        });
+    });
+
     it('remaps later actions to the canonical lane returned by a no-op add', async () => {
         const noOpLaneMacro: Macro = {
             id: 'automation-existing-lane',

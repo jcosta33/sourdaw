@@ -1,5 +1,6 @@
-import { simplifyAutomationPoints } from '../../services/automationPointAlgorithms';
 import { automationStore } from '../../stores/automationStore';
+
+import { transformAutomationPoints } from './transformAutomationPoints';
 
 export function thinAutomationPoints(laneId: string, tolerance = 0.01): void {
     const state = automationStore.value;
@@ -11,10 +12,7 @@ export function thinAutomationPoints(laneId: string, tolerance = 0.01): void {
             if (lane.id !== laneId) {
                 return lane;
             }
-            if (lane.points.length <= 2) {
-                return lane;
-            }
-            return { ...lane, points: simplifyAutomationPoints({ points: lane.points, tolerance }) };
+            return { ...lane, points: transformAutomationPoints(lane, { type: 'thin', tolerance }) };
         }),
     });
 }

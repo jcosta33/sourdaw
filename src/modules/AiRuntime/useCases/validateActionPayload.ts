@@ -436,13 +436,40 @@ const validators = {
     arpeggiate: 'unchecked',
 
     // Automation secondary ops
-    setAutomationMode: 'unchecked',
-    scaleAutomation: 'unchecked',
-    stretchAutomation: 'unchecked',
-    invertAutomation: 'unchecked',
-    reverseAutomation: 'unchecked',
-    thinAutomation: 'unchecked',
-    quantizeAutomation: 'unchecked',
+    setAutomationMode: (param): param is PayloadOf<'setAutomationMode'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['trackId', 'mode']) &&
+        isNonEmptyString(param.trackId) &&
+        (param.mode === 'read' ||
+            param.mode === 'write' ||
+            param.mode === 'touch' ||
+            param.mode === 'latch' ||
+            param.mode === 'off'),
+    scaleAutomation: (param): param is PayloadOf<'scaleAutomation'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['laneId', 'factor']) &&
+        isNonEmptyString(param.laneId) &&
+        isInRange(param.factor, Number.MIN_VALUE, 16),
+    stretchAutomation: (param): param is PayloadOf<'stretchAutomation'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['laneId', 'factor']) &&
+        isNonEmptyString(param.laneId) &&
+        isInRange(param.factor, Number.MIN_VALUE, 16),
+    invertAutomation: (param): param is PayloadOf<'invertAutomation'> =>
+        isObj(param) && hasExactKeys(param, ['laneId']) && isNonEmptyString(param.laneId),
+    reverseAutomation: (param): param is PayloadOf<'reverseAutomation'> =>
+        isObj(param) && hasExactKeys(param, ['laneId']) && isNonEmptyString(param.laneId),
+    thinAutomation: (param): param is PayloadOf<'thinAutomation'> =>
+        isObj(param) &&
+        hasOnlyKeys(param, ['laneId', 'tolerance']) &&
+        Object.hasOwn(param, 'laneId') &&
+        isNonEmptyString(param.laneId) &&
+        isOptional(param.tolerance, isPositiveNumber),
+    quantizeAutomation: (param): param is PayloadOf<'quantizeAutomation'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['laneId', 'gridSize']) &&
+        isNonEmptyString(param.laneId) &&
+        isInRange(param.gridSize, Number.MIN_VALUE, 64),
     // Internal inverse-only actions (emitted by handlers' describe(), never by the AI).
     restoreAutomationLanePoints: 'unchecked',
 

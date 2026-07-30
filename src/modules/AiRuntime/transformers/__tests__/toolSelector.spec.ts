@@ -70,6 +70,26 @@ describe('toolSelector', () => {
         expect(selectedNames).toContain('analyzeMix');
     });
 
+    it('makes every executable automation transform available for automation prompts', () => {
+        const selected = selectToolsForPrompt([...DAW_TOOL_SCHEMAS], 'thin and quantize the automation envelope');
+        const selectedNames = selected.map((tool) => tool.function.name);
+
+        expect(selectedNames).toEqual(
+            expect.arrayContaining([
+                'addAutomationLane',
+                'addAutomationPoint',
+                'setAutomationLaneEnabled',
+                'setAutomationMode',
+                'scaleAutomation',
+                'stretchAutomation',
+                'invertAutomation',
+                'reverseAutomation',
+                'thinAutomation',
+                'quantizeAutomation',
+            ])
+        );
+    });
+
     it('includes specific tools based on keywords (e.g. stems)', () => {
         const selected = selectToolsForPrompt(allTools, 'separate the vocal stem');
         const selectedNames = selected.map((time) => time.function.name);

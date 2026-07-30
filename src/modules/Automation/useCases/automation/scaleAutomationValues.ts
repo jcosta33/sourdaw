@@ -1,5 +1,7 @@
 import { automationStore } from '../../stores/automationStore';
 
+import { transformAutomationPoints } from './transformAutomationPoints';
+
 export function scaleAutomationValues(laneId: string, factor: number, anchor = 0): void {
     const state = automationStore.value;
     if (!state) {
@@ -10,13 +12,7 @@ export function scaleAutomationValues(laneId: string, factor: number, anchor = 0
             if (lane.id !== laneId) {
                 return lane;
             }
-            return {
-                ...lane,
-                points: lane.points.map((param) => ({
-                    ...param,
-                    value: Math.min(lane.maxValue, Math.max(lane.minValue, anchor + (param.value - anchor) * factor)),
-                })),
-            };
+            return { ...lane, points: transformAutomationPoints(lane, { type: 'scale', factor, anchor }) };
         }),
     });
 }

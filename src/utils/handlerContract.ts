@@ -526,7 +526,10 @@ export type AppAction =
               pointId?: string;
           };
       }
-    | { type: 'setAutomationMode'; payload: { trackId: string; mode: AutomationMode } }
+    | {
+          type: 'setAutomationMode';
+          payload: { trackId: string; mode: AutomationMode; expectedMode?: AutomationMode };
+      }
     | { type: 'hideTrack'; payload: { trackId: string; hidden: boolean } }
     | { type: 'disableTrack'; payload: { trackId: string; disabled: boolean } }
     | { type: 'setTrackHeight'; payload: { trackId: string; height: number } }
@@ -554,7 +557,11 @@ export type AppAction =
            *  directly. Keep mirrored in src/utils/handlerContract.ts and
            *  AiRuntime/models/RuntimeAction.ts. */
           type: 'restoreAutomationLanePoints';
-          payload: { laneId: string; points: readonly AutomationPointSnapshot[] };
+          payload: {
+              laneId: string;
+              points: readonly AutomationPointSnapshot[];
+              expectedPoints?: readonly AutomationPointSnapshot[];
+          };
       }
     | { type: 'loadPreset'; payload: { presetId: string; trackId?: string } }
     | { type: 'savePreset'; payload: { trackId: string; name: string; category: string } }

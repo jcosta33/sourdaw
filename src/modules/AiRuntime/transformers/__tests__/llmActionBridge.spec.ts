@@ -33,6 +33,7 @@ const projectContext: ProjectContext = {
             armed: false,
             gain: 0.8,
             pan: 0,
+            automationMode: 'read',
             outputId: 'master',
             clipCount: 1,
             deviceCount: 1,
@@ -103,6 +104,7 @@ const projectContext: ProjectContext = {
             armed: false,
             gain: 0.8,
             pan: 0,
+            automationMode: 'read',
             outputId: 'master',
             clipCount: 0,
             deviceCount: 0,
@@ -119,6 +121,7 @@ const projectContext: ProjectContext = {
             armed: false,
             gain: 0.8,
             pan: 0,
+            automationMode: 'read',
             outputId: 'hw_out',
             clipCount: 0,
             deviceCount: 0,
@@ -1207,6 +1210,7 @@ describe('bridgeLlmToolCalls', () => {
         expect(userMessage).toContain('"pointCount":1');
         expect(userMessage).not.toContain('"points"');
         expect(userMessage).toContain('"armed":false');
+        expect(userMessage).toContain('"automationMode":"read"');
         expect(userMessage).toContain('<user_request>\nmute the vocals\n</user_request>');
         expect(userMessage).toContain(
             '"clips":[{"id":"clip-verse","name":"Verse","type":"audio","startBeat":0,"endBeat":8}]'
@@ -1366,5 +1370,207 @@ describe('bridgeLlmToolCalls', () => {
                 reason: 'Provider batch contains conflicting writes to automation-lane-point:lane-vocal-gain:8',
             },
         ]);
+    });
+
+    it('converts every bounded automation transform into an exact runtime action', () => {
+        const lane = projectContext.automationLanes?.[0];
+        if (!lane) {
+            throw new Error('Expected the project fixture to contain an automation lane');
+        }
+        const context: ProjectContext = {
+            ...projectContext,
+            automationLanes: [
+                {
+                    ...lane,
+                    points: [
+                        { beat: 0.25, value: 0.2, curve: 'linear' },
+                        { beat: 2.25, value: 0.5, curve: 'linear' },
+                        { beat: 4.25, value: 0.8, curve: 'linear' },
+                    ],
+                },
+            ],
+        };
+        const cases = [
+            {
+                call: { name: 'setAutomationMode', arguments: { trackId: 'track-vocals', mode: 'touch' } },
+                action: { type: 'setAutomationMode', payload: { trackId: 'track-vocals', mode: 'touch' } },
+            },
+            {
+                call: { name: 'scaleAutomation', arguments: { laneId: lane.id, factor: 1.5 } },
+                action: { type: 'scaleAutomation', payload: { laneId: lane.id, factor: 1.5 } },
+            },
+            {
+                call: { name: 'stretchAutomation', arguments: { laneId: lane.id, factor: 2 } },
+                action: { type: 'stretchAutomation', payload: { laneId: lane.id, factor: 2 } },
+            },
+            {
+                call: { name: 'invertAutomation', arguments: { laneId: lane.id } },
+                action: { type: 'invertAutomation', payload: { laneId: lane.id } },
+            },
+            {
+                call: { name: 'reverseAutomation', arguments: { laneId: lane.id } },
+                action: { type: 'reverseAutomation', payload: { laneId: lane.id } },
+            },
+            {
+                call: { name: 'thinAutomation', arguments: { laneId: lane.id, tolerance: 0.02 } },
+                action: { type: 'thinAutomation', payload: { laneId: lane.id, tolerance: 0.02 } },
+            },
+            {
+                call: { name: 'quantizeAutomation', arguments: { laneId: lane.id, gridSize: 1 } },
+                action: { type: 'quantizeAutomation', payload: { laneId: lane.id, gridSize: 1 } },
+            },
+        ];
+
+        for (const automationCase of cases) {
+            expect(bridge({ calls: [automationCase.call], context })).toEqual({
+                actions: [automationCase.action],
+                rejections: [],
+            });
+        }
+    });
+
+    it('rejects transform no-ops, hidden fields, invalid bounds, and insufficient lane content', () => {
+        const result = bridge({
+            calls: [
+                { name: 'setAutomationMode', arguments: { trackId: 'track-vocals', mode: 'read' } },
+                { name: 'scaleAutomation', arguments: { laneId: 'lane-vocal-gain', factor: 1 } },
+                { name: 'scaleAutomation', arguments: { laneId: 'lane-vocal-gain', factor: 2, anchor: 0.5 } },
+                { name: 'stretchAutomation', arguments: { laneId: 'lane-vocal-gain', factor: 17 } },
+                { name: 'invertAutomation', arguments: { laneId: 'missing' } },
+                { name: 'reverseAutomation', arguments: { laneId: 'lane-vocal-gain' } },
+                { name: 'thinAutomation', arguments: { laneId: 'lane-vocal-gain', tolerance: 2 } },
+                { name: 'quantizeAutomation', arguments: { laneId: 'lane-vocal-gain', gridSize: 1 } },
+            ],
+        });
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections.map(({ name }) => name)).toEqual([
+            'setAutomationMode',
+            'scaleAutomation',
+            'scaleAutomation',
+            'stretchAutomation',
+            'invertAutomation',
+            'reverseAutomation',
+            'thinAutomation',
+            'quantizeAutomation',
+        ]);
+    });
+
+    it('rejects scaling when every lane value would remain unchanged', () => {
+        const lane = projectContext.automationLanes?.[0];
+        if (!lane) {
+            throw new Error('Expected the project fixture to contain an automation lane');
+        }
+        const result = bridge({
+            context: {
+                ...projectContext,
+                automationLanes: [
+                    {
+                        ...lane,
+                        points: [
+                            { beat: 0, value: 0, curve: 'linear' },
+                            { beat: 4, value: 0, curve: 'linear' },
+                        ],
+                    },
+                ],
+            },
+            calls: [{ name: 'scaleAutomation', arguments: { laneId: lane.id, factor: 2 } }],
+        });
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.name).toBe('scaleAutomation');
+    });
+
+    it('rejects an order-dependent point insertion and whole-lane transform batch as a unit', () => {
+        const lane = projectContext.automationLanes?.[0];
+        if (!lane) {
+            throw new Error('Expected the project fixture to contain an automation lane');
+        }
+        const context: ProjectContext = {
+            ...projectContext,
+            automationLanes: [
+                {
+                    ...lane,
+                    points: [
+                        { beat: 0, value: 0.2, curve: 'linear' },
+                        { beat: 4, value: 0.8, curve: 'linear' },
+                    ],
+                },
+            ],
+        };
+        const result = bridge({
+            context,
+            calls: [
+                { name: 'addAutomationPoint', arguments: { laneId: lane.id, beat: 2, value: 0.5 } },
+                { name: 'scaleAutomation', arguments: { laneId: lane.id, factor: 1.5 } },
+            ],
+        });
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toEqual([
+            {
+                index: 1,
+                name: 'scaleAutomation',
+                reason: 'Provider batch mixes point insertion with a whole-lane transform',
+            },
+        ]);
+    });
+
+    it('rejects point insertion and whole-lane transform conflicts in reverse order', () => {
+        const lane = projectContext.automationLanes?.[0];
+        if (!lane) {
+            throw new Error('Expected the project fixture to contain an automation lane');
+        }
+        const context: ProjectContext = {
+            ...projectContext,
+            automationLanes: [
+                {
+                    ...lane,
+                    points: [
+                        { beat: 0, value: 0.2, curve: 'linear' },
+                        { beat: 4, value: 0.8, curve: 'linear' },
+                    ],
+                },
+            ],
+        };
+        const result = bridge({
+            context,
+            calls: [
+                { name: 'scaleAutomation', arguments: { laneId: lane.id, factor: 1.5 } },
+                { name: 'addAutomationPoint', arguments: { laneId: lane.id, beat: 2, value: 0.5 } },
+            ],
+        });
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toBe('Provider batch mixes point insertion with a whole-lane transform');
+    });
+
+    it('keeps the first whole-lane transform and rejects a repeated transform of that lane', () => {
+        const lane = projectContext.automationLanes?.[0];
+        if (!lane) {
+            throw new Error('Expected the project fixture to contain an automation lane');
+        }
+        const context: ProjectContext = {
+            ...projectContext,
+            automationLanes: [
+                {
+                    ...lane,
+                    points: [
+                        { beat: 0, value: 0.2, curve: 'linear' },
+                        { beat: 4, value: 0.8, curve: 'linear' },
+                    ],
+                },
+            ],
+        };
+        const result = bridge({
+            context,
+            calls: [
+                { name: 'scaleAutomation', arguments: { laneId: lane.id, factor: 1.5 } },
+                { name: 'invertAutomation', arguments: { laneId: lane.id } },
+            ],
+        });
+
+        expect(result.actions).toEqual([{ type: 'scaleAutomation', payload: { laneId: lane.id, factor: 1.5 } }]);
+        expect(result.rejections[0]?.reason).toBe('Provider batch writes the same target field more than once');
     });
 });

@@ -379,6 +379,77 @@ const EXPECTED_COMMANDS = [
         'bounded-reversible',
         false
     ),
+    expectedCommand(
+        'setAutomationMode',
+        "Set an existing track's automation mode.",
+        {
+            trackId: { type: 'string', description: 'Existing track ID' },
+            mode: { type: 'string', enum: ['read', 'write', 'touch', 'latch', 'off'] },
+        },
+        ['trackId', 'mode'],
+        'authority-sensitive',
+        true
+    ),
+    expectedCommand(
+        'scaleAutomation',
+        'Scale values on one existing track automation lane.',
+        {
+            laneId: { type: 'string', description: 'Existing track automation lane ID' },
+            factor: { type: 'number', description: 'Greater than 0 and at most 16' },
+        },
+        ['laneId', 'factor'],
+        'broad-reversible',
+        true
+    ),
+    expectedCommand(
+        'stretchAutomation',
+        'Stretch timing on one existing track automation lane.',
+        {
+            laneId: { type: 'string', description: 'Existing track automation lane ID' },
+            factor: { type: 'number', description: 'Greater than 0 and at most 16' },
+        },
+        ['laneId', 'factor'],
+        'broad-reversible',
+        true
+    ),
+    expectedCommand(
+        'invertAutomation',
+        'Invert values across one existing track automation lane range.',
+        { laneId: { type: 'string', description: 'Existing track automation lane ID' } },
+        ['laneId'],
+        'broad-reversible',
+        true
+    ),
+    expectedCommand(
+        'reverseAutomation',
+        'Reverse the timing of one existing track automation lane.',
+        { laneId: { type: 'string', description: 'Existing track automation lane ID' } },
+        ['laneId'],
+        'broad-reversible',
+        true
+    ),
+    expectedCommand(
+        'thinAutomation',
+        'Reduce redundant points on one existing track automation lane.',
+        {
+            laneId: { type: 'string', description: 'Existing track automation lane ID' },
+            tolerance: { type: 'number', description: 'Optional positive tolerance within the lane value span' },
+        },
+        ['laneId'],
+        'destructive-reversible',
+        true
+    ),
+    expectedCommand(
+        'quantizeAutomation',
+        'Snap point timing on one existing track automation lane to a beat grid.',
+        {
+            laneId: { type: 'string', description: 'Existing track automation lane ID' },
+            gridSize: { type: 'number', description: 'Beat grid greater than 0 and at most 64' },
+        },
+        ['laneId', 'gridSize'],
+        'destructive-reversible',
+        true
+    ),
 ];
 
 const EXPECTED_GROUNDING = [
@@ -736,6 +807,64 @@ const EXPECTED_GROUNDING = [
                 falsePhrases: ['disable automation lane', 'disable automation', 'turn automation off'],
             },
         ],
+    },
+    {
+        actionType: 'setAutomationMode',
+        intentPhrases: [
+            'set automation mode',
+            'automation mode',
+            'set to read',
+            'set to write',
+            'set to touch',
+            'set to latch',
+            'set to off',
+            'turn automation mode off',
+        ],
+        targetRules: [{ argument: 'trackId', capability: 'track' }],
+        valueRules: [
+            {
+                argument: 'mode',
+                kind: 'enum-if-present',
+                values: ['read', 'write', 'touch', 'latch', 'off'],
+                requiredInPrompt: true,
+            },
+        ],
+    },
+    {
+        actionType: 'scaleAutomation',
+        intentPhrases: ['scale automation', 'multiply automation values', 'amplify automation'],
+        targetRules: [{ argument: 'laneId', capability: 'automation-lane' }],
+        valueRules: [{ argument: 'factor', kind: 'number-if-present', requiredInPrompt: true }],
+    },
+    {
+        actionType: 'stretchAutomation',
+        intentPhrases: ['stretch automation', 'compress automation timing', 'expand automation timing'],
+        targetRules: [{ argument: 'laneId', capability: 'automation-lane' }],
+        valueRules: [{ argument: 'factor', kind: 'number-if-present', requiredInPrompt: true }],
+    },
+    {
+        actionType: 'invertAutomation',
+        intentPhrases: ['invert automation', 'flip automation values'],
+        targetRules: [{ argument: 'laneId', capability: 'automation-lane' }],
+        valueRules: [],
+    },
+    {
+        actionType: 'reverseAutomation',
+        intentPhrases: ['reverse automation', 'reverse automation timing'],
+        targetRules: [{ argument: 'laneId', capability: 'automation-lane' }],
+        valueRules: [],
+    },
+    {
+        actionType: 'thinAutomation',
+        intentPhrases: ['thin automation', 'simplify automation', 'reduce automation points'],
+        targetRules: [{ argument: 'laneId', capability: 'automation-lane' }],
+        valueRules: [{ argument: 'tolerance', kind: 'number-if-present', mayOmitWhenUnmentioned: true }],
+    },
+    {
+        actionType: 'quantizeAutomation',
+        intentPhrases: ['quantize automation', 'snap automation', 'quantize automation timing'],
+        targetRules: [{ argument: 'laneId', capability: 'automation-lane' }],
+        valueRules: [{ argument: 'gridSize', kind: 'number-if-present', requiredInPrompt: true }],
     },
 ];
 
