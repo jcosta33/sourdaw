@@ -10,10 +10,16 @@ import { createLevainBridge, type LevainDevice } from '../helpers';
 // createLevainBridge — engine forwarding behaviour
 // ---------------------------------------------------------------------------
 
-type AutoLoad = (deviceId: string, port: MessagePort, instrumentId: string, signal?: AbortSignal) => Promise<void>;
+type AutoLoadOutcome = 'ready' | 'failed' | 'cancelled';
+type AutoLoad = (
+    deviceId: string,
+    port: MessagePort,
+    instrumentId: string,
+    signal?: AbortSignal
+) => Promise<AutoLoadOutcome>;
 
 function makeDeps(
-    autoLoad: AutoLoad = vi.fn(() => Promise.resolve()),
+    autoLoad: AutoLoad = vi.fn(() => Promise.resolve<AutoLoadOutcome>('ready')),
     initialResolutionStatus: DeviceWriteTargetResolution['status'] = 'eligible'
 ) {
     let resolutionStatus = initialResolutionStatus;
@@ -111,7 +117,7 @@ describe('createLevainBridge', () => {
                     if (signal) {
                         signals.push(signal);
                     }
-                    return new Promise<void>(() => {
+                    return new Promise<AutoLoadOutcome>(() => {
                         // Intentionally remains pending so cancellation is observable.
                     });
                 });
@@ -190,7 +196,7 @@ describe('createLevainBridge', () => {
                     if (signal) {
                         signals.push(signal);
                     }
-                    return new Promise<void>(() => {
+                    return new Promise<AutoLoadOutcome>(() => {
                         // Intentionally remains pending so unregister must abort it.
                     });
                 });
@@ -213,6 +219,48 @@ describe('createLevainBridge', () => {
                 expect(deps.persistDeviceParam).not.toHaveBeenCalled();
             }
         );
+    });
+
+    describe('initial content readiness', () => {
+        it('settles ready only after the registered device sample load completes', async () => {
+            const deps = makeDeps();
+            const bridge = createLevainBridge(deps);
+            const onContentLoadSettled = vi.fn();
+
+            bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort, onContentLoadSettled);
+            expect(onContentLoadSettled).not.toHaveBeenCalled();
+
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(onContentLoadSettled).toHaveBeenCalledOnce();
+            expect(onContentLoadSettled).toHaveBeenCalledWith('ready');
+        });
+
+        it('settles failed when the sample loader reports a content failure', async () => {
+            const deps = makeDeps(() => Promise.resolve('failed'));
+            const bridge = createLevainBridge(deps);
+            const onContentLoadSettled = vi.fn();
+
+            bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort, onContentLoadSettled);
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(onContentLoadSettled).toHaveBeenCalledOnce();
+            expect(onContentLoadSettled).toHaveBeenCalledWith('failed');
+        });
+
+        it('settles cancelled when the device is removed during its initial sample load', () => {
+            const deps = makeDeps(() => new Promise<AutoLoadOutcome>(() => {}));
+            const bridge = createLevainBridge(deps);
+            const onContentLoadSettled = vi.fn();
+
+            bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort, onContentLoadSettled);
+            bridge.unregisterLevainDevice('d1');
+
+            expect(onContentLoadSettled).toHaveBeenCalledOnce();
+            expect(onContentLoadSettled).toHaveBeenCalledWith('cancelled');
+        });
     });
 
     describe('fix 1 — register-time vibrato uses the cents slot, not the CC slot', () => {
@@ -289,9 +337,9 @@ describe('createLevainBridge', () => {
                 _port: MessagePort,
                 _instrumentId: string,
                 signal?: AbortSignal
-            ): Promise<void> {
+            ): Promise<AutoLoadOutcome> {
                 signals.push(signal);
-                return new Promise<void>(() => {
+                return new Promise<AutoLoadOutcome>(() => {
                     // never resolves — simulates a long-running load
                 });
             }
@@ -317,9 +365,9 @@ describe('createLevainBridge', () => {
                 _port: MessagePort,
                 _instrumentId: string,
                 signal?: AbortSignal
-            ): Promise<void> {
+            ): Promise<AutoLoadOutcome> {
                 signals.push(signal);
-                return new Promise<void>(() => {});
+                return new Promise<AutoLoadOutcome>(() => {});
             }
             const deps = makeDeps(autoLoad);
             const bridge = createLevainBridge(deps);

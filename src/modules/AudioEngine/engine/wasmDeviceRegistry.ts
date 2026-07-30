@@ -11,6 +11,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { isFaustModule } from '#/modules/PluginHost/useCases';
 
 import { type BuiltinDeviceNode } from '../models/AudioEngineState';
+import { type DeviceContentLoadOutcome } from '../services/deviceReadinessDiagnostics';
 import { createFaustDeviceNode } from '../useCases/deviceResolvers/createFaustDeviceNode';
 import { clearReportedLatency } from '../useCases/latencyCompensation/compensation/clearReportedLatency';
 import { reportLatency } from '../useCases/latencyCompensation/compensation/reportLatency';
@@ -39,6 +40,7 @@ export type WasmDeviceCreateDeps = {
     signal?: AbortSignal;
     /** Returns false when the owner rejected and destroyed a stale loaded node. */
     onLoaded: (finalDn: BuiltinDeviceNode) => boolean | void;
+    onContentLoadSettled?: (outcome: DeviceContentLoadOutcome) => void;
 };
 
 export type WasmDeviceDescriptor = {
@@ -279,7 +281,7 @@ const toasterDescriptor: WasmDeviceDescriptor = {
 
 const levainDescriptor: WasmDeviceDescriptor = {
     matches: isLevainDevice,
-    create({ context, deviceId, deviceType, signal, onLoaded }) {
+    create({ context, deviceId, deviceType, signal, onLoaded, onContentLoadSettled }) {
         const pendingParams: Array<[string, number]> = [];
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.levainControls = {
@@ -362,6 +364,7 @@ const levainDescriptor: WasmDeviceDescriptor = {
                         setInstrument: result.setInstrument,
                     },
                     port: result.workletNode.port,
+                    onContentLoadSettled,
                 });
                 getAudioDeviceRuntimeSink().setLevainEngineReady({ deviceId, isReady: true });
                 return;

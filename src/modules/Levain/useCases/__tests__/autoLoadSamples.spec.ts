@@ -37,8 +37,9 @@ describe('autoLoadLevainSamples', () => {
     it('reports progress and calls the loader with the manifest URL', async () => {
         const port = {} as MessagePort;
 
-        await autoLoadLevainSamples('d1', port, 'violin-1');
+        const outcome = await autoLoadLevainSamples('d1', port, 'violin-1');
 
+        expect(outcome).toBe('ready');
         expect(setSampleLoadProgress).toHaveBeenCalledWith('d1', 0.01);
         expect(loadInstrumentFromManifest).toHaveBeenCalledWith(
             expect.stringContaining('/samples/levain/violin-1/manifest.json'),
@@ -83,8 +84,9 @@ describe('autoLoadLevainSamples', () => {
         it('records an error and never claims completion when the loader rejects', async () => {
             vi.mocked(loadInstrumentFromManifest).mockRejectedValueOnce(new Error('boom'));
 
-            await autoLoadLevainSamples('d1', {} as MessagePort, 'cello');
+            const outcome = await autoLoadLevainSamples('d1', {} as MessagePort, 'cello');
 
+            expect(outcome).toBe('failed');
             expect(setSampleLoadError).toHaveBeenCalledWith('d1', 'boom');
             // The old code set progress to 1.0 in a finally even on error.
             expect(setSampleLoadProgress).not.toHaveBeenCalledWith('d1', 1.0);
@@ -96,8 +98,9 @@ describe('autoLoadLevainSamples', () => {
             const controller = new AbortController();
             controller.abort();
 
-            await autoLoadLevainSamples('d1', {} as MessagePort, 'viola', controller.signal);
+            const outcome = await autoLoadLevainSamples('d1', {} as MessagePort, 'viola', controller.signal);
 
+            expect(outcome).toBe('cancelled');
             expect(loadInstrumentFromManifest).not.toHaveBeenCalled();
             expect(setSampleLoadProgress).not.toHaveBeenCalled();
         });
@@ -108,8 +111,9 @@ describe('autoLoadLevainSamples', () => {
                 controller.abort();
             });
 
-            await autoLoadLevainSamples('d1', {} as MessagePort, 'flute', controller.signal);
+            const outcome = await autoLoadLevainSamples('d1', {} as MessagePort, 'flute', controller.signal);
 
+            expect(outcome).toBe('cancelled');
             expect(setSampleLoadProgress).not.toHaveBeenCalledWith('d1', 1.0);
         });
 
@@ -120,8 +124,9 @@ describe('autoLoadLevainSamples', () => {
                 throw new Error('aborted decode');
             });
 
-            await autoLoadLevainSamples('d1', {} as MessagePort, 'oboe', controller.signal);
+            const outcome = await autoLoadLevainSamples('d1', {} as MessagePort, 'oboe', controller.signal);
 
+            expect(outcome).toBe('cancelled');
             expect(setSampleLoadError).not.toHaveBeenCalled();
         });
     });

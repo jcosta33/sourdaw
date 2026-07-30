@@ -2,6 +2,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { clampFaderGain } from '#/utils/audioLevelLaw';
 import { hasSharedArrayBuffer } from '#/utils/capabilities';
 
+import { deviceReadinessDiagnostics, type DeviceReadinessToken } from '../services/deviceReadinessDiagnostics';
 import { applyParams } from '../useCases/deviceResolvers/applyParams';
 import { createBuiltinDeviceNode } from '../useCases/deviceResolvers/createBuiltinDeviceNode';
 
@@ -41,6 +42,7 @@ type PendingDeviceLoad = {
     bypassed?: boolean;
     parameterWrites: Array<[string, number]>;
     loadPromise?: Promise<unknown>;
+    readinessToken?: DeviceReadinessToken;
     resolved: boolean;
 };
 
@@ -55,6 +57,7 @@ export class TrackNode {
     // disconnect/reconnect sweeps. `_rebuildScheduled` coalesces them so at
     // most one rebuild runs per microtask turn.
     private _rebuildScheduled = false;
+    private readonly _pendingGraphReadinessTokens = new Set<DeviceReadinessToken>();
     private _disposed = false;
     private _outputDestination: AudioNode | null = null;
     private readonly _failedDeviceLoads = new Set<string>();
@@ -366,6 +369,10 @@ export class TrackNode {
                 return;
             }
             this.rebuildChain();
+            for (const token of this._pendingGraphReadinessTokens) {
+                deviceReadinessDiagnostics.markGraphReady({ token });
+            }
+            this._pendingGraphReadinessTokens.clear();
         });
     }
 
@@ -473,6 +480,13 @@ export class TrackNode {
             return;
         }
         this._pendingDeviceLoads.delete(deviceId);
+        if (pendingLoad.readinessToken && !pendingLoad.resolved) {
+            if (failed) {
+                deviceReadinessDiagnostics.markFailed({ token: pendingLoad.readinessToken, stage: 'node' });
+            } else {
+                deviceReadinessDiagnostics.cancel(pendingLoad.readinessToken);
+            }
+        }
         pendingLoad.parameterWrites.length = 0;
         if (!pendingLoad.resolved) {
             pendingLoad.abortController.abort();
@@ -659,9 +673,15 @@ export class TrackNode {
                 if (!descriptor) {
                     return;
                 }
+                const readinessToken = deviceReadinessDiagnostics.begin({
+                    deviceId,
+                    deviceType,
+                    requiresContent: deviceType === 'levain',
+                });
                 const pendingLoad: PendingDeviceLoad = {
                     abortController: new AbortController(),
                     parameterWrites: [],
+                    readinessToken,
                     resolved: false,
                 };
                 const { placeholder, loadPromise } = descriptor.create({
@@ -671,7 +691,17 @@ export class TrackNode {
                     transportSAB: this.deps.transportSAB,
                     isCurrent: () => this._pendingDeviceLoads.get(deviceId) === pendingLoad && !this._disposed,
                     signal: pendingLoad.abortController.signal,
-                    onLoaded: (finalDn) => this.completePendingDeviceLoad(deviceId, pendingLoad, finalDn),
+                    onLoaded: (finalDn) => {
+                        deviceReadinessDiagnostics.markNodeReady({ token: readinessToken });
+                        const accepted = this.completePendingDeviceLoad(deviceId, pendingLoad, finalDn);
+                        if (accepted) {
+                            this._pendingGraphReadinessTokens.add(readinessToken);
+                        }
+                        return accepted;
+                    },
+                    onContentLoadSettled: (outcome) => {
+                        deviceReadinessDiagnostics.markContentSettled({ token: readinessToken, outcome });
+                    },
                 });
                 if (!placeholder.controller) {
                     placeholder.controller = this.createPlaceholderController(deviceId, pendingLoad);
@@ -692,6 +722,13 @@ export class TrackNode {
         }
 
         this.invalidatePendingDeviceLoad(deviceId);
+        for (const token of this._pendingGraphReadinessTokens) {
+            if (token.deviceId === deviceId) {
+                this._pendingGraphReadinessTokens.delete(token);
+                break;
+            }
+        }
+        deviceReadinessDiagnostics.removeDevice(deviceId);
         this.strip.deviceNodes = this.strip.deviceNodes.filter((d) => d.deviceId !== deviceId);
         this.deps.onDeviceRemoved?.(this.trackId, dn);
         if (dn.controller) {
@@ -790,6 +827,7 @@ export class TrackNode {
         }
         this._disposed = true;
         this._rebuildScheduled = false;
+        this._pendingGraphReadinessTokens.clear();
         for (const deviceId of this._pendingDeviceLoads.keys()) {
             this.invalidatePendingDeviceLoad(deviceId);
         }
@@ -807,6 +845,7 @@ export class TrackNode {
             this.strip.meterNode.disconnect();
         }
         for (const dn of this.strip.deviceNodes) {
+            deviceReadinessDiagnostics.removeDevice(dn.deviceId);
             if (dn.controller) {
                 dn.controller.destroy?.();
             } else if (dn.dispose) {

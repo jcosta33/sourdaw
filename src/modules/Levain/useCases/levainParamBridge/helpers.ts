@@ -18,6 +18,8 @@ export type LevainDevice = {
     setInstrument?: (instrumentId: string) => void;
 };
 
+type LevainContentLoadOutcome = 'ready' | 'failed' | 'cancelled';
+
 export type LevainBridgeDeps = {
     getAllTracks: () => Track[];
     persistDeviceParam: typeof persistDeviceParam;
@@ -32,6 +34,7 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
     // the previous one so the last-started load — not the last-finishing one —
     // wins the worklet zone map and the UI progress.
     const loadControllers = new Map<string, AbortController>();
+    const initialContentLoadSettlers = new Map<string, (outcome: LevainContentLoadOutcome) => void>();
 
     // §33.2 — Shared rAF-batch primitive. Last-write-wins per rustKey,
     // coalesced into one flush per animation frame.
@@ -77,6 +80,15 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         return activeDevices.get(deviceId);
     }
 
+    function settleInitialContentLoad(deviceId: string, outcome: LevainContentLoadOutcome): void {
+        const settle = initialContentLoadSettlers.get(deviceId);
+        if (!settle) {
+            return;
+        }
+        initialContentLoadSettlers.delete(deviceId);
+        settle(outcome);
+    }
+
     function loadSamplesForInstrument(deviceId: string, instrumentId: string): void {
         const target = deps.resolveEligibleDeviceWriteTarget(deviceId);
         if (target.status !== 'eligible') {
@@ -94,25 +106,48 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         loadControllers.get(deviceId)?.abort();
         const controller = new AbortController();
         loadControllers.set(deviceId, controller);
-        deps.autoLoadLevainSamples(deviceId, port, instrumentId, controller.signal)
+        void deps
+            .autoLoadLevainSamples(deviceId, port, instrumentId, controller.signal)
+            .then((outcome) => {
+                if (loadControllers.get(deviceId) === controller) {
+                    settleInitialContentLoad(deviceId, outcome);
+                }
+                return undefined;
+            })
+            .catch((error) => {
+                logger.warn(`[LevainBridge] Sample load failed for device ${deviceId}:`, error);
+                if (loadControllers.get(deviceId) === controller) {
+                    settleInitialContentLoad(deviceId, controller.signal.aborted ? 'cancelled' : 'failed');
+                }
+            })
             .finally(() => {
                 // Only clear the slot if it's still ours — a newer load may have
                 // already replaced it.
                 if (loadControllers.get(deviceId) === controller) {
                     loadControllers.delete(deviceId);
                 }
-            })
-            .catch((error) => {
-                logger.warn(`[LevainBridge] Sample load failed for device ${deviceId}:`, error);
             });
     }
 
-    function registerLevainDevice(deviceId: string, device: LevainDevice, port?: MessagePort): void {
+    function registerLevainDevice(
+        deviceId: string,
+        device: LevainDevice,
+        port?: MessagePort,
+        onContentLoadSettled?: (outcome: LevainContentLoadOutcome) => void
+    ): void {
         const target = deps.resolveEligibleDeviceWriteTarget(deviceId);
         if (target.status !== 'eligible') {
+            onContentLoadSettled?.('cancelled');
+            return;
+        }
+        if (!port && onContentLoadSettled) {
+            onContentLoadSettled('failed');
             return;
         }
 
+        if (onContentLoadSettled) {
+            initialContentLoadSettlers.set(deviceId, onContentLoadSettled);
+        }
         activeDevices.set(deviceId, device);
         if (port) {
             activePorts.set(deviceId, port);
@@ -153,6 +188,7 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         // missing device, but cancelling avoids the wasted decode work).
         loadControllers.get(deviceId)?.abort();
         loadControllers.delete(deviceId);
+        settleInitialContentLoad(deviceId, 'cancelled');
 
         // Cancel this device's pending rAF batches by their deterministic keys.
         // The `activeDevices` miss already guards `device.setParam`, but

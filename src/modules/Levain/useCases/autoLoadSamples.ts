@@ -25,7 +25,7 @@ export async function autoLoadLevainSamples(
     nodePort: MessagePort,
     instrumentId: string,
     signal?: AbortSignal
-): Promise<void> {
+): Promise<'ready' | 'failed' | 'cancelled'> {
     // The repository owns the Tauri IPC: on desktop it resolves the bundled
     // resource directory (massive sample banks straight from OS resources); on
     // web it returns the public `/samples/levain/<id>` path.
@@ -34,7 +34,7 @@ export async function autoLoadLevainSamples(
     // A newer load may have superseded this one while the resource path
     // resolved. Bail before touching the UI so we don't clobber its state.
     if (signal?.aborted) {
-        return;
+        return 'cancelled';
     }
 
     const manifestUrl = `${manifestBase}/manifest.json`;
@@ -58,18 +58,18 @@ export async function autoLoadLevainSamples(
     } catch (error) {
         // A superseding load aborted this one; it owns the UI now, stay silent.
         if (signal?.aborted) {
-            return;
+            return 'cancelled';
         }
         logger.warn(`[Levain] Failed to load samples for ${instrumentId}:`, error);
         // Fallback sine tone will continue to work. Surface the failure instead
         // of flashing a synthetic 100% then "Ready".
         setSampleLoadError(deviceId, error instanceof Error ? error.message : 'Sample load failed');
-        return;
+        return 'failed';
     }
 
     // Completed but superseded — don't claim 100%/Ready over the newer load.
     if (signal?.aborted) {
-        return;
+        return 'cancelled';
     }
     setSampleLoadProgress(deviceId, 1.0);
     setTimeout(() => {
@@ -78,4 +78,5 @@ export async function autoLoadLevainSamples(
         }
         setSampleLoadProgress(deviceId, null);
     }, 300); // clear after short delay
+    return 'ready';
 }

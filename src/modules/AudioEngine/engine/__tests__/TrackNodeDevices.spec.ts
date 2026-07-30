@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createMockAudioContext, createMockAudioNode } from '#/helpers/__tests__/audioContext.mock';
 
 import { type BuiltinDeviceNode, type SendNode } from '../../models/AudioEngineState';
+import { deviceReadinessDiagnostics, type DeviceContentLoadOutcome } from '../../services/deviceReadinessDiagnostics';
 import { TrackNode, type TrackNodeDeps } from '../TrackNode';
 
 const mocks = vi.hoisted(() => ({
@@ -107,12 +108,18 @@ function installDeferredWasmDevice({
         controller,
     };
     let onLoaded: ((finalDn: BuiltinDeviceNode) => void) | undefined;
+    let onContentLoadSettled: ((outcome: DeviceContentLoadOutcome) => void) | undefined;
     let signal: AbortSignal | undefined;
     const load = Promise.withResolvers<void>();
     mocks.findWasmDescriptor.mockReturnValue({
         matches: () => true,
-        create: (deps: { onLoaded: (finalDn: BuiltinDeviceNode) => void; signal?: AbortSignal }) => {
+        create: (deps: {
+            onLoaded: (finalDn: BuiltinDeviceNode) => void;
+            onContentLoadSettled?: (outcome: DeviceContentLoadOutcome) => void;
+            signal?: AbortSignal;
+        }) => {
             onLoaded = deps.onLoaded;
+            onContentLoadSettled = deps.onContentLoadSettled;
             signal = deps.signal;
             return { placeholder, loadPromise: load.promise };
         },
@@ -130,6 +137,9 @@ function installDeferredWasmDevice({
             onLoaded(finalDn);
         },
         settle: load.resolve,
+        settleContent(outcome: DeviceContentLoadOutcome): void {
+            onContentLoadSettled?.(outcome);
+        },
     };
 }
 
@@ -157,6 +167,7 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
         workletInstances.length = 0;
         mocks.hasSharedArrayBuffer.mockReturnValue(true);
         mocks.findWasmDescriptor.mockReturnValue(undefined);
+        deviceReadinessDiagnostics.reset();
         vi.stubGlobal('AudioWorkletNode', FakeAudioWorkletNode);
         vi.stubGlobal(
             'SharedArrayBuffer',
@@ -494,6 +505,17 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             expect(loaded.device.bypassed).toBe(true);
             expect(onDeviceLoaded).toHaveBeenCalledWith('t1', loaded.device);
             expect(track.getDeviceLoadState('wasm-1')).toBe('ready');
+
+            await Promise.resolve();
+            expect(deviceReadinessDiagnostics.snapshot().devices[0]).toMatchObject({
+                deviceId: 'wasm-1',
+                status: 'content-pending',
+            });
+            deferred.settleContent('ready');
+            expect(deviceReadinessDiagnostics.snapshot().devices[0]).toMatchObject({
+                deviceId: 'wasm-1',
+                status: 'ready',
+            });
 
             deferred.settle();
             await Promise.resolve();

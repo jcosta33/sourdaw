@@ -1,3 +1,5 @@
+import { type DeviceContentLoadOutcome } from '../services/deviceReadinessDiagnostics';
+
 import { type BacteriaMeterData } from './BacteriaNode';
 import { type FermenterNodeResult } from './FermenterNode';
 import { type GlutenMeterData } from './GlutenNode';
@@ -34,7 +36,12 @@ type ScoringTelemetry = Parameters<ScoringNodeResult['onTelemetry']>[0] extends 
 export type AudioDeviceRuntimeSink = {
     emitDeviceLoaded: (payload: DeviceLifecyclePayload) => void;
     emitDeviceRemoved: (payload: DeviceLifecyclePayload) => void;
-    registerLevainDevice: (input: { deviceId: string; device: LevainRuntimeDevice; port?: MessagePort }) => void;
+    registerLevainDevice: (input: {
+        deviceId: string;
+        device: LevainRuntimeDevice;
+        port?: MessagePort;
+        onContentLoadSettled?: (outcome: DeviceContentLoadOutcome) => void;
+    }) => void;
     unregisterLevainDevice: (deviceId: string) => void;
     setLevainEngineReady: (input: { deviceId: string; isReady: boolean }) => void;
     setFermenterTelemetry: (deviceId: string, telemetry: FermenterTelemetry) => void;

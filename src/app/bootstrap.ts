@@ -288,8 +288,8 @@ configureAudioDeviceRuntimeSink({
     emitDeviceRemoved: (payload) => {
         void eventBus.emit('audioDevice.removed', payload);
     },
-    registerLevainDevice: ({ deviceId, device, port }) => {
-        registerLevainDevice(deviceId, device, port);
+    registerLevainDevice: ({ deviceId, device, port, onContentLoadSettled }) => {
+        registerLevainDevice(deviceId, device, port, onContentLoadSettled);
     },
     unregisterLevainDevice,
     setLevainEngineReady: ({ deviceId, isReady }) => {

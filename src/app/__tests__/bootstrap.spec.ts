@@ -17,11 +17,16 @@ import { describe, it, expect, vi } from 'vitest';
 type HandlerMapSentinel = { moduleId: string };
 
 /**
- * The one sink member this spec asserts on. The offline render's device chain
- * calls it for every worklet-backed device it builds; bootstrap is the only place
- * that decides which device types have anything to prepare.
+ * The sink members whose cross-module dispatch this composition-root spec proves:
+ * live Levain readiness reporting and offline instrument preparation.
  */
 type RuntimeSinkUnderTest = {
+    registerLevainDevice: (input: {
+        deviceId: string;
+        device: { setParam: () => void; handleCc: () => void; setInstrument: () => void };
+        port?: MessagePort;
+        onContentLoadSettled?: (outcome: 'ready' | 'failed' | 'cancelled') => void;
+    }) => void;
     prepareOfflineInstrument: (input: {
         deviceId: string;
         deviceType: string;
@@ -48,6 +53,7 @@ const {
     prepareTimelineMapTimeOperationMock,
     prepareTimelineMapStateRestoreMock,
     configureAudioDeviceRuntimeSinkMock,
+    registerLevainDeviceMock,
     prepareOfflineLevainMock,
 } = vi.hoisted(() => {
     const noop = vi.fn();
@@ -70,6 +76,7 @@ const {
         prepareTimelineMapTimeOperationMock: vi.fn(),
         prepareTimelineMapStateRestoreMock: vi.fn(),
         configureAudioDeviceRuntimeSinkMock: vi.fn<(sink: RuntimeSinkUnderTest) => void>(),
+        registerLevainDeviceMock: vi.fn(),
         prepareOfflineLevainMock: vi.fn(() => Promise.resolve()),
     };
 });
@@ -214,7 +221,7 @@ vi.mock('#/modules/Knead/useCases', () => ({
 vi.mock('#/modules/Levain/stores', () => ({ setEngineReady: noop }));
 
 vi.mock('#/modules/Levain/useCases', () => ({
-    registerLevainDevice: noop,
+    registerLevainDevice: registerLevainDeviceMock,
     unregisterLevainDevice: noop,
     prepareOfflineLevain: prepareOfflineLevainMock,
 }));
@@ -400,7 +407,7 @@ describe('bootstrap', () => {
         });
     });
 
-    describe('offline instrument setup dispatch', () => {
+    describe('audio device runtime sink dispatch', () => {
         // The offline device chain hands every worklet-backed device to this sink
         // member; bootstrap is the only place that knows which device types have
         // anything to prepare. Until this spec named `prepareOfflineLevain` in the
@@ -415,6 +422,21 @@ describe('bootstrap', () => {
         }
 
         const port = { postMessage: () => {} } as unknown as MessagePort;
+
+        it('forwards live Levain content readiness through the composition root', () => {
+            registerLevainDeviceMock.mockClear();
+            const device = { setParam: vi.fn(), handleCc: vi.fn(), setInstrument: vi.fn() };
+            const onContentLoadSettled = vi.fn();
+
+            getSink().registerLevainDevice({ deviceId: 'levain-1', device, port, onContentLoadSettled });
+
+            expect(registerLevainDeviceMock).toHaveBeenCalledExactlyOnceWith(
+                'levain-1',
+                device,
+                port,
+                onContentLoadSettled
+            );
+        });
 
         it('routes a levain device to the Levain module, passing its id, port and signal', async () => {
             prepareOfflineLevainMock.mockClear();

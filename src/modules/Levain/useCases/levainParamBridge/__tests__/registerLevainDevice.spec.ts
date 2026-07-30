@@ -26,4 +26,14 @@ describe('registerLevainDevice', () => {
         expect(bridge.registerLevainDevice).toHaveBeenCalledTimes(1);
         expect(bridge.registerLevainDevice).toHaveBeenCalledWith('dev-1', device, port);
     });
+
+    it('forwards the initial content readiness callback when provided', () => {
+        const device: LevainDevice = { setParam: vi.fn(), handleCc: vi.fn() };
+        const port = {} as MessagePort;
+        const onContentLoadSettled = vi.fn();
+
+        registerLevainDevice('dev-1', device, port, onContentLoadSettled);
+
+        expect(bridge.registerLevainDevice).toHaveBeenCalledWith('dev-1', device, port, onContentLoadSettled);
+    });
 });

@@ -256,8 +256,9 @@ describe('wasmDeviceRegistry descriptors', () => {
             factoryMocks.createLevainNode.mockResolvedValue(result);
             const registerLevainDevice = vi.fn();
             const setLevainEngineReady = vi.fn();
+            const onContentLoadSettled = vi.fn();
             setAudioDeviceRuntimeSink({ registerLevainDevice, setLevainEngineReady });
-            const deps = createDeps({ deviceType: 'levain', deviceId: 'lev-1' });
+            const deps = createDeps({ deviceType: 'levain', deviceId: 'lev-1', onContentLoadSettled });
 
             const { placeholder, loadPromise } = requireDescriptor('levain').create(deps);
             placeholder.levainControls?.setParam('cutoff', 0.4);
@@ -272,6 +273,7 @@ describe('wasmDeviceRegistry descriptors', () => {
                     setInstrument: result.setInstrument,
                 },
                 port: result.workletNode.port,
+                onContentLoadSettled,
             });
             expect(setLevainEngineReady).toHaveBeenCalledWith({ deviceId: 'lev-1', isReady: true });
 
