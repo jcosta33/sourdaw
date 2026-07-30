@@ -5,6 +5,7 @@ import { handleArmTrack } from '../armTrack';
 const mocks = vi.hoisted(() => ({
     armTrack: vi.fn(),
     getMidiInputTrack: vi.fn<() => string | null>(),
+    getMidiInputTrackOwnerId: vi.fn<() => string | null>(),
     getTrackStoreState: vi.fn<() => { tracks: { id: string; armed: boolean; kind: 'audio' | 'midi' }[] } | null>(),
 }));
 
@@ -18,12 +19,14 @@ vi.mock('../../../useCases/getTrackStoreState', () => ({
 
 vi.mock('#/modules/MIDI/useCases', () => ({
     getMidiInputTrack: mocks.getMidiInputTrack,
+    getMidiInputTrackOwnerId: mocks.getMidiInputTrackOwnerId,
 }));
 
 describe('handleArmTrack', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.getMidiInputTrack.mockReturnValue(null);
+        mocks.getMidiInputTrackOwnerId.mockReturnValue(null);
         mocks.getTrackStoreState.mockReturnValue(null);
     });
 
@@ -34,13 +37,15 @@ describe('handleArmTrack', () => {
 
         const result = handleArmTrack.execute({
             type: 'armTrack',
-            payload: { trackId: 't1', armed: true },
+            payload: { trackId: 't1', armed: true, midiInputOwnerId: 'owner-forward' },
         });
 
         expect(mocks.armTrack).toHaveBeenCalledWith('t1', true, {
             deferRuntimeEffect: true,
             midiInputTrackId: undefined,
             expectedMidiInputTrackId: undefined,
+            midiInputOwnerId: 'owner-forward',
+            expectedMidiInputOwnerId: undefined,
         });
         expect(result).toEqual({ status: 'written', afterCommit, afterAmbiguousCommit });
     });
@@ -57,6 +62,8 @@ describe('handleArmTrack', () => {
                 armed: false,
                 midiInputTrackId: 't0',
                 expectedMidiInputTrackId: 't1',
+                midiInputOwnerId: null,
+                expectedMidiInputOwnerId: 'owner-forward',
             },
         });
 
@@ -64,6 +71,8 @@ describe('handleArmTrack', () => {
             deferRuntimeEffect: true,
             midiInputTrackId: 't0',
             expectedMidiInputTrackId: 't1',
+            midiInputOwnerId: null,
+            expectedMidiInputOwnerId: 'owner-forward',
         });
     });
 
@@ -98,7 +107,7 @@ describe('handleArmTrack', () => {
         expect(handleArmTrack.isNoop?.({ type: 'armTrack', payload: { trackId: 't1', armed: false } })).toBe(false);
     });
 
-    it('executes a route-only inverse only while its expected route still matches', () => {
+    it('executes a route-only inverse only while its expected route owner still matches', () => {
         mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', armed: false, kind: 'midi' }] });
         const inverseAction = {
             type: 'armTrack' as const,
@@ -107,13 +116,20 @@ describe('handleArmTrack', () => {
                 armed: false,
                 midiInputTrackId: 't0',
                 expectedMidiInputTrackId: 't1',
+                midiInputOwnerId: null,
+                expectedMidiInputOwnerId: 'owner-forward',
             },
         };
 
         mocks.getMidiInputTrack.mockReturnValue('t1');
+        mocks.getMidiInputTrackOwnerId.mockReturnValue('owner-forward');
         expect(handleArmTrack.isNoop?.(inverseAction)).toBe(false);
 
         mocks.getMidiInputTrack.mockReturnValue('t2');
+        expect(handleArmTrack.isNoop?.(inverseAction)).toBe(true);
+
+        mocks.getMidiInputTrack.mockReturnValue('t1');
+        mocks.getMidiInputTrackOwnerId.mockReturnValue(null);
         expect(handleArmTrack.isNoop?.(inverseAction)).toBe(true);
     });
 
@@ -137,13 +153,14 @@ describe('handleArmTrack', () => {
         expect(desc2.label).toBe('Disarm track');
     });
 
-    it('describes an inverse restoring project state and the exact MIDI route', () => {
+    it('describes an inverse restoring project state and the exact MIDI route owner', () => {
         mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', armed: false, kind: 'midi' }] });
         mocks.getMidiInputTrack.mockReturnValue('t0');
+        mocks.getMidiInputTrackOwnerId.mockReturnValue('owner-before');
 
         const desc = handleArmTrack.describe({
             type: 'armTrack',
-            payload: { trackId: 't1', armed: true },
+            payload: { trackId: 't1', armed: true, midiInputOwnerId: 'owner-forward' },
         });
 
         expect(desc.inverseAction).toEqual({
@@ -153,13 +170,16 @@ describe('handleArmTrack', () => {
                 armed: false,
                 midiInputTrackId: 't0',
                 expectedMidiInputTrackId: 't1',
+                midiInputOwnerId: 'owner-before',
+                expectedMidiInputOwnerId: 'owner-forward',
             },
         });
     });
 
-    it('describes a route-only inverse with the forward route as its expectation', () => {
+    it('describes a route-only inverse with the forward route owner as its expectation', () => {
         mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', armed: false, kind: 'midi' }] });
         mocks.getMidiInputTrack.mockReturnValue('t1');
+        mocks.getMidiInputTrackOwnerId.mockReturnValue('owner-forward');
 
         const desc = handleArmTrack.describe({
             type: 'armTrack',
@@ -168,6 +188,8 @@ describe('handleArmTrack', () => {
                 armed: false,
                 midiInputTrackId: 't0',
                 expectedMidiInputTrackId: 't1',
+                midiInputOwnerId: null,
+                expectedMidiInputOwnerId: 'owner-forward',
             },
         });
 
@@ -178,6 +200,8 @@ describe('handleArmTrack', () => {
                 armed: false,
                 midiInputTrackId: 't1',
                 expectedMidiInputTrackId: 't0',
+                midiInputOwnerId: 'owner-forward',
+                expectedMidiInputOwnerId: null,
             },
         });
     });
@@ -187,7 +211,7 @@ describe('handleArmTrack', () => {
 
         const desc = handleArmTrack.describe({
             type: 'armTrack',
-            payload: { trackId: 't1', armed: true },
+            payload: { trackId: 't1', armed: true, midiInputOwnerId: 'owner-forward' },
         });
 
         expect(desc.inverseAction).toEqual({
@@ -197,6 +221,8 @@ describe('handleArmTrack', () => {
                 armed: true,
                 midiInputTrackId: null,
                 expectedMidiInputTrackId: 't1',
+                midiInputOwnerId: null,
+                expectedMidiInputOwnerId: 'owner-forward',
             },
         });
     });

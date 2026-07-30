@@ -1,4 +1,9 @@
-import { getMidiInputTrack, getMidiInputTrackRevision, setMidiInputTrack } from '#/modules/MIDI/useCases';
+import {
+    getMidiInputTrack,
+    getMidiInputTrackOwnerId,
+    getMidiInputTrackRevision,
+    setMidiInputTrack,
+} from '#/modules/MIDI/useCases';
 
 import { getTrackById } from '../../repositories/track/getTrackById';
 import { updateTrack } from '../../repositories/track/updateTrack';
@@ -8,6 +13,8 @@ type ArmTrackOptions = {
     deferRuntimeEffect?: boolean;
     midiInputTrackId?: string | null;
     expectedMidiInputTrackId?: string | null;
+    midiInputOwnerId?: string | null;
+    expectedMidiInputOwnerId?: string | null;
 };
 
 type DeferredArmTrackRuntimeEffect = {
@@ -36,24 +43,35 @@ export function armTrack(
     }
 
     const previousMidiInputTrackId = getMidiInputTrack();
+    const previousMidiInputOwnerId = getMidiInputTrackOwnerId();
     const previousMidiInputTrackRevision = getMidiInputTrackRevision();
-    const hasExplicitRouteExpectation = options.expectedMidiInputTrackId !== undefined;
+    const hasExplicitRouteExpectation =
+        options.expectedMidiInputTrackId !== undefined || options.expectedMidiInputOwnerId !== undefined;
     const runtimeRouteExpectation =
         options.expectedMidiInputTrackId === undefined ? previousMidiInputTrackId : options.expectedMidiInputTrackId;
-    const expectedRouteMatches = previousMidiInputTrackId === runtimeRouteExpectation;
+    const runtimeOwnerExpectation =
+        options.expectedMidiInputOwnerId === undefined ? previousMidiInputOwnerId : options.expectedMidiInputOwnerId;
+    const expectedRouteMatches =
+        previousMidiInputTrackId === runtimeRouteExpectation && previousMidiInputOwnerId === runtimeOwnerExpectation;
+    const actionOwnerId = options.midiInputOwnerId === undefined ? null : options.midiInputOwnerId;
     let desiredMidiInputTrackId = previousMidiInputTrackId;
+    let desiredMidiInputOwnerId = previousMidiInputOwnerId;
     if (expectedRouteMatches) {
         if (options.midiInputTrackId !== undefined) {
             desiredMidiInputTrackId = options.midiInputTrackId;
+            desiredMidiInputOwnerId = actionOwnerId;
         } else if (armed && track.kind === 'midi') {
             desiredMidiInputTrackId = trackId;
+            desiredMidiInputOwnerId = actionOwnerId;
         } else if (!armed && previousMidiInputTrackId === trackId) {
             desiredMidiInputTrackId = null;
+            desiredMidiInputOwnerId = actionOwnerId;
         }
     }
 
     const projectStateChanged = track.armed !== armed;
-    const runtimeStateChanged = desiredMidiInputTrackId !== previousMidiInputTrackId;
+    const runtimeStateChanged =
+        desiredMidiInputTrackId !== previousMidiInputTrackId || desiredMidiInputOwnerId !== previousMidiInputOwnerId;
     if (!projectStateChanged && !runtimeStateChanged) {
         return false;
     }
@@ -64,20 +82,22 @@ export function armTrack(
         updateTrack(trackId, (candidate) => ({ ...candidate, armed }));
     }
 
-    function applyMidiInputTrack(nextTrackId: string | null): void {
-        if (getMidiInputTrack() === nextTrackId) {
+    function applyMidiInputTrack(nextTrackId: string | null, nextOwnerId: string | null): void {
+        if (getMidiInputTrack() === nextTrackId && getMidiInputTrackOwnerId() === nextOwnerId) {
             return;
         }
-        setMidiInputTrack(nextTrackId);
+        setMidiInputTrack(nextTrackId, nextOwnerId);
         lastArmTrackMidiInputRevision = getMidiInputTrackRevision();
     }
 
     function ownsRuntimeRoute(): boolean {
         const currentMidiInputTrackId = getMidiInputTrack();
+        const currentMidiInputOwnerId = getMidiInputTrackOwnerId();
         const currentMidiInputTrackRevision = getMidiInputTrackRevision();
         const stillOwnsOriginalRoute =
             expectedRouteMatches &&
             currentMidiInputTrackId === runtimeRouteExpectation &&
+            currentMidiInputOwnerId === runtimeOwnerExpectation &&
             currentMidiInputTrackRevision === previousMidiInputTrackRevision;
         if (stillOwnsOriginalRoute) {
             return true;
@@ -86,6 +106,7 @@ export function armTrack(
             return false;
         }
         return (
+            currentMidiInputOwnerId !== null &&
             currentMidiInputTrackRevision === lastArmTrackMidiInputRevision &&
             currentMidiInputTrackRevision > previousMidiInputTrackRevision
         );
@@ -97,7 +118,7 @@ export function armTrack(
             return;
         }
         if (ownsRuntimeRoute()) {
-            applyMidiInputTrack(desiredMidiInputTrackId);
+            applyMidiInputTrack(desiredMidiInputTrackId, desiredMidiInputOwnerId);
         }
         runtimeEffectFinalized = true;
     }
@@ -110,7 +131,7 @@ export function armTrack(
         if (!ownsRuntimeRoute()) {
             return;
         }
-        applyMidiInputTrack(desiredMidiInputTrackId);
+        applyMidiInputTrack(desiredMidiInputTrackId, desiredMidiInputOwnerId);
     }
 
     if (options.deferRuntimeEffect) {
