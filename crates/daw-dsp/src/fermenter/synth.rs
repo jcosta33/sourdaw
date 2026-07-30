@@ -500,9 +500,13 @@ impl MasterSynth {
             );
         }
 
+        let effect_output_quiet = Self::block_is_quiet(&left[..block_size], &right[..block_size]);
+
         // Apply parametric EQ (after reverb/delay/chorus/phaser, before stereo width)
         self.eq
             .process_block(&mut left[..block_size], &mut right[..block_size]);
+
+        let eq_output_quiet = Self::block_is_quiet(&left[..block_size], &right[..block_size]);
 
         // Apply stereo width (last effect before master gain)
         if (stereo_width - 1.0).abs() > 0.001 {
@@ -512,8 +516,6 @@ impl MasterSynth {
                 stereo_width,
             );
         }
-
-        let internal_output_quiet = Self::block_is_quiet(&left[..block_size], &right[..block_size]);
 
         // Apply master gain
         if (master_gain - 1.0).abs() > 0.001 {
@@ -525,7 +527,7 @@ impl MasterSynth {
 
         let audible_output_quiet = Self::block_is_quiet(&left[..block_size], &right[..block_size]);
         self.update_lifecycle_after_block(
-            internal_output_quiet && audible_output_quiet,
+            effect_output_quiet && eq_output_quiet && audible_output_quiet,
             block_size,
             had_active_voices,
         );

@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:565da377f0856c316da75e33d8142900ed224ccd51c8cde14bfc3c9959093088
+// @wasm-bindgen-dts crate-source: sha256:d5da48f33465be0ec64b8c027dd76ab24c67872c115ea742a287150c56d1233e
 /* tslint:disable */
 /* eslint-disable */
 
@@ -571,40 +571,6 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
-    readonly __wbg_gluteninstance_free: (a: number, b: number) => void;
-    readonly __wbg_grandbouleinstance_free: (a: number, b: number) => void;
-    readonly gluteninstance_get_crest: (a: number) => number;
-    readonly gluteninstance_get_gr_db: (a: number) => number;
-    readonly gluteninstance_get_input_db: (a: number) => number;
-    readonly gluteninstance_get_input_left_ptr: (a: number) => number;
-    readonly gluteninstance_get_input_right_ptr: (a: number) => number;
-    readonly gluteninstance_get_latency_samples: (a: number) => number;
-    readonly gluteninstance_get_nan_flush_count: (a: number) => number;
-    readonly gluteninstance_get_output_db: (a: number) => number;
-    readonly gluteninstance_get_phase_corr: (a: number) => number;
-    readonly gluteninstance_get_right_ptr: (a: number) => number;
-    readonly gluteninstance_get_sc_left_ptr: (a: number) => number;
-    readonly gluteninstance_get_sc_right_ptr: (a: number) => number;
-    readonly gluteninstance_new: (a: number) => number;
-    readonly gluteninstance_process: (a: number, b: number) => number;
-    readonly gluteninstance_set_param: (a: number, b: number, c: number, d: number) => void;
-    readonly grandbouleinstance_all_notes_off: (a: number) => void;
-    readonly grandbouleinstance_get_nan_flush_count: (a: number) => number;
-    readonly grandbouleinstance_get_right_ptr: (a: number) => number;
-    readonly grandbouleinstance_load_attack_clip: (a: number, b: number, c: number, d: number) => void;
-    readonly grandbouleinstance_new: (a: number, b: number) => number;
-    readonly grandbouleinstance_note_expression: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
-    readonly grandbouleinstance_note_off: (a: number, b: number) => void;
-    readonly grandbouleinstance_note_off_on_channel: (a: number, b: number, c: number) => void;
-    readonly grandbouleinstance_note_on: (a: number, b: number, c: number) => void;
-    readonly grandbouleinstance_note_on_midi2: (a: number, b: number, c: number, d: number) => void;
-    readonly grandbouleinstance_note_on_with_channel: (a: number, b: number, c: number, d: number) => void;
-    readonly grandbouleinstance_process: (a: number, b: number) => number;
-    readonly grandbouleinstance_set_param: (a: number, b: number, c: number, d: number) => void;
-    readonly grandbouleinstance_set_sostenuto: (a: number, b: number) => void;
-    readonly grandbouleinstance_set_sustain: (a: number, b: number) => void;
-    readonly grandbouleinstance_set_temperament: (a: number, b: number) => void;
-    readonly grandbouleinstance_set_una_corda: (a: number, b: number) => void;
     readonly __wbg_toasterinstance_free: (a: number, b: number) => void;
     readonly toasterinstance_get_nan_flush_count: (a: number) => number;
     readonly toasterinstance_get_right_ptr: (a: number) => number;
@@ -652,8 +618,7 @@ export interface InitOutput {
     readonly grinderinstance_process: (a: number, b: number) => number;
     readonly grinderinstance_process_automated: (a: number, b: number) => number;
     readonly grinderinstance_set_param: (a: number, b: number, c: number, d: number) => void;
-    readonly analyze_pitch_wasm: (a: number, b: number, c: number) => [number, number];
-    readonly commit_pitch_edit_wasm: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number];
+    readonly init_panic_hook: () => void;
     readonly __wbg_fermenterinstance_free: (a: number, b: number) => void;
     readonly __wbg_kneadinstance_free: (a: number, b: number) => void;
     readonly __wbg_levaininstance_free: (a: number, b: number) => void;
@@ -724,7 +689,42 @@ export interface InitOutput {
     readonly proofinstance_reorder: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
     readonly proofinstance_reset_integrated: (a: number) => void;
     readonly proofinstance_set_param: (a: number, b: number, c: number, d: number) => void;
-    readonly init_panic_hook: () => void;
+    readonly __wbg_gluteninstance_free: (a: number, b: number) => void;
+    readonly __wbg_grandbouleinstance_free: (a: number, b: number) => void;
+    readonly gluteninstance_get_crest: (a: number) => number;
+    readonly gluteninstance_get_gr_db: (a: number) => number;
+    readonly gluteninstance_get_input_db: (a: number) => number;
+    readonly gluteninstance_get_input_left_ptr: (a: number) => number;
+    readonly gluteninstance_get_input_right_ptr: (a: number) => number;
+    readonly gluteninstance_get_latency_samples: (a: number) => number;
+    readonly gluteninstance_get_nan_flush_count: (a: number) => number;
+    readonly gluteninstance_get_output_db: (a: number) => number;
+    readonly gluteninstance_get_phase_corr: (a: number) => number;
+    readonly gluteninstance_get_right_ptr: (a: number) => number;
+    readonly gluteninstance_get_sc_left_ptr: (a: number) => number;
+    readonly gluteninstance_get_sc_right_ptr: (a: number) => number;
+    readonly gluteninstance_new: (a: number) => number;
+    readonly gluteninstance_process: (a: number, b: number) => number;
+    readonly gluteninstance_set_param: (a: number, b: number, c: number, d: number) => void;
+    readonly grandbouleinstance_all_notes_off: (a: number) => void;
+    readonly grandbouleinstance_get_nan_flush_count: (a: number) => number;
+    readonly grandbouleinstance_get_right_ptr: (a: number) => number;
+    readonly grandbouleinstance_load_attack_clip: (a: number, b: number, c: number, d: number) => void;
+    readonly grandbouleinstance_new: (a: number, b: number) => number;
+    readonly grandbouleinstance_note_expression: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly grandbouleinstance_note_off: (a: number, b: number) => void;
+    readonly grandbouleinstance_note_off_on_channel: (a: number, b: number, c: number) => void;
+    readonly grandbouleinstance_note_on: (a: number, b: number, c: number) => void;
+    readonly grandbouleinstance_note_on_midi2: (a: number, b: number, c: number, d: number) => void;
+    readonly grandbouleinstance_note_on_with_channel: (a: number, b: number, c: number, d: number) => void;
+    readonly grandbouleinstance_process: (a: number, b: number) => number;
+    readonly grandbouleinstance_set_param: (a: number, b: number, c: number, d: number) => void;
+    readonly grandbouleinstance_set_sostenuto: (a: number, b: number) => void;
+    readonly grandbouleinstance_set_sustain: (a: number, b: number) => void;
+    readonly grandbouleinstance_set_temperament: (a: number, b: number) => void;
+    readonly grandbouleinstance_set_una_corda: (a: number, b: number) => void;
+    readonly analyze_pitch_wasm: (a: number, b: number, c: number) => [number, number];
+    readonly commit_pitch_edit_wasm: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number];
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
