@@ -48,6 +48,88 @@ const guardedPayloadContractCases = [
         ],
     }),
     guardedPayloadCase({
+        actionType: 'duplicateClip',
+        validPayload: { clipId: 'clip-1' },
+        invalidPayloads: [
+            { clipId: '' },
+            {},
+            { clipId: 1 },
+            { clipId: 'clip-1', extra: true },
+            { clipId: 'clip-1', targetClipId: 'internal-copy-id' },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'duplicateClipToNextBar',
+        validPayload: { clipId: 'clip-1' },
+        invalidPayloads: [
+            { clipId: '' },
+            {},
+            { clipId: 1 },
+            { clipId: 'clip-1', extra: true },
+            { clipId: 'clip-1', targetClipId: 'internal-copy-id' },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'removeClip',
+        validPayload: { clipId: 'clip-1' },
+        invalidPayloads: [{ clipId: '' }, {}, { clipId: 1 }, { clipId: 'clip-1', extra: true }],
+    }),
+    guardedPayloadCase({
+        actionType: 'renameClip',
+        validPayload: { clipId: 'clip-1', name: 'Verse Lead' },
+        invalidPayloads: [
+            { clipId: '', name: 'Verse Lead' },
+            { clipId: 'clip-1', name: '' },
+            { clipId: 'clip-1', name: 1 },
+            { clipId: 'clip-1', name: 'Verse Lead', extra: true },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'trimClipStart',
+        validPayload: { clipId: 'clip-1', newStartBeat: 1 },
+        invalidPayloads: [
+            { clipId: '', newStartBeat: 1 },
+            { clipId: 'clip-1', newStartBeat: -0.01 },
+            { clipId: 'clip-1', newStartBeat: Number.NaN },
+            { clipId: 'clip-1', newStartBeat: Number.POSITIVE_INFINITY },
+            { clipId: 'clip-1', newStartBeat: 1, extra: true },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'trimClipEnd',
+        validPayload: { clipId: 'clip-1', newEndBeat: 2 },
+        invalidPayloads: [
+            { clipId: '', newEndBeat: 2 },
+            { clipId: 'clip-1', newEndBeat: 0 },
+            { clipId: 'clip-1', newEndBeat: Number.NaN },
+            { clipId: 'clip-1', newEndBeat: Number.NEGATIVE_INFINITY },
+            { clipId: 'clip-1', newEndBeat: 2, extra: true },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'nudgeClip',
+        validPayload: { clipId: 'clip-1', beats: -0.25 },
+        invalidPayloads: [
+            { clipId: '', beats: 0.25 },
+            { clipId: 'clip-1' },
+            { clipId: 'clip-1', beats: 0 },
+            { clipId: 'clip-1', beats: Number.NaN },
+            { clipId: 'clip-1', beats: Number.POSITIVE_INFINITY },
+            { clipId: 'clip-1', beats: 0.25, extra: true },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'setClipGain',
+        validPayload: { clipId: 'clip-1', gain: 1.25 },
+        invalidPayloads: [
+            { clipId: '', gain: 1 },
+            { clipId: 'clip-1', gain: -0.01 },
+            { clipId: 'clip-1', gain: 2.01 },
+            { clipId: 'clip-1', gain: Number.NaN },
+            { clipId: 'clip-1', gain: 1, extra: true },
+        ],
+    }),
+    guardedPayloadCase({
         actionType: 'splitClip',
         validPayload: { clipId: 'clip-1', beat: 4 },
         invalidPayloads: [

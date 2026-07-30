@@ -90,7 +90,9 @@ describe('getProjectContext', () => {
                     gain: 0.8,
                     pan: -10,
                     outputId: 'master',
-                    clips: [{ id: 'c1', name: 'Vox 1', type: 'audio', startBeat: 0, endBeat: 4 }],
+                    clips: [
+                        { id: 'c1', name: 'Vox 1', type: 'audio', startBeat: 0, endBeat: 4, gain: 1.2, locked: false },
+                    ],
                     devices: [
                         {
                             id: 'd1',
@@ -185,6 +187,8 @@ describe('getProjectContext', () => {
             type: 'audio',
             startBeat: 0,
             endBeat: 4,
+            gain: 1.2,
+            locked: false,
             noteCount: 0,
         });
         expect(context.tracks[0]?.devices[0]).toEqual({

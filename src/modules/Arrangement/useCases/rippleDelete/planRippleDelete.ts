@@ -7,6 +7,7 @@ type RippleDeleteShift = {
     clipId: string;
     origStartBeat: number;
     origEndBeat: number;
+    automationDelta: number;
 };
 
 type RippleDeletePlan = {
@@ -63,6 +64,7 @@ export function planRippleDelete({ trackId, clipIds }: PlanRippleDeleteInput): P
                 clipId: clip.id,
                 origStartBeat: clip.startBeat,
                 origEndBeat: clip.endBeat,
+                automationDelta: -gap,
             });
             accumulator.push({
                 ...clip,

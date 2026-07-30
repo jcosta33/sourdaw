@@ -8,7 +8,7 @@ import { rippleDeleteClips } from '../../useCases/rippleDelete/rippleDeleteClips
 
 // Minimal structural clip shape used to widen a concrete Clip into the structural
 // `ClipSnapshot` carried by the `restoreClip` inverse action payload.
-type MinimalClipShape = { id: string; trackId: string; startBeat: number; endBeat: number };
+type MinimalClipShape = { id: string; trackId: string; name: string; startBeat: number; endBeat: number };
 
 export const handleRemoveClip = createHandler<'removeClip'>({
     execute: (alpha) => {
@@ -65,7 +65,7 @@ export const handleRemoveClip = createHandler<'removeClip'>({
         const pb = midiState?.pitchBendByClipId[alpha.payload.clipId];
 
         return {
-            label: 'Remove clip',
+            label: `Remove clip "${clipSnapshot.name}"`,
             inverseAction: {
                 type: 'restoreClip',
                 payload: {

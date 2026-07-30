@@ -19,7 +19,16 @@ const context: ProjectContext = {
             outputId: 'master',
             clipCount: 0,
             deviceCount: 0,
-            clips: [],
+            clips: [
+                {
+                    id: 'clip-verse',
+                    name: 'Verse Lead',
+                    type: 'audio',
+                    startBeat: 0,
+                    endBeat: 8,
+                    noteCount: 0,
+                },
+            ],
             devices: [],
             sends: [],
         },
@@ -45,5 +54,20 @@ describe('describePlannedAction', () => {
                 context,
             })
         ).toBe('Remove track');
+    });
+
+    it('names a resolved clip removal target and falls back when the clip is unavailable', () => {
+        expect(
+            describePlannedAction({
+                action: { type: 'removeClip', payload: { clipId: 'clip-verse' } },
+                context,
+            })
+        ).toBe('Remove clip "Verse Lead"');
+        expect(
+            describePlannedAction({
+                action: { type: 'removeClip', payload: { clipId: 'missing' } },
+                context,
+            })
+        ).toBe('Remove clip');
     });
 });

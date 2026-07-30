@@ -15,6 +15,8 @@ export type ProjectContextClip = {
     type: 'audio' | 'midi';
     startBeat: number;
     endBeat: number;
+    gain?: number;
+    locked?: boolean;
     noteCount: number;
 };
 
