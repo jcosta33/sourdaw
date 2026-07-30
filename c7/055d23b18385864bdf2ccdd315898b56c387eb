@@ -1,0 +1,55 @@
+src/infra/audioWorklet/raceAbortSignal.ts
+  s_66d4924c65dcd2::t_88ffea1ac3634a 1-26
+src/modules/AudioEngine/engine/BacteriaNode.ts
+  s_66d4924c65dcd2::t_abd67c433b376b 8,70-74,80,83-86
+src/modules/AudioEngine/engine/FermenterNode.ts
+  s_66d4924c65dcd2::t_5d28a44e3778ee 12,112-116,118,121-124
+src/modules/AudioEngine/engine/GlutenNode.ts
+  s_66d4924c65dcd2::t_66abd99bf2e660 10,60-64,71,74-77
+src/modules/AudioEngine/engine/GrandBouleNode.ts
+  s_66d4924c65dcd2::t_d8cb6a63ac2bcd 15,87-91,98,101-104,137
+src/modules/AudioEngine/engine/GrinderNode.ts
+  s_66d4924c65dcd2::t_5e7e8b4058bf1f 5,76-80,86,89-92
+src/modules/AudioEngine/engine/KneadNode.ts
+  s_66d4924c65dcd2::t_dfd1c823ae78df 7-8,29-30,33,36-39
+src/modules/AudioEngine/engine/LevainNode.ts
+  s_66d4924c65dcd2::t_3fa7529a4a5aad 9,58-59,62,65-68,97
+src/modules/AudioEngine/engine/ProofChamberNode.ts
+  s_66d4924c65dcd2::t_ee4fd5bba7abc2 6,40-43,45,48-51
+src/modules/AudioEngine/engine/ProofNode.ts
+  s_66d4924c65dcd2::t_dc626d316403f2 10,81-85,92,95,97-99
+src/modules/AudioEngine/engine/ScoringNode.ts
+  s_66d4924c65dcd2::t_8c848828e0998c 7,73,78,81-84
+src/modules/AudioEngine/engine/ToasterNode.ts
+  s_66d4924c65dcd2::t_16549f31fb8b7b 8,82-86,88,91-94
+src/modules/AudioEngine/engine/__tests__/FermenterNode.spec.ts
+  s_66d4924c65dcd2::t_4cb3d9ac724521 256-301
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_66d4924c65dcd2::t_8a0fb3d662d59c 132,206,298-309,388,439,497,572,655,742,801,956
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistryDescriptors.spec.ts
+  s_36a75e94f39c80::t_4ddc48675429e3 825-826,833
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "c7055d23b18385864bdf2ccdd315898b56c387eb",
+  "prompts": {},
+  "sessions": {
+    "s_36a75e94f39c80": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ae02a4586cdb37175",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
