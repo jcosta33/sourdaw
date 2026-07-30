@@ -4,6 +4,7 @@ import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 
 import { createExportError } from '../errors/ExportError';
 import { prepareOfflineSidechainCompressor } from '../repositories/devices/dynamics/prepareOfflineSidechainCompressor';
+import { prepareOfflineBitcrusherRate } from '../repositories/devices/toneShaping/prepareOfflineBitcrusherRate';
 import { connectOfflineSidechainRoutes } from '../repositories/offlineRouting/connectOfflineSidechainRoutes';
 
 import { type DeviceNodeEntry } from './buildDeviceChain';
@@ -139,6 +140,21 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
             } catch (error) {
                 const reason = error instanceof Error ? error.message : String(error);
                 onWarning?.(`Sidechain processor unavailable; using the offline compressor fallback. ${reason}`);
+            }
+        }
+        // Same ordering constraint as the sidechain prepare above: the bitcrusher
+        // builds its sample-and-hold node synchronously inside the strip, so the
+        // module has to be registered before any strip exists or the bounce loses
+        // rate reduction that playback has.
+        const hasBitcrusher = allRenderableTracks.some((track) =>
+            track.devices.some((device) => device.type === 'builtin-bitcrusher' && !device.bypassed)
+        );
+        if (hasBitcrusher) {
+            try {
+                await prepareOfflineBitcrusherRate(offlineCtx);
+            } catch (error) {
+                const reason = error instanceof Error ? error.message : String(error);
+                onWarning?.(`Bitcrusher rate reduction unavailable; rendering without it. ${reason}`);
             }
         }
         let scheduled = 0;

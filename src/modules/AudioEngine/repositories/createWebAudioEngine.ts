@@ -6,6 +6,7 @@ import { createAdjustmentLayerRuntime, type AdjustmentLayerRuntime } from '../en
 import { BusNode } from '../engine/BusNode';
 import { dropoutCounters } from '../engine/dropoutCounter';
 import { TrackNode } from '../engine/TrackNode';
+import bitcrusherRateProcessorUrl from '../services/bitcrusherRateProcessor.ts?worker&url';
 import meteringProcessorUrl from '../services/meteringProcessor.ts?worker&url';
 import recordingProcessorUrl from '../services/recordingProcessor.ts?worker&url';
 
@@ -299,6 +300,7 @@ class AudioEngineImpl implements AudioEngine {
             this.context.audioWorklet.addModule('/audio/worklets/native-plugin-bridge-processor.js'),
             this.context.audioWorklet.addModule(recordingProcessorUrl),
             this.context.audioWorklet.addModule(meteringProcessorUrl),
+            this.context.audioWorklet.addModule(bitcrusherRateProcessorUrl),
         ]);
         if (generation !== this.initializationGeneration) {
             throw new Error('Audio engine was disposed during initialization.');

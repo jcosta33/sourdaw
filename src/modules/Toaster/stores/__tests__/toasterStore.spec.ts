@@ -4,6 +4,7 @@ import { createDefaultKit } from '../../models/ToasterKit';
 import {
     toasterStore,
     defaultToasterState,
+    registerToasterDevice,
     unregisterToasterDevice,
     updatePad,
     updateKit,
@@ -97,5 +98,51 @@ describe('toasterStore device-absence guards', () => {
 
         selectPad('dev1', 3);
         expect(toasterStore.value?.dev1?.selectedPadIndex).toBe(3);
+    });
+});
+
+describe('registerToasterDevice', () => {
+    beforeEach(() => {
+        toasterStore.set({});
+    });
+
+    it('creates the record the mutators require, so an edit survives instead of no-opping', () => {
+        registerToasterDevice('dev1');
+
+        updateKit('dev1', { swing: 0.25 });
+        updatePad('dev1', 1, { tune: -3 });
+
+        expect(toasterStore.value?.dev1?.kit.swing).toBe(0.25);
+        expect(toasterStore.value?.dev1?.kit.pads[1]?.tune).toBe(-3);
+    });
+
+    it('is idempotent — re-registering keeps the edits the record already holds', () => {
+        registerToasterDevice('dev1');
+        updateKit('dev1', { swing: 0.6 });
+
+        registerToasterDevice('dev1');
+
+        expect(toasterStore.value?.dev1?.kit.swing).toBe(0.6);
+    });
+
+    it('gives each device its own kit, so an edit on one does not reach the other', () => {
+        registerToasterDevice('dev1');
+        registerToasterDevice('dev2');
+
+        updatePad('dev1', 0, { tune: 11 });
+
+        expect(toasterStore.value?.dev1?.kit.pads[0]?.tune).toBe(11);
+        expect(toasterStore.value?.dev2?.kit.pads[0]?.tune).not.toBe(11);
+    });
+
+    it('unregister then write still refuses — creation is registration, never a write', () => {
+        registerToasterDevice('dev1');
+        unregisterToasterDevice('dev1');
+
+        updateKit('dev1', { swing: 0.7 });
+        toggleStep('dev1', 0, 0);
+
+        expect(toasterStore.value?.dev1).toBeUndefined();
+        expect(toasterStore.value).toEqual({});
     });
 });

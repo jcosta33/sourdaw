@@ -188,6 +188,16 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/GrandBoule/useCases/setGrandBouleSympatheticSend.ts': 1,
         'src/modules/GrandBoule/useCases/setGrandBouleVelocityCurve.ts': 1,
         'src/modules/Levain/useCases/levainParamBridge/helpers.ts': 11,
+        // Count provenance: measured 1, was 0 (new file). The single match is a
+        // doc-comment mention of `setParam` — this file holds no device write at
+        // all. It reads the persisted chain order off the project and posts one
+        // `reorder` message to the offline worklet port; the comment names
+        // `setParam` because it has to explain why the offline param replay does
+        // *not* deliver order (the worklet's `set_param` matches no
+        // `chain_order_` prefix and drops all five values). Deleting the word
+        // would drop this row to 0, so a future real sink added here still trips
+        // the closure.
+        'src/modules/Proof/useCases/prepareOfflineProof.ts': 1,
         'src/modules/Proof/useCases/proofParamBridge/helpers.ts': 1,
         'src/modules/Proof/useCases/proofParamBridge/setProofParam.ts': 1,
         'src/modules/Proof/useCases/proofParamBridge/setProofParamWithPatch.ts': 2,
