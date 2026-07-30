@@ -18,22 +18,22 @@ describe('validateStoredPreferences', () => {
         expect(result.theme).toBe(defaultPreferences.theme);
     });
 
-    it('replaces an out-of-range enum field (bufferSize: 999) with its default', () => {
-        const result = validateStoredPreferences({ ...defaultPreferences, bufferSize: 999 });
+    it('replaces an unknown audio latency profile with its default', () => {
+        const result = validateStoredPreferences({ ...defaultPreferences, audioLatencyProfile: 'unsupported' });
 
-        expect(result.bufferSize).toBe(defaultPreferences.bufferSize);
+        expect(result.audioLatencyProfile).toBe(defaultPreferences.audioLatencyProfile);
     });
 
     it('preserves valid stored fields that differ from the defaults', () => {
         const result = validateStoredPreferences({
             ...defaultPreferences,
             theme: 'light',
-            bufferSize: 1024,
+            audioLatencyProfile: 'high-capacity',
             autoSave: false,
         });
 
         expect(result.theme).toBe('light');
-        expect(result.bufferSize).toBe(1024);
+        expect(result.audioLatencyProfile).toBe('high-capacity');
         expect(result.autoSave).toBe(false);
     });
 
@@ -46,7 +46,7 @@ describe('validateStoredPreferences', () => {
     it('returns a distinct copy that does not mutate defaultPreferences', () => {
         // Capture the canonical defaults before any mutation so we can prove they survive.
         const themeBefore = defaultPreferences.theme;
-        const bufferSizeBefore = defaultPreferences.bufferSize;
+        const audioLatencyProfileBefore = defaultPreferences.audioLatencyProfile;
 
         const result = validateStoredPreferences({ ...defaultPreferences });
 
@@ -54,9 +54,9 @@ describe('validateStoredPreferences', () => {
         // non-default values through it must not leak back into the canonical defaults.
         expect(result).not.toBe(defaultPreferences);
         result.theme = 'light';
-        result.bufferSize = 2048;
+        result.audioLatencyProfile = 'high-capacity';
         expect(defaultPreferences.theme).toBe(themeBefore);
-        expect(defaultPreferences.bufferSize).toBe(bufferSizeBefore);
+        expect(defaultPreferences.audioLatencyProfile).toBe(audioLatencyProfileBefore);
     });
 });
 
@@ -236,13 +236,39 @@ describe('validateStoredPreferences — fields absent from a partial stored blob
         // Simulates an upgrade: an older persisted blob only carries a subset of the
         // current schema's keys. Every absent key must fall through to its default
         // (not become `undefined`), while present valid keys are preserved as-is.
-        const result = validateStoredPreferences({ theme: 'light', bufferSize: 1024 });
+        const result = validateStoredPreferences({ theme: 'light', audioLatencyProfile: 'high-capacity' });
 
         expect(result.theme).toBe('light');
-        expect(result.bufferSize).toBe(1024);
+        expect(result.audioLatencyProfile).toBe('high-capacity');
         expect(result.autoSave).toBe(defaultPreferences.autoSave);
         expect(result.soloMode).toBe(defaultPreferences.soloMode);
         expect(result.panelPlacementSidebar).toBe(defaultPreferences.panelPlacementSidebar);
+    });
+
+    it('migrates legacy pseudo buffer settings to the real low-latency profile', () => {
+        const result = validateStoredPreferences({
+            preferencesSchemaVersion: 1,
+            bufferSize: 2048,
+            sampleRate: 96_000,
+        });
+
+        expect(result.audioLatencyProfile).toBe('low-latency');
+        expect(result.preferencesSchemaVersion).toBe(2);
+        expect('bufferSize' in result).toBe(false);
+        expect('sampleRate' in result).toBe(false);
+    });
+
+    it('preserves future-schema fields and version while validating fields this build understands', () => {
+        const result = validateStoredPreferences({
+            ...defaultPreferences,
+            preferencesSchemaVersion: 3,
+            audioLatencyProfile: 'high-capacity',
+            futureAudioMode: 'adaptive',
+        });
+
+        expect(result.preferencesSchemaVersion).toBe(3);
+        expect(result.audioLatencyProfile).toBe('high-capacity');
+        expect(Reflect.get(result, 'futureAudioMode')).toBe('adaptive');
     });
 
     it('returns the full default set for an empty stored object', () => {
@@ -263,7 +289,7 @@ describe('validateStoredPreferences — timeline minimap migration', () => {
 
         expect(result.showMinimap).toBe(true);
         expect(result.timelineMinimapHeight).toBe(28);
-        expect(result.preferencesSchemaVersion).toBe(1);
+        expect(result.preferencesSchemaVersion).toBe(2);
     });
 
     it('honors an explicit hidden choice after the schema-aware migration', () => {
@@ -276,6 +302,7 @@ describe('validateStoredPreferences — timeline minimap migration', () => {
 
         expect(result.showMinimap).toBe(false);
         expect(result.timelineMinimapHeight).toBe(72);
+        expect(result.preferencesSchemaVersion).toBe(2);
     });
 
     it.each([1.5, Number.NaN, Number.POSITIVE_INFINITY, '1', null])(
@@ -287,7 +314,7 @@ describe('validateStoredPreferences — timeline minimap migration', () => {
                 showMinimap: false,
             });
 
-            expect(result.preferencesSchemaVersion).toBe(1);
+            expect(result.preferencesSchemaVersion).toBe(2);
             expect(result.showMinimap).toBe(true);
         }
     );

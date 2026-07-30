@@ -67,6 +67,8 @@ export type AudioEngineDiagnostics = {
         sampleRate: number;
         baseLatency: number;
         outputLatency: number;
+        requestedLatencyProfile: 'low-latency' | 'high-capacity';
+        requestedLatencyHint: AudioContextLatencyCategory;
     };
     /** Null only when the engine has no live AudioContext and is running its fallback shim. */
     playback: AudioEnginePlaybackStats | null;

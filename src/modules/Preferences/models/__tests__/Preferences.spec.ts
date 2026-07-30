@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-    BUFFER_SIZE_OPTIONS,
+    AUDIO_LATENCY_PROFILE_OPTIONS,
     GRID_SNAP_OPTIONS,
-    SAMPLE_RATE_OPTIONS,
     TRACK_HEIGHT_VALUES,
     defaultPreferences,
     gridSnapBeats,
@@ -41,20 +40,15 @@ describe('option lists', () => {
         expect(GRID_SNAP_OPTIONS.every((output) => typeof output.beats === 'number')).toBe(true);
     });
 
-    it('should list buffer sizes in ascending order', () => {
-        expect(BUFFER_SIZE_OPTIONS.map((output) => output.value)).toEqual([128, 256, 512, 1024, 2048]);
-    });
-
-    it('should list common sample rates', () => {
-        expect(SAMPLE_RATE_OPTIONS.map((output) => output.value)).toEqual([44100, 48000, 96000]);
+    it('should list the explicit Chrome latency profiles', () => {
+        expect(AUDIO_LATENCY_PROFILE_OPTIONS.map((output) => output.value)).toEqual(['low-latency', 'high-capacity']);
     });
 });
 
 describe('defaultPreferences', () => {
-    it('should use normal track height and default buffer settings', () => {
+    it('should use normal track height and the low-latency audio profile', () => {
         expect(defaultPreferences.trackHeight).toBe('normal');
-        expect(defaultPreferences.bufferSize).toBe(512);
-        expect(defaultPreferences.sampleRate).toBe(44100);
+        expect(defaultPreferences.audioLatencyProfile).toBe('low-latency');
         expect(defaultPreferences.soloMode).toBe('sip');
     });
 

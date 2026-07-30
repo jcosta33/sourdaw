@@ -57,15 +57,10 @@ export const createStore = <TData>(options: StoreOptions<TData> = {}): Store<TDa
      * — so it is a guard against data this build cannot read, never a review of
      * what this build just wrote.
      *
-     * What happens to the rejected content depends on who else can see the
-     * backing store. On a shared document the sanitized result governs the read
-     * view and nothing more: the content stays in the document, quarantined
-     * rather than deleted. Writing it back would let a validator that cannot
-     * recognise a row destroy it for every peer — including peers that read it
-     * perfectly well — and a structural, version-blind validator cannot even
-     * tell those rows from corrupt ones. On storage only this replica can see
-     * there is no peer to lose and repairing it is the point, so the write-back
-     * stands.
+     * What happens to rejected content depends on whether backing truth must be
+     * preserved. Shared documents and local values from a future schema expose
+     * a sanitized projection while leaving the source quarantined. Compatible
+     * local storage can be repaired in place.
      */
     const sanitizeStorageValue = (value: TData | null): boolean => {
         if (!sanitize) {
@@ -90,7 +85,7 @@ export const createStore = <TData>(options: StoreOptions<TData> = {}): Store<TDa
         if (setProjected) {
             if (logger) {
                 logger.warn(
-                    'Store content this build cannot read was quarantined: withheld from readers, left intact in shared storage.'
+                    'Store content this build cannot read was quarantined: withheld from readers, left intact in backing storage.'
                 );
             }
             setProjected.call(storage, sanitized);

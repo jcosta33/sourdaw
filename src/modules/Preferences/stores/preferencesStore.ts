@@ -1,12 +1,12 @@
 import { logger } from '#/infra/logger/appLogger';
 import { createStore } from '#/infra/store/createStore';
 import { createLocalStorage } from '#/infra/store/storage/createLocalStorage';
+import { type StorageAdapter } from '#/infra/store/storage/types';
 import { normalizeTimelineMinimapHeight } from '#/utils/TimelineMinimap/timelineMinimapHeight';
 
 import {
-    BUFFER_SIZE_OPTIONS,
+    AUDIO_LATENCY_PROFILE_OPTIONS,
     GRID_SNAP_OPTIONS,
-    SAMPLE_RATE_OPTIONS,
     PREFERENCES_SCHEMA_VERSION,
     defaultPreferences,
     type Preferences,
@@ -18,11 +18,51 @@ import {
 // the `stores/` barrel next to `preferencesStore`.
 export type { Preferences };
 
-const storage = createLocalStorage<Preferences>('sourdaw-preferences');
+const persistedStorage = createLocalStorage<Preferences>('sourdaw-preferences');
+let projectedPreferences: Preferences | null | undefined;
+
+function hasFuturePreferencesSchema(value: Preferences | null): boolean {
+    return (
+        value !== null &&
+        isValidPreferencesSchemaVersion(value.preferencesSchemaVersion) &&
+        value.preferencesSchemaVersion > PREFERENCES_SCHEMA_VERSION
+    );
+}
+
+const storage: StorageAdapter<Preferences> = {
+    get(): Preferences | null {
+        if (projectedPreferences !== undefined) {
+            return projectedPreferences;
+        }
+        return persistedStorage.get();
+    },
+    set(value): void {
+        if (hasFuturePreferencesSchema(persistedStorage.get())) {
+            projectedPreferences = value;
+            return;
+        }
+        projectedPreferences = undefined;
+        persistedStorage.set(value);
+    },
+    setProjected(value): void {
+        if (hasFuturePreferencesSchema(persistedStorage.get())) {
+            projectedPreferences = value;
+            return;
+        }
+        projectedPreferences = undefined;
+        persistedStorage.set(value);
+    },
+    clear(): void {
+        projectedPreferences = undefined;
+        persistedStorage.clear();
+    },
+    isSupported(): boolean {
+        return persistedStorage.isSupported();
+    },
+};
 
 const GRID_SNAP_VALUES = new Set<unknown>(GRID_SNAP_OPTIONS.map((option) => option.value));
-const BUFFER_SIZE_VALUES = new Set<unknown>(BUFFER_SIZE_OPTIONS.map((option) => option.value));
-const SAMPLE_RATE_VALUES = new Set<unknown>(SAMPLE_RATE_OPTIONS.map((option) => option.value));
+const AUDIO_LATENCY_PROFILE_VALUES = new Set<unknown>(AUDIO_LATENCY_PROFILE_OPTIONS.map((option) => option.value));
 
 function isFiniteNumber(value: unknown): boolean {
     return typeof value === 'number' && Number.isFinite(value);
@@ -60,8 +100,7 @@ const PREFERENCES_SCHEMA: { [K in keyof Preferences]: (value: unknown) => boolea
     panelPlacementInspector: isOneOf('left', 'right'),
     panelPlacementChat: isOneOf('left', 'right'),
     panelPlacementAi: isOneOf('left', 'right'),
-    bufferSize: (value) => BUFFER_SIZE_VALUES.has(value),
-    sampleRate: (value) => SAMPLE_RATE_VALUES.has(value),
+    audioLatencyProfile: (value) => AUDIO_LATENCY_PROFILE_VALUES.has(value),
     metronomeEnabled: (value) => typeof value === 'boolean',
     metronomeVolume: isFiniteNumber,
     recordCountIn: isOneOf(0, 1, 2, 4),
@@ -88,9 +127,11 @@ export function validateStoredPreferences(stored: unknown): Preferences {
     }
 
     const record = stored as Record<string, unknown>;
-    const result = { ...defaultPreferences };
-    const rejected: string[] = [];
     const storedSchemaVersion = record.preferencesSchemaVersion;
+    const futureSchemaVersion =
+        isValidPreferencesSchemaVersion(storedSchemaVersion) && storedSchemaVersion > PREFERENCES_SCHEMA_VERSION;
+    const result = { ...(futureSchemaVersion ? record : {}), ...defaultPreferences };
+    const rejected: string[] = [];
     const visibilityChoiceIsAuthoritative = isValidPreferencesSchemaVersion(storedSchemaVersion);
 
     for (const key of PREFERENCE_KEYS) {
@@ -109,8 +150,8 @@ export function validateStoredPreferences(stored: unknown): Preferences {
     result.timelineMinimapHeight = normalizeTimelineMinimapHeight(result.timelineMinimapHeight);
     if (!visibilityChoiceIsAuthoritative) {
         result.showMinimap = true;
-        result.preferencesSchemaVersion = PREFERENCES_SCHEMA_VERSION;
     }
+    result.preferencesSchemaVersion = futureSchemaVersion ? storedSchemaVersion : PREFERENCES_SCHEMA_VERSION;
 
     if (rejected.length > 0) {
         logger.warn(`Discarding invalid stored preference field(s): ${rejected.join(', ')}; using defaults for those.`);

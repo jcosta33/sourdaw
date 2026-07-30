@@ -156,7 +156,7 @@ describe('AudioEngineImpl — residual branch coverage', () => {
                 }
             }
         );
-        engine = createAudioEngine(asAudioContext(mockCtx));
+        engine = createAudioEngine({ context: asAudioContext(mockCtx) });
     });
 
     afterEach(() => {
@@ -218,7 +218,7 @@ describe('AudioEngineImpl — residual branch coverage', () => {
             try {
                 // Build a fresh engine with no SAB. The constructor must not
                 // allocate transport views, and initialize must skip the meter.
-                const noSabEngine = createAudioEngine(asAudioContext(mockCtx));
+                const noSabEngine = createAudioEngine({ context: asAudioContext(mockCtx) });
                 await noSabEngine.initialize();
                 // No worklet meter node — the constructor's analyser stands.
                 const meter = (noSabEngine as unknown as { masterMeterNode?: unknown }).masterMeterNode;
@@ -436,7 +436,7 @@ describe('AudioEngineImpl — residual branch coverage', () => {
             const savedSab = globalThis.SharedArrayBuffer;
             delete (globalThis as { SharedArrayBuffer?: unknown }).SharedArrayBuffer;
             try {
-                const noSabEngine = createAudioEngine(asAudioContext(mockCtx));
+                const noSabEngine = createAudioEngine({ context: asAudioContext(mockCtx) });
                 // Creating a strip reads transportSAB ?? undefined. No throw and
                 // a strip materializes.
                 const strip = noSabEngine.ensureTrackStrip('sab-less');

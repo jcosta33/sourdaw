@@ -199,7 +199,7 @@ describe('AudioEngine', () => {
             }
         );
 
-        engine = createAudioEngine(asAudioContext(mockCtx));
+        engine = createAudioEngine({ context: asAudioContext(mockCtx) });
     });
 
     it('should initialize with master nodes', () => {
@@ -208,6 +208,30 @@ describe('AudioEngine', () => {
         expect(engine.masterAnalyser).toBeDefined();
         expect(mockCtx.createGain).toHaveBeenCalled();
         expect(mockCtx.createAnalyser).toHaveBeenCalled();
+    });
+
+    it('reports the requested latency profile and its Chrome latency hint', () => {
+        const highCapacityEngine = createAudioEngine({
+            context: asAudioContext(createMockAudioContext()),
+            latencyProfile: 'high-capacity',
+        });
+
+        expect(highCapacityEngine.getDiagnostics().context).toMatchObject({
+            requestedLatencyProfile: 'high-capacity',
+            requestedLatencyHint: 'playback',
+        });
+    });
+
+    it('constructs the live AudioContext with the selected Chrome latency hint', () => {
+        const context = createMockAudioContext();
+        const AudioContextConstructor = vi.fn(function (_options: AudioContextOptions): AudioContext {
+            return asAudioContext(context);
+        });
+        vi.stubGlobal('AudioContext', AudioContextConstructor);
+
+        createAudioEngine({ latencyProfile: 'high-capacity' });
+
+        expect(AudioContextConstructor).toHaveBeenCalledWith({ latencyHint: 'playback' });
     });
 
     it('should load worklets on initialize', async () => {
@@ -687,7 +711,7 @@ describe('AudioEngine', () => {
                 }
             }
             vi.stubGlobal('Int32Array', SpyInt32Array);
-            engine = createAudioEngine(asAudioContext(mockCtx));
+            engine = createAudioEngine({ context: asAudioContext(mockCtx) });
             vi.stubGlobal('Int32Array', OriginalInt32Array);
         });
 
@@ -858,7 +882,14 @@ describe('AudioEngine', () => {
             expect(fbEngine.getState().isReady).toBe(false);
             expect(fbEngine.getState().state).toBe('closed');
             const actual = fbEngine.getDiagnostics();
-            expect(actual.context).toEqual({ state: 'closed', sampleRate: 44_100, baseLatency: 0, outputLatency: 0 });
+            expect(actual.context).toEqual({
+                state: 'closed',
+                sampleRate: 44_100,
+                baseLatency: 0,
+                outputLatency: 0,
+                requestedLatencyProfile: 'low-latency',
+                requestedLatencyHint: 'interactive',
+            });
             expect(actual.playback).toBeNull();
         });
 
@@ -1456,7 +1487,7 @@ describe('AudioEngine', () => {
             try {
                 let noSabEngine: AudioEngine | undefined;
                 expect(() => {
-                    noSabEngine = createAudioEngine(asAudioContext(mockCtx));
+                    noSabEngine = createAudioEngine({ context: asAudioContext(mockCtx) });
                 }).not.toThrow();
                 // Transport writes are a safe no-op with no SAB backing.
                 expect(() => noSabEngine!.setTransportInfo(4, 120, true)).not.toThrow();

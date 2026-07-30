@@ -68,6 +68,36 @@ describe('preferencesStore — present-but-corrupt persisted blob', () => {
     });
 });
 
+describe('preferencesStore — future schema quarantine', () => {
+    const STORAGE_KEY = 'sourdaw-preferences';
+
+    beforeEach(() => {
+        window.localStorage.clear();
+    });
+
+    afterEach(() => {
+        window.localStorage.clear();
+    });
+
+    it('projects safe current values without repairing a future-version blob', async () => {
+        const futurePreferences = {
+            ...defaultPreferences,
+            preferencesSchemaVersion: 3,
+            audioLatencyProfile: 'adaptive',
+            futureAudioMode: 'adaptive',
+        };
+        window.localStorage.setItem(STORAGE_KEY, stringify(futurePreferences));
+
+        vi.resetModules();
+        const fresh = (await import('../preferencesStore')).preferencesStore;
+
+        expect(fresh.value?.audioLatencyProfile).toBe('low-latency');
+        fresh.update((preferences) => ({ ...preferences!, theme: 'light' }));
+        expect(fresh.value?.theme).toBe('light');
+        expect(parse(window.localStorage.getItem(STORAGE_KEY)!)).toEqual(futurePreferences);
+    });
+});
+
 describe('preferencesStore — empty persisted storage (first run)', () => {
     const STORAGE_KEY = 'sourdaw-preferences';
 
@@ -94,11 +124,11 @@ describe('preferencesStore — empty persisted storage (first run)', () => {
         vi.resetModules();
         const fresh = (await import('../preferencesStore')).preferencesStore;
 
-        fresh.set({ ...defaultPreferences, theme: 'light', bufferSize: 1024 });
+        fresh.set({ ...defaultPreferences, theme: 'light', audioLatencyProfile: 'high-capacity' });
 
         const persisted = window.localStorage.getItem(STORAGE_KEY);
         expect(persisted).not.toBeNull();
-        expect(parse(persisted as string)).toMatchObject({ theme: 'light', bufferSize: 1024 });
+        expect(parse(persisted as string)).toMatchObject({ theme: 'light', audioLatencyProfile: 'high-capacity' });
     });
 
     it('seeds a visible 28px minimap under the current preferences schema', async () => {
@@ -106,7 +136,7 @@ describe('preferencesStore — empty persisted storage (first run)', () => {
         const fresh = (await import('../preferencesStore')).preferencesStore;
 
         expect(fresh.value).toMatchObject({
-            preferencesSchemaVersion: 1,
+            preferencesSchemaVersion: 2,
             showMinimap: true,
             timelineMinimapHeight: 28,
         });
@@ -130,7 +160,7 @@ describe('preferencesStore — legacy minimap visibility migration', () => {
         const fresh = (await import('../preferencesStore')).preferencesStore;
 
         expect(fresh.value).toMatchObject({
-            preferencesSchemaVersion: 1,
+            preferencesSchemaVersion: 2,
             showMinimap: true,
             timelineMinimapHeight: 28,
         });
@@ -140,6 +170,6 @@ describe('preferencesStore — legacy minimap visibility migration', () => {
         const reloaded = (await import('../preferencesStore')).preferencesStore;
 
         expect(reloaded.value?.showMinimap).toBe(false);
-        expect(reloaded.value?.preferencesSchemaVersion).toBe(1);
+        expect(reloaded.value?.preferencesSchemaVersion).toBe(2);
     });
 });

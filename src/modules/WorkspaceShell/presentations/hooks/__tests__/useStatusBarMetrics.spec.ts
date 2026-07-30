@@ -46,7 +46,14 @@ function makeElements(refs: StatusBarMetricRefs): void {
 
 function makeEngineDiagnostics(deviceInstances = 24): ReturnType<typeof getEngineDiagnostics> {
     return {
-        context: { state: 'running', sampleRate: 48_000, baseLatency: 0.005, outputLatency: 0.005 },
+        context: {
+            state: 'running',
+            sampleRate: 48_000,
+            baseLatency: 0.005,
+            outputLatency: 0.005,
+            requestedLatencyProfile: 'low-latency',
+            requestedLatencyHint: 'interactive',
+        },
         playback: {
             underrunDuration: 0,
             underrunEvents: 0,

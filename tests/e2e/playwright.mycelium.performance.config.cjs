@@ -9,6 +9,10 @@ const repoRoot = path.resolve(__dirname, '../..');
 const cpuInfo = os.cpus();
 const headless = process.env.SOURDAW_PERF_HEADLESS === '1';
 const smoke = process.env.SOURDAW_PERF_SMOKE === '1';
+const audioLatencyProfile = process.env.SOURDAW_AUDIO_LATENCY_PROFILE ?? 'low-latency';
+if (!['low-latency', 'high-capacity'].includes(audioLatencyProfile)) {
+    throw new Error('SOURDAW_AUDIO_LATENCY_PROFILE must be low-latency or high-capacity');
+}
 const readGit = (args) => childProcess.execFileSync('git', args, { cwd: repoRoot, encoding: 'utf8' }).trim();
 const gitDirty = readGit(['status', '--porcelain=v1']).length > 0;
 if (gitDirty && !smoke) {
@@ -19,6 +23,7 @@ const performanceMetadata = {
     gitDirty,
     headless,
     smoke,
+    audioLatencyProfile,
     os: {
         platform: os.platform(),
         release: os.release(),

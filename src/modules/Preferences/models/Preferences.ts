@@ -24,26 +24,16 @@ export function gridSnapBeats(option: GridSnapOption): number {
     return entry?.beats ?? 0;
 }
 
-export type BufferSizeOption = 128 | 256 | 512 | 1024 | 2048;
-export type SampleRateOption = 44100 | 48000 | 96000;
+export type AudioLatencyProfilePreference = 'low-latency' | 'high-capacity';
 
-export const BUFFER_SIZE_OPTIONS: { value: BufferSizeOption; label: string }[] = [
-    { value: 128, label: '128 samples' },
-    { value: 256, label: '256 samples' },
-    { value: 512, label: '512 samples' },
-    { value: 1024, label: '1024 samples' },
-    { value: 2048, label: '2048 samples' },
-];
-
-export const SAMPLE_RATE_OPTIONS: { value: SampleRateOption; label: string }[] = [
-    { value: 44100, label: '44.1 kHz' },
-    { value: 48000, label: '48 kHz' },
-    { value: 96000, label: '96 kHz' },
+export const AUDIO_LATENCY_PROFILE_OPTIONS: { value: AudioLatencyProfilePreference; label: string }[] = [
+    { value: 'low-latency', label: 'Low latency' },
+    { value: 'high-capacity', label: 'High capacity' },
 ];
 
 export type SoloModePreference = 'sip' | 'afl' | 'pfl';
 
-export const PREFERENCES_SCHEMA_VERSION = 1;
+export const PREFERENCES_SCHEMA_VERSION = 2;
 
 export type Preferences = {
     preferencesSchemaVersion: number;
@@ -63,8 +53,7 @@ export type Preferences = {
     panelPlacementInspector: 'left' | 'right';
     panelPlacementChat: 'left' | 'right';
     panelPlacementAi: 'left' | 'right';
-    bufferSize: BufferSizeOption;
-    sampleRate: SampleRateOption;
+    audioLatencyProfile: AudioLatencyProfilePreference;
     metronomeEnabled: boolean;
     metronomeVolume: number;
     recordCountIn: 0 | 1 | 2 | 4;
@@ -93,8 +82,7 @@ export const defaultPreferences: Preferences = {
     panelPlacementInspector: 'right',
     panelPlacementChat: 'right',
     panelPlacementAi: 'right',
-    bufferSize: 512,
-    sampleRate: 44100,
+    audioLatencyProfile: 'low-latency',
     metronomeEnabled: false,
     metronomeVolume: 0.5,
     recordCountIn: 1,

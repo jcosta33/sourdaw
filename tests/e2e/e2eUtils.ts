@@ -13,10 +13,10 @@ type LaunchFromTemplateInput = {
 
 /**
  * Common setup for E2E tests: bypasses the onboarding tour and alpha notice
- * via local storage, then navigates to the root URL and ensures basic DOM
- * loading is complete.
+ * via local storage, then navigates to the requested app path (root by default)
+ * and ensures basic DOM loading is complete.
  */
-export async function setupWorkspace(page: Page): Promise<void> {
+export async function setupWorkspace(page: Page, path = '/'): Promise<void> {
     page.on('console', msg => console.log(`[Browser Console] ${msg.text()}`));
     page.on('pageerror', err => console.log(`[Browser Error] ${err}`));
 
@@ -31,7 +31,7 @@ export async function setupWorkspace(page: Page): Promise<void> {
         window.localStorage.setItem('sourdaw-alpha-notice-dismissed', alphaDismissed);
     }, { alphaDismissed });
 
-    await page.goto('/');
+    await page.goto(path);
     await page.waitForLoadState('domcontentloaded');
 }
 

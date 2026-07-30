@@ -58,6 +58,7 @@ type PerformanceMetadata = {
     gitDirty: boolean;
     headless: boolean;
     smoke: boolean;
+    audioLatencyProfile: MyceliumEvidenceEnvironment['audioLatencyProfile'];
     os: MyceliumEvidenceEnvironment['os'];
 };
 
@@ -77,6 +78,7 @@ export type MyceliumEvidenceEnvironment = {
     viewport: { width: number; height: number };
     headless: boolean;
     smoke: boolean;
+    audioLatencyProfile: 'low-latency' | 'high-capacity';
     repeatIndex: number;
     capabilities: RuntimeCapabilities;
 };
@@ -125,6 +127,7 @@ function readPerformanceMetadata(testInfo: TestInfo): PerformanceMetadata {
     const gitDirty = performanceMetadata.gitDirty;
     const headless = performanceMetadata.headless;
     const smoke = performanceMetadata.smoke;
+    const audioLatencyProfile = performanceMetadata.audioLatencyProfile;
     const osValues = {
         platform: os.platform,
         release: os.release,
@@ -139,6 +142,7 @@ function readPerformanceMetadata(testInfo: TestInfo): PerformanceMetadata {
         typeof gitDirty !== 'boolean' ||
         typeof headless !== 'boolean' ||
         typeof smoke !== 'boolean' ||
+        (audioLatencyProfile !== 'low-latency' && audioLatencyProfile !== 'high-capacity') ||
         typeof osValues.platform !== 'string' ||
         typeof osValues.release !== 'string' ||
         typeof osValues.architecture !== 'string' ||
@@ -149,7 +153,14 @@ function readPerformanceMetadata(testInfo: TestInfo): PerformanceMetadata {
     ) {
         throw new TypeError('Playwright performance metadata is incomplete');
     }
-    return { gitSha, gitDirty, headless, smoke, os: osValues as MyceliumEvidenceEnvironment['os'] };
+    return {
+        gitSha,
+        gitDirty,
+        headless,
+        smoke,
+        audioLatencyProfile,
+        os: osValues as MyceliumEvidenceEnvironment['os'],
+    };
 }
 
 async function readCapabilities(page: Page): Promise<RuntimeCapabilities> {
@@ -171,12 +182,17 @@ export async function openMeasuredPage(testInfo: TestInfo): Promise<OpenMeasured
             viewport: { width: 1920, height: 1080 },
         });
         page = await context.newPage();
-        await setupWorkspace(page);
+        const pagePath = `/?audioLatencyProfile=${metadata.audioLatencyProfile}`;
+        await setupWorkspace(page, pagePath);
 
         const capabilities = await readCapabilities(page);
         expect(capabilities.crossOriginIsolated).toBe(true);
         expect(capabilities.hasLongTasks).toBe(true);
         expect(capabilities.hasMeasureMemory).toBe(true);
+        const initialSnapshot = await readRuntimeSnapshot(page);
+        const audioDiagnostics = getRecord(initialSnapshot.audio, 'Audio diagnostics');
+        const audioContext = getRecord(audioDiagnostics.context, 'Audio diagnostics context');
+        expect(audioContext.requestedLatencyProfile).toBe(metadata.audioLatencyProfile);
 
         return {
             browser,
@@ -189,6 +205,7 @@ export async function openMeasuredPage(testInfo: TestInfo): Promise<OpenMeasured
                 viewport: { width: 1920, height: 1080 },
                 headless: metadata.headless,
                 smoke: metadata.smoke,
+                audioLatencyProfile: metadata.audioLatencyProfile,
                 repeatIndex: testInfo.repeatEachIndex,
                 capabilities,
             },

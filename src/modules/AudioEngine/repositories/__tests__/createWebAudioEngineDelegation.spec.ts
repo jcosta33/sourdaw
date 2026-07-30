@@ -246,7 +246,7 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
                 }
             }
         );
-        engine = createAudioEngine(asAudioContext(mockCtx));
+        engine = createAudioEngine({ context: asAudioContext(mockCtx) });
         // The dropout counters are a process-wide singleton backed by one SAB —
         // clear the tally so specs do not inherit each other's counts.
         dropoutCounters.reset();
@@ -286,7 +286,14 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
     });
 
     it('reports the live graph and runtime load without touching the render path', async () => {
-        const expectedCtx = { state: 'running' as const, sampleRate: 48_000, baseLatency: 0.01, outputLatency: 0.01 };
+        const expectedCtx = {
+            state: 'running' as const,
+            sampleRate: 48_000,
+            baseLatency: 0.01,
+            outputLatency: 0.01,
+            requestedLatencyProfile: 'low-latency',
+            requestedLatencyHint: 'interactive',
+        };
         const expectedPlayback = {
             underrunDuration: 0.002,
             underrunEvents: 2,

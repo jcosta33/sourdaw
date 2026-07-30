@@ -1,3 +1,5 @@
+import { AUDIO_LATENCY_PROFILE_DEFINITIONS, type AudioLatencyProfile } from '#/infra/audio/AudioLatencyProfile';
+import { audioRuntimeConfiguration } from '#/infra/audio/audioRuntimeConfiguration';
 import { logger } from '#/infra/logger/appLogger';
 import { hasSharedArrayBuffer } from '#/utils/capabilities';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -102,6 +104,11 @@ function readPlaybackStats(context: AudioContext): AudioEnginePlaybackStats {
 type DeviceRuntimeResources = {
     audioWorkletProcessors: number;
     workers: number;
+};
+
+type CreateAudioEngineInput = {
+    context?: AudioContext;
+    latencyProfile?: AudioLatencyProfile;
 };
 
 function countDeviceRuntimeResources(device: BuiltinDeviceNode): DeviceRuntimeResources {
@@ -255,8 +262,12 @@ class AudioEngineImpl implements AudioEngine {
     private lastInitError: Error | null = null;
     private lastResumeError: Error | null = null;
     private adjustmentRuntime: AdjustmentLayerRuntime;
+    private readonly requestedLatencyProfile: AudioLatencyProfile;
+    private readonly requestedLatencyHint: AudioContextLatencyCategory;
 
-    constructor(providedContext?: AudioContext) {
+    constructor({ context: providedContext, latencyProfile }: CreateAudioEngineInput = {}) {
+        this.requestedLatencyProfile = latencyProfile ?? audioRuntimeConfiguration.latencyProfile;
+        this.requestedLatencyHint = AUDIO_LATENCY_PROFILE_DEFINITIONS[this.requestedLatencyProfile].latencyHint;
         // Transport SAB layout: see TRANSPORT_F64 / TRANSPORT_SEQ_I32 above. The
         // seven f64 data fields (slots 0–6) are guarded by a seqlock counter in
         // the Int32 view at TRANSPORT_SEQ_I32 so worklet readers never observe a
@@ -280,7 +291,7 @@ class AudioEngineImpl implements AudioEngine {
         }
 
         try {
-            this.context = providedContext ?? new AudioContext({ latencyHint: 'interactive' });
+            this.context = providedContext ?? new AudioContext({ latencyHint: this.requestedLatencyHint });
             this.masterGainNode = this.context.createGain();
             this.masterGainNode.gain.value = 0.8;
 
@@ -393,6 +404,8 @@ class AudioEngineImpl implements AudioEngine {
             sampleRate: engineState.sampleRate,
             baseLatency: engineState.baseLatency,
             outputLatency: this.fallbackMode ? 0 : this.context.outputLatency,
+            requestedLatencyProfile: this.requestedLatencyProfile,
+            requestedLatencyHint: this.requestedLatencyHint,
         };
         if (this.fallbackMode) {
             return {
@@ -1484,8 +1497,8 @@ class AudioEngineImpl implements AudioEngine {
     }
 }
 
-export function createAudioEngine(providedContext?: AudioContext): AudioEngine {
-    return new AudioEngineImpl(providedContext);
+export function createAudioEngine(input: CreateAudioEngineInput = {}): AudioEngine {
+    return new AudioEngineImpl(input);
 }
 
 export const audioEngine = createAudioEngine();
