@@ -1,0 +1,75 @@
+src/modules/MixerConsole/presentations/views/Mixer/DeviceChainSection.tsx
+  s_66d4924c65dcd2::t_cee1107810085e 94
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackDevicesSection.spec.tsx
+  s_66d4924c65dcd2::t_cef44b2597c7ee 262-264
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/effectsTabHelpers.spec.tsx
+  s_66d4924c65dcd2::t_c136a776adf5ce 1,3,9-15
+  s_66d4924c65dcd2::t_6ceaf6c2337d58 29-32
+  s_66d4924c65dcd2::t_6478bd58e619f1 16
+  s_66d4924c65dcd2::t_65634af987dd98 61-82
+src/modules/Arrangement/useCases/preset/__tests__/presetLoading.spec.ts
+  s_66d4924c65dcd2::t_4528e1190e05d6 293,301-303,305-309,311,315
+  s_66d4924c65dcd2::t_de59aa9f291de7 287
+  s_66d4924c65dcd2::t_d5d3b00b71b2fa 310
+  s_66d4924c65dcd2::t_74e39db8ddef92 294-300,304,312-314
+  s_66d4924c65dcd2::t_4faa6287605ee4 262
+  s_66d4924c65dcd2::t_c28f19d41d17c6 290
+src/modules/AiRuntime/models/PresetActions/Presets/Device.ts
+  s_66d4924c65dcd2::t_c9d4489889a75b 85
+  s_66d4924c65dcd2::t_93abf53b0595d0 21
+  s_66d4924c65dcd2::t_8a2255542bca6b 61
+  s_66d4924c65dcd2::t_ccbc19e44ade06 37
+  s_66d4924c65dcd2::t_ec3bce8b43f5b2 125
+  s_66d4924c65dcd2::t_f68b29aa1769ca 93
+  s_66d4924c65dcd2::t_04b247be8ba13b 77
+  s_66d4924c65dcd2::t_e268445b0a7637 69
+  s_66d4924c65dcd2::t_751728fdc521d9 117
+  s_66d4924c65dcd2::t_81d99df7c83f2c 3-13
+  s_66d4924c65dcd2::t_764d45dca916a1 133
+  s_66d4924c65dcd2::t_e1bbab19e3ae56 101
+  s_66d4924c65dcd2::t_2bed0d7337b360 109
+  s_66d4924c65dcd2::t_868f32a7f37ff7 29
+  s_66d4924c65dcd2::t_0ddcbf21e9a605 45
+  s_66d4924c65dcd2::t_421aeb9a17fed0 53
+src/modules/ContentBrowser/presentations/views/Sidebar/effectsTabHelpers.tsx
+  s_66d4924c65dcd2::t_c6968f49538e40 202,210
+  s_66d4924c65dcd2::t_0ccd234aaa5207 177-182
+src/modules/AiRuntime/models/PresetActions/Presets/__tests__/Device.spec.ts
+  s_66d4924c65dcd2::t_174727692bf1c1 1-40
+src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx
+  s_66d4924c65dcd2::t_61680f3519178c 137
+  s_66d4924c65dcd2::t_17d109ea84b7d3 103
+  s_66d4924c65dcd2::t_17a2360b90a658 119
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/DeviceChainSection.spec.tsx
+  s_66d4924c65dcd2::t_ad708e10fe5ded 131-133
+src/modules/Arrangement/useCases/device/addDevice.ts
+  s_66d4924c65dcd2::t_0302f5a30424ea 17-27
+  s_66d4924c65dcd2::t_ddb0a88d37e582 71
+src/modules/Arrangement/useCases/preset/presetLoading.ts
+  s_66d4924c65dcd2::t_5cec67cefdbfb9 44-52
+  s_66d4924c65dcd2::t_988e6a203eab5c 56
+src/modules/Arrangement/useCases/device/__tests__/addDevice.spec.ts
+  s_66d4924c65dcd2::t_4dc0ca885cb87d 140-158,160-166
+  s_66d4924c65dcd2::t_1a2825ab09b639 167-181
+  s_66d4924c65dcd2::t_34c6c0f284fc07 159
+src/modules/Arrangement/presentations/hooks/useTimelineFileDrop.ts
+  s_66d4924c65dcd2::t_92785562265ead 240-244
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineFileDrop.spec.tsx
+  s_66d4924c65dcd2::t_5164f874d4d987 111-142
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "5964a2e2e6f9ce73dd4b08e8abb59bd81ddbaa4b",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": null
+    }
+  }
+}
