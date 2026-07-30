@@ -1,0 +1,90 @@
+src/modules/AudioEngine/services/__tests__/levainProcessorWasmViews.spec.ts
+  s_ac9b259eab20ba::t_27cb049188fc3c 46
+  s_ac9b259eab20ba::t_d5911fc8b9febc 49-52
+src/modules/AudioEngine/services/levainProcessor.ts
+  s_ac9b259eab20ba::t_e071d9572c6a2d 10
+  s_ac9b259eab20ba::t_acd228c730234c 86,110,128-133,215,330-332
+  s_ac9b259eab20ba::t_96c22f3f5d3674 240-242
+  s_ac9b259eab20ba::t_f2adf10643cacb 9,25,28-31,85,119-121,138-140,214,317-326,333,359-368,382
+  s_ac9b259eab20ba::t_27cb049188fc3c 14,91,238-239
+  s_ac9b259eab20ba::t_deaca953851be1 243
+  s_ac9b259eab20ba::t_0f3d02adb8ac41 327-328
+crates/daw-dsp/src/levain/mod.rs
+  s_ac9b259eab20ba::t_42aaf07b9f1da5 230-239
+  s_ac9b259eab20ba::t_30ff136a8aeaac 300-312
+  s_ac9b259eab20ba::t_cae846dc7eaf82 342-345,347-349,353-358
+  s_ac9b259eab20ba::t_b4a353ca6207fe 277,280,313
+  s_ac9b259eab20ba::t_1847a9f73b27ce 23,269-270
+  s_ac9b259eab20ba::t_ef30e976c7450b 110-113
+  s_ac9b259eab20ba::t_d05efa76755a8e 262,267-268,271-272,315-317,331-340
+  s_ac9b259eab20ba::t_6395a802ffd9d3 346
+  s_ac9b259eab20ba::t_20b47b70e34a82 350-352
+  s_ac9b259eab20ba::t_6d1a60676263de 257-261,263-266,273-276,278-279,281-299,314,318-330,341,359
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_ac9b259eab20ba::t_f2adf10643cacb 397
+crates/daw-dsp/src/levain/voice.rs
+  s_ac9b259eab20ba::t_ef30e976c7450b 786-791
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistryDescriptors.spec.ts
+  s_ac9b259eab20ba::t_d9aec615ce886f 278-279
+  s_ac9b259eab20ba::t_9ad13d28ba2604 256
+src/modules/AudioEngine/engine/telemetryAllocator.ts
+  s_ac9b259eab20ba::t_f2adf10643cacb 113-116
+src/modules/AudioEngine/engine/__tests__/LevainNode.spec.ts
+  s_ac9b259eab20ba::t_b5582bf0ab91c0 4,203-204,208-209,211-220,249-265
+  s_ac9b259eab20ba::t_6d1a60676263de 91-93,134,141,153,200-202,205-207,210,221-248
+  s_ac9b259eab20ba::t_dbdb1b89e22f6b 266-284
+  s_ac9b259eab20ba::t_cae846dc7eaf82 123,131
+  s_ac9b259eab20ba::t_9e7d0cb18774c8 285
+src/modules/AudioEngine/services/__tests__/levainProcessor.spec.ts
+  s_ac9b259eab20ba::t_830d7daef6f33f 270
+  s_ac9b259eab20ba::t_7d1ad7a7959413 186
+  s_ac9b259eab20ba::t_d05efa76755a8e 196,237,239-258
+  s_ac9b259eab20ba::t_b5582bf0ab91c0 259-269,271-272
+  s_ac9b259eab20ba::t_6d1a60676263de 32,36,40,81,96-101,134,211,223,229-230,234-236,360,364,383
+  s_ac9b259eab20ba::t_a9923a515dca58 400
+  s_ac9b259eab20ba::t_96c22f3f5d3674 50,181-182,184-185,192-195
+  s_ac9b259eab20ba::t_cae846dc7eaf82 49,51-52,179-180,183,187-191
+  s_ac9b259eab20ba::t_b69405e0609873 197
+  s_ac9b259eab20ba::t_cd5ba027dbfeb1 238
+crates/daw-dsp/src/levain/fallback.rs
+  s_ac9b259eab20ba::t_ef30e976c7450b 145-150
+crates/daw-dsp/src/levain/engine.rs
+  s_ac9b259eab20ba::t_ef30e976c7450b 360-370
+  s_ac9b259eab20ba::t_92e21dd7176a1d 22,78-79,108,121,602,606-610,617
+  s_ac9b259eab20ba::t_42aaf07b9f1da5 19-21,601,603-605,611-616,618-633
+crates/daw-dsp/src/levain/realism/bow_noise.rs
+  s_ac9b259eab20ba::t_42aaf07b9f1da5 80-83
+src/modules/AudioEngine/engine/LevainNode.ts
+  s_ac9b259eab20ba::t_acd228c730234c 114,120-126,238-239,241,243
+  s_ac9b259eab20ba::t_27cb049188fc3c 119,216-218,220-222
+  s_ac9b259eab20ba::t_dbdb1b89e22f6b 115,136,257
+  s_ac9b259eab20ba::t_f2adf10643cacb 15-22,25-43,61,107-113,215,240,256,258-271
+crates/daw-dsp/src/levain/realism/mod.rs
+  s_ac9b259eab20ba::t_42aaf07b9f1da5 283-286
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_ac9b259eab20ba::t_60afa8815d190a 1,395-398,405,428-431,595,597-610,631-641,653-671,674-691,695,697,703,736,739-753
+public/wasm/daw-dsp/daw_dsp.js
+  s_ac9b259eab20ba::t_d3890a6d5041d9 971-977,986-988,1029-1036
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_ac9b259eab20ba::t_f82ae8a905de6d 1,5,7-20,41-51,63-81,84-101,105,107,113,146,149-163
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_ac9b259eab20ba::t_ac0cbe5ae41ea0 1,395-398,405,428-431,595,597-610,631-641,653-671,674-691,695,697,703,736,739-753
+src/modules/AudioEngine/wasm/daw_dsp.js
+  s_ac9b259eab20ba::t_211365c20a5db1 1148-1154,1163-1165,1206-1213
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "1a9fb8cb36d8e613cbcce5758fdc365219c05d48",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
