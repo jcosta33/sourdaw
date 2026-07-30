@@ -1,0 +1,27 @@
+src/modules/AudioEngine/engine/telemetry/__tests__/deviceTelemetryScheduler.spec.ts
+  s_ac9b259eab20ba::t_9c938eb0fe7ede 147-149,151,153,156-157,159-162
+  s_ac9b259eab20ba::t_fe230fd5005e8c 1-91,93-115,117-134,136-144,186-187
+  s_ac9b259eab20ba::t_ab9df447b84c72 92,116,135,145-146,154-155,158,163-171,173-185
+  s_ac9b259eab20ba::t_f6195aa3ceca0c 150,152,172
+src/modules/AudioEngine/engine/telemetry/deviceTelemetryScheduler.ts
+  s_ac9b259eab20ba::t_1c62cbdedca47f 141-144,162
+  s_ac9b259eab20ba::t_36d8d1eed5c874 1-16,18-132,134-140,145-161,163-167,170-181,183-186,188-190,192-194,197-202,204,208-213,215-294,296-307
+  s_ac9b259eab20ba::t_ab9df447b84c72 168-169,182,205-207
+  s_ac9b259eab20ba::t_f6195aa3ceca0c 17,133,187,191,195-196,203,214,295
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "b89cbd48e4cc953d5c1028fc650fea51ac8913d5",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
