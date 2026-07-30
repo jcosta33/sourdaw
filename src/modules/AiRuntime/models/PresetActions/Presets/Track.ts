@@ -105,7 +105,12 @@ export const trackPresets: readonly PresetAction[] = [
         category: 'Track',
         requiresSelection: 'track',
         isDestructive: true,
-        buildAction: trackAction('removeTrack', (id) => ({ trackId: id })),
+        buildAction: (context) => {
+            if (!context.selectedTrackId || !context.selectedTrackKind || context.selectedTrackKind === 'master') {
+                return null;
+            }
+            return { type: 'removeTrack', payload: { trackId: context.selectedTrackId } };
+        },
     },
     {
         id: 'remove-all-tracks',

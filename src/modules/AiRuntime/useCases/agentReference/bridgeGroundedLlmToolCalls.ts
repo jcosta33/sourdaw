@@ -161,6 +161,35 @@ function isGenericDeviceIntent(phrase: string): boolean {
     return genericDeviceIntentPhrases.has(normalizePromptText(phrase));
 }
 
+type ExplicitTrackDeletionScopeInput = {
+    context: ProjectContext;
+    text: string;
+    trackId: unknown;
+};
+
+function isExplicitTrackDeletionScope({ context, text, trackId }: ExplicitTrackDeletionScopeInput): boolean {
+    if (typeof trackId !== 'string') {
+        return false;
+    }
+    const track = context.tracks.find((candidate) => candidate.id === trackId);
+    if (!track || track.kind === 'master') {
+        return false;
+    }
+
+    let commandText = text;
+    const targetReferences = [track.id, track.name].sort((left, right) => right.length - left.length);
+    for (const reference of targetReferences) {
+        const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(reference)}(?![\\p{L}\\p{N}])`, 'giu');
+        commandText = commandText.replaceAll(pattern, ' ');
+    }
+    commandText = normalizePromptText(commandText);
+    commandText = commandText.replace(/^(?:please\s+)?(?:can|could|would)\s+you(?:\s+please)?\s+/u, '');
+    commandText = commandText.replace(/^please\s+/u, '');
+    return /^(?:delete|remove)(?: the)?(?: (?:selected|current|this)(?: (?:audio|midi|bus|folder))?)?(?: track)?(?: from (?:the )?project)?$/u.test(
+        commandText
+    );
+}
+
 function isExplicitCommandClause(maskedText: string, catalog: GroundingCatalog): boolean {
     if (/["“”]/u.test(maskedText)) {
         return false;
@@ -789,6 +818,16 @@ function groundToolCall({
         }
 
         groundedArguments[targetRule.argument] = result.id;
+    }
+    if (
+        call.name === 'removeTrack' &&
+        !isExplicitTrackDeletionScope({
+            context,
+            text: actionScope.text,
+            trackId: groundedArguments.trackId,
+        })
+    ) {
+        return rejection(index, call.name, 'Provider track deletion is not explicit in the user request');
     }
     const valueRejection = validateGroundedValues(groundingRules, groundedArguments, actionScope, context);
     if (valueRejection) {

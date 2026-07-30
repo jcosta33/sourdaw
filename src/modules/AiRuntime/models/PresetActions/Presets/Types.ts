@@ -1,9 +1,11 @@
+import { type ProjectContext } from '../../ProjectContext';
 import { type RuntimeAction } from '../../RuntimeAction';
 
 // ── Context passed to every preset builder ──────────────────────────────
 
 export type PresetContext = {
     selectedTrackId: string | undefined;
+    selectedTrackKind?: ProjectContext['tracks'][number]['kind'];
     selectedClipId: string | undefined;
     selectedClipType: 'audio' | 'midi' | undefined;
     trackCount: number;

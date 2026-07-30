@@ -187,10 +187,42 @@ describe('bridgeLlmToolCalls', () => {
         expect(result.rejections.every((rejection) => rejection.name === 'createBus')).toBe(true);
     });
 
+    it('converts exact non-master track deletion and rejects unsafe targets and duplicates', () => {
+        const valid = bridge({ calls: [{ name: 'removeTrack', arguments: { trackId: 'track-vocals' } }] });
+        const invalid = bridge({
+            calls: [
+                { name: 'removeTrack', arguments: { trackId: 'master' } },
+                { name: 'removeTrack', arguments: { trackId: 'missing' } },
+                { name: 'removeTrack', arguments: { trackId: '' } },
+                { name: 'removeTrack', arguments: { trackId: 'track-vocals', extra: true } },
+            ],
+        });
+        const repeated = bridge({
+            calls: [
+                { name: 'removeTrack', arguments: { trackId: 'track-vocals' } },
+                { name: 'removeTrack', arguments: { trackId: 'track-vocals' } },
+            ],
+        });
+
+        expect(valid).toEqual({
+            actions: [{ type: 'removeTrack', payload: { trackId: 'track-vocals' } }],
+            rejections: [],
+        });
+        expect(invalid.actions).toEqual([]);
+        expect(invalid.rejections).toHaveLength(4);
+        expect(repeated.actions).toEqual([{ type: 'removeTrack', payload: { trackId: 'track-vocals' } }]);
+        expect(repeated.rejections).toEqual([
+            {
+                index: 1,
+                name: 'removeTrack',
+                reason: 'Provider batch writes the same target field more than once',
+            },
+        ]);
+    });
+
     it('rejects unsupported tools, extra fields, invalid bounds, and unavailable targets', () => {
         const result = bridge({
             calls: [
-                { name: 'removeTrack', arguments: { trackId: 'track-vocals' } },
                 { name: 'setTempo', arguments: { bpm: 128, hidden: true } },
                 { name: 'setTimeSignature', arguments: { numerator: 7, denominator: 3 } },
                 { name: 'setTimeSignature', arguments: { numerator: 4, denominator: 4, hidden: true } },
@@ -211,7 +243,6 @@ describe('bridgeLlmToolCalls', () => {
 
         expect(result.actions).toEqual([]);
         expect(result.rejections.map((rejection) => rejection.name)).toEqual([
-            'removeTrack',
             'setTempo',
             'setTimeSignature',
             'setTimeSignature',

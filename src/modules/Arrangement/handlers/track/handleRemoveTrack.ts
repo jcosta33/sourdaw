@@ -151,7 +151,7 @@ export const handleRemoveTrack = createHandler<'removeTrack'>({
         );
 
         return {
-            label: 'Remove track',
+            label: `Remove track "${track.name}"`,
             inverseAction: {
                 type: 'restoreTrack',
                 payload: {

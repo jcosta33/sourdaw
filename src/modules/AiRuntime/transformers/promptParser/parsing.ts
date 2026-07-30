@@ -90,6 +90,7 @@ export function buildPresetContext(context: ProjectContext): PresetContext {
 
     return {
         selectedTrackId: context.selectedTrackId ?? undefined,
+        selectedTrackKind: selectedTrack?.kind,
         selectedClipId: context.selectedClipId ?? undefined,
         selectedClipType: selectedClip?.type,
         trackCount: context.tracks.length,
@@ -242,8 +243,8 @@ export function tryParameterizedPath(normalized: string, context: ProjectContext
 
     const deleteTrackMatch = normalized.match(/^(?:delete|remove)\s+(?:the\s+)?(?:track\s+)?(.+?)(?:\s+track)?$/i);
     if (deleteTrackMatch) {
-        const track = findTrack(context, deleteTrackMatch[1]!.trim());
-        if (track) {
+        const track = findExactTrackForDeletion(context, deleteTrackMatch[1]!.trim());
+        if (track && track.kind !== 'master') {
             return [{ type: 'removeTrack', payload: { trackId: track.id } }];
         }
     }
@@ -412,6 +413,26 @@ export function matchSoundDesignRecipe(normalized: string, trackId: string): Run
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────
+
+function findExactTrackForDeletion(
+    context: ProjectContext,
+    reference: string
+): ProjectContext['tracks'][number] | undefined {
+    const literalIdMatches = context.tracks.filter((track) => track.id === reference.trim());
+    if (literalIdMatches.length === 1) {
+        return literalIdMatches[0];
+    }
+
+    const normalizedName = reference
+        .toLocaleLowerCase()
+        .replace(/\s+track$/iu, '')
+        .trim();
+    const exactNameMatches = context.tracks.filter((track) => track.name.toLocaleLowerCase() === normalizedName);
+    if (exactNameMatches.length === 1) {
+        return exactNameMatches[0];
+    }
+    return undefined;
+}
 
 export function findTrack(context: ProjectContext, name: string): ProjectContext['tracks'][number] | undefined {
     const lower = name

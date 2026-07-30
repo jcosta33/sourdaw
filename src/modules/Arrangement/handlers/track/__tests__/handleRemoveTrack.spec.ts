@@ -311,7 +311,7 @@ describe('handleRemoveTrack', () => {
                 payload: { trackId: 't1' },
             });
 
-            expect(desc.label).toBe('Remove track');
+            expect(desc.label).toBe('Remove track "Vocals"');
             expect(desc.inverseAction).toBeDefined();
 
             const inverseAction = desc.inverseAction;

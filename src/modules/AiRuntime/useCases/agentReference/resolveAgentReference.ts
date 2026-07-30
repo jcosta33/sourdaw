@@ -4,6 +4,7 @@ type AgentReferenceCapability =
     | 'track'
     | 'armable-track'
     | 'duplicable-track'
+    | 'removable-track'
     | 'routable-source'
     | 'bus'
     | 'output'
@@ -102,6 +103,9 @@ function getTrackCandidates(
     }
     if (capability === 'duplicable-track') {
         return context.tracks.filter((track) => duplicableTrackKinds.has(track.kind));
+    }
+    if (capability === 'removable-track') {
+        return context.tracks;
     }
     if (capability === 'routable-source') {
         return context.tracks.filter((track) => routableTrackKinds.has(track.kind));
@@ -219,6 +223,12 @@ export function resolveAgentReference(input: ResolveAgentReferenceInput): Resolv
     }
     if (typeof input.assertedId !== 'string' || !evidenceById.has(input.assertedId)) {
         return { status: 'rejected', reason: 'asserted-target-mismatch' };
+    }
+    if (input.capability === 'removable-track') {
+        const track = input.context.tracks.find((candidate) => candidate.id === input.assertedId);
+        if (!track || track.kind === 'master') {
+            return { status: 'rejected', reason: 'ungrounded-target' };
+        }
     }
 
     const evidence = evidenceById.get(input.assertedId) ?? 'exact-name';

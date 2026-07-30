@@ -1,11 +1,13 @@
 import { type AppActionType } from '#/utils/handlerContract';
 
-export type ExecutableAppActionRisk = 'bounded-reversible' | 'broad-reversible' | 'authority-sensitive';
+export type ExecutableAppActionRisk =
+    'bounded-reversible' | 'broad-reversible' | 'destructive-reversible' | 'authority-sensitive';
 
 export type ExecutableAppActionTargetCapability =
     | 'track'
     | 'armable-track'
     | 'duplicable-track'
+    | 'removable-track'
     | 'routable-source'
     | 'bus'
     | 'output'
@@ -122,6 +124,17 @@ export const executableAppActionDescriptors = [
         parameters: {
             properties: { name: { type: 'string', description: 'Display name for the new bus track' } },
             required: ['name'],
+        },
+    },
+    {
+        actionType: 'removeTrack',
+        risk: 'destructive-reversible',
+        description: 'Delete a track and its project-owned contents.',
+        intentPhrases: ['delete track', 'remove track', 'delete', 'remove'],
+        targetRules: [{ argument: 'trackId', capability: 'removable-track' }],
+        parameters: {
+            properties: { trackId: { type: 'string', description: 'Existing non-master track ID' } },
+            required: ['trackId'],
         },
     },
     {

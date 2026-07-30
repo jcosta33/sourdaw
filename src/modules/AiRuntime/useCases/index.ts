@@ -41,6 +41,7 @@ export { initEngine } from './llmOrchestration/lifecycle/initEngine';
 export { unloadEngine } from './llmOrchestration/lifecycle/unloadEngine';
 
 export { notifyAiChange } from './notifyAiChange';
+export { describePlannedAction } from './describePlannedAction';
 
 export { parsePromptToActions } from './parsePromptToActions';
 export { planPromptActions } from './planPromptActions';

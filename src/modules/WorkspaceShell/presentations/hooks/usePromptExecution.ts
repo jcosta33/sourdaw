@@ -5,6 +5,8 @@ import { useStore } from '#/infra/store/useStore';
 import { llmStatusStore } from '#/modules/AiRuntime/stores';
 import {
     executePlannedActions,
+    describePlannedAction,
+    getProjectContext,
     planPromptActions,
     isComplexPrompt,
     searchPresets,
@@ -21,7 +23,7 @@ import {
     defaultTrackState,
     trackStore,
 } from '#/modules/Arrangement/stores';
-import { describeAction, requiresAppActionConfirmation } from '#/modules/Command/useCases';
+import { requiresAppActionConfirmation } from '#/modules/Command/useCases';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
 const defaultLlmStatus: typeof llmStatusStore.value = { state: 'idle' };
@@ -145,13 +147,18 @@ export const usePromptExecution = (): PromptExecutionState => {
     // ── Derive selection tags ───────────────────────────────────────────
     const selectionTags: SelectionTag[] = [];
     const selectedTrackId = trackState?.selectedTrackId;
+    const selectedTrack = trackState?.tracks.find((track) => track.id === selectedTrackId);
     const selectedClipId = clipSelection.selectedClipId;
     const selectedClipIds = clipSelection.selectedClipIds;
 
     if (selectedTrackId) {
-        const track = trackState?.tracks.find((time) => time.id === selectedTrackId);
-        if (track && !dismissedTags.has(`track:${selectedTrackId}`)) {
-            selectionTags.push({ id: `track:${selectedTrackId}`, label: track.name, kind: 'track', icon: 'track' });
+        if (selectedTrack && !dismissedTags.has(`track:${selectedTrackId}`)) {
+            selectionTags.push({
+                id: `track:${selectedTrackId}`,
+                label: selectedTrack.name,
+                kind: 'track',
+                icon: 'track',
+            });
         }
     }
     if (selectedClipIds.length > 1) {
@@ -170,6 +177,7 @@ export const usePromptExecution = (): PromptExecutionState => {
     // ── Build preset context ────────────────────────────────────────────
     const presetContext = {
         selectedTrackId: selectedTrackId ?? undefined,
+        selectedTrackKind: selectedTrack?.kind,
         selectedClipId: selectedClipId ?? undefined,
         selectedClipType: (() => {
             const allClips = trackState?.tracks.flatMap((time) => time.clips) ?? [];
@@ -268,9 +276,10 @@ export const usePromptExecution = (): PromptExecutionState => {
         }
 
         if (result.preset.isDestructive || requiresAppActionConfirmation(actions)) {
+            const context = getProjectContext();
             showPreview({
                 actions,
-                actionLabels: actions.map((action) => describeAction(action)),
+                actionLabels: actions.map((action) => describePlannedAction({ action, context })),
                 rawText: result.preset.label,
                 requiresConfirmation: true,
                 projectRevision,
@@ -323,7 +332,7 @@ export const usePromptExecution = (): PromptExecutionState => {
         // had just been shown a confirmation preview.
         let shouldClearValue = true;
         try {
-            const { result, projectRevision } = await planPromptActions({
+            const { context, result, projectRevision } = await planPromptActions({
                 prompt: value,
                 signal: controller.signal,
             });
@@ -335,7 +344,7 @@ export const usePromptExecution = (): PromptExecutionState => {
             if (result.requiresConfirmation && result.actions.length > 0) {
                 showPreview({
                     ...result,
-                    actionLabels: result.actions.map((action) => describeAction(action)),
+                    actionLabels: result.actions.map((action) => describePlannedAction({ action, context })),
                     projectRevision,
                 });
                 setIsProcessing(false);

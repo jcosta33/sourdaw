@@ -185,6 +185,8 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
             expect(guard({})).toBe(false);
             expect(guard({ trackId: 1 })).toBe(false);
             expect(guard(null)).toBe(false);
+            expect(guard({ trackId: '' })).toBe(false);
+            expect(guard({ trackId: 'track-1', extra: true })).toBe(false);
         });
     });
 

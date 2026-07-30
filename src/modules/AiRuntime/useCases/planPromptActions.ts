@@ -19,5 +19,5 @@ export async function planPromptActions(input: PlanPromptActionsInput) {
         throw new AiProposalInvalidatedError();
     }
 
-    return { result, projectRevision };
+    return { context, result, projectRevision };
 }
