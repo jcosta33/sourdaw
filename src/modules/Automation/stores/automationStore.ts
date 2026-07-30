@@ -45,7 +45,7 @@ const AUTOMATION_LANE_OPTIONAL_KEYS = [
     'color',
 ] as const;
 const AUTOMATION_POINT_REQUIRED_KEYS = ['beat', 'value', 'curve', 'tension'] as const;
-const AUTOMATION_POINT_OPTIONAL_KEYS = ['stairSteps', 'cp1', 'cp2'] as const;
+const AUTOMATION_POINT_OPTIONAL_KEYS = ['id', 'stairSteps', 'cp1', 'cp2'] as const;
 const AUTOMATION_CONTROL_POINT_KEYS = ['x', 'y'] as const;
 const AUTOMATION_OBJECT_REQUIRED_KEYS = ['id', 'laneId', 'startBeat', 'endBeat', 'points', 'name'] as const;
 const AUTOMATION_OBJECT_OPTIONAL_KEYS = ['poolId', 'loopLength', 'overrides'] as const;
@@ -82,6 +82,10 @@ function is_dense_array<TValue>(
 
 function is_finite_number(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value);
+}
+
+function is_non_empty_string(value: unknown): value is string {
+    return typeof value === 'string' && value.length > 0;
 }
 
 function is_finite_non_negative_number(value: unknown): value is number {
@@ -155,6 +159,7 @@ function is_valid_automation_point(value: unknown): value is AutomationPoint {
 
 function has_valid_automation_point_optionals(value: AutomationPoint): boolean {
     return (
+        (!('id' in value) || is_non_empty_string(value.id)) &&
         (!('stairSteps' in value) || is_finite_non_negative_number(value.stairSteps)) &&
         (!('cp1' in value) || is_control_point(value.cp1)) &&
         (!('cp2' in value) || is_control_point(value.cp2))
@@ -182,6 +187,10 @@ function normalize_automation_point(point: AutomationPoint): AutomationPoint {
         curve: point.curve,
         tension: point.tension,
     };
+
+    if (is_non_empty_string(point.id)) {
+        normalized_point.id = point.id;
+    }
 
     if (is_finite_non_negative_number(point.stairSteps)) {
         normalized_point.stairSteps = point.stairSteps;

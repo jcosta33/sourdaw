@@ -63,6 +63,147 @@ describe('playMacro', () => {
         expect(executeAppActionMock).not.toHaveBeenCalled();
     });
 
+    it('regenerates automation IDs and remaps later references on every playback', async () => {
+        const automationMacro: Macro = {
+            id: 'automation-1',
+            name: 'Automation steps',
+            actions: [
+                {
+                    type: 'addAutomationLane',
+                    payload: {
+                        trackId: 'track-1',
+                        parameterId: 'gain',
+                        parameterName: 'Gain',
+                        laneId: 'recorded-lane',
+                    },
+                },
+                {
+                    type: 'addAutomationPoint',
+                    payload: {
+                        laneId: 'recorded-lane',
+                        pointId: 'recorded-point',
+                        beat: 4,
+                        value: 0.5,
+                    },
+                },
+                { type: 'setAutomationLaneEnabled', payload: { laneId: 'recorded-lane', enabled: false } },
+                {
+                    type: 'removeAutomationPoint',
+                    payload: { laneId: 'recorded-lane', pointIndex: 0, pointId: 'recorded-point' },
+                },
+            ],
+            createdAt: 0,
+        };
+        macroStore.set({ macros: [automationMacro], recording: false, currentRecording: [] });
+        let generatedLaneId = 0;
+        let generatedPointId = 0;
+        executeAppActionMock.mockImplementation((action) => {
+            if (action.type === 'addAutomationLane' && action.payload.laneId === undefined) {
+                generatedLaneId += 1;
+                action.payload.laneId = `replayed-lane-${String(generatedLaneId)}`;
+            }
+            if (action.type === 'addAutomationPoint' && action.payload.pointId === undefined) {
+                generatedPointId += 1;
+                action.payload.pointId = `replayed-point-${String(generatedPointId)}`;
+            }
+            return Promise.resolve();
+        });
+
+        await playMacro('automation-1');
+        await playMacro('automation-1');
+
+        expect(executeAppActionMock.mock.calls.map(([action]) => action)).toEqual([
+            {
+                type: 'addAutomationLane',
+                payload: {
+                    trackId: 'track-1',
+                    parameterId: 'gain',
+                    parameterName: 'Gain',
+                    laneId: 'replayed-lane-1',
+                },
+            },
+            {
+                type: 'addAutomationPoint',
+                payload: { laneId: 'replayed-lane-1', pointId: 'replayed-point-1', beat: 4, value: 0.5 },
+            },
+            { type: 'setAutomationLaneEnabled', payload: { laneId: 'replayed-lane-1', enabled: false } },
+            {
+                type: 'removeAutomationPoint',
+                payload: { laneId: 'replayed-lane-1', pointIndex: 0, pointId: 'replayed-point-1' },
+            },
+            {
+                type: 'addAutomationLane',
+                payload: {
+                    trackId: 'track-1',
+                    parameterId: 'gain',
+                    parameterName: 'Gain',
+                    laneId: 'replayed-lane-2',
+                },
+            },
+            {
+                type: 'addAutomationPoint',
+                payload: { laneId: 'replayed-lane-2', pointId: 'replayed-point-2', beat: 4, value: 0.5 },
+            },
+            { type: 'setAutomationLaneEnabled', payload: { laneId: 'replayed-lane-2', enabled: false } },
+            {
+                type: 'removeAutomationPoint',
+                payload: { laneId: 'replayed-lane-2', pointIndex: 0, pointId: 'replayed-point-2' },
+            },
+        ]);
+        expect(macroStore.value?.macros[0]?.actions).toEqual(automationMacro.actions);
+    });
+
+    it('remaps later actions to the canonical lane returned by a no-op add', async () => {
+        const noOpLaneMacro: Macro = {
+            id: 'automation-existing-lane',
+            name: 'Existing automation lane',
+            actions: [
+                {
+                    type: 'addAutomationLane',
+                    payload: {
+                        trackId: 'track-1',
+                        parameterId: 'gain',
+                        parameterName: 'Gain',
+                        laneId: 'recorded-lane',
+                    },
+                },
+                {
+                    type: 'addAutomationPoint',
+                    payload: { laneId: 'recorded-lane', pointId: 'recorded-point', beat: 4, value: 0.5 },
+                },
+            ],
+            createdAt: 0,
+        };
+        macroStore.set({ macros: [noOpLaneMacro], recording: false, currentRecording: [] });
+        executeAppActionMock.mockImplementation((action) => {
+            if (action.type === 'addAutomationLane') {
+                action.payload.laneId = 'existing-lane';
+            }
+            if (action.type === 'addAutomationPoint') {
+                action.payload.pointId = 'replayed-point';
+            }
+            return Promise.resolve();
+        });
+
+        await playMacro(noOpLaneMacro.id);
+
+        expect(executeAppActionMock.mock.calls.map(([action]) => action)).toEqual([
+            {
+                type: 'addAutomationLane',
+                payload: {
+                    trackId: 'track-1',
+                    parameterId: 'gain',
+                    parameterName: 'Gain',
+                    laneId: 'existing-lane',
+                },
+            },
+            {
+                type: 'addAutomationPoint',
+                payload: { laneId: 'existing-lane', pointId: 'replayed-point', beat: 4, value: 0.5 },
+            },
+        ]);
+    });
+
     it('should regenerate adjustment IDs and remap later references without mutating the macro', async () => {
         const adjustmentMacro: Macro = {
             id: 'adjustment-1',

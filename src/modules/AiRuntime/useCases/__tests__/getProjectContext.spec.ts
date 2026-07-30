@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
     transportStoreValue: { value: null } as any,
     workspaceStoreValue: { value: null } as any,
     clipSelectionStoreValue: { value: null } as any,
+    automationStoreValue: { value: null } as any,
     getPluginById: vi.fn(),
     getPlatformPlugins: vi.fn(),
 }));
@@ -28,6 +29,14 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 vi.mock('#/modules/Arrangement/useCases', () => ({
     getPluginById: mocks.getPluginById,
     getPlatformPlugins: mocks.getPlatformPlugins,
+}));
+
+vi.mock('#/modules/Automation/stores', () => ({
+    automationStore: {
+        get value() {
+            return mocks.automationStoreValue.value;
+        },
+    },
 }));
 
 vi.mock('#/modules/MIDI/stores', () => ({
@@ -62,6 +71,7 @@ describe('getProjectContext', () => {
         mocks.transportStoreValue.value = null;
         mocks.workspaceStoreValue.value = null;
         mocks.clipSelectionStoreValue.value = null;
+        mocks.automationStoreValue.value = null;
         mocks.getPluginById.mockReturnValue(undefined);
         mocks.getPlatformPlugins.mockReturnValue([
             { id: 'builtin-eq', name: 'EQ' },
@@ -80,6 +90,7 @@ describe('getProjectContext', () => {
         expect(context.metronomeEnabled).toBe(false);
         expect(context.metronomeVolume).toBe(0.5);
         expect(context.availableDeviceTypes).toEqual([{ id: 'builtin-eq', name: 'EQ' }]);
+        expect(context.automationLanes).toEqual([]);
         expect(context.tracks).toEqual([]);
         expect(context.selectedTrackId).toBeNull();
         expect(context.selectedClipId).toBeNull();
@@ -237,5 +248,68 @@ describe('getProjectContext', () => {
             type: 'midi',
             noteCount: 3,
         });
+    });
+
+    it('maps non-clip automation lanes and invalidates the cache when automation state changes', () => {
+        mocks.automationStoreValue.value = {
+            lanes: [
+                {
+                    id: 'lane-gain',
+                    trackId: 'track-vocals',
+                    parameterId: 'gain',
+                    parameterName: 'Gain',
+                    enabled: true,
+                    minValue: 0,
+                    maxValue: 1,
+                    points: [
+                        { beat: 0, value: 0.4, curve: 'linear', tension: 0 },
+                        { beat: 8, value: 0.8, curve: 'smooth', tension: 0.2 },
+                    ],
+                },
+                {
+                    id: 'lane-clip-gain',
+                    trackId: 'track-vocals',
+                    clipId: 'clip-verse',
+                    parameterId: 'gain',
+                    parameterName: 'Clip Gain',
+                    enabled: true,
+                    minValue: 0,
+                    maxValue: 1,
+                    points: [{ beat: 0, value: 1, curve: 'linear', tension: 0 }],
+                },
+            ],
+        };
+
+        const first = getProjectContext();
+
+        expect(first.automationLanes).toEqual([
+            {
+                id: 'lane-gain',
+                trackId: 'track-vocals',
+                parameterId: 'gain',
+                name: 'Gain',
+                enabled: true,
+                minValue: 0,
+                maxValue: 1,
+                points: [
+                    { beat: 0, value: 0.4, curve: 'linear' },
+                    { beat: 8, value: 0.8, curve: 'smooth' },
+                ],
+            },
+        ]);
+
+        mocks.automationStoreValue.value = {
+            lanes: [
+                {
+                    ...mocks.automationStoreValue.value.lanes[0],
+                    enabled: false,
+                },
+            ],
+        };
+
+        const second = getProjectContext();
+
+        expect(second).not.toBe(first);
+        expect(second.automationLanes?.[0]?.enabled).toBe(false);
     });
 });

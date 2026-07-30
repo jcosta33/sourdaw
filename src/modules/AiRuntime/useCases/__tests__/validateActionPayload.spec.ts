@@ -380,6 +380,20 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
             expect(guard({ ...payload, parameterName: null })).toBe(false);
         });
 
+        it('should require exact non-empty provider fields', () => {
+            const guard = PAYLOAD_VALIDATORS.addAutomationLane;
+            expect(guard).not.toBe('unchecked');
+            if (guard === 'unchecked') {
+                return;
+            }
+
+            const payload = { trackId: 'track-1', parameterId: 'gain', parameterName: 'Gain' };
+            expect(guard({ ...payload, trackId: '' })).toBe(false);
+            expect(guard({ ...payload, parameterId: '' })).toBe(false);
+            expect(guard({ ...payload, parameterName: '' })).toBe(false);
+            expect(guard({ ...payload, extra: true })).toBe(false);
+        });
+
         it('should exclude the command-owned identity field and inverse action', () => {
             type AddAutomationLanePayload = Extract<RuntimeAction, { type: 'addAutomationLane' }>['payload'];
             type AddAutomationLaneHasLaneId = 'laneId' extends keyof AddAutomationLanePayload ? true : false;
@@ -391,6 +405,83 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
             expect(validateActions(inverse)).toEqual([]);
             expectTypeOf<AddAutomationLaneHasLaneId>().toEqualTypeOf<false>();
             expectTypeOf<RemoveAutomationLaneAction>().toEqualTypeOf<never>();
+        });
+    });
+
+    describe('addAutomationPoint', () => {
+        it('should accept exact minimal and fully shaped point payloads', () => {
+            const guard = PAYLOAD_VALIDATORS.addAutomationPoint;
+            expect(guard).not.toBe('unchecked');
+            if (guard === 'unchecked') {
+                return;
+            }
+
+            expect(guard({ laneId: 'lane-1', beat: 4, value: 0.5 })).toBe(true);
+            expect(
+                guard({
+                    laneId: 'lane-1',
+                    beat: 4,
+                    value: 0.5,
+                    curve: 'bezier',
+                    tension: 0,
+                    stairSteps: 4,
+                    cp1: { x: 0.25, y: 0.5 },
+                    cp2: { x: 0.75, y: 0.5 },
+                })
+            ).toBe(true);
+        });
+
+        it.each([
+            ['empty lane id', { laneId: '', beat: 4, value: 0.5 }],
+            ['negative beat', { laneId: 'lane-1', beat: -1, value: 0.5 }],
+            ['unknown field', { laneId: 'lane-1', beat: 4, value: 0.5, extra: true }],
+            ['internal point id', { laneId: 'lane-1', pointId: 'point-1', beat: 4, value: 0.5 }],
+            ['unknown curve', { laneId: 'lane-1', beat: 4, value: 0.5, curve: 'arc' }],
+            ['out-of-range tension', { laneId: 'lane-1', beat: 4, value: 0.5, tension: 2 }],
+            ['fractional stair count', { laneId: 'lane-1', beat: 4, value: 0.5, stairSteps: 3.5 }],
+            ['out-of-range control point', { laneId: 'lane-1', beat: 4, value: 0.5, cp1: { x: -1, y: 0.5 } }],
+        ])('should reject %s', (_label, payload) => {
+            const guard = PAYLOAD_VALIDATORS.addAutomationPoint;
+            expect(guard).not.toBe('unchecked');
+            if (guard === 'unchecked') {
+                return;
+            }
+
+            expect(guard(payload)).toBe(false);
+        });
+    });
+
+    describe('removeAutomationPoint', () => {
+        it('should validate the index-based command payload', () => {
+            const guard = PAYLOAD_VALIDATORS.removeAutomationPoint;
+            expect(guard).not.toBe('unchecked');
+            if (guard === 'unchecked') {
+                return;
+            }
+
+            expect(guard({ laneId: 'lane-1', pointIndex: 0 })).toBe(true);
+            expect(guard({ laneId: 'lane-1', pointIndex: -1 })).toBe(false);
+            expect(guard({ laneId: 'lane-1', pointIndex: 0.5 })).toBe(false);
+            expect(guard({ laneId: 'lane-1', beat: 4 })).toBe(false);
+            expect(guard({ laneId: 'lane-1', pointIndex: 0, extra: true })).toBe(false);
+            expect(guard({ laneId: 'lane-1', pointIndex: 0, pointId: 'point-1' })).toBe(false);
+        });
+    });
+
+    describe('setAutomationLaneEnabled', () => {
+        it('should require an exact lane id and enabled value', () => {
+            const guard = Object.entries(PAYLOAD_VALIDATORS).find(
+                ([actionType]) => actionType === 'setAutomationLaneEnabled'
+            )?.[1];
+            expect(guard).toBeTypeOf('function');
+            if (typeof guard !== 'function') {
+                return;
+            }
+
+            expect(guard({ laneId: 'lane-1', enabled: true })).toBe(true);
+            expect(guard({ laneId: '', enabled: true })).toBe(false);
+            expect(guard({ laneId: 'lane-1', enabled: 'yes' })).toBe(false);
+            expect(guard({ laneId: 'lane-1', enabled: true, extra: true })).toBe(false);
         });
     });
 

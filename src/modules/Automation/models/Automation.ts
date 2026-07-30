@@ -1,6 +1,7 @@
 export type AutomationCurveType = 'linear' | 'exponential' | 'step' | 's-curve' | 'stairs' | 'smooth' | 'bezier';
 
 export type AutomationPoint = {
+    id?: string;
     beat: number;
     value: number;
     curve: AutomationCurveType;

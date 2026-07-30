@@ -136,6 +136,38 @@ function findAvailableDeviceType(context: ProjectContext, assertedType: unknown)
     return matches.length === 1 ? matches[0] : undefined;
 }
 
+const automationLaneDisplayNameByParameterId = {
+    gain: 'Gain',
+    pan: 'Pan',
+} as const;
+
+type ExecutableAutomationParameterId = keyof typeof automationLaneDisplayNameByParameterId;
+
+function isExecutableAutomationParameterId(value: unknown): value is ExecutableAutomationParameterId {
+    return typeof value === 'string' && Object.hasOwn(automationLaneDisplayNameByParameterId, value);
+}
+
+function findAutomationLane(context: ProjectContext, laneId: unknown) {
+    if (typeof laneId !== 'string') {
+        return undefined;
+    }
+    return (context.automationLanes ?? []).find((lane) => lane.id === laneId);
+}
+
+function isProviderAutomationCurve(
+    value: unknown
+): value is 'linear' | 'step' | 'exponential' | 's-curve' | 'stairs' | 'smooth' | 'bezier' {
+    return (
+        value === 'linear' ||
+        value === 'step' ||
+        value === 'exponential' ||
+        value === 's-curve' ||
+        value === 'stairs' ||
+        value === 'smooth' ||
+        value === 'bezier'
+    );
+}
+
 function isSafeTrackColor(value: unknown): value is string {
     return typeof value === 'string' && /^#[\dA-Fa-f]{6}$/.test(value);
 }
@@ -224,6 +256,84 @@ function bridgeToolCall({
             return rejection(index, call.name, 'Expected only a finite metronome volume from 0 through 1');
         }
         return { type: 'setMetronomeVolume', payload: { volume: args.volume } };
+    }
+
+    if (call.name === 'addAutomationLane') {
+        const track = findTrack(context, args.trackId);
+        if (
+            !hasExactKeys(args, ['trackId', 'parameterId']) ||
+            !track ||
+            !isExecutableAutomationParameterId(args.parameterId) ||
+            (context.automationLanes ?? []).some(
+                (lane) => lane.trackId === track.id && lane.parameterId === args.parameterId
+            )
+        ) {
+            return rejection(index, call.name, 'Expected an available track and one new gain or pan automation lane');
+        }
+        return {
+            type: 'addAutomationLane',
+            payload: {
+                trackId: track.id,
+                parameterId: args.parameterId,
+                parameterName: automationLaneDisplayNameByParameterId[args.parameterId],
+            },
+        };
+    }
+
+    if (call.name === 'addAutomationPoint') {
+        const lane = findAutomationLane(context, args.laneId);
+        const hasValidKeys =
+            hasExactKeys(args, ['laneId', 'beat', 'value']) || hasExactKeys(args, ['laneId', 'beat', 'value', 'curve']);
+        if (args.curve !== undefined && !isProviderAutomationCurve(args.curve)) {
+            return rejection(index, call.name, 'Expected one supported automation curve');
+        }
+        if (
+            !hasValidKeys ||
+            !lane ||
+            !isFiniteNumber(args.beat) ||
+            args.beat < 0 ||
+            !isFiniteNumber(args.value) ||
+            !Number.isFinite(lane.minValue) ||
+            !Number.isFinite(lane.maxValue) ||
+            args.value < lane.minValue ||
+            args.value > lane.maxValue ||
+            lane.points.some((point) => point.beat === args.beat)
+        ) {
+            return rejection(
+                index,
+                call.name,
+                'Expected an existing automation lane, an unused non-negative beat, and a value within lane bounds'
+            );
+        }
+        return {
+            type: 'addAutomationPoint',
+            payload: {
+                laneId: lane.id,
+                beat: args.beat,
+                value: args.value,
+                ...(args.curve === undefined ? {} : { curve: args.curve }),
+            },
+        };
+    }
+
+    if (call.name === 'setAutomationLaneEnabled') {
+        const lane = findAutomationLane(context, args.laneId);
+        if (
+            !hasExactKeys(args, ['laneId', 'enabled']) ||
+            !lane ||
+            typeof args.enabled !== 'boolean' ||
+            args.enabled === lane.enabled
+        ) {
+            return rejection(
+                index,
+                call.name,
+                'Expected an existing automation lane and a changed boolean enabled value'
+            );
+        }
+        return {
+            type: 'setAutomationLaneEnabled',
+            payload: { laneId: lane.id, enabled: args.enabled },
+        };
     }
 
     if (call.name === 'addTrack') {
@@ -682,6 +792,15 @@ function getMutationKeys(action: RuntimeAction): string[] {
     if (action.type === 'setMetronomeVolume') {
         return ['metronome:volume'];
     }
+    if (action.type === 'addAutomationLane') {
+        return [`automation-target:${action.payload.trackId}:${action.payload.parameterId}`];
+    }
+    if (action.type === 'addAutomationPoint') {
+        return [`automation-lane-point:${action.payload.laneId}:${String(action.payload.beat)}`];
+    }
+    if (action.type === 'setAutomationLaneEnabled') {
+        return [`automation-lane-enabled:${action.payload.laneId}`];
+    }
     if (action.type === 'setDeviceParameter') {
         return [`${action.type}:${action.payload.deviceId}:${action.payload.paramId}`];
     }
@@ -798,7 +917,8 @@ export function bridgeLlmToolCalls({ calls, context }: BridgeLlmToolCallsInput):
             const hasClipLifecycleConflict =
                 clipTargetId !== null &&
                 ((result.type === 'removeClip' && clipTargetIds.has(clipTargetId)) || removedClipIds.has(clipTargetId));
-            const hasMutationConflict = mutationKeysForAction.some((mutationKey) => mutationKeys.has(mutationKey));
+            const conflictingMutationKey = mutationKeysForAction.find((mutationKey) => mutationKeys.has(mutationKey));
+            const hasMutationConflict = conflictingMutationKey !== undefined;
             const hasRippleCouplingConflict =
                 clipTrackId !== null &&
                 ((result.type === 'removeClip' && clipTrackIds.has(clipTrackId)) ||
@@ -812,6 +932,22 @@ export function bridgeLlmToolCalls({ calls, context }: BridgeLlmToolCallsInput):
                     (deviceTarget.kind === 'remove' &&
                         (addedDeviceTrackIds.has(deviceTarget.trackId) ||
                             removedDeviceTrackIds.has(deviceTarget.trackId))));
+            if (conflictingMutationKey?.startsWith('automation-lane-point:')) {
+                for (let actionIndex = actions.length - 1; actionIndex >= 0; actionIndex -= 1) {
+                    const priorAction = actions[actionIndex];
+                    if (priorAction && getMutationKeys(priorAction).includes(conflictingMutationKey)) {
+                        actions.splice(actionIndex, 1);
+                    }
+                }
+                rejections.push(
+                    rejection(
+                        index,
+                        call.name,
+                        `Provider batch contains conflicting writes to ${conflictingMutationKey}`
+                    )
+                );
+                continue;
+            }
             if (hasClipLifecycleConflict || hasMutationConflict) {
                 rejections.push(
                     rejection(index, call.name, 'Provider batch writes the same target field more than once')
@@ -886,6 +1022,16 @@ export function buildLlmActionUserMessage({ prompt, context }: { prompt: string;
         metronomeEnabled: context.metronomeEnabled,
         metronomeVolume: context.metronomeVolume,
         availableDeviceTypes: context.availableDeviceTypes ?? [],
+        automationLanes: (context.automationLanes ?? []).map((lane) => ({
+            id: lane.id,
+            trackId: lane.trackId,
+            parameterId: lane.parameterId,
+            name: lane.name,
+            enabled: lane.enabled,
+            minValue: lane.minValue,
+            maxValue: lane.maxValue,
+            pointCount: lane.points.length,
+        })),
         selectedTrackId: context.selectedTrackId,
         selectedClipId: context.selectedClipId,
         selectedClipIds: context.selectedClipIds,

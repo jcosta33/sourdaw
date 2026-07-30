@@ -5,6 +5,8 @@ import { executeAppAction } from '../executeAppAction';
 import { generateGroupId } from '../generateGroupId';
 
 type ReplayIdMappings = {
+    automationLaneIds: Map<string, string>;
+    automationPointIds: Map<string, string>;
     chordEventIds: Map<string, string>;
     layerIds: Map<string, string>;
     regionIds: Map<string, string>;
@@ -68,6 +70,31 @@ function remapVcaReferences(action: AppAction, mappings: ReplayIdMappings): void
     }
 }
 
+function remapAutomationLaneId(laneId: string, mappings: ReplayIdMappings): string {
+    return mappings.automationLaneIds.get(laneId) ?? laneId;
+}
+
+function remapAutomationReferences(action: AppAction, mappings: ReplayIdMappings): void {
+    if (
+        action.type === 'removeAutomationLane' ||
+        action.type === 'setAutomationLaneEnabled' ||
+        action.type === 'addAutomationPoint' ||
+        action.type === 'removeAutomationPoint' ||
+        action.type === 'scaleAutomation' ||
+        action.type === 'stretchAutomation' ||
+        action.type === 'invertAutomation' ||
+        action.type === 'reverseAutomation' ||
+        action.type === 'thinAutomation' ||
+        action.type === 'quantizeAutomation' ||
+        action.type === 'restoreAutomationLanePoints'
+    ) {
+        action.payload.laneId = remapAutomationLaneId(action.payload.laneId, mappings);
+    }
+    if (action.type === 'removeAutomationPoint' && action.payload.pointId) {
+        action.payload.pointId = mappings.automationPointIds.get(action.payload.pointId) ?? action.payload.pointId;
+    }
+}
+
 function remapAdjustmentReferences(action: AppAction, mappings: ReplayIdMappings): void {
     if (
         action.type === 'removeAdjustmentLayer' ||
@@ -120,12 +147,41 @@ function getGeneratedTrackAlternativeId(action: AppAction): string | undefined {
     return action.type === 'createTrackAlternative' ? action.payload.alternativeId : undefined;
 }
 
+function getGeneratedAutomationLaneId(action: AppAction): string | undefined {
+    return action.type === 'addAutomationLane' ? action.payload.laneId : undefined;
+}
+
+function getGeneratedAutomationPointId(action: AppAction): string | undefined {
+    return action.type === 'addAutomationPoint' ? action.payload.pointId : undefined;
+}
+
 async function executeMacroAction(
     action: AppAction,
     mappings: ReplayIdMappings,
     options: { groupId: string; groupLabel: string }
 ): Promise<void> {
     const replayAction = structuredClone(action);
+    if (replayAction.type === 'addAutomationLane') {
+        const recordedLaneId = replayAction.payload.laneId;
+        delete replayAction.payload.laneId;
+        await executeAppAction(replayAction, options);
+        const generatedLaneId = getGeneratedAutomationLaneId(replayAction);
+        if (recordedLaneId && generatedLaneId) {
+            mappings.automationLaneIds.set(recordedLaneId, generatedLaneId);
+        }
+        return;
+    }
+    if (replayAction.type === 'addAutomationPoint') {
+        replayAction.payload.laneId = remapAutomationLaneId(replayAction.payload.laneId, mappings);
+        const recordedPointId = replayAction.payload.pointId;
+        delete replayAction.payload.pointId;
+        await executeAppAction(replayAction, options);
+        const generatedPointId = getGeneratedAutomationPointId(replayAction);
+        if (recordedPointId && generatedPointId) {
+            mappings.automationPointIds.set(recordedPointId, generatedPointId);
+        }
+        return;
+    }
     if (replayAction.type === 'addChordEvent') {
         const recordedEventId = replayAction.payload.eventId;
         delete replayAction.payload.eventId;
@@ -203,6 +259,7 @@ async function executeMacroAction(
         return;
     }
 
+    remapAutomationReferences(replayAction, mappings);
     remapAdjustmentReferences(replayAction, mappings);
     remapChordReferences(replayAction, mappings);
     remapVcaReferences(replayAction, mappings);
@@ -229,6 +286,8 @@ export async function playMacro(macroId: string): Promise<void> {
 
     const { groupId, groupLabel } = generateGroupId(`Macro: ${macro.name}`);
     const replayIdMappings: ReplayIdMappings = {
+        automationLaneIds: new Map(),
+        automationPointIds: new Map(),
         chordEventIds: new Map(),
         layerIds: new Map(),
         regionIds: new Map(),

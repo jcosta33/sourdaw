@@ -490,7 +490,7 @@ function findConnectorBoundNumber(maskedScope: string, numbers: readonly PromptN
 function findNamedConnectorBoundNumber(
     maskedScope: string,
     numbers: readonly PromptNumber[],
-    connectorName: 'from' | 'to'
+    connectorName: 'from' | 'to' | 'beat'
 ): PromptNumber | null {
     const connectorPattern = new RegExp(`\\b${connectorName}\\b`, 'giu');
     for (const connector of maskedScope.matchAll(connectorPattern)) {
@@ -512,19 +512,40 @@ function findDirectionBoundNumber(maskedScope: string, numbers: readonly PromptN
     return numbers.find((number) => /^\s*(?:left|right)\b/iu.test(maskedScope.slice(number.end))) ?? null;
 }
 
+type AutomationLaneValueRange = NonNullable<ProjectContext['automationLanes']>[number];
+
+function scalePromptNumber(
+    value: number,
+    isPercentage: boolean,
+    valueRule: Extract<GroundingValueRule, { kind: 'number-if-present' }>,
+    automationLane: AutomationLaneValueRange | undefined
+): number {
+    if (valueRule.scale === 'unit-interval' && (isPercentage || Math.abs(value) > 1)) {
+        return value / 100;
+    }
+    if (valueRule.scale === 'percentage-only' && isPercentage) {
+        return value / 100;
+    }
+    if (valueRule.scale !== 'automation-lane-range' || !isPercentage || !automationLane) {
+        return value;
+    }
+
+    const normalizedPercentage = value / 100;
+    if (automationLane.parameterId === 'pan' && automationLane.minValue === -1 && automationLane.maxValue === 1) {
+        return normalizedPercentage;
+    }
+    return automationLane.minValue + normalizedPercentage * (automationLane.maxValue - automationLane.minValue);
+}
+
 function normalizePromptNumber(
     number: PromptNumber,
     actionScope: ActionPromptScope,
-    valueRule: Extract<GroundingValueRule, { kind: 'number-if-present' }>
+    valueRule: Extract<GroundingValueRule, { kind: 'number-if-present' }>,
+    automationLane: AutomationLaneValueRange | undefined
 ): number {
     const isPercentage = number.raw.endsWith('%');
-    let value = Number.parseFloat(number.raw);
-    if (valueRule.scale === 'unit-interval' && (isPercentage || Math.abs(value) > 1)) {
-        value /= 100;
-    }
-    if (valueRule.scale === 'percentage-only' && isPercentage) {
-        value /= 100;
-    }
+    const rawValue = Number.parseFloat(number.raw);
+    const value = scalePromptNumber(rawValue, isPercentage, valueRule, automationLane);
     if (valueRule.direction !== 'pan') {
         return value;
     }
@@ -539,7 +560,11 @@ function normalizePromptNumber(
     return value;
 }
 
-function getExpectedNumbers(actionScope: ActionPromptScope, valueRule: GroundingValueRule): number[] | null {
+function getExpectedNumbers(
+    actionScope: ActionPromptScope,
+    valueRule: GroundingValueRule,
+    automationLane: AutomationLaneValueRange | undefined
+): number[] | null {
     if (valueRule.kind !== 'number-if-present') {
         return [];
     }
@@ -556,12 +581,12 @@ function getExpectedNumbers(actionScope: ActionPromptScope, valueRule: Grounding
         if (!connectorBoundNumber) {
             return null;
         }
-        return [normalizePromptNumber(connectorBoundNumber, actionScope, valueRule)];
+        return [normalizePromptNumber(connectorBoundNumber, actionScope, valueRule, automationLane)];
     }
     const boundNumber =
         findConnectorBoundNumber(actionScope.masked, numbers) ?? findDirectionBoundNumber(actionScope.masked, numbers);
     if (boundNumber) {
-        return [normalizePromptNumber(boundNumber, actionScope, valueRule)];
+        return [normalizePromptNumber(boundNumber, actionScope, valueRule, automationLane)];
     }
     if (numbers.length > 1) {
         return null;
@@ -570,7 +595,7 @@ function getExpectedNumbers(actionScope: ActionPromptScope, valueRule: Grounding
     if (!onlyNumber) {
         return [];
     }
-    return [normalizePromptNumber(onlyNumber, actionScope, valueRule)];
+    return [normalizePromptNumber(onlyNumber, actionScope, valueRule, automationLane)];
 }
 
 function getTextAfterKeyword(actionScope: ActionPromptScope, keywords: readonly string[]): string | null {
@@ -685,6 +710,22 @@ function validateQualitativeNumberDirection(
     return true;
 }
 
+function getAutomationLaneValueRange(
+    valueRule: NumberValueRule,
+    groundedArguments: Record<string, unknown>,
+    context: ProjectContext
+): AutomationLaneValueRange | null | undefined {
+    if (valueRule.scale !== 'automation-lane-range') {
+        return undefined;
+    }
+    const laneId = groundedArguments.laneId;
+    const lane = (context.automationLanes ?? []).find((candidate) => candidate.id === laneId);
+    if (!lane || !Number.isFinite(lane.minValue) || !Number.isFinite(lane.maxValue) || lane.maxValue < lane.minValue) {
+        return null;
+    }
+    return lane;
+}
+
 function validateNumberValue(
     valueRule: NumberValueRule,
     assertedValue: unknown,
@@ -695,7 +736,11 @@ function validateNumberValue(
     if (typeof assertedValue !== 'number') {
         return getValueMismatchReason(valueRule.argument);
     }
-    const expectedNumbers = getExpectedNumbers(actionScope, valueRule);
+    const automationLane = getAutomationLaneValueRange(valueRule, groundedArguments, context);
+    if (automationLane === null) {
+        return getValueMismatchReason(valueRule.argument);
+    }
+    const expectedNumbers = getExpectedNumbers(actionScope, valueRule, automationLane);
     if (expectedNumbers === null) {
         return getValueMismatchReason(valueRule.argument);
     }
@@ -828,6 +873,19 @@ function validateStringLiteralValue(
         ) {
             return null;
         }
+    }
+    if (valueRule.argument === 'parameterId') {
+        const normalizedAssertedValue = normalizePromptText(assertedValue);
+        let aliases: readonly string[] = [];
+        if (normalizedAssertedValue === 'gain') {
+            aliases = ['gain', 'volume', 'fader', 'level'];
+        } else if (normalizedAssertedValue === 'pan') {
+            aliases = ['pan', 'panning'];
+        }
+        if (aliases.some((alias) => getIntentPhraseIndex(actionScope.masked, alias) >= 0)) {
+            return null;
+        }
+        return getValueMismatchReason(valueRule.argument);
     }
     if (getIntentPhraseIndex(actionScope.masked, assertedValue) < 0) {
         return getValueMismatchReason(valueRule.argument);

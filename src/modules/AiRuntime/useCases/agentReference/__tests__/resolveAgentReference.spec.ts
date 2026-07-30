@@ -80,6 +80,48 @@ function resolveClip(prompt: string, assertedId: string, project = createClipPro
     return resolveAgentReference({ prompt, assertedId, capability: 'editable-clip', context: project });
 }
 
+function createAutomationProjectState(): ProjectContext {
+    return {
+        ...createProjectState(),
+        automationLanes: [
+            {
+                id: 'lane-vocals-gain',
+                trackId: 'track-vocals',
+                parameterId: 'gain',
+                name: 'Gain',
+                enabled: true,
+                minValue: 0,
+                maxValue: 1,
+                points: [],
+            },
+            {
+                id: 'lane-vocals-pan',
+                trackId: 'track-vocals',
+                parameterId: 'pan',
+                name: 'Pan',
+                enabled: true,
+                minValue: -1,
+                maxValue: 1,
+                points: [],
+            },
+            {
+                id: 'lane-bass-gain',
+                trackId: 'track-bass',
+                parameterId: 'gain',
+                name: 'Gain',
+                enabled: false,
+                minValue: 0,
+                maxValue: 1,
+                points: [],
+            },
+        ],
+    };
+}
+
+function resolveAutomationLane(prompt: string, assertedId: string, project = createAutomationProjectState()) {
+    return resolveAgentReference({ prompt, assertedId, capability: 'automation-lane', context: project });
+}
+
 describe('resolveAgentReference', () => {
     it('resolves unique exact names and explicit selection language', () => {
         expect(resolveTrack('mute Vocals', 'track-vocals')).toEqual({
@@ -186,6 +228,40 @@ describe('resolveAgentReference', () => {
             status: 'rejected',
         });
         expect(resolveClip('rename Locked to Open', 'clip-locked', project)).toMatchObject({
+            status: 'rejected',
+            reason: 'ungrounded-target',
+        });
+    });
+
+    it('scopes duplicate automation-lane names by their owner track', () => {
+        expect(resolveAutomationLane('disable Gain automation on Vocals', 'lane-vocals-gain')).toEqual({
+            status: 'resolved',
+            id: 'lane-vocals-gain',
+            evidence: 'exact-name',
+        });
+        expect(resolveAutomationLane('enable Gain automation on Bass', 'lane-bass-gain')).toEqual({
+            status: 'resolved',
+            id: 'lane-bass-gain',
+            evidence: 'exact-name',
+        });
+        expect(resolveAutomationLane('disable Gain automation', 'lane-vocals-gain')).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+    });
+
+    it('supports literal lane IDs and selected-track owner scoping without inventing a lane selection', () => {
+        expect(resolveAutomationLane('disable lane-vocals-gain', 'lane-vocals-gain')).toEqual({
+            status: 'resolved',
+            id: 'lane-vocals-gain',
+            evidence: 'literal-id',
+        });
+        expect(resolveAutomationLane('disable Pan automation on the selected track', 'lane-vocals-pan')).toEqual({
+            status: 'resolved',
+            id: 'lane-vocals-pan',
+            evidence: 'exact-name',
+        });
+        expect(resolveAutomationLane('disable automation on the selected track', 'lane-vocals-gain')).toMatchObject({
             status: 'rejected',
             reason: 'ungrounded-target',
         });

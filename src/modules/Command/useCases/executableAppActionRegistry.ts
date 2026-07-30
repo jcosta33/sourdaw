@@ -14,6 +14,7 @@ export type ExecutableAppActionTargetCapability =
     | 'device-host-track'
     | 'device'
     | 'device-parameter'
+    | 'automation-lane'
     | 'clip'
     | 'editable-clip';
 
@@ -37,8 +38,8 @@ export type ExecutableAppActionValueRule =
           argument: string;
           kind: 'number-if-present';
           requiredInPrompt?: boolean;
-          connector?: 'from' | 'to';
-          scale?: 'unit-interval' | 'percentage-only';
+          connector?: 'from' | 'to' | 'beat';
+          scale?: 'unit-interval' | 'percentage-only' | 'automation-lane-range';
           direction?: 'pan';
           qualitativeDirection?: 'track-gain' | 'track-pan' | 'device-parameter';
       }
@@ -640,6 +641,93 @@ export const executableAppActionDescriptors = [
                 outputId: { type: 'string', description: 'Destination track/bus ID' },
             },
             required: ['trackId', 'outputId'],
+        },
+    },
+    {
+        actionType: 'addAutomationLane',
+        risk: 'bounded-reversible',
+        description: 'Create a gain or pan automation lane on an existing track.',
+        intentPhrases: [
+            'add automation lane',
+            'create automation lane',
+            'automate track gain',
+            'automate track volume',
+            'automate track pan',
+            'automate track panning',
+        ],
+        targetRules: trackTargetRules,
+        valueRules: [{ argument: 'parameterId', kind: 'string-literal' }],
+        parameters: {
+            properties: {
+                trackId: { type: 'string', description: 'Existing track ID' },
+                parameterId: {
+                    type: 'string',
+                    enum: ['gain', 'pan'],
+                    description: 'Track parameter to automate',
+                },
+            },
+            required: ['trackId', 'parameterId'],
+        },
+    },
+    {
+        actionType: 'addAutomationPoint',
+        risk: 'bounded-reversible',
+        description: 'Add a value at an explicit beat on an existing track automation lane.',
+        intentPhrases: ['add automation point', 'create automation point', 'set automation point'],
+        targetRules: [{ argument: 'laneId', capability: 'automation-lane' }],
+        valueRules: [
+            { argument: 'beat', kind: 'number-if-present', requiredInPrompt: true, connector: 'beat' },
+            { argument: 'value', kind: 'number-if-present', requiredInPrompt: true, scale: 'automation-lane-range' },
+            {
+                argument: 'curve',
+                kind: 'enum-if-present',
+                values: ['linear', 'step', 'exponential', 's-curve', 'stairs', 'smooth', 'bezier'],
+            },
+        ],
+        parameters: {
+            properties: {
+                laneId: { type: 'string', description: 'Existing track automation lane ID' },
+                beat: { type: 'number', description: 'Non-negative project beat' },
+                value: {
+                    type: 'number',
+                    description: 'Value within the selected lane minValue and maxValue bounds',
+                },
+                curve: {
+                    type: 'string',
+                    enum: ['linear', 'step', 'exponential', 's-curve', 'stairs', 'smooth', 'bezier'],
+                    description: 'Interpolation from this point to the next',
+                },
+            },
+            required: ['laneId', 'beat', 'value'],
+        },
+    },
+    {
+        actionType: 'setAutomationLaneEnabled',
+        risk: 'bounded-reversible',
+        description: 'Enable or disable an existing track automation lane.',
+        intentPhrases: [
+            'enable automation lane',
+            'enable automation',
+            'disable automation lane',
+            'disable automation',
+            'turn automation on',
+            'turn automation off',
+        ],
+        targetRules: [{ argument: 'laneId', capability: 'automation-lane' }],
+        valueRules: [
+            {
+                argument: 'enabled',
+                kind: 'boolean-intent',
+                truePhrases: ['enable automation lane', 'enable automation', 'turn automation on'],
+                falsePhrases: ['disable automation lane', 'disable automation', 'turn automation off'],
+            },
+        ],
+        parameters: {
+            properties: {
+                laneId: { type: 'string', description: 'Existing track automation lane ID' },
+                enabled: { type: 'boolean', description: 'true=enable, false=disable' },
+            },
+            required: ['laneId', 'enabled'],
         },
     },
 ] as const satisfies readonly ExecutableAppActionDescriptor[];

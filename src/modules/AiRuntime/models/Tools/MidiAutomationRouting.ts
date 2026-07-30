@@ -90,10 +90,13 @@ export const automationTools: readonly ToolSchema[] = [
         'Create an automation lane for a track parameter.',
         {
             trackId: { type: 'string' },
-            parameterId: { type: 'string', description: 'e.g. "gain", "pan", "mute", or a device param ID' },
-            parameterName: { type: 'string', description: 'Display name for the lane' },
+            parameterId: {
+                type: 'string',
+                enum: ['gain', 'pan'],
+                description: 'Track parameter to automate',
+            },
         },
-        ['trackId', 'parameterId', 'parameterName']
+        ['trackId', 'parameterId']
     ),
     tool(
         'addAutomationPoint',
@@ -101,14 +104,23 @@ export const automationTools: readonly ToolSchema[] = [
         {
             laneId: { type: 'string' },
             beat: { type: 'number' },
-            value: { type: 'number', description: 'Normalized 0.0–1.0' },
+            value: { type: 'number', description: 'Within the selected lane minValue and maxValue bounds' },
             curve: {
                 type: 'string',
-                enum: ['linear', 'step', 'exponential'],
+                enum: ['linear', 'step', 'exponential', 's-curve', 'stairs', 'smooth', 'bezier'],
                 description: 'Interpolation between this point and the next',
             },
         },
         ['laneId', 'beat', 'value']
+    ),
+    tool(
+        'setAutomationLaneEnabled',
+        'Enable or disable an existing automation lane.',
+        {
+            laneId: { type: 'string' },
+            enabled: { type: 'boolean', description: 'true=enable, false=disable' },
+        },
+        ['laneId', 'enabled']
     ),
     tool(
         'setAutomationMode',

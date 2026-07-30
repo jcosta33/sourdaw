@@ -74,6 +74,19 @@ describe('promptParser parsing', () => {
         });
     });
 
+    describe('tryPresetMatch', () => {
+        it('leaves add-automation-lane prompts for the grounded provider path', () => {
+            const actions = tryPresetMatch('add automation lane', {
+                selectedTrackId: 'track-1',
+                selectedClipId: undefined,
+                selectedClipType: undefined,
+                trackCount: 1,
+            });
+
+            expect(actions).toEqual([]);
+        });
+    });
+
     describe('tryParameterizedPath', () => {
         const context: ProjectContext = {
             tempo: 120,

@@ -45,6 +45,18 @@ const projectContext: ProjectContext = {
     loopEnd: 12,
     metronomeEnabled: false,
     metronomeVolume: 0.5,
+    automationLanes: [
+        {
+            id: 'lane-vocal-gain',
+            trackId: 'track-vocals',
+            parameterId: 'gain',
+            name: 'Gain',
+            enabled: true,
+            minValue: 0,
+            maxValue: 1,
+            points: [],
+        },
+    ],
     tracks: [vocals, guitar, master],
     selectedTrackId: 'track-vocals',
     selectedClipId: null,
@@ -1144,5 +1156,154 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(explicitTrackTie.actions).toEqual([{ type: 'removeTrack', payload: { trackId: 'track-bridge' } }]);
         expect(reservedEntityWord.actions).toEqual([]);
         expect(explicitTrackRequest.actions).toEqual([]);
+    });
+
+    it('grounds gain and pan lane creation only when the requested parameter is explicit', () => {
+        const contextWithoutAutomation = { ...projectContext, automationLanes: [] };
+        const gain = bridge(
+            [{ name: 'addAutomationLane', arguments: { trackId: 'track-vocals', parameterId: 'gain' } }],
+            'automate track volume on Vocals',
+            contextWithoutAutomation
+        );
+        const pan = bridge(
+            [{ name: 'addAutomationLane', arguments: { trackId: 'track-guitar', parameterId: 'pan' } }],
+            'automate track panning on Guitar',
+            contextWithoutAutomation
+        );
+        const vague = bridge(
+            [{ name: 'addAutomationLane', arguments: { trackId: 'track-guitar', parameterId: 'gain' } }],
+            'add automation lane on Guitar'
+        );
+
+        expect(gain.actions).toEqual([
+            {
+                type: 'addAutomationLane',
+                payload: { trackId: 'track-vocals', parameterId: 'gain', parameterName: 'Gain' },
+            },
+        ]);
+        expect(pan.actions).toEqual([
+            {
+                type: 'addAutomationLane',
+                payload: { trackId: 'track-guitar', parameterId: 'pan', parameterName: 'Pan' },
+            },
+        ]);
+        expect(vague.actions).toEqual([]);
+        expect(vague.rejections[0]?.reason).toContain('parameterId');
+    });
+
+    it('grounds automation lane edits by parameter name and owner track', () => {
+        const point = bridge(
+            [
+                {
+                    name: 'addAutomationPoint',
+                    arguments: { laneId: 'lane-vocal-gain', beat: 8, value: 0.5 },
+                },
+            ],
+            'add automation point to Gain on Vocals at beat 8 with value 0.5'
+        );
+        const disable = bridge(
+            [
+                {
+                    name: 'setAutomationLaneEnabled',
+                    arguments: { laneId: 'lane-vocal-gain', enabled: false },
+                },
+            ],
+            'disable automation for Gain on Vocals'
+        );
+        const naturalValueAndCurve = bridge(
+            [
+                {
+                    name: 'addAutomationPoint',
+                    arguments: { laneId: 'lane-vocal-gain', beat: 8, value: 0.5, curve: 'smooth' },
+                },
+            ],
+            'add automation point to Gain on Vocals at beat 8 to 50% smooth'
+        );
+        const omittedRequestedCurve = bridge(
+            [
+                {
+                    name: 'addAutomationPoint',
+                    arguments: { laneId: 'lane-vocal-gain', beat: 8, value: 0.5 },
+                },
+            ],
+            'add automation point to Gain on Vocals at beat 8 to 50% smooth'
+        );
+
+        expect(point.actions).toEqual([
+            { type: 'addAutomationPoint', payload: { laneId: 'lane-vocal-gain', beat: 8, value: 0.5 } },
+        ]);
+        expect(disable.actions).toEqual([
+            { type: 'setAutomationLaneEnabled', payload: { laneId: 'lane-vocal-gain', enabled: false } },
+        ]);
+        expect(naturalValueAndCurve.actions).toEqual([
+            {
+                type: 'addAutomationPoint',
+                payload: { laneId: 'lane-vocal-gain', beat: 8, value: 0.5, curve: 'smooth' },
+            },
+        ]);
+        expect(omittedRequestedCurve.actions).toEqual([]);
+        expect(omittedRequestedCurve.rejections[0]?.reason).toContain('curve');
+    });
+
+    it('grounds percentages against arbitrary existing lane bounds', () => {
+        const cutoffContext: ProjectContext = {
+            ...projectContext,
+            automationLanes: [
+                ...projectContext.automationLanes!,
+                {
+                    id: 'lane-vocal-cutoff',
+                    trackId: 'track-vocals',
+                    parameterId: 'cutoff',
+                    name: 'Cutoff',
+                    enabled: true,
+                    minValue: 20,
+                    maxValue: 20_000,
+                    points: [],
+                },
+            ],
+        };
+        const prompt = 'add automation point to Cutoff on Vocals at beat 12 to 50%';
+        const grounded = bridge(
+            [{ name: 'addAutomationPoint', arguments: { laneId: 'lane-vocal-cutoff', beat: 12, value: 10_010 } }],
+            prompt,
+            cutoffContext
+        );
+        const wronglyNormalized = bridge(
+            [{ name: 'addAutomationPoint', arguments: { laneId: 'lane-vocal-cutoff', beat: 12, value: 0.5 } }],
+            prompt,
+            cutoffContext
+        );
+
+        expect(grounded.actions).toEqual([
+            { type: 'addAutomationPoint', payload: { laneId: 'lane-vocal-cutoff', beat: 12, value: 10_010 } },
+        ]);
+        expect(wronglyNormalized.actions).toEqual([]);
+        expect(wronglyNormalized.rejections[0]?.reason).toContain('value');
+    });
+
+    it('rejects an automation lane name that is ambiguous without an owner track', () => {
+        const result = bridge(
+            [
+                {
+                    name: 'setAutomationLaneEnabled',
+                    arguments: { laneId: 'lane-vocal-gain', enabled: false },
+                },
+            ],
+            'disable automation for Gain',
+            {
+                ...projectContext,
+                automationLanes: [
+                    ...projectContext.automationLanes!,
+                    {
+                        ...projectContext.automationLanes![0]!,
+                        id: 'lane-guitar-gain',
+                        trackId: 'track-guitar',
+                    },
+                ],
+            }
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toContain('ambiguous');
     });
 });

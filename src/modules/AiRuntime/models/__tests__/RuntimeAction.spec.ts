@@ -18,9 +18,9 @@ describe('RuntimeAction', () => {
             }
         }
 
-        expect(RUNTIME_ACTION_TYPES).toHaveLength(234);
+        expect(RUNTIME_ACTION_TYPES).toHaveLength(238);
         expect(new Set(RUNTIME_ACTION_TYPES).size).toBe(RUNTIME_ACTION_TYPES.length);
-        expect(digest >>> 0).toBe(889_050_541);
+        expect(digest >>> 0).toBe(1_670_677_419);
     });
 
     it('derives initiating payloads without exposing command-owned replay fields', () => {
@@ -31,6 +31,9 @@ describe('RuntimeAction', () => {
                 type: 'addAutomationLane',
                 payload: { trackId: 'track-1', parameterId: 'gain', parameterName: 'Gain' },
             },
+            { type: 'addAutomationPoint', payload: { laneId: 'lane-1', beat: 4, value: 0.5 } },
+            { type: 'removeAutomationPoint', payload: { laneId: 'lane-1', pointIndex: 0 } },
+            { type: 'setAutomationLaneEnabled', payload: { laneId: 'lane-1', enabled: false } },
             { type: 'createVcaGroup', payload: { name: 'Band', trackIds: ['track-1'] } },
             { type: 'createCollabSession', payload: { name: 'Mix review' } },
         ];
@@ -38,11 +41,16 @@ describe('RuntimeAction', () => {
         expect(actions.map((action) => action.type)).toEqual([
             'duplicateClip',
             'addAutomationLane',
+            'addAutomationPoint',
+            'removeAutomationPoint',
+            'setAutomationLaneEnabled',
             'createVcaGroup',
             'createCollabSession',
         ]);
         expectTypeOf<PayloadHasKey<'duplicateClip', 'targetClipId'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'addAutomationLane', 'laneId'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'addAutomationPoint', 'pointId'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'removeAutomationPoint', 'pointId'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'createVcaGroup', 'vcaGroupId'>>().toEqualTypeOf<false>();
         expectTypeOf<EmptyCollabSessionPayloadAllowed>().toEqualTypeOf<false>();
     });

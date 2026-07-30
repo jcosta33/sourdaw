@@ -11,6 +11,7 @@ type AgentReferenceCapability =
     | 'device-host-track'
     | 'device'
     | 'device-parameter'
+    | 'automation-lane'
     | 'clip'
     | 'editable-clip';
 
@@ -229,6 +230,25 @@ function getReferenceCandidates(input: ResolveAgentReferenceInput): ReferenceCan
         return (device?.parameters ?? []).map((parameter) => ({ id: parameter.id, name: parameter.name }));
     }
 
+    if (input.capability === 'automation-lane') {
+        let lanes = input.context.automationLanes ?? [];
+        if (hasExplicitTrackSelection(input.prompt)) {
+            if (input.context.selectedTrackId === null) {
+                return [];
+            }
+            lanes = lanes.filter((lane) => lane.trackId === input.context.selectedTrackId);
+        } else {
+            const ownerReference = resolveTrackOwnerReference(input.prompt, input.context);
+            if (ownerReference.status === 'ambiguous') {
+                return [];
+            }
+            if (ownerReference.status === 'unique') {
+                lanes = lanes.filter((lane) => lane.trackId === ownerReference.id);
+            }
+        }
+        return lanes.map((lane) => ({ id: lane.id, name: lane.name }));
+    }
+
     return [];
 }
 
@@ -301,6 +321,17 @@ export function resolveAgentReference(input: ResolveAgentReferenceInput): Resolv
         const selected = candidates.find((candidate) => candidate.id === selectedReferenceId);
         if (selected && !evidenceById.has(selected.id)) {
             evidenceById.set(selected.id, 'selection');
+        }
+    }
+
+    if (
+        input.capability === 'automation-lane' &&
+        [...evidenceById.values()].some((evidence) => evidence === 'literal-id')
+    ) {
+        for (const [candidateId, evidence] of evidenceById) {
+            if (evidence !== 'literal-id') {
+                evidenceById.delete(candidateId);
+            }
         }
     }
 
