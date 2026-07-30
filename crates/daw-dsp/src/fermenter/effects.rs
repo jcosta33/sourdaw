@@ -255,14 +255,34 @@ impl StereoPhaser {
         }
     }
 
-    /// Advance the free-running LFO while the processor-owned audio state is quiescent.
-    pub fn advance_silence(&mut self, frames: usize, rate: f32) {
-        let phase_inc = rate / self.sample_rate;
+    /// Apply the same zero-input recurrence as continuous rendering without output buffers.
+    pub fn advance_silence(&mut self, frames: usize, rate: f32, depth: f32) {
         for _ in 0..frames {
-            self.lfo_phase = (self.lfo_phase + phase_inc) % 1.0;
+            self.lfo_phase = (self.lfo_phase + rate / self.sample_rate) % 1.0;
+            let lfo = (self.lfo_phase * core::f32::consts::TAU).sin();
+            let min_freq = 200.0 + (1.0 - depth) * 800.0;
+            let max_freq = 2000.0 + depth * 6000.0;
+            let freq = min_freq + (lfo + 1.0) * 0.5 * (max_freq - min_freq);
+            let coeff = (core::f32::consts::PI * freq / self.sample_rate).tan();
+            let a1 = (coeff - 1.0) / (coeff + 1.0);
+            let mut wet_l = 0.0;
+            for state in &mut self.allpass_l {
+                let output = a1 * wet_l + *state;
+                *state = flush_denormal(wet_l - a1 * output);
+                wet_l = output;
+            }
+
+            let lfo_r = ((self.lfo_phase + 0.25) * core::f32::consts::TAU).sin();
+            let freq_r = min_freq + (lfo_r + 1.0) * 0.5 * (max_freq - min_freq);
+            let coeff_r = (core::f32::consts::PI * freq_r / self.sample_rate).tan();
+            let a1_r = (coeff_r - 1.0) / (coeff_r + 1.0);
+            let mut wet_r = 0.0;
+            for state in &mut self.allpass_r {
+                let output = a1_r * wet_r + *state;
+                *state = flush_denormal(wet_r - a1_r * output);
+                wet_r = output;
+            }
         }
-        self.allpass_l.fill(0.0);
-        self.allpass_r.fill(0.0);
     }
 }
 
@@ -877,11 +897,33 @@ mod tests {
     fn phaser_silent_advance_matches_continuous_zero_input() {
         let mut continuous = StereoPhaser::new(SAMPLE_RATE);
         let mut sleeping = StereoPhaser::new(SAMPLE_RATE);
+        let mut continuous_prime_left = [0.0; FRAMES];
+        let mut continuous_prime_right = [0.0; FRAMES];
+        let mut sleeping_prime_left = [0.0; FRAMES];
+        let mut sleeping_prime_right = [0.0; FRAMES];
+        continuous_prime_left[0] = 1.0;
+        continuous_prime_right[0] = 0.5;
+        sleeping_prime_left[0] = 1.0;
+        sleeping_prime_right[0] = 0.5;
+        continuous.process_block(
+            &mut continuous_prime_left,
+            &mut continuous_prime_right,
+            3.0,
+            0.7,
+            0.5,
+        );
+        sleeping.process_block(
+            &mut sleeping_prime_left,
+            &mut sleeping_prime_right,
+            3.0,
+            0.7,
+            0.5,
+        );
         let mut zero_left = [0.0; FRAMES];
         let mut zero_right = [0.0; FRAMES];
 
         continuous.process_block(&mut zero_left, &mut zero_right, 3.0, 0.7, 0.5);
-        sleeping.advance_silence(FRAMES, 3.0);
+        sleeping.advance_silence(FRAMES, 3.0, 0.7);
 
         let mut continuous_left = [0.0; FRAMES];
         let mut continuous_right = [0.0; FRAMES];

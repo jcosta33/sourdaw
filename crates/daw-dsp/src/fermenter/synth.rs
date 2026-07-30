@@ -567,8 +567,11 @@ impl MasterSynth {
                 .advance_silence(RENDER_QUANTUM_FRAMES as usize, self.chorus_rate);
         }
         if phaser_mix > 0.001 {
-            self.phaser
-                .advance_silence(RENDER_QUANTUM_FRAMES as usize, self.phaser_rate);
+            self.phaser.advance_silence(
+                RENDER_QUANTUM_FRAMES as usize,
+                self.phaser_rate,
+                self.phaser_depth,
+            );
         }
         let any_solo = self.layers[..self.num_active_layers]
             .iter()
@@ -588,13 +591,13 @@ impl MasterSynth {
                 1 => self.fdn_reverb.max_tail_gap_samples(),
                 _ => self.reverb.max_tail_gap_samples(),
             };
-            gap = gap.max(reverb_gap);
+            gap = gap.saturating_add(reverb_gap);
         }
         if self.delay_mix.value().max(self.delay_mix.target()) > 0.001 {
-            gap = gap.max(self.delay.max_tail_gap_samples(self.delay_time));
+            gap = gap.saturating_add(self.delay.max_tail_gap_samples(self.delay_time));
         }
         if self.chorus_mix.value().max(self.chorus_mix.target()) > 0.001 {
-            gap = gap.max(self.chorus.max_tail_gap_samples());
+            gap = gap.saturating_add(self.chorus.max_tail_gap_samples());
         }
         gap
     }
@@ -607,7 +610,7 @@ impl MasterSynth {
     }
 
     fn update_lifecycle_after_block(&mut self, output_quiet: bool, frames: usize, had_active_voices: bool) {
-        if had_active_voices || self.renderable_active_voice_count() > 0 || !output_quiet {
+        if had_active_voices || self.renderable_active_voice_count() > 0 || self.wake_requested || !output_quiet {
             self.tail_samples_remaining = self.configured_tail_gap_samples();
         } else {
             self.tail_samples_remaining = self
@@ -756,7 +759,7 @@ impl MasterSynth {
 
 #[cfg(test)]
 mod tests {
-    use super::{MasterSynth, MidiEvent};
+    use super::{MasterSynth, MidiEvent, RENDER_QUANTUM_FRAMES};
     use crate::primitives::ProcessLifecycle;
 
     fn block_energy(left: &[f32], right: &[f32]) -> f32 {
@@ -1328,6 +1331,57 @@ mod tests {
         synth.set_param("master_gain", 0.0);
 
         assert_eq!(synth.lifecycle(), ProcessLifecycle::ContinueIfNotQuiet);
+    }
+
+    #[test]
+    fn serial_wet_effects_compose_their_tail_gap() {
+        let mut synth = MasterSynth::new(48_000.0, 8);
+        synth.reverb_mix.set(1.0);
+        synth.reverb_mix.snap();
+        synth.delay_mix.set(1.0);
+        synth.delay_mix.snap();
+        synth.delay_time = 2_000.0;
+        synth.chorus_mix.set(1.0);
+        synth.chorus_mix.snap();
+
+        let expected = RENDER_QUANTUM_FRAMES
+            + synth.reverb.max_tail_gap_samples()
+            + synth.delay.max_tail_gap_samples(synth.delay_time)
+            + synth.chorus.max_tail_gap_samples();
+
+        assert_eq!(synth.configured_tail_gap_samples(), expected);
+    }
+
+    #[test]
+    fn waking_a_frozen_delay_establishes_a_full_tail_horizon() {
+        let mut synth = MasterSynth::new(48_000.0, 8);
+        let mut left = [0.0; 128];
+        let mut right = [0.0; 128];
+        synth.reverb_mix.set(0.0);
+        synth.reverb_mix.snap();
+        synth.delay_time = 2_000.0;
+        synth.delay_mix.set(1.0);
+        synth.delay_mix.snap();
+        synth.note_on(60, 100);
+        synth.process_block(&mut left, &mut right, &[]);
+        synth.note_off(60);
+        synth.delay_mix.set(0.0);
+        synth.delay_mix.snap();
+
+        for _ in 0..4_000 {
+            synth.process_block(&mut left, &mut right, &[]);
+            if synth.lifecycle() == ProcessLifecycle::Sleep {
+                break;
+            }
+        }
+        assert_eq!(synth.lifecycle(), ProcessLifecycle::Sleep);
+
+        synth.set_param("delay_mix", 1.0);
+        synth.delay_mix.snap();
+        synth.process_block(&mut left, &mut right, &[]);
+
+        assert!(matches!(synth.lifecycle(), ProcessLifecycle::Tail(_)));
+        assert!(synth.tail_samples_remaining > RENDER_QUANTUM_FRAMES);
     }
 
     /// audit MD-2 (review round 1) — the audible half of the targeting fix.
