@@ -1,0 +1,50 @@
+src/app/bootstrap.ts
+  s_66d4924c65dcd2::t_e4d02786ddbe47 116
+  s_66d4924c65dcd2::t_1180226cc9ddbf 299-302
+  s_66d4924c65dcd2::t_d49a3a4c9b1ac2 307-310
+src/modules/Toaster/useCases/toasterSubscriber.ts
+  s_66d4924c65dcd2::t_4753bcad04d547 8
+  s_66d4924c65dcd2::t_5cce5555786160 56-65,67
+src/app/__tests__/bootstrap.spec.ts
+  s_66d4924c65dcd2::t_7e6f8ec3735b90 75
+  s_66d4924c65dcd2::t_095b52ffa3b92e 440-456,459
+  s_66d4924c65dcd2::t_8b3f400f56c16f 466
+  s_66d4924c65dcd2::t_15d0d690ba7ce4 283
+  s_66d4924c65dcd2::t_c3e06cf758c9fd 52
+src/modules/Toaster/useCases/projectToasterKitToEngineMessages.ts
+  s_66d4924c65dcd2::t_d82814c639aff1 52-59
+  s_66d4924c65dcd2::t_8a49f510ea6b94 6-7,62-88
+  s_66d4924c65dcd2::t_cbb8142cb3e7fb 1-5,8-51,60-61,89-91
+src/modules/Toaster/useCases/prepareOfflineToaster.ts
+  s_66d4924c65dcd2::t_dd005d224c1835 32-42
+  s_66d4924c65dcd2::t_8e1ba4137f94ea 5,7,9-10,47
+  s_66d4924c65dcd2::t_f4b91c4bb97782 1-4,6,8,11-31,43-45,48-51
+  s_66d4924c65dcd2::t_d427d386493799 46
+src/modules/Toaster/useCases/__tests__/prepareOfflineToaster.spec.ts
+  s_66d4924c65dcd2::t_dc0e6c9b852d46 1-33,35-142,144,153-197
+  s_66d4924c65dcd2::t_b57b55749d4f3a 34
+  s_66d4924c65dcd2::t_e917e24abaeaba 143,145-152
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_66d4924c65dcd2::t_026e0f07634604 201-206
+  s_66d4924c65dcd2::t_bfa4ad344590b9 211-218
+src/modules/Toaster/useCases/index.ts
+  s_66d4924c65dcd2::t_6b3806e9f4621d 3
+src/modules/Toaster/useCases/__tests__/toasterSubscriber.spec.ts
+  s_66d4924c65dcd2::t_b449d3fab8def5 171-202
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "6f2cc3b6b5d9e588c5462c6a6679449cdb4b96a5",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
