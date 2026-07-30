@@ -6,24 +6,15 @@ import { getTransportHandlers } from '#/modules/Transport/useCases';
 import { getAppActionExecutionPolicy } from '../getAppActionExecutionPolicy';
 import { getExecutableAppActionToolSchemas } from '../getExecutableAppActionToolSchemas';
 
-function expectedCommand(
-    name: string,
-    description: string,
-    properties: Record<string, unknown>,
-    required: string[],
-    risk: string,
-    requiresConfirmation: boolean
-) {
-    return {
-        name,
-        description,
-        properties,
-        required,
-        additionalProperties: false,
-        classification: 'explicit',
-        risk,
-        requiresConfirmation,
-    };
+type ExpectedCommandArgs = [string, string, Record<string, unknown>, string[], string, boolean];
+
+function expectedCommand(...args: ExpectedCommandArgs) {
+    const [name, description, properties, required, risk, requiresConfirmation] = args;
+    return [name, description, properties, required, false, 'explicit', risk, requiresConfirmation] as const;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 const EXPECTED_COMMANDS = [
@@ -185,20 +176,35 @@ describe('executable command registry', () => {
         const schemas = getExecutableAppActionToolSchemas();
         const actual = schemas.map((schema) => {
             const policy = getAppActionExecutionPolicy(schema.function.name);
-            return {
-                name: schema.function.name,
-                description: schema.function.description,
-                properties: schema.function.parameters.properties,
-                required: schema.function.parameters.required,
-                additionalProperties: schema.function.parameters.additionalProperties,
-                classification: policy.classification,
-                risk: policy.risk,
-                requiresConfirmation: policy.requiresConfirmation,
-            };
+            return [
+                schema.function.name,
+                schema.function.description,
+                schema.function.parameters.properties,
+                schema.function.parameters.required,
+                schema.function.parameters.additionalProperties,
+                policy.classification,
+                policy.risk,
+                policy.requiresConfirmation,
+            ];
         });
 
         expect(actual).toEqual(EXPECTED_COMMANDS);
-        expect(new Set(actual.map((command) => command.name)).size).toBe(actual.length);
+    });
+
+    it('isolates nested schema data between generated provider surfaces', () => {
+        const firstProperties = getExecutableAppActionToolSchemas()[0]?.function.parameters.properties;
+        if (!firstProperties) {
+            throw new Error('addTrack schema is unavailable');
+        }
+        const originalProperties = structuredClone(firstProperties);
+        const firstNameProperty: unknown = Reflect.get(firstProperties, 'name');
+        if (!isRecord(firstNameProperty)) {
+            throw new Error('addTrack name schema is unavailable');
+        }
+
+        firstNameProperty.description = 'mutated by provider adapter';
+
+        expect(getExecutableAppActionToolSchemas()[0]?.function.parameters.properties).toEqual(originalProperties);
     });
 
     it('maps every provider-executable action to exactly one production handler with executable metadata', () => {
@@ -206,13 +212,13 @@ describe('executable command registry', () => {
 
         expect(
             EXPECTED_COMMANDS.map((command) => {
-                const owners = handlerMaps.filter((handlerMap) => Object.hasOwn(handlerMap, command.name));
-                const handler = owners[0]?.[command.name];
+                const owners = handlerMaps.filter((handlerMap) => Object.hasOwn(handlerMap, command[0]));
+                const handler = owners[0]?.[command[0]];
                 if (typeof handler !== 'object' || handler === null) {
-                    return { actionType: command.name, ownerCount: owners.length, handler: null };
+                    return { actionType: command[0], ownerCount: owners.length, handler: null };
                 }
                 return {
-                    actionType: command.name,
+                    actionType: command[0],
                     ownerCount: owners.length,
                     handler: {
                         execute: typeof Reflect.get(handler, 'execute'),
@@ -223,7 +229,7 @@ describe('executable command registry', () => {
             })
         ).toEqual(
             EXPECTED_COMMANDS.map((command) => ({
-                actionType: command.name,
+                actionType: command[0],
                 ownerCount: 1,
                 handler: { execute: 'function', describe: 'function', undoable: 'boolean' },
             }))

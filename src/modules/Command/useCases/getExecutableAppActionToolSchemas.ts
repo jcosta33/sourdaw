@@ -8,7 +8,7 @@ export function getExecutableAppActionToolSchemas() {
             description: descriptor.description,
             parameters: {
                 type: 'object' as const,
-                properties: descriptor.parameters.properties,
+                properties: structuredClone(descriptor.parameters.properties),
                 required: [...descriptor.parameters.required],
                 additionalProperties: false,
             },
