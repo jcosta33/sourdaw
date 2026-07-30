@@ -129,16 +129,29 @@ describe('validateActions', () => {
         const initiatingPayload = Object.fromEntries(
             Object.entries(action.payload).filter(([key]) => allowedKeys.includes(key))
         );
-        const missingRequiredKey = RUNTIME_ACTION_OVERRIDE_REQUIRED_PAYLOAD_KEYS[action.type][0];
-        const missingRequiredPayload = Object.fromEntries(
-            Object.entries(initiatingPayload).filter(([key]) => key !== missingRequiredKey)
-        );
-        const missingRequiredAction = { ...action, payload: missingRequiredPayload };
+        for (const missingRequiredKey of RUNTIME_ACTION_OVERRIDE_REQUIRED_PAYLOAD_KEYS[action.type]) {
+            const missingRequiredPayload = Object.fromEntries(
+                Object.entries(initiatingPayload).filter(([key]) => key !== missingRequiredKey)
+            );
+            const missingRequiredAction = { ...action, payload: missingRequiredPayload };
 
-        expect(validateActions([missingRequiredAction] as unknown as RuntimeAction[])).toEqual([]);
-        expect(mockLogger.warn).toHaveBeenLastCalledWith(
-            `Command-owned payload fields rejected for action ${action.type}`
-        );
+            expect(validateActions([missingRequiredAction] as unknown as RuntimeAction[])).toEqual([]);
+            expect(mockLogger.warn).toHaveBeenLastCalledWith(
+                `Command-owned payload fields rejected for action ${action.type}`
+            );
+        }
+    });
+
+    it('should reject hidden and symbol payload fields', () => {
+        const hiddenPayload = Object.defineProperty({ clipId: 'clip-1' }, 'targetClipId', { value: 'clip-2' });
+        const symbolPayload = { clipId: 'clip-1', [Symbol('targetClipId')]: 'clip-2' };
+        const actions = [
+            { type: 'duplicateClip', payload: hiddenPayload },
+            { type: 'duplicateClip', payload: symbolPayload },
+        ] as unknown as RuntimeAction[];
+
+        expect(validateActions(actions)).toEqual([]);
+        expect(mockLogger.warn).toHaveBeenCalledTimes(2);
     });
 
     it('should reject invalid setTempo bpm', () => {
