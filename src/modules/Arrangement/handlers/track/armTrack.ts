@@ -1,21 +1,44 @@
+import { getMidiInputTrack } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { armTrack } from '../../useCases/recording/armTrack';
-import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
 export const handleArmTrack = createHandler<'armTrack'>({
     execute: (action) => {
-        return toHandlerExecutionResult(armTrack(action.payload.trackId, action.payload.armed));
-    },
-    describe: (alpha) => {
-        // Re-arming an already-armed track is a forward no-op, so the inverse
-        // restores the captured pre-state instead of negating the payload.
-        const prev = getTrackStoreState()?.tracks.find((time) => time.id === alpha.payload.trackId);
+        const runtimeEffect = armTrack(action.payload.trackId, action.payload.armed, {
+            deferRuntimeEffect: true,
+            midiInputTrackId: action.payload.midiInputTrackId,
+        });
+        if (!runtimeEffect) {
+            return { status: 'no-write' };
+        }
         return {
-            label: alpha.payload.armed ? 'Arm track' : 'Disarm track',
-            inverseAction: prev ? { type: 'armTrack', payload: { trackId: prev.id, armed: prev.armed } } : null,
+            status: 'written',
+            afterCommit: runtimeEffect.afterCommit,
+            afterAmbiguousCommit: runtimeEffect.afterAmbiguousCommit,
         };
     },
+    isNoop: (action) => {
+        const track = getTrackStoreState()?.tracks.find((candidate) => candidate.id === action.payload.trackId);
+        return track?.armed === action.payload.armed;
+    },
+    describe: (action) => {
+        const previousTrack = getTrackStoreState()?.tracks.find((candidate) => candidate.id === action.payload.trackId);
+        return {
+            label: action.payload.armed ? 'Arm track' : 'Disarm track',
+            inverseAction: previousTrack
+                ? {
+                      type: 'armTrack',
+                      payload: {
+                          trackId: previousTrack.id,
+                          armed: previousTrack.armed,
+                          midiInputTrackId: getMidiInputTrack(),
+                      },
+                  }
+                : null,
+        };
+    },
+    requiresAbortCompensation: false,
     undoable: true,
 });

@@ -113,6 +113,83 @@ describe('armTrack', () => {
         expect(mocks.setMidiInputTrack).not.toHaveBeenCalled();
     });
 
+    it('defers MIDI input routing until the project transaction commits', () => {
+        mocks.getTrackById.mockReturnValue({ id: 't1', kind: 'midi', armed: false });
+        mocks.getMidiInputTrack.mockReturnValue('t0');
+
+        const runtimeEffect = armTrack('t1', true, { deferRuntimeEffect: true });
+
+        expect(mocks.updateTrack).toHaveBeenCalledWith('t1', expect.any(Function));
+        expect(mocks.setMidiInputTrack).not.toHaveBeenCalled();
+        expect(runtimeEffect).not.toBeNull();
+        if (!runtimeEffect) {
+            return;
+        }
+
+        runtimeEffect.afterCommit();
+
+        expect(mocks.setMidiInputTrack).toHaveBeenCalledWith('t1');
+    });
+
+    it('restores the exact captured MIDI input route after a committed inverse', () => {
+        mocks.getTrackById.mockReturnValue({ id: 't1', kind: 'midi', armed: true });
+        mocks.getMidiInputTrack.mockReturnValue('t1');
+
+        const runtimeEffect = armTrack('t1', false, {
+            deferRuntimeEffect: true,
+            midiInputTrackId: 't0',
+        });
+
+        expect(mocks.setMidiInputTrack).not.toHaveBeenCalled();
+        expect(runtimeEffect).not.toBeNull();
+        if (!runtimeEffect) {
+            return;
+        }
+
+        runtimeEffect.afterCommit();
+
+        expect(mocks.setMidiInputTrack).toHaveBeenCalledWith('t0');
+    });
+
+    it('reconciles MIDI routing to the requested state after an ambiguous committed transaction', () => {
+        mocks.getTrackById
+            .mockReturnValueOnce({ id: 't1', kind: 'midi', armed: false })
+            .mockReturnValueOnce({ id: 't1', kind: 'midi', armed: true });
+        mocks.getMidiInputTrack.mockReturnValue('t0');
+
+        const runtimeEffect = armTrack('t1', true, { deferRuntimeEffect: true });
+        expect(runtimeEffect).not.toBeNull();
+        if (!runtimeEffect) {
+            return;
+        }
+
+        runtimeEffect.afterAmbiguousCommit();
+
+        expect(mocks.setMidiInputTrack).toHaveBeenCalledWith('t1');
+    });
+
+    it('restores prior MIDI routing after an ambiguous rolled-back transaction', () => {
+        mocks.getTrackById
+            .mockReturnValueOnce({ id: 't1', kind: 'midi', armed: false })
+            .mockReturnValueOnce({ id: 't1', kind: 'midi', armed: false });
+        let routing: string | null = 't0';
+        mocks.getMidiInputTrack.mockImplementation(() => routing);
+        mocks.setMidiInputTrack.mockImplementation((next: string | null) => {
+            routing = next;
+        });
+
+        const runtimeEffect = armTrack('t1', true, { deferRuntimeEffect: true });
+        expect(runtimeEffect).not.toBeNull();
+        if (!runtimeEffect) {
+            return;
+        }
+        routing = 't1';
+
+        runtimeEffect.afterAmbiguousCommit();
+
+        expect(routing).toBe('t0');
+    });
+
     it('restores routing across an arm -> disarm -> re-arm (redo) sequence', () => {
         mocks.getTrackById.mockReturnValue({ id: 't1', kind: 'midi', armed: false });
         let routing: string | null = null;

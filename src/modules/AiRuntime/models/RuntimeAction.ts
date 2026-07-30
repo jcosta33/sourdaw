@@ -244,6 +244,7 @@ type AppActionPayload<ActionType extends AppActionType> =
     AppActionOf<ActionType> extends { payload: infer Payload } ? Payload : never;
 
 export const RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS = {
+    armTrack: ['trackId', 'armed'],
     createTrackAlternative: ['trackId', 'name', 'duplicateActive'],
     deleteTrackAlternative: ['trackId', 'alternativeId'],
     duplicateClip: ['clipId'],
@@ -263,6 +264,7 @@ export const RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS = {
 } as const satisfies Partial<Record<RuntimeActionType, readonly string[]>>;
 
 export const RUNTIME_ACTION_OVERRIDE_REQUIRED_PAYLOAD_KEYS = {
+    armTrack: ['trackId', 'armed'],
     createTrackAlternative: ['trackId', 'name', 'duplicateActive'],
     deleteTrackAlternative: ['trackId', 'alternativeId'],
     duplicateClip: ['clipId'],
