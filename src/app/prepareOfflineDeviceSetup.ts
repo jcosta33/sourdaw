@@ -1,4 +1,5 @@
 import { prepareOfflineLevain } from '#/modules/Levain/useCases';
+import { prepareOfflineProof } from '#/modules/Proof/useCases';
 
 export type PrepareOfflineDeviceSetupInput = {
     /** Id of the device being rendered; keys the project state that configures it. */
@@ -36,5 +37,13 @@ export async function prepareOfflineDeviceSetup({
 }: PrepareOfflineDeviceSetupInput): Promise<void> {
     if (deviceType === 'levain') {
         await prepareOfflineLevain({ deviceId, port, signal });
+        return;
+    }
+
+    // Proof's module order is persisted as `chain_order_N` params the worklet
+    // ignores; only a `reorder` message moves the chain, and nothing offline
+    // sent one, so every export rendered the default order.
+    if (deviceType === 'proof') {
+        prepareOfflineProof({ deviceId, port });
     }
 }

@@ -4,8 +4,8 @@ import { getTrackStoreState } from '#/modules/Arrangement/useCases';
 import { PROOF_PATCH_RANGES, TARGET_LUFS, type DitherMode, type ProofPatch } from '../../models/ProofPatch';
 import { ditherModeToInt } from '../../services/ditherModeToInt';
 import { getProofPatchParameterValues } from '../../services/getProofPatchParameterValues';
+import { getRestoredProofChainOrder } from '../../services/getRestoredProofChainOrder';
 import { isValidDynCrossoverFreqs } from '../../services/isValidDynCrossoverFreqs';
-import { isValidProofChainOrder } from '../../services/isValidProofChainOrder';
 import { proofTargetFromInt } from '../../services/proofTargetCodec';
 import { getProofState, hydrateProofPatch } from '../../stores/proofStore';
 import { PROOF_PRESETS } from '../proofPresets';
@@ -357,38 +357,6 @@ function getRestoredExcBands(
     return bands.some((entry) => entry.restored) ? bands.map((entry) => entry.band) : null;
 }
 
-function getRestoredChainOrder(
-    parameterValues: Record<string, number>,
-    baseOrder: ProofPatch['chainOrder']
-): ProofPatch['chainOrder'] | null {
-    const order: Array<number | null> = [];
-    for (let index = 0; index < baseOrder.length; index++) {
-        order.push(integerFromRestoredParam(parameterValues[`chain_order_${index}`], PROOF_PATCH_RANGES.chainModuleId));
-    }
-    if (order.includes(null)) {
-        return null;
-    }
-
-    const [first, second, third, fourth, fifth] = order;
-    if (
-        first === null ||
-        first === undefined ||
-        second === null ||
-        second === undefined ||
-        third === null ||
-        third === undefined ||
-        fourth === null ||
-        fourth === undefined ||
-        fifth === null ||
-        fifth === undefined
-    ) {
-        return null;
-    }
-
-    const restoredOrder: ProofPatch['chainOrder'] = [first, second, third, fourth, fifth];
-    return isValidProofChainOrder(restoredOrder) ? restoredOrder : null;
-}
-
 function getRestoredProofPatch(parameterValues: Record<string, number>, basePatch: ProofPatch): Partial<ProofPatch> {
     const restoredPatch = getRestoredScalarPatch(parameterValues);
     const eqBands = getRestoredEqBands(parameterValues, basePatch.eqBands);
@@ -411,7 +379,7 @@ function getRestoredProofPatch(parameterValues: Record<string, number>, basePatc
     if (excBands) {
         restoredPatch.excBands = excBands;
     }
-    const chainOrder = getRestoredChainOrder(parameterValues, basePatch.chainOrder);
+    const chainOrder = getRestoredProofChainOrder(parameterValues);
     if (chainOrder) {
         restoredPatch.chainOrder = chainOrder;
     }
