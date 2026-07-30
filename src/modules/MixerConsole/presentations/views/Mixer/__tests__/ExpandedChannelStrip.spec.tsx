@@ -17,7 +17,7 @@ const mocks = vi.hoisted(() => ({
     soloTrackExclusive: vi.fn(),
     toggleInputMonitoring: vi.fn(),
     selectTrack: vi.fn(),
-    armTrack: vi.fn(),
+    executeAppAction: vi.fn(),
     removeTrack: vi.fn(),
     renameTrack: vi.fn(),
     toggleVcaMembership: vi.fn(),
@@ -33,12 +33,15 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     soloTrackExclusive: mocks.soloTrackExclusive,
     toggleInputMonitoring: mocks.toggleInputMonitoring,
     selectTrack: mocks.selectTrack,
-    armTrack: mocks.armTrack,
     removeTrack: mocks.removeTrack,
     renameTrack: mocks.renameTrack,
     toggleVcaMembership: mocks.toggleVcaMembership,
     createAndAssignVcaGroup: mocks.createAndAssignVcaGroup,
     getVcaGroups: mocks.getVcaGroups,
+}));
+
+vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction: mocks.executeAppAction,
 }));
 
 vi.mock('#/utils/Notification/confirmUser', () => ({
@@ -126,7 +129,10 @@ describe('ExpandedChannelStrip', () => {
         expect(mocks.soloTrack).toHaveBeenCalledWith('track-1', true);
 
         fireEvent.click(screen.getByRole('button', { name: 'Arm' }));
-        expect(mocks.armTrack).toHaveBeenCalledWith('track-1', true);
+        expect(mocks.executeAppAction).toHaveBeenCalledWith({
+            type: 'armTrack',
+            payload: { trackId: 'track-1', armed: true },
+        });
 
         fireEvent.click(screen.getByRole('button', { name: 'Enable monitoring' }));
         expect(mocks.toggleInputMonitoring).toHaveBeenCalledWith('track-1');

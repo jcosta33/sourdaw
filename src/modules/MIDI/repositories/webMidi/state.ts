@@ -30,6 +30,8 @@ export const webMidiRuntime = {
     activeInput: null as MIDIInput | null,
     midiMessageListener: null as EventListener | null,
     targetTrackId: null as string | null,
+    targetTrackOwnerId: null as string | null,
+    targetTrackRevision: 0,
     mpeEnabled: false,
     tauriMode: false,
     tauriEventUnlisten: null as (() => void) | null,

@@ -206,6 +206,44 @@ describe('parsePromptToActions', () => {
         expect(result.executionMode).toBe('atomic');
     });
 
+    it('proposes a grounded provider arm command as one confirmable atomic action', async () => {
+        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
+            '../agentReference/bridgeGroundedLlmToolCalls'
+        );
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        const providerContext: ProjectContext = {
+            ...baseContext,
+            tracks: [
+                {
+                    id: 'track-vocals',
+                    name: 'Vocals',
+                    kind: 'audio',
+                    muted: false,
+                    soloed: false,
+                    armed: false,
+                    gain: 0.8,
+                    pan: 0,
+                    outputId: 'master',
+                    clipCount: 0,
+                    deviceCount: 0,
+                    clips: [],
+                    devices: [],
+                    sends: [],
+                },
+            ],
+            selectedTrackId: 'track-vocals',
+        };
+        vi.mocked(generateToolCalls).mockResolvedValue(
+            completePlan([{ name: 'armTrack', arguments: { trackId: 'track-vocals', armed: true } }])
+        );
+
+        const result = await parsePromptToActions('arm Vocals for recording', providerContext);
+
+        expect(result.actions).toEqual([{ type: 'armTrack', payload: { trackId: 'track-vocals', armed: true } }]);
+        expect(result.requiresConfirmation).toBe(true);
+        expect(result.executionMode).toBe('atomic');
+    });
+
     it('rejects a provider time signature that does not match the prompt', async () => {
         const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
             '../agentReference/bridgeGroundedLlmToolCalls'

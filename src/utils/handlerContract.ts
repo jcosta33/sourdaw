@@ -318,7 +318,18 @@ export type AppAction =
     | { type: 'muteTrack'; payload: { trackId: string; muted: boolean } }
     | { type: 'soloTrack'; payload: { trackId: string; soloed: boolean } }
     | { type: 'toggleSoloSafe'; payload: { trackId: string } }
-    | { type: 'armTrack'; payload: { trackId: string; armed: boolean } }
+    | {
+          type: 'armTrack';
+          payload: {
+              trackId: string;
+              armed: boolean;
+              /** Internal runtime-routing metadata. AiRuntime payload validation rejects these fields. */
+              midiInputTrackId?: string | null;
+              expectedMidiInputTrackId?: string | null;
+              midiInputOwnerId?: string | null;
+              expectedMidiInputOwnerId?: string | null;
+          };
+      }
     | { type: 'freezeTrack'; payload: { trackId: string } }
     | { type: 'unfreezeTrack'; payload: { trackId: string } }
     | { type: 'flattenTrack'; payload: { trackId: string } }

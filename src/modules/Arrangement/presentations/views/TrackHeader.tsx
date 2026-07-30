@@ -20,11 +20,11 @@ import { DawMeterBar } from '#/components/daw/DawMeterBar';
 import { LatchButton } from '#/components/daw/LatchButton';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipTrigger, TooltipContent } from '#/components/ui/tooltip';
+import { executeAppAction } from '#/modules/Command/useCases';
 import { cn } from '#/utils/Styles/cn';
 
 import { type Track, type InputMonitoring } from '../../models/Track';
 import { toggleFolderCollapse } from '../../useCases/folder/toggleFolderCollapse';
-import { armTrack } from '../../useCases/recording/armTrack';
 import { setInputMonitoring } from '../../useCases/setTrackGainPan/setInputMonitoring';
 import { muteTrack } from '../../useCases/toggleTrackState/muteTrack';
 import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
@@ -263,7 +263,10 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                                     aria-label={track.armed ? `Disarm ${track.name}` : `Arm ${track.name}`}
                                     onClick={(event) => {
                                         event.stopPropagation();
-                                        armTrack(track.id, !track.armed);
+                                        void executeAppAction({
+                                            type: 'armTrack',
+                                            payload: { trackId: track.id, armed: !track.armed },
+                                        });
                                     }}
                                 >
                                     <Circle

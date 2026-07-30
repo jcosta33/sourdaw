@@ -21,6 +21,20 @@ function guardedPayloadCase<ActionType extends RuntimeActionType>(
 
 const guardedPayloadContractCases = [
     guardedPayloadCase({
+        actionType: 'armTrack',
+        validPayload: { trackId: 'track-1', armed: true },
+        invalidPayloads: [
+            { trackId: '', armed: true },
+            { trackId: 'track-1', armed: 'yes' },
+            { trackId: 'track-1' },
+            { trackId: 'track-1', armed: true, extra: true },
+            { trackId: 'track-1', armed: true, midiInputTrackId: null },
+            { trackId: 'track-1', armed: true, expectedMidiInputTrackId: 'track-1' },
+            { trackId: 'track-1', armed: true, midiInputOwnerId: 'owner-1' },
+            { trackId: 'track-1', armed: true, expectedMidiInputOwnerId: 'owner-1' },
+        ],
+    }),
+    guardedPayloadCase({
         actionType: 'splitClip',
         validPayload: { clipId: 'clip-1', beat: 4 },
         invalidPayloads: [
@@ -117,6 +131,19 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
                 }
             }
         );
+    });
+
+    it('excludes internal MIDI routing metadata from the RuntimeAction type', () => {
+        type ArmTrackPayload = Extract<RuntimeAction, { type: 'armTrack' }>['payload'];
+        type ArmTrackHasMidiRoute = 'midiInputTrackId' extends keyof ArmTrackPayload ? true : false;
+        type ArmTrackHasExpectedMidiRoute = 'expectedMidiInputTrackId' extends keyof ArmTrackPayload ? true : false;
+        type ArmTrackHasMidiOwner = 'midiInputOwnerId' extends keyof ArmTrackPayload ? true : false;
+        type ArmTrackHasExpectedMidiOwner = 'expectedMidiInputOwnerId' extends keyof ArmTrackPayload ? true : false;
+
+        expectTypeOf<ArmTrackHasMidiRoute>().toEqualTypeOf<false>();
+        expectTypeOf<ArmTrackHasExpectedMidiRoute>().toEqualTypeOf<false>();
+        expectTypeOf<ArmTrackHasMidiOwner>().toEqualTypeOf<false>();
+        expectTypeOf<ArmTrackHasExpectedMidiOwner>().toEqualTypeOf<false>();
     });
 
     describe('removeTrack', () => {

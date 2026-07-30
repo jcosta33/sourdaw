@@ -236,6 +236,19 @@ function bridgeToolCall({
         return { type: 'soloTrack', payload: { trackId: args.trackId, soloed: args.soloed } };
     }
 
+    if (call.name === 'armTrack') {
+        const track = findTrack(context, args.trackId);
+        if (
+            !hasExactKeys(args, ['trackId', 'armed']) ||
+            !track ||
+            track.kind === 'vca' ||
+            typeof args.armed !== 'boolean'
+        ) {
+            return rejection(index, call.name, 'Expected an armable trackId and boolean armed value');
+        }
+        return { type: 'armTrack', payload: { trackId: track.id, armed: args.armed } };
+    }
+
     if (call.name === 'setTrackGain') {
         if (
             !hasExactKeys(args, ['trackId', 'gain']) ||
@@ -447,6 +460,7 @@ function getMutationKey(action: RuntimeAction): string | null {
         action.type === 'renameTrack' ||
         action.type === 'muteTrack' ||
         action.type === 'soloTrack' ||
+        action.type === 'armTrack' ||
         action.type === 'setTrackGain' ||
         action.type === 'setTrackPan' ||
         action.type === 'setTrackColor'
@@ -516,6 +530,7 @@ export function buildLlmActionUserMessage({ prompt, context }: { prompt: string;
             kind: track.kind,
             muted: track.muted,
             soloed: track.soloed,
+            armed: track.armed,
             gain: track.gain,
             pan: track.pan,
             outputId: track.outputId,

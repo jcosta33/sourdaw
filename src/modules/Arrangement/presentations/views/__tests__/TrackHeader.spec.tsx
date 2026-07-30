@@ -2,6 +2,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
+import { executeAppAction } from '#/modules/Command/useCases';
 
 // Import mocked functions
 import { TrackDummy } from '../../../__tests__/TrackDummy';
@@ -27,8 +28,8 @@ vi.mock('../../../useCases/toggleTrackState/selectTrack', () => ({
     selectTrack: vi.fn<(...args: unknown[]) => void>(),
 }));
 
-vi.mock('../../../useCases/recording/armTrack', () => ({
-    armTrack: vi.fn<(...args: unknown[]) => void>(),
+vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction: vi.fn(),
 }));
 
 vi.mock('../../../useCases/folder/toggleFolderCollapse', () => ({
@@ -156,6 +157,17 @@ describe('TrackHeader', () => {
         expect(screen.getByLabelText(/Arm/)).toBeInTheDocument();
     });
 
+    it('routes arm changes through the canonical AppAction write path', () => {
+        renderWithTooltip(<TrackHeader track={mockTrack} isSelected={false} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Arm Test Track' }));
+
+        expect(vi.mocked(executeAppAction)).toHaveBeenCalledWith({
+            type: 'armTrack',
+            payload: { trackId: 'track1', armed: true },
+        });
+    });
+
     it('should render folder track differently', () => {
         renderWithTooltip(<TrackHeader track={mockFolderTrack} isSelected={false} />);
         expect(screen.getByLabelText(/folder/i)).toBeInTheDocument();
@@ -201,13 +213,6 @@ describe('TrackHeader', () => {
         renderWithTooltip(<TrackHeader track={track} isSelected={false} />);
         fireEvent.click(screen.getByLabelText(/Input monitoring/));
         expect(setInputMonitoring).toHaveBeenCalledWith('track1', 'off');
-    });
-
-    it('toggles the arm state on click', async () => {
-        const { armTrack } = await import('../../../useCases/recording/armTrack');
-        renderWithTooltip(<TrackHeader track={mockTrack} isSelected={false} />);
-        fireEvent.click(screen.getByLabelText(/Arm/));
-        expect(armTrack).toHaveBeenCalledWith('track1', true);
     });
 
     it('toggles the mute state on click', async () => {

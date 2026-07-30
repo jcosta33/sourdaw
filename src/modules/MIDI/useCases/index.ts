@@ -147,6 +147,8 @@ export { setWebMidiRealtimeProcessor } from './webMidiInput/setWebMidiRealtimePr
 export { setWebMidiRuntimeEventBus } from './webMidiInput/setWebMidiRuntimeEventBus';
 export { setMidiInputTrack } from './webMidiInput/setMidiInputTrack';
 export { getMidiInputTrack } from './webMidiInput/getMidiInputTrack';
+export { getMidiInputTrackOwnerId } from './webMidiInput/getMidiInputTrackOwnerId';
+export { getMidiInputTrackRevision } from './webMidiInput/getMidiInputTrackRevision';
 export { selectMidiInput } from './webMidiInput/selectMidiInput';
 export { resetMidiState } from './webMidiInput/resetMidiState';
 export { panicLiveNotes } from './webMidiInput/panicLiveNotes';

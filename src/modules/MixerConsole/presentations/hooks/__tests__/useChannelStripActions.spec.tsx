@@ -15,7 +15,7 @@ const mocks = vi.hoisted(() => ({
     setTrackGain: vi.fn(),
     setTrackPan: vi.fn(),
     setTrackColor: vi.fn(),
-    armTrack: vi.fn(),
+    executeAppAction: vi.fn(),
     removeTrack: vi.fn(),
     renameTrack: vi.fn(),
     toggleVcaMembership: vi.fn(),
@@ -35,12 +35,15 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     setTrackGain: mocks.setTrackGain,
     setTrackPan: mocks.setTrackPan,
     setTrackColor: mocks.setTrackColor,
-    armTrack: mocks.armTrack,
     removeTrack: mocks.removeTrack,
     renameTrack: mocks.renameTrack,
     toggleVcaMembership: mocks.toggleVcaMembership,
     createAndAssignVcaGroup: mocks.createAndAssignVcaGroup,
     removeFromVca: mocks.removeFromVca,
+}));
+
+vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction: mocks.executeAppAction,
 }));
 
 vi.mock('#/modules/Automation/useCases', () => ({
@@ -135,12 +138,15 @@ describe('useChannelStripActions', () => {
         expect(mocks.soloTrack).not.toHaveBeenCalled();
     });
 
-    it('toggleArm flips the current armed flag', () => {
+    it('toggleArm routes the inverse armed flag through the canonical AppAction write path', () => {
         const { result } = renderHook(() => useChannelStripActions(makeTrack({ id: 'track-1', armed: true })));
 
         result.current.toggleArm();
 
-        expect(mocks.armTrack).toHaveBeenCalledWith('track-1', false);
+        expect(mocks.executeAppAction).toHaveBeenCalledWith({
+            type: 'armTrack',
+            payload: { trackId: 'track-1', armed: false },
+        });
     });
 
     it('toggleMonitoring dispatches toggleInputMonitoring for the track', () => {

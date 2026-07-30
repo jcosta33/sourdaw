@@ -272,7 +272,11 @@ const validators = {
     muteTrack: 'unchecked',
     soloTrack: 'unchecked',
     toggleSoloSafe: 'unchecked',
-    armTrack: 'unchecked',
+    armTrack: (param): param is PayloadOf<'armTrack'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['trackId', 'armed']) &&
+        isNonEmptyString(param.trackId) &&
+        typeof param.armed === 'boolean',
     reorderTrack: 'unchecked',
     setTrackGain: 'unchecked',
     setTrackPan: 'unchecked',

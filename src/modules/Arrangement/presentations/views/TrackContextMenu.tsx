@@ -4,6 +4,7 @@ import { DawContextMenuSurface } from '#/components/daw/DawContextMenuSurface';
 import { DawMenuInlineEditor } from '#/components/daw/DawMenuInlineEditor';
 import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
+import { executeAppAction } from '#/modules/Command/useCases';
 import { confirmUser } from '#/utils/Notification/confirmUser';
 import { cn } from '#/utils/Styles/cn';
 import { TRACK_COLOR_PRESETS } from '#/utils/UI/colorPresets';
@@ -18,7 +19,6 @@ import { freezeTrack } from '../../useCases/freezeBounce/freezeTrack';
 import { unfreezeTrack } from '../../useCases/freezeBounce/unfreezeTrack';
 import { importAudioClipToTrack } from '../../useCases/importAudioClipToTrack';
 import { importMidiFile } from '../../useCases/importMidiFile';
-import { armTrack } from '../../useCases/recording/armTrack';
 import { removeTrack } from '../../useCases/removeTrack';
 import { renameTrack } from '../../useCases/renameTrack';
 import { saveTrackAsTemplate } from '../../useCases/saveTrackAsTemplate';
@@ -123,7 +123,10 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
         {
             label: track.armed ? 'Disarm' : 'Arm for Recording',
             action: () => {
-                armTrack(track.id, !track.armed);
+                void executeAppAction({
+                    type: 'armTrack',
+                    payload: { trackId: track.id, armed: !track.armed },
+                });
                 close();
             },
         },

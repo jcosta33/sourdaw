@@ -1,7 +1,14 @@
 import { type ProjectContext } from '../../models/ProjectContext';
 
 type AgentReferenceCapability =
-    'track' | 'duplicable-track' | 'routable-source' | 'bus' | 'output' | 'device' | 'device-parameter';
+    | 'track'
+    | 'armable-track'
+    | 'duplicable-track'
+    | 'routable-source'
+    | 'bus'
+    | 'output'
+    | 'device'
+    | 'device-parameter';
 
 type ResolveAgentReferenceInput = {
     prompt: string;
@@ -89,6 +96,9 @@ function getTrackCandidates(
 ): ReferenceCandidate[] | null {
     if (capability === 'track') {
         return context.tracks;
+    }
+    if (capability === 'armable-track') {
+        return context.tracks.filter((track) => track.kind !== 'vca');
     }
     if (capability === 'duplicable-track') {
         return context.tracks.filter((track) => duplicableTrackKinds.has(track.kind));
