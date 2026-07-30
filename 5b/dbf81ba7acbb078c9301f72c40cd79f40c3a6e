@@ -1,0 +1,21 @@
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_66d4924c65dcd2::t_447188def4df89 335,339-341,344-347
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_66d4924c65dcd2::t_57f97af37838ce 47-50
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "5bdbf81ba7acbb078c9301f72c40cd79f40c3a6e",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
