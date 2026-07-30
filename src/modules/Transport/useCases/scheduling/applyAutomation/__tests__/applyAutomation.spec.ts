@@ -12,7 +12,7 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationValueAtBeat, isRecordingAutomation, resolveAutoMatchValue } from '#/modules/Automation/useCases';
-import { setFermenterMappedParam } from '#/modules/Fermenter/useCases';
+import { applyFermenterRuntimeParam, setFermenterMappedParam } from '#/modules/Fermenter/useCases';
 import { AUTOMATION_SLEW_ALPHA, slewStep } from '#/utils/automationSlew';
 
 import { applyAutomation } from '../applyAutomation';
@@ -86,6 +86,7 @@ vi.mock('#/modules/Fermenter/useCases', async (importOriginal) => {
     const mod = await importOriginal<typeof import('#/modules/Fermenter/useCases')>();
     return {
         ...mod,
+        applyFermenterRuntimeParam: vi.fn(),
         setFermenterMappedParam: vi.fn(),
     };
 });
@@ -166,27 +167,20 @@ describe('applyAutomation', () => {
         expect(scheduleTrackPan).toHaveBeenCalledWith('track-1', expectedPan, 5);
     });
 
-    it('routes a canonical Fermenter lane through the mapped use-case with the bare param id', () => {
+    it('routes a canonical Fermenter lane through the runtime-only mapped use-case', () => {
         seedDeviceLane({
             devices: [{ id: 'device-f1', type: 'fermenter', parameterValues: { filterCutoff: 0 } }],
             laneParameterId: 'device-f1:filterCutoff',
         });
 
-        // The per-param exponential slew only dispatches once the smoothed value
-        // moves past SLEW_EPSILON, so drive two ticks with a changing target.
-        vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(0).mockReturnValue(0.75);
+        vi.mocked(getAutomationValueAtBeat).mockReturnValue(1_000);
         applyAutomation(0);
-        applyAutomation(1);
 
-        // The Fermenter contract use-case receives the BARE camelCase id; it owns
-        // the camelCase→snake_case (`filterCutoff`→`cutoff`) DSP mapping that the
-        // UI bridge applies, so the param reaches the engine instead of hitting
-        // Rust's silent no-op arm.
-        expect(setFermenterMappedParam).toHaveBeenCalledTimes(1);
-        expect(setFermenterMappedParam).toHaveBeenCalledWith(
-            expect.objectContaining({ deviceId: 'device-f1', paramId: 'filterCutoff' })
+        expect(applyFermenterRuntimeParam).toHaveBeenCalledTimes(1);
+        expect(applyFermenterRuntimeParam).toHaveBeenCalledWith(
+            expect.objectContaining({ trackId: 'track-1', deviceId: 'device-f1', paramId: 'filterCutoff' })
         );
-        // It must NOT forward the prefixed id straight to the raw engine call.
+        expect(setFermenterMappedParam).not.toHaveBeenCalled();
         expect(updateDeviceParam).not.toHaveBeenCalled();
     });
 
@@ -203,8 +197,8 @@ describe('applyAutomation', () => {
         applyAutomation(0);
         applyAutomation(1);
 
-        expect(updateDeviceParam).toHaveBeenCalledTimes(1);
-        expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'device-eq1', 'eq-low-gain', expect.any(Number));
+        expect(updateDeviceParam).toHaveBeenCalledTimes(2);
+        expect(updateDeviceParam).toHaveBeenLastCalledWith('track-1', 'device-eq1', 'eq-low-gain', expect.any(Number));
         expect(setFermenterMappedParam).not.toHaveBeenCalled();
     });
 
@@ -539,7 +533,7 @@ describe('applyAutomation', () => {
             expect(updateMidiFxParam).toHaveBeenCalledWith('track-1', 'midi-fx-1', 'fx-param', expect.any(Number));
         });
 
-        it('does not dispatch on a fresh lane when the target already equals the seeded previous (within epsilon)', () => {
+        it('dispatches a fresh steady lane once, then suppresses unchanged values within epsilon', () => {
             mutableTrackStore.value = {
                 tracks: [
                     {
@@ -566,14 +560,13 @@ describe('applyAutomation', () => {
                     },
                 ],
             };
-            // First tick: laneSlew is empty so prev = `?? value` = value, and
-            // slewStep(value, value) === value → |smoothed - prev| == 0 <= epsilon,
-            // so the dispatch branch is skipped (the device path's symmetric guard).
             vi.mocked(getAutomationValueAtBeat).mockReturnValue(0.5);
 
             applyAutomation(0);
+            applyAutomation(1);
 
-            expect(updateMidiFxParam).not.toHaveBeenCalled();
+            expect(updateMidiFxParam).toHaveBeenCalledTimes(1);
+            expect(updateMidiFxParam).toHaveBeenCalledWith('track-1', 'midi-fx-1', 'fx-param', 0.5);
         });
     });
 
@@ -709,7 +702,7 @@ describe('applyAutomation', () => {
             seedRestorableDeviceLane('lane-restore-off');
             applyAutomation(0);
             applyAutomation(1);
-            expect(updateDeviceParam).toHaveBeenCalledTimes(1);
+            expect(updateDeviceParam).toHaveBeenCalledTimes(2);
 
             setAutomationMode('off');
             applyAutomation(2);

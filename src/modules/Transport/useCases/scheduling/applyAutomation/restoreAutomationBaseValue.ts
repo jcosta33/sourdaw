@@ -1,12 +1,16 @@
 import { resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
-import { getEffectiveGain, isDeviceParameterAutomatable } from '#/modules/Arrangement/useCases';
+import {
+    clampDeviceParameterValue,
+    getEffectiveGain,
+    isDeviceParameterAutomatable,
+} from '#/modules/Arrangement/useCases';
 import {
     scheduleTrackGain,
     scheduleTrackPan,
     updateDeviceParam,
     updateMidiFxParam,
 } from '#/modules/AudioEngine/useCases';
-import { setFermenterMappedParam } from '#/modules/Fermenter/useCases';
+import { applyFermenterRuntimeParam } from '#/modules/Fermenter/useCases';
 import {
     getDeviceAutomationParameterId,
     resolveDeviceAutomationTargetIndex,
@@ -97,7 +101,17 @@ export function restoreAutomationBaseValue({ lane, track, landTime }: RestoreAut
             return;
         }
         if (device.type === 'fermenter') {
-            setFermenterMappedParam({ deviceId: device.id, paramId, value: baseValue });
+            const boundedBaseValue = clampDeviceParameterValue({
+                deviceType: device.type,
+                paramId,
+                value: baseValue,
+            });
+            applyFermenterRuntimeParam({
+                trackId: targetOwner.trackId,
+                deviceId: targetOwner.deviceId,
+                paramId,
+                value: boundedBaseValue,
+            });
             return;
         }
         updateDeviceParam(targetOwner.trackId, targetOwner.deviceId, paramId, baseValue);

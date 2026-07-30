@@ -14,7 +14,7 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationValueAtBeat, isRecordingAutomation, resolveAutoMatchValue } from '#/modules/Automation/useCases';
-import { setFermenterMappedParam } from '#/modules/Fermenter/useCases';
+import { applyFermenterRuntimeParam } from '#/modules/Fermenter/useCases';
 import { dbToGain } from '#/utils/audioLevelLaw';
 import {
     getDeviceAutomationParameterId,
@@ -257,7 +257,9 @@ export function applyAutomation(
                     automationState.pluginParamSlew.set(lane.id, laneSlew);
                 }
 
-                const prev = laneSlew.get(device.id) ?? value;
+                const previousValue = laneSlew.get(device.id);
+                const isFirstApplication = previousValue === undefined;
+                const prev = previousValue ?? value;
                 const slewed = isDiscontinuity ? value : slewStep(prev, value, AUTOMATION_SLEW_ALPHA);
                 // Lane data is validated on load only for finiteness and
                 // `maxValue >= minValue` — never against the descriptor — so a
@@ -275,14 +277,18 @@ export function applyAutomation(
                     appliedAutomationBases.set(device.id, appliedByParameter);
                 }
                 appliedByParameter.set(paramId, smoothed);
-                if (isDiscontinuity || Math.abs(smoothed - prev) > SLEW_EPSILON) {
+                if (isFirstApplication || isDiscontinuity || Math.abs(smoothed - prev) > SLEW_EPSILON) {
                     if (device.type === 'fermenter') {
                         // Fermenter params use camelCase ids that must be mapped to
-                        // their snake_case DSP ids before reaching the WASM node —
-                        // the same translation the UI bridge applies. Route through
-                        // the public mapped use-case so automation and the UI share
-                        // one mapping path instead of hitting Rust's silent no-op arm.
-                        setFermenterMappedParam({ deviceId: device.id, paramId, value: smoothed });
+                        // their snake_case DSP ids before reaching the WASM node.
+                        // Runtime automation must not overwrite the persisted manual
+                        // base value or trigger project reconciliation.
+                        applyFermenterRuntimeParam({
+                            trackId: targetOwner.trackId,
+                            deviceId: targetOwner.deviceId,
+                            paramId,
+                            value: smoothed,
+                        });
                     } else {
                         updateDeviceParam(targetOwner.trackId, targetOwner.deviceId, paramId, smoothed);
                     }
@@ -317,7 +323,9 @@ export function applyAutomation(
                     laneSlew = new Map<string, number>();
                     automationState.pluginParamSlew.set(lane.id, laneSlew);
                 }
-                const prev = laneSlew.get(fx.id) ?? value;
+                const previousValue = laneSlew.get(fx.id);
+                const isFirstApplication = previousValue === undefined;
+                const prev = previousValue ?? value;
                 const slewedFxValue = isDiscontinuity ? value : slewStep(prev, value, AUTOMATION_SLEW_ALPHA);
                 const smoothed = clampDeviceParameterValue({
                     deviceType: fx.type,
@@ -325,7 +333,7 @@ export function applyAutomation(
                     value: slewedFxValue,
                 });
                 laneSlew.set(fx.id, smoothed);
-                if (isDiscontinuity || Math.abs(smoothed - prev) > SLEW_EPSILON) {
+                if (isFirstApplication || isDiscontinuity || Math.abs(smoothed - prev) > SLEW_EPSILON) {
                     updateMidiFxParam(lane.trackId, fx.id, lane.parameterId, smoothed);
                 }
                 break;
