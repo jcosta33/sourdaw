@@ -203,6 +203,7 @@ describe('bridgeGroundedLlmToolCalls', () => {
             'set time signature to 7/8, but cancel that',
             'set time signature to 7/8, but leave it unchanged',
             'set time signature to 7/8, on second thought',
+            'set time signature to 7/8. Actually, no.',
         ].map((prompt) => bridge([{ name: 'setTimeSignature', arguments: { numerator: 7, denominator: 8 } }], prompt));
         const unrelatedNegation = bridge(
             [{ name: 'setTimeSignature', arguments: { numerator: 7, denominator: 8 } }],
@@ -237,6 +238,16 @@ describe('bridgeGroundedLlmToolCalls', () => {
         const wrongSource = bridge(
             [{ name: 'setTimeSignature', arguments: { numerator: 7, denominator: 8 } }],
             'change the time signature from 3/4 to 7/8'
+        );
+        const staleCurrentValue = bridge(
+            [{ name: 'setTimeSignature', arguments: { numerator: 4, denominator: 4 } }],
+            'change the time signature currently at 4/4'
+        );
+        const numericNamedTrack = createTrack({ id: 'track-meter-name', name: '7/8' });
+        const projectRatio = bridge(
+            [{ name: 'setTimeSignature', arguments: { numerator: 7, denominator: 8 } }],
+            'set the time signature for track 7/8',
+            { ...projectContext, tracks: [...projectContext.tracks, numericNamedTrack] }
         );
         const unsupportedTextDestination = bridge(
             [{ name: 'setTimeSignature', arguments: { numerator: 4, denominator: 4 } }],
@@ -282,6 +293,8 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(textualAlternative.actions).toEqual([]);
         expect(chainedDestination.actions).toEqual([]);
         expect(wrongSource.actions).toEqual([]);
+        expect(staleCurrentValue.actions).toEqual([]);
+        expect(projectRatio.actions).toEqual([]);
         expect(unsupportedTextDestination.actions).toEqual([]);
         expect(unsupportedQualifiedTextDestination.actions).toEqual([]);
         expect(mismatched.actions).toEqual([]);

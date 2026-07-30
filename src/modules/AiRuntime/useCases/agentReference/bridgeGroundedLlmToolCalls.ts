@@ -89,7 +89,7 @@ type CancellationCue = {
 
 function getCancellationCues(text: string): CancellationCue[] {
     const patterns = [
-        /\b(?:never mind|on second thought)\b/gu,
+        /\b(?:never mind|on second thought|actually\s*,?\s+no)\b/gu,
         /\b(?:abort|cancel|disregard|scratch)\s+(?:it\b|(?:that|this)\b(?!\s+\p{L})|(?:the|that|this)\s+(?:\p{L}+\s+){0,2}(?:change|command|request)\b)/gu,
         /\bleave\s+(?:(?:it|that|this)\s+)?unchanged\b/gu,
         /\b(?:do not|don['’]t|don t|dont|never|not)\b(?:\s+\p{L}+){0,3}\s+(?:apply|change|do|execute|make)\s+(?:it\b|(?:that|this)\b(?!\s+\p{L})|(?:the|that|this)\s+(?:\p{L}+\s+){0,2}(?:change|command|request)\b)/gu,
@@ -560,6 +560,28 @@ function getConnectorBoundTimeSignatures(
     return boundMatches;
 }
 
+function isExplicitTimeSignatureDestination(actionScope: ActionPromptScope, match: RegExpExecArray): boolean {
+    const fromConnector = /\bfrom\b/iu.exec(actionScope.masked);
+    if (fromConnector && fromConnector.index < match.index) {
+        return false;
+    }
+    const normalizedPrefix = normalizePromptText(actionScope.masked.slice(0, match.index));
+    const normalizedIntent = normalizePromptText(actionScope.matchedIntentPhrase);
+    const intentIndex = normalizedPrefix.lastIndexOf(normalizedIntent);
+    if (intentIndex < 0) {
+        return false;
+    }
+    const intentSuffix = normalizedPrefix.slice(intentIndex + normalizedIntent.length).trim();
+    return (
+        intentSuffix.length === 0 ||
+        intentSuffix === 'to' ||
+        intentSuffix === 'as' ||
+        intentSuffix === 'at' ||
+        intentSuffix.endsWith(' to') ||
+        intentSuffix.endsWith(' as')
+    );
+}
+
 function validateTimeSignatureValue(
     valueRule: Extract<GroundingValueRule, { kind: 'time-signature' }>,
     assertedValue: unknown,
@@ -572,8 +594,7 @@ function validateTimeSignatureValue(
     }
     const matches = [...actionScope.masked.matchAll(/\b(\d{1,2})\s*\/\s*(\d{1,2})\b/gu)];
     let match = matches.length === 1 ? matches[0] : null;
-    const fromConnector = /\bfrom\b/iu.exec(actionScope.masked);
-    if (match && fromConnector && fromConnector.index < match.index) {
+    if (match && !isExplicitTimeSignatureDestination(actionScope, match)) {
         match = null;
     }
     if (matches.length === 2) {
