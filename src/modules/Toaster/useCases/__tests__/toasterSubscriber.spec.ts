@@ -10,6 +10,7 @@ vi.mock('../disposeToasterDevice', () => ({
 const hydrationMocks = vi.hoisted(() => ({
     getToasterDeviceControls: vi.fn(),
     readToasterStore: vi.fn<() => Record<string, { kit: unknown }> | undefined>(),
+    registerToasterDevice: vi.fn(),
     resolveEligibleDeviceWriteTarget: vi.fn(),
 }));
 
@@ -23,6 +24,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 }));
 
 vi.mock('../../stores/toasterStore', () => ({
+    registerToasterDevice: hydrationMocks.registerToasterDevice,
     toasterStore: {
         get value() {
             return hydrationMocks.readToasterStore();
