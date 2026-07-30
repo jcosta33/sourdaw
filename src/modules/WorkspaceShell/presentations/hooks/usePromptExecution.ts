@@ -4,9 +4,9 @@ import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
 import { llmStatusStore } from '#/modules/AiRuntime/stores';
 import {
-    parsePromptToActions,
+    executePlannedActions,
+    planPromptActions,
     isComplexPrompt,
-    getProjectContext,
     searchPresets,
     getAvailablePresets,
     resolvePresetActions,
@@ -14,7 +14,6 @@ import {
     notifyAiChange,
     isLlmAvailable,
     initEngine,
-    recordAiActionGroup,
 } from '#/modules/AiRuntime/useCases';
 import {
     clipSelectionStore,
@@ -22,7 +21,8 @@ import {
     defaultTrackState,
     trackStore,
 } from '#/modules/Arrangement/stores';
-import { executeAppAction, generateGroupId, describeAction } from '#/modules/Command/useCases';
+import { describeAction } from '#/modules/Command/useCases';
+import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
 const defaultLlmStatus: typeof llmStatusStore.value = { state: 'idle' };
 
@@ -65,9 +65,20 @@ type PromptPreview = {
     actionLabels: string[];
     rawText: string;
     requiresConfirmation: boolean;
+    projectRevision: string;
+    executionMode?: 'atomic';
     _jsonEditApplied?: boolean;
     _jsonEditSummaries?: string[];
     _jsonEditAttempted?: boolean;
+};
+
+type ExecutePromptActionGroupInput = {
+    actions: PromptAction[];
+    prompt: string;
+    projectRevision: string;
+    executionMode?: 'atomic';
+    signal?: AbortSignal;
+    successVerb?: 'Executed' | 'Confirmed';
 };
 
 // ── Hook return type ────────────────────────────────────────────────────
@@ -113,8 +124,19 @@ export const usePromptExecution = (): PromptExecutionState => {
     const [isFocused, setIsFocused] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
     const formRef = useRef<HTMLFormElement>(null);
-    const abortRef = useRef<AbortController | null>(null);
+    const operationRef = useRef<AbortController | null>(null);
     const pendingSubmitRef = useRef(false);
+    const previewRef = useRef<PromptPreview | null>(null);
+
+    const showPreview = (proposal: PromptPreview): void => {
+        previewRef.current = proposal;
+        setPreview(proposal);
+    };
+
+    const clearPreview = (): void => {
+        previewRef.current = null;
+        setPreview(null);
+    };
 
     const llmStatus = useStore(llmStatusStore, defaultLlmStatus);
     const trackState = useStore(trackStore, defaultTrackState);
@@ -166,6 +188,10 @@ export const usePromptExecution = (): PromptExecutionState => {
     // ── Voice injection (auto-submit after setting value) ────────────────
     useEffect(() => {
         return onPromptInjection((text) => {
+            if (previewRef.current || operationRef.current) {
+                notifyAiChange('Voice command not accepted while another AI command is pending or running.', []);
+                return;
+            }
             setValue((prev) => (prev ? `${prev} ${text}` : text));
             pendingSubmitRef.current = true;
             inputRef.current?.focus();
@@ -204,63 +230,75 @@ export const usePromptExecution = (): PromptExecutionState => {
     }, [value, preview, isFocused, isProcessing, trackState, clipSelection]);
 
     // ── Execute action group ────────────────────────────────────────────
-    const executeWithGroup = async (actions: PromptAction[], prompt: string): Promise<void> => {
-        const group = generateGroupId(prompt);
-        const executedLabels: Array<{ action: PromptAction; label: string }> = [];
-
-        for (const action of actions) {
-            await executeAppAction(action, { ...group, source: 'prompt' });
-            executedLabels.push({ action, label: describeAction(action) });
+    const executeWithGroup = async (input: ExecutePromptActionGroupInput): Promise<void> => {
+        const execution = await executePlannedActions(input);
+        if (execution.status === 'committed') {
+            return;
         }
-
-        if (actions.length > 0) {
-            recordAiActionGroup({
-                prompt,
-                actions: executedLabels.map((length) => ({
-                    kind: 'appAction' as const,
-                    actionType: length.action.type,
-                    label: length.label,
-                })),
-                groupId: group.groupId,
-            });
+        if (execution.status === 'invalidated' || execution.status === 'failed') {
+            notifyAiChange(`Command not executed: ${execution.reason}`, []);
+            return;
         }
+        if (execution.status === 'ambiguous') {
+            notifyAiChange(
+                `Command outcome is uncertain: ${execution.reason}. Inspect the project before retrying.`,
+                []
+            );
+            return;
+        }
+        if (execution.status === 'cancelled') {
+            notifyAiChange('Command cancelled before it committed. No project changes were applied.', []);
+            return;
+        }
+        notifyAiChange('No project changes were needed.', []);
     };
 
     // ── Execute preset directly ─────────────────────────────────────────
     const executePreset = async (result: PromptFuzzyResult): Promise<void> => {
+        if (operationRef.current || previewRef.current) {
+            return;
+        }
         const actions = resolvePresetActions({
             presetId: result.preset.id,
             context: presetContext,
         });
+        const projectRevision = captureProjectRevision();
         if (actions.length === 0) {
             return;
         }
 
         if (result.preset.isDestructive) {
-            setPreview({
+            showPreview({
                 actions,
                 actionLabels: actions.map((action) => describeAction(action)),
                 rawText: result.preset.label,
                 requiresConfirmation: true,
+                projectRevision,
             });
             setValue(result.preset.label);
             setFuzzyResults([]);
             return;
         }
 
+        const controller = new AbortController();
+        operationRef.current = controller;
         setFuzzyResults([]);
         setIsProcessing(true);
         try {
-            await executeWithGroup(actions, result.preset.label);
-            if (actions.length > 0) {
-                notifyAiChange(
-                    `Executed: ${result.preset.label}`,
-                    actions.map((alpha) => alpha.type)
-                );
-            }
+            await executeWithGroup({
+                actions,
+                prompt: result.preset.label,
+                projectRevision,
+                signal: controller.signal,
+            });
         } catch (error) {
-            logger.error(new Error('Preset execution failed', { cause: error }));
+            if (!controller.signal.aborted) {
+                logger.error(new Error('Preset execution failed', { cause: error }));
+            }
         } finally {
+            if (operationRef.current === controller) {
+                operationRef.current = null;
+            }
             setIsProcessing(false);
             setValue('');
         }
@@ -269,33 +307,36 @@ export const usePromptExecution = (): PromptExecutionState => {
     // ── Full prompt submission (for complex / LLM) ──────────────────────
     const handleSubmit = async (event: FormEvent): Promise<void> => {
         event.preventDefault();
-        if (!value.trim() || isProcessing) {
+        if (!value.trim() || operationRef.current || previewRef.current) {
             return;
         }
 
+        const controller = new AbortController();
+        operationRef.current = controller;
         setFuzzyResults([]);
         setIsProcessing(true);
-        const controller = new AbortController();
-        abortRef.current = controller;
         // §188.1 — track the clear-on-finish decision locally instead of
         // reading the `preview` state closure from `finally`. The closure
         // captures the preview value as of when handleSubmit started; any
-        // `setPreview(result)` earlier in the same invocation is invisible
+        // `showPreview(result)` earlier in the same invocation is invisible
         // to it, so the previous code cleared the input even when the user
         // had just been shown a confirmation preview.
         let shouldClearValue = true;
         try {
-            const context = getProjectContext();
-            const result = await parsePromptToActions(value, context, controller.signal);
+            const { result, projectRevision } = await planPromptActions({
+                prompt: value,
+                signal: controller.signal,
+            });
 
             if (controller.signal.aborted) {
                 return;
             }
 
             if (result.requiresConfirmation && result.actions.length > 0) {
-                setPreview({
+                showPreview({
                     ...result,
                     actionLabels: result.actions.map((action) => describeAction(action)),
+                    projectRevision,
                 });
                 setIsProcessing(false);
                 shouldClearValue = false;
@@ -307,18 +348,29 @@ export const usePromptExecution = (): PromptExecutionState => {
             } else if (result._jsonEditApplied) {
                 notifyAiChange(result._jsonEditSummaries?.join('. ') ?? `Executed: ${value}`, []);
             } else if (result.actions.length > 0) {
-                await executeWithGroup(result.actions, value);
-                notifyAiChange(
-                    `Executed: ${value}`,
-                    result.actions.map((alpha) => alpha.type)
-                );
+                await executeWithGroup({
+                    actions: result.actions,
+                    prompt: value,
+                    projectRevision,
+                    executionMode: result.executionMode,
+                    signal: controller.signal,
+                });
             } else {
                 notifyAiChange('No actions matched. Try rephrasing, or use the AI Chat panel for open-ended help.', []);
             }
         } catch (error) {
-            logger.error(new Error('Prompt execution failed', { cause: error }));
+            if (controller.signal.aborted) {
+                return;
+            }
+            if (error instanceof Error && error.name === 'AiProposalInvalidatedError') {
+                notifyAiChange(`Command not executed: ${error.message}`, []);
+            } else {
+                logger.error(new Error('Prompt execution failed', { cause: error }));
+            }
         } finally {
-            abortRef.current = null;
+            if (operationRef.current === controller) {
+                operationRef.current = null;
+            }
             setIsProcessing(false);
             if (shouldClearValue) {
                 setValue('');
@@ -327,26 +379,43 @@ export const usePromptExecution = (): PromptExecutionState => {
     };
 
     const confirmPreview = async (): Promise<void> => {
-        if (!preview) {
+        const proposal = previewRef.current;
+        if (!proposal || operationRef.current) {
             return;
         }
-        await executeWithGroup(preview.actions, value);
-        notifyAiChange(
-            `Confirmed: ${value}`,
-            preview.actions.map((alpha) => alpha.type)
-        );
-        setPreview(null);
-        setValue('');
+
+        const controller = new AbortController();
+        operationRef.current = controller;
+        clearPreview();
+        setIsProcessing(true);
+        try {
+            await executeWithGroup({
+                actions: proposal.actions,
+                prompt: proposal.rawText,
+                projectRevision: proposal.projectRevision,
+                executionMode: proposal.executionMode,
+                signal: controller.signal,
+                successVerb: 'Confirmed',
+            });
+        } finally {
+            if (operationRef.current === controller) {
+                operationRef.current = null;
+            }
+            setIsProcessing(false);
+            setValue('');
+        }
     };
 
     const cancelPreview = (): void => {
-        setPreview(null);
+        if (operationRef.current) {
+            operationRef.current.abort();
+            return;
+        }
+        clearPreview();
     };
 
     const cancelProcessing = (): void => {
-        abortRef.current?.abort();
-        abortRef.current = null;
-        setIsProcessing(false);
+        operationRef.current?.abort();
     };
 
     // ── Keyboard navigation ─────────────────────────────────────────────

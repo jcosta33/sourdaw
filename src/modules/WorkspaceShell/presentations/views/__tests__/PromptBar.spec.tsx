@@ -142,6 +142,7 @@ describe('PromptBar', () => {
                     actionLabels: ['Mute Track 1', 'Set BPM to 120'],
                     rawText: 'mute track 1 and set bpm to 120',
                     requiresConfirmation: true,
+                    projectRevision: 'revision-1',
                 },
             });
 
@@ -154,7 +155,13 @@ describe('PromptBar', () => {
 
         it('calls confirmPreview when the confirm button is clicked', () => {
             setPromptState({
-                preview: { actions: [], actionLabels: ['Do thing'], rawText: 'do thing', requiresConfirmation: true },
+                preview: {
+                    actions: [],
+                    actionLabels: ['Do thing'],
+                    rawText: 'do thing',
+                    requiresConfirmation: true,
+                    projectRevision: 'revision-1',
+                },
             });
 
             render(<PromptBar />);
@@ -165,7 +172,13 @@ describe('PromptBar', () => {
 
         it('calls cancelPreview when the cancel button is clicked', () => {
             setPromptState({
-                preview: { actions: [], actionLabels: ['Do thing'], rawText: 'do thing', requiresConfirmation: true },
+                preview: {
+                    actions: [],
+                    actionLabels: ['Do thing'],
+                    rawText: 'do thing',
+                    requiresConfirmation: true,
+                    projectRevision: 'revision-1',
+                },
             });
 
             render(<PromptBar />);
