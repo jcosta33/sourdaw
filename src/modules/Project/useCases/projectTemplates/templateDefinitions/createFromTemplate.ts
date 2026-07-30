@@ -9,6 +9,7 @@ import {
     startCrdtAutoSave,
 } from '#/modules/CrdtDocument/useCases';
 import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { projectStore } from '../../../stores/projectStore';
 import { setAutoSaveHandle } from '../../projectPersistence/helpers/autoSaveHandle';
@@ -18,17 +19,21 @@ import { stopActiveAutoSave } from '../../projectPersistence/helpers/stopActiveA
 
 import { templates } from './helpers';
 
-function restoreAudioGraph(templateId: string): void {
+function restoreAudioGraph(templateId: string): boolean {
+    let restored = true;
     try {
         resetAudioGraph();
     } catch (error) {
+        restored = false;
         logger.warn(`[createFromTemplate] Failed to reset graph while recovering "${templateId}":`, error);
     }
     try {
         ensureTrackStrips();
     } catch (error) {
+        restored = false;
         logger.warn(`[createFromTemplate] Failed to rebuild graph while recovering "${templateId}":`, error);
     }
+    return restored;
 }
 
 function restorePersistence(): void {
@@ -36,6 +41,35 @@ function restorePersistence(): void {
         setAutoSaveHandle(startCrdtAutoSave());
     } catch (error) {
         logger.warn('[createFromTemplate] Failed to restart autosave:', error);
+    }
+}
+
+async function completeCommittedTemplate(templateId: string): Promise<void> {
+    try {
+        ensureTrackStrips();
+    } catch (error) {
+        logger.warn(`[createFromTemplate] Failed to build committed graph for "${templateId}":`, error);
+        if (!restoreAudioGraph(templateId)) {
+            notifyUser('Project opened, but its audio graph could not be restored. Reload before playback.', 'warning');
+        }
+    }
+
+    // Workspace-ready means project truth is committed and graph construction
+    // has started. Device/content playable-readiness is a separate AudioEngine
+    // boundary and must be transition-scoped before it can gate transport.
+    const readyProject = projectStore.value;
+    if (readyProject) {
+        projectStore.set({ ...readyProject, loading: false, initialized: true });
+    }
+    restorePersistence();
+    try {
+        await compactProject();
+    } catch (error) {
+        logger.warn(`[createFromTemplate] Failed to persist initial snapshot for "${templateId}":`, error);
+        notifyUser(
+            'Project opened, but its initial snapshot could not be saved. Save a copy before closing.',
+            'warning'
+        );
     }
 }
 
@@ -104,29 +138,23 @@ export async function createFromTemplate(templateId: string): Promise<boolean> {
             // persistence — do not restart autosave or compact here.
             return false;
         }
-        // The template's project writes — tracks, selection, metadata — are now
-        // committed by the action above. Publish workspace-ready ONLY now, never
-        // during the async build (initProject deliberately leaves `initialized`
-        // false), so a track the user clicks the instant the workspace paints is
-        // not clobbered by a late template write (CC-10). Monotonic per #687: this
-        // is the single ready latch on the template path and is never un-set.
-        const readyProject = projectStore.value;
-        if (readyProject) {
-            projectStore.set({ ...readyProject, loading: false, initialized: true });
-        }
-        restorePersistence();
-        await compactProject();
+        await completeCommittedTemplate(templateId);
         return true;
     } catch (error) {
+        if (!transaction.isCurrent()) {
+            logger.info(`[createFromTemplate] superseded after a template failure for "${templateId}"`);
+            return false;
+        }
+        if (isAppActionCommittedError(error)) {
+            logger.warn(`[createFromTemplate] Template "${templateId}" committed with recovery errors:`, error);
+            await completeCommittedTemplate(templateId);
+            return true;
+        }
         if (graphWasReset) {
             restoreAudioGraph(templateId);
         }
         if (persistenceStopped) {
             restorePersistence();
-        }
-        if (isAppActionCommittedError(error)) {
-            logger.warn(`[createFromTemplate] Template "${templateId}" committed with recovery errors:`, error);
-            return true;
         }
         logger.warn(`[createFromTemplate] Failed to create template "${templateId}":`, error);
         return false;

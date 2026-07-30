@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
     isAppActionCommittedError: vi.fn(),
     flushAutomergeStorageWrites: vi.fn(),
     newProject: vi.fn(),
+    notifyUser: vi.fn(),
     projectActionHistoryToStore: vi.fn(),
     projectSet: vi.fn(),
     resetAudioGraph: vi.fn(),
@@ -47,6 +48,10 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
 vi.mock('#/modules/Transport/useCases', () => ({
     ensureTrackStrips: mocks.ensureTrackStrips,
     stopPlayback: mocks.stopPlayback,
+}));
+
+vi.mock('#/utils/Notification/notifyUser', () => ({
+    notifyUser: mocks.notifyUser,
 }));
 
 vi.mock('#/infra/store/storage/createAutomergeStorage', async (importOriginal) => {
@@ -134,6 +139,23 @@ describe('createFromTemplate', () => {
         expect(created).toBe(true);
     });
 
+    it('starts building the audio graph before publishing workspace-ready', async () => {
+        await expect(createFromTemplate('pop-song')).resolves.toBe(true);
+
+        expect(mocks.ensureTrackStrips).toHaveBeenCalledOnce();
+        const readyCallIndex = mocks.projectSet.mock.calls.findIndex(
+            (call) => (call[0] as { initialized?: boolean } | undefined)?.initialized === true
+        );
+        const actionOrder = mocks.executeAppAction.mock.invocationCallOrder[0];
+        const rebuildOrder = mocks.ensureTrackStrips.mock.invocationCallOrder[0];
+        const readyOrder = mocks.projectSet.mock.invocationCallOrder[readyCallIndex];
+        if (actionOrder === undefined || rebuildOrder === undefined || readyOrder === undefined) {
+            throw new Error('expected template action, graph rebuild, and ready latch');
+        }
+        expect(rebuildOrder).toBeGreaterThan(actionOrder);
+        expect(readyOrder).toBeGreaterThan(rebuildOrder);
+    });
+
     it('converts a rejected template action to a failed outcome', async () => {
         mocks.executeAppAction.mockRejectedValue(new Error('device setup failed'));
 
@@ -147,6 +169,34 @@ describe('createFromTemplate', () => {
             throw new Error('expected graph recovery calls');
         }
         expect(rebuildOrder).toBeGreaterThan(recoveryResetOrder);
+    });
+
+    it('keeps committed project truth usable when graph construction needs recovery', async () => {
+        mocks.ensureTrackStrips.mockImplementationOnce(() => {
+            throw new Error('graph construction failed');
+        });
+
+        await expect(createFromTemplate('pop-song')).resolves.toBe(true);
+
+        expect(mocks.resetAudioGraph).toHaveBeenCalledTimes(2);
+        expect(mocks.ensureTrackStrips).toHaveBeenCalledTimes(2);
+        expect(mocks.projectSet).toHaveBeenCalledWith(expect.objectContaining({ initialized: true, loading: false }));
+        expect(mocks.startCrdtAutoSave).toHaveBeenCalledOnce();
+        expect(mocks.compactProject).toHaveBeenCalledOnce();
+    });
+
+    it('warns when a committed project cannot recover its audio graph', async () => {
+        mocks.ensureTrackStrips.mockImplementation(() => {
+            throw new Error('graph construction failed');
+        });
+
+        await expect(createFromTemplate('pop-song')).resolves.toBe(true);
+
+        expect(mocks.notifyUser).toHaveBeenCalledWith(
+            'Project opened, but its audio graph could not be restored. Reload before playback.',
+            'warning'
+        );
+        expect(mocks.projectSet).toHaveBeenCalledWith(expect.objectContaining({ initialized: true, loading: false }));
     });
 
     it('recovers when initial graph reset throws after partial teardown', async () => {
@@ -182,8 +232,37 @@ describe('createFromTemplate', () => {
         mocks.isAppActionCommittedError.mockImplementation((error) => error === committedFailure);
 
         await expect(createFromTemplate('pop-song')).resolves.toBe(true);
-        expect(mocks.resetAudioGraph).toHaveBeenCalledTimes(2);
+        expect(mocks.resetAudioGraph).toHaveBeenCalledOnce();
         expect(mocks.ensureTrackStrips).toHaveBeenCalledOnce();
+        expect(mocks.projectSet).toHaveBeenCalledWith(expect.objectContaining({ initialized: true, loading: false }));
+        expect(mocks.startCrdtAutoSave).toHaveBeenCalledOnce();
+        expect(mocks.compactProject).toHaveBeenCalledOnce();
+    });
+
+    it('does not recover a committed failure after a successor owns the transition', async () => {
+        const committedFailure = new Error('macro history failed after commit');
+        mocks.executeAppAction.mockRejectedValue(committedFailure);
+        mocks.isAppActionCommittedError.mockImplementation((error) => error === committedFailure);
+        mocks.transactionIsCurrent.mockReturnValueOnce(true).mockReturnValue(false);
+
+        await expect(createFromTemplate('pop-song')).resolves.toBe(false);
+
+        expect(mocks.ensureTrackStrips).not.toHaveBeenCalled();
+        expect(mocks.projectSet).not.toHaveBeenCalled();
+        expect(mocks.startCrdtAutoSave).not.toHaveBeenCalled();
+        expect(mocks.compactProject).not.toHaveBeenCalled();
+    });
+
+    it('keeps a committed project usable when the initial snapshot fails', async () => {
+        mocks.compactProject.mockRejectedValue(new Error('storage unavailable'));
+
+        await expect(createFromTemplate('pop-song')).resolves.toBe(true);
+
+        expect(mocks.projectSet).toHaveBeenCalledWith(expect.objectContaining({ initialized: true, loading: false }));
+        expect(mocks.notifyUser).toHaveBeenCalledWith(
+            'Project opened, but its initial snapshot could not be saved. Save a copy before closing.',
+            'warning'
+        );
     });
 
     it('lets project-replacement templates own the CRDT authority swap', async () => {
