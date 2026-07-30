@@ -1,0 +1,37 @@
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_bc88af7d3b054c::t_5432976a0cb9bd 4-5,112-121,124,148,177,190,225,234,236,239,281,290,304,317,321,359,381,409,424,441,454-485,489,508,527,530,545-595
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_bc88af7d3b054c::t_db1f223f7d5b1e 480
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_bc88af7d3b054c::t_ec36941cd347a4 154,157,159,163,172,176-177,179
+src/modules/AiRuntime/useCases/agentReference/__tests__/resolveAgentReference.spec.ts
+  s_bc88af7d3b054c::t_8b088b2c44ed04 1-81
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_bc88af7d3b054c::t_8ffa8678f47708 1-91
+src/modules/AiRuntime/useCases/agentReference/resolveAgentReference.ts
+  s_bc88af7d3b054c::t_0b64d5342c7018 1-137
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_bc88af7d3b054c::t_526a731531bf61 8,17-18,122
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_bc88af7d3b054c::t_54296940008b12 5-14,19,26-38,44,57,67,80,93,100,113,126,139,152,159-166,183,193,207,221,231-234
+src/modules/Command/useCases/getExecutableAppActionTargetRules.ts
+  s_bc88af7d3b054c::t_43a2c7d852c1de 1-9
+src/modules/Command/useCases/index.ts
+  s_bc88af7d3b054c::t_baaa148bfe7d39 10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "ce83880e842145295e1d422a0f1adc97b692b037",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
