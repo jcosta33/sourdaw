@@ -47,6 +47,7 @@ describe('captureProjectRevision', () => {
 
     it('canonicalizes document and head ordering', () => {
         vi.spyOn(automergeRepository, 'getDocumentIdentityEpoch').mockReturnValue(7);
+        vi.spyOn(automergeRepository, 'getMutationEpoch').mockReturnValue(11);
         vi.spyOn(automergeRepository, 'getDocIds').mockReturnValue(['zeta', 'root', 'alpha']);
         vi.spyOn(automergeRepository, 'getHeads').mockImplementation((docId) => {
             if (docId === 'zeta') {
@@ -60,12 +61,38 @@ describe('captureProjectRevision', () => {
 
         expect(JSON.parse(captureProjectRevision())).toEqual({
             documentIdentityEpoch: 7,
+            mutationEpoch: 11,
             documents: [
                 { docId: 'alpha', heads: ['head-c'] },
                 { docId: 'root', heads: ['head-d'] },
                 { docId: 'zeta', heads: ['head-a', 'head-b'] },
             ],
         });
+    });
+
+    it('does not recreate an old token after restoring identical document heads', () => {
+        const rootBytes = automergeRepository.saveDoc('root');
+        if (!rootBytes) {
+            throw new Error('Expected the root document to exist');
+        }
+        const initialRevision = captureProjectRevision();
+
+        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.tempo = 128;
+        });
+        automergeRepository.restoreSnapshot(
+            new Map([
+                [
+                    'root',
+                    {
+                        state: 'present' as const,
+                        bytes: rootBytes,
+                    },
+                ],
+            ])
+        );
+
+        expect(captureProjectRevision()).not.toBe(initialRevision);
     });
 
     it('distinguishes replacement projects with equivalent empty roots', () => {

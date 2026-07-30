@@ -2,7 +2,7 @@ import { automergeRepository } from '../repositories/automergeRepository';
 
 /**
  * Capture the complete local Automerge authority used to plan an AI command.
- * The identity epoch distinguishes replacement projects with equivalent heads.
+ * Monotonic mutation and identity epochs prevent exact-state and project-replacement ABA.
  */
 export function captureProjectRevision(): string {
     const documents = automergeRepository
@@ -15,6 +15,7 @@ export function captureProjectRevision(): string {
 
     return JSON.stringify({
         documentIdentityEpoch: automergeRepository.getDocumentIdentityEpoch(),
+        mutationEpoch: automergeRepository.getMutationEpoch(),
         documents,
     });
 }
