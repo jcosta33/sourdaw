@@ -1,0 +1,31 @@
+crates/daw-dsp/src/fermenter/synth.rs
+  s_ac9b259eab20ba::t_17e2c95848c5cd 752,1282-1321,1329
+  s_ac9b259eab20ba::t_e67d97de286cfd 94,161,179-182,383,516-517,526,528-529,535,538,550,553-554,559-570,600-601,604-608,613,616,707-751
+  s_ac9b259eab20ba::t_67003a8fbc7ba3 758,1258-1281,1322-1328
+  s_ac9b259eab20ba::t_1948e8ad4aaab3 1330
+crates/daw-dsp/src/fermenter/effects.rs
+  s_ac9b259eab20ba::t_67003a8fbc7ba3 412,834-972
+  s_ac9b259eab20ba::t_e67d97de286cfd 107-118,257-266,405-411
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_ac9b259eab20ba::t_9c03e7aebc9aa1 1,574-656
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_ac9b259eab20ba::t_b99c6b329d5974 1,5-87
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_ac9b259eab20ba::t_64ada14ef11345 1,574-656
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "253bb584aa4d9f55184aa03ce0395415b107424c",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
