@@ -1,0 +1,105 @@
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_66d4924c65dcd2::t_a414c5626142d2 994
+  s_66d4924c65dcd2::t_289c382648f993 316-385
+  s_66d4924c65dcd2::t_f31bdf671e89ac 20
+src/modules/AudioEngine/repositories/deviceStrategy/nativeDspDeviceFactories.ts
+  s_66d4924c65dcd2::t_5781f22e21d90c 2
+  s_66d4924c65dcd2::t_71a73da2d3ce5d 52-55
+crates/daw-dsp/tests/crumbs_render_signal.rs
+  s_66d4924c65dcd2::t_c8b9434c6a9d46 165-166
+  s_66d4924c65dcd2::t_1944919536447d 1-164,167-227
+crates/daw-dsp/AGENTS.md
+  s_66d4924c65dcd2::t_c499a0361c78ee 3
+  s_66d4924c65dcd2::t_3da2e1be054afb 8
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_66d4924c65dcd2::t_171d6083e2232e 42,53-57
+src-tauri/src/commands/crumbs.rs
+  s_66d4924c65dcd2::t_538460fca2eeef 732-734,736-737
+  s_66d4924c65dcd2::t_e6df405a4b8398 439-441
+  s_66d4924c65dcd2::t_34ed132e88f113 20
+src/modules/Arrangement/models/PluginDescriptors/CrumbsDescriptor.ts
+  s_66d4924c65dcd2::t_5c04cf019ffa2f 14-23
+AGENTS.md
+  s_66d4924c65dcd2::t_c0e698bd04ceda 30
+src/modules/Crumbs/useCases/__tests__/prepareCrumbsEngine.spec.ts
+  s_66d4924c65dcd2::t_b2d090177faca5 1-155
+  s_66d4924c65dcd2::t_6fa8ba843c7980 156-158
+src/modules/AudioEngine/repositories/deviceStrategy/__tests__/offlineDeviceCoverage.spec.ts
+  s_66d4924c65dcd2::t_ca334e7fd37601 38-40
+  s_66d4924c65dcd2::t_869d379f3ca445 127-134,139
+crates/daw-dsp/src/crumbs/types.rs
+  s_66d4924c65dcd2::t_6aada703faaca1 313-360
+src/modules/AudioEngine/services/crumbsProcessor.ts
+  s_66d4924c65dcd2::t_abc7faaa11b1c6 144-147,149
+  s_66d4924c65dcd2::t_5b19afa02a7225 1-23,25-38,40-143,148,150-238
+  s_66d4924c65dcd2::t_9455269ec6e8cb 24
+  s_66d4924c65dcd2::t_68b2cf1aedbbb0 39
+src/modules/Crumbs/repositories/sampleTransfer/decodeCrumbsSampleFile.ts
+  s_66d4924c65dcd2::t_d33db726863ebb 1-46
+crates/daw-dsp/src/crumbs/mod.rs
+  s_66d4924c65dcd2::t_6fef1f0594e688 23-166
+src/modules/Crumbs/repositories/sampleTransfer/getCrumbsDecodeContext.ts
+  s_66d4924c65dcd2::t_9ae5ac52c1bedb 1-15
+src/modules/AudioEngine/repositories/deviceStrategy/nodelessOfflineDeviceTypes.ts
+  s_66d4924c65dcd2::t_944ef61bb9a52f 24-25
+src/modules/AudioEngine/engine/audioDeviceRuntimeSink.ts
+  s_66d4924c65dcd2::t_53b158b61713da 74-88
+  s_66d4924c65dcd2::t_4df87e34aab5f6 108
+src/modules/AudioEngine/repositories/deviceStrategy/setupDeviceStrategies.ts
+  s_66d4924c65dcd2::t_0910a120d25507 20-27,31,33
+  s_66d4924c65dcd2::t_01ac0f4436f50f 28-30
+crates/daw-dsp/tests/device_process_rt.rs
+  s_66d4924c65dcd2::t_d9f114839cf17f 206-247
+  s_66d4924c65dcd2::t_ba5dbcc9b15347 205
+src/modules/AudioEngine/models/AudioEngineState.ts
+  s_66d4924c65dcd2::t_4eabd0dba216ed 217-236
+src/modules/AudioEngine/repositories/deviceStrategy/unsupportedDeviceTypeError.ts
+  s_66d4924c65dcd2::t_536f7edac20847 8-15
+src/modules/AudioEngine/repositories/deviceStrategy/__tests__/setupDeviceStrategies.spec.ts
+  s_66d4924c65dcd2::t_17c20e8041e7be 20-21,23-25
+  s_66d4924c65dcd2::t_66927bf757e7ab 99-119
+src/modules/AudioEngine/useCases/__tests__/buildDeviceChain.spec.ts
+  s_66d4924c65dcd2::t_a9f6f71a54b39c 135-136,151,157,159-160,165,169-170
+  s_66d4924c65dcd2::t_e39dde176ea8a7 212,214-215,220-221,227,231-239,243,253,255,258-261
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_66d4924c65dcd2::t_c7c3f9746b1b63 341-379
+src/modules/Crumbs/useCases/prepareCrumbsEngine.ts
+  s_66d4924c65dcd2::t_103c5df5ce7bd9 1-84
+src/app/bootstrap.ts
+  s_66d4924c65dcd2::t_73bf1cf2776563 77
+  s_66d4924c65dcd2::t_f3c5368574187e 306-308,310-314
+src/modules/AudioEngine/engine/CrumbsNode.ts
+  s_66d4924c65dcd2::t_d85128bccd2fe2 1-168
+src/modules/Crumbs/useCases/index.ts
+  s_66d4924c65dcd2::t_f480454fe1fb53 5
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_66d4924c65dcd2::t_ea69d43dca0e97 1,71-155,647-665,667-677,696-697,713-777,801-811
+public/wasm/daw-dsp/daw_dsp.js
+  s_66d4924c65dcd2::t_54bc97bdbc4022 140-292,1613-1615
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_66d4924c65dcd2::t_b8dd820ab67a6e 1,5-23,25-35,54-55,71-135,159-169
+public/wasm/manifest.json
+  s_66d4924c65dcd2::t_a470b154270405 12,15-18,20-21
+src/modules/AudioEngine/useCases/__tests__/exportStems.spec.ts
+  s_66d4924c65dcd2::t_e5e37958bcde26 865
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_66d4924c65dcd2::t_976a6e5a049af4 1,71-155,647-665,667-677,696-697,713-777,801-811
+src/modules/AudioEngine/wasm/daw_dsp.js
+  s_66d4924c65dcd2::t_112dcae0cdc5b6 317-469,1790-1792
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "acca3aa85f6314baccf3e806d4d5897667f51aa0",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
