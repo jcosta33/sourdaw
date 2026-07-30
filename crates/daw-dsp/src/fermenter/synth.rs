@@ -91,6 +91,7 @@ pub struct MasterSynth {
     sample_rate: f32,
     last_output_quiet: bool,
     tail_samples_remaining: u64,
+    wake_requested: bool,
 }
 
 impl MasterSynth {
@@ -157,6 +158,7 @@ impl MasterSynth {
             sample_rate,
             last_output_quiet: true,
             tail_samples_remaining: 0,
+            wake_requested: false,
         }
     }
 
@@ -172,6 +174,10 @@ impl MasterSynth {
                 return;
             }
             _ => {}
+        }
+
+        if Self::parameter_can_reveal_dsp_state(name) {
+            self.wake_requested = true;
         }
 
         // Global effect params — handled at MasterSynth level
@@ -374,7 +380,7 @@ impl MasterSynth {
     /// `left` and `right` are output buffers (will be overwritten).
     pub fn process_block(&mut self, left: &mut [f32], right: &mut [f32], events: &[MidiEvent]) {
         let block_size = left.len().min(right.len());
-        let had_active_voices = self.active_voice_count() > 0;
+        let had_active_voices = self.renderable_active_voice_count() > 0;
 
         // Clear output
         left[..block_size].fill(0.0);
@@ -507,6 +513,8 @@ impl MasterSynth {
             );
         }
 
+        let internal_output_quiet = Self::block_is_quiet(&left[..block_size], &right[..block_size]);
+
         // Apply master gain
         if (master_gain - 1.0).abs() > 0.001 {
             for i in 0..block_size {
@@ -515,18 +523,19 @@ impl MasterSynth {
             }
         }
 
+        let audible_output_quiet = Self::block_is_quiet(&left[..block_size], &right[..block_size]);
         self.update_lifecycle_after_block(
-            &left[..block_size],
-            &right[..block_size],
+            internal_output_quiet && audible_output_quiet,
+            block_size,
             had_active_voices,
         );
     }
 
     pub fn lifecycle(&self) -> ProcessLifecycle {
-        if self.active_voice_count() > 0 {
+        if self.renderable_active_voice_count() > 0 {
             return ProcessLifecycle::Continue;
         }
-        if !self.last_output_quiet {
+        if self.wake_requested || !self.last_output_quiet {
             return ProcessLifecycle::ContinueIfNotQuiet;
         }
         if self.tail_samples_remaining > 0 {
@@ -538,15 +547,27 @@ impl MasterSynth {
     pub fn advance_silent_block(&mut self) {
         self.dist_drive.tick();
         self.dist_mix.tick();
-        self.comp_mix.tick();
+        let comp_mix = self.comp_mix.tick();
         self.delay_feedback.tick();
         self.delay_mix.tick();
-        self.chorus_mix.tick();
-        self.phaser_mix.tick();
+        let chorus_mix = self.chorus_mix.tick();
+        let phaser_mix = self.phaser_mix.tick();
         self.master_gain.tick();
         self.stereo_width.tick();
         self.reverb_mix.tick();
         self.reverb_decay.tick();
+        if comp_mix > 0.001 {
+            self.compressor
+                .advance_silence(RENDER_QUANTUM_FRAMES as usize, self.comp_release, self.sample_rate);
+        }
+        if chorus_mix > 0.001 {
+            self.chorus
+                .advance_silence(RENDER_QUANTUM_FRAMES as usize, self.chorus_rate);
+        }
+        if phaser_mix > 0.001 {
+            self.phaser
+                .advance_silence(RENDER_QUANTUM_FRAMES as usize, self.phaser_rate);
+        }
         let any_solo = self.layers[..self.num_active_layers]
             .iter()
             .any(|layer| layer.solo);
@@ -576,24 +597,23 @@ impl MasterSynth {
         gap
     }
 
-    fn update_lifecycle_after_block(
-        &mut self,
-        left: &[f32],
-        right: &[f32],
-        had_active_voices: bool,
-    ) {
-        let output_quiet = left
+    fn block_is_quiet(left: &[f32], right: &[f32]) -> bool {
+        left
             .iter()
             .chain(right)
-            .all(|sample| sample.is_finite() && sample.abs() <= OUTPUT_QUIET_THRESHOLD);
-        if had_active_voices || self.active_voice_count() > 0 || !output_quiet {
+            .all(|sample| sample.is_finite() && sample.abs() <= OUTPUT_QUIET_THRESHOLD)
+    }
+
+    fn update_lifecycle_after_block(&mut self, output_quiet: bool, frames: usize, had_active_voices: bool) {
+        if had_active_voices || self.renderable_active_voice_count() > 0 || !output_quiet {
             self.tail_samples_remaining = self.configured_tail_gap_samples();
         } else {
             self.tail_samples_remaining = self
                 .tail_samples_remaining
-                .saturating_sub(left.len().min(right.len()) as u64);
+                .saturating_sub(frames as u64);
         }
         self.last_output_quiet = output_quiet;
+        self.wake_requested = false;
     }
 
     fn apply_midi_event(&mut self, event: &MidiEvent) {
@@ -684,11 +704,58 @@ impl MasterSynth {
             .map(|l| l.active_voice_count())
             .sum()
     }
+
+    fn renderable_active_voice_count(&self) -> usize {
+        let any_solo = self.layers[..self.num_active_layers].iter().any(|layer| layer.solo);
+        self.layers[..self.num_active_layers]
+            .iter()
+            .filter(|layer| !layer.muted && (!any_solo || layer.solo))
+            .map(|layer| layer.active_voice_count())
+            .sum()
+    }
+
+    fn parameter_can_reveal_dsp_state(name: &str) -> bool {
+        matches!(
+            name,
+            "reverb_type"
+                | "reverb_mix"
+                | "reverb_decay"
+                | "eq_low_freq"
+                | "eq_low_gain"
+                | "eq_low_q"
+                | "eq_mid_freq"
+                | "eq_mid_gain"
+                | "eq_mid_q"
+                | "eq_high_freq"
+                | "eq_high_gain"
+                | "eq_high_q"
+                | "delay_time"
+                | "delay_feedback"
+                | "delay_mix"
+                | "chorus_rate"
+                | "chorus_depth"
+                | "chorus_mix"
+                | "phaser_rate"
+                | "phaser_depth"
+                | "phaser_mix"
+                | "dist_drive"
+                | "dist_tone"
+                | "dist_mix"
+                | "comp_threshold"
+                | "comp_ratio"
+                | "comp_attack"
+                | "comp_release"
+                | "comp_mix"
+                | "master_gain"
+                | "stereo_width"
+        )
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{MasterSynth, MidiEvent};
+    use crate::primitives::ProcessLifecycle;
 
     fn block_energy(left: &[f32], right: &[f32]) -> f32 {
         left.iter()
@@ -1186,6 +1253,79 @@ mod tests {
             .map(|(a, b)| a - b)
             .collect();
         rms(&differences)
+    }
+
+    #[test]
+    fn muted_release_can_sleep_and_unmute_wakes_the_frozen_voice() {
+        let mut synth = MasterSynth::new(48_000.0, 8);
+        let mut left = [0.0; 128];
+        let mut right = [0.0; 128];
+        synth.note_on(60, 100);
+        synth.process_block(&mut left, &mut right, &[]);
+        synth.note_off(60);
+        synth.set_param("layer_mute", 1.0);
+
+        for _ in 0..4_000 {
+            synth.process_block(&mut left, &mut right, &[]);
+            if synth.lifecycle() == ProcessLifecycle::Sleep {
+                break;
+            }
+        }
+
+        assert!(synth.active_voice_count() > 0);
+        assert_eq!(synth.lifecycle(), ProcessLifecycle::Sleep);
+        synth.set_param("layer_mute", 0.0);
+        assert_eq!(synth.lifecycle(), ProcessLifecycle::Continue);
+    }
+
+    #[test]
+    fn solo_exclusion_can_sleep_and_unsolo_wakes_the_frozen_voice() {
+        let mut synth = MasterSynth::new(48_000.0, 8);
+        let mut left = [0.0; 128];
+        let mut right = [0.0; 128];
+        synth.set_param("num_layers", 2.0);
+        synth.note_on(60, 100);
+        synth.process_block(&mut left, &mut right, &[]);
+        synth.note_off(60);
+        synth.set_param("active_layer", 1.0);
+        synth.set_param("layer_solo", 1.0);
+
+        for _ in 0..4_000 {
+            synth.process_block(&mut left, &mut right, &[]);
+            if synth.lifecycle() == ProcessLifecycle::Sleep {
+                break;
+            }
+        }
+
+        assert!(synth.active_voice_count() > 0);
+        assert_eq!(synth.lifecycle(), ProcessLifecycle::Sleep);
+        synth.set_param("layer_solo", 0.0);
+        assert_eq!(synth.lifecycle(), ProcessLifecycle::Continue);
+    }
+
+    #[test]
+    fn lifecycle_observes_internal_audio_before_zero_master_gain() {
+        let mut synth = MasterSynth::new(48_000.0, 8);
+        let mut left = [0.0; 128];
+        let mut right = [0.0; 128];
+        synth.master_gain.set(0.0);
+        synth.master_gain.snap();
+        synth.note_on(60, 100);
+
+        synth.process_block(&mut left, &mut right, &[]);
+
+        assert!(left.iter().chain(&right).all(|sample| *sample == 0.0));
+        assert!(!synth.last_output_quiet);
+    }
+
+    #[test]
+    fn state_revealing_control_change_wakes_a_sleeping_processor() {
+        let mut synth = MasterSynth::new(48_000.0, 8);
+        assert_eq!(synth.lifecycle(), ProcessLifecycle::Sleep);
+
+        synth.set_param("master_gain", 0.0);
+
+        assert_eq!(synth.lifecycle(), ProcessLifecycle::ContinueIfNotQuiet);
     }
 
     /// audit MD-2 (review round 1) — the audible half of the targeting fix.
