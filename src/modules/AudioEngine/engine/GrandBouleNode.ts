@@ -12,6 +12,7 @@
  * MIDI and control messages are routed to the Worker, not the worklet.
  */
 
+import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 import { createReadyHandshake, ensureWorkletRegistered } from '#/infra/audioWorklet/workletInitShared';
 
 import grandBouleProcessorUrl from '../services/grandBouleProcessor.ts?worker&url';
@@ -83,17 +84,24 @@ export function isGrandBouleDevice(deviceType: string): boolean {
     return deviceType === 'grand-boule';
 }
 
-export async function createGrandBouleNode(ctx: BaseAudioContext, wasmUrl?: string): Promise<GrandBouleNodeResult> {
+export async function createGrandBouleNode(
+    ctx: BaseAudioContext,
+    wasmUrl?: string,
+    signal?: AbortSignal
+): Promise<GrandBouleNodeResult> {
     // Fail fast before doing any AudioContext / worklet / WASM work when
     // SharedArrayBuffer is unavailable. The typed error is caught in
     // `buildDeviceChain` and mapped to a user-visible notification.
     requireSharedArrayBuffer('Grand Boule');
 
     if (ctx instanceof AudioContext && ctx.state === 'suspended') {
-        await ctx.resume();
+        await raceAbortSignal(ctx.resume(), signal);
     }
 
-    await ensureWorkletRegistered(ctx, grandBouleProcessorUrl);
+    await raceAbortSignal(ensureWorkletRegistered(ctx, grandBouleProcessorUrl), signal);
+    const wasmBytes = await raceAbortSignal(fetchGrandBouleWasm(wasmUrl ?? DEFAULT_WASM_URL), signal);
+
+    signal?.throwIfAborted();
 
     const node = new AudioWorkletNode(ctx, 'grand-boule-processor', {
         numberOfInputs: 0,
@@ -126,8 +134,7 @@ export async function createGrandBouleNode(ctx: BaseAudioContext, wasmUrl?: stri
     };
     const readyPromise = handshake.promise;
 
-    // Send WASM bytes + SAB to the engine worker.
-    const wasmBytes = await fetchGrandBouleWasm(wasmUrl ?? DEFAULT_WASM_URL);
+    // Send the preloaded WASM bytes + SAB to the engine worker.
     const copy = wasmBytes.slice(0);
     engineWorker.postMessage({ type: 'init', wasmBytes: copy, sab, sampleRate: ctx.sampleRate }, [copy]);
 

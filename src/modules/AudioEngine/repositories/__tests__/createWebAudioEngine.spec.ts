@@ -204,7 +204,9 @@ describe('AudioEngine', () => {
 
     it('should load worklets on initialize', async () => {
         await engine.initialize();
-        expect(mockCtx.audioWorklet.addModule).toHaveBeenCalledTimes(5);
+        // sidechain-compressor, native-plugin-host, native-plugin-bridge,
+        // recording, metering, bitcrusher-rate.
+        expect(mockCtx.audioWorklet.addModule).toHaveBeenCalledTimes(6);
     });
 
     it('should manage master gain', () => {
@@ -556,8 +558,8 @@ describe('AudioEngine', () => {
             const callsBefore = mockCtx.audioWorklet.addModule.mock.calls.length;
             await Promise.all([engine.initialize(), engine.initialize()]);
             const callsAfter = mockCtx.audioWorklet.addModule.mock.calls.length;
-            // Five modules loaded exactly once despite two callers.
-            expect(callsAfter - callsBefore).toBe(5);
+            // Six modules loaded exactly once despite two callers.
+            expect(callsAfter - callsBefore).toBe(6);
         });
     });
 
@@ -618,8 +620,8 @@ describe('AudioEngine', () => {
 
             const initialization = engine.initialize();
             await engine.dispose();
-            workletLoad.resolve();
             await expect(initialization).rejects.toThrow('Audio engine was disposed during initialization');
+            workletLoad.resolve();
 
             expect(engine.getHealth().workletReady).toBe(false);
             expect(engine.getDiagnostics().graph.masterMeterWorklets).toBe(0);

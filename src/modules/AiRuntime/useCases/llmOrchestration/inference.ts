@@ -3,6 +3,7 @@ import { logger } from '#/infra/logger/appLogger';
 
 import { isAiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
 import { createAiRuntimeError } from '../../errors/AiRuntimeError';
+import { isNativeToolCallingProtocolError } from '../../errors/NativeToolCallingProtocolError';
 import { isToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedError';
 import { type RunnableAiBackend } from '../../models/LlmOrchestrationTypes';
 import { WEBLLM_MODEL_ID } from '../../models/ModelInfo';
@@ -43,7 +44,10 @@ async function waitForInference<TResult>(inference: Promise<TResult>, signal?: A
 
     return new Promise<TResult>((resolve, reject) => {
         function onAbort(): void {
-            reject(createToolPlanningAbortError());
+            // Let an already-settled inference promise win this race.
+            queueMicrotask(() => {
+                reject(createToolPlanningAbortError());
+            });
         }
 
         async function settleInference(): Promise<void> {
@@ -111,10 +115,13 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                 return { status: 'complete', toolCalls: results };
             }
         } catch (error) {
-            if (signal?.aborted) {
-                throw createToolPlanningAbortError();
+            if (isToolPlanningRejectedError(error) || isNativeToolCallingProtocolError(error)) {
+                throw error;
             }
-            if (isToolPlanningRejectedError(error)) {
+            if (signal?.aborted) {
+                if (error instanceof Error && error.name === 'AbortError') {
+                    throw createToolPlanningAbortError();
+                }
                 throw error;
             }
             const msg = error instanceof Error ? error.message : String(error);
@@ -177,6 +184,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
         const previousStatus = llmStatusStore.value;
         llmStatusStore.set({ state: 'generating' });
 
+        const failedBackends = new Set<RunnableAiBackend>();
         let lastError: Error | null = null;
 
         for (const backend of chain) {
@@ -232,20 +240,27 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     llmStatusStore.set({ state: 'idle' });
                     throw error;
                 }
+                const isTerminalModelRejection = isToolPlanningRejectedError(error);
+                const isExplicitAbort = error instanceof Error && error.name === 'AbortError';
+                if (!isTerminalModelRejection && !isExplicitAbort) {
+                    failedBackends.add(backend);
+                }
                 if (signal?.aborted) {
                     const currentPreference = aiBackendPreferenceStore.value ?? 'auto';
-                    if (
+                    const previousBackendFailed =
+                        previousStatus?.state === 'ready' && failedBackends.has(previousStatus.backend);
+                    const preferenceChangedBackend =
                         currentPreference !== 'auto' &&
                         previousStatus?.state === 'ready' &&
-                        previousStatus.backend !== currentPreference
-                    ) {
+                        previousStatus.backend !== currentPreference;
+                    if (previousBackendFailed || preferenceChangedBackend) {
                         llmStatusStore.set({ state: 'idle' });
                     } else {
                         llmStatusStore.set(previousStatus);
                     }
                     throw createToolPlanningAbortError();
                 }
-                if (isToolPlanningRejectedError(error)) {
+                if (isTerminalModelRejection) {
                     llmStatusStore.set({ state: 'ready', backend, modelId: getBackendModelId(backend) });
                     return { status: 'rejected', reason: error.message };
                 }

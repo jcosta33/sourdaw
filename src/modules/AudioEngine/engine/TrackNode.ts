@@ -37,6 +37,7 @@ export type TrackNodeDeps = {
 };
 
 type PendingDeviceLoad = {
+    abortController: AbortController;
     bypassed?: boolean;
     parameterWrites: Array<[string, number]>;
     loadPromise?: Promise<unknown>;
@@ -473,6 +474,9 @@ export class TrackNode {
         }
         this._pendingDeviceLoads.delete(deviceId);
         pendingLoad.parameterWrites.length = 0;
+        if (!pendingLoad.resolved) {
+            pendingLoad.abortController.abort();
+        }
         if (pendingLoad.loadPromise) {
             this.deps.pendingDevicePromises.delete(pendingLoad.loadPromise);
         }
@@ -520,10 +524,6 @@ export class TrackNode {
             return pendingLoad.resolved ? 'ready' : 'pending';
         }
         if (this._failedDeviceLoads.has(deviceId)) {
-            return 'failed';
-        }
-        const device = this.strip.deviceNodes.find((candidate) => candidate.deviceId === deviceId);
-        if (device?.controller?.ready === false) {
             return 'failed';
         }
         return 'ready';
@@ -585,7 +585,11 @@ export class TrackNode {
             // cpal audio thread. A SharedArrayBuffer cannot reach the host
             // process, so the hop to Rust is IPC; the instance id is the key.
             const loadingBypass = context.createGain();
-            const pendingLoad: PendingDeviceLoad = { parameterWrites: [], resolved: false };
+            const pendingLoad: PendingDeviceLoad = {
+                abortController: new AbortController(),
+                parameterWrites: [],
+                resolved: false,
+            };
             dn = {
                 deviceId,
                 type: deviceType,
@@ -655,13 +659,18 @@ export class TrackNode {
                 if (!descriptor) {
                     return;
                 }
-                const pendingLoad: PendingDeviceLoad = { parameterWrites: [], resolved: false };
+                const pendingLoad: PendingDeviceLoad = {
+                    abortController: new AbortController(),
+                    parameterWrites: [],
+                    resolved: false,
+                };
                 const { placeholder, loadPromise } = descriptor.create({
                     context,
                     deviceId,
                     deviceType,
                     transportSAB: this.deps.transportSAB,
                     isCurrent: () => this._pendingDeviceLoads.get(deviceId) === pendingLoad && !this._disposed,
+                    signal: pendingLoad.abortController.signal,
                     onLoaded: (finalDn) => this.completePendingDeviceLoad(deviceId, pendingLoad, finalDn),
                 });
                 if (!placeholder.controller) {

@@ -6,6 +6,7 @@
  * Follows the same pattern as FermenterNode.
  */
 
+import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from '#/infra/audioWorklet/workletInitShared';
 import { logger } from '#/infra/logger/appLogger';
 
@@ -54,13 +55,17 @@ export function isLevainDevice(deviceType: string): boolean {
 export async function createLevainNode(
     ctx: BaseAudioContext,
     wasmUrl?: string,
-    onFault?: (message: string) => void
+    onFault?: (message: string) => void,
+    signal?: AbortSignal
 ): Promise<LevainNodeResult> {
     if (ctx instanceof AudioContext && ctx.state === 'suspended') {
-        await ctx.resume();
+        await raceAbortSignal(ctx.resume(), signal);
     }
 
-    await ensureWorkletRegistered(ctx, levainProcessorUrl);
+    await raceAbortSignal(ensureWorkletRegistered(ctx, levainProcessorUrl), signal);
+    const wasmBytes = await raceAbortSignal(fetchWasmBinary(wasmUrl ?? DEFAULT_WASM_URL), signal);
+
+    signal?.throwIfAborted();
 
     const node = new AudioWorkletNode(ctx, 'levain-processor', {
         numberOfInputs: 0,
@@ -89,8 +94,7 @@ export async function createLevainNode(
     };
     const readyPromise = handshake.promise;
 
-    // Fetch WASM and initialize the processor.
-    const wasmBytes = await fetchWasmBinary(wasmUrl ?? DEFAULT_WASM_URL);
+    // Initialize the processor with the binary acquired before node allocation.
     const copy = wasmBytes.slice(0);
     node.port.postMessage({ type: 'init', wasmBytes: copy }, [copy]);
 

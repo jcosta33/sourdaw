@@ -2,6 +2,7 @@
  * GrinderNode — AudioWorkletNode wrapper for the Grinder amp simulator.
  */
 
+import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 import { createReadyHandshake, ensureWorkletRegistered } from '#/infra/audioWorklet/workletInitShared';
 import { logger } from '#/infra/logger/appLogger';
 
@@ -72,16 +73,23 @@ export function isGrinderDevice(deviceType: string): boolean {
     return deviceType === 'grinder';
 }
 
-export async function createGrinderNode(ctx: BaseAudioContext, wasmUrl?: string): Promise<GrinderNodeResult> {
+export async function createGrinderNode(
+    ctx: BaseAudioContext,
+    wasmUrl?: string,
+    signal?: AbortSignal
+): Promise<GrinderNodeResult> {
     // Grinder's neural-amp telemetry uses a SAB slot. Fail fast if the
     // environment cannot provide one — see `buildDeviceChain` for the UX path.
     requireSharedArrayBuffer('Grinder');
 
     if (ctx instanceof AudioContext && ctx.state === 'suspended') {
-        await ctx.resume();
+        await raceAbortSignal(ctx.resume(), signal);
     }
 
-    await ensureWorkletRegistered(ctx, grinderProcessorUrl);
+    await raceAbortSignal(ensureWorkletRegistered(ctx, grinderProcessorUrl), signal);
+    const wasmBytes = await raceAbortSignal(fetchGrinderWasm(wasmUrl ?? DEFAULT_WASM_URL), signal);
+
+    signal?.throwIfAborted();
 
     const node = new AudioWorkletNode(ctx, 'grinder-processor', {
         numberOfInputs: 1,
@@ -150,7 +158,6 @@ export async function createGrinderNode(ctx: BaseAudioContext, wasmUrl?: string)
     };
     const readyPromise = handshake.promise;
 
-    const wasmBytes = await fetchGrinderWasm(wasmUrl ?? DEFAULT_WASM_URL);
     const copy = wasmBytes.slice(0);
     node.port.postMessage({ type: 'init', wasmBytes: copy }, [copy]);
 

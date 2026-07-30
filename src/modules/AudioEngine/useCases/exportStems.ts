@@ -8,6 +8,7 @@ import { sidechainStore } from '#/modules/Routing/stores';
 
 import { createExportError } from '../errors/ExportError';
 import { prepareOfflineSidechainCompressor } from '../repositories/devices/dynamics/prepareOfflineSidechainCompressor';
+import { prepareOfflineBitcrusherRate } from '../repositories/devices/toneShaping/prepareOfflineBitcrusherRate';
 import { connectOfflineSidechainRoutes } from '../repositories/offlineRouting/connectOfflineSidechainRoutes';
 
 import { type DeviceNodeEntry } from './buildDeviceChain';
@@ -257,6 +258,21 @@ export const exportStems: ExportStemsFn = async function exportStems(
                 } catch (error) {
                     const reason = error instanceof Error ? error.message : String(error);
                     onWarning?.(`Sidechain processor unavailable; using the offline compressor fallback. ${reason}`);
+                }
+            }
+            // Same ordering constraint: the bitcrusher builds its sample-and-hold
+            // node synchronously inside the strip, so the module has to be
+            // registered before `createOfflineTrackStrip` runs or the stem loses
+            // rate reduction that playback has.
+            const hasBitcrusher = groupedTracks.some((groupedTrack) =>
+                groupedTrack.devices.some((device) => device.type === 'builtin-bitcrusher' && !device.bypassed)
+            );
+            if (hasBitcrusher) {
+                try {
+                    await prepareOfflineBitcrusherRate(offlineCtx);
+                } catch (error) {
+                    const reason = error instanceof Error ? error.message : String(error);
+                    onWarning?.(`Bitcrusher rate reduction unavailable; rendering without it. ${reason}`);
                 }
             }
             for (const groupedTrack of groupedTracks) {

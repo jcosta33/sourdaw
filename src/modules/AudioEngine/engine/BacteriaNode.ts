@@ -5,6 +5,7 @@
  * provides setParam/setBypass via MessagePort.
  */
 
+import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from '#/infra/audioWorklet/workletInitShared';
 
 import bacteriaProcessorUrl from '../services/bacteriaProcessor.ts?worker&url';
@@ -66,16 +67,23 @@ export function isBacteriaDevice(deviceType: string): boolean {
     return deviceType === 'bacteria';
 }
 
-export async function createBacteriaNode(ctx: BaseAudioContext, wasmUrl?: string): Promise<BacteriaNodeResult> {
+export async function createBacteriaNode(
+    ctx: BaseAudioContext,
+    wasmUrl?: string,
+    signal?: AbortSignal
+): Promise<BacteriaNodeResult> {
     // Bacteria's per-band meter telemetry lives in a SAB slot. Guard here so
     // the worklet setup doesn't run pointlessly in an un-isolated environment.
     requireSharedArrayBuffer('Bacteria');
 
     if (ctx instanceof AudioContext && ctx.state === 'suspended') {
-        await ctx.resume();
+        await raceAbortSignal(ctx.resume(), signal);
     }
 
-    await ensureWorkletRegistered(ctx, bacteriaProcessorUrl);
+    await raceAbortSignal(ensureWorkletRegistered(ctx, bacteriaProcessorUrl), signal);
+    const wasmBytes = await raceAbortSignal(fetchWasmBinary(wasmUrl ?? DEFAULT_WASM_URL), signal);
+
+    signal?.throwIfAborted();
 
     const node = new AudioWorkletNode(ctx, 'bacteria-processor', {
         numberOfInputs: 1,
@@ -106,7 +114,6 @@ export async function createBacteriaNode(ctx: BaseAudioContext, wasmUrl?: string
     };
     const readyPromise = handshake.promise;
 
-    const wasmBytes = await fetchWasmBinary(wasmUrl ?? DEFAULT_WASM_URL);
     const copy = wasmBytes.slice(0);
     node.port.postMessage({ type: 'init', wasmBytes: copy }, [copy]);
 

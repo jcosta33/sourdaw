@@ -107,16 +107,21 @@ function installDeferredWasmDevice({
         controller,
     };
     let onLoaded: ((finalDn: BuiltinDeviceNode) => void) | undefined;
+    let signal: AbortSignal | undefined;
     const load = Promise.withResolvers<void>();
     mocks.findWasmDescriptor.mockReturnValue({
         matches: () => true,
-        create: (deps: { onLoaded: (finalDn: BuiltinDeviceNode) => void }) => {
+        create: (deps: { onLoaded: (finalDn: BuiltinDeviceNode) => void; signal?: AbortSignal }) => {
             onLoaded = deps.onLoaded;
+            signal = deps.signal;
             return { placeholder, loadPromise: load.promise };
         },
     });
     return {
         placeholder,
+        get signal(): AbortSignal | undefined {
+            return signal;
+        },
         resolve(finalDn: BuiltinDeviceNode): void {
             if (!onLoaded) {
                 throw new Error('expected the deferred descriptor to capture onLoaded');
@@ -520,6 +525,7 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
 
             expect(track.getDeviceLoadState('wasm-1')).toBe('failed');
             expect(pendingDevicePromises.size).toBe(0);
+            expect(deferred.signal?.aborted).toBe(true);
             const loaded = createLoadedDevice();
             deferred.resolve(loaded.device);
             expect(loaded.dispose).toHaveBeenCalledTimes(1);

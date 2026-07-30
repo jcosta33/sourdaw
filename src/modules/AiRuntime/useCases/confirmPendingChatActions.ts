@@ -1,13 +1,17 @@
 import { logger } from '#/infra/logger/appLogger';
 import { executeAppActionBatch, generateGroupId } from '#/modules/Command/useCases';
+import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
+import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
 import { type ChatActionConfirmationStatus } from '../models/Chat';
 import { type DsoConfirmationTarget } from '../models/DsoTypes';
 import { pushAiActionGroup, type AiActionGroup } from '../stores/aiActionHistoryStore';
-import { updateChatMessage } from '../stores/chatStore';
+import { chatStore, setActiveAborter, setChatGenerating, updateChatMessage } from '../stores/chatStore';
 import {
     getPendingActionConfirmation,
     recordPendingActionExecution,
+    type PendingActionConfirmation,
+    type PendingAppActionConfirmation,
     type PendingDsoEditConfirmation,
     updatePendingActionConfirmationStatus,
 } from '../stores/pendingActionConfirmationStore';
@@ -23,7 +27,10 @@ type ConfirmPendingChatActionsInput = {
 type ConfirmPendingChatActionsResult =
     | { status: 'missing' }
     | { status: 'not_pending'; currentStatus: ChatActionConfirmationStatus }
+    | { status: 'busy' }
     | { status: 'executed' }
+    | { status: 'invalidated'; reason: string }
+    | { status: 'cancelled' }
     | { status: 'failed'; reason: string };
 
 type ConfirmPendingChatActionsOutput = Promise<ConfirmPendingChatActionsResult>;
@@ -39,6 +46,18 @@ export async function confirmPendingChatActions(
         return { status: 'not_pending', currentStatus: confirmation.status };
     }
 
+    if (confirmation.kind === 'app_actions' && captureProjectRevision() !== confirmation.projectRevision) {
+        return invalidatePendingConfirmation(confirmation);
+    }
+
+    if (confirmation.kind === 'app_actions' && chatStore.value?.isGenerating === true) {
+        updateChatMessage(confirmation.assistantMessageId, {
+            pendingActionConfirmationStatus: 'proposed',
+            content: `Another AI command is still running. This proposal remains pending:\n\n${confirmation.actionLabels.map((label) => `- ${label}`).join('\n')}`,
+        });
+        return { status: 'busy' };
+    }
+
     updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'accepted' });
     updateChatMessage(confirmation.assistantMessageId, {
         pendingActionConfirmationStatus: 'accepted',
@@ -50,12 +69,16 @@ export async function confirmPendingChatActions(
     }
 
     const group = generateGroupId(confirmation.prompt);
+    const aborter = new AbortController();
+    setChatGenerating(true);
+    setActiveAborter(aborter);
     let batchResult: Awaited<ReturnType<typeof executeAppActionBatch>>;
     try {
         batchResult = await executeAppActionBatch(confirmation.actions, {
             ...group,
             source: 'prompt',
             requireCompensation: confirmation.executionMode === 'atomic',
+            shouldExecute: () => !aborter.signal.aborted && captureProjectRevision() === confirmation.projectRevision,
         });
     } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
@@ -70,6 +93,16 @@ export async function confirmPendingChatActions(
             content: `Failed to execute confirmed actions atomically:\n\n${reason}`,
         });
         return { status: 'failed', reason };
+    } finally {
+        setActiveAborter(null);
+        setChatGenerating(false);
+    }
+
+    if (batchResult.status === 'cancelled') {
+        if (aborter.signal.aborted) {
+            return cancelAcceptedConfirmation(confirmation);
+        }
+        return invalidatePendingConfirmation(confirmation);
     }
 
     if (batchResult.status === 'committed' || batchResult.status === 'committed-with-warning') {
@@ -166,6 +199,35 @@ export async function confirmPendingChatActions(
         content: `Failed to execute confirmed actions atomically:\n\n${batchResult.reason}`,
     });
     return { status: 'failed', reason: batchResult.reason };
+}
+
+function invalidatePendingConfirmation(confirmation: PendingActionConfirmation): ConfirmPendingChatActionsResult {
+    const reason = new AiProposalInvalidatedError().message;
+    updatePendingActionConfirmationStatus({
+        confirmationId: confirmation.id,
+        status: 'invalidated',
+        error: reason,
+    });
+    updateChatMessage(confirmation.assistantMessageId, {
+        pendingActionConfirmationStatus: 'invalidated',
+        error: reason,
+        content:
+            'This proposal was not executed because the project changed after it was created. Review the current project and submit the command again.',
+    });
+    return { status: 'invalidated', reason };
+}
+
+function cancelAcceptedConfirmation(confirmation: PendingAppActionConfirmation): ConfirmPendingChatActionsResult {
+    updatePendingActionConfirmationStatus({
+        confirmationId: confirmation.id,
+        status: 'cancelled',
+    });
+    updateChatMessage(confirmation.assistantMessageId, {
+        pendingActionConfirmationStatus: 'cancelled',
+        error: undefined,
+        content: 'Command cancelled before it committed. No project changes were applied.',
+    });
+    return { status: 'cancelled' };
 }
 
 async function confirmPendingDsoEdit(confirmation: PendingDsoEditConfirmation): ConfirmPendingChatActionsOutput {

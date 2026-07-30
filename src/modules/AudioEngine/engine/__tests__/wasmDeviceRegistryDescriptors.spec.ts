@@ -425,7 +425,9 @@ describe('wasmDeviceRegistry descriptors', () => {
     });
 
     describe('bacteria', () => {
-        function makeBacteriaResult(ready: Record<string, unknown>): BacteriaNodeResult & {
+        function makeBacteriaResult(
+            ready: Record<string, unknown> | Promise<Record<string, unknown>>
+        ): BacteriaNodeResult & {
             emitLatency: (latency: number) => void;
         } {
             let latencyCallback: ((latency: number) => void) | undefined;
@@ -474,6 +476,29 @@ describe('wasmDeviceRegistry descriptors', () => {
 
             expect(externalLatencyRegistry.get('bac-2')).toBe(0);
         });
+
+        it('destroys an invalidated late load before it reports latency or installs callbacks', async () => {
+            const readiness = Promise.withResolvers<Record<string, unknown>>();
+            const result = makeBacteriaResult(readiness.promise);
+            factoryMocks.createBacteriaNode.mockResolvedValue(result);
+            const abortController = new AbortController();
+            const deps = createDeps({
+                deviceType: 'bacteria',
+                deviceId: 'bac-late',
+                signal: abortController.signal,
+            });
+
+            const { loadPromise } = requireDescriptor('bacteria').create(deps);
+            await Promise.resolve();
+            abortController.abort();
+            await loadPromise;
+
+            expect(result.destroy).toHaveBeenCalledTimes(1);
+            expect(deps.onLoaded).not.toHaveBeenCalled();
+            expect(externalLatencyRegistry.has('bac-late')).toBe(false);
+            expect(result.onLatencyChanged).not.toHaveBeenCalled();
+            expect(result.onMeterData).not.toHaveBeenCalled();
+        });
     });
 
     describe('grinder', () => {
@@ -503,6 +528,42 @@ describe('wasmDeviceRegistry descriptors', () => {
             expect(result.setParam).toHaveBeenCalledWith('drive', 0.7);
             expect(result.setPatch).toHaveBeenCalledWith({ amp: 'lead' });
             expect(result.setBypass).toHaveBeenCalledWith(true);
+        });
+
+        it('destroys an invalidated late load before replaying state or reporting latency', async () => {
+            const readiness = Promise.withResolvers<{ latency: number }>();
+            const result: GrinderNodeResult = {
+                workletNode: makeWorkletNode(),
+                setParam: vi.fn(),
+                setPatch: vi.fn(),
+                setBypass: vi.fn(),
+                onMeterData: vi.fn(),
+                onLatencyChanged: vi.fn(),
+                connect: vi.fn(),
+                disconnect: vi.fn(),
+                destroy: vi.fn(),
+                ready: readiness.promise,
+            };
+            factoryMocks.createGrinderNode.mockResolvedValue(result);
+            const abortController = new AbortController();
+            const deps = createDeps({
+                deviceType: 'grinder',
+                deviceId: 'grind-late',
+                signal: abortController.signal,
+            });
+
+            const { placeholder, loadPromise } = requireDescriptor('grinder').create(deps);
+            placeholder.controller?.setParam('drive', 0.7);
+            await Promise.resolve();
+            abortController.abort();
+            await loadPromise;
+
+            expect(result.destroy).toHaveBeenCalledTimes(1);
+            expect(deps.onLoaded).not.toHaveBeenCalled();
+            expect(externalLatencyRegistry.has('grind-late')).toBe(false);
+            expect(result.setParam).not.toHaveBeenCalled();
+            expect(result.onLatencyChanged).not.toHaveBeenCalled();
+            expect(result.onMeterData).not.toHaveBeenCalled();
         });
 
         it('forwards worklet telemetry frames to the grinder sink', async () => {
@@ -696,6 +757,30 @@ describe('wasmDeviceRegistry descriptors', () => {
             expect(emitDeviceLoaded).toHaveBeenCalledWith({ deviceId: 'faust-1', deviceType: 'faust-flanger' });
         });
 
+        it('destroys a delayed result after cancellation without replaying queued events', async () => {
+            const deferred = Promise.withResolvers<Record<string, unknown>>();
+            const { controls, result } = makeFaustResult();
+            factoryMocks.createFaustDeviceNode.mockReturnValue(deferred.promise);
+            const abortController = new AbortController();
+            const deps = createDeps({
+                deviceType: 'faust-flanger',
+                deviceId: 'faust-late',
+                signal: abortController.signal,
+            });
+
+            const { placeholder, loadPromise } = requireDescriptor('faust-flanger').create(deps);
+            placeholder.controller?.setParam('depth', 0.5);
+            placeholder.controller?.keyOn?.(0, 60, 100, 0.5);
+            abortController.abort();
+            deferred.resolve(result);
+            await loadPromise;
+
+            expect(controls.destroy).toHaveBeenCalledTimes(1);
+            expect(controls.setParam).not.toHaveBeenCalled();
+            expect(controls.keyOn).not.toHaveBeenCalled();
+            expect(deps.onLoaded).not.toHaveBeenCalled();
+        });
+
         it('leaves the placeholder in place when the factory resolves null or without controls', async () => {
             factoryMocks.createFaustDeviceNode.mockResolvedValueOnce(null);
             const nullDeps = createDeps({ deviceType: 'faust-flanger', deviceId: 'faust-2' });
@@ -725,18 +810,27 @@ describe('wasmDeviceRegistry descriptors', () => {
                 setParam: vi.fn(),
                 setBypass: vi.fn(),
                 updateState: vi.fn(),
+                destroy: () => {
+                    try {
+                        workletNode.disconnect();
+                    } catch {
+                        // The node may already be detached during teardown.
+                    }
+                    workletNode.port.close();
+                },
                 ready: Promise.resolve({}),
             };
             factoryMocks.createKneadNode.mockResolvedValue(result);
             const transportSAB = new ArrayBuffer(16) as unknown as SharedArrayBuffer;
-            const deps = createDeps({ deviceType: 'knead', deviceId: 'knead-1', transportSAB });
+            const signal = new AbortController().signal;
+            const deps = createDeps({ deviceType: 'knead', deviceId: 'knead-1', transportSAB, signal });
 
             const { placeholder, loadPromise } = requireDescriptor('knead').create(deps);
             expect(placeholder.kneadControls?.ready).toBe(false);
             placeholder.kneadControls?.setParam('shift_semitones', 3);
             await loadPromise;
 
-            expect(factoryMocks.createKneadNode).toHaveBeenCalledWith(deps.context, transportSAB);
+            expect(factoryMocks.createKneadNode).toHaveBeenCalledWith(deps.context, transportSAB, signal);
             expect(result.setParam).toHaveBeenCalledWith('shift_semitones', 3);
 
             const loaded = lastLoadedNode(deps.onLoaded);
@@ -757,6 +851,14 @@ describe('wasmDeviceRegistry descriptors', () => {
                 setParam: vi.fn(),
                 setBypass: vi.fn(),
                 updateState: vi.fn(),
+                destroy: () => {
+                    try {
+                        workletNode.disconnect();
+                    } catch {
+                        // The node may already be detached during teardown.
+                    }
+                    workletNode.port.close();
+                },
                 ready: Promise.resolve({}),
             };
             factoryMocks.createKneadNode.mockResolvedValue(result);

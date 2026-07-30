@@ -42,6 +42,30 @@ export const toasterStore = createStore<ToasterInstances>({
     initialData: {},
 });
 
+/**
+ * The single creation point for a Toaster instance record.
+ *
+ * Every mutator below refuses an unknown deviceId so a write arriving after
+ * teardown cannot resurrect a deleted device. That guard is only safe because
+ * registration — not a stray write — is what puts the record here. Removing
+ * this function does not "fall back" to anything: the store stays empty and
+ * every panel edit, step toggle and kit load becomes a silent no-op.
+ *
+ * Idempotent: re-registering a device that already has a record keeps that
+ * record, so a reload never discards the edits it is holding.
+ *
+ * Each device gets its own kit object rather than sharing
+ * `defaultToasterState.kit`, so no two instances can ever alias the same
+ * pads/patterns arrays.
+ */
+export function registerToasterDevice(deviceId: string): void {
+    const instances = toasterStore.value ?? {};
+    if (instances[deviceId]) {
+        return;
+    }
+    toasterStore.set({ ...instances, [deviceId]: { ...defaultToasterState, kit: createDefaultKit() } });
+}
+
 export function unregisterToasterDevice(deviceId: string): void {
     const state = toasterStore.value;
     if (state && state[deviceId]) {

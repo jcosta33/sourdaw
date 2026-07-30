@@ -6,6 +6,7 @@ import { createAdjustmentLayerRuntime, type AdjustmentLayerRuntime } from '../en
 import { BusNode } from '../engine/BusNode';
 import { dropoutCounters } from '../engine/dropoutCounter';
 import { TrackNode } from '../engine/TrackNode';
+import bitcrusherRateProcessorUrl from '../services/bitcrusherRateProcessor.ts?worker&url';
 import meteringProcessorUrl from '../services/meteringProcessor.ts?worker&url';
 import recordingProcessorUrl from '../services/recordingProcessor.ts?worker&url';
 
@@ -182,6 +183,7 @@ class AudioEngineImpl implements AudioEngine {
     private transportView: Float64Array | null;
     private transportSeqView: Int32Array | null;
     private initPromise: Promise<void> | null = null;
+    private initializationCancellation: PromiseWithResolvers<never> | null = null;
     private initializationGeneration = 0;
     private disposed = false;
     private disposalPromise: Promise<void> | null = null;
@@ -276,14 +278,18 @@ class AudioEngineImpl implements AudioEngine {
         // 404s) must not poison the engine forever. On rejection we clear the
         // cached promise so the next initialize() retries the load.
         const generation = this.initializationGeneration;
-        this.initPromise = this.loadWorklets(generation).catch((error: unknown) => {
-            const initError = error instanceof Error ? error : new Error(String(error));
-            if (generation === this.initializationGeneration) {
-                this.initPromise = null;
-                this.lastInitError = initError;
+        this.initializationCancellation = Promise.withResolvers<never>();
+        this.initPromise = Promise.race([this.loadWorklets(generation), this.initializationCancellation.promise]).catch(
+            (error: unknown) => {
+                const initError = error instanceof Error ? error : new Error(String(error));
+                if (generation === this.initializationGeneration) {
+                    this.initPromise = null;
+                    this.initializationCancellation = null;
+                    this.lastInitError = initError;
+                }
+                throw initError;
             }
-            throw initError;
-        });
+        );
         return this.initPromise;
     }
 
@@ -294,10 +300,12 @@ class AudioEngineImpl implements AudioEngine {
             this.context.audioWorklet.addModule('/audio/worklets/native-plugin-bridge-processor.js'),
             this.context.audioWorklet.addModule(recordingProcessorUrl),
             this.context.audioWorklet.addModule(meteringProcessorUrl),
+            this.context.audioWorklet.addModule(bitcrusherRateProcessorUrl),
         ]);
         if (generation !== this.initializationGeneration) {
             throw new Error('Audio engine was disposed during initialization.');
         }
+        this.initializationCancellation = null;
         // The metering-processor module is now registered, so the master meter
         // can be inserted into the master chain. This cannot happen in the
         // constructor — the master nodes are built before any worklet module is
@@ -402,6 +410,7 @@ class AudioEngineImpl implements AudioEngine {
                 stripMeterWorklets++;
             }
             for (const device of trackNode.strip.deviceNodes) {
+                deviceAudioNodes += device.nodes.length;
                 const loadState = trackNode.getDeviceLoadState(device.deviceId);
                 if (loadState === 'pending') {
                     pendingDeviceInstances++;
@@ -412,7 +421,6 @@ class AudioEngineImpl implements AudioEngine {
                     continue;
                 }
                 deviceInstances++;
-                deviceAudioNodes += device.nodes.length;
                 deviceInstancesByType.set(device.type, (deviceInstancesByType.get(device.type) ?? 0) + 1);
             }
         }
@@ -1382,6 +1390,8 @@ class AudioEngineImpl implements AudioEngine {
         // Invalidate loadWorklets before a stale continuation can rebuild the disposed graph.
         this.disposed = true;
         this.initializationGeneration++;
+        this.initializationCancellation?.reject(new Error('Audio engine was disposed during initialization.'));
+        this.initializationCancellation = null;
         this.initPromise = null;
         this.workletReady = false;
 

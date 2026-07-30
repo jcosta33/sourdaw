@@ -9,6 +9,7 @@
  * polls it, so the render thread neither allocates nor sends a message.
  */
 
+import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from '#/infra/audioWorklet/workletInitShared';
 
 import fermenterProcessorUrl from '../services/fermenterProcessor.ts?worker&url';
@@ -108,12 +109,19 @@ export function isFermenterDevice(deviceType: string): boolean {
  * Resumes the AudioContext if suspended (worklet processors only run when active).
  * Caches WASM binary across calls. Await `result.ready` before sending MIDI.
  */
-export async function createFermenterNode(ctx: BaseAudioContext, wasmUrl?: string): Promise<FermenterNodeResult> {
+export async function createFermenterNode(
+    ctx: BaseAudioContext,
+    wasmUrl?: string,
+    signal?: AbortSignal
+): Promise<FermenterNodeResult> {
     if (ctx instanceof AudioContext && ctx.state === 'suspended') {
-        await ctx.resume();
+        await raceAbortSignal(ctx.resume(), signal);
     }
 
-    await ensureWorkletRegistered(ctx, fermenterProcessorUrl);
+    await raceAbortSignal(ensureWorkletRegistered(ctx, fermenterProcessorUrl), signal);
+    const wasmBytes = await raceAbortSignal(fetchWasmBinary(wasmUrl ?? DEFAULT_WASM_URL), signal);
+
+    signal?.throwIfAborted();
 
     const node = new AudioWorkletNode(ctx, 'fermenter-processor', {
         numberOfInputs: 0,
@@ -147,7 +155,6 @@ export async function createFermenterNode(ctx: BaseAudioContext, wasmUrl?: strin
     };
     const readyPromise = handshake.promise;
 
-    const wasmBytes = await fetchWasmBinary(wasmUrl ?? DEFAULT_WASM_URL);
     const copy = wasmBytes.slice(0);
     node.port.postMessage({ type: 'init', wasmBytes: copy }, [copy]);
 
