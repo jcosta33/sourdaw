@@ -1,3 +1,5 @@
+import { type NativeDspDeviceType } from '#/utils/nativeDspDeviceTypes';
+
 import { isBacteriaDevice, createBacteriaNode } from '../../engine/BacteriaNode';
 import { isFermenterDevice, createFermenterNode } from '../../engine/FermenterNode';
 import { isGlutenDevice, createGlutenNode } from '../../engine/GlutenNode';
@@ -78,6 +80,18 @@ function bindPadNotes<TNode extends PadNoteNode>(node: TNode): NoteBoundNode<TNo
 }
 
 type NativeDspDeviceFactory = {
+    /**
+     * The canonical type this factory builds.
+     *
+     * Declared alongside `matches` rather than derived from it, because a
+     * predicate cannot be asked what it accepts. It is what welds this list to
+     * `NATIVE_DSP_DEVICE_TYPES` and therefore to the hydration table in the
+     * composition root: a device added here without a canonical type does not
+     * compile, and `nativeDspDeviceTypeWeld.spec.ts` asserts every declared type
+     * is one its own `matches` actually claims, so the two cannot drift apart
+     * silently.
+     */
+    readonly type: NativeDspDeviceType;
     readonly matches: (deviceType: string) => boolean;
     readonly create: (ctx: BaseAudioContext) => Promise<NativeDspNode>;
 };
@@ -102,17 +116,25 @@ type NativeDspDeviceFactory = {
  * slots each of these four bindings actually produces.
  */
 export const NATIVE_DSP_DEVICE_FACTORIES: readonly NativeDspDeviceFactory[] = [
-    { matches: isFermenterDevice, create: async (ctx) => bindMelodicNotes(await createFermenterNode(ctx)) },
-    { matches: isToasterDevice, create: async (ctx) => bindPadNotes(await createToasterNode(ctx)) },
-    { matches: isLevainDevice, create: async (ctx) => bindMelodicNotes(await createLevainNode(ctx)) },
-    { matches: isGrandBouleDevice, create: async (ctx) => bindMelodicNotes(await createGrandBouleNode(ctx)) },
-    { matches: isGlutenDevice, create: createGlutenNode },
-    { matches: isBacteriaDevice, create: createBacteriaNode },
-    { matches: isGrinderDevice, create: createGrinderNode },
-    { matches: isProofDevice, create: createProofNode },
-    { matches: isProofChamberDevice, create: createProofChamberNode },
-    { matches: isScoringDevice, create: createScoringNode },
-    { matches: isKneadDevice, create: createKneadNode },
+    {
+        type: 'fermenter',
+        matches: isFermenterDevice,
+        create: async (ctx) => bindMelodicNotes(await createFermenterNode(ctx)),
+    },
+    { type: 'toaster', matches: isToasterDevice, create: async (ctx) => bindPadNotes(await createToasterNode(ctx)) },
+    { type: 'levain', matches: isLevainDevice, create: async (ctx) => bindMelodicNotes(await createLevainNode(ctx)) },
+    {
+        type: 'grand-boule',
+        matches: isGrandBouleDevice,
+        create: async (ctx) => bindMelodicNotes(await createGrandBouleNode(ctx)),
+    },
+    { type: 'gluten', matches: isGlutenDevice, create: createGlutenNode },
+    { type: 'bacteria', matches: isBacteriaDevice, create: createBacteriaNode },
+    { type: 'grinder', matches: isGrinderDevice, create: createGrinderNode },
+    { type: 'proof', matches: isProofDevice, create: createProofNode },
+    { type: 'dutch-oven', matches: isProofChamberDevice, create: createProofChamberNode },
+    { type: 'native-scoring', matches: isScoringDevice, create: createScoringNode },
+    { type: 'knead', matches: isKneadDevice, create: createKneadNode },
 ];
 
 export function isNativeDspDevice(deviceType: string): boolean {

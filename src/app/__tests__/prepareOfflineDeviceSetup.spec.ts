@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createTrack, getTrackStoreState } from '#/modules/Arrangement/useCases';
+import { prepareOfflineLevain } from '#/modules/Levain/useCases';
+import { NATIVE_DSP_DEVICE_TYPES } from '#/utils/nativeDspDeviceTypes';
 
 import { prepareOfflineDeviceSetup } from '../prepareOfflineDeviceSetup';
 
@@ -109,5 +111,62 @@ describe('prepareOfflineDeviceSetup — Proof chain order', () => {
         await prepareOfflineDeviceSetup({ deviceId: 'proof-absent', deviceType: 'proof', port });
 
         expect(reorderMessages(postMessage)).toEqual([]);
+    });
+});
+
+describe('prepareOfflineDeviceSetup — hydration table routing', () => {
+    beforeEach(() => {
+        vi.mocked(getTrackStoreState).mockReset();
+        vi.mocked(getTrackStoreState).mockReturnValue({ tracks: [], selectedTrackId: null });
+        vi.mocked(prepareOfflineLevain).mockClear();
+    });
+
+    it('routes levain to its own hydration, forwarding the abort signal it needs to cancel a fetch', async () => {
+        const { port } = makePort();
+        const controller = new AbortController();
+
+        await prepareOfflineDeviceSetup({
+            deviceId: 'levain-1',
+            deviceType: 'levain',
+            port,
+            signal: controller.signal,
+        });
+
+        expect(prepareOfflineLevain).toHaveBeenCalledExactlyOnceWith({
+            deviceId: 'levain-1',
+            port,
+            signal: controller.signal,
+        });
+    });
+
+    // Nine of the eleven native types are an explicit `null` in the table. That is
+    // a recorded decision — their whole state arrives as `parameterValues` — so the
+    // observable contract is that they post nothing at all, not that they happen to
+    // have no branch.
+    const NON_HYDRATING_TYPES = NATIVE_DSP_DEVICE_TYPES.filter((type) => type !== 'levain' && type !== 'proof');
+
+    it.each(NON_HYDRATING_TYPES)('posts nothing at the port for %s', async (deviceType) => {
+        const { port, postMessage } = makePort();
+
+        await prepareOfflineDeviceSetup({ deviceId: `${deviceType}-1`, deviceType, port });
+
+        expect(postMessage).not.toHaveBeenCalled();
+        expect(prepareOfflineLevain).not.toHaveBeenCalled();
+    });
+
+    it('covers every native device type, so a new one cannot arrive untested', () => {
+        // Guards the split above: if a device moves off `null`, this count changes
+        // and whoever moved it has to say so here.
+        expect(NON_HYDRATING_TYPES).toHaveLength(9);
+        expect(NATIVE_DSP_DEVICE_TYPES).toHaveLength(11);
+    });
+
+    it('does nothing for a device type no native factory builds', async () => {
+        const { port, postMessage } = makePort();
+
+        await prepareOfflineDeviceSetup({ deviceId: 'synth-1', deviceType: 'synth', port });
+
+        expect(postMessage).not.toHaveBeenCalled();
+        expect(prepareOfflineLevain).not.toHaveBeenCalled();
     });
 });
