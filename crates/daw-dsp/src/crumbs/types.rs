@@ -310,6 +310,54 @@ pub enum CrumbsParam {
     StackSpread,
 }
 
+/// Resolve a `CrumbsParam` from the parameter id the product uses.
+///
+/// The names are the `CrumbsDescriptor` parameter ids, so one spelling serves
+/// the native `set_crumbs_param` command and the wasm `CrumbsInstance` binding.
+/// Keeping the table here rather than beside each caller is deliberate: the
+/// live (native) and offline (wasm) paths reading two hand-maintained name maps
+/// is precisely how a device ends up honouring a parameter in playback and
+/// ignoring it in a render.
+pub fn parse_crumbs_param(name: &str) -> Option<CrumbsParam> {
+    match name {
+        "masterGain" => Some(CrumbsParam::MasterGain),
+        "attack" => Some(CrumbsParam::Attack),
+        "hold" => Some(CrumbsParam::Hold),
+        "decay" => Some(CrumbsParam::Decay),
+        "sustain" => Some(CrumbsParam::Sustain),
+        "release" => Some(CrumbsParam::Release),
+        "filterCutoff" => Some(CrumbsParam::FilterCutoff),
+        "filterResonance" => Some(CrumbsParam::FilterResonance),
+        "filterType" => Some(CrumbsParam::FilterType),
+        "loopMode" => Some(CrumbsParam::LoopMode),
+        "loopStart" => Some(CrumbsParam::LoopStart),
+        "loopEnd" => Some(CrumbsParam::LoopEnd),
+        "loopCrossfade" => Some(CrumbsParam::LoopCrossfade),
+        "playbackMode" => Some(CrumbsParam::PlaybackMode),
+        "rootNote" => Some(CrumbsParam::RootNote),
+        "tune" => Some(CrumbsParam::Tune),
+        "pan" => Some(CrumbsParam::Pan),
+        "stackCount" => Some(CrumbsParam::StackCount),
+        "detuneSpread" => Some(CrumbsParam::DetuneSpread),
+        "stackSpread" => Some(CrumbsParam::StackSpread),
+        _ => None,
+    }
+}
+
+/// Resolve a `CrumbsMode` from the mode name the product uses.
+///
+/// Shared with `set_crumbs_mode` for the same reason as `parse_crumbs_param`.
+pub fn parse_crumbs_mode(name: &str) -> Option<CrumbsMode> {
+    match name {
+        "quick" => Some(CrumbsMode::Quick),
+        "drum" => Some(CrumbsMode::Drum),
+        "slice" => Some(CrumbsMode::Slice),
+        "warp" => Some(CrumbsMode::Warp),
+        "record" => Some(CrumbsMode::Record),
+        _ => None,
+    }
+}
+
 /// LFO wave shape for modulation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LfoShape {

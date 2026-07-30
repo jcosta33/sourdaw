@@ -138,6 +138,159 @@ export class BacteriaInstance {
 if (Symbol.dispose) BacteriaInstance.prototype[Symbol.dispose] = BacteriaInstance.prototype.free;
 
 /**
+ * WASM-exported Crumbs instance for AudioWorklet rendering.
+ *
+ * Crumbs' native host reaches `CrumbsEngine` over an SPSC command ring from
+ * the Tauri command layer. A worklet has no such ring — messages already
+ * arrive one at a time on the port — so this wrapper calls `handle_command`
+ * directly, which is the same entry point the native host's drain loop calls.
+ *
+ * ## Disk streaming is deliberately absent
+ *
+ * `crumbs::streaming` schedules reads the native integration layer performs;
+ * an `AudioWorkletGlobalScope` has no file or network API at all, so nothing
+ * inside a worklet could service those reads. For rendering that costs
+ * nothing: an `OfflineAudioContext` has no realtime deadline to stream
+ * against, so the correct answer is a preloaded in-memory pool, which is
+ * exactly what `add_sample` builds. Sample sets larger than the worklet's heap
+ * are the limit of this build, not a bug in it.
+ */
+export class CrumbsInstance {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        CrumbsInstanceFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_crumbsinstance_free(ptr, 0);
+    }
+    /**
+     * Voices sounding as of the last rendered block.
+     * @returns {number}
+     */
+    active_voices() {
+        const ret = wasm.crumbsinstance_active_voices(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Copy interleaved PCM into the in-memory pool and return its sample id.
+     *
+     * Mirrors `LevainInstance::add_sample`: the caller transfers a
+     * `Float32Array` across the worklet port because a wasm instance cannot
+     * read a file. Not RT-safe — call it during setup, never from `process`.
+     * @param {Float32Array} data
+     * @param {number} channels
+     * @param {number} sample_rate
+     * @returns {number}
+     */
+    add_sample(data, channels, sample_rate) {
+        const ptr0 = passArrayF32ToWasm0(data, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.crumbsinstance_add_sample(this.__wbg_ptr, ptr0, len0, channels, sample_rate);
+        return ret >>> 0;
+    }
+    /**
+     * Release all held voices into their amp-envelope release stage.
+     */
+    all_notes_off() {
+        wasm.crumbsinstance_all_notes_off(this.__wbg_ptr);
+    }
+    /**
+     * Cut every voice immediately with a short de-click fade.
+     */
+    all_sound_off() {
+        wasm.crumbsinstance_all_sound_off(this.__wbg_ptr);
+    }
+    /**
+     * Non-finite output samples scrubbed to silence since construction.
+     * Non-zero means a poisoned block was caught at the wasm boundary.
+     * @returns {number}
+     */
+    get_nan_flush_count() {
+        const ret = wasm.crumbsinstance_get_nan_flush_count(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Pointer to the right channel buffer (valid after `process`).
+     * @returns {number}
+     */
+    get_right_ptr() {
+        const ret = wasm.crumbsinstance_get_right_ptr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @param {number} sample_rate
+     */
+    constructor(sample_rate) {
+        const ret = wasm.crumbsinstance_new(sample_rate);
+        this.__wbg_ptr = ret;
+        CrumbsInstanceFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * Release every voice sounding at `note`.
+     * @param {number} note
+     */
+    note_off(note) {
+        wasm.crumbsinstance_note_off(this.__wbg_ptr, note);
+    }
+    /**
+     * Trigger a note. Pitch is derived from the active sample's root note.
+     * @param {number} note
+     * @param {number} velocity
+     */
+    note_on(note, velocity) {
+        wasm.crumbsinstance_note_on(this.__wbg_ptr, note, velocity);
+    }
+    /**
+     * Render a block. Returns a pointer to the left channel; the right channel
+     * is at `get_right_ptr()`.
+     *
+     * `CrumbsEngine::process_block` *adds* into its output slices, so the
+     * block is zeroed first — the native host slot does the same. Skipping it
+     * would accumulate the previous block forever.
+     * @param {number} block_size
+     * @returns {number}
+     */
+    process(block_size) {
+        const ret = wasm.crumbsinstance_process(this.__wbg_ptr, block_size);
+        return ret >>> 0;
+    }
+    /**
+     * Select which pooled sample subsequent notes play.
+     * @param {number} sample_id
+     */
+    set_active_sample(sample_id) {
+        wasm.crumbsinstance_set_active_sample(this.__wbg_ptr, sample_id);
+    }
+    /**
+     * Set the operating mode by name (`quick`, `drum`, `slice`, `warp`,
+     * `record`).
+     * @param {string} mode
+     */
+    set_mode(mode) {
+        const ptr0 = passStringToWasm0(mode, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.crumbsinstance_set_mode(this.__wbg_ptr, ptr0, len0);
+    }
+    /**
+     * Set a global parameter by its `CrumbsDescriptor` id. Unknown ids are
+     * ignored rather than trapping — a project may carry a parameter this
+     * build no longer has.
+     * @param {string} name
+     * @param {number} value
+     */
+    set_param(name, value) {
+        const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.crumbsinstance_set_param(this.__wbg_ptr, ptr0, len0, value);
+    }
+}
+if (Symbol.dispose) CrumbsInstance.prototype[Symbol.dispose] = CrumbsInstance.prototype.free;
+
+/**
  * WASM-exported Fermenter instance for AudioWorklet.
  */
 export class FermenterInstance {
@@ -1457,6 +1610,9 @@ function __wbg_get_imports() {
 const BacteriaInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_bacteriainstance_free(ptr, 1));
+const CrumbsInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_crumbsinstance_free(ptr, 1));
 const FermenterInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_fermenterinstance_free(ptr, 1));

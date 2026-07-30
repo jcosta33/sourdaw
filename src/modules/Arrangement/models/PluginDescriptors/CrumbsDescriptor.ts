@@ -11,9 +11,16 @@ export const CRUMBS_DESCRIPTOR: PluginDescriptor = {
     vendor: 'Sourdaw',
     format: 'builtin',
     category: 'instrument',
-    // Crumbs has no WebAudio implementation. Its engine lives in the Rust
-    // backend and is reached only through the `crumbs_*` Tauri commands, so a
-    // browser build was offering a device that could not make a sound anywhere.
+    // Still native-only, but no longer because the *engine* is: `CrumbsInstance`
+    // compiles to wasm and renders through `crumbs-processor` in both the live
+    // graph and an offline export. What remains native is getting a sample into
+    // it. Every step of that — the file dialog, `load_sample`, the waveform
+    // mipmap, onset detection, pitch detection, threshold recording — is a
+    // `crumbs_*` Tauri command with no browser counterpart, and
+    // `isCrumbsNativeAvailable` refuses the drop path outright off desktop.
+    // Offering Crumbs in a browser build would offer a sampler that can never be
+    // given a sample. Retire this when sample acquisition has a web path, not
+    // before.
     platform: 'native',
     hasCustomUI: true,
     // An instrument keeps sounding for its amp-envelope release after the last

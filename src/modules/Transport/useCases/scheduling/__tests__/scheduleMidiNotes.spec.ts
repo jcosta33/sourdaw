@@ -338,6 +338,51 @@ describe('scheduleMidiNotes', () => {
         });
     });
 
+    // Crumbs' catalog id carries the `builtin-` prefix, so it was absent from
+    // the worklet-synth table and a Crumbs track fell through to the fallback
+    // sawtooth here — while the offline render, once Crumbs became renderable,
+    // voiced the real sampler. Live and the export have to reach the same
+    // engine, and the fallback substituting for a sampler is the "plausible
+    // wrong instrument" failure, not a graceful degradation.
+    it('routes a Crumbs track to its sampler rather than the fallback synth', async () => {
+        const noteOn = vi.fn();
+        const noteOff = vi.fn();
+        const track = midiTrack({
+            clips: [midiClip()],
+            devices: [{ id: 'crumbs-1', type: 'builtin-crumbs' }],
+        });
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = {
+            notesByClipId: {
+                'clip-1': [{ id: 'n1', pitch: 62, startBeat: 0.25, duration: 0.5, velocity: 96 }],
+            },
+        };
+        vi.mocked(ensureTrackStrip).mockReturnValue({
+            gainNode: {},
+            preFaderTap: { connect: vi.fn() },
+            deviceNodes: [
+                {
+                    deviceId: 'crumbs-1',
+                    type: 'builtin-crumbs',
+                    crumbsControls: { ready: true, noteOn, noteOff },
+                },
+            ],
+        } as never);
+
+        await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+
+        expect(scheduleNote).not.toHaveBeenCalled();
+        // Every slot, not just pitch and velocity. Crumbs' node was written
+        // against Toaster's pad order at first — `(pad, velocity, midiNote?,
+        // sampleFrame?)` — which put this call's `sampleFrame` in a slot Crumbs
+        // discards and its channel in `sampleFrame`, voicing every note at
+        // frame 0. All four slots are `number`, so only asserting the values
+        // catches it. At 120 bpm / 48 kHz, beat 0.25 is frame 6000 and the note
+        // ends half a beat later at 18000.
+        expect(noteOn.mock.calls[0]).toEqual([62, 96, 6000, 0]);
+        expect(noteOff.mock.calls[0]).toEqual([62, 18000, 0]);
+    });
+
     it('does not schedule synth when MIDI store is uninitialized', async () => {
         await scheduleMidiNotes(0, 4, 0, 0, new Set<string>(), [], defaultTransportState, 120);
 

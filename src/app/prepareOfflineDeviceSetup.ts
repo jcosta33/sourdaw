@@ -1,3 +1,4 @@
+import { prepareCrumbsEngine } from '#/modules/Crumbs/useCases';
 import { prepareOfflineLevain } from '#/modules/Levain/useCases';
 import { prepareOfflineProof } from '#/modules/Proof/useCases';
 import { type NativeDspDeviceType, resolveNativeDspDeviceType } from '#/utils/nativeDspDeviceTypes';
@@ -26,7 +27,7 @@ type HydrateOfflineDevice = (input: PrepareOfflineDeviceSetupInput) => void | Pr
  *
  * **`null` is a decision, not a gap.** It means "this device's entire state
  * reaches the offline node as plain `parameterValues`, which the strategy already
- * replays". Nine of eleven are genuinely in that position, which is what makes an
+ * replays". Nine of twelve are genuinely in that position, which is what makes an
  * exhaustive table cheap enough to be worth having.
  *
  * The table is exhaustive over `NativeDspDeviceType`, so adding a native device to
@@ -55,6 +56,25 @@ const OFFLINE_DEVICE_HYDRATION: Record<NativeDspDeviceType, HydrateOfflineDevice
     // The only entry that fetches: its sample zones come over the network, so it
     // is also the only one that needs the abort signal.
     levain: ({ deviceId, port, signal }) => prepareOfflineLevain({ deviceId, port, signal }),
+    // Emphatically not `null`. A `CrumbsInstance` is constructed with an empty
+    // sample pool, and `CrumbsEngine::note_on` returns before allocating a voice
+    // when there is no active sample — so an unhydrated Crumbs renders digital
+    // silence no matter how faithfully its parameters were replayed. The sample
+    // is not expressible as a `parameterValue`: it is decoded PCM that only
+    // exists on disk, read over the native bridge and transferred in. The
+    // operating mode is the same story — it lives on `crumbsStore`, not in
+    // `Device.parameterValues`.
+    //
+    // Takes the signal for the same reason Levain does: this one does file I/O
+    // and a decode, so a cancelled export must be able to stop it.
+    //
+    // Slice markers are deliberately *not* part of this. They are UI state
+    // today: `CrumbsEngine::note_on` always triggers at `start_frame: 0` and the
+    // `crumbs::modes` structs are not wired into the engine on either platform,
+    // so markers change no rendered sample in the session either. Hydrating them
+    // here would make the export differ from live — the same trap as Toaster's
+    // kit above. They belong here once the engine consumes them, not before.
+    'builtin-crumbs': ({ deviceId, port, signal }) => prepareCrumbsEngine({ deviceId, port, signal }),
     'grand-boule': null,
     gluten: null,
     bacteria: null,

@@ -24,8 +24,20 @@ export function createDeviceRegistry({
 }: CreateDeviceRegistryInput): DeviceFactoryRegistry {
     const registry = new DeviceFactoryRegistry();
 
+    // `builtin-` is a prefix arm and `createDevice` stops at the first match,
+    // so a native device whose catalog id carries that prefix — Crumbs — would
+    // be routed to a WebAudio factory that has no node for it and refuse. Live
+    // playback has never had that problem: `TrackNode.addDevice` tries
+    // `createBuiltinDeviceNode` first and *falls through* to the wasm registry
+    // when it hands back nothing. Excluding the native ids here reproduces that
+    // fall-through in a first-match registry. The sets are disjoint, so no
+    // other id changes arm.
+    function isBuiltinWebAudioDevice(type: string): boolean {
+        return type.startsWith('builtin-') && !isNativeDspDevice(type);
+    }
+
     // eslint-disable-next-line @typescript-eslint/require-await -- registry callback signature is async; createWebAudioDevice is currently synchronous
-    registry.register('builtin-', async (ctx, device) => createWebAudioDevice(ctx, device));
+    registry.register(isBuiltinWebAudioDevice, async (ctx, device) => createWebAudioDevice(ctx, device));
 
     registry.register(faustModuleMatcher, (ctx, device) =>
         createFaustStrategy({ ctx, device, createFaustDevice, isFaustInstrument: faustInstrumentMatcher })

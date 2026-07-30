@@ -26,6 +26,11 @@ export const NATIVE_DSP_DEVICE_TYPES = [
     'fermenter',
     'toaster',
     'levain',
+    // The sampler/slicer. The only native type carrying the `builtin-` prefix,
+    // which is why `createDeviceRegistry` has to exclude native ids from its
+    // `builtin-` WebAudio arm — that arm is a prefix match registered first, and
+    // it would otherwise claim Crumbs and refuse to build it.
+    'builtin-crumbs',
     'grand-boule',
     'gluten',
     'bacteria',

@@ -21,6 +21,8 @@ import { isBuiltinSynthDevice, isDrumDevice } from '#/utils/deviceTypeMatching';
  * stating which code path renders it. There is deliberately no wildcard and no
  * "starts with builtin-" catch-all: `builtin-crumbs` shipped unrenderable for
  * exactly as long as its failure looked like every other `builtin-` failure.
+ * (Crumbs renders through the device chain now, so it is correctly absent from
+ * this table — it is not node-less, it has a node.)
  */
 /**
  * Individually declared node-less types, keyed by device type, valued by the

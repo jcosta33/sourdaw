@@ -18,8 +18,9 @@ import { NATIVE_DSP_DEVICE_FACTORIES } from '../nativeDspDeviceFactories';
 //
 // This spec is what actually holds the binding. It drives each note-voicing
 // entry of the real factory table with a stub node that records positional
-// arguments, and asserts the slots. Adding a fifth instrument with a third note
-// API, or binding an existing one to the wrong adapter, fails here.
+// arguments, and asserts the slots. Adding an instrument with a third note API,
+// or binding an existing one to the wrong adapter, fails here — it caught
+// Crumbs bound to the pad adapter on the first device added after this landed.
 
 type Recorded = { method: 'noteOn' | 'noteOff'; args: (number | undefined)[] };
 
@@ -62,6 +63,10 @@ vi.mock('../../../engine/GrandBouleNode', async (importOriginal) => ({
     ...(await importOriginal<typeof import('../../../engine/GrandBouleNode')>()),
     createGrandBouleNode: vi.fn(() => Promise.resolve(makeRecordingNode())),
 }));
+vi.mock('../../../engine/CrumbsNode', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../../../engine/CrumbsNode')>()),
+    createCrumbsNode: vi.fn(() => Promise.resolve(makeRecordingNode())),
+}));
 
 async function buildNode(deviceType: string) {
     const factory = NATIVE_DSP_DEVICE_FACTORIES.find((candidate) => candidate.matches(deviceType));
@@ -76,9 +81,16 @@ describe('native DSP note bindings map the named request onto each device own no
         recorded.length = 0;
     });
 
-    // Fermenter, Levain and Grand Boule all publish
+    // Fermenter, Levain, Grand Boule and Crumbs all publish
     // `(note, velocity, sampleFrame?, channel?)`.
-    it.each(['fermenter', 'levain', 'grand-boule'])(
+    //
+    // Crumbs was written against Toaster's pad order first, and nothing but a
+    // slot assertion could have said so: the two adapters are mutually
+    // assignable, `tsc` was silent, and a coverage test that only checked the
+    // node came back stayed green. Its live path put `sampleFrame` in the slot
+    // Crumbs discards and the MPE channel in `sampleFrame`, so every scheduled
+    // note voiced at frame 0.
+    it.each(['fermenter', 'levain', 'grand-boule', 'builtin-crumbs'])(
         '%s receives the frame in slot 3 and the channel in slot 4',
         async (deviceType) => {
             const node = await buildNode(deviceType);
@@ -95,7 +107,7 @@ describe('native DSP note bindings map the named request onto each device own no
 
     // A melodic device must not be handed a pad request's `midiNote`: there is
     // no slot for it, and putting it in slot 3 is the original defect inverted.
-    it.each(['fermenter', 'levain', 'grand-boule'])(
+    it.each(['fermenter', 'levain', 'grand-boule', 'builtin-crumbs'])(
         '%s ignores midiNote rather than voicing it',
         async (deviceType) => {
             const node = await buildNode(deviceType);
@@ -128,7 +140,7 @@ describe('native DSP note bindings map the named request onto each device own no
     // Their `create` fetches wasm and cannot run here, and they are not
     // note-less at the strategy in any case — see the note on the instrument
     // gate in the PR description.
-    it.each(['fermenter', 'toaster', 'levain', 'grand-boule'])(
+    it.each(['fermenter', 'toaster', 'levain', 'grand-boule', 'builtin-crumbs'])(
         '%s binds both halves of its note surface',
         async (deviceType) => {
             const node = await buildNode(deviceType);

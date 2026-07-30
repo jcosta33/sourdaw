@@ -71,6 +71,21 @@ export type AudioDeviceRuntimeSink = {
         /** Aborts the setup when the export is cancelled or outruns its deadline. */
         signal?: AbortSignal;
     }) => Promise<void>;
+    /**
+     * Give a *live* Crumbs worklet the sample the device is set to play.
+     *
+     * A wasm Crumbs instance starts with an empty pool, so without this it
+     * renders silence no matter what the project says. The composition root
+     * routes this and the `builtin-crumbs` arm of `prepareOfflineInstrument` to
+     * the same use case on purpose: the live and offline registries building
+     * two differently-configured engines is the failure this device is being
+     * dug out of, and one shared call is what stops it recurring.
+     *
+     * Fire-and-forget here, matching live Levain registration — live playback
+     * runs in real time and can start silent, then sound once the load lands.
+     * The offline path must await; see `prepareOfflineInstrument`.
+     */
+    prepareCrumbsDevice: (input: { deviceId: string; port: MessagePort }) => Promise<void>;
 };
 
 const defaultSink: AudioDeviceRuntimeSink = {
@@ -90,6 +105,7 @@ const defaultSink: AudioDeviceRuntimeSink = {
     updateProofMeters: () => {},
     updateTunerTelemetry: () => {},
     prepareOfflineInstrument: async () => {},
+    prepareCrumbsDevice: async () => {},
 };
 
 let runtimeSink = defaultSink;

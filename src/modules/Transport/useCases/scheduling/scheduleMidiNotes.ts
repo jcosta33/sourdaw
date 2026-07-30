@@ -39,7 +39,7 @@ import { scheduleFrozenTrack } from './scheduleFrozenTrack';
 // Each entry maps a device type to the controls property name on the device node
 // and an optional velocity transform (defaults to identity).
 type WorkletSynthEntry = {
-    controlsKey: 'fermenterControls' | 'grandBouleControls' | 'levainControls';
+    controlsKey: 'fermenterControls' | 'grandBouleControls' | 'levainControls' | 'crumbsControls';
     velocityTransform?: (velocity: number) => number;
 };
 
@@ -50,6 +50,11 @@ const WORKLET_SYNTH_DEVICES: Record<string, WorkletSynthEntry> = {
         velocityTransform: (value: number) => value / 127,
     },
     levain: { controlsKey: 'levainControls' },
+    // Crumbs' catalog id carries the `builtin-` prefix. Without this row a
+    // Crumbs track fell through to the built-in fallback synth here while the
+    // offline render voiced the real sampler — the same live/offline split the
+    // device's export refusal was hiding, just pointing the other way.
+    'builtin-crumbs': { controlsKey: 'crumbsControls' },
 };
 
 export type SchedulerCancellation = {

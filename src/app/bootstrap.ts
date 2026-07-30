@@ -74,6 +74,7 @@ import {
     clearActionHistory as clearCrdtActionHistory,
     registerCrdtStorageRuntime,
 } from '#/modules/CrdtDocument/useCases';
+import { prepareCrumbsEngine } from '#/modules/Crumbs/useCases';
 import { getDawProjectHandlers } from '#/modules/DawInterchange/useCases';
 import { setFermenterTelemetry } from '#/modules/Fermenter/stores';
 import { setFermenterMappedParam, setFermenterDependencies } from '#/modules/Fermenter/useCases';
@@ -300,6 +301,11 @@ configureAudioDeviceRuntimeSink({
     // silence. Dispatch stays in the composition root; each module owns what its
     // own device needs. See `prepareOfflineDeviceSetup`.
     prepareOfflineInstrument: prepareOfflineDeviceSetup,
+    // The live registry's Crumbs descriptor calls this, and the offline chain
+    // reaches the same use case through the `builtin-crumbs` row of
+    // `OFFLINE_DEVICE_HYDRATION`. One shared call is what stops the two
+    // registries from configuring two differently loaded engines.
+    prepareCrumbsDevice: ({ deviceId, port }) => prepareCrumbsEngine({ deviceId, port }),
     setFermenterTelemetry: (deviceId, telemetry) => {
         setFermenterTelemetry(deviceId, telemetry.peakL, telemetry.peakR, telemetry.scopeBuffer);
     },
