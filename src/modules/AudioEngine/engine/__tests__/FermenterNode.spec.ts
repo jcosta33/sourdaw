@@ -222,6 +222,12 @@ describe('createFermenterNode message surface & lifecycle', () => {
 
         const values = new Float32Array(initSab.sab, initSab.byteOffset, FERMENTER_SLOT_FLOATS);
         const sequence = new Int32Array(initSab.sab, initSab.byteOffset, FERMENTER_SLOT_FLOATS);
+        Atomics.add(sequence, TELEMETRY_SEQ_IDX, 1);
+        values[FERMENTER_IDX.lifecycle] = 3;
+        expect(result.processorLifecycle()).toBeNull();
+        Atomics.add(sequence, TELEMETRY_SEQ_IDX, 1);
+        expect(result.processorLifecycle()).toBe('sleep');
+
         const cases = [
             [0, 'continue'],
             [1, 'continueIfNotQuiet'],

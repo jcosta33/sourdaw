@@ -169,6 +169,7 @@ export async function createFermenterNode(
         node.port.postMessage({ type: 'init-sab', sab: slot.sab, byteOffset: slot.byteOffset });
     }
     const lifecycleReader = slot ? createTelemetryReader({ slot, project: projectFermenterLifecycle }) : null;
+    let lastLifecycle: FermenterProcessorLifecycle | null = null;
 
     const handshake = createReadyHandshake({ pluginName: 'FermenterNode' });
     node.port.onmessage = (event: MessageEvent) => {
@@ -305,10 +306,20 @@ export async function createFermenterNode(
             telemetryRafId = requestAnimationFrame(poll);
         },
         processorLifecycle() {
-            if (!slot || !lifecycleReader || Atomics.load(slot.seqView, TELEMETRY_SEQ_IDX) === 0) {
+            if (!slot || !lifecycleReader) {
                 return null;
             }
-            return lifecycleReader();
+            const before = Atomics.load(slot.seqView, TELEMETRY_SEQ_IDX);
+            if (before === 0 || (before & 1) !== 0) {
+                return lastLifecycle;
+            }
+            const lifecycle = lifecycleReader();
+            const after = Atomics.load(slot.seqView, TELEMETRY_SEQ_IDX);
+            if (before !== after || (after & 1) !== 0) {
+                return lastLifecycle;
+            }
+            lastLifecycle = lifecycle;
+            return lifecycle;
         },
         connect(dest: AudioNode) {
             node.connect(dest);

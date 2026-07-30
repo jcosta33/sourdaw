@@ -95,7 +95,7 @@ export type AudioEngineDiagnostics = {
     };
     runtime: {
         trackedAudioScheduledSources: number;
-        /** Device processors are unmanaged until the lifecycle protocol lands in Wave 1. */
+        /** Every device worklet is counted once: lifecycle-aware processors by state, all others as unmanaged. */
         processorLifecycle: {
             unmanaged: number;
             continue: number;
