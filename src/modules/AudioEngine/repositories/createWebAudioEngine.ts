@@ -15,6 +15,7 @@ import type {
     AudioEngine,
     AudioEngineDiagnostics,
     AudioEngineHealth,
+    AudioEnginePlaybackStats,
     AudioEngineState,
     BusStrip,
     BuiltinDeviceNode,
@@ -57,6 +58,76 @@ type ToasterPadRoute = {
     destinationNode: GainNode | null;
     controls: ToasterDeviceControls | null;
 };
+
+type ChromeAudioPlaybackStats = AudioEnginePlaybackStats & {
+    resetLatency(): void;
+    toJSON(): object;
+};
+
+function isChromeAudioPlaybackStats(value: unknown): value is ChromeAudioPlaybackStats {
+    if (typeof value !== 'object' || value === null) {
+        return false;
+    }
+    return (
+        'underrunDuration' in value &&
+        typeof value.underrunDuration === 'number' &&
+        'underrunEvents' in value &&
+        typeof value.underrunEvents === 'number' &&
+        'totalDuration' in value &&
+        typeof value.totalDuration === 'number' &&
+        'averageLatency' in value &&
+        typeof value.averageLatency === 'number' &&
+        'minimumLatency' in value &&
+        typeof value.minimumLatency === 'number' &&
+        'maximumLatency' in value &&
+        typeof value.maximumLatency === 'number' &&
+        'resetLatency' in value &&
+        typeof value.resetLatency === 'function' &&
+        'toJSON' in value &&
+        typeof value.toJSON === 'function'
+    );
+}
+
+function readPlaybackStats(context: AudioContext): AudioEnginePlaybackStats {
+    const stats = 'playbackStats' in context ? context.playbackStats : undefined;
+    if (!isChromeAudioPlaybackStats(stats)) {
+        throw new Error('Audio diagnostics require AudioContext.playbackStats from current stable Chrome.');
+    }
+    return {
+        underrunDuration: stats.underrunDuration,
+        underrunEvents: stats.underrunEvents,
+        totalDuration: stats.totalDuration,
+        averageLatency: stats.averageLatency,
+        minimumLatency: stats.minimumLatency,
+        maximumLatency: stats.maximumLatency,
+    };
+}
+
+type DeviceRuntimeResources = {
+    audioWorkletProcessors: number;
+    workers: number;
+};
+
+function countDeviceRuntimeResources(device: BuiltinDeviceNode): DeviceRuntimeResources {
+    let audioWorkletProcessors = 0;
+    for (const node of device.nodes) {
+        if (node instanceof AudioWorkletNode) {
+            audioWorkletProcessors++;
+        }
+    }
+    return { audioWorkletProcessors, workers: device.workerInstances ?? 0 };
+}
+
+function addCountByType(counts: Map<string, number>, type: string, count: number): void {
+    if (count === 0) {
+        return;
+    }
+    counts.set(type, (counts.get(type) ?? 0) + count);
+}
+
+function toSortedCountRecord(counts: Map<string, number>): Record<string, number> {
+    return Object.fromEntries([...counts].sort(([left], [right]) => left.localeCompare(right)));
+}
 
 /**
  * Transport SharedArrayBuffer layout (one 64-byte buffer shared with worklet
@@ -381,6 +452,7 @@ class AudioEngineImpl implements AudioEngine {
         if (this.fallbackMode) {
             return {
                 context,
+                playback: null,
                 graph: {
                     trackStrips: 0,
                     busStrips: 0,
@@ -391,18 +463,30 @@ class AudioEngineImpl implements AudioEngine {
                     failedDeviceInstances: 0,
                     deviceInstancesByType: {},
                     deviceAudioNodes: 0,
+                    deviceAudioWorkletProcessors: 0,
+                    deviceAudioWorkletProcessorsByType: {},
                     stripMeterWorklets: 0,
                     masterMeterWorklets: 0,
+                    graphAudioWorkletProcessors: 0,
+                    workerInstances: 0,
+                    workerInstancesByType: {},
                     adjustmentLayerBuses: 0,
                 },
-                runtime: { trackedAudioScheduledSources: 0 },
+                runtime: {
+                    trackedAudioScheduledSources: 0,
+                    processorLifecycle: { unmanaged: 0, continue: 0, continueIfNotQuiet: 0, tail: 0, sleep: 0 },
+                },
             };
         }
         const deviceInstancesByType = new Map<string, number>();
+        const deviceAudioWorkletProcessorsByType = new Map<string, number>();
+        const workerInstancesByType = new Map<string, number>();
         let deviceInstances = 0;
         let pendingDeviceInstances = 0;
         let failedDeviceInstances = 0;
         let deviceAudioNodes = 0;
+        let deviceAudioWorkletProcessors = 0;
+        let workerInstances = 0;
         let stripMeterWorklets = 0;
 
         for (const trackNode of this.trackNodes.values()) {
@@ -411,6 +495,11 @@ class AudioEngineImpl implements AudioEngine {
             }
             for (const device of trackNode.strip.deviceNodes) {
                 deviceAudioNodes += device.nodes.length;
+                const resources = countDeviceRuntimeResources(device);
+                deviceAudioWorkletProcessors += resources.audioWorkletProcessors;
+                addCountByType(deviceAudioWorkletProcessorsByType, device.type, resources.audioWorkletProcessors);
+                workerInstances += resources.workers;
+                addCountByType(workerInstancesByType, device.type, resources.workers);
                 const loadState = trackNode.getDeviceLoadState(device.deviceId);
                 if (loadState === 'pending') {
                     pendingDeviceInstances++;
@@ -421,16 +510,17 @@ class AudioEngineImpl implements AudioEngine {
                     continue;
                 }
                 deviceInstances++;
-                deviceInstancesByType.set(device.type, (deviceInstancesByType.get(device.type) ?? 0) + 1);
+                addCountByType(deviceInstancesByType, device.type, 1);
             }
         }
 
-        const sortedDeviceInstances = [...deviceInstancesByType].sort(([left], [right]) => left.localeCompare(right));
-        const masterMeterWorklets =
-            typeof AudioWorkletNode !== 'undefined' && this.masterMeterNode instanceof AudioWorkletNode ? 1 : 0;
+        const masterMeterWorklets = this.masterMeterNode instanceof AudioWorkletNode ? 1 : 0;
+        const graphAudioWorkletProcessors = deviceAudioWorkletProcessors + stripMeterWorklets + masterMeterWorklets;
+        const playback = readPlaybackStats(this.context);
 
         return {
             context,
+            playback,
             graph: {
                 // A bus owns a backing TrackNode; keep the public counters disjoint.
                 trackStrips: this.trackNodes.size - this.busNodes.size,
@@ -440,13 +530,27 @@ class AudioEngineImpl implements AudioEngine {
                 deviceInstances,
                 pendingDeviceInstances,
                 failedDeviceInstances,
-                deviceInstancesByType: Object.fromEntries(sortedDeviceInstances),
+                deviceInstancesByType: toSortedCountRecord(deviceInstancesByType),
                 deviceAudioNodes,
+                deviceAudioWorkletProcessors,
+                deviceAudioWorkletProcessorsByType: toSortedCountRecord(deviceAudioWorkletProcessorsByType),
                 stripMeterWorklets,
                 masterMeterWorklets,
+                graphAudioWorkletProcessors,
+                workerInstances,
+                workerInstancesByType: toSortedCountRecord(workerInstancesByType),
                 adjustmentLayerBuses: this.adjustmentRuntime.listLiveBusKeys().length,
             },
-            runtime: { trackedAudioScheduledSources: this.scheduledNodes.length },
+            runtime: {
+                trackedAudioScheduledSources: this.scheduledNodes.length,
+                processorLifecycle: {
+                    unmanaged: deviceAudioWorkletProcessors,
+                    continue: 0,
+                    continueIfNotQuiet: 0,
+                    tail: 0,
+                    sleep: 0,
+                },
+            },
         };
     }
 
