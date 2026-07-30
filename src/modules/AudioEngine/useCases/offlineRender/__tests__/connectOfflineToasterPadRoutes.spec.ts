@@ -26,6 +26,7 @@ function toasterEntry(connectPadOutput: ConnectPadOutput, setPadDryRouted: SetPa
         node,
         strategy: {
             node,
+            acceptsNotes: true,
             setParam: vi.fn<(name: string, value: number) => void>(),
             resolveOfflineAutomation: () => null,
             connectPadOutput,

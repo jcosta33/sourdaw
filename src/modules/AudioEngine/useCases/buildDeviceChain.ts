@@ -1,6 +1,11 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { compileFaustDSP, createFaustNode, isFaustModule } from '#/modules/PluginHost/useCases';
+import {
+    compileFaustDSP,
+    createFaustNode,
+    isFaustInstrumentModule,
+    isFaustModule,
+} from '#/modules/PluginHost/useCases';
 
 import { getAudioDeviceRuntimeSink } from '../engine/audioDeviceRuntimeSink';
 import { isPluginRequiresIsolationError } from '../engine/pluginHostingErrors';
@@ -38,6 +43,7 @@ export type BuildDeviceChainOutput = DeviceNodeEntry[];
 
 const deviceRegistry = createDeviceRegistry({
     faustModuleMatcher: isFaustModule,
+    faustInstrumentMatcher: isFaustInstrumentModule,
     createFaustDevice: ({ ctx, faustModuleId }) =>
         createFaustDevice({
             ctx,
@@ -322,7 +328,16 @@ export const buildDeviceChain = inject({ logger })(
                     // chain look like an instrument to the offline scheduler, so
                     // a MIDI track carrying only effects routed its notes into a
                     // no-op instead of the fallback synth (MD-4).
-                    instrumentControls: strategy.noteOn
+                    //
+                    // The gate is the strategy's own `acceptsNotes` declaration,
+                    // not `strategy.noteOn`. Reading the method back only looked
+                    // like the same question: `NativeDspDeviceStrategy` declares
+                    // `noteOn` on its prototype and forwards to an optional one
+                    // on the DSP node, so the check passed for every native
+                    // effect — Gluten, Proof, Bacteria — and the first of them
+                    // in a rack took the track's notes into a no-op while the
+                    // real instrument behind it rendered silent.
+                    instrumentControls: strategy.acceptsNotes
                         ? {
                               noteOn: (request) => strategy.noteOn?.(request),
                               noteOff: (request) => strategy.noteOff?.(request),

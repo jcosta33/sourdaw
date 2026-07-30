@@ -14,8 +14,17 @@ export class NativeDspDeviceStrategy implements AudioDeviceStrategy {
     public readonly node: OfflineDeviceNode;
     public readonly acceptsScheduledParam?: (name: string) => boolean;
     public readonly scheduleParam?: (name: string, segments: readonly OfflineAutomationSegment[]) => void;
+    /**
+     * Read off the DSP node the factory table built, not off this class. Every
+     * device that comes through here gets the same forwarding methods whether
+     * or not the node behind them implements anything, so the methods say
+     * nothing about the device; the node's own surface does. Gluten, Proof,
+     * Bacteria, Grinder, Knead, ProofChamber and Scoring supply no `noteOn`.
+     */
+    public readonly acceptsNotes: boolean;
 
     constructor(private readonly dspNode: NativeDspNode) {
+        this.acceptsNotes = dspNode.noteOn !== undefined;
         this.node = {
             inputNode: dspNode.workletNode,
             outputNode: dspNode.workletNode,
