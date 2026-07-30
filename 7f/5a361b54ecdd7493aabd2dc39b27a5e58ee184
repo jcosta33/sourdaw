@@ -1,0 +1,51 @@
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_bc88af7d3b054c::t_38d5d95aaba773 124,135,150-154,171-175,531-548
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_ac9b259eab20ba::t_b108a8c91b7328 135-138,165-182,428
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_8a101c04206a5b::t_923b52cd53c584 193-223
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_ac9b259eab20ba::t_215c4aead500e1 185-298
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_ac9b259eab20ba::t_5d0387497d8917 26,48,85-157,180-187,286,290-293,541-607,677-678,715,728,796
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_bc88af7d3b054c::t_c4a4f2c298ee3b 114-124,294-308
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_bc88af7d3b054c::t_0dcc9b17912cf2 33-34,245-268
+src/modules/Transport/handlers/transport/__tests__/handleSetTimeSignature.spec.ts
+  s_bc88af7d3b054c::t_3d69dd79351b3d 1-58
+src/modules/Transport/handlers/transport/handleSetTimeSignature.ts
+  s_bc88af7d3b054c::t_7b2a6cc1e39f8e 4,10-31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "7f5a361b54ecdd7493aabd2dc39b27a5e58ee184",
+  "prompts": {},
+  "sessions": {
+    "s_8a101c04206a5b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fb163-0915-7e60-b63e-68114f44ce8f",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
