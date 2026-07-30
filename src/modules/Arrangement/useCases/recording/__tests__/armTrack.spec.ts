@@ -28,8 +28,28 @@ describe('armTrack', () => {
         mocks.getMidiInputTrack.mockReturnValue(null);
     });
 
+    it('returns no write for a missing track', () => {
+        mocks.getTrackById.mockReturnValue(undefined);
+
+        const didWrite = armTrack('missing', true);
+
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(mocks.setMidiInputTrack).not.toHaveBeenCalled();
+        expect(didWrite).toBe(false);
+    });
+
+    it('returns no write when the requested armed state already matches project truth', () => {
+        mocks.getTrackById.mockReturnValue({ id: 't1', kind: 'audio', armed: true });
+
+        const didWrite = armTrack('t1', true);
+
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(mocks.setMidiInputTrack).not.toHaveBeenCalled();
+        expect(didWrite).toBe(false);
+    });
+
     it('arms a track and sets it as MIDI input in engine if MIDI track', () => {
-        mocks.getTrackById.mockReturnValue({ id: 't1', kind: 'midi' });
+        mocks.getTrackById.mockReturnValue({ id: 't1', kind: 'midi', armed: false });
 
         const didWrite = armTrack('t1', true);
 
@@ -39,7 +59,7 @@ describe('armTrack', () => {
     });
 
     it('arms a track but does not set MIDI input if not MIDI', () => {
-        mocks.getTrackById.mockReturnValue({ id: 't1', kind: 'audio' });
+        mocks.getTrackById.mockReturnValue({ id: 't1', kind: 'audio', armed: false });
 
         armTrack('t1', true);
 
@@ -48,7 +68,7 @@ describe('armTrack', () => {
     });
 
     it('rejects arming a dormant VCA without a project or MIDI-routing write', () => {
-        mocks.getTrackById.mockReturnValue({ id: 'vca-1', kind: 'vca' });
+        mocks.getTrackById.mockReturnValue({ id: 'vca-1', kind: 'vca', armed: false });
 
         const didWrite = armTrack('vca-1', true);
 
@@ -58,7 +78,7 @@ describe('armTrack', () => {
     });
 
     it('permits dormant VCA disarm cleanup and conditionally clears its stale MIDI routing', () => {
-        mocks.getTrackById.mockReturnValue({ id: 'vca-1', kind: 'vca' });
+        mocks.getTrackById.mockReturnValue({ id: 'vca-1', kind: 'vca', armed: true });
         mocks.getMidiInputTrack.mockReturnValue('vca-1');
 
         const didWrite = armTrack('vca-1', false);
@@ -69,12 +89,14 @@ describe('armTrack', () => {
     });
 
     it('disarms a track without touching MIDI input pointed elsewhere', () => {
+        mocks.getTrackById.mockReturnValue({ id: 't1', kind: 'audio', armed: true });
         armTrack('t1', false);
         expect(mocks.updateTrack).toHaveBeenCalledWith('t1', expect.any(Function));
         expect(mocks.setMidiInputTrack).not.toHaveBeenCalled();
     });
 
     it('clears MIDI input routing on disarm when it points at the track', () => {
+        mocks.getTrackById.mockReturnValue({ id: 't1', kind: 'audio', armed: true });
         mocks.getMidiInputTrack.mockReturnValue('t1');
 
         armTrack('t1', false);
@@ -83,6 +105,7 @@ describe('armTrack', () => {
     });
 
     it('leaves MIDI input routing alone on disarm when it points at another track', () => {
+        mocks.getTrackById.mockReturnValue({ id: 't1', kind: 'audio', armed: true });
         mocks.getMidiInputTrack.mockReturnValue('t2');
 
         armTrack('t1', false);
@@ -91,7 +114,7 @@ describe('armTrack', () => {
     });
 
     it('restores routing across an arm -> disarm -> re-arm (redo) sequence', () => {
-        mocks.getTrackById.mockReturnValue({ id: 't1', kind: 'midi' });
+        mocks.getTrackById.mockReturnValue({ id: 't1', kind: 'midi', armed: false });
         let routing: string | null = null;
         mocks.setMidiInputTrack.mockImplementation((next: string | null) => {
             routing = next;
@@ -100,10 +123,12 @@ describe('armTrack', () => {
 
         armTrack('t1', true);
         expect(routing).toBe('t1');
+        mocks.getTrackById.mockReturnValue({ id: 't1', kind: 'midi', armed: true });
 
         // Undo of the arm disarms and must clear the routing it created.
         armTrack('t1', false);
         expect(routing).toBeNull();
+        mocks.getTrackById.mockReturnValue({ id: 't1', kind: 'midi', armed: false });
 
         // Redo of the arm re-routes input to the re-armed track.
         armTrack('t1', true);

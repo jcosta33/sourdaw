@@ -2,6 +2,7 @@ import { render, screen, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
+import { executeAppAction } from '#/modules/Command/useCases';
 import { confirmUser } from '#/utils/Notification/confirmUser';
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
@@ -13,7 +14,6 @@ import { freezeTrack } from '../../../useCases/freezeBounce/freezeTrack';
 import { unfreezeTrack } from '../../../useCases/freezeBounce/unfreezeTrack';
 import { importAudioClipToTrack } from '../../../useCases/importAudioClipToTrack';
 import { importMidiFile } from '../../../useCases/importMidiFile';
-import { armTrack } from '../../../useCases/recording/armTrack';
 import { removeTrack } from '../../../useCases/removeTrack';
 import { renameTrack } from '../../../useCases/renameTrack';
 import { saveTrackAsTemplate } from '../../../useCases/saveTrackAsTemplate';
@@ -58,8 +58,8 @@ vi.mock('../../../useCases/freezeBounce/bounceTrack', () => ({
     bounceTrack: vi.fn(),
 }));
 
-vi.mock('../../../useCases/recording/armTrack', () => ({
-    armTrack: vi.fn(),
+vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction: vi.fn(),
 }));
 
 vi.mock('../../../useCases/duplicateTrack', () => ({
@@ -449,7 +449,7 @@ describe('TrackContextMenu', () => {
         expect(vi.mocked(setTrackColor)).toHaveBeenCalledWith('track1', expect.any(String));
     });
 
-    it('disarms an armed track', () => {
+    it('routes disarming through the canonical AppAction write path', () => {
         const armedTrack = TrackDummy.create({ id: 'arm1', armed: true });
         renderWithTooltip(
             <TrackContextMenu track={armedTrack}>
@@ -458,7 +458,10 @@ describe('TrackContextMenu', () => {
         );
         fireEvent.contextMenu(screen.getByTestId('track'));
         fireEvent.click(screen.getByText('Disarm'));
-        expect(vi.mocked(armTrack)).toHaveBeenCalledWith('arm1', false);
+        expect(vi.mocked(executeAppAction)).toHaveBeenCalledWith({
+            type: 'armTrack',
+            payload: { trackId: 'arm1', armed: false },
+        });
     });
 
     it('freezes an unfrozen track', () => {

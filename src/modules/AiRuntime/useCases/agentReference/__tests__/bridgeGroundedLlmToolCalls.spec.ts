@@ -182,6 +182,35 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(wrongCreatedTrack.actions).toEqual([]);
     });
 
+    it('grounds arm polarity to eligible named or selected tracks and respects cancellation', () => {
+        const arm = bridge([{ name: 'armTrack', arguments: { trackId: vocals.id, armed: true } }], 'arm Vocals');
+        const disarm = bridge([{ name: 'armTrack', arguments: { trackId: vocals.id, armed: false } }], 'disarm Vocals');
+        const selected = bridge(
+            [{ name: 'armTrack', arguments: { trackId: vocals.id, armed: true } }],
+            'arm selected track'
+        );
+        const wrongPolarity = bridge(
+            [{ name: 'armTrack', arguments: { trackId: vocals.id, armed: true } }],
+            'disarm Vocals'
+        );
+        const cancelled = bridge(
+            [{ name: 'armTrack', arguments: { trackId: vocals.id, armed: true } }],
+            "arm Vocals, but don't apply it"
+        );
+        const vca = createTrack({ id: 'vca-drums', name: 'Drum VCA', kind: 'vca' });
+        const ineligible = bridge([{ name: 'armTrack', arguments: { trackId: vca.id, armed: true } }], 'arm Drum VCA', {
+            ...projectContext,
+            tracks: [...projectContext.tracks, vca],
+        });
+
+        expect(arm.actions).toEqual([{ type: 'armTrack', payload: { trackId: vocals.id, armed: true } }]);
+        expect(disarm.actions).toEqual([{ type: 'armTrack', payload: { trackId: vocals.id, armed: false } }]);
+        expect(selected.actions).toEqual([{ type: 'armTrack', payload: { trackId: vocals.id, armed: true } }]);
+        expect(wrongPolarity.actions).toEqual([]);
+        expect(cancelled.actions).toEqual([]);
+        expect(ineligible.actions).toEqual([]);
+    });
+
     it('grounds time signatures as an explicit paired value', () => {
         const valid = bridge(
             [{ name: 'setTimeSignature', arguments: { numerator: 7, denominator: 8 } }],

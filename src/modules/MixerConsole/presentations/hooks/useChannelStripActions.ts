@@ -8,7 +8,6 @@ import {
     setTrackGain,
     setTrackPan,
     setTrackColor,
-    armTrack,
     removeTrack,
     renameTrack,
     toggleVcaMembership,
@@ -16,6 +15,7 @@ import {
     removeFromVca,
 } from '#/modules/Arrangement/useCases';
 import { releaseTouchAutomation } from '#/modules/Automation/useCases';
+import { executeAppAction } from '#/modules/Command/useCases';
 import { confirmUser } from '#/utils/Notification/confirmUser';
 
 import { type Track } from '../../models/TrackViewTypes';
@@ -56,7 +56,12 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
                 soloTrackExclusive(track.id);
             }
         },
-        toggleArm: () => armTrack(track.id, !track.armed),
+        toggleArm: () => {
+            void executeAppAction({
+                type: 'armTrack',
+                payload: { trackId: track.id, armed: !track.armed },
+            });
+        },
         toggleMonitoring: () => toggleInputMonitoring(track.id),
         toggleSoloSafeFlag: () => toggleSoloSafe(track.id),
         setGain: (value) => setTrackGain(track.id, value),

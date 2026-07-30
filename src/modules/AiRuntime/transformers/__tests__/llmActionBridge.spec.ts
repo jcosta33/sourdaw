@@ -125,6 +125,7 @@ describe('bridgeLlmToolCalls', () => {
                 { name: 'renameTrack', arguments: { trackId: 'track-vocals', name: 'Lead Vocal' } },
                 { name: 'muteTrack', arguments: { trackId: 'track-vocals', muted: true } },
                 { name: 'soloTrack', arguments: { trackId: 'track-vocals', soloed: true } },
+                { name: 'armTrack', arguments: { trackId: 'track-vocals', armed: true } },
                 { name: 'setTrackGain', arguments: { trackId: 'track-vocals', gain: 0.65 } },
                 { name: 'setTrackPan', arguments: { trackId: 'bus-reverb', pan: -20 } },
             ],
@@ -136,10 +137,35 @@ describe('bridgeLlmToolCalls', () => {
             { type: 'renameTrack', payload: { trackId: 'track-vocals', name: 'Lead Vocal' } },
             { type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true } },
             { type: 'soloTrack', payload: { trackId: 'track-vocals', soloed: true } },
+            { type: 'armTrack', payload: { trackId: 'track-vocals', armed: true } },
             { type: 'setTrackGain', payload: { trackId: 'track-vocals', gain: 0.65 } },
             { type: 'setTrackPan', payload: { trackId: 'bus-reverb', pan: -20 } },
         ]);
         expect(result.rejections).toEqual([]);
+    });
+
+    it('rejects malformed arm payloads and tracks that cannot be armed', () => {
+        const vcaTrack = {
+            ...projectContext.tracks[0]!,
+            id: 'vca-1',
+            name: 'Drum VCA',
+            kind: 'vca' as const,
+        };
+        const result = bridge({
+            calls: [
+                { name: 'armTrack', arguments: { trackId: 'track-vocals' } },
+                { name: 'armTrack', arguments: { trackId: 'track-vocals', armed: 'yes' } },
+                { name: 'armTrack', arguments: { trackId: 'track-vocals', armed: true, extra: true } },
+                { name: 'armTrack', arguments: { trackId: 'vca-1', armed: true } },
+            ],
+            context: { ...projectContext, tracks: [...projectContext.tracks, vcaTrack] },
+        });
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toHaveLength(4);
+        expect(
+            result.rejections.every(({ reason }) => reason === 'Expected an armable trackId and boolean armed value')
+        ).toBe(true);
     });
 
     it('rejects unsupported tools, extra fields, invalid bounds, and unavailable targets', () => {
@@ -528,6 +554,24 @@ describe('bridgeLlmToolCalls', () => {
         ]);
     });
 
+    it('rejects repeated arm writes to the same track', () => {
+        const result = bridge({
+            calls: [
+                { name: 'armTrack', arguments: { trackId: 'track-vocals', armed: true } },
+                { name: 'armTrack', arguments: { trackId: 'track-vocals', armed: false } },
+            ],
+        });
+
+        expect(result.actions).toEqual([{ type: 'armTrack', payload: { trackId: 'track-vocals', armed: true } }]);
+        expect(result.rejections).toEqual([
+            {
+                index: 1,
+                name: 'armTrack',
+                reason: 'Provider batch writes the same target field more than once',
+            },
+        ]);
+    });
+
     it('rejects repeated time-signature changes instead of depending on ambiguous order', () => {
         const result = bridge({
             calls: [
@@ -578,6 +622,7 @@ describe('bridgeLlmToolCalls', () => {
         expect(userMessage).toContain('"id":"track-vocals"');
         expect(userMessage).toContain('"index":0');
         expect(userMessage).toContain('"selectedTrackId":"track-vocals"');
+        expect(userMessage).toContain('"armed":false');
         expect(userMessage).toContain('<user_request>\nmute the vocals\n</user_request>');
         expect(userMessage).not.toContain('"clips"');
         expect(userMessage).toContain('"devices"');

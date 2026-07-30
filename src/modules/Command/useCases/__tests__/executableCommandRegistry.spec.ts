@@ -61,6 +61,17 @@ const EXPECTED_COMMANDS = [
         false
     ),
     expectedCommand(
+        'armTrack',
+        'Arm or disarm a track for recording.',
+        {
+            trackId: { type: 'string' },
+            armed: { type: 'boolean', description: 'true=arm, false=disarm' },
+        },
+        ['trackId', 'armed'],
+        'authority-sensitive',
+        true
+    ),
+    expectedCommand(
         'duplicateTrack',
         'Duplicate a track with all clips and devices.',
         { trackId: { type: 'string' } },
@@ -243,6 +254,19 @@ const EXPECTED_GROUNDING = [
                 kind: 'boolean-intent',
                 truePhrases: ['solo'],
                 falsePhrases: ['unsolo'],
+            },
+        ],
+    },
+    {
+        actionType: 'armTrack',
+        intentPhrases: ['arm for recording', 'arm', 'disarm'],
+        targetRules: [{ argument: 'trackId', capability: 'armable-track' }],
+        valueRules: [
+            {
+                argument: 'armed',
+                kind: 'boolean-intent',
+                truePhrases: ['arm for recording', 'arm'],
+                falsePhrases: ['disarm'],
             },
         ],
     },

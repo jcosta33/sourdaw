@@ -21,6 +21,16 @@ function guardedPayloadCase<ActionType extends RuntimeActionType>(
 
 const guardedPayloadContractCases = [
     guardedPayloadCase({
+        actionType: 'armTrack',
+        validPayload: { trackId: 'track-1', armed: true },
+        invalidPayloads: [
+            { trackId: '', armed: true },
+            { trackId: 'track-1', armed: 'yes' },
+            { trackId: 'track-1' },
+            { trackId: 'track-1', armed: true, extra: true },
+        ],
+    }),
+    guardedPayloadCase({
         actionType: 'splitClip',
         validPayload: { clipId: 'clip-1', beat: 4 },
         invalidPayloads: [

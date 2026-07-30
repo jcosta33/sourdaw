@@ -3,7 +3,14 @@ import { type AppActionType } from '#/utils/handlerContract';
 export type ExecutableAppActionRisk = 'bounded-reversible' | 'broad-reversible' | 'authority-sensitive';
 
 export type ExecutableAppActionTargetCapability =
-    'track' | 'duplicable-track' | 'routable-source' | 'bus' | 'output' | 'device' | 'device-parameter';
+    | 'track'
+    | 'armable-track'
+    | 'duplicable-track'
+    | 'routable-source'
+    | 'bus'
+    | 'output'
+    | 'device'
+    | 'device-parameter';
 
 export type ExecutableAppActionTargetRule = {
     argument: string;
@@ -154,6 +161,28 @@ export const executableAppActionDescriptors = [
                 soloed: { type: 'boolean', description: 'true=solo, false=unsolo' },
             },
             required: ['trackId', 'soloed'],
+        },
+    },
+    {
+        actionType: 'armTrack',
+        risk: 'authority-sensitive',
+        description: 'Arm or disarm a track for recording.',
+        intentPhrases: ['arm for recording', 'arm', 'disarm'],
+        targetRules: [{ argument: 'trackId', capability: 'armable-track' }],
+        valueRules: [
+            {
+                argument: 'armed',
+                kind: 'boolean-intent',
+                truePhrases: ['arm for recording', 'arm'],
+                falsePhrases: ['disarm'],
+            },
+        ],
+        parameters: {
+            properties: {
+                trackId: { type: 'string' },
+                armed: { type: 'boolean', description: 'true=arm, false=disarm' },
+            },
+            required: ['trackId', 'armed'],
         },
     },
     {

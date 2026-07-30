@@ -6,14 +6,17 @@ import { getTrackEligibility } from '../../stores/trackEligibility';
 
 export function armTrack(trackId: string, armed: boolean): boolean {
     const track = getTrackById(trackId);
-    if (armed && track && !getTrackEligibility(track.kind).acceptsArm) {
+    if (!track || track.armed === armed) {
+        return false;
+    }
+    if (armed && !getTrackEligibility(track.kind).acceptsArm) {
         return false;
     }
 
     updateTrack(trackId, (time) => ({ ...time, armed }));
 
     if (armed) {
-        if (track && track.kind === 'midi') {
+        if (track.kind === 'midi') {
             setMidiInputTrack(trackId);
         }
         return true;
