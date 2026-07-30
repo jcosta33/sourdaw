@@ -61,20 +61,33 @@ vi.mock('#/infra/store/useStore', () => ({
 }));
 
 const mockSetTempo = vi.fn();
-const mockSetTimeSignature = vi.fn();
+const mockExecuteAppAction = vi.fn();
 const mockAddTempoChange = vi.fn();
 const mockRemoveTempoChange = vi.fn();
 const mockUpdateTempoChange = vi.fn();
 vi.mock('#/modules/Transport/useCases', () => ({
-    setTempo: (...args: unknown[]) => mockSetTempo(...args),
-    setTimeSignature: (...args: unknown[]) => mockSetTimeSignature(...args),
-    addTempoChange: (...args: unknown[]) => mockAddTempoChange(...args),
-    removeTempoChange: (...args: unknown[]) => mockRemoveTempoChange(...args),
-    updateTempoChange: (...args: unknown[]) => mockUpdateTempoChange(...args),
+    setTempo: (...args: unknown[]): void => {
+        mockSetTempo(...args);
+    },
+    addTempoChange: (...args: unknown[]): void => {
+        mockAddTempoChange(...args);
+    },
+    removeTempoChange: (...args: unknown[]): void => {
+        mockRemoveTempoChange(...args);
+    },
+    updateTempoChange: (...args: unknown[]): void => {
+        mockUpdateTempoChange(...args);
+    },
     // useTransportState reads this as the `useStore` default; our `useStore`
     // mock ignores it and always resolves via store identity, but the real
     // module shape must still be present for the import to resolve.
     defaultTransportState: {},
+}));
+
+vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction: (action: unknown): void => {
+        mockExecuteAppAction(action);
+    },
 }));
 
 describe('useTempoEditorState', () => {
@@ -111,7 +124,10 @@ describe('useTempoEditorState', () => {
                 result.current.commitTimeSig();
             });
 
-            expect(mockSetTimeSignature).toHaveBeenCalledWith(7, 16);
+            expect(mockExecuteAppAction).toHaveBeenCalledWith({
+                type: 'setTimeSignature',
+                payload: { numerator: 7, denominator: 16 },
+            });
             expect(result.current.editingTimeSig).toBe(false);
         });
 
@@ -125,7 +141,7 @@ describe('useTempoEditorState', () => {
                 result.current.cancelTimeSigEdit();
             });
 
-            expect(mockSetTimeSignature).not.toHaveBeenCalled();
+            expect(mockExecuteAppAction).not.toHaveBeenCalled();
             expect(result.current.editingTimeSig).toBe(false);
         });
     });
