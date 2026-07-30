@@ -162,11 +162,16 @@ describe('createProofNode', () => {
         expect(port.postMessage).toHaveBeenNthCalledWith(2, { type: 'reset_integrated' });
     });
 
-    it('initializes SAB telemetry on ready and polls torn-free meter snapshots into the callback', async () => {
+    it('initializes SAB telemetry on ready and explicitly polls torn-free meter snapshots into the callback', async () => {
         const slot = makeSlot();
         mocks.allocateSlot.mockReturnValue(slot);
         const node = await createProofNode(makeContext());
         const { port } = lastWorklet();
+        const frames: ProofMeterData[] = [];
+        node.onMeterData((data) => frames.push(data));
+
+        node.pollTelemetry();
+        expect(frames).toHaveLength(0);
 
         // Worklet signals ready → the node hands the SAB slot to the processor.
         port.onmessage?.({ data: { type: 'ready' } } as MessageEvent);
@@ -185,9 +190,7 @@ describe('createProofNode', () => {
         slot.view[PROOF_IDX.latency] = 256;
         slot.seqView[TELEMETRY_SEQ_IDX] = 2;
 
-        const frames: ProofMeterData[] = [];
-        node.onMeterData((data) => frames.push(data));
-        vi.advanceTimersByTime(16);
+        node.pollTelemetry();
 
         expect(frames).toHaveLength(1);
         expect(frames[0]).toMatchObject({
@@ -202,9 +205,8 @@ describe('createProofNode', () => {
         expect(frames[0]!.tapPeaks[5]!.peakL).toBeCloseTo(0.7, 5);
         expect(frames[0]!.tapPeaks[5]!.peakR).toBeCloseTo(0.6, 5);
 
-        // Polling keeps delivering frames every 16 ms.
-        vi.advanceTimersByTime(32);
-        expect(frames).toHaveLength(3);
+        node.pollTelemetry();
+        expect(frames).toHaveLength(2);
     });
 
     it('delivers the neutral snapshot — never the open-seqlock fields — when the counter never settles', async () => {
@@ -223,7 +225,7 @@ describe('createProofNode', () => {
 
         const frames: ProofMeterData[] = [];
         node.onMeterData((data) => frames.push(data));
-        vi.advanceTimersByTime(16);
+        node.pollTelemetry();
 
         expect(frames).toHaveLength(1);
         expect(frames[0]!.inputLufs).toBe(0);
@@ -244,7 +246,7 @@ describe('createProofNode', () => {
 
         const frames: ProofMeterData[] = [];
         node.onMeterData((data) => frames.push(data));
-        vi.advanceTimersByTime(16);
+        node.pollTelemetry();
         expect(frames[0]!.inputLufs).toBe(-18);
 
         // Writer opens the seqlock, overwrites one field, and never closes it:
@@ -252,7 +254,7 @@ describe('createProofNode', () => {
         slot.seqView[TELEMETRY_SEQ_IDX] = 3;
         slot.view[PROOF_IDX.inputLufs] = -20;
 
-        vi.advanceTimersByTime(16);
+        node.pollTelemetry();
 
         // Stale-but-consistent, not the mixed generation.
         expect(frames).toHaveLength(2);
@@ -272,8 +274,26 @@ describe('createProofNode', () => {
 
         const frames: ProofMeterData[] = [];
         node.onMeterData((data) => frames.push(data));
-        vi.advanceTimersByTime(64);
+        node.pollTelemetry();
         expect(frames).toHaveLength(0);
+    });
+
+    it('does not start an independent recurring scheduler when telemetry is registered or polled', async () => {
+        const slot = makeSlot();
+        mocks.allocateSlot.mockReturnValue(slot);
+        const setIntervalSpy = vi.fn();
+        const requestAnimationFrameSpy = vi.fn();
+        vi.stubGlobal('setInterval', setIntervalSpy);
+        vi.stubGlobal('requestAnimationFrame', requestAnimationFrameSpy);
+        const node = await createProofNode(makeContext());
+        const { port } = lastWorklet();
+        port.onmessage?.({ data: { type: 'ready' } } as MessageEvent);
+
+        node.onMeterData(vi.fn());
+        node.pollTelemetry();
+
+        expect(setIntervalSpy).not.toHaveBeenCalled();
+        expect(requestAnimationFrameSpy).not.toHaveBeenCalled();
     });
 
     it('forwards latency-changed worklet messages to the latency callback', async () => {
@@ -302,7 +322,7 @@ describe('createProofNode', () => {
         expect(() => node.disconnect()).not.toThrow();
     });
 
-    it('destroy stops polling, releases the telemetry slot, and closes the port', async () => {
+    it('destroy stops callback delivery, releases the telemetry slot, and closes the port', async () => {
         const slot = makeSlot();
         mocks.allocateSlot.mockReturnValue(slot);
         const node = await createProofNode(makeContext());
@@ -312,16 +332,15 @@ describe('createProofNode', () => {
 
         const frames: ProofMeterData[] = [];
         node.onMeterData((data) => frames.push(data));
-        vi.advanceTimersByTime(16);
+        node.pollTelemetry();
         expect(frames).toHaveLength(1);
 
         node.destroy();
+        node.pollTelemetry();
 
         expect(mocks.releaseSlot).toHaveBeenCalledWith(slot.byteOffset);
         expect(worklet.disconnect).toHaveBeenCalled();
         expect(worklet.port.close).toHaveBeenCalledTimes(1);
-        // The 16 ms poll is gone — no further frames arrive.
-        vi.advanceTimersByTime(64);
         expect(frames).toHaveLength(1);
     });
 });

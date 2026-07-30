@@ -7,7 +7,16 @@ import { externalLatencyRegistry } from '../../useCases/latencyCompensation/comp
 import { setAudioDeviceRuntimeSink } from '../audioDeviceRuntimeSink';
 import { type FermenterNodeResult } from '../FermenterNode';
 import { type ProofNodeResult } from '../ProofNode';
+import { registerDeviceTelemetrySource } from '../telemetry/deviceTelemetryScheduler';
 import { findWasmDescriptor } from '../wasmDeviceRegistry';
+
+const telemetrySchedulerMocks = vi.hoisted(() => ({
+    unregisterSource: vi.fn(),
+}));
+
+vi.mock('../telemetry/deviceTelemetryScheduler', () => ({
+    registerDeviceTelemetrySource: vi.fn(() => telemetrySchedulerMocks.unregisterSource),
+}));
 
 const proofNodeMocks = vi.hoisted(() => ({
     createProofNode: vi.fn(),
@@ -61,6 +70,7 @@ type RegistryAudioWorkletNode = ReturnType<typeof createMockAudioNode<'audio-wor
 
 describe('findWasmDescriptor', () => {
     beforeEach(() => {
+        vi.clearAllMocks();
         proofNodeMocks.createProofNode.mockReset();
         proofNodeMocks.destroy.mockReset();
         proofNodeMocks.onLatencyChanged.mockReset();
@@ -238,7 +248,8 @@ describe('findWasmDescriptor', () => {
         // on bypass entry. Without this wiring the mechanism silently skips
         // Fermenter and held voices keep sounding through bypass.
         const onLoaded = vi.fn();
-        fermenterNodeMocks.createFermenterNode.mockResolvedValue(createFermenterNodeResult());
+        const result = createFermenterNodeResult();
+        fermenterNodeMocks.createFermenterNode.mockResolvedValue(result);
 
         const desc = findWasmDescriptor('fermenter');
         if (!desc) {
@@ -255,6 +266,10 @@ describe('findWasmDescriptor', () => {
         await loadPromise;
 
         expect(onLoaded).toHaveBeenCalledTimes(1);
+        expect(registerDeviceTelemetrySource).toHaveBeenCalledWith({
+            deviceId: 'ferm-1',
+            poll: result.pollTelemetry,
+        });
         const loadedNode = onLoaded.mock.calls[0]![0] as BuiltinDeviceNode;
         if (!loadedNode.controller?.allNotesOff) {
             throw new Error('Expected loaded fermenter controller to expose allNotesOff');
@@ -263,6 +278,68 @@ describe('findWasmDescriptor', () => {
         expect(fermenterNodeMocks.allNotesOff).toHaveBeenCalledTimes(1);
         expect(loadedNode.processorLifecycle?.()).toBe('sleep');
         expect(fermenterNodeMocks.processorLifecycle).toHaveBeenCalledOnce();
+        loadedNode.dispose?.();
+        expect(telemetrySchedulerMocks.unregisterSource).toHaveBeenCalledTimes(1);
+    });
+
+    it('destroys a loaded device when telemetry source registration fails', async () => {
+        const registrationError = new Error('telemetry registration failed');
+        vi.mocked(registerDeviceTelemetrySource).mockImplementationOnce(() => {
+            throw registrationError;
+        });
+        const onLoaded = vi.fn();
+        const result = createFermenterNodeResult();
+        fermenterNodeMocks.createFermenterNode.mockResolvedValue(result);
+
+        const desc = findWasmDescriptor('fermenter');
+        if (!desc) {
+            throw new Error('Expected fermenter descriptor to be registered');
+        }
+
+        const { loadPromise } = desc.create({
+            context: createRegistryAudioContext(),
+            deviceId: 'ferm-registration-error',
+            deviceType: 'fermenter',
+            onLoaded,
+        });
+
+        await expect(loadPromise).resolves.toBeUndefined();
+        expect(onLoaded).not.toHaveBeenCalled();
+        expect(result.destroy).toHaveBeenCalledTimes(1);
+        expect(telemetrySchedulerMocks.unregisterSource).not.toHaveBeenCalled();
+    });
+
+    it('removes Proof runtime state when the owner rejects the loaded node', async () => {
+        const registerProofDevice = vi.fn();
+        const unregisterProofDevice = vi.fn();
+        setAudioDeviceRuntimeSink({
+            registerProofDevice,
+            syncProofPatch: vi.fn(),
+            unregisterProofDevice,
+        });
+        const result = createProofNodeResult();
+        result.ready = Promise.resolve({ latency: 480 });
+        proofNodeMocks.createProofNode.mockResolvedValue(result);
+        const onLoaded = vi.fn(() => false);
+
+        const desc = findWasmDescriptor('proof');
+        if (!desc) {
+            throw new Error('Expected proof descriptor to be registered');
+        }
+
+        const { loadPromise } = desc.create({
+            context: createRegistryAudioContext(),
+            deviceId: 'proof-rejected',
+            deviceType: 'proof',
+            onLoaded,
+        });
+
+        await loadPromise;
+        expect(registerProofDevice).toHaveBeenCalledTimes(1);
+        expect(unregisterProofDevice).toHaveBeenCalledWith('proof-rejected');
+        expect(externalLatencyRegistry.has('proof-rejected')).toBe(false);
+        expect(result.destroy).toHaveBeenCalledTimes(1);
+        expect(telemetrySchedulerMocks.unregisterSource).toHaveBeenCalledTimes(1);
     });
 });
 
@@ -281,6 +358,7 @@ function createProofNodeResult(): ProofNodeResult {
         disconnect: vi.fn(),
         onLatencyChanged: proofNodeMocks.onLatencyChanged,
         onMeterData: proofNodeMocks.onMeterData,
+        pollTelemetry: vi.fn(),
         ready: Promise.resolve({ latency: 0 }),
         reorderModules: proofNodeMocks.reorderModules,
         resetIntegrated: proofNodeMocks.resetIntegrated,
@@ -300,6 +378,7 @@ function createFermenterNodeResult(): FermenterNodeResult {
         noteOff: fermenterNodeMocks.noteOff,
         noteOn: fermenterNodeMocks.noteOn,
         onTelemetry: fermenterNodeMocks.onTelemetry,
+        pollTelemetry: vi.fn(),
         processorLifecycle: fermenterNodeMocks.processorLifecycle,
         ready: Promise.resolve({}),
         setBypass: fermenterNodeMocks.setBypass,

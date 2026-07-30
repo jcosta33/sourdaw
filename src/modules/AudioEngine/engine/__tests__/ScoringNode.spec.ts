@@ -20,7 +20,7 @@ vi.mock('#/infra/audioWorklet/workletInitShared', () => ({
 vi.mock('../pluginHostingErrors', () => ({ requireSharedArrayBuffer: vi.fn() }));
 
 // No telemetry slot by default; individual tests override allocateSlot to
-// exercise the slot-present branches (init-sab post, telemetry polling).
+// exercise the slot-present branches (init-sab post, explicit telemetry polling).
 vi.mock('../telemetryAllocator', async () => {
     const actual = await vi.importActual<typeof import('../telemetryAllocator')>('../telemetryAllocator');
     return { ...actual, telemetryAllocator: { allocateSlot: vi.fn(() => null), releaseSlot: vi.fn() } };
@@ -126,13 +126,16 @@ describe('createScoringNode', () => {
         expect(postMessage).toHaveBeenCalledWith({ type: 'bypass', bypassed: false });
     });
 
-    it('should poll telemetry only when a slot is available, deriving noteName from noteIndex', async () => {
+    it('delivers telemetry only when explicitly polled with a slot, deriving noteName from noteIndex', async () => {
         const { telemetryAllocator, SCORING_IDX } = await import('../telemetryAllocator');
         const raf = vi.fn();
         vi.stubGlobal('requestAnimationFrame', raf);
 
         const noSlotNode = await createScoringNode(makeCtx());
-        noSlotNode.onTelemetry(vi.fn());
+        const noSlotCallback = vi.fn();
+        noSlotNode.onTelemetry(noSlotCallback);
+        noSlotNode.pollTelemetry();
+        expect(noSlotCallback).not.toHaveBeenCalled();
         expect(raf).not.toHaveBeenCalled();
 
         const view = new Float32Array(32);
@@ -149,17 +152,10 @@ describe('createScoringNode', () => {
             view,
             seqView: new Int32Array(32),
         });
-        const rafCallbacks: FrameRequestCallback[] = [];
-        vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
-            rafCallbacks.push(cb);
-            return rafCallbacks.length;
-        });
-        vi.stubGlobal('cancelAnimationFrame', vi.fn());
-
         const node = await createScoringNode(makeCtx());
         const cb = vi.fn();
         node.onTelemetry(cb);
-        rafCallbacks[0]!(0);
+        node.pollTelemetry();
 
         expect(cb).toHaveBeenCalledTimes(1);
         expect(cb).toHaveBeenCalledWith({
@@ -172,6 +168,7 @@ describe('createScoringNode', () => {
             midiNote: 69,
             noteName: 'A',
         });
+        expect(raf).not.toHaveBeenCalled();
     });
 
     it('should report an inactive, zeroed telemetry frame when the active flag is unset', async () => {
@@ -185,17 +182,10 @@ describe('createScoringNode', () => {
             view,
             seqView: new Int32Array(32),
         });
-        const rafCallbacks: FrameRequestCallback[] = [];
-        vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
-            rafCallbacks.push(cb);
-            return rafCallbacks.length;
-        });
-        vi.stubGlobal('cancelAnimationFrame', vi.fn());
-
         const node = await createScoringNode(makeCtx());
         const cb = vi.fn();
         node.onTelemetry(cb);
-        rafCallbacks[0]!(0);
+        node.pollTelemetry();
 
         expect(cb).toHaveBeenCalledWith({
             active: false,
@@ -221,7 +211,7 @@ describe('createScoringNode', () => {
         expect(() => node.disconnect()).not.toThrow();
     });
 
-    it('should release the telemetry slot, cancel polling, disconnect and close the port on destroy', async () => {
+    it('releases the telemetry slot, stops callback delivery, disconnects and closes the port on destroy', async () => {
         const { telemetryAllocator } = await import('../telemetryAllocator');
         vi.mocked(telemetryAllocator.allocateSlot).mockReturnValue({
             sab: {} as SharedArrayBuffer,
@@ -229,17 +219,15 @@ describe('createScoringNode', () => {
             view: new Float32Array(32),
             seqView: new Int32Array(32),
         });
-        vi.stubGlobal('requestAnimationFrame', () => 5);
-        const cancelRaf = vi.fn();
-        vi.stubGlobal('cancelAnimationFrame', cancelRaf);
-
         const node = await createScoringNode(makeCtx());
-        node.onTelemetry(vi.fn());
+        const callback = vi.fn();
+        node.onTelemetry(callback);
 
         node.destroy();
+        node.pollTelemetry();
 
         expect(telemetryAllocator.releaseSlot).toHaveBeenCalledWith(32);
-        expect(cancelRaf).toHaveBeenCalledWith(5);
+        expect(callback).not.toHaveBeenCalled();
         expect(disconnect).toHaveBeenCalled();
         expect(close).toHaveBeenCalled();
     });
@@ -251,7 +239,7 @@ describe('createScoringNode', () => {
         await expect(node.ready).resolves.toEqual({});
     });
 
-    it('cancels a prior polling loop when onTelemetry is registered again', async () => {
+    it('replaces the registered telemetry callback without starting a recurring scheduler', async () => {
         const { telemetryAllocator } = await import('../telemetryAllocator');
         vi.mocked(telemetryAllocator.allocateSlot).mockReturnValue({
             sab: {} as SharedArrayBuffer,
@@ -259,35 +247,25 @@ describe('createScoringNode', () => {
             view: new Float32Array(32),
             seqView: new Int32Array(32),
         });
-        const rafCallbacks: FrameRequestCallback[] = [];
-        vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
-            rafCallbacks.push(cb);
-            return rafCallbacks.length;
-        });
-        const cancelRaf = vi.fn();
-        vi.stubGlobal('cancelAnimationFrame', cancelRaf);
+        const raf = vi.fn();
+        vi.stubGlobal('requestAnimationFrame', raf);
 
         const node = await createScoringNode(makeCtx());
-        node.onTelemetry(vi.fn());
-        // A second registration must cancel the first scheduled frame before
-        // starting a new poll loop (the `telemetryRafId !== null` guard).
-        node.onTelemetry(vi.fn());
+        const first = vi.fn();
+        const second = vi.fn();
+        node.onTelemetry(first);
+        node.onTelemetry(second);
+        node.pollTelemetry();
 
-        expect(cancelRaf).toHaveBeenCalledWith(1);
+        expect(first).not.toHaveBeenCalled();
+        expect(second).toHaveBeenCalledTimes(1);
+        expect(raf).not.toHaveBeenCalled();
     });
 
-    it('destroy is a safe no-op when no slot was allocated and no poll is running', async () => {
-        // No slot (allocateSlot returns null) and onTelemetry never called →
-        // both destroy guards (telemetryRafId null, slot null) take their false
-        // arms: nothing to cancel, nothing to release.
-        const cancelRaf = vi.fn();
-        vi.stubGlobal('cancelAnimationFrame', cancelRaf);
-
+    it('destroy is safe when no telemetry slot was allocated', async () => {
         const node = await createScoringNode(makeCtx());
         node.destroy();
 
-        expect(cancelRaf).not.toHaveBeenCalled();
-        // Still disconnects and closes the port.
         expect(disconnect).toHaveBeenCalled();
         expect(close).toHaveBeenCalled();
     });

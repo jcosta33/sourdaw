@@ -13,8 +13,17 @@ import { type KneadNodeResult } from '../KneadNode';
 import { type LevainNodeResult } from '../LevainNode';
 import { type ProofChamberNodeResult } from '../ProofChamberNode';
 import { type ScoringNodeResult } from '../ScoringNode';
+import { registerDeviceTelemetrySource } from '../telemetry/deviceTelemetryScheduler';
 import { type ToasterNodeResult } from '../ToasterNode';
 import { findWasmDescriptor, type WasmDeviceCreateDeps } from '../wasmDeviceRegistry';
+
+const telemetrySchedulerMocks = vi.hoisted(() => ({
+    unregisterSource: vi.fn(),
+}));
+
+vi.mock('../telemetry/deviceTelemetryScheduler', () => ({
+    registerDeviceTelemetrySource: vi.fn(() => telemetrySchedulerMocks.unregisterSource),
+}));
 
 const factoryMocks = vi.hoisted(() => ({
     createToasterNode: vi.fn(),
@@ -368,6 +377,7 @@ describe('wasmDeviceRegistry descriptors', () => {
 
     describe('gluten', () => {
         it('routes meter data to the sink, reports latency in ms, and cleans both up on destroy', async () => {
+            let latencyCallback: ((latency: number) => void) | undefined;
             let meterCallback:
                 | ((
                       data: Parameters<GlutenNodeResult['onMeterData']>[0] extends (data: infer D) => void ? D : never
@@ -380,7 +390,10 @@ describe('wasmDeviceRegistry descriptors', () => {
                 onMeterData: vi.fn((cb) => {
                     meterCallback = cb;
                 }),
-                onLatencyChanged: vi.fn(),
+                pollTelemetry: vi.fn(),
+                onLatencyChanged: vi.fn((cb) => {
+                    latencyCallback = cb;
+                }),
                 connect: vi.fn(),
                 disconnect: vi.fn(),
                 destroy: vi.fn(),
@@ -395,6 +408,10 @@ describe('wasmDeviceRegistry descriptors', () => {
             const { loadPromise } = requireDescriptor('gluten').create(deps);
             await loadPromise;
 
+            expect(registerDeviceTelemetrySource).toHaveBeenCalledWith({
+                deviceId: 'glu-1',
+                poll: result.pollTelemetry,
+            });
             if (!meterCallback) {
                 throw new Error('expected the gluten meter callback to be registered');
             }
@@ -415,12 +432,18 @@ describe('wasmDeviceRegistry descriptors', () => {
                 phaseCorr: 0.8,
                 latency: 480,
             });
+            expect(externalLatencyRegistry.has('glu-1')).toBe(false);
+            if (!latencyCallback) {
+                throw new Error('expected the gluten latency callback to be registered');
+            }
+            latencyCallback(480);
             // 480 samples at the 48 kHz mock context = 10 ms of reported latency.
             expect(externalLatencyRegistry.get('glu-1')).toBeCloseTo(10, 6);
 
             const loaded = lastLoadedNode(deps.onLoaded);
             loaded.controller?.destroy?.();
             expect(result.destroy).toHaveBeenCalledTimes(1);
+            expect(telemetrySchedulerMocks.unregisterSource).toHaveBeenCalledTimes(1);
             expect(externalLatencyRegistry.has('glu-1')).toBe(false);
             expect(deleteGlutenMeters).toHaveBeenCalledWith('glu-1');
         });
@@ -438,6 +461,7 @@ describe('wasmDeviceRegistry descriptors', () => {
                 setParam: vi.fn(),
                 setBypass: vi.fn(),
                 onMeterData: vi.fn(),
+                pollTelemetry: vi.fn(),
                 onLatencyChanged: vi.fn((cb) => {
                     latencyCallback = cb;
                 }),
@@ -479,6 +503,23 @@ describe('wasmDeviceRegistry descriptors', () => {
             expect(externalLatencyRegistry.get('bac-2')).toBe(0);
         });
 
+        it('clears initial latency when the owner rejects the loaded node', async () => {
+            const result = makeBacteriaResult({ latency: 96 });
+            factoryMocks.createBacteriaNode.mockResolvedValue(result);
+            const deps = createDeps({
+                deviceType: 'bacteria',
+                deviceId: 'bac-rejected',
+                onLoaded: vi.fn(() => false),
+            });
+
+            const { loadPromise } = requireDescriptor('bacteria').create(deps);
+            await loadPromise;
+
+            expect(result.destroy).toHaveBeenCalledTimes(1);
+            expect(telemetrySchedulerMocks.unregisterSource).toHaveBeenCalledTimes(1);
+            expect(externalLatencyRegistry.has('bac-rejected')).toBe(false);
+        });
+
         it('destroys an invalidated late load before it reports latency or installs callbacks', async () => {
             const readiness = Promise.withResolvers<Record<string, unknown>>();
             const result = makeBacteriaResult(readiness.promise);
@@ -511,6 +552,7 @@ describe('wasmDeviceRegistry descriptors', () => {
                 setPatch: vi.fn(),
                 setBypass: vi.fn(),
                 onMeterData: vi.fn(),
+                pollTelemetry: vi.fn(),
                 onLatencyChanged: vi.fn(),
                 connect: vi.fn(),
                 disconnect: vi.fn(),
@@ -540,6 +582,7 @@ describe('wasmDeviceRegistry descriptors', () => {
                 setPatch: vi.fn(),
                 setBypass: vi.fn(),
                 onMeterData: vi.fn(),
+                pollTelemetry: vi.fn(),
                 onLatencyChanged: vi.fn(),
                 connect: vi.fn(),
                 disconnect: vi.fn(),
@@ -568,6 +611,37 @@ describe('wasmDeviceRegistry descriptors', () => {
             expect(result.onMeterData).not.toHaveBeenCalled();
         });
 
+        it('clears initial latency when loaded-node installation throws', async () => {
+            const result: GrinderNodeResult = {
+                workletNode: makeWorkletNode(),
+                setParam: vi.fn(),
+                setPatch: vi.fn(),
+                setBypass: vi.fn(),
+                onMeterData: vi.fn(),
+                pollTelemetry: vi.fn(),
+                onLatencyChanged: vi.fn(),
+                connect: vi.fn(),
+                disconnect: vi.fn(),
+                destroy: vi.fn(),
+                ready: Promise.resolve({ latency: 96 }),
+            };
+            factoryMocks.createGrinderNode.mockResolvedValue(result);
+            const deps = createDeps({
+                deviceType: 'grinder',
+                deviceId: 'grind-rejected',
+                onLoaded: vi.fn(() => {
+                    throw new Error('loaded-node installation failed');
+                }),
+            });
+
+            const { loadPromise } = requireDescriptor('grinder').create(deps);
+            await loadPromise;
+
+            expect(result.destroy).toHaveBeenCalledTimes(1);
+            expect(telemetrySchedulerMocks.unregisterSource).toHaveBeenCalledTimes(1);
+            expect(externalLatencyRegistry.has('grind-rejected')).toBe(false);
+        });
+
         it('forwards worklet telemetry frames to the grinder sink', async () => {
             let meterCallback:
                 | ((
@@ -582,6 +656,7 @@ describe('wasmDeviceRegistry descriptors', () => {
                 onMeterData: vi.fn((cb) => {
                     meterCallback = cb;
                 }),
+                pollTelemetry: vi.fn(),
                 onLatencyChanged: vi.fn(),
                 connect: vi.fn(),
                 disconnect: vi.fn(),
@@ -631,6 +706,7 @@ describe('wasmDeviceRegistry descriptors', () => {
                 onTelemetry: vi.fn((cb) => {
                     telemetryCallback = cb;
                 }),
+                pollTelemetry: vi.fn(),
                 connect: vi.fn(),
                 disconnect: vi.fn(),
                 destroy: vi.fn(),

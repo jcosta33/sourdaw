@@ -112,6 +112,7 @@ export type FermenterNodeResult = {
     setPatch: (patch: Record<string, unknown>) => void;
     setBypass: (bypassed: boolean) => void;
     onTelemetry: (callback: (data: FermenterTelemetryData) => void) => void;
+    pollTelemetry: () => void;
     processorLifecycle: () => FermenterProcessorLifecycle | null;
     connect: (dest: AudioNode) => void;
     disconnect: () => void;
@@ -163,11 +164,13 @@ export async function createFermenterNode(
         floats: FERMENTER_SLOT_FLOATS,
         deviceName: 'Fermenter',
     });
-    let telemetryRafId: number | null = null;
+    let telemetryCallback: ((data: FermenterTelemetryData) => void) | null = null;
 
     if (slot) {
         node.port.postMessage({ type: 'init-sab', sab: slot.sab, byteOffset: slot.byteOffset });
     }
+    const readTelemetry = slot ? createTelemetryReader({ slot, project: projectFermenterTelemetry }) : null;
+    let lastTelemetryGeneration = slot ? Atomics.load(slot.seqView, TELEMETRY_SEQ_IDX) : null;
     const lifecycleReader = slot ? createTelemetryReader({ slot, project: projectFermenterLifecycle }) : null;
     let lastLifecycle: FermenterProcessorLifecycle | null = null;
 
@@ -269,41 +272,31 @@ export async function createFermenterNode(
             bypassed = state;
         },
         onTelemetry(cb: (data: FermenterTelemetryData) => void) {
-            if (telemetryRafId !== null) {
-                cancelAnimationFrame(telemetryRafId);
-                telemetryRafId = null;
+            if (!slot || !readTelemetry) {
+                return;
             }
-            if (!slot) {
+            telemetryCallback = cb;
+            lastTelemetryGeneration = Atomics.load(slot.seqView, TELEMETRY_SEQ_IDX);
+        },
+        pollTelemetry() {
+            if (!slot || !readTelemetry || !telemetryCallback || lastTelemetryGeneration === null) {
                 return;
             }
             // Read under the slot seqlock (audit RT-2): peaks and the 128 waveform
-            // samples are published as one block, so a raw read could pair a new
-            // peak with a half-overwritten waveform. Built once, outside the poll,
-            // since it retains the last consistent snapshot.
-            const readTelemetry = createTelemetryReader({ slot, project: projectFermenterTelemetry });
-            const seqView = slot.seqView;
-            // The worklet publishes every ~46 ms but rAF fires every ~16 ms. Emit
-            // only when the generation counter has moved, so downstream keeps the
-            // one-callback-per-publish cadence the port delivered instead of
-            // re-broadcasting (and re-rendering) the same waveform three times.
+            // samples are published as one block. Emit only when the generation
+            // counter advances so downstream keeps one callback per publish.
             //
             // Only *settled* (even) generations advance the gate. A poll can land
             // mid-publish and sample the odd value; storing that would desync the
             // gate by one, so the same publish would emit twice — once on the odd
-            // sample and again when the counter settles to the next even value.
-            // Skipping odd samples costs nothing: the publish that is in flight
-            // lands in the next frame, ~16 ms later.
-            let lastGeneration = Atomics.load(seqView, TELEMETRY_SEQ_IDX);
-            const poll = () => {
-                const generation = Atomics.load(seqView, TELEMETRY_SEQ_IDX);
-                const settled = (generation & 1) === 0;
-                if (settled && generation !== lastGeneration) {
-                    lastGeneration = generation;
-                    cb(readTelemetry());
-                }
-                telemetryRafId = requestAnimationFrame(poll);
-            };
-            telemetryRafId = requestAnimationFrame(poll);
+            // sample and again when the counter settles.
+            const generation = Atomics.load(slot.seqView, TELEMETRY_SEQ_IDX);
+            const settled = (generation & 1) === 0;
+            if (!settled || generation === lastTelemetryGeneration) {
+                return;
+            }
+            lastTelemetryGeneration = generation;
+            telemetryCallback(readTelemetry());
         },
         processorLifecycle() {
             if (!slot || !lifecycleReader) {
@@ -332,10 +325,8 @@ export async function createFermenterNode(
             }
         },
         destroy() {
-            if (telemetryRafId !== null) {
-                cancelAnimationFrame(telemetryRafId);
-                telemetryRafId = null;
-            }
+            telemetryCallback = null;
+            lastTelemetryGeneration = null;
             // A wide slot owns its SharedArrayBuffer outright and has no index in
             // the pooled allocator — dropping the reference is the whole release.
             slot = null;

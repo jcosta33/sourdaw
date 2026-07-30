@@ -46,6 +46,7 @@ export type GlutenNodeResult = {
     setParam: (name: string, value: number) => void;
     setBypass: (bypassed: boolean) => void;
     onMeterData: (cb: (data: GlutenMeterData) => void) => void;
+    pollTelemetry: () => void;
     onLatencyChanged: (cb: (latency: number) => void) => void;
     connect: (dest: AudioNode) => void;
     disconnect: () => void;
@@ -85,12 +86,13 @@ export async function createGlutenNode(
     });
 
     let slot: TelemetrySlot | null = telemetryAllocator.allocateSlot();
-    let meterRafId: number | null = null;
+    let meterCallback: ((data: GlutenMeterData) => void) | null = null;
     let latencyCallback: ((latency: number) => void) | null = null;
 
     if (slot) {
         node.port.postMessage({ type: 'init-sab', sab: slot.sab, byteOffset: slot.byteOffset });
     }
+    const readMeter = slot ? createTelemetryReader({ slot, project: projectGlutenMeter }) : null;
 
     const handshake = createReadyHandshake({ pluginName: 'GlutenNode' });
     node.port.onmessage = (event: MessageEvent) => {
@@ -119,23 +121,18 @@ export async function createGlutenNode(
             node.port.postMessage({ type: 'param', name: 'bypass', value: state ? 1 : 0 });
         },
         onMeterData(cb: (data: GlutenMeterData) => void) {
-            if (meterRafId !== null) {
-                cancelAnimationFrame(meterRafId);
-                meterRafId = null;
-            }
-            if (!slot) {
+            if (!slot || !readMeter) {
                 return;
             }
-            // Read under the slot seqlock (audit RT-2): the worklet publishes the
-            // six fields with non-atomic stores, so a raw read here could pair a
-            // GR value with a crest from a different meter block. Built once,
-            // outside the poll, since it retains the last consistent snapshot.
-            const readMeter = createTelemetryReader({ slot, project: projectGlutenMeter });
-            const poll = () => {
-                cb(readMeter());
-                meterRafId = requestAnimationFrame(poll);
-            };
-            meterRafId = requestAnimationFrame(poll);
+            meterCallback = cb;
+        },
+        pollTelemetry() {
+            if (!slot || !readMeter || !meterCallback) {
+                return;
+            }
+            // Read under the slot seqlock (audit RT-2): the six fields must come
+            // from one settled meter block.
+            meterCallback(readMeter());
         },
         onLatencyChanged(cb: (latency: number) => void) {
             latencyCallback = cb;
@@ -151,10 +148,7 @@ export async function createGlutenNode(
             }
         },
         destroy() {
-            if (meterRafId !== null) {
-                cancelAnimationFrame(meterRafId);
-                meterRafId = null;
-            }
+            meterCallback = null;
             if (slot) {
                 telemetryAllocator.releaseSlot(slot.byteOffset);
                 slot = null;

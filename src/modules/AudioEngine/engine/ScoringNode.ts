@@ -60,6 +60,7 @@ export type ScoringNodeResult = {
     setParam: (name: string, value: number) => void;
     setBypass: (bypassed: boolean) => void;
     onTelemetry: (callback: (data: TunerTelemetry) => void) => void;
+    pollTelemetry: () => void;
     connect: (dest: AudioNode) => void;
     disconnect: () => void;
     destroy: () => void;
@@ -92,11 +93,12 @@ export async function createScoringNode(ctx: BaseAudioContext, signal?: AbortSig
     });
 
     let slot: TelemetrySlot | null = telemetryAllocator.allocateSlot();
-    let telemetryRafId: number | null = null;
+    let telemetryCallback: ((data: TunerTelemetry) => void) | null = null;
 
     if (slot) {
         node.port.postMessage({ type: 'init-sab', sab: slot.sab, byteOffset: slot.byteOffset });
     }
+    const readTelemetry = slot ? createTelemetryReader({ slot, project: projectTunerTelemetry }) : null;
 
     const handshake = createReadyHandshake({ pluginName: 'ScoringNode' });
     node.port.onmessage = (event: MessageEvent) => {
@@ -118,23 +120,18 @@ export async function createScoringNode(ctx: BaseAudioContext, signal?: AbortSig
             node.port.postMessage({ type: 'bypass', bypassed });
         },
         onTelemetry: (callback) => {
-            if (telemetryRafId !== null) {
-                cancelAnimationFrame(telemetryRafId);
-                telemetryRafId = null;
-            }
-            if (!slot) {
+            if (!slot || !readTelemetry) {
                 return;
             }
-            // Read under the slot seqlock (audit RT-2): the active flag and the pitch
-            // fields are published together, so without the retry the tuner can show
-            // `active` next to the previous detection's note. Built once, outside the
-            // poll, since it retains the last consistent snapshot.
-            const readTelemetry = createTelemetryReader({ slot, project: projectTunerTelemetry });
-            const poll = () => {
-                callback(readTelemetry());
-                telemetryRafId = requestAnimationFrame(poll);
-            };
-            telemetryRafId = requestAnimationFrame(poll);
+            telemetryCallback = callback;
+        },
+        pollTelemetry: () => {
+            if (!slot || !readTelemetry || !telemetryCallback) {
+                return;
+            }
+            // Active and pitch fields are delivered from one settled seqlock
+            // generation so the UI cannot combine different detections.
+            telemetryCallback(readTelemetry());
         },
         connect: (dest) => node.connect(dest),
         disconnect: () => {
@@ -145,10 +142,7 @@ export async function createScoringNode(ctx: BaseAudioContext, signal?: AbortSig
             }
         },
         destroy: () => {
-            if (telemetryRafId !== null) {
-                cancelAnimationFrame(telemetryRafId);
-                telemetryRafId = null;
-            }
+            telemetryCallback = null;
             if (slot) {
                 telemetryAllocator.releaseSlot(slot.byteOffset);
                 slot = null;

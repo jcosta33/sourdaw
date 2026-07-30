@@ -20,7 +20,7 @@ vi.mock('#/infra/audioWorklet/workletInitShared', () => ({
 vi.mock('../pluginHostingErrors', () => ({ requireSharedArrayBuffer: vi.fn() }));
 
 // No telemetry slot by default; individual tests override allocateSlot to
-// exercise the slot-present branches (init-sab post, meter polling).
+// exercise the slot-present branches (init-sab post, explicit meter polling).
 vi.mock('../telemetryAllocator', async () => {
     const actual = await vi.importActual<typeof import('../telemetryAllocator')>('../telemetryAllocator');
     return { ...actual, telemetryAllocator: { allocateSlot: vi.fn(() => null), releaseSlot: vi.fn() } };
@@ -126,13 +126,16 @@ describe('createBacteriaNode', () => {
         expect(postMessage).toHaveBeenCalledWith({ type: 'param', name: 'bypass', value: 0 });
     });
 
-    it('should poll meter data only when a telemetry slot is available, converting band levels to dB', async () => {
+    it('delivers meter data only when explicitly polled with a telemetry slot, converting band levels to dB', async () => {
         const { telemetryAllocator, BACTERIA_IDX } = await import('../telemetryAllocator');
         const raf = vi.fn();
         vi.stubGlobal('requestAnimationFrame', raf);
 
         const noSlotNode = await createBacteriaNode(makeCtx());
-        noSlotNode.onMeterData(vi.fn());
+        const noSlotCallback = vi.fn();
+        noSlotNode.onMeterData(noSlotCallback);
+        noSlotNode.pollTelemetry();
+        expect(noSlotCallback).not.toHaveBeenCalled();
         expect(raf).not.toHaveBeenCalled();
 
         const view = new Float32Array(32);
@@ -146,19 +149,13 @@ describe('createBacteriaNode', () => {
             view,
             seqView: new Int32Array(32),
         });
-        const rafCallbacks: FrameRequestCallback[] = [];
-        vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
-            rafCallbacks.push(cb);
-            return rafCallbacks.length;
-        });
-        vi.stubGlobal('cancelAnimationFrame', vi.fn());
-
         const node = await createBacteriaNode(makeCtx());
         const cb = vi.fn();
         node.onMeterData(cb);
-        rafCallbacks[0]!(0);
+        node.pollTelemetry();
 
         expect(cb).toHaveBeenCalledTimes(1);
+        expect(raf).not.toHaveBeenCalled();
         const data = cb.mock.calls[0]![0] as {
             inputDb: number;
             outputDb: number;
@@ -195,7 +192,7 @@ describe('createBacteriaNode', () => {
         expect(() => node.disconnect()).not.toThrow();
     });
 
-    it('should release the telemetry slot, cancel polling, disconnect and close the port on destroy', async () => {
+    it('releases the telemetry slot, stops callback delivery, disconnects and closes the port on destroy', async () => {
         const { telemetryAllocator } = await import('../telemetryAllocator');
         vi.mocked(telemetryAllocator.allocateSlot).mockReturnValue({
             sab: {} as SharedArrayBuffer,
@@ -203,17 +200,15 @@ describe('createBacteriaNode', () => {
             view: new Float32Array(32),
             seqView: new Int32Array(32),
         });
-        vi.stubGlobal('requestAnimationFrame', () => 7);
-        const cancelRaf = vi.fn();
-        vi.stubGlobal('cancelAnimationFrame', cancelRaf);
-
         const node = await createBacteriaNode(makeCtx());
-        node.onMeterData(vi.fn());
+        const callback = vi.fn();
+        node.onMeterData(callback);
 
         node.destroy();
+        node.pollTelemetry();
 
         expect(telemetryAllocator.releaseSlot).toHaveBeenCalledWith(64);
-        expect(cancelRaf).toHaveBeenCalledWith(7);
+        expect(callback).not.toHaveBeenCalled();
         expect(disconnect).toHaveBeenCalled();
         expect(close).toHaveBeenCalled();
     });
@@ -225,7 +220,7 @@ describe('createBacteriaNode', () => {
         await expect(node.ready).resolves.toEqual({});
     });
 
-    it('cancels a prior meter rAF before installing a new polling loop', async () => {
+    it('replaces the registered meter callback without starting a recurring scheduler', async () => {
         const { telemetryAllocator } = await import('../telemetryAllocator');
         vi.mocked(telemetryAllocator.allocateSlot).mockReturnValue({
             sab: {} as SharedArrayBuffer,
@@ -233,31 +228,25 @@ describe('createBacteriaNode', () => {
             view: new Float32Array(32),
             seqView: new Int32Array(32),
         });
-        const rafCallbacks: FrameRequestCallback[] = [];
-        vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
-            rafCallbacks.push(cb);
-            return rafCallbacks.length;
-        });
-        const cancelRaf = vi.fn();
-        vi.stubGlobal('cancelAnimationFrame', cancelRaf);
+        const raf = vi.fn();
+        vi.stubGlobal('requestAnimationFrame', raf);
 
         const node = await createBacteriaNode(makeCtx());
-        node.onMeterData(vi.fn());
-        // A second registration cancels the first scheduled frame (the
-        // `meterRafId !== null` guard) before starting a fresh loop.
-        node.onMeterData(vi.fn());
+        const first = vi.fn();
+        const second = vi.fn();
+        node.onMeterData(first);
+        node.onMeterData(second);
+        node.pollTelemetry();
 
-        expect(cancelRaf).toHaveBeenCalledWith(1);
+        expect(first).not.toHaveBeenCalled();
+        expect(second).toHaveBeenCalledTimes(1);
+        expect(raf).not.toHaveBeenCalled();
     });
 
-    it('destroy is a safe no-op when no slot was allocated and no poll is running', async () => {
-        const cancelRaf = vi.fn();
-        vi.stubGlobal('cancelAnimationFrame', cancelRaf);
-
+    it('destroy is safe when no telemetry slot was allocated', async () => {
         const node = await createBacteriaNode(makeCtx());
         node.destroy();
 
-        expect(cancelRaf).not.toHaveBeenCalled();
         expect(disconnect).toHaveBeenCalled();
         expect(close).toHaveBeenCalled();
     });

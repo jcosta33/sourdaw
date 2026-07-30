@@ -24,7 +24,7 @@ vi.mock('../pluginHostingErrors', () => ({
 }));
 
 // No telemetry slot by default; individual tests override allocateSlot to
-// exercise the slot-present branches (init-sab post, meter polling).
+// exercise the slot-present branches (init-sab post, explicit meter polling).
 vi.mock('../telemetryAllocator', async () => {
     const actual = await vi.importActual<typeof import('../telemetryAllocator')>('../telemetryAllocator');
     return { ...actual, telemetryAllocator: { allocateSlot: vi.fn(() => null), releaseSlot: vi.fn() } };
@@ -202,13 +202,16 @@ describe('createGrinderNode', () => {
         );
     });
 
-    it('should schedule a meter poll only once a telemetry slot is available, defaulting missing fields to 0', async () => {
+    it('delivers meter data only when explicitly polled with a telemetry slot, defaulting missing fields to 0', async () => {
         const { telemetryAllocator, GRINDER_IDX } = await import('../telemetryAllocator');
         const raf = vi.fn();
         vi.stubGlobal('requestAnimationFrame', raf);
 
         const noSlotNode = await createGrinderNode(makeCtx());
-        noSlotNode.onMeterData(vi.fn());
+        const noSlotCallback = vi.fn();
+        noSlotNode.onMeterData(noSlotCallback);
+        noSlotNode.pollTelemetry();
+        expect(noSlotCallback).not.toHaveBeenCalled();
         expect(raf).not.toHaveBeenCalled();
 
         const view = new Float32Array(6); // shorter than a full slot: exercises the ?? 0 fallback
@@ -226,17 +229,10 @@ describe('createGrinderNode', () => {
             // under test is deliberately short.
             seqView: new Int32Array(32),
         });
-        const rafCallbacks: FrameRequestCallback[] = [];
-        vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
-            rafCallbacks.push(cb);
-            return rafCallbacks.length;
-        });
-        vi.stubGlobal('cancelAnimationFrame', vi.fn());
-
         const node = await createGrinderNode(makeCtx());
         const cb = vi.fn();
         node.onMeterData(cb);
-        rafCallbacks[0]!(0);
+        node.pollTelemetry();
 
         expect(cb).toHaveBeenCalledWith({
             inputDb: -12,
@@ -250,6 +246,7 @@ describe('createGrinderNode', () => {
             neuralCpuPercent: 0,
             neuralWarmupProgress: 0,
         });
+        expect(raf).not.toHaveBeenCalled();
     });
 
     it('should connect to the destination and swallow a disconnect error instead of throwing', async () => {
@@ -264,7 +261,7 @@ describe('createGrinderNode', () => {
         expect(() => node.disconnect()).not.toThrow();
     });
 
-    it('should release the telemetry slot, cancel the meter poll and pending param flush, disconnect and close the port on destroy', async () => {
+    it('releases telemetry, cancels the pending param flush, and closes the node on destroy', async () => {
         const { telemetryAllocator } = await import('../telemetryAllocator');
         vi.mocked(telemetryAllocator.allocateSlot).mockReturnValue({
             sab: {} as SharedArrayBuffer,
@@ -272,29 +269,27 @@ describe('createGrinderNode', () => {
             view: new Float32Array(32),
             seqView: new Int32Array(32),
         });
-        let nextId = 10;
-        vi.stubGlobal('requestAnimationFrame', () => nextId++);
+        vi.stubGlobal('requestAnimationFrame', () => 10);
         const cancelRaf = vi.fn();
         vi.stubGlobal('cancelAnimationFrame', cancelRaf);
 
         const node = await createGrinderNode(makeCtx());
-        node.onMeterData(vi.fn()); // schedules a meter poll (meterRafId = 10)
-        node.onMeterData(vi.fn()); // cancels 10, reschedules (meterRafId = 11)
-        node.setParam('unmapped-param', 0.5); // queues a param flush (paramFlushRafId = 12)
+        const callback = vi.fn();
+        node.onMeterData(callback);
+        node.setParam('unmapped-param', 0.5);
 
         node.destroy();
+        node.pollTelemetry();
 
         expect(cancelRaf).toHaveBeenCalledWith(10);
-        expect(cancelRaf).toHaveBeenCalledWith(11);
-        expect(cancelRaf).toHaveBeenCalledWith(12);
+        expect(cancelRaf).toHaveBeenCalledTimes(1);
+        expect(callback).not.toHaveBeenCalled();
         expect(telemetryAllocator.releaseSlot).toHaveBeenCalledWith(96);
         expect(disconnect).toHaveBeenCalled();
         expect(close).toHaveBeenCalled();
     });
 
-    it('destroy is a safe no-op when no slot, poll, or param flush is active', async () => {
-        // Default allocateSlot returns null; onMeterData and setParam never
-        // called → all three destroy guards take their false arms.
+    it('destroy is a safe no-op when no slot or param flush is active', async () => {
         const cancelRaf = vi.fn();
         vi.stubGlobal('cancelAnimationFrame', cancelRaf);
 

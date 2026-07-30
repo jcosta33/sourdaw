@@ -27,6 +27,7 @@ import { isLevainDevice, createLevainNode, type LevainNodeResult } from './Levai
 import { isProofChamberDevice, createProofChamberNode, type ProofChamberNodeResult } from './ProofChamberNode';
 import { isProofDevice, createProofNode, type ProofNodeResult } from './ProofNode';
 import { isScoringDevice, createScoringNode, type ScoringNodeResult } from './ScoringNode';
+import { registerDeviceTelemetrySource } from './telemetry/deviceTelemetryScheduler';
 import { isToasterDevice, createToasterNode, type ToasterNodeResult } from './ToasterNode';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -108,6 +109,70 @@ async function waitForDeviceReady(input: WaitForDeviceReadyInput): Promise<Recor
     }
 }
 
+type TelemetryPollingResult = {
+    destroy: () => void;
+    pollTelemetry: () => void;
+};
+
+type CreateTelemetryLifecycleInput = {
+    deviceId: string;
+    onDestroy?: () => void;
+    result: TelemetryPollingResult;
+};
+
+function createTelemetryLifecycle(input: CreateTelemetryLifecycleInput): {
+    register: () => void;
+    destroy: () => void;
+} {
+    let unregisterSource: (() => void) | null = null;
+    let destroyed = false;
+    return {
+        register() {
+            if (destroyed || unregisterSource !== null) {
+                return;
+            }
+            unregisterSource = registerDeviceTelemetrySource({
+                deviceId: input.deviceId,
+                poll: input.result.pollTelemetry,
+            });
+        },
+        destroy() {
+            if (destroyed) {
+                return;
+            }
+            destroyed = true;
+            try {
+                unregisterSource?.();
+            } finally {
+                unregisterSource = null;
+                try {
+                    input.onDestroy?.();
+                } finally {
+                    input.result.destroy();
+                }
+            }
+        },
+    };
+}
+
+type InstallTelemetryNodeInput = {
+    lifecycle: ReturnType<typeof createTelemetryLifecycle>;
+    node: BuiltinDeviceNode;
+    onLoaded: WasmDeviceCreateDeps['onLoaded'];
+};
+
+function installTelemetryNode(input: InstallTelemetryNodeInput): void {
+    try {
+        input.lifecycle.register();
+        if (input.onLoaded(input.node) === false) {
+            input.lifecycle.destroy();
+        }
+    } catch (error) {
+        input.lifecycle.destroy();
+        throw error;
+    }
+}
+
 // ── Descriptors ──────────────────────────────────────────────────────────────
 
 const fermenterDescriptor: WasmDeviceDescriptor = {
@@ -145,34 +210,39 @@ const fermenterDescriptor: WasmDeviceDescriptor = {
                 result.onTelemetry((data) => {
                     getAudioDeviceRuntimeSink().setFermenterTelemetry(deviceId, data);
                 });
-                onLoaded({
-                    deviceId,
-                    type: deviceType,
-                    nodes: [result.workletNode],
-                    inputNode: result.workletNode,
-                    outputNode: result.workletNode,
-                    dispose: result.destroy,
-                    processorLifecycle: result.processorLifecycle,
-                    controller: {
-                        ready: true,
-                        noteOn: result.noteOn,
-                        noteOff: result.noteOff,
-                        allNotesOff: result.allNotesOff,
-                        setParam: result.setParam,
-                        setPatch: result.setPatch,
-                        setBypass: result.setBypass,
-                        destroy: result.destroy,
-                    },
-                    fermenterControls: {
-                        ready: true,
-                        noteOn: result.noteOn,
-                        noteOff: result.noteOff,
-                        noteExpression: result.noteExpression,
-                        allNotesOff: result.allNotesOff,
-                        setParam: result.setParam,
-                        setPatch: result.setPatch,
-                        setBypass: result.setBypass,
-                        destroy: result.destroy,
+                const telemetryLifecycle = createTelemetryLifecycle({ deviceId, result });
+                installTelemetryNode({
+                    lifecycle: telemetryLifecycle,
+                    onLoaded,
+                    node: {
+                        deviceId,
+                        type: deviceType,
+                        nodes: [result.workletNode],
+                        inputNode: result.workletNode,
+                        outputNode: result.workletNode,
+                        dispose: telemetryLifecycle.destroy,
+                        processorLifecycle: result.processorLifecycle,
+                        controller: {
+                            ready: true,
+                            noteOn: result.noteOn,
+                            noteOff: result.noteOff,
+                            allNotesOff: result.allNotesOff,
+                            setParam: result.setParam,
+                            setPatch: result.setPatch,
+                            setBypass: result.setBypass,
+                            destroy: telemetryLifecycle.destroy,
+                        },
+                        fermenterControls: {
+                            ready: true,
+                            noteOn: result.noteOn,
+                            noteOff: result.noteOff,
+                            noteExpression: result.noteExpression,
+                            allNotesOff: result.allNotesOff,
+                            setParam: result.setParam,
+                            setPatch: result.setPatch,
+                            setBypass: result.setBypass,
+                            destroy: telemetryLifecycle.destroy,
+                        },
                     },
                 });
                 return;
@@ -457,25 +527,35 @@ const glutenDescriptor: WasmDeviceDescriptor = {
                         phaseCorr: data.phaseCorr,
                         latency: data.latency,
                     });
-                    reportLatency(deviceId, (data.latency / context.sampleRate) * 1000);
                 });
-                onLoaded({
+                result.onLatencyChanged((latency) => {
+                    reportLatency(deviceId, (latency / context.sampleRate) * 1000);
+                });
+                const telemetryLifecycle = createTelemetryLifecycle({
                     deviceId,
-                    type: deviceType,
-                    nodes: [result.workletNode],
-                    inputNode: result.workletNode,
-                    outputNode: result.workletNode,
-                    dispose: result.destroy,
-                    controller: {
-                        setParam: result.setParam,
-                        setBypass: result.setBypass,
-                        destroy: () => {
-                            result.destroy();
-                            clearReportedLatency(deviceId);
-                            getAudioDeviceRuntimeSink().deleteGlutenMeters(deviceId);
-                        },
+                    onDestroy: () => {
+                        clearReportedLatency(deviceId);
+                        getAudioDeviceRuntimeSink().deleteGlutenMeters(deviceId);
                     },
-                    nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
+                    result,
+                });
+                installTelemetryNode({
+                    lifecycle: telemetryLifecycle,
+                    onLoaded,
+                    node: {
+                        deviceId,
+                        type: deviceType,
+                        nodes: [result.workletNode],
+                        inputNode: result.workletNode,
+                        outputNode: result.workletNode,
+                        dispose: telemetryLifecycle.destroy,
+                        controller: {
+                            setParam: result.setParam,
+                            setBypass: result.setBypass,
+                            destroy: telemetryLifecycle.destroy,
+                        },
+                        nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
+                    },
                 });
                 return;
             })
@@ -520,22 +600,28 @@ const bacteriaDescriptor: WasmDeviceDescriptor = {
                 result.onMeterData((data) => {
                     getAudioDeviceRuntimeSink().updateBacteriaMeters(deviceId, data);
                 });
-                onLoaded({
+                const telemetryLifecycle = createTelemetryLifecycle({
                     deviceId,
-                    type: deviceType,
-                    nodes: [result.workletNode],
-                    inputNode: result.workletNode,
-                    outputNode: result.workletNode,
-                    dispose: result.destroy,
-                    controller: {
-                        setParam: result.setParam,
-                        setBypass: result.setBypass,
-                        destroy: () => {
-                            result.destroy();
-                            clearReportedLatency(deviceId);
+                    onDestroy: () => clearReportedLatency(deviceId),
+                    result,
+                });
+                installTelemetryNode({
+                    lifecycle: telemetryLifecycle,
+                    onLoaded,
+                    node: {
+                        deviceId,
+                        type: deviceType,
+                        nodes: [result.workletNode],
+                        inputNode: result.workletNode,
+                        outputNode: result.workletNode,
+                        dispose: telemetryLifecycle.destroy,
+                        controller: {
+                            setParam: result.setParam,
+                            setBypass: result.setBypass,
+                            destroy: telemetryLifecycle.destroy,
                         },
+                        nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                     },
-                    nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
                 return;
             })
@@ -612,23 +698,29 @@ const grinderDescriptor: WasmDeviceDescriptor = {
                 if (pendingBypass) {
                     result.setBypass(true);
                 }
-                onLoaded({
+                const telemetryLifecycle = createTelemetryLifecycle({
                     deviceId,
-                    type: deviceType,
-                    nodes: [result.workletNode],
-                    inputNode: result.workletNode,
-                    outputNode: result.workletNode,
-                    dispose: result.destroy,
-                    controller: {
-                        setParam: result.setParam,
-                        setPatch: result.setPatch,
-                        setBypass: result.setBypass,
-                        destroy: () => {
-                            result.destroy();
-                            clearReportedLatency(deviceId);
+                    onDestroy: () => clearReportedLatency(deviceId),
+                    result,
+                });
+                installTelemetryNode({
+                    lifecycle: telemetryLifecycle,
+                    onLoaded,
+                    node: {
+                        deviceId,
+                        type: deviceType,
+                        nodes: [result.workletNode],
+                        inputNode: result.workletNode,
+                        outputNode: result.workletNode,
+                        dispose: telemetryLifecycle.destroy,
+                        controller: {
+                            setParam: result.setParam,
+                            setPatch: result.setPatch,
+                            setBypass: result.setBypass,
+                            destroy: telemetryLifecycle.destroy,
                         },
+                        nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                     },
-                    nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
                 return;
             })
@@ -669,6 +761,7 @@ const proofDescriptor: WasmDeviceDescriptor = {
                 const initialLatency = typeof readyData.latency === 'number' ? readyData.latency : 0;
                 reportLatency(deviceId, (initialLatency / context.sampleRate) * 1000);
                 const runtimeSink = getAudioDeviceRuntimeSink();
+                let telemetryLifecycle: ReturnType<typeof createTelemetryLifecycle> | null = null;
                 try {
                     runtimeSink.registerProofDevice({
                         deviceId,
@@ -691,38 +784,49 @@ const proofDescriptor: WasmDeviceDescriptor = {
                     result.onMeterData((data) => {
                         runtimeSink.updateProofMeters(deviceId, data);
                     });
-                    onLoaded({
+                    telemetryLifecycle = createTelemetryLifecycle({
                         deviceId,
-                        type: deviceType,
-                        nodes: [result.workletNode],
-                        inputNode: result.workletNode,
-                        outputNode: result.workletNode,
-                        dispose: result.destroy,
-                        controller: {
-                            setParam: result.setParam,
-                            setBypass: result.setBypass,
-                            destroy: () => {
-                                result.destroy();
-                                clearReportedLatency(deviceId);
-                                try {
-                                    getAudioDeviceRuntimeSink().unregisterProofDevice(deviceId);
-                                } catch {
-                                    // Intentionally empty: the device may already be
-                                    // unregistered from the Proof store; teardown proceeds.
-                                }
-                            },
+                        onDestroy: () => {
+                            clearReportedLatency(deviceId);
+                            try {
+                                getAudioDeviceRuntimeSink().unregisterProofDevice(deviceId);
+                            } catch {
+                                // The Proof bridge may already be absent during teardown.
+                            }
                         },
-                        nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
+                        result,
+                    });
+                    installTelemetryNode({
+                        lifecycle: telemetryLifecycle,
+                        onLoaded,
+                        node: {
+                            deviceId,
+                            type: deviceType,
+                            nodes: [result.workletNode],
+                            inputNode: result.workletNode,
+                            outputNode: result.workletNode,
+                            dispose: telemetryLifecycle.destroy,
+                            controller: {
+                                setParam: result.setParam,
+                                setBypass: result.setBypass,
+                                destroy: telemetryLifecycle.destroy,
+                            },
+                            nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
+                        },
                     });
                 } catch (error) {
                     try {
-                        runtimeSink.unregisterProofDevice(deviceId);
-                    } catch {
-                        // Cleanup is best-effort when registration itself failed.
-                    }
-                    clearReportedLatency(deviceId);
-                    try {
-                        result.destroy();
+                        if (telemetryLifecycle) {
+                            telemetryLifecycle.destroy();
+                        } else {
+                            try {
+                                runtimeSink.unregisterProofDevice(deviceId);
+                            } catch {
+                                // Cleanup is best-effort when registration itself failed.
+                            }
+                            clearReportedLatency(deviceId);
+                            result.destroy();
+                        }
                     } catch (cleanupError) {
                         logger.warn(`[WebAudioEngine] ${deviceType} cleanup failed: ${String(cleanupError)}`);
                     }
@@ -760,14 +864,24 @@ const scoringDescriptor: WasmDeviceDescriptor = {
                         active: data.active,
                     });
                 });
-                onLoaded({
-                    deviceId,
-                    type: deviceType,
-                    nodes: [result.workletNode],
-                    inputNode: result.workletNode,
-                    outputNode: result.workletNode,
-                    controller: { setParam: result.setParam, setBypass: result.setBypass, destroy: result.destroy },
-                    nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
+                const telemetryLifecycle = createTelemetryLifecycle({ deviceId, result });
+                installTelemetryNode({
+                    lifecycle: telemetryLifecycle,
+                    onLoaded,
+                    node: {
+                        deviceId,
+                        type: deviceType,
+                        nodes: [result.workletNode],
+                        inputNode: result.workletNode,
+                        outputNode: result.workletNode,
+                        dispose: telemetryLifecycle.destroy,
+                        controller: {
+                            setParam: result.setParam,
+                            setBypass: result.setBypass,
+                            destroy: telemetryLifecycle.destroy,
+                        },
+                        nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
+                    },
                 });
                 return;
             })

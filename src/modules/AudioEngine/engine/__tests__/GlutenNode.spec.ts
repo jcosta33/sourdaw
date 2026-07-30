@@ -20,7 +20,7 @@ vi.mock('#/infra/audioWorklet/workletInitShared', () => ({
 vi.mock('../pluginHostingErrors', () => ({ requireSharedArrayBuffer: vi.fn() }));
 
 // No telemetry slot by default; individual tests override allocateSlot to
-// exercise the slot-present branches (init-sab post, meter polling).
+// exercise the slot-present branches (init-sab post, explicit meter polling).
 vi.mock('../telemetryAllocator', async () => {
     const actual = await vi.importActual<typeof import('../telemetryAllocator')>('../telemetryAllocator');
     return { ...actual, telemetryAllocator: { allocateSlot: vi.fn(() => null), releaseSlot: vi.fn() } };
@@ -139,13 +139,16 @@ describe('createGlutenNode', () => {
         expect(postMessage).toHaveBeenCalledWith({ type: 'param', name: 'bypass', value: 0 });
     });
 
-    it('should poll meter data only when a telemetry slot is available', async () => {
+    it('delivers meter data only when explicitly polled with a telemetry slot', async () => {
         const { telemetryAllocator, GLUTEN_IDX } = await import('../telemetryAllocator');
         const raf = vi.fn();
         vi.stubGlobal('requestAnimationFrame', raf);
 
         const noSlotNode = await createGlutenNode(makeCtx());
-        noSlotNode.onMeterData(vi.fn());
+        const noSlotCallback = vi.fn();
+        noSlotNode.onMeterData(noSlotCallback);
+        noSlotNode.pollTelemetry();
+        expect(noSlotCallback).not.toHaveBeenCalled();
         expect(raf).not.toHaveBeenCalled();
 
         const view = new Float32Array(32);
@@ -161,20 +164,14 @@ describe('createGlutenNode', () => {
             view,
             seqView: new Int32Array(32),
         });
-        const rafCallbacks: FrameRequestCallback[] = [];
-        vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
-            rafCallbacks.push(cb);
-            return rafCallbacks.length;
-        });
-        vi.stubGlobal('cancelAnimationFrame', vi.fn());
-
         const node = await createGlutenNode(makeCtx());
         const cb = vi.fn();
         node.onMeterData(cb);
-        rafCallbacks[0]!(0);
+        node.pollTelemetry();
 
         expect(cb).toHaveBeenCalledTimes(1);
         expect(cb).toHaveBeenCalledWith({ grDb: -4.5, inputDb: -8, outputDb: -3, crest: 6, phaseCorr: 1, latency: 64 });
+        expect(raf).not.toHaveBeenCalled();
     });
 
     it('should invoke the latency callback when the worklet posts a latency-changed message', async () => {
@@ -199,7 +196,7 @@ describe('createGlutenNode', () => {
         expect(() => node.disconnect()).not.toThrow();
     });
 
-    it('should release the telemetry slot, cancel polling, disconnect and close the port on destroy', async () => {
+    it('releases the telemetry slot, stops callback delivery, disconnects and closes the port on destroy', async () => {
         const { telemetryAllocator } = await import('../telemetryAllocator');
         vi.mocked(telemetryAllocator.allocateSlot).mockReturnValue({
             sab: {} as SharedArrayBuffer,
@@ -207,17 +204,15 @@ describe('createGlutenNode', () => {
             view: new Float32Array(32),
             seqView: new Int32Array(32),
         });
-        vi.stubGlobal('requestAnimationFrame', () => 9);
-        const cancelRaf = vi.fn();
-        vi.stubGlobal('cancelAnimationFrame', cancelRaf);
-
         const node = await createGlutenNode(makeCtx());
-        node.onMeterData(vi.fn());
+        const callback = vi.fn();
+        node.onMeterData(callback);
 
         node.destroy();
+        node.pollTelemetry();
 
         expect(telemetryAllocator.releaseSlot).toHaveBeenCalledWith(32);
-        expect(cancelRaf).toHaveBeenCalledWith(9);
+        expect(callback).not.toHaveBeenCalled();
         expect(disconnect).toHaveBeenCalled();
         expect(close).toHaveBeenCalled();
     });
@@ -229,7 +224,7 @@ describe('createGlutenNode', () => {
         await expect(node.ready).resolves.toEqual({});
     });
 
-    it('cancels a prior meter rAF before installing a new polling loop', async () => {
+    it('replaces the registered meter callback without starting a recurring scheduler', async () => {
         const { telemetryAllocator } = await import('../telemetryAllocator');
         vi.mocked(telemetryAllocator.allocateSlot).mockReturnValue({
             sab: {} as SharedArrayBuffer,
@@ -237,21 +232,19 @@ describe('createGlutenNode', () => {
             view: new Float32Array(32),
             seqView: new Int32Array(32),
         });
-        const rafIds: number[] = [];
-        vi.stubGlobal('requestAnimationFrame', () => {
-            rafIds.push(rafIds.length + 1);
-            return rafIds[rafIds.length - 1]!;
-        });
-        const cancelRaf = vi.fn();
-        vi.stubGlobal('cancelAnimationFrame', cancelRaf);
+        const raf = vi.fn();
+        vi.stubGlobal('requestAnimationFrame', raf);
 
         const node = await createGlutenNode(makeCtx());
-        node.onMeterData(vi.fn());
-        // A second onMeterData must cancel the first polling rAF before
-        // starting a new one.
-        node.onMeterData(vi.fn());
+        const first = vi.fn();
+        const second = vi.fn();
+        node.onMeterData(first);
+        node.onMeterData(second);
+        node.pollTelemetry();
 
-        expect(cancelRaf).toHaveBeenCalledWith(expect.any(Number));
+        expect(first).not.toHaveBeenCalled();
+        expect(second).toHaveBeenCalledTimes(1);
+        expect(raf).not.toHaveBeenCalled();
     });
 
     it('ignores a non-latency "other" message without invoking the latency callback', async () => {

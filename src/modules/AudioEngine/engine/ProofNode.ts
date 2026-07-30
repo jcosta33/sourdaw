@@ -38,6 +38,7 @@ export type ProofNodeResult = {
     reorderModules: (order: [number, number, number, number, number]) => void;
     resetIntegrated: () => void;
     onMeterData: (cb: (data: ProofMeterData) => void) => void;
+    pollTelemetry: () => void;
     onLatencyChanged: (cb: (latency: number) => void) => void;
     connect: (dest: AudioNode) => void;
     disconnect: () => void;
@@ -108,7 +109,7 @@ export async function createProofNode(
     let meterCallback: ((data: ProofMeterData) => void) | null = null;
     let latencyCallback: ((latency: number) => void) | null = null;
     let sabSlot = telemetryAllocator.allocateSlot();
-    let pollInterval: ReturnType<typeof setInterval> | null = null;
+    let readMeter: (() => ProofMeterData) | null = null;
 
     const handshake = createReadyHandshake({ pluginName: 'ProofNode' });
     node.port.onmessage = (event: MessageEvent) => {
@@ -123,17 +124,12 @@ export async function createProofNode(
         if (outcome !== 'ready') {
             return;
         }
-        // On ready: wire up SAB telemetry polling (§90.2 — see worklet note).
+        // On ready: hand the SAB to the processor and prepare synchronous reads.
         if (sabSlot) {
             node.port.postMessage({ type: 'init-sab', sab: sabSlot.sab, byteOffset: sabSlot.byteOffset });
-            // Built once, outside the interval, since it retains the last
+            // Built once on readiness, since it retains the last
             // consistent snapshot to hand back on retry exhaustion (audit RT-2).
-            const readMeter = createTelemetryReader({ slot: sabSlot, project: projectProofMeter });
-            pollInterval = setInterval(() => {
-                if (meterCallback) {
-                    meterCallback(readMeter());
-                }
-            }, 16);
+            readMeter = createTelemetryReader({ slot: sabSlot, project: projectProofMeter });
         }
     };
     const readyPromise = handshake.promise;
@@ -161,6 +157,12 @@ export async function createProofNode(
         onMeterData(cb: (data: ProofMeterData) => void) {
             meterCallback = cb;
         },
+        pollTelemetry() {
+            if (!sabSlot || !readMeter || !meterCallback) {
+                return;
+            }
+            meterCallback(readMeter());
+        },
         onLatencyChanged(cb: (latency: number) => void) {
             latencyCallback = cb;
         },
@@ -175,10 +177,8 @@ export async function createProofNode(
             }
         },
         destroy() {
-            if (pollInterval !== null) {
-                clearInterval(pollInterval);
-                pollInterval = null;
-            }
+            meterCallback = null;
+            readMeter = null;
             if (sabSlot) {
                 telemetryAllocator.releaseSlot(sabSlot.byteOffset);
                 sabSlot = null;

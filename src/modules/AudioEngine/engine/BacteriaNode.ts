@@ -56,6 +56,7 @@ export type BacteriaNodeResult = {
     setParam: (name: string, value: number) => void;
     setBypass: (bypassed: boolean) => void;
     onMeterData: (cb: (data: BacteriaMeterData) => void) => void;
+    pollTelemetry: () => void;
     onLatencyChanged: (cb: (latency: number) => void) => void;
     connect: (dest: AudioNode) => void;
     disconnect: () => void;
@@ -94,12 +95,13 @@ export async function createBacteriaNode(
     });
 
     let slot: TelemetrySlot | null = telemetryAllocator.allocateSlot();
-    let meterRafId: number | null = null;
+    let meterCallback: ((data: BacteriaMeterData) => void) | null = null;
     let latencyCallback: ((latency: number) => void) | null = null;
 
     if (slot) {
         node.port.postMessage({ type: 'init-sab', sab: slot.sab, byteOffset: slot.byteOffset });
     }
+    const readMeter = slot ? createTelemetryReader({ slot, project: projectBacteriaMeter }) : null;
 
     const handshake = createReadyHandshake({ pluginName: 'BacteriaNode' });
     node.port.onmessage = (event: MessageEvent) => {
@@ -128,24 +130,18 @@ export async function createBacteriaNode(
             node.port.postMessage({ type: 'param', name: 'bypass', value: state ? 1 : 0 });
         },
         onMeterData(cb: (data: BacteriaMeterData) => void) {
-            if (meterRafId !== null) {
-                cancelAnimationFrame(meterRafId);
-                meterRafId = null;
-            }
-            if (!slot) {
+            if (!slot || !readMeter) {
                 return;
             }
-            // Read under the slot seqlock (audit RT-2). This is the tear the audit
-            // called out by name: the worklet blits all six band levels in one
-            // `.set()`, but a raw poll could still straddle the blit and show bands
-            // from two different blocks side by side. Built once, outside the poll,
-            // since it retains the last consistent snapshot.
-            const readMeter = createTelemetryReader({ slot, project: projectBacteriaMeter });
-            const poll = () => {
-                cb(readMeter());
-                meterRafId = requestAnimationFrame(poll);
-            };
-            meterRafId = requestAnimationFrame(poll);
+            meterCallback = cb;
+        },
+        pollTelemetry() {
+            if (!slot || !readMeter || !meterCallback) {
+                return;
+            }
+            // Read under the slot seqlock (audit RT-2). The worklet blits all
+            // band levels in one block, so raw reads could mix generations.
+            meterCallback(readMeter());
         },
         onLatencyChanged(cb: (latency: number) => void) {
             latencyCallback = cb;
@@ -161,10 +157,7 @@ export async function createBacteriaNode(
             }
         },
         destroy() {
-            if (meterRafId !== null) {
-                cancelAnimationFrame(meterRafId);
-                meterRafId = null;
-            }
+            meterCallback = null;
             if (slot) {
                 telemetryAllocator.releaseSlot(slot.byteOffset);
                 slot = null;

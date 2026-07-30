@@ -243,6 +243,43 @@ describe('createFermenterNode message surface & lifecycle', () => {
         }
     });
 
+    it('delivers each settled telemetry generation only when explicitly polled', async () => {
+        const requestAnimationFrameSpy = vi.fn();
+        vi.stubGlobal('requestAnimationFrame', requestAnimationFrameSpy);
+        const result = await makeNode();
+        const initSab = postMessage.mock.calls
+            .map((call) => call[0] as { type?: string; sab?: SharedArrayBuffer; byteOffset?: number })
+            .find((message) => message.type === 'init-sab');
+        if (!initSab?.sab || initSab.byteOffset === undefined) {
+            throw new Error('Expected Fermenter telemetry slot');
+        }
+        const values = new Float32Array(initSab.sab, initSab.byteOffset, FERMENTER_SLOT_FLOATS);
+        const sequence = new Int32Array(initSab.sab, initSab.byteOffset, FERMENTER_SLOT_FLOATS);
+        const callback = vi.fn();
+        result.onTelemetry(callback);
+
+        result.pollTelemetry();
+        expect(callback).not.toHaveBeenCalled();
+
+        Atomics.add(sequence, TELEMETRY_SEQ_IDX, 1);
+        values[FERMENTER_IDX.peakL] = 0.75;
+        result.pollTelemetry();
+        expect(callback).not.toHaveBeenCalled();
+
+        Atomics.add(sequence, TELEMETRY_SEQ_IDX, 1);
+        result.pollTelemetry();
+        result.pollTelemetry();
+
+        expect(callback).toHaveBeenCalledTimes(1);
+        expect(callback.mock.calls[0]![0]).toMatchObject({ peakL: 0.75 });
+        expect(requestAnimationFrameSpy).not.toHaveBeenCalled();
+
+        result.destroy();
+        Atomics.add(sequence, TELEMETRY_SEQ_IDX, 2);
+        result.pollTelemetry();
+        expect(callback).toHaveBeenCalledTimes(1);
+    });
+
     it('onmessage hands non-telemetry events to the ready handshake', async () => {
         await makeNode();
         const handshake = await import('#/infra/audioWorklet/workletInitShared');

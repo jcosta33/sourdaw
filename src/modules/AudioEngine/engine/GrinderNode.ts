@@ -62,6 +62,7 @@ export type GrinderNodeResult = {
     setPatch: (patch: Record<string, unknown>) => void;
     setBypass: (bypassed: boolean) => void;
     onMeterData: (cb: (data: GrinderMeterData) => void) => void;
+    pollTelemetry: () => void;
     onLatencyChanged: (cb: (latency: number) => void) => void;
     connect: (dest: AudioNode) => void;
     disconnect: () => void;
@@ -100,12 +101,13 @@ export async function createGrinderNode(
     });
 
     let slot: TelemetrySlot | null = telemetryAllocator.allocateSlot();
-    let meterRafId: number | null = null;
+    let meterCallback: ((data: GrinderMeterData) => void) | null = null;
     let latencyCallback: ((latency: number) => void) | null = null;
 
     if (slot) {
         node.port.postMessage({ type: 'init-sab', sab: slot.sab, byteOffset: slot.byteOffset });
     }
+    const readMeter = slot ? createTelemetryReader({ slot, project: projectGrinderMeter }) : null;
 
     // Per-frame coalescing for message-port params (those without a backing
     // AudioParam). A rapid knob drag or automation sweep fires setParam many
@@ -184,22 +186,18 @@ export async function createGrinderNode(
             node.port.postMessage({ type: 'param', name: 'bypass', value: state ? 1 : 0 });
         },
         onMeterData(cb: (data: GrinderMeterData) => void) {
-            if (meterRafId !== null) {
-                cancelAnimationFrame(meterRafId);
-                meterRafId = null;
-            }
-            if (!slot) {
+            if (!slot || !readMeter) {
                 return;
             }
-            // Read under the slot seqlock (audit RT-2): without it a poll could pair
-            // a gate state with a latency reported from a different quantum. Built
-            // once, outside the poll, since it retains the last consistent snapshot.
-            const readMeter = createTelemetryReader({ slot, project: projectGrinderMeter });
-            const poll = () => {
-                cb(readMeter());
-                meterRafId = requestAnimationFrame(poll);
-            };
-            meterRafId = requestAnimationFrame(poll);
+            meterCallback = cb;
+        },
+        pollTelemetry() {
+            if (!slot || !readMeter || !meterCallback) {
+                return;
+            }
+            // Gate, neural, and latency fields are projected from one settled
+            // seqlock generation.
+            meterCallback(readMeter());
         },
         onLatencyChanged(cb: (latency: number) => void) {
             latencyCallback = cb;
@@ -215,10 +213,7 @@ export async function createGrinderNode(
             }
         },
         destroy() {
-            if (meterRafId !== null) {
-                cancelAnimationFrame(meterRafId);
-                meterRafId = null;
-            }
+            meterCallback = null;
             // Cancel a scheduled param flush and drop any buffered posts so the
             // destroyed node does not post into a closed port on the next frame.
             if (paramFlushRafId !== null) {
