@@ -1,3 +1,4 @@
+import { HostedToolCallingProtocolError } from '../../../errors/HostedToolCallingProtocolError';
 import { ToolPlanningRejectedError } from '../../../errors/ToolPlanningRejectedError';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
 import { type ToolCallResult } from '../../../transformers/toolCallParser';
@@ -58,6 +59,9 @@ function parseArguments(value: unknown): Record<string, unknown> | null {
 function parseToolCalls(response: unknown): ToolCallResult[] {
     if (!isRecord(response) || !Array.isArray(response.choices)) {
         throw new ToolPlanningRejectedError('Hosted AI returned an invalid tool-planning response');
+    }
+    if (response.choices.length !== 1) {
+        throw new HostedToolCallingProtocolError('Hosted AI returned an invalid response choice count');
     }
     const choices: unknown[] = response.choices;
     const firstChoice = choices[0];
@@ -136,6 +140,7 @@ export async function generateOpenAiCompatibleToolCalls({
             ],
             tools: toolSchemas,
             tool_choice: 'auto',
+            n: 1,
             stream: false,
         }),
     });

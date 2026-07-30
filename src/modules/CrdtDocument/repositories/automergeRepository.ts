@@ -286,6 +286,11 @@ class AutomergeRepository {
         return this.documentIdentityEpoch;
     }
 
+    /** Monotonic epoch for any local project mutation, including exact-state restore. */
+    getMutationEpoch(): number {
+        return this.mutationEpoch;
+    }
+
     /** Subscribe to document changes (for the projection bridge). */
     onChange(listener: ChangeListener): () => void {
         this.changeListeners.add(listener);

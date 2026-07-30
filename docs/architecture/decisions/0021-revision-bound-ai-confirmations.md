@@ -8,7 +8,7 @@ AiRuntime can plan an AppAction batch from a project snapshot and either execute
 
 ## Decision
 
-- CrdtDocument exposes a read-only project revision token derived from the local document-identity epoch, sorted active document IDs, and each document's sorted Automerge heads.
+- CrdtDocument exposes a read-only project revision token derived from a monotonic mutation epoch, the local document-identity epoch, sorted active document IDs, and each document's sorted Automerge heads.
 - AiRuntime captures the token before building project context for an AppAction-backed command.
 - Planning must stop if the token changes before a proposal is published or immediate execution begins.
 - Pending AppAction confirmations store the captured token and compare it with current project state before acceptance.
@@ -19,4 +19,4 @@ AiRuntime can plan an AppAction batch from a project snapshot and either execute
 
 ## Consequences
 
-AppAction-backed AI execution is bound to the complete active project revision rather than only the named targets. Any intervening project change requires a fresh plan, including unrelated edits. The token is local execution authority, not a persisted project identifier or a collaboration protocol field. Replacement projects remain distinguishable even when their document IDs and heads are otherwise equivalent.
+AppAction-backed AI execution is bound to the complete active project revision rather than only the named targets. Any intervening project change requires a fresh plan, including unrelated edits and an exact-state restoration. The token is local execution authority, not a persisted project identifier or a collaboration protocol field. Replacement projects remain distinguishable even when their document IDs and heads are otherwise equivalent.
