@@ -281,6 +281,11 @@ class AutomergeRepository {
         return Array.from(this.docs.keys());
     }
 
+    /** Local epoch for project/document authority replacement. */
+    getDocumentIdentityEpoch(): number {
+        return this.documentIdentityEpoch;
+    }
+
     /** Subscribe to document changes (for the projection bridge). */
     onChange(listener: ChangeListener): () => void {
         this.changeListeners.add(listener);
