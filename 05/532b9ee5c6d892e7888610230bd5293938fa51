@@ -1,0 +1,55 @@
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_66d4924c65dcd2::t_44f8170942c524 9
+  s_66d4924c65dcd2::t_5b0f56af205f26 303
+src/modules/AudioEngine/services/__tests__/bitcrusherRateProcessor.spec.ts
+  s_66d4924c65dcd2::t_22b8f62e50eca2 7-12
+  s_66d4924c65dcd2::t_52585f0775413a 23
+  s_66d4924c65dcd2::t_565db51b95db13 1-6,13-22,24-118,138-150
+  s_66d4924c65dcd2::t_c3afb87fd6466a 119-137
+src/modules/AudioEngine/useCases/renderOffline.ts
+  s_66d4924c65dcd2::t_6ed3455685c75b 7
+  s_66d4924c65dcd2::t_5b03fb9ecefe7d 145-159
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngine.spec.ts
+  s_66d4924c65dcd2::t_b49801bac3b46d 561-562
+  s_66d4924c65dcd2::t_993a4526a0ef8d 207-209
+src/modules/AudioEngine/useCases/exportStems.ts
+  s_66d4924c65dcd2::t_1a40854471d031 11
+  s_66d4924c65dcd2::t_d7c6027d66fb8e 263-277
+src/modules/AudioEngine/repositories/devices/toneShaping/__tests__/bitcrusherRateReduction.spec.ts
+  s_66d4924c65dcd2::t_5ce4d7b6ab48b9 10-13,16-18,23,26-27,30,40,47-51,54-55,70-78,80,83,88-97,99-104,106-107,109-112,118-129,144-174,183,187,196,204,207,210-211,213,215-221
+  s_66d4924c65dcd2::t_1c2a5460852bd4 98
+  s_66d4924c65dcd2::t_a4c9f4329ae21d 1-9,14-15,19-22,24-25,28-29,31-39,41-46,52-53,56-69,79,81-82,84-87,105,108,113-117,130-143,175-182,184-186,188-195,197-203,205-206,208-209,212,214,222-223
+src/modules/AudioEngine/repositories/devices/toneShaping/applyBitcrusherParams.ts
+  s_66d4924c65dcd2::t_453b02a7958c9f 5-26
+  s_66d4924c65dcd2::t_fe57de3cb13c5f 34-44
+src/modules/AudioEngine/services/bitcrusherRateProcessor.ts
+  s_66d4924c65dcd2::t_6b9d8cdf0261eb 72
+  s_66d4924c65dcd2::t_841ba1b0c17a13 79
+  s_66d4924c65dcd2::t_7b928a3973b495 33-45,47
+  s_66d4924c65dcd2::t_5e316d39091616 23
+  s_66d4924c65dcd2::t_a3c688a35daa7f 1-22,24-32,46,48-71,73-78,80-123
+src/modules/AudioEngine/repositories/devices/toneShaping/createBitcrusherRateDecimator.ts
+  s_66d4924c65dcd2::t_a9014340b96e63 19-22
+  s_66d4924c65dcd2::t_34af5493974af6 1-18,23-30
+src/modules/AudioEngine/repositories/devices/toneShaping/createBitcrusher.ts
+  s_66d4924c65dcd2::t_3ddb0364f18ec2 28,31-36,39-43
+  s_66d4924c65dcd2::t_7ff7900e8a3855 3,6-17
+src/modules/AudioEngine/repositories/devices/toneShaping/prepareOfflineBitcrusherRate.ts
+  s_66d4924c65dcd2::t_362adff3fbfcfd 1-15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "05532b9ee5c6d892e7888610230bd5293938fa51",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
