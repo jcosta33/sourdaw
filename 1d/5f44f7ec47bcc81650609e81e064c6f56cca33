@@ -1,0 +1,55 @@
+src/app/__tests__/bootstrap.spec.ts
+  s_ac9b259eab20ba::t_454cf692c9afe6 20-21,24-29,56,79,224,410,426-440
+src/app/bootstrap.ts
+  s_0f3ab06e2b0c6f::t_59fd549e424458 291-292
+src/modules/AudioEngine/engine/TrackNode.ts
+  s_ac9b259eab20ba::t_bb95402a1710cf 5,45,60,372-375,483-489,676-680,684,694-704,725-731,830,848
+src/modules/AudioEngine/engine/__tests__/TrackNodeDevices.spec.ts
+  s_ac9b259eab20ba::t_eb0b121a55d6c9 6,111,116-120,122,140-142,170,509-519
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistryDescriptors.spec.ts
+  s_ac9b259eab20ba::t_92a2238c702ce6 259,261,276
+src/modules/AudioEngine/engine/audioDeviceRuntimeSink.ts
+  s_ac9b259eab20ba::t_7914b9d1f25db5 1-2,39-44
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_ac9b259eab20ba::t_82eece919857df 14,43,284,367
+src/modules/AudioEngine/useCases/engineAccess/__tests__/getDeviceReadinessDiagnostics.spec.ts
+  s_ac9b259eab20ba::t_111dedf207922f 1-24
+src/modules/AudioEngine/useCases/engineAccess/getDeviceReadinessDiagnostics.ts
+  s_0f3ab06e2b0c6f::t_997c646f1cdfb5 1-5
+src/modules/AudioEngine/useCases/index.ts
+  s_0f3ab06e2b0c6f::t_40707929c63eb9 68
+src/modules/Levain/useCases/__tests__/autoLoadSamples.spec.ts
+  s_ac9b259eab20ba::t_e49b8fd174f1e4 40,42,87,89,101,103,114,116,127,129
+src/modules/Levain/useCases/autoLoadSamples.ts
+  s_ac9b259eab20ba::t_60b8aebe5a0479 28,37,61,67,72,81
+src/modules/Levain/useCases/levainParamBridge/__tests__/registerLevainDevice.spec.ts
+  s_ac9b259eab20ba::t_33d0ff54d7148b 29-38
+src/modules/Levain/useCases/levainParamBridge/helpers.ts
+  s_ac9b259eab20ba::t_27a8474ed11dea 21-22,37,83-91,109-122,132-137,140-144,148-150,191
+src/modules/Levain/useCases/levainParamBridge/registerLevainDevice.ts
+  s_ac9b259eab20ba::t_7e6a1a17319d9a 5-14,16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "1d5f44f7ec47bcc81650609e81e064c6f56cca33",
+  "prompts": {},
+  "sessions": {
+    "s_0f3ab06e2b0c6f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fb0fa-f596-7bf3-9fcb-e81c4bc77b6d",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
