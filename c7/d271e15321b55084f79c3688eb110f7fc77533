@@ -1,0 +1,89 @@
+docs/architecture/decisions/0025-llm-device-chain-lifecycle.md
+  s_ac9b259eab20ba::t_5c1ffeeb8f24b7 1-24
+src/modules/AiRuntime/models/ProjectContext.ts
+  s_bc88af7d3b054c::t_d06a2231c4b819 9,18-22
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_bc88af7d3b054c::t_2f8444f48681f9 251,273
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_bc88af7d3b054c::t_2d65f377525777 110,114-136,483-503,636-659,786-789,796,806-814,827-832,848-861,888
+src/modules/AiRuntime/useCases/__tests__/getProjectContext.spec.ts
+  s_bc88af7d3b054c::t_263178d453f590 12,30,66-69,82
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_bc88af7d3b054c::t_bc2521224b372b 37-53
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_bc88af7d3b054c::t_4e972ad14f9b9b 756-792
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_bc88af7d3b054c::t_601168f982a765 810-811,813-832,899
+src/modules/AiRuntime/useCases/agentReference/resolveAgentReference.ts
+  s_bc88af7d3b054c::t_09ec4283d40df9 11,118-119,180-182
+src/modules/AiRuntime/useCases/getProjectContext.ts
+  s_bc88af7d3b054c::t_fbe9c72b655830 2,11,73-75
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_bc88af7d3b054c::t_cde91aa38b33c6 165-168,170
+src/modules/Arrangement/handlers/device/__tests__/handleAddDevice.spec.ts
+  s_bc88af7d3b054c::t_5ba889b558758c 25,47-57
+src/modules/Arrangement/handlers/device/handleAddDevice.ts
+  s_bc88af7d3b054c::t_05e6d080ea0acc 6-16,18-29,31
+src/modules/Arrangement/handlers/device/handleRemoveDevice.ts
+  s_bc88af7d3b054c::t_9dc86aaa2fd22d 4,8-9,12,15-47,49
+src/modules/Arrangement/handlers/device/handleRestoreDevice.ts
+  s_bc88af7d3b054c::t_740ff19960b9bc 1-15
+src/modules/Arrangement/useCases/device/__tests__/addDevice.spec.ts
+  s_bc88af7d3b054c::t_3ad7ae1d55a750 140-161
+src/modules/Arrangement/useCases/device/__tests__/removeDevice.spec.ts
+  s_ac9b259eab20ba::t_9e0dd88efaa628 11,21,41,47,51-54,110-152
+src/modules/Arrangement/useCases/device/__tests__/restoreDevice.spec.ts
+  s_bc88af7d3b054c::t_ba24e9e683090a 1-66
+src/modules/Arrangement/useCases/device/addDevice.ts
+  s_bc88af7d3b054c::t_5777bb69a9ccc0 27,36-39,74
+src/modules/Arrangement/useCases/device/restoreDevice.ts
+  s_bc88af7d3b054c::t_3708529405dd3e 1-65
+src/modules/Arrangement/useCases/getArrangementHandlers.ts
+  s_bc88af7d3b054c::t_f7ee443867a74f 16,158
+src/modules/Arrangement/useCases/projectTrackToLiveStrip.ts
+  s_bc88af7d3b054c::t_d89f0c88a7cdb1 76,81,83,85-86
+src/modules/AudioEngine/engine/TrackNode.ts
+  s_bc88af7d3b054c::t_a6d71f2080d0ee 547-552,689-699
+src/modules/AudioEngine/models/AudioEngineState.ts
+  s_ac9b259eab20ba::t_690194f40847cd 359-365
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngineDelegation.spec.ts
+  s_ac9b259eab20ba::t_d9fc02c3dbf4a1 425-426
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_bc88af7d3b054c::t_4831fc1bebcf6d 812-818,823
+src/modules/AudioEngine/useCases/__tests__/deviceControls.spec.ts
+  s_bc88af7d3b054c::t_18153726ef2c79 14,16
+src/modules/AudioEngine/useCases/deviceControls/__tests__/deviceControls.spec.ts
+  s_bc88af7d3b054c::t_6421f97ce84446 30-31
+src/modules/AudioEngine/useCases/deviceControls/addDeviceToStrip.ts
+  s_bc88af7d3b054c::t_51770f89094116 7-8,10
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_bc88af7d3b054c::t_5c81ca1724e546 257-275,590-601
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_bc88af7d3b054c::t_99e9bae17453cf 14,513-539
+src/utils/handlerContract.ts
+  s_bc88af7d3b054c::t_a2d370171a4604 10-20,386,389-393
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "c7d271e15321b55084f79c3688eb110f7fc77533",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
