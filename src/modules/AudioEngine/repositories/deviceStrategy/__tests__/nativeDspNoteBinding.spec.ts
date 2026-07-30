@@ -119,18 +119,22 @@ describe('native DSP note bindings map the named request onto each device own no
         ]);
     });
 
-    // The bound surface is the whole surface: a device the table claims but
-    // that voices no notes must stay note-less, so the offline scheduler keeps
-    // reading its absence as "this is not an instrument".
-    it('binds a note surface to exactly the four note-voicing devices', async () => {
-        const noteVoicing: string[] = [];
-        for (const deviceType of ['fermenter', 'toaster', 'levain', 'grand-boule']) {
+    // Both halves or neither. A binding that adapted `noteOn` and left `noteOff`
+    // positional would still satisfy `NativeDspNode` — `noteOff` is optional
+    // there — and would release notes at the wrong frame while note-ons looked
+    // correct, which is the harder half of this defect to hear.
+    //
+    // This says nothing about the seven table entries that voice no notes.
+    // Their `create` fetches wasm and cannot run here, and they are not
+    // note-less at the strategy in any case — see the note on the instrument
+    // gate in the PR description.
+    it.each(['fermenter', 'toaster', 'levain', 'grand-boule'])(
+        '%s binds both halves of its note surface',
+        async (deviceType) => {
             const node = await buildNode(deviceType);
-            if (node.noteOn && node.noteOff) {
-                noteVoicing.push(deviceType);
-            }
-        }
 
-        expect(noteVoicing).toEqual(['fermenter', 'toaster', 'levain', 'grand-boule']);
-    });
+            expect(node.noteOn).toBeTypeOf('function');
+            expect(node.noteOff).toBeTypeOf('function');
+        }
+    );
 });
