@@ -32,10 +32,28 @@ function isInstrumentDevice(type: string): boolean {
 }
 
 function attachEffectDevice(trackId: string, dp: DevicePreset): void {
-    const added = addDevice(trackId, dp.name);
+    // `dp.type`, never `dp.name`. `addDevice` resolves by name *or* id and, on
+    // a miss, stores the string it was handed as the device type. Factory
+    // presets label their effects — `comp('Drum Comp', …)` is
+    // `type: 'builtin-compressor'` under a name no catalog plugin carries — so
+    // passing the label minted a device typed `Drum Comp`, which no descriptor
+    // matches. `TrackNode.addDevice` then bails on it, meaning the effect was
+    // silent in playback as well as absent from a render.
+    // `attachInstrumentDevice` below already used `dp.type`; this is the same
+    // rule, applied on the branch that had drifted from it.
+    //
+    // The label goes in the same call. Resolving by type otherwise costs it:
+    // `addDevice` names what it placed after the catalog plugin it matched, so
+    // `Drum Comp` would come back as `Compressor`. `device.name` is what the
+    // device chain, the inspector, the automation lane and the modulation
+    // matrix render, and it is the preset's to choose — `attachInstrumentDevice`
+    // keeps `dp.name` for the same reason. Passing it here keeps the device to
+    // a single write instead of adding then renaming.
+    const added = addDevice(trackId, dp.type, dp.name);
     if (!added) {
         return;
     }
+
     for (const [paramId, value] of Object.entries(dp.parameterValues)) {
         // `setDeviceParameter` already clamps and pushes the clamped value to
         // the engine. The raw `updateDeviceParam` that used to follow it here

@@ -100,7 +100,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                         className={cn(menuBtnClass, 'text-foreground')}
                                         role="menuitem"
                                         onClick={() => {
-                                            addDevice(track.id, plugin.name);
+                                            addDevice(track.id, plugin.id);
                                             setShowDeviceMenu(false);
                                         }}
                                     >
@@ -116,7 +116,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                         className={cn(menuBtnClass, 'text-foreground hover:bg-accent/50')}
                                         role="menuitem"
                                         onClick={() => {
-                                            addDevice(track.id, plugin.name);
+                                            addDevice(track.id, plugin.id);
                                             setShowDeviceMenu(false);
                                         }}
                                     >
@@ -134,7 +134,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                                 className={cn(menuBtnClass, 'text-foreground')}
                                                 role="menuitem"
                                                 onClick={() => {
-                                                    addDevice(track.id, plugin.name);
+                                                    addDevice(track.id, plugin.id);
                                                     setShowDeviceMenu(false);
                                                 }}
                                             >

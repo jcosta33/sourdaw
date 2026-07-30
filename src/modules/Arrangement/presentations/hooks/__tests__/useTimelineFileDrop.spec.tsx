@@ -108,7 +108,38 @@ describe('useTimelineFileDrop', () => {
         });
 
         await waitFor(() => {
-            expect(mocks.addDevice).toHaveBeenCalledWith('t1', 'SuperFilter');
+            expect(mocks.addDevice).toHaveBeenCalledWith('t1', 'p1');
+        });
+    });
+
+    // The drag payload carries both, and `addDevice` matches on name *or* id.
+    // `De-esser`, `LUFS Meter` and `Stereo Widener` each name two catalog
+    // plugins — a builtin and a Faust one — so a name lookup returns whichever
+    // the registry lists first, not the card the user actually dragged.
+    it('adds the dropped plugin by id, so a name two plugins share cannot pick the other one', async () => {
+        const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
+
+        const mockEvent = {
+            preventDefault: vi.fn(),
+            dataTransfer: {
+                getData: (type: string) => {
+                    if (type === 'application/x-sourdaw-plugin') {
+                        return JSON.stringify({ name: 'De-esser', id: 'faust-de-esser' });
+                    }
+                    return '';
+                },
+                files: [],
+            },
+        };
+
+        mocks.hitTestTrack.mockReturnValue('t1');
+
+        await act(async () => {
+            await result.current.handleFileDrop(mockEvent as any);
+        });
+
+        await waitFor(() => {
+            expect(mocks.addDevice).toHaveBeenCalledWith('t1', 'faust-de-esser');
         });
     });
 

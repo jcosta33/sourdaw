@@ -261,8 +261,58 @@ describe('loadPresetToTrack', () => {
 
         loadPresetToTrack('t4', basePreset([{ type: 'delay', name: 'Delay', parameterValues: { mix: 0.5 } }]));
 
-        expect(addDevice).toHaveBeenCalledWith('t4', 'Delay');
+        expect(addDevice).toHaveBeenCalledWith('t4', 'delay', 'Delay');
         expect(setDeviceParameter).not.toHaveBeenCalled();
         expect(updateDeviceParam).not.toHaveBeenCalled();
+    });
+
+    // Every factory preset labels its effects — `comp('Drum Comp', …)` carries
+    // `type: 'builtin-compressor'` with a display name no catalog plugin has.
+    // `addDevice` matches on name first and falls back to storing whatever
+    // string it was handed as the device type, so passing the label produced a
+    // device typed `Drum Comp`: silent live, because `findWasmDescriptor`
+    // returns nothing and `TrackNode.addDevice` bails, and unrenderable
+    // offline for the same reason. The fixtures above all use presets whose
+    // name happens to resolve, which is why nothing caught it.
+    it('attaches an effect by its device type, not by its display label', () => {
+        vi.mocked(getTrackById).mockReturnValue(makeTrack('t5'));
+        vi.mocked(addDevice).mockReturnValue({
+            id: 'new-comp',
+            name: 'Compressor',
+            type: 'builtin-compressor',
+            bypassed: false,
+            parameterValues: {},
+        });
+
+        loadPresetToTrack(
+            't5',
+            basePreset([{ type: 'builtin-compressor', name: 'Drum Comp', parameterValues: { 'comp-ratio': 4 } }])
+        );
+
+        expect(addDevice).toHaveBeenCalledWith('t5', 'builtin-compressor', 'Drum Comp');
+        expect(setDeviceParameter).toHaveBeenCalledWith('new-comp', 'comp-ratio', 4);
+    });
+
+    // Resolving by type costs the label unless it is passed along: `addDevice`
+    // names what it placed after the catalog plugin it matched, so `Drum Comp`
+    // would come back as `Compressor`. `device.name` is what the device chain,
+    // the inspector, the automation lane (`${device.name} → ${param.name}`) and
+    // the modulation matrix render, and `attachInstrumentDevice` keeps `dp.name`
+    // — both branches have to. `addDevice.spec` covers the device it produces.
+    it("hands the preset's own label to addDevice alongside the type", () => {
+        vi.mocked(getTrackById).mockReturnValue(makeTrack('t7'));
+        vi.mocked(addDevice).mockReturnValue({
+            id: 'new-comp',
+            name: 'Drum Comp',
+            type: 'builtin-compressor',
+            bypassed: false,
+            parameterValues: {},
+        });
+
+        loadPresetToTrack('t7', basePreset([{ type: 'builtin-compressor', name: 'Drum Comp', parameterValues: {} }]));
+
+        expect(addDevice).toHaveBeenCalledWith('t7', 'builtin-compressor', 'Drum Comp');
+        // Only the strip clear — the device is written once, by addDevice.
+        expect(vi.mocked(updateTrack).mock.calls).toHaveLength(1);
     });
 });
