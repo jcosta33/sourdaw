@@ -7,6 +7,10 @@ import { isPluginRequiresIsolationError } from '../engine/pluginHostingErrors';
 import { createExportError } from '../errors/ExportError';
 import { type Device } from '../models/TrackViewTypes';
 import { type OfflineDeviceNode } from '../repositories/devices/types';
+import {
+    type DeviceNoteOffRequest,
+    type DeviceNoteOnRequest,
+} from '../repositories/deviceStrategy/AudioDeviceStrategy';
 import { isNodelessOfflineDeviceType } from '../repositories/deviceStrategy/nodelessOfflineDeviceTypes';
 import { createDeviceRegistry, type AudioDeviceStrategy } from '../repositories/deviceStrategy/setupDeviceStrategies';
 import { isUnrenderableCatalogDeviceType } from '../repositories/deviceStrategy/unrenderableCatalogDeviceTypes';
@@ -25,8 +29,8 @@ export type DeviceNodeEntry = {
         setBypass: (bypassed: boolean) => void;
     };
     instrumentControls?: {
-        noteOn: (noteOrPad: number, velocity: number, midiNote?: number, sampleFrame?: number) => void;
-        noteOff: (noteOrPad: number, sampleFrame?: number) => void;
+        noteOn: (request: DeviceNoteOnRequest) => void;
+        noteOff: (request: DeviceNoteOffRequest) => void;
     };
 };
 
@@ -320,8 +324,8 @@ export const buildDeviceChain = inject({ logger })(
                     // no-op instead of the fallback synth (MD-4).
                     instrumentControls: strategy.noteOn
                         ? {
-                              noteOn: (note, vel, midi, sampleFrame) => strategy.noteOn?.(note, vel, midi, sampleFrame),
-                              noteOff: (note, sampleFrame) => strategy.noteOff?.(note, sampleFrame),
+                              noteOn: (request) => strategy.noteOn?.(request),
+                              noteOff: (request) => strategy.noteOff?.(request),
                           }
                         : undefined,
                 });
