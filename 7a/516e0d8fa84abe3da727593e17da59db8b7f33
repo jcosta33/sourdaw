@@ -1,0 +1,76 @@
+src/modules/AudioEngine/engine/ProofNode.ts
+  s_ac9b259eab20ba::t_6ba811155f85ba 41,112,130,132,160-165,180-181
+  s_ac9b259eab20ba::t_d42b28e27b791a 127
+src/modules/AudioEngine/engine/BacteriaNode.ts
+  s_ac9b259eab20ba::t_6196c9550d9574 59,98,104,133-134,136-139,142-144,160
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistryDescriptors.spec.ts
+  s_ac9b259eab20ba::t_380bf2cb6580a9 506-520,614-642
+  s_ac9b259eab20ba::t_a561faa721e1ce 16,20-27,411-414,446
+  s_ac9b259eab20ba::t_f6195aa3ceca0c 380,394-396,435-439
+  s_ac9b259eab20ba::t_5785f9112f6d1c 393,464,555,585,659,709
+  s_ac9b259eab20ba::t_8ddb36de86821a 521-522
+  s_ac9b259eab20ba::t_a7f230de6d1d69 643-644
+src/modules/AudioEngine/engine/__tests__/ProofNodeCreate.spec.ts
+  s_ac9b259eab20ba::t_d010cad60be246 170-174
+  s_ac9b259eab20ba::t_a13989988a67f6 165,193,208-209,228,249,257,277,281-298,325,335,339
+src/modules/AudioEngine/engine/__tests__/GrinderNode.spec.ts
+  s_ac9b259eab20ba::t_d42b28e27b791a 27
+  s_ac9b259eab20ba::t_a13989988a67f6 205,211-214,235,249,264,272,277-279,282,285-286,292
+src/modules/AudioEngine/engine/__tests__/FermenterNode.spec.ts
+  s_ac9b259eab20ba::t_d010cad60be246 276-280
+  s_ac9b259eab20ba::t_a13989988a67f6 246-275,281-282
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistry.spec.ts
+  s_ac9b259eab20ba::t_d1cea27637c98c 283-305,307-310
+  s_ac9b259eab20ba::t_380bf2cb6580a9 311-342
+  s_ac9b259eab20ba::t_5785f9112f6d1c 361,381
+  s_ac9b259eab20ba::t_a239f2bc0046ac 73
+  s_ac9b259eab20ba::t_ed29bd08bfadb0 251-252,269-272,281-282
+  s_ac9b259eab20ba::t_a561faa721e1ce 10,13-19
+  s_ac9b259eab20ba::t_6b7a7a423e1bb9 306
+  s_ac9b259eab20ba::t_8eedcf9635c570 20
+src/modules/AudioEngine/engine/FermenterNode.ts
+  s_ac9b259eab20ba::t_6ba811155f85ba 115,167,172-173,275-276,278-282,286-287,292-299,328-329
+src/modules/AudioEngine/engine/GlutenNode.ts
+  s_ac9b259eab20ba::t_6196c9550d9574 49,89,95,124-125,127-130,133-135,151
+src/modules/AudioEngine/engine/GrinderNode.ts
+  s_ac9b259eab20ba::t_6ba811155f85ba 65,104,110,189-190,192-195,198-200,216
+src/modules/AudioEngine/engine/__tests__/ScoringNode.spec.ts
+  s_ac9b259eab20ba::t_b1681cd3f600f9 129,135-138,158,171,188,214,223-224,227,230,242,250-251,254-262,265
+  s_ac9b259eab20ba::t_d42b28e27b791a 23
+src/modules/AudioEngine/engine/__tests__/BacteriaNode.spec.ts
+  s_ac9b259eab20ba::t_d42b28e27b791a 23
+  s_ac9b259eab20ba::t_b1681cd3f600f9 129,135-138,155,158,195,204-205,208,211,223,231-232,235-243,246
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_ac9b259eab20ba::t_9dc46dea583f27 30,112-118,120-143,154-157
+  s_ac9b259eab20ba::t_160376b9fa784a 764,819-821,828-829
+  s_ac9b259eab20ba::t_2e9f83e27e6f8e 119,144-153,533,555,603,605-607,621,701,703-705,720,787,789-797,812,822-827
+  s_ac9b259eab20ba::t_a831d562933a6b 867,884
+  s_ac9b259eab20ba::t_7e31624a961700 213,534,536-541
+  s_ac9b259eab20ba::t_bd22579919845b 799-811,814,868-883
+  s_ac9b259eab20ba::t_f6195aa3ceca0c 531-532
+  s_ac9b259eab20ba::t_d1cea27637c98c 166
+  s_ac9b259eab20ba::t_798f4a58f646a3 158-165,167-175,214-245
+  s_ac9b259eab20ba::t_fb46bcaf8373dd 542-554,557,608-620,623,706-719,722
+  s_ac9b259eab20ba::t_6e29dd96d83ca9 798
+src/modules/AudioEngine/engine/ScoringNode.ts
+  s_ac9b259eab20ba::t_6196c9550d9574 63,96,101,123-124,126-129,132-134,145
+src/modules/AudioEngine/engine/__tests__/GlutenNode.spec.ts
+  s_ac9b259eab20ba::t_d42b28e27b791a 23
+  s_ac9b259eab20ba::t_b1681cd3f600f9 142,148-151,170,174,199,208-209,212,215,227,235-236,239-247
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "7a516e0d8fa84abe3da727593e17da59db8b7f33",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
