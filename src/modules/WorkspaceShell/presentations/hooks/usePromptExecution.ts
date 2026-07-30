@@ -21,7 +21,7 @@ import {
     defaultTrackState,
     trackStore,
 } from '#/modules/Arrangement/stores';
-import { describeAction } from '#/modules/Command/useCases';
+import { describeAction, requiresAppActionConfirmation } from '#/modules/Command/useCases';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
 const defaultLlmStatus: typeof llmStatusStore.value = { state: 'idle' };
@@ -267,7 +267,7 @@ export const usePromptExecution = (): PromptExecutionState => {
             return;
         }
 
-        if (result.preset.isDestructive) {
+        if (result.preset.isDestructive || requiresAppActionConfirmation(actions)) {
             showPreview({
                 actions,
                 actionLabels: actions.map((action) => describeAction(action)),

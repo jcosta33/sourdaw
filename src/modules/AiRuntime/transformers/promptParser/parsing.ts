@@ -423,17 +423,3 @@ export function findTrack(context: ProjectContext, name: string): ProjectContext
         context.tracks.find((time) => time.name.toLowerCase().includes(lower))
     );
 }
-
-/**
- * Checks whether validated actions contain destructive operations
- * requiring user confirmation.
- */
-export function requiresConfirmation(actions: RuntimeAction[]): boolean {
-    return actions.some(
-        (alpha) =>
-            alpha.type === 'removeTrack' ||
-            alpha.type === 'removeClip' ||
-            alpha.type === 'removeDevice' ||
-            alpha.type === 'bounceInPlace'
-    );
-}

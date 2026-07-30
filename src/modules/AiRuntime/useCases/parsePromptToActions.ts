@@ -1,5 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
+import { requiresAppActionConfirmation } from '#/modules/Command/useCases';
 
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
 import { type IntentResult } from '../models/IntentResult';
@@ -16,12 +17,9 @@ import {
     buildPresetContext,
     tryParameterizedPath,
     tryCompoundFastPath,
-    requiresConfirmation,
 } from '../transformers/promptParser/parsing';
 
-import { executeDsoEdit } from './dsoEditor/executeDsoEdit';
 import { getProjectContext, type ProjectContext } from './getProjectContext';
-import { isDsoBackendAvailable } from './llmOrchestration/backendResolution/isDsoBackendAvailable';
 import { generateToolPlanningOutcome } from './llmOrchestration/inference';
 import { validateActions } from './validateActions';
 
@@ -48,7 +46,7 @@ function createFastPathResult(input: CreateFastPathResultInput): IntentResult {
     return {
         actions: validated,
         rawText: input.prompt,
-        requiresConfirmation: requiresConfirmation(validated),
+        requiresConfirmation: requiresAppActionConfirmation(validated),
     };
 }
 
@@ -59,7 +57,6 @@ function createFastPathResult(input: CreateFastPathResultInput): IntentResult {
  * 3. Parameterized fast-path: regex for commands that need values (tempo N, transpose N)
  * 4. Compound fast-path: multi-track creation etc.
  * 5. Provider-neutral LLM tool path: tool calls cross a strict app-owned action bridge
- * 6. DSO fallback: only after successful provider planning returns no tool calls
  */
 export const parsePromptToActions = inject({ logger })(
     ({ logger }) =>
@@ -164,7 +161,7 @@ export const parsePromptToActions = inject({ logger })(
                     return {
                         actions: validated,
                         rawText: prompt,
-                        requiresConfirmation: validated.length > 1 || requiresConfirmation(validated),
+                        requiresConfirmation: requiresAppActionConfirmation(validated),
                         executionMode: 'atomic',
                     };
                 }
@@ -196,54 +193,7 @@ export const parsePromptToActions = inject({ logger })(
                 };
             }
 
-            // 6. DSO fallback — every non-empty or failed provider plan returned above.
-            if (isDsoBackendAvailable()) {
-                try {
-                    const result = await executeDsoEdit(prompt, signal);
-
-                    if (signal?.aborted) {
-                        return { actions: [], rawText: prompt, requiresConfirmation: false };
-                    }
-
-                    if (result.success && result.pendingConfirmationId) {
-                        return {
-                            actions: [],
-                            rawText: prompt,
-                            requiresConfirmation: false,
-                            _jsonEditAttempted: true,
-                        };
-                    }
-
-                    if (result.success) {
-                        return {
-                            actions: [],
-                            rawText: prompt,
-                            requiresConfirmation: false,
-                            _jsonEditApplied: true,
-                            _jsonEditSummaries: result.summaries,
-                        };
-                    } else {
-                        logger.warn(`[AI] DSO editor failed: ${result.error ?? 'unknown'}`);
-                        return {
-                            actions: [],
-                            rawText: prompt,
-                            requiresConfirmation: false,
-                            _jsonEditAttempted: true,
-                        };
-                    }
-                } catch (error) {
-                    if (signal?.aborted) {
-                        return { actions: [], rawText: prompt, requiresConfirmation: false };
-                    }
-                    logger.warn(`[AI] DSO editor failed: ${String(error)}`);
-                    return {
-                        actions: [],
-                        rawText: prompt,
-                        requiresConfirmation: false,
-                        _jsonEditAttempted: true,
-                    };
-                }
-            }
+            // The legacy DSO editor can escape the AppAction transaction, so an empty tool plan must stop here.
 
             return { actions: [], rawText: prompt, requiresConfirmation: false };
         }

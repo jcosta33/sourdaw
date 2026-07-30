@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { matchSoundDesignRecipe, requiresConfirmation, tryCompoundFastPath, isComplexPrompt } from '../parsing';
+import { matchSoundDesignRecipe, tryCompoundFastPath, isComplexPrompt } from '../parsing';
 
 const ctx = {
     tracks: [{ id: 't1', name: 'Drums', kind: 'audio', clips: [] }],
@@ -55,41 +55,6 @@ describe('matchSoundDesignRecipe', () => {
         for (const action of result!) {
             expect((action.payload as { trackId: string }).trackId).toBe('my-track');
         }
-    });
-});
-
-describe('requiresConfirmation', () => {
-    it('returns true for removeTrack', () => {
-        expect(requiresConfirmation([{ type: 'removeTrack', payload: {} } as never])).toBe(true);
-    });
-
-    it('returns true for removeClip', () => {
-        expect(requiresConfirmation([{ type: 'removeClip', payload: {} } as never])).toBe(true);
-    });
-
-    it('returns true for removeDevice', () => {
-        expect(requiresConfirmation([{ type: 'removeDevice', payload: {} } as never])).toBe(true);
-    });
-
-    it('returns true for bounceInPlace', () => {
-        expect(requiresConfirmation([{ type: 'bounceInPlace', payload: {} } as never])).toBe(true);
-    });
-
-    it('returns false for addTrack', () => {
-        expect(requiresConfirmation([{ type: 'addTrack', payload: {} } as never])).toBe(false);
-    });
-
-    it('returns false for empty list', () => {
-        expect(requiresConfirmation([])).toBe(false);
-    });
-
-    it('returns true when mixed with safe actions', () => {
-        expect(
-            requiresConfirmation([
-                { type: 'addTrack', payload: {} },
-                { type: 'removeTrack', payload: {} },
-            ] as never)
-        ).toBe(true);
     });
 });
 
