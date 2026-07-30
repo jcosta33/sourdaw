@@ -45,8 +45,7 @@ describe('MeteringWorkletProcessor peak capture', () => {
     let peakView: Float32Array;
 
     beforeEach(() => {
-        // One Float32: the single combined-peak slot the meter SAB holds.
-        sab = new SharedArrayBuffer(4);
+        sab = new SharedArrayBuffer(2 * Float32Array.BYTES_PER_ELEMENT);
         peakView = new Float32Array(sab);
     });
 
@@ -88,6 +87,21 @@ describe('MeteringWorkletProcessor peak capture', () => {
         expect(peakView[0]).toBeCloseTo(0.9, 5);
     });
 
+    it('keeps independent peaks for separate pooled inputs', async () => {
+        const proc = await loadProcessor();
+        sendInit(proc, sab);
+
+        const first = new Float32Array(128);
+        first[3] = 0.4;
+        const second = new Float32Array(128);
+        second[7] = -0.85;
+
+        proc.process([[first], [second]], []);
+
+        expect(peakView[0]).toBeCloseTo(0.4, 5);
+        expect(peakView[1]).toBeCloseTo(0.85, 5);
+    });
+
     it('accumulates the running peak across blocks (Math.max, not overwrite)', async () => {
         const proc = await loadProcessor();
         sendInit(proc, sab);
@@ -115,19 +129,13 @@ describe('MeteringWorkletProcessor peak capture', () => {
         expect(proc.process([], [])).toBe(false);
     });
 
-    it('passes audio through unchanged (it is an in-chain tap)', async () => {
+    it('ignores inputs beyond the bounded shared-memory slot count', async () => {
         const proc = await loadProcessor();
         sendInit(proc, sab);
 
-        // Values exactly representable in Float32 so the round-trip is exact.
-        const left = new Float32Array([0.25, 0.5, -0.75]);
-        const right = new Float32Array([0.125, -0.5, 0.875]);
-        const outL = new Float32Array(3);
-        const outR = new Float32Array(3);
-
-        proc.process([[left, right]], [[outL, outR]]);
-
-        expect(Array.from(outL)).toEqual([0.25, 0.5, -0.75]);
-        expect(Array.from(outR)).toEqual([0.125, -0.5, 0.875]);
+        const signal = new Float32Array([0.7]);
+        expect(proc.process([[signal], [signal], [signal]], [])).toBe(true);
+        expect(peakView[0]).toBeCloseTo(0.7, 5);
+        expect(peakView[1]).toBeCloseTo(0.7, 5);
     });
 });

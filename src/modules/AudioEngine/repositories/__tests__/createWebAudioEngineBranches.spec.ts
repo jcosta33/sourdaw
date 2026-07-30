@@ -10,8 +10,7 @@ import type { AudioEngine } from '../../models/AudioEngineState';
 /**
  * Node double shared across the TrackNode / BusNode mocks below. The strip
  * exposes the nodes AudioEngineImpl reads directly (preFaderTap / analyserNode
- * for sends and sidechain, deviceNodes for note-off fan-out, meterNode for the
- * dispose shutdown sweep).
+ * for sends and sidechain, plus deviceNodes for note-off fan-out).
  */
 function makeNode() {
     return { connect: vi.fn(), disconnect: vi.fn(), port: { postMessage: vi.fn(), close: vi.fn() } };
@@ -27,7 +26,6 @@ vi.mock('../../engine/TrackNode', () => ({
             gainNode: ReturnType<typeof makeNode>;
             preFaderTap: ReturnType<typeof makeNode>;
             analyserNode: ReturnType<typeof makeNode>;
-            meterNode: ReturnType<typeof makeNode> | null;
             deviceNodes: unknown[];
             outputId?: string;
         };
@@ -90,7 +88,6 @@ vi.mock('../../engine/TrackNode', () => ({
                 gainNode: makeNode(),
                 preFaderTap: makeNode(),
                 analyserNode: makeNode(),
-                meterNode: makeNode(),
                 deviceNodes: [],
             };
         }
@@ -648,23 +645,6 @@ describe('AudioEngineImpl — residual branch coverage', () => {
             // Worklet node got the shutdown message; the plain node was not asked
             // for a port (instanceof guard).
             expect(worklet.port.postMessage).toHaveBeenCalledWith({ type: 'shutdown' });
-        });
-    });
-
-    // ── postShutdownToWorklets: meterNode null guard.
-    describe('postShutdownToWorklets meterNode null', () => {
-        it('skips a null meterNode without throwing', async () => {
-            const strip = engine.ensureTrackStrip('null-meter-track');
-            // Set meterNode to null to exercise the optional-chain short-circuit.
-            (strip as unknown as { meterNode: unknown }).meterNode = null;
-            strip.deviceNodes.push({
-                deviceId: 'plain-dev',
-                type: 'fermenter',
-                nodes: [],
-                fermenterControls: {},
-            } as never);
-
-            await expect(engine.dispose()).resolves.toBeUndefined();
         });
     });
 

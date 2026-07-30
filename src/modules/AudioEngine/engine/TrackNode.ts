@@ -1,11 +1,11 @@
 import { logger } from '#/infra/logger/appLogger';
 import { clampFaderGain } from '#/utils/audioLevelLaw';
-import { hasSharedArrayBuffer } from '#/utils/capabilities';
 
 import { deviceReadinessDiagnostics, type DeviceReadinessToken } from '../services/deviceReadinessDiagnostics';
 import { applyParams } from '../useCases/deviceResolvers/applyParams';
 import { createBuiltinDeviceNode } from '../useCases/deviceResolvers/createBuiltinDeviceNode';
 
+import { type MeterTransport } from './metering/MeterTransport';
 import { createNativePluginBridgeNode } from './NativePluginBridgeNode';
 import { findWasmDescriptor } from './wasmDeviceRegistry';
 
@@ -28,6 +28,7 @@ export type TrackNodeDeps = {
     getTrackGainNode: (id: string) => GainNode | undefined;
     getSendsForTrack: (tId: string) => SendNode[];
     pendingDevicePromises: Set<Promise<unknown>>;
+    meterTransport?: MeterTransport;
     transportSAB?: SharedArrayBuffer;
     /** Adjustment-layer insert: when non-null for this track, `analyserNode`
      *  routes to this node instead of the track's default destination. */
@@ -87,20 +88,7 @@ export class TrackNode {
         analyserNode.fftSize = 256;
         analyserNode.smoothingTimeConstant = 0.8;
 
-        let meterNode: AudioWorkletNode | null = null;
-        let meterBuffer: Float32Array;
-
-        if (hasSharedArrayBuffer()) {
-            // 4-byte SAB = one Float32: a single combined-peak meter. The
-            // metering-processor scans every input channel into this one slot
-            // (no `channels` field — that misleadingly implied per-channel peaks
-            // the 1-float buffer cannot hold). getPeakLevel reads-and-resets it.
-            const meterSab = new SharedArrayBuffer(4);
-            meterNode = new AudioWorkletNode(context, 'metering-processor');
-            meterNode.port.postMessage({ type: 'init', sab: meterSab });
-            meterBuffer = new Float32Array(meterSab);
-        } else {
-            meterBuffer = new Float32Array(1);
+        if (!deps.meterTransport) {
             this._analyserFallbackBuffer = new Float32Array(analyserNode.fftSize);
         }
 
@@ -108,12 +96,8 @@ export class TrackNode {
         preFaderTap.connect(faderNode);
         faderNode.connect(postFaderGain);
         postFaderGain.connect(panNode);
-        if (meterNode) {
-            panNode.connect(meterNode);
-            meterNode.connect(analyserNode);
-        } else {
-            panNode.connect(analyserNode);
-        }
+        panNode.connect(analyserNode);
+        deps.meterTransport?.register(trackId, panNode);
 
         this.strip = {
             trackId,
@@ -122,14 +106,12 @@ export class TrackNode {
             faderNode,
             postFaderGain,
             panNode,
-            meterNode,
             analyserNode,
             muted: false,
             soloGated: false,
             soloed: false,
             deviceNodes: [],
             midiFxNodes: [],
-            meterBuffer,
         };
 
         this.routeOutput();
@@ -277,6 +259,9 @@ export class TrackNode {
     }
 
     public getPeakLevel(): number {
+        if (this.deps.meterTransport) {
+            return this.deps.meterTransport.read(this.trackId);
+        }
         if (this._analyserFallbackBuffer) {
             this.strip.analyserNode.getFloatTimeDomainData(this._analyserFallbackBuffer);
             let peak = 0;
@@ -288,14 +273,7 @@ export class TrackNode {
             }
             return peak;
         }
-        // Read-and-reset of a single f32, deliberately without Atomics (audit
-        // RT-9) — the scalar-meter exception to the Atomics discipline the
-        // multi-field telemetry slots follow. Rationale in the module header of
-        // services/meteringProcessor.ts (the writer); the worst case is one
-        // dropped peak frame, never a torn value.
-        const peak = this.strip.meterBuffer[0]!;
-        this.strip.meterBuffer[0] = 0;
-        return peak;
+        return 0;
     }
 
     public setOutput(outputId: string): void {
@@ -386,7 +364,6 @@ export class TrackNode {
         s.faderNode.disconnect();
         s.postFaderGain.disconnect();
         s.panNode.disconnect();
-        s.meterNode?.disconnect();
 
         for (const dn of s.deviceNodes) {
             try {
@@ -420,12 +397,8 @@ export class TrackNode {
         s.preFaderTap.connect(s.faderNode);
         s.faderNode.connect(s.postFaderGain);
         s.postFaderGain.connect(s.panNode);
-        if (s.meterNode) {
-            s.panNode.connect(s.meterNode);
-            s.meterNode.connect(s.analyserNode);
-        } else {
-            s.panNode.connect(s.analyserNode);
-        }
+        s.panNode.connect(s.analyserNode);
+        this.deps.meterTransport?.reconnect(this.trackId);
 
         this.routeOutput();
         if (this.deps.reconnectRoutingForTrack) {
@@ -836,14 +809,10 @@ export class TrackNode {
         this.strip.gainNode.disconnect();
         this.strip.faderNode.disconnect();
         this.strip.postFaderGain.disconnect();
+        this.deps.meterTransport?.unregister(this.trackId);
         this.strip.panNode.disconnect();
         this.strip.analyserNode.disconnect();
         this._outputDestination = null;
-        if (this.strip.meterNode) {
-            this.strip.meterNode.port.postMessage({ type: 'shutdown' });
-            this.strip.meterNode.port.close();
-            this.strip.meterNode.disconnect();
-        }
         for (const dn of this.strip.deviceNodes) {
             deviceReadinessDiagnostics.removeDevice(dn.deviceId);
             if (dn.controller) {

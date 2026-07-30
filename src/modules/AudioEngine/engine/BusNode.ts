@@ -12,7 +12,6 @@ export class BusNode {
             busId,
             gainNode: trackNode.strip.gainNode,
             analyserNode: trackNode.strip.analyserNode,
-            meterBuffer: trackNode.strip.meterBuffer,
         };
     }
 

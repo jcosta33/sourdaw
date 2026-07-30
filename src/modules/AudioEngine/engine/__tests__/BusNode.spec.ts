@@ -17,7 +17,6 @@ describe('BusNode', () => {
             strip: {
                 gainNode,
                 analyserNode,
-                meterBuffer: new Float32Array(1),
             },
             setGain: vi.fn(),
             getPeakLevel: vi.fn(() => 0.8),
@@ -31,7 +30,6 @@ describe('BusNode', () => {
         expect(bus.strip.busId).toBe('bus-1');
         expect(bus.strip.gainNode).toBe(trackNode.strip.gainNode);
         expect(bus.strip.analyserNode).toBe(trackNode.strip.analyserNode);
-        expect(bus.strip.meterBuffer).toBe(trackNode.strip.meterBuffer);
     });
 
     it('sets gain through the owning track fader', () => {

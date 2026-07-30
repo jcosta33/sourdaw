@@ -38,7 +38,6 @@ vi.mock('../../engine/TrackNode', () => ({
             trackId: string;
             preFaderTap: { connect: ReturnType<typeof vi.fn>; disconnect: ReturnType<typeof vi.fn> };
             analyserNode: { connect: ReturnType<typeof vi.fn>; disconnect: ReturnType<typeof vi.fn> };
-            meterNode: null;
             deviceNodes: unknown[];
         };
         mocks: Record<string, (...args: unknown[]) => void>;
@@ -49,7 +48,6 @@ vi.mock('../../engine/TrackNode', () => ({
                 trackId: id,
                 preFaderTap: { connect: vi.fn(), disconnect: vi.fn() },
                 analyserNode: { connect: vi.fn(), disconnect: vi.fn() },
-                meterNode: null,
                 deviceNodes: [],
             };
             this.mocks = {
@@ -166,7 +164,7 @@ function asAudioContext(ctx: MockAudioContext): AudioContext {
 }
 
 class FakeWorkletNode {
-    port = { postMessage: vi.fn() };
+    port = { postMessage: vi.fn(), close: vi.fn() };
     connect = vi.fn();
     disconnect = vi.fn();
 }
@@ -309,8 +307,8 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
             deviceAudioNodes: 0,
             deviceAudioWorkletProcessors: 0,
             deviceAudioWorkletProcessorsByType: {},
-            stripMeterWorklets: 0,
-            masterMeterWorklets: 0,
+            meterTaps: 0,
+            meterWorkletPools: 0,
             graphAudioWorkletProcessors: 0,
             workerInstances: 0,
             workerInstancesByType: {},
@@ -332,8 +330,6 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
         engine.ensureBusStrip('bus-1');
         engine.setSend('t1', 'bus-1', 0.5, false);
 
-        track.meterNode = new FakeWorkletNode() as unknown as AudioWorkletNode;
-        busTrack.meterNode = null;
         function createDevice(input: Omit<DiagnosticDeviceInput, 'context'>): DiagnosticTestDevice {
             return createDiagnosticDevice({ context: mockCtx, ...input });
         }
@@ -386,9 +382,9 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
                 deviceAudioNodes: 7,
                 deviceAudioWorkletProcessors: 3,
                 deviceAudioWorkletProcessorsByType: { bacteria: 1, fermenter: 1, 'grand-boule': 1 },
-                stripMeterWorklets: 1,
-                masterMeterWorklets: 1,
-                graphAudioWorkletProcessors: 5,
+                meterTaps: 1,
+                meterWorkletPools: 1,
+                graphAudioWorkletProcessors: 4,
                 workerInstances: 1,
                 workerInstancesByType: { 'grand-boule': 1 },
                 adjustmentLayerBuses: 1,
@@ -405,7 +401,8 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
             playback: expectedPlayback,
             graph: {
                 ...emptyGraph,
-                masterMeterWorklets: 1,
+                meterTaps: 1,
+                meterWorkletPools: 1,
                 graphAudioWorkletProcessors: 1,
                 adjustmentLayerBuses: 0,
             },
@@ -416,7 +413,7 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
         });
 
         await engine.dispose();
-        expect(engine.getDiagnostics().graph.masterMeterWorklets).toBe(0);
+        expect(engine.getDiagnostics().graph.meterWorkletPools).toBe(0);
     });
 
     it('rejects a live context without the required current-Chrome playback statistics API', () => {

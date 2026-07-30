@@ -74,8 +74,8 @@ function makeEngineDiagnostics(deviceInstances = 24): ReturnType<typeof getEngin
             deviceAudioNodes: 31,
             deviceAudioWorkletProcessors: 24,
             deviceAudioWorkletProcessorsByType: { fermenter: 14 },
-            stripMeterWorklets: 39,
-            masterMeterWorklets: 1,
+            meterTaps: 40,
+            meterWorkletPools: 2,
             graphAudioWorkletProcessors: 64,
             workerInstances: 1,
             workerInstancesByType: { 'grand-boule': 1 },
@@ -243,7 +243,7 @@ describe('useStatusBarMetrics', () => {
         const expectedClass = getDawStatusDotClassName({ tone: 'success' });
         expect(refs.engineState.current!.className).toContain(expectedClass);
         expect(refs.engineState.current!.title).toBe(
-            'Engine: running · audio track strips: 43 · bus strips: 8 · sends: 12 · sidechains: 2 · ready device instances: 24 (fermenter: 14) · pending device instances: 1 · failed device instances: 2 · device audio nodes: 31 · strip meter worklets: 39 · master meter worklets: 1 · adjustment-layer buses: 0 · tracked AudioScheduledSources: 0'
+            'Engine: running · audio track strips: 43 · bus strips: 8 · sends: 12 · sidechains: 2 · ready device instances: 24 (fermenter: 14) · pending device instances: 1 · failed device instances: 2 · device audio nodes: 31 · meter taps: 40 · meter worklet pools: 2 · adjustment-layer buses: 0 · tracked AudioScheduledSources: 0'
         );
     });
 
@@ -266,7 +266,7 @@ describe('useStatusBarMetrics', () => {
         const expectedClass = getDawStatusDotClassName({ tone: 'muted' });
         expect(refs.engineState.current!.className).toContain(expectedClass);
         expect(refs.engineState.current!.title).toBe(
-            'Engine: suspended · audio track strips: 43 · bus strips: 8 · sends: 12 · sidechains: 2 · ready device instances: 24 (fermenter: 14) · pending device instances: 1 · failed device instances: 2 · device audio nodes: 31 · strip meter worklets: 39 · master meter worklets: 1 · adjustment-layer buses: 0 · tracked AudioScheduledSources: 0'
+            'Engine: suspended · audio track strips: 43 · bus strips: 8 · sends: 12 · sidechains: 2 · ready device instances: 24 (fermenter: 14) · pending device instances: 1 · failed device instances: 2 · device audio nodes: 31 · meter taps: 40 · meter worklet pools: 2 · adjustment-layer buses: 0 · tracked AudioScheduledSources: 0'
         );
     });
 

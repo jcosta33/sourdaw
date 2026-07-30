@@ -75,8 +75,8 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
                     ` · pending device instances: ${String(diagnostics.graph.pendingDeviceInstances)}` +
                     ` · failed device instances: ${String(diagnostics.graph.failedDeviceInstances)}` +
                     ` · device audio nodes: ${String(diagnostics.graph.deviceAudioNodes)}` +
-                    ` · strip meter worklets: ${String(diagnostics.graph.stripMeterWorklets)}` +
-                    ` · master meter worklets: ${String(diagnostics.graph.masterMeterWorklets)}` +
+                    ` · meter taps: ${String(diagnostics.graph.meterTaps)}` +
+                    ` · meter worklet pools: ${String(diagnostics.graph.meterWorkletPools)}` +
                     ` · adjustment-layer buses: ${String(diagnostics.graph.adjustmentLayerBuses)}` +
                     ` · tracked AudioScheduledSources: ${String(diagnostics.runtime.trackedAudioScheduledSources)}`;
                 lastDiagnosticsAtRef.current = now;

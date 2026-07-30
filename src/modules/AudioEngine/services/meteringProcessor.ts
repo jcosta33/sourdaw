@@ -1,7 +1,6 @@
 /**
- * Pass-through peak meter: one f32 in a SharedArrayBuffer, written here on the
- * render thread and read-and-reset by the main thread (TrackNode.getPeakLevel,
- * WebAudioEngine.getMasterPeakLevel).
+ * Pooled side-tap peak meter: one f32 per input in a SharedArrayBuffer, written
+ * here on the render thread and read-and-reset by the main thread.
  *
  * **The plain, non-`Atomics` access below is deliberate (audit RT-9), not an
  * oversight and not a missing seqlock — do not "fix" it into one.** The multi-
@@ -33,51 +32,35 @@ export class MeteringWorkletProcessor extends AudioWorkletProcessor {
         };
     }
 
-    process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
+    process(inputs: Float32Array[][], _outputs: Float32Array[][]): boolean {
         if (!this._active) {
             return false;
         }
-        const input = inputs[0];
-        if (!input || input.length === 0 || !this._sab) {
+        if (!this._sab) {
             return true;
         }
 
-        // Pass-through audio so we can drop this right in the signal chain
-        const output = outputs[0];
-        if (output && output.length > 0) {
-            for (let channel = 0; channel < input.length; channel++) {
-                const inData = input[channel];
-                const outData = output[channel];
-                if (inData && outData) {
-                    outData.set(inData);
-                }
+        for (let inputIndex = 0; inputIndex < inputs.length; inputIndex++) {
+            const input = inputs[inputIndex];
+            if (!input || input.length === 0 || inputIndex >= this._sab.length) {
+                continue;
             }
-        }
-
-        // Calculate the combined peak across every input channel in the block.
-        // The SAB holds a single float, so this is a mono peak readout by design
-        // (the consumer surface, getPeakLevel/getMasterPeakLevel, returns one
-        // number). Scanning all present channels — rather than a caller-supplied
-        // `channels` count against a 1-float buffer — means a hard-panned signal
-        // is not under-reported by the meter.
-        let peak = 0;
-        for (let channel = 0; channel < input.length; channel++) {
-            const data = input[channel];
-            if (data) {
-                for (let index = 0; index < data.length; index++) {
-                    const abs = Math.abs(data[index]!);
-                    if (abs > peak) {
-                        peak = abs;
+            let peak = 0;
+            for (let channel = 0; channel < input.length; channel++) {
+                const data = input[channel];
+                if (data) {
+                    for (let index = 0; index < data.length; index++) {
+                        const abs = Math.abs(data[index]!);
+                        if (abs > peak) {
+                            peak = abs;
+                        }
                     }
                 }
             }
-        }
 
-        // Write the peak to SAB (UI reads and resets to 0 periodically)
-        // Using Math.max so we don't drop peaks between UI polling frames.
-        // Non-atomic by design — see the RT-9 note in the module header.
-        if (peak > this._sab[0]!) {
-            this._sab[0] = peak;
+            if (peak > this._sab[inputIndex]!) {
+                this._sab[inputIndex] = peak;
+            }
         }
 
         return true;

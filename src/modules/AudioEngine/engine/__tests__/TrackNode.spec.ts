@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { createMockAudioContext } from '../../../../helpers/__tests__/audioContext.mock';
 import { TrackNode, type TrackNodeDeps } from '../TrackNode';
@@ -49,18 +49,12 @@ describe('TrackNode', () => {
         expect(track.trackId).toBe('track-1');
         expect(track.strip.muted).toBe(false);
 
-        // Initial wiring check (simplified)
-        // gainNode -> preFaderTap -> faderNode -> postFaderGain -> panNode -> meterNode -> analyserNode -> masterGain
+        // Audible wiring stays direct; metering is a host-owned side tap.
         expect(track.strip.gainNode.connect).toHaveBeenCalledWith(track.strip.preFaderTap);
         expect(track.strip.preFaderTap.connect).toHaveBeenCalledWith(track.strip.faderNode);
         expect(track.strip.faderNode.connect).toHaveBeenCalledWith(track.strip.postFaderGain);
         expect(track.strip.postFaderGain.connect).toHaveBeenCalledWith(track.strip.panNode);
-        const meterNode = track.strip.meterNode;
-        if (!meterNode) {
-            throw new Error('expected the track meter node to be created');
-        }
-        expect(track.strip.panNode.connect).toHaveBeenCalledWith(meterNode);
-        expect(meterNode.connect).toHaveBeenCalledWith(track.strip.analyserNode);
+        expect(track.strip.panNode.connect).toHaveBeenCalledWith(track.strip.analyserNode);
         expect(track.strip.analyserNode.connect).toHaveBeenCalledWith(deps.masterGainNode);
     });
 
@@ -263,23 +257,13 @@ describe('TrackNode', () => {
         expect(device.outputNode.connect).toHaveBeenCalledWith(track.strip.preFaderTap);
     });
 
-    // ── Fix 8: the per-track meter SAB is one Float32 and the init message must
-    // NOT claim `channels: 2` — that implied per-channel peaks the 1-float buffer
-    // cannot hold. The meter is a single combined-peak readout. ──
-    it('initializes the meter worklet without a misleading channels field', () => {
-        const track = new TrackNode('track-1', deps);
-        const meterPort = (track.strip.meterNode as any).port;
+    it('registers its post-pan signal as a host-owned meter side tap', () => {
+        const meterTransport = {
+            register: vi.fn(),
+        } as unknown as NonNullable<TrackNodeDeps['meterTransport']>;
+        const track = new TrackNode('track-1', { ...deps, meterTransport });
 
-        const initCall = meterPort.postMessage.mock.calls.find(
-            (c: unknown[]) => (c[0] as { type?: string })?.type === 'init'
-        );
-        expect(initCall).toBeDefined();
-        const initMsg = initCall![0] as Record<string, unknown>;
-        expect(initMsg.sab).toBeInstanceOf(ArrayBuffer);
-        // The meter SAB is exactly one Float32 (4 bytes) — a single peak slot.
-        expect((initMsg.sab as ArrayBuffer).byteLength).toBe(4);
-        // No `channels` knob: the processor scans all input channels into the slot.
-        expect('channels' in initMsg).toBe(false);
+        expect(meterTransport.register).toHaveBeenCalledWith('track-1', track.strip.panNode);
     });
 
     // ── Fix 2: Knead has no tuning-table consumer (its WASM exposes only
@@ -439,9 +423,7 @@ describe('TrackNode', () => {
     // sidechain-compressor param dispatch, and the no-op updateBypass when the
     // bypass state is already at the requested value.
     describe('control-flow & lifecycle guards', () => {
-        // The shared AudioWorkletNode stub in the outer beforeEach gives the
-        // meter worklet a port without `close`; dispose() calls port.close().
-        // Re-stub with a complete port so the dispose paths run cleanly here.
+        // Re-stub with a complete port so device-worklet disposal paths run cleanly.
         beforeEach(() => {
             (global as { AudioWorkletNode?: unknown }).AudioWorkletNode = class {
                 port = { postMessage: vi.fn(), close: vi.fn() };
@@ -579,26 +561,16 @@ describe('TrackNode', () => {
             expect(() => track.removeDevice('absent')).not.toThrow();
         });
 
-        it('getPeakLevel uses the analyser fallback when SAB is unavailable', () => {
-            // Construct without SAB: temporarily remove SharedArrayBuffer.
-            const savedSAB = (global as { SharedArrayBuffer?: unknown }).SharedArrayBuffer;
-            delete (global as { SharedArrayBuffer?: unknown }).SharedArrayBuffer;
-            try {
-                const noSabTrack = new TrackNode('t-nosab', deps);
-                expect(noSabTrack.strip.meterNode).toBeNull();
-                // Feed deterministic time-domain data into the analyser fallback.
-                vi.mocked(noSabTrack.strip.analyserNode.getFloatTimeDomainData).mockImplementation(
-                    (arr: Float32Array) => {
-                        arr[0] = 0.25;
-                        arr[1] = -0.8;
-                        arr[2] = 0.4;
-                        return arr;
-                    }
-                );
-                expect(noSabTrack.getPeakLevel()).toBeCloseTo(0.8, 6);
-            } finally {
-                (global as { SharedArrayBuffer?: unknown }).SharedArrayBuffer = savedSAB;
-            }
+        it('getPeakLevel uses the analyser fallback without a host meter transport', () => {
+            const track = new TrackNode('fallback-meter', deps);
+            vi.mocked(track.strip.analyserNode.getFloatTimeDomainData).mockImplementation((arr: Float32Array) => {
+                arr[0] = 0.25;
+                arr[1] = -0.8;
+                arr[2] = 0.4;
+                return arr;
+            });
+
+            expect(track.getPeakLevel()).toBeCloseTo(0.8, 6);
         });
 
         it('getDefaultDestination resolves hw_out and unknown outputs to the master gain', () => {
@@ -710,21 +682,9 @@ describe('TrackNode', () => {
         });
     });
 
-    // No-SAB tracks: meterNode is null, so rebuildChain and dispose take the
-    // analyser-direct branches instead of the meter-wiring branches.
-    describe('no-SharedArrayBuffer track wiring & teardown', () => {
-        let savedSAB: unknown;
-        beforeEach(() => {
-            savedSAB = (global as { SharedArrayBuffer?: unknown }).SharedArrayBuffer;
-            delete (global as { SharedArrayBuffer?: unknown }).SharedArrayBuffer;
-        });
-        afterEach(() => {
-            (global as { SharedArrayBuffer?: unknown }).SharedArrayBuffer = savedSAB;
-        });
-
-        it('wires panNode directly to analyserNode in rebuildChain and disposes without a meter', () => {
+    describe('analyser fallback wiring & teardown', () => {
+        it('wires panNode directly to analyserNode in rebuildChain and disposes without a host meter transport', () => {
             const track = new TrackNode('t-nosab', deps);
-            expect(track.strip.meterNode).toBeNull();
 
             vi.mocked(track.strip.panNode.connect).mockClear();
             track.rebuildChain();

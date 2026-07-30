@@ -7,8 +7,8 @@ import type { AudioEngine } from '../../models/AudioEngineState';
 
 // Mock TrackNode and BusNode to avoid deep dependencies. The strip exposes the
 // nodes that AudioEngineImpl reads directly (preFaderTap / analyserNode for
-// sends and sidechain, deviceNodes for note-off fan-out, meterNode for the
-// dispose shutdown sweep) so the engine's own routing logic is exercised.
+// sends and sidechain, and deviceNodes for note-off fan-out) so the engine's
+// own routing logic is exercised.
 function makeStripNode() {
     return {
         connect: vi.fn(),
@@ -25,7 +25,6 @@ vi.mock('../../engine/TrackNode', () => ({
             gainNode: ReturnType<typeof makeStripNode>;
             preFaderTap: ReturnType<typeof makeStripNode>;
             analyserNode: ReturnType<typeof makeStripNode>;
-            meterNode: ReturnType<typeof makeStripNode> | null;
             deviceNodes: unknown[];
             outputId?: string;
         };
@@ -82,7 +81,6 @@ vi.mock('../../engine/TrackNode', () => ({
                 gainNode: makeStripNode(),
                 preFaderTap: makeStripNode(),
                 analyserNode: makeStripNode(),
-                meterNode: makeStripNode(),
                 deviceNodes: [],
             };
         }
@@ -172,13 +170,23 @@ describe('AudioEngine', () => {
     let mockCtx: MockAudioContext;
 
     class FakeWorkletNode {
-        port = { postMessage: vi.fn() };
+        static instances: FakeWorkletNode[] = [];
+        port = { postMessage: vi.fn(), close: vi.fn() };
         connect = vi.fn();
         disconnect = vi.fn();
+
+        constructor(
+            public readonly context?: AudioContext,
+            public readonly name = '',
+            public readonly options: AudioWorkletNodeOptions = {}
+        ) {
+            FakeWorkletNode.instances.push(this);
+        }
     }
 
     beforeEach(() => {
         vi.clearAllMocks();
+        FakeWorkletNode.instances = [];
         mockCtx = createMockAudioContext();
 
         vi.stubGlobal('AudioWorkletNode', FakeWorkletNode);
@@ -590,14 +598,13 @@ describe('AudioEngine', () => {
         it('awaits context.close, makes disposal terminal, and releases the transport SAB', async () => {
             await engine.initialize();
             expect(engine.getHealth().workletReady).toBe(true);
-            const masterMeterPort = (engine as unknown as { masterMeterNode: { port: { postMessage: Mock } } })
-                .masterMeterNode.port;
+            const meterPoolPort = FakeWorkletNode.instances[0]!.port;
             const lateSource = mockCtx.createOscillator();
 
             await engine.dispose();
 
             expect(mockCtx.close).toHaveBeenCalledTimes(1);
-            expect(masterMeterPort.postMessage).toHaveBeenCalledWith({ type: 'shutdown' });
+            expect(meterPoolPort.postMessage).toHaveBeenCalledWith({ type: 'shutdown' });
             expect(engine.getHealth().workletReady).toBe(false);
 
             // SAB released: a post-dispose transport write must not throw.
@@ -624,16 +631,17 @@ describe('AudioEngine', () => {
             workletLoad.resolve();
 
             expect(engine.getHealth().workletReady).toBe(false);
-            expect(engine.getDiagnostics().graph.masterMeterWorklets).toBe(0);
+            expect(engine.getDiagnostics().graph.meterWorkletPools).toBe(0);
         });
 
-        it('posts a shutdown message to live track worklet ports before teardown', async () => {
-            const strip = engine.ensureTrackStrip('t1');
-            const meterPort = (strip.meterNode as unknown as { port: { postMessage: Mock } }).port;
+        it('posts one shutdown message to the shared meter pool before teardown', async () => {
+            await engine.initialize();
+            engine.ensureTrackStrip('t1');
+            const meterPoolPort = FakeWorkletNode.instances[0]!.port;
 
             await engine.dispose();
 
-            expect(meterPort.postMessage).toHaveBeenCalledWith({ type: 'shutdown' });
+            expect(meterPoolPort.postMessage).toHaveBeenCalledWith({ type: 'shutdown' });
         });
     });
 
@@ -870,8 +878,8 @@ describe('AudioEngine', () => {
                 deviceAudioNodes: 0,
                 deviceAudioWorkletProcessors: 0,
                 deviceAudioWorkletProcessorsByType: {},
-                stripMeterWorklets: 0,
-                masterMeterWorklets: 0,
+                meterTaps: 0,
+                meterWorkletPools: 0,
                 graphAudioWorkletProcessors: 0,
                 workerInstances: 0,
                 workerInstancesByType: {},
@@ -1262,16 +1270,9 @@ describe('AudioEngine', () => {
         });
     });
 
-    // ── Fix 1: master peak path is wired through a SAB-backed meter ───────────────
-    //
-    // Before, getMasterPeakLevel always returned 0: masterMeterBuffer was a plain
-    // Float32Array nothing wrote to, and no metering-processor sat in the master
-    // chain (masterGain → masterAnalyser → destination). initialize() must insert
-    // a SAB-backed metering-processor (masterGain → meter → analyser) and point
-    // masterMeterBuffer at that SAB, so getMasterPeakLevel reflects real level.
-    describe('master meter wiring', () => {
-        function masterMeterSab(eng: AudioEngine): ArrayBuffer {
-            const meterNode = (eng as unknown as { masterMeterNode: { port: { postMessage: Mock } } }).masterMeterNode;
+    describe('shared master meter side tap', () => {
+        function masterMeterSab(): ArrayBuffer {
+            const meterNode = FakeWorkletNode.instances[0]!;
             const initCall = meterNode.port.postMessage.mock.calls.find(
                 (c) => (c[0] as { type?: string })?.type === 'init'
             );
@@ -1279,28 +1280,21 @@ describe('AudioEngine', () => {
             return (initCall![0] as { sab: ArrayBuffer }).sab;
         }
 
-        it('inserts a metering-processor into the master chain on initialize', async () => {
-            // Before init, no meter node is wired (master nodes are built in the
-            // constructor, before any worklet module is loaded).
-            const beforeInit = (engine as unknown as { masterMeterNode?: unknown }).masterMeterNode;
-            expect(beforeInit).toBeUndefined();
+        it('connects the master to a zero-output pool without changing its audible route', async () => {
+            expect(FakeWorkletNode.instances).toHaveLength(0);
 
             await engine.initialize();
 
-            const meterNode = (engine as unknown as { masterMeterNode: { connect: Mock } }).masterMeterNode;
-            expect(meterNode).toBeDefined();
-            // Master gain rerouted: disconnected from the analyser, then connected
-            // to the meter, which connects to the analyser.
-            expect(engine.masterGainNode.disconnect).toHaveBeenCalled();
-            expect(engine.masterGainNode.connect as Mock).toHaveBeenCalledWith(meterNode);
-            expect(meterNode.connect).toHaveBeenCalledWith(engine.masterAnalyser);
+            const meterNode = FakeWorkletNode.instances[0]!;
+            expect(meterNode.options).toMatchObject({ numberOfInputs: 32, numberOfOutputs: 0 });
+            expect(engine.masterGainNode.connect as Mock).toHaveBeenCalledWith(meterNode, 0, 0);
+            expect(engine.masterGainNode.disconnect).not.toHaveBeenCalled();
         });
 
         it('reports the peak the meter writes into the SAB, then resets it', async () => {
             await engine.initialize();
-            const sab = masterMeterSab(engine);
-            // Exactly one Float32 (the single combined-peak slot).
-            expect(sab.byteLength).toBe(4);
+            const sab = masterMeterSab();
+            expect(sab.byteLength).toBe(32 * Float32Array.BYTES_PER_ELEMENT);
 
             // Simulate the worklet writing a peak the UI then reads.
             new Float32Array(sab)[0] = 0.6;

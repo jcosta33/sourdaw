@@ -84,9 +84,11 @@ export type AudioEngineDiagnostics = {
         /** AudioWorklet processor instances owned by devices; meter worklets are reported separately. */
         deviceAudioWorkletProcessors: number;
         deviceAudioWorkletProcessorsByType: Record<string, number>;
-        stripMeterWorklets: number;
-        masterMeterWorklets: number;
-        /** Device processors plus strip and master meter processors. */
+        /** Live strip and master side taps assigned to the shared meter transport. */
+        meterTaps: number;
+        /** Zero-output AudioWorklet pools, each serving a bounded set of meter taps. */
+        meterWorkletPools: number;
+        /** Device processors plus shared meter pool processors. */
         graphAudioWorkletProcessors: number;
         /** Dedicated Workers owned by loaded graph devices; excludes transient recording/export workers. */
         workerInstances: number;
@@ -310,7 +312,6 @@ export type TrackChannelStrip = {
      *  own mute targets this; solo-in-place targets `preFaderTap` instead. */
     postFaderGain: GainNode;
     panNode: StereoPannerNode;
-    meterNode: AudioWorkletNode | null;
     analyserNode: AnalyserNode;
     muted: boolean;
     /** FX-8: silenced because solo is engaged elsewhere, not because the user
@@ -320,7 +321,6 @@ export type TrackChannelStrip = {
     soloed: boolean;
     deviceNodes: BuiltinDeviceNode[];
     midiFxNodes: MidiFxNode[];
-    meterBuffer: Float32Array;
     outputId?: string;
 };
 
@@ -328,7 +328,6 @@ export type BusStrip = {
     busId: string;
     gainNode: GainNode;
     analyserNode: AnalyserNode;
-    meterBuffer: Float32Array;
 };
 
 export type SendNode = {

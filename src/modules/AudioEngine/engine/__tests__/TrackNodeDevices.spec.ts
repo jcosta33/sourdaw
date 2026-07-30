@@ -7,14 +7,8 @@ import { deviceReadinessDiagnostics, type DeviceContentLoadOutcome } from '../..
 import { TrackNode, type TrackNodeDeps } from '../TrackNode';
 
 const mocks = vi.hoisted(() => ({
-    hasSharedArrayBuffer: vi.fn(() => true),
     findWasmDescriptor: vi.fn(),
     loggerDebug: vi.fn(),
-}));
-
-vi.mock('#/utils/capabilities', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/utils/capabilities')>()),
-    hasSharedArrayBuffer: mocks.hasSharedArrayBuffer,
 }));
 
 vi.mock('../wasmDeviceRegistry', async (importOriginal) => ({
@@ -165,7 +159,6 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         workletInstances.length = 0;
-        mocks.hasSharedArrayBuffer.mockReturnValue(true);
         mocks.findWasmDescriptor.mockReturnValue(undefined);
         deviceReadinessDiagnostics.reset();
         vi.stubGlobal('AudioWorkletNode', FakeAudioWorkletNode);
@@ -185,25 +178,22 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
     });
 
     describe('getPeakLevel', () => {
-        it('reads and resets the SAB meter slot', () => {
-            const track = new TrackNode('t1', makeDeps(ctx));
-            expect(track.strip.meterNode).not.toBeNull();
-
-            track.strip.meterBuffer[0] = 0.5;
+        it('delegates pooled peak reads to the host meter transport', () => {
+            const meterTransport = {
+                read: vi.fn(() => 0.5),
+                register: vi.fn(),
+            } as unknown as NonNullable<TrackNodeDeps['meterTransport']>;
+            const track = new TrackNode('t1', makeDeps(ctx, { meterTransport }));
 
             expect(track.getPeakLevel()).toBe(0.5);
-            // Read-and-reset: the slot is consumed.
-            expect(track.strip.meterBuffer[0]).toBe(0);
-            expect(track.getPeakLevel()).toBe(0);
+            expect(meterTransport.read).toHaveBeenCalledWith('t1');
         });
 
-        it('falls back to analyser time-domain peaks when SharedArrayBuffer is unavailable', () => {
-            mocks.hasSharedArrayBuffer.mockReturnValue(false);
+        it('falls back to analyser time-domain peaks without a host meter transport', () => {
             const track = new TrackNode('t1', makeDeps(ctx));
 
-            expect(track.strip.meterNode).toBeNull();
             const analyser = track.strip.analyserNode as unknown as ReturnType<typeof createMockAudioNode<'analyser'>>;
-            // Without the meter worklet the pan node feeds the analyser directly.
+            // The audible path remains direct regardless of whether a side tap exists.
             expect(
                 (track.strip.panNode as unknown as ReturnType<typeof createMockAudioNode<'stereo-panner'>>).connect
             ).toHaveBeenCalledWith(analyser);
@@ -419,11 +409,11 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
     describe('sidechain compressor device', () => {
         it('creates a two-input worklet whose params are scheduled with ms→s conversion for attack/release', () => {
             const track = new TrackNode('t1', makeDeps(ctx));
-            const meterWorkletCount = workletInstances.length;
+            const workletCountBeforeDevice = workletInstances.length;
 
             track.addDevice('sc-1', 'builtin-sidechain-compressor');
 
-            expect(workletInstances).toHaveLength(meterWorkletCount + 1);
+            expect(workletInstances).toHaveLength(workletCountBeforeDevice + 1);
             const device = track.strip.deviceNodes.find((candidate) => candidate.deviceId === 'sc-1');
             if (!device?.controller) {
                 throw new Error('expected the sidechain compressor device with controller');
@@ -607,7 +597,6 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             const track = new TrackNode('t1', makeDeps(ctx, { pendingDevicePromises }));
             track.addDevice('wasm-1', 'levain');
             const rebuildChain = vi.spyOn(track, 'rebuildChain');
-            const meterNode = workletInstances[0]!;
             track.scheduleRebuildChain();
 
             track.dispose();
@@ -616,7 +605,6 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
 
             expect(track.strip.deviceNodes).toHaveLength(0);
             expect(pendingDevicePromises.size).toBe(0);
-            expect(meterNode.port.close).toHaveBeenCalledTimes(1);
             expect(rebuildChain).not.toHaveBeenCalled();
 
             const loaded = createLoadedDevice();
@@ -637,16 +625,17 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
     });
 
     describe('dispose', () => {
-        it('tears down strip nodes, closes the meter port, and destroys devices', () => {
-            const track = new TrackNode('t1', makeDeps(ctx));
+        it('tears down strip nodes, releases its meter tap, and destroys devices', () => {
+            const meterTransport = {
+                register: vi.fn(),
+                unregister: vi.fn(),
+            } as unknown as NonNullable<TrackNodeDeps['meterTransport']>;
+            const track = new TrackNode('t1', makeDeps(ctx, { meterTransport }));
             const { node, controller } = pushControllerDevice(track);
-            const meterNode = workletInstances[0]!;
 
             track.dispose();
 
-            expect(meterNode.port.postMessage).toHaveBeenCalledWith({ type: 'shutdown' });
-            expect(meterNode.port.close).toHaveBeenCalledTimes(1);
-            expect(meterNode.disconnect).toHaveBeenCalled();
+            expect(meterTransport.unregister).toHaveBeenCalledWith('t1');
             expect(controller.destroy).toHaveBeenCalledTimes(1);
             expect(node.disconnect).toHaveBeenCalled();
             const gainNode = track.strip.gainNode as unknown as ReturnType<typeof createMockAudioNode<'gain'>>;

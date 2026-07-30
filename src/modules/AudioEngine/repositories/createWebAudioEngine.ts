@@ -5,6 +5,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { createAdjustmentLayerRuntime, type AdjustmentLayerRuntime } from '../engine/AdjustmentLayerRuntime';
 import { BusNode } from '../engine/BusNode';
 import { dropoutCounters } from '../engine/dropoutCounter';
+import { MeterTransport } from '../engine/metering/MeterTransport';
 import { TrackNode } from '../engine/TrackNode';
 import bitcrusherRateProcessorUrl from '../services/bitcrusherRateProcessor.ts?worker&url';
 import meteringProcessorUrl from '../services/meteringProcessor.ts?worker&url';
@@ -24,12 +25,6 @@ import type {
     ToasterDeviceControls,
     TrackChannelStrip,
 } from '../models/AudioEngineState';
-
-type NoopMeterNode = {
-    connect(): void;
-    disconnect(): void;
-    port: { postMessage(message: unknown): void };
-};
 
 type SidechainConnection = {
     sourceTrackId: string;
@@ -226,8 +221,6 @@ class AudioEngineImpl implements AudioEngine {
     public context!: AudioContext;
     public masterGainNode!: GainNode;
     public masterAnalyser!: AnalyserNode;
-    public masterMeterNode: AudioWorkletNode | NoopMeterNode | undefined;
-
     private trackNodes = new Map<string, TrackNode>();
     private busNodes = new Map<string, BusNode>();
     private sendNodes = new Map<string, SendNode>();
@@ -247,7 +240,7 @@ class AudioEngineImpl implements AudioEngine {
         { sourceTrackId: string; targetTrackId: string; targetDeviceId: string }
     >();
     private scheduledNodes: AudioScheduledSourceNode[] = [];
-    private masterMeterBuffer!: Float32Array;
+    private meterTransport: MeterTransport | null = null;
     private pendingDevicePromises = new Set<Promise<unknown>>();
     private workletReady = false;
     private fallbackMode = false;
@@ -297,7 +290,10 @@ class AudioEngineImpl implements AudioEngine {
 
             this.masterGainNode.connect(this.masterAnalyser);
             this.masterAnalyser.connect(this.context.destination);
-            this.masterMeterBuffer = new Float32Array(this.masterAnalyser.frequencyBinCount);
+            if (hasSharedArrayBuffer()) {
+                this.meterTransport = new MeterTransport(this.context);
+                this.meterTransport.register('master', this.masterGainNode);
+            }
         } catch (error) {
             logger.warn(`Failed to create AudioContext: ${error}`);
             notifyUser(
@@ -320,13 +316,8 @@ class AudioEngineImpl implements AudioEngine {
         this.context = createNoopAudioContext();
         this.masterGainNode = this.context.createGain();
         this.masterGainNode.gain.value = 0;
-        this.masterMeterNode = {
-            connect: () => {},
-            disconnect: () => {},
-            port: { postMessage: () => {} },
-        };
         this.masterAnalyser = this.context.createAnalyser();
-        this.masterMeterBuffer = new Float32Array(1);
+        this.meterTransport = null;
     }
 
     private assertActive(): void {
@@ -378,56 +369,9 @@ class AudioEngineImpl implements AudioEngine {
             throw new Error('Audio engine was disposed during initialization.');
         }
         this.initializationCancellation = null;
-        // The metering-processor module is now registered, so the master meter
-        // can be inserted into the master chain. This cannot happen in the
-        // constructor — the master nodes are built before any worklet module is
-        // loaded (initialize() runs later), exactly like the per-track meter
-        // which is built once metering-processor is available.
-        this.wireMasterMeter();
+        this.meterTransport?.start();
         this.workletReady = true;
         this.lastInitError = null;
-    }
-
-    /**
-     * Insert a SAB-backed metering-processor into the master chain so
-     * getMasterPeakLevel reflects real output level. Mirrors the per-track meter
-     * wiring in {@link TrackNode}: a 4-byte SharedArrayBuffer holds one peak the
-     * worklet writes (Math.max across the block) and the UI read-and-resets.
-     *
-     * Chain before: masterGainNode → masterAnalyser → destination.
-     * Chain after:  masterGainNode → masterMeterNode → masterAnalyser → destination.
-     * The metering-processor passes audio straight through, so the audible signal
-     * is unchanged — it only taps the peak. Idempotent: a second initialize()
-     * (e.g. after dispose()) replaces the existing meter node rather than
-     * stacking a second tap.
-     */
-    private wireMasterMeter(): void {
-        if (this.fallbackMode || typeof AudioWorkletNode === 'undefined' || !hasSharedArrayBuffer()) {
-            // No live graph, no worklet support, or no SAB: leave masterMeterBuffer
-            // as the inert buffer from the constructor so getMasterPeakLevel reads 0.
-            return;
-        }
-        // Tear down a previously-wired meter node so a re-initialize does not
-        // leave a stale tap summing into the analyser.
-        const previous = this.masterMeterNode;
-        if (previous && typeof AudioWorkletNode !== 'undefined' && previous instanceof AudioWorkletNode) {
-            try {
-                previous.disconnect();
-            } catch {
-                // already disconnected
-            }
-        }
-
-        const meterSab = new SharedArrayBuffer(4);
-        const meterNode = new AudioWorkletNode(this.context, 'metering-processor');
-        meterNode.port.postMessage({ type: 'init', sab: meterSab });
-        this.masterMeterNode = meterNode;
-        this.masterMeterBuffer = new Float32Array(meterSab);
-
-        // Re-route the master chain through the meter node.
-        this.masterGainNode.disconnect();
-        this.masterGainNode.connect(meterNode);
-        meterNode.connect(this.masterAnalyser);
     }
 
     public getHealth(): AudioEngineHealth {
@@ -466,8 +410,8 @@ class AudioEngineImpl implements AudioEngine {
                     deviceAudioNodes: 0,
                     deviceAudioWorkletProcessors: 0,
                     deviceAudioWorkletProcessorsByType: {},
-                    stripMeterWorklets: 0,
-                    masterMeterWorklets: 0,
+                    meterTaps: 0,
+                    meterWorkletPools: 0,
                     graphAudioWorkletProcessors: 0,
                     workerInstances: 0,
                     workerInstancesByType: {},
@@ -488,7 +432,6 @@ class AudioEngineImpl implements AudioEngine {
         let deviceAudioNodes = 0;
         let deviceAudioWorkletProcessors = 0;
         let workerInstances = 0;
-        let stripMeterWorklets = 0;
         const processorLifecycle: { unmanaged: number } & Record<AudioProcessorLifecycleState, number> = {
             unmanaged: 0,
             continue: 0,
@@ -498,9 +441,6 @@ class AudioEngineImpl implements AudioEngine {
         };
 
         for (const trackNode of this.trackNodes.values()) {
-            if (trackNode.strip.meterNode) {
-                stripMeterWorklets++;
-            }
             for (const device of trackNode.strip.deviceNodes) {
                 deviceAudioNodes += device.nodes.length;
                 const resources = countDeviceRuntimeResources(device);
@@ -529,8 +469,9 @@ class AudioEngineImpl implements AudioEngine {
             }
         }
 
-        const masterMeterWorklets = this.masterMeterNode instanceof AudioWorkletNode ? 1 : 0;
-        const graphAudioWorkletProcessors = deviceAudioWorkletProcessors + stripMeterWorklets + masterMeterWorklets;
+        const meterTaps = this.meterTransport?.getTapCount() ?? 0;
+        const meterWorkletPools = this.meterTransport?.getWorkletCount() ?? 0;
+        const graphAudioWorkletProcessors = deviceAudioWorkletProcessors + meterWorkletPools;
         const playback = readPlaybackStats(this.context);
 
         return {
@@ -549,8 +490,8 @@ class AudioEngineImpl implements AudioEngine {
                 deviceAudioNodes,
                 deviceAudioWorkletProcessors,
                 deviceAudioWorkletProcessorsByType: toSortedCountRecord(deviceAudioWorkletProcessorsByType),
-                stripMeterWorklets,
-                masterMeterWorklets,
+                meterTaps,
+                meterWorkletPools,
                 graphAudioWorkletProcessors,
                 workerInstances,
                 workerInstancesByType: toSortedCountRecord(workerInstancesByType),
@@ -752,6 +693,7 @@ class AudioEngineImpl implements AudioEngine {
                     getSendsForTrack: (tId) =>
                         Array.from(this.sendNodes.values()).filter((state) => state.sourceTrackId === tId),
                     pendingDevicePromises: this.pendingDevicePromises,
+                    meterTransport: this.meterTransport ?? undefined,
                     transportSAB: this.transportSAB ?? undefined,
                     getAdjustmentBusForTrack: (id) => this.adjustmentRuntime.getBusInputForTrack(id),
                     reconnectRoutingForTrack: (id) => this.reconnectRoutingForTrack(id),
@@ -877,12 +819,7 @@ class AudioEngineImpl implements AudioEngine {
         if (this.fallbackMode) {
             return 0;
         }
-        // Read-and-reset of a single f32, deliberately without Atomics (audit
-        // RT-9) — same scalar-meter exception as TrackNode.getPeakLevel.
-        // Rationale in the module header of services/meteringProcessor.ts.
-        const peak = this.masterMeterBuffer[0]!;
-        this.masterMeterBuffer[0] = 0;
-        return peak;
+        return this.meterTransport?.read('master') ?? 0;
     }
 
     public ensureBusStrip(busId: string): BusStrip {
@@ -1508,25 +1445,16 @@ class AudioEngineImpl implements AudioEngine {
         this.initPromise = null;
         this.workletReady = false;
 
-        // Tell every live worklet processor to shut down before we tear down the
-        // graph and close the context, so processors stop their RT work cleanly.
+        // Tell every live device worklet processor to shut down before teardown.
         this.postShutdownToWorklets();
 
         // Tear down the per-project graph (tracks, buses, sends, sidechain,
-        // adjustment-layer runtime). This also closes per-track meter ports.
+        // adjustment-layer runtime).
         this.resetGraph();
+        this.meterTransport?.dispose();
+        this.meterTransport = null;
 
         this.masterGainNode.disconnect();
-        // Disconnect the master meter tap (inserted by wireMasterMeter into the
-        // master chain) so it is not left dangling on the closed context.
-        if (typeof AudioWorkletNode !== 'undefined' && this.masterMeterNode instanceof AudioWorkletNode) {
-            try {
-                this.masterMeterNode.disconnect();
-            } catch {
-                // already disconnected
-            }
-        }
-        this.masterMeterNode = undefined;
         this.masterAnalyser.disconnect();
 
         // Release the transport SAB / its view so the buffer can be GC'd and a
@@ -1544,11 +1472,7 @@ class AudioEngineImpl implements AudioEngine {
     private postShutdownToWorklets(): void {
         const shutdown = { type: 'shutdown' as const };
         const hasWorkletNode = typeof AudioWorkletNode !== 'undefined';
-        if (hasWorkletNode && this.masterMeterNode instanceof AudioWorkletNode) {
-            this.masterMeterNode.port.postMessage(shutdown);
-        }
         for (const [, trackNode] of this.trackNodes) {
-            trackNode.strip.meterNode?.port.postMessage(shutdown);
             for (const dn of trackNode.strip.deviceNodes) {
                 for (const node of dn.nodes) {
                     if (hasWorkletNode && node instanceof AudioWorkletNode) {
