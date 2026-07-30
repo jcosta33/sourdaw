@@ -9,7 +9,9 @@ type AgentReferenceCapability =
     | 'bus'
     | 'output'
     | 'device'
-    | 'device-parameter';
+    | 'device-parameter'
+    | 'clip'
+    | 'editable-clip';
 
 type ResolveAgentReferenceInput = {
     prompt: string;
@@ -37,6 +39,27 @@ type ResolveAgentReferenceResult =
 
 const duplicableTrackKinds: ReadonlySet<string> = new Set(['audio', 'midi', 'bus', 'folder']);
 const routableTrackKinds: ReadonlySet<string> = new Set(['audio', 'midi', 'bus']);
+const reservedClipReferenceWords: ReadonlySet<string> = new Set([
+    'track',
+    'clip',
+    'device',
+    'bus',
+    'master',
+    'output',
+    'send',
+    'parameter',
+    'remove',
+    'delete',
+    'rename',
+    'duplicate',
+    'copy',
+    'trim',
+    'start',
+    'end',
+    'nudge',
+    'gain',
+    'volume',
+]);
 
 function normalizeReferenceText(value: string): string {
     return value
@@ -61,6 +84,24 @@ function containsQualifiedMasterOutputReference(prompt: string): boolean {
 function hasExplicitTrackSelection(prompt: string): boolean {
     const normalized = normalizeReferenceText(prompt);
     return /\b(?:selected|current|this) (?:audio |midi |bus |folder )?track\b/u.test(normalized);
+}
+
+function hasExplicitClipSelection(prompt: string): boolean {
+    const normalized = normalizeReferenceText(prompt);
+    return /\b(?:selected|current|this) (?:audio |midi )?clip\b/u.test(normalized);
+}
+
+function containsQualifiedClipReference(prompt: string, reference: string): boolean {
+    const normalizedPrompt = ` ${normalizeReferenceText(prompt)} `;
+    const normalizedReference = normalizeReferenceText(reference);
+    return (
+        normalizedPrompt.includes(` ${normalizedReference} clip `) ||
+        normalizedPrompt.includes(` clip ${normalizedReference} `)
+    );
+}
+
+function isClipCapability(capability: AgentReferenceCapability): boolean {
+    return capability === 'clip' || capability === 'editable-clip';
 }
 
 type TrackOwnerReference = { status: 'none' } | { status: 'unique'; id: string } | { status: 'ambiguous' };
@@ -89,6 +130,23 @@ function resolveTrackOwnerReference(prompt: string, context: ProjectContext): Tr
         return { status: 'ambiguous' };
     }
     return { status: 'unique', id: referencedTracks[0]!.id };
+}
+
+function hasNonClipReferenceCollision(
+    clip: ProjectContext['tracks'][number]['clips'][number],
+    context: ProjectContext
+): boolean {
+    const clipReferences = new Set([normalizeReferenceText(clip.id), normalizeReferenceText(clip.name)]);
+    return context.tracks.some(
+        (track) =>
+            clipReferences.has(normalizeReferenceText(track.id)) ||
+            clipReferences.has(normalizeReferenceText(track.name)) ||
+            track.devices.some(
+                (device) =>
+                    clipReferences.has(normalizeReferenceText(device.id)) ||
+                    clipReferences.has(normalizeReferenceText(device.type))
+            )
+    );
 }
 
 function getTrackCandidates(
@@ -123,6 +181,20 @@ function getReferenceCandidates(input: ResolveAgentReferenceInput): ReferenceCan
     const trackCandidates = getTrackCandidates(input.capability, input.context);
     if (trackCandidates) {
         return trackCandidates;
+    }
+
+    if (isClipCapability(input.capability)) {
+        let tracks = input.context.tracks;
+        if (!hasExplicitClipSelection(input.prompt)) {
+            const ownerReference = resolveTrackOwnerReference(input.prompt, input.context);
+            if (ownerReference.status === 'ambiguous') {
+                return [];
+            }
+            if (ownerReference.status === 'unique') {
+                tracks = tracks.filter((track) => track.id === ownerReference.id);
+            }
+        }
+        return tracks.flatMap((track) => track.clips.map((clip) => ({ id: clip.id, name: clip.name })));
     }
 
     if (input.capability === 'device') {
@@ -179,12 +251,25 @@ function removeOverlappedExactNameEvidence(
 export function resolveAgentReference(input: ResolveAgentReferenceInput): ResolveAgentReferenceResult {
     const excludedIds = new Set(input.excludedIds ?? []);
     const trackCandidates = getTrackCandidates(input.capability, input.context);
+    const hasTrackSelection = trackCandidates !== null && hasExplicitTrackSelection(input.prompt);
+    const hasClipSelection = isClipCapability(input.capability) && hasExplicitClipSelection(input.prompt);
+    let selectedReferenceId: string | null | undefined;
+    if (hasTrackSelection) {
+        selectedReferenceId = input.context.selectedTrackId;
+    } else if (hasClipSelection) {
+        const selectedClipIds = new Set(input.context.selectedClipIds);
+        if (input.context.selectedClipId !== null) {
+            selectedClipIds.add(input.context.selectedClipId);
+        }
+        selectedReferenceId = selectedClipIds.size === 1 ? [...selectedClipIds][0]! : null;
+    }
+
     let candidates = getReferenceCandidates(input).filter((candidate) => !excludedIds.has(candidate.id));
-    if (trackCandidates && hasExplicitTrackSelection(input.prompt)) {
-        if (input.context.selectedTrackId === null) {
+    if (selectedReferenceId !== undefined) {
+        if (selectedReferenceId === null) {
             candidates = [];
         } else {
-            candidates = candidates.filter((candidate) => candidate.id === input.context.selectedTrackId);
+            candidates = candidates.filter((candidate) => candidate.id === selectedReferenceId);
         }
     }
     const evidenceById = new Map<string, AgentReferenceEvidence>();
@@ -206,8 +291,8 @@ export function resolveAgentReference(input: ResolveAgentReferenceInput): Resolv
         }
     }
 
-    if (trackCandidates && hasExplicitTrackSelection(input.prompt) && input.context.selectedTrackId !== null) {
-        const selected = candidates.find((candidate) => candidate.id === input.context.selectedTrackId);
+    if (selectedReferenceId !== null && selectedReferenceId !== undefined) {
+        const selected = candidates.find((candidate) => candidate.id === selectedReferenceId);
         if (selected && !evidenceById.has(selected.id)) {
             evidenceById.set(selected.id, 'selection');
         }
@@ -227,6 +312,34 @@ export function resolveAgentReference(input: ResolveAgentReferenceInput): Resolv
     if (input.capability === 'removable-track') {
         const track = input.context.tracks.find((candidate) => candidate.id === input.assertedId);
         if (!track || track.kind === 'master') {
+            return { status: 'rejected', reason: 'ungrounded-target' };
+        }
+    }
+    if (isClipCapability(input.capability)) {
+        const clip = input.context.tracks
+            .flatMap((track) => track.clips)
+            .find((candidate) => candidate.id === input.assertedId);
+        if (!clip || (input.capability === 'editable-clip' && clip.locked === true)) {
+            return { status: 'rejected', reason: 'ungrounded-target' };
+        }
+        const ownerReference = resolveTrackOwnerReference(input.prompt, input.context);
+        const hasQualifiedClipReference = [clip.id, clip.name].some((reference) =>
+            containsQualifiedClipReference(input.prompt, reference)
+        );
+        const hasSafeLiteralId =
+            evidenceById.get(input.assertedId) === 'literal-id' &&
+            !reservedClipReferenceWords.has(normalizeReferenceText(clip.id));
+        const requiresQualification =
+            hasNonClipReferenceCollision(clip, input.context) ||
+            reservedClipReferenceWords.has(normalizeReferenceText(clip.id)) ||
+            reservedClipReferenceWords.has(normalizeReferenceText(clip.name));
+        if (
+            requiresQualification &&
+            !hasSafeLiteralId &&
+            !hasExplicitClipSelection(input.prompt) &&
+            !hasQualifiedClipReference &&
+            ownerReference.status !== 'unique'
+        ) {
             return { status: 'rejected', reason: 'ungrounded-target' };
         }
     }

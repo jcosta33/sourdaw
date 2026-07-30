@@ -92,7 +92,7 @@ function hasTrackId(param: unknown): param is { trackId: string } {
     return isObj(param) && isString(param.trackId);
 }
 function hasClipId(param: unknown): param is { clipId: string } {
-    return isObj(param) && isString(param.clipId);
+    return isObj(param) && hasExactKeys(param, ['clipId']) && isNonEmptyString(param.clipId);
 }
 function isAddNotesNote(param: unknown): param is PayloadOf<'addNotes'>['notes'][number] {
     return (
@@ -294,29 +294,50 @@ const validators = {
     removeAllTracks: 'unchecked',
     clearSolos: 'unchecked',
 
-    // Clip state — trusted
+    // Clip state
     bypassDevice: 'unchecked',
-    trimClipStart: 'unchecked',
-    trimClipEnd: 'unchecked',
+    trimClipStart: (param): param is PayloadOf<'trimClipStart'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['clipId', 'newStartBeat']) &&
+        isNonEmptyString(param.clipId) &&
+        isNonNegativeNumber(param.newStartBeat),
+    trimClipEnd: (param): param is PayloadOf<'trimClipEnd'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['clipId', 'newEndBeat']) &&
+        isNonEmptyString(param.clipId) &&
+        isPositiveNumber(param.newEndBeat),
     setClipFade: 'unchecked',
     copyClip: 'unchecked',
     cutClip: 'unchecked',
     pasteClip: 'unchecked',
-    setClipGain: 'unchecked',
+    setClipGain: (param): param is PayloadOf<'setClipGain'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['clipId', 'gain']) &&
+        isNonEmptyString(param.clipId) &&
+        isInRange(param.gain, 0, 2),
     setClipColor: 'unchecked',
     lockClip: 'unchecked',
     muteClip: 'unchecked',
-    renameClip: 'unchecked',
+    renameClip: (param): param is PayloadOf<'renameClip'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['clipId', 'name']) &&
+        isNonEmptyString(param.clipId) &&
+        normalizeSafeProjectName(param.name) !== null,
     setClipLoop: 'unchecked',
     setClipLoopLength: 'unchecked',
     setClipStretchMode: 'unchecked',
     setClipStretchRatio: 'unchecked',
     fitClipToBeats: 'unchecked',
-    duplicateClipToNextBar: 'unchecked',
+    duplicateClipToNextBar: hasClipId,
     normalizeClip: 'unchecked',
     reverseClip: 'unchecked',
     glueClips: 'unchecked',
-    nudgeClip: 'unchecked',
+    nudgeClip: (param): param is PayloadOf<'nudgeClip'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['clipId', 'beats']) &&
+        isNonEmptyString(param.clipId) &&
+        isNumber(param.beats) &&
+        param.beats !== 0,
     crossfadeClips: 'unchecked',
     consolidateSelection: 'unchecked',
     bounceSelection: 'unchecked',

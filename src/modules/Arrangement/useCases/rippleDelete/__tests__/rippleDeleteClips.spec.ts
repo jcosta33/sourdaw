@@ -54,7 +54,7 @@ describe('rippleDeleteClips', () => {
     it('shifts collateral clips automation by the ripple delta (regression: ledger M-025)', () => {
         const mockPlan = {
             removedClips: [{ id: 'c1' }],
-            shiftedClips: [{ clipId: 'c2', origStartBeat: 8, origEndBeat: 10 }],
+            shiftedClips: [{ clipId: 'c2', origStartBeat: 8, origEndBeat: 10, automationDelta: -4 }],
             nextClips: [{ id: 'c2', startBeat: 4, endBeat: 6 }],
         };
         mocks.planRippleDelete.mockReturnValue(mockPlan);
@@ -93,7 +93,7 @@ describe('rippleDeleteClips', () => {
         const mockPlan = {
             removedClips: [{ id: 'c1' }],
             // shifted clip references c2, but nextClips only has c3 → no next
-            shiftedClips: [{ clipId: 'c2', origStartBeat: 8, origEndBeat: 10 }],
+            shiftedClips: [{ clipId: 'c2', origStartBeat: 8, origEndBeat: 10, automationDelta: -4 }],
             nextClips: [{ id: 'c3', startBeat: 0, endBeat: 4 }],
         };
         mocks.planRippleDelete.mockReturnValue(mockPlan);
@@ -111,7 +111,7 @@ describe('rippleDeleteClips', () => {
         const mockPlan = {
             removedClips: [{ id: 'c1' }],
             // next clip starts at the same beat as before → delta 0
-            shiftedClips: [{ clipId: 'c2', origStartBeat: 4, origEndBeat: 8 }],
+            shiftedClips: [{ clipId: 'c2', origStartBeat: 4, origEndBeat: 8, automationDelta: 0 }],
             nextClips: [{ id: 'c2', startBeat: 4, endBeat: 8 }],
         };
         mocks.planRippleDelete.mockReturnValue(mockPlan);

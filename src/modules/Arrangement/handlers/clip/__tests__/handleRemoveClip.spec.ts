@@ -160,6 +160,15 @@ describe('handleRemoveClip', () => {
             expect(desc).toEqual({ label: 'Remove clip' });
         });
 
+        it('uses the exact clip name in the execution receipt label', () => {
+            const clip = createTestClip({ id: 'c1', startBeat: 0, endBeat: 1 });
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', clips: [clip] }] });
+
+            const desc = handleRemoveClip.describe({ type: 'removeClip', payload: { clipId: 'c1' } });
+
+            expect(desc.label).toBe('Remove clip "Clip c1"');
+        });
+
         it('omits the ripple plan when ripple editing yields no plan', () => {
             const clip = createTestClip({ id: 'c1', startBeat: 0, endBeat: 1 });
             mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', clips: [clip] }] });
@@ -196,7 +205,7 @@ describe('handleRemoveClip', () => {
         it('returns inverse action with full clip and MIDI snapshots', () => {
             const mockClip = createTestClip({ id: 'c1', startBeat: 0, endBeat: 1 });
             const rippleRemovedClip = createTestClip({ id: 'c1', startBeat: 0, endBeat: 1 });
-            const rippleShift = { clipId: 'c2', origStartBeat: 1, origEndBeat: 2 };
+            const rippleShift = { clipId: 'c2', origStartBeat: 1, origEndBeat: 2, automationDelta: -1 };
             const ripplePlanSource = { removedClips: [rippleRemovedClip], shiftedClips: [rippleShift] };
             mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', clips: [mockClip] }] });
             mocks.planRippleDelete.mockReturnValue(ripplePlanSource);
@@ -216,7 +225,7 @@ describe('handleRemoveClip', () => {
 
             const desc = handleRemoveClip.describe({ type: 'removeClip', payload: { clipId: 'c1' } });
 
-            expect(desc.label).toBe('Remove clip');
+            expect(desc.label).toBe('Remove clip "Clip c1"');
             expect(mocks.getMidiStoreState).toHaveBeenCalledTimes(1);
 
             if (!desc.inverseAction || desc.inverseAction.type !== 'restoreClip') {

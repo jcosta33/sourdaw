@@ -38,13 +38,11 @@ export function rippleDeleteClips({ trackId, clipIds }: RippleDeleteClipsInput):
     // the arrangement (ledger M-025). MIDI notes are clip-relative and
     // follow the rectangle on their own.
     for (const shifted of plan.shiftedClips) {
-        const next = plan.nextClips.find((clip) => clip.id === shifted.clipId);
-        if (!next) {
+        if (!plan.nextClips.some((clip) => clip.id === shifted.clipId)) {
             continue;
         }
-        const delta = next.startBeat - shifted.origStartBeat;
-        if (delta !== 0) {
-            shiftClipAutomation(shifted.clipId, delta);
+        if (shifted.automationDelta !== 0) {
+            shiftClipAutomation(shifted.clipId, shifted.automationDelta);
         }
     }
 

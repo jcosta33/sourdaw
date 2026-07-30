@@ -229,6 +229,66 @@ describe('sendChatMessage injectables', () => {
         expect(confirmationUpdate?.pendingActionConfirmationStatus).toBe('proposed');
     });
 
+    it('proposes named confirmation instead of executing a destructive clip command', async () => {
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'prompt',
+        };
+        mocks.parsePromptToActions.mockResolvedValue({
+            actions: [{ type: 'removeClip', payload: { clipId: 'clip-chorus' } }],
+            rawText: 'delete Chorus clip',
+            requiresConfirmation: true,
+        });
+        mocks.getProjectContext.mockReturnValue({
+            tempo: 120,
+            timeSignature: [4, 4],
+            tracks: [
+                {
+                    id: 'track-1',
+                    name: 'Vocals',
+                    kind: 'audio',
+                    muted: false,
+                    soloed: false,
+                    armed: false,
+                    gain: 0.8,
+                    pan: 0,
+                    outputId: 'master',
+                    clipCount: 1,
+                    deviceCount: 0,
+                    clips: [
+                        {
+                            id: 'clip-chorus',
+                            name: 'Chorus',
+                            type: 'audio',
+                            startBeat: 0,
+                            endBeat: 8,
+                            noteCount: 0,
+                        },
+                    ],
+                    devices: [],
+                    sends: [],
+                },
+            ],
+            selectedTrackId: 'track-1',
+            selectedClipId: 'clip-chorus',
+            selectedClipIds: ['clip-chorus'],
+            activeView: 'arrange',
+            playheadPosition: 0,
+        });
+
+        await sendChatMessage('delete Chorus clip');
+
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
+        expect(mocks.proposePendingActionConfirmation).toHaveBeenCalledWith(
+            expect.objectContaining({
+                projectRevision: 'revision-1',
+                actionLabels: ['Remove clip "Chorus"'],
+            })
+        );
+    });
+
     it('invalidates a prompt when the project changes during planning', async () => {
         mocks.chatStoreValue.value = {
             messages: [],

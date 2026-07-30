@@ -12,7 +12,9 @@ export type ExecutableAppActionTargetCapability =
     | 'bus'
     | 'output'
     | 'device'
-    | 'device-parameter';
+    | 'device-parameter'
+    | 'clip'
+    | 'editable-clip';
 
 export type ExecutableAppActionTargetRule = {
     argument: string;
@@ -33,7 +35,8 @@ export type ExecutableAppActionValueRule =
     | {
           argument: string;
           kind: 'number-if-present';
-          scale?: 'unit-interval';
+          requiredInPrompt?: boolean;
+          scale?: 'unit-interval' | 'percentage-only';
           direction?: 'pan';
           qualitativeDirection?: 'track-gain' | 'track-pan' | 'device-parameter';
       }
@@ -57,6 +60,14 @@ type ExecutableAppActionDescriptor = {
 
 const trackTargetRules = [
     { argument: 'trackId', capability: 'track' },
+] as const satisfies readonly ExecutableAppActionTargetRule[];
+
+const clipTargetRules = [
+    { argument: 'clipId', capability: 'clip' },
+] as const satisfies readonly ExecutableAppActionTargetRule[];
+
+const editableClipTargetRules = [
+    { argument: 'clipId', capability: 'editable-clip' },
 ] as const satisfies readonly ExecutableAppActionTargetRule[];
 
 const sendTargetRules = [
@@ -135,6 +146,99 @@ export const executableAppActionDescriptors = [
         parameters: {
             properties: { trackId: { type: 'string', description: 'Existing non-master track ID' } },
             required: ['trackId'],
+        },
+    },
+    {
+        actionType: 'duplicateClip',
+        risk: 'bounded-reversible',
+        description: 'Duplicate an existing clip immediately after itself.',
+        intentPhrases: ['duplicate clip', 'copy clip'],
+        targetRules: clipTargetRules,
+        parameters: {
+            properties: { clipId: { type: 'string', description: 'Existing clip ID' } },
+            required: ['clipId'],
+        },
+    },
+    {
+        actionType: 'duplicateClipToNextBar',
+        risk: 'bounded-reversible',
+        description: 'Duplicate an existing clip at the next bar boundary.',
+        intentPhrases: ['duplicate clip to next bar', 'copy clip to next bar', 'duplicate to next bar'],
+        targetRules: clipTargetRules,
+        parameters: {
+            properties: { clipId: { type: 'string', description: 'Existing clip ID' } },
+            required: ['clipId'],
+        },
+    },
+    {
+        actionType: 'removeClip',
+        risk: 'destructive-reversible',
+        description: 'Delete a clip and its project-owned MIDI data.',
+        intentPhrases: ['delete clip', 'remove clip', 'delete', 'remove'],
+        targetRules: editableClipTargetRules,
+        parameters: {
+            properties: { clipId: { type: 'string', description: 'Existing unlocked clip ID' } },
+            required: ['clipId'],
+        },
+    },
+    {
+        actionType: 'renameClip',
+        risk: 'bounded-reversible',
+        description: 'Rename an existing clip.',
+        intentPhrases: ['rename clip'],
+        targetRules: [{ argument: 'clipId', capability: 'editable-clip', promptRole: 'source' }],
+        valueRules: [{ argument: 'name', kind: 'text-after-connector', connector: 'to' }],
+        parameters: {
+            properties: { clipId: { type: 'string' }, name: { type: 'string' } },
+            required: ['clipId', 'name'],
+        },
+    },
+    {
+        actionType: 'trimClipStart',
+        risk: 'bounded-reversible',
+        description: 'Trim the start of an existing clip to an absolute beat.',
+        intentPhrases: ['trim clip start', 'trim start'],
+        targetRules: editableClipTargetRules,
+        valueRules: [{ argument: 'newStartBeat', kind: 'number-if-present', requiredInPrompt: true }],
+        parameters: {
+            properties: { clipId: { type: 'string' }, newStartBeat: { type: 'number', description: 'Absolute beat' } },
+            required: ['clipId', 'newStartBeat'],
+        },
+    },
+    {
+        actionType: 'trimClipEnd',
+        risk: 'bounded-reversible',
+        description: 'Trim the end of an existing clip to an absolute beat.',
+        intentPhrases: ['trim clip end', 'trim end'],
+        targetRules: editableClipTargetRules,
+        valueRules: [{ argument: 'newEndBeat', kind: 'number-if-present', requiredInPrompt: true }],
+        parameters: {
+            properties: { clipId: { type: 'string' }, newEndBeat: { type: 'number', description: 'Absolute beat' } },
+            required: ['clipId', 'newEndBeat'],
+        },
+    },
+    {
+        actionType: 'nudgeClip',
+        risk: 'bounded-reversible',
+        description: 'Move an existing clip by an explicit number of beats.',
+        intentPhrases: ['nudge clip', 'nudge'],
+        targetRules: editableClipTargetRules,
+        valueRules: [{ argument: 'beats', kind: 'number-if-present', requiredInPrompt: true }],
+        parameters: {
+            properties: { clipId: { type: 'string' }, beats: { type: 'number', description: 'Signed beat delta' } },
+            required: ['clipId', 'beats'],
+        },
+    },
+    {
+        actionType: 'setClipGain',
+        risk: 'bounded-reversible',
+        description: 'Set an existing clip gain from 0.0 through 2.0.',
+        intentPhrases: ['set clip gain', 'clip gain', 'set clip volume'],
+        targetRules: editableClipTargetRules,
+        valueRules: [{ argument: 'gain', kind: 'number-if-present', requiredInPrompt: true, scale: 'percentage-only' }],
+        parameters: {
+            properties: { clipId: { type: 'string' }, gain: { type: 'number', description: '0.0 to 2.0' } },
+            required: ['clipId', 'gain'],
         },
     },
     {

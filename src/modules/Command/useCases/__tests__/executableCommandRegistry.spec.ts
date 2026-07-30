@@ -47,6 +47,76 @@ const EXPECTED_COMMANDS = [
         true
     ),
     expectedCommand(
+        'duplicateClip',
+        'Duplicate an existing clip immediately after itself.',
+        { clipId: { type: 'string', description: 'Existing clip ID' } },
+        ['clipId'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
+        'duplicateClipToNextBar',
+        'Duplicate an existing clip at the next bar boundary.',
+        { clipId: { type: 'string', description: 'Existing clip ID' } },
+        ['clipId'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
+        'removeClip',
+        'Delete a clip and its project-owned MIDI data.',
+        { clipId: { type: 'string', description: 'Existing unlocked clip ID' } },
+        ['clipId'],
+        'destructive-reversible',
+        true
+    ),
+    expectedCommand(
+        'renameClip',
+        'Rename an existing clip.',
+        { clipId: { type: 'string' }, name: { type: 'string' } },
+        ['clipId', 'name'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
+        'trimClipStart',
+        'Trim the start of an existing clip to an absolute beat.',
+        { clipId: { type: 'string' }, newStartBeat: { type: 'number', description: 'Absolute beat' } },
+        ['clipId', 'newStartBeat'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
+        'trimClipEnd',
+        'Trim the end of an existing clip to an absolute beat.',
+        { clipId: { type: 'string' }, newEndBeat: { type: 'number', description: 'Absolute beat' } },
+        ['clipId', 'newEndBeat'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
+        'nudgeClip',
+        'Move an existing clip by an explicit number of beats.',
+        {
+            clipId: { type: 'string' },
+            beats: { type: 'number', description: 'Signed beat delta' },
+        },
+        ['clipId', 'beats'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
+        'setClipGain',
+        'Set an existing clip gain from 0.0 through 2.0.',
+        {
+            clipId: { type: 'string' },
+            gain: { type: 'number', description: '0.0 to 2.0' },
+        },
+        ['clipId', 'gain'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
         'renameTrack',
         'Rename a track.',
         { trackId: { type: 'string' }, name: { type: 'string' } },
@@ -257,6 +327,54 @@ const EXPECTED_GROUNDING = [
         intentPhrases: ['delete track', 'remove track', 'delete', 'remove'],
         targetRules: [{ argument: 'trackId', capability: 'removable-track' }],
         valueRules: [],
+    },
+    {
+        actionType: 'duplicateClip',
+        intentPhrases: ['duplicate clip', 'copy clip'],
+        targetRules: [{ argument: 'clipId', capability: 'clip' }],
+        valueRules: [],
+    },
+    {
+        actionType: 'duplicateClipToNextBar',
+        intentPhrases: ['duplicate clip to next bar', 'copy clip to next bar', 'duplicate to next bar'],
+        targetRules: [{ argument: 'clipId', capability: 'clip' }],
+        valueRules: [],
+    },
+    {
+        actionType: 'removeClip',
+        intentPhrases: ['delete clip', 'remove clip', 'delete', 'remove'],
+        targetRules: [{ argument: 'clipId', capability: 'editable-clip' }],
+        valueRules: [],
+    },
+    {
+        actionType: 'renameClip',
+        intentPhrases: ['rename clip'],
+        targetRules: [{ argument: 'clipId', capability: 'editable-clip', promptRole: 'source' }],
+        valueRules: [{ argument: 'name', kind: 'text-after-connector', connector: 'to' }],
+    },
+    {
+        actionType: 'trimClipStart',
+        intentPhrases: ['trim clip start', 'trim start'],
+        targetRules: [{ argument: 'clipId', capability: 'editable-clip' }],
+        valueRules: [{ argument: 'newStartBeat', kind: 'number-if-present', requiredInPrompt: true }],
+    },
+    {
+        actionType: 'trimClipEnd',
+        intentPhrases: ['trim clip end', 'trim end'],
+        targetRules: [{ argument: 'clipId', capability: 'editable-clip' }],
+        valueRules: [{ argument: 'newEndBeat', kind: 'number-if-present', requiredInPrompt: true }],
+    },
+    {
+        actionType: 'nudgeClip',
+        intentPhrases: ['nudge clip', 'nudge'],
+        targetRules: [{ argument: 'clipId', capability: 'editable-clip' }],
+        valueRules: [{ argument: 'beats', kind: 'number-if-present', requiredInPrompt: true }],
+    },
+    {
+        actionType: 'setClipGain',
+        intentPhrases: ['set clip gain', 'clip gain', 'set clip volume'],
+        targetRules: [{ argument: 'clipId', capability: 'editable-clip' }],
+        valueRules: [{ argument: 'gain', kind: 'number-if-present', requiredInPrompt: true, scale: 'percentage-only' }],
     },
     {
         actionType: 'renameTrack',

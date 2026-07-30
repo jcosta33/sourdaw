@@ -1,3 +1,5 @@
+import { shiftClipAutomation } from '#/modules/Automation/useCases';
+
 import { type Clip } from '../../stores/trackStore';
 import { getTrackStoreState } from '../getTrackStoreState';
 import { setTrackState } from '../setTrackState';
@@ -6,6 +8,7 @@ type RippleDeleteShift = {
     clipId: string;
     origStartBeat: number;
     origEndBeat: number;
+    automationDelta: number;
 };
 
 type UndoRippleDeleteInput = {
@@ -48,4 +51,10 @@ export function undoRippleDelete({ trackId, removedClips, shiftedClips }: UndoRi
             };
         }),
     });
+
+    for (const shifted of shiftedClips) {
+        if (shifted.automationDelta !== 0) {
+            shiftClipAutomation(shifted.clipId, -shifted.automationDelta);
+        }
+    }
 }

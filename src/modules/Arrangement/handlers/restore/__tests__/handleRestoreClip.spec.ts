@@ -160,7 +160,9 @@ describe('handleRestoreClip', () => {
                         path === 'ripple'
                             ? {
                                   removedClips: [{ id: 'c1', trackId: 't1', startBeat: 0, endBeat: 1 }],
-                                  shiftedClips: [{ clipId: 'c2', origStartBeat: 1, origEndBeat: 2 }],
+                                  shiftedClips: [
+                                      { clipId: 'c2', origStartBeat: 1, origEndBeat: 2, automationDelta: -1 },
+                                  ],
                               }
                             : null,
                     ...snapshots,

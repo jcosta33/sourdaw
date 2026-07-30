@@ -82,6 +82,8 @@ export function getProjectContext(): ProjectContext {
                 type: context.type ?? 'audio',
                 startBeat: context.startBeat,
                 endBeat: context.endBeat,
+                gain: context.gain,
+                locked: context.locked,
                 noteCount: context.type === 'midi' ? (notesByClipId?.[context.id]?.length ?? 0) : 0,
             })),
             devices: time.devices.map((data) => {

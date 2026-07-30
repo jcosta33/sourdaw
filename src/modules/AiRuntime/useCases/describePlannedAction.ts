@@ -15,5 +15,13 @@ export function describePlannedAction({ action, context }: DescribePlannedAction
             return `Remove track "${track.name}"`;
         }
     }
+    if (action.type === 'removeClip') {
+        const clip = context.tracks
+            .flatMap((track) => track.clips)
+            .find((candidate) => candidate.id === action.payload.clipId);
+        if (clip) {
+            return `Remove clip "${clip.name}"`;
+        }
+    }
     return describeAction(action);
 }

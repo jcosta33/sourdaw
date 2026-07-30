@@ -53,7 +53,7 @@ describe('planRippleDelete', () => {
         // Gap = c2 end (8) - c2 start (4) = 4.
         const plan = planRippleDelete({ trackId: 't1', clipIds: ['c2'] });
 
-        expect(plan?.shiftedClips).toEqual([{ clipId: 'c3', origStartBeat: 10, origEndBeat: 14 }]);
+        expect(plan?.shiftedClips).toEqual([{ clipId: 'c3', origStartBeat: 10, origEndBeat: 14, automationDelta: -4 }]);
         expect(plan?.nextClips[1]).toMatchObject({
             id: 'c3',
             startBeat: 6, // 10 - 4
@@ -122,7 +122,9 @@ describe('planRippleDelete', () => {
         const plan = planRippleDelete({ trackId: 't1', clipIds: ['c3', 'c1'] });
 
         expect(plan?.removedClips.map((clip) => clip.id).sort()).toEqual(['c1', 'c3']);
-        expect(plan?.shiftedClips).toEqual([{ clipId: 'c4', origStartBeat: 12, origEndBeat: 14 }]);
+        expect(plan?.shiftedClips).toEqual([
+            { clipId: 'c4', origStartBeat: 12, origEndBeat: 14, automationDelta: -10 },
+        ]);
         const shifted = plan?.nextClips.find((clip) => clip.id === 'c4');
         expect(shifted).toMatchObject({ startBeat: 2, endBeat: 4 });
         // c2 lies before deleteEnd (10) so it stays put.

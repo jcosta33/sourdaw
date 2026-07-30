@@ -132,7 +132,7 @@ function getNearestIntentAction(
     const plannedCatalog = catalog.filter((entry) => plannedActionNames.includes(entry.actionType));
     let actionType: string | null = null;
     for (const clause of getPromptClauses(prefix, prefix)) {
-        const intent = resolveClauseActionIntent(clause.text, clause.masked, plannedCatalog);
+        const intent = resolveClauseActionIntent(clause.masked, plannedCatalog);
         if (intent) {
             actionType = intent.actionType;
         }
@@ -175,6 +175,23 @@ function isExplicitTrackDeletionScope({ context, text, trackId }: ExplicitTrackD
     if (!track || track.kind === 'master') {
         return false;
     }
+    const normalizedTrackReferences = new Set([normalizePromptText(track.id), normalizePromptText(track.name)]);
+    const hasNonTrackReferenceCollision = context.tracks.some(
+        (candidateTrack) =>
+            candidateTrack.clips.some(
+                (clip) =>
+                    normalizedTrackReferences.has(normalizePromptText(clip.id)) ||
+                    normalizedTrackReferences.has(normalizePromptText(clip.name))
+            ) ||
+            candidateTrack.devices.some(
+                (device) =>
+                    normalizedTrackReferences.has(normalizePromptText(device.id)) ||
+                    normalizedTrackReferences.has(normalizePromptText(device.type))
+            )
+    );
+    if (hasNonTrackReferenceCollision && !/\btrack\b/u.test(normalizePromptText(text))) {
+        return false;
+    }
 
     let commandText = text;
     const targetReferences = [track.id, track.name].sort((left, right) => right.length - left.length);
@@ -186,6 +203,49 @@ function isExplicitTrackDeletionScope({ context, text, trackId }: ExplicitTrackD
     commandText = commandText.replace(/^(?:please\s+)?(?:can|could|would)\s+you(?:\s+please)?\s+/u, '');
     commandText = commandText.replace(/^please\s+/u, '');
     return /^(?:delete|remove)(?: the)?(?: (?:selected|current|this)(?: (?:audio|midi|bus|folder))?)?(?: track)?(?: from (?:the )?project)?$/u.test(
+        commandText
+    );
+}
+
+type ExplicitClipDeletionScopeInput = {
+    context: ProjectContext;
+    text: string;
+    clipId: unknown;
+};
+
+function isExplicitClipDeletionScope({ context, text, clipId }: ExplicitClipDeletionScopeInput): boolean {
+    if (typeof clipId !== 'string') {
+        return false;
+    }
+    const clip = context.tracks.flatMap((track) => track.clips).find((candidate) => candidate.id === clipId);
+    if (!clip) {
+        return false;
+    }
+    const normalizedClipReferences = new Set([normalizePromptText(clip.id), normalizePromptText(clip.name)]);
+    const hasNonClipReferenceCollision = context.tracks.some(
+        (track) =>
+            normalizedClipReferences.has(normalizePromptText(track.id)) ||
+            normalizedClipReferences.has(normalizePromptText(track.name)) ||
+            track.devices.some(
+                (device) =>
+                    normalizedClipReferences.has(normalizePromptText(device.id)) ||
+                    normalizedClipReferences.has(normalizePromptText(device.type))
+            )
+    );
+    if (hasNonClipReferenceCollision && !/\bclip\b/u.test(normalizePromptText(text))) {
+        return false;
+    }
+
+    let commandText = text;
+    const targetReferences = [clip.id, clip.name].sort((left, right) => right.length - left.length);
+    for (const reference of targetReferences) {
+        const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(reference)}(?![\\p{L}\\p{N}])`, 'giu');
+        commandText = commandText.replaceAll(pattern, ' ');
+    }
+    commandText = normalizePromptText(commandText);
+    commandText = commandText.replace(/^(?:please\s+)?(?:can|could|would)\s+you(?:\s+please)?\s+/u, '');
+    commandText = commandText.replace(/^please\s+/u, '');
+    return /^(?:delete|remove)(?: the)?(?: (?:selected|current|this)(?: (?:audio|midi))?)?(?: clip)?(?: from (?:the )?project)?$/u.test(
         commandText
     );
 }
@@ -219,9 +279,9 @@ function isExplicitCommandClause(maskedText: string, catalog: GroundingCatalog):
 }
 
 function resolveClauseActionIntent(
-    text: string,
     maskedText: string,
-    catalog: GroundingCatalog
+    catalog: GroundingCatalog,
+    expectedActionType?: string
 ): ClauseActionIntent | null {
     if (!isExplicitCommandClause(maskedText, catalog)) {
         return null;
@@ -230,11 +290,11 @@ function resolveClauseActionIntent(
         .flatMap((entry) =>
             entry.intentPhrases.map((phrase) => ({
                 actionType: entry.actionType,
-                index: getIntentPhraseIndex(text, phrase),
+                index: getIntentPhraseIndex(maskedText, phrase),
                 phrase,
             }))
         )
-        .filter((match) => match.index >= 0 && !isNegatedIntent(text, match.phrase))
+        .filter((match) => match.index >= 0 && !isNegatedIntent(maskedText, match.phrase))
         .sort((left, right) => {
             const genericDifference =
                 Number(isGenericDeviceIntent(left.phrase)) - Number(isGenericDeviceIntent(right.phrase));
@@ -257,6 +317,18 @@ function resolveClauseActionIntent(
         normalizePromptText(second.phrase).length === normalizePromptText(first.phrase).length &&
         second.actionType !== first.actionType
     ) {
+        const normalizedPhrase = normalizePromptText(first.phrase);
+        if (expectedActionType && (normalizedPhrase === 'delete' || normalizedPhrase === 'remove')) {
+            const expectedMatch = matches.find(
+                (match) =>
+                    match.index === first.index &&
+                    normalizePromptText(match.phrase).length === normalizedPhrase.length &&
+                    match.actionType === expectedActionType
+            );
+            if (expectedMatch) {
+                return expectedMatch;
+            }
+        }
         return null;
     }
     return first;
@@ -275,14 +347,57 @@ function getProjectReferenceTexts(context: ProjectContext): string[] {
             device.type,
             ...(device.parameters ?? []).flatMap((parameter) => [parameter.id, parameter.name]),
         ]),
+        ...track.clips.flatMap((clip) => [clip.id, clip.name]),
     ]);
     return [...new Set(references)]
         .filter((reference) => reference.length > 0)
         .sort((left, right) => right.length - left.length);
 }
 
+const reservedClipReferenceWords: ReadonlySet<string> = new Set([
+    'track',
+    'clip',
+    'device',
+    'bus',
+    'master',
+    'output',
+    'send',
+    'parameter',
+    'remove',
+    'delete',
+    'rename',
+    'duplicate',
+    'copy',
+    'trim',
+    'start',
+    'end',
+    'nudge',
+    'gain',
+    'volume',
+]);
+
+function getSemanticClipReferenceTexts(context: ProjectContext): string[] {
+    const clipReferences = context.tracks.flatMap((track) => track.clips.flatMap((clip) => [clip.id, clip.name]));
+    return [...new Set(clipReferences)]
+        .filter((reference) => reference.length >= 'clip'.length)
+        .filter((reference) => !reservedClipReferenceWords.has(normalizePromptText(reference)))
+        .sort((left, right) => right.length - left.length);
+}
+
 function maskProjectReferences(prompt: string, context: ProjectContext): string {
     let maskedPrompt = prompt;
+    for (const reference of getSemanticClipReferenceTexts(context)) {
+        const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(reference)}(?![\\p{L}\\p{N}])`, 'giu');
+        maskedPrompt = maskedPrompt.replaceAll(pattern, (match, offset: number) => {
+            const explicitEntitySuffix = /^\s+(?:clip|track|device|bus|master|output|send|parameter)\b/iu.test(
+                maskedPrompt.slice(offset + match.length)
+            );
+            if (explicitEntitySuffix) {
+                return '□'.repeat(match.length);
+            }
+            return `clip${'□'.repeat(match.length - 'clip'.length)}`;
+        });
+    }
     for (const reference of getProjectReferenceTexts(context)) {
         const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(reference)}(?![\\p{L}\\p{N}])`, 'giu');
         maskedPrompt = maskedPrompt.replaceAll(pattern, (match) => '□'.repeat(match.length));
@@ -322,7 +437,7 @@ function resolveActionPromptScope({
     const maskedPrompt = groundingRules.targetRules.length === 0 ? prompt : maskProjectReferences(prompt, context);
     const matchingScopes: ActionPromptScope[] = [];
     for (const clause of getPromptClauses(prompt, maskedPrompt)) {
-        const intent = resolveClauseActionIntent(clause.text, clause.masked, catalog);
+        const intent = resolveClauseActionIntent(clause.masked, catalog, actionName);
         if (intent?.actionType === actionName) {
             matchingScopes.push({ ...clause, matchedIntentPhrase: intent.phrase });
         }
@@ -384,6 +499,9 @@ function normalizePromptNumber(
     const isPercentage = number.raw.endsWith('%');
     let value = Number.parseFloat(number.raw);
     if (valueRule.scale === 'unit-interval' && (isPercentage || Math.abs(value) > 1)) {
+        value /= 100;
+    }
+    if (valueRule.scale === 'percentage-only' && isPercentage) {
         value /= 100;
     }
     if (valueRule.direction !== 'pan') {
@@ -551,6 +669,9 @@ function validateNumberValue(
     }
     const expectedNumbers = getExpectedNumbers(actionScope, valueRule);
     if (expectedNumbers === null) {
+        return getValueMismatchReason(valueRule.argument);
+    }
+    if (valueRule.requiredInPrompt === true && expectedNumbers.length === 0) {
         return getValueMismatchReason(valueRule.argument);
     }
     const matchesExpectedValue = expectedNumbers.some((expected) => Math.abs(expected - assertedValue) < 0.000_001);
@@ -828,6 +949,16 @@ function groundToolCall({
         })
     ) {
         return rejection(index, call.name, 'Provider track deletion is not explicit in the user request');
+    }
+    if (
+        call.name === 'removeClip' &&
+        !isExplicitClipDeletionScope({
+            context,
+            text: actionScope.text,
+            clipId: groundedArguments.clipId,
+        })
+    ) {
+        return rejection(index, call.name, 'Provider clip deletion is not explicit in the user request');
     }
     const valueRejection = validateGroundedValues(groundingRules, groundedArguments, actionScope, context);
     if (valueRejection) {

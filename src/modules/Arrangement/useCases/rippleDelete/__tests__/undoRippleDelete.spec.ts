@@ -5,6 +5,11 @@ import { undoRippleDelete } from '../undoRippleDelete';
 const mocks = vi.hoisted(() => ({
     getTrackStoreState: vi.fn(),
     setTrackState: vi.fn(),
+    shiftClipAutomation: vi.fn(),
+}));
+
+vi.mock('#/modules/Automation/useCases', () => ({
+    shiftClipAutomation: mocks.shiftClipAutomation,
 }));
 
 vi.mock('../../getTrackStoreState', () => ({
@@ -27,7 +32,7 @@ describe('undoRippleDelete', () => {
         undoRippleDelete({
             trackId: 't1',
             removedClips: [{ id: 'c2', startBeat: 4, endBeat: 8 } as any],
-            shiftedClips: [{ clipId: 'c3', origStartBeat: 10, origEndBeat: 14 }],
+            shiftedClips: [{ clipId: 'c3', origStartBeat: 10, origEndBeat: 14, automationDelta: -4 }],
         });
 
         expect(mocks.setTrackState).toHaveBeenCalledTimes(1);
@@ -43,6 +48,7 @@ describe('undoRippleDelete', () => {
         // c3 shifted back to 10
         const c3 = track.clips.find((context: any) => context.id === 'c3');
         expect(c3).toMatchObject({ startBeat: 10, endBeat: 14 });
+        expect(mocks.shiftClipAutomation).toHaveBeenCalledWith('c3', 4);
 
         // c2 restored
         const c2 = track.clips.find((context: any) => context.id === 'c2');
@@ -69,7 +75,7 @@ describe('undoRippleDelete', () => {
         undoRippleDelete({
             trackId: 't1',
             removedClips: [],
-            shiftedClips: [{ clipId: 'c1', origStartBeat: 8, origEndBeat: 12 }],
+            shiftedClips: [{ clipId: 'c1', origStartBeat: 8, origEndBeat: 12, automationDelta: -6 }],
         });
 
         const newState = mocks.setTrackState.mock.calls[0]?.[0];

@@ -98,6 +98,7 @@ export type RippleShiftSnapshot = {
     readonly clipId: string;
     readonly origStartBeat: number;
     readonly origEndBeat: number;
+    readonly automationDelta: number;
 };
 export type RipplePlanSnapshot = {
     readonly removedClips: readonly ClipSnapshot[];

@@ -56,6 +56,38 @@ function bridge(
     return bridgeGroundedLlmToolCalls({ calls, prompt, context });
 }
 
+function createClipContext(): ProjectContext {
+    const intro = {
+        id: 'clip-intro',
+        name: 'Intro',
+        type: 'audio' as const,
+        startBeat: 0,
+        endBeat: 8,
+        gain: 1,
+        locked: false,
+        noteCount: 0,
+    };
+    const chorus = { ...intro, id: 'clip-chorus', name: 'Chorus', startBeat: 8, endBeat: 16 };
+    const vocalsVerse = { ...intro, id: 'clip-vocals-verse', name: 'Verse', startBeat: 16, endBeat: 24 };
+    const guitarVerse = { ...intro, id: 'clip-guitar-verse', name: 'Verse', startBeat: 24, endBeat: 32 };
+    const deviceCollision = { ...intro, id: 'clip-eq', name: 'EQ', startBeat: 32, endBeat: 40 };
+    const entityTie = { ...intro, id: 'clip-bridge', name: 'Bridge', startBeat: 40, endBeat: 48 };
+    const trackCollision = createTrack({ id: 'track-verse', name: 'Verse' });
+    const entityTieTrack = createTrack({ id: 'track-bridge', name: 'Bridge' });
+    return {
+        ...projectContext,
+        tracks: [
+            { ...vocals, clipCount: 5, clips: [intro, chorus, vocalsVerse, deviceCollision, entityTie] },
+            { ...guitar, clipCount: 1, clips: [guitarVerse] },
+            trackCollision,
+            entityTieTrack,
+            master,
+        ],
+        selectedClipId: intro.id,
+        selectedClipIds: [intro.id],
+    };
+}
+
 describe('bridgeGroundedLlmToolCalls', () => {
     it('grounds multiple distinct targets from one provider plan', () => {
         const result = bridge(
@@ -727,5 +759,246 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(result.rejections).toEqual([
             { index: 24, name: '<batch>', reason: 'Provider batch exceeds the 24-action limit' },
         ]);
+    });
+
+    it('grounds all eight provider clip actions to one editable clip', () => {
+        const context = createClipContext();
+        const cases = [
+            {
+                call: { name: 'duplicateClip', arguments: { clipId: 'clip-intro' } },
+                prompt: 'duplicate Intro clip',
+                action: { type: 'duplicateClip', payload: { clipId: 'clip-intro' } },
+            },
+            {
+                call: { name: 'duplicateClipToNextBar', arguments: { clipId: 'clip-chorus' } },
+                prompt: 'duplicate Chorus clip to next bar',
+                action: { type: 'duplicateClipToNextBar', payload: { clipId: 'clip-chorus' } },
+            },
+            {
+                call: { name: 'removeClip', arguments: { clipId: 'clip-chorus' } },
+                prompt: 'delete Chorus clip',
+                action: { type: 'removeClip', payload: { clipId: 'clip-chorus' } },
+            },
+            {
+                call: { name: 'renameClip', arguments: { clipId: 'clip-intro', name: 'Opening' } },
+                prompt: 'rename Intro clip to Opening',
+                action: { type: 'renameClip', payload: { clipId: 'clip-intro', name: 'Opening' } },
+            },
+            {
+                call: { name: 'trimClipStart', arguments: { clipId: 'clip-intro', newStartBeat: 2 } },
+                prompt: 'trim Intro clip start to beat 2',
+                action: { type: 'trimClipStart', payload: { clipId: 'clip-intro', newStartBeat: 2 } },
+            },
+            {
+                call: { name: 'trimClipEnd', arguments: { clipId: 'clip-intro', newEndBeat: 6 } },
+                prompt: 'trim Intro clip end to beat 6',
+                action: { type: 'trimClipEnd', payload: { clipId: 'clip-intro', newEndBeat: 6 } },
+            },
+            {
+                call: { name: 'nudgeClip', arguments: { clipId: 'clip-intro', beats: 2 } },
+                prompt: 'nudge Intro clip by 2 beats',
+                action: { type: 'nudgeClip', payload: { clipId: 'clip-intro', beats: 2 } },
+            },
+            {
+                call: { name: 'setClipGain', arguments: { clipId: 'clip-intro', gain: 1.5 } },
+                prompt: 'set Intro clip gain to 150%',
+                action: { type: 'setClipGain', payload: { clipId: 'clip-intro', gain: 1.5 } },
+            },
+        ];
+
+        for (const testCase of cases) {
+            const result = bridge([testCase.call], testCase.prompt, context);
+            expect.soft(result).toEqual({ actions: [testCase.action], rejections: [] });
+        }
+    });
+
+    it('grounds duplicate clip names only with an exact track qualifier', () => {
+        const context = createClipContext();
+        const qualified = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-vocals-verse', name: 'Lead Verse' } }],
+            'rename Verse on Vocals to Lead Verse',
+            context
+        );
+        const ambiguous = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-vocals-verse', name: 'Lead Verse' } }],
+            'rename Verse to Lead Verse',
+            context
+        );
+
+        expect(qualified.actions).toEqual([
+            { type: 'renameClip', payload: { clipId: 'clip-vocals-verse', name: 'Lead Verse' } },
+        ]);
+        expect(ambiguous.actions).toEqual([]);
+    });
+
+    it('rejects clip numeric values that mismatch or are absent from the prompt', () => {
+        const context = createClipContext();
+        const mismatched = [
+            bridge(
+                [{ name: 'trimClipStart', arguments: { clipId: 'clip-intro', newStartBeat: 3 } }],
+                'trim Intro clip start to beat 2',
+                context
+            ),
+            bridge(
+                [{ name: 'trimClipEnd', arguments: { clipId: 'clip-intro', newEndBeat: 7 } }],
+                'trim Intro clip end to beat 6',
+                context
+            ),
+            bridge(
+                [{ name: 'nudgeClip', arguments: { clipId: 'clip-intro', beats: 3 } }],
+                'nudge Intro clip by 2 beats',
+                context
+            ),
+            bridge(
+                [{ name: 'setClipGain', arguments: { clipId: 'clip-intro', gain: 1.2 } }],
+                'set Intro clip gain to 150%',
+                context
+            ),
+        ];
+        const missing = [
+            bridge(
+                [{ name: 'trimClipStart', arguments: { clipId: 'clip-intro', newStartBeat: 2 } }],
+                'trim Intro clip start',
+                context
+            ),
+            bridge(
+                [{ name: 'trimClipEnd', arguments: { clipId: 'clip-intro', newEndBeat: 6 } }],
+                'trim Intro clip end',
+                context
+            ),
+            bridge([{ name: 'nudgeClip', arguments: { clipId: 'clip-intro', beats: 2 } }], 'nudge Intro clip', context),
+            bridge(
+                [{ name: 'setClipGain', arguments: { clipId: 'clip-intro', gain: 1.5 } }],
+                'set Intro clip gain',
+                context
+            ),
+        ];
+        const absoluteClipGain = bridge(
+            [{ name: 'setClipGain', arguments: { clipId: 'clip-intro', gain: 1.5 } }],
+            'set Intro clip gain to 1.5',
+            context
+        );
+
+        expect(absoluteClipGain.actions).toEqual([
+            { type: 'setClipGain', payload: { clipId: 'clip-intro', gain: 1.5 } },
+        ]);
+
+        expect([...mismatched, ...missing].every((result) => result.actions.length === 0)).toBe(true);
+    });
+
+    it('rejects ambiguous selection and locked provider clip targets', () => {
+        const context = createClipContext();
+        const multiSelection = bridge(
+            [{ name: 'nudgeClip', arguments: { clipId: 'clip-intro', beats: 2 } }],
+            'nudge the selected clip by 2 beats',
+            { ...context, selectedClipIds: ['clip-intro', 'clip-chorus'] }
+        );
+        const lockedClip = {
+            ...context.tracks[0]!.clips[0]!,
+            id: 'clip-locked',
+            name: 'Locked',
+            locked: true,
+        };
+        const locked = bridge(
+            [{ name: 'renameClip', arguments: { clipId: lockedClip.id, name: 'Open' } }],
+            'rename Locked clip to Open',
+            {
+                ...context,
+                tracks: [
+                    { ...context.tracks[0]!, clips: [...context.tracks[0]!.clips, lockedClip] },
+                    ...context.tracks.slice(1),
+                ],
+            }
+        );
+
+        expect(multiSelection.actions).toEqual([]);
+        expect(locked.actions).toEqual([]);
+    });
+
+    it('requires explicit non-negated clip deletion and rejects cross-entity or generic-delete ties', () => {
+        const context = createClipContext();
+        const explicit = bridge(
+            [{ name: 'removeClip', arguments: { clipId: 'clip-chorus' } }],
+            'delete Chorus clip',
+            context
+        );
+        const negated = bridge(
+            [{ name: 'removeClip', arguments: { clipId: 'clip-chorus' } }],
+            'do not delete Chorus clip',
+            context
+        );
+        const deviceRemoval = bridge(
+            [{ name: 'removeClip', arguments: { clipId: 'clip-eq' } }],
+            'remove EQ from Vocals',
+            context
+        );
+        const trackRemoval = bridge(
+            [{ name: 'removeClip', arguments: { clipId: 'clip-vocals-verse' } }],
+            'remove Vocals track',
+            context
+        );
+        const genericTie = bridge(
+            [{ name: 'removeClip', arguments: { clipId: 'clip-bridge' } }],
+            'delete Bridge',
+            context
+        );
+        const explicitTie = bridge(
+            [{ name: 'removeClip', arguments: { clipId: 'clip-bridge' } }],
+            'delete Bridge clip',
+            context
+        );
+        const genericTrackTie = bridge(
+            [{ name: 'removeTrack', arguments: { trackId: 'track-bridge' } }],
+            'delete Bridge',
+            context
+        );
+        const explicitTrackTie = bridge(
+            [{ name: 'removeTrack', arguments: { trackId: 'track-bridge' } }],
+            'delete Bridge track',
+            context
+        );
+        const reservedNameClip = {
+            ...context.tracks[0]!.clips[0]!,
+            id: 'clip-track-name',
+            name: 'Track',
+        };
+        const reservedEntityWord = bridge(
+            [{ name: 'removeClip', arguments: { clipId: reservedNameClip.id } }],
+            'remove track',
+            {
+                ...context,
+                tracks: [
+                    { ...context.tracks[0]!, clips: [...context.tracks[0]!.clips, reservedNameClip] },
+                    ...context.tracks.slice(1),
+                ],
+            }
+        );
+        const crossEntityClip = {
+            ...context.tracks[0]!.clips[0]!,
+            id: 'clip-vocals-name',
+            name: 'Vocals',
+        };
+        const explicitTrackRequest = bridge(
+            [{ name: 'removeClip', arguments: { clipId: crossEntityClip.id } }],
+            'delete the Vocals track',
+            {
+                ...context,
+                tracks: [
+                    { ...context.tracks[0]!, clips: [...context.tracks[0]!.clips, crossEntityClip] },
+                    ...context.tracks.slice(1),
+                ],
+            }
+        );
+
+        expect(explicit.actions).toEqual([{ type: 'removeClip', payload: { clipId: 'clip-chorus' } }]);
+        expect(negated.actions).toEqual([]);
+        expect(deviceRemoval.actions).toEqual([]);
+        expect(trackRemoval.actions).toEqual([]);
+        expect(genericTie.actions).toEqual([]);
+        expect(explicitTie.actions).toEqual([{ type: 'removeClip', payload: { clipId: 'clip-bridge' } }]);
+        expect(genericTrackTie.actions).toEqual([]);
+        expect(explicitTrackTie.actions).toEqual([{ type: 'removeTrack', payload: { trackId: 'track-bridge' } }]);
+        expect(reservedEntityWord.actions).toEqual([]);
+        expect(explicitTrackRequest.actions).toEqual([]);
     });
 });
