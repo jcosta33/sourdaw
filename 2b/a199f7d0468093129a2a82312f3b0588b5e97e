@@ -1,0 +1,28 @@
+src/modules/AudioEngine/repositories/deviceStrategy/AudioDeviceStrategy.ts
+  s_66d4924c65dcd2::t_8cd26af9957501 45-54
+src/modules/AudioEngine/repositories/deviceStrategy/nativeDspDeviceFactories.ts
+  s_66d4924c65dcd2::t_a370ace41ce3a7 34-43
+  s_66d4924c65dcd2::t_0a5b9c1efc0fe3 99-102
+src/modules/AudioEngine/useCases/offlineRender/__tests__/offlineNoteScheduleTiming.spec.ts
+  s_66d4924c65dcd2::t_db78e9029e027a 185,187,191-194
+  s_66d4924c65dcd2::t_de0ee8000710f5 210
+src/modules/AudioEngine/repositories/deviceStrategy/__tests__/nativeDspNoteBinding.spec.ts
+  s_66d4924c65dcd2::t_f3b123af9a7556 98-101,103,105-107
+  s_66d4924c65dcd2::t_dc9183bda74150 1-97,102,104,108-136
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "2ba199f7d0468093129a2a82312f3b0588b5e97e",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
