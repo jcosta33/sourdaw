@@ -4,6 +4,7 @@ import { trackStore, vcaGroupStore } from '#/modules/Arrangement/stores';
 
 import {
     RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS,
+    RUNTIME_ACTION_OVERRIDE_REQUIRED_PAYLOAD_KEYS,
     RUNTIME_ACTION_TYPES,
     type RuntimeAction,
     type RuntimeActionType,
@@ -29,8 +30,13 @@ function hasOnlyInitiatingPayloadKeys(action: RuntimeAction): boolean {
         return false;
     }
 
+    const requiredKeys: readonly string[] = RUNTIME_ACTION_OVERRIDE_REQUIRED_PAYLOAD_KEYS[action.type];
+    if (!requiredKeys.every((key) => Object.hasOwn(payload, key))) {
+        return false;
+    }
+
     const allowedKeys: readonly string[] = RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS[action.type];
-    return Object.keys(payload).every((key) => allowedKeys.includes(key));
+    return Reflect.ownKeys(payload).every((key) => typeof key === 'string' && allowedKeys.includes(key));
 }
 
 const UNAWAITED_AI_ACTION_TYPES: ReadonlySet<RuntimeActionType> = new Set([

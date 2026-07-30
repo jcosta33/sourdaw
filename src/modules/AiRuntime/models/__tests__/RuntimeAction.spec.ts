@@ -11,8 +11,16 @@ type PayloadHasKey<
 
 describe('RuntimeAction', () => {
     it('admits the exact duplicate-free compatibility action census', () => {
+        let digest = 2_166_136_261;
+        for (const actionType of RUNTIME_ACTION_TYPES) {
+            for (const character of `${actionType}\n`) {
+                digest = Math.imul(digest ^ character.charCodeAt(0), 16_777_619);
+            }
+        }
+
         expect(RUNTIME_ACTION_TYPES).toHaveLength(234);
         expect(new Set(RUNTIME_ACTION_TYPES).size).toBe(RUNTIME_ACTION_TYPES.length);
+        expect(digest >>> 0).toBe(889_050_541);
     });
 
     it('derives initiating payloads without exposing command-owned replay fields', () => {

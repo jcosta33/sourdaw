@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { type RuntimeAction } from '../../models/RuntimeAction';
+import {
+    RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS,
+    RUNTIME_ACTION_OVERRIDE_REQUIRED_PAYLOAD_KEYS,
+    type RuntimeAction,
+} from '../../models/RuntimeAction';
 import { validateActions } from '../validateActions';
 
 const { mockLogger } = vi.hoisted(() => ({
@@ -117,9 +121,24 @@ describe('validateActions', () => {
             type: 'createAdjustmentLayer',
             payload: { name: 'Glue', effectType: 'compressor', layerId: 'layer-1' },
         },
-    ])('should reject non-initiating payload fields for $type', (action) => {
+    ] as const)('should reject payloads outside the initiating contract for $type', (action) => {
         expect(validateActions([action] as unknown as RuntimeAction[])).toEqual([]);
         expect(mockLogger.warn).toHaveBeenCalledWith(`Command-owned payload fields rejected for action ${action.type}`);
+
+        const allowedKeys: readonly string[] = RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS[action.type];
+        const initiatingPayload = Object.fromEntries(
+            Object.entries(action.payload).filter(([key]) => allowedKeys.includes(key))
+        );
+        const missingRequiredKey = RUNTIME_ACTION_OVERRIDE_REQUIRED_PAYLOAD_KEYS[action.type][0];
+        const missingRequiredPayload = Object.fromEntries(
+            Object.entries(initiatingPayload).filter(([key]) => key !== missingRequiredKey)
+        );
+        const missingRequiredAction = { ...action, payload: missingRequiredPayload };
+
+        expect(validateActions([missingRequiredAction] as unknown as RuntimeAction[])).toEqual([]);
+        expect(mockLogger.warn).toHaveBeenLastCalledWith(
+            `Command-owned payload fields rejected for action ${action.type}`
+        );
     });
 
     it('should reject invalid setTempo bpm', () => {
