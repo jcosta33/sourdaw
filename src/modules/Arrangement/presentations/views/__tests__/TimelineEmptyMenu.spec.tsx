@@ -156,6 +156,16 @@ describe('TimelineEmptyMenu', () => {
         expect(mockOnClose).toHaveBeenCalled();
     });
 
+    it('dispatches bus creation through the canonical app action', () => {
+        renderWithTooltip(<TimelineEmptyMenu x={100} y={100} trackId={null} beat={8} onClose={mockOnClose} />);
+
+        fireEvent.click(screen.getByText('Add Bus Track'));
+
+        expect(executeAppAction).toHaveBeenCalledWith({ type: 'createBus', payload: { name: 'Bus' } });
+        expect(addTrack).not.toHaveBeenCalledWith({ name: 'Bus', kind: 'bus' });
+        expect(mockOnClose).toHaveBeenCalled();
+    });
+
     it('should call onClose when menu item is clicked', () => {
         renderWithTooltip(<TimelineEmptyMenu x={100} y={100} trackId={null} beat={8} onClose={mockOnClose} />);
         const button = screen.getByText('Add Audio Track');

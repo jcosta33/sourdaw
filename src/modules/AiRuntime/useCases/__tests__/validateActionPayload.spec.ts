@@ -37,7 +37,15 @@ const guardedPayloadContractCases = [
     guardedPayloadCase({
         actionType: 'createBus',
         validPayload: { name: 'Parallel Reverb' },
-        invalidPayloads: [{ name: '' }, { name: 42 }, {}, { name: 'Parallel Reverb', busId: 'internal-id' }],
+        invalidPayloads: [
+            { name: '' },
+            { name: 42 },
+            {},
+            { name: 'x'.repeat(121) },
+            { name: 'Bad <bus>' },
+            { name: 'Bad\u0000Bus' },
+            { name: 'Parallel Reverb', busId: 'internal-id' },
+        ],
     }),
     guardedPayloadCase({
         actionType: 'splitClip',

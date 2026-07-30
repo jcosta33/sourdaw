@@ -1,5 +1,6 @@
 import { type ProjectContext } from '../models/ProjectContext';
 import { type RuntimeAction } from '../models/RuntimeAction';
+import { normalizeSafeProjectName } from '../validators/normalizeSafeProjectName';
 
 import { MAX_LLM_ACTIONS_PER_BATCH } from './llmActionLimits';
 import { type ToolCallResult } from './toolCallParser';
@@ -100,34 +101,6 @@ function findDevice(context: ProjectContext, deviceId: unknown) {
     return context.tracks.flatMap((track) => track.devices).find((device) => device.id === deviceId);
 }
 
-function hasUnsafeProjectNameCharacters(name: string): boolean {
-    for (const character of name) {
-        const codePoint = character.codePointAt(0);
-        if (
-            character === '<' ||
-            character === '>' ||
-            character === '&' ||
-            codePoint === undefined ||
-            codePoint < 32 ||
-            codePoint === 127
-        ) {
-            return true;
-        }
-    }
-    return false;
-}
-
-function normalizeProjectName(value: unknown): string | null {
-    if (typeof value !== 'string') {
-        return null;
-    }
-    const name = value.trim();
-    if (name.length === 0 || name.length > 120 || hasUnsafeProjectNameCharacters(name)) {
-        return null;
-    }
-    return name;
-}
-
 function isSafeTrackColor(value: unknown): value is string {
     return typeof value === 'string' && /^#[\dA-Fa-f]{6}$/.test(value);
 }
@@ -181,7 +154,7 @@ function bridgeToolCall({
     }
 
     if (call.name === 'addTrack') {
-        const name = normalizeProjectName(args.name);
+        const name = normalizeSafeProjectName(args.name);
         if (!hasExactKeys(args, ['name', 'kind']) || !name || !isExecutableTrackKind(args.kind)) {
             return rejection(index, call.name, 'Expected a safe name and one of audio, midi, or folder');
         }
@@ -192,7 +165,7 @@ function bridgeToolCall({
     }
 
     if (call.name === 'createBus') {
-        const name = normalizeProjectName(args.name);
+        const name = normalizeSafeProjectName(args.name);
         if (!hasExactKeys(args, ['name']) || !name) {
             return rejection(
                 index,
@@ -207,7 +180,7 @@ function bridgeToolCall({
         if (!hasExactKeys(args, ['trackId', 'name']) || !hasTrack(context, args.trackId)) {
             return rejection(index, call.name, 'Expected an available trackId and name');
         }
-        const name = normalizeProjectName(args.name);
+        const name = normalizeSafeProjectName(args.name);
         if (!name) {
             return rejection(
                 index,

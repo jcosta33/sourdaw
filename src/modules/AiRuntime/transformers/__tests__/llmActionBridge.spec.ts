@@ -174,13 +174,17 @@ describe('bridgeLlmToolCalls', () => {
         const result = bridge({
             calls: [
                 { name: 'createBus', arguments: { name: '' } },
+                { name: 'createBus', arguments: { name: 'x'.repeat(121) } },
+                { name: 'createBus', arguments: { name: 'Bad <bus>' } },
+                { name: 'createBus', arguments: { name: 'Bad\u0000Bus' } },
                 { name: 'createBus', arguments: { name: 'Parallel Reverb', extra: true } },
                 { name: 'createBus', arguments: { name: 'Parallel Reverb', busId: 'internal-id' } },
             ],
         });
 
         expect(result.actions).toEqual([]);
-        expect(result.rejections.map((rejection) => rejection.name)).toEqual(['createBus', 'createBus', 'createBus']);
+        expect(result.rejections).toHaveLength(6);
+        expect(result.rejections.every((rejection) => rejection.name === 'createBus')).toBe(true);
     });
 
     it('rejects unsupported tools, extra fields, invalid bounds, and unavailable targets', () => {
