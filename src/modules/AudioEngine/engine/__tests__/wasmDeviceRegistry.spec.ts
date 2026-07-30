@@ -32,6 +32,7 @@ const fermenterNodeMocks = vi.hoisted(() => ({
     noteOff: vi.fn(),
     noteOn: vi.fn(),
     onTelemetry: vi.fn(),
+    processorLifecycle: vi.fn(() => 'sleep' as const),
     setBypass: vi.fn(),
     setParam: vi.fn(),
     setPatch: vi.fn(),
@@ -232,7 +233,7 @@ describe('findWasmDescriptor', () => {
         expect(syncProofPatch).toHaveBeenCalledWith('proof-1');
     });
 
-    it('wires the Fermenter allNotesOff surface into the loaded controller (TrackNode bypass coverage)', async () => {
+    it('wires the Fermenter voice release and lifecycle surfaces into the loaded device', async () => {
         // TrackNode.updateBypass releases held voices via controller.allNotesOff
         // on bypass entry. Without this wiring the mechanism silently skips
         // Fermenter and held voices keep sounding through bypass.
@@ -260,6 +261,8 @@ describe('findWasmDescriptor', () => {
         }
         loadedNode.controller.allNotesOff();
         expect(fermenterNodeMocks.allNotesOff).toHaveBeenCalledTimes(1);
+        expect(loadedNode.processorLifecycle?.()).toBe('sleep');
+        expect(fermenterNodeMocks.processorLifecycle).toHaveBeenCalledOnce();
     });
 });
 
@@ -297,6 +300,7 @@ function createFermenterNodeResult(): FermenterNodeResult {
         noteOff: fermenterNodeMocks.noteOff,
         noteOn: fermenterNodeMocks.noteOn,
         onTelemetry: fermenterNodeMocks.onTelemetry,
+        processorLifecycle: fermenterNodeMocks.processorLifecycle,
         ready: Promise.resolve({}),
         setBypass: fermenterNodeMocks.setBypass,
         setParam: fermenterNodeMocks.setParam,

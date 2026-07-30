@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { createFermenterNode, isFermenterDevice } from '../FermenterNode';
+import { FERMENTER_IDX, FERMENTER_SLOT_FLOATS, TELEMETRY_SEQ_IDX } from '../telemetryAllocator';
 
 describe('isFermenterDevice', () => {
     it('should return true only for the fermenter device type string', () => {
@@ -207,6 +208,33 @@ describe('createFermenterNode message surface & lifecycle', () => {
         result.setPatch(patch);
 
         expect(postMessage).toHaveBeenCalledWith({ type: 'patch', patch });
+    });
+
+    it('maps every processor-owned lifecycle code from the telemetry seqlock', async () => {
+        const result = await makeNode();
+        const initSab = postMessage.mock.calls
+            .map((call) => call[0] as { type?: string; sab?: SharedArrayBuffer; byteOffset?: number })
+            .find((message) => message.type === 'init-sab');
+        if (!initSab?.sab || initSab.byteOffset === undefined) {
+            throw new Error('Expected Fermenter lifecycle telemetry slot');
+        }
+        expect(result.processorLifecycle()).toBeNull();
+
+        const values = new Float32Array(initSab.sab, initSab.byteOffset, FERMENTER_SLOT_FLOATS);
+        const sequence = new Int32Array(initSab.sab, initSab.byteOffset, FERMENTER_SLOT_FLOATS);
+        const cases = [
+            [0, 'continue'],
+            [1, 'continueIfNotQuiet'],
+            [2, 'tail'],
+            [3, 'sleep'],
+            [99, null],
+        ] as const;
+        for (const [code, expected] of cases) {
+            Atomics.add(sequence, TELEMETRY_SEQ_IDX, 1);
+            values[FERMENTER_IDX.lifecycle] = code;
+            Atomics.add(sequence, TELEMETRY_SEQ_IDX, 1);
+            expect(result.processorLifecycle()).toBe(expected);
+        }
     });
 
     it('onmessage hands non-telemetry events to the ready handshake', async () => {

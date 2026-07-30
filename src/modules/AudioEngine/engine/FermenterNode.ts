@@ -56,6 +56,25 @@ export type FermenterTelemetryData = {
     scopeBuffer: Float32Array;
 };
 
+type FermenterProcessorLifecycle = 'continue' | 'continueIfNotQuiet' | 'tail' | 'sleep';
+
+function projectFermenterLifecycle(view: Float32Array): FermenterProcessorLifecycle | null {
+    switch (view[FERMENTER_IDX.lifecycle]) {
+        case 0:
+            return 'continue';
+        case 1:
+            return 'continueIfNotQuiet';
+        case 2:
+            return 'tail';
+        case 3:
+            return 'sleep';
+        case undefined:
+            return null;
+        default:
+            return null;
+    }
+}
+
 /**
  * Slot floats → telemetry snapshot. Pure, so the seqlock reader may re-run it on
  * retry. The waveform is copied out of shared memory into a fresh array rather
@@ -93,6 +112,7 @@ export type FermenterNodeResult = {
     setPatch: (patch: Record<string, unknown>) => void;
     setBypass: (bypassed: boolean) => void;
     onTelemetry: (callback: (data: FermenterTelemetryData) => void) => void;
+    processorLifecycle: () => FermenterProcessorLifecycle | null;
     connect: (dest: AudioNode) => void;
     disconnect: () => void;
     destroy: () => void;
@@ -148,6 +168,7 @@ export async function createFermenterNode(
     if (slot) {
         node.port.postMessage({ type: 'init-sab', sab: slot.sab, byteOffset: slot.byteOffset });
     }
+    const lifecycleReader = slot ? createTelemetryReader({ slot, project: projectFermenterLifecycle }) : null;
 
     const handshake = createReadyHandshake({ pluginName: 'FermenterNode' });
     node.port.onmessage = (event: MessageEvent) => {
@@ -282,6 +303,12 @@ export async function createFermenterNode(
                 telemetryRafId = requestAnimationFrame(poll);
             };
             telemetryRafId = requestAnimationFrame(poll);
+        },
+        processorLifecycle() {
+            if (!slot || !lifecycleReader || Atomics.load(slot.seqView, TELEMETRY_SEQ_IDX) === 0) {
+                return null;
+            }
+            return lifecycleReader();
         },
         connect(dest: AudioNode) {
             node.connect(dest);

@@ -16,6 +16,7 @@ import type {
     AudioEngineDiagnostics,
     AudioEngineHealth,
     AudioEnginePlaybackStats,
+    AudioProcessorLifecycleState,
     AudioEngineState,
     BusStrip,
     BuiltinDeviceNode,
@@ -488,6 +489,13 @@ class AudioEngineImpl implements AudioEngine {
         let deviceAudioWorkletProcessors = 0;
         let workerInstances = 0;
         let stripMeterWorklets = 0;
+        const processorLifecycle: { unmanaged: number } & Record<AudioProcessorLifecycleState, number> = {
+            unmanaged: 0,
+            continue: 0,
+            continueIfNotQuiet: 0,
+            tail: 0,
+            sleep: 0,
+        };
 
         for (const trackNode of this.trackNodes.values()) {
             if (trackNode.strip.meterNode) {
@@ -497,6 +505,13 @@ class AudioEngineImpl implements AudioEngine {
                 deviceAudioNodes += device.nodes.length;
                 const resources = countDeviceRuntimeResources(device);
                 deviceAudioWorkletProcessors += resources.audioWorkletProcessors;
+                const lifecycleState = device.processorLifecycle?.() ?? null;
+                if (lifecycleState && resources.audioWorkletProcessors > 0) {
+                    processorLifecycle[lifecycleState]++;
+                    processorLifecycle.unmanaged += resources.audioWorkletProcessors - 1;
+                } else {
+                    processorLifecycle.unmanaged += resources.audioWorkletProcessors;
+                }
                 addCountByType(deviceAudioWorkletProcessorsByType, device.type, resources.audioWorkletProcessors);
                 workerInstances += resources.workers;
                 addCountByType(workerInstancesByType, device.type, resources.workers);
@@ -543,13 +558,7 @@ class AudioEngineImpl implements AudioEngine {
             },
             runtime: {
                 trackedAudioScheduledSources: this.scheduledNodes.length,
-                processorLifecycle: {
-                    unmanaged: deviceAudioWorkletProcessors,
-                    continue: 0,
-                    continueIfNotQuiet: 0,
-                    tail: 0,
-                    sleep: 0,
-                },
+                processorLifecycle,
             },
         };
     }

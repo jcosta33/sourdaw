@@ -4,7 +4,12 @@ import { createMockAudioContext, type MockAudioContext } from '../../../../helpe
 import { DROPOUT_IDX, dropoutCounters } from '../../engine/dropoutCounter';
 import { createAudioEngine } from '../createWebAudioEngine';
 
-import type { AdjustmentLayerTickInput, AudioEngine, BuiltinDeviceNode } from '../../models/AudioEngineState';
+import type {
+    AdjustmentLayerTickInput,
+    AudioEngine,
+    AudioProcessorLifecycleState,
+    BuiltinDeviceNode,
+} from '../../models/AudioEngineState';
 
 const runtimeMocks = vi.hoisted(() => ({
     applyTick: vi.fn(),
@@ -178,6 +183,7 @@ type DiagnosticDeviceInput = {
     workletNodeCount?: number;
     workerInstances?: number;
     loadState?: DiagnosticTestDevice['diagnosticLoadState'];
+    processorLifecycle?: AudioProcessorLifecycleState | null;
 };
 
 function createDiagnosticDevice(input: DiagnosticDeviceInput): DiagnosticTestDevice {
@@ -200,6 +206,9 @@ function createDiagnosticDevice(input: DiagnosticDeviceInput): DiagnosticTestDev
         outputNode: nodes.at(-1)!,
         workerInstances: input.workerInstances,
     };
+    if (input.processorLifecycle !== undefined) {
+        device.processorLifecycle = () => input.processorLifecycle ?? null;
+    }
     if (input.loadState && input.loadState !== 'ready') {
         device.controller = {
             ready: false,
@@ -332,6 +341,7 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
             deviceId: 'fermenter-1',
             deviceType: 'fermenter',
             workletNodeCount: 1,
+            processorLifecycle: 'sleep',
         });
         const bacteria = createDevice({
             deviceId: 'bacteria-1',
@@ -385,7 +395,7 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
             },
             runtime: {
                 trackedAudioScheduledSources: 1,
-                processorLifecycle: { unmanaged: 3, continue: 0, continueIfNotQuiet: 0, tail: 0, sleep: 0 },
+                processorLifecycle: { unmanaged: 2, continue: 0, continueIfNotQuiet: 0, tail: 0, sleep: 1 },
             },
         });
 
