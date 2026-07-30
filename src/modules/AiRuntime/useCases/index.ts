@@ -43,6 +43,8 @@ export { unloadEngine } from './llmOrchestration/lifecycle/unloadEngine';
 export { notifyAiChange } from './notifyAiChange';
 
 export { parsePromptToActions } from './parsePromptToActions';
+export { planPromptActions } from './planPromptActions';
+export { executePlannedActions } from './executePlannedActions';
 
 export { onPromptInjection } from './onPromptInjection';
 export { injectPromptCommand } from './promptInjection';

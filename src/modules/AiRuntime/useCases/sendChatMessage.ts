@@ -1,7 +1,5 @@
 import { isAppError } from '#/infra/errors/isAppError';
-import { logger } from '#/infra/logger/appLogger';
-import { describeAction, executeAppActionBatch, generateGroupId } from '#/modules/Command/useCases';
-import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
+import { describeAction } from '#/modules/Command/useCases';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
@@ -19,7 +17,6 @@ import { isNativeEngineReady } from '../repositories/nativeEngine/isNativeEngine
 import { streamNativeCompletion } from '../repositories/nativeEngine/streaming';
 import { getActiveModelId } from '../repositories/webLlm/getActiveModelId';
 import { getLlmEngine } from '../repositories/webLlm/getLlmEngine';
-import { pushAiActionGroup, type AiActionGroup } from '../stores/aiActionHistoryStore';
 import { aiBackendPreferenceStore } from '../stores/aiBackendPreferenceStore';
 import {
     chatStore,
@@ -32,10 +29,11 @@ import { llmStatusStore } from '../stores/llmStatusStore';
 import { proposePendingActionConfirmation } from '../stores/pendingActionConfirmationStore';
 
 import { createThinkBlockParser } from './createThinkBlockParser';
+import { executePlannedActions } from './executePlannedActions';
 import { getProjectContext } from './getProjectContext';
 import { resolveBackend } from './llmOrchestration/backendResolution/helpers';
 import { notifyAiChange } from './notifyAiChange';
-import { parsePromptToActions } from './parsePromptToActions';
+import { planPromptActions } from './planPromptActions';
 
 function getBackendModelId(backend: RunnableAiBackend): string {
     if (backend === 'native') {
@@ -78,9 +76,10 @@ export async function sendChatMessage(userText: string): Promise<void> {
         setActiveAborter(aborter);
 
         try {
-            const projectRevision = captureProjectRevision();
-            const context = getProjectContext();
-            const result = await parsePromptToActions(userText, context, aborter.signal);
+            const { result, projectRevision } = await planPromptActions({
+                prompt: userText,
+                signal: aborter.signal,
+            });
 
             if (aborter.signal.aborted) {
                 return;
@@ -107,17 +106,6 @@ export async function sendChatMessage(userText: string): Promise<void> {
                     isDsoAction: true,
                 });
 
-                if (captureProjectRevision() !== projectRevision) {
-                    const error = new AiProposalInvalidatedError();
-                    updateChatMessage(assistantMsgId, {
-                        isStreaming: false,
-                        error: error.message,
-                        content:
-                            'The project changed while this command was being planned. Review the current project and submit it again.',
-                    });
-                    return;
-                }
-
                 if (result.requiresConfirmation) {
                     const confirmationId = `prompt-confirmation-${crypto.randomUUID()}`;
                     const actionLabels = result.actions.map((action) => describeAction(action));
@@ -140,80 +128,50 @@ export async function sendChatMessage(userText: string): Promise<void> {
                     return;
                 }
 
-                const group = generateGroupId(userText);
-                const admissionState = { revisionInvalidated: false };
-                function shouldExecuteBatch(): boolean {
-                    if (aborter.signal.aborted) {
-                        return false;
-                    }
-                    admissionState.revisionInvalidated = captureProjectRevision() !== projectRevision;
-                    return !admissionState.revisionInvalidated;
-                }
-                const batchResult = await executeAppActionBatch(result.actions, {
-                    ...group,
-                    source: 'prompt',
-                    requireCompensation: result.executionMode === 'atomic',
-                    shouldExecute: shouldExecuteBatch,
+                const execution = await executePlannedActions({
+                    prompt: userText,
+                    actions: result.actions,
+                    projectRevision,
+                    executionMode: result.executionMode,
+                    signal: aborter.signal,
                 });
-                if (batchResult.status === 'committed' || batchResult.status === 'committed-with-warning') {
-                    const executedLabels = batchResult.actions;
-                    try {
-                        const historyGroup: AiActionGroup = {
-                            id: group.groupId,
-                            prompt: userText,
-                            actions: executedLabels.map((entry) => ({
-                                kind: 'appAction',
-                                actionType: entry.action.type,
-                                label: entry.label,
-                            })),
-                            groupId: group.groupId,
-                            timestamp: Date.now(),
-                            reverted: false,
-                        };
-                        pushAiActionGroup(historyGroup);
-                        notifyAiChange(
-                            `Executed: ${userText}`,
-                            executedLabels.map((entry) => entry.action.type)
-                        );
-                        updateChatMessage(assistantMsgId, {
-                            isStreaming: false,
-                            error: batchResult.status === 'committed-with-warning' ? batchResult.warning : undefined,
-                            content:
-                                batchResult.status === 'committed-with-warning'
-                                    ? `Applied:\n\n${executedLabels.map((entry) => `- **${entry.action.type.replaceAll('_', ' ')}**: ${entry.label}`).join('\n')}\n\nThe project change committed, but its history record failed: ${batchResult.warning}. Do not retry this command.`
-                                    : `Executed:\n\n${executedLabels.map((entry) => `- **${entry.action.type.replaceAll('_', ' ')}**: ${entry.label}`).join('\n')}`,
-                        });
-                    } catch (error) {
-                        const warning = error instanceof Error ? error.message : String(error);
-                        logger.error(new Error('AI post-commit reporting failed', { cause: error }));
-                        try {
-                            updateChatMessage(assistantMsgId, {
-                                isStreaming: false,
-                                error: warning,
-                                content: `The project change committed, but reporting it failed: ${warning}. Do not retry this command.`,
-                            });
-                        } catch (reportingError) {
-                            logger.error(
-                                new Error('AI post-commit warning could not be displayed', {
-                                    cause: reportingError,
-                                })
-                            );
-                        }
+
+                if (execution.status === 'committed') {
+                    const receiptWarnings: string[] = [];
+                    if (execution.commitWarning) {
+                        receiptWarnings.push(`Post-commit project follow-up warning: ${execution.commitWarning}`);
                     }
+                    if (execution.reportingWarning) {
+                        receiptWarnings.push(
+                            `AI history or notification reporting warning: ${execution.reportingWarning}`
+                        );
+                    }
+                    const actionSummary = execution.actions
+                        .map((entry) => `- **${entry.actionType.replaceAll('_', ' ')}**: ${entry.label}`)
+                        .join('\n');
+                    const warningSummary = receiptWarnings.join(' ');
+                    const content = warningSummary
+                        ? `Applied:\n\n${actionSummary}\n\n${warningSummary} The project change committed. Do not retry automatically; inspect the current project state.`
+                        : `Executed:\n\n${actionSummary}`;
+                    updateChatMessage(assistantMsgId, {
+                        isStreaming: false,
+                        error: warningSummary || undefined,
+                        content,
+                    });
                     return;
                 }
 
-                if (batchResult.status === 'cancelled') {
-                    if (admissionState.revisionInvalidated) {
-                        const error = new AiProposalInvalidatedError();
-                        updateChatMessage(assistantMsgId, {
-                            isStreaming: false,
-                            error: error.message,
-                            content:
-                                'The project changed before this command could commit. Review it and submit the command again.',
-                        });
-                        return;
-                    }
+                if (execution.status === 'invalidated') {
+                    updateChatMessage(assistantMsgId, {
+                        isStreaming: false,
+                        error: execution.reason,
+                        content:
+                            'The project changed before this command could commit. Review it and submit the command again.',
+                    });
+                    return;
+                }
+
+                if (execution.status === 'cancelled') {
                     updateChatMessage(assistantMsgId, {
                         isStreaming: false,
                         content: 'Command cancelled before it committed. No project changes were applied.',
@@ -221,7 +179,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
                     return;
                 }
 
-                if (batchResult.status === 'no-op') {
+                if (execution.status === 'no-op') {
                     updateChatMessage(assistantMsgId, {
                         isStreaming: false,
                         content: 'No project changes were needed.',
@@ -229,19 +187,19 @@ export async function sendChatMessage(userText: string): Promise<void> {
                     return;
                 }
 
-                if (batchResult.status === 'ambiguous') {
+                if (execution.status === 'ambiguous') {
                     updateChatMessage(assistantMsgId, {
                         isStreaming: false,
-                        error: batchResult.reason,
-                        content: `The command stopped after an uncertain partial commit: ${batchResult.reason}. Do not retry it; inspect the project first.`,
+                        error: execution.reason,
+                        content: `The command stopped after an uncertain partial commit: ${execution.reason}. Do not retry it; inspect the project first.`,
                     });
                     return;
                 }
 
                 updateChatMessage(assistantMsgId, {
                     isStreaming: false,
-                    error: batchResult.reason,
-                    content: `Failed to execute prompt command atomically: ${batchResult.reason}`,
+                    error: execution.reason,
+                    content: `Failed to execute prompt command atomically: ${execution.reason}`,
                 });
             } else if (result.rejectionReason) {
                 appendChatMessage({
@@ -281,9 +239,14 @@ export async function sendChatMessage(userText: string): Promise<void> {
         } catch (error) {
             const reason = error instanceof Error ? error.message : String(error);
             const configurationChanged = isAiRuntimeConfigurationChangedError(error);
-            const failureContent = configurationChanged
-                ? 'Prompt cancelled because the AI configuration changed.'
-                : 'Failed to process prompt command.';
+            const proposalInvalidated = error instanceof AiProposalInvalidatedError;
+            let failureContent = 'Failed to process prompt command.';
+            if (configurationChanged) {
+                failureContent = 'Prompt cancelled because the AI configuration changed.';
+            } else if (proposalInvalidated) {
+                failureContent =
+                    'The project changed while this command was being planned. Review the current project and submit it again.';
+            }
             if (prompt_assistant_message_id) {
                 updateChatMessage(prompt_assistant_message_id, {
                     isStreaming: false,
