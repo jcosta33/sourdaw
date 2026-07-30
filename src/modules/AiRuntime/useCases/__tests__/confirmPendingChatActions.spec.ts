@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
     configureAutomergeStoragePort,
+    createAutomergeStorage,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
@@ -10,6 +11,7 @@ import {
     captureProjectRevision,
     createCrdtDoc,
     mutateCrdtDoc,
+    getCrdtDoc,
     registerCrdtStorageRuntime,
     resetCrdtProjectAuthority,
     transactSnapshot,
@@ -35,6 +37,7 @@ describe('confirmPendingChatActions transaction admission', () => {
         clearPendingActionConfirmations();
         resetCrdtProjectAuthority('AI confirmation admission');
         createCrdtDoc('independent');
+        createCrdtDoc('owned');
         registerCrdtStorageRuntime();
         chatStore.set({
             messages: [
@@ -61,7 +64,10 @@ describe('confirmPendingChatActions transaction admission', () => {
     });
 
     it('invalidates a confirmed action when the project changes while batch admission is waiting', async () => {
-        const execute = vi.fn<ActionHandler<SetTempoAction>['execute']>();
+        const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
+        const execute = vi.fn<ActionHandler<SetTempoAction>['execute']>((action) => {
+            ownedStorage.set({ bpm: action.payload.bpm });
+        });
         registerHandlerMap({
             setTempo: {
                 execute,
@@ -72,15 +78,16 @@ describe('confirmPendingChatActions transaction admission', () => {
                 undoable: true,
             },
         });
-        proposePendingActionConfirmation({
+        const proposal = {
             id: 'confirmation-1',
             prompt: 'set tempo to 128',
             assistantMessageId: 'assistant-1',
-            actions: [{ type: 'setTempo', payload: { bpm: 128 } }],
+            actions: [{ type: 'setTempo', payload: { bpm: 128 } } satisfies SetTempoAction],
             actionLabels: ['Set tempo'],
-            executionMode: 'atomic',
+            executionMode: 'atomic' as const,
             projectRevision: captureProjectRevision(),
-        });
+        };
+        proposePendingActionConfirmation(proposal);
 
         let releaseSnapshotTransaction!: () => void;
         let markSnapshotTransactionStarted!: () => void;
@@ -115,5 +122,15 @@ describe('confirmPendingChatActions transaction admission', () => {
             pendingActionConfirmationStatus: 'invalidated',
             content: expect.stringContaining('project changed'),
         });
+
+        proposePendingActionConfirmation({
+            ...proposal,
+            id: 'confirmation-2',
+            projectRevision: captureProjectRevision(),
+        });
+        await expect(confirmPendingChatActions({ confirmationId: 'confirmation-2' })).resolves.toEqual({
+            status: 'executed',
+        });
+        expect(getCrdtDoc<Record<string, unknown>>('owned')).toMatchObject({ transport: { bpm: 128 } });
     });
 });

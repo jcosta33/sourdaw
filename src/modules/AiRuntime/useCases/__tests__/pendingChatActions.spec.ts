@@ -97,6 +97,18 @@ const pendingDsoPlan: EditPlan = {
     dsos: [{ op: 'remove_track', track_id: 'track-1' }],
 };
 
+function proposePendingAppAction(id: string): void {
+    proposePendingActionConfirmation({
+        id,
+        prompt: 'delete drums',
+        assistantMessageId: 'assistant-1',
+        actions: [pendingAction],
+        actionLabels: ['Remove track'],
+        executionMode: 'atomic',
+        projectRevision: 'revision-1',
+    });
+}
+
 describe('pending chat action confirmation', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -256,14 +268,7 @@ describe('pending chat action confirmation', () => {
     });
 
     it('invalidates an app-action proposal when the project revision changed before confirmation', async () => {
-        proposePendingActionConfirmation({
-            id: 'confirm-stale',
-            prompt: 'delete drums',
-            assistantMessageId: 'assistant-1',
-            actions: [pendingAction],
-            actionLabels: ['Remove track'],
-            projectRevision: 'revision-1',
-        });
+        proposePendingAppAction('confirm-stale');
         mocks.projectRevision.value = 'revision-2';
 
         const result = await confirmPendingChatActions({ confirmationId: 'confirm-stale' });
@@ -296,14 +301,7 @@ describe('pending chat action confirmation', () => {
             }
             return Promise.resolve({ status: 'no-op', actions: [] });
         });
-        proposePendingActionConfirmation({
-            id: 'confirm-racing',
-            prompt: 'delete drums',
-            assistantMessageId: 'assistant-1',
-            actions: [pendingAction],
-            actionLabels: ['Remove track'],
-            projectRevision: 'revision-1',
-        });
+        proposePendingAppAction('confirm-racing');
 
         const result = await confirmPendingChatActions({ confirmationId: 'confirm-racing' });
 
@@ -328,15 +326,7 @@ describe('pending chat action confirmation', () => {
                 actions: [],
             });
         });
-        proposePendingActionConfirmation({
-            id: 'confirm-stop',
-            prompt: 'delete drums',
-            assistantMessageId: 'assistant-1',
-            actions: [pendingAction],
-            actionLabels: ['Remove track'],
-            executionMode: 'atomic',
-            projectRevision: 'revision-1',
-        });
+        proposePendingAppAction('confirm-stop');
 
         const result = await confirmPendingChatActions({ confirmationId: 'confirm-stop' });
 
