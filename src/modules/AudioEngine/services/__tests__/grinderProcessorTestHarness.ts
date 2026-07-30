@@ -17,7 +17,7 @@ export type GrinderProcessorLike = {
 };
 
 type GrinderProcessorConstructor = {
-    new (): GrinderProcessorLike;
+    new (...args: unknown[]): GrinderProcessorLike;
     readonly parameterDescriptors: readonly GrinderAudioParamDescriptor[];
 };
 
@@ -140,7 +140,7 @@ vi.mock('../../wasm/daw_dsp.js', () => ({
     GrinderInstance: GrinderInstanceMock,
 }));
 
-const MINIMAL_WASM = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
+const MINIMAL_WASM_MODULE = new WebAssembly.Module(new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]));
 
 export async function loadGrinderProcessorConstructor(): Promise<GrinderProcessorConstructor> {
     await import('../grinderProcessor');
@@ -153,8 +153,8 @@ export async function loadGrinderProcessorConstructor(): Promise<GrinderProcesso
 
 export async function createReadyGrinderProcessor(): Promise<GrinderProcessorLike> {
     const Processor = await loadGrinderProcessorConstructor();
-    const processor = new Processor();
-    processor.port.onmessage?.({ data: { type: 'init', wasmBytes: MINIMAL_WASM } });
+    const processor = new Processor({ processorOptions: { wasmModule: MINIMAL_WASM_MODULE } });
+    processor.port.onmessage?.({ data: { type: 'init', wasmModule: MINIMAL_WASM_MODULE } });
     return processor;
 }
 

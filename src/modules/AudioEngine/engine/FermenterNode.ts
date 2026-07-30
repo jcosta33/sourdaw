@@ -2,7 +2,7 @@
  * FermenterNode — AudioWorkletNode wrapper for the Fermenter synthesizer.
  *
  * Creates and manages the WASM-powered worklet. Provides noteOn/noteOff/setParam
- * methods that forward via MessagePort. Caches WASM binary and worklet registration.
+ * methods that forward via MessagePort. Caches the compiled WASM module and worklet registration.
  *
  * Telemetry (peaks + oscilloscope) comes back through a SAB slot, not the port
  * (audit RT-3) — the worklet publishes under the shared seqlock and this node
@@ -10,7 +10,7 @@
  */
 
 import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
-import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from '#/infra/audioWorklet/workletInitShared';
+import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
 
 import fermenterProcessorUrl from '../services/fermenterProcessor.ts?worker&url';
 
@@ -128,7 +128,7 @@ export function isFermenterDevice(deviceType: string): boolean {
  * Create a Fermenter AudioWorkletNode.
  *
  * Resumes the AudioContext if suspended (worklet processors only run when active).
- * Caches WASM binary across calls. Await `result.ready` before sending MIDI.
+ * Caches the compiled WASM module across calls. Await `result.ready` before sending MIDI.
  */
 export async function createFermenterNode(
     ctx: BaseAudioContext,
@@ -140,7 +140,7 @@ export async function createFermenterNode(
     }
 
     await raceAbortSignal(ensureWorkletRegistered(ctx, fermenterProcessorUrl), signal);
-    const wasmBytes = await raceAbortSignal(fetchWasmBinary(wasmUrl ?? DEFAULT_WASM_URL), signal);
+    const wasmModule = await raceAbortSignal(fetchWasmModule(wasmUrl ?? DEFAULT_WASM_URL), signal);
 
     signal?.throwIfAborted();
 
@@ -150,6 +150,7 @@ export async function createFermenterNode(
         outputChannelCount: [2],
         channelCount: 2,
         channelCountMode: 'explicit',
+        processorOptions: { wasmModule },
     });
 
     let bypassed = false;
@@ -180,8 +181,7 @@ export async function createFermenterNode(
     };
     const readyPromise = handshake.promise;
 
-    const copy = wasmBytes.slice(0);
-    node.port.postMessage({ type: 'init', wasmBytes: copy }, [copy]);
+    node.port.postMessage({ type: 'init' });
 
     return {
         workletNode: node,

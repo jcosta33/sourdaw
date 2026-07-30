@@ -7,13 +7,14 @@
  * Effect processor: reads from inputs[0], writes to outputs[0].
  *
  * Messages from main thread:
- *   { type: 'init', wasmBytes: ArrayBuffer }
+ *   { type: 'init' }
  *   { type: 'param', name, value }
  *   { type: 'bypass', bypassed }
  */
 
 import { initSync, ProofChamberInstance } from '../wasm/proof_chamber.js';
 
+import { resolveProcessorWasmModule } from './resolveProcessorWasmModule';
 import { WasmView } from './wasmView';
 
 type ParamAutomationSegment = {
@@ -31,7 +32,7 @@ type ParamAutomationSchedule = {
 };
 
 type ProofChamberMsg =
-    | { type: 'init'; wasmBytes: BufferSource }
+    | { type: 'init' }
     | { type: 'param'; name: string; value: number }
     | { type: 'paramAutomation'; paramId: number; segments: ParamAutomationSegment[] }
     | { type: 'bypass'; bypassed: boolean };
@@ -49,8 +50,9 @@ class ProofChamberProcessor extends AudioWorkletProcessor {
     _outLeftView = new WasmView();
     _outRightView = new WasmView();
 
-    constructor() {
+    constructor(...args: unknown[]) {
         super();
+        let wasmModule = resolveProcessorWasmModule(args[0]);
         this.port.onmessage = (event: MessageEvent<ProofChamberMsg>) => {
             const msg = event.data;
             try {
@@ -58,7 +60,11 @@ class ProofChamberProcessor extends AudioWorkletProcessor {
                     if (this._ready) {
                         return;
                     }
-                    this._initWasm(msg.wasmBytes);
+                    if (!wasmModule) {
+                        throw new TypeError('ProofChamberProcessor requires a compiled WASM module');
+                    }
+                    this._initWasm(wasmModule);
+                    wasmModule = null;
                 } else if (msg.type === 'bypass') {
                     this._bypassed = msg.bypassed;
                 } else if (msg.type === 'paramAutomation' && this._instance !== null && !this._faulted) {
@@ -82,8 +88,8 @@ class ProofChamberProcessor extends AudioWorkletProcessor {
         };
     }
 
-    _initWasm(wasmBytes: BufferSource): void {
-        const wasmExports = initSync({ module: new WebAssembly.Module(wasmBytes) });
+    _initWasm(wasmModule: WebAssembly.Module): void {
+        const wasmExports = initSync({ module: wasmModule });
         this._memory = wasmExports.memory;
         this._instance = new ProofChamberInstance(sampleRate);
         this._ready = true;

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from '../workletInitShared';
+import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '../workletInitShared';
 
 type FakeAudioContext = {
     audioWorklet: {
@@ -56,7 +56,7 @@ describe('ensureWorkletRegistered', () => {
     });
 });
 
-describe('fetchWasmBinary', () => {
+describe('fetchWasmModule', () => {
     const originalFetch = globalThis.fetch;
 
     afterEach(() => {
@@ -64,36 +64,58 @@ describe('fetchWasmBinary', () => {
         vi.restoreAllMocks();
     });
 
-    it('fetches the binary and resolves with the array buffer', async () => {
+    it('fetches and compiles one module', async () => {
         const buffer = new ArrayBuffer(4);
+        const module = new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]));
         const fetchMock = vi.fn().mockResolvedValue({
             ok: true,
             arrayBuffer: () => Promise.resolve(buffer),
         });
+        const compileMock = vi.spyOn(WebAssembly, 'compile').mockResolvedValue(module);
         globalThis.fetch = fetchMock;
 
-        const result = await fetchWasmBinary('https://example.test/module-a.wasm');
+        const result = await fetchWasmModule('https://example.test/module-a.wasm');
 
-        expect(result).toBe(buffer);
+        expect(result).toBe(module);
         expect(fetchMock).toHaveBeenCalledExactlyOnceWith('https://example.test/module-a.wasm');
+        expect(compileMock).toHaveBeenCalledExactlyOnceWith(buffer);
     });
 
-    it('caches in-flight fetches so a second call for the same url does not re-fetch', async () => {
+    it('shares one in-flight fetch and compilation for concurrent callers at the same url', async () => {
         const buffer = new ArrayBuffer(4);
+        const module = new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]));
         const fetchMock = vi.fn().mockResolvedValue({
             ok: true,
             arrayBuffer: () => Promise.resolve(buffer),
         });
+        const compileMock = vi.spyOn(WebAssembly, 'compile').mockResolvedValue(module);
         globalThis.fetch = fetchMock;
 
         const [first, second] = await Promise.all([
-            fetchWasmBinary('https://example.test/module-b.wasm'),
-            fetchWasmBinary('https://example.test/module-b.wasm'),
+            fetchWasmModule('https://example.test/module-b.wasm'),
+            fetchWasmModule('https://example.test/module-b.wasm'),
         ]);
 
-        expect(first).toBe(buffer);
-        expect(second).toBe(buffer);
+        expect(first).toBe(module);
+        expect(second).toBe(module);
         expect(fetchMock).toHaveBeenCalledOnce();
+        expect(compileMock).toHaveBeenCalledOnce();
+    });
+
+    it('compiles distinct module urls separately', async () => {
+        const module = new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]));
+        const fetchMock = vi.fn().mockResolvedValue({
+            ok: true,
+            arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
+        });
+        const compileMock = vi.spyOn(WebAssembly, 'compile').mockResolvedValue(module);
+        globalThis.fetch = fetchMock;
+
+        await fetchWasmModule('https://example.test/module-c.wasm');
+        await fetchWasmModule('https://example.test/module-d.wasm');
+
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(compileMock).toHaveBeenCalledTimes(2);
     });
 
     it('rejects with a descriptive error when the response is not ok', async () => {
@@ -104,23 +126,46 @@ describe('fetchWasmBinary', () => {
         });
         globalThis.fetch = fetchMock;
 
-        await expect(fetchWasmBinary('https://example.test/missing.wasm')).rejects.toThrow(
+        await expect(fetchWasmModule('https://example.test/missing.wasm')).rejects.toThrow(
             'Failed to fetch WASM (https://example.test/missing.wasm): 404'
         );
     });
 
-    it('drops a failed fetch from the cache so a later retry can succeed', async () => {
+    it('drops a failed load from the cache so a later retry can succeed', async () => {
+        const module = new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]));
         const fetchMock = vi
             .fn()
             .mockResolvedValueOnce({ ok: false, status: 500, arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)) })
             .mockResolvedValueOnce({ ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)) });
+        const compileMock = vi.spyOn(WebAssembly, 'compile').mockResolvedValue(module);
         globalThis.fetch = fetchMock;
 
-        await expect(fetchWasmBinary('https://example.test/retry.wasm')).rejects.toThrow();
-        const result = await fetchWasmBinary('https://example.test/retry.wasm');
+        await expect(fetchWasmModule('https://example.test/retry.wasm')).rejects.toThrow();
+        const result = await fetchWasmModule('https://example.test/retry.wasm');
 
-        expect(result.byteLength).toBe(8);
+        expect(result).toBe(module);
         expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(compileMock).toHaveBeenCalledOnce();
+    });
+
+    it('drops a failed compilation from the cache so a later retry can succeed', async () => {
+        const module = new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]));
+        const fetchMock = vi.fn().mockResolvedValue({
+            ok: true,
+            arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
+        });
+        const compileMock = vi
+            .spyOn(WebAssembly, 'compile')
+            .mockRejectedValueOnce(new WebAssembly.CompileError('invalid module'))
+            .mockResolvedValueOnce(module);
+        globalThis.fetch = fetchMock;
+
+        await expect(fetchWasmModule('https://example.test/retry-compile.wasm')).rejects.toThrow('invalid module');
+        const result = await fetchWasmModule('https://example.test/retry-compile.wasm');
+
+        expect(result).toBe(module);
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(compileMock).toHaveBeenCalledTimes(2);
     });
 });
 

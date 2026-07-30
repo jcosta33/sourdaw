@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // --- Worklet global scope shims -------------------------------------------
-const registry = new Map<string, new () => ProofProcessorLike>();
+const registry = new Map<string, new (...args: unknown[]) => ProofProcessorLike>();
 
 class AudioWorkletProcessorShim {
     port = {
@@ -19,7 +19,7 @@ type ProofProcessorLike = {
 };
 
 vi.stubGlobal('AudioWorkletProcessor', AudioWorkletProcessorShim);
-vi.stubGlobal('registerProcessor', (name: string, proc: new () => ProofProcessorLike) => {
+vi.stubGlobal('registerProcessor', (name: string, proc: new (...args: unknown[]) => ProofProcessorLike) => {
     registry.set(name, proc);
 });
 vi.stubGlobal('sampleRate', 48000);
@@ -115,7 +115,7 @@ vi.mock('../../wasm/daw_dsp.js', () => ({
     ProofInstance: ProofInstanceMock,
 }));
 
-const MINIMAL_WASM = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
+const MINIMAL_WASM_MODULE = new WebAssembly.Module(new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]));
 
 // Seqlock counter index within the telemetry slot — mirrors TELEMETRY_SEQ_IDX
 // in engine/telemetryAllocator.ts (FLOATS_PER_SLOT - 1).
@@ -135,7 +135,7 @@ async function loadProcessor(): Promise<ProofProcessorLike> {
     if (!Ctor) {
         throw new Error('proof-processor was not registered');
     }
-    return new Ctor();
+    return new Ctor({ processorOptions: { wasmModule: MINIMAL_WASM_MODULE } });
 }
 
 function send(proc: ProofProcessorLike, data: unknown): void {
@@ -163,7 +163,7 @@ describe('ProofProcessor telemetry seqlock', () => {
     });
 
     function init(proc: ProofProcessorLike): void {
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         send(proc, { type: 'init-sab', sab, byteOffset: 0 });
     }
 
@@ -235,17 +235,18 @@ describe('ProofProcessor message handling & process guards', () => {
 
     it('ignores a second init once ready', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         const ready = vi
             .mocked(proc.port.postMessage)
             .mock.calls.filter((c) => (c[0] as { type: string }).type === 'ready');
         expect(ready).toHaveLength(1);
     });
 
-    it('reports an init error when wasm compilation throws', async () => {
+    it('reports an init error when WASM instantiation throws', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: new Uint8Array(0) });
+        proofInitShouldThrow = new Error('WASM instantiation failed');
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         const errors = vi
             .mocked(proc.port.postMessage)
             .mock.calls.filter((c) => (c[0] as { type?: string }).type === 'error');
@@ -254,7 +255,7 @@ describe('ProofProcessor message handling & process guards', () => {
 
     it('forwards param, reorder (5-tuple) and reset_integrated', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
 
         send(proc, { type: 'param', name: 'lim_threshold', value: -1 });
         send(proc, { type: 'reorder', order: [3, 1, 2, 0, 4] });
@@ -267,7 +268,7 @@ describe('ProofProcessor message handling & process guards', () => {
 
     it('reports a latency-changed event when a message shifts the reported latency', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         // _handleMessage reads latency before and after; queue 0 then 64 ⇒ change.
         proofLatencyQueue = [0, 64];
 
@@ -283,7 +284,7 @@ describe('ProofProcessor message handling & process guards', () => {
 
     it('does not report latency-changed when the message leaves latency unchanged', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         proofLatencyQueue = [256, 256]; // both calls identical
         send(proc, { type: 'param', name: 'lim_threshold', value: -1 });
         const postMessage = vi.mocked(proc.port.postMessage);
@@ -308,7 +309,7 @@ describe('ProofProcessor message handling & process guards', () => {
         proc.process([[new Float32Array(128), new Float32Array(128)]], [out]);
         // (no throw; reaching here is success)
 
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         // mono input ⇒ early return
         proc.process([[new Float32Array(128)]], [out]);
         // mono output ⇒ early return
@@ -318,7 +319,7 @@ describe('ProofProcessor message handling & process guards', () => {
 
     it('faults and posts an error when instance.process throws', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         proofProcessShouldThrow = true;
 
         const out = [new Float32Array(128), new Float32Array(128)];
@@ -337,7 +338,7 @@ describe('ProofProcessor message handling & process guards', () => {
     // same policy the process() catch has always had. ──
     it('posts an error and stops taking work when a control handler throws while already ready', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM }); // _ready = true
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE }); // _ready = true
         proofParamCalls.length = 0;
         vi.mocked(proc.port.postMessage).mockClear();
 
@@ -362,7 +363,7 @@ describe('ProofProcessor message handling & process guards', () => {
     it('reports String(error) when init throws a non-Error value', async () => {
         proofInitShouldThrow = 'boom-string';
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
 
         const errorMsg = vi
             .mocked(proc.port.postMessage)
@@ -375,7 +376,7 @@ describe('ProofProcessor message handling & process guards', () => {
     // and the mono `input[1] ?? in0` fallback at line 150. ──
     it('returns early when the first input channel is missing', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
 
         const out = [new Float32Array(128), new Float32Array(128)];
         // input[0] present but null-ish guard: pass [null] to hit `!in0`.
@@ -386,7 +387,7 @@ describe('ProofProcessor message handling & process guards', () => {
 
     it('falls back to the left input for the right channel when only one is provided', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
 
         const rightSpy = vi.spyOn(ProofInstanceMock.prototype, 'get_input_right_ptr');
         // Only one input channel ⇒ input[1] is undefined ⇒ `input[1] ?? in0` copies left.
@@ -407,7 +408,7 @@ describe('ProofProcessor message handling & process guards', () => {
     // when the input declares a second-channel slot that is absent (undefined). ──
     it('passthrough falls back to the left channel for the right output when the right input is absent', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         proofProcessShouldThrow = true;
 
         // Two-channel input whose right entry is a hole ⇒ `input[1] ?? in0`.

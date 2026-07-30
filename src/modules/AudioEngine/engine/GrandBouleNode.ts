@@ -13,7 +13,7 @@
  */
 
 import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
-import { createReadyHandshake, ensureWorkletRegistered } from '#/infra/audioWorklet/workletInitShared';
+import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
 
 import grandBouleProcessorUrl from '../services/grandBouleProcessor.ts?worker&url';
 
@@ -50,25 +50,6 @@ function projectGrandBouleLifecycle(
         default:
             return null;
     }
-}
-
-/**
- * Grand Boule uses its own fetcher (not the shared cache) because it appends
- * a DEV-only cache-buster query string to pick up freshly-rebuilt WASM during
- * hot development of the physical-modeling engine.
- */
-let cachedGrandBouleWasm: ArrayBuffer | null = null;
-async function fetchGrandBouleWasm(url: string): Promise<ArrayBuffer> {
-    if (cachedGrandBouleWasm) {
-        return cachedGrandBouleWasm;
-    }
-    const fetchUrl = import.meta.env.DEV ? `${url}?t=${Date.now()}` : url;
-    const response = await fetch(fetchUrl);
-    if (!response.ok) {
-        throw new Error(`Failed to fetch Grand Boule WASM: ${response.status}`);
-    }
-    cachedGrandBouleWasm = await response.arrayBuffer();
-    return cachedGrandBouleWasm;
 }
 
 export type GrandBouleNodeResult = {
@@ -125,7 +106,7 @@ export async function createGrandBouleNode(
     }
 
     await raceAbortSignal(ensureWorkletRegistered(ctx, grandBouleProcessorUrl), signal);
-    const wasmBytes = await raceAbortSignal(fetchGrandBouleWasm(wasmUrl ?? DEFAULT_WASM_URL), signal);
+    const wasmModule = await raceAbortSignal(fetchWasmModule(wasmUrl ?? DEFAULT_WASM_URL), signal);
 
     signal?.throwIfAborted();
 
@@ -168,9 +149,8 @@ export async function createGrandBouleNode(
     };
     const readyPromise = handshake.promise;
 
-    // Send the preloaded WASM bytes + SAB to the engine worker.
-    const copy = wasmBytes.slice(0);
-    engineWorker.postMessage({ type: 'init', wasmBytes: copy, sab, sampleRate: ctx.sampleRate }, [copy]);
+    // Send the precompiled WASM module + SAB to the engine worker.
+    engineWorker.postMessage({ type: 'init', wasmModule, sab, sampleRate: ctx.sampleRate });
 
     /** Post a message to the engine worker (not the AudioWorklet). */
     const post = (msg: Record<string, unknown>): void => {

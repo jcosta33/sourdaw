@@ -9,7 +9,7 @@
  * full OS timeslice and can absorb occasional spikes without causing glitches.
  *
  * Port protocol (self.onmessage):
- *   ← { type: 'init', wasmBytes: ArrayBuffer, sab: SharedArrayBuffer, sampleRate: number }
+ *   ← { type: 'init', wasmModule: WebAssembly.Module, sab: SharedArrayBuffer, sampleRate: number }
  *   → { type: 'ready' }
  *   ← { type: 'noteOn', midiNote, velocity, channel? }
  *   ← { type: 'noteExpression', midiNote, channel, bendSemitones, pressure, slide }
@@ -136,7 +136,7 @@ export function writeBlockRelease(
     return nextWriteHead;
 }
 
-function initEngine(wasmBytes: ArrayBuffer, sab: SharedArrayBuffer, workerSampleRate: number): void {
+function initEngine(wasmModule: WebAssembly.Module, sab: SharedArrayBuffer, workerSampleRate: number): void {
     // Parse SAB layout.
     controlInts = new Int32Array(sab, 0, 7);
     const headerBytes = 7 * Int32Array.BYTES_PER_ELEMENT;
@@ -153,7 +153,7 @@ function initEngine(wasmBytes: ArrayBuffer, sab: SharedArrayBuffer, workerSample
     Atomics.store(controlInts, FLUSH_HEAD_IDX, 0);
 
     // Init WASM.
-    const exports = initSync({ module: new WebAssembly.Module(wasmBytes) });
+    const exports = initSync({ module: wasmModule });
     memory = exports.memory;
     instance = new GrandBouleInstance(workerSampleRate, 64);
     running = true;
@@ -297,7 +297,7 @@ type GrandBouleDispatchMsg =
     | { type: 'allNotesOff' };
 
 type GrandBouleWorkerMsg =
-    | { type: 'init'; wasmBytes: ArrayBuffer; sab: SharedArrayBuffer; sampleRate: number }
+    | { type: 'init'; wasmModule: WebAssembly.Module; sab: SharedArrayBuffer; sampleRate: number }
     | { type: 'stop' }
     | GrandBouleDispatchMsg;
 
@@ -368,7 +368,7 @@ function dispatch(msg: GrandBouleDispatchMsg): void {
 
 self.onmessage = ({ data }: MessageEvent<GrandBouleWorkerMsg>): void => {
     if (data.type === 'init') {
-        initEngine(data.wasmBytes, data.sab, data.sampleRate);
+        initEngine(data.wasmModule, data.sab, data.sampleRate);
     } else if (data.type === 'stop') {
         running = false;
         renderScheduled = false;

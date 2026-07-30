@@ -14,6 +14,7 @@ describe('isGrandBouleDevice', () => {
 // without a real AudioContext / worklet module / cross-origin isolation.
 vi.mock('#/infra/audioWorklet/workletInitShared', () => ({
     ensureWorkletRegistered: vi.fn().mockResolvedValue(undefined),
+    fetchWasmModule: vi.fn().mockResolvedValue(new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]))),
     createReadyHandshake: vi.fn(() => ({
         promise: Promise.resolve({}),
         onMessage: () => 'ready' as const,
@@ -76,8 +77,6 @@ describe('createGrandBouleNode', () => {
         }
         vi.stubGlobal('Worker', FakeWorker);
         vi.stubGlobal('AudioWorkletNode', FakeWorkletNode);
-        const fetchResponse = { ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)) };
-        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(fetchResponse));
         ctx = { currentTime: 0, state: 'running', sampleRate: 48000 } as unknown as BaseAudioContext;
     });
 
@@ -104,6 +103,16 @@ describe('createGrandBouleNode', () => {
         result.allNotesOff();
 
         expect(workerPostMessage).toHaveBeenCalledWith({ type: 'allNotesOff' });
+    });
+
+    it('posts the compiled WASM module to the engine worker without a transfer list', async () => {
+        await createGrandBouleNode(ctx);
+
+        const initCall = workerPostMessage.mock.calls.find((call) => (call[0] as { type?: string }).type === 'init');
+        expect(initCall).toBeDefined();
+        const message = initCall![0] as { wasmModule: WebAssembly.Module };
+        expect(message.wasmModule).toBeInstanceOf(WebAssembly.Module);
+        expect(initCall).toHaveLength(1);
     });
 
     it('projects DSP lifecycle from shared state and reports worker faults as unmanaged', async () => {
@@ -136,12 +145,11 @@ describe('createGrandBouleNode', () => {
         expect(resume).not.toHaveBeenCalled();
     });
 
-    it('should reject when the Grand Boule WASM fetch response is not ok', async () => {
-        vi.resetModules();
-        const { createGrandBouleNode: freshCreate } = await import('../GrandBouleNode');
-        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500 }));
+    it('should propagate a shared WASM module load failure', async () => {
+        const { fetchWasmModule } = await import('#/infra/audioWorklet/workletInitShared');
+        vi.mocked(fetchWasmModule).mockRejectedValueOnce(new Error('Failed to fetch WASM: 500'));
 
-        await expect(freshCreate(ctx)).rejects.toThrow('Failed to fetch Grand Boule WASM: 500');
+        await expect(createGrandBouleNode(ctx)).rejects.toThrow('Failed to fetch WASM: 500');
     });
 
     it('should post an init message to the worklet once the engine worker reports ready', async () => {

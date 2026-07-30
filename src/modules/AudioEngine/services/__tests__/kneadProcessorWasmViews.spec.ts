@@ -12,7 +12,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // can be simulated mid-call. No transport SAB is provided, so the shift resolves
 // to zero and the view lifecycle is isolated.
 
-const registry = new Map<string, new () => KneadProcessorLike>();
+const registry = new Map<string, new (...args: unknown[]) => KneadProcessorLike>();
 
 class AudioWorkletProcessorShim {
     port = {
@@ -30,7 +30,7 @@ type KneadProcessorLike = {
 };
 
 vi.stubGlobal('AudioWorkletProcessor', AudioWorkletProcessorShim);
-vi.stubGlobal('registerProcessor', (name: string, proc: new () => KneadProcessorLike) => {
+vi.stubGlobal('registerProcessor', (name: string, proc: new (...args: unknown[]) => KneadProcessorLike) => {
     registry.set(name, proc);
 });
 vi.stubGlobal('sampleRate', 48000);
@@ -94,7 +94,7 @@ vi.mock('../../wasm/daw_dsp.js', () => ({
     KneadInstance: KneadInstanceMock,
 }));
 
-const MINIMAL_WASM = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
+const MINIMAL_WASM_MODULE = new WebAssembly.Module(new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]));
 
 async function loadProcessor(): Promise<KneadProcessorLike> {
     await import('../kneadProcessor');
@@ -102,7 +102,7 @@ async function loadProcessor(): Promise<KneadProcessorLike> {
     if (!Ctor) {
         throw new Error('knead-processor was not registered');
     }
-    return new Ctor();
+    return new Ctor({ processorOptions: { wasmModule: MINIMAL_WASM_MODULE } });
 }
 
 function send(proc: KneadProcessorLike, data: unknown): void {
@@ -130,7 +130,7 @@ describe('KneadProcessor WASM-view lifecycle (audit RT-7)', () => {
 
     it('maps output views over the new buffer when memory.grow() happens inside process() (mid-block)', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
 
         // Warm up so the output views are cached over the pre-grow buffer.
         const warmup = makeBlock((_channel, frame) => frame);

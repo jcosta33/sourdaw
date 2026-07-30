@@ -34,18 +34,18 @@ Never hand-edit files under `src/modules/AudioEngine/wasm/` — regenerate via t
 
 ## 2. Loading at runtime
 
-Worklets cannot fetch asynchronously at construction time, so WASM bytes are fetched on the main thread and passed in: processors call `initSync({ module: new WebAssembly.Module(wasmBytes) })` (e.g. `services/fermenterProcessor.ts`, `workers/grandBouleEngineWorker.ts`). The shared handshake — per-context module registration cache, fetched-wasm cache, ready/error/timeout protocol — lives in `src/infra/audioWorklet/workletInitShared.ts` and is used by every WASM-backed `create*Node` factory in AudioEngine (the native-plugin bridge excepted).
+Worklets cannot fetch asynchronously at construction time, so the main thread fetches and asynchronously compiles each URL once through `fetchWasmModule`. Each `AudioWorkletNode` supplies the resulting structured-cloneable `WebAssembly.Module` in `processorOptions`; GrandBoule supplies it in the worker's init message. A separate port init message starts caught instantiation and the ready/error handshake. Both processor kinds call `initSync({ module: wasmModule })` without synchronous compilation on their real-time-adjacent threads. The shared handshake — per-context worklet registration cache, URL-keyed module cache, and ready/error/timeout protocol — lives in `src/infra/audioWorklet/workletInitShared.ts` and is used by every WASM-backed `create*Node` factory in AudioEngine (the native-plugin bridge excepted).
 
 Each DSP crate exports `#[wasm_bindgen]` instance structs (`FermenterInstance`, `ToasterInstance`, `GrinderInstance`, `GrandBouleInstance`, `KneadInstance`, `LevainInstance`, `BacteriaInstance`, `GlutenInstance`, `ProofInstance` from daw-dsp; `ProofChamberInstance` from proof-chamber; `ScoringInstance` from scoring). The engine instantiates them per device through `wasmDeviceRegistry.ts`.
 
 ## 3. What runs where
 
-| Crate | WASM | Native | Notes |
-|---|---|---|---|
-| daw-dsp (9 of 10 engines) | ✓ | ✓ | `crumbs` is native-only — its engine runs behind `crumbs_*` Tauri commands |
-| proof-chamber (reverb) | ✓ | — | WASM-only crate; "Dutch Oven" device id |
-| scoring (tuner) | ✓ | — | WASM-only crate; passthrough audio + telemetry |
-| daw-wasm-decoder | ✓ | — | main-thread decode for codecs `decodeAudioData` can't handle (ALAC, m4a, FLAC/OGG edge cases) |
+| Crate                     | WASM | Native | Notes                                                                                         |
+| ------------------------- | ---- | ------ | --------------------------------------------------------------------------------------------- |
+| daw-dsp (9 of 10 engines) | ✓    | ✓      | `crumbs` is native-only — its engine runs behind `crumbs_*` Tauri commands                    |
+| proof-chamber (reverb)    | ✓    | —      | WASM-only crate; "Dutch Oven" device id                                                       |
+| scoring (tuner)           | ✓    | —      | WASM-only crate; passthrough audio + telemetry                                                |
+| daw-wasm-decoder          | ✓    | —      | main-thread decode for codecs `decodeAudioData` can't handle (ALAC, m4a, FLAC/OGG edge cases) |
 
 `daw-wasm-decoder` has no worklet generator — it is used on the main thread where async fetch is fine.
 

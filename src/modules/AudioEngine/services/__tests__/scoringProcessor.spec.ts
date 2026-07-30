@@ -78,7 +78,7 @@ vi.mock('../../wasm/scoring.js', () => ({
     ScoringInstance: ScoringInstanceMock,
 }));
 
-const MINIMAL_WASM = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
+const MINIMAL_WASM_MODULE = new WebAssembly.Module(new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]));
 
 async function loadProcessor(): Promise<ScoringProcessorLike> {
     await import('../scoringProcessor');
@@ -86,7 +86,7 @@ async function loadProcessor(): Promise<ScoringProcessorLike> {
     if (!Ctor) {
         throw new Error('scoring-processor was not registered');
     }
-    return new Ctor();
+    return new Ctor({ processorOptions: { wasmModule: MINIMAL_WASM_MODULE } });
 }
 
 function send(proc: ScoringProcessorLike, data: unknown): void {
@@ -112,22 +112,26 @@ describe('ScoringProcessor message handling', () => {
 
     it('posts ready on init and ignores a second init', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         const ready = proc.port.postMessage.mock.calls.filter((c) => (c[0] as { type: string }).type === 'ready');
         expect(ready).toHaveLength(1);
     });
 
-    it('reports an init error when wasm compilation throws', async () => {
+    it('reports an init error when WASM instantiation throws', async () => {
+        const { initSync } = await import('../../wasm/scoring.js');
+        vi.mocked(initSync).mockImplementationOnce(() => {
+            throw new Error('WASM instantiation failed');
+        });
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: new Uint8Array(0) });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         const errors = proc.port.postMessage.mock.calls.filter((c) => (c[0] as { type?: string }).type === 'error');
         expect(errors).toHaveLength(1);
     });
 
     it('forwards param name/value and toggles bypass', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         resetRecording();
         send(proc, { type: 'param', name: 'threshold', value: 0.5 });
         send(proc, { type: 'bypass', bypassed: true });
@@ -160,7 +164,7 @@ describe('ScoringProcessor process & telemetry', () => {
 
     it('returns early when the left input is absent or output empty', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         resetRecording();
         proc.process([[]], [stereo(FRAMES, 0)]); // no left channel
         proc.process([stereo(FRAMES, 0.5)], [[]]); // empty output
@@ -169,7 +173,7 @@ describe('ScoringProcessor process & telemetry', () => {
 
     it('publishes the inactive telemetry slot when no pitch is detected', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         const sab = new SharedArrayBuffer(Float32Array.BYTES_PER_ELEMENT * 32);
         const view = new Float32Array(sab);
         send(proc, { type: 'init-sab', sab, byteOffset: 0 });
@@ -185,7 +189,7 @@ describe('ScoringProcessor process & telemetry', () => {
 
     it('publishes the full pitch telemetry when a note is active', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         const sab = new SharedArrayBuffer(Float32Array.BYTES_PER_ELEMENT * 32);
         const view = new Float32Array(sab);
         send(proc, { type: 'init-sab', sab, byteOffset: 0 });
@@ -206,7 +210,7 @@ describe('ScoringProcessor process & telemetry', () => {
 
     it('does not throw when telemetry fires without an SAB', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         resetRecording();
         isActive = true;
         for (let i = 0; i < 5; i++) {
@@ -217,7 +221,7 @@ describe('ScoringProcessor process & telemetry', () => {
 
     it('faults and passthrough-copies when instance.process throws, then stops processing', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         resetRecording();
         processShouldThrow = true;
 

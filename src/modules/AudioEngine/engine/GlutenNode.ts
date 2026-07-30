@@ -1,14 +1,14 @@
 /**
  * GlutenNode — AudioWorkletNode wrapper for the Gluten bus compressor.
  *
- * Same pattern as FermenterNode/ToasterNode: caches WASM binary, resumes
+ * Same pattern as FermenterNode/ToasterNode: caches the compiled WASM module, resumes
  * AudioContext, provides setParam/setBypass via MessagePort.
  *
  * Key difference: Gluten is an *effect* (1 input, 1 output), not an instrument.
  */
 
 import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
-import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from '#/infra/audioWorklet/workletInitShared';
+import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
 
 import glutenProcessorUrl from '../services/glutenProcessor.ts?worker&url';
 
@@ -73,7 +73,7 @@ export async function createGlutenNode(
     }
 
     await raceAbortSignal(ensureWorkletRegistered(ctx, glutenProcessorUrl), signal);
-    const wasmBytes = await raceAbortSignal(fetchWasmBinary(wasmUrl ?? DEFAULT_WASM_URL), signal);
+    const wasmModule = await raceAbortSignal(fetchWasmModule(wasmUrl ?? DEFAULT_WASM_URL), signal);
 
     signal?.throwIfAborted();
 
@@ -83,6 +83,7 @@ export async function createGlutenNode(
         outputChannelCount: [2],
         channelCount: 2,
         channelCountMode: 'explicit',
+        processorOptions: { wasmModule },
     });
 
     let slot: TelemetrySlot | null = telemetryAllocator.allocateSlot();
@@ -107,8 +108,7 @@ export async function createGlutenNode(
     };
     const readyPromise = handshake.promise;
 
-    const copy = wasmBytes.slice(0);
-    node.port.postMessage({ type: 'init', wasmBytes: copy }, [copy]);
+    node.port.postMessage({ type: 'init' });
 
     return {
         workletNode: node,

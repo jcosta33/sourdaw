@@ -106,7 +106,7 @@ vi.mock('../../wasm/daw_dsp.js', () => ({
     LevainInstance: LevainInstanceMock,
 }));
 
-const MINIMAL_WASM = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
+const MINIMAL_WASM_MODULE = new WebAssembly.Module(new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]));
 
 async function loadProcessor(): Promise<LevainProcessorLike> {
     await import('../levainProcessor');
@@ -114,7 +114,7 @@ async function loadProcessor(): Promise<LevainProcessorLike> {
     if (!Ctor) {
         throw new Error('levain-processor was not registered');
     }
-    return new Ctor();
+    return new Ctor({ processorOptions: { wasmModule: MINIMAL_WASM_MODULE } });
 }
 
 function send(proc: LevainProcessorLike, data: unknown): void {
@@ -141,7 +141,7 @@ describe('LevainProcessor message handling', () => {
         send(proc, { type: 'cc', cc: 1, value: 64 });
         expect(calls).toEqual([]);
 
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
 
         // Buffered messages replayed in order during _initWasm.
         expect(calls.map((c) => c.method)).toEqual(['note_on', 'handle_cc']);
@@ -150,22 +150,26 @@ describe('LevainProcessor message handling', () => {
 
     it('ignores a second init once ready', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         const ready = proc.port.postMessage.mock.calls.filter((c) => (c[0] as { type: string }).type === 'ready');
         expect(ready).toHaveLength(1);
     });
 
-    it('reports an init error when wasm compilation throws', async () => {
+    it('reports an init error when WASM instantiation throws', async () => {
+        const { initSync } = await import('../../wasm/daw_dsp.js');
+        vi.mocked(initSync).mockImplementationOnce(() => {
+            throw new Error('WASM instantiation failed');
+        });
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: new Uint8Array(0) });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         const errors = proc.port.postMessage.mock.calls.filter((c) => (c[0] as { type?: string }).type === 'error');
         expect(errors).toHaveLength(1);
     });
 
     it('dispatches immediate noteOn/noteOff and allNotesOff to the instance', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         calls.length = 0;
 
         send(proc, { type: 'noteOn', note: 64, velocity: 80 });
@@ -180,7 +184,7 @@ describe('LevainProcessor message handling', () => {
         const proc = await loadProcessor();
         const sab = new SharedArrayBuffer(32 * Float32Array.BYTES_PER_ELEMENT);
         send(proc, { type: 'init-sab', sab, byteOffset: 0 });
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         send(proc, { type: 'noteOn', note: 60, velocity: 100 });
         proc.process([], [makeChannels(2, FRAMES)]);
         send(proc, { type: 'noteOn', note: 67, velocity: 90, sampleFrame: 64 });
@@ -197,7 +201,7 @@ describe('LevainProcessor message handling', () => {
 
     it('maps known params through PARAM_MAP and falls back to the raw name', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         calls.length = 0;
 
         send(proc, { type: 'param', name: 'masterGain', value: 0.8 });
@@ -210,7 +214,7 @@ describe('LevainProcessor message handling', () => {
 
     it('forwards cc and setInstrument messages', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         calls.length = 0;
 
         send(proc, { type: 'cc', cc: 74, value: 100 });
@@ -222,7 +226,7 @@ describe('LevainProcessor message handling', () => {
 
     it('sleeps without rendering, advances control time, and clears stale output', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         calls.length = 0;
 
         const output = makeChannels(2, FRAMES);
@@ -240,7 +244,7 @@ describe('LevainProcessor message handling', () => {
         const proc = await loadProcessor();
         const sab = new SharedArrayBuffer(32 * Float32Array.BYTES_PER_ELEMENT);
         send(proc, { type: 'init-sab', sab, byteOffset: 0 });
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
 
         proc.process([], [makeChannels(2, FRAMES)]);
 
@@ -260,7 +264,7 @@ describe('LevainProcessor message handling', () => {
         const proc = await loadProcessor();
         const sab = new SharedArrayBuffer(32 * Float32Array.BYTES_PER_ELEMENT);
         send(proc, { type: 'init-sab', sab, byteOffset: 0 });
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         proc.process([], [makeChannels(2, FRAMES)]);
         const sequence = new Int32Array(sab);
         const publishedSequence = Atomics.load(sequence, 31);
@@ -274,7 +278,7 @@ describe('LevainProcessor message handling', () => {
 
     it('loads a sample and forwards addSample args to the instance', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         calls.length = 0;
 
         const data = new Float32Array([0.1, 0.2, 0.3, 0.4]);
@@ -291,7 +295,7 @@ describe('LevainProcessor message handling', () => {
 
     it('maps addZone loop modes forward→1, pingpong→2, other/absent→0', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         calls.length = 0;
 
         const baseZone = {
@@ -335,7 +339,7 @@ describe('LevainProcessor message handling', () => {
 
     it('forwards buildZoneMap and clearZones', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         calls.length = 0;
 
         send(proc, { type: 'buildZoneMap', numArticulations: 4, numMics: 3 });
@@ -347,7 +351,7 @@ describe('LevainProcessor message handling', () => {
 
     it('enqueues a future-dated note and drains it within the process block window', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         calls.length = 0;
 
         // currentFrame stubbed at 0 ⇒ blockEndFrame = 128. A note at 64 drains; 200 stays.
@@ -370,7 +374,7 @@ describe('LevainProcessor message handling', () => {
         proc.process([], [makeChannels(2, FRAMES)]);
         expect(calls.find((c) => c.method === 'process')).toBeUndefined();
 
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         calls.length = 0;
         // mono output
         proc.process([], [makeChannels(1, FRAMES)]);
@@ -379,7 +383,7 @@ describe('LevainProcessor message handling', () => {
 
     it('renders a stereo block and copies the seeded output views', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         lifecycleState = 0;
         calls.length = 0;
 
@@ -396,7 +400,7 @@ describe('LevainProcessor message handling', () => {
 
     it('faults and posts an error when instance.process throws', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         lifecycleState = 0;
         calls.length = 0;
         processShouldThrow = true;
@@ -415,7 +419,7 @@ describe('LevainProcessor message handling', () => {
 
     it('faults and posts an error when a message handled after ready throws', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         calls.length = 0;
         proc.port.postMessage.mockClear();
         addSampleShouldThrow = true;

@@ -15,7 +15,7 @@ describe('isFermenterDevice', () => {
 // immediately so the factory completes.
 vi.mock('#/infra/audioWorklet/workletInitShared', () => ({
     ensureWorkletRegistered: vi.fn().mockResolvedValue(undefined),
-    fetchWasmBinary: vi.fn().mockResolvedValue(new ArrayBuffer(8)),
+    fetchWasmModule: vi.fn().mockResolvedValue(new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]))),
     createReadyHandshake: vi.fn(() => ({
         promise: Promise.resolve({}),
         // vi.fn so callers can assert the port onmessage delegates here.
@@ -327,7 +327,7 @@ describe('createFermenterNode message surface & lifecycle', () => {
 
     it('aborts WASM fetching before allocating an AudioWorkletNode', async () => {
         const workletInit = await import('#/infra/audioWorklet/workletInitShared');
-        vi.mocked(workletInit.fetchWasmBinary).mockImplementationOnce(() => new Promise<ArrayBuffer>(() => {}));
+        vi.mocked(workletInit.fetchWasmModule).mockImplementationOnce(() => new Promise<WebAssembly.Module>(() => {}));
         const allocation = vi.fn();
         class CountingWorkletNode {
             constructor() {

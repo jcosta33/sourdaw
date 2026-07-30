@@ -104,7 +104,7 @@ vi.mock('../../wasm/daw_dsp.js', () => ({
     GrandBouleInstance: GrandBouleInstanceMock,
 }));
 
-const MINIMAL_WASM = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
+const MINIMAL_WASM_MODULE = new WebAssembly.Module(new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]));
 
 let onmessage: (ev: MessageEvent) => void;
 
@@ -147,7 +147,7 @@ describe('Grand Boule engine worker control plane', () => {
 
     it('init parses the SAB, builds the instance, posts ready and leaves a cold DSP asleep', async () => {
         await loadWorker();
-        send({ type: 'init', wasmBytes: MINIMAL_WASM.buffer, sab: SAB, sampleRate: 48000 });
+        send({ type: 'init', wasmModule: MINIMAL_WASM_MODULE, sab: SAB, sampleRate: 48000 });
 
         expect(posted.some((m) => m.type === 'ready')).toBe(true);
         expect(queuedYields).toHaveLength(0);
@@ -155,7 +155,7 @@ describe('Grand Boule engine worker control plane', () => {
 
     it('stop halts the render loop (a subsequent queued yield is a no-op)', async () => {
         await loadWorker();
-        send({ type: 'init', wasmBytes: MINIMAL_WASM.buffer, sab: SAB, sampleRate: 48000 });
+        send({ type: 'init', wasmModule: MINIMAL_WASM_MODULE, sab: SAB, sampleRate: 48000 });
         send({ type: 'stop' });
 
         const before = calls.length;
@@ -168,7 +168,7 @@ describe('Grand Boule engine worker control plane', () => {
 
     it('dispatches noteOn, noteOff and allNotesOff to the instance', async () => {
         await loadWorker();
-        send({ type: 'init', wasmBytes: MINIMAL_WASM.buffer, sab: SAB, sampleRate: 48000 });
+        send({ type: 'init', wasmModule: MINIMAL_WASM_MODULE, sab: SAB, sampleRate: 48000 });
         calls.length = 0;
 
         send({ type: 'noteOn', midiNote: 60, velocity: 90 });
@@ -187,7 +187,7 @@ describe('Grand Boule engine worker control plane', () => {
 
     it('maps known params through PARAM_MAP and falls back to the raw name', async () => {
         await loadWorker();
-        send({ type: 'init', wasmBytes: MINIMAL_WASM.buffer, sab: SAB, sampleRate: 48000 });
+        send({ type: 'init', wasmModule: MINIMAL_WASM_MODULE, sab: SAB, sampleRate: 48000 });
         calls.length = 0;
 
         send({ type: 'param', name: 'masterGain', value: 0.7 });
@@ -202,7 +202,7 @@ describe('Grand Boule engine worker control plane', () => {
 
     it('forwards sustain, unaCorda and sostenuto pedal messages', async () => {
         await loadWorker();
-        send({ type: 'init', wasmBytes: MINIMAL_WASM.buffer, sab: SAB, sampleRate: 48000 });
+        send({ type: 'init', wasmModule: MINIMAL_WASM_MODULE, sab: SAB, sampleRate: 48000 });
         calls.length = 0;
 
         send({ type: 'sustain', position: 0.9 });
@@ -216,7 +216,7 @@ describe('Grand Boule engine worker control plane', () => {
 
     it('forwards MIDI 2.0 noteOn and temperament index', async () => {
         await loadWorker();
-        send({ type: 'init', wasmBytes: MINIMAL_WASM.buffer, sab: SAB, sampleRate: 48000 });
+        send({ type: 'init', wasmModule: MINIMAL_WASM_MODULE, sab: SAB, sampleRate: 48000 });
         calls.length = 0;
 
         send({ type: 'noteOnMidi2', midiNote: 72, velocity16bit: 32000, pitchOffsetQ24: 1 << 24 });
@@ -228,7 +228,7 @@ describe('Grand Boule engine worker control plane', () => {
 
     it('loads an attack clip for a key', async () => {
         await loadWorker();
-        send({ type: 'init', wasmBytes: MINIMAL_WASM.buffer, sab: SAB, sampleRate: 48000 });
+        send({ type: 'init', wasmModule: MINIMAL_WASM_MODULE, sab: SAB, sampleRate: 48000 });
         calls.length = 0;
 
         const samples = new Float32Array([0.1, 0.2, 0.3]);

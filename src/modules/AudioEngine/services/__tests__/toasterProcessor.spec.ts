@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // --- Worklet global scope shims -------------------------------------------
-const registry = new Map<string, new () => ToasterProcessorLike>();
+const registry = new Map<string, new (...args: unknown[]) => ToasterProcessorLike>();
 
 class AudioWorkletProcessorShim {
     port = {
@@ -21,7 +21,7 @@ type ToasterProcessorLike = {
 };
 
 vi.stubGlobal('AudioWorkletProcessor', AudioWorkletProcessorShim);
-vi.stubGlobal('registerProcessor', (name: string, proc: new () => ToasterProcessorLike) => {
+vi.stubGlobal('registerProcessor', (name: string, proc: new (...args: unknown[]) => ToasterProcessorLike) => {
     registry.set(name, proc);
 });
 vi.stubGlobal('sampleRate', 48000);
@@ -105,7 +105,7 @@ vi.mock('../../wasm/daw_dsp.js', () => ({
     ToasterInstance: ToasterInstanceMock,
 }));
 
-const MINIMAL_WASM = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
+const MINIMAL_WASM_MODULE = new WebAssembly.Module(new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]));
 
 async function loadProcessor(): Promise<ToasterProcessorLike> {
     await import('../toasterProcessor');
@@ -113,7 +113,7 @@ async function loadProcessor(): Promise<ToasterProcessorLike> {
     if (!Ctor) {
         throw new Error('toaster-processor was not registered');
     }
-    return new Ctor();
+    return new Ctor({ processorOptions: { wasmModule: MINIMAL_WASM_MODULE } });
 }
 
 function send(proc: ToasterProcessorLike, data: unknown): void {
@@ -136,7 +136,7 @@ describe('ToasterProcessor allNotesOff', () => {
 
     it('evaluates numeric parameter schedules once per render quantum', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         send(proc, {
             type: 'paramAutomation',
             paramId: 1,
@@ -187,7 +187,7 @@ describe('ToasterProcessor allNotesOff', () => {
     // Toaster device. The processor now releases all 16 pads on one message.
     it('releases all 16 pads on a single allNotesOff message', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
 
         send(proc, { type: 'allNotesOff' });
 
@@ -199,7 +199,7 @@ describe('ToasterProcessor allNotesOff', () => {
 
     it('drops not-yet-dispatched scheduled hits so a queued noteOn cannot retrigger', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
 
         send(proc, { type: 'noteOn', pad: 3, velocity: 100, sampleFrame: 10_000 });
         expect(proc._queue.length).toBe(1);
@@ -218,7 +218,7 @@ describe('ToasterProcessor allNotesOff', () => {
 
     it('dispatches a scheduled hit and its locks only when the audio frame arrives', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         send(proc, {
             type: 'scheduledHit',
             pad: 3,
@@ -249,7 +249,7 @@ describe('ToasterProcessor allNotesOff', () => {
 
     it('cancels future sequencer hits without releasing voices or deleting queued MIDI', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         send(proc, {
             type: 'scheduledHit',
             pad: 5,
@@ -267,7 +267,7 @@ describe('ToasterProcessor allNotesOff', () => {
 
     it('evaluates fill conditions at the queued sample frame using the latest state', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         send(proc, {
             type: 'scheduledHit',
             pad: 1,
@@ -296,7 +296,7 @@ describe('ToasterProcessor allNotesOff', () => {
 
     it('copies pad-pure stereo taps to outputs after the unchanged parent mix', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         const outputs = Array.from({ length: 17 }, () => [new Float32Array(8), new Float32Array(8)]);
 
         proc.process([[]], outputs);
@@ -314,7 +314,7 @@ describe('ToasterProcessor allNotesOff', () => {
     it('advances control state and hard-zeros every output without calling WASM process while asleep', async () => {
         lifecycleState = 3;
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         processCalls.length = 0;
         const outputs = Array.from({ length: 17 }, () => [new Float32Array(8).fill(1), new Float32Array(8).fill(-1)]);
 
@@ -330,7 +330,7 @@ describe('ToasterProcessor allNotesOff', () => {
     it('dispatches a due note before the sleep check and renders the woken voice', async () => {
         lifecycleState = 3;
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         processCalls.length = 0;
         send(proc, { type: 'noteOn', pad: 4, velocity: 100, sampleFrame: 64 });
         vi.stubGlobal('currentFrame', 0);
@@ -349,7 +349,7 @@ describe('ToasterProcessor allNotesOff', () => {
         const view = new Float32Array(sab);
         const seqView = new Int32Array(sab);
         send(proc, { type: 'init-sab', sab, byteOffset: 0 });
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
 
         expect(view[0]).toBe(3);
         expect(Atomics.load(seqView, 31)).toBeGreaterThan(0);
@@ -362,7 +362,7 @@ describe('ToasterProcessor allNotesOff', () => {
 
     it('acknowledges disposal and terminates the processor', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         const postMessage = vi.mocked(proc.port.postMessage);
 
         send(proc, { type: 'dispose' });
@@ -373,7 +373,7 @@ describe('ToasterProcessor allNotesOff', () => {
 
     it('excludes routed pad dry signal while preserving its tap and restores it on reset', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         const outputs = Array.from({ length: 17 }, () => [new Float32Array(8), new Float32Array(8)]);
 
         send(proc, { type: 'padDryRouted', pad: 0, routed: true });
@@ -402,7 +402,7 @@ describe('ToasterProcessor allNotesOff', () => {
 
     it('hard-zeros an oversized render quantum without reading beyond WASM output buffers', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         const outputs = Array.from({ length: 17 }, () => [
             new Float32Array(WASM_BLOCK_SAMPLES + 1).fill(Number.NaN),
             new Float32Array(WASM_BLOCK_SAMPLES + 1).fill(Number.NaN),
@@ -432,7 +432,7 @@ describe('ToasterProcessor dispatch paths & process guards', () => {
         vi.stubGlobal('currentFrame', 0);
     });
 
-    it('ignores messages before init (not ready) and reports init compile errors', async () => {
+    it('ignores messages before init and reports WASM instantiation errors', async () => {
         const proc = await loadProcessor();
         // Before init: every message is dropped (the ready guard).
         send(proc, { type: 'noteOn', pad: 0, velocity: 1 });
@@ -440,8 +440,8 @@ describe('ToasterProcessor dispatch paths & process guards', () => {
         expect(noteOnCalls).toEqual([]);
         expect(kitParamCalls).toEqual([]);
 
-        // A malformed wasm triggers a compile error, reported once.
-        send(proc, { type: 'init', wasmBytes: new Uint8Array(0) });
+        toasterInitShouldThrow = new Error('WASM instantiation failed');
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         const postMessage = vi.mocked(proc.port.postMessage);
         const errors = postMessage.mock.calls.filter((c) => (c[0] as { type?: string }).type === 'error');
         expect(errors).toHaveLength(1);
@@ -449,7 +449,7 @@ describe('ToasterProcessor dispatch paths & process guards', () => {
 
     it('dispatches kit param (KIT_PARAM_MAP), pad param (PAD_PARAM_MAP), and unmapped fallbacks', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         send(proc, { type: 'param', name: 'swing', value: 0.6 }); // → swing
         send(proc, { type: 'param', name: 'unknownKit', value: 0.1 }); // fallback as-is
         send(proc, { type: 'padParam', pad: 2, name: 'engineType', value: 3 }); // → engine_type
@@ -462,7 +462,7 @@ describe('ToasterProcessor dispatch paths & process guards', () => {
 
     it('dispatches immediate noteOn/noteOff (sampleFrame <= currentFrame) without queueing', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         vi.stubGlobal('currentFrame', 1000);
         // sampleFrame absent → dispatched immediately (not enqueued).
         send(proc, { type: 'noteOn', pad: 4, velocity: 0.8, note: 64 });
@@ -474,7 +474,7 @@ describe('ToasterProcessor dispatch paths & process guards', () => {
 
     it('scheduledHit with restoreEngineType omitted does not call set_pad_param a second time', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         vi.stubGlobal('currentFrame', 1000);
         send(proc, {
             type: 'scheduledHit',
@@ -490,7 +490,7 @@ describe('ToasterProcessor dispatch paths & process guards', () => {
 
     it('resetPadDryRouting clears all per-pad dry routing', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         send(proc, { type: 'padDryRouted', pad: 0, routed: true });
         expect(padZeroDryRouted).toBe(true);
         send(proc, { type: 'resetPadDryRouting' });
@@ -503,7 +503,7 @@ describe('ToasterProcessor dispatch paths & process guards', () => {
         expect(proc.process([[]], [[new Float32Array(8), new Float32Array(8)]])).toBe(true);
         expect(processCalls).toEqual([]);
 
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         // Parent output < 2 channels → early return.
         proc.process([[]], [[new Float32Array(8)]]);
         // out0 absent → early return (output[0] is undefined).
@@ -514,7 +514,7 @@ describe('ToasterProcessor dispatch paths & process guards', () => {
 
     it('automation: interpolates mid-segment and snaps to endValue at/after endFrame', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         paramByIdCalls.length = 0;
         send(proc, {
             type: 'paramAutomation',
@@ -546,7 +546,7 @@ describe('ToasterProcessor dispatch paths & process guards', () => {
 
     it('automation rejects malformed schedules (bad paramId, gaps, non-contiguous frames)', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         // paramId out of range (>= TOASTER_AUTOMATION_PARAM_COUNT=3).
         send(proc, {
             type: 'paramAutomation',
@@ -571,7 +571,7 @@ describe('ToasterProcessor dispatch paths & process guards', () => {
 
     it('drainQueue stops at a future sampleFrame and resets the head when drained', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         // Queue a hit far in the future.
         send(proc, { type: 'noteOn', pad: 6, velocity: 1, sampleFrame: 50_000 });
         expect(proc._queue.length).toBe(1);
@@ -592,8 +592,8 @@ describe('ToasterProcessor dispatch paths & process guards', () => {
 
     it('ignores a second init once already ready (posts ready exactly once)', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
 
         const ready = vi
             .mocked(proc.port.postMessage)
@@ -604,7 +604,7 @@ describe('ToasterProcessor dispatch paths & process guards', () => {
     it('reports String(error) when init throws a non-Error value', async () => {
         toasterInitShouldThrow = 'wasm-boom';
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
 
         const errorMsg = vi
             .mocked(proc.port.postMessage)
@@ -615,7 +615,7 @@ describe('ToasterProcessor dispatch paths & process guards', () => {
 
     it('posts an error and stops taking work when a dispatched message throws while already ready', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         kitParamCalls.length = 0;
         vi.mocked(proc.port.postMessage).mockClear();
 
@@ -640,7 +640,7 @@ describe('ToasterProcessor dispatch paths & process guards', () => {
 
     it('suppresses a fill-conditioned scheduledHit when the fill is not active', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         vi.stubGlobal('currentFrame', 1000);
         // fillCondition 'fill' but _fillActive is false ⇒ break, no note_on.
         send(proc, {
@@ -659,7 +659,7 @@ describe('ToasterProcessor dispatch paths & process guards', () => {
 
     it('forwards an unmapped padParam name as-is during a scheduled hit', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         vi.stubGlobal('currentFrame', 1000);
         send(proc, {
             type: 'scheduledHit',
@@ -677,7 +677,7 @@ describe('ToasterProcessor dispatch paths & process guards', () => {
 
     it('does not re-apply an automation value that equals the last applied value', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         // A flat segment: startValue == endValue, so every frame computes the
         // same value. The first apply writes it; the second finds value ===
         // lastValue and skips the set_param_by_id call.

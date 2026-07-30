@@ -1,12 +1,12 @@
 /**
  * BacteriaNode — AudioWorkletNode wrapper for the Bacteria creative multi-effects.
  *
- * Same pattern as GlutenNode: caches WASM binary, resumes AudioContext,
+ * Same pattern as GlutenNode: caches the compiled WASM module, resumes AudioContext,
  * provides setParam/setBypass via MessagePort.
  */
 
 import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
-import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from '#/infra/audioWorklet/workletInitShared';
+import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
 
 import bacteriaProcessorUrl from '../services/bacteriaProcessor.ts?worker&url';
 
@@ -82,7 +82,7 @@ export async function createBacteriaNode(
     }
 
     await raceAbortSignal(ensureWorkletRegistered(ctx, bacteriaProcessorUrl), signal);
-    const wasmBytes = await raceAbortSignal(fetchWasmBinary(wasmUrl ?? DEFAULT_WASM_URL), signal);
+    const wasmModule = await raceAbortSignal(fetchWasmModule(wasmUrl ?? DEFAULT_WASM_URL), signal);
 
     signal?.throwIfAborted();
 
@@ -92,6 +92,7 @@ export async function createBacteriaNode(
         outputChannelCount: [2],
         channelCount: 2,
         channelCountMode: 'explicit',
+        processorOptions: { wasmModule },
     });
 
     let slot: TelemetrySlot | null = telemetryAllocator.allocateSlot();
@@ -116,8 +117,7 @@ export async function createBacteriaNode(
     };
     const readyPromise = handshake.promise;
 
-    const copy = wasmBytes.slice(0);
-    node.port.postMessage({ type: 'init', wasmBytes: copy }, [copy]);
+    node.port.postMessage({ type: 'init' });
 
     return {
         workletNode: node,

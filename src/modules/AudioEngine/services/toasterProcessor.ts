@@ -5,7 +5,7 @@
  * WASM memory management is handled by the generated glue — no manual malloc/free.
  *
  * Messages from main thread:
- *   { type: 'init', wasmBytes: ArrayBuffer }
+ *   { type: 'init' }
  *   { type: 'noteOn', pad, velocity, note, sampleFrame? }
  *   { type: 'noteOff', pad, sampleFrame? }
  *   { type: 'scheduledHit', pad, velocity, note, sampleFrame, padParams, restoreEngineType? }
@@ -19,6 +19,7 @@
 
 import { initSync, ToasterInstance } from '../wasm/daw_dsp.js';
 
+import { resolveProcessorWasmModule } from './resolveProcessorWasmModule';
 import { beginTelemetryPublish, endTelemetryPublish } from './telemetrySeqlock';
 
 /** Pad count the ToasterInstance is created with; the allNotesOff release loop spans 0..PAD_COUNT-1. */
@@ -112,7 +113,7 @@ const KIT_PARAM_MAP: Record<string, string> = {
 };
 
 type ToasterMsg =
-    | { type: 'init'; wasmBytes: BufferSource }
+    | { type: 'init' }
     | { type: 'init-sab'; sab: SharedArrayBuffer; byteOffset: number }
     | { type: 'dispose' }
     | { type: 'noteOn'; pad: number; velocity: number; note?: number; sampleFrame?: number }
@@ -166,8 +167,9 @@ class ToasterProcessor extends AudioWorkletProcessor {
     _lastLifecycleState = -1;
     _disposed = false;
 
-    constructor() {
+    constructor(...args: unknown[]) {
         super();
+        let wasmModule = resolveProcessorWasmModule(args[0]);
         this.port.onmessage = (event: MessageEvent<ToasterMsg>) => {
             const msg = event.data;
             try {
@@ -183,7 +185,11 @@ class ToasterProcessor extends AudioWorkletProcessor {
                     if (this._ready) {
                         return;
                     }
-                    this._initWasm(msg.wasmBytes);
+                    if (!wasmModule) {
+                        throw new TypeError('ToasterProcessor requires a compiled WASM module');
+                    }
+                    this._initWasm(wasmModule);
+                    wasmModule = null;
                 } else if (this._ready && !this._faulted) {
                     this._handleMessage(msg);
                 }
@@ -203,8 +209,8 @@ class ToasterProcessor extends AudioWorkletProcessor {
         };
     }
 
-    _initWasm(wasmBytes: BufferSource): void {
-        const wasmExports = initSync({ module: new WebAssembly.Module(wasmBytes) });
+    _initWasm(wasmModule: WebAssembly.Module): void {
+        const wasmExports = initSync({ module: wasmModule });
         this._memory = wasmExports.memory;
         this._instance = new ToasterInstance(sampleRate, TOASTER_PAD_COUNT);
         this._cacheOutputViews(this._instance.process(0), this._memory.buffer);
