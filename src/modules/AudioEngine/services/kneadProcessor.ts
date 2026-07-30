@@ -91,6 +91,9 @@ class KneadProcessor extends AudioWorkletProcessor {
             const msg = event.data;
             try {
                 if (msg.type === 'init') {
+                    if (this._ready) {
+                        return;
+                    }
                     if (!wasmModule) {
                         throw new TypeError('KneadProcessor requires a compiled WASM module');
                     }
