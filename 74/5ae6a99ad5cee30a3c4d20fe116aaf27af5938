@@ -1,0 +1,83 @@
+docs/architecture/decisions/0022-llm-track-deletion.md
+  s_bc88af7d3b054c::t_0d44542c054432 1-20
+src/modules/AiRuntime/models/PresetActions/Presets/Track.ts
+  s_bc88af7d3b054c::t_c9d239f2ab2637 108-113
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_bc88af7d3b054c::t_8edc21822cd586 190-222
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_91d75b578f65c4::t_cbe2b1d11b0313 179-186,457
+src/modules/AiRuntime/transformers/promptParser/__tests__/parsing.spec.ts
+  s_bc88af7d3b054c::t_9a2605824a49a1 7,65,121-154
+src/modules/AiRuntime/transformers/promptParser/parsing.ts
+  s_bc88af7d3b054c::t_ad39a0e6e48149 93,246-247,417-436
+src/modules/AiRuntime/useCases/__tests__/describePlannedAction.spec.ts
+  s_bc88af7d3b054c::t_caaeca4d75b1e2 1-49
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_bc88af7d3b054c::t_fe015471f86035 263-300,364,369,372,376,381,384,387,391,393
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_bc88af7d3b054c::t_be64181b8a37d1 185-211,219-222,227
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_bc88af7d3b054c::t_df36a3a9f7e370 188-189
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_ac9b259eab20ba::t_979c8fae6cfd0a 224-274
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_ac9b259eab20ba::t_1868c6ff524994 164-192,822-831
+src/modules/AiRuntime/useCases/agentReference/resolveAgentReference.ts
+  s_ac9b259eab20ba::t_aebdb8cd916982 7,107-109,227-232
+src/modules/AiRuntime/useCases/describePlannedAction.ts
+  s_bc88af7d3b054c::t_a2be23ae9bd806 1-19
+src/modules/AiRuntime/useCases/index.ts
+  s_bc88af7d3b054c::t_062319d1c1044f 44
+src/modules/AiRuntime/useCases/planPromptActions.ts
+  s_bc88af7d3b054c::t_8e200f5bda9c68 22
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_bc88af7d3b054c::t_0950a17c696d6b 31,79,111
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_bc88af7d3b054c::t_a6b2fc6013dfd0 136-137
+src/modules/Arrangement/handlers/track/__tests__/handleRemoveTrack.spec.ts
+  s_bc88af7d3b054c::t_0e4d67754a1789 314
+src/modules/Arrangement/handlers/track/handleRemoveTrack.ts
+  s_bc88af7d3b054c::t_b72976a0bad650 154
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_ac9b259eab20ba::t_5374dccbc3eb79 41-48,255-260
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_bc88af7d3b054c::t_43b989534c6526 3-4,10,129-139
+src/modules/Command/useCases/getAppActionExecutionPolicy.ts
+  s_bc88af7d3b054c::t_eee7a01f70f689 59
+src/modules/WorkspaceShell/presentations/hooks/__tests__/usePromptExecution.spec.ts
+  s_bc88af7d3b054c::t_160ed15fbba2c6 9,35-45,111-118,335-362,365,368,374,376,379
+src/modules/WorkspaceShell/presentations/hooks/usePromptExecution.ts
+  s_bc88af7d3b054c::t_ddbdb1e7e1bccd 8-9,26,150,155-161,180,279,282,335,347
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "745ae6a99ad5cee30a3c4d20fe116aaf27af5938",
+  "prompts": {},
+  "sessions": {
+    "s_91d75b578f65c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fb2c2-55f7-7a70-bb8b-1ede92e81276",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
