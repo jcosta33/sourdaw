@@ -15,6 +15,7 @@ export type KneadNodeResult = {
     setParam: (name: string, value: number | number[]) => void;
     setBypass: (bypassed: boolean) => void;
     updateState: (state: Record<string, unknown>) => void;
+    destroy: () => void;
     ready: Promise<Record<string, unknown>>;
 };
 
@@ -67,6 +68,14 @@ export async function createKneadNode(
         },
         updateState: (clips: Record<string, unknown>) => {
             node.port.postMessage({ type: 'update-state', clips });
+        },
+        destroy: () => {
+            try {
+                node.disconnect();
+            } catch {
+                // The node may already be detached during teardown.
+            }
+            node.port.close();
         },
         ready: readyPromise,
     };

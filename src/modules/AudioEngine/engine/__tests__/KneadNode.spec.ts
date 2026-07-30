@@ -116,6 +116,15 @@ describe('createKneadNode', () => {
         expect(postMessage).toHaveBeenCalledWith({ type: 'update-state', clips });
     });
 
+    it('should disconnect the worklet and close its port when destroyed', async () => {
+        const node = await createKneadNode(makeCtx('running'));
+
+        node.destroy();
+
+        expect(node.workletNode.disconnect).toHaveBeenCalledTimes(1);
+        expect(node.workletNode.port.close).toHaveBeenCalledTimes(1);
+    });
+
     it('should expose the underlying worklet node and a ready promise', async () => {
         const ctx = makeCtx('running');
         const node = await createKneadNode(ctx);

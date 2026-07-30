@@ -36,6 +36,7 @@ export type WasmDeviceCreateDeps = {
     deviceType: string;
     transportSAB?: SharedArrayBuffer;
     isCurrent?: () => boolean;
+    signal?: AbortSignal;
     /** Returns false when the owner rejected and destroyed a stale loaded node. */
     onLoaded: (finalDn: BuiltinDeviceNode) => boolean | void;
 };
@@ -55,11 +56,61 @@ function loadingBypassNode(context: AudioContext, deviceId: string, deviceType: 
     return { deviceId, type: deviceType, nodes: [node], inputNode: node, outputNode: node };
 }
 
+type WaitForDeviceReadyInput = {
+    deviceType: string;
+    result: { destroy: () => void; ready: Promise<Record<string, unknown>> };
+    signal?: AbortSignal;
+};
+
+async function waitForDeviceReady(input: WaitForDeviceReadyInput): Promise<Record<string, unknown> | null> {
+    const { deviceType, result, signal } = input;
+    let disposed = false;
+    const disposeResult = (): void => {
+        if (disposed) {
+            return;
+        }
+        disposed = true;
+        try {
+            result.destroy();
+        } catch (cleanupError) {
+            logger.warn(`[WebAudioEngine] ${deviceType} readiness cleanup failed: ${String(cleanupError)}`);
+        }
+    };
+
+    if (signal?.aborted) {
+        disposeResult();
+        return null;
+    }
+
+    let resolveAbort: () => void = () => {};
+    const aborted = new Promise<null>((resolve) => {
+        resolveAbort = () => resolve(null);
+    });
+    const handleAbort = (): void => {
+        disposeResult();
+        resolveAbort();
+    };
+    signal?.addEventListener('abort', handleAbort, { once: true });
+
+    try {
+        const readyData = await Promise.race([result.ready, aborted]);
+        if (signal?.aborted) {
+            return null;
+        }
+        return readyData;
+    } catch (error) {
+        disposeResult();
+        throw error;
+    } finally {
+        signal?.removeEventListener('abort', handleAbort);
+    }
+}
+
 // ── Descriptors ──────────────────────────────────────────────────────────────
 
 const fermenterDescriptor: WasmDeviceDescriptor = {
     matches: isFermenterDevice,
-    create({ context, deviceId, deviceType, onLoaded }) {
+    create({ context, deviceId, deviceType, signal, onLoaded }) {
         const pendingParams: Array<[string, number | number[]]> = [];
         let pendingPatch: Record<string, unknown> | null = null;
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
@@ -80,7 +131,9 @@ const fermenterDescriptor: WasmDeviceDescriptor = {
         };
         const loadPromise = createFermenterNode(context)
             .then(async (result: FermenterNodeResult) => {
-                await result.ready;
+                if ((await waitForDeviceReady({ deviceType, result, signal })) === null) {
+                    return;
+                }
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
@@ -131,7 +184,7 @@ const fermenterDescriptor: WasmDeviceDescriptor = {
 
 const toasterDescriptor: WasmDeviceDescriptor = {
     matches: isToasterDevice,
-    create({ context, deviceId, deviceType, onLoaded }) {
+    create({ context, deviceId, deviceType, signal, onLoaded }) {
         const pendingParams: Array<[string, number]> = [];
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.toasterControls = {
@@ -152,7 +205,9 @@ const toasterDescriptor: WasmDeviceDescriptor = {
         };
         const loadPromise = createToasterNode(context)
             .then(async (result: ToasterNodeResult) => {
-                await result.ready;
+                if ((await waitForDeviceReady({ deviceType, result, signal })) === null) {
+                    return;
+                }
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
@@ -224,7 +279,7 @@ const toasterDescriptor: WasmDeviceDescriptor = {
 
 const levainDescriptor: WasmDeviceDescriptor = {
     matches: isLevainDevice,
-    create({ context, deviceId, deviceType, onLoaded }) {
+    create({ context, deviceId, deviceType, signal, onLoaded }) {
         const pendingParams: Array<[string, number]> = [];
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.levainControls = {
@@ -248,7 +303,9 @@ const levainDescriptor: WasmDeviceDescriptor = {
             getAudioDeviceRuntimeSink().setLevainEngineReady({ deviceId, isReady: false });
         })
             .then(async (result: LevainNodeResult) => {
-                await result.ready;
+                if ((await waitForDeviceReady({ deviceType, result, signal })) === null) {
+                    return;
+                }
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
@@ -314,7 +371,7 @@ const levainDescriptor: WasmDeviceDescriptor = {
 
 const proofChamberDescriptor: WasmDeviceDescriptor = {
     matches: isProofChamberDevice,
-    create({ context, deviceId, deviceType, onLoaded }) {
+    create({ context, deviceId, deviceType, signal, onLoaded }) {
         const pendingParams: Array<[string, number]> = [];
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.nativeDspControls = {
@@ -325,7 +382,10 @@ const proofChamberDescriptor: WasmDeviceDescriptor = {
         };
         const loadPromise = createProofChamberNode(context)
             .then(async (result: ProofChamberNodeResult) => {
-                const readyData = await result.ready;
+                const readyData = await waitForDeviceReady({ deviceType, result, signal });
+                if (!readyData) {
+                    return;
+                }
                 const initialLatency = typeof readyData.latency === 'number' ? readyData.latency : 0;
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
@@ -362,7 +422,7 @@ const proofChamberDescriptor: WasmDeviceDescriptor = {
 
 const glutenDescriptor: WasmDeviceDescriptor = {
     matches: isGlutenDevice,
-    create({ context, deviceId, deviceType, onLoaded }) {
+    create({ context, deviceId, deviceType, signal, onLoaded }) {
         const pendingParams: Array<[string, number]> = [];
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.nativeDspControls = {
@@ -373,7 +433,9 @@ const glutenDescriptor: WasmDeviceDescriptor = {
         };
         const loadPromise = createGlutenNode(context)
             .then(async (result: GlutenNodeResult) => {
-                await result.ready;
+                if ((await waitForDeviceReady({ deviceType, result, signal })) === null) {
+                    return;
+                }
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
@@ -418,7 +480,7 @@ const glutenDescriptor: WasmDeviceDescriptor = {
 
 const bacteriaDescriptor: WasmDeviceDescriptor = {
     matches: isBacteriaDevice,
-    create({ context, deviceId, deviceType, onLoaded }) {
+    create({ context, deviceId, deviceType, isCurrent, signal, onLoaded }) {
         const pendingParams: Array<[string, number]> = [];
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.nativeDspControls = {
@@ -429,7 +491,14 @@ const bacteriaDescriptor: WasmDeviceDescriptor = {
         };
         const loadPromise = createBacteriaNode(context)
             .then(async (result: BacteriaNodeResult) => {
-                const readyData = await result.ready;
+                const readyData = await waitForDeviceReady({ deviceType, result, signal });
+                if (!readyData) {
+                    return;
+                }
+                if (isCurrent?.() === false) {
+                    result.destroy();
+                    return;
+                }
                 const initialLatency = typeof readyData.latency === 'number' ? readyData.latency : 0;
                 reportLatency(deviceId, (initialLatency / context.sampleRate) * 1000);
 
@@ -471,7 +540,7 @@ const bacteriaDescriptor: WasmDeviceDescriptor = {
 
 const grinderDescriptor: WasmDeviceDescriptor = {
     matches: isGrinderDevice,
-    create({ context, deviceId, deviceType, onLoaded }) {
+    create({ context, deviceId, deviceType, isCurrent, signal, onLoaded }) {
         const pendingParams: Array<[string, number]> = [];
         let pendingPatch: Record<string, unknown> | null = null;
         let pendingBypass = false;
@@ -497,7 +566,14 @@ const grinderDescriptor: WasmDeviceDescriptor = {
         };
         const loadPromise = createGrinderNode(context)
             .then(async (result: GrinderNodeResult) => {
-                const readyData = await result.ready;
+                const readyData = await waitForDeviceReady({ deviceType, result, signal });
+                if (!readyData) {
+                    return;
+                }
+                if (isCurrent?.() === false) {
+                    result.destroy();
+                    return;
+                }
                 const initialLatency = typeof readyData.latency === 'number' ? readyData.latency : 0;
                 reportLatency(deviceId, (initialLatency / context.sampleRate) * 1000);
 
@@ -557,7 +633,7 @@ const grinderDescriptor: WasmDeviceDescriptor = {
 
 const proofDescriptor: WasmDeviceDescriptor = {
     matches: isProofDevice,
-    create({ context, deviceId, deviceType, isCurrent, onLoaded }) {
+    create({ context, deviceId, deviceType, isCurrent, signal, onLoaded }) {
         const pendingParams: Array<[string, number]> = [];
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         const loadingControls: {
@@ -573,7 +649,10 @@ const proofDescriptor: WasmDeviceDescriptor = {
         placeholder.controller = loadingControls;
         const loadPromise = createProofNode(context)
             .then(async (result: ProofNodeResult) => {
-                const readyData = await result.ready;
+                const readyData = await waitForDeviceReady({ deviceType, result, signal });
+                if (!readyData) {
+                    return;
+                }
                 if (isCurrent?.() === false) {
                     result.destroy();
                     return;
@@ -652,12 +731,14 @@ const proofDescriptor: WasmDeviceDescriptor = {
 
 const scoringDescriptor: WasmDeviceDescriptor = {
     matches: isScoringDevice,
-    create({ context, deviceId, deviceType, onLoaded }) {
+    create({ context, deviceId, deviceType, signal, onLoaded }) {
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.nativeDspControls = { setParam: () => {}, setBypass: () => {} };
         const loadPromise = createScoringNode(context)
             .then(async (result: ScoringNodeResult) => {
-                await result.ready;
+                if ((await waitForDeviceReady({ deviceType, result, signal })) === null) {
+                    return;
+                }
                 result.onTelemetry((data) => {
                     getAudioDeviceRuntimeSink().updateTunerTelemetry(deviceId, {
                         frequency: data.frequency,
@@ -691,7 +772,7 @@ const scoringDescriptor: WasmDeviceDescriptor = {
 
 const grandBouleDescriptor: WasmDeviceDescriptor = {
     matches: isGrandBouleDevice,
-    create({ context, deviceId, deviceType, onLoaded }) {
+    create({ context, deviceId, deviceType, signal, onLoaded }) {
         const pendingParams: Array<[string, number]> = [];
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.grandBouleControls = {
@@ -714,7 +795,9 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
         };
         const loadPromise = createGrandBouleNode(context)
             .then(async (result: GrandBouleNodeResult) => {
-                await result.ready;
+                if ((await waitForDeviceReady({ deviceType, result, signal })) === null) {
+                    return;
+                }
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
@@ -772,7 +855,7 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
 
 const faustDescriptor: WasmDeviceDescriptor = {
     matches: isFaustModule,
-    create({ context, deviceId, deviceType, onLoaded }) {
+    create({ context, deviceId, deviceType, isCurrent, signal, onLoaded }) {
         type PendingParam = { kind: 'param'; name: string; value: number; time?: number };
         type PendingKey = {
             kind: 'keyOn' | 'keyOff';
@@ -798,6 +881,10 @@ const faustDescriptor: WasmDeviceDescriptor = {
                 }
                 const controls = result.wamControls;
                 if (!controls) {
+                    return;
+                }
+                if (signal?.aborted || isCurrent?.() === false) {
+                    controls.destroy?.();
                     return;
                 }
                 for (const event of pending) {
@@ -849,7 +936,7 @@ const faustDescriptor: WasmDeviceDescriptor = {
 
 const kneadDescriptor: WasmDeviceDescriptor = {
     matches: isKneadDevice,
-    create({ context, deviceId, deviceType, transportSAB, onLoaded }) {
+    create({ context, deviceId, deviceType, transportSAB, signal, onLoaded }) {
         const pendingParams: Array<[string, number | number[]]> = [];
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.kneadControls = {
@@ -863,7 +950,9 @@ const kneadDescriptor: WasmDeviceDescriptor = {
         };
         const loadPromise = createKneadNode(context, transportSAB)
             .then(async (result: KneadNodeResult) => {
-                await result.ready;
+                if ((await waitForDeviceReady({ deviceType, result, signal })) === null) {
+                    return;
+                }
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
@@ -873,34 +962,20 @@ const kneadDescriptor: WasmDeviceDescriptor = {
                     nodes: [result.workletNode],
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
+                    dispose: result.destroy,
                     controller: {
                         ready: true,
                         updateState: result.updateState,
                         setParam: result.setParam,
                         setBypass: result.setBypass,
-                        destroy: () => {
-                            try {
-                                result.workletNode.disconnect();
-                            } catch {
-                                // Intentionally empty: the worklet node may already
-                                // be detached; the port is closed regardless below.
-                            }
-                            result.workletNode.port.close();
-                        },
+                        destroy: result.destroy,
                     },
                     kneadControls: {
                         ready: true,
                         updateState: result.updateState,
                         setParam: result.setParam,
                         setBypass: result.setBypass,
-                        destroy: () => {
-                            try {
-                                result.workletNode.disconnect();
-                            } catch {
-                                // ignore
-                            }
-                            result.workletNode.port.close();
-                        },
+                        destroy: result.destroy,
                     },
                 });
                 return;
