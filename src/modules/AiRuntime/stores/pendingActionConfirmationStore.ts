@@ -23,6 +23,7 @@ type PendingActionConfirmationBase = {
 
 export type PendingAppActionConfirmation = PendingActionConfirmationBase & {
     kind: 'app_actions';
+    projectRevision: string;
     actions: RuntimeAction[];
     executionMode: 'atomic' | undefined;
 };
@@ -53,6 +54,7 @@ type ProposePendingActionConfirmationInput = {
     actions: RuntimeAction[];
     actionLabels: string[];
     executionMode?: 'atomic';
+    projectRevision: string;
 };
 
 export function proposePendingActionConfirmation(
@@ -76,6 +78,7 @@ export function proposePendingActionConfirmation(
         error: null,
         createdAt: Date.now(),
         resolvedAt: null,
+        projectRevision: input.projectRevision,
     };
 
     pendingActionConfirmationStore.set({

@@ -1,0 +1,119 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
+import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
+import { clearUndoHistory } from '#/modules/Command/useCases';
+import {
+    captureProjectRevision,
+    createCrdtDoc,
+    mutateCrdtDoc,
+    registerCrdtStorageRuntime,
+    resetCrdtProjectAuthority,
+    transactSnapshot,
+} from '#/modules/CrdtDocument/useCases';
+import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
+
+import { aiActionHistoryStore, clearAiHistory } from '../../stores/aiActionHistoryStore';
+import { chatStore } from '../../stores/chatStore';
+import {
+    clearPendingActionConfirmations,
+    getPendingActionConfirmation,
+    proposePendingActionConfirmation,
+} from '../../stores/pendingActionConfirmationStore';
+import { confirmPendingChatActions } from '../confirmPendingChatActions';
+
+type SetTempoAction = Extract<AppAction, { type: 'setTempo' }>;
+
+describe('confirmPendingChatActions transaction admission', () => {
+    beforeEach(() => {
+        clearHandlerRegistry();
+        clearUndoHistory();
+        clearAiHistory();
+        clearPendingActionConfirmations();
+        resetCrdtProjectAuthority('AI confirmation admission');
+        createCrdtDoc('independent');
+        registerCrdtStorageRuntime();
+        chatStore.set({
+            messages: [
+                {
+                    id: 'assistant-1',
+                    role: 'assistant',
+                    content: 'Awaiting confirmation',
+                    timestamp: 1,
+                },
+            ],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'prompt',
+        });
+    });
+
+    afterEach(() => {
+        flushAutomergeStorageWrites();
+        configureAutomergeStoragePort(null);
+        clearHandlerRegistry();
+        clearUndoHistory();
+        clearAiHistory();
+        clearPendingActionConfirmations();
+    });
+
+    it('invalidates a confirmed action when the project changes while batch admission is waiting', async () => {
+        const execute = vi.fn<ActionHandler<SetTempoAction>['execute']>();
+        registerHandlerMap({
+            setTempo: {
+                execute,
+                describe: () => ({
+                    label: 'Set tempo',
+                    inverseAction: { type: 'setTempo', payload: { bpm: 120 } },
+                }),
+                undoable: true,
+            },
+        });
+        proposePendingActionConfirmation({
+            id: 'confirmation-1',
+            prompt: 'set tempo to 128',
+            assistantMessageId: 'assistant-1',
+            actions: [{ type: 'setTempo', payload: { bpm: 128 } }],
+            actionLabels: ['Set tempo'],
+            executionMode: 'atomic',
+            projectRevision: captureProjectRevision(),
+        });
+
+        let releaseSnapshotTransaction!: () => void;
+        let markSnapshotTransactionStarted!: () => void;
+        const snapshotTransactionStarted = new Promise<void>((resolve) => {
+            markSnapshotTransactionStarted = resolve;
+        });
+        const release = new Promise<void>((resolve) => {
+            releaseSnapshotTransaction = resolve;
+        });
+        const blockingTransaction = transactSnapshot(async () => {
+            markSnapshotTransactionStarted();
+            await release;
+        });
+        await snapshotTransactionStarted;
+
+        const confirmation = confirmPendingChatActions({ confirmationId: 'confirmation-1' });
+        await vi.waitFor(() => expect(getPendingActionConfirmation('confirmation-1')?.status).toBe('accepted'));
+        mutateCrdtDoc<Record<string, unknown>>({
+            id: 'independent',
+            changeFn: (doc) => {
+                doc.changedDuringAdmission = true;
+            },
+        });
+        releaseSnapshotTransaction();
+
+        await blockingTransaction;
+        await expect(confirmation).resolves.toMatchObject({ status: 'invalidated' });
+        expect(execute).not.toHaveBeenCalled();
+        expect(undoStore.value?.past).toEqual([]);
+        expect(aiActionHistoryStore.value?.groups).toEqual([]);
+        expect(chatStore.value?.messages[0]).toMatchObject({
+            pendingActionConfirmationStatus: 'invalidated',
+            content: expect.stringContaining('project changed'),
+        });
+    });
+});

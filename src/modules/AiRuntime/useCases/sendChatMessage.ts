@@ -1,7 +1,9 @@
 import { isAppError } from '#/infra/errors/isAppError';
 import { logger } from '#/infra/logger/appLogger';
 import { describeAction, executeAppActionBatch, generateGroupId } from '#/modules/Command/useCases';
+import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
+import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
 import { createAiRuntimeError } from '../errors/AiRuntimeError';
 import { type ChatMessage } from '../models/Chat';
@@ -76,6 +78,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
         setActiveAborter(aborter);
 
         try {
+            const projectRevision = captureProjectRevision();
             const context = getProjectContext();
             const result = await parsePromptToActions(userText, context, aborter.signal);
 
@@ -104,6 +107,17 @@ export async function sendChatMessage(userText: string): Promise<void> {
                     isDsoAction: true,
                 });
 
+                if (captureProjectRevision() !== projectRevision) {
+                    const error = new AiProposalInvalidatedError();
+                    updateChatMessage(assistantMsgId, {
+                        isStreaming: false,
+                        error: error.message,
+                        content:
+                            'The project changed while this command was being planned. Review the current project and submit it again.',
+                    });
+                    return;
+                }
+
                 if (result.requiresConfirmation) {
                     const confirmationId = `prompt-confirmation-${crypto.randomUUID()}`;
                     const actionLabels = result.actions.map((action) => describeAction(action));
@@ -114,6 +128,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
                         actions: result.actions,
                         actionLabels,
                         executionMode: result.executionMode,
+                        projectRevision,
                     });
 
                     updateChatMessage(assistantMsgId, {

@@ -14,13 +14,20 @@ import { confirmPendingChatActions } from '../confirmPendingChatActions';
 type ExecuteAppActionBatch = (typeof import('#/modules/Command/useCases'))['executeAppActionBatch'];
 type AppAction = Parameters<ExecuteAppActionBatch>[0][number];
 
+const chatGenerationState = vi.hoisted(() => ({ value: false }));
+
 const mocks = vi.hoisted(() => ({
+    projectRevision: { value: 'revision-1' },
     executeAppAction: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     executeAppActionBatch: vi.fn<ExecuteAppActionBatch>(),
     describeAction: vi.fn((_action: AppAction) => 'Remove track'),
     generateGroupId: vi.fn(() => ({ groupId: 'group-1', groupLabel: 'delete drums' })),
     pushAiActionGroup: vi.fn(),
     updateChatMessage: vi.fn(),
+    setActiveAborter: vi.fn<(aborter: AbortController | null) => void>(),
+    setChatGenerating: vi.fn((isGenerating: boolean) => {
+        chatGenerationState.value = isGenerating;
+    }),
     notifyAiChange: vi.fn(),
     commitDsoEditPlan: vi.fn(() => Promise.resolve({ summaries: ['Removed track'], failures: [] })),
     trackStoreState: {
@@ -36,6 +43,10 @@ const mocks = vi.hoisted(() => ({
             selectedTrackId: 'track-1',
         },
     },
+}));
+
+vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectRevision: () => mocks.projectRevision.value,
 }));
 
 vi.mock('#/modules/Command/useCases', async (import_original) => ({
@@ -55,6 +66,13 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 }));
 
 vi.mock('../../stores/chatStore', () => ({
+    chatStore: {
+        get value() {
+            return { isGenerating: chatGenerationState.value };
+        },
+    },
+    setActiveAborter: mocks.setActiveAborter,
+    setChatGenerating: mocks.setChatGenerating,
     updateChatMessage: mocks.updateChatMessage,
 }));
 
@@ -96,6 +114,8 @@ describe('pending chat action confirmation', () => {
         mocks.describeAction.mockReturnValue('Remove track');
         mocks.generateGroupId.mockReturnValue({ groupId: 'group-1', groupLabel: 'delete drums' });
         mocks.commitDsoEditPlan.mockResolvedValue({ summaries: ['Removed track'], failures: [] });
+        mocks.projectRevision.value = 'revision-1';
+        chatGenerationState.value = false;
         mocks.trackStoreState.value = {
             tracks: [
                 {
@@ -116,17 +136,20 @@ describe('pending chat action confirmation', () => {
             assistantMessageId: 'assistant-1',
             actions: [pendingAction],
             actionLabels: ['Remove track'],
+            projectRevision: 'revision-1',
         });
 
         const result = await confirmPendingChatActions({ confirmationId: 'confirm-1' });
 
         expect(result).toEqual({ status: 'executed' });
-        expect(mocks.executeAppActionBatch).toHaveBeenCalledWith([pendingAction], {
+        expect(mocks.executeAppActionBatch.mock.calls[0]?.[0]).toEqual([pendingAction]);
+        expect(mocks.executeAppActionBatch.mock.calls[0]?.[1]).toMatchObject({
             groupId: 'group-1',
             groupLabel: 'delete drums',
             source: 'prompt',
             requireCompensation: false,
         });
+        expect(typeof mocks.executeAppActionBatch.mock.calls[0]?.[1]?.shouldExecute).toBe('function');
         expect(mocks.pushAiActionGroup).toHaveBeenCalledWith({
             id: 'group-1',
             prompt: 'delete drums',
@@ -232,6 +255,164 @@ describe('pending chat action confirmation', () => {
         );
     });
 
+    it('invalidates an app-action proposal when the project revision changed before confirmation', async () => {
+        proposePendingActionConfirmation({
+            id: 'confirm-stale',
+            prompt: 'delete drums',
+            assistantMessageId: 'assistant-1',
+            actions: [pendingAction],
+            actionLabels: ['Remove track'],
+            projectRevision: 'revision-1',
+        });
+        mocks.projectRevision.value = 'revision-2';
+
+        const result = await confirmPendingChatActions({ confirmationId: 'confirm-stale' });
+
+        expect(result).toEqual({
+            status: 'invalidated',
+            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+        });
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
+        expect(mocks.commitDsoEditPlan).not.toHaveBeenCalled();
+        expect(getPendingActionConfirmation('confirm-stale')?.status).toBe('invalidated');
+        expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+            'assistant-1',
+            expect.objectContaining({
+                pendingActionConfirmationStatus: 'invalidated',
+                content: expect.stringContaining('project changed'),
+            })
+        );
+    });
+
+    it('invalidates an app-action proposal when its revision changes during batch admission', async () => {
+        mocks.executeAppActionBatch.mockImplementationOnce((_actions, options) => {
+            mocks.projectRevision.value = 'revision-2';
+            if (!options?.shouldExecute?.()) {
+                return Promise.resolve({
+                    status: 'cancelled',
+                    reason: 'Batch execution authority was revoked',
+                    actions: [],
+                });
+            }
+            return Promise.resolve({ status: 'no-op', actions: [] });
+        });
+        proposePendingActionConfirmation({
+            id: 'confirm-racing',
+            prompt: 'delete drums',
+            assistantMessageId: 'assistant-1',
+            actions: [pendingAction],
+            actionLabels: ['Remove track'],
+            projectRevision: 'revision-1',
+        });
+
+        const result = await confirmPendingChatActions({ confirmationId: 'confirm-racing' });
+
+        expect(result.status).toBe('invalidated');
+        expect(getPendingActionConfirmation('confirm-racing')?.status).toBe('invalidated');
+        expect(mocks.pushAiActionGroup).not.toHaveBeenCalled();
+    });
+
+    it('lets Stop cancel an accepted app-action confirmation before commit', async () => {
+        mocks.executeAppActionBatch.mockImplementationOnce((_actions, options) => {
+            const activeAborter = mocks.setActiveAborter.mock.calls.find(
+                (call) => call[0] instanceof AbortController
+            )?.[0];
+            if (!activeAborter) {
+                throw new Error('Expected confirmed execution to expose Stop authority');
+            }
+            activeAborter.abort();
+            expect(options?.shouldExecute?.()).toBe(false);
+            return Promise.resolve({
+                status: 'cancelled',
+                reason: 'Batch execution authority was revoked',
+                actions: [],
+            });
+        });
+        proposePendingActionConfirmation({
+            id: 'confirm-stop',
+            prompt: 'delete drums',
+            assistantMessageId: 'assistant-1',
+            actions: [pendingAction],
+            actionLabels: ['Remove track'],
+            executionMode: 'atomic',
+            projectRevision: 'revision-1',
+        });
+
+        const result = await confirmPendingChatActions({ confirmationId: 'confirm-stop' });
+
+        expect(result).toEqual({ status: 'cancelled' });
+        expect(getPendingActionConfirmation('confirm-stop')?.status).toBe('cancelled');
+        expect(mocks.setChatGenerating.mock.calls).toEqual([[true], [false]]);
+        expect(mocks.setActiveAborter.mock.calls[0]?.[0]).toBeInstanceOf(AbortController);
+        expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
+        expect(mocks.pushAiActionGroup).not.toHaveBeenCalled();
+        expect(mocks.notifyAiChange).not.toHaveBeenCalled();
+        expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+            'assistant-1',
+            expect.objectContaining({
+                pendingActionConfirmationStatus: 'cancelled',
+                error: undefined,
+                content: 'Command cancelled before it committed. No project changes were applied.',
+            })
+        );
+    });
+
+    it('keeps a second app-action confirmation proposed while another AI execution owns Stop', async () => {
+        const firstBatchControl: { release: () => void } = {
+            release: () => {
+                throw new Error('Expected the first confirmed batch to be pending');
+            },
+        };
+        mocks.executeAppActionBatch.mockImplementationOnce(
+            (actions) =>
+                new Promise((resolve) => {
+                    firstBatchControl.release = () => {
+                        resolve({
+                            status: 'committed',
+                            actions: actions.map((action) => ({ action, label: mocks.describeAction(action) })),
+                        });
+                    };
+                })
+        );
+        proposePendingActionConfirmation({
+            id: 'confirm-first',
+            prompt: 'delete drums',
+            assistantMessageId: 'assistant-first',
+            actions: [pendingAction],
+            actionLabels: ['Remove track'],
+            projectRevision: 'revision-1',
+        });
+        proposePendingActionConfirmation({
+            id: 'confirm-second',
+            prompt: 'delete chorus',
+            assistantMessageId: 'assistant-second',
+            actions: [secondPendingAction],
+            actionLabels: ['Remove clip'],
+            projectRevision: 'revision-1',
+        });
+
+        const firstConfirmation = confirmPendingChatActions({ confirmationId: 'confirm-first' });
+        const firstAborter = mocks.setActiveAborter.mock.calls[0]?.[0];
+        const secondResult = await confirmPendingChatActions({ confirmationId: 'confirm-second' });
+
+        expect(firstAborter).toBeInstanceOf(AbortController);
+        expect(secondResult).toEqual({ status: 'busy' });
+        expect(getPendingActionConfirmation('confirm-second')?.status).toBe('proposed');
+        expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+            'assistant-second',
+            expect.objectContaining({
+                pendingActionConfirmationStatus: 'proposed',
+                content: expect.stringMatching(/still running.*remains pending/is),
+            })
+        );
+        expect(mocks.executeAppActionBatch).toHaveBeenCalledTimes(1);
+        expect(mocks.setActiveAborter).toHaveBeenCalledTimes(1);
+        firstBatchControl.release();
+        await expect(firstConfirmation).resolves.toEqual({ status: 'executed' });
+        expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
+        expect(chatGenerationState.value).toBe(false);
+    });
+
     it('should cancel proposed actions without executing them', () => {
         proposePendingActionConfirmation({
             id: 'confirm-1',
@@ -239,6 +420,7 @@ describe('pending chat action confirmation', () => {
             assistantMessageId: 'assistant-1',
             actions: [pendingAction],
             actionLabels: ['Remove track'],
+            projectRevision: 'revision-1',
         });
 
         const result = cancelPendingChatActions({ confirmationId: 'confirm-1' });
@@ -272,6 +454,7 @@ describe('pending chat action confirmation', () => {
             actions: [pendingAction, secondPendingAction],
             actionLabels: ['Remove track', 'Remove clip'],
             executionMode: 'atomic',
+            projectRevision: 'revision-1',
         });
 
         const result = await confirmPendingChatActions({ confirmationId: 'confirm-1' });
@@ -306,6 +489,7 @@ describe('pending chat action confirmation', () => {
             actions: [pendingAction, secondPendingAction],
             actionLabels: ['Remove track', 'Remove clip'],
             executionMode: 'atomic',
+            projectRevision: 'revision-1',
         });
 
         const result = await confirmPendingChatActions({ confirmationId: 'confirm-1' });
@@ -337,6 +521,7 @@ describe('pending chat action confirmation', () => {
             assistantMessageId: 'assistant-1',
             actions: [pendingAction],
             actionLabels: ['Remove track'],
+            projectRevision: 'revision-1',
         });
 
         const result = await confirmPendingChatActions({ confirmationId: 'confirm-1' });
@@ -374,6 +559,7 @@ describe('pending chat action confirmation', () => {
             assistantMessageId: 'assistant-1',
             actions: [pendingAction],
             actionLabels: ['Remove track'],
+            projectRevision: 'revision-1',
         });
 
         const result = await confirmPendingChatActions({ confirmationId: 'confirm-1' });
@@ -405,6 +591,7 @@ describe('pending chat action confirmation', () => {
             actions: [pendingAction, secondPendingAction],
             actionLabels: ['Remove track', 'Remove clip'],
             executionMode: 'atomic',
+            projectRevision: 'revision-1',
         });
 
         const result = await confirmPendingChatActions({ confirmationId: 'confirm-1' });
@@ -414,12 +601,14 @@ describe('pending chat action confirmation', () => {
             { actionType: 'removeTrack', label: 'Remove track' },
             { actionType: 'removeClip', label: 'Remove clip' },
         ]);
-        expect(mocks.executeAppActionBatch).toHaveBeenCalledWith([pendingAction, secondPendingAction], {
+        expect(mocks.executeAppActionBatch.mock.calls[0]?.[0]).toEqual([pendingAction, secondPendingAction]);
+        expect(mocks.executeAppActionBatch.mock.calls[0]?.[1]).toMatchObject({
             groupId: 'group-1',
             groupLabel: 'delete drums',
             source: 'prompt',
             requireCompensation: true,
         });
+        expect(typeof mocks.executeAppActionBatch.mock.calls[0]?.[1]?.shouldExecute).toBe('function');
         expect(mocks.pushAiActionGroup).toHaveBeenCalledWith(
             expect.objectContaining({
                 actions: [
