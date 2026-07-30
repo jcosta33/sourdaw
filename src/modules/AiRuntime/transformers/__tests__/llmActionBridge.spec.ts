@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { type ProjectContext } from '../../models/ProjectContext';
-import { bridgeGroundedLlmToolCalls } from '../../useCases/agentReference/bridgeGroundedLlmToolCalls';
-import { buildLlmActionSystemPrompt, buildLlmActionUserMessage } from '../llmActionBridge';
+import { bridgeLlmToolCalls, buildLlmActionSystemPrompt, buildLlmActionUserMessage } from '../llmActionBridge';
 
 const projectContext: ProjectContext = {
     tempo: 120,
@@ -109,14 +108,12 @@ const projectContext: ProjectContext = {
     playheadPosition: 0,
 };
 
-const groundedPrompt = 'track-vocals device-eq frequency';
-type BridgeInput = Omit<Parameters<typeof bridgeGroundedLlmToolCalls>[0], 'context' | 'prompt'> & {
+type BridgeInput = Omit<Parameters<typeof bridgeLlmToolCalls>[0], 'context'> & {
     context?: ProjectContext;
-    prompt?: string;
 };
 
-function bridge({ calls, context = projectContext, prompt = groundedPrompt }: BridgeInput) {
-    return bridgeGroundedLlmToolCalls({ calls, context, prompt });
+function bridge({ calls, context = projectContext }: BridgeInput) {
+    return bridgeLlmToolCalls({ calls, context });
 }
 
 describe('bridgeLlmToolCalls', () => {
@@ -130,7 +127,6 @@ describe('bridgeLlmToolCalls', () => {
                 { name: 'setTrackGain', arguments: { trackId: 'track-vocals', gain: 0.65 } },
                 { name: 'setTrackPan', arguments: { trackId: 'bus-reverb', pan: -20 } },
             ],
-            prompt: 'mute track-vocals and pan bus-reverb',
         });
 
         expect(result.actions).toEqual([
@@ -187,7 +183,6 @@ describe('bridgeLlmToolCalls', () => {
                 },
             ],
             context: projectContext,
-            prompt: 'set device-eq frequency and send track-vocals to bus-reverb',
         });
 
         expect(result).toEqual({
@@ -231,12 +226,10 @@ describe('bridgeLlmToolCalls', () => {
                 { name: 'removeSend', arguments: { trackId: 'track-vocals', busId: 'bus-reverb' } },
             ],
             context: projectContext,
-            prompt: 'route track-vocals to bus-reverb and remove that send',
         });
         const creation = bridge({
             calls: [{ name: 'addSend', arguments: { trackId: 'track-vocals', busId: 'bus-reverb', level: 0.35 } }],
             context: withoutSend,
-            prompt: 'send track-vocals to bus-reverb',
         });
 
         expect(topology).toEqual({
@@ -280,14 +273,13 @@ describe('bridgeLlmToolCalls', () => {
     it('rejects invented, ambiguous, and state-incompatible routing changes', () => {
         const result = bridge({
             calls: [
-                { name: 'setTrackOutput', arguments: { trackId: 'track-vocals', outputId: 'master' } },
+                { name: 'setTrackOutput', arguments: { trackId: 'track-vocals', outputId: 'missing' } },
                 { name: 'setTrackOutput', arguments: { trackId: 'bus-reverb', outputId: 'bus-reverb' } },
                 { name: 'addSend', arguments: { trackId: 'track-vocals', busId: 'bus-reverb', level: 0.5 } },
                 { name: 'removeSend', arguments: { trackId: 'bus-reverb', busId: 'bus-reverb' } },
                 { name: 'setSend', arguments: { trackId: 'bus-reverb', busId: 'bus-reverb', level: 0.5 } },
             ],
             context: projectContext,
-            prompt: 'master track-vocals, then route track-vocals to bus-reverb',
         });
 
         expect(result.actions).toEqual([]);
@@ -318,7 +310,6 @@ describe('bridgeLlmToolCalls', () => {
                 },
             ],
             context: projectContext,
-            prompt: 'route track-vocals to bus-reverb',
         });
 
         expect(result.actions).toEqual([
@@ -438,7 +429,6 @@ describe('bridgeLlmToolCalls', () => {
                 },
             ],
             context: projectContext,
-            prompt: 'set device-eq frequency and send track-vocals to bus-reverb',
         });
 
         expect(result.actions).toEqual([]);
@@ -464,7 +454,6 @@ describe('bridgeLlmToolCalls', () => {
                         arguments: { deviceId: 'device-eq', paramId, value: validValue },
                     },
                 ],
-                prompt: `set device-eq ${paramId}`,
             })
         );
         const invalid = cases.map(({ paramId, invalidValue }) =>
@@ -475,7 +464,6 @@ describe('bridgeLlmToolCalls', () => {
                         arguments: { deviceId: 'device-eq', paramId, value: invalidValue },
                     },
                 ],
-                prompt: `set device-eq ${paramId}`,
             })
         );
 
@@ -545,57 +533,6 @@ describe('bridgeLlmToolCalls', () => {
                 reason: 'Provider batch writes the same target field more than once',
             },
         ]);
-    });
-
-    it('rejects a provider-selected ID when the requested display name is ambiguous', () => {
-        const vocals = projectContext.tracks[0];
-        if (!vocals) {
-            throw new Error('Expected the project fixture to contain a track');
-        }
-        const ambiguousContext: ProjectContext = {
-            ...projectContext,
-            tracks: [...projectContext.tracks, { ...vocals, id: 'track-vocals-double', devices: [], sends: [] }],
-        };
-
-        const result = bridge({
-            calls: [{ name: 'muteTrack', arguments: { trackId: 'track-vocals', muted: true } }],
-            context: ambiguousContext,
-            prompt: 'mute Vocals',
-        });
-
-        expect(result.actions).toEqual([]);
-        expect(result.rejections[0]?.reason).toContain('ambiguous');
-    });
-
-    it('requires the provider ID to match the uniquely grounded project reference', () => {
-        const matched = bridge({
-            calls: [{ name: 'muteTrack', arguments: { trackId: 'track-vocals', muted: true } }],
-            prompt: 'mute Vocals',
-        });
-        const mismatched = bridge({
-            calls: [{ name: 'muteTrack', arguments: { trackId: 'bus-reverb', muted: true } }],
-            prompt: 'mute Vocals',
-        });
-        const ungrounded = bridge({
-            calls: [{ name: 'muteTrack', arguments: { trackId: 'track-vocals', muted: true } }],
-            prompt: 'make it quieter',
-        });
-
-        expect(matched.actions).toEqual([{ type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true } }]);
-        expect(mismatched.actions).toEqual([]);
-        expect(mismatched.rejections[0]?.reason).toContain('does not match');
-        expect(ungrounded.actions).toEqual([]);
-        expect(ungrounded.rejections[0]?.reason).toContain('not grounded');
-    });
-
-    it('grounds explicit selected-track language against the frozen project context', () => {
-        const result = bridge({
-            calls: [{ name: 'setTrackGain', arguments: { trackId: 'track-vocals', gain: 0.6 } }],
-            prompt: 'turn down the selected track',
-        });
-
-        expect(result.actions).toEqual([{ type: 'setTrackGain', payload: { trackId: 'track-vocals', gain: 0.6 } }]);
-        expect(result.rejections).toEqual([]);
     });
 
     it('serializes only command-relevant project state and labels it as untrusted data', () => {

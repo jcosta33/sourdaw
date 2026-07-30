@@ -85,7 +85,10 @@ function getReferenceCandidates(input: ResolveAgentReferenceInput): ReferenceCan
 
     if (input.capability === 'device') {
         let tracks = input.context.tracks;
-        if (hasExplicitTrackSelection(input.prompt) && input.context.selectedTrackId !== null) {
+        if (hasExplicitTrackSelection(input.prompt)) {
+            if (input.context.selectedTrackId === null) {
+                return [];
+            }
             tracks = tracks.filter((track) => track.id === input.context.selectedTrackId);
         }
         return tracks.flatMap((track) => track.devices.map((device) => ({ id: device.id, name: device.type })));
