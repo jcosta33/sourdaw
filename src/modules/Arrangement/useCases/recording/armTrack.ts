@@ -7,6 +7,7 @@ import { getTrackEligibility } from '../../stores/trackEligibility';
 type ArmTrackOptions = {
     deferRuntimeEffect?: boolean;
     midiInputTrackId?: string | null;
+    expectedMidiInputTrackId?: string | null;
 };
 
 type DeferredArmTrackRuntimeEffect = {
@@ -14,11 +15,13 @@ type DeferredArmTrackRuntimeEffect = {
     afterAmbiguousCommit: () => void;
 };
 
+type DeferredArmTrackOptions = ArmTrackOptions & { deferRuntimeEffect: true };
+
 export function armTrack(trackId: string, armed: boolean): boolean;
 export function armTrack(
     trackId: string,
     armed: boolean,
-    options: { deferRuntimeEffect: true; midiInputTrackId?: string | null }
+    options: DeferredArmTrackOptions
 ): DeferredArmTrackRuntimeEffect | null;
 export function armTrack(
     trackId: string,
@@ -26,24 +29,35 @@ export function armTrack(
     options: ArmTrackOptions = {}
 ): boolean | DeferredArmTrackRuntimeEffect | null {
     const track = getTrackById(trackId);
-    if (!track || track.armed === armed) {
+    if (!track) {
+        return false;
+    }
+
+    const previousMidiInputTrackId = getMidiInputTrack();
+    const expectedRouteMatches =
+        options.expectedMidiInputTrackId === undefined || previousMidiInputTrackId === options.expectedMidiInputTrackId;
+    let desiredMidiInputTrackId = previousMidiInputTrackId;
+    if (expectedRouteMatches) {
+        if (options.midiInputTrackId !== undefined) {
+            desiredMidiInputTrackId = options.midiInputTrackId;
+        } else if (armed && track.kind === 'midi') {
+            desiredMidiInputTrackId = trackId;
+        } else if (!armed && previousMidiInputTrackId === trackId) {
+            desiredMidiInputTrackId = null;
+        }
+    }
+
+    const projectStateChanged = track.armed !== armed;
+    const runtimeStateChanged = desiredMidiInputTrackId !== previousMidiInputTrackId;
+    if (!projectStateChanged && !runtimeStateChanged) {
         return false;
     }
     if (armed && !getTrackEligibility(track.kind).acceptsArm) {
         return false;
     }
-
-    const previousMidiInputTrackId = getMidiInputTrack();
-    let desiredMidiInputTrackId = previousMidiInputTrackId;
-    if (options.midiInputTrackId !== undefined) {
-        desiredMidiInputTrackId = options.midiInputTrackId;
-    } else if (armed && track.kind === 'midi') {
-        desiredMidiInputTrackId = trackId;
-    } else if (!armed && previousMidiInputTrackId === trackId) {
-        desiredMidiInputTrackId = null;
+    if (projectStateChanged) {
+        updateTrack(trackId, (candidate) => ({ ...candidate, armed }));
     }
-
-    updateTrack(trackId, (candidate) => ({ ...candidate, armed }));
 
     function applyMidiInputTrack(nextTrackId: string | null): void {
         if (getMidiInputTrack() !== nextTrackId) {

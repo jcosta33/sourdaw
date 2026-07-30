@@ -5,7 +5,7 @@ import { handleArmTrack } from '../armTrack';
 const mocks = vi.hoisted(() => ({
     armTrack: vi.fn(),
     getMidiInputTrack: vi.fn<() => string | null>(),
-    getTrackStoreState: vi.fn<() => { tracks: { id: string; armed: boolean }[] } | null>(),
+    getTrackStoreState: vi.fn<() => { tracks: { id: string; armed: boolean; kind: 'audio' | 'midi' }[] } | null>(),
 }));
 
 vi.mock('../../../useCases/recording/armTrack', () => ({
@@ -40,6 +40,7 @@ describe('handleArmTrack', () => {
         expect(mocks.armTrack).toHaveBeenCalledWith('t1', true, {
             deferRuntimeEffect: true,
             midiInputTrackId: undefined,
+            expectedMidiInputTrackId: undefined,
         });
         expect(result).toEqual({ status: 'written', afterCommit, afterAmbiguousCommit });
     });
@@ -51,12 +52,18 @@ describe('handleArmTrack', () => {
 
         void handleArmTrack.execute({
             type: 'armTrack',
-            payload: { trackId: 't1', armed: false, midiInputTrackId: 't0' },
+            payload: {
+                trackId: 't1',
+                armed: false,
+                midiInputTrackId: 't0',
+                expectedMidiInputTrackId: 't1',
+            },
         });
 
         expect(mocks.armTrack).toHaveBeenCalledWith('t1', false, {
             deferRuntimeEffect: true,
             midiInputTrackId: 't0',
+            expectedMidiInputTrackId: 't1',
         });
     });
 
@@ -85,10 +92,29 @@ describe('handleArmTrack', () => {
     });
 
     it('identifies matching project truth as a no-op', () => {
-        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', armed: true }] });
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', armed: true, kind: 'midi' }] });
 
         expect(handleArmTrack.isNoop?.({ type: 'armTrack', payload: { trackId: 't1', armed: true } })).toBe(true);
         expect(handleArmTrack.isNoop?.({ type: 'armTrack', payload: { trackId: 't1', armed: false } })).toBe(false);
+    });
+
+    it('executes a route-only inverse only while its expected route still matches', () => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', armed: false, kind: 'midi' }] });
+        const inverseAction = {
+            type: 'armTrack' as const,
+            payload: {
+                trackId: 't1',
+                armed: false,
+                midiInputTrackId: 't0',
+                expectedMidiInputTrackId: 't1',
+            },
+        };
+
+        mocks.getMidiInputTrack.mockReturnValue('t1');
+        expect(handleArmTrack.isNoop?.(inverseAction)).toBe(false);
+
+        mocks.getMidiInputTrack.mockReturnValue('t2');
+        expect(handleArmTrack.isNoop?.(inverseAction)).toBe(true);
     });
 
     it('does not classify a missing track as a no-op', () => {
@@ -112,7 +138,7 @@ describe('handleArmTrack', () => {
     });
 
     it('describes an inverse restoring project state and the exact MIDI route', () => {
-        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', armed: false }] });
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', armed: false, kind: 'midi' }] });
         mocks.getMidiInputTrack.mockReturnValue('t0');
 
         const desc = handleArmTrack.describe({
@@ -122,12 +148,42 @@ describe('handleArmTrack', () => {
 
         expect(desc.inverseAction).toEqual({
             type: 'armTrack',
-            payload: { trackId: 't1', armed: false, midiInputTrackId: 't0' },
+            payload: {
+                trackId: 't1',
+                armed: false,
+                midiInputTrackId: 't0',
+                expectedMidiInputTrackId: 't1',
+            },
         });
     });
 
-    it('does not negate the payload when the forward arm is a no-op', () => {
-        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', armed: true }] });
+    it('describes a route-only inverse with the forward route as its expectation', () => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', armed: false, kind: 'midi' }] });
+        mocks.getMidiInputTrack.mockReturnValue('t1');
+
+        const desc = handleArmTrack.describe({
+            type: 'armTrack',
+            payload: {
+                trackId: 't1',
+                armed: false,
+                midiInputTrackId: 't0',
+                expectedMidiInputTrackId: 't1',
+            },
+        });
+
+        expect(desc.inverseAction).toEqual({
+            type: 'armTrack',
+            payload: {
+                trackId: 't1',
+                armed: false,
+                midiInputTrackId: 't1',
+                expectedMidiInputTrackId: 't0',
+            },
+        });
+    });
+
+    it('does not negate project state when describing a matching arm', () => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', armed: true, kind: 'midi' }] });
 
         const desc = handleArmTrack.describe({
             type: 'armTrack',
@@ -136,7 +192,12 @@ describe('handleArmTrack', () => {
 
         expect(desc.inverseAction).toEqual({
             type: 'armTrack',
-            payload: { trackId: 't1', armed: true, midiInputTrackId: null },
+            payload: {
+                trackId: 't1',
+                armed: true,
+                midiInputTrackId: null,
+                expectedMidiInputTrackId: 't1',
+            },
         });
     });
 

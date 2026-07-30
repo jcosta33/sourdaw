@@ -9,6 +9,7 @@ export const handleArmTrack = createHandler<'armTrack'>({
         const runtimeEffect = armTrack(action.payload.trackId, action.payload.armed, {
             deferRuntimeEffect: true,
             midiInputTrackId: action.payload.midiInputTrackId,
+            expectedMidiInputTrackId: action.payload.expectedMidiInputTrackId,
         });
         if (!runtimeEffect) {
             return { status: 'no-write' };
@@ -21,10 +22,39 @@ export const handleArmTrack = createHandler<'armTrack'>({
     },
     isNoop: (action) => {
         const track = getTrackStoreState()?.tracks.find((candidate) => candidate.id === action.payload.trackId);
-        return track?.armed === action.payload.armed;
+        if (!track || track.armed !== action.payload.armed) {
+            return false;
+        }
+        if (action.payload.midiInputTrackId === undefined) {
+            return true;
+        }
+
+        const currentMidiInputTrackId = getMidiInputTrack();
+        if (
+            action.payload.expectedMidiInputTrackId !== undefined &&
+            currentMidiInputTrackId !== action.payload.expectedMidiInputTrackId
+        ) {
+            return true;
+        }
+        return currentMidiInputTrackId === action.payload.midiInputTrackId;
     },
     describe: (action) => {
         const previousTrack = getTrackStoreState()?.tracks.find((candidate) => candidate.id === action.payload.trackId);
+        const previousMidiInputTrackId = getMidiInputTrack();
+        let expectedMidiInputTrackId = previousMidiInputTrackId;
+        const expectedRouteMatches =
+            action.payload.expectedMidiInputTrackId === undefined ||
+            previousMidiInputTrackId === action.payload.expectedMidiInputTrackId;
+        if (previousTrack && expectedRouteMatches) {
+            if (action.payload.midiInputTrackId !== undefined) {
+                expectedMidiInputTrackId = action.payload.midiInputTrackId;
+            } else if (action.payload.armed && previousTrack.kind === 'midi') {
+                expectedMidiInputTrackId = previousTrack.id;
+            } else if (!action.payload.armed && previousMidiInputTrackId === previousTrack.id) {
+                expectedMidiInputTrackId = null;
+            }
+        }
+
         return {
             label: action.payload.armed ? 'Arm track' : 'Disarm track',
             inverseAction: previousTrack
@@ -33,7 +63,8 @@ export const handleArmTrack = createHandler<'armTrack'>({
                       payload: {
                           trackId: previousTrack.id,
                           armed: previousTrack.armed,
-                          midiInputTrackId: getMidiInputTrack(),
+                          midiInputTrackId: previousMidiInputTrackId,
+                          expectedMidiInputTrackId,
                       },
                   }
                 : null,

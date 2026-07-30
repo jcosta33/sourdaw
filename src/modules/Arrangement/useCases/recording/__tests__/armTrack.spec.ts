@@ -138,10 +138,53 @@ describe('armTrack', () => {
         const runtimeEffect = armTrack('t1', false, {
             deferRuntimeEffect: true,
             midiInputTrackId: 't0',
+            expectedMidiInputTrackId: 't1',
         });
 
         expect(mocks.setMidiInputTrack).not.toHaveBeenCalled();
         expect(runtimeEffect).not.toBeNull();
+        if (!runtimeEffect) {
+            return;
+        }
+
+        runtimeEffect.afterCommit();
+
+        expect(mocks.setMidiInputTrack).toHaveBeenCalledWith('t0');
+    });
+
+    it('preserves a newer MIDI route when undoing an earlier arm', () => {
+        mocks.getTrackById.mockReturnValue({ id: 't1', kind: 'midi', armed: true });
+        mocks.getMidiInputTrack.mockReturnValue('t2');
+
+        const runtimeEffect = armTrack('t1', false, {
+            deferRuntimeEffect: true,
+            midiInputTrackId: 't0',
+            expectedMidiInputTrackId: 't1',
+        });
+
+        expect(runtimeEffect).not.toBeNull();
+        if (!runtimeEffect) {
+            return;
+        }
+
+        runtimeEffect.afterCommit();
+
+        expect(mocks.updateTrack).toHaveBeenCalledWith('t1', expect.any(Function));
+        expect(mocks.setMidiInputTrack).not.toHaveBeenCalled();
+    });
+
+    it('can restore an inverse-only MIDI route when project truth already matches', () => {
+        mocks.getTrackById.mockReturnValue({ id: 't1', kind: 'midi', armed: false });
+        mocks.getMidiInputTrack.mockReturnValue('t1');
+
+        const runtimeEffect = armTrack('t1', false, {
+            deferRuntimeEffect: true,
+            midiInputTrackId: 't0',
+            expectedMidiInputTrackId: 't1',
+        });
+
+        expect(runtimeEffect).not.toBeNull();
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
         if (!runtimeEffect) {
             return;
         }

@@ -29,6 +29,7 @@ const guardedPayloadContractCases = [
             { trackId: 'track-1' },
             { trackId: 'track-1', armed: true, extra: true },
             { trackId: 'track-1', armed: true, midiInputTrackId: null },
+            { trackId: 'track-1', armed: true, expectedMidiInputTrackId: 'track-1' },
         ],
     }),
     guardedPayloadCase({
@@ -133,8 +134,10 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
     it('excludes the inverse-only MIDI route from the RuntimeAction type', () => {
         type ArmTrackPayload = Extract<RuntimeAction, { type: 'armTrack' }>['payload'];
         type ArmTrackHasMidiRoute = 'midiInputTrackId' extends keyof ArmTrackPayload ? true : false;
+        type ArmTrackHasExpectedMidiRoute = 'expectedMidiInputTrackId' extends keyof ArmTrackPayload ? true : false;
 
         expectTypeOf<ArmTrackHasMidiRoute>().toEqualTypeOf<false>();
+        expectTypeOf<ArmTrackHasExpectedMidiRoute>().toEqualTypeOf<false>();
     });
 
     describe('removeTrack', () => {

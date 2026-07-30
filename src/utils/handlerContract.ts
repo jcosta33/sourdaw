@@ -323,8 +323,9 @@ export type AppAction =
           payload: {
               trackId: string;
               armed: boolean;
-              /** Internal inverse-only runtime route. AiRuntime payload validation rejects it. */
+              /** Internal inverse-only runtime route. AiRuntime payload validation rejects these fields. */
               midiInputTrackId?: string | null;
+              expectedMidiInputTrackId?: string | null;
           };
       }
     | { type: 'freezeTrack'; payload: { trackId: string } }
