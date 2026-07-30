@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { getExecutableAppActionToolSchemas } from '#/modules/Command/useCases';
+
 import { AiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { tryPresetMatch, tryParameterizedPath, tryCompoundFastPath } from '../../transformers/promptParser/parsing';
@@ -8,24 +10,18 @@ import { getProjectContext } from '../getProjectContext';
 import { generateToolPlanningOutcome as generateToolCalls } from '../llmOrchestration/inference';
 import { parsePromptToActions } from '../parsePromptToActions';
 
-const {
-    mockLogger,
-    mockBridgeLlmToolCalls,
-    mockBuildLlmActionSystemPrompt,
-    mockBuildLlmActionUserMessage,
-    executableToolSchemas,
-} = vi.hoisted(() => ({
-    mockLogger: {
-        warn: vi.fn(),
-        info: vi.fn(),
-        error: vi.fn(),
-        debug: vi.fn(),
-    },
-    mockBridgeLlmToolCalls: vi.fn(),
-    mockBuildLlmActionSystemPrompt: vi.fn(() => 'command system prompt'),
-    mockBuildLlmActionUserMessage: vi.fn(() => 'command user message'),
-    executableToolSchemas: [{ type: 'function', function: { name: 'muteTrack' } }],
-}));
+const { mockLogger, mockBridgeLlmToolCalls, mockBuildLlmActionSystemPrompt, mockBuildLlmActionUserMessage } =
+    vi.hoisted(() => ({
+        mockLogger: {
+            warn: vi.fn(),
+            info: vi.fn(),
+            error: vi.fn(),
+            debug: vi.fn(),
+        },
+        mockBridgeLlmToolCalls: vi.fn(),
+        mockBuildLlmActionSystemPrompt: vi.fn(() => 'command system prompt'),
+        mockBuildLlmActionUserMessage: vi.fn(() => 'command user message'),
+    }));
 
 vi.mock('#/infra/logger/appLogger', () => ({
     logger: mockLogger,
@@ -54,7 +50,6 @@ vi.mock('../../transformers/llmActionBridge', () => ({
     bridgeLlmToolCalls: mockBridgeLlmToolCalls,
     buildLlmActionSystemPrompt: mockBuildLlmActionSystemPrompt,
     buildLlmActionUserMessage: mockBuildLlmActionUserMessage,
-    LLM_EXECUTABLE_TOOL_SCHEMAS: executableToolSchemas,
 }));
 
 const baseContext: ProjectContext = {
@@ -172,7 +167,7 @@ describe('parsePromptToActions', () => {
         expect(generateToolCalls).toHaveBeenCalledWith(
             'command system prompt',
             'command user message',
-            executableToolSchemas,
+            getExecutableAppActionToolSchemas(),
             undefined
         );
         expect(mockBuildLlmActionUserMessage).toHaveBeenCalledWith({

@@ -1,6 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { requiresAppActionConfirmation } from '#/modules/Command/useCases';
+import { getExecutableAppActionToolSchemas, requiresAppActionConfirmation } from '#/modules/Command/useCases';
 
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
 import { type IntentResult } from '../models/IntentResult';
@@ -9,7 +9,6 @@ import {
     bridgeLlmToolCalls,
     buildLlmActionSystemPrompt,
     buildLlmActionUserMessage,
-    LLM_EXECUTABLE_TOOL_SCHEMAS,
 } from '../transformers/llmActionBridge';
 import { findDeniedPromptIntent } from '../transformers/promptParser/findDeniedPromptIntent';
 import {
@@ -106,7 +105,7 @@ export const parsePromptToActions = inject({ logger })(
                 const planningOutcome = await generateToolPlanningOutcome(
                     buildLlmActionSystemPrompt(),
                     buildLlmActionUserMessage({ prompt, context }),
-                    LLM_EXECUTABLE_TOOL_SCHEMAS,
+                    getExecutableAppActionToolSchemas(),
                     signal
                 );
 

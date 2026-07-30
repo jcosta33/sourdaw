@@ -1,5 +1,7 @@
 import { type AppActionType } from '#/utils/handlerContract';
 
+import { executableAppActionDescriptorByType, type ExecutableAppActionRisk } from './executableAppActionRegistry';
+
 type AppActionRisk =
     | 'read-only'
     | 'bounded-reversible'
@@ -51,6 +53,12 @@ const authoritySensitivePolicy: AppActionExecutionPolicy = {
     reason: 'This action changes project-wide timing, gain, recording, or signal routing.',
 };
 
+const executablePolicyByRisk: Record<ExecutableAppActionRisk, AppActionExecutionPolicy> = {
+    'bounded-reversible': boundedPolicy,
+    'broad-reversible': broadPolicy,
+    'authority-sensitive': authoritySensitivePolicy,
+};
+
 const externalEffectPolicy: AppActionExecutionPolicy = {
     classification: 'explicit',
     risk: 'external-effect',
@@ -74,10 +82,8 @@ const executionPolicies = {
 
     addAutomationLane: boundedPolicy,
     addDevice: boundedPolicy,
-    addTrack: boundedPolicy,
     applyGroove: boundedPolicy,
     arpeggiate: boundedPolicy,
-    bypassDevice: boundedPolicy,
     closeMixer: boundedPolicy,
     createFolder: boundedPolicy,
     disableMpe: boundedPolicy,
@@ -93,7 +99,6 @@ const executionPolicies = {
     invertNotes: boundedPolicy,
     lockClip: boundedPolicy,
     muteClip: boundedPolicy,
-    muteTrack: boundedPolicy,
     nudgeClip: boundedPolicy,
     openMixer: boundedPolicy,
     openPreferencesDialog: boundedPolicy,
@@ -101,8 +106,6 @@ const executionPolicies = {
     quantizeNoteLengths: boundedPolicy,
     quantizeNotes: boundedPolicy,
     renameClip: boundedPolicy,
-    renameTrack: boundedPolicy,
-    reorderTrack: boundedPolicy,
     retrogradeNotes: boundedPolicy,
     scaleVelocities: boundedPolicy,
     setAllVelocities: boundedPolicy,
@@ -110,12 +113,7 @@ const executionPolicies = {
     setClipLoopLength: boundedPolicy,
     setClipStretchMode: boundedPolicy,
     setClipStretchRatio: boundedPolicy,
-    setDeviceParameter: boundedPolicy,
-    setTrackColor: boundedPolicy,
-    setTrackGain: boundedPolicy,
-    setTrackPan: boundedPolicy,
     setWorkspaceMode: boundedPolicy,
-    soloTrack: boundedPolicy,
     stopPlayback: boundedPolicy,
     toggleChatPanel: boundedPolicy,
     toggleCountIn: boundedPolicy,
@@ -136,7 +134,6 @@ const executionPolicies = {
     bounceToNewTrack: broadPolicy,
     clearSolos: broadPolicy,
     consolidateAllTracks: broadPolicy,
-    duplicateTrack: broadPolicy,
     freezeTrack: broadPolicy,
     generateChordProgression: broadPolicy,
     generateDrumPattern: broadPolicy,
@@ -155,13 +152,8 @@ const executionPolicies = {
     reverseClip: destructivePolicy,
     stripSilence: destructivePolicy,
 
-    addSend: authoritySensitivePolicy,
     armTrack: authoritySensitivePolicy,
-    removeSend: authoritySensitivePolicy,
     setMasterGain: authoritySensitivePolicy,
-    setSend: authoritySensitivePolicy,
-    setTempo: authoritySensitivePolicy,
-    setTrackOutput: authoritySensitivePolicy,
     toggleRecording: authoritySensitivePolicy,
 
     createCollabSession: externalEffectPolicy,
@@ -171,5 +163,9 @@ const executionPolicies = {
 const executionPolicyByActionType: Partial<Record<string, AppActionExecutionPolicy>> = executionPolicies;
 
 export function getAppActionExecutionPolicy(actionType: string): AppActionExecutionPolicy {
+    const executableDescriptor = executableAppActionDescriptorByType.get(actionType);
+    if (executableDescriptor) {
+        return executablePolicyByRisk[executableDescriptor.risk];
+    }
     return executionPolicyByActionType[actionType] ?? defaultPolicy;
 }
