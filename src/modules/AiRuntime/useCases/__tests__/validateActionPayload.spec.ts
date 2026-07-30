@@ -198,7 +198,7 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
             expect(guard({ ...payload, parameterName: null })).toBe(false);
         });
 
-        it('should inherit the canonical identity field while excluding the inverse action', () => {
+        it('should exclude the command-owned identity field and inverse action', () => {
             type AddAutomationLanePayload = Extract<RuntimeAction, { type: 'addAutomationLane' }>['payload'];
             type AddAutomationLaneHasLaneId = 'laneId' extends keyof AddAutomationLanePayload ? true : false;
             type RemoveAutomationLaneAction = Extract<RuntimeAction, { type: 'removeAutomationLane' }>;
@@ -207,7 +207,7 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
             ] as unknown as RuntimeAction[];
 
             expect(validateActions(inverse)).toEqual([]);
-            expectTypeOf<AddAutomationLaneHasLaneId>().toEqualTypeOf<true>();
+            expectTypeOf<AddAutomationLaneHasLaneId>().toEqualTypeOf<false>();
             expectTypeOf<RemoveAutomationLaneAction>().toEqualTypeOf<never>();
         });
     });

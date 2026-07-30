@@ -238,4 +238,42 @@ export const RUNTIME_ACTION_TYPES = [
 ] as const satisfies readonly AppActionType[];
 
 export type RuntimeActionType = (typeof RUNTIME_ACTION_TYPES)[number];
-export type RuntimeAction = Extract<AppAction, { type: RuntimeActionType }>;
+
+type AppActionOf<ActionType extends AppActionType> = Extract<AppAction, { type: ActionType }>;
+type AppActionPayload<ActionType extends AppActionType> =
+    AppActionOf<ActionType> extends { payload: infer Payload } ? Payload : never;
+
+type RuntimePayloadOverrides = {
+    createTrackAlternative: Omit<AppActionPayload<'createTrackAlternative'>, 'alternativeId'>;
+    deleteTrackAlternative: Omit<AppActionPayload<'deleteTrackAlternative'>, 'fallbackAlternativeId'>;
+    duplicateClip: Omit<AppActionPayload<'duplicateClip'>, 'targetClipId'>;
+    duplicateClipToNextBar: Omit<AppActionPayload<'duplicateClipToNextBar'>, 'targetClipId'>;
+    addMarker: Omit<AppActionPayload<'addMarker'>, 'markerId' | 'color'>;
+    addSection: Omit<AppActionPayload<'addSection'>, 'sectionId' | 'color'>;
+    addAutomationLane: Omit<AppActionPayload<'addAutomationLane'>, 'laneId'>;
+    generateDrumPattern: Omit<AppActionPayload<'generateDrumPattern'>, 'startBeat'>;
+    generateMelody: Omit<AppActionPayload<'generateMelody'>, 'octave' | 'density' | 'startBeat'>;
+    generateChordProgression: Omit<AppActionPayload<'generateChordProgression'>, 'startBeat'>;
+    extractGroove: Pick<AppActionPayload<'extractGroove'>, 'clipId'>;
+    createCollabSession: AppActionPayload<'createCollabSession'> & { name: string };
+    joinCollabSession: AppActionPayload<'joinCollabSession'> & { peerName: string };
+    createVcaGroup: Omit<AppActionPayload<'createVcaGroup'>, 'vcaGroupId'>;
+    addChordEvent: Omit<AppActionPayload<'addChordEvent'>, 'eventId'>;
+    createAdjustmentLayer: Omit<AppActionPayload<'createAdjustmentLayer'>, 'layerId'>;
+};
+
+type RuntimePayloadOverrideType = keyof RuntimePayloadOverrides;
+type RuntimeActionWithPayload<ActionType extends RuntimePayloadOverrideType> = Omit<
+    AppActionOf<ActionType>,
+    'payload'
+> & { payload: RuntimePayloadOverrides[ActionType] };
+
+type CanonicalRuntimeAction = Exclude<
+    Extract<AppAction, { type: RuntimeActionType }>,
+    { type: RuntimePayloadOverrideType }
+>;
+type RuntimePayloadOverrideAction = {
+    [ActionType in RuntimePayloadOverrideType]: RuntimeActionWithPayload<ActionType>;
+}[RuntimePayloadOverrideType];
+
+export type RuntimeAction = CanonicalRuntimeAction | RuntimePayloadOverrideAction;
