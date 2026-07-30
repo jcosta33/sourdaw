@@ -1,0 +1,25 @@
+crates/daw-dsp/src/fermenter/synth.rs
+  s_ac9b259eab20ba::t_38ed5b8e9e4e10 503-504,509-510,530
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_ac9b259eab20ba::t_8799be70c5b20d 1,621,692-727
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_ac9b259eab20ba::t_df8ec39530eece 1,52,123-158
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_ac9b259eab20ba::t_24292a9325ef8c 1,621,692-727
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "55df0240dfbf6773054410d612256a1284ac83c4",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
