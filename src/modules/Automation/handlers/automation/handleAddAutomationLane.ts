@@ -21,13 +21,16 @@ function isAddAutomationLaneNoop(action: AddAutomationLaneAction): boolean {
     if (!state) {
         return false;
     }
-    if (action.payload.laneId !== undefined) {
-        return state.lanes.some((lane) => lane.id === action.payload.laneId);
-    }
-    return state.lanes.some(
+    const existingLane = state.lanes.find(
         (lane) =>
-            !lane.clipId && lane.trackId === action.payload.trackId && lane.parameterId === action.payload.parameterId
+            lane.id === action.payload.laneId ||
+            (!lane.clipId && lane.trackId === action.payload.trackId && lane.parameterId === action.payload.parameterId)
     );
+    if (!existingLane) {
+        return false;
+    }
+    action.payload.laneId = existingLane.id;
+    return true;
 }
 
 export const handleAddAutomationLane = createHandler<'addAutomationLane'>({

@@ -7,19 +7,15 @@ export function addAutomationLane(trackId: string, parameterId: string, paramete
         return;
     }
 
-    let exists: boolean;
-    if (laneId === undefined) {
-        exists = state.lanes.some(
-            (lane) => !lane.clipId && lane.trackId === trackId && lane.parameterId === parameterId
-        );
-    } else {
-        exists = state.lanes.some((lane) => lane.id === laneId);
-    }
+    const exists = state.lanes.some(
+        (lane) => lane.id === laneId || (!lane.clipId && lane.trackId === trackId && lane.parameterId === parameterId)
+    );
     if (exists) {
         return;
     }
 
-    const lane = createAutomationLane(trackId, parameterId, parameterName);
+    const minValue = parameterId === 'pan' ? -1 : 0;
+    const lane = createAutomationLane(trackId, parameterId, parameterName, minValue, 1);
     automationStore.set({
         lanes: [...state.lanes, laneId === undefined ? lane : { ...lane, id: laneId }],
     });

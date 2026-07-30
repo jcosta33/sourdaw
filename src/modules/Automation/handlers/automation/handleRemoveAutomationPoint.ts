@@ -1,22 +1,40 @@
 import { createHandler } from '#/utils/createHandler';
 
 import { removeAutomationPoint } from '../../useCases/automation/removeAutomationPoint';
+import { removeAutomationPointById } from '../../useCases/automation/removeAutomationPointById';
 import { getAutomationStoreState } from '../../useCases/getAutomationStoreState';
 
+type RemoveAutomationPointPayload = {
+    laneId: string;
+    pointIndex: number;
+    pointId?: string;
+};
+
+function getTargetPoint(payload: RemoveAutomationPointPayload) {
+    const state = getAutomationStoreState();
+    const lane = state?.lanes.find((candidate) => candidate.id === payload.laneId);
+    if (!lane) {
+        return undefined;
+    }
+    if (payload.pointId) {
+        return lane.points.find((point) => point.id === payload.pointId);
+    }
+    if (payload.pointIndex < 0 || payload.pointIndex >= lane.points.length) {
+        return undefined;
+    }
+    return lane.points[payload.pointIndex];
+}
 export const handleRemoveAutomationPoint = createHandler<'removeAutomationPoint'>({
     execute: (action) => {
-        const state = getAutomationStoreState();
-        if (!state) {
+        const point = getTargetPoint(action.payload);
+        if (!point) {
             return;
         }
-        const lane = state.lanes.find((candidate) => candidate.id === action.payload.laneId);
-        if (!lane || action.payload.pointIndex < 0 || action.payload.pointIndex >= lane.points.length) {
+        if (action.payload.pointId) {
+            removeAutomationPointById(action.payload.laneId, action.payload.pointId);
             return;
         }
-        const point = lane.points[action.payload.pointIndex];
-        if (point) {
-            removeAutomationPoint(action.payload.laneId, point.beat);
-        }
+        removeAutomationPoint(action.payload.laneId, point.beat);
     },
     // Runs PRE-execute (see executeAppAction). The inverse of removing a point is
     // re-adding it. `removeAutomationPoint` deletes every point at the target beat,
@@ -27,15 +45,12 @@ export const handleRemoveAutomationPoint = createHandler<'removeAutomationPoint'
     describe: (action) => {
         const state = getAutomationStoreState();
         const lane = state?.lanes.find((candidate) => candidate.id === action.payload.laneId);
-        if (!lane || action.payload.pointIndex < 0 || action.payload.pointIndex >= lane.points.length) {
-            return { label: 'Remove automation point' };
-        }
-        const point = lane.points[action.payload.pointIndex];
-        if (!point) {
+        const point = getTargetPoint(action.payload);
+        if (!lane || !point) {
             return { label: 'Remove automation point' };
         }
         const beatDuplicated = lane.points.filter((candidate) => candidate.beat === point.beat).length > 1;
-        if (beatDuplicated) {
+        if (!action.payload.pointId && beatDuplicated) {
             return { label: 'Remove automation point' };
         }
         return {
@@ -44,6 +59,7 @@ export const handleRemoveAutomationPoint = createHandler<'removeAutomationPoint'
                 type: 'addAutomationPoint',
                 payload: {
                     laneId: action.payload.laneId,
+                    pointId: point.id,
                     beat: point.beat,
                     value: point.value,
                     curve: point.curve,

@@ -70,6 +70,28 @@ function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): 
     return Reflect.ownKeys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key));
 }
 
+function hasOnlyKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+    return Reflect.ownKeys(value).every((key) => typeof key === 'string' && keys.includes(key));
+}
+
+function isAutomationCurve(
+    value: unknown
+): value is 'linear' | 'step' | 'exponential' | 's-curve' | 'stairs' | 'smooth' | 'bezier' {
+    return (
+        value === 'linear' ||
+        value === 'step' ||
+        value === 'exponential' ||
+        value === 's-curve' ||
+        value === 'stairs' ||
+        value === 'smooth' ||
+        value === 'bezier'
+    );
+}
+
+function isAutomationControlPoint(value: unknown): value is { x: number; y: number } {
+    return isObj(value) && hasExactKeys(value, ['x', 'y']) && isInRange(value.x, 0, 1) && isInRange(value.y, 0, 1);
+}
+
 function isUniqueNonEmptyStringArray(value: unknown): value is string[] {
     if (!Array.isArray(value) || !value.every(isNonEmptyString)) {
         return false;
@@ -203,14 +225,35 @@ const validators = {
     // Automation
     addAutomationLane: (param): param is PayloadOf<'addAutomationLane'> =>
         isObj(param) &&
-        isString(param.trackId) &&
-        isString(param.parameterId) &&
-        isString(param.parameterName) &&
-        !Object.hasOwn(param, 'laneId'),
+        hasExactKeys(param, ['trackId', 'parameterId', 'parameterName']) &&
+        isNonEmptyString(param.trackId) &&
+        isNonEmptyString(param.parameterId) &&
+        isNonEmptyString(param.parameterName),
     addAutomationPoint: (param): param is PayloadOf<'addAutomationPoint'> =>
-        isObj(param) && isString(param.laneId) && isNumber(param.beat) && isNumber(param.value),
+        isObj(param) &&
+        hasOnlyKeys(param, ['laneId', 'beat', 'value', 'curve', 'tension', 'stairSteps', 'cp1', 'cp2']) &&
+        Object.hasOwn(param, 'laneId') &&
+        Object.hasOwn(param, 'beat') &&
+        Object.hasOwn(param, 'value') &&
+        isNonEmptyString(param.laneId) &&
+        isNonNegativeNumber(param.beat) &&
+        isNumber(param.value) &&
+        isOptional(param.curve, isAutomationCurve) &&
+        isOptional(param.tension, (value): value is number => isInRange(value, -1, 1)) &&
+        isOptional(param.stairSteps, (value): value is number => isInRange(value, 2, 32) && Number.isInteger(value)) &&
+        isOptional(param.cp1, isAutomationControlPoint) &&
+        isOptional(param.cp2, isAutomationControlPoint),
+    setAutomationLaneEnabled: (param): param is PayloadOf<'setAutomationLaneEnabled'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['laneId', 'enabled']) &&
+        isNonEmptyString(param.laneId) &&
+        typeof param.enabled === 'boolean',
     removeAutomationPoint: (param): param is PayloadOf<'removeAutomationPoint'> =>
-        isObj(param) && isString(param.laneId) && isNumber(param.beat),
+        isObj(param) &&
+        hasExactKeys(param, ['laneId', 'pointIndex']) &&
+        isNonEmptyString(param.laneId) &&
+        isNonNegativeNumber(param.pointIndex) &&
+        Number.isInteger(param.pointIndex),
 
     // Sidechain routing
     addSidechainRoute: (param): param is PayloadOf<'addSidechainRoute'> =>

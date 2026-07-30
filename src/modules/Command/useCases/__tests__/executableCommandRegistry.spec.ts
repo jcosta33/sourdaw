@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
+import { getAutomationHandlers } from '#/modules/Automation/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
 
 import { getAppActionExecutionPolicy } from '../getAppActionExecutionPolicy';
@@ -332,6 +333,52 @@ const EXPECTED_COMMANDS = [
         'authority-sensitive',
         true
     ),
+    expectedCommand(
+        'addAutomationLane',
+        'Create a gain or pan automation lane on an existing track.',
+        {
+            trackId: { type: 'string', description: 'Existing track ID' },
+            parameterId: {
+                type: 'string',
+                enum: ['gain', 'pan'],
+                description: 'Track parameter to automate',
+            },
+        },
+        ['trackId', 'parameterId'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
+        'addAutomationPoint',
+        'Add a value at an explicit beat on an existing track automation lane.',
+        {
+            laneId: { type: 'string', description: 'Existing track automation lane ID' },
+            beat: { type: 'number', description: 'Non-negative project beat' },
+            value: {
+                type: 'number',
+                description: 'Value within the selected lane minValue and maxValue bounds',
+            },
+            curve: {
+                type: 'string',
+                enum: ['linear', 'step', 'exponential', 's-curve', 'stairs', 'smooth', 'bezier'],
+                description: 'Interpolation from this point to the next',
+            },
+        },
+        ['laneId', 'beat', 'value'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
+        'setAutomationLaneEnabled',
+        'Enable or disable an existing track automation lane.',
+        {
+            laneId: { type: 'string', description: 'Existing track automation lane ID' },
+            enabled: { type: 'boolean', description: 'true=enable, false=disable' },
+        },
+        ['laneId', 'enabled'],
+        'bounded-reversible',
+        false
+    ),
 ];
 
 const EXPECTED_GROUNDING = [
@@ -643,6 +690,53 @@ const EXPECTED_GROUNDING = [
         ],
         valueRules: [],
     },
+    {
+        actionType: 'addAutomationLane',
+        intentPhrases: [
+            'add automation lane',
+            'create automation lane',
+            'automate track gain',
+            'automate track volume',
+            'automate track pan',
+            'automate track panning',
+        ],
+        targetRules: [{ argument: 'trackId', capability: 'track' }],
+        valueRules: [{ argument: 'parameterId', kind: 'string-literal' }],
+    },
+    {
+        actionType: 'addAutomationPoint',
+        intentPhrases: ['add automation point', 'create automation point', 'set automation point'],
+        targetRules: [{ argument: 'laneId', capability: 'automation-lane' }],
+        valueRules: [
+            { argument: 'beat', kind: 'number-if-present', requiredInPrompt: true, connector: 'beat' },
+            { argument: 'value', kind: 'number-if-present', requiredInPrompt: true, scale: 'automation-lane-range' },
+            {
+                argument: 'curve',
+                kind: 'enum-if-present',
+                values: ['linear', 'step', 'exponential', 's-curve', 'stairs', 'smooth', 'bezier'],
+            },
+        ],
+    },
+    {
+        actionType: 'setAutomationLaneEnabled',
+        intentPhrases: [
+            'enable automation lane',
+            'enable automation',
+            'disable automation lane',
+            'disable automation',
+            'turn automation on',
+            'turn automation off',
+        ],
+        targetRules: [{ argument: 'laneId', capability: 'automation-lane' }],
+        valueRules: [
+            {
+                argument: 'enabled',
+                kind: 'boolean-intent',
+                truePhrases: ['enable automation lane', 'enable automation', 'turn automation on'],
+                falsePhrases: ['disable automation lane', 'disable automation', 'turn automation off'],
+            },
+        ],
+    },
 ];
 
 describe('executable command registry', () => {
@@ -688,7 +782,11 @@ describe('executable command registry', () => {
     });
 
     it('maps every provider-executable action to exactly one production handler with executable metadata', () => {
-        const handlerMaps: readonly Record<string, unknown>[] = [getArrangementHandlers(), getTransportHandlers()];
+        const handlerMaps: readonly Record<string, unknown>[] = [
+            getArrangementHandlers(),
+            getAutomationHandlers(),
+            getTransportHandlers(),
+        ];
 
         expect(
             EXPECTED_COMMANDS.map((command) => {

@@ -114,7 +114,7 @@ describe('automationStore', () => {
             parameterId: 'gain',
             parameterName: 'Gain',
             points: [
-                { beat: 0, value: 0.75, curve: 'linear', tension: 0 },
+                { id: 'point-1', beat: 0, value: 0.75, curve: 'linear', tension: 0 },
                 { beat: Number.NaN, value: 0.5, curve: 'linear', tension: 0 },
             ],
             objects: [],
@@ -150,7 +150,7 @@ describe('automationStore', () => {
             lanes: [
                 {
                     ...valid_lane,
-                    points: [{ beat: 0, value: 0.75, curve: 'linear', tension: 0 }],
+                    points: [{ id: 'point-1', beat: 0, value: 0.75, curve: 'linear', tension: 0 }],
                 },
             ],
         });
@@ -246,7 +246,7 @@ describe('automationStore', () => {
                     trackId: 'track-1',
                     parameterId: 'gain',
                     parameterName: 'Gain',
-                    points: [],
+                    points: [{ id: 'point-1', beat: 4, value: 0.5, curve: 'linear', tension: 0 }],
                     objects: [],
                     visible: true,
                     enabled: true,

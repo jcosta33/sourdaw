@@ -1,4 +1,4 @@
-import { type PresetAction, trackAction } from './Types';
+import { type PresetAction } from './Types';
 
 export const mixPresets: readonly PresetAction[] = [
     {
@@ -38,11 +38,10 @@ export const automationPresets: readonly PresetAction[] = [
         keywords: ['automation lane', 'add automation', 'automation'],
         category: 'Automation',
         requiresSelection: 'track',
-        buildAction: trackAction('addAutomationLane', (id) => ({
-            trackId: id,
-            parameterId: 'volume',
-            parameterName: 'Volume',
-        })),
+        // Parameter and target grounding belong to the provider tool bridge.
+        // Keeping this searchable but non-executable prevents the legacy fuzzy
+        // fast path from inventing a default lane and bypassing that validation.
+        buildAction: () => null,
     },
     {
         id: 'invert-auto',

@@ -4,6 +4,7 @@ import { addAutomationLane } from '../../../useCases/automation/addAutomationLan
 import { addAutomationPoint } from '../../../useCases/automation/addAutomationPoint';
 import { quantizeAutomationBeats } from '../../../useCases/automation/quantizeAutomationBeats';
 import { removeAutomationPoint } from '../../../useCases/automation/removeAutomationPoint';
+import { removeAutomationPointById } from '../../../useCases/automation/removeAutomationPointById';
 import { reverseAutomation } from '../../../useCases/automation/reverseAutomation';
 import { scaleAutomationValues } from '../../../useCases/automation/scaleAutomationValues';
 import { stretchAutomationTime } from '../../../useCases/automation/stretchAutomationTime';
@@ -21,6 +22,7 @@ import { handleThinAutomation } from '../handleThinAutomation';
 vi.mock('../../../useCases/automation/addAutomationLane', () => ({ addAutomationLane: vi.fn() }));
 vi.mock('../../../useCases/automation/addAutomationPoint', () => ({ addAutomationPoint: vi.fn() }));
 vi.mock('../../../useCases/automation/removeAutomationPoint', () => ({ removeAutomationPoint: vi.fn() }));
+vi.mock('../../../useCases/automation/removeAutomationPointById', () => ({ removeAutomationPointById: vi.fn() }));
 vi.mock('../../../useCases/automation/quantizeAutomationBeats', () => ({ quantizeAutomationBeats: vi.fn() }));
 vi.mock('../../../useCases/automation/reverseAutomation', () => ({ reverseAutomation: vi.fn() }));
 vi.mock('../../../useCases/automation/scaleAutomationValues', () => ({ scaleAutomationValues: vi.fn() }));
@@ -52,27 +54,86 @@ describe('Automation Handlers', () => {
     });
 
     it('handleAddAutomationLane should delegate to addAutomationLane', () => {
-        handleAddAutomationLane.execute({
+        void handleAddAutomationLane.execute({
             type: 'addAutomationLane',
             payload: { trackId: 't1', parameterId: 'gain', parameterName: 'Gain', laneId: 'lane-1' },
         });
         expect(addAutomationLane).toHaveBeenCalledWith('t1', 'gain', 'Gain', 'lane-1');
     });
 
+    it('writes the canonical existing lane id onto a no-op replay action', () => {
+        const action: Parameters<NonNullable<typeof handleAddAutomationLane.isNoop>>[0] = {
+            type: 'addAutomationLane',
+            payload: { trackId: 't1', parameterId: 'gain', parameterName: 'Gain' },
+        };
+
+        expect(handleAddAutomationLane.isNoop?.(action)).toBe(true);
+        expect(action.payload.laneId).toBe('l1');
+    });
+
     it('handleAddAutomationPoint should delegate to addAutomationPoint', () => {
-        handleAddAutomationPoint.execute({
+        void handleAddAutomationPoint.execute({
             type: 'addAutomationPoint',
-            payload: { laneId: 'l1', beat: 4, value: 0.5 },
+            payload: { laneId: 'l1', pointId: 'point-1', beat: 4, value: 0.5 },
         });
-        expect(addAutomationPoint).toHaveBeenCalledWith('l1', { beat: 4, value: 0.5, curve: 'linear', tension: 0 });
+        expect(addAutomationPoint).toHaveBeenCalledWith('l1', {
+            id: 'point-1',
+            beat: 4,
+            value: 0.5,
+            curve: 'linear',
+            tension: 0,
+        });
+    });
+
+    it('describes point insertion with a stable-id inverse', () => {
+        const description = handleAddAutomationPoint.describe({
+            type: 'addAutomationPoint',
+            payload: { laneId: 'l1', pointId: 'point-2', beat: 8, value: 0.75 },
+        });
+
+        expect(description.inverseAction).toEqual({
+            type: 'removeAutomationPoint',
+            payload: { laneId: 'l1', pointIndex: 1, pointId: 'point-2' },
+        });
     });
 
     it('handleRemoveAutomationPoint should remove by lane and point index', () => {
-        handleRemoveAutomationPoint.execute({
+        void handleRemoveAutomationPoint.execute({
             type: 'removeAutomationPoint',
             payload: { laneId: 'l1', pointIndex: 0 },
         });
         expect(removeAutomationPoint).toHaveBeenCalledWith('l1', 4);
+    });
+
+    it('removes an added point by stable identity after an earlier collaborative insertion shifts its index', () => {
+        vi.mocked(getAutomationStoreState).mockReturnValue({
+            lanes: [
+                {
+                    id: 'l1',
+                    trackId: 't1',
+                    parameterId: 'gain',
+                    parameterName: 'Gain',
+                    minValue: 0,
+                    maxValue: 1,
+                    points: [
+                        { id: 'remote-point', beat: 2, value: 0.25, curve: 'linear', tension: 0 },
+                        { id: 'ai-point', beat: 4, value: 0.5, curve: 'linear', tension: 0 },
+                    ],
+                    objects: [],
+                    visible: true,
+                    enabled: true,
+                    collapsed: false,
+                },
+            ],
+        });
+
+        void handleRemoveAutomationPoint.execute({
+            type: 'removeAutomationPoint',
+            payload: { laneId: 'l1', pointIndex: 0, pointId: 'ai-point' },
+        });
+
+        expect(removeAutomationPointById).toHaveBeenCalledWith('l1', 'ai-point');
+        expect(removeAutomationPoint).not.toHaveBeenCalled();
     });
 
     it('handleQuantizeAutomation should delegate to quantizeAutomationBeats', () => {

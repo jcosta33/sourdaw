@@ -1,5 +1,6 @@
 import { clipSelectionStore, trackStore } from '#/modules/Arrangement/stores';
 import { getPlatformPlugins, getPluginById } from '#/modules/Arrangement/useCases';
+import { automationStore } from '#/modules/Automation/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { transportStore } from '#/modules/Transport/stores';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
@@ -9,6 +10,8 @@ import { type ProjectContext } from '../models/ProjectContext';
 export type {
     ProjectContext,
     ProjectContextAvailableDeviceType,
+    ProjectContextAutomationLane,
+    ProjectContextAutomationPoint,
     ProjectContextClip,
     ProjectContextDevice,
     ProjectContextDeviceParameter,
@@ -16,13 +19,14 @@ export type {
     ProjectContextTrack,
 } from '../models/ProjectContext';
 
-// §92.2 — Memoize the context by the identity of the five backing store
+// §92.2 — Memoize the context by the identity of the backing store
 // values. Stores use immutable replacement (.set(new object)), so
-// reference equality is enough: if all five have the same identity as
+// reference equality is enough: if all stores have the same identity as
 // the last call, we can return the cached context without rebuilding
 // the entire track/clip/device graph for the AI chat pipeline.
 const contextCache: {
     track: unknown;
+    automation: unknown;
     transport: unknown;
     workspace: unknown;
     selection: unknown;
@@ -30,6 +34,7 @@ const contextCache: {
     context: ProjectContext | null;
 } = {
     track: null,
+    automation: null,
     transport: null,
     workspace: null,
     selection: null,
@@ -39,6 +44,7 @@ const contextCache: {
 
 export function getProjectContext(): ProjectContext {
     const trackState = trackStore.value;
+    const automationState = automationStore.value;
     const transportState = transportStore.value;
     const workspaceState = workspaceStore.value;
     const selectionState = clipSelectionStore.value;
@@ -50,6 +56,7 @@ export function getProjectContext(): ProjectContext {
     if (
         contextCache.context !== null &&
         contextCache.track === trackState &&
+        contextCache.automation === automationState &&
         contextCache.transport === transportState &&
         contextCache.workspace === workspaceState &&
         contextCache.selection === selectionState &&
@@ -73,6 +80,22 @@ export function getProjectContext(): ProjectContext {
         availableDeviceTypes: getPlatformPlugins()
             .filter((plugin) => plugin.id !== 'crust')
             .map((plugin) => ({ id: plugin.id, name: plugin.name })),
+        automationLanes: (automationState?.lanes ?? [])
+            .filter((lane) => lane.clipId === undefined)
+            .map((lane) => ({
+                id: lane.id,
+                trackId: lane.trackId,
+                parameterId: lane.parameterId,
+                name: lane.parameterName,
+                enabled: lane.enabled,
+                minValue: lane.minValue,
+                maxValue: lane.maxValue,
+                points: lane.points.map((point) => ({
+                    beat: point.beat,
+                    value: point.value,
+                    curve: point.curve,
+                })),
+            })),
         tracks: (trackState?.tracks ?? []).map((time) => ({
             id: time.id,
             name: time.name,
@@ -141,6 +164,7 @@ export function getProjectContext(): ProjectContext {
     };
 
     contextCache.track = trackState;
+    contextCache.automation = automationState;
     contextCache.transport = transportState;
     contextCache.workspace = workspaceState;
     contextCache.selection = selectionState;

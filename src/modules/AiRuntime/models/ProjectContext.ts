@@ -7,6 +7,7 @@ export type ProjectContext = {
     metronomeEnabled: boolean;
     metronomeVolume: number;
     availableDeviceTypes?: ProjectContextAvailableDeviceType[];
+    automationLanes?: ProjectContextAutomationLane[];
     tracks: ProjectContextTrack[];
     selectedTrackId: string | null;
     selectedClipId: string | null;
@@ -18,6 +19,23 @@ export type ProjectContext = {
 export type ProjectContextAvailableDeviceType = {
     id: string;
     name: string;
+};
+
+export type ProjectContextAutomationPoint = {
+    beat: number;
+    value: number;
+    curve: 'linear' | 'exponential' | 'step' | 's-curve' | 'stairs' | 'smooth' | 'bezier';
+};
+
+export type ProjectContextAutomationLane = {
+    id: string;
+    trackId: string;
+    parameterId: string;
+    name: string;
+    enabled: boolean;
+    minValue: number;
+    maxValue: number;
+    points: ProjectContextAutomationPoint[];
 };
 
 export type ProjectContextClip = {

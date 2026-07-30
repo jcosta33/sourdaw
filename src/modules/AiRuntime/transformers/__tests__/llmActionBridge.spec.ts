@@ -11,6 +11,18 @@ const projectContext: ProjectContext = {
     loopEnd: 12,
     metronomeEnabled: false,
     metronomeVolume: 0.5,
+    automationLanes: [
+        {
+            id: 'lane-vocal-gain',
+            trackId: 'track-vocals',
+            parameterId: 'gain',
+            name: 'Gain',
+            enabled: true,
+            minValue: 0,
+            maxValue: 1,
+            points: [{ beat: 4, value: 0.75, curve: 'linear' }],
+        },
+    ],
     tracks: [
         {
             id: 'track-vocals',
@@ -1190,6 +1202,10 @@ describe('bridgeLlmToolCalls', () => {
         expect(userMessage).toContain('"loopEnd":12');
         expect(userMessage).toContain('"metronomeEnabled":false');
         expect(userMessage).toContain('"metronomeVolume":0.5');
+        expect(userMessage).toContain('"automationLanes"');
+        expect(userMessage).toContain('"id":"lane-vocal-gain"');
+        expect(userMessage).toContain('"pointCount":1');
+        expect(userMessage).not.toContain('"points"');
         expect(userMessage).toContain('"armed":false');
         expect(userMessage).toContain('<user_request>\nmute the vocals\n</user_request>');
         expect(userMessage).toContain(
@@ -1201,6 +1217,33 @@ describe('bridgeLlmToolCalls', () => {
         expect(userMessage).toContain('"minValue":20');
         expect(userMessage).toContain('"sends"');
         expect(userMessage).toContain('"outputId":"master"');
+    });
+
+    it('keeps dense automation point arrays out of provider prompt context', () => {
+        const lane = projectContext.automationLanes?.[0];
+        if (!lane) {
+            throw new Error('Expected the project fixture to contain an automation lane');
+        }
+        const userMessage = buildLlmActionUserMessage({
+            prompt: 'add an automation point',
+            context: {
+                ...projectContext,
+                automationLanes: [
+                    {
+                        ...lane,
+                        points: Array.from({ length: 5_000 }, (_, beat) => ({
+                            beat,
+                            value: 0.5,
+                            curve: 'linear' as const,
+                        })),
+                    },
+                ],
+            },
+        });
+
+        expect(userMessage).toContain('"pointCount":5000');
+        expect(userMessage).not.toContain('"beat":4999');
+        expect(userMessage.length).toBeLessThan(20_000);
     });
 
     it('escapes framing characters from project-owned names', () => {
@@ -1226,5 +1269,102 @@ describe('bridgeLlmToolCalls', () => {
         expect(userMessage.match(/<\/project_context>/g)).toHaveLength(1);
         expect(userMessage).toContain('\\u003c/project_context\\u003e');
         expect(userMessage).toContain('\\u0026');
+    });
+
+    it('converts bounded automation calls into typed runtime actions', () => {
+        const result = bridge({
+            calls: [
+                { name: 'addAutomationLane', arguments: { trackId: 'bus-reverb', parameterId: 'pan' } },
+                {
+                    name: 'addAutomationPoint',
+                    arguments: { laneId: 'lane-vocal-gain', beat: 8, value: 0.5, curve: 'linear' },
+                },
+                {
+                    name: 'setAutomationLaneEnabled',
+                    arguments: { laneId: 'lane-vocal-gain', enabled: false },
+                },
+            ],
+        });
+
+        expect(result).toEqual({
+            actions: [
+                {
+                    type: 'addAutomationLane',
+                    payload: { trackId: 'bus-reverb', parameterId: 'pan', parameterName: 'Pan' },
+                },
+                {
+                    type: 'addAutomationPoint',
+                    payload: { laneId: 'lane-vocal-gain', beat: 8, value: 0.5, curve: 'linear' },
+                },
+                {
+                    type: 'setAutomationLaneEnabled',
+                    payload: { laneId: 'lane-vocal-gain', enabled: false },
+                },
+            ],
+            rejections: [],
+        });
+    });
+
+    it('rejects unbounded, colliding, missing, and provider-extended automation calls', () => {
+        const result = bridge({
+            calls: [
+                { name: 'addAutomationLane', arguments: { trackId: 'track-vocals', parameterId: 'mute' } },
+                { name: 'addAutomationLane', arguments: { trackId: 'track-vocals', parameterId: 'gain' } },
+                { name: 'addAutomationPoint', arguments: { laneId: 'lane-vocal-gain', beat: 4, value: 0.5 } },
+                { name: 'addAutomationPoint', arguments: { laneId: 'lane-vocal-gain', beat: 8, value: 1.5 } },
+                { name: 'setAutomationLaneEnabled', arguments: { laneId: 'missing', enabled: false } },
+                {
+                    name: 'setAutomationLaneEnabled',
+                    arguments: { laneId: 'lane-vocal-gain', enabled: false, force: true },
+                },
+                { name: 'setAutomationLaneEnabled', arguments: { laneId: 'lane-vocal-gain', enabled: true } },
+            ],
+        });
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections.map(({ name }) => name)).toEqual([
+            'addAutomationLane',
+            'addAutomationLane',
+            'addAutomationPoint',
+            'addAutomationPoint',
+            'setAutomationLaneEnabled',
+            'setAutomationLaneEnabled',
+            'setAutomationLaneEnabled',
+        ]);
+    });
+
+    it('allows multiple point insertions at distinct beats now that their stable-id inverses compose', () => {
+        const result = bridge({
+            calls: [
+                { name: 'addAutomationPoint', arguments: { laneId: 'lane-vocal-gain', beat: 8, value: 0.5 } },
+                { name: 'addAutomationPoint', arguments: { laneId: 'lane-vocal-gain', beat: 12, value: 0.25 } },
+            ],
+        });
+
+        expect(result).toEqual({
+            actions: [
+                { type: 'addAutomationPoint', payload: { laneId: 'lane-vocal-gain', beat: 8, value: 0.5 } },
+                { type: 'addAutomationPoint', payload: { laneId: 'lane-vocal-gain', beat: 12, value: 0.25 } },
+            ],
+            rejections: [],
+        });
+    });
+
+    it('rejects multiple point insertions at the same lane position', () => {
+        const result = bridge({
+            calls: [
+                { name: 'addAutomationPoint', arguments: { laneId: 'lane-vocal-gain', beat: 8, value: 0.5 } },
+                { name: 'addAutomationPoint', arguments: { laneId: 'lane-vocal-gain', beat: 8, value: 0.25 } },
+            ],
+        });
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toEqual([
+            {
+                index: 1,
+                name: 'addAutomationPoint',
+                reason: 'Provider batch contains conflicting writes to automation-lane-point:lane-vocal-gain:8',
+            },
+        ]);
     });
 });

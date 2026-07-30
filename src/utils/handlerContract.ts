@@ -93,6 +93,7 @@ export type AutomationLaneSnapshot = { readonly id: string; readonly trackId: st
  *  action. Command cannot import Automation's `AutomationPoint` model (model isolation),
  *  so this specifies only the fields a transform-undo round-trips. */
 export type AutomationPointSnapshot = {
+    readonly id?: string;
     readonly beat: number;
     readonly value: number;
     readonly curve: string;
@@ -441,6 +442,8 @@ export type AppAction =
           type: 'addAutomationPoint';
           payload: {
               laneId: string;
+              /** Command-owned stable identity for exact undo/redo. AiRuntime rejects provider input. */
+              pointId?: string;
               beat: number;
               value: number;
               curve?: 'linear' | 'step' | 'exponential' | 's-curve' | 'stairs' | 'smooth' | 'bezier';
@@ -514,7 +517,15 @@ export type AppAction =
           type: 'removeSend';
           payload: { trackId: string; busId: string; expectedLevel?: number; expectedPreFader?: boolean };
       }
-    | { type: 'removeAutomationPoint'; payload: { laneId: string; pointIndex: number } }
+    | {
+          type: 'removeAutomationPoint';
+          payload: {
+              laneId: string;
+              pointIndex: number;
+              /** Internal stable target. AiRuntime rejects provider input. */
+              pointId?: string;
+          };
+      }
     | { type: 'setAutomationMode'; payload: { trackId: string; mode: AutomationMode } }
     | { type: 'hideTrack'; payload: { trackId: string; hidden: boolean } }
     | { type: 'disableTrack'; payload: { trackId: string; disabled: boolean } }
