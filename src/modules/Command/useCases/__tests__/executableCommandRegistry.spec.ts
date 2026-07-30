@@ -112,6 +112,17 @@ const EXPECTED_COMMANDS = [
         true
     ),
     expectedCommand(
+        'setTimeSignature',
+        'Set the project time signature.',
+        {
+            numerator: { type: 'integer', description: 'Whole-number beat count from 1 through 32' },
+            denominator: { type: 'integer', enum: [2, 4, 8, 16], description: 'Beat unit' },
+        },
+        ['numerator', 'denominator'],
+        'authority-sensitive',
+        true
+    ),
+    expectedCommand(
         'setDeviceParameter',
         'Adjust a parameter on an existing device.',
         {
@@ -279,6 +290,21 @@ const EXPECTED_GROUNDING = [
         intentPhrases: ['set tempo', 'change tempo', 'tempo'],
         targetRules: [],
         valueRules: [{ argument: 'bpm', kind: 'number-if-present' }],
+    },
+    {
+        actionType: 'setTimeSignature',
+        intentPhrases: [
+            'set time signature',
+            'set the time signature',
+            'change time signature',
+            'change the time signature',
+            'set meter',
+            'set the meter',
+            'change meter',
+            'change the meter',
+        ],
+        targetRules: [],
+        valueRules: [{ argument: 'numerator', denominatorArgument: 'denominator', kind: 'time-signature' }],
     },
     {
         actionType: 'setDeviceParameter',

@@ -190,6 +190,37 @@ describe('parsePromptToActions', () => {
         expect(result.executionMode).toBe('atomic');
     });
 
+    it('proposes an explicit provider time-signature command as one confirmable atomic action', async () => {
+        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
+            '../agentReference/bridgeGroundedLlmToolCalls'
+        );
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        vi.mocked(generateToolCalls).mockResolvedValue(
+            completePlan([{ name: 'setTimeSignature', arguments: { numerator: 7, denominator: 8 } }])
+        );
+
+        const result = await parsePromptToActions('set time signature to 7/8', baseContext);
+
+        expect(result.actions).toEqual([{ type: 'setTimeSignature', payload: { numerator: 7, denominator: 8 } }]);
+        expect(result.requiresConfirmation).toBe(true);
+        expect(result.executionMode).toBe('atomic');
+    });
+
+    it('rejects a provider time signature that does not match the prompt', async () => {
+        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
+            '../agentReference/bridgeGroundedLlmToolCalls'
+        );
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        vi.mocked(generateToolCalls).mockResolvedValue(
+            completePlan([{ name: 'setTimeSignature', arguments: { numerator: 4, denominator: 4 } }])
+        );
+
+        const result = await parsePromptToActions('set time signature to 7/8', baseContext);
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejectionReason).toContain('does not match the user request');
+    });
+
     it('requires confirmation for a grounded multi-action provider plan', async () => {
         const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
             '../agentReference/bridgeGroundedLlmToolCalls'

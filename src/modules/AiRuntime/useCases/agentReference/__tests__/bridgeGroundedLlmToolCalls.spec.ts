@@ -182,6 +182,120 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(wrongCreatedTrack.actions).toEqual([]);
     });
 
+    it('grounds time signatures as an explicit paired value', () => {
+        const valid = bridge(
+            [{ name: 'setTimeSignature', arguments: { numerator: 7, denominator: 8 } }],
+            'set time signature to 7/8'
+        );
+        const fromTo = bridge(
+            [{ name: 'setTimeSignature', arguments: { numerator: 7, denominator: 8 } }],
+            'change the time signature from 4/4 to 7/8'
+        );
+        const nounQuestion = bridge(
+            [{ name: 'setTimeSignature', arguments: { numerator: 7, denominator: 8 } }],
+            'time signature 7/8?'
+        );
+        const cancelled = [
+            "set time signature to 7/8, but don't apply it",
+            "set time signature to 7/8, but don't actually apply it",
+            "set time signature to 7/8, don't apply it",
+            "set time signature to 7/8, but don't apply the change",
+            'set time signature to 7/8, but cancel that',
+            'set time signature to 7/8, but leave it unchanged',
+            'set time signature to 7/8, on second thought',
+        ].map((prompt) => bridge([{ name: 'setTimeSignature', arguments: { numerator: 7, denominator: 8 } }], prompt));
+        const unrelatedNegation = bridge(
+            [{ name: 'setTimeSignature', arguments: { numerator: 7, denominator: 8 } }],
+            "set time signature to 7/8, but don't change the tempo"
+        );
+        const nearestActionNegation = bridge(
+            [{ name: 'setTimeSignature', arguments: { numerator: 7, denominator: 8 } }],
+            "set time signature to 7/8 and set tempo to 120, but don't apply that tempo change"
+        );
+        const descriptiveDistractor = bridge(
+            [{ name: 'setTimeSignature', arguments: { numerator: 7, denominator: 8 } }],
+            "set time signature to 7/8; mute is unrelated, but don't apply the change"
+        );
+        const tempoNamedTrack = createTrack({ id: 'track-tempo', name: 'Tempo' });
+        const projectReferenceDistractor = bridge(
+            [{ name: 'setTimeSignature', arguments: { numerator: 7, denominator: 8 } }],
+            "set time signature to 7/8 for Tempo, but don't apply it",
+            { ...projectContext, tracks: [...projectContext.tracks, tempoNamedTrack] }
+        );
+        const alternative = bridge(
+            [{ name: 'setTimeSignature', arguments: { numerator: 7, denominator: 8 } }],
+            'set time signature to 7/8 or 6/8'
+        );
+        const textualAlternative = bridge(
+            [{ name: 'setTimeSignature', arguments: { numerator: 7, denominator: 8 } }],
+            'set time signature to 7/8 or common time'
+        );
+        const chainedDestination = bridge(
+            [{ name: 'setTimeSignature', arguments: { numerator: 6, denominator: 8 } }],
+            'set time signature to 7/8 to 6/8'
+        );
+        const wrongSource = bridge(
+            [{ name: 'setTimeSignature', arguments: { numerator: 7, denominator: 8 } }],
+            'change the time signature from 3/4 to 7/8'
+        );
+        const unsupportedTextDestination = bridge(
+            [{ name: 'setTimeSignature', arguments: { numerator: 4, denominator: 4 } }],
+            'change time signature from 4/4 to common time'
+        );
+        const unsupportedQualifiedTextDestination = bridge(
+            [{ name: 'setTimeSignature', arguments: { numerator: 4, denominator: 4 } }],
+            'change time signature from the current 4/4 to common time'
+        );
+        const mismatched = bridge(
+            [{ name: 'setTimeSignature', arguments: { numerator: 4, denominator: 4 } }],
+            'change the meter to 7/8'
+        );
+        const missing = bridge(
+            [{ name: 'setTimeSignature', arguments: { numerator: 7, denominator: 8 } }],
+            'change the time signature'
+        );
+        const invalid = bridge(
+            [{ name: 'setTimeSignature', arguments: { numerator: 7, denominator: 3 } }],
+            'set meter to 7/3'
+        );
+        const batch = bridge(
+            [
+                { name: 'setTempo', arguments: { bpm: 128 } },
+                { name: 'setTimeSignature', arguments: { numerator: 7, denominator: 8 } },
+            ],
+            'set tempo to 128 and set time signature to 7/8'
+        );
+
+        expect(valid.actions).toEqual([{ type: 'setTimeSignature', payload: { numerator: 7, denominator: 8 } }]);
+        expect(fromTo.actions).toEqual([{ type: 'setTimeSignature', payload: { numerator: 7, denominator: 8 } }]);
+        expect(nounQuestion.actions).toEqual([]);
+        expect(cancelled.every((result) => result.actions.length === 0)).toBe(true);
+        expect(unrelatedNegation.actions).toEqual([
+            { type: 'setTimeSignature', payload: { numerator: 7, denominator: 8 } },
+        ]);
+        expect(nearestActionNegation.actions).toEqual([
+            { type: 'setTimeSignature', payload: { numerator: 7, denominator: 8 } },
+        ]);
+        expect(descriptiveDistractor.actions).toEqual([]);
+        expect(projectReferenceDistractor.actions).toEqual([]);
+        expect(alternative.actions).toEqual([]);
+        expect(textualAlternative.actions).toEqual([]);
+        expect(chainedDestination.actions).toEqual([]);
+        expect(wrongSource.actions).toEqual([]);
+        expect(unsupportedTextDestination.actions).toEqual([]);
+        expect(unsupportedQualifiedTextDestination.actions).toEqual([]);
+        expect(mismatched.actions).toEqual([]);
+        expect(mismatched.rejections[0]?.reason).toContain('does not match');
+        expect(missing.actions).toEqual([]);
+        expect(missing.rejections[0]?.reason).toContain('not grounded');
+        expect(invalid.actions).toEqual([]);
+        expect(invalid.rejections[0]?.reason).toContain('denominator 2, 4, 8, or 16');
+        expect(batch.actions).toEqual([
+            { type: 'setTempo', payload: { bpm: 128 } },
+            { type: 'setTimeSignature', payload: { numerator: 7, denominator: 8 } },
+        ]);
+    });
+
     it('rejects masked-control bypasses, broad creation verbs, and qualitative direction mismatches', () => {
         const referenceCollisionContext = {
             ...projectContext,

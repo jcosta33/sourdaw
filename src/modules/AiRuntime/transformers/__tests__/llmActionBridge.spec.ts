@@ -121,6 +121,7 @@ describe('bridgeLlmToolCalls', () => {
         const result = bridge({
             calls: [
                 { name: 'setTempo', arguments: { bpm: 128 } },
+                { name: 'setTimeSignature', arguments: { numerator: 7, denominator: 8 } },
                 { name: 'renameTrack', arguments: { trackId: 'track-vocals', name: 'Lead Vocal' } },
                 { name: 'muteTrack', arguments: { trackId: 'track-vocals', muted: true } },
                 { name: 'soloTrack', arguments: { trackId: 'track-vocals', soloed: true } },
@@ -131,6 +132,7 @@ describe('bridgeLlmToolCalls', () => {
 
         expect(result.actions).toEqual([
             { type: 'setTempo', payload: { bpm: 128 } },
+            { type: 'setTimeSignature', payload: { numerator: 7, denominator: 8 } },
             { type: 'renameTrack', payload: { trackId: 'track-vocals', name: 'Lead Vocal' } },
             { type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true } },
             { type: 'soloTrack', payload: { trackId: 'track-vocals', soloed: true } },
@@ -145,6 +147,11 @@ describe('bridgeLlmToolCalls', () => {
             calls: [
                 { name: 'removeTrack', arguments: { trackId: 'track-vocals' } },
                 { name: 'setTempo', arguments: { bpm: 128, hidden: true } },
+                { name: 'setTimeSignature', arguments: { numerator: 7, denominator: 3 } },
+                { name: 'setTimeSignature', arguments: { numerator: 4, denominator: 4, hidden: true } },
+                { name: 'setTimeSignature', arguments: { numerator: 7.5, denominator: 8 } },
+                { name: 'setTimeSignature', arguments: { numerator: 0, denominator: 4 } },
+                { name: 'setTimeSignature', arguments: { numerator: 33, denominator: 4 } },
                 { name: 'setTrackGain', arguments: { trackId: 'track-vocals', gain: 1.1 } },
                 { name: 'setTrackPan', arguments: { trackId: 'missing', pan: 0 } },
                 { name: 'renameTrack', arguments: { trackId: 'track-vocals', name: '   ' } },
@@ -161,6 +168,11 @@ describe('bridgeLlmToolCalls', () => {
         expect(result.rejections.map((rejection) => rejection.name)).toEqual([
             'removeTrack',
             'setTempo',
+            'setTimeSignature',
+            'setTimeSignature',
+            'setTimeSignature',
+            'setTimeSignature',
+            'setTimeSignature',
             'setTrackGain',
             'setTrackPan',
             'renameTrack',
@@ -511,6 +523,24 @@ describe('bridgeLlmToolCalls', () => {
             {
                 index: 1,
                 name: 'setTrackGain',
+                reason: 'Provider batch writes the same target field more than once',
+            },
+        ]);
+    });
+
+    it('rejects repeated time-signature changes instead of depending on ambiguous order', () => {
+        const result = bridge({
+            calls: [
+                { name: 'setTimeSignature', arguments: { numerator: 7, denominator: 8 } },
+                { name: 'setTimeSignature', arguments: { numerator: 6, denominator: 8 } },
+            ],
+        });
+
+        expect(result.actions).toEqual([{ type: 'setTimeSignature', payload: { numerator: 7, denominator: 8 } }]);
+        expect(result.rejections).toEqual([
+            {
+                index: 1,
+                name: 'setTimeSignature',
                 reason: 'Provider batch writes the same target field more than once',
             },
         ]);
