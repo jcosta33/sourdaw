@@ -1,0 +1,34 @@
+src/app/__tests__/prepareOfflineDeviceSetup.spec.ts
+  s_66d4924c65dcd2::t_b3fc0d7a18bb00 1-21,23,26-43,45,56-113
+  s_66d4924c65dcd2::t_0bc91c4228b5ec 44,46-55
+  s_66d4924c65dcd2::t_ce8916a1b70303 22,24-25
+src/modules/Proof/useCases/prepareOfflineProof.ts
+  s_66d4924c65dcd2::t_28f6436f204ab4 1-66
+src/app/prepareOfflineDeviceSetup.ts
+  s_66d4924c65dcd2::t_59d0a56a75d9ec 2
+  s_66d4924c65dcd2::t_df5aac54a12f93 40-47
+src/modules/Proof/useCases/proofParamBridge/syncFullPatch.ts
+  s_66d4924c65dcd2::t_3a0b5af7f48f2d 7
+  s_66d4924c65dcd2::t_10e70c0d8a2164 382
+src/modules/Proof/services/getRestoredProofChainOrder.ts
+  s_66d4924c65dcd2::t_51574c77174105 1,5-6,13-16,20-21,23,25,37-38
+  s_66d4924c65dcd2::t_82a0430d13665e 2-4,7-12,17-19,22,24,26-36,39-51
+src/modules/Proof/useCases/index.ts
+  s_66d4924c65dcd2::t_59ddedf25dc0b9 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "9d7bc7354453b772302eb4d7ef5b6f488623102d",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
