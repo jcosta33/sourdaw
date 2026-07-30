@@ -1,0 +1,64 @@
+src/modules/AudioEngine/engine/metering/__tests__/MeterTransport.spec.ts
+  s_ac9b259eab20ba::t_6985a8e715cbe8 111-144
+  s_ac9b259eab20ba::t_b935339b307079 52-54
+  s_ac9b259eab20ba::t_0c4e51cbd76b63 1-51,55-110,145
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngineDelegation.spec.ts
+  s_ac9b259eab20ba::t_ff07815ea5eeab 167
+  s_ac9b259eab20ba::t_d01e9ba3c226da 310-311,385-387,404-405,416
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_ac9b259eab20ba::t_d38af6f3067d50 8,243,293-296,320,372,413-414,472-474,493-494,696,822,1448,1452,1454-1455
+src/modules/AudioEngine/engine/metering/MeterTransport.ts
+  s_ac9b259eab20ba::t_b7f1402c4f44bc 154-158,177-186
+  s_ac9b259eab20ba::t_e1c83644e095c4 94-101
+  s_ac9b259eab20ba::t_6985a8e715cbe8 36-41,46-50,54-59,71-79,81,128-134,151-153,159-160,173
+  s_ac9b259eab20ba::t_dc7a59f056cf2b 1-35,42-45,51-53,60-70,80,82-93,102-127,135-150,161-172,174-176,187-189
+src/modules/AudioEngine/models/AudioEngineState.ts
+  s_ac9b259eab20ba::t_d38af6f3067d50 87-91
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngineBranches.spec.ts
+  s_ac9b259eab20ba::t_e50565db3e5f71 13
+src/modules/WorkspaceShell/presentations/hooks/useStatusBarMetrics.ts
+  s_ac9b259eab20ba::t_4542588f003d24 78-79
+src/modules/AudioEngine/engine/__tests__/TrackNodeDevices.spec.ts
+  s_ac9b259eab20ba::t_b46fe8f3434199 181-186,189,628-633,638
+  s_ac9b259eab20ba::t_abc3afcd4a2e5e 192,196,412,416
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngine.spec.ts
+  s_ac9b259eab20ba::t_e50565db3e5f71 10-11
+  s_ac9b259eab20ba::t_9a8cf4af2b0dce 173-174,177-178,182-184,189,601,607,637-640,644,1273,1275,1283-1284,1288-1291,1297
+  s_ac9b259eab20ba::t_27d94ded9e6740 179-181
+  s_ac9b259eab20ba::t_d01e9ba3c226da 634,881-882
+  s_ac9b259eab20ba::t_ff07815ea5eeab 1274,1296
+src/modules/AudioEngine/services/meteringProcessor.ts
+  s_ac9b259eab20ba::t_8a50fa41f8d3dd 35
+  s_ac9b259eab20ba::t_dc7a59f056cf2b 2-3,39,43-46,48-56,61-63
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useStatusBarMetrics.spec.ts
+  s_ac9b259eab20ba::t_4c76ead7d59786 246,269
+  s_ac9b259eab20ba::t_d01e9ba3c226da 77-78
+src/modules/AudioEngine/engine/TrackNode.ts
+  s_ac9b259eab20ba::t_8bf6c0dfae1a2d 91
+  s_ac9b259eab20ba::t_31648af66d1434 8,31,99-100,262-264,276,400,812
+  s_ac9b259eab20ba::t_e1c83644e095c4 401
+src/modules/AudioEngine/services/__tests__/meteringProcessor.spec.ts
+  s_ac9b259eab20ba::t_91f006b46062b4 48,90-104,132,136-137
+  s_ac9b259eab20ba::t_912a30a700e352 138-139
+src/modules/AudioEngine/engine/__tests__/TrackNode.spec.ts
+  s_ac9b259eab20ba::t_b46fe8f3434199 52,57,260-266
+  s_ac9b259eab20ba::t_abc3afcd4a2e5e 426,685-686
+  s_ac9b259eab20ba::t_9ca99e6e230665 1
+  s_ac9b259eab20ba::t_70f0d930b7d299 564-573
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "20ed9600d9cf54b811cf415d20b8e7aff880fc1b",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
