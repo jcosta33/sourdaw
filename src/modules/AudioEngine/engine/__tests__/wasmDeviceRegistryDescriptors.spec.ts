@@ -822,14 +822,15 @@ describe('wasmDeviceRegistry descriptors', () => {
             };
             factoryMocks.createKneadNode.mockResolvedValue(result);
             const transportSAB = new ArrayBuffer(16) as unknown as SharedArrayBuffer;
-            const deps = createDeps({ deviceType: 'knead', deviceId: 'knead-1', transportSAB });
+            const signal = new AbortController().signal;
+            const deps = createDeps({ deviceType: 'knead', deviceId: 'knead-1', transportSAB, signal });
 
             const { placeholder, loadPromise } = requireDescriptor('knead').create(deps);
             expect(placeholder.kneadControls?.ready).toBe(false);
             placeholder.kneadControls?.setParam('shift_semitones', 3);
             await loadPromise;
 
-            expect(factoryMocks.createKneadNode).toHaveBeenCalledWith(deps.context, transportSAB);
+            expect(factoryMocks.createKneadNode).toHaveBeenCalledWith(deps.context, transportSAB, signal);
             expect(result.setParam).toHaveBeenCalledWith('shift_semitones', 3);
 
             const loaded = lastLoadedNode(deps.onLoaded);

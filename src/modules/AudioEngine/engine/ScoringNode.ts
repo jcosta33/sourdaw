@@ -4,6 +4,7 @@
  * telemetry sent back via MessagePort.
  */
 
+import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from '#/infra/audioWorklet/workletInitShared';
 import { NOTE_NAMES } from '#/utils/noteNames';
 
@@ -69,15 +70,18 @@ export function isScoringDevice(deviceType: string): boolean {
     return deviceType === 'native-scoring';
 }
 
-export async function createScoringNode(ctx: BaseAudioContext): Promise<ScoringNodeResult> {
+export async function createScoringNode(ctx: BaseAudioContext, signal?: AbortSignal): Promise<ScoringNodeResult> {
     // Scoring's tuner telemetry (frequency, cents, confidence) is SAB-backed.
     requireSharedArrayBuffer('Scoring');
 
     if (ctx instanceof AudioContext && ctx.state === 'suspended') {
-        await ctx.resume();
+        await raceAbortSignal(ctx.resume(), signal);
     }
 
-    await ensureWorkletRegistered(ctx, scoringProcessorUrl);
+    await raceAbortSignal(ensureWorkletRegistered(ctx, scoringProcessorUrl), signal);
+    const wasmBytes = await raceAbortSignal(fetchWasmBinary(DEFAULT_WASM_URL), signal);
+
+    signal?.throwIfAborted();
 
     const node = new AudioWorkletNode(ctx, 'scoring-processor', {
         numberOfInputs: 1,
@@ -100,7 +104,6 @@ export async function createScoringNode(ctx: BaseAudioContext): Promise<ScoringN
     };
     const readyPromise = handshake.promise;
 
-    const wasmBytes = await fetchWasmBinary(DEFAULT_WASM_URL);
     const copy = wasmBytes.slice(0);
     node.port.postMessage({ type: 'init', wasmBytes: copy }, [copy]);
 

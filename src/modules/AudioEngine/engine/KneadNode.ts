@@ -4,7 +4,8 @@
  * Synchronizes with the kneadStore to receive per-clip pitch blobs and parameters.
  */
 
-import { ensureWorkletRegistered, fetchWasmBinary, createReadyHandshake } from '#/infra/audioWorklet/workletInitShared';
+import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
+import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from '#/infra/audioWorklet/workletInitShared';
 
 import kneadProcessorUrl from '../services/kneadProcessor.ts?worker&url';
 
@@ -25,13 +26,17 @@ export function isKneadDevice(deviceType: string): boolean {
 
 export async function createKneadNode(
     ctx: BaseAudioContext,
-    transportSAB?: SharedArrayBuffer
+    transportSAB?: SharedArrayBuffer,
+    signal?: AbortSignal
 ): Promise<KneadNodeResult> {
     if (ctx instanceof AudioContext && ctx.state === 'suspended') {
-        await ctx.resume();
+        await raceAbortSignal(ctx.resume(), signal);
     }
 
-    await ensureWorkletRegistered(ctx, kneadProcessorUrl);
+    await raceAbortSignal(ensureWorkletRegistered(ctx, kneadProcessorUrl), signal);
+    const wasmBytes = await raceAbortSignal(fetchWasmBinary(DEFAULT_WASM_URL), signal);
+
+    signal?.throwIfAborted();
 
     const node = new AudioWorkletNode(ctx, 'knead-processor', {
         numberOfInputs: 1,
@@ -47,7 +52,6 @@ export async function createKneadNode(
     };
     const readyPromise = handshake.promise;
 
-    const wasmBytes = await fetchWasmBinary(DEFAULT_WASM_URL);
     const copy = wasmBytes.slice(0);
     node.port.postMessage(
         {

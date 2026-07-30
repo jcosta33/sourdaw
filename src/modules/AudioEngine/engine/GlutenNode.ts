@@ -7,6 +7,7 @@
  * Key difference: Gluten is an *effect* (1 input, 1 output), not an instrument.
  */
 
+import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from '#/infra/audioWorklet/workletInitShared';
 
 import glutenProcessorUrl from '../services/glutenProcessor.ts?worker&url';
@@ -56,17 +57,24 @@ export function isGlutenDevice(deviceType: string): boolean {
     return deviceType === 'gluten';
 }
 
-export async function createGlutenNode(ctx: BaseAudioContext, wasmUrl?: string): Promise<GlutenNodeResult> {
+export async function createGlutenNode(
+    ctx: BaseAudioContext,
+    wasmUrl?: string,
+    signal?: AbortSignal
+): Promise<GlutenNodeResult> {
     // Gluten's meter readout lives in a SAB telemetry slot; without SAB the
     // worklet still runs but the UI silently freezes at the default values.
     // Fail fast with a typed error so `buildDeviceChain` surfaces the reason.
     requireSharedArrayBuffer('Gluten');
 
     if (ctx instanceof AudioContext && ctx.state === 'suspended') {
-        await ctx.resume();
+        await raceAbortSignal(ctx.resume(), signal);
     }
 
-    await ensureWorkletRegistered(ctx, glutenProcessorUrl);
+    await raceAbortSignal(ensureWorkletRegistered(ctx, glutenProcessorUrl), signal);
+    const wasmBytes = await raceAbortSignal(fetchWasmBinary(wasmUrl ?? DEFAULT_WASM_URL), signal);
+
+    signal?.throwIfAborted();
 
     const node = new AudioWorkletNode(ctx, 'gluten-processor', {
         numberOfInputs: 2, // Input 0: main audio, Input 1: external sidechain
@@ -97,7 +105,6 @@ export async function createGlutenNode(ctx: BaseAudioContext, wasmUrl?: string):
     };
     const readyPromise = handshake.promise;
 
-    const wasmBytes = await fetchWasmBinary(wasmUrl ?? DEFAULT_WASM_URL);
     const copy = wasmBytes.slice(0);
     node.port.postMessage({ type: 'init', wasmBytes: copy }, [copy]);
 
