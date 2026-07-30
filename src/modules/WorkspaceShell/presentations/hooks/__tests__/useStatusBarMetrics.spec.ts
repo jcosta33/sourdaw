@@ -4,7 +4,7 @@ import { renderHook } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { getDawStatusDotClassName } from '#/components/daw/DawStatusDot';
-import { getEngineState, getMasterPeakLevel } from '#/modules/AudioEngine/useCases';
+import { getEngineDiagnostics, getEngineState, getMasterPeakLevel } from '#/modules/AudioEngine/useCases';
 import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
 
 import { useStatusBarMetrics, type StatusBarMetricRefs } from '../useStatusBarMetrics';
@@ -12,6 +12,7 @@ import { useStatusBarMetrics, type StatusBarMetricRefs } from '../useStatusBarMe
 type TickFn = () => void;
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    getEngineDiagnostics: vi.fn(),
     getEngineState: vi.fn(),
     getMasterPeakLevel: vi.fn(),
 }));
@@ -50,11 +51,33 @@ function makeElements(refs: StatusBarMetricRefs): void {
     }
 }
 
+function makeEngineDiagnostics(deviceInstances = 24): ReturnType<typeof getEngineDiagnostics> {
+    return {
+        context: { state: 'running', sampleRate: 48_000, baseLatency: 0.005, outputLatency: 0.005 },
+        graph: {
+            trackStrips: 43,
+            busStrips: 8,
+            sends: 12,
+            sidechains: 2,
+            deviceInstances,
+            pendingDeviceInstances: 1,
+            failedDeviceInstances: 2,
+            deviceInstancesByType: { fermenter: 14 },
+            deviceAudioNodes: 31,
+            stripMeterWorklets: 39,
+            masterMeterWorklets: 1,
+            adjustmentLayerBuses: 0,
+        },
+        runtime: { trackedAudioScheduledSources: 0 },
+    };
+}
+
 describe('useStatusBarMetrics', () => {
     const originalRequestIdle = globalThis.requestIdleCallback;
     const originalCancelIdle = globalThis.cancelIdleCallback;
 
     beforeEach(() => {
+        vi.clearAllMocks();
         vi.useFakeTimers();
         vi.stubGlobal('performance', { now: vi.fn(() => 0) });
         // No requestIdleCallback by default — exercises the feature-detect branch.
@@ -62,6 +85,7 @@ describe('useStatusBarMetrics', () => {
         delete (globalThis as { cancelIdleCallback?: unknown }).cancelIdleCallback;
         capturedTick = null;
         capturedId = null;
+        vi.mocked(getEngineDiagnostics).mockReturnValue(makeEngineDiagnostics());
     });
 
     afterEach(() => {
@@ -202,7 +226,9 @@ describe('useStatusBarMetrics', () => {
 
         const expectedClass = getDawStatusDotClassName({ tone: 'success' });
         expect(refs.engineState.current!.className).toContain(expectedClass);
-        expect(refs.engineState.current!.title).toBe('Engine: running');
+        expect(refs.engineState.current!.title).toBe(
+            'Engine: running · audio track strips: 43 · bus strips: 8 · sends: 12 · sidechains: 2 · ready device instances: 24 (fermenter: 14) · pending device instances: 1 · failed device instances: 2 · device audio nodes: 31 · strip meter worklets: 39 · master meter worklets: 1 · adjustment-layer buses: 0 · tracked AudioScheduledSources: 0'
+        );
     });
 
     it('sets the engine-state dot to muted when the engine is suspended', () => {
@@ -223,7 +249,41 @@ describe('useStatusBarMetrics', () => {
 
         const expectedClass = getDawStatusDotClassName({ tone: 'muted' });
         expect(refs.engineState.current!.className).toContain(expectedClass);
-        expect(refs.engineState.current!.title).toBe('Engine: suspended');
+        expect(refs.engineState.current!.title).toBe(
+            'Engine: suspended · audio track strips: 43 · bus strips: 8 · sends: 12 · sidechains: 2 · ready device instances: 24 (fermenter: 14) · pending device instances: 1 · failed device instances: 2 · device audio nodes: 31 · strip meter worklets: 39 · master meter worklets: 1 · adjustment-layer buses: 0 · tracked AudioScheduledSources: 0'
+        );
+    });
+
+    it('samples graph diagnostics at most once per second', () => {
+        let now = 0;
+        vi.stubGlobal('performance', { now: () => now });
+        vi.mocked(getEngineState).mockReturnValue({
+            isReady: true,
+            sampleRate: 48_000,
+            state: 'running',
+            masterGain: 1,
+            currentTime: 0,
+            baseLatency: 0.005,
+        });
+        vi.mocked(getMasterPeakLevel).mockReturnValue(0);
+
+        const refs = makeRefs();
+        makeElements(refs);
+        renderHook(() => useStatusBarMetrics(refs));
+
+        capturedTick!();
+        const initialTitle = refs.engineState.current!.title;
+
+        vi.mocked(getEngineDiagnostics).mockReturnValue(makeEngineDiagnostics(25));
+        now = 500;
+        capturedTick!();
+        expect(getEngineDiagnostics).toHaveBeenCalledTimes(1);
+        expect(refs.engineState.current!.title).toBe(initialTitle);
+
+        now = 1_000;
+        capturedTick!();
+        expect(getEngineDiagnostics).toHaveBeenCalledTimes(2);
+        expect(refs.engineState.current!.title).toContain('ready device instances: 25');
     });
 
     it('writes a CPU percentage text and applies the success color when CPU is low', () => {

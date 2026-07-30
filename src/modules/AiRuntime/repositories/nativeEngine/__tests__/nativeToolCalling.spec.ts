@@ -28,6 +28,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function generateToolCalls() {
+    return generateNativeToolCalls({
+        systemPrompt: 'system',
+        userMessage: 'mute drums',
+        tools: [],
+        temperature: 0.1,
+    });
+}
+
 describe('generateNativeToolCalls', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -51,7 +60,17 @@ describe('generateNativeToolCalls', () => {
         mocks.isTauri.mockReturnValue(true);
         mocks.tauriInvoke.mockResolvedValue({
             status: 'complete',
-            toolCalls: [{ name: 'mute_track', arguments: { track_id: 'track-1', muted: true } }],
+            protocolVersion: 1,
+            requestId: 'request-1',
+            metadata: { provider: 'qwen' },
+            toolCalls: [
+                {
+                    id: 'call-1',
+                    name: 'mute_track',
+                    arguments: { track_id: 'track-1', muted: true },
+                    metadata: { provider: 'qwen' },
+                },
+            ],
         });
 
         const result = await generateNativeToolCalls({
@@ -78,6 +97,7 @@ describe('generateNativeToolCalls', () => {
         mocks.isTauri.mockReturnValue(true);
         mocks.tauriInvoke.mockResolvedValue({
             status: 'complete',
+            protocolVersion: 1,
             toolCalls: [{ name: 'mute_track', arguments: null }],
         });
 
@@ -89,7 +109,7 @@ describe('generateNativeToolCalls', () => {
                 temperature: 0.1,
             })
         ).rejects.toMatchObject({
-            name: 'ToolPlanningRejectedError',
+            name: 'NativeToolCallingProtocolError',
             message: 'Invalid native_tool_calling response: item 0 has invalid arguments',
         });
     });
@@ -98,7 +118,10 @@ describe('generateNativeToolCalls', () => {
         mocks.isTauri.mockReturnValue(true);
         mocks.tauriInvoke.mockResolvedValue({
             status: 'rejected',
+            protocolVersion: 1,
             reason: 'Native tool calling returned inconsistent finish reason length',
+            requestId: 'request-1',
+            metadata: { provider: 'qwen' },
         });
 
         await expect(
@@ -117,10 +140,12 @@ describe('generateNativeToolCalls', () => {
     it.each([
         null,
         [],
-        { status: 'complete' },
-        { status: 'rejected', reason: null },
-        { status: 'unknown', toolCalls: [] },
-    ])('should terminally reject malformed native protocol envelope %#', async (response) => {
+        { status: 'complete', protocolVersion: 1 },
+        { status: 'rejected', protocolVersion: 1, reason: null },
+        { status: 'unknown', protocolVersion: 1, toolCalls: [] },
+        { status: 'complete', toolCalls: [] },
+        { status: 'complete', protocolVersion: 2, toolCalls: [] },
+    ])('should report malformed native protocol envelope %# as an operational failure', async (response) => {
         mocks.isTauri.mockReturnValue(true);
         mocks.tauriInvoke.mockResolvedValue(response);
 
@@ -132,8 +157,47 @@ describe('generateNativeToolCalls', () => {
                 temperature: 0.1,
             })
         ).rejects.toMatchObject({
-            name: 'ToolPlanningRejectedError',
+            name: 'NativeToolCallingProtocolError',
             message: 'Invalid native_tool_calling response envelope',
+        });
+    });
+
+    it.each([
+        {
+            label: 'complete envelope with a reason',
+            response: { status: 'complete', protocolVersion: 1, toolCalls: [], reason: 'contradictory' },
+        },
+        {
+            label: 'rejected envelope with tool calls',
+            response: { status: 'rejected', protocolVersion: 1, reason: 'Rejected', toolCalls: [] },
+        },
+    ])('should reject a $label', async ({ response }) => {
+        mocks.isTauri.mockReturnValue(true);
+        mocks.tauriInvoke.mockResolvedValue(response);
+
+        await expect(generateToolCalls()).rejects.toMatchObject({
+            name: 'NativeToolCallingProtocolError',
+            message: 'Invalid native_tool_calling response envelope',
+        });
+    });
+
+    it('should reject parameters beside a tool-call item arguments record', async () => {
+        mocks.isTauri.mockReturnValue(true);
+        mocks.tauriInvoke.mockResolvedValue({
+            status: 'complete',
+            protocolVersion: 1,
+            toolCalls: [
+                {
+                    name: 'mute_track',
+                    arguments: { nested: { provider: true } },
+                    parameters: { type: 'object' },
+                },
+            ],
+        });
+
+        await expect(generateToolCalls()).rejects.toMatchObject({
+            name: 'NativeToolCallingProtocolError',
+            message: 'Invalid native_tool_calling response: item 0 has contradictory fields',
         });
     });
 

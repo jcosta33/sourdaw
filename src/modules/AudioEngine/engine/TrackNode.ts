@@ -43,6 +43,8 @@ type PendingDeviceLoad = {
     resolved: boolean;
 };
 
+type DeviceLoadState = 'ready' | 'pending' | 'failed';
+
 export class TrackNode {
     public strip: TrackChannelStrip;
     /** When SAB is unavailable, getPeakLevel falls back to AnalyserNode time-domain data. */
@@ -54,6 +56,7 @@ export class TrackNode {
     private _rebuildScheduled = false;
     private _disposed = false;
     private _outputDestination: AudioNode | null = null;
+    private readonly _failedDeviceLoads = new Set<string>();
     private readonly _pendingDeviceLoads = new Map<string, PendingDeviceLoad>();
 
     constructor(
@@ -452,6 +455,9 @@ export class TrackNode {
         void loadPromise.finally(() => {
             this.deps.pendingDevicePromises.delete(loadPromise);
             if (this._pendingDeviceLoads.get(deviceId) === pendingLoad) {
+                if (!pendingLoad.resolved) {
+                    this._failedDeviceLoads.add(deviceId);
+                }
                 this._pendingDeviceLoads.delete(deviceId);
                 pendingLoad.parameterWrites.length = 0;
             }
@@ -459,6 +465,7 @@ export class TrackNode {
     }
 
     private invalidatePendingDeviceLoad(deviceId: string): void {
+        this._failedDeviceLoads.delete(deviceId);
         const pendingLoad = this._pendingDeviceLoads.get(deviceId);
         if (!pendingLoad) {
             return;
@@ -498,6 +505,17 @@ export class TrackNode {
         this.deps.onDeviceLoaded?.(this.trackId, finalDn);
         this.scheduleRebuildChain();
         return true;
+    }
+
+    public getDeviceLoadState(deviceId: string): DeviceLoadState {
+        const pendingLoad = this._pendingDeviceLoads.get(deviceId);
+        if (pendingLoad) {
+            return pendingLoad.resolved ? 'ready' : 'pending';
+        }
+        if (this._failedDeviceLoads.has(deviceId)) {
+            return 'failed';
+        }
+        return 'ready';
     }
 
     private destroyRejectedDeviceNode(device: BuiltinDeviceNode): void {
@@ -755,6 +773,7 @@ export class TrackNode {
         for (const deviceId of this._pendingDeviceLoads.keys()) {
             this.invalidatePendingDeviceLoad(deviceId);
         }
+        this._failedDeviceLoads.clear();
         this.strip.preFaderTap.disconnect();
         this.strip.gainNode.disconnect();
         this.strip.faderNode.disconnect();

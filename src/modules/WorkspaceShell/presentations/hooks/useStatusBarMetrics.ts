@@ -1,7 +1,7 @@
 import { type RefObject, useEffect, useRef } from 'react';
 
 import { getDawStatusDotClassName } from '#/components/daw/DawStatusDot';
-import { getEngineState, getMasterPeakLevel } from '#/modules/AudioEngine/useCases';
+import { getEngineDiagnostics, getEngineState, getMasterPeakLevel } from '#/modules/AudioEngine/useCases';
 import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
 
 /**
@@ -35,6 +35,8 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
     const cpuHeadRef = useRef(0);
     const cpuFilledRef = useRef(0);
     const idleDeadlineRef = useRef(-1);
+    const lastDiagnosticsAtRef = useRef(Number.NEGATIVE_INFINITY);
+    const engineDiagnosticsTitleRef = useRef('');
 
     useEffect(() => {
         lastFrameRef.current = performance.now();
@@ -58,6 +60,27 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
 
             const engineInfo = getEngineState();
             const masterLevel = getMasterPeakLevel();
+            if (now - lastDiagnosticsAtRef.current >= 1_000) {
+                const diagnostics = getEngineDiagnostics();
+                const deviceTypes = Object.entries(diagnostics.graph.deviceInstancesByType)
+                    .map(([type, count]) => `${type}: ${String(count)}`)
+                    .join(', ');
+                const deviceTypeSummary = deviceTypes.length > 0 ? ` (${deviceTypes})` : '';
+                engineDiagnosticsTitleRef.current =
+                    ` · audio track strips: ${String(diagnostics.graph.trackStrips)}` +
+                    ` · bus strips: ${String(diagnostics.graph.busStrips)}` +
+                    ` · sends: ${String(diagnostics.graph.sends)}` +
+                    ` · sidechains: ${String(diagnostics.graph.sidechains)}` +
+                    ` · ready device instances: ${String(diagnostics.graph.deviceInstances)}${deviceTypeSummary}` +
+                    ` · pending device instances: ${String(diagnostics.graph.pendingDeviceInstances)}` +
+                    ` · failed device instances: ${String(diagnostics.graph.failedDeviceInstances)}` +
+                    ` · device audio nodes: ${String(diagnostics.graph.deviceAudioNodes)}` +
+                    ` · strip meter worklets: ${String(diagnostics.graph.stripMeterWorklets)}` +
+                    ` · master meter worklets: ${String(diagnostics.graph.masterMeterWorklets)}` +
+                    ` · adjustment-layer buses: ${String(diagnostics.graph.adjustmentLayerBuses)}` +
+                    ` · tracked AudioScheduledSources: ${String(diagnostics.runtime.trackedAudioScheduledSources)}`;
+                lastDiagnosticsAtRef.current = now;
+            }
 
             // ── CPU load estimate ───────────────────────────────────────
             // Uses requestIdleCallback to measure how much of each frame is
@@ -139,7 +162,7 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
                 refs.engineState.current.className = getDawStatusDotClassName({
                     tone: engineInfo.state === 'running' ? 'success' : 'muted',
                 });
-                refs.engineState.current.title = `Engine: ${engineInfo.state}`;
+                refs.engineState.current.title = `Engine: ${engineInfo.state}${engineDiagnosticsTitleRef.current}`;
             }
 
             // ── Master level ────────────────────────────────────────────
