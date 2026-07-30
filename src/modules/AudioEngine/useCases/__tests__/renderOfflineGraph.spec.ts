@@ -306,6 +306,7 @@ describe('renderOffline — graph construction and lifecycle', () => {
                         node,
                         strategy: {
                             node,
+                            acceptsNotes: true,
                             setParam: vi.fn<(name: string, value: number) => void>(),
                             resolveOfflineAutomation: () => null,
                             connectPadOutput,
@@ -365,6 +366,7 @@ describe('renderOffline — graph construction and lifecycle', () => {
                         node,
                         strategy: {
                             node,
+                            acceptsNotes: false,
                             setParam: vi.fn<(name: string, value: number) => void>(),
                             resolveOfflineAutomation: () => null,
                         },
@@ -425,6 +427,7 @@ describe('renderOffline — graph construction and lifecycle', () => {
                         node,
                         strategy: {
                             node,
+                            acceptsNotes: false,
                             setParam: vi.fn<(name: string, value: number) => void>(),
                             resolveOfflineAutomation: () => null,
                         },

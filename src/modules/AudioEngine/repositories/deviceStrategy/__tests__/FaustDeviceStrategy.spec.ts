@@ -34,7 +34,7 @@ describe('FaustDeviceStrategy', () => {
             outputNode: {} as AudioNode,
             nodes: [faustNode],
         };
-        const strategy = new FaustDeviceStrategy(offlineNode, faustNode);
+        const strategy = new FaustDeviceStrategy(offlineNode, faustNode, false, 48_000);
 
         strategy.setParam('freq', 0.5);
 
@@ -47,8 +47,36 @@ describe('FaustDeviceStrategy', () => {
             outputNode: {} as AudioNode,
             nodes: [make_audio_node()],
         };
-        const strategy = new FaustDeviceStrategy(offlineNode, make_audio_node() as FaustNodeLike);
+        const strategy = new FaustDeviceStrategy(offlineNode, make_audio_node() as FaustNodeLike, false, 48_000);
         expect(() => strategy.setParam('x', 1)).not.toThrow();
+    });
+
+    // The note surface is gated on the registered `isInstrument` flag, not on
+    // the `faust-` prefix and not on `wamControls.keyOn` (the factory defines
+    // that wrapper for every module, effect or not).
+    it('offers a note surface only to a module registered as an instrument', () => {
+        const keyOn = vi.fn();
+        const keyOff = vi.fn();
+        const faustNode = Object.assign(make_audio_node(), { setParamValue: vi.fn() });
+        const offlineNode = {
+            inputNode: faustNode as AudioNode,
+            outputNode: faustNode as AudioNode,
+            nodes: [faustNode as AudioNode],
+            wamControls: { setParam: vi.fn(), scheduleParam: vi.fn(), keyOn, keyOff },
+        };
+
+        const effect = new FaustDeviceStrategy(offlineNode, faustNode, false, 48_000);
+        const instrument = new FaustDeviceStrategy(offlineNode, faustNode, true, 48_000);
+
+        expect(effect.acceptsNotes).toBe(false);
+        expect(instrument.acceptsNotes).toBe(true);
+
+        // Frame 24000 at 48kHz is 0.5s — the seconds the Faust scheduler wants.
+        instrument.noteOn({ noteOrPad: 64, velocity: 100, sampleFrame: 24_000 });
+        instrument.noteOff({ noteOrPad: 64, sampleFrame: 48_000 });
+
+        expect(keyOn).toHaveBeenCalledWith(0, 64, 100, 0.5);
+        expect(keyOff).toHaveBeenCalledWith(0, 64, 0, 1);
     });
 });
 
@@ -70,9 +98,10 @@ describe('createFaustStrategy', () => {
         };
         await expect(
             createFaustStrategy({
-                ctx: {} as BaseAudioContext,
+                ctx: { sampleRate: 48_000 } as BaseAudioContext,
                 device,
                 createFaustDevice,
+                isFaustInstrument: () => false,
             })
         ).rejects.toThrow(/Failed to create Faust device/);
     });
@@ -93,10 +122,37 @@ describe('createFaustStrategy', () => {
             bypassed: false,
             parameterValues: { gain: 0.25 },
         };
-        const ctx = {} as BaseAudioContext;
-        await createFaustStrategy({ ctx, device, createFaustDevice });
+        const ctx = { sampleRate: 48_000 } as BaseAudioContext;
+        await createFaustStrategy({ ctx, device, createFaustDevice, isFaustInstrument: () => false });
         expect(createFaustDevice).toHaveBeenCalledWith({ ctx, faustModuleId: 'faust-x' });
         expect(setParamValue).toHaveBeenCalledWith('gain', 0.25);
+    });
+
+    it('carries the registered instrument flag onto the strategy it builds', async () => {
+        const faustNode = { setParamValue: vi.fn() };
+        createFaustDevice.mockResolvedValue({
+            inputNode: faustNode as unknown as AudioNode,
+            outputNode: faustNode as unknown as AudioNode,
+            nodes: [faustNode as unknown as AudioNode],
+        });
+        const device: Device = {
+            id: 'd1',
+            name: 'Supersaw Unison',
+            type: 'faust-supersaw-unison',
+            bypassed: false,
+            parameterValues: {},
+        };
+        const isFaustInstrument = vi.fn((moduleId: string) => moduleId === 'faust-supersaw-unison');
+
+        const strategy = await createFaustStrategy({
+            ctx: { sampleRate: 48_000 } as BaseAudioContext,
+            device,
+            createFaustDevice,
+            isFaustInstrument,
+        });
+
+        expect(isFaustInstrument).toHaveBeenCalledWith('faust-supersaw-unison');
+        expect(strategy.acceptsNotes).toBe(true);
     });
 });
 
@@ -118,7 +174,10 @@ function make_faust_strategy(addresses: string[]) {
         outputNode: {} as AudioNode,
         nodes: [faustNode],
     };
-    return { strategy: new FaustDeviceStrategy(offlineNode, faustNode as unknown as FaustNodeLike), params };
+    return {
+        strategy: new FaustDeviceStrategy(offlineNode, faustNode as unknown as FaustNodeLike, false, 48_000),
+        params,
+    };
 }
 
 function make_lane(overrides: Partial<AutomationLane>): AutomationLane {

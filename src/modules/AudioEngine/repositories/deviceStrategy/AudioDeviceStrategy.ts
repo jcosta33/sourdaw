@@ -72,6 +72,22 @@ export type DeviceNoteOffRequest = {
 
 export type AudioDeviceStrategy = {
     readonly node: OfflineDeviceNode;
+    /**
+     * Whether this device voices notes. `scheduleTrackClips` reads the first
+     * chain entry that carries a note surface as the track's instrument, so
+     * this decides who receives the track's MIDI.
+     *
+     * It is required, and it is a declaration rather than something
+     * `buildDeviceChain` infers. Inferring it from `strategy.noteOn` looked
+     * equivalent and was not: `NativeDspDeviceStrategy` implements `noteOn` as
+     * a prototype method that forwards to an optional one on the DSP node, so
+     * the property is truthy on Gluten, Proof and Bacteria — devices with no
+     * note API at all. Whichever of those sat first in a rack claimed the
+     * track's notes and swallowed them, and the instrument behind it rendered
+     * silent. Live playback picks its instrument by device type and was never
+     * affected, which is why a bounce could disagree with the session.
+     */
+    readonly acceptsNotes: boolean;
     setParam(name: string, value: number): void;
     /**
      * Resolve how offline automation of `parameterId` reaches this device, or

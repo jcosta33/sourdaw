@@ -34,6 +34,7 @@ describe('setupDeviceStrategies', () => {
     it('should create built-in web audio devices', async () => {
         const registry = createDeviceRegistry({
             faustModuleMatcher: () => false,
+            faustInstrumentMatcher: () => false,
             createFaustDevice: vi.fn(),
         });
         const ctx = {} as BaseAudioContext;
@@ -56,6 +57,7 @@ describe('setupDeviceStrategies', () => {
         const createFaustDevice = vi.fn().mockResolvedValue(offlineNode);
         const registry = createDeviceRegistry({
             faustModuleMatcher: (type) => type === 'faust-x',
+            faustInstrumentMatcher: () => false,
             createFaustDevice,
         });
         const ctx = {} as BaseAudioContext;
@@ -77,6 +79,7 @@ describe('setupDeviceStrategies', () => {
     it('routes every device its native strategy claims to that strategy', async () => {
         const registry = createDeviceRegistry({
             faustModuleMatcher: () => false,
+            faustInstrumentMatcher: () => false,
             createFaustDevice: vi.fn(),
         });
         const ctx = {} as BaseAudioContext;
@@ -95,6 +98,7 @@ describe('setupDeviceStrategies', () => {
     it('refuses a device its native strategy does not claim', async () => {
         const registry = createDeviceRegistry({
             faustModuleMatcher: () => false,
+            faustInstrumentMatcher: () => false,
             createFaustDevice: vi.fn(),
         });
 

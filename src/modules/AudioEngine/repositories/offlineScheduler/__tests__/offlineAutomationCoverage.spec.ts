@@ -182,7 +182,9 @@ describe('offline device-param automation capability coverage', () => {
             } as unknown as ConstructorParameters<typeof FaustDeviceStrategy>[1];
             const strategy = new FaustDeviceStrategy(
                 { inputNode: {} as AudioNode, outputNode: {} as AudioNode, nodes: [faustNode] },
-                faustNode
+                faustNode,
+                false,
+                48_000
             );
             coveredFamilies += 1;
 

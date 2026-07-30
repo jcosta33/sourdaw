@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
     compileFaustDSP: vi.fn(),
     createFaustNode: vi.fn(),
     isFaustModule: vi.fn((moduleId: string) => moduleId.startsWith('faust-')),
+    isFaustInstrumentModule: vi.fn(() => false),
     logger: { error: vi.fn() },
     notifyUser: vi.fn(),
     registerFaustDSP: vi.fn(),
@@ -44,6 +45,7 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
     compileFaustDSP: mocks.compileFaustDSP,
     createFaustNode: mocks.createFaustNode,
     isFaustModule: mocks.isFaustModule,
+    isFaustInstrumentModule: mocks.isFaustInstrumentModule,
     registerFaustDSP: mocks.registerFaustDSP,
 }));
 

@@ -5,6 +5,7 @@ import { getPlatformPlugins } from '#/modules/Arrangement/useCases';
 import {
     compileFaustDSP,
     createFaustNode,
+    isFaustInstrumentModule,
     isFaustModule,
     registerBuiltinFaustDSP,
     registerProModulationEffects,
@@ -110,6 +111,7 @@ const CHAIN_RENDERED_IDS = CATALOG_IDS.filter(
 function buildOfflineRegistry() {
     return createDeviceRegistry({
         faustModuleMatcher: isFaustModule,
+        faustInstrumentMatcher: isFaustInstrumentModule,
         createFaustDevice: ({ ctx, faustModuleId }) =>
             createFaustDevice({ ctx, faustModuleId, compileFaustDSP, createFaustNode }),
     });
