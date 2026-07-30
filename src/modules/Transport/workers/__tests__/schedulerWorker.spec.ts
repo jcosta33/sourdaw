@@ -5,7 +5,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 // assigns `self.onmessage` and uses the global setInterval/clearInterval, so we
 // stub those on `self` (=== globalThis in jsdom) before importing.
 
-type TickMsg = { type: 'tick' };
+type TickMsg = {
+    type: 'tick';
+    sequence: number;
+    scheduledAtMs: number;
+    sentAtMs: number;
+};
 
 describe('schedulerWorker', () => {
     let postedMessages: TickMsg[];
@@ -22,6 +27,7 @@ describe('schedulerWorker', () => {
     afterEach(() => {
         vi.clearAllTimers();
         vi.useRealTimers();
+        vi.restoreAllMocks();
         vi.unstubAllGlobals();
         self.postMessage = originalPostMessage;
         // Reset the module so the next test re-registers a fresh onmessage and
@@ -38,13 +44,42 @@ describe('schedulerWorker', () => {
 
     it('starts an interval that posts a tick every `interval` ms', async () => {
         await loadWorker();
+        const firstDeadlineMs = performance.timeOrigin + performance.now() + 10;
         self.onmessage?.({ data: { type: 'start', interval: 10 } } as MessageEvent);
 
         expect(postedMessages).toHaveLength(0);
         vi.advanceTimersByTime(10);
-        expect(postedMessages).toEqual([{ type: 'tick' }]);
+        expect(postedMessages[0]).toEqual({
+            type: 'tick',
+            sequence: 1,
+            scheduledAtMs: firstDeadlineMs,
+            sentAtMs: firstDeadlineMs,
+        });
         vi.advanceTimersByTime(20);
         expect(postedMessages).toHaveLength(3); // 10, 20, 30 ms → 3 ticks
+        expect(postedMessages.map((message) => message.sequence)).toEqual([1, 2, 3]);
+    });
+
+    it('reports missed timer slots without carrying a stall into later wake-lateness measurements', async () => {
+        const now = vi.spyOn(performance, 'now');
+        now.mockReturnValueOnce(0).mockReturnValueOnce(35).mockReturnValueOnce(40);
+        await loadWorker();
+        self.onmessage?.({ data: { type: 'start', interval: 10 } } as MessageEvent);
+
+        vi.advanceTimersByTime(10);
+        expect(postedMessages[0]).toMatchObject({
+            sequence: 3,
+            scheduledAtMs: performance.timeOrigin + 30,
+            sentAtMs: performance.timeOrigin + 35,
+        });
+
+        vi.advanceTimersByTime(10);
+        expect(postedMessages[1]).toMatchObject({
+            sequence: 4,
+            scheduledAtMs: performance.timeOrigin + 40,
+            sentAtMs: performance.timeOrigin + 40,
+        });
+        now.mockRestore();
     });
 
     it('defaults to a 10 ms interval when interval is not positive', async () => {

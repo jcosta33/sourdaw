@@ -9,7 +9,20 @@
 
 type SchedulerMessage = { type: 'start'; interval: number } | { type: 'stop' };
 
+type SchedulerTick = {
+    type: 'tick';
+    sequence: number;
+    scheduledAtMs: number;
+    sentAtMs: number;
+};
+
+function highResolutionEpochMs(): number {
+    return performance.timeOrigin + performance.now();
+}
+
 let timerId: ReturnType<typeof setInterval> | null = null;
+let nextScheduledAtMs = 0;
+let tickSequence = 0;
 
 self.onmessage = (event: MessageEvent<SchedulerMessage>) => {
     const msg = event.data;
@@ -19,13 +32,28 @@ self.onmessage = (event: MessageEvent<SchedulerMessage>) => {
         if (timerId !== null) {
             clearInterval(timerId);
         }
+        tickSequence = 0;
+        nextScheduledAtMs = highResolutionEpochMs() + intervalMs;
         timerId = setInterval(() => {
-            self.postMessage({ type: 'tick' });
+            const sentAtMs = highResolutionEpochMs();
+            const elapsedIntervals = Math.max(1, Math.floor((sentAtMs - nextScheduledAtMs) / intervalMs) + 1);
+            tickSequence += elapsedIntervals;
+            const scheduledAtMs = nextScheduledAtMs + (elapsedIntervals - 1) * intervalMs;
+            nextScheduledAtMs += elapsedIntervals * intervalMs;
+            const tick: SchedulerTick = {
+                type: 'tick',
+                sequence: tickSequence,
+                scheduledAtMs,
+                sentAtMs,
+            };
+            self.postMessage(tick);
         }, intervalMs);
-    } else if (msg.type === 'stop') {
+    } else {
         if (timerId !== null) {
             clearInterval(timerId);
             timerId = null;
+            nextScheduledAtMs = 0;
+            tickSequence = 0;
         }
     }
 };
