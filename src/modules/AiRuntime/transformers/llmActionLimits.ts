@@ -1,0 +1,1 @@
+export const MAX_LLM_ACTIONS_PER_BATCH = 24;

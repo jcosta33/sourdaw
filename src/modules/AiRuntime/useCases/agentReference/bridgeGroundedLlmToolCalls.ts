@@ -2,6 +2,7 @@ import { getExecutableAppActionTargetRules } from '#/modules/Command/useCases';
 
 import { type ProjectContext } from '../../models/ProjectContext';
 import { bridgeLlmToolCalls, type LlmActionRejection } from '../../transformers/llmActionBridge';
+import { MAX_LLM_ACTIONS_PER_BATCH } from '../../transformers/llmActionLimits';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
 
 import { resolveAgentReference } from './resolveAgentReference';
@@ -69,6 +70,9 @@ function groundToolCall({ call, context, index, prompt }: GroundToolCallInput): 
 }
 
 export function bridgeGroundedLlmToolCalls({ calls, context, prompt }: BridgeGroundedLlmToolCallsInput) {
+    if (calls.length > MAX_LLM_ACTIONS_PER_BATCH) {
+        return bridgeLlmToolCalls({ calls, context });
+    }
     const groundingRejections = new Map<number, LlmActionRejection>();
     const groundedCalls = calls.map((call, index) => {
         const grounded = groundToolCall({ call, context, index, prompt });

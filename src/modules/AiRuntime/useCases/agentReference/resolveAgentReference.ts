@@ -45,6 +45,11 @@ function containsExactPhrase(prompt: string, reference: string): boolean {
     return ` ${normalizeReferenceText(prompt)} `.includes(` ${normalizedReference} `);
 }
 
+function containsQualifiedMasterOutputReference(prompt: string): boolean {
+    const normalized = normalizeReferenceText(prompt);
+    return /\b(?:to|into|through) (?:the )?master\b|\bmaster (?:bus|channel|output)\b/u.test(normalized);
+}
+
 function hasExplicitTrackSelection(prompt: string): boolean {
     const normalized = normalizeReferenceText(prompt);
     return /\b(?:selected|current|this) (?:audio |midi |bus |folder )?track\b/u.test(normalized);
@@ -96,12 +101,36 @@ function getReferenceCandidates(input: ResolveAgentReferenceInput): ReferenceCan
     return [];
 }
 
+function getAmbiguousExactNameIds(
+    assertedId: string,
+    candidates: readonly ReferenceCandidate[],
+    evidenceById: ReadonlyMap<string, AgentReferenceEvidence>
+): string[] {
+    const assertedCandidate = candidates.find((candidate) => candidate.id === assertedId);
+    if (!assertedCandidate) {
+        return [];
+    }
+    const normalizedName = normalizeReferenceText(assertedCandidate.name);
+    return candidates
+        .filter(
+            (candidate) => normalizeReferenceText(candidate.name) === normalizedName && evidenceById.has(candidate.id)
+        )
+        .map((candidate) => candidate.id);
+}
+
 export function resolveAgentReference(input: ResolveAgentReferenceInput): ResolveAgentReferenceResult {
     const excludedIds = new Set(input.excludedIds ?? []);
     const candidates = getReferenceCandidates(input).filter((candidate) => !excludedIds.has(candidate.id));
     const evidenceById = new Map<string, AgentReferenceEvidence>();
 
     for (const candidate of candidates) {
+        if (
+            input.capability === 'output' &&
+            candidate.id === 'master' &&
+            !containsQualifiedMasterOutputReference(input.prompt)
+        ) {
+            continue;
+        }
         if (containsExactPhrase(input.prompt, candidate.id)) {
             evidenceById.set(candidate.id, 'literal-id');
             continue;
@@ -121,17 +150,20 @@ export function resolveAgentReference(input: ResolveAgentReferenceInput): Resolv
         }
     }
 
-    const candidateIds = [...evidenceById.keys()];
-    if (candidateIds.length === 0) {
+    if (evidenceById.size === 0) {
         return { status: 'rejected', reason: 'ungrounded-target' };
     }
-    if (candidateIds.length > 1) {
-        return { status: 'rejected', reason: 'ambiguous-target', candidateIds };
-    }
-
-    const id = candidateIds[0];
-    if (typeof input.assertedId !== 'string' || input.assertedId !== id) {
+    if (typeof input.assertedId !== 'string' || !evidenceById.has(input.assertedId)) {
         return { status: 'rejected', reason: 'asserted-target-mismatch' };
     }
-    return { status: 'resolved', id, evidence: evidenceById.get(id) ?? 'exact-name' };
+
+    const evidence = evidenceById.get(input.assertedId) ?? 'exact-name';
+    if (evidence === 'exact-name') {
+        const ambiguousIds = getAmbiguousExactNameIds(input.assertedId, candidates, evidenceById);
+        if (ambiguousIds.length > 1) {
+            return { status: 'rejected', reason: 'ambiguous-target', candidateIds: ambiguousIds };
+        }
+    }
+
+    return { status: 'resolved', id: input.assertedId, evidence };
 }

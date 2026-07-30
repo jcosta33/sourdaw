@@ -1,9 +1,9 @@
 import { type ProjectContext } from '../models/ProjectContext';
 import { type RuntimeAction } from '../models/RuntimeAction';
 
+import { MAX_LLM_ACTIONS_PER_BATCH } from './llmActionLimits';
 import { type ToolCallResult } from './toolCallParser';
 
-const MAX_LLM_ACTIONS_PER_BATCH = 24;
 type ExecutableTrackKind = 'audio' | 'midi' | 'bus' | 'folder';
 const executableTrackKinds: ReadonlySet<string> = new Set(['audio', 'midi', 'bus', 'folder']);
 

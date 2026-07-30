@@ -128,9 +128,9 @@ describe('bridgeLlmToolCalls', () => {
                 { name: 'muteTrack', arguments: { trackId: 'track-vocals', muted: true } },
                 { name: 'soloTrack', arguments: { trackId: 'track-vocals', soloed: true } },
                 { name: 'setTrackGain', arguments: { trackId: 'track-vocals', gain: 0.65 } },
-                { name: 'setTrackPan', arguments: { trackId: 'track-vocals', pan: -20 } },
+                { name: 'setTrackPan', arguments: { trackId: 'bus-reverb', pan: -20 } },
             ],
-            context: projectContext,
+            prompt: 'mute track-vocals and pan bus-reverb',
         });
 
         expect(result.actions).toEqual([
@@ -139,7 +139,7 @@ describe('bridgeLlmToolCalls', () => {
             { type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true } },
             { type: 'soloTrack', payload: { trackId: 'track-vocals', soloed: true } },
             { type: 'setTrackGain', payload: { trackId: 'track-vocals', gain: 0.65 } },
-            { type: 'setTrackPan', payload: { trackId: 'track-vocals', pan: -20 } },
+            { type: 'setTrackPan', payload: { trackId: 'bus-reverb', pan: -20 } },
         ]);
         expect(result.rejections).toEqual([]);
     });
@@ -280,14 +280,14 @@ describe('bridgeLlmToolCalls', () => {
     it('rejects invented, ambiguous, and state-incompatible routing changes', () => {
         const result = bridge({
             calls: [
-                { name: 'setTrackOutput', arguments: { trackId: 'track-vocals', outputId: 'missing' } },
+                { name: 'setTrackOutput', arguments: { trackId: 'track-vocals', outputId: 'master' } },
                 { name: 'setTrackOutput', arguments: { trackId: 'bus-reverb', outputId: 'bus-reverb' } },
                 { name: 'addSend', arguments: { trackId: 'track-vocals', busId: 'bus-reverb', level: 0.5 } },
                 { name: 'removeSend', arguments: { trackId: 'bus-reverb', busId: 'bus-reverb' } },
                 { name: 'setSend', arguments: { trackId: 'bus-reverb', busId: 'bus-reverb', level: 0.5 } },
             ],
             context: projectContext,
-            prompt: 'route track-vocals to bus-reverb',
+            prompt: 'master track-vocals, then route track-vocals to bus-reverb',
         });
 
         expect(result.actions).toEqual([]);
@@ -491,7 +491,12 @@ describe('bridgeLlmToolCalls', () => {
                 name: 'muteTrack',
                 arguments: { trackId: 'track-vocals', muted: true },
             })),
-            context: projectContext,
+            context: {
+                ...projectContext,
+                get tracks(): ProjectContext['tracks'] {
+                    throw new Error('Oversized batches must reject before reading project targets');
+                },
+            },
         });
 
         expect(result.actions).toEqual([]);
