@@ -74,6 +74,10 @@ pub struct GlutenEngine {
     mix: SmoothedParam,
     makeup_gain: SmoothedParam,
     auto_makeup: bool,
+    cached_makeup_db: f32,
+    cached_makeup_linear: f32,
+    #[cfg(test)]
+    makeup_gain_conversion_count: usize,
     bypassed: bool,
     /// Delta listen: output only the difference (compressed - dry)
     delta_listen: bool,
@@ -146,6 +150,10 @@ impl GlutenEngine {
             mix: SmoothedParam::new(1.0, 5.0, sample_rate),
             makeup_gain: SmoothedParam::new(0.0, 5.0, sample_rate),
             auto_makeup: false,
+            cached_makeup_db: f32::NAN,
+            cached_makeup_linear: 1.0,
+            #[cfg(test)]
+            makeup_gain_conversion_count: 0,
             bypassed: false,
             delta_listen: false,
             ext_sidechain: false,
@@ -442,7 +450,7 @@ impl GlutenEngine {
             } else {
                 makeup
             };
-            let makeup_lin = db_to_linear(effective_makeup);
+            let makeup_lin = self.makeup_gain_linear(effective_makeup);
             let made_up_l = wet_l * makeup_lin;
             let made_up_r = wet_r * makeup_lin;
 
@@ -545,6 +553,19 @@ impl GlutenEngine {
         auto_makeup(self.current_threshold, self.current_ratio)
     }
 
+    #[inline]
+    fn makeup_gain_linear(&mut self, makeup_db: f32) -> f32 {
+        if makeup_db != self.cached_makeup_db {
+            self.cached_makeup_db = makeup_db;
+            self.cached_makeup_linear = db_to_linear(makeup_db);
+            #[cfg(test)]
+            {
+                self.makeup_gain_conversion_count += 1;
+            }
+        }
+        self.cached_makeup_linear
+    }
+
     pub fn current_gr_db(&self) -> f32 {
         self.meter_gr_db
     }
@@ -567,5 +588,43 @@ impl GlutenEngine {
 
     pub fn latency_samples(&self) -> u32 {
         (self.lookahead_ms * 0.001 * self.sample_rate) as u32
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::GlutenEngine;
+
+    #[test]
+    fn stable_makeup_gain_is_converted_once() {
+        let mut engine = GlutenEngine::new(48_000.0);
+        let mut left = [0.25_f32; 128];
+        let mut right = [-0.25_f32; 128];
+
+        engine.process_block(&mut left, &mut right);
+        engine.process_block(&mut left, &mut right);
+
+        assert_eq!(engine.makeup_gain_conversion_count, 1);
+    }
+
+    #[test]
+    fn changing_makeup_gain_keeps_sample_by_sample_smoothing() {
+        let mut engine = GlutenEngine::new(48_000.0);
+        let mut left = [0.25_f32; 128];
+        let mut right = [-0.25_f32; 128];
+
+        engine.process_block(&mut left, &mut right);
+        let conversions_before_change = engine.makeup_gain_conversion_count;
+        engine.set_param("makeup", 6.0);
+        engine.process_block(&mut left, &mut right);
+
+        assert_eq!(
+            engine.makeup_gain_conversion_count - conversions_before_change,
+            left.len()
+        );
+        assert_eq!(
+            engine.cached_makeup_linear,
+            super::db_to_linear(engine.cached_makeup_db)
+        );
     }
 }
