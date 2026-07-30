@@ -76,6 +76,10 @@ class ToasterInstanceMock {
     set_pad_param(): void {}
     set_pad_dry_routed(): void {}
     reset_pad_dry_routing(): void {}
+    advance_silence(): void {}
+    lifecycle_state(): number {
+        return 0;
+    }
     process(_frames: number): number {
         if (growOnNextProcess) {
             growOnNextProcess = false;

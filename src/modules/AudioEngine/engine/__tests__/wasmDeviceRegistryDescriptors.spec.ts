@@ -161,6 +161,7 @@ describe('wasmDeviceRegistry descriptors', () => {
                 setPadParam: vi.fn(),
                 setPadDryRouted: vi.fn(),
                 setBypass: vi.fn(),
+                processorLifecycle: vi.fn(() => 'sleep' as const),
                 connectPadOutput: vi.fn(),
                 disconnectPadOutput: vi.fn(),
                 connect: vi.fn(),
@@ -205,6 +206,8 @@ describe('wasmDeviceRegistry descriptors', () => {
             expect(loaded.toasterControls?.setPadDryRouted).toBe(result.setPadDryRouted);
             expect(loaded.toasterControls?.connectPadOutput).toBe(result.connectPadOutput);
             expect(loaded.toasterControls?.disconnectPadOutput).toBe(result.disconnectPadOutput);
+            expect(loaded.processorLifecycle?.()).toBe('sleep');
+            expect(result.processorLifecycle).toHaveBeenCalledTimes(1);
 
             vi.mocked(deps.onLoaded).mockReturnValue(false);
             emitDeviceLoaded.mockClear();

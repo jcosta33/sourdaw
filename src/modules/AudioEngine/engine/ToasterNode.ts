@@ -10,6 +10,14 @@ import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from '
 
 import toasterProcessorUrl from '../services/toasterProcessor.ts?worker&url';
 
+import {
+    createTelemetryReader,
+    telemetryAllocator,
+    TELEMETRY_SEQ_IDX,
+    TOASTER_IDX,
+    type TelemetrySlot,
+} from './telemetryAllocator';
+
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 const TOASTER_PAD_COUNT = 16;
 export const TOASTER_AUTOMATION_PARAM_IDS: Readonly<Record<string, number>> = {
@@ -17,6 +25,25 @@ export const TOASTER_AUTOMATION_PARAM_IDS: Readonly<Record<string, number>> = {
     reverbMix: 1,
     delayMix: 2,
 };
+
+type ToasterProcessorLifecycle = 'continue' | 'continueIfNotQuiet' | 'tail' | 'sleep';
+
+function projectToasterLifecycle(view: Float32Array): ToasterProcessorLifecycle | null {
+    switch (view[TOASTER_IDX.lifecycle]) {
+        case 0:
+            return 'continue';
+        case 1:
+            return 'continueIfNotQuiet';
+        case 2:
+            return 'tail';
+        case 3:
+            return 'sleep';
+        case undefined:
+            return null;
+        default:
+            return null;
+    }
+}
 
 type OfflineAutomationSegment = {
     startFrame: number;
@@ -67,6 +94,7 @@ export type ToasterNodeResult = {
     setPadParam: (pad: number, name: string, value: number) => void;
     setPadDryRouted: (pad: number, routed: boolean) => void;
     setBypass: (bypassed: boolean) => void;
+    processorLifecycle: () => ToasterProcessorLifecycle | null;
     connectPadOutput?: (pad: number, dest: AudioNode) => void;
     disconnectPadOutput?: (pad: number, dest: AudioNode) => void;
     connect: (dest: AudioNode) => void;
@@ -111,10 +139,36 @@ export async function createToasterNode(
     });
 
     let bypassed = false;
+    let slot: TelemetrySlot | null =
+        typeof SharedArrayBuffer === 'undefined' ? null : telemetryAllocator.allocateSlot();
+    if (slot) {
+        node.port.postMessage({ type: 'init-sab', sab: slot.sab, byteOffset: slot.byteOffset });
+    }
+    const lifecycleReader = slot ? createTelemetryReader({ slot, project: projectToasterLifecycle }) : null;
+    let lastLifecycle: ToasterProcessorLifecycle | null = null;
+    let destroyRequested = false;
+    let runtimeFaulted = false;
 
     const handshake = createReadyHandshake({ pluginName: 'ToasterNode' });
-    node.port.onmessage = (event: MessageEvent) => {
-        handshake.onMessage(event);
+    node.port.onmessage = (event: MessageEvent<unknown>) => {
+        if (event.data && typeof event.data === 'object' && 'type' in event.data && event.data.type === 'disposed') {
+            if (slot) {
+                telemetryAllocator.releaseSlot(slot.byteOffset);
+                slot = null;
+            }
+            node.port.close();
+            return;
+        }
+        const outcome = handshake.onMessage(event);
+        if (
+            outcome === 'late' &&
+            event.data &&
+            typeof event.data === 'object' &&
+            'type' in event.data &&
+            event.data.type === 'error'
+        ) {
+            runtimeFaulted = true;
+        }
     };
     const readyPromise = handshake.promise;
 
@@ -193,6 +247,22 @@ export async function createToasterNode(
         setBypass(state: boolean) {
             bypassed = state;
         },
+        processorLifecycle() {
+            if (destroyRequested || runtimeFaulted || !slot || !lifecycleReader) {
+                return null;
+            }
+            const before = Atomics.load(slot.seqView, TELEMETRY_SEQ_IDX);
+            if (before === 0 || (before & 1) !== 0) {
+                return lastLifecycle;
+            }
+            const lifecycle = lifecycleReader();
+            const after = Atomics.load(slot.seqView, TELEMETRY_SEQ_IDX);
+            if (before !== after || (after & 1) !== 0) {
+                return lastLifecycle;
+            }
+            lastLifecycle = lifecycle;
+            return lifecycle;
+        },
         connectPadOutput(pad: number, dest: AudioNode) {
             if (Number.isInteger(pad) && pad >= 0 && pad < TOASTER_PAD_COUNT) {
                 padOutputGains[pad]?.connect(dest);
@@ -219,6 +289,10 @@ export async function createToasterNode(
             }
         },
         destroy() {
+            if (destroyRequested) {
+                return;
+            }
+            destroyRequested = true;
             node.port.postMessage({ type: 'resetPadDryRouting' });
             for (const gainNode of padOutputGains) {
                 try {
@@ -237,7 +311,7 @@ export async function createToasterNode(
             } catch {
                 // ignore
             }
-            node.port.close();
+            node.port.postMessage({ type: 'dispose' });
         },
         ready: readyPromise,
     };

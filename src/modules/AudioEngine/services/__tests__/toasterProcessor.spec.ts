@@ -35,7 +35,9 @@ const padDryRoutedCalls: Array<[number, boolean]> = [];
 const paramByIdCalls: Array<[number, number]> = [];
 const kitParamCalls: Array<[string, number]> = [];
 const processCalls: number[] = [];
+const advanceSilenceCalls: number[] = [];
 let padZeroDryRouted = false;
+let lifecycleState = 0;
 // When non-null, initSync throws this value (used to cover the String(error)
 // arm and the error-after-ready arm of the onmessage catch).
 let toasterInitShouldThrow: unknown = null;
@@ -46,6 +48,7 @@ const WASM_HEAP = new ArrayBuffer((2 + 16 * 2) * WASM_CHANNEL_BYTES);
 class ToasterInstanceMock {
     note_on(pad: number): void {
         noteOnCalls.push(pad);
+        lifecycleState = 0;
     }
     note_off(pad: number): void {
         noteOffCalls.push(pad);
@@ -67,6 +70,12 @@ class ToasterInstanceMock {
     }
     reset_pad_dry_routing(): void {
         padZeroDryRouted = false;
+    }
+    advance_silence(frames: number): void {
+        advanceSilenceCalls.push(frames);
+    }
+    lifecycle_state(): number {
+        return lifecycleState;
     }
     process(frames: number): number {
         processCalls.push(frames);
@@ -120,6 +129,8 @@ describe('ToasterProcessor allNotesOff', () => {
         paramByIdCalls.length = 0;
         padZeroDryRouted = false;
         processCalls.length = 0;
+        advanceSilenceCalls.length = 0;
+        lifecycleState = 0;
         vi.stubGlobal('currentFrame', 0);
     });
 
@@ -300,6 +311,66 @@ describe('ToasterProcessor allNotesOff', () => {
         expect(outputs[3]?.[1]).toEqual(new Float32Array(8));
     });
 
+    it('advances control state and hard-zeros every output without calling WASM process while asleep', async () => {
+        lifecycleState = 3;
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        processCalls.length = 0;
+        const outputs = Array.from({ length: 17 }, () => [new Float32Array(8).fill(1), new Float32Array(8).fill(-1)]);
+
+        expect(proc.process([[]], outputs)).toBe(true);
+
+        expect(processCalls).toEqual([]);
+        expect(advanceSilenceCalls).toEqual([8]);
+        expect(outputs.every((output) => output.every((channel) => channel.every((sample) => sample === 0)))).toBe(
+            true
+        );
+    });
+
+    it('dispatches a due note before the sleep check and renders the woken voice', async () => {
+        lifecycleState = 3;
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        processCalls.length = 0;
+        send(proc, { type: 'noteOn', pad: 4, velocity: 100, sampleFrame: 64 });
+        vi.stubGlobal('currentFrame', 0);
+        const output = [new Float32Array(128), new Float32Array(128)];
+
+        proc.process([[]], [output]);
+
+        expect(noteOnCalls).toContain(4);
+        expect(processCalls).toEqual([128]);
+    });
+
+    it('publishes lifecycle transitions through the shared telemetry slot', async () => {
+        lifecycleState = 3;
+        const proc = await loadProcessor();
+        const sab = new SharedArrayBuffer(32 * Float32Array.BYTES_PER_ELEMENT);
+        const view = new Float32Array(sab);
+        const seqView = new Int32Array(sab);
+        send(proc, { type: 'init-sab', sab, byteOffset: 0 });
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+
+        expect(view[0]).toBe(3);
+        expect(Atomics.load(seqView, 31)).toBeGreaterThan(0);
+
+        send(proc, { type: 'noteOn', pad: 1, velocity: 100 });
+
+        expect(view[0]).toBe(0);
+        expect(Atomics.load(seqView, 31) & 1).toBe(0);
+    });
+
+    it('acknowledges disposal and terminates the processor', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        const postMessage = vi.mocked(proc.port.postMessage);
+
+        send(proc, { type: 'dispose' });
+
+        expect(postMessage).toHaveBeenCalledWith({ type: 'disposed' });
+        expect(proc.process([[]], [[new Float32Array(8), new Float32Array(8)]])).toBe(false);
+    });
+
     it('excludes routed pad dry signal while preserving its tap and restores it on reset', async () => {
         const proc = await loadProcessor();
         send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
@@ -356,6 +427,8 @@ describe('ToasterProcessor dispatch paths & process guards', () => {
         padZeroDryRouted = false;
         toasterInitShouldThrow = null;
         processCalls.length = 0;
+        advanceSilenceCalls.length = 0;
+        lifecycleState = 0;
         vi.stubGlobal('currentFrame', 0);
     });
 

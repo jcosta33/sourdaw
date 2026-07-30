@@ -294,6 +294,7 @@ const toasterDescriptor: WasmDeviceDescriptor = {
                     inputNode: result.outputNode,
                     outputNode: result.outputNode,
                     isGenerator: true,
+                    processorLifecycle: result.processorLifecycle,
                     dispose: result.destroy,
                     controller: {
                         ready: true,
