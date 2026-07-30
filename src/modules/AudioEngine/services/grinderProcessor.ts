@@ -10,6 +10,7 @@
 import { initSync, GrinderInstance } from '../wasm/daw_dsp.js';
 
 import grinderAudioParamContract from './grinderAudioParamContract.json';
+import { resolveProcessorWasmModule } from './resolveProcessorWasmModule';
 import { beginTelemetryPublish, endTelemetryPublish } from './telemetrySeqlock';
 
 type GrinderAudioParamDescriptor = {
@@ -142,7 +143,7 @@ const GRINDER_AUTOMATION_BUFFER_SIZE =
     GRINDER_AUTOMATABLE_PARAM_COUNT + GRINDER_AUTOMATABLE_PARAM_COUNT * MAX_GRINDER_BLOCK_SIZE;
 
 type GrinderMsg =
-    | { type: 'init'; wasmBytes: BufferSource }
+    | { type: 'init' }
     | { type: 'init-sab'; sab: SharedArrayBuffer; byteOffset: number }
     | { type: 'param'; name: string; value: number }
     | { type: 'patch'; patch: Record<string, unknown> };
@@ -254,8 +255,9 @@ class GrinderProcessor extends AudioWorkletProcessor {
     /** Int32 view over the same slot bytes — carries the seqlock counter (RT-2). */
     _sabSeqView: Int32Array | null = null;
 
-    constructor() {
+    constructor(...args: unknown[]) {
         super();
+        let wasmModule = resolveProcessorWasmModule(args[0]);
         this.port.onmessage = (event: MessageEvent<GrinderMsg>) => {
             const msg = event.data;
             try {
@@ -263,7 +265,11 @@ class GrinderProcessor extends AudioWorkletProcessor {
                     if (this._ready) {
                         return;
                     }
-                    this._initWasm(msg.wasmBytes);
+                    if (!wasmModule) {
+                        throw new TypeError('GrinderProcessor requires a compiled WASM module');
+                    }
+                    this._initWasm(wasmModule);
+                    wasmModule = null;
                 } else if (msg.type === 'init-sab') {
                     this._sabView = new Float32Array(msg.sab, msg.byteOffset, 32);
                     this._sabSeqView = new Int32Array(msg.sab, msg.byteOffset, 32);
@@ -300,8 +306,8 @@ class GrinderProcessor extends AudioWorkletProcessor {
         };
     }
 
-    _initWasm(wasmBytes: BufferSource): void {
-        const wasmExports = initSync({ module: new WebAssembly.Module(wasmBytes) });
+    _initWasm(wasmModule: WebAssembly.Module): void {
+        const wasmExports = initSync({ module: wasmModule });
         this._instance = new GrinderInstance(sampleRate);
         this._wasmMemory = wasmExports.memory;
         this._cacheWasmViews();

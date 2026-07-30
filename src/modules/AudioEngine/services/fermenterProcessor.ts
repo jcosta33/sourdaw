@@ -5,7 +5,7 @@
  * WASM memory management is handled by the generated glue — no manual malloc/free.
  *
  * Messages from main thread:
- *   { type: 'init', wasmBytes: ArrayBuffer }
+ *   { type: 'init' }
  *   { type: 'init-sab', sab: SharedArrayBuffer, byteOffset: number }
  *   { type: 'noteOn', note, velocity, sampleFrame? }
  *   { type: 'noteOff', note, sampleFrame? }
@@ -21,6 +21,7 @@
 
 import { initSync, FermenterInstance } from '../wasm/daw_dsp.js';
 
+import { resolveProcessorWasmModule } from './resolveProcessorWasmModule';
 import { beginTelemetryPublish, endTelemetryPublish } from './telemetrySeqlock';
 import { WasmView } from './wasmView';
 
@@ -93,7 +94,7 @@ type NoteExpressionMsg = {
     sampleFrame?: number;
 };
 type FermenterMsg =
-    | { type: 'init'; wasmBytes: BufferSource }
+    | { type: 'init' }
     | { type: 'init-sab'; sab: SharedArrayBuffer; byteOffset: number }
     | { type: 'noteOn'; note: number; velocity: number; sampleFrame?: number; channel?: number }
     | { type: 'noteOff'; note: number; sampleFrame?: number; channel?: number }
@@ -126,8 +127,9 @@ class FermenterProcessor extends AudioWorkletProcessor {
     _outLeftView = new WasmView();
     _outRightView = new WasmView();
 
-    constructor() {
+    constructor(...args: unknown[]) {
         super();
+        let wasmModule = resolveProcessorWasmModule(args[0]);
         this.port.onmessage = (event: MessageEvent<FermenterMsg>) => {
             const msg = event.data;
             try {
@@ -135,7 +137,11 @@ class FermenterProcessor extends AudioWorkletProcessor {
                     if (this._ready) {
                         return;
                     }
-                    this._initWasm(msg.wasmBytes);
+                    if (!wasmModule) {
+                        throw new TypeError('FermenterProcessor requires a compiled WASM module');
+                    }
+                    this._initWasm(wasmModule);
+                    wasmModule = null;
                 } else if (msg.type === 'init-sab') {
                     this._telemetryView = new Float32Array(msg.sab, msg.byteOffset, TELEMETRY_SLOT_FLOATS);
                     this._telemetrySeqView = new Int32Array(msg.sab, msg.byteOffset, TELEMETRY_SLOT_FLOATS);
@@ -158,8 +164,8 @@ class FermenterProcessor extends AudioWorkletProcessor {
         };
     }
 
-    _initWasm(wasmBytes: BufferSource): void {
-        const wasmExports = initSync({ module: new WebAssembly.Module(wasmBytes) });
+    _initWasm(wasmModule: WebAssembly.Module): void {
+        const wasmExports = initSync({ module: wasmModule });
         this._memory = wasmExports.memory;
         this._instance = new FermenterInstance(sampleRate, 32);
         this._ready = true;

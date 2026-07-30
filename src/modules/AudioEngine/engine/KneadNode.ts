@@ -5,7 +5,7 @@
  */
 
 import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
-import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from '#/infra/audioWorklet/workletInitShared';
+import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
 
 import kneadProcessorUrl from '../services/kneadProcessor.ts?worker&url';
 
@@ -34,7 +34,7 @@ export async function createKneadNode(
     }
 
     await raceAbortSignal(ensureWorkletRegistered(ctx, kneadProcessorUrl), signal);
-    const wasmBytes = await raceAbortSignal(fetchWasmBinary(DEFAULT_WASM_URL), signal);
+    const wasmModule = await raceAbortSignal(fetchWasmModule(DEFAULT_WASM_URL), signal);
 
     signal?.throwIfAborted();
 
@@ -44,6 +44,7 @@ export async function createKneadNode(
         outputChannelCount: [2],
         channelCount: 2,
         channelCountMode: 'explicit',
+        processorOptions: { wasmModule },
     });
 
     const handshake = createReadyHandshake({ pluginName: 'KneadNode' });
@@ -52,15 +53,10 @@ export async function createKneadNode(
     };
     const readyPromise = handshake.promise;
 
-    const copy = wasmBytes.slice(0);
-    node.port.postMessage(
-        {
-            type: 'init',
-            wasmBytes: copy,
-            transportSAB,
-        },
-        [copy]
-    );
+    node.port.postMessage({
+        type: 'init',
+        transportSAB,
+    });
 
     return {
         workletNode: node,

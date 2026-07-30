@@ -29,7 +29,7 @@
  */
 
 import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
-import { createReadyHandshake, ensureWorkletRegistered } from '#/infra/audioWorklet/workletInitShared';
+import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
 
 import grandBouleProcessorUrl from '../services/grandBouleProcessor.ts?worker&url';
 import grandBouleOfflineProcessorUrl from '../worklets/grandBouleOfflineProcessor.ts?worker&url';
@@ -43,25 +43,6 @@ const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 const RING_FRAMES = 8192;
 const HEADER_BYTES = 2 * Int32Array.BYTES_PER_ELEMENT; // writeHead + readHead
 const SAB_BYTES = HEADER_BYTES + RING_FRAMES * 2 * Float32Array.BYTES_PER_ELEMENT;
-
-/**
- * Grand Boule uses its own fetcher (not the shared cache) because it appends
- * a DEV-only cache-buster query string to pick up freshly-rebuilt WASM during
- * hot development of the physical-modeling engine.
- */
-let cachedGrandBouleWasm: ArrayBuffer | null = null;
-async function fetchGrandBouleWasm(url: string): Promise<ArrayBuffer> {
-    if (cachedGrandBouleWasm) {
-        return cachedGrandBouleWasm;
-    }
-    const fetchUrl = import.meta.env.DEV ? `${url}?t=${Date.now()}` : url;
-    const response = await fetch(fetchUrl);
-    if (!response.ok) {
-        throw new Error(`Failed to fetch Grand Boule WASM: ${response.status}`);
-    }
-    cachedGrandBouleWasm = await response.arrayBuffer();
-    return cachedGrandBouleWasm;
-}
 
 export type GrandBouleNodeResult = {
     workletNode: AudioWorkletNode;
@@ -121,14 +102,14 @@ type GrandBouleTransport = {
 
 type CreateGrandBouleTransportInput = {
     ctx: BaseAudioContext;
-    wasmBytes: ArrayBuffer;
+    wasmModule: WebAssembly.Module;
 };
 
 /**
  * Live transport: engine in a Worker, samples through a SharedArrayBuffer ring,
  * worklet as consumer. Behaviour is exactly as it has always been.
  */
-function createWorkerRingTransport({ ctx, wasmBytes }: CreateGrandBouleTransportInput): GrandBouleTransport {
+function createWorkerRingTransport({ ctx, wasmModule }: CreateGrandBouleTransportInput): GrandBouleTransport {
     // `requireSharedArrayBuffer` guards this transport and is called by the
     // factory *before* its awaits, not here: by the time this runs the context
     // has been resumed and the wasm downloaded, which is exactly the work the
@@ -204,21 +185,17 @@ function createWorkerRingTransport({ ctx, wasmBytes }: CreateGrandBouleTransport
     // rejects `ready` and the other's later rejection is still handled.
     const ready = Promise.all([workerHandshake.promise, workletHandshake.promise]).then(([workerData]) => workerData);
 
-    // Send the preloaded WASM bytes + SAB to the engine worker. `contextFrame`
+    // Send the precompiled WASM module + SAB to the engine worker. `contextFrame`
     // anchors the engine's frame 0 on the host clock for the window before the
     // worklet has run a block.
-    const copy = wasmBytes.slice(0);
-    engineWorker.postMessage(
-        {
-            type: 'init',
-            wasmBytes: copy,
-            sab,
-            sampleRate: ctx.sampleRate,
-            syncSab,
-            contextFrame: Math.round(ctx.currentTime * ctx.sampleRate),
-        },
-        [copy]
-    );
+    engineWorker.postMessage({
+        type: 'init',
+        wasmModule,
+        sab,
+        sampleRate: ctx.sampleRate,
+        syncSab,
+        contextFrame: Math.round(ctx.currentTime * ctx.sampleRate),
+    });
 
     return {
         workletNode: node,
@@ -242,24 +219,20 @@ function createWorkerRingTransport({ ctx, wasmBytes }: CreateGrandBouleTransport
  *
  * One handshake, because there is one side to come up.
  */
-function createInlineWorkletTransport({ ctx, wasmBytes }: CreateGrandBouleTransportInput): GrandBouleTransport {
+function createInlineWorkletTransport({ ctx, wasmModule }: CreateGrandBouleTransportInput): GrandBouleTransport {
     const node = new AudioWorkletNode(ctx, 'grand-boule-offline-processor', {
         numberOfInputs: 0,
         numberOfOutputs: 1,
         outputChannelCount: [2],
         channelCount: 2,
         channelCountMode: 'explicit',
+        processorOptions: { wasmModule },
     });
 
     const handshake = createReadyHandshake({ pluginName: 'GrandBouleNode offline worklet' });
     node.port.onmessage = (event: MessageEvent) => {
         handshake.onMessage(event);
     };
-
-    // Transferred, like the Worker's copy, so the bytes are not cloned into the
-    // worklet scope. `fetchGrandBouleWasm` keeps its own cached original.
-    const copy = wasmBytes.slice(0);
-    node.port.postMessage({ type: 'init', wasmBytes: copy }, [copy]);
 
     return {
         workletNode: node,
@@ -305,15 +278,15 @@ export async function createGrandBouleNode(
     const processorUrl = isOfflineRender ? grandBouleOfflineProcessorUrl : grandBouleProcessorUrl;
 
     await raceAbortSignal(ensureWorkletRegistered(ctx, processorUrl), signal);
-    const wasmBytes = await raceAbortSignal(fetchGrandBouleWasm(wasmUrl ?? DEFAULT_WASM_URL), signal);
+    const wasmModule = await raceAbortSignal(fetchWasmModule(wasmUrl ?? DEFAULT_WASM_URL), signal);
 
     signal?.throwIfAborted();
 
     let transport: GrandBouleTransport;
     if (isOfflineRender) {
-        transport = createInlineWorkletTransport({ ctx, wasmBytes });
+        transport = createInlineWorkletTransport({ ctx, wasmModule });
     } else {
-        transport = createWorkerRingTransport({ ctx, wasmBytes });
+        transport = createWorkerRingTransport({ ctx, wasmModule });
     }
 
     const node = transport.workletNode;

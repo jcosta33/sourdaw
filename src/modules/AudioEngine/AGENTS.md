@@ -6,7 +6,7 @@ WebAudio graph runtime: hosts every built-in device as a WASM engine node, plus 
 
 - Device DSP lives in Rust crates and is compiled to WASM: `pnpm wasm:all` runs `wasm-pack --target web` for `crates/{daw-dsp,proof-chamber,scoring,daw-wasm-decoder}` into `public/wasm/`.
 - Post-processors `scripts/gen-*-worklet.ts` rewrite the wasm-pack JS glue into `src/modules/AudioEngine/wasm/` — they prepend AudioWorklet-scope polyfills and replace `new URL(..., import.meta.url)` with a static path so Vite doesn't bundle the `.wasm`. Re-run the `wasm:*` script after changing a crate; never hand-edit files under `AudioEngine/wasm/`.
-- Worklet processors `initSync` with pre-fetched wasm bytes (e.g. `services/fermenterProcessor.ts`); shared init handshake (module registration cache, ready/error/timeout) is in `src/infra/audioWorklet/workletInitShared.ts`.
+- The main thread fetches and asynchronously compiles each WASM URL once. AudioWorklet processors receive the structured-cloned `WebAssembly.Module` through `processorOptions`; the GrandBoule worker receives it in its init message. A separate port init message starts caught instantiation and the ready/error handshake, and both processor kinds call `initSync` without compiling on their real-time-adjacent threads. Shared module caching and handshake logic live in `src/infra/audioWorklet/workletInitShared.ts`.
 - Device id "Dutch Oven" = the ProofChamber reverb — there is no separate Dutch Oven module.
 - Crumbs (sampler) is **native-only** — its engine runs in the Rust backend via `crumbs_*` Tauri commands, not WASM.
 

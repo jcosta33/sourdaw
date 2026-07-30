@@ -35,7 +35,7 @@
  * as an unscheduled one does.
  *
  * Port protocol (self.onmessage):
- *   ← { type: 'init', wasmBytes: ArrayBuffer, sab: SharedArrayBuffer, sampleRate: number,
+ *   ← { type: 'init', wasmModule: WebAssembly.Module, sab: SharedArrayBuffer, sampleRate: number,
  *       syncSab?: SharedArrayBuffer, contextFrame?: number }
  *   → { type: 'ready' }
  *   ← { type: 'noteOn', midiNote, velocity, sampleFrame?, channel? }
@@ -172,14 +172,14 @@ export function writeBlockRelease(
 }
 
 type InitEngineInput = {
-    wasmBytes: ArrayBuffer;
+    wasmModule: WebAssembly.Module;
     sab: SharedArrayBuffer;
     workerSampleRate: number;
     syncSab?: SharedArrayBuffer;
     contextFrame?: number;
 };
 
-function initEngine({ wasmBytes, sab, workerSampleRate, syncSab, contextFrame }: InitEngineInput): void {
+function initEngine({ wasmModule, sab, workerSampleRate, syncSab, contextFrame }: InitEngineInput): void {
     // Consumer sync plane. Reset so an offset left by a previous engine instance
     // sharing this slot can never be read as this one's.
     //
@@ -215,7 +215,7 @@ function initEngine({ wasmBytes, sab, workerSampleRate, syncSab, contextFrame }:
 
     // Init WASM. Constructed through the shared core so the live engine and the
     // offline one are the same instance at the same voice count.
-    const engine = createGrandBouleInstance({ wasmBytes, sampleRate: workerSampleRate });
+    const engine = createGrandBouleInstance({ wasmModule, sampleRate: workerSampleRate });
     memory = engine.memory;
     instance = engine.instance;
     running = true;
@@ -309,7 +309,7 @@ function renderLoop(): void {
 type GrandBouleWorkerMsg =
     | {
           type: 'init';
-          wasmBytes: ArrayBuffer;
+          wasmModule: WebAssembly.Module;
           sab: SharedArrayBuffer;
           sampleRate: number;
           syncSab?: SharedArrayBuffer;
@@ -346,7 +346,7 @@ function receive(msg: GrandBouleDispatchMsg): void {
 self.onmessage = ({ data }: MessageEvent<GrandBouleWorkerMsg>): void => {
     if (data.type === 'init') {
         initEngine({
-            wasmBytes: data.wasmBytes,
+            wasmModule: data.wasmModule,
             sab: data.sab,
             workerSampleRate: data.sampleRate,
             syncSab: data.syncSab,

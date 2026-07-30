@@ -70,7 +70,9 @@ vi.mock('../../wasm/daw_dsp.js', () => ({
     CrumbsInstance: CrumbsInstanceMock,
 }));
 
-const MINIMAL_WASM = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
+const MINIMAL_WASM_MODULE = new WebAssembly.Module(
+    new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00])
+);
 
 async function loadProcessor(): Promise<CrumbsProcessorLike> {
     await import('../crumbsProcessor');
@@ -78,7 +80,7 @@ async function loadProcessor(): Promise<CrumbsProcessorLike> {
     if (!Ctor) {
         throw new Error('crumbs-processor was not registered');
     }
-    return new Ctor();
+    return new Ctor({ processorOptions: { wasmModule: MINIMAL_WASM_MODULE } });
 }
 
 function send(proc: CrumbsProcessorLike, data: unknown): void {
@@ -98,7 +100,7 @@ describe('CrumbsProcessor scheduled note queue', () => {
 
     it('voices a note landing on a block boundary in that block, not the one before it', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init' });
         calls.length = 0;
 
         // Block 1 renders frames [0, 127]; block 2 renders [128, 255].
@@ -120,7 +122,7 @@ describe('CrumbsProcessor scheduled note queue', () => {
 
     it('sounds a note at exactly currentFrame even while bypassed, where a queued one is withheld', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init' });
         send(proc, { type: 'bypass', bypassed: true });
         calls.length = 0;
 

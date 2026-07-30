@@ -22,6 +22,7 @@ describe('isGrandBouleDevice', () => {
 // `ready` was answering for the engine worker alone.
 vi.mock('#/infra/audioWorklet/workletInitShared', () => ({
     ensureWorkletRegistered: vi.fn().mockResolvedValue(undefined),
+    fetchWasmModule: vi.fn().mockResolvedValue(new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]))),
     createReadyHandshake: vi.fn(() => {
         let settle: (data: Record<string, unknown>) => void = () => {};
         let fail: (reason: Error) => void = () => {};
@@ -106,6 +107,7 @@ describe('createGrandBouleNode', () => {
     let lastNodePort: { onmessage: ((e: MessageEvent) => void) | null } | undefined;
     let lastWorkletNode: object | undefined;
     let lastProcessorName: string | undefined;
+    let lastProcessorOptions: AudioWorkletNodeOptions | undefined;
     let workerConstructed = 0;
     let sharedArrayBuffersAllocated = 0;
     let ctx: BaseAudioContext;
@@ -122,6 +124,7 @@ describe('createGrandBouleNode', () => {
         lastNodePort = undefined;
         lastWorkletNode = undefined;
         lastProcessorName = undefined;
+        lastProcessorOptions = undefined;
         workerConstructed = 0;
         sharedArrayBuffersAllocated = 0;
 
@@ -141,8 +144,13 @@ describe('createGrandBouleNode', () => {
         // Same plain-constructor trick as FakeWorker above, for the same reason:
         // the created node has to be captured, and returning an object from a
         // `new`-invoked function replaces the implicit `this` with that object.
-        function FakeWorkletNode(_context: unknown, processorName?: string) {
+        function FakeWorkletNode(
+            _context: unknown,
+            processorName?: string,
+            processorOptions?: AudioWorkletNodeOptions
+        ) {
             lastProcessorName = processorName;
+            lastProcessorOptions = processorOptions;
             const instance = {
                 port: {
                     postMessage: nodePostMessage,
@@ -164,8 +172,6 @@ describe('createGrandBouleNode', () => {
         vi.stubGlobal('Worker', FakeWorker);
         vi.stubGlobal('AudioWorkletNode', FakeWorkletNode);
         vi.stubGlobal('SharedArrayBuffer', FakeSharedArrayBuffer);
-        const fetchResponse = { ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)) };
-        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(fetchResponse));
         ctx = { currentTime: 0, state: 'running', sampleRate: 48000 } as unknown as BaseAudioContext;
     });
 
@@ -194,6 +200,15 @@ describe('createGrandBouleNode', () => {
         expect(workerPostMessage).toHaveBeenCalledWith({ type: 'allNotesOff' });
     });
 
+    it('posts the compiled WASM module to the engine worker without a transfer list', async () => {
+        await createGrandBouleNode(ctx);
+
+        const initCall = workerPostMessage.mock.calls.find((call) => (call[0] as { type?: string }).type === 'init');
+        expect(initCall).toBeDefined();
+        const message = initCall![0] as { wasmModule: WebAssembly.Module };
+        expect(message.wasmModule).toBeInstanceOf(WebAssembly.Module);
+        expect(initCall).toHaveLength(1);
+    });
     it('setBypass only gates new notes — release is TrackNode-owned, no in-node post', async () => {
         const result = await createGrandBouleNode(ctx);
         workerPostMessage.mockClear();
@@ -212,12 +227,11 @@ describe('createGrandBouleNode', () => {
         expect(resume).not.toHaveBeenCalled();
     });
 
-    it('should reject when the Grand Boule WASM fetch response is not ok', async () => {
-        vi.resetModules();
-        const { createGrandBouleNode: freshCreate } = await import('../GrandBouleNode');
-        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500 }));
+    it('should propagate a shared WASM module load failure', async () => {
+        const { fetchWasmModule } = await import('#/infra/audioWorklet/workletInitShared');
+        vi.mocked(fetchWasmModule).mockRejectedValueOnce(new Error('Failed to fetch WASM: 500'));
 
-        await expect(freshCreate(ctx)).rejects.toThrow('Failed to fetch Grand Boule WASM: 500');
+        await expect(createGrandBouleNode(ctx)).rejects.toThrow('Failed to fetch WASM: 500');
     });
 
     it('hands the worklet its ring at construction, without waiting for the engine worker', async () => {
@@ -319,7 +333,7 @@ describe('createGrandBouleNode', () => {
         });
     });
 
-    it('hands the offline worklet the engine bytes, and nothing the ring needed', async () => {
+    it('hands the offline worklet the compiled engine module, and nothing the ring needed', async () => {
         class FakeOfflineAudioContext {
             state = 'suspended';
             currentTime = 0;
@@ -328,29 +342,22 @@ describe('createGrandBouleNode', () => {
         vi.stubGlobal('OfflineAudioContext', FakeOfflineAudioContext);
 
         await createGrandBouleNode(new FakeOfflineAudioContext() as unknown as BaseAudioContext);
-        const init = nodePostMessage.mock.calls
-            .map(([message]) => message)
-            .find(
-                (message): message is Record<string, unknown> =>
-                    message !== null && typeof message === 'object' && 'type' in message && message.type === 'init'
-            );
-
         // The offline processor constructs its own `GrandBouleInstance`, so its
-        // init is the WASM bytes and nothing else. A ring field surviving here
+        // constructor receives the compiled module and no ring setup message. A
+        // ring field surviving here
         // would mean the ring consumer was built by mistake — the failure mode
         // that produced a silent export reporting zero dropouts.
         expect({
-            hasWasmBytes: init?.wasmBytes instanceof ArrayBuffer,
-            ringFields: ['sab', 'syncSab', 'dropoutSab', 'countPreRollStarvation'].filter(
-                (field) => init !== undefined && field in init
-            ),
-        }).toEqual({ hasWasmBytes: true, ringFields: [] });
+            hasWasmModule: lastProcessorOptions?.processorOptions?.wasmModule instanceof WebAssembly.Module,
+            initMessages: nodePostMessage.mock.calls.length,
+        }).toEqual({ hasWasmModule: true, initMessages: 0 });
     });
 
     it('refuses a live node without cross-origin isolation before doing any work for it', async () => {
         const gate = vi.mocked(requireSharedArrayBuffer);
         const registered = vi.mocked(ensureWorkletRegistered);
-        const fetchSpy = vi.mocked(fetch);
+        const { fetchWasmModule } = await import('#/infra/audioWorklet/workletInitShared');
+        const fetchSpy = vi.mocked(fetchWasmModule);
         gate.mockImplementationOnce(() => {
             throw new Error('Grand Boule requires cross-origin isolation');
         });

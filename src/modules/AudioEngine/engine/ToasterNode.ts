@@ -1,12 +1,12 @@
 /**
  * ToasterNode — AudioWorkletNode wrapper for the Toaster drum machine.
  *
- * Same pattern as FermenterNode: caches WASM binary, resumes AudioContext,
+ * Same pattern as FermenterNode: caches the compiled WASM module, resumes AudioContext,
  * provides noteOn/noteOff/setParam/setPadParam via MessagePort.
  */
 
 import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
-import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from '#/infra/audioWorklet/workletInitShared';
+import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
 
 import toasterProcessorUrl from '../services/toasterProcessor.ts?worker&url';
 
@@ -89,7 +89,7 @@ export async function createToasterNode(
     }
 
     await raceAbortSignal(ensureWorkletRegistered(ctx, toasterProcessorUrl), signal);
-    const wasmBytes = await raceAbortSignal(fetchWasmBinary(wasmUrl ?? DEFAULT_WASM_URL), signal);
+    const wasmModule = await raceAbortSignal(fetchWasmModule(wasmUrl ?? DEFAULT_WASM_URL), signal);
 
     signal?.throwIfAborted();
 
@@ -99,6 +99,7 @@ export async function createToasterNode(
         outputChannelCount: Array.from({ length: 1 + TOASTER_PAD_COUNT }, () => 2),
         channelCount: 2,
         channelCountMode: 'explicit',
+        processorOptions: { wasmModule },
     });
     const outputNode = ctx.createGain();
     outputNode.gain.value = 1;
@@ -118,8 +119,7 @@ export async function createToasterNode(
     };
     const readyPromise = handshake.promise;
 
-    const copy = wasmBytes.slice(0);
-    node.port.postMessage({ type: 'init', wasmBytes: copy }, [copy]);
+    node.port.postMessage({ type: 'init' });
 
     return {
         workletNode: node,

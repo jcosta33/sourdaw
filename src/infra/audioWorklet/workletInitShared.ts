@@ -3,7 +3,7 @@
  *
  * Consolidates the three duplicated patterns identified in audit §39.1/§39.2:
  *   1. Per-context worklet-module registration caching (`ensureWorkletRegistered`)
- *   2. Fetched WASM binary caching keyed by URL (`fetchWasmBinary`)
+ *   2. Fetched and compiled WASM module caching keyed by URL (`fetchWasmModule`)
  *   3. "ready / error / timeout" handshake factory (`createReadyHandshake`)
  *
  * Used by every `create*Node` factory under `src/modules/AudioEngine/engine/`.
@@ -50,22 +50,19 @@ export async function ensureWorkletRegistered(ctx: BaseAudioContext, moduleUrl: 
 }
 
 /**
- * URL-keyed cache of fetched WASM binaries. Stores the in-flight fetch
- * promise rather than the resolved buffer so concurrent callers share a
- * single network request.
- *
- * Note: individual callers still `.slice(0)` the buffer before transferring
- * so the cached reference remains intact for subsequent creates.
+ * URL-keyed cache of fetched and compiled WASM modules. Stores the in-flight
+ * promise so concurrent callers share both network and compilation work.
  */
-const wasmBinaryCache = new Map<string, Promise<ArrayBuffer>>();
+const wasmModuleCache = new Map<string, Promise<WebAssembly.Module>>();
 
 /**
- * Fetch a WASM binary, caching by URL. The cached buffer is shared across
- * all plugin node factories that target the same URL (most target the
- * `daw-dsp` multi-device bundle).
+ * Fetch and asynchronously compile a WASM module once per URL. A compiled
+ * `WebAssembly.Module` is structured-cloneable, so node factories can send
+ * the cached module to worklets and workers without compiling synchronously
+ * on their real-time-adjacent threads.
  */
-export async function fetchWasmBinary(url: string): Promise<ArrayBuffer> {
-    const cached = wasmBinaryCache.get(url);
+export async function fetchWasmModule(url: string): Promise<WebAssembly.Module> {
+    const cached = wasmModuleCache.get(url);
     if (cached) {
         return cached;
     }
@@ -73,14 +70,15 @@ export async function fetchWasmBinary(url: string): Promise<ArrayBuffer> {
         if (!response.ok) {
             throw new Error(`Failed to fetch WASM (${url}): ${response.status}`);
         }
-        return response.arrayBuffer();
+        const bytes = await response.arrayBuffer();
+        return WebAssembly.compile(bytes);
     });
-    wasmBinaryCache.set(url, promise);
+    wasmModuleCache.set(url, promise);
     try {
         return await promise;
     } catch (error) {
-        // Drop failed fetches so a later retry can succeed.
-        wasmBinaryCache.delete(url);
+        // Drop failed fetches or compilations so a later retry can succeed.
+        wasmModuleCache.delete(url);
         throw error;
     }
 }

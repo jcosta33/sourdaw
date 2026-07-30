@@ -75,7 +75,7 @@ vi.mock('../../wasm/daw_dsp.js', () => ({
     FermenterInstance: FermenterInstanceMock,
 }));
 
-const MINIMAL_WASM = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
+const MINIMAL_WASM_MODULE = new WebAssembly.Module(new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]));
 
 async function loadProcessor(): Promise<FermenterProcessorLike> {
     await import('../fermenterProcessor');
@@ -83,7 +83,7 @@ async function loadProcessor(): Promise<FermenterProcessorLike> {
     if (!Ctor) {
         throw new Error('fermenter-processor was not registered');
     }
-    return new Ctor();
+    return new Ctor({ processorOptions: { wasmModule: MINIMAL_WASM_MODULE } });
 }
 
 function send(proc: FermenterProcessorLike, data: unknown): void {
@@ -111,17 +111,20 @@ describe('FermenterProcessor message handling', () => {
     describe('init', () => {
         it('posts ready on first init and ignores a second init', async () => {
             const proc = await loadProcessor();
-            send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
-            send(proc, { type: 'init', wasmBytes: MINIMAL_WASM }); // double-init guard
+            send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+            send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE }); // double-init guard
 
             const types = proc.port.postMessage.mock.calls.map((c) => (c[0] as { type: string }).type);
             expect(types).toEqual(['ready']); // exactly one ready
         });
 
-        it('reports an error if init throws before becoming ready', async () => {
+        it('reports an error if WASM instantiation throws before becoming ready', async () => {
+            const { initSync } = await import('../../wasm/daw_dsp.js');
+            vi.mocked(initSync).mockImplementationOnce(() => {
+                throw new Error('WASM instantiation failed');
+            });
             const proc = await loadProcessor();
-            // An invalid wasm module (empty buffer) makes WebAssembly.Module throw.
-            send(proc, { type: 'init', wasmBytes: new Uint8Array(0) });
+            send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
 
             const errorCalls = proc.port.postMessage.mock.calls.filter(
                 (c) => (c[0] as { type?: string }).type === 'error'
@@ -136,7 +139,7 @@ describe('FermenterProcessor message handling', () => {
     describe('immediate note dispatch', () => {
         it('dispatches noteOn/noteOff immediately when sampleFrame is omitted', async () => {
             const proc = await loadProcessor();
-            send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+            send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
             resetRecording();
 
             send(proc, { type: 'noteOn', note: 60, velocity: 100 });
@@ -152,7 +155,7 @@ describe('FermenterProcessor message handling', () => {
     describe('scheduled note queue', () => {
         it('enqueues future notes in sampleFrame order and drains due notes within the block window', async () => {
             const proc = await loadProcessor();
-            send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+            send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
             resetRecording();
 
             // currentFrame is stubbed at 0, so blockEndFrame = 0 + 128 = 128 every block,
@@ -215,7 +218,7 @@ describe('FermenterProcessor message handling', () => {
     describe('allNotesOff', () => {
         it('drops queued notes and releases every held note 0..127', async () => {
             const proc = await loadProcessor();
-            send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+            send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
             resetRecording();
 
             send(proc, { type: 'noteOn', note: 60, velocity: 100, sampleFrame: 128 });
@@ -238,7 +241,7 @@ describe('FermenterProcessor message handling', () => {
     describe('param + patch', () => {
         it('snake-cases param names and forwards value to the instance', async () => {
             const proc = await loadProcessor();
-            send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+            send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
             resetRecording();
 
             send(proc, { type: 'param', name: 'oscMix', value: 0.5 });
@@ -247,7 +250,7 @@ describe('FermenterProcessor message handling', () => {
 
         it('remaps reserved filter/osc/lfo/portamento param names', async () => {
             const proc = await loadProcessor();
-            send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+            send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
             resetRecording();
 
             send(proc, {
@@ -275,7 +278,7 @@ describe('FermenterProcessor message handling', () => {
 
         it('expands a patch macros array into macro0..N params, defaulting missing slots', async () => {
             const proc = await loadProcessor();
-            send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+            send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
             resetRecording();
 
             send(proc, { type: 'patch', patch: { macros: [0.4, 0.9] } });
@@ -286,7 +289,7 @@ describe('FermenterProcessor message handling', () => {
 
         it('defaults a sparse/holey macros slot to 0 via the nullish guard', async () => {
             const proc = await loadProcessor();
-            send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+            send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
             resetRecording();
 
             // Array(1) is a holey array: index 0 is undefined → value[index] ?? 0
@@ -299,7 +302,7 @@ describe('FermenterProcessor message handling', () => {
 
         it('ignores non-number, non-macros patch entries', async () => {
             const proc = await loadProcessor();
-            send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+            send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
             resetRecording();
 
             send(proc, { type: 'patch', patch: { label: 'ignored' as unknown as number } });
@@ -310,7 +313,7 @@ describe('FermenterProcessor message handling', () => {
     describe('param automation', () => {
         it('rejects automation with an out-of-range, non-integer or empty-segment schedule', async () => {
             const proc = await loadProcessor();
-            send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+            send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
             resetRecording();
 
             send(proc, {
@@ -336,7 +339,7 @@ describe('FermenterProcessor message handling', () => {
 
         it('interpolates a ramp across a segment and writes only changed values', async () => {
             const proc = await loadProcessor();
-            send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+            send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
             resetRecording();
 
             // Segment spanning frames 0..256, 0→10 linear. currentFrame starts at 0.
@@ -361,7 +364,7 @@ describe('FermenterProcessor message handling', () => {
 
         it('replaces an existing schedule for the same paramId instead of appending', async () => {
             const proc = await loadProcessor();
-            send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+            send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
             resetRecording();
 
             send(proc, {
@@ -382,7 +385,7 @@ describe('FermenterProcessor message handling', () => {
 
         it('linearly interpolates the value when the playhead is mid-segment', async () => {
             const proc = await loadProcessor();
-            send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+            send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
             resetRecording();
 
             // Segment 0..256 ramping 0→256. Advance the playhead into the middle
@@ -405,7 +408,7 @@ describe('FermenterProcessor message handling', () => {
 
         it('clamps to the end value once the playhead reaches or passes endFrame', async () => {
             const proc = await loadProcessor();
-            send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+            send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
             resetRecording();
 
             // Segment 0..64. With the playhead at 128 (>= endFrame), the
@@ -426,7 +429,7 @@ describe('FermenterProcessor message handling', () => {
 
         it('uses the end value when a segment is degenerate (endFrame <= startFrame)', async () => {
             const proc = await loadProcessor();
-            send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+            send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
             resetRecording();
 
             // A zero-duration segment: endFrame == startFrame. The first arm of
@@ -456,7 +459,7 @@ describe('FermenterProcessor message handling', () => {
 
         it('returns true when the output bus has fewer than 2 channels', async () => {
             const proc = await loadProcessor();
-            send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+            send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
             resetRecording();
 
             const ok = proc.process([], [makeChannels(1, FRAMES)]);
@@ -466,7 +469,7 @@ describe('FermenterProcessor message handling', () => {
 
         it('renders a mono output (right channel absent) without throwing', async () => {
             const proc = await loadProcessor();
-            send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+            send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
             resetRecording();
 
             const output = makeChannels(2, FRAMES);
@@ -486,7 +489,7 @@ describe('FermenterProcessor message handling', () => {
 
         it('faults and posts an error when instance.process throws, then stops processing', async () => {
             const proc = await loadProcessor();
-            send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+            send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
             resetRecording();
             processShouldThrow = true; // simulate a Rust-side trap propagating to JS
 

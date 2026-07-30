@@ -6,7 +6,7 @@ import { createCrumbsNode, isCrumbsDevice } from '../CrumbsNode';
 // AudioContext / worklet module / WASM fetch.
 vi.mock('#/infra/audioWorklet/workletInitShared', () => ({
     ensureWorkletRegistered: vi.fn().mockResolvedValue(undefined),
-    fetchWasmBinary: vi.fn().mockResolvedValue(new ArrayBuffer(8)),
+    fetchWasmModule: vi.fn().mockResolvedValue(new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]))),
     createReadyHandshake: vi.fn(() => ({
         promise: Promise.resolve({}),
         onMessage: () => 'other' as const,
@@ -29,11 +29,16 @@ describe('isCrumbsDevice', () => {
 
 describe('createCrumbsNode', () => {
     let postMessage: ReturnType<typeof vi.fn>;
+    let workletOptions: AudioWorkletNodeOptions | undefined;
 
     beforeEach(() => {
         postMessage = vi.fn();
+        workletOptions = undefined;
 
         class FakeWorkletNode {
+            constructor(_context: unknown, _processorName: string, options?: AudioWorkletNodeOptions) {
+                workletOptions = options;
+            }
             port = { postMessage, onmessage: null, close: vi.fn() };
             connect = vi.fn();
             disconnect = vi.fn();
@@ -124,5 +129,12 @@ describe('createCrumbsNode', () => {
         await createCrumbsNode(makeCtx());
 
         expect(messagesOfType('loadSample')).toEqual([]);
+    });
+
+    it('passes the compiled module in processor options and posts an empty init message', async () => {
+        await createCrumbsNode(makeCtx());
+
+        expect(workletOptions?.processorOptions?.wasmModule).toBeInstanceOf(WebAssembly.Module);
+        expect(messagesOfType('init')).toEqual([{ type: 'init' }]);
     });
 });

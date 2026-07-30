@@ -1,14 +1,14 @@
 /**
  * ProofNode — AudioWorkletNode wrapper for the Proof mastering suite.
  *
- * Same pattern as GlutenNode: caches WASM binary, resumes AudioContext,
+ * Same pattern as GlutenNode: caches the compiled WASM module, resumes AudioContext,
  * provides setParam/setBypass/reorder via MessagePort.
  *
  * Effect processor: 1 input, 1 output.
  */
 
 import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
-import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from '#/infra/audioWorklet/workletInitShared';
+import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
 
 import proofProcessorUrl from '../services/proofProcessor.ts?worker&url';
 
@@ -94,7 +94,7 @@ export async function createProofNode(
     if (ctx instanceof AudioContext && ctx.state === 'suspended') {
         await raceAbortSignal(ctx.resume(), signal);
     }
-    const wasmBytes = await raceAbortSignal(fetchWasmBinary(wasmUrl ?? DEFAULT_WASM_URL), signal);
+    const wasmModule = await raceAbortSignal(fetchWasmModule(wasmUrl ?? DEFAULT_WASM_URL), signal);
 
     signal?.throwIfAborted();
 
@@ -102,6 +102,7 @@ export async function createProofNode(
         numberOfInputs: 1,
         numberOfOutputs: 1,
         outputChannelCount: [2],
+        processorOptions: { wasmModule },
     });
 
     let bypassed = false;
@@ -138,8 +139,7 @@ export async function createProofNode(
     };
     const readyPromise = handshake.promise;
 
-    const copy = wasmBytes.slice(0);
-    node.port.postMessage({ type: 'init', wasmBytes: copy }, [copy]);
+    node.port.postMessage({ type: 'init' });
 
     return {
         workletNode: node,

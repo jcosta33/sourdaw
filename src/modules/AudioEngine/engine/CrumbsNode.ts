@@ -11,7 +11,7 @@
  * than a degraded one.
  */
 
-import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from '#/infra/audioWorklet/workletInitShared';
+import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
 import { logger } from '#/infra/logger/appLogger';
 
 import crumbsProcessorUrl from '../services/crumbsProcessor.ts?worker&url';
@@ -53,7 +53,7 @@ export function isCrumbsDevice(deviceType: string): boolean {
 /**
  * Create a Crumbs AudioWorkletNode.
  *
- * Resumes the AudioContext if suspended. Caches the WASM binary across calls.
+ * Resumes the AudioContext if suspended. Caches the compiled WASM module across calls.
  * Await `result.ready` before sending notes.
  *
  * `onFault` is invoked if the worklet posts a runtime-fault `error` message
@@ -71,6 +71,7 @@ export async function createCrumbsNode(
     }
 
     await ensureWorkletRegistered(ctx, crumbsProcessorUrl);
+    const wasmModule = await fetchWasmModule(wasmUrl ?? DEFAULT_WASM_URL);
 
     const node = new AudioWorkletNode(ctx, 'crumbs-processor', {
         numberOfInputs: 0,
@@ -78,6 +79,7 @@ export async function createCrumbsNode(
         outputChannelCount: [2],
         channelCount: 2,
         channelCountMode: 'explicit',
+        processorOptions: { wasmModule },
     });
 
     let bypassed = false;
@@ -99,9 +101,7 @@ export async function createCrumbsNode(
     };
     const readyPromise = handshake.promise;
 
-    const wasmBytes = await fetchWasmBinary(wasmUrl ?? DEFAULT_WASM_URL);
-    const copy = wasmBytes.slice(0);
-    node.port.postMessage({ type: 'init', wasmBytes: copy }, [copy]);
+    node.port.postMessage({ type: 'init' });
 
     // Sample loading is driven by the Crumbs module (live registration, or
     // `prepareOfflineCrumbs` for a render). Nothing is loaded eagerly here:

@@ -33,12 +33,13 @@
  * measurement that has not happened.
  *
  * Messages from the main thread:
- *   { type: 'init', wasmBytes: ArrayBuffer }
+ *   `processorOptions.wasmModule: WebAssembly.Module`
  *   → { type: 'ready' }
  *   every member of `GrandBouleDispatchMsg`
  */
 
 import { type GrandBouleInstance } from '../wasm/daw_dsp.js';
+import { resolveProcessorWasmModule } from '../services/resolveProcessorWasmModule';
 
 import {
     createGrandBouleBlockViews,
@@ -57,8 +58,6 @@ const RENDER_QUANTUM_FRAMES = 128;
 /** `GrandBouleInstance::process` pre-allocates this much; asking for more truncates. */
 const MAX_BLOCK_FRAMES = 4096;
 
-type GrandBouleOfflineMsg = { type: 'init'; wasmBytes: BufferSource } | GrandBouleDispatchMsg;
-
 class GrandBouleOfflineProcessor extends AudioWorkletProcessor {
     _instance: GrandBouleInstance | null = null;
     _memory: WebAssembly.Memory | null = null;
@@ -71,17 +70,12 @@ class GrandBouleOfflineProcessor extends AudioWorkletProcessor {
     // primitive comparisons and allocates nothing.
     _blockViews = createGrandBouleBlockViews();
 
-    constructor() {
+    constructor(options?: AudioWorkletNodeOptions) {
         super();
-        this.port.onmessage = (event: MessageEvent<GrandBouleOfflineMsg>) => {
+        this.port.onmessage = (event: MessageEvent<GrandBouleDispatchMsg>) => {
             const msg = event.data;
             try {
-                if (msg.type === 'init') {
-                    if (this._ready) {
-                        return;
-                    }
-                    this._initWasm(msg.wasmBytes);
-                } else if (!this._ready) {
+                if (!this._ready) {
                     this._pendingMessages.push(msg);
                 } else if (!this._faulted) {
                     this._handleMessage(msg);
@@ -101,10 +95,25 @@ class GrandBouleOfflineProcessor extends AudioWorkletProcessor {
                 });
             }
         };
+
+        try {
+            const wasmModule = resolveProcessorWasmModule(options);
+            if (!wasmModule) {
+                throw new Error('GrandBouleOfflineProcessor requires processorOptions.wasmModule');
+            }
+            this._initWasm(wasmModule);
+        } catch (error) {
+            console.error('GrandBouleOfflineProcessor init error:', error);
+            this._faulted = true;
+            this.port.postMessage({
+                type: 'error',
+                message: error instanceof Error ? error.message : String(error),
+            });
+        }
     }
 
-    _initWasm(wasmBytes: BufferSource): void {
-        const engine = createGrandBouleInstance({ wasmBytes, sampleRate });
+    _initWasm(wasmModule: WebAssembly.Module): void {
+        const engine = createGrandBouleInstance({ wasmModule, sampleRate });
         this._instance = engine.instance;
         this._memory = engine.memory;
         this._ready = true;

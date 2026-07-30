@@ -5,7 +5,9 @@ import { PROOF_IDX, TELEMETRY_SEQ_IDX } from '../telemetryAllocator';
 
 const mocks = vi.hoisted(() => ({
     ensureWorkletRegistered: vi.fn(() => Promise.resolve()),
-    fetchWasmBinary: vi.fn(() => Promise.resolve(new ArrayBuffer(8))),
+    fetchWasmModule: vi.fn(() =>
+        Promise.resolve(new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0])))
+    ),
     requireSharedArrayBuffer: vi.fn(),
     allocateSlot: vi.fn(),
     releaseSlot: vi.fn(),
@@ -13,7 +15,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('#/infra/audioWorklet/workletInitShared', () => ({
     ensureWorkletRegistered: mocks.ensureWorkletRegistered,
-    fetchWasmBinary: mocks.fetchWasmBinary,
+    fetchWasmModule: mocks.fetchWasmModule,
     createReadyHandshake: vi.fn(() => ({
         promise: Promise.resolve({}),
         onMessage: (event: MessageEvent) => {
@@ -47,16 +49,22 @@ type FakePort = {
     close: ReturnType<typeof vi.fn>;
 };
 
-const workletNodes: Array<{ port: FakePort; connect: ReturnType<typeof vi.fn>; disconnect: ReturnType<typeof vi.fn> }> =
-    [];
+const workletNodes: Array<{
+    port: FakePort;
+    connect: ReturnType<typeof vi.fn>;
+    disconnect: ReturnType<typeof vi.fn>;
+    options: AudioWorkletNodeOptions;
+}> = [];
 
 class FakeAudioWorkletNode {
     port: FakePort = { postMessage: vi.fn(), onmessage: null, close: vi.fn() };
     parameters = new Map<string, AudioParam>();
     connect = vi.fn();
     disconnect = vi.fn();
+    options: AudioWorkletNodeOptions;
 
-    constructor() {
+    constructor(_context: BaseAudioContext, _name: string, options: AudioWorkletNodeOptions) {
+        this.options = options;
         workletNodes.push(this);
     }
 }
@@ -114,18 +122,14 @@ describe('createProofNode', () => {
         expect(mocks.ensureWorkletRegistered).not.toHaveBeenCalled();
     });
 
-    it('registers the worklet and posts the transferred WASM bytes as the init message', async () => {
+    it('registers the worklet and supplies the compiled WASM module in processor options', async () => {
         await createProofNode(makeContext());
 
         expect(mocks.ensureWorkletRegistered).toHaveBeenCalledTimes(1);
-        const { port } = lastWorklet();
+        const { options, port } = lastWorklet();
+        expect(options.processorOptions?.wasmModule).toBeInstanceOf(WebAssembly.Module);
         const initCall = port.postMessage.mock.calls.find((call) => (call[0] as { type?: string }).type === 'init');
-        expect(initCall).toBeDefined();
-        const message = initCall![0] as { wasmBytes: ArrayBuffer };
-        expect(message.wasmBytes).toBeInstanceOf(ArrayBuffer);
-        expect(message.wasmBytes.byteLength).toBe(8);
-        // The copy is transferred, not the cached original.
-        expect(initCall![1]).toEqual([message.wasmBytes]);
+        expect(initCall).toEqual([{ type: 'init' }]);
     });
 
     it('posts finite params, drops non-finite values, and gates params while bypassed', async () => {
