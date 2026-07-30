@@ -6,6 +6,7 @@ export { setActionHistoryMetadataPort } from './actionHistoryMetadataPort';
 export { CommandEventBus, setCommandEventBus } from './commandEventBus';
 export { createCallbackUndoEntry } from './createCallbackUndoEntry';
 export { getAppActionExecutionPolicy } from './getAppActionExecutionPolicy';
+export { getExecutableAppActionToolSchemas } from './getExecutableAppActionToolSchemas';
 export { requiresAppActionConfirmation } from './requiresAppActionConfirmation';
 export { createUndoEntry } from './createUndoEntry';
 

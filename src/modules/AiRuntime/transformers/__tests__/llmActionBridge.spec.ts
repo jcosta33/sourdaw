@@ -1,14 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { getAppActionExecutionPolicy } from '#/modules/Command/useCases';
-
 import { type ProjectContext } from '../../models/ProjectContext';
-import {
-    bridgeLlmToolCalls,
-    buildLlmActionSystemPrompt,
-    buildLlmActionUserMessage,
-    LLM_EXECUTABLE_TOOL_SCHEMAS,
-} from '../llmActionBridge';
+import { bridgeLlmToolCalls, buildLlmActionSystemPrompt, buildLlmActionUserMessage } from '../llmActionBridge';
 
 const projectContext: ProjectContext = {
     tempo: 120,
@@ -519,34 +512,6 @@ describe('bridgeLlmToolCalls', () => {
                 reason: 'Provider batch writes the same target field more than once',
             },
         ]);
-    });
-
-    it('exposes only actions accepted by the bridge to providers', () => {
-        expect(LLM_EXECUTABLE_TOOL_SCHEMAS.map((schema) => schema.function.name)).toEqual([
-            'addTrack',
-            'renameTrack',
-            'muteTrack',
-            'soloTrack',
-            'duplicateTrack',
-            'setTrackGain',
-            'setTrackPan',
-            'setTrackColor',
-            'reorderTrack',
-            'setTempo',
-            'setDeviceParameter',
-            'bypassDevice',
-            'addSend',
-            'setSend',
-            'removeSend',
-            'setTrackOutput',
-        ]);
-        expect(
-            LLM_EXECUTABLE_TOOL_SCHEMAS.every((schema) => schema.function.parameters.additionalProperties === false)
-        ).toBe(true);
-        const unclassifiedActionTypes = LLM_EXECUTABLE_TOOL_SCHEMAS.map((schema) => schema.function.name).filter(
-            (actionType) => getAppActionExecutionPolicy(actionType).classification !== 'explicit'
-        );
-        expect(unclassifiedActionTypes).toEqual([]);
     });
 
     it('serializes only command-relevant project state and labels it as untrusted data', () => {

@@ -1,48 +1,11 @@
 import { type ProjectContext } from '../models/ProjectContext';
-import { type RuntimeAction, type RuntimeActionType } from '../models/RuntimeAction';
-import { DAW_TOOL_SCHEMAS, type ToolSchema } from '../models/ToolDefinitions';
+import { type RuntimeAction } from '../models/RuntimeAction';
 
 import { type ToolCallResult } from './toolCallParser';
 
-const EXECUTABLE_ACTION_TYPES = [
-    'addTrack',
-    'renameTrack',
-    'muteTrack',
-    'soloTrack',
-    'duplicateTrack',
-    'setTrackGain',
-    'setTrackPan',
-    'setTrackColor',
-    'reorderTrack',
-    'setTrackOutput',
-    'setTempo',
-    'setDeviceParameter',
-    'bypassDevice',
-    'setSend',
-    'addSend',
-    'removeSend',
-] as const satisfies readonly RuntimeActionType[];
-
 const MAX_LLM_ACTIONS_PER_BATCH = 24;
-type ExecutableActionType = (typeof EXECUTABLE_ACTION_TYPES)[number];
-type ExecutableRuntimeAction = Extract<RuntimeAction, { type: ExecutableActionType }>;
-
-const executableActionTypes: ReadonlySet<string> = new Set(EXECUTABLE_ACTION_TYPES);
 type ExecutableTrackKind = 'audio' | 'midi' | 'bus' | 'folder';
 const executableTrackKinds: ReadonlySet<string> = new Set(['audio', 'midi', 'bus', 'folder']);
-
-export const LLM_EXECUTABLE_TOOL_SCHEMAS: readonly ToolSchema[] = DAW_TOOL_SCHEMAS.filter((schema) =>
-    executableActionTypes.has(schema.function.name)
-).map((schema) => ({
-    ...schema,
-    function: {
-        ...schema.function,
-        parameters: {
-            ...schema.function.parameters,
-            additionalProperties: false,
-        },
-    },
-}));
 
 export type LlmActionRejection = {
     index: number;
@@ -185,7 +148,7 @@ function bridgeToolCall({
     call: ToolCallResult;
     context: ProjectContext;
     index: number;
-}): ExecutableRuntimeAction | LlmActionRejection {
+}): RuntimeAction | LlmActionRejection {
     const args = call.arguments;
 
     if (call.name === 'setTempo') {
@@ -310,7 +273,7 @@ function bridgeToolCall({
             !isProviderRoutableSource(source) ||
             typeof source.outputId !== 'string' ||
             !target ||
-            source?.id === target.id
+            source.id === target.id
         ) {
             return rejection(index, call.name, 'Expected a routable source track and a distinct bus or master output');
         }
@@ -360,7 +323,7 @@ function bridgeToolCall({
             !hasExactKeys(args, ['trackId', 'busId', 'level']) ||
             !isProviderRoutableSource(source) ||
             bus?.kind !== 'bus' ||
-            source?.id === bus.id ||
+            source.id === bus.id ||
             !existing ||
             !isFiniteNumber(args.level) ||
             args.level < 0 ||
@@ -392,7 +355,7 @@ function bridgeToolCall({
             !hasExactKeys(args, ['trackId', 'busId', 'level']) ||
             !isProviderRoutableSource(source) ||
             bus?.kind !== 'bus' ||
-            source?.id === bus.id ||
+            source.id === bus.id ||
             existing ||
             !isFiniteNumber(args.level) ||
             args.level < 0 ||
@@ -436,7 +399,7 @@ function bridgeToolCall({
     return rejection(index, call.name, 'Tool is not in the executable LLM allowlist');
 }
 
-function getMutationKey(action: ExecutableRuntimeAction): string | null {
+function getMutationKey(action: RuntimeAction): string | null {
     if (action.type === 'addTrack' || action.type === 'duplicateTrack') {
         return null;
     }
@@ -458,7 +421,17 @@ function getMutationKey(action: ExecutableRuntimeAction): string | null {
     if (action.type === 'setTrackOutput') {
         return `output:${action.payload.trackId}`;
     }
-    return `${action.type}:${action.payload.trackId}`;
+    if (
+        action.type === 'renameTrack' ||
+        action.type === 'muteTrack' ||
+        action.type === 'soloTrack' ||
+        action.type === 'setTrackGain' ||
+        action.type === 'setTrackPan' ||
+        action.type === 'setTrackColor'
+    ) {
+        return `${action.type}:${action.payload.trackId}`;
+    }
+    return null;
 }
 
 export function bridgeLlmToolCalls({ calls, context }: BridgeLlmToolCallsInput): LlmActionBridgeResult {
