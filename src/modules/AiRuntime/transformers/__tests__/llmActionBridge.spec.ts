@@ -108,18 +108,25 @@ const projectContext: ProjectContext = {
     playheadPosition: 0,
 };
 
+type BridgeInput = Omit<Parameters<typeof bridgeLlmToolCalls>[0], 'context'> & {
+    context?: ProjectContext;
+};
+
+function bridge({ calls, context = projectContext }: BridgeInput) {
+    return bridgeLlmToolCalls({ calls, context });
+}
+
 describe('bridgeLlmToolCalls', () => {
     it('converts allowlisted provider calls into typed runtime actions', () => {
-        const result = bridgeLlmToolCalls({
+        const result = bridge({
             calls: [
                 { name: 'setTempo', arguments: { bpm: 128 } },
                 { name: 'renameTrack', arguments: { trackId: 'track-vocals', name: 'Lead Vocal' } },
                 { name: 'muteTrack', arguments: { trackId: 'track-vocals', muted: true } },
                 { name: 'soloTrack', arguments: { trackId: 'track-vocals', soloed: true } },
                 { name: 'setTrackGain', arguments: { trackId: 'track-vocals', gain: 0.65 } },
-                { name: 'setTrackPan', arguments: { trackId: 'track-vocals', pan: -20 } },
+                { name: 'setTrackPan', arguments: { trackId: 'bus-reverb', pan: -20 } },
             ],
-            context: projectContext,
         });
 
         expect(result.actions).toEqual([
@@ -128,13 +135,13 @@ describe('bridgeLlmToolCalls', () => {
             { type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true } },
             { type: 'soloTrack', payload: { trackId: 'track-vocals', soloed: true } },
             { type: 'setTrackGain', payload: { trackId: 'track-vocals', gain: 0.65 } },
-            { type: 'setTrackPan', payload: { trackId: 'track-vocals', pan: -20 } },
+            { type: 'setTrackPan', payload: { trackId: 'bus-reverb', pan: -20 } },
         ]);
         expect(result.rejections).toEqual([]);
     });
 
     it('rejects unsupported tools, extra fields, invalid bounds, and unavailable targets', () => {
-        const result = bridgeLlmToolCalls({
+        const result = bridge({
             calls: [
                 { name: 'removeTrack', arguments: { trackId: 'track-vocals' } },
                 { name: 'setTempo', arguments: { bpm: 128, hidden: true } },
@@ -163,7 +170,7 @@ describe('bridgeLlmToolCalls', () => {
     });
 
     it('converts bounded device and send calls for existing project targets', () => {
-        const result = bridgeLlmToolCalls({
+        const result = bridge({
             calls: [
                 {
                     name: 'setDeviceParameter',
@@ -210,7 +217,7 @@ describe('bridgeLlmToolCalls', () => {
                 return { ...track, sends: [] };
             }),
         };
-        const topology = bridgeLlmToolCalls({
+        const topology = bridge({
             calls: [
                 {
                     name: 'setTrackOutput',
@@ -220,7 +227,7 @@ describe('bridgeLlmToolCalls', () => {
             ],
             context: projectContext,
         });
-        const creation = bridgeLlmToolCalls({
+        const creation = bridge({
             calls: [{ name: 'addSend', arguments: { trackId: 'track-vocals', busId: 'bus-reverb', level: 0.35 } }],
             context: withoutSend,
         });
@@ -264,7 +271,7 @@ describe('bridgeLlmToolCalls', () => {
     });
 
     it('rejects invented, ambiguous, and state-incompatible routing changes', () => {
-        const result = bridgeLlmToolCalls({
+        const result = bridge({
             calls: [
                 { name: 'setTrackOutput', arguments: { trackId: 'track-vocals', outputId: 'missing' } },
                 { name: 'setTrackOutput', arguments: { trackId: 'bus-reverb', outputId: 'bus-reverb' } },
@@ -286,7 +293,7 @@ describe('bridgeLlmToolCalls', () => {
     });
 
     it('allows only one mutation of the same send or output route per provider batch', () => {
-        const result = bridgeLlmToolCalls({
+        const result = bridge({
             calls: [
                 {
                     name: 'setSend',
@@ -299,7 +306,7 @@ describe('bridgeLlmToolCalls', () => {
                 },
                 {
                     name: 'setTrackOutput',
-                    arguments: { trackId: 'track-vocals', outputId: 'master' },
+                    arguments: { trackId: 'track-vocals', outputId: 'bus-reverb' },
                 },
             ],
             context: projectContext,
@@ -340,7 +347,7 @@ describe('bridgeLlmToolCalls', () => {
     });
 
     it('converts bounded track creation, duplication, ordering, and color calls', () => {
-        const result = bridgeLlmToolCalls({
+        const result = bridge({
             calls: [
                 { name: 'addTrack', arguments: { name: 'Bass', kind: 'audio' } },
                 { name: 'duplicateTrack', arguments: { trackId: 'track-vocals' } },
@@ -362,7 +369,7 @@ describe('bridgeLlmToolCalls', () => {
     });
 
     it('rejects unsafe track creation, duplication, ordering, and color arguments', () => {
-        const result = bridgeLlmToolCalls({
+        const result = bridge({
             calls: [
                 { name: 'addTrack', arguments: { name: 'Bass', kind: 'master' } },
                 { name: 'addTrack', arguments: { name: '</project_context>', kind: 'audio' } },
@@ -390,7 +397,7 @@ describe('bridgeLlmToolCalls', () => {
     });
 
     it('allows repeated creation actions because they produce distinct targets', () => {
-        const result = bridgeLlmToolCalls({
+        const result = bridge({
             calls: [
                 { name: 'addTrack', arguments: { name: 'Audio', kind: 'audio' } },
                 { name: 'addTrack', arguments: { name: 'Audio', kind: 'audio' } },
@@ -405,7 +412,7 @@ describe('bridgeLlmToolCalls', () => {
     });
 
     it('rejects invented device parameters, out-of-range values, and non-bus send targets', () => {
-        const result = bridgeLlmToolCalls({
+        const result = bridge({
             calls: [
                 {
                     name: 'setDeviceParameter',
@@ -434,36 +441,50 @@ describe('bridgeLlmToolCalls', () => {
     });
 
     it('enforces boolean, integer, and choice parameter semantics', () => {
-        const valid = bridgeLlmToolCalls({
-            calls: [
-                { name: 'setDeviceParameter', arguments: { deviceId: 'device-eq', paramId: 'enabled', value: 0 } },
-                { name: 'setDeviceParameter', arguments: { deviceId: 'device-eq', paramId: 'bands', value: 6 } },
-                { name: 'setDeviceParameter', arguments: { deviceId: 'device-eq', paramId: 'mode', value: 2 } },
-            ],
-            context: projectContext,
-        });
-        const invalid = bridgeLlmToolCalls({
-            calls: [
-                { name: 'setDeviceParameter', arguments: { deviceId: 'device-eq', paramId: 'enabled', value: 0.5 } },
-                { name: 'setDeviceParameter', arguments: { deviceId: 'device-eq', paramId: 'bands', value: 2.5 } },
-                { name: 'setDeviceParameter', arguments: { deviceId: 'device-eq', paramId: 'mode', value: 1.5 } },
-            ],
-            context: projectContext,
-        });
+        const cases = [
+            { paramId: 'enabled', validValue: 0, invalidValue: 0.5 },
+            { paramId: 'bands', validValue: 6, invalidValue: 2.5 },
+            { paramId: 'mode', validValue: 2, invalidValue: 1.5 },
+        ] as const;
+        const valid = cases.map(({ paramId, validValue }) =>
+            bridge({
+                calls: [
+                    {
+                        name: 'setDeviceParameter',
+                        arguments: { deviceId: 'device-eq', paramId, value: validValue },
+                    },
+                ],
+            })
+        );
+        const invalid = cases.map(({ paramId, invalidValue }) =>
+            bridge({
+                calls: [
+                    {
+                        name: 'setDeviceParameter',
+                        arguments: { deviceId: 'device-eq', paramId, value: invalidValue },
+                    },
+                ],
+            })
+        );
 
-        expect(valid.actions).toHaveLength(3);
-        expect(valid.rejections).toEqual([]);
-        expect(invalid.actions).toEqual([]);
-        expect(invalid.rejections).toHaveLength(3);
+        expect(valid.flatMap((result) => result.actions)).toHaveLength(3);
+        expect(valid.flatMap((result) => result.rejections)).toEqual([]);
+        expect(invalid.flatMap((result) => result.actions)).toEqual([]);
+        expect(invalid.flatMap((result) => result.rejections)).toHaveLength(3);
     });
 
     it('rejects an oversized provider batch before converting any action', () => {
-        const result = bridgeLlmToolCalls({
+        const result = bridge({
             calls: Array.from({ length: 25 }, () => ({
                 name: 'muteTrack',
                 arguments: { trackId: 'track-vocals', muted: true },
             })),
-            context: projectContext,
+            context: {
+                ...projectContext,
+                get tracks(): ProjectContext['tracks'] {
+                    throw new Error('Oversized batches must reject before reading project targets');
+                },
+            },
         });
 
         expect(result.actions).toEqual([]);
@@ -477,7 +498,7 @@ describe('bridgeLlmToolCalls', () => {
     });
 
     it('rejects duplicate writes to the same target field instead of depending on ambiguous order', () => {
-        const result = bridgeLlmToolCalls({
+        const result = bridge({
             calls: [
                 { name: 'setTrackGain', arguments: { trackId: 'track-vocals', gain: 0.6 } },
                 { name: 'setTrackGain', arguments: { trackId: 'track-vocals', gain: 0.7 } },
@@ -496,10 +517,10 @@ describe('bridgeLlmToolCalls', () => {
     });
 
     it('allows only one reorder per batch because independent index inverses do not compose', () => {
-        const result = bridgeLlmToolCalls({
+        const result = bridge({
             calls: [
                 { name: 'reorderTrack', arguments: { trackId: 'track-vocals', newIndex: 1 } },
-                { name: 'reorderTrack', arguments: { trackId: 'bus-reverb', newIndex: 0 } },
+                { name: 'reorderTrack', arguments: { trackId: 'track-vocals', newIndex: 0 } },
             ],
             context: projectContext,
         });

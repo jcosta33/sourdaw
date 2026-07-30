@@ -7,6 +7,8 @@ export { CommandEventBus, setCommandEventBus } from './commandEventBus';
 export { createCallbackUndoEntry } from './createCallbackUndoEntry';
 export { getAppActionExecutionPolicy } from './getAppActionExecutionPolicy';
 export { getExecutableAppActionToolSchemas } from './getExecutableAppActionToolSchemas';
+export { getExecutableAppActionGroundingCatalog } from './getExecutableAppActionGroundingCatalog';
+export { getExecutableAppActionGroundingRules } from './getExecutableAppActionGroundingRules';
 export { requiresAppActionConfirmation } from './requiresAppActionConfirmation';
 export { createUndoEntry } from './createUndoEntry';
 
