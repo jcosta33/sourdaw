@@ -6,11 +6,15 @@ import { TooltipProvider } from '#/components/ui/tooltip';
 import { LevelMeter } from '../LevelMeter';
 
 const mocks = vi.hoisted(() => ({
-    getMasterPeakLevel: vi.fn(() => 0),
-    getTrackPeakLevel: vi.fn(() => 0),
-    register: vi.fn(),
-    unregister: vi.fn(),
-    scheduledTick: null as ((currentTime: DOMHighResTimeStamp, deltaMs: number) => void) | null,
+    unsubscribe: vi.fn(),
+    subscribePeakMeter:
+        vi.fn<
+            (input: {
+                trackId: string | null;
+                onFrame: (peak: number, currentTime: DOMHighResTimeStamp, deltaMs: number) => void;
+            }) => () => void
+        >(),
+    scheduledTick: null as ((peak: number, currentTime: DOMHighResTimeStamp, deltaMs: number) => void) | null,
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', async () => {
@@ -20,21 +24,17 @@ vi.mock('#/modules/AudioEngine/useCases', async () => {
 
     return {
         ...actual,
-        getMasterPeakLevel: mocks.getMasterPeakLevel,
-        getTrackPeakLevel: mocks.getTrackPeakLevel,
-    };
-});
-
-vi.mock('#/utils/DOM/AnimationScheduler', () => ({
-    animationScheduler: {
-        register: mocks.register.mockImplementation(
-            (_id: string, callback: (currentTime: DOMHighResTimeStamp, deltaMs: number) => void) => {
-                mocks.scheduledTick = callback;
+        subscribePeakMeter: mocks.subscribePeakMeter.mockImplementation(
+            (input: {
+                trackId: string | null;
+                onFrame: (peak: number, currentTime: DOMHighResTimeStamp, deltaMs: number) => void;
+            }) => {
+                mocks.scheduledTick = input.onFrame;
+                return mocks.unsubscribe;
             }
         ),
-        unregister: mocks.unregister,
-    },
-}));
+    };
+});
 
 const OriginalResizeObserver = globalThis.ResizeObserver;
 
@@ -69,8 +69,6 @@ const renderWithTooltip = (ui: React.ReactElement) => {
 describe('LevelMeter', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.getMasterPeakLevel.mockReturnValue(0);
-        mocks.getTrackPeakLevel.mockReturnValue(0);
         mocks.scheduledTick = null;
         globalThis.ResizeObserver = LevelMeterResizeObserver;
     });
@@ -79,14 +77,15 @@ describe('LevelMeter', () => {
         globalThis.ResizeObserver = OriginalResizeObserver;
     });
 
-    it('should render without crashing', () => {
-        renderWithTooltip(<LevelMeter trackId={null} />);
-        expect(document.body).toBeTruthy();
-    });
+    it('subscribes to the requested meter and releases it on unmount', () => {
+        const { unmount } = renderWithTooltip(<LevelMeter trackId="track-1" />);
 
-    it('should render with useCase bindings', () => {
-        renderWithTooltip(<LevelMeter trackId={null} />);
-        expect(document.body).toBeTruthy();
+        const subscription = mocks.subscribePeakMeter.mock.calls[0]?.[0];
+        expect(subscription?.trackId).toBe('track-1');
+        expect(typeof subscription?.onFrame).toBe('function');
+
+        unmount();
+        expect(mocks.unsubscribe).toHaveBeenCalledTimes(1);
     });
 
     it('should hold transient peak level separately from smoothed VU level', () => {
@@ -94,11 +93,10 @@ describe('LevelMeter', () => {
         expect(canvasContext).not.toBeNull();
         const fillRectSpy = vi.spyOn(canvasContext!, 'fillRect');
 
-        mocks.getMasterPeakLevel.mockReturnValue(1);
         renderWithTooltip(<LevelMeter trackId={null} />);
 
         expect(mocks.scheduledTick).not.toBeNull();
-        mocks.scheduledTick!(0, 16);
+        mocks.scheduledTick!(1, 0, 16);
 
         const peakHoldCalls = fillRectSpy.mock.calls.filter((call) => call[3] === 1.5);
         expect(peakHoldCalls).toContainEqual([0, 0, 8, 1.5]);

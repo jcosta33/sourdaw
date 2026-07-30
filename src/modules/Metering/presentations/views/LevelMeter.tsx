@@ -1,8 +1,7 @@
-import { type ReactElement, useEffect, useRef, useState } from 'react';
+import { type ReactElement, useEffect, useRef } from 'react';
 
 import { DawMeterFrame } from '#/components/daw/DawMeterFrame';
-import { getTrackPeakLevel, getMasterPeakLevel, VUMeter } from '#/modules/AudioEngine/useCases';
-import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
+import { subscribePeakMeter, VUMeter } from '#/modules/AudioEngine/useCases';
 import { cn } from '#/utils/Styles/cn';
 import { resolveToken } from '#/utils/UI/resolveToken';
 
@@ -27,7 +26,6 @@ const linearToDb = (linear: number): number => {
 const dbToPercent = (db: number): number => Math.max(0, Math.min(100, ((db - MIN_DB) / (0 - MIN_DB)) * 100));
 
 export const LevelMeter = ({ trackId, height = 'h-full', width = 'w-2' }: LevelMeterProps): ReactElement => {
-    const [schedulerId] = useState(() => `meter-${crypto.randomUUID()}`);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const vuMeterRef = useRef(new VUMeter());
@@ -97,8 +95,7 @@ export const LevelMeter = ({ trackId, height = 'h-full', width = 'w-2' }: LevelM
         peakHoldRef.current = 0;
         peakHoldTimeRef.current = 0;
 
-        const tick = (currentTime: DOMHighResTimeStamp, deltaMs: number) => {
-            const rawPeak = trackId ? getTrackPeakLevel(trackId) : getMasterPeakLevel();
+        const tick = (rawPeak: number, currentTime: DOMHighResTimeStamp, deltaMs: number) => {
             vuSampleRef.current[0] = rawPeak;
             const rawRms = vuMeterRef.current.update(vuSampleRef.current, Math.max(0, deltaMs) / 1000);
             if (rawPeak >= peakHoldRef.current) {
@@ -151,13 +148,13 @@ export const LevelMeter = ({ trackId, height = 'h-full', width = 'w-2' }: LevelM
             }
         };
 
-        animationScheduler.register(schedulerId, tick);
+        const unsubscribe = subscribePeakMeter({ trackId, onFrame: tick });
 
         return () => {
-            animationScheduler.unregister(schedulerId);
+            unsubscribe();
             resizeObserver.disconnect();
         };
-    }, [schedulerId, trackId]);
+    }, [trackId]);
 
     return (
         <div

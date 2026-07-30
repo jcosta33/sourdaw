@@ -3,14 +3,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { MixerLevelReadout } from '../MixerLevelReadout';
 
-type SchedulerTick = (currentTime: DOMHighResTimeStamp, deltaMs: number) => void;
-
 const mocks = vi.hoisted(() => ({
-    getMasterPeakLevel: vi.fn(() => 0),
-    getTrackPeakLevel: vi.fn(() => 0),
-    register: vi.fn<(id: string, callback: (currentTime: DOMHighResTimeStamp, deltaMs: number) => void) => void>(),
-    unregister: vi.fn<(id: string) => void>(),
-    scheduledTick: null as ((currentTime: DOMHighResTimeStamp, deltaMs: number) => void) | null,
+    unsubscribe: vi.fn(),
+    subscribePeakMeter:
+        vi.fn<
+            (input: {
+                trackId: string | null;
+                onFrame: (peak: number, currentTime: DOMHighResTimeStamp, deltaMs: number) => void;
+            }) => () => void
+        >(),
+    scheduledTick: null as ((peak: number) => void) | null,
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', async () => {
@@ -20,8 +22,12 @@ vi.mock('#/modules/AudioEngine/useCases', async () => {
 
     return {
         ...actual,
-        getMasterPeakLevel: mocks.getMasterPeakLevel,
-        getTrackPeakLevel: mocks.getTrackPeakLevel,
+        subscribePeakMeter: mocks.subscribePeakMeter.mockImplementation((input) => {
+            mocks.scheduledTick = (peak) => {
+                input.onFrame(peak, 0, 16);
+            };
+            return mocks.unsubscribe;
+        }),
     };
 });
 
@@ -31,22 +37,11 @@ vi.mock('#/modules/Metering/presentations/views', () => ({
     ),
 }));
 
-vi.mock('#/utils/DOM/AnimationScheduler', () => ({
-    animationScheduler: {
-        register: mocks.register.mockImplementation((_id: string, callback: SchedulerTick) => {
-            mocks.scheduledTick = callback;
-        }),
-        unregister: mocks.unregister,
-    },
-}));
-
 const getPeakReadout = () => screen.getByTitle('Click to reset peak');
 
 describe('MixerLevelReadout', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.getMasterPeakLevel.mockReturnValue(0);
-        mocks.getTrackPeakLevel.mockReturnValue(0);
         mocks.scheduledTick = null;
     });
 
@@ -59,59 +54,48 @@ describe('MixerLevelReadout', () => {
         expect(getPeakReadout()).toHaveTextContent('-∞');
     });
 
-    it('registers a peak tick on mount and unregisters the same id on unmount', () => {
+    it('subscribes to the requested meter and releases it on unmount', () => {
         const { unmount } = render(<MixerLevelReadout trackId="track-1" control={null} value={null} />);
 
-        expect(mocks.register).toHaveBeenCalledTimes(1);
-        const call = mocks.register.mock.calls[0];
-        if (!call) {
-            throw new Error('animationScheduler.register was not called');
-        }
-        const [id] = call;
-        expect(id).toMatch(/^peak-readout-/);
+        const subscription = mocks.subscribePeakMeter.mock.calls[0]?.[0];
+        expect(subscription?.trackId).toBe('track-1');
+        expect(typeof subscription?.onFrame).toBe('function');
 
         unmount();
-        expect(mocks.unregister).toHaveBeenCalledWith(id);
+        expect(mocks.unsubscribe).toHaveBeenCalledTimes(1);
     });
 
-    it('reads the bound track peak and shows the loudest level observed, in dB', () => {
-        mocks.getTrackPeakLevel.mockReturnValue(1);
+    it('shows the loudest level delivered by the shared meter, in dB', () => {
         render(<MixerLevelReadout trackId="track-1" control={null} value={null} />);
 
-        mocks.scheduledTick?.(0, 16);
-        expect(mocks.getTrackPeakLevel).toHaveBeenCalledWith('track-1');
-        expect(mocks.getMasterPeakLevel).not.toHaveBeenCalled();
+        mocks.scheduledTick?.(1);
         expect(getPeakReadout()).toHaveTextContent('0.0');
 
         // A quieter follow-up sample must not pull a held peak back down.
-        mocks.getTrackPeakLevel.mockReturnValue(0.1);
-        mocks.scheduledTick?.(0, 16);
+        mocks.scheduledTick?.(0.1);
         expect(getPeakReadout()).toHaveTextContent('0.0');
     });
 
-    it('falls back to the master peak level when no track is bound', () => {
-        mocks.getMasterPeakLevel.mockReturnValue(1);
+    it('subscribes to the master meter when no track is bound', () => {
         render(<MixerLevelReadout trackId={null} control={null} value={null} />);
 
-        mocks.scheduledTick?.(0, 16);
-        expect(mocks.getMasterPeakLevel).toHaveBeenCalledTimes(1);
-        expect(mocks.getTrackPeakLevel).not.toHaveBeenCalled();
+        const subscription = mocks.subscribePeakMeter.mock.calls[0]?.[0];
+        expect(subscription?.trackId).toBeNull();
+        expect(typeof subscription?.onFrame).toBe('function');
+        mocks.scheduledTick?.(1);
         expect(getPeakReadout()).toHaveTextContent('0.0');
     });
 
-    it('flags a peak above 0 dB as an over, and clicking resets it', () => {
-        mocks.getTrackPeakLevel.mockReturnValue(1.5);
+    it('shows a peak above 0 dB and clicking resets it', () => {
         render(<MixerLevelReadout trackId="track-1" control={null} value={null} />);
 
-        mocks.scheduledTick?.(0, 16);
+        mocks.scheduledTick?.(1.5);
         const readout = getPeakReadout();
-        expect(readout).toHaveClass('text-state-error');
-        expect(readout).not.toHaveClass('text-muted-foreground/80');
+        expect(readout).toHaveAccessibleName('Peak level: 3.5 dB. Click to reset.');
 
         fireEvent.click(readout);
         expect(readout).toHaveTextContent('-∞');
-        expect(readout).not.toHaveClass('text-state-error');
-        expect(readout).toHaveClass('text-muted-foreground/80');
+        expect(readout).toHaveAccessibleName('Peak level: -∞ dB. Click to reset.');
     });
 
     it('applies clusterClassName to the cluster and valueSize to the value text', () => {

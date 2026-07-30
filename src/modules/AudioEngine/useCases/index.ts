@@ -134,6 +134,7 @@ export { setTrackMute } from './trackAudioControls/setTrackMute';
 export { setTrackSoloGate } from './trackAudioControls/setTrackSoloGate';
 export { setTrackOutput } from './trackAudioControls/setTrackOutput';
 export { getTrackPeakLevel } from './trackAudioControls/getTrackPeakLevel';
+export { subscribePeakMeter } from './metering/subscribePeakMeter';
 
 export { analyzePitchForClip } from './audioAnalysis/analyzePitchForClip';
 export { commitPitchEdit } from './audioAnalysis/commitPitchEdit';

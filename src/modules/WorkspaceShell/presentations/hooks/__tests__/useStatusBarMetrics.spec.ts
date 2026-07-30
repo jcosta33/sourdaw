@@ -4,31 +4,24 @@ import { renderHook } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { getDawStatusDotClassName } from '#/components/daw/DawStatusDot';
-import { getEngineDiagnostics, getEngineState, getMasterPeakLevel } from '#/modules/AudioEngine/useCases';
-import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
+import { getEngineDiagnostics, getEngineState, subscribePeakMeter } from '#/modules/AudioEngine/useCases';
 
 import { useStatusBarMetrics, type StatusBarMetricRefs } from '../useStatusBarMetrics';
 
-type TickFn = () => void;
+type TickFn = Parameters<typeof subscribePeakMeter>[0]['onFrame'];
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     getEngineDiagnostics: vi.fn(),
     getEngineState: vi.fn(),
-    getMasterPeakLevel: vi.fn(),
+    subscribePeakMeter: vi.fn(),
 }));
 
 let capturedTick: TickFn | null = null;
-let capturedId: string | null = null;
+const unsubscribe = vi.fn();
 
-vi.mock('#/utils/DOM/AnimationScheduler', () => ({
-    animationScheduler: {
-        register: vi.fn((id: string, cb: TickFn) => {
-            capturedId = id;
-            capturedTick = cb;
-        }),
-        unregister: vi.fn(),
-    },
-}));
+function runTick(peak = 0): void {
+    capturedTick?.(peak, 0, 16);
+}
 
 function makeRefs(): StatusBarMetricRefs {
     return {
@@ -100,19 +93,18 @@ describe('useStatusBarMetrics', () => {
         delete (globalThis as { requestIdleCallback?: unknown }).requestIdleCallback;
         delete (globalThis as { cancelIdleCallback?: unknown }).cancelIdleCallback;
         capturedTick = null;
-        capturedId = null;
+        vi.mocked(subscribePeakMeter).mockImplementation(({ onFrame }) => {
+            capturedTick = onFrame;
+            return unsubscribe;
+        });
         vi.mocked(getEngineDiagnostics).mockReturnValue(makeEngineDiagnostics());
     });
 
     afterEach(() => {
         vi.useRealTimers();
         vi.unstubAllGlobals();
-        if (originalRequestIdle) {
-            (globalThis as { requestIdleCallback?: unknown }).requestIdleCallback = originalRequestIdle;
-        }
-        if (originalCancelIdle) {
-            (globalThis as { cancelIdleCallback?: unknown }).cancelIdleCallback = originalCancelIdle;
-        }
+        globalThis.requestIdleCallback = originalRequestIdle;
+        globalThis.cancelIdleCallback = originalCancelIdle;
     });
 
     it('writes the audio engine sample rate and latency to the DOM on tick', () => {
@@ -124,14 +116,12 @@ describe('useStatusBarMetrics', () => {
             currentTime: 0,
             baseLatency: 0.005,
         });
-        vi.mocked(getMasterPeakLevel).mockReturnValue(0);
-
         const refs = makeRefs();
         makeElements(refs);
         renderHook(() => useStatusBarMetrics(refs));
 
         expect(capturedTick).not.toBeNull();
-        capturedTick!();
+        runTick();
 
         // 48000 Hz → "48kHz"; 0.005s → 5.0ms.
         expect(refs.sampleRate.current!.textContent).toBe('48kHz');
@@ -148,12 +138,10 @@ describe('useStatusBarMetrics', () => {
             baseLatency: 0.01,
         });
         // 0.5 amplitude → 20*log10(0.5) ≈ -6.0 dB.
-        vi.mocked(getMasterPeakLevel).mockReturnValue(0.5);
-
         const refs = makeRefs();
         makeElements(refs);
         renderHook(() => useStatusBarMetrics(refs));
-        capturedTick!();
+        runTick(0.5);
 
         expect(refs.masterLevelText.current!.textContent).toContain('-6.0 dB');
         // 0.5 * 300 = 150, but the bar width is capped at Math.min(100, ...) → 100%.
@@ -169,12 +157,10 @@ describe('useStatusBarMetrics', () => {
             currentTime: 0,
             baseLatency: 0.01,
         });
-        vi.mocked(getMasterPeakLevel).mockReturnValue(0);
-
         const refs = makeRefs();
         makeElements(refs);
         renderHook(() => useStatusBarMetrics(refs));
-        capturedTick!();
+        runTick();
 
         expect(refs.masterLevelText.current!.textContent).toBe('-∞ dB');
     });
@@ -188,13 +174,12 @@ describe('useStatusBarMetrics', () => {
             currentTime: 0,
             baseLatency: 0.01,
         });
-        vi.mocked(getMasterPeakLevel).mockReturnValue(0);
         // performance.memory absent (non-Chrome) — default in jsdom.
 
         const refs = makeRefs();
         makeElements(refs);
         renderHook(() => useStatusBarMetrics(refs));
-        capturedTick!();
+        runTick();
 
         expect(refs.memContainer.current!.style.display).toBe('none');
     });
@@ -208,7 +193,6 @@ describe('useStatusBarMetrics', () => {
             currentTime: 0,
             baseLatency: 0.01,
         });
-        vi.mocked(getMasterPeakLevel).mockReturnValue(0);
         // 10 MB in bytes.
         vi.stubGlobal('performance', {
             now: () => 0,
@@ -218,7 +202,7 @@ describe('useStatusBarMetrics', () => {
         const refs = makeRefs();
         makeElements(refs);
         renderHook(() => useStatusBarMetrics(refs));
-        capturedTick!();
+        runTick();
 
         expect(refs.memContainer.current!.style.display).toBe('flex');
         expect(refs.memText.current!.textContent).toBe('10 MB');
@@ -233,12 +217,10 @@ describe('useStatusBarMetrics', () => {
             currentTime: 0,
             baseLatency: 0.01,
         });
-        vi.mocked(getMasterPeakLevel).mockReturnValue(0);
-
         const refs = makeRefs();
         makeElements(refs);
         renderHook(() => useStatusBarMetrics(refs));
-        capturedTick!();
+        runTick();
 
         const expectedClass = getDawStatusDotClassName({ tone: 'success' });
         expect(refs.engineState.current!.className).toContain(expectedClass);
@@ -256,12 +238,10 @@ describe('useStatusBarMetrics', () => {
             currentTime: 0,
             baseLatency: 0.01,
         });
-        vi.mocked(getMasterPeakLevel).mockReturnValue(0);
-
         const refs = makeRefs();
         makeElements(refs);
         renderHook(() => useStatusBarMetrics(refs));
-        capturedTick!();
+        runTick();
 
         const expectedClass = getDawStatusDotClassName({ tone: 'muted' });
         expect(refs.engineState.current!.className).toContain(expectedClass);
@@ -281,23 +261,21 @@ describe('useStatusBarMetrics', () => {
             currentTime: 0,
             baseLatency: 0.005,
         });
-        vi.mocked(getMasterPeakLevel).mockReturnValue(0);
-
         const refs = makeRefs();
         makeElements(refs);
         renderHook(() => useStatusBarMetrics(refs));
 
-        capturedTick!();
+        runTick();
         const initialTitle = refs.engineState.current!.title;
 
         vi.mocked(getEngineDiagnostics).mockReturnValue(makeEngineDiagnostics(25));
         now = 500;
-        capturedTick!();
+        runTick();
         expect(getEngineDiagnostics).toHaveBeenCalledTimes(1);
         expect(refs.engineState.current!.title).toBe(initialTitle);
 
         now = 1_000;
-        capturedTick!();
+        runTick();
         expect(getEngineDiagnostics).toHaveBeenCalledTimes(2);
         expect(refs.engineState.current!.title).toContain('ready device instances: 25');
     });
@@ -312,12 +290,10 @@ describe('useStatusBarMetrics', () => {
             currentTime: 0,
             baseLatency: 0.01,
         });
-        vi.mocked(getMasterPeakLevel).mockReturnValue(0);
-
         const refs = makeRefs();
         makeElements(refs);
         renderHook(() => useStatusBarMetrics(refs));
-        capturedTick!();
+        runTick();
 
         // CPU text is a percentage string.
         expect(refs.cpuText.current!.textContent).toMatch(/^\d+%$/);
@@ -334,16 +310,16 @@ describe('useStatusBarMetrics', () => {
             currentTime: 0,
             baseLatency: 0.01,
         });
-        vi.mocked(getMasterPeakLevel).mockReturnValue(0);
-
         const refs = makeRefs();
         makeElements(refs);
         const { unmount } = renderHook(() => useStatusBarMetrics(refs));
 
-        expect(capturedId).not.toBeNull();
+        const subscription = vi.mocked(subscribePeakMeter).mock.calls[0]?.[0];
+        expect(subscription?.trackId).toBeNull();
+        expect(typeof subscription?.onFrame).toBe('function');
         unmount();
 
-        expect(animationScheduler.unregister).toHaveBeenCalledWith(capturedId);
+        expect(unsubscribe).toHaveBeenCalledTimes(1);
     });
 
     it('uses requestIdleCallback when available to measure idle load', () => {
@@ -359,8 +335,6 @@ describe('useStatusBarMetrics', () => {
             currentTime: 0,
             baseLatency: 0.01,
         });
-        vi.mocked(getMasterPeakLevel).mockReturnValue(0);
-
         const refs = makeRefs();
         makeElements(refs);
         renderHook(() => useStatusBarMetrics(refs));

@@ -1,8 +1,7 @@
 import { type ReactElement, type ReactNode, useEffect, useRef } from 'react';
 
-import { getTrackPeakLevel, getMasterPeakLevel } from '#/modules/AudioEngine/useCases';
+import { subscribePeakMeter } from '#/modules/AudioEngine/useCases';
 import { LevelMeter } from '#/modules/Metering/presentations/views';
-import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
 import { cn } from '#/utils/Styles/cn';
 
 import { MixerStripValue } from '../../components/Mixer/MixerStripValue';
@@ -31,19 +30,19 @@ export const MixerLevelReadout = ({
     clusterClassName,
     valueSize = 'md',
 }: MixerLevelReadoutProps): ReactElement => {
-    const id = crypto.randomUUID();
-    const peakTextRef = useRef<HTMLDivElement>(null);
+    const peakTextRef = useRef<HTMLButtonElement>(null);
     const maxPeakRef = useRef<number>(MIN_DB);
 
     useEffect(() => {
-        const tick = () => {
-            const rawPeak = trackId ? getTrackPeakLevel(trackId) : getMasterPeakLevel();
+        const tick = (rawPeak: number) => {
             const db = linearToDb(rawPeak);
 
             if (db > maxPeakRef.current) {
                 maxPeakRef.current = db;
                 if (peakTextRef.current) {
-                    peakTextRef.current.textContent = db <= MIN_DB ? '-∞' : db.toFixed(1);
+                    const peakText = db <= MIN_DB ? '-∞' : db.toFixed(1);
+                    peakTextRef.current.textContent = peakText;
+                    peakTextRef.current.ariaLabel = `Peak level: ${peakText} dB. Click to reset.`;
                     if (db > 0) {
                         peakTextRef.current.classList.add('text-state-error');
                         peakTextRef.current.classList.remove('text-muted-foreground/80');
@@ -55,17 +54,18 @@ export const MixerLevelReadout = ({
             }
         };
 
-        animationScheduler.register(`peak-readout-${id}`, tick);
+        const unsubscribe = subscribePeakMeter({ trackId, onFrame: tick });
 
         return () => {
-            animationScheduler.unregister(`peak-readout-${id}`);
+            unsubscribe();
         };
-    }, [trackId, id]);
+    }, [trackId]);
 
     const handleReset = () => {
         maxPeakRef.current = MIN_DB;
         if (peakTextRef.current) {
             peakTextRef.current.textContent = '-∞';
+            peakTextRef.current.ariaLabel = 'Peak level: -∞ dB. Click to reset.';
             peakTextRef.current.classList.remove('text-state-error');
             peakTextRef.current.classList.add('text-muted-foreground/80');
         }
@@ -74,14 +74,16 @@ export const MixerLevelReadout = ({
     return (
         <>
             <div className={cn('mt-1 flex shrink-0 flex-col items-center gap-1', clusterClassName)}>
-                <div
+                <button
+                    type="button"
                     ref={peakTextRef}
                     onClick={handleReset}
-                    className="text-[9px] font-mono cursor-pointer text-muted-foreground/80 hover:text-text-primary transition-colors h-3 flex items-center justify-center"
+                    className="text-[9px] font-mono cursor-pointer text-muted-foreground/80 hover:text-text-primary transition-colors h-3 flex items-center justify-center border-0 bg-transparent p-0"
                     title="Click to reset peak"
+                    aria-label="Peak level: -∞ dB. Click to reset."
                 >
                     -∞
-                </div>
+                </button>
                 <div className="flex items-end justify-center h-full">
                     <LevelMeter trackId={trackId} width="w-1.5" />
                 </div>

@@ -1,12 +1,11 @@
 import { type RefObject, useEffect, useRef } from 'react';
 
 import { getDawStatusDotClassName } from '#/components/daw/DawStatusDot';
-import { getEngineDiagnostics, getEngineState, getMasterPeakLevel } from '#/modules/AudioEngine/useCases';
-import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
+import { getEngineDiagnostics, getEngineState, subscribePeakMeter } from '#/modules/AudioEngine/useCases';
 
 /**
  * Refs for DOM elements that StatusBar updates at 60 fps via direct mutation.
- * The hook registers an animation tick that writes to these refs every frame.
+ * The hook subscribes to the shared master-meter frame and writes to these refs.
  */
 export type StatusBarMetricRefs = {
     cpuBar: RefObject<HTMLDivElement | null>;
@@ -22,10 +21,9 @@ export type StatusBarMetricRefs = {
 
 /**
  * Drives StatusBar CPU / memory / latency / level meters at animation-frame rate
- * via direct DOM mutations (bypassing React renders for performance).
+ * from the shared master-meter frame via direct DOM mutations.
  */
 export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
-    const idRef = useRef(crypto.randomUUID());
     const lastFrameRef = useRef(0);
     // §162.x — ring buffer for CPU samples. 30-entry Array.shift() on
     // every status-bar tick was O(n); fixed-size Float32Array + head
@@ -53,13 +51,12 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
         };
         scheduleIdle();
 
-        const tick = (): void => {
+        const tick = (masterLevel: number): void => {
             const now = performance.now();
             const frameDelta = now - lastFrameRef.current;
             lastFrameRef.current = now;
 
             const engineInfo = getEngineState();
-            const masterLevel = getMasterPeakLevel();
             if (now - lastDiagnosticsAtRef.current >= 1_000) {
                 const diagnostics = getEngineDiagnostics();
                 const deviceTypes = Object.entries(diagnostics.graph.deviceInstancesByType)
@@ -105,7 +102,7 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
             }
 
             // Combine: higher of frame jank or idle pressure
-            const isPlaying = engineInfo?.state === 'running';
+            const isPlaying = engineInfo.state === 'running';
             const floor = isPlaying ? 3 : 0;
             const load = Math.max(floor, frameLoad, idleLoad);
             const samples = cpuSamplesRef.current;
@@ -175,9 +172,9 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
             }
         };
 
-        animationScheduler.register(`status-${idRef.current}`, tick);
+        const unsubscribe = subscribePeakMeter({ trackId: null, onFrame: tick });
         return () => {
-            animationScheduler.unregister(`status-${idRef.current}`);
+            unsubscribe();
             if (typeof cancelIdleCallback === 'function' && idleId) {
                 cancelIdleCallback(idleId);
             }
