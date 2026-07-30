@@ -615,8 +615,8 @@ describe('AudioEngine', () => {
 
             const initialization = engine.initialize();
             await engine.dispose();
-            workletLoad.resolve();
             await expect(initialization).rejects.toThrow('Audio engine was disposed during initialization');
+            workletLoad.resolve();
 
             expect(engine.getHealth().workletReady).toBe(false);
             expect(engine.getDiagnostics().graph.masterMeterWorklets).toBe(0);
