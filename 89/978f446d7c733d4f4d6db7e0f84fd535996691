@@ -1,0 +1,123 @@
+src/modules/AiRuntime/models/ProjectContext.ts
+  s_bc88af7d3b054c::t_70d8b17d3a3eaf 4-8
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_bc88af7d3b054c::t_59ab20ea1825ad 32-34
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_ac9b259eab20ba::t_0cb1e01c848993 9-13,163-231,958-991,1025-1029
+src/modules/AiRuntime/transformers/promptParser/__tests__/parsing.spec.ts
+  s_c43dbfc78f9027::t_fe66f7673bbb5d 40-44,81-85,171-175
+src/modules/AiRuntime/transformers/promptParser/__tests__/parsingDeep.spec.ts
+  s_c43dbfc78f9027::t_263afc5254755b 10-14
+src/modules/AiRuntime/useCases/__tests__/describePlannedAction.spec.ts
+  s_bc88af7d3b054c::t_038978d851e0f5 9-13
+src/modules/AiRuntime/useCases/__tests__/getProjectContext.spec.ts
+  s_bc88af7d3b054c::t_60dfe79668a7e8 71-75,139-143,172-176
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_c43dbfc78f9027::t_4d29565445ef7f 67-71
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_c43dbfc78f9027::t_9488bf4e5868f9 156-160,193-197,257-261
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_c43dbfc78f9027::t_617840ca4e5eba 200-233
+src/modules/AiRuntime/useCases/agentReference/__tests__/resolveAgentReference.spec.ts
+  s_c43dbfc78f9027::t_4d45f928363b23 30-34
+src/modules/AiRuntime/useCases/dsoEditor/__tests__/executeDsos.spec.ts
+  s_ac9b259eab20ba::t_9fd3048aebc6f2 155-172,250
+src/modules/AiRuntime/useCases/dsoEditor/executeDsos.ts
+  s_ac9b259eab20ba::t_7d765cf4e49319 474
+src/modules/AiRuntime/useCases/getProjectContext.ts
+  s_bc88af7d3b054c::t_70c0721268bb21 67-71
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_bc88af7d3b054c::t_51d7397bb51b6f 180-198
+src/modules/Transport/handlers/transport/__tests__/handleRestoreLoopRegion.spec.ts
+  s_a24dbe40128d2e::t_460a08f6788d48 1-22
+src/modules/Transport/handlers/transport/__tests__/handleSetLoopEnabled.spec.ts
+  s_bc88af7d3b054c::t_4bcf0c25d6ba0c 1-47
+src/modules/Transport/handlers/transport/__tests__/handleSetMetronomeEnabled.spec.ts
+  s_bd81b284217223::t_3cc56b9282295f 1-44
+src/modules/Transport/handlers/transport/__tests__/handleSetMetronomeVolume.spec.ts
+  s_bc88af7d3b054c::t_019ee8aa8d9e6c 1-49
+src/modules/Transport/handlers/transport/__tests__/transportHandlers.spec.ts
+  s_ac9b259eab20ba::t_ca74e67c12bb4a 103
+src/modules/Transport/handlers/transport/handleRestoreLoopRegion.ts
+  s_bc88af7d3b054c::t_09ae3cd5331418 1-11
+src/modules/Transport/handlers/transport/handleSetLoopEnabled.ts
+  s_a24dbe40128d2e::t_5aec109b13b1bd 1-23
+src/modules/Transport/handlers/transport/handleSetMetronomeEnabled.ts
+  s_a24dbe40128d2e::t_a52e7040b1d28d 1-20
+src/modules/Transport/handlers/transport/handleSetMetronomeVolume.ts
+  s_bc88af7d3b054c::t_9af4ed6ce42ee6 4,7-18
+src/modules/Transport/useCases/__tests__/getTransportHandlers.spec.ts
+  s_a24dbe40128d2e::t_c5b5a89f527054 11,13,16
+src/modules/Transport/useCases/getTransportHandlers.ts
+  s_bc88af7d3b054c::t_34ccb5f3399154 3,7,9,29,32,35,62-64
+src/modules/Transport/useCases/transportControls/__tests__/setLoopEnabled.spec.ts
+  s_bc88af7d3b054c::t_9fa52eb9ab3943 1-33
+src/modules/Transport/useCases/transportControls/__tests__/setLoopRegion.spec.ts
+  s_ac9b259eab20ba::t_e1df4a88196015 31-40
+src/modules/Transport/useCases/transportControls/restoreLoopRegion.ts
+  s_bc88af7d3b054c::t_31785ad9ebd1e3 1-16
+src/modules/Transport/useCases/transportControls/setLoopEnabled.ts
+  s_bc88af7d3b054c::t_fbaf3a369c5fe2 1-14
+src/modules/Transport/useCases/transportControls/setMetronomeEnabled.ts
+  s_bc88af7d3b054c::t_f6791edfbbbae3 1-10
+src/modules/WorkspaceShell/presentations/hooks/__tests__/usePromptExecution.spec.ts
+  s_aacef3cdcea50d::t_bdd80ce94812ea 7,339-343
+src/utils/handlerContract.ts
+  s_bc88af7d3b054c::t_9885362936236f 349-354
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "89978f446d7c733d4f4d6db7e0f84fd535996691",
+  "prompts": {},
+  "sessions": {
+    "s_a24dbe40128d2e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fb2b2-861f-7751-920d-ffed740fa99a",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_aacef3cdcea50d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fb309-8da3-7e11-bfa4-13a5cb7f7abc",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bd81b284217223": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fb319-fff8-76d0-b7c5-aced51fd489a",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c43dbfc78f9027": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fb31a-1447-73a0-831e-4bba75325223",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
