@@ -855,7 +855,7 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
 
 const faustDescriptor: WasmDeviceDescriptor = {
     matches: isFaustModule,
-    create({ context, deviceId, deviceType, onLoaded }) {
+    create({ context, deviceId, deviceType, isCurrent, signal, onLoaded }) {
         type PendingParam = { kind: 'param'; name: string; value: number; time?: number };
         type PendingKey = {
             kind: 'keyOn' | 'keyOff';
@@ -881,6 +881,10 @@ const faustDescriptor: WasmDeviceDescriptor = {
                 }
                 const controls = result.wamControls;
                 if (!controls) {
+                    return;
+                }
+                if (signal?.aborted || isCurrent?.() === false) {
+                    controls.destroy?.();
                     return;
                 }
                 for (const event of pending) {

@@ -757,6 +757,30 @@ describe('wasmDeviceRegistry descriptors', () => {
             expect(emitDeviceLoaded).toHaveBeenCalledWith({ deviceId: 'faust-1', deviceType: 'faust-flanger' });
         });
 
+        it('destroys a delayed result after cancellation without replaying queued events', async () => {
+            const deferred = Promise.withResolvers<Record<string, unknown>>();
+            const { controls, result } = makeFaustResult();
+            factoryMocks.createFaustDeviceNode.mockReturnValue(deferred.promise);
+            const abortController = new AbortController();
+            const deps = createDeps({
+                deviceType: 'faust-flanger',
+                deviceId: 'faust-late',
+                signal: abortController.signal,
+            });
+
+            const { placeholder, loadPromise } = requireDescriptor('faust-flanger').create(deps);
+            placeholder.controller?.setParam('depth', 0.5);
+            placeholder.controller?.keyOn?.(0, 60, 100, 0.5);
+            abortController.abort();
+            deferred.resolve(result);
+            await loadPromise;
+
+            expect(controls.destroy).toHaveBeenCalledTimes(1);
+            expect(controls.setParam).not.toHaveBeenCalled();
+            expect(controls.keyOn).not.toHaveBeenCalled();
+            expect(deps.onLoaded).not.toHaveBeenCalled();
+        });
+
         it('leaves the placeholder in place when the factory resolves null or without controls', async () => {
             factoryMocks.createFaustDeviceNode.mockResolvedValueOnce(null);
             const nullDeps = createDeps({ deviceType: 'faust-flanger', deviceId: 'faust-2' });
