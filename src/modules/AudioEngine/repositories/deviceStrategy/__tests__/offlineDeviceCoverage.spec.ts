@@ -35,7 +35,9 @@ vi.stubGlobal('AudioBuffer', MockAudioBuffer);
  * It replaces a hardcoded list of eleven native device types that was checked
  * against the registries' own matchers. That guard asked "does a factory claim
  * this type" and never "does the result work", so it stayed green while
- * `builtin-crumbs` and `crust` had no offline implementation at all.
+ * `builtin-crumbs` and `crust` had no offline implementation at all. Crumbs has
+ * one now (`CrumbsInstance` → `crumbs-processor` → `CrumbsNode`), so it has
+ * moved out of the exemption table and into the native DSP cohort.
  *
  * The left side is always `getPlatformPlugins()` — what the Content Browser and
  * the mixer's device menu offer the user. It is authored for a user-visible
@@ -122,14 +124,19 @@ function makeCatalogDevice(deviceType: string): Device {
 /**
  * Which registry arm claims this id, in `createDeviceRegistry`'s registration
  * order — the order `DeviceFactoryRegistry.createDevice` walks. Mirroring the
- * order matters: the `builtin-` prefix is registered first, so a hypothetical
- * `builtin-`-prefixed native device would be routed to WebAudio, and this guard
- * has to check the arm that would actually run.
+ * order matters, and the `builtin-` arm is where it bites: it is a prefix
+ * match registered first, so it used to swallow *every* `builtin-*` id.
+ * `builtin-crumbs` is a native DSP device with that prefix, so the production
+ * registration now excludes native ids from the WebAudio arm — reproducing the
+ * fall-through live playback has always had, where `TrackNode.addDevice` tries
+ * the built-in factory and moves on to the wasm registry when it returns
+ * nothing. This mirrors that exclusion; it is not an exemption for Crumbs, and
+ * the native cohort's own checks still apply to it.
  */
 type RegistryArm = 'webAudio' | 'faust' | 'nativeDsp' | 'unclaimed';
 
 function registryArmFor(deviceType: string): RegistryArm {
-    if (deviceType.startsWith('builtin-')) {
+    if (deviceType.startsWith('builtin-') && !isNativeDspDevice(deviceType)) {
         return 'webAudio';
     }
     if (isFaustModule(deviceType)) {

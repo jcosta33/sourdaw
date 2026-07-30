@@ -17,6 +17,7 @@ import { reportLatency } from '../useCases/latencyCompensation/compensation/repo
 
 import { getAudioDeviceRuntimeSink } from './audioDeviceRuntimeSink';
 import { isBacteriaDevice, createBacteriaNode, type BacteriaNodeResult } from './BacteriaNode';
+import { isCrumbsDevice, createCrumbsNode, type CrumbsNodeResult } from './CrumbsNode';
 import { isFermenterDevice, createFermenterNode, type FermenterNodeResult } from './FermenterNode';
 import { isGlutenDevice, createGlutenNode, type GlutenNodeResult } from './GlutenNode';
 import { isGrandBouleDevice, createGrandBouleNode, type GrandBouleNodeResult } from './GrandBouleNode';
@@ -302,6 +303,76 @@ const levainDescriptor: WasmDeviceDescriptor = {
                     port: result.workletNode.port,
                 });
                 getAudioDeviceRuntimeSink().setLevainEngineReady({ deviceId, isReady: true });
+                return;
+            })
+            .catch((error) => {
+                logger.warn(`[WebAudioEngine] ${deviceType} failed: ${error}`);
+                return;
+            });
+        return { placeholder, loadPromise };
+    },
+};
+
+const crumbsDescriptor: WasmDeviceDescriptor = {
+    matches: isCrumbsDevice,
+    create({ context, deviceId, deviceType, onLoaded }) {
+        const pendingParams: Array<[string, number]> = [];
+        const placeholder = loadingBypassNode(context, deviceId, deviceType);
+        placeholder.crumbsControls = {
+            ready: false,
+            noteOn: () => {},
+            noteOff: () => {},
+            allNotesOff: () => {},
+            setParam: (name, value) => {
+                pendingParams.push([name, value]);
+            },
+            setMode: () => {},
+            setBypass: () => {},
+            destroy: () => {},
+        };
+        const loadPromise = createCrumbsNode(context)
+            .then(async (result: CrumbsNodeResult) => {
+                await result.ready;
+                for (const [name, value] of pendingParams) {
+                    result.setParam(name, value);
+                }
+                const accepted = onLoaded({
+                    deviceId,
+                    type: deviceType,
+                    nodes: [result.workletNode],
+                    inputNode: result.workletNode,
+                    outputNode: result.workletNode,
+                    dispose: result.destroy,
+                    controller: {
+                        ready: true,
+                        noteOn: result.noteOn,
+                        noteOff: result.noteOff,
+                        allNotesOff: result.allNotesOff,
+                        setParam: result.setParam,
+                        setBypass: result.setBypass,
+                        destroy: result.destroy,
+                    },
+                    crumbsControls: {
+                        ready: true,
+                        noteOn: result.noteOn,
+                        noteOff: result.noteOff,
+                        allNotesOff: result.allNotesOff,
+                        setParam: result.setParam,
+                        setMode: result.setMode,
+                        setBypass: result.setBypass,
+                        destroy: result.destroy,
+                    },
+                });
+                if (accepted === false) {
+                    return;
+                }
+                // Load the project's sample into the live instance through the
+                // same use case the offline chain awaits, so the two registries
+                // cannot configure two different engines.
+                await getAudioDeviceRuntimeSink().prepareCrumbsDevice({
+                    deviceId,
+                    port: result.workletNode.port,
+                });
                 return;
             })
             .catch((error) => {
@@ -920,6 +991,7 @@ const WASM_DEVICE_DESCRIPTORS: WasmDeviceDescriptor[] = [
     fermenterDescriptor,
     toasterDescriptor,
     levainDescriptor,
+    crumbsDescriptor,
     proofChamberDescriptor,
     glutenDescriptor,
     bacteriaDescriptor,

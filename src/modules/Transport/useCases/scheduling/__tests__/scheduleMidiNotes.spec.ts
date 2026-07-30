@@ -338,6 +338,45 @@ describe('scheduleMidiNotes', () => {
         });
     });
 
+    // Crumbs' catalog id carries the `builtin-` prefix, so it was absent from
+    // the worklet-synth table and a Crumbs track fell through to the fallback
+    // sawtooth here — while the offline render, once Crumbs became renderable,
+    // voiced the real sampler. Live and the export have to reach the same
+    // engine, and the fallback substituting for a sampler is the "plausible
+    // wrong instrument" failure, not a graceful degradation.
+    it('routes a Crumbs track to its sampler rather than the fallback synth', async () => {
+        const noteOn = vi.fn();
+        const noteOff = vi.fn();
+        const track = midiTrack({
+            clips: [midiClip()],
+            devices: [{ id: 'crumbs-1', type: 'builtin-crumbs' }],
+        });
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = {
+            notesByClipId: {
+                'clip-1': [{ id: 'n1', pitch: 62, startBeat: 0.25, duration: 0.5, velocity: 96 }],
+            },
+        };
+        vi.mocked(ensureTrackStrip).mockReturnValue({
+            gainNode: {},
+            preFaderTap: { connect: vi.fn() },
+            deviceNodes: [
+                {
+                    deviceId: 'crumbs-1',
+                    type: 'builtin-crumbs',
+                    crumbsControls: { ready: true, noteOn, noteOff },
+                },
+            ],
+        } as never);
+
+        await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+
+        expect(scheduleNote).not.toHaveBeenCalled();
+        // noteOn(pitch, velocity, sampleFrame, channel)
+        expect(noteOn.mock.calls[0]?.slice(0, 2)).toEqual([62, 96]);
+        expect(noteOff.mock.calls[0]?.[0]).toBe(62);
+    });
+
     it('does not schedule synth when MIDI store is uninitialized', async () => {
         await scheduleMidiNotes(0, 4, 0, 0, new Set<string>(), [], defaultTransportState, 120);
 

@@ -17,8 +17,12 @@ vi.mock('../NativeDspDeviceStrategy', () => ({
 
 // The registry matcher and the factory dispatch now read one table, so the
 // matcher this registry registers is the factory table's own.
+// `builtin-crumbs` is here because Crumbs is the one native DSP device whose
+// catalog id carries the `builtin-` prefix, which the WebAudio arm matches on.
 vi.mock('../nativeDspDeviceFactories', () => ({
-    isNativeDspDevice: vi.fn((type: string) => type === 'fermenter' || type === 'dutch-oven'),
+    isNativeDspDevice: vi.fn(
+        (type: string) => type === 'fermenter' || type === 'dutch-oven' || type === 'builtin-crumbs'
+    ),
 }));
 
 import { createNativeDspStrategy } from '../NativeDspDeviceStrategy';
@@ -90,6 +94,27 @@ describe('setupDeviceStrategies', () => {
         await registry.createDevice(ctx, createDevice({ type: 'dutch-oven' }));
 
         expect(createNativeDspStrategy).toHaveBeenCalledTimes(2);
+    });
+
+    // `builtin-` is a prefix arm registered ahead of the native one, and
+    // `createDevice` stops at the first match, so a native device carrying that
+    // prefix would be handed to a WebAudio factory that has no node for it and
+    // the export would refuse. Live playback never had that problem —
+    // `TrackNode.addDevice` falls through to the wasm registry when the
+    // built-in factory returns nothing — so the two dispatches would have
+    // disagreed about the same device.
+    it('sends a builtin-prefixed native device to the native strategy, not the WebAudio arm', async () => {
+        const registry = createDeviceRegistry({
+            faustModuleMatcher: () => false,
+            createFaustDevice: vi.fn(),
+        });
+        const ctx = {} as BaseAudioContext;
+        const device = createDevice({ type: 'builtin-crumbs' });
+
+        const strategy = await registry.createDevice(ctx, device);
+
+        expect(strategy).toBe(strategyMocks.nativeStrategy);
+        expect(createWebAudioDevice).not.toHaveBeenCalled();
     });
 
     it('refuses a device its native strategy does not claim', async () => {

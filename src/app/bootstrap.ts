@@ -74,6 +74,7 @@ import {
     clearActionHistory as clearCrdtActionHistory,
     registerCrdtStorageRuntime,
 } from '#/modules/CrdtDocument/useCases';
+import { prepareCrumbsEngine } from '#/modules/Crumbs/useCases';
 import { getDawProjectHandlers } from '#/modules/DawInterchange/useCases';
 import { setFermenterTelemetry } from '#/modules/Fermenter/stores';
 import { setFermenterMappedParam, setFermenterDependencies } from '#/modules/Fermenter/useCases';
@@ -302,7 +303,15 @@ configureAudioDeviceRuntimeSink({
         if (deviceType === 'levain') {
             await prepareOfflineLevain({ deviceId, port, signal });
         }
+        if (deviceType === 'builtin-crumbs') {
+            await prepareCrumbsEngine({ deviceId, port, signal });
+        }
     },
+    // Deliberately the same use case the offline arm above calls: a Crumbs
+    // instance built by the live registry and one built by the offline registry
+    // must end up holding the same sample, and one shared call is what
+    // guarantees it.
+    prepareCrumbsDevice: ({ deviceId, port }) => prepareCrumbsEngine({ deviceId, port }),
     setFermenterTelemetry: (deviceId, telemetry) => {
         setFermenterTelemetry(deviceId, telemetry.peakL, telemetry.peakR, telemetry.scopeBuffer);
     },

@@ -862,9 +862,7 @@ describe('exportStems — option parsing, validation & control flow', () => {
             offlineRenderMocks.createOfflineTrackStrip.mockImplementation((_ctx: unknown, track: { id: string }) => {
                 if (track.id === failingTrackId) {
                     return Promise.reject(
-                        new Error(
-                            `Track "${track.id}" uses the device "builtin-crumbs", which this build cannot render`
-                        )
+                        new Error(`Track "${track.id}" uses the device "crust", which this build cannot render`)
                     );
                 }
                 return Promise.resolve({

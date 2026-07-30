@@ -132,8 +132,8 @@ describe('buildDeviceChain', () => {
         mocks.isFaustModule.mockReturnValue(false);
         const unrenderable: Device = {
             id: 'd1',
-            name: 'Crumbs',
-            type: 'builtin-crumbs',
+            name: 'Crust',
+            type: 'crust',
             bypassed: false,
             parameterValues: {},
         };
@@ -148,26 +148,26 @@ describe('buildDeviceChain', () => {
 
     // The user has to find the device in the rack, and the chip there shows the
     // display name, not the raw type. Naming only the type asks them to
-    // translate `builtin-crumbs` into "Crumbs" themselves.
+    // translate a raw id like `crust` into the label they can see themselves.
     it('names the device the way the rack labels it, as well as by type', async () => {
         vi.stubGlobal('AudioWorkletNode', undefined);
         const input = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
         const output = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
         mocks.isFaustModule.mockReturnValue(false);
-        const crumbs: Device = {
+        const unrenderable: Device = {
             id: 'd1',
-            name: 'Crumbs',
-            type: 'builtin-crumbs',
+            name: 'Crust',
+            type: 'crust',
             bypassed: false,
             parameterValues: {},
         };
 
-        const failure = await buildDeviceChain({} as BaseAudioContext, [crumbs], input, output, {
+        const failure = await buildDeviceChain({} as BaseAudioContext, [unrenderable], input, output, {
             trackName: 'Sampler',
         }).catch((error: unknown) => error);
 
-        expect((failure as Error).message).toContain('"Crumbs"');
-        expect((failure as Error).message).toContain('builtin-crumbs');
+        expect((failure as Error).message).toContain('"Crust"');
+        expect((failure as Error).message).toContain('crust');
     });
 
     // `addDevice` stores an unmatched string verbatim as the device type, so
@@ -209,33 +209,38 @@ describe('buildDeviceChain', () => {
         const output = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
         const onWarning = vi.fn();
         mocks.isFaustModule.mockReturnValue(false);
-        const crumbs: Device = {
+        const unrenderable: Device = {
             id: 'd1',
-            name: 'Crumbs',
-            type: 'builtin-crumbs',
+            name: 'Crust',
+            type: 'crust',
             bypassed: false,
             parameterValues: {},
         };
 
-        const entries = await buildDeviceChain({} as BaseAudioContext, [crumbs], input, output, {
-            trackName: 'Muted sampler',
+        const entries = await buildDeviceChain({} as BaseAudioContext, [unrenderable], input, output, {
+            trackName: 'Muted limiter',
             onWarning,
             contributesAudio: false,
         });
 
         expect(entries).toEqual([]);
-        expect(onWarning.mock.calls[0]?.[0]).toContain('builtin-crumbs');
+        expect(onWarning.mock.calls[0]?.[0]).toContain('crust');
         expect(input.connect).toHaveBeenCalledWith(output);
     });
 
-    // The `builtin-` prefix matcher claims every `builtin-*` id, so a builtin
-    // with no node in deviceNodeFactory reaches a factory and fails inside it.
-    // That is still a coverage hole, and splitting on "did a matcher claim it"
-    // would have mis-filed it as a degradable runtime failure.
-    it('fails the export for a builtin id the WebAudio factory cannot build', async () => {
+    // Crumbs used to be this file's example of a `builtin-`-prefixed id the
+    // WebAudio arm claimed and could not build, and the export refused for it.
+    // It has a real render path now (`CrumbsInstance` → `crumbs-processor`), so
+    // the refusal must *not* fire for it: an environment without
+    // `AudioWorkletNode` is a missing-asset failure, which degrades everywhere.
+    // Whether it reaches the native arm at all is pinned in
+    // `setupDeviceStrategies.spec.ts`; what matters here is that it is no
+    // longer treated as a coverage hole.
+    it('no longer refuses the export for Crumbs, which now has an offline render path', async () => {
         vi.stubGlobal('AudioWorkletNode', undefined);
         const input = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
         const output = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
+        const onWarning = vi.fn();
         mocks.isFaustModule.mockReturnValue(false);
         const crumbs: Device = {
             id: 'd1',
@@ -245,13 +250,15 @@ describe('buildDeviceChain', () => {
             parameterValues: {},
         };
 
-        const failure = await buildDeviceChain({} as BaseAudioContext, [crumbs], input, output, {
+        const outcome = await buildDeviceChain({} as BaseAudioContext, [crumbs], input, output, {
             trackName: 'Sampler',
+            onWarning,
         }).catch((error: unknown) => error);
 
-        expect(failure).toMatchObject({ _tag: 'Export' });
-        expect((failure as Error).message).toContain('builtin-crumbs');
-        expect(input.connect).not.toHaveBeenCalledWith(output);
+        expect(outcome).toEqual([]);
+        expect(onWarning.mock.calls[0]?.[0]).toContain('builtin-crumbs');
+        // The chain still completes, which is what "degrade" means here.
+        expect(input.connect).toHaveBeenCalledWith(output);
     });
 
     // A registered factory that throws at runtime is an environment or asset

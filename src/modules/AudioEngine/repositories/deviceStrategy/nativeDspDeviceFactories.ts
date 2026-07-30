@@ -1,4 +1,5 @@
 import { isBacteriaDevice, createBacteriaNode } from '../../engine/BacteriaNode';
+import { isCrumbsDevice, createCrumbsNode } from '../../engine/CrumbsNode';
 import { isFermenterDevice, createFermenterNode } from '../../engine/FermenterNode';
 import { isGlutenDevice, createGlutenNode } from '../../engine/GlutenNode';
 import { isGrandBouleDevice, createGrandBouleNode } from '../../engine/GrandBouleNode';
@@ -48,6 +49,10 @@ export const NATIVE_DSP_DEVICE_FACTORIES: readonly NativeDspDeviceFactory[] = [
     { matches: isFermenterDevice, create: createFermenterNode },
     { matches: isToasterDevice, create: createToasterNode },
     { matches: isLevainDevice, create: createLevainNode },
+    // Crumbs' catalog id is `builtin-crumbs`, so `createDeviceRegistry` has to
+    // let this table claim it before the `builtin-` WebAudio arm — see the
+    // exclusion there. Every other native id is unprefixed.
+    { matches: isCrumbsDevice, create: createCrumbsNode },
     { matches: isGrandBouleDevice, create: createGrandBouleNode },
     { matches: isGlutenDevice, create: createGlutenNode },
     { matches: isBacteriaDevice, create: createBacteriaNode },
