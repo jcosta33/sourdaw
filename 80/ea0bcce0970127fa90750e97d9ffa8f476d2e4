@@ -1,0 +1,95 @@
+src/modules/Preferences/presentations/views/preferences/PerformanceSection.tsx
+  s_ac9b259eab20ba::t_a9ce49c3259b80 7
+  s_ac9b259eab20ba::t_20e62f6c323dc4 15-22,24-28,30-33,35,41-48
+src/modules/Preferences/stores/preferencesStore.ts
+  s_ac9b259eab20ba::t_95cbae624498ab 4,21-39,44-62
+  s_ac9b259eab20ba::t_6f9d0b910ba1cf 131,133-134,154
+  s_ac9b259eab20ba::t_a7ada768bff601 40-43
+  s_ac9b259eab20ba::t_16931678ac4f3e 8,65,103
+  s_ac9b259eab20ba::t_def85343879ddd 132
+tests/e2e/myceliumPerformanceEvidence.ts
+  s_ac9b259eab20ba::t_c241bc1bcbe486 61,81,130,145,156-163,185-186,192-195,208
+src/app/__tests__/reportStartupFailure.spec.ts
+  s_ac9b259eab20ba::t_dd6066f19f6aa0 1-23
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngine.spec.ts
+  s_ac9b259eab20ba::t_65d5feee1d5b35 202,213-222
+  s_ac9b259eab20ba::t_aa0a121ecd7503 714
+  s_ac9b259eab20ba::t_436ae88aeb1ebe 223,225-236
+  s_ac9b259eab20ba::t_c732008739e45f 1490
+  s_ac9b259eab20ba::t_2664ee5886f02c 885-892
+  s_ac9b259eab20ba::t_0bd0967d495e2f 224
+src/modules/Preferences/models/Preferences.ts
+  s_ac9b259eab20ba::t_16931678ac4f3e 27,29-31,36,56,85
+src/modules/Preferences/presentations/views/preferences/__tests__/PerformanceSection.spec.tsx
+  s_ac9b259eab20ba::t_65d5feee1d5b35 8,11,17-18,21,23,25-27,29-31
+  s_ac9b259eab20ba::t_20e62f6c323dc4 16
+tests/e2e/e2eUtils.ts
+  s_ac9b259eab20ba::t_c241bc1bcbe486 19,34
+  s_ac9b259eab20ba::t_eb64c6ee934525 16-17
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngineBranches.spec.ts
+  s_ac9b259eab20ba::t_aa0a121ecd7503 159
+  s_ac9b259eab20ba::t_c732008739e45f 221,439
+src/modules/Preferences/stores/__tests__/preferencesStore.spec.ts
+  s_ac9b259eab20ba::t_8ab2aa9cec7448 95-96
+  s_ac9b259eab20ba::t_5e5d63a0f4137f 71-94,97-100
+  s_ac9b259eab20ba::t_65d5feee1d5b35 127,131,139,163,173
+src/infra/audio/__tests__/resolveAudioLatencyProfile.spec.ts
+  s_ac9b259eab20ba::t_65d5feee1d5b35 1-32
+src/modules/AudioEngine/AGENTS.md
+  s_ac9b259eab20ba::t_c241bc1bcbe486 18
+src/infra/audio/resolveAudioLatencyProfile.ts
+  s_ac9b259eab20ba::t_20e62f6c323dc4 1,9
+  s_ac9b259eab20ba::t_16931678ac4f3e 2-7,12-15,18,21-23
+  s_ac9b259eab20ba::t_c241bc1bcbe486 8,10-11,16-17,19-20
+tests/e2e/playwright.mycelium.performance.config.cjs
+  s_ac9b259eab20ba::t_c241bc1bcbe486 12-15,26
+src/modules/Preferences/models/__tests__/Preferences.spec.ts
+  s_ac9b259eab20ba::t_51e30b45bb10eb 44
+  s_ac9b259eab20ba::t_65d5feee1d5b35 4,43,49,51
+src/modules/Preferences/stores/__tests__/validateStoredPreferences.spec.ts
+  s_ac9b259eab20ba::t_dd6066f19f6aa0 261-273
+  s_ac9b259eab20ba::t_65d5feee1d5b35 21-22,24,31,36,49,57,59,239,242,292,305,317
+  s_ac9b259eab20ba::t_20e62f6c323dc4 248-260
+src/infra/audio/AudioLatencyProfile.ts
+  s_ac9b259eab20ba::t_16931678ac4f3e 1-11
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useStatusBarMetrics.spec.ts
+  s_ac9b259eab20ba::t_ef100c2e08076b 49-56
+src/infra/store/storage/types.ts
+  s_ac9b259eab20ba::t_95cbae624498ab 14,16-19,21-22
+src/app/reportStartupFailure.ts
+  s_ac9b259eab20ba::t_6f9d0b910ba1cf 1-16
+src/infra/store/createStore.ts
+  s_ac9b259eab20ba::t_95cbae624498ab 60-63,88
+src/infra/audio/__tests__/audioRuntimeConfiguration.spec.ts
+  s_ac9b259eab20ba::t_dd6066f19f6aa0 1-25
+src/app/main.tsx
+  s_ac9b259eab20ba::t_16931678ac4f3e 4-6,10-22
+  s_ac9b259eab20ba::t_6f9d0b910ba1cf 8-9,23
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_ac9b259eab20ba::t_16931678ac4f3e 2,109-113,265-266,268-270,294,407-408,1500-1501
+  s_ac9b259eab20ba::t_c732008739e45f 1
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngineDelegation.spec.ts
+  s_ac9b259eab20ba::t_aa0a121ecd7503 249
+  s_ac9b259eab20ba::t_2664ee5886f02c 289-296
+src/modules/AudioEngine/models/AudioEngineState.ts
+  s_ac9b259eab20ba::t_16931678ac4f3e 70-71
+src/infra/audio/audioRuntimeConfiguration.ts
+  s_ac9b259eab20ba::t_6f9d0b910ba1cf 13-16
+  s_ac9b259eab20ba::t_16931678ac4f3e 1-12,17-18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "80ea0bcce0970127fa90750e97d9ffa8f476d2e4",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
