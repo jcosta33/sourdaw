@@ -1,0 +1,73 @@
+src/modules/AudioEngine/repositories/deviceStrategy/FaustDeviceStrategy.ts
+  s_66d4924c65dcd2::t_c1e0c9a4740197 140
+  s_66d4924c65dcd2::t_c5a19dca651cbb 47-52
+  s_66d4924c65dcd2::t_361eae823ef337 82-83,86-87
+  s_66d4924c65dcd2::t_a2cb415684cb82 58-68,73-81,84-85,88-96
+  s_66d4924c65dcd2::t_91b3ae27a51a0c 124-125,132
+  s_66d4924c65dcd2::t_70e94ff6f0d061 97
+src/modules/AudioEngine/repositories/deviceStrategy/setupDeviceStrategies.ts
+  s_66d4924c65dcd2::t_c42766b48c3158 11-16,22
+  s_66d4924c65dcd2::t_94a3b6c891737e 30-32
+src/modules/AudioEngine/repositories/deviceStrategy/__tests__/offlineDeviceCoverage.spec.ts
+  s_66d4924c65dcd2::t_815b8092731812 8
+  s_66d4924c65dcd2::t_547ec99d0017ad 114
+src/modules/AudioEngine/useCases/__tests__/buildDeviceChain.spec.ts
+  s_66d4924c65dcd2::t_3b55161f875e39 40
+  s_66d4924c65dcd2::t_9a7a0fae371d3c 25
+  s_66d4924c65dcd2::t_c3d0b16933d7ec 12
+src/modules/AudioEngine/repositories/deviceStrategy/__tests__/setupDeviceStrategies.spec.ts
+  s_66d4924c65dcd2::t_d49b0de44951b4 37,82,101
+  s_66d4924c65dcd2::t_d07327442bb749 60
+src/modules/AudioEngine/useCases/__tests__/buildDeviceChainNoteCapability.spec.ts
+  s_66d4924c65dcd2::t_a2e53caaff95ee 1-111
+src/modules/AudioEngine/repositories/deviceStrategy/NativeDspDeviceStrategy.ts
+  s_66d4924c65dcd2::t_62ae0de853e5ba 15-22
+  s_66d4924c65dcd2::t_34908ddf2bdada 25
+src/modules/AudioEngine/useCases/offlineRender/__tests__/faustInstrumentOfflineRender.spec.ts
+  s_66d4924c65dcd2::t_8e83939e694795 1-215,223-259
+  s_66d4924c65dcd2::t_9ac7a1338bcd8a 216-222
+src/modules/Arrangement/useCases/preset/__tests__/presetLoading.spec.ts
+  s_66d4924c65dcd2::t_a21991ddc53a27 17
+  s_66d4924c65dcd2::t_bcf372792a7f78 48
+src/modules/AudioEngine/useCases/__tests__/renderOfflineGraph.spec.ts
+  s_66d4924c65dcd2::t_eacc50f4af1004 369,430
+  s_66d4924c65dcd2::t_6d23d62e0b6eb4 309
+src/modules/AudioEngine/useCases/buildDeviceChain.ts
+  s_66d4924c65dcd2::t_712d597c4aeb9c 3-8
+  s_66d4924c65dcd2::t_8fb54c6d168f2f 327-335
+  s_66d4924c65dcd2::t_84bf1faf5c9306 336
+  s_66d4924c65dcd2::t_b2a46a9816cc93 42
+src/modules/AudioEngine/repositories/deviceStrategy/__tests__/FaustDeviceStrategy.spec.ts
+  s_66d4924c65dcd2::t_9f20d332f0d845 177-180
+  s_66d4924c65dcd2::t_4dce960c0902a8 125-126,130-155
+  s_66d4924c65dcd2::t_f823ce3a486de0 50,53-79
+  s_66d4924c65dcd2::t_72ef7fb613e20b 37
+  s_66d4924c65dcd2::t_9df64a37c8aeb1 101,104
+  s_66d4924c65dcd2::t_e80804a87079f5 80,156
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/offlineAutomationCoverage.spec.ts
+  s_66d4924c65dcd2::t_8a3380406f9041 185-187
+src/modules/AudioEngine/repositories/deviceStrategy/WebAudioDeviceStrategy.ts
+  s_66d4924c65dcd2::t_b8e7d1bd03e3f4 10-12
+src/modules/AudioEngine/repositories/deviceStrategy/AudioDeviceStrategy.ts
+  s_66d4924c65dcd2::t_2c811daadd22e4 34-49
+src/modules/AudioEngine/useCases/__tests__/buildDeviceChainOfflineInstrumentSetup.spec.ts
+  s_66d4924c65dcd2::t_1077e61aa5582f 36
+src/modules/AudioEngine/useCases/offlineRender/__tests__/connectOfflineToasterPadRoutes.spec.ts
+  s_66d4924c65dcd2::t_a5bc129caa15d6 29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "108ae90d7952dfcf635b3de58c4581d5a7052254",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
