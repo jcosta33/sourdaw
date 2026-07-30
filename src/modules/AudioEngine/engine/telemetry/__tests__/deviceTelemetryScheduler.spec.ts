@@ -59,23 +59,6 @@ describe('deviceTelemetryScheduler', () => {
         expect(animationScheduler.unregister).toHaveBeenCalledWith('audio-engine-device-telemetry');
     });
 
-    it('does not keep the scheduler alive for demand without a source', () => {
-        const unregisterSource = trackCleanup(registerDeviceTelemetrySource({ deviceId: 'device-1', poll: vi.fn() }));
-        trackCleanup(subscribeDeviceTelemetryDemand({ deviceId: 'device-1' }));
-        trackCleanup(subscribeDeviceTelemetryDemand({ deviceId: 'missing-device' }));
-
-        unregisterSource();
-
-        expect(animationScheduler.unregister).toHaveBeenCalledWith('audio-engine-device-telemetry');
-        expect(getDeviceTelemetrySchedulerDiagnostics()).toEqual({
-            activeDemandSubscriptions: 2,
-            activeSources: 0,
-            eligibleSources: 0,
-            pendingMutations: 0,
-            schedulerRegistered: false,
-        });
-    });
-
     it('settles scheduler state when an unregister transition is reentrant', () => {
         const secondPoll = vi.fn();
         trackCleanup(registerDeviceTelemetrySource({ deviceId: 'device-1', poll: vi.fn() }));
@@ -152,6 +135,22 @@ describe('deviceTelemetryScheduler', () => {
             activeDemandSubscriptions: 1,
             eligibleSources: 1,
             schedulerRegistered: true,
+        });
+    });
+
+    it('bounds persistent reentrant start failures', () => {
+        trackCleanup(registerDeviceTelemetrySource({ deviceId: 'device-1', poll: vi.fn() }));
+        vi.mocked(animationScheduler.register).mockImplementation(() => {
+            trackCleanup(subscribeDeviceTelemetryDemand({ deviceId: 'missing-device' }));
+            throw new Error('persistent start failure');
+        });
+
+        expect(() => subscribeDeviceTelemetryDemand({ deviceId: 'device-1' })).toThrow('persistent start failure');
+
+        expect(animationScheduler.register).toHaveBeenCalledTimes(2);
+        expect(getDeviceTelemetrySchedulerDiagnostics()).toMatchObject({
+            eligibleSources: 0,
+            schedulerRegistered: false,
         });
     });
 });

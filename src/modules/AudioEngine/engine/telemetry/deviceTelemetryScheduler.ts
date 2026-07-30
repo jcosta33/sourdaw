@@ -148,39 +148,39 @@ function reconcileScheduler(): void {
         return;
     }
     isReconciling = true;
-    let failure: unknown;
+    let firstFailure: unknown;
     let failed = false;
-    let retryAfterFailure = false;
     try {
-        do {
-            reconcileRequested = false;
-            const shouldRun = hasEligibleSource();
-            if (shouldRun && !schedulerRegistered) {
-                animationScheduler.register(SCHEDULER_ID, tick);
-                schedulerRegistered = true;
-            } else if (!shouldRun && schedulerRegistered) {
-                schedulerRegistered = false;
-                animationScheduler.unregister(SCHEDULER_ID);
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+            try {
+                do {
+                    reconcileRequested = false;
+                    const shouldRun = hasEligibleSource();
+                    if (shouldRun && !schedulerRegistered) {
+                        animationScheduler.register(SCHEDULER_ID, tick);
+                        schedulerRegistered = true;
+                    } else if (!shouldRun && schedulerRegistered) {
+                        schedulerRegistered = false;
+                        animationScheduler.unregister(SCHEDULER_ID);
+                    }
+                } while (requiresAnotherReconciliation());
+                break;
+            } catch (error) {
+                if (!failed) {
+                    failed = true;
+                    firstFailure = error;
+                }
+                if (!reconcileRequested) {
+                    break;
+                }
             }
-        } while (requiresAnotherReconciliation());
-    } catch (error) {
-        failed = true;
-        failure = error;
-        retryAfterFailure = reconcileRequested;
+        }
     } finally {
         isReconciling = false;
     }
-    if (!failed) {
-        return;
+    if (failed) {
+        throw firstFailure;
     }
-    if (retryAfterFailure) {
-        try {
-            reconcileScheduler();
-        } catch (retryError) {
-            logger.warn('[DeviceTelemetryScheduler] Reconciliation retry failed:', retryError);
-        }
-    }
-    throw failure;
 }
 
 function reconcileAfterRollback(): void {
@@ -192,8 +192,11 @@ function reconcileAfterRollback(): void {
 }
 
 function flushPendingMutations(): boolean {
-    const hadPendingMutations = pendingMutations.length > 0;
-    for (const mutation of pendingMutations) {
+    if (pendingMutations.length === 0) {
+        return false;
+    }
+    for (let index = 0; index < pendingMutations.length; index += 1) {
+        const mutation = pendingMutations[index]!;
         if (mutation.kind === 'add-source') {
             addSource(mutation.source);
         } else if (mutation.kind === 'remove-source') {
@@ -205,7 +208,7 @@ function flushPendingMutations(): boolean {
         }
     }
     pendingMutations.length = 0;
-    return hadPendingMutations;
+    return true;
 }
 
 function tick(time: DOMHighResTimeStamp, deltaMs: number): void {
