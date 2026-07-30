@@ -481,16 +481,16 @@ describe('wasmDeviceRegistry descriptors', () => {
             const readiness = Promise.withResolvers<Record<string, unknown>>();
             const result = makeBacteriaResult(readiness.promise);
             factoryMocks.createBacteriaNode.mockResolvedValue(result);
-            let current = true;
+            const abortController = new AbortController();
             const deps = createDeps({
                 deviceType: 'bacteria',
                 deviceId: 'bac-late',
-                isCurrent: () => current,
+                signal: abortController.signal,
             });
 
             const { loadPromise } = requireDescriptor('bacteria').create(deps);
-            current = false;
-            readiness.resolve({ latency: 96 });
+            await Promise.resolve();
+            abortController.abort();
             await loadPromise;
 
             expect(result.destroy).toHaveBeenCalledTimes(1);
@@ -545,17 +545,17 @@ describe('wasmDeviceRegistry descriptors', () => {
                 ready: readiness.promise,
             };
             factoryMocks.createGrinderNode.mockResolvedValue(result);
-            let current = true;
+            const abortController = new AbortController();
             const deps = createDeps({
                 deviceType: 'grinder',
                 deviceId: 'grind-late',
-                isCurrent: () => current,
+                signal: abortController.signal,
             });
 
             const { placeholder, loadPromise } = requireDescriptor('grinder').create(deps);
             placeholder.controller?.setParam('drive', 0.7);
-            current = false;
-            readiness.resolve({ latency: 96 });
+            await Promise.resolve();
+            abortController.abort();
             await loadPromise;
 
             expect(result.destroy).toHaveBeenCalledTimes(1);
@@ -786,6 +786,14 @@ describe('wasmDeviceRegistry descriptors', () => {
                 setParam: vi.fn(),
                 setBypass: vi.fn(),
                 updateState: vi.fn(),
+                destroy: () => {
+                    try {
+                        workletNode.disconnect();
+                    } catch {
+                        // The node may already be detached during teardown.
+                    }
+                    workletNode.port.close();
+                },
                 ready: Promise.resolve({}),
             };
             factoryMocks.createKneadNode.mockResolvedValue(result);
@@ -818,6 +826,14 @@ describe('wasmDeviceRegistry descriptors', () => {
                 setParam: vi.fn(),
                 setBypass: vi.fn(),
                 updateState: vi.fn(),
+                destroy: () => {
+                    try {
+                        workletNode.disconnect();
+                    } catch {
+                        // The node may already be detached during teardown.
+                    }
+                    workletNode.port.close();
+                },
                 ready: Promise.resolve({}),
             };
             factoryMocks.createKneadNode.mockResolvedValue(result);

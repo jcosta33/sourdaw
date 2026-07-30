@@ -126,6 +126,7 @@ type MockTrackNode = {
     getDefaultDestination: () => unknown;
     routeOutput: ReturnType<typeof vi.fn>;
     cancelAutomationRamps: () => void;
+    timeoutPendingDeviceLoads: ReturnType<typeof vi.fn>;
 };
 
 function getMockTrackNode(engine: AudioEngine, trackId: string): MockTrackNode {
@@ -544,6 +545,7 @@ describe('AudioEngineImpl — residual branch coverage', () => {
         it('clears pending devices and warns when a load never settles', async () => {
             vi.useFakeTimers();
             engine.ensureTrackStrip('t1');
+            const trackNode = getMockTrackNode(engine, 't1');
             const set = (engine as unknown as { pendingDevicePromises: Set<Promise<unknown>> }).pendingDevicePromises;
             set.add(new Promise(() => {}));
             const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
@@ -555,6 +557,7 @@ describe('AudioEngineImpl — residual branch coverage', () => {
 
             await expect(waiting).resolves.toBeUndefined();
             expect(set.size).toBe(0);
+            expect(trackNode.timeoutPendingDeviceLoads).toHaveBeenCalledTimes(1);
             expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('timed out'));
             warnSpy.mockRestore();
             vi.useRealTimers();
