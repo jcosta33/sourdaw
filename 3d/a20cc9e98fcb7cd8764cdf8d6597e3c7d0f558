@@ -1,0 +1,20 @@
+crates/daw-dsp/src/bacteria/engine.rs
+  s_ac9b259eab20ba::t_dd10b247b1d367 24,542,544,630
+  s_ac9b259eab20ba::t_da432ea684a16e 1058-1068
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "3da20cc9e98fcb7cd8764cdf8d6597e3c7d0f558",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
