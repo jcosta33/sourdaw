@@ -1,6 +1,11 @@
 export type ProjectContext = {
     tempo: number;
     timeSignature: [number, number];
+    isLooping: boolean;
+    loopStart: number;
+    loopEnd: number;
+    metronomeEnabled: boolean;
+    metronomeVolume: number;
     tracks: ProjectContextTrack[];
     selectedTrackId: string | null;
     selectedClipId: string | null;

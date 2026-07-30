@@ -346,6 +346,12 @@ export type AppAction =
     | { type: 'toggleMetronome'; payload?: undefined }
     | { type: 'setMetronomeVolume'; payload: { volume: number } }
     | { type: 'setLoopRegion'; payload: { startBeat: number; endBeat: number } }
+    | { type: 'setLoopEnabled'; payload: { enabled: boolean } }
+    | { type: 'setMetronomeEnabled'; payload: { enabled: boolean } }
+    | {
+          type: 'restoreLoopRegion';
+          payload: { loopStart: number; loopEnd: number; isLooping: boolean };
+      }
     | {
           type: 'addClip';
           payload: {

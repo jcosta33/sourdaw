@@ -68,6 +68,11 @@ describe('getProjectContext', () => {
 
         expect(context.tempo).toBe(120);
         expect(context.timeSignature).toEqual([4, 4]);
+        expect(context.isLooping).toBe(false);
+        expect(context.loopStart).toBe(0);
+        expect(context.loopEnd).toBe(0);
+        expect(context.metronomeEnabled).toBe(false);
+        expect(context.metronomeVolume).toBe(0.5);
         expect(context.tracks).toEqual([]);
         expect(context.selectedTrackId).toBeNull();
         expect(context.selectedClipId).toBeNull();
@@ -131,6 +136,11 @@ describe('getProjectContext', () => {
             timeSignatureNumerator: 3,
             timeSignatureDenominator: 4,
             playheadPosition: 16,
+            isLooping: true,
+            loopStart: 4,
+            loopEnd: 12,
+            metronomeEnabled: true,
+            metronomeVolume: 0.25,
         };
 
         mocks.clipSelectionStoreValue.value = {
@@ -159,6 +169,11 @@ describe('getProjectContext', () => {
 
         expect(context.tempo).toBe(130);
         expect(context.timeSignature).toEqual([3, 4]);
+        expect(context.isLooping).toBe(true);
+        expect(context.loopStart).toBe(4);
+        expect(context.loopEnd).toBe(12);
+        expect(context.metronomeEnabled).toBe(true);
+        expect(context.metronomeVolume).toBe(0.25);
         expect(context.selectedTrackId).toBe('t1');
         expect(context.selectedClipId).toBe('c2');
         expect(context.selectedClipIds).toEqual(['c2']);

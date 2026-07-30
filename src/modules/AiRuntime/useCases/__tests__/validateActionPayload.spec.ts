@@ -197,6 +197,40 @@ const guardedPayloadContractCases = [
             { vcaGroupId: 'vca-1', gain: 1, extra: true },
         ],
     }),
+    guardedPayloadCase({
+        actionType: 'setLoopEnabled',
+        validPayload: { enabled: true },
+        invalidPayloads: [{}, { enabled: 'yes' }, { enabled: true, extra: true }],
+    }),
+    guardedPayloadCase({
+        actionType: 'setLoopRegion',
+        validPayload: { startBeat: 4, endBeat: 12 },
+        invalidPayloads: [
+            { startBeat: -0.01, endBeat: 12 },
+            { startBeat: 4, endBeat: 4 },
+            { startBeat: 12, endBeat: 4 },
+            { startBeat: Number.NaN, endBeat: 12 },
+            { startBeat: 4, endBeat: Number.POSITIVE_INFINITY },
+            { startBeat: 4, endBeat: 12, extra: true },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'setMetronomeEnabled',
+        validPayload: { enabled: false },
+        invalidPayloads: [{}, { enabled: 1 }, { enabled: false, extra: true }],
+    }),
+    guardedPayloadCase({
+        actionType: 'setMetronomeVolume',
+        validPayload: { volume: 0.25 },
+        invalidPayloads: [
+            {},
+            { volume: -0.01 },
+            { volume: 1.01 },
+            { volume: Number.NaN },
+            { volume: Number.POSITIVE_INFINITY },
+            { volume: 0.25, extra: true },
+        ],
+    }),
 ] as const;
 
 describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {

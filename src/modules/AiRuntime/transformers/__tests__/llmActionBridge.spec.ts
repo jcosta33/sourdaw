@@ -6,6 +6,11 @@ import { bridgeLlmToolCalls, buildLlmActionSystemPrompt, buildLlmActionUserMessa
 const projectContext: ProjectContext = {
     tempo: 120,
     timeSignature: [4, 4],
+    isLooping: true,
+    loopStart: 4,
+    loopEnd: 12,
+    metronomeEnabled: false,
+    metronomeVolume: 0.5,
     tracks: [
         {
             id: 'track-vocals',
@@ -153,6 +158,75 @@ describe('bridgeLlmToolCalls', () => {
             { type: 'setTrackPan', payload: { trackId: 'bus-reverb', pan: -20 } },
         ]);
         expect(result.rejections).toEqual([]);
+    });
+
+    it('converts exact bounded loop and metronome calls into typed runtime actions', () => {
+        const controls = bridge({
+            calls: [
+                { name: 'setLoopEnabled', arguments: { enabled: false } },
+                { name: 'setMetronomeEnabled', arguments: { enabled: true } },
+                { name: 'setMetronomeVolume', arguments: { volume: 0.25 } },
+            ],
+        });
+        const region = bridge({
+            calls: [{ name: 'setLoopRegion', arguments: { startBeat: 8, endBeat: 16 } }],
+        });
+
+        expect(controls).toEqual({
+            actions: [
+                { type: 'setLoopEnabled', payload: { enabled: false } },
+                { type: 'setMetronomeEnabled', payload: { enabled: true } },
+                { type: 'setMetronomeVolume', payload: { volume: 0.25 } },
+            ],
+            rejections: [],
+        });
+        expect(region).toEqual({
+            actions: [{ type: 'setLoopRegion', payload: { startBeat: 8, endBeat: 16 } }],
+            rejections: [],
+        });
+    });
+
+    it('rejects malformed transport payloads and refuses to enable an invalid current loop', () => {
+        const malformed = bridge({
+            calls: [
+                { name: 'setLoopEnabled', arguments: { enabled: 'yes' } },
+                { name: 'setLoopEnabled', arguments: { enabled: true, extra: true } },
+                { name: 'setLoopRegion', arguments: { startBeat: -1, endBeat: 8 } },
+                { name: 'setLoopRegion', arguments: { startBeat: 8, endBeat: 8 } },
+                { name: 'setLoopRegion', arguments: { startBeat: 12, endBeat: 8 } },
+                { name: 'setMetronomeEnabled', arguments: { enabled: 1 } },
+                { name: 'setMetronomeVolume', arguments: { volume: -0.01 } },
+                { name: 'setMetronomeVolume', arguments: { volume: 1.01 } },
+                { name: 'setMetronomeVolume', arguments: { volume: 0.25, extra: true } },
+            ],
+        });
+        const invalidCurrentLoop = bridge({
+            calls: [{ name: 'setLoopEnabled', arguments: { enabled: true } }],
+            context: { ...projectContext, isLooping: false, loopStart: 0, loopEnd: 0 },
+        });
+        const safeDisable = bridge({
+            calls: [{ name: 'setLoopEnabled', arguments: { enabled: false } }],
+            context: { ...projectContext, isLooping: false, loopStart: 0, loopEnd: 0 },
+        });
+
+        expect(malformed.actions).toEqual([]);
+        expect(malformed.rejections.map((rejection) => rejection.name)).toEqual([
+            'setLoopEnabled',
+            'setLoopEnabled',
+            'setLoopRegion',
+            'setLoopRegion',
+            'setLoopRegion',
+            'setMetronomeEnabled',
+            'setMetronomeVolume',
+            'setMetronomeVolume',
+            'setMetronomeVolume',
+        ]);
+        expect(invalidCurrentLoop.actions).toEqual([]);
+        expect(invalidCurrentLoop.rejections).toHaveLength(1);
+        expect(safeDisable).toEqual({
+            actions: [{ type: 'setLoopEnabled', payload: { enabled: false } }],
+            rejections: [],
+        });
     });
 
     it('converts the reversible single-clip command packet for an available clip', () => {
@@ -881,6 +955,40 @@ describe('bridgeLlmToolCalls', () => {
         ]);
     });
 
+    it('allows independent loop bound and enabled writes while rejecting repeated metronome-field writes', () => {
+        const loop = bridge({
+            calls: [
+                { name: 'setLoopEnabled', arguments: { enabled: true } },
+                { name: 'setLoopRegion', arguments: { startBeat: 8, endBeat: 16 } },
+            ],
+            context: { ...projectContext, loopStart: 0, loopEnd: 0, isLooping: false },
+        });
+        const metronome = bridge({
+            calls: [
+                { name: 'setMetronomeEnabled', arguments: { enabled: true } },
+                { name: 'setMetronomeVolume', arguments: { volume: 0.25 } },
+                { name: 'setMetronomeVolume', arguments: { volume: 0.5 } },
+            ],
+        });
+
+        expect(loop.actions).toEqual([
+            { type: 'setLoopRegion', payload: { startBeat: 8, endBeat: 16 } },
+            { type: 'setLoopEnabled', payload: { enabled: true } },
+        ]);
+        expect(loop.rejections).toEqual([]);
+        expect(metronome.actions).toEqual([
+            { type: 'setMetronomeEnabled', payload: { enabled: true } },
+            { type: 'setMetronomeVolume', payload: { volume: 0.25 } },
+        ]);
+        expect(metronome.rejections).toEqual([
+            {
+                index: 2,
+                name: 'setMetronomeVolume',
+                reason: 'Provider batch writes the same target field more than once',
+            },
+        ]);
+    });
+
     it('allows only one reorder per batch because independent index inverses do not compose', () => {
         const result = bridge({
             calls: [
@@ -914,6 +1022,11 @@ describe('bridgeLlmToolCalls', () => {
         expect(userMessage).toContain('"index":0');
         expect(userMessage).toContain('"selectedTrackId":"track-vocals"');
         expect(userMessage).toContain('"selectedClipId":"clip-verse"');
+        expect(userMessage).toContain('"isLooping":true');
+        expect(userMessage).toContain('"loopStart":4');
+        expect(userMessage).toContain('"loopEnd":12');
+        expect(userMessage).toContain('"metronomeEnabled":false');
+        expect(userMessage).toContain('"metronomeVolume":0.5');
         expect(userMessage).toContain('"armed":false');
         expect(userMessage).toContain('<user_request>\nmute the vocals\n</user_request>');
         expect(userMessage).toContain(

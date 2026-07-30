@@ -100,7 +100,7 @@ describe('Transport Handlers', () => {
 
     it('handleSetLoopRegion delegates to use case', () => {
         void handleSetLoopRegion.execute({ type: 'setLoopRegion', payload: { startBeat: 0, endBeat: 4 } });
-        expect(mocks.setLoopRegion).toHaveBeenCalledWith(0, 4);
+        expect(mocks.setLoopRegion).toHaveBeenCalledWith(0, 4, false);
     });
 
     it('handleAddTimeSignatureChange delegates to use case', () => {

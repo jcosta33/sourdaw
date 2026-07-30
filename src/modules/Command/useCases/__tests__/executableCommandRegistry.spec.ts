@@ -220,6 +220,41 @@ const EXPECTED_COMMANDS = [
         true
     ),
     expectedCommand(
+        'setLoopEnabled',
+        'Enable or disable the project loop.',
+        { enabled: { type: 'boolean', description: 'true=enable looping, false=disable looping' } },
+        ['enabled'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
+        'setLoopRegion',
+        'Set project loop bounds without changing whether looping is enabled.',
+        {
+            startBeat: { type: 'number', description: 'Non-negative loop start beat' },
+            endBeat: { type: 'number', description: 'Loop end beat, strictly after startBeat' },
+        },
+        ['startBeat', 'endBeat'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
+        'setMetronomeEnabled',
+        'Enable or disable the metronome.',
+        { enabled: { type: 'boolean', description: 'true=enable, false=disable' } },
+        ['enabled'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
+        'setMetronomeVolume',
+        'Set metronome volume from 0.0 through 1.0.',
+        { volume: { type: 'number', description: '0.0 to 1.0' } },
+        ['volume'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
         'setDeviceParameter',
         'Adjust a parameter on an existing device.',
         {
@@ -480,6 +515,58 @@ const EXPECTED_GROUNDING = [
         ],
         targetRules: [],
         valueRules: [{ argument: 'numerator', denominatorArgument: 'denominator', kind: 'time-signature' }],
+    },
+    {
+        actionType: 'setLoopEnabled',
+        intentPhrases: [
+            'enable loop',
+            'enable the loop',
+            'enable looping',
+            'disable loop',
+            'disable the loop',
+            'disable looping',
+            'turn loop on',
+            'turn loop off',
+        ],
+        targetRules: [],
+        valueRules: [
+            {
+                argument: 'enabled',
+                kind: 'boolean-intent',
+                truePhrases: ['enable loop', 'enable the loop', 'enable looping', 'turn loop on'],
+                falsePhrases: ['disable loop', 'disable the loop', 'disable looping', 'turn loop off'],
+            },
+        ],
+    },
+    {
+        actionType: 'setLoopRegion',
+        intentPhrases: ['set loop region', 'set the loop region', 'set loop', 'set the loop', 'change loop region'],
+        targetRules: [],
+        valueRules: [
+            { argument: 'startBeat', kind: 'number-if-present', requiredInPrompt: true, connector: 'from' },
+            { argument: 'endBeat', kind: 'number-if-present', requiredInPrompt: true, connector: 'to' },
+        ],
+    },
+    {
+        actionType: 'setMetronomeEnabled',
+        intentPhrases: ['enable metronome', 'enable the metronome', 'disable metronome', 'disable the metronome'],
+        targetRules: [],
+        valueRules: [
+            {
+                argument: 'enabled',
+                kind: 'boolean-intent',
+                truePhrases: ['enable metronome', 'enable the metronome'],
+                falsePhrases: ['disable metronome', 'disable the metronome'],
+            },
+        ],
+    },
+    {
+        actionType: 'setMetronomeVolume',
+        intentPhrases: ['set metronome volume', 'set the metronome volume', 'change metronome volume'],
+        targetRules: [],
+        valueRules: [
+            { argument: 'volume', kind: 'number-if-present', requiredInPrompt: true, scale: 'percentage-only' },
+        ],
     },
     {
         actionType: 'setDeviceParameter',

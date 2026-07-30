@@ -36,6 +36,7 @@ export type ExecutableAppActionValueRule =
           argument: string;
           kind: 'number-if-present';
           requiredInPrompt?: boolean;
+          connector?: 'from' | 'to';
           scale?: 'unit-interval' | 'percentage-only';
           direction?: 'pan';
           qualitativeDirection?: 'track-gain' | 'track-pan' | 'device-parameter';
@@ -427,6 +428,85 @@ export const executableAppActionDescriptors = [
                 denominator: { type: 'integer', enum: [2, 4, 8, 16], description: 'Beat unit' },
             },
             required: ['numerator', 'denominator'],
+        },
+    },
+    {
+        actionType: 'setLoopEnabled',
+        risk: 'bounded-reversible',
+        description: 'Enable or disable the project loop.',
+        intentPhrases: [
+            'enable loop',
+            'enable the loop',
+            'enable looping',
+            'disable loop',
+            'disable the loop',
+            'disable looping',
+            'turn loop on',
+            'turn loop off',
+        ],
+        targetRules: [],
+        valueRules: [
+            {
+                argument: 'enabled',
+                kind: 'boolean-intent',
+                truePhrases: ['enable loop', 'enable the loop', 'enable looping', 'turn loop on'],
+                falsePhrases: ['disable loop', 'disable the loop', 'disable looping', 'turn loop off'],
+            },
+        ],
+        parameters: {
+            properties: { enabled: { type: 'boolean', description: 'true=enable looping, false=disable looping' } },
+            required: ['enabled'],
+        },
+    },
+    {
+        actionType: 'setLoopRegion',
+        risk: 'bounded-reversible',
+        description: 'Set project loop bounds without changing whether looping is enabled.',
+        intentPhrases: ['set loop region', 'set the loop region', 'set loop', 'set the loop', 'change loop region'],
+        targetRules: [],
+        valueRules: [
+            { argument: 'startBeat', kind: 'number-if-present', requiredInPrompt: true, connector: 'from' },
+            { argument: 'endBeat', kind: 'number-if-present', requiredInPrompt: true, connector: 'to' },
+        ],
+        parameters: {
+            properties: {
+                startBeat: { type: 'number', description: 'Non-negative loop start beat' },
+                endBeat: { type: 'number', description: 'Loop end beat, strictly after startBeat' },
+            },
+            required: ['startBeat', 'endBeat'],
+        },
+    },
+    {
+        actionType: 'setMetronomeEnabled',
+        risk: 'bounded-reversible',
+        description: 'Enable or disable the metronome.',
+        intentPhrases: ['enable metronome', 'enable the metronome', 'disable metronome', 'disable the metronome'],
+        targetRules: [],
+        valueRules: [
+            {
+                argument: 'enabled',
+                kind: 'boolean-intent',
+                truePhrases: ['enable metronome', 'enable the metronome'],
+                falsePhrases: ['disable metronome', 'disable the metronome'],
+            },
+        ],
+        parameters: {
+            properties: { enabled: { type: 'boolean', description: 'true=enable, false=disable' } },
+            required: ['enabled'],
+        },
+    },
+    {
+        actionType: 'setMetronomeVolume',
+        risk: 'bounded-reversible',
+        description: 'Set metronome volume from 0.0 through 1.0.',
+        intentPhrases: ['set metronome volume', 'set the metronome volume', 'change metronome volume'],
+        targetRules: [],
+        valueRules: [
+            { argument: 'volume', kind: 'number-if-present', requiredInPrompt: true, scale: 'percentage-only' },
+        ],
+        parameters: {
+            properties: { volume: { type: 'number', description: '0.0 to 1.0' } },
+            required: ['volume'],
         },
     },
     {

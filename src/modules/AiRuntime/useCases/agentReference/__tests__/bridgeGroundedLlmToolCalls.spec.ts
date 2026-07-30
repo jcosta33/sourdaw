@@ -40,6 +40,11 @@ const master = createTrack({ id: 'master', name: 'Master', kind: 'master' });
 const projectContext: ProjectContext = {
     tempo: 120,
     timeSignature: [4, 4],
+    isLooping: true,
+    loopStart: 4,
+    loopEnd: 12,
+    metronomeEnabled: false,
+    metronomeVolume: 0.5,
     tracks: [vocals, guitar, master],
     selectedTrackId: 'track-vocals',
     selectedClipId: null,
@@ -222,6 +227,108 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(wrongCreatedTrack.actions).toEqual([]);
         expect(createdBus.actions).toEqual([{ type: 'createBus', payload: { name: 'Parallel Reverb' } }]);
         expect(wrongCreatedBus.actions).toEqual([]);
+    });
+
+    it('grounds explicit loop and metronome intent, values, and percentage normalization', () => {
+        const enableLoop = bridge([{ name: 'setLoopEnabled', arguments: { enabled: true } }], 'enable looping');
+        const disableLoop = bridge([{ name: 'setLoopEnabled', arguments: { enabled: false } }], 'disable looping');
+        const loopRegion = bridge(
+            [{ name: 'setLoopRegion', arguments: { startBeat: 8, endBeat: 16 } }],
+            'set the loop from beat 8 to beat 16'
+        );
+        const regionAndEnable = bridge(
+            [
+                { name: 'setLoopEnabled', arguments: { enabled: true } },
+                { name: 'setLoopRegion', arguments: { startBeat: 8, endBeat: 16 } },
+            ],
+            'set the loop from beat 8 to beat 16 and enable looping',
+            { ...projectContext, loopStart: 0, loopEnd: 0, isLooping: false }
+        );
+        const incompleteCompoundLoop = bridge(
+            [{ name: 'setLoopRegion', arguments: { startBeat: 8, endBeat: 16 } }],
+            'set the loop from beat 8 to beat 16 and enable looping'
+        );
+        const enableMetronome = bridge(
+            [{ name: 'setMetronomeEnabled', arguments: { enabled: true } }],
+            'enable the metronome'
+        );
+        const disableMetronome = bridge(
+            [{ name: 'setMetronomeEnabled', arguments: { enabled: false } }],
+            'disable the metronome'
+        );
+        const percentageVolume = bridge(
+            [{ name: 'setMetronomeVolume', arguments: { volume: 0.25 } }],
+            'set metronome volume to 25%'
+        );
+        const absoluteVolume = bridge(
+            [{ name: 'setMetronomeVolume', arguments: { volume: 0.25 } }],
+            'set metronome volume to 0.25'
+        );
+        const unnormalizedPercentage = bridge(
+            [{ name: 'setMetronomeVolume', arguments: { volume: 25 } }],
+            'set metronome volume to 25%'
+        );
+        const wrongRegion = bridge(
+            [{ name: 'setLoopRegion', arguments: { startBeat: 4, endBeat: 12 } }],
+            'set the loop from beat 8 to beat 16'
+        );
+        const contradictedRegion = bridge(
+            [{ name: 'setLoopRegion', arguments: { startBeat: 8, endBeat: 16 } }],
+            'set the loop from beat 8 to beat 16 and do not enable looping'
+        );
+        const explicitlyDisabledRegion = bridge(
+            [{ name: 'setLoopRegion', arguments: { startBeat: 8, endBeat: 16 } }],
+            'set the loop from beat 8 to beat 16 and disable looping'
+        );
+        const articleContradiction = bridge(
+            [{ name: 'setLoopRegion', arguments: { startBeat: 8, endBeat: 16 } }],
+            'set the loop from beat 8 to beat 16 and do not enable the loop'
+        );
+        const independentNegation = bridge(
+            [{ name: 'setLoopRegion', arguments: { startBeat: 8, endBeat: 16 } }],
+            'set the loop from beat 8 to beat 16, do not disable the metronome but disable looping'
+        );
+        const withoutEnabling = bridge(
+            [{ name: 'setLoopRegion', arguments: { startBeat: 8, endBeat: 16 } }],
+            'set the loop from beat 8 to beat 16 without enabling it'
+        );
+        const leaveLoopOff = bridge(
+            [{ name: 'setLoopRegion', arguments: { startBeat: 8, endBeat: 16 } }],
+            'set the loop from beat 8 to beat 16 but leave the loop off'
+        );
+        const unrelatedDisabledState = bridge(
+            [{ name: 'setLoopRegion', arguments: { startBeat: 8, endBeat: 16 } }],
+            'set the loop from beat 8 to beat 16 but leave the metronome off'
+        );
+        const implicitVolume = bridge(
+            [{ name: 'setMetronomeVolume', arguments: { volume: 0.25 } }],
+            'turn down the metronome volume'
+        );
+
+        expect(enableLoop.actions).toEqual([{ type: 'setLoopEnabled', payload: { enabled: true } }]);
+        expect(disableLoop.actions).toEqual([{ type: 'setLoopEnabled', payload: { enabled: false } }]);
+        const regionAction = { type: 'setLoopRegion', payload: { startBeat: 8, endBeat: 16 } } as const;
+        expect(loopRegion.actions).toEqual([regionAction]);
+        expect(regionAndEnable.actions).toEqual([regionAction, { type: 'setLoopEnabled', payload: { enabled: true } }]);
+        expect(incompleteCompoundLoop.actions).toEqual([]);
+        expect(enableMetronome.actions).toEqual([{ type: 'setMetronomeEnabled', payload: { enabled: true } }]);
+        expect(disableMetronome.actions).toEqual([{ type: 'setMetronomeEnabled', payload: { enabled: false } }]);
+        expect(percentageVolume.actions).toEqual([{ type: 'setMetronomeVolume', payload: { volume: 0.25 } }]);
+        expect(absoluteVolume.actions).toEqual([{ type: 'setMetronomeVolume', payload: { volume: 0.25 } }]);
+        expect(unnormalizedPercentage.actions).toEqual([]);
+        expect(wrongRegion.actions).toEqual([]);
+        expect(explicitlyDisabledRegion.actions).toEqual([]);
+        expect(independentNegation.actions).toEqual([]);
+        for (const result of [
+            contradictedRegion,
+            articleContradiction,
+            withoutEnabling,
+            leaveLoopOff,
+            unrelatedDisabledState,
+        ]) {
+            expect.soft(result.actions).toEqual([regionAction]);
+        }
+        expect(implicitVolume.actions).toEqual([]);
     });
 
     it('grounds arm polarity to eligible named or selected tracks and respects cancellation', () => {

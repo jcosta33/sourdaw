@@ -4,9 +4,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
 import { llmStatusStore } from '#/modules/AiRuntime/stores';
+import { type describePlannedAction } from '#/modules/AiRuntime/useCases';
 import {
     executePlannedActions,
-    describePlannedAction,
     getProjectContext,
     parsePromptToActions,
     planPromptActions,
@@ -336,6 +336,11 @@ describe('usePromptExecution', () => {
         vi.mocked(getProjectContext).mockReturnValue({
             tempo: 120,
             timeSignature: [4, 4],
+            isLooping: false,
+            loopStart: 0,
+            loopEnd: 0,
+            metronomeEnabled: false,
+            metronomeVolume: 0.5,
             tracks: [
                 {
                     id: 'track-drums',

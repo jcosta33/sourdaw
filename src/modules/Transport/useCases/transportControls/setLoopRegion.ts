@@ -1,7 +1,7 @@
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
 
-export function setLoopRegion(startBeat: number, endBeat: number): void {
+export function setLoopRegion(startBeat: number, endBeat: number, enableLooping = true): void {
     const state = getTransportState();
     if (!state) {
         return;
@@ -15,10 +15,14 @@ export function setLoopRegion(startBeat: number, endBeat: number): void {
     const loopStart = Math.max(0, Math.min(startBeat, endBeat));
     const loopEnd = Math.max(startBeat, endBeat);
 
+    if (!enableLooping) {
+        updateTransportState({ loopStart, loopEnd });
+        return;
+    }
+
     // A degenerate (zero-length) region cannot loop; keep the bounds but leave
     // looping disabled rather than asserting an enabled loop the scheduler will
     // ignore.
     const isLooping = loopEnd > loopStart;
-
     updateTransportState({ loopStart, loopEnd, isLooping });
 }

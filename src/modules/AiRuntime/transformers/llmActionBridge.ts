@@ -166,6 +166,44 @@ function bridgeToolCall({
         return { type: 'setTimeSignature', payload: { numerator: args.numerator, denominator: args.denominator } };
     }
 
+    if (call.name === 'setLoopEnabled') {
+        if (
+            !hasExactKeys(args, ['enabled']) ||
+            typeof args.enabled !== 'boolean' ||
+            (args.enabled && context.loopEnd <= context.loopStart)
+        ) {
+            return rejection(index, call.name, 'Expected a boolean enabled value and a valid existing loop region');
+        }
+        return { type: 'setLoopEnabled', payload: { enabled: args.enabled } };
+    }
+
+    if (call.name === 'setLoopRegion') {
+        if (
+            !hasExactKeys(args, ['startBeat', 'endBeat']) ||
+            !isFiniteNumber(args.startBeat) ||
+            !isFiniteNumber(args.endBeat) ||
+            args.startBeat < 0 ||
+            args.endBeat <= args.startBeat
+        ) {
+            return rejection(index, call.name, 'Expected finite loop beats with 0 <= startBeat < endBeat');
+        }
+        return { type: 'setLoopRegion', payload: { startBeat: args.startBeat, endBeat: args.endBeat } };
+    }
+
+    if (call.name === 'setMetronomeEnabled') {
+        if (!hasExactKeys(args, ['enabled']) || typeof args.enabled !== 'boolean') {
+            return rejection(index, call.name, 'Expected only a boolean enabled value');
+        }
+        return { type: 'setMetronomeEnabled', payload: { enabled: args.enabled } };
+    }
+
+    if (call.name === 'setMetronomeVolume') {
+        if (!hasExactKeys(args, ['volume']) || !isFiniteNumber(args.volume) || args.volume < 0 || args.volume > 1) {
+            return rejection(index, call.name, 'Expected only a finite metronome volume from 0 through 1');
+        }
+        return { type: 'setMetronomeVolume', payload: { volume: args.volume } };
+    }
+
     if (call.name === 'addTrack') {
         const name = normalizeSafeProjectName(args.name);
         if (!hasExactKeys(args, ['name', 'kind']) || !name || !isExecutableTrackKind(args.kind)) {
@@ -565,6 +603,18 @@ function getMutationKeys(action: RuntimeAction): string[] {
     if (action.type === 'setTempo' || action.type === 'setTimeSignature' || action.type === 'reorderTrack') {
         return [action.type];
     }
+    if (action.type === 'setLoopEnabled') {
+        return ['loop:enabled'];
+    }
+    if (action.type === 'setLoopRegion') {
+        return ['loop:region'];
+    }
+    if (action.type === 'setMetronomeEnabled') {
+        return ['metronome:enabled'];
+    }
+    if (action.type === 'setMetronomeVolume') {
+        return ['metronome:volume'];
+    }
     if (action.type === 'setDeviceParameter') {
         return [`${action.type}:${action.payload.deviceId}:${action.payload.paramId}`];
     }
@@ -609,6 +659,40 @@ function getMutationKeys(action: RuntimeAction): string[] {
     return [];
 }
 
+function getProspectiveLoopContext(calls: readonly ToolCallResult[], context: ProjectContext): ProjectContext {
+    for (const call of calls) {
+        const args = call.arguments;
+        if (
+            call.name === 'setLoopRegion' &&
+            hasExactKeys(args, ['startBeat', 'endBeat']) &&
+            isFiniteNumber(args.startBeat) &&
+            isFiniteNumber(args.endBeat) &&
+            args.startBeat >= 0 &&
+            args.endBeat > args.startBeat
+        ) {
+            return { ...context, loopStart: args.startBeat, loopEnd: args.endBeat };
+        }
+    }
+    return context;
+}
+
+function canonicalizeLoopActionOrder(actions: RuntimeAction[]): RuntimeAction[] {
+    const loopEnabledIndex = actions.findIndex((action) => action.type === 'setLoopEnabled');
+    const loopRegionIndex = actions.findIndex((action) => action.type === 'setLoopRegion');
+    if (loopEnabledIndex < 0 || loopRegionIndex < 0 || loopRegionIndex < loopEnabledIndex) {
+        return actions;
+    }
+    const orderedActions = [...actions];
+    const loopEnabledAction = orderedActions[loopEnabledIndex];
+    const loopRegionAction = orderedActions[loopRegionIndex];
+    if (!loopEnabledAction || !loopRegionAction) {
+        return actions;
+    }
+    orderedActions[loopEnabledIndex] = loopRegionAction;
+    orderedActions[loopRegionIndex] = loopEnabledAction;
+    return orderedActions;
+}
+
 export function bridgeLlmToolCalls({ calls, context }: BridgeLlmToolCallsInput): LlmActionBridgeResult {
     if (calls.length > MAX_LLM_ACTIONS_PER_BATCH) {
         return {
@@ -623,6 +707,8 @@ export function bridgeLlmToolCalls({ calls, context }: BridgeLlmToolCallsInput):
         };
     }
 
+    const prospectiveContext = getProspectiveLoopContext(calls, context);
+
     const actions: RuntimeAction[] = [];
     const rejections: LlmActionRejection[] = [];
     const mutationKeys = new Set<string>();
@@ -632,7 +718,7 @@ export function bridgeLlmToolCalls({ calls, context }: BridgeLlmToolCallsInput):
     const removedClipTrackIds = new Set<string>();
 
     for (const [index, call] of calls.entries()) {
-        const result = bridgeToolCall({ call, context, index });
+        const result = bridgeToolCall({ call, context: prospectiveContext, index });
         if ('type' in result) {
             const clipTargetId = getClipTargetId(result);
             const clipTrackId = clipTargetId === null ? null : (findClip(context, clipTargetId)?.track.id ?? null);
@@ -678,7 +764,7 @@ export function bridgeLlmToolCalls({ calls, context }: BridgeLlmToolCallsInput):
         }
     }
 
-    return { actions, rejections };
+    return { actions: canonicalizeLoopActionOrder(actions), rejections };
 }
 
 export function buildLlmActionSystemPrompt(): string {
@@ -693,6 +779,11 @@ export function buildLlmActionUserMessage({ prompt, context }: { prompt: string;
     const commandContext = {
         tempo: context.tempo,
         timeSignature: context.timeSignature,
+        isLooping: context.isLooping,
+        loopStart: context.loopStart,
+        loopEnd: context.loopEnd,
+        metronomeEnabled: context.metronomeEnabled,
+        metronomeVolume: context.metronomeVolume,
         selectedTrackId: context.selectedTrackId,
         selectedClipId: context.selectedClipId,
         selectedClipIds: context.selectedClipIds,
