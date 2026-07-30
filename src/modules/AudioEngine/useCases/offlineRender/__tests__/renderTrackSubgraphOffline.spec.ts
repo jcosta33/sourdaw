@@ -262,11 +262,11 @@ function createInstrumentEntry(deviceId: string, deviceType: string): DeviceNode
         node: {} as DeviceNodeEntry['node'],
         strategy: {} as DeviceNodeEntry['strategy'],
         instrumentControls: {
-            noteOn: (note, velocity, midiNote, sampleFrame) => {
+            noteOn: ({ noteOrPad: note, velocity, midiNote, sampleFrame }) => {
                 mocks.instrumentNoteOn(note, velocity, midiNote, sampleFrame);
                 heldNotes.set(note, sampleFrame ?? 0);
             },
-            noteOff: (note, sampleFrame) => {
+            noteOff: ({ noteOrPad: note, sampleFrame }) => {
                 mocks.instrumentNoteOff(note, sampleFrame);
                 const startFrame = heldNotes.get(note);
                 if (startFrame === undefined) {
