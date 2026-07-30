@@ -1,0 +1,50 @@
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateOpenAiCompatibleToolCalls.spec.ts
+  s_bc88af7d3b054c::t_590a7d5f379339 134-137,310
+  s_bc88af7d3b054c::t_10aae2c1dada77 130
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_bc88af7d3b054c::t_57d22ced312c3b 118-123,240-244,260
+src/modules/AiRuntime/errors/HostedToolCallingProtocolError.ts
+  s_bc88af7d3b054c::t_590a7d5f379339 1-3
+src/modules/AiRuntime/repositories/nativeEngine/__tests__/nativeToolCalling.spec.ts
+  s_bc88af7d3b054c::t_590a7d5f379339 63-73,100,121,123-124,143-147,168,172,184,188-195,200
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_bc88af7d3b054c::t_590a7d5f379339 4,227-244,246-256,332-347
+  s_bc88af7d3b054c::t_05fa4732be0f14 245
+  s_66d4924c65dcd2::t_bb7cc62cedc49a 348
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateOpenAiCompatibleToolCalls.ts
+  s_bc88af7d3b054c::t_57d22ced312c3b 1,60,63-64
+  s_66d4924c65dcd2::t_acd5c5ec65f055 65
+src/modules/AiRuntime/repositories/nativeEngine/nativeToolCalling.ts
+  s_bc88af7d3b054c::t_57d22ced312c3b 50,55,80,82
+  s_bc88af7d3b054c::t_05fa4732be0f14 63
+src-tauri/src/commands/native_llm.rs
+  s_bc88af7d3b054c::t_590a7d5f379339 1036,1041-1045
+  s_bc88af7d3b054c::t_57d22ced312c3b 80,86,91-92,597,610,619,624-630,1032
+  s_bc88af7d3b054c::t_f4dbef9e3f7d03 79,85
+docs/architecture/decisions/0020-terminal-provider-planning-rejections.md
+  s_bc88af7d3b054c::t_6b1943a2f3a881 14-15,18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "e572cb3e48da1158be9b4f84662bb754db346991",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
