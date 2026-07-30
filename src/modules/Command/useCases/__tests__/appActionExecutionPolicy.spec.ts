@@ -4,12 +4,18 @@ import { getAppActionExecutionPolicy } from '../getAppActionExecutionPolicy';
 import { requiresAppActionConfirmation } from '../requiresAppActionConfirmation';
 
 describe('app action execution policy', () => {
-    it.each(['setTempo', 'setMasterGain', 'setTrackOutput', 'setSend', 'addSend', 'removeSend'] as const)(
-        'requires confirmation for a single authority-sensitive %s action',
-        (type) => {
-            expect(requiresAppActionConfirmation([{ type }])).toBe(true);
-        }
-    );
+    it.each([
+        'armTrack',
+        'toggleRecording',
+        'setTempo',
+        'setMasterGain',
+        'setTrackOutput',
+        'setSend',
+        'addSend',
+        'removeSend',
+    ] as const)('requires confirmation for a single authority-sensitive %s action', (type) => {
+        expect(requiresAppActionConfirmation([{ type }])).toBe(true);
+    });
 
     it.each(['removeTrack', 'removeAllTracks', 'removeClip', 'removeDevice', 'bounceInPlace'] as const)(
         'requires confirmation for a single destructive %s action',

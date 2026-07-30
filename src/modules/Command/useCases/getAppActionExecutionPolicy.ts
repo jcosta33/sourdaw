@@ -76,7 +76,6 @@ const executionPolicies = {
     addDevice: boundedPolicy,
     addTrack: boundedPolicy,
     applyGroove: boundedPolicy,
-    armTrack: boundedPolicy,
     arpeggiate: boundedPolicy,
     bypassDevice: boundedPolicy,
     closeMixer: boundedPolicy,
@@ -157,6 +156,7 @@ const executionPolicies = {
     stripSilence: destructivePolicy,
 
     addSend: authoritySensitivePolicy,
+    armTrack: authoritySensitivePolicy,
     removeSend: authoritySensitivePolicy,
     setMasterGain: authoritySensitivePolicy,
     setSend: authoritySensitivePolicy,
