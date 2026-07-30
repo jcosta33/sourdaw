@@ -1,4 +1,4 @@
-import { type ReactElement, type MouseEvent, useEffect, useRef } from 'react';
+import { type ReactElement, type MouseEvent, useEffect, useEffectEvent, useRef } from 'react';
 
 import { cn } from '#/utils/Styles/cn';
 
@@ -9,28 +9,30 @@ type ResizeHandleProps = {
 };
 
 export const ResizeHandle = ({ direction, onResize, onResizeEnd }: ResizeHandleProps): ReactElement => {
-    const dragging = useRef(false);
-    const lastPos = useRef(0);
+    const draggingRef = useRef(false);
+    const lastPosRef = useRef(0);
+    const resize = useEffectEvent(onResize);
+    const finishResize = useEffectEvent(() => onResizeEnd?.());
 
     useEffect(() => {
         const handleMouseMove = (event: globalThis.MouseEvent) => {
-            if (!dragging.current) {
+            if (!draggingRef.current) {
                 return;
             }
             const current = direction === 'vertical' ? event.clientX : event.clientY;
-            const delta = current - lastPos.current;
-            lastPos.current = current;
-            onResize(delta);
+            const delta = current - lastPosRef.current;
+            lastPosRef.current = current;
+            resize(delta);
         };
 
         const handleMouseUp = () => {
-            if (!dragging.current) {
+            if (!draggingRef.current) {
                 return;
             }
-            dragging.current = false;
+            draggingRef.current = false;
             document.body.style.cursor = '';
             document.body.style.userSelect = '';
-            onResizeEnd?.();
+            finishResize();
         };
 
         document.addEventListener('mousemove', handleMouseMove);
@@ -39,12 +41,12 @@ export const ResizeHandle = ({ direction, onResize, onResizeEnd }: ResizeHandleP
             document.removeEventListener('mousemove', handleMouseMove);
             document.removeEventListener('mouseup', handleMouseUp);
         };
-    }, [direction, onResize, onResizeEnd]);
+    }, [direction]);
 
     const handleMouseDown = (event: MouseEvent) => {
         event.preventDefault();
-        dragging.current = true;
-        lastPos.current = direction === 'vertical' ? event.clientX : event.clientY;
+        draggingRef.current = true;
+        lastPosRef.current = direction === 'vertical' ? event.clientX : event.clientY;
         document.body.style.cursor = direction === 'vertical' ? 'col-resize' : 'row-resize';
         document.body.style.userSelect = 'none';
     };

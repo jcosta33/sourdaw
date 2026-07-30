@@ -65,4 +65,28 @@ describe('useContextMenuDismiss', () => {
         expect(onClose).not.toHaveBeenCalled();
         unmount();
     });
+
+    it('keeps document listeners stable while using the latest close callback', () => {
+        const firstOnClose = vi.fn();
+        const secondOnClose = vi.fn();
+        const ref = createRef<HTMLDivElement>();
+        const menu = document.createElement('div');
+        document.body.append(menu);
+        ref.current = menu;
+        const addEventListener = vi.spyOn(document, 'addEventListener');
+
+        const { rerender, unmount } = renderHook(
+            ({ onClose }: { onClose: () => void }) => useContextMenuDismiss(ref, onClose),
+            { initialProps: { onClose: firstOnClose } }
+        );
+        const listenerCountAfterMount = addEventListener.mock.calls.length;
+
+        rerender({ onClose: secondOnClose });
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+
+        expect(addEventListener).toHaveBeenCalledTimes(listenerCountAfterMount);
+        expect(firstOnClose).not.toHaveBeenCalled();
+        expect(secondOnClose).toHaveBeenCalledTimes(1);
+        unmount();
+    });
 });
