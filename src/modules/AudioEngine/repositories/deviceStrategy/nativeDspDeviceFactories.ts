@@ -31,7 +31,16 @@ export type NativeDspNode = {
     ready: Promise<Record<string, unknown>>;
 };
 
-/** A node whose note surface has been mapped onto the named request contract. */
+/**
+ * A node whose note surface has been mapped onto the named request contract.
+ *
+ * The two binders below produce this by spreading the node. That is a shallow
+ * copy, and it is only correct because all four note-voicing factories return
+ * plain object literals whose methods close over local state — no classes, no
+ * getters, no `this`. A future node that is a class instance or exposes an
+ * accessor would lose behaviour here while still satisfying this type. Wrap it
+ * explicitly rather than spreading if that day comes.
+ */
 type NoteBoundNode<TNode> = Omit<TNode, 'noteOn' | 'noteOff'> & Required<Pick<NativeDspNode, 'noteOn' | 'noteOff'>>;
 
 /**
@@ -87,7 +96,10 @@ type NativeDspDeviceFactory = {
  *
  * The note-voicing entries wrap their node in the adapter for that device's own
  * note API. This is the only place a positional note call is still written, and
- * each one sits beside the device whose signature it encodes.
+ * each one sits beside the device whose signature it encodes. The compiler will
+ * not catch an entry bound to the wrong adapter — the two adapter parameter
+ * types are mutually assignable — so `nativeDspNoteBinding.spec.ts` asserts the
+ * slots each of these four bindings actually produces.
  */
 export const NATIVE_DSP_DEVICE_FACTORIES: readonly NativeDspDeviceFactory[] = [
     { matches: isFermenterDevice, create: async (ctx) => bindMelodicNotes(await createFermenterNode(ctx)) },

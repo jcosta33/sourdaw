@@ -182,14 +182,16 @@ describe('offline note scheduling reaches the engine at the scheduled frame', ()
         const strategy = await buildLevainStrategy();
         const offlineCtx = { sampleRate: OFFLINE_SAMPLE_RATE } as unknown as OfflineAudioContext;
 
-        schedulePendingSuspends(offlineCtx, [noteOnEvent(0.256, 60, strategy), noteOnEvent(0.512, 64, strategy)], 4);
+        schedulePendingSuspends(offlineCtx, [noteOnEvent(0.2, 60, strategy), noteOnEvent(0.5, 64, strategy)], 4);
 
-        // Frames 256 and 512 are both in the future, so scheduling must voice
+        // Frames 200 and 500 are both in the future, so scheduling must voice
         // nothing yet — the processor queues them instead.
         expect(dispatches).toEqual([]);
 
-        // Blocks 0..3 cover frames 0..511. Frame 256 falls in block 1
-        // (end frame 256) and frame 512 in block 3 (end frame 512).
+        // Block b renders frames b*128 .. b*128+127. Frame 200 sits inside
+        // block 1 (128..255) and frame 500 inside block 3 (384..511). Both are
+        // strictly interior, so this assertion does not depend on how the
+        // processor treats a frame that lands exactly on a block boundary.
         for (let block = 0; block < 4; block++) {
             renderBlock(processor);
         }
@@ -205,7 +207,7 @@ describe('offline note scheduling reaches the engine at the scheduled frame', ()
         const strategy = await buildLevainStrategy();
         const offlineCtx = { sampleRate: OFFLINE_SAMPLE_RATE } as unknown as OfflineAudioContext;
 
-        schedulePendingSuspends(offlineCtx, [noteOnEvent(0.256, 60, strategy)], 4);
+        schedulePendingSuspends(offlineCtx, [noteOnEvent(0.2, 60, strategy)], 4);
         for (let block = 0; block < 2; block++) {
             renderBlock(processor);
         }

@@ -42,10 +42,16 @@ export type OfflineAutomationBinding =
  * four slots are `number`, the compiler had nothing to object to and never
  * would have.
  *
- * Names remove the failure mode: a device adapter that reads the wrong field is
- * reading a field that is not there. The positional call survives only inside
- * the per-device adapters in `nativeDspDeviceFactories`, one adapter per note
- * API, written next to the device it belongs to.
+ * Naming the fields removes the dispatcher's ability to misroute a note: there
+ * is no slot to put the frame in by mistake. It does not make the whole class
+ * of mistake impossible, and it is worth being exact about the remaining gap.
+ * The positional call survives inside the per-device adapters in
+ * `nativeDspDeviceFactories`, one adapter per note API. Those two adapters'
+ * parameter types are mutually assignable — same arity, every parameter
+ * `number | undefined`, and parameter names carry no weight in assignability —
+ * so binding a device to the wrong adapter still compiles and still reproduces
+ * this defect. What holds that edge is `nativeDspNoteBinding.spec.ts`, which
+ * drives every note-voicing entry of the factory table and asserts the slots.
  */
 export type DeviceNoteOnRequest = {
     /** MIDI pitch for melodic instruments; pad index for pad-addressed devices. */
