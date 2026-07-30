@@ -1,0 +1,31 @@
+src/modules/AudioEngine/useCases/index.ts
+  s_ac9b259eab20ba::t_36d8d1eed5c874 138
+src/modules/AudioEngine/engine/telemetry/__tests__/deviceTelemetrySchedulerFailure.spec.ts
+  s_ac9b259eab20ba::t_300df6c656c6c3 1-28,30,32-41,43-50,136-180
+  s_ac9b259eab20ba::t_cb2d5c4eb822d7 29,31,42,51-135
+src/modules/WorkspaceShell/presentations/hooks/useActiveDevicePanel.ts
+  s_ac9b259eab20ba::t_20138e61658d77 148
+  s_ac9b259eab20ba::t_dc7ccd05b21d27 4,146-147,149-151
+  s_ac9b259eab20ba::t_d9452cc26f975c 152
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useActiveDevicePanel.spec.ts
+  s_ac9b259eab20ba::t_dc7ccd05b21d27 35-42,75,97,124,216
+  s_ac9b259eab20ba::t_1ed7058436de6a 69
+src/modules/AudioEngine/useCases/deviceTelemetry/subscribeDeviceTelemetry.ts
+  s_ac9b259eab20ba::t_36d8d1eed5c874 1-9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "c8fdc05998a2a586d98f7b2d7a374912419c5774",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
