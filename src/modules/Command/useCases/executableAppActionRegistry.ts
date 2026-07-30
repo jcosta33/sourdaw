@@ -10,13 +10,35 @@ export type ExecutableAppActionTargetRule = {
     capability: ExecutableAppActionTargetCapability;
     dependsOn?: string;
     distinctFrom?: string;
+    promptRole?: 'source' | 'destination';
 };
+
+export type ExecutableAppActionValueRule =
+    | {
+          argument: string;
+          kind: 'boolean-intent';
+          truePhrases: readonly string[];
+          falsePhrases: readonly string[];
+      }
+    | { argument: string; kind: 'text-after-connector'; connector: 'to' }
+    | {
+          argument: string;
+          kind: 'number-if-present';
+          scale?: 'unit-interval';
+          direction?: 'pan';
+          qualitativeDirection?: 'track-gain' | 'track-pan' | 'device-parameter';
+      }
+    | { argument: string; kind: 'string-literal' }
+    | { argument: string; kind: 'enum-if-present'; values: readonly string[] }
+    | { argument: string; kind: 'text-after-keyword-if-present'; keywords: readonly string[] };
 
 type ExecutableAppActionDescriptor = {
     actionType: AppActionType;
     risk: ExecutableAppActionRisk;
     description: string;
+    intentPhrases: readonly string[];
     targetRules: readonly ExecutableAppActionTargetRule[];
+    valueRules?: readonly ExecutableAppActionValueRule[];
     parameters: {
         properties: Record<string, unknown>;
         required: readonly string[];
@@ -28,11 +50,12 @@ const trackTargetRules = [
 ] as const satisfies readonly ExecutableAppActionTargetRule[];
 
 const sendTargetRules = [
-    { argument: 'busId', capability: 'bus' },
+    { argument: 'busId', capability: 'bus', promptRole: 'destination' },
     {
         argument: 'trackId',
         capability: 'routable-source',
         distinctFrom: 'busId',
+        promptRole: 'source',
     },
 ] as const satisfies readonly ExecutableAppActionTargetRule[];
 
@@ -41,7 +64,33 @@ export const executableAppActionDescriptors = [
         actionType: 'addTrack',
         risk: 'bounded-reversible',
         description: 'Create a new track in the session.',
+        intentPhrases: [
+            'add track',
+            'create track',
+            'add new track',
+            'create new track',
+            'add audio track',
+            'create audio track',
+            'add an audio track',
+            'create an audio track',
+            'add midi track',
+            'create midi track',
+            'add a midi track',
+            'create a midi track',
+            'add bus track',
+            'create bus track',
+            'add a bus track',
+            'create a bus track',
+            'add folder track',
+            'create folder track',
+            'add a folder track',
+            'create a folder track',
+        ],
         targetRules: [],
+        valueRules: [
+            { argument: 'name', kind: 'text-after-keyword-if-present', keywords: ['named', 'called'] },
+            { argument: 'kind', kind: 'enum-if-present', values: ['audio', 'midi', 'bus', 'folder'] },
+        ],
         parameters: {
             properties: {
                 name: { type: 'string', description: 'Display name (e.g. "Kick", "Vocals", "Synth Pad")' },
@@ -54,7 +103,9 @@ export const executableAppActionDescriptors = [
         actionType: 'renameTrack',
         risk: 'bounded-reversible',
         description: 'Rename a track.',
-        targetRules: trackTargetRules,
+        intentPhrases: ['rename'],
+        targetRules: [{ argument: 'trackId', capability: 'track', promptRole: 'source' }],
+        valueRules: [{ argument: 'name', kind: 'text-after-connector', connector: 'to' }],
         parameters: {
             properties: { trackId: { type: 'string' }, name: { type: 'string' } },
             required: ['trackId', 'name'],
@@ -64,7 +115,16 @@ export const executableAppActionDescriptors = [
         actionType: 'muteTrack',
         risk: 'bounded-reversible',
         description: 'Mute or unmute a track.',
+        intentPhrases: ['mute', 'unmute'],
         targetRules: trackTargetRules,
+        valueRules: [
+            {
+                argument: 'muted',
+                kind: 'boolean-intent',
+                truePhrases: ['mute'],
+                falsePhrases: ['unmute'],
+            },
+        ],
         parameters: {
             properties: {
                 trackId: { type: 'string' },
@@ -77,7 +137,16 @@ export const executableAppActionDescriptors = [
         actionType: 'soloTrack',
         risk: 'bounded-reversible',
         description: 'Solo or unsolo a track (only hear this track).',
+        intentPhrases: ['solo', 'unsolo'],
         targetRules: trackTargetRules,
+        valueRules: [
+            {
+                argument: 'soloed',
+                kind: 'boolean-intent',
+                truePhrases: ['solo'],
+                falsePhrases: ['unsolo'],
+            },
+        ],
         parameters: {
             properties: {
                 trackId: { type: 'string' },
@@ -90,6 +159,7 @@ export const executableAppActionDescriptors = [
         actionType: 'duplicateTrack',
         risk: 'broad-reversible',
         description: 'Duplicate a track with all clips and devices.',
+        intentPhrases: ['duplicate', 'copy'],
         targetRules: [{ argument: 'trackId', capability: 'duplicable-track' }],
         parameters: { properties: { trackId: { type: 'string' } }, required: ['trackId'] },
     },
@@ -97,7 +167,16 @@ export const executableAppActionDescriptors = [
         actionType: 'setTrackGain',
         risk: 'bounded-reversible',
         description: 'Set track volume. 0.0=silence, 0.8=default, 1.0=max.',
+        intentPhrases: ['gain', 'volume', 'louder', 'quieter', 'raise', 'lower', 'turn up', 'turn down'],
         targetRules: trackTargetRules,
+        valueRules: [
+            {
+                argument: 'gain',
+                kind: 'number-if-present',
+                scale: 'unit-interval',
+                qualitativeDirection: 'track-gain',
+            },
+        ],
         parameters: {
             properties: {
                 trackId: { type: 'string' },
@@ -110,7 +189,11 @@ export const executableAppActionDescriptors = [
         actionType: 'setTrackPan',
         risk: 'bounded-reversible',
         description: 'Pan a track left/right. -50=hard left, 0=center, 50=hard right.',
+        intentPhrases: ['pan', 'left', 'right', 'center'],
         targetRules: trackTargetRules,
+        valueRules: [
+            { argument: 'pan', kind: 'number-if-present', direction: 'pan', qualitativeDirection: 'track-pan' },
+        ],
         parameters: {
             properties: {
                 trackId: { type: 'string' },
@@ -123,7 +206,9 @@ export const executableAppActionDescriptors = [
         actionType: 'setTrackColor',
         risk: 'bounded-reversible',
         description: 'Color-code a track for visual organization.',
+        intentPhrases: ['color', 'colour'],
         targetRules: trackTargetRules,
+        valueRules: [{ argument: 'color', kind: 'string-literal' }],
         parameters: {
             properties: {
                 trackId: { type: 'string' },
@@ -136,7 +221,9 @@ export const executableAppActionDescriptors = [
         actionType: 'reorderTrack',
         risk: 'bounded-reversible',
         description: 'Move a track to a new position in the track list.',
+        intentPhrases: ['reorder', 'move'],
         targetRules: trackTargetRules,
+        valueRules: [{ argument: 'newIndex', kind: 'number-if-present' }],
         parameters: {
             properties: {
                 trackId: { type: 'string' },
@@ -149,13 +236,16 @@ export const executableAppActionDescriptors = [
         actionType: 'setTempo',
         risk: 'authority-sensitive',
         description: 'Set the project tempo in BPM. Range: 20–300.',
+        intentPhrases: ['set tempo', 'change tempo', 'tempo'],
         targetRules: [],
+        valueRules: [{ argument: 'bpm', kind: 'number-if-present' }],
         parameters: { properties: { bpm: { type: 'number' } }, required: ['bpm'] },
     },
     {
         actionType: 'setDeviceParameter',
         risk: 'bounded-reversible',
         description: 'Adjust a parameter on an existing device.',
+        intentPhrases: ['adjust', 'set', 'change', 'increase', 'decrease'],
         targetRules: [
             { argument: 'deviceId', capability: 'device' },
             {
@@ -164,6 +254,7 @@ export const executableAppActionDescriptors = [
                 dependsOn: 'deviceId',
             },
         ],
+        valueRules: [{ argument: 'value', kind: 'number-if-present', qualitativeDirection: 'device-parameter' }],
         parameters: {
             properties: {
                 deviceId: { type: 'string' },
@@ -180,7 +271,16 @@ export const executableAppActionDescriptors = [
         actionType: 'bypassDevice',
         risk: 'bounded-reversible',
         description: 'Bypass or re-enable an effect (keeps settings, just disables processing).',
+        intentPhrases: ['bypass', 'enable', 'disable', 're-enable'],
         targetRules: [{ argument: 'deviceId', capability: 'device' }],
+        valueRules: [
+            {
+                argument: 'bypassed',
+                kind: 'boolean-intent',
+                truePhrases: ['bypass', 'disable'],
+                falsePhrases: ['enable', 're-enable'],
+            },
+        ],
         parameters: {
             properties: { deviceId: { type: 'string' }, bypassed: { type: 'boolean' } },
             required: ['deviceId', 'bypassed'],
@@ -190,7 +290,9 @@ export const executableAppActionDescriptors = [
         actionType: 'addSend',
         risk: 'authority-sensitive',
         description: "Route a copy of a track's signal to a bus (parallel processing).",
+        intentPhrases: ['add send', 'create send', 'send'],
         targetRules: sendTargetRules,
+        valueRules: [{ argument: 'level', kind: 'number-if-present', scale: 'unit-interval' }],
         parameters: {
             properties: {
                 trackId: { type: 'string' },
@@ -204,7 +306,9 @@ export const executableAppActionDescriptors = [
         actionType: 'setSend',
         risk: 'authority-sensitive',
         description: 'Adjust the send level from a track to a bus.',
+        intentPhrases: ['adjust send', 'set send', 'change send'],
         targetRules: sendTargetRules,
+        valueRules: [{ argument: 'level', kind: 'number-if-present', scale: 'unit-interval' }],
         parameters: {
             properties: {
                 trackId: { type: 'string' },
@@ -218,6 +322,7 @@ export const executableAppActionDescriptors = [
         actionType: 'removeSend',
         risk: 'authority-sensitive',
         description: 'Remove a send from a track to a bus.',
+        intentPhrases: ['remove send', 'delete send', 'disconnect send'],
         targetRules: sendTargetRules,
         parameters: {
             properties: { trackId: { type: 'string' }, busId: { type: 'string' } },
@@ -228,9 +333,10 @@ export const executableAppActionDescriptors = [
         actionType: 'setTrackOutput',
         risk: 'authority-sensitive',
         description: "Route a track's output to a specific bus or master.",
+        intentPhrases: ['route', 'set output', 'output'],
         targetRules: [
-            { argument: 'outputId', capability: 'output' },
-            { argument: 'trackId', capability: 'routable-source', distinctFrom: 'outputId' },
+            { argument: 'outputId', capability: 'output', promptRole: 'destination' },
+            { argument: 'trackId', capability: 'routable-source', distinctFrom: 'outputId', promptRole: 'source' },
         ],
         parameters: {
             properties: {

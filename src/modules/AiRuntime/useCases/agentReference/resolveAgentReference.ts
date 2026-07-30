@@ -55,14 +55,32 @@ function hasExplicitTrackSelection(prompt: string): boolean {
     return /\b(?:selected|current|this) (?:audio |midi |bus |folder )?track\b/u.test(normalized);
 }
 
-function getUniquelyReferencedTrackId(prompt: string, context: ProjectContext): string | null {
+type TrackOwnerReference = { status: 'none' } | { status: 'unique'; id: string } | { status: 'ambiguous' };
+
+function containsQualifiedTrackOwnerReference(prompt: string, reference: string): boolean {
+    const normalizedPrompt = ` ${normalizeReferenceText(prompt)} `;
+    const normalizedReference = normalizeReferenceText(reference);
+    return [
+        ` on ${normalizedReference} `,
+        ` on the ${normalizedReference} `,
+        ` in ${normalizedReference} `,
+        ` in the ${normalizedReference} `,
+    ].some((qualifiedReference) => normalizedPrompt.includes(qualifiedReference));
+}
+
+function resolveTrackOwnerReference(prompt: string, context: ProjectContext): TrackOwnerReference {
     const referencedTracks = context.tracks.filter(
-        (track) => containsExactPhrase(prompt, track.id) || containsExactPhrase(prompt, track.name)
+        (track) =>
+            containsQualifiedTrackOwnerReference(prompt, track.id) ||
+            containsQualifiedTrackOwnerReference(prompt, track.name)
     );
-    if (referencedTracks.length !== 1) {
-        return null;
+    if (referencedTracks.length === 0) {
+        return { status: 'none' };
     }
-    return referencedTracks[0]?.id ?? null;
+    if (referencedTracks.length > 1) {
+        return { status: 'ambiguous' };
+    }
+    return { status: 'unique', id: referencedTracks[0]!.id };
 }
 
 function getTrackCandidates(
@@ -101,9 +119,12 @@ function getReferenceCandidates(input: ResolveAgentReferenceInput): ReferenceCan
             }
             tracks = tracks.filter((track) => track.id === input.context.selectedTrackId);
         } else {
-            const ownerTrackId = getUniquelyReferencedTrackId(input.prompt, input.context);
-            if (ownerTrackId !== null) {
-                tracks = tracks.filter((track) => track.id === ownerTrackId);
+            const ownerReference = resolveTrackOwnerReference(input.prompt, input.context);
+            if (ownerReference.status === 'ambiguous') {
+                return [];
+            }
+            if (ownerReference.status === 'unique') {
+                tracks = tracks.filter((track) => track.id === ownerReference.id);
             }
         }
         return tracks.flatMap((track) => track.devices.map((device) => ({ id: device.id, name: device.type })));
@@ -119,26 +140,39 @@ function getReferenceCandidates(input: ResolveAgentReferenceInput): ReferenceCan
     return [];
 }
 
-function getAmbiguousExactNameIds(
-    assertedId: string,
+function removeOverlappedExactNameEvidence(
     candidates: readonly ReferenceCandidate[],
-    evidenceById: ReadonlyMap<string, AgentReferenceEvidence>
-): string[] {
-    const assertedCandidate = candidates.find((candidate) => candidate.id === assertedId);
-    if (!assertedCandidate) {
-        return [];
+    evidenceById: Map<string, AgentReferenceEvidence>
+): void {
+    for (const candidate of candidates) {
+        if (evidenceById.get(candidate.id) !== 'exact-name') {
+            continue;
+        }
+        const normalizedName = normalizeReferenceText(candidate.name);
+        const isContainedByLongerName = candidates.some((otherCandidate) => {
+            if (otherCandidate.id === candidate.id || evidenceById.get(otherCandidate.id) !== 'exact-name') {
+                return false;
+            }
+            const otherName = normalizeReferenceText(otherCandidate.name);
+            return otherName.length > normalizedName.length && ` ${otherName} `.includes(` ${normalizedName} `);
+        });
+        if (isContainedByLongerName) {
+            evidenceById.delete(candidate.id);
+        }
     }
-    const normalizedName = normalizeReferenceText(assertedCandidate.name);
-    return candidates
-        .filter(
-            (candidate) => normalizeReferenceText(candidate.name) === normalizedName && evidenceById.has(candidate.id)
-        )
-        .map((candidate) => candidate.id);
 }
 
 export function resolveAgentReference(input: ResolveAgentReferenceInput): ResolveAgentReferenceResult {
     const excludedIds = new Set(input.excludedIds ?? []);
-    const candidates = getReferenceCandidates(input).filter((candidate) => !excludedIds.has(candidate.id));
+    const trackCandidates = getTrackCandidates(input.capability, input.context);
+    let candidates = getReferenceCandidates(input).filter((candidate) => !excludedIds.has(candidate.id));
+    if (trackCandidates && hasExplicitTrackSelection(input.prompt)) {
+        if (input.context.selectedTrackId === null) {
+            candidates = [];
+        } else {
+            candidates = candidates.filter((candidate) => candidate.id === input.context.selectedTrackId);
+        }
+    }
     const evidenceById = new Map<string, AgentReferenceEvidence>();
 
     for (const candidate of candidates) {
@@ -158,30 +192,26 @@ export function resolveAgentReference(input: ResolveAgentReferenceInput): Resolv
         }
     }
 
-    const trackCandidates = getTrackCandidates(input.capability, input.context);
     if (trackCandidates && hasExplicitTrackSelection(input.prompt) && input.context.selectedTrackId !== null) {
-        const selected = trackCandidates.find(
-            (candidate) => candidate.id === input.context.selectedTrackId && !excludedIds.has(candidate.id)
-        );
+        const selected = candidates.find((candidate) => candidate.id === input.context.selectedTrackId);
         if (selected && !evidenceById.has(selected.id)) {
             evidenceById.set(selected.id, 'selection');
         }
     }
 
+    removeOverlappedExactNameEvidence(candidates, evidenceById);
+
     if (evidenceById.size === 0) {
         return { status: 'rejected', reason: 'ungrounded-target' };
+    }
+    if (evidenceById.size > 1) {
+        return { status: 'rejected', reason: 'ambiguous-target', candidateIds: [...evidenceById.keys()] };
     }
     if (typeof input.assertedId !== 'string' || !evidenceById.has(input.assertedId)) {
         return { status: 'rejected', reason: 'asserted-target-mismatch' };
     }
 
     const evidence = evidenceById.get(input.assertedId) ?? 'exact-name';
-    if (evidence === 'exact-name') {
-        const ambiguousIds = getAmbiguousExactNameIds(input.assertedId, candidates, evidenceById);
-        if (ambiguousIds.length > 1) {
-            return { status: 'rejected', reason: 'ambiguous-target', candidateIds: ambiguousIds };
-        }
-    }
 
     return { status: 'resolved', id: input.assertedId, evidence };
 }

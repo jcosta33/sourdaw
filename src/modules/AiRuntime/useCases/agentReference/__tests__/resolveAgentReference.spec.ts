@@ -64,6 +64,13 @@ describe('resolveAgentReference', () => {
             ...projectState,
             tracks: [...projectState.tracks, { ...firstTrack, id: 'track-vocals-double' }],
         };
+        const overlappingContext = {
+            ...projectState,
+            tracks: [
+                { ...firstTrack, id: 'track-lead', name: 'Lead' },
+                { ...firstTrack, id: 'track-lead-vox', name: 'Lead Vox' },
+            ],
+        };
 
         expect(resolveTrack('mute Vocals', 'track-vocals', ambiguousContext)).toMatchObject({
             status: 'rejected',
@@ -72,6 +79,19 @@ describe('resolveAgentReference', () => {
         expect(resolveTrack('mute Vocals', 'track-bass', projectState)).toEqual({
             status: 'rejected',
             reason: 'asserted-target-mismatch',
+        });
+        expect(resolveTrack('mute Vocals Bass', 'track-vocals', projectState)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(resolveTrack('mute Lead Vox', 'track-lead', overlappingContext)).toEqual({
+            status: 'rejected',
+            reason: 'asserted-target-mismatch',
+        });
+        expect(resolveTrack('mute Lead Vox', 'track-lead-vox', overlappingContext)).toEqual({
+            status: 'resolved',
+            id: 'track-lead-vox',
+            evidence: 'exact-name',
         });
         expect(resolveTrack('adjust the embassy', 'track-bass', projectState)).toEqual({
             status: 'rejected',
