@@ -44,9 +44,9 @@ function makeSab(ringFrames: number): {
     leftRing: Float32Array;
     rightRing: Float32Array;
 } {
-    const headerBytes = 2 * Int32Array.BYTES_PER_ELEMENT;
+    const headerBytes = 7 * Int32Array.BYTES_PER_ELEMENT;
     const sab = new SharedArrayBuffer(headerBytes + ringFrames * 2 * Float32Array.BYTES_PER_ELEMENT);
-    const controlInts = new Int32Array(sab, 0, 2);
+    const controlInts = new Int32Array(sab, 0, 7);
     const leftRing = new Float32Array(sab, headerBytes, ringFrames);
     const rightRing = new Float32Array(sab, headerBytes + ringFrames * Float32Array.BYTES_PER_ELEMENT, ringFrames);
     return { sab, controlInts, leftRing, rightRing };
@@ -67,18 +67,10 @@ describe('readBlockAcquire (SPSC acquire read)', () => {
 
         const out0 = new Float32Array(frames);
         const out1 = new Float32Array(frames);
-        const { consumed, nextReadHead } = readBlockAcquire(
-            controlInts,
-            leftRing,
-            rightRing,
-            ringFrames,
-            out0,
-            out1,
-            frames
-        );
+        const consumed = readBlockAcquire(controlInts, leftRing, rightRing, ringFrames, out0, out1, frames);
 
-        expect(consumed).toBe(frames);
-        expect(nextReadHead).toBe(frames);
+        expect(consumed).toBe(true);
+        expect(Atomics.load(controlInts, READ_HEAD_IDX)).toBe(frames);
         expect(Array.from(out0)).toEqual([1, 2, 3, 4]);
         expect(Array.from(out1)).toEqual([-1, -2, -3, -4]);
     });
@@ -93,18 +85,10 @@ describe('readBlockAcquire (SPSC acquire read)', () => {
 
         const out0 = new Float32Array(4).fill(7); // pre-filled sentinel
         const out1 = new Float32Array(4).fill(7);
-        const { consumed, nextReadHead } = readBlockAcquire(
-            controlInts,
-            leftRing,
-            rightRing,
-            ringFrames,
-            out0,
-            out1,
-            4
-        );
+        const consumed = readBlockAcquire(controlInts, leftRing, rightRing, ringFrames, out0, out1, 4);
 
-        expect(consumed).toBe(0);
-        expect(nextReadHead).toBe(0);
+        expect(consumed).toBe(false);
+        expect(Atomics.load(controlInts, READ_HEAD_IDX)).toBe(0);
         // Outputs untouched — caller emits silence, no stale ring frames leak in.
         expect(Array.from(out0)).toEqual([7, 7, 7, 7]);
     });
@@ -128,18 +112,10 @@ describe('readBlockAcquire (SPSC acquire read)', () => {
 
         const out0 = new Float32Array(4);
         const out1 = new Float32Array(4);
-        const { consumed, nextReadHead } = readBlockAcquire(
-            controlInts,
-            leftRing,
-            rightRing,
-            ringFrames,
-            out0,
-            out1,
-            4
-        );
+        const consumed = readBlockAcquire(controlInts, leftRing, rightRing, ringFrames, out0, out1, 4);
 
-        expect(consumed).toBe(4);
-        expect(nextReadHead).toBe(6);
+        expect(consumed).toBe(true);
+        expect(Atomics.load(controlInts, READ_HEAD_IDX)).toBe(6);
         expect(Array.from(out0)).toEqual([30, 40, 50, 60]);
         expect(Array.from(out1)).toEqual([-30, -40, -50, -60]);
     });
@@ -152,8 +128,8 @@ describe('readBlockAcquire (SPSC acquire read)', () => {
         Atomics.store(controlInts, WRITE_HEAD_IDX, 2);
 
         const out0 = new Float32Array(2);
-        const { consumed } = readBlockAcquire(controlInts, leftRing, rightRing, ringFrames, out0, undefined, 2);
-        expect(consumed).toBe(2);
+        const consumed = readBlockAcquire(controlInts, leftRing, rightRing, ringFrames, out0, undefined, 2);
+        expect(consumed).toBe(true);
         expect(Array.from(out0)).toEqual([1, 2]);
     });
 });
@@ -205,7 +181,7 @@ describe('GrandBouleProcessor (real instance)', () => {
         expect(true).toBe(true);
     });
 
-    it('consumes published frames and advances the read head; underrun leaves output untouched', () => {
+    it('consumes published frames and advances the read head; underrun emits silence', () => {
         const proc = newProc();
         const { controlInts, leftRing, rightRing, sab } = makeSab(8);
         send(proc, sab);
@@ -224,10 +200,50 @@ describe('GrandBouleProcessor (real instance)', () => {
         // Read head advanced by the consumed count.
         expect(Atomics.load(controlInts, READ_HEAD_IDX)).toBe(4);
 
-        // Next call underruns (nothing published) → output untouched, head unchanged.
+        // Next call underruns (nothing published) → output is silent, head unchanged.
         const out2 = [new Float32Array(4).fill(5), new Float32Array(4).fill(5)];
         proc.process([], [out2]);
-        expect(Array.from(out2[0]!)).toEqual([5, 5, 5, 5]);
+        expect(Array.from(out2[0]!)).toEqual([0, 0, 0, 0]);
         expect(Atomics.load(controlInts, READ_HEAD_IDX)).toBe(4);
+    });
+
+    it('keeps expected DSP sleep silent without requesting worker renders', () => {
+        const proc = newProc();
+        const { controlInts, sab } = makeSab(8);
+        Atomics.store(controlInts, 3, 0);
+        Atomics.store(controlInts, 4, 3);
+        send(proc, sab);
+
+        const out = [new Float32Array(4).fill(5), new Float32Array(4).fill(5)];
+        proc.process([], [out]);
+
+        expect(Array.from(out[0]!)).toEqual([0, 0, 0, 0]);
+        expect(Atomics.load(controlInts, 2)).toBe(0);
+    });
+
+    it('drops only through the hard-flush boundary and preserves audio rendered by a later wake', () => {
+        const proc = newProc();
+        const { controlInts, leftRing, rightRing, sab } = makeSab(8);
+        leftRing.fill(1);
+        rightRing.fill(1);
+        Atomics.store(controlInts, WRITE_HEAD_IDX, 4);
+        send(proc, sab);
+
+        Atomics.store(controlInts, 6, 4);
+        Atomics.add(controlInts, 5, 1);
+        leftRing.fill(2, 4);
+        rightRing.fill(-2, 4);
+        Atomics.store(controlInts, WRITE_HEAD_IDX, 8);
+        Atomics.store(controlInts, 4, 0);
+        const out = [new Float32Array(4).fill(5), new Float32Array(4).fill(5)];
+        proc.process([], [out]);
+
+        expect(Array.from(out[0]!)).toEqual([0, 0, 0, 0]);
+        expect(Atomics.load(controlInts, READ_HEAD_IDX)).toBe(4);
+
+        const wakeOut = [new Float32Array(4), new Float32Array(4)];
+        proc.process([], [wakeOut]);
+        expect(Array.from(wakeOut[0]!)).toEqual([2, 2, 2, 2]);
+        expect(Array.from(wakeOut[1]!)).toEqual([-2, -2, -2, -2]);
     });
 });

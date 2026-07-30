@@ -10,14 +10,23 @@
  *   { type: 'init', sab: SharedArrayBuffer }
  *
  * SAB layout:
- *   [0..3]  writeHead (Int32, atomic) — total frames written by engine worker
- *   [4..7]  readHead  (Int32, atomic) — total frames read by this processor
- *   [8..]   left ring  (Float32, ringFrames entries)
- *   [8 + ringFrames*4..] right ring (Float32, ringFrames entries)
+ *   [0] writeHead, [1] readHead, [2] render request generation,
+ *   [3] sleep-after head, [4] DSP lifecycle, [5] hard-flush generation,
+ *   [6] hard-flush write boundary, followed by the stereo Float32 rings.
  */
 
-const WRITE_HEAD_IDX = 0;
-const READ_HEAD_IDX = 1;
+import {
+    GRAND_BOULE_CONTROL_HEADER_BYTES,
+    GRAND_BOULE_CONTROL_INT_COUNT,
+    GRAND_BOULE_FLUSH_GENERATION_IDX,
+    GRAND_BOULE_FLUSH_HEAD_IDX,
+    GRAND_BOULE_LIFECYCLE_IDX,
+    GRAND_BOULE_LIFECYCLE_SLEEP,
+    GRAND_BOULE_READ_HEAD_IDX,
+    GRAND_BOULE_RENDER_REQUEST_IDX,
+    GRAND_BOULE_SLEEP_HEAD_IDX,
+    GRAND_BOULE_WRITE_HEAD_IDX,
+} from '../worklets/grandBouleRingProtocol';
 
 /**
  * Slot in the one-Int32 sync SAB carrying `currentFrame - readHead` — how far
@@ -57,9 +66,8 @@ type GrandBouleMsg = {
  * `subarray` reads below. When fewer than `frames` are published the ring is
  * left untouched (underrun) and `consumed` is 0 — no stale frames are copied.
  *
- * Returns the number of frames consumed and the advanced read head, so the
- * caller publishes the read head with a release store. Hot-path safe: no
- * allocation, no blocking.
+ * Publishes the advanced read head after copying and returns whether a complete
+ * block was consumed. Hot-path safe: no allocation, no blocking.
  */
 export function readBlockAcquire(
     controlInts: Int32Array,
@@ -69,34 +77,37 @@ export function readBlockAcquire(
     out0: Float32Array,
     out1: Float32Array | undefined,
     frames: number
-): { consumed: number; nextReadHead: number } {
+): boolean {
     // Acquire fence — must precede the ring reads below.
-    const writeHead = Atomics.load(controlInts, WRITE_HEAD_IDX);
-    const readHead = Atomics.load(controlInts, READ_HEAD_IDX);
+    const writeHead = Atomics.load(controlInts, GRAND_BOULE_WRITE_HEAD_IDX);
+    const readHead = Atomics.load(controlInts, GRAND_BOULE_READ_HEAD_IDX);
     const available = (writeHead - readHead) | 0;
 
     if (available < frames) {
-        // Underrun — caller outputs silence. The engine worker will catch up.
-        return { consumed: 0, nextReadHead: readHead };
+        return false;
     }
 
     const offset = (readHead >>> 0) % ringFrames;
     const firstChunk = Math.min(frames, ringFrames - offset);
     const secondChunk = frames - firstChunk;
 
-    out0.set(leftRing.subarray(offset, offset + firstChunk));
-    if (secondChunk > 0) {
-        out0.set(leftRing.subarray(0, secondChunk), firstChunk);
+    for (let index = 0; index < firstChunk; index++) {
+        out0[index] = leftRing[offset + index] ?? 0;
     }
-
-    if (out1) {
-        out1.set(rightRing.subarray(offset, offset + firstChunk));
-        if (secondChunk > 0) {
-            out1.set(rightRing.subarray(0, secondChunk), firstChunk);
+    for (let index = 0; index < secondChunk; index++) {
+        out0[firstChunk + index] = leftRing[index] ?? 0;
+    }
+    if (out1 !== undefined) {
+        for (let index = 0; index < firstChunk; index++) {
+            out1[index] = rightRing[offset + index] ?? 0;
+        }
+        for (let index = 0; index < secondChunk; index++) {
+            out1[firstChunk + index] = rightRing[index] ?? 0;
         }
     }
 
-    return { consumed: frames, nextReadHead: (readHead + frames) | 0 };
+    Atomics.store(controlInts, GRAND_BOULE_READ_HEAD_IDX, (readHead + frames) | 0);
+    return true;
 }
 
 class GrandBouleProcessor extends AudioWorkletProcessor {
@@ -129,12 +140,14 @@ class GrandBouleProcessor extends AudioWorkletProcessor {
      * for the first delivery that would license it to count.
      */
     _countPreRoll = false;
+    /** Last hard-flush generation observed from the engine worker. */
+    _flushGeneration = 0;
 
     constructor() {
         super();
         this.port.onmessage = (event: MessageEvent<GrandBouleMsg>) => {
             const msg = event.data;
-            if (msg.type === 'init' && !this._ready) {
+            if (!this._ready) {
                 if (msg.dropoutSab) {
                     this._dropoutInts = new Int32Array(msg.dropoutSab);
                 }
@@ -180,18 +193,27 @@ class GrandBouleProcessor extends AudioWorkletProcessor {
     }
 
     _initSab(sab: SharedArrayBuffer): void {
-        this._controlInts = new Int32Array(sab, 0, 2);
-        const headerBytes = 2 * Int32Array.BYTES_PER_ELEMENT;
-        const floatBytes = sab.byteLength - headerBytes;
+        this._controlInts = new Int32Array(sab, 0, GRAND_BOULE_CONTROL_INT_COUNT);
+        const floatBytes = sab.byteLength - GRAND_BOULE_CONTROL_HEADER_BYTES;
         this._ringFrames = floatBytes / (2 * Float32Array.BYTES_PER_ELEMENT);
-        this._leftRing = new Float32Array(sab, headerBytes, this._ringFrames);
+        this._leftRing = new Float32Array(sab, GRAND_BOULE_CONTROL_HEADER_BYTES, this._ringFrames);
         this._rightRing = new Float32Array(
             sab,
-            headerBytes + this._ringFrames * Float32Array.BYTES_PER_ELEMENT,
+            GRAND_BOULE_CONTROL_HEADER_BYTES + this._ringFrames * Float32Array.BYTES_PER_ELEMENT,
             this._ringFrames
         );
+        this._flushGeneration = Atomics.load(this._controlInts, GRAND_BOULE_FLUSH_GENERATION_IDX);
         this._ready = true;
         this.port.postMessage({ type: 'ready' });
+    }
+
+    _requestRender(): void {
+        const controls = this._controlInts;
+        if (!controls) {
+            return;
+        }
+        Atomics.add(controls, GRAND_BOULE_RENDER_REQUEST_IDX, 1);
+        Atomics.notify(controls, GRAND_BOULE_RENDER_REQUEST_IDX);
     }
 
     process(_inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
@@ -211,7 +233,23 @@ class GrandBouleProcessor extends AudioWorkletProcessor {
         const frames = out0.length;
         const out1 = output[1];
 
-        const { consumed, nextReadHead } = readBlockAcquire(
+        const flushGeneration = Atomics.load(this._controlInts, GRAND_BOULE_FLUSH_GENERATION_IDX);
+        if (flushGeneration !== this._flushGeneration) {
+            this._flushGeneration = flushGeneration;
+            const flushHead = Atomics.load(this._controlInts, GRAND_BOULE_FLUSH_HEAD_IDX);
+            Atomics.store(this._controlInts, GRAND_BOULE_READ_HEAD_IDX, flushHead);
+            this._publishConsumerOffset(flushHead);
+            out0.fill(0);
+            out1?.fill(0);
+            this._hasDelivered = false;
+            if (Atomics.load(this._controlInts, GRAND_BOULE_LIFECYCLE_IDX) !== GRAND_BOULE_LIFECYCLE_SLEEP) {
+                this._requestRender();
+            }
+            return true;
+        }
+
+        const readHead = Atomics.load(this._controlInts, GRAND_BOULE_READ_HEAD_IDX);
+        const consumed = readBlockAcquire(
             this._controlInts,
             this._leftRing,
             this._rightRing,
@@ -221,23 +259,31 @@ class GrandBouleProcessor extends AudioWorkletProcessor {
             frames
         );
 
-        // `nextReadHead` equals the pre-call read head on an underrun, so this is
-        // the head of the block being delivered either way.
-        this._publishConsumerOffset(nextReadHead - consumed);
+        this._publishConsumerOffset(readHead);
 
-        if (consumed === 0) {
+        if (!consumed) {
+            out0.fill(0);
+            out1?.fill(0);
             // Underrun — output silence. The engine worker will catch up. This
             // used to vanish without a trace; now it lands in the shared dropout
             // counters so the glitch is diagnosable after the fact (audit RT-10).
-            if (this._hasDelivered || this._countPreRoll) {
+            const sleepHead = Atomics.load(this._controlInts, GRAND_BOULE_SLEEP_HEAD_IDX);
+            const lifecycleState = Atomics.load(this._controlInts, GRAND_BOULE_LIFECYCLE_IDX);
+            const expectedSilence = lifecycleState === GRAND_BOULE_LIFECYCLE_SLEEP || sleepHead === readHead;
+            if (!expectedSilence && (this._hasDelivered || this._countPreRoll)) {
                 this._recordUnderrun(frames);
+            }
+            if (lifecycleState !== GRAND_BOULE_LIFECYCLE_SLEEP) {
+                this._requestRender();
             }
             return true;
         }
         this._hasDelivered = true;
 
-        // Release the read head only after the frames have been copied out.
-        Atomics.store(this._controlInts, READ_HEAD_IDX, nextReadHead);
+        const lifecycleState = Atomics.load(this._controlInts, GRAND_BOULE_LIFECYCLE_IDX);
+        if (lifecycleState !== GRAND_BOULE_LIFECYCLE_SLEEP) {
+            this._requestRender();
+        }
 
         return true;
     }

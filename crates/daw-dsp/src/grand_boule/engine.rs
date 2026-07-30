@@ -13,12 +13,16 @@ use super::pedals::PedalState;
 use super::soundboard::Soundboard;
 use super::sympathetic::Sympathetic;
 use super::voice::PianoVoice;
+use crate::primitives::ProcessLifecycle;
 
 /// Default voice-pool size for this scaffolding slice.
 pub const DEFAULT_VOICE_COUNT: usize = 32;
 
 /// Hard upper bound the engine will honour at construction time.
 pub const MAX_VOICE_COUNT: usize = 256;
+
+const OUTPUT_QUIET_THRESHOLD: f32 = 3.162_277_6e-8;
+const QUIET_BLOCKS_BEFORE_SLEEP: u8 = 4;
 
 #[derive(Clone, Copy)]
 pub struct PerNoteValues {
@@ -97,6 +101,8 @@ pub struct GrandBouleEngine {
     /// 0.0 disables the burst entirely, 1.0 = neutral (matches the
     /// hammer's actual MIDI velocity), > 1.0 over-emphasises the chirp.
     attack_bite: f32,
+    /// Consecutive complete output blocks below -150 dBFS.
+    quiet_block_count: u8,
 }
 
 impl GrandBouleEngine {
@@ -131,6 +137,7 @@ impl GrandBouleEngine {
             tone_color: 0.0,
             stretch_amount: 1.0,
             attack_bite: 1.0,
+            quiet_block_count: QUIET_BLOCKS_BEFORE_SLEEP,
         }
     }
 
@@ -169,6 +176,7 @@ impl GrandBouleEngine {
         let Some(key) = midi_to_key(midi_note) else {
             return;
         };
+        self.quiet_block_count = 0;
         // Apply velocity curve shaping: v' = v^exponent.
         let shaped_velocity = velocity.clamp(0.0, 1.0).powf(self.velocity_curve);
         // Apply historical temperament offset on top of the caller's pitch ratio.
@@ -292,6 +300,7 @@ impl GrandBouleEngine {
     }
 
     pub fn note_off(&mut self, midi_note: u8) {
+        self.quiet_block_count = 0;
         self.noise.trigger(NoiseEvent::DamperLift, 0.5);
         if let Some(key) = midi_to_key(midi_note) {
             self.pedals.release_key(key);
@@ -549,6 +558,26 @@ impl GrandBouleEngine {
             left[frame] += sample_l;
             right[frame] += sample_r;
         }
+
+        let output_quiet = left[..frames]
+            .iter()
+            .chain(&right[..frames])
+            .all(|sample| sample.is_finite() && sample.abs() <= OUTPUT_QUIET_THRESHOLD);
+        if output_quiet {
+            self.quiet_block_count = self.quiet_block_count.saturating_add(1);
+        } else {
+            self.quiet_block_count = 0;
+        }
+    }
+
+    pub fn lifecycle(&self) -> ProcessLifecycle {
+        if self.voices.iter().any(|voice| !voice.is_idle()) {
+            return ProcessLifecycle::Continue;
+        }
+        if self.quiet_block_count < QUIET_BLOCKS_BEFORE_SLEEP {
+            return ProcessLifecycle::ContinueIfNotQuiet;
+        }
+        ProcessLifecycle::Sleep
     }
 
     /// Inject a microtuning-ready note-on given a MIDI 2.0 Q24 pitch offset
@@ -565,6 +594,11 @@ impl GrandBouleEngine {
         for voice in self.voices.iter_mut() {
             voice.kill();
         }
+        self.pedals.clear_playing_keys();
+        self.soundboard.reset();
+        self.sympathetic.reset();
+        self.noise.reset();
+        self.quiet_block_count = QUIET_BLOCKS_BEFORE_SLEEP;
     }
 
     /// Expose the key fundamental frequency (used by the UI for highlights).
@@ -582,6 +616,23 @@ mod tests {
         let mut engine = GrandBouleEngine::new(48_000.0, 4);
         engine.note_on(60, 0.8);
         assert!(engine.voices.iter().any(|voice| !voice.is_idle()));
+    }
+
+    #[test]
+    fn all_notes_off_preserves_pedal_controller_state() {
+        let mut engine = GrandBouleEngine::new(48_000.0, 4);
+        engine.set_sustain(0.8);
+        engine.set_una_corda(true);
+        engine.note_on(60, 0.8);
+        engine.set_sostenuto(true);
+
+        engine.all_notes_off();
+
+        assert_eq!(engine.pedals.sustain_position(), 0.8);
+        assert!(engine.pedals.una_corda());
+        assert!(engine.pedals.sostenuto());
+        let key = midi_to_key(60).expect("middle C is in the piano range");
+        assert!(!engine.pedals.key_is_held(key));
     }
 
     #[test]
@@ -715,7 +766,13 @@ mod tests {
     /// decay to (near) silence instead of ringing on intrinsic string decay.
     #[test]
     fn sustain_pedal_release_decays_output_to_silence() {
-        fn render(engine: &mut GrandBouleEngine, left: &mut [f32], right: &mut [f32], seconds: f32, sr: f32) {
+        fn render(
+            engine: &mut GrandBouleEngine,
+            left: &mut [f32],
+            right: &mut [f32],
+            seconds: f32,
+            sr: f32,
+        ) {
             let blocks = (seconds * sr / left.len() as f32) as usize;
             for _ in 0..blocks {
                 left.fill(0.0);
@@ -723,7 +780,12 @@ mod tests {
                 engine.process_block(left, right);
             }
         }
-        fn window_energy(engine: &mut GrandBouleEngine, left: &mut [f32], right: &mut [f32], sr: f32) -> f32 {
+        fn window_energy(
+            engine: &mut GrandBouleEngine,
+            left: &mut [f32],
+            right: &mut [f32],
+            sr: f32,
+        ) -> f32 {
             let mut energy = 0.0_f32;
             let blocks = (0.1 * sr / left.len() as f32) as usize;
             for _ in 0..blocks {
@@ -752,7 +814,10 @@ mod tests {
         render(&mut engine, &mut left, &mut right, 1.8, sr);
         let late = window_energy(&mut engine, &mut left, &mut right, sr); // ~2 s after pedal up
 
-        assert!(early > 1.0e-6, "sustained note was already dead at pedal up: {early}");
+        assert!(
+            early > 1.0e-6,
+            "sustained note was already dead at pedal up: {early}"
+        );
         assert!(
             late < early * 0.01,
             "note still ringing 2s after pedal release: early={early} late={late}"
@@ -1080,7 +1145,8 @@ mod tests {
     #[test]
     fn per_note_pitch_bend_keeps_the_string_ringing_through_the_retune() {
         let bent = render_bent_tail(Some(7.0));
-        let energy: f32 = bent.iter().map(|sample| sample * sample).sum::<f32>() / bent.len() as f32;
+        let energy: f32 =
+            bent.iter().map(|sample| sample * sample).sum::<f32>() / bent.len() as f32;
 
         // A retune that reset the biquad state would silence the note; the
         // string must still be sounding after it.

@@ -33,6 +33,11 @@ import { createReadyHandshake, ensureWorkletRegistered } from '#/infra/audioWork
 
 import grandBouleProcessorUrl from '../services/grandBouleProcessor.ts?worker&url';
 import grandBouleOfflineProcessorUrl from '../worklets/grandBouleOfflineProcessor.ts?worker&url';
+import {
+    GRAND_BOULE_CONTROL_HEADER_BYTES,
+    GRAND_BOULE_CONTROL_INT_COUNT,
+    GRAND_BOULE_SLEEP_HEAD_IDX,
+} from '../worklets/grandBouleRingProtocol';
 
 import { dropoutCounters } from './dropoutCounter';
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
@@ -41,8 +46,7 @@ const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 
 /** Ring buffer: 8192 stereo frames ≈ 170 ms at 48 kHz. */
 const RING_FRAMES = 8192;
-const HEADER_BYTES = 2 * Int32Array.BYTES_PER_ELEMENT; // writeHead + readHead
-const SAB_BYTES = HEADER_BYTES + RING_FRAMES * 2 * Float32Array.BYTES_PER_ELEMENT;
+const SAB_BYTES = GRAND_BOULE_CONTROL_HEADER_BYTES + RING_FRAMES * 2 * Float32Array.BYTES_PER_ELEMENT;
 
 /**
  * Grand Boule uses its own fetcher (not the shared cache) because it appends
@@ -144,6 +148,10 @@ function createWorkerRingTransport({ ctx, wasmBytes }: CreateGrandBouleTransport
     // Create SAB ring buffer shared between Worker and AudioWorklet.
     // Requires cross-origin isolation (COOP + COEP headers) — guarded above.
     const sab = new SharedArrayBuffer(SAB_BYTES);
+    const controls = new Int32Array(sab, 0, GRAND_BOULE_CONTROL_INT_COUNT);
+    // Distinguish the not-yet-initialised producer from a producer that has
+    // deliberately gone to sleep at frame zero.
+    Atomics.store(controls, GRAND_BOULE_SLEEP_HEAD_IDX, -1);
 
     // One Int32 the worklet publishes its render-cursor offset into, so the
     // engine worker can place a scheduled note in the block whose frames the

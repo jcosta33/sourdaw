@@ -19,12 +19,14 @@ Object.defineProperty(globalThis, 'self', { configurable: true, value: selfShim 
 
 const calls: Array<{ method: string; args: unknown[] }> = [];
 let processShouldThrow = false;
+let lifecycleState = 3;
 
 class GrandBouleInstanceMock {
     note_on(note: number, velocity: number): void {
         calls.push({ method: 'note_on', args: [note, velocity] });
     }
     note_on_with_channel(note: number, velocity: number, _channel: number): void {
+        lifecycleState = 0;
         calls.push({ method: 'note_on', args: [note, velocity] });
     }
     note_off(note: number): void {
@@ -52,6 +54,7 @@ class GrandBouleInstanceMock {
         calls.push({ method: 'load_attack_clip', args: [key, samples] });
     }
     all_notes_off(): void {
+        lifecycleState = 3;
         calls.push({ method: 'all_notes_off', args: [] });
     }
     process(): number {
@@ -62,6 +65,9 @@ class GrandBouleInstanceMock {
     }
     get_right_ptr(): number {
         return 0;
+    }
+    lifecycle_state(): number {
+        return lifecycleState;
     }
 }
 
@@ -90,7 +96,7 @@ vi.stubGlobal(
 
 // A real SharedArrayBuffer-backed control plane the init path parses.
 const RING_FRAMES = 128 * 8; // enough for TARGET_AHEAD (128*6)
-const HEADER = 2 * Int32Array.BYTES_PER_ELEMENT;
+const HEADER = 7 * Int32Array.BYTES_PER_ELEMENT;
 const SAB = new SharedArrayBuffer(HEADER + RING_FRAMES * 2 * Float32Array.BYTES_PER_ELEMENT);
 
 vi.mock('../../wasm/daw_dsp.js', () => ({
@@ -121,8 +127,9 @@ describe('Grand Boule engine worker control plane', () => {
         posted.length = 0;
         queuedYields.length = 0;
         processShouldThrow = false;
+        lifecycleState = 3;
         // Reset SAB heads so each init starts clean.
-        const ints = new Int32Array(SAB, 0, 2);
+        const ints = new Int32Array(SAB, 0, 7);
         Atomics.store(ints, 0, 0);
         Atomics.store(ints, 1, 0);
     });
@@ -138,13 +145,12 @@ describe('Grand Boule engine worker control plane', () => {
         expect(calls).toEqual([]);
     });
 
-    it('init parses the SAB, builds the instance, posts ready and schedules the first render', async () => {
+    it('init parses the SAB, builds the instance, posts ready and leaves a cold DSP asleep', async () => {
         await loadWorker();
         send({ type: 'init', wasmBytes: MINIMAL_WASM.buffer, sab: SAB, sampleRate: 48000 });
 
         expect(posted.some((m) => m.type === 'ready')).toBe(true);
-        // The render yield was scheduled (captured, not run) — proving scheduleRender fired.
-        expect(queuedYields).toHaveLength(1);
+        expect(queuedYields).toHaveLength(0);
     });
 
     it('stop halts the render loop (a subsequent queued yield is a no-op)', async () => {
@@ -170,8 +176,13 @@ describe('Grand Boule engine worker control plane', () => {
         send({ type: 'allNotesOff' });
 
         expect(method('note_on')!.args).toEqual([60, 90]);
+        expect(queuedYields).toHaveLength(1);
         expect(method('note_off')!.args).toEqual([60]);
         expect(calls.some((c) => c.method === 'all_notes_off')).toBe(true);
+        const controls = new Int32Array(SAB, 0, 7);
+        expect(Atomics.load(controls, 4)).toBe(3);
+        expect(Atomics.load(controls, 5)).toBe(1);
+        expect(Atomics.load(controls, 6)).toBe(Atomics.load(controls, 0));
     });
 
     it('maps known params through PARAM_MAP and falls back to the raw name', async () => {

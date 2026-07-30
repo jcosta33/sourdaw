@@ -79,6 +79,8 @@ type PostMessageSpy = ReturnType<typeof vi.fn<(message: unknown, transfer?: read
 /** The `init` payload out of a `postMessage` spy's recorded calls, if it sent one. */
 type PostedInit = {
     type: 'init';
+    sab?: unknown;
+    dropoutSab?: unknown;
     syncSab?: unknown;
     contextFrame?: number;
     countPreRollStarvation?: boolean;
@@ -87,8 +89,8 @@ type PostedInit = {
 function findInitMessage(spy: PostMessageSpy): PostedInit | undefined {
     for (const [message] of spy.mock.calls) {
         if (message !== null && typeof message === 'object' && 'type' in message && message.type === 'init') {
-            const { syncSab, contextFrame, countPreRollStarvation } = message as PostedInit;
-            return { type: 'init', syncSab, contextFrame, countPreRollStarvation };
+            const { sab, dropoutSab, syncSab, contextFrame, countPreRollStarvation } = message as PostedInit;
+            return { type: 'init', sab, dropoutSab, syncSab, contextFrame, countPreRollStarvation };
         }
     }
     return undefined;
@@ -156,10 +158,10 @@ describe('createGrandBouleNode', () => {
             lastWorkletNode = instance;
             return instance;
         }
-        class FakeSharedArrayBuffer {
-            constructor(_byteLength: number) {
-                sharedArrayBuffersAllocated++;
-            }
+        const NativeSharedArrayBuffer = globalThis.SharedArrayBuffer;
+        function FakeSharedArrayBuffer(byteLength: number) {
+            sharedArrayBuffersAllocated++;
+            return new NativeSharedArrayBuffer(byteLength);
         }
         vi.stubGlobal('Worker', FakeWorker);
         vi.stubGlobal('AudioWorkletNode', FakeWorkletNode);
@@ -233,11 +235,14 @@ describe('createGrandBouleNode', () => {
         // ring starvation is tallied instead of silently emitting silence (RT-10),
         // plus the sync slot it publishes its render-cursor offset into — the only
         // thing that tells the engine worker where the context clock stands.
-        expect(nodePostMessage).toHaveBeenCalledWith({
+        const workletInit = findInitMessage(nodePostMessage);
+        const workerInit = findInitMessage(workerPostMessage);
+        expect(workletInit).toEqual({
             type: 'init',
-            sab: expect.anything(),
+            sab: workerInit?.sab,
             dropoutSab: dropoutCounters.getSab(),
-            syncSab: expect.anything(),
+            syncSab: workerInit?.syncSab,
+            contextFrame: undefined,
             countPreRollStarvation: false,
         });
     });

@@ -38,9 +38,9 @@ function makeSab(ringFrames: number): {
     leftRing: Float32Array;
     rightRing: Float32Array;
 } {
-    const headerBytes = 2 * Int32Array.BYTES_PER_ELEMENT;
+    const headerBytes = 7 * Int32Array.BYTES_PER_ELEMENT;
     const sab = new SharedArrayBuffer(headerBytes + ringFrames * 2 * Float32Array.BYTES_PER_ELEMENT);
-    const controlInts = new Int32Array(sab, 0, 2);
+    const controlInts = new Int32Array(sab, 0, 7);
     const leftRing = new Float32Array(sab, headerBytes, ringFrames);
     const rightRing = new Float32Array(sab, headerBytes + ringFrames * Float32Array.BYTES_PER_ELEMENT, ringFrames);
     return { controlInts, leftRing, rightRing };
@@ -141,12 +141,12 @@ describe('producer release ↔ consumer acquire round-trip', () => {
         const out0a = new Float32Array(BLOCK);
         const out1a = new Float32Array(BLOCK);
         const r1 = readBlockAcquire(controlInts, leftRing, rightRing, ringFrames, out0a, out1a, BLOCK);
-        Atomics.store(controlInts, 1, r1.nextReadHead);
         const out0b = new Float32Array(BLOCK);
         const out1b = new Float32Array(BLOCK);
         const r2 = readBlockAcquire(controlInts, leftRing, rightRing, ringFrames, out0b, out1b, BLOCK);
-        Atomics.store(controlInts, 1, r2.nextReadHead);
 
+        expect(r1).toBe(true);
+        expect(r2).toBe(true);
         expect(Array.from(out0a)).toEqual(Array.from(blocks[0]!));
         expect(Array.from(out0b)).toEqual(Array.from(blocks[1]!));
 
@@ -156,7 +156,7 @@ describe('producer release ↔ consumer acquire round-trip', () => {
         const out1c = new Float32Array(BLOCK);
         const r3 = readBlockAcquire(controlInts, leftRing, rightRing, ringFrames, out0c, out1c, BLOCK);
 
-        expect(r3.consumed).toBe(BLOCK);
+        expect(r3).toBe(true);
         expect(Array.from(out0c)).toEqual(Array.from(blocks[2]!));
         expect(Array.from(out1c)).toEqual(Array.from(blocks[2]!));
     });

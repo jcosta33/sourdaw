@@ -40,13 +40,26 @@ const LEFT_PTR = 0; // byte offset 0
 const RIGHT_PTR = MEM_FRAMES * Float32Array.BYTES_PER_ELEMENT; // byte offset 512
 
 let processCalls = 0;
+let noteOnCalls = 0;
+let lifecycleState = 3;
+let sleepAfterProcessCalls: number | null = null;
 class GrandBouleInstanceMock {
+    note_on_with_channel(): void {
+        noteOnCalls++;
+        lifecycleState = 0;
+    }
     process(): number {
         processCalls++;
+        if (sleepAfterProcessCalls !== null && processCalls >= sleepAfterProcessCalls) {
+            lifecycleState = 3;
+        }
         return LEFT_PTR;
     }
     get_right_ptr(): number {
         return RIGHT_PTR;
+    }
+    lifecycle_state(): number {
+        return lifecycleState;
     }
 }
 
@@ -65,7 +78,7 @@ beforeAll(async () => {
 });
 
 function makeSab(ringFrames: number): SharedArrayBuffer {
-    const HEADER = 2 * Int32Array.BYTES_PER_ELEMENT;
+    const HEADER = 7 * Int32Array.BYTES_PER_ELEMENT;
     return new SharedArrayBuffer(HEADER + ringFrames * 2 * Float32Array.BYTES_PER_ELEMENT);
 }
 
@@ -84,39 +97,177 @@ afterEach(() => {
 });
 
 describe('grandBouleEngineWorker renderLoop', () => {
-    it('renders blocks up to TARGET_AHEAD headroom, then sleeps 2ms when the buffer is full', async () => {
+    it('leaves a cold sleeping DSP idle until a note wakes it', async () => {
         processCalls = 0;
+        noteOnCalls = 0;
+        lifecycleState = 3;
+        sleepAfterProcessCalls = null;
+        const sab = makeSab(128 * 8);
+
+        sendInit(sab);
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        expect(processCalls).toBe(0);
+
+        onmessage({ data: { type: 'noteOn', midiNote: 60, velocity: 1 } } as MessageEvent);
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        expect(processCalls).toBeGreaterThan(0);
+    });
+
+    it('keeps rendering toward a future-frame note while the DSP itself is still asleep', async () => {
+        processCalls = 0;
+        noteOnCalls = 0;
+        lifecycleState = 3;
+        sleepAfterProcessCalls = null;
+        const sab = makeSab(128 * 8);
+
+        sendInit(sab);
+        onmessage({ data: { type: 'noteOn', midiNote: 60, velocity: 1, sampleFrame: 384 } } as MessageEvent);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+
+        expect(noteOnCalls).toBe(1);
+        expect(processCalls).toBeGreaterThanOrEqual(4);
+    });
+
+    it('renders blocks up to TARGET_AHEAD headroom, then waits for consumer demand', async () => {
+        processCalls = 0;
+        lifecycleState = 0;
+        sleepAfterProcessCalls = null;
         // Large ring (128*8) so the loop is bounded by TARGET_AHEAD, not by
         // ring capacity.
         const sab = makeSab(128 * 8);
 
         sendInit(sab);
 
-        // init posts 'ready' and calls scheduleRender() → the real MessageChannel
-        // delivers renderLoop as a macrotask; the 2ms reschedule (setTimeout)
-        // also fires. Drain macrotasks with real async ticks.
+        // Init schedules the active mock engine; drain the MessageChannel task.
         await new Promise((resolve) => setTimeout(resolve, 20));
 
         // TARGET_AHEAD = 128*6 = 768; the loop renders 6 blocks then breaks on
-        // `buffered >= TARGET_AHEAD` and schedules setTimeout(scheduleRender, 2).
+        // `buffered >= TARGET_AHEAD` and waits for a render request.
         expect(processCalls).toBeGreaterThanOrEqual(6);
         // The ready handshake was posted.
         expect(posted.some((m) => m.type === 'ready')).toBe(true);
     });
 
-    it('immediately reschedules when the ring fills before reaching TARGET_AHEAD', async () => {
+    it('renders again only after the consumer advances the ring and requests work', async () => {
         processCalls = 0;
+        lifecycleState = 0;
+        sleepAfterProcessCalls = null;
+        const sab = makeSab(128 * 8);
+        const controls = new Int32Array(sab, 0, 7);
+
+        sendInit(sab);
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        const beforeDemand = processCalls;
+        Atomics.store(controls, 1, 128);
+        Atomics.add(controls, 2, 1);
+        Atomics.notify(controls, 2);
+        await new Promise((resolve) => setTimeout(resolve, 10));
+
+        expect(processCalls).toBeGreaterThan(beforeDemand);
+    });
+
+    it('rechecks ring capacity after sampling the request generation', async () => {
+        processCalls = 0;
+        lifecycleState = 0;
+        sleepAfterProcessCalls = null;
+        const sab = makeSab(128 * 8);
+        const controls = new Int32Array(sab, 0, 7);
+        const originalLoad = Atomics.load;
+        let demandInjected = false;
+        const loadSpy = vi.spyOn(Atomics, 'load').mockImplementation((typedArray, index) => {
+            if (typedArray.buffer === sab && index === 2 && !demandInjected) {
+                demandInjected = true;
+                Atomics.store(controls, 1, 128);
+                Atomics.add(controls, 2, 1);
+            }
+            return originalLoad(typedArray, index);
+        });
+
+        try {
+            sendInit(sab);
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            expect(demandInjected).toBe(true);
+            expect(processCalls).toBeGreaterThan(6);
+        } finally {
+            loadSpy.mockRestore();
+        }
+    });
+
+    it('does not miss a request-generation change during waiter enrollment', async () => {
+        processCalls = 0;
+        lifecycleState = 0;
+        sleepAfterProcessCalls = null;
+        const sab = makeSab(128 * 8);
+        const controls = new Int32Array(sab, 0, 7);
+        const originalWaitAsync = Atomics.waitAsync;
+        let demandInjected = false;
+        const waitSpy = vi.spyOn(Atomics, 'waitAsync').mockImplementation((typedArray, index, value, timeout) => {
+            if (typedArray.buffer === sab && index === 2 && !demandInjected) {
+                demandInjected = true;
+                Atomics.store(controls, 1, 128);
+                Atomics.add(controls, 2, 1);
+                Atomics.notify(controls, 2);
+            }
+            return originalWaitAsync(typedArray, index, value, timeout);
+        });
+
+        try {
+            sendInit(sab);
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            expect(demandInjected).toBe(true);
+            expect(processCalls).toBeGreaterThan(6);
+        } finally {
+            waitSpy.mockRestore();
+        }
+    });
+
+    it('stops producing after the DSP publishes sleep and preserves the drain boundary', async () => {
+        processCalls = 0;
+        lifecycleState = 0;
+        sleepAfterProcessCalls = 2;
+        const sab = makeSab(128 * 8);
+        const controls = new Int32Array(sab, 0, 7);
+        const originalStore = Atomics.store;
+        const publicationOrder: number[] = [];
+        const storeSpy = vi.spyOn(Atomics, 'store').mockImplementation((typedArray, index, value) => {
+            if (typedArray.buffer === sab && (index === 3 || index === 4)) {
+                publicationOrder.push(index);
+            }
+            return originalStore(typedArray, index, value);
+        });
+
+        try {
+            sendInit(sab);
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            const sleepingProcessCalls = processCalls;
+            const sleepHead = Atomics.load(controls, 3);
+
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            expect(sleepingProcessCalls).toBe(2);
+            expect(processCalls).toBe(sleepingProcessCalls);
+            expect(sleepHead).toBe(Atomics.load(controls, 0));
+            expect(Atomics.load(controls, 4)).toBe(3);
+            expect(publicationOrder.slice(-2)).toEqual([3, 4]);
+        } finally {
+            storeSpy.mockRestore();
+        }
+    });
+
+    it('waits instead of spinning when the ring fills before reaching TARGET_AHEAD', async () => {
+        processCalls = 0;
+        lifecycleState = 0;
+        sleepAfterProcessCalls = null;
         // Small ring: one block (128) fills it. After one render, buffered=128
         // and ringFrames-buffered = 0 < BLOCK_SIZE → break on the ring-full
-        // branch. buffered (128) < TARGET_AHEAD (768) → scheduleRender() now.
+        // branch and waits for the consumer to free space.
         const sab = makeSab(128);
 
         sendInit(sab);
         await new Promise((resolve) => setTimeout(resolve, 20));
 
-        // At least one block rendered; the loop broke on ring-full and the
-        // immediate-reschedule branch (line 169 else) ran.
+        // Exactly one block fits; no polling render should run while it remains full.
         expect(processCalls).toBeGreaterThanOrEqual(1);
+        expect(processCalls).toBeLessThanOrEqual(1);
     });
 
     it('no-ops renderLoop before init (module-level guards are all null)', async () => {
@@ -125,6 +276,8 @@ describe('grandBouleEngineWorker renderLoop', () => {
         // a stop then re-init is consistent: stop sets running=false so a
         // pending render is a no-op guard return.
         processCalls = 0;
+        lifecycleState = 0;
+        sleepAfterProcessCalls = null;
         const sab = makeSab(128 * 8);
         sendInit(sab);
         onmessage({ data: { type: 'stop' } } as MessageEvent);
