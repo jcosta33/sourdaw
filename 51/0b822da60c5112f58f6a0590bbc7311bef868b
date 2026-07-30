@@ -1,0 +1,224 @@
+src/modules/AudioEngine/services/__tests__/scoringProcessorWasmViews.spec.ts
+  s_ac9b259eab20ba::t_0c1d860985066f 63,71
+  s_ac9b259eab20ba::t_b72901290575ca 92,110
+src/modules/AudioEngine/services/__tests__/bacteriaProcessorWasmViews.spec.ts
+  s_ac9b259eab20ba::t_0c1d860985066f 87,95
+  s_ac9b259eab20ba::t_6578716294ef16 122,146
+src/modules/AudioEngine/engine/ScoringNode.ts
+  s_ac9b259eab20ba::t_86410bfe6cba50 93,110
+  s_ac9b259eab20ba::t_63c535fa4e8010 8,83
+src/modules/AudioEngine/services/proofChamberProcessor.ts
+  s_ac9b259eab20ba::t_7675fdd3c3bd81 53,55
+  s_ac9b259eab20ba::t_94cf73459eadbb 91-92
+  s_ac9b259eab20ba::t_3f376434ea9278 10,17,35,63-67
+src/modules/AudioEngine/services/__tests__/levainProcessor.spec.ts
+  s_ac9b259eab20ba::t_0c1d860985066f 109,117
+  s_ac9b259eab20ba::t_aded865467c45b 144,153-154,159-163,165,172,187,204,217,229,247,267,281,298,342,354,377,386,403,422
+src/modules/AudioEngine/services/levainProcessor.ts
+  s_ac9b259eab20ba::t_94cf73459eadbb 172-173
+  s_ac9b259eab20ba::t_7675fdd3c3bd81 124,126
+  s_ac9b259eab20ba::t_3f376434ea9278 8,25,85,139-143
+src/modules/AudioEngine/services/__tests__/scoringProcessor.spec.ts
+  s_ac9b259eab20ba::t_0c1d860985066f 81,89
+  s_ac9b259eab20ba::t_3bed98b2c07d2d 115-116,121-125,127,134,167,176,192,213,224
+src/modules/AudioEngine/services/__tests__/grinderProcessorWasmViews.spec.ts
+  s_ac9b259eab20ba::t_b72901290575ca 110,128
+  s_ac9b259eab20ba::t_0c1d860985066f 81,89
+src/modules/AudioEngine/workers/grandBouleEngineWorker.ts
+  s_ac9b259eab20ba::t_74db9461e4c905 12,139,156,300,371
+src/modules/AudioEngine/services/proofProcessor.ts
+  s_ac9b259eab20ba::t_3f376434ea9278 14,19,51-55
+  s_ac9b259eab20ba::t_7675fdd3c3bd81 41,43
+  s_ac9b259eab20ba::t_94cf73459eadbb 79-80
+src/infra/audioWorklet/__tests__/workletInitShared.spec.ts
+  s_ac9b259eab20ba::t_19cbfb5728687f 3,59,67,69,74,77,79,81,84,86,91,95-96,99-100,102-103,129,134-135,140-160,163-164,166,168
+  s_ac9b259eab20ba::t_44c8aadd75081a 105-118
+  s_ac9b259eab20ba::t_10c7275032491d 104
+src/modules/AudioEngine/engine/ProofChamberNode.ts
+  s_ac9b259eab20ba::t_63c535fa4e8010 7,49
+  s_ac9b259eab20ba::t_86410bfe6cba50 59,68
+src/modules/AudioEngine/services/__tests__/proofChamberProcessor.spec.ts
+  s_ac9b259eab20ba::t_c7911fbda989db 113-114,121,123-124,131,139,169,178,206,233,255,278,326,336,345,364,387
+  s_ac9b259eab20ba::t_0c1d860985066f 78,86
+src/modules/AudioEngine/workers/__tests__/grandBouleEngineWorker.dispatch.spec.ts
+  s_ac9b259eab20ba::t_92d72e08cbd549 107,150,158,171,190,205,219,231
+src/modules/AudioEngine/services/__tests__/kneadProcessorWasmViews.spec.ts
+  s_ac9b259eab20ba::t_bd2789eaceed38 15,33
+  s_ac9b259eab20ba::t_0c1d860985066f 97,105
+  s_ac9b259eab20ba::t_b72901290575ca 133
+src/modules/AudioEngine/services/resolveProcessorWasmModule.ts
+  s_ac9b259eab20ba::t_7675fdd3c3bd81 1-9
+  s_ac9b259eab20ba::t_e34335c0bcee5a 10-14
+src/modules/AudioEngine/engine/__tests__/GrandBouleNode.spec.ts
+  s_ac9b259eab20ba::t_c19792730f990f 17,148-150,152
+  s_ac9b259eab20ba::t_a8c683f71e71df 108-117
+src/modules/AudioEngine/services/__tests__/levainProcessorWasmViews.spec.ts
+  s_ac9b259eab20ba::t_b72901290575ca 98,116
+  s_ac9b259eab20ba::t_0c1d860985066f 70,78
+src/modules/AudioEngine/services/__tests__/bacteriaProcessor.spec.ts
+  s_ac9b259eab20ba::t_581c1c1a34a871 125-126,134,157,172,208,220,233,265,282,297
+  s_ac9b259eab20ba::t_0c1d860985066f 90,98
+src/modules/AudioEngine/services/__tests__/toasterProcessor.spec.ts
+  s_ac9b259eab20ba::t_0c1d860985066f 108,116
+  s_ac9b259eab20ba::t_bd2789eaceed38 4,24
+  s_ac9b259eab20ba::t_a137edfcf902f6 435,443-444,452,465,477,493,506,517,549,574,595-596,607,618,643,662,680
+  s_ac9b259eab20ba::t_ff1b7305401bf2 139,190,202,221,252,270,299,317,333,352,365,376,405
+src/modules/AudioEngine/engine/BacteriaNode.ts
+  s_ac9b259eab20ba::t_e92c6bd692dca8 4
+  s_ac9b259eab20ba::t_63c535fa4e8010 9,85
+  s_ac9b259eab20ba::t_86410bfe6cba50 95,120
+src/modules/AudioEngine/services/fermenterProcessor.ts
+  s_ac9b259eab20ba::t_3f376434ea9278 8,24,99,142-146
+  s_ac9b259eab20ba::t_94cf73459eadbb 169-170
+  s_ac9b259eab20ba::t_7675fdd3c3bd81 132,134
+src/modules/AudioEngine/services/scoringProcessor.ts
+  s_ac9b259eab20ba::t_3f376434ea9278 11,18,23,55-59
+  s_ac9b259eab20ba::t_94cf73459eadbb 84-85
+  s_ac9b259eab20ba::t_7675fdd3c3bd81 45,47
+src/modules/AudioEngine/services/__tests__/proofChamberProcessorWasmViews.spec.ts
+  s_ac9b259eab20ba::t_b72901290575ca 93,111
+  s_ac9b259eab20ba::t_0c1d860985066f 64,72
+src/modules/AudioEngine/engine/ToasterNode.ts
+  s_ac9b259eab20ba::t_63c535fa4e8010 9,120
+  s_ac9b259eab20ba::t_2361d360314291 130,176
+  s_ac9b259eab20ba::t_e92c6bd692dca8 4
+src/modules/AudioEngine/useCases/offlineRender/__tests__/offlineNoteScheduleTiming.spec.ts
+  s_ac9b259eab20ba::t_6b9dad7f409df1 137-140
+  s_ac9b259eab20ba::t_2fbd38041846b2 141
+src/modules/AudioEngine/services/__tests__/fermenterProcessor.spec.ts
+  s_ac9b259eab20ba::t_0c1d860985066f 148,156,218,234,298,318,337,360,369,397,408,421,432,458,483,504,527,548,571,624,634,654
+  s_ac9b259eab20ba::t_c326ea6ced92e7 190-191,197-201,203
+src/modules/AudioEngine/engine/GrinderNode.ts
+  s_ac9b259eab20ba::t_a39174d4484c70 6,77
+  s_ac9b259eab20ba::t_86410bfe6cba50 87,150
+src/modules/AudioEngine/services/__tests__/wasmViewGrowthHarness.ts
+  s_ac9b259eab20ba::t_824eca2361dbf6 148,157,165
+src/modules/AudioEngine/engine/FermenterNode.ts
+  s_ac9b259eab20ba::t_86410bfe6cba50 153,184
+  s_ac9b259eab20ba::t_63c535fa4e8010 13,143
+  s_ac9b259eab20ba::t_e92c6bd692dca8 5,131
+src/modules/AudioEngine/services/toasterProcessor.ts
+  s_ac9b259eab20ba::t_3f376434ea9278 8,22,116,188-192
+  s_ac9b259eab20ba::t_94cf73459eadbb 212-213
+  s_ac9b259eab20ba::t_7675fdd3c3bd81 170,172
+src/modules/AudioEngine/engine/__tests__/LevainNode.spec.ts
+  s_ac9b259eab20ba::t_0384e7fa0b032f 20
+src/modules/AudioEngine/AGENTS.md
+  s_ac9b259eab20ba::t_1bdf9ab7d0aa56 9
+docs/architecture/07-wasm-dsp-pipeline.md
+  s_ac9b259eab20ba::t_1bdf9ab7d0aa56 37,43-48
+src/modules/AudioEngine/services/__tests__/resolveProcessorWasmModule.spec.ts
+  s_ac9b259eab20ba::t_9e7919a81affae 1-24
+src/modules/AudioEngine/engine/__tests__/ProofChamberNode.spec.ts
+  s_ac9b259eab20ba::t_0384e7fa0b032f 10
+src/modules/AudioEngine/engine/GrandBouleNode.ts
+  s_ac9b259eab20ba::t_1b93beb5fe9028 152
+  s_ac9b259eab20ba::t_a39174d4484c70 16,109,153
+src/modules/AudioEngine/engine/__tests__/GrinderNode.spec.ts
+  s_ac9b259eab20ba::t_0384e7fa0b032f 12
+  s_ac9b259eab20ba::t_0f651f57a5a965 96-98,100
+src/modules/AudioEngine/engine/__tests__/FermenterNode.spec.ts
+  s_ac9b259eab20ba::t_0384e7fa0b032f 18
+  s_ac9b259eab20ba::t_ab9506c6c56a74 330
+src/modules/AudioEngine/engine/__tests__/BacteriaNode.spec.ts
+  s_ac9b259eab20ba::t_0384e7fa0b032f 10
+src/infra/audioWorklet/workletInitShared.ts
+  s_ac9b259eab20ba::t_a6988268ff39f8 6,53-54,56,59-62,64-65,73-74,76,80-81
+src/modules/AudioEngine/services/__tests__/grinderProcessorTestHarness.ts
+  s_ac9b259eab20ba::t_bd2789eaceed38 20
+  s_ac9b259eab20ba::t_9da4b50a5e1cb3 143,156
+  s_ac9b259eab20ba::t_7a6ad4356b2094 157
+src/modules/AudioEngine/engine/LevainNode.ts
+  s_ac9b259eab20ba::t_86410bfe6cba50 104,145
+  s_ac9b259eab20ba::t_e92c6bd692dca8 5,75
+  s_ac9b259eab20ba::t_63c535fa4e8010 10,94
+src/modules/AudioEngine/engine/__tests__/grinderControlRateParams.spec.ts
+  s_ac9b259eab20ba::t_0f651f57a5a965 7
+src/modules/AudioEngine/services/bacteriaProcessor.ts
+  s_ac9b259eab20ba::t_7675fdd3c3bd81 78,80
+  s_ac9b259eab20ba::t_3f376434ea9278 12,56,88-92
+  s_ac9b259eab20ba::t_94cf73459eadbb 120-121
+src/modules/AudioEngine/services/__tests__/kneadProcessor.spec.ts
+  s_ac9b259eab20ba::t_bd2789eaceed38 7,34
+  s_ac9b259eab20ba::t_333c0d2ea940db 129,161,196,231,249,295,307,332,347,369,390,411
+  s_ac9b259eab20ba::t_0c1d860985066f 87,112
+src/modules/AudioEngine/engine/GlutenNode.ts
+  s_ac9b259eab20ba::t_63c535fa4e8010 11,76
+  s_ac9b259eab20ba::t_86410bfe6cba50 86,111
+  s_ac9b259eab20ba::t_e92c6bd692dca8 4
+src/modules/AudioEngine/engine/ProofNode.ts
+  s_ac9b259eab20ba::t_63c535fa4e8010 11,98
+  s_ac9b259eab20ba::t_2361d360314291 106,138
+  s_ac9b259eab20ba::t_e92c6bd692dca8 4
+src/modules/AudioEngine/services/kneadProcessor.ts
+  s_ac9b259eab20ba::t_7675fdd3c3bd81 87,89
+  s_ac9b259eab20ba::t_1787394edea4ac 121-122
+  s_ac9b259eab20ba::t_3f376434ea9278 10-11,39,94-98
+src/modules/AudioEngine/engine/__tests__/KneadNode.spec.ts
+  s_ac9b259eab20ba::t_0384e7fa0b032f 10
+src/modules/AudioEngine/workers/__tests__/grandBouleEngineWorker.renderLoop.spec.ts
+  s_ac9b259eab20ba::t_92d72e08cbd549 69,84
+src/modules/AudioEngine/engine/__tests__/GlutenNode.spec.ts
+  s_ac9b259eab20ba::t_ab9506c6c56a74 92,96
+  s_ac9b259eab20ba::t_0384e7fa0b032f 10
+src/modules/AudioEngine/services/grinderProcessor.ts
+  s_ac9b259eab20ba::t_94cf73459eadbb 309-310
+  s_ac9b259eab20ba::t_3f376434ea9278 13,146,268-272
+  s_ac9b259eab20ba::t_7675fdd3c3bd81 258,260
+src/modules/AudioEngine/engine/__tests__/ToasterNode.spec.ts
+  s_ac9b259eab20ba::t_0384e7fa0b032f 13
+src/modules/AudioEngine/services/glutenProcessor.ts
+  s_ac9b259eab20ba::t_7675fdd3c3bd81 90,92
+  s_ac9b259eab20ba::t_3f376434ea9278 12,67,100-104
+  s_ac9b259eab20ba::t_94cf73459eadbb 133-134
+src/modules/AudioEngine/services/__tests__/fermenterProcessorTelemetry.spec.ts
+  s_ac9b259eab20ba::t_0c1d860985066f 83,91
+  s_ac9b259eab20ba::t_b72901290575ca 110,238
+src/modules/AudioEngine/engine/KneadNode.ts
+  s_ac9b259eab20ba::t_a39174d4484c70 8,37
+  s_ac9b259eab20ba::t_2361d360314291 47,56-59
+src/modules/AudioEngine/engine/__tests__/ProofNodeCreate.spec.ts
+  s_ac9b259eab20ba::t_99af3bc84b4f23 8-10,18
+  s_ac9b259eab20ba::t_417319d3715760 52-57,64,66-67,125,129-130,132
+src/modules/AudioEngine/services/__tests__/fermenterProcessorWasmViews.spec.ts
+  s_ac9b259eab20ba::t_b72901290575ca 114,135
+  s_ac9b259eab20ba::t_0c1d860985066f 79,87
+src/modules/AudioEngine/services/__tests__/toasterProcessorWasmViews.spec.ts
+  s_ac9b259eab20ba::t_bd2789eaceed38 15,33
+  s_ac9b259eab20ba::t_0c1d860985066f 100,108
+  s_ac9b259eab20ba::t_b72901290575ca 128
+src/modules/AudioEngine/services/__tests__/telemetrySeqlockWriters.spec.ts
+  s_ac9b259eab20ba::t_6b9dad7f409df1 289-291,336-338
+src/modules/AudioEngine/services/__tests__/glutenProcessorWasmViews.spec.ts
+  s_ac9b259eab20ba::t_0c1d860985066f 81,89
+  s_ac9b259eab20ba::t_b72901290575ca 113,131
+src/modules/AudioEngine/engine/__tests__/ScoringNode.spec.ts
+  s_ac9b259eab20ba::t_0384e7fa0b032f 10
+src/modules/AudioEngine/services/__tests__/proofProcessor.spec.ts
+  s_ac9b259eab20ba::t_bd2789eaceed38 4,22
+  s_ac9b259eab20ba::t_0c1d860985066f 118,138
+  s_ac9b259eab20ba::t_dda74fe8089dc3 166,238-239,246,248-249,258,271,287,312,322,341,366,379,390,411
+src/modules/AudioEngine/services/__tests__/proofProcessorWasmViews.spec.ts
+  s_ac9b259eab20ba::t_0c1d860985066f 131,155
+  s_ac9b259eab20ba::t_dda74fe8089dc3 184,209,224,258
+  s_ac9b259eab20ba::t_bd2789eaceed38 14,32
+src/modules/AudioEngine/services/__tests__/glutenProcessor.spec.ts
+  s_ac9b259eab20ba::t_0c1d860985066f 103,111
+  s_ac9b259eab20ba::t_c0255492239f78 139-140,147,149-150,157,186,198,215,224,258,272,289,302,324,334,358,371,386,403
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "510b822da60c5112f58f6a0590bbc7311bef868b",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
