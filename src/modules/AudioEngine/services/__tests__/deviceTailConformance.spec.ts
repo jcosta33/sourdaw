@@ -119,13 +119,16 @@ function snapshotNode(nodes: readonly object[]): string {
  * rename; reading it turns the claim into a check.
  */
 const OFF_GRAPH_TAIL_ATTESTATION: Record<string, { file: string; consumes: string }> = {
-    // The FDN reads this value as an RT60 in seconds, clamped to 0.1..30, while
-    // the descriptor declares the same parameter as unitless 0..0.999 — so the
-    // knob's full travel reaches only about 0.1..1 s of reverb time. That is a
-    // known device defect, tracked outside this repository. The tail below
-    // deliberately matches what the engine does today rather than rescaling the
-    // value here: a rescale would change the sound of every saved project that
-    // uses this reverb, so it belongs with the device fix, not with export.
+    // `decay` is the unitless 0..0.999 coefficient the descriptor declares, and
+    // the FDN converts it to an RT60 in seconds itself via `decay_to_rt60_seconds`,
+    // so the knob's full travel reaches the engine's full ~0.1..30 s range.
+    //
+    // This comment used to say the opposite — that the FDN read the value as raw
+    // seconds and the knob therefore topped out near 1 s. That was true once and
+    // is not any more; the conversion now lives at the engine boundary and both
+    // sides are pinned (`fdn.rs` tests, plus the Rust/TS parity spec). The stale
+    // wording is worth calling out because prose describing a fixed defect as
+    // live is how a closed finding gets re-opened by someone auditing comments.
     'dutch-oven': { file: 'crates/proof-chamber/src/fdn.rs', consumes: 'decay_to_rt60_seconds' },
     'faust-zita-rev1-reverb': {
         file: 'src/modules/PluginHost/useCases/faustEngine/dsp/zita-rev1.dsp',
