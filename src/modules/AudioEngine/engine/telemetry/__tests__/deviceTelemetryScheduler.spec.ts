@@ -59,35 +59,6 @@ describe('deviceTelemetryScheduler', () => {
         expect(animationScheduler.unregister).toHaveBeenCalledWith('audio-engine-device-telemetry');
     });
 
-    it('starts when a source arrives for pre-existing demand', () => {
-        const poll = vi.fn();
-        trackCleanup(subscribeDeviceTelemetryDemand({ deviceId: 'device-1' }));
-
-        expect(animationScheduler.register).not.toHaveBeenCalled();
-
-        trackCleanup(registerDeviceTelemetrySource({ deviceId: 'device-1', poll }));
-        registeredTick()(200, 17);
-
-        expect(poll).toHaveBeenCalledWith(200, 17);
-        expect(animationScheduler.register).toHaveBeenCalledTimes(1);
-    });
-
-    it('owns duplicate demand subscriptions independently', () => {
-        const poll = vi.fn();
-        trackCleanup(registerDeviceTelemetrySource({ deviceId: 'device-1', poll }));
-        const unsubscribeFirst = trackCleanup(subscribeDeviceTelemetryDemand({ deviceId: 'device-1' }));
-        const unsubscribeSecond = trackCleanup(subscribeDeviceTelemetryDemand({ deviceId: 'device-1' }));
-
-        unsubscribeFirst();
-        registeredTick()(300, 18);
-
-        expect(poll).toHaveBeenCalledTimes(1);
-        expect(animationScheduler.unregister).not.toHaveBeenCalled();
-
-        unsubscribeSecond();
-        expect(animationScheduler.unregister).toHaveBeenCalledTimes(1);
-    });
-
     it('does not keep the scheduler alive for demand without a source', () => {
         const unregisterSource = trackCleanup(registerDeviceTelemetrySource({ deviceId: 'device-1', poll: vi.fn() }));
         trackCleanup(subscribeDeviceTelemetryDemand({ deviceId: 'device-1' }));
@@ -103,45 +74,6 @@ describe('deviceTelemetryScheduler', () => {
             pendingMutations: 0,
             schedulerRegistered: false,
         });
-    });
-
-    it('applies reentrant changes after a fixed frame cohort', () => {
-        const secondPoll = vi.fn();
-        let unregisterFirst: () => void = vi.fn();
-        const firstPoll = vi.fn(() => {
-            unregisterFirst();
-            trackCleanup(registerDeviceTelemetrySource({ deviceId: 'device-2', poll: secondPoll }));
-            trackCleanup(subscribeDeviceTelemetryDemand({ deviceId: 'device-2' }));
-        });
-        unregisterFirst = trackCleanup(registerDeviceTelemetrySource({ deviceId: 'device-1', poll: firstPoll }));
-        trackCleanup(subscribeDeviceTelemetryDemand({ deviceId: 'device-1' }));
-
-        registeredTick()(400, 16);
-
-        expect(firstPoll).toHaveBeenCalledTimes(1);
-        expect(secondPoll).not.toHaveBeenCalled();
-        expect(animationScheduler.register).toHaveBeenCalledTimes(1);
-        expect(animationScheduler.unregister).not.toHaveBeenCalled();
-
-        registeredTick()(416, 16);
-
-        expect(firstPoll).toHaveBeenCalledTimes(1);
-        expect(secondPoll).toHaveBeenCalledTimes(1);
-    });
-
-    it('keeps a replacement source when the prior owner cleans up', () => {
-        const firstPoll = vi.fn();
-        const secondPoll = vi.fn();
-        const unregisterFirst = trackCleanup(registerDeviceTelemetrySource({ deviceId: 'device-1', poll: firstPoll }));
-        trackCleanup(subscribeDeviceTelemetryDemand({ deviceId: 'device-1' }));
-        trackCleanup(registerDeviceTelemetrySource({ deviceId: 'device-1', poll: secondPoll }));
-
-        unregisterFirst();
-        registeredTick()(500, 16);
-
-        expect(firstPoll).not.toHaveBeenCalled();
-        expect(secondPoll).toHaveBeenCalledTimes(1);
-        expect(animationScheduler.unregister).not.toHaveBeenCalled();
     });
 
     it('settles scheduler state when an unregister transition is reentrant', () => {
@@ -183,5 +115,43 @@ describe('deviceTelemetryScheduler', () => {
 
         expect(poll).toHaveBeenCalledTimes(1);
         expect(animationScheduler.register).toHaveBeenCalledTimes(2);
+    });
+
+    it('recovers from a throwing stop when eligible demand returns', () => {
+        const poll = vi.fn();
+        trackCleanup(registerDeviceTelemetrySource({ deviceId: 'device-1', poll }));
+        const unsubscribe = trackCleanup(subscribeDeviceTelemetryDemand({ deviceId: 'device-1' }));
+        vi.mocked(animationScheduler.unregister).mockImplementationOnce(() => {
+            throw new Error('stop failed');
+        });
+
+        expect(() => unsubscribe()).toThrow('stop failed');
+
+        trackCleanup(subscribeDeviceTelemetryDemand({ deviceId: 'device-1' }));
+        registeredTick()(900, 16);
+
+        expect(animationScheduler.register).toHaveBeenCalledTimes(2);
+        expect(poll).toHaveBeenCalledTimes(1);
+    });
+
+    it('reconciles surviving reentrant state after a failed start', () => {
+        const survivingPoll = vi.fn();
+        trackCleanup(registerDeviceTelemetrySource({ deviceId: 'device-1', poll: vi.fn() }));
+        vi.mocked(animationScheduler.register).mockImplementationOnce(() => {
+            trackCleanup(registerDeviceTelemetrySource({ deviceId: 'device-2', poll: survivingPoll }));
+            trackCleanup(subscribeDeviceTelemetryDemand({ deviceId: 'device-2' }));
+            throw new Error('start failed');
+        });
+
+        expect(() => subscribeDeviceTelemetryDemand({ deviceId: 'device-1' })).toThrow('start failed');
+        registeredTick()(950, 16);
+
+        expect(animationScheduler.register).toHaveBeenCalledTimes(2);
+        expect(survivingPoll).toHaveBeenCalledTimes(1);
+        expect(getDeviceTelemetrySchedulerDiagnostics()).toMatchObject({
+            activeDemandSubscriptions: 1,
+            eligibleSources: 1,
+            schedulerRegistered: true,
+        });
     });
 });

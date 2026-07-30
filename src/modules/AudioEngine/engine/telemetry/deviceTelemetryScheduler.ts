@@ -148,6 +148,9 @@ function reconcileScheduler(): void {
         return;
     }
     isReconciling = true;
+    let failure: unknown;
+    let failed = false;
+    let retryAfterFailure = false;
     try {
         do {
             reconcileRequested = false;
@@ -156,12 +159,35 @@ function reconcileScheduler(): void {
                 animationScheduler.register(SCHEDULER_ID, tick);
                 schedulerRegistered = true;
             } else if (!shouldRun && schedulerRegistered) {
-                animationScheduler.unregister(SCHEDULER_ID);
                 schedulerRegistered = false;
+                animationScheduler.unregister(SCHEDULER_ID);
             }
         } while (requiresAnotherReconciliation());
+    } catch (error) {
+        failed = true;
+        failure = error;
+        retryAfterFailure = reconcileRequested;
     } finally {
         isReconciling = false;
+    }
+    if (!failed) {
+        return;
+    }
+    if (retryAfterFailure) {
+        try {
+            reconcileScheduler();
+        } catch (retryError) {
+            logger.warn('[DeviceTelemetryScheduler] Reconciliation retry failed:', retryError);
+        }
+    }
+    throw failure;
+}
+
+function reconcileAfterRollback(): void {
+    try {
+        reconcileScheduler();
+    } catch (error) {
+        logger.warn('[DeviceTelemetryScheduler] Rollback reconciliation failed:', error);
     }
 }
 
@@ -225,6 +251,7 @@ export function registerDeviceTelemetrySource(input: RegisterDeviceTelemetrySour
             reconcileScheduler();
         } catch (error) {
             restoreSource(source, previous);
+            reconcileAfterRollback();
             throw error;
         }
     }
@@ -260,6 +287,7 @@ export function subscribeDeviceTelemetryDemand(input: SubscribeDeviceTelemetryDe
             reconcileScheduler();
         } catch (error) {
             removeDemand(subscription);
+            reconcileAfterRollback();
             throw error;
         }
     }
