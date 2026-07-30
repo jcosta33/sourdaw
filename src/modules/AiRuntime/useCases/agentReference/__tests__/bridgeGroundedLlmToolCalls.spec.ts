@@ -112,6 +112,60 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(withoutSelection.actions).toEqual([]);
     });
 
+    it('scopes duplicate device names to a uniquely referenced owner track', () => {
+        const frequency = {
+            id: 'frequency',
+            name: 'Frequency',
+            type: 'float' as const,
+            value: 1200,
+            minValue: 20,
+            maxValue: 20_000,
+            unit: 'Hz',
+        };
+        const scopedContext: ProjectContext = {
+            ...projectContext,
+            tracks: projectContext.tracks.map((track) => {
+                if (track.id === 'track-vocals') {
+                    return { ...track, devices: [{ ...track.devices[0]!, parameters: [frequency] }] };
+                }
+                if (track.id === 'track-guitar') {
+                    return {
+                        ...track,
+                        deviceCount: 1,
+                        devices: [{ id: 'device-eq-guitar', type: 'EQ', bypassed: false, parameters: [frequency] }],
+                    };
+                }
+                return track;
+            }),
+        };
+        const bypass = bridge(
+            [{ name: 'bypassDevice', arguments: { deviceId: 'device-eq', bypassed: true } }],
+            'bypass EQ on Vocals',
+            scopedContext
+        );
+        const parameter = bridge(
+            [{ name: 'setDeviceParameter', arguments: { deviceId: 'device-eq', paramId: 'frequency', value: 2400 } }],
+            'set EQ Frequency on Vocals',
+            scopedContext
+        );
+
+        expect(bypass.actions).toEqual([{ type: 'bypassDevice', payload: { deviceId: 'device-eq', bypassed: true } }]);
+        expect(parameter.actions).toEqual([
+            { type: 'setDeviceParameter', payload: { deviceId: 'device-eq', paramId: 'frequency', value: 2400 } },
+        ]);
+    });
+
+    it('reports an exact distinct-target rejection for same-endpoint routing', () => {
+        const bus = createTrack({ id: 'bus-reverb', name: 'Reverb Bus', kind: 'bus' });
+        const result = bridge(
+            [{ name: 'setTrackOutput', arguments: { trackId: bus.id, outputId: bus.id } }],
+            'route Reverb Bus to Reverb Bus',
+            { ...projectContext, tracks: [...projectContext.tracks, bus] }
+        );
+
+        expect(result.rejections[0]?.reason).toBe('Target trackId must be distinct from outputId');
+    });
+
     it('requires Master to be phrased as an output target', () => {
         const homonym = bridge(
             [{ name: 'setTrackOutput', arguments: { trackId: 'track-vocals', outputId: 'master' } }],

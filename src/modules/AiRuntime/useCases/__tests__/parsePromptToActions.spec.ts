@@ -10,7 +10,7 @@ import { getProjectContext } from '../getProjectContext';
 import { generateToolPlanningOutcome as generateToolCalls } from '../llmOrchestration/inference';
 import { parsePromptToActions } from '../parsePromptToActions';
 
-const { mockLogger, mockBridgeLlmToolCalls, mockBuildLlmActionSystemPrompt, mockBuildLlmActionUserMessage } =
+const { mockLogger, mockBridgeGroundedLlmToolCalls, mockBuildLlmActionSystemPrompt, mockBuildLlmActionUserMessage } =
     vi.hoisted(() => ({
         mockLogger: {
             warn: vi.fn(),
@@ -18,7 +18,7 @@ const { mockLogger, mockBridgeLlmToolCalls, mockBuildLlmActionSystemPrompt, mock
             error: vi.fn(),
             debug: vi.fn(),
         },
-        mockBridgeLlmToolCalls: vi.fn(),
+        mockBridgeGroundedLlmToolCalls: vi.fn(),
         mockBuildLlmActionSystemPrompt: vi.fn(() => 'command system prompt'),
         mockBuildLlmActionUserMessage: vi.fn(() => 'command user message'),
     }));
@@ -46,11 +46,20 @@ vi.mock('../dsoEditor/executeDsoEdit', () => ({
     executeDsoEdit: vi.fn(),
 }));
 
-vi.mock('../../transformers/llmActionBridge', () => ({
-    bridgeLlmToolCalls: mockBridgeLlmToolCalls,
-    buildLlmActionSystemPrompt: mockBuildLlmActionSystemPrompt,
-    buildLlmActionUserMessage: mockBuildLlmActionUserMessage,
+vi.mock('../agentReference/bridgeGroundedLlmToolCalls', () => ({
+    bridgeGroundedLlmToolCalls: mockBridgeGroundedLlmToolCalls,
 }));
+
+vi.mock('../../transformers/llmActionBridge', async () => {
+    const actual = await vi.importActual<typeof import('../../transformers/llmActionBridge')>(
+        '../../transformers/llmActionBridge'
+    );
+    return {
+        ...actual,
+        buildLlmActionSystemPrompt: mockBuildLlmActionSystemPrompt,
+        buildLlmActionUserMessage: mockBuildLlmActionUserMessage,
+    };
+});
 
 const baseContext: ProjectContext = {
     tempo: 120,
@@ -76,7 +85,7 @@ describe('parsePromptToActions', () => {
         vi.mocked(getProjectContext).mockReturnValue(baseContext);
         vi.mocked(generateToolCalls).mockReset();
         vi.mocked(executeDsoEdit).mockReset();
-        mockBridgeLlmToolCalls.mockReset();
+        mockBridgeGroundedLlmToolCalls.mockReset();
         mockBuildLlmActionSystemPrompt.mockClear();
         mockBuildLlmActionUserMessage.mockClear();
     });
@@ -155,7 +164,7 @@ describe('parsePromptToActions', () => {
         const currentContext = { ...baseContext, tempo: 121 };
         vi.mocked(getProjectContext).mockReturnValue(currentContext);
         vi.mocked(generateToolCalls).mockResolvedValue(completePlan([{ name: 'setTempo', arguments: { bpm: 128 } }]));
-        mockBridgeLlmToolCalls.mockReturnValue({
+        mockBridgeGroundedLlmToolCalls.mockReturnValue({
             actions: [{ type: 'setTempo', payload: { bpm: 128 } }],
             rejections: [],
         });
@@ -172,31 +181,55 @@ describe('parsePromptToActions', () => {
             prompt: 'make the project faster',
             context: baseContext,
         });
-        expect(mockBridgeLlmToolCalls).toHaveBeenCalledWith({
+        expect(mockBridgeGroundedLlmToolCalls).toHaveBeenCalledWith({
             calls: [{ name: 'setTempo', arguments: { bpm: 128 } }],
             context: baseContext,
+            prompt: 'make the project faster',
         });
         expect(result.actions).toEqual([{ type: 'setTempo', payload: { bpm: 128 } }]);
         expect(result.executionMode).toBe('atomic');
     });
 
-    it('requires confirmation for a multi-action provider plan', async () => {
+    it('requires confirmation for a grounded multi-action provider plan', async () => {
+        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
+            '../agentReference/bridgeGroundedLlmToolCalls'
+        );
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        const providerContext: ProjectContext = {
+            ...baseContext,
+            tracks: [
+                { id: 'track-vocals', name: 'Vocals' },
+                { id: 'track-guitar', name: 'Guitar' },
+            ].map(({ id, name }) => ({
+                id,
+                name,
+                kind: 'audio',
+                muted: false,
+                soloed: false,
+                armed: false,
+                gain: 0.8,
+                pan: 0,
+                outputId: 'master',
+                clipCount: 0,
+                deviceCount: 0,
+                clips: [],
+                devices: [],
+                sends: [],
+            })),
+        };
         vi.mocked(generateToolCalls).mockResolvedValue(
             completePlan([
                 { name: 'muteTrack', arguments: { trackId: 'track-vocals', muted: true } },
                 { name: 'setTrackGain', arguments: { trackId: 'track-guitar', gain: 0.6 } },
             ])
         );
-        mockBridgeLlmToolCalls.mockReturnValue({
-            actions: [
-                { type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true } },
-                { type: 'setTrackGain', payload: { trackId: 'track-guitar', gain: 0.6 } },
-            ],
-            rejections: [],
-        });
 
-        const result = await parsePromptToActions('mute vocals and lower guitar', baseContext);
+        const result = await parsePromptToActions('mute Vocals and lower Guitar', providerContext);
 
+        expect(result.actions).toEqual([
+            { type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true } },
+            { type: 'setTrackGain', payload: { trackId: 'track-guitar', gain: 0.6 } },
+        ]);
         expect(result.requiresConfirmation).toBe(true);
         expect(result.executionMode).toBe('atomic');
     });
@@ -208,7 +241,7 @@ describe('parsePromptToActions', () => {
                 { name: 'removeTrack', arguments: { trackId: 'track-vocals' } },
             ])
         );
-        mockBridgeLlmToolCalls.mockReturnValue({
+        mockBridgeGroundedLlmToolCalls.mockReturnValue({
             actions: [{ type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true } }],
             rejections: [{ index: 1, name: 'removeTrack', reason: 'Tool is not allowlisted' }],
         });
@@ -225,7 +258,7 @@ describe('parsePromptToActions', () => {
         vi.mocked(generateToolCalls).mockResolvedValue(
             completePlan([{ name: 'removeTrack', arguments: { trackId: 'track-vocals' } }])
         );
-        mockBridgeLlmToolCalls.mockReturnValue({
+        mockBridgeGroundedLlmToolCalls.mockReturnValue({
             actions: [],
             rejections: [{ index: 0, name: 'removeTrack', reason: 'Tool is not allowlisted' }],
         });
@@ -242,7 +275,7 @@ describe('parsePromptToActions', () => {
 
     it('returns a rejection when runtime validation filters a provider batch', async () => {
         vi.mocked(generateToolCalls).mockResolvedValue(completePlan([{ name: 'saveProject', arguments: {} }]));
-        mockBridgeLlmToolCalls.mockReturnValue({
+        mockBridgeGroundedLlmToolCalls.mockReturnValue({
             actions: [{ type: 'saveProject' }],
             rejections: [],
         });
@@ -272,7 +305,7 @@ describe('parsePromptToActions', () => {
             rejectionReason:
                 'Provider planning rejected: Native text tool planning did not complete (finish_reason: length)',
         });
-        expect(mockBridgeLlmToolCalls).not.toHaveBeenCalled();
+        expect(mockBridgeGroundedLlmToolCalls).not.toHaveBeenCalled();
         expect(executeDsoEdit).not.toHaveBeenCalled();
     });
 
@@ -298,7 +331,7 @@ describe('parsePromptToActions', () => {
         'does not route %s through the retired legacy DSO mutation path after an empty provider plan',
         async (prompt) => {
             vi.mocked(generateToolCalls).mockResolvedValue(completePlan([]));
-            mockBridgeLlmToolCalls.mockReturnValue({ actions: [], rejections: [] });
+            mockBridgeGroundedLlmToolCalls.mockReturnValue({ actions: [], rejections: [] });
 
             const result = await parsePromptToActions(prompt, baseContext);
 
@@ -328,7 +361,7 @@ describe('parsePromptToActions', () => {
                 { name: 'setTrackPan', arguments: { trackId: 'track-guitar', pan: -20 } },
             ])
         );
-        mockBridgeLlmToolCalls.mockReturnValue({
+        mockBridgeGroundedLlmToolCalls.mockReturnValue({
             actions: [
                 { type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true } },
                 { type: 'setTrackPan', payload: { trackId: 'track-guitar', pan: -20 } },

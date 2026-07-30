@@ -32,11 +32,19 @@ function groundToolCall({ call, context, index, prompt }: GroundToolCallInput): 
 
     const groundedArguments = { ...call.arguments };
     for (const targetRule of targetRules) {
+        const assertedValue = groundedArguments[targetRule.argument];
         const dependencyValue = targetRule.dependsOn ? groundedArguments[targetRule.dependsOn] : undefined;
         const distinctValue = targetRule.distinctFrom ? groundedArguments[targetRule.distinctFrom] : undefined;
+        if (targetRule.distinctFrom && typeof distinctValue === 'string' && assertedValue === distinctValue) {
+            return rejection(
+                index,
+                call.name,
+                `Target ${targetRule.argument} must be distinct from ${targetRule.distinctFrom}`
+            );
+        }
         const result = resolveAgentReference({
             prompt,
-            assertedId: groundedArguments[targetRule.argument],
+            assertedId: assertedValue,
             capability: targetRule.capability,
             context,
             dependencyId: typeof dependencyValue === 'string' ? dependencyValue : undefined,
@@ -57,13 +65,6 @@ function groundToolCall({ call, context, index, prompt }: GroundToolCallInput): 
         }
 
         groundedArguments[targetRule.argument] = result.id;
-        if (targetRule.distinctFrom && groundedArguments[targetRule.distinctFrom] === result.id) {
-            return rejection(
-                index,
-                call.name,
-                `Target ${targetRule.argument} must be distinct from ${targetRule.distinctFrom}`
-            );
-        }
     }
 
     return { ...call, arguments: groundedArguments };

@@ -55,6 +55,16 @@ function hasExplicitTrackSelection(prompt: string): boolean {
     return /\b(?:selected|current|this) (?:audio |midi |bus |folder )?track\b/u.test(normalized);
 }
 
+function getUniquelyReferencedTrackId(prompt: string, context: ProjectContext): string | null {
+    const referencedTracks = context.tracks.filter(
+        (track) => containsExactPhrase(prompt, track.id) || containsExactPhrase(prompt, track.name)
+    );
+    if (referencedTracks.length !== 1) {
+        return null;
+    }
+    return referencedTracks[0]?.id ?? null;
+}
+
 function getTrackCandidates(
     capability: AgentReferenceCapability,
     context: ProjectContext
@@ -90,6 +100,11 @@ function getReferenceCandidates(input: ResolveAgentReferenceInput): ReferenceCan
                 return [];
             }
             tracks = tracks.filter((track) => track.id === input.context.selectedTrackId);
+        } else {
+            const ownerTrackId = getUniquelyReferencedTrackId(input.prompt, input.context);
+            if (ownerTrackId !== null) {
+                tracks = tracks.filter((track) => track.id === ownerTrackId);
+            }
         }
         return tracks.flatMap((track) => track.devices.map((device) => ({ id: device.id, name: device.type })));
     }
