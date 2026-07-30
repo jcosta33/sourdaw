@@ -369,6 +369,32 @@ describe('scheduleMidiNotes', () => {
         expect(vi.mocked(scheduleNote).mock.calls[0]?.[5]).toBe(40);
     });
 
+    it('projects all regular MIDI events once per clip iteration instead of once per note', async () => {
+        const track = midiTrack({ clips: [midiClip()] });
+        const source = [
+            { id: 'n1', pitch: 60, startBeat: 0.25, duration: 0.25, velocity: 100 },
+            { id: 'n2', pitch: 64, startBeat: 0.5, duration: 0.25, velocity: 90 },
+        ];
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = { notesByClipId: { 'clip-1': source } };
+
+        await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+
+        expect(projectClipMidiEvents).toHaveBeenCalledExactlyOnceWith({
+            events: source,
+            clipId: 'clip-1',
+            clipStartBeat: 0,
+            clipEndBeat: 4,
+            iterationStartBeat: 0,
+            loopLengthBeats: 4,
+            midiOffsetBeats: 0,
+            loopEnabled: false,
+            clipGrooveAlreadyApplied: false,
+            eventsAreAbsolute: false,
+        });
+        expect(vi.mocked(scheduleNote).mock.calls.map((call) => call[2])).toEqual([60, 64]);
+    });
+
     it('does not chord-project live Toaster child notes', async () => {
         const toasterNoteOn = vi.fn();
         const parent = midiTrack({
@@ -1333,10 +1359,10 @@ describe('scheduleMidiNotes', () => {
         it('drops a note beyond the loop length on a non-looping iteration', async () => {
             const track = midiTrack({ clips: [midiClip({ startBeat: 0, endBeat: 2 })] });
             (trackStore as { value: unknown }).value = { tracks: [track] };
-            // Note authored at startBeat 3 but loopLen=2 → 3 - 0 >= 2 ⇒ dropped.
             (midiStore as { value: unknown }).value = {
                 notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 60, startBeat: 3, duration: 0.25, velocity: 100 }] },
             };
+            vi.mocked(projectClipMidiEvents).mockReturnValue([]);
 
             await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
 

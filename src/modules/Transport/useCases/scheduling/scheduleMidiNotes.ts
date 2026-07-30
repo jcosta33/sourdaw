@@ -409,16 +409,32 @@ export async function scheduleMidiNotes(
                 const yeastRouteId = `live-yeast:${track.id}:${clip.id}:${absoluteOccurrenceIndex}`;
                 const iterNotes = yeastDevice ? (liveYeastNotesByRoute.get(yeastRouteId) ?? []) : notes;
                 const notesAreAbsolute = yeastDevice !== undefined;
+                const iterationStart = clip.startBeat + iterOffset;
+                let projectedIterationNotes: readonly LiveYeastNote[] | null = null;
+                if (yeastDevice === undefined) {
+                    projectedIterationNotes = projectClipMidiEvents({
+                        events: iterNotes,
+                        clipId: clip.id,
+                        clipStartBeat: clip.startBeat,
+                        clipEndBeat: clip.endBeat,
+                        iterationStartBeat: iterationStart,
+                        loopLengthBeats: loopLen,
+                        midiOffsetBeats: clipMidiOffset,
+                        loopEnabled: clip.loopEnabled ?? false,
+                        clipGrooveAlreadyApplied: false,
+                        eventsAreAbsolute: false,
+                    });
+                }
+                const notesToSchedule = projectedIterationNotes ?? iterNotes;
+                const singletonProjectedNote: LiveYeastNote[] = [];
 
-                for (const note of iterNotes) {
+                for (const note of notesToSchedule) {
                     const isTrackScopedYeastNote = trackScopedYeastNoteIds.has(note.id);
-                    if (!notesAreAbsolute && note.startBeat - clipMidiOffset >= loopLen) {
-                        continue;
-                    }
-
-                    const iterationStart = clip.startBeat + iterOffset;
                     let projectedNotes: readonly LiveYeastNote[];
-                    if (isTrackScopedYeastNote) {
+                    if (projectedIterationNotes !== null) {
+                        singletonProjectedNote[0] = note;
+                        projectedNotes = singletonProjectedNote;
+                    } else if (isTrackScopedYeastNote) {
                         projectedNotes = [note];
                     } else {
                         projectedNotes = projectClipMidiEvents({
