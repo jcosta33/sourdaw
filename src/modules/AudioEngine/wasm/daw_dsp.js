@@ -337,6 +337,12 @@ export class FermenterInstance {
         return ret >>> 0;
     }
     /**
+     * Advance control-rate smoothing while DSP is asleep.
+     */
+    advance_silence() {
+        wasm.fermenterinstance_advance_silence(this.__wbg_ptr);
+    }
+    /**
      * Number of non-finite output samples scrubbed to silence since
      * construction (DSP-8). Non-zero means a poisoned block was caught at the
      * wasm output boundary and surfaced for health telemetry.
@@ -352,6 +358,14 @@ export class FermenterInstance {
      */
     get_right_ptr() {
         const ret = wasm.fermenterinstance_get_right_ptr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Stable numeric lifecycle code consumed by the AudioWorklet host.
+     * @returns {number}
+     */
+    lifecycle_state() {
+        const ret = wasm.fermenterinstance_lifecycle_state(this.__wbg_ptr);
         return ret >>> 0;
     }
     /**
@@ -443,6 +457,14 @@ export class FermenterInstance {
      */
     set_param_by_id(param_id, value) {
         wasm.fermenterinstance_set_param_by_id(this.__wbg_ptr, param_id, value);
+    }
+    /**
+     * Remaining finite tail samples, -1 for an infinite tail, or 0 outside tail state.
+     * @returns {number}
+     */
+    tail_samples() {
+        const ret = wasm.fermenterinstance_tail_samples(this.__wbg_ptr);
+        return ret;
     }
 }
 if (Symbol.dispose) FermenterInstance.prototype[Symbol.dispose] = FermenterInstance.prototype.free;

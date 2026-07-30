@@ -34,13 +34,17 @@ const paramByIdCalls: Array<{ id: number; value: number }> = [];
 const processSizes: number[] = [];
 // Flip to simulate a Rust-side panic propagating through the bindgen glue.
 let processShouldThrow = false;
+let lifecycleState = 0;
+let advanceSilenceCalls = 0;
 
 class FermenterInstanceMock {
     note_on(note: number, velocity: number): void {
         noteEvents.push({ kind: 'on', note, velocity });
+        lifecycleState = 0;
     }
     note_on_with_channel(note: number, velocity: number, _channel: number): void {
         noteEvents.push({ kind: 'on', note, velocity });
+        lifecycleState = 0;
     }
     note_off(note: number): void {
         noteEvents.push({ kind: 'off', note });
@@ -67,6 +71,12 @@ class FermenterInstanceMock {
     }
     get_right_ptr(): number {
         return OUT_RIGHT_PTR;
+    }
+    lifecycle_state(): number {
+        return lifecycleState;
+    }
+    advance_silence(): void {
+        advanceSilenceCalls++;
     }
 }
 
@@ -100,6 +110,8 @@ function resetRecording(): void {
     paramByIdCalls.length = 0;
     processSizes.length = 0;
     processShouldThrow = false;
+    lifecycleState = 0;
+    advanceSilenceCalls = 0;
 }
 
 describe('FermenterProcessor message handling', () => {
@@ -420,6 +432,52 @@ describe('FermenterProcessor message handling', () => {
     });
 
     describe('process guards & telemetry', () => {
+        it('keeps automation current while asleep and resumes DSP after note-on wakes the engine', async () => {
+            const proc = await loadProcessor();
+            send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+            resetRecording();
+            lifecycleState = 3;
+            vi.stubGlobal('currentFrame', 0);
+            send(proc, {
+                type: 'paramAutomation',
+                paramId: 4,
+                segments: [{ startFrame: 0, endFrame: 256, startValue: 2, endValue: 4 }],
+            });
+            const sleepingOutput = makeStereoBlock();
+            sleepingOutput[0]![0]!.fill(1);
+            sleepingOutput[0]![1]!.fill(1);
+
+            proc.process([], sleepingOutput);
+
+            expect(paramByIdCalls).toEqual([{ id: 4, value: 2 }]);
+            expect(processSizes).toEqual([]);
+            expect(advanceSilenceCalls).toBe(1);
+            expect(Array.from(sleepingOutput[0]![0]!.slice(0, 2))).toEqual([0, 0]);
+            expect(Array.from(sleepingOutput[0]![1]!.slice(0, 2))).toEqual([0, 0]);
+
+            vi.stubGlobal('currentFrame', 128);
+            proc.process([], makeStereoBlock());
+            expect(paramByIdCalls).toEqual([
+                { id: 4, value: 2 },
+                { id: 4, value: 3 },
+            ]);
+            expect(processSizes).toEqual([]);
+            expect(advanceSilenceCalls).toBe(2);
+
+            vi.stubGlobal('currentFrame', 256);
+            send(proc, { type: 'noteOn', note: 64, velocity: 100 });
+            proc.process([], makeStereoBlock());
+
+            expect(noteEvents).toContainEqual({ kind: 'on', note: 64, velocity: 100 });
+            expect(paramByIdCalls).toEqual([
+                { id: 4, value: 2 },
+                { id: 4, value: 3 },
+                { id: 4, value: 4 },
+            ]);
+            expect(processSizes).toEqual([FRAMES]);
+            vi.stubGlobal('currentFrame', 0);
+        });
+
         it('returns true and posts nothing when not ready', async () => {
             const proc = await loadProcessor();
             const ok = proc.process([], makeStereoBlock());

@@ -456,6 +456,12 @@ impl Layer {
         }
     }
 
+    pub fn advance_silent_block(&mut self) {
+        self.cutoff.tick();
+        self.resonance.tick();
+        self.lfo_rate.tick();
+    }
+
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
             "cutoff" => self.cutoff.set(value.clamp(20.0, 20000.0)),

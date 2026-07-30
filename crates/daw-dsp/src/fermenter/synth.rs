@@ -7,6 +7,7 @@ use super::effects::{
 use super::layer::Layer;
 use super::oscillator::Wavetable;
 use super::params::SmoothedParam;
+use crate::primitives::{ProcessLifecycle, TailLength};
 
 /// MIDI event passed from JS to WASM.
 #[derive(Clone, Copy)]
@@ -18,6 +19,8 @@ pub struct MidiEvent {
 }
 
 const MAX_LAYERS: usize = 4;
+const OUTPUT_QUIET_THRESHOLD: f32 = 3.162_277_6e-8;
+const RENDER_QUANTUM_FRAMES: u64 = 128;
 
 pub struct MasterSynth {
     layers: [Layer; MAX_LAYERS],
@@ -86,6 +89,8 @@ pub struct MasterSynth {
     pub stereo_width: SmoothedParam,
 
     sample_rate: f32,
+    last_output_quiet: bool,
+    tail_samples_remaining: u64,
 }
 
 impl MasterSynth {
@@ -150,6 +155,8 @@ impl MasterSynth {
             master_gain: SmoothedParam::new(1.0, 5.0, sample_rate),
             stereo_width: SmoothedParam::new(1.0, 5.0, sample_rate),
             sample_rate,
+            last_output_quiet: true,
+            tail_samples_remaining: 0,
         }
     }
 
@@ -367,6 +374,7 @@ impl MasterSynth {
     /// `left` and `right` are output buffers (will be overwritten).
     pub fn process_block(&mut self, left: &mut [f32], right: &mut [f32], events: &[MidiEvent]) {
         let block_size = left.len().min(right.len());
+        let had_active_voices = self.active_voice_count() > 0;
 
         // Clear output
         left[..block_size].fill(0.0);
@@ -506,6 +514,86 @@ impl MasterSynth {
                 right[i] *= master_gain;
             }
         }
+
+        self.update_lifecycle_after_block(
+            &left[..block_size],
+            &right[..block_size],
+            had_active_voices,
+        );
+    }
+
+    pub fn lifecycle(&self) -> ProcessLifecycle {
+        if self.active_voice_count() > 0 {
+            return ProcessLifecycle::Continue;
+        }
+        if !self.last_output_quiet {
+            return ProcessLifecycle::ContinueIfNotQuiet;
+        }
+        if self.tail_samples_remaining > 0 {
+            return ProcessLifecycle::Tail(TailLength::Finite(self.tail_samples_remaining));
+        }
+        ProcessLifecycle::Sleep
+    }
+
+    pub fn advance_silent_block(&mut self) {
+        self.dist_drive.tick();
+        self.dist_mix.tick();
+        self.comp_mix.tick();
+        self.delay_feedback.tick();
+        self.delay_mix.tick();
+        self.chorus_mix.tick();
+        self.phaser_mix.tick();
+        self.master_gain.tick();
+        self.stereo_width.tick();
+        self.reverb_mix.tick();
+        self.reverb_decay.tick();
+        let any_solo = self.layers[..self.num_active_layers]
+            .iter()
+            .any(|layer| layer.solo);
+        for layer in &mut self.layers[..self.num_active_layers] {
+            if layer.muted || (any_solo && !layer.solo) {
+                continue;
+            }
+            layer.advance_silent_block();
+        }
+    }
+
+    fn configured_tail_gap_samples(&self) -> u64 {
+        let mut gap = RENDER_QUANTUM_FRAMES;
+        if self.reverb_mix.value().max(self.reverb_mix.target()) > 0.001 {
+            let reverb_gap = match self.reverb_type {
+                1 => self.fdn_reverb.max_tail_gap_samples(),
+                _ => self.reverb.max_tail_gap_samples(),
+            };
+            gap = gap.max(reverb_gap);
+        }
+        if self.delay_mix.value().max(self.delay_mix.target()) > 0.001 {
+            gap = gap.max(self.delay.max_tail_gap_samples(self.delay_time));
+        }
+        if self.chorus_mix.value().max(self.chorus_mix.target()) > 0.001 {
+            gap = gap.max(self.chorus.max_tail_gap_samples());
+        }
+        gap
+    }
+
+    fn update_lifecycle_after_block(
+        &mut self,
+        left: &[f32],
+        right: &[f32],
+        had_active_voices: bool,
+    ) {
+        let output_quiet = left
+            .iter()
+            .chain(right)
+            .all(|sample| sample.is_finite() && sample.abs() <= OUTPUT_QUIET_THRESHOLD);
+        if had_active_voices || self.active_voice_count() > 0 || !output_quiet {
+            self.tail_samples_remaining = self.configured_tail_gap_samples();
+        } else {
+            self.tail_samples_remaining = self
+                .tail_samples_remaining
+                .saturating_sub(left.len().min(right.len()) as u64);
+        }
+        self.last_output_quiet = output_quiet;
     }
 
     fn apply_midi_event(&mut self, event: &MidiEvent) {
@@ -789,10 +877,8 @@ mod tests {
 
     #[test]
     fn granular_params_change_rendered_output() {
-        let (sparse_left, sparse_right) = render_note_for_engine_with_params(
-            4,
-            &[("grain_density", 1.0), ("grain_size", 20.0), ("grain_pan_spread", 0.0)],
-        );
+        let (sparse_left, sparse_right) =
+            render_note_for_engine_with_params(4, &[("grain_density", 1.0), ("grain_size", 20.0), ("grain_pan_spread", 0.0)]);
         let (dense_left, dense_right) = render_note_for_engine_with_params(
             4,
             &[

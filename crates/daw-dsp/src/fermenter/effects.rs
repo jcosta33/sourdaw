@@ -20,6 +20,12 @@ impl StereoDelay {
         }
     }
 
+    /// Longest interval before buffered energy can reappear; not the total decay time.
+    pub fn max_tail_gap_samples(&self, time_ms: f32) -> u64 {
+        let delay_samples = time_ms.clamp(10.0, 2000.0) * 0.001 * self.sample_rate;
+        delay_samples.ceil() as u64 + 1
+    }
+
     /// Read from a delay buffer with linear interpolation for fractional delay.
     #[inline]
     fn read_interp(buffer: &[f32], write_pos: usize, delay_samples: f32) -> f32 {
@@ -91,6 +97,11 @@ impl StereoChorus {
             lfo_phase_r: 0.25, // 90-degree offset for stereo
             sample_rate,
         }
+    }
+
+    /// Longest interval before buffered energy can reappear; not the total decay time.
+    pub fn max_tail_gap_samples(&self) -> u64 {
+        self.buffer_l.len() as u64
     }
 
     /// Read from buffer with linear interpolation.
@@ -425,6 +436,11 @@ impl FdnReverb {
         }
     }
 
+    /// Conservative interval before energy can traverse the complete FDN topology.
+    pub fn max_tail_gap_samples(&self) -> u64 {
+        self.delays.iter().map(|delay| delay.len() as u64).sum()
+    }
+
     pub fn set_params(&mut self, decay: f32, mix: f32, damping: f32) {
         self.decay = decay.clamp(0.0, 0.99);
         self.mix = mix.clamp(0.0, 1.0);
@@ -709,6 +725,23 @@ impl PlateReverb {
             damp_state_l: 0.0,
             damp_state_r: 0.0,
         }
+    }
+
+    /// Conservative interval before energy can traverse the complete plate topology.
+    pub fn max_tail_gap_samples(&self) -> u64 {
+        [
+            self.apf1_len,
+            self.apf2_len,
+            self.apf3_len,
+            self.apf4_len,
+            self.del1_len,
+            self.del2_len,
+            self.del3_len,
+            self.del4_len,
+        ]
+        .into_iter()
+        .map(|length| length as u64)
+        .sum()
     }
 
     pub fn set_params(&mut self, decay: f32, mix: f32, damping: f32) {

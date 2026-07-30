@@ -26,7 +26,7 @@ pub mod voice;
 
 use synth::MasterSynth;
 use wasm_bindgen::prelude::*;
-use crate::primitives::sanitize_block;
+use crate::primitives::{sanitize_block, TailLength};
 
 const AUTOMATION_PARAM_NAMES: [&str; 15] = [
     "osc_level",
@@ -138,6 +138,25 @@ impl FermenterInstance {
         self.left_buf.as_ptr()
     }
 
+    /// Advance control-rate smoothing while DSP is asleep.
+    pub fn advance_silence(&mut self) {
+        self.synth.advance_silent_block();
+    }
+
+    /// Stable numeric lifecycle code consumed by the AudioWorklet host.
+    pub fn lifecycle_state(&self) -> u32 {
+        self.synth.lifecycle().code()
+    }
+
+    /// Remaining finite tail samples, -1 for an infinite tail, or 0 outside tail state.
+    pub fn tail_samples(&self) -> f64 {
+        match self.synth.lifecycle().tail_samples() {
+            Some(TailLength::Finite(samples)) => samples as f64,
+            Some(TailLength::Infinite) => -1.0,
+            None => 0.0,
+        }
+    }
+
     /// Number of non-finite output samples scrubbed to silence since
     /// construction (DSP-8). Non-zero means a poisoned block was caught at the
     /// wasm output boundary and surfaced for health telemetry.
@@ -161,6 +180,7 @@ mod tests {
     use assert_no_alloc::assert_no_alloc;
 
     use super::FermenterInstance;
+    use crate::primitives::ProcessLifecycle;
 
     #[test]
     fn numeric_automation_setter_does_not_allocate() {
@@ -171,5 +191,46 @@ mod tests {
             }
             instance.set_param_by_id(u32::MAX, 0.5);
         });
+    }
+
+    #[test]
+    fn lifecycle_sleeps_cold_wakes_for_note_and_preserves_default_reverb_tail() {
+        let mut instance = FermenterInstance::new(48_000.0, 32);
+        assert_eq!(instance.lifecycle_state(), ProcessLifecycle::SLEEP_CODE);
+
+        instance.note_on(60, 100);
+        assert_eq!(instance.lifecycle_state(), ProcessLifecycle::CONTINUE_CODE);
+        instance.process(128);
+        instance.note_off(60);
+
+        let mut observed_tail = false;
+        for _ in 0..4_000 {
+            instance.process(128);
+            let state = instance.lifecycle_state();
+            observed_tail |= state == ProcessLifecycle::CONTINUE_IF_NOT_QUIET_CODE
+                || state == ProcessLifecycle::TAIL_CODE;
+            if state == ProcessLifecycle::SLEEP_CODE {
+                break;
+            }
+        }
+
+        assert!(observed_tail);
+        assert_eq!(instance.lifecycle_state(), ProcessLifecycle::SLEEP_CODE);
+
+        let left_ptr = instance.process(128);
+        let right_ptr = instance.get_right_ptr();
+        let left = unsafe { std::slice::from_raw_parts(left_ptr, 128) };
+        let right = unsafe { std::slice::from_raw_parts(right_ptr, 128) };
+        let peak = left
+            .iter()
+            .chain(right)
+            .fold(0.0f32, |current, sample| current.max(sample.abs()));
+        assert!(
+            peak <= 3.162_277_6e-8,
+            "post-sleep peak {peak} exceeded the lifecycle quiet threshold"
+        );
+
+        instance.note_on(67, 90);
+        assert_eq!(instance.lifecycle_state(), ProcessLifecycle::CONTINUE_CODE);
     }
 }
