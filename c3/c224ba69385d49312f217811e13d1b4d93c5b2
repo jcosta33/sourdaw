@@ -1,0 +1,139 @@
+docs/architecture/decisions/0027-llm-automation-transform-command-surface.md
+  s_bc88af7d3b054c::t_540bd2ec3f3147 1-24
+src/modules/AiRuntime/models/ProjectContext.ts
+  s_23a96cb2337997::t_963e3aa4e456a5 85
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_5b10772d092dbe::t_ad35a40c01ef21 263-267,292-296
+src/modules/AiRuntime/models/Tools/MidiAutomationRouting.ts
+  s_08802e9ea64204::t_3c2a936728e2cc 136,139-148,154,158-179
+src/modules/AiRuntime/models/Tools/__tests__/MidiAutomationRouting.spec.ts
+  s_bc88af7d3b054c::t_a87de89da7d986 49-77
+src/modules/AiRuntime/models/__tests__/RuntimeAction.spec.ts
+  s_bc88af7d3b054c::t_9304d5eddf07bb 37-39,50-52,60-62
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_bc88af7d3b054c::t_9752e9cafdec94 36,107,124,1213,1374-1575
+src/modules/AiRuntime/transformers/__tests__/toolSelector.spec.ts
+  s_bc88af7d3b054c::t_83fc3b60cd7203 73-92
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_bc88af7d3b054c::t_c35e62566ae50f 157-166,181-186,355-471,937-946,967-968,1053-1054,1063-1070,1089-1110,1148-1153,1230
+src/modules/AiRuntime/transformers/promptParser/__tests__/parsing.spec.ts
+  s_5b10772d092dbe::t_a802ece8578203 55,110,201,216
+src/modules/AiRuntime/transformers/promptParser/__tests__/parsingDeep.spec.ts
+  s_b3148db70f2a74::t_422a6a6381871a 25,40
+src/modules/AiRuntime/transformers/toolSelector.ts
+  s_bc88af7d3b054c::t_3378e69c00acaf 83-95
+src/modules/AiRuntime/useCases/__tests__/describePlannedAction.spec.ts
+  s_bc88af7d3b054c::t_89673f065ba897 24
+src/modules/AiRuntime/useCases/__tests__/getProjectContext.spec.ts
+  s_bc88af7d3b054c::t_a23c3782797d86 115,214
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_bc88af7d3b054c::t_91511a106dfd92 231,286,342
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_5b10772d092dbe::t_c72d9ae8918d67 208,273
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_bc88af7d3b054c::t_21f0887123fc7a 251-311,343-351
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_bc88af7d3b054c::t_789d9ea62e3d4a 24,1249-1376
+src/modules/AiRuntime/useCases/agentReference/__tests__/resolveAgentReference.spec.ts
+  s_bc88af7d3b054c::t_3971579d2aa7fc 19
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_08802e9ea64204::t_1285cfe02e8106 744-752,908-914
+src/modules/AiRuntime/useCases/getProjectContext.ts
+  s_bc88af7d3b054c::t_629e14d7a486cb 108
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_aad1f4c6844ff3::t_a39b98cd67194b 439-472
+src/modules/Arrangement/handlers/track/__tests__/setAutomationMode.spec.ts
+  s_5b10772d092dbe::t_b177ce7d94e6c9 7,14-17,24-26,35-39,44-101,104,106
+src/modules/Arrangement/handlers/track/setAutomationMode.ts
+  s_5b10772d092dbe::t_606e696b44a51f 3,8-14,16,18-41
+src/modules/Automation/handlers/automation/handleInvertAutomation.ts
+  s_5b10772d092dbe::t_ddc1768c7c56a1 4,12-15,18-19
+src/modules/Automation/handlers/automation/handleQuantizeAutomation.ts
+  s_5b10772d092dbe::t_7bca5ac7fb58da 4,12-15,19-23
+src/modules/Automation/handlers/automation/handleRestoreAutomationLanePoints.ts
+  s_5b10772d092dbe::t_5ca7cb644327cf 2,6-33,37-43,45-52
+src/modules/Automation/handlers/automation/handleReverseAutomation.ts
+  s_5b10772d092dbe::t_875761bb7da35c 4,12-15,18-19
+src/modules/Automation/handlers/automation/handleScaleAutomation.ts
+  s_5b10772d092dbe::t_ba5e4ca26110cc 4,12-15,18-24
+src/modules/Automation/handlers/automation/handleStretchAutomation.ts
+  s_5b10772d092dbe::t_9492082736fea6 4,12-15,18-24
+src/modules/Automation/handlers/automation/handleThinAutomation.ts
+  s_5b10772d092dbe::t_e2b79434ae54a7 4,12-15,18-23
+src/modules/Automation/useCases/automation/__tests__/reverseAutomation.spec.ts
+  s_08802e9ea64204::t_f35edab47ca0f4 1,3-4,7-38
+src/modules/Automation/useCases/automation/invertAutomation.ts
+  s_5b10772d092dbe::t_e8c6fa66447d13 3-4,11-13
+src/modules/Automation/useCases/automation/reverseAutomation.ts
+  s_5b10772d092dbe::t_c2deab1fa58c0e 3-4,11-13
+src/modules/Automation/useCases/automation/transformAutomationPoints.ts
+  s_5b10772d092dbe::t_b5e628cab0ece6 1-101
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_bc88af7d3b054c::t_4e49d3084c581a 382-452,811-868
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_bc88af7d3b054c::t_2121c27d1696e8 41,48,734-846
+src/modules/Command/useCases/macro/__tests__/playback.spec.ts
+  s_5b10772d092dbe::t_1591ab314db5d9 156-251
+src/modules/Command/useCases/macro/playback.ts
+  s_5b10772d092dbe::t_e4cff08def4da1 77-85,102-108
+src/modules/WorkspaceShell/presentations/hooks/__tests__/usePromptExecution.spec.ts
+  s_bc88af7d3b054c::t_bb7afe9a8210f5 354
+src/utils/handlerContract.ts
+  s_23a96cb2337997::t_99644464e355de 529-532,560-564
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "c3c224ba69385d49312f217811e13d1b4d93c5b2",
+  "prompts": {},
+  "sessions": {
+    "s_08802e9ea64204": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fb3db-60ae-7fa1-8896-d41f8331ac72",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_23a96cb2337997": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fb3e5-b834-7312-976b-5306dcbd9ce9",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_5b10772d092dbe": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fb3db-4ab8-74a3-95bc-31c92a72f6cc",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_aad1f4c6844ff3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fb3cd-95cb-73c1-93a2-e7f46951347a",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_b3148db70f2a74": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fb3e7-efa3-7af0-a5a3-9d4e4397dc02",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
