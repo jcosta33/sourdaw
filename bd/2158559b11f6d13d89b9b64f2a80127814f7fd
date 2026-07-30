@@ -1,0 +1,40 @@
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngineDelegation.spec.ts
+  s_ac9b259eab20ba::t_4c144ed8d4766f 7-12,186,344,398
+  s_ac9b259eab20ba::t_2b630b38e51f74 209-211
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_ac9b259eab20ba::t_7eb1dbca173d6a 19,492-498,508-514,561
+src/modules/AudioEngine/engine/__tests__/FermenterNode.spec.ts
+  s_ac9b259eab20ba::t_6922270d29478c 213,225-237
+  s_ac9b259eab20ba::t_9f901f67497095 214-222
+  s_ac9b259eab20ba::t_340fc151f90ae9 4,223-224
+  s_ac9b259eab20ba::t_792e88edbb10c8 238-239
+src/modules/AudioEngine/engine/FermenterNode.ts
+  s_ac9b259eab20ba::t_f23a09f9c1bf93 71-72,171
+  s_ac9b259eab20ba::t_5cfbc68501b959 59-70,73-77,115,307-311
+  s_ac9b259eab20ba::t_6607e23b475e85 312
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_ac9b259eab20ba::t_5b0a8a3812b08e 155
+src/modules/AudioEngine/engine/telemetryAllocator.ts
+  s_ac9b259eab20ba::t_5cfbc68501b959 133
+src/modules/AudioEngine/models/AudioEngineState.ts
+  s_ac9b259eab20ba::t_0ace9eb2f02af8 62-63,162
+  s_ac9b259eab20ba::t_5cfbc68501b959 163
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistry.spec.ts
+  s_ac9b259eab20ba::t_cb5dffb0b4e6e2 35,236,264-265,303
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "bd2158559b11f6d13d89b9b64f2a80127814f7fd",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
