@@ -1,0 +1,37 @@
+src/modules/AiRuntime/useCases/__tests__/executePlannedActions.spec.ts
+  s_66d4924c65dcd2::t_0e1f551164deb6 1-182
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_66d4924c65dcd2::t_68c015635803cb 221-223,225,638-639,666-669,674,704,782,819-820
+src/modules/AiRuntime/useCases/executePlannedActions.ts
+  s_66d4924c65dcd2::t_eac6e1f295bc39 1-119
+src/modules/AiRuntime/useCases/index.ts
+  s_66d4924c65dcd2::t_4bcc30a5b81bff 46-47
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_66d4924c65dcd2::t_22ac1078e66e13 2,32,36,79-82,131-136,138-146,149-160,164-174,182,190,193-194,201-202,242-249
+src/modules/AiRuntime/useCases/planPromptActions.ts
+  s_bc88af7d3b054c::t_743b566b5c4795 1-23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "f0e07158dc64e0bc6289f5fc261a6fb5044045c0",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
