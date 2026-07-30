@@ -1,8 +1,4 @@
-import { trackStore } from '#/modules/Arrangement/stores';
-
-import { getCompensationDelay } from './getCompensationDelay';
-import { getDeviceLatencyMs } from './getDeviceLatencyMs';
-import { getTrackLatency } from './getTrackLatency';
+import { captureLatencyCompensationSnapshot } from './captureLatencyCompensationSnapshot';
 
 export type GetSidechainKeyDelayInput = {
     sourceTrackId: string;
@@ -22,10 +18,10 @@ export type GetSidechainKeyDelayInput = {
  *
  *     keyDelay = (comp(target) + upstreamOf(detector)) − (comp(source) + chain(source))
  *
- * Every term comes off the one `getCompensationDelay` / `getDeviceLatencyMs`
- * surface the offline path uses, so live and export agree by construction and a
- * mid-session latency push moves the alignment on the next read (nothing here
- * caches — same discipline the native-plugin latency path is locked to).
+ * Every term comes off the same latency snapshot surface the offline path uses,
+ * so live and export agree by construction. Standalone reads capture current
+ * state; the live scheduler shares one immutable snapshot across each tick, so
+ * a mid-session latency push moves the alignment within one grain.
  *
  * A negative result means the key already arrives later than the program, which
  * a delay line cannot undo; it clamps to zero rather than widening the error.
@@ -35,33 +31,9 @@ export function getSidechainKeyDelay({
     targetTrackId,
     targetDeviceId,
 }: GetSidechainKeyDelayInput): number {
-    const tracks = trackStore.value?.tracks;
-    if (!tracks) {
-        return 0;
-    }
-
-    const targetTrack = tracks.find((track) => track.id === targetTrackId);
-    if (!targetTrack) {
-        return 0;
-    }
-
-    let upstreamOfDetectorMs = 0;
-    for (const device of targetTrack.devices) {
-        if (device.id === targetDeviceId) {
-            break;
-        }
-        if (!device.bypassed) {
-            upstreamOfDetectorMs += getDeviceLatencyMs(device.id, device.type);
-        }
-    }
-
-    const keyChainMs = getTrackLatency(sourceTrackId).deviceLatencyMs;
-    const programArrivalSec = getCompensationDelay(targetTrackId) + upstreamOfDetectorMs / 1000;
-    const keyArrivalSec = getCompensationDelay(sourceTrackId) + keyChainMs / 1000;
-    const alignmentSec = programArrivalSec - keyArrivalSec;
-
-    if (alignmentSec <= 0) {
-        return 0;
-    }
-    return alignmentSec;
+    return captureLatencyCompensationSnapshot().getSidechainKeyDelay({
+        sourceTrackId,
+        targetTrackId,
+        targetDeviceId,
+    });
 }

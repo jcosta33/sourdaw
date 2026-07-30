@@ -96,6 +96,7 @@ export { initializeAudioEngine } from './initializeAudioEngine';
 export { getTrackLatency } from './latencyCompensation/compensation/getTrackLatency';
 export { getCompensationDelay } from './latencyCompensation/compensation/getCompensationDelay';
 export { getSidechainKeyDelay } from './latencyCompensation/compensation/getSidechainKeyDelay';
+export { captureLatencyCompensationSnapshot } from './latencyCompensation/compensation/captureLatencyCompensationSnapshot';
 export { getLatencyReport } from './latencyCompensation/compensation/getLatencyReport';
 export { reportLatency } from './latencyCompensation/compensation/reportLatency';
 export { clearReportedLatency } from './latencyCompensation/compensation/clearReportedLatency';
