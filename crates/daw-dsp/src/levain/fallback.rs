@@ -1,9 +1,13 @@
-//! Fallback tone generator — produces a simple sine wave when no samples are loaded.
+//! Fallback tone generator — a simple sine wave covering the window between the
+//! start of a sample load and the arrival of real zone content.
 //!
-//! This ensures the instrument always makes sound in response to MIDI,
-//! even before sample content is available. The tone is a warm sine with
-//! a gentle amplitude envelope, suitable for confirming MIDI connectivity
-//! and basic playback.
+//! Scope, precisely: `LevainEngine::clear_zones` arms it and `build_zone_map`
+//! disarms it, so it sounds only while a load is in flight. It is **not** a
+//! guarantee that the instrument always responds to MIDI — an engine that has
+//! never begun a load renders silence by design, because a sine standing in for
+//! missing sample content is audible garbage that reads as working. The tone is
+//! a warm sine with a gentle amplitude envelope, useful for confirming MIDI
+//! connectivity while content streams in.
 
 use std::f32::consts::TAU;
 
@@ -97,6 +101,17 @@ impl FallbackToneEngine {
         Self {
             voices: [FallbackVoice::new(); MAX_FALLBACK_VOICES],
             sample_rate,
+            // Deliberately disarmed at construction. `LevainEngine::clear_zones`
+            // is the only writer that arms this (`engine.rs:112`) and it is the
+            // first step of the sample loader, so the fallback covers the window
+            // between "a load has begun" and "zones exist" — not the window
+            // before any load was requested.
+            //
+            // Arming at construction was tried and rejected: it makes an engine
+            // that never began a load sing a sine instead of rendering silence,
+            // which substitutes a test tone for the instrument's actual content.
+            // Silence is a symptom a listener reports; a plausible tone is one
+            // they do not. See `tests/levain_unloaded_instance_is_silent.rs`.
             enabled: false,
         }
     }
