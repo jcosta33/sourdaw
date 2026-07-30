@@ -5,7 +5,7 @@ import { getToasterDeviceControls } from '#/modules/AudioEngine/useCases';
 import { registerToasterDevice, toasterStore } from '../stores/toasterStore';
 
 import { disposeToasterDevice } from './disposeToasterDevice';
-import { TOASTER_ENGINE_MAP } from './loadToasterKit';
+import { projectToasterKitToEngineMessages } from './projectToasterKitToEngineMessages';
 
 type AudioDeviceLifecyclePayload = {
     deviceId: string;
@@ -63,38 +63,18 @@ export function initToasterSubscribers({ eventBus, logger }: InitToasterSubscrib
             return;
         }
 
-        tControls.setParam('master_gain', kit.masterGain);
-        tControls.setParam('reverb_mix', kit.reverbMix);
-        tControls.setParam('reverb_decay', kit.reverbDecay);
-        tControls.setParam('delay_time', kit.delayTime);
-        tControls.setParam('delay_feedback', kit.delayFeedback);
-        tControls.setParam('delay_mix', kit.delayMix);
-        tControls.setParam('lofi_bits', kit.lofiBits);
-        tControls.setParam('lofi_rate', kit.lofiRate);
-        tControls.setParam('lofi_mix', kit.lofiMix);
-
-        for (let index = 0; index < kit.pads.length; index++) {
-            const pad = kit.pads[index]!;
-            const engineIdx = TOASTER_ENGINE_MAP[pad.engineType] ?? 0;
-            tControls.setPadParam(index, 'engine_type', engineIdx);
-
-            if (pad.engineType === 'hihat-open') {
-                tControls.setPadParam(index, 'open', 1);
+        // One projection, two runtimes. The offline render asks the same question
+        // of the same kit at construction time, so what it posts and what this
+        // posts are the same list — that equality is the export-matches-session
+        // property, and `toasterLiveOfflineParity.spec.ts` asserts it directly.
+        // Do not re-inline this loop: the two copies drifting is what let an export
+        // render the engine's built-in kit while a session played the project's.
+        for (const message of projectToasterKitToEngineMessages({ kit })) {
+            if (message.type === 'param') {
+                tControls.setParam(message.name, message.value);
+                continue;
             }
-            if (pad.engineType === 'hihat-closed') {
-                tControls.setPadParam(index, 'open', 0);
-            }
-
-            tControls.setPadParam(index, 'volume', pad.volume);
-            tControls.setPadParam(index, 'pan', pad.pan);
-            tControls.setPadParam(index, 'tune', pad.tune);
-            tControls.setPadParam(index, 'decay', pad.decay);
-            tControls.setPadParam(index, 'tone', pad.tone);
-            tControls.setPadParam(index, 'drive', pad.drive);
-            tControls.setPadParam(index, 'filter_cutoff', pad.filterCutoff);
-            tControls.setPadParam(index, 'filter_resonance', pad.filterResonance);
-            tControls.setPadParam(index, 'send_reverb', pad.sendReverb);
-            tControls.setPadParam(index, 'send_delay', pad.sendDelay);
+            tControls.setPadParam(message.pad, message.name, message.value);
         }
     });
 

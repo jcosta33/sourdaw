@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTrack, getTrackStoreState } from '#/modules/Arrangement/useCases';
 import { prepareCrumbsEngine } from '#/modules/Crumbs/useCases';
 import { prepareOfflineLevain } from '#/modules/Levain/useCases';
+import { prepareOfflineToaster } from '#/modules/Toaster/useCases';
 import { NATIVE_DSP_DEVICE_TYPES } from '#/utils/nativeDspDeviceTypes';
 
 import { prepareOfflineDeviceSetup } from '../prepareOfflineDeviceSetup';
@@ -26,6 +27,10 @@ vi.mock('#/modules/Levain/useCases', () => ({
 vi.mock('#/modules/Crumbs/useCases', () => ({
     prepareCrumbsEngine: vi.fn(() => Promise.resolve()),
 }));
+// Toaster's kit push is asserted against real project state in
+// `toasterLiveOfflineParity.spec.ts`. What this spec owns is the table wiring:
+// that the `toaster` row exists and is handed the right arguments.
+vi.mock('#/modules/Toaster/useCases', () => ({ prepareOfflineToaster: vi.fn() }));
 
 type ReorderMessage = { type: string; order: number[] };
 type PortSpy = ReturnType<typeof vi.fn<(message: unknown) => void>>;
@@ -127,6 +132,7 @@ describe('prepareOfflineDeviceSetup — hydration table routing', () => {
         vi.mocked(getTrackStoreState).mockReturnValue({ tracks: [], selectedTrackId: null });
         vi.mocked(prepareOfflineLevain).mockClear();
         vi.mocked(prepareCrumbsEngine).mockClear();
+        vi.mocked(prepareOfflineToaster).mockClear();
     });
 
     it('routes levain to its own hydration, forwarding the abort signal it needs to cancel a fetch', async () => {
@@ -174,8 +180,9 @@ describe('prepareOfflineDeviceSetup — hydration table routing', () => {
     // a recorded decision — their whole state arrives as `parameterValues` — so the
     // observable contract is that they post nothing at all, not that they happen to
     // have no branch.
+    const HYDRATING_TYPES = ['levain', 'proof', 'toaster', 'builtin-crumbs'] as const;
     const NON_HYDRATING_TYPES = NATIVE_DSP_DEVICE_TYPES.filter(
-        (type) => type !== 'levain' && type !== 'proof' && type !== 'builtin-crumbs'
+        (type) => !HYDRATING_TYPES.some((hydrating) => hydrating === type)
     );
 
     it.each(NON_HYDRATING_TYPES)('posts nothing at the port for %s', async (deviceType) => {
@@ -190,10 +197,27 @@ describe('prepareOfflineDeviceSetup — hydration table routing', () => {
 
     it('covers every native device type, so a new one cannot arrive untested', () => {
         // Guards the split above: if a device moves off `null`, this count changes
-        // and whoever moved it has to say so here. Crumbs is what moved it from
-        // 9-of-11 to 9-of-12 — it arrived hydrating, not `null`.
-        expect(NON_HYDRATING_TYPES).toHaveLength(9);
+        // and whoever moved it has to say so here. Crumbs arrived hydrating
+        // rather than `null`, taking the table from 11 rows to 12; Toaster then
+        // moved off `null`, taking the non-hydrating count from 9 to 8.
+        expect(NON_HYDRATING_TYPES).toHaveLength(8);
         expect(NATIVE_DSP_DEVICE_TYPES).toHaveLength(12);
+    });
+
+    // Pins the table entry itself, not just the module function behind it. Written
+    // after a mutation check: reverting `toaster` to `null` in the table produced
+    // no red at all, because the Toaster spec calls `prepareOfflineToaster`
+    // directly and the non-hydrating sweep above cannot tell "no row" from "row
+    // whose device has no store record". This drives the real registration use case
+    // so the store record exists, which is what makes the two distinguishable.
+    it('routes a toaster device to the Toaster module, passing its id and port', async () => {
+        const { port } = makePort();
+
+        await prepareOfflineDeviceSetup({ deviceId: 'toaster-1', deviceType: 'toaster', port });
+
+        // No signal: the kit push is a bounded run of postMessage calls with
+        // nothing to abort, unlike Levain's sample fetch.
+        expect(prepareOfflineToaster).toHaveBeenCalledExactlyOnceWith({ deviceId: 'toaster-1', port });
     });
 
     it('does nothing for a device type no native factory builds', async () => {

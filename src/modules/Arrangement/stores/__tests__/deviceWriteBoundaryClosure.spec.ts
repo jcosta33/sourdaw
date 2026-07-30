@@ -207,12 +207,18 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Proof/useCases/proofParamBridge/syncFullPatch.ts': 13,
         'src/modules/Proof/useCases/proofParamBridge/syncImager.ts': 3,
         'src/modules/Toaster/useCases/getToasterControls.ts': 2,
-        'src/modules/Toaster/useCases/loadToasterKit.ts': 23,
+        // Count provenance: the kit projection was three hand-maintained copies —
+        // 23 sinks in the preset loader and 22 in the live subscriber, each
+        // enumerating the same pad fields. They now delegate to one shared
+        // projection, so 45 sinks became 9. A row moving *down* here is a copy
+        // retiring; measured with `grep -o`, not estimated.
+        'src/modules/Toaster/useCases/loadToasterKit.ts': 3,
+        'src/modules/Toaster/useCases/projectToasterKitToEngineMessages.ts': 4,
         'src/modules/Toaster/useCases/setPadParamImmediate.ts': 1,
         'src/modules/Toaster/useCases/toasterParamBridge/setPadEngineImmediate.ts': 1,
         'src/modules/Toaster/useCases/toasterParamBridge/setToasterKitParam.ts': 1,
         'src/modules/Toaster/useCases/toasterParamBridge/setToasterPadParam.ts': 1,
-        'src/modules/Toaster/useCases/toasterSubscriber.ts': 22,
+        'src/modules/Toaster/useCases/toasterSubscriber.ts': 2,
     },
     'load-compile-hydration': {
         'src/app/bootstrap.ts': 1,
@@ -295,6 +301,11 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Proof/useCases/proofParamBridge/loadProofPatchWithAudio.ts': 1,
         'src/modules/Proof/presentations/views/ProofPanel.tsx': 3,
         'src/modules/Toaster/useCases/loadToasterKit.ts': 1,
+        // Count provenance: one hit, `audioDevice.loaded` in the doc comment
+        // explaining why an offline path is needed — that event never fires
+        // offline, so the live subscriber never runs. No load or hydration sink
+        // in the file. Kept rather than reworded: the sentence is the reason.
+        'src/modules/Toaster/useCases/prepareOfflineToaster.ts': 1,
         'src/modules/Toaster/useCases/setPadParamImmediate.ts': 1,
         'src/modules/Toaster/useCases/toasterParamBridge/setPadEngineImmediate.ts': 1,
         'src/modules/Toaster/useCases/toasterSubscriber.ts': 2,

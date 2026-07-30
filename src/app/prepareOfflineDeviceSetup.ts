@@ -1,6 +1,7 @@
 import { prepareCrumbsEngine } from '#/modules/Crumbs/useCases';
 import { prepareOfflineLevain } from '#/modules/Levain/useCases';
 import { prepareOfflineProof } from '#/modules/Proof/useCases';
+import { prepareOfflineToaster } from '#/modules/Toaster/useCases';
 import { type NativeDspDeviceType, resolveNativeDspDeviceType } from '#/utils/nativeDspDeviceTypes';
 
 export type PrepareOfflineDeviceSetupInput = {
@@ -27,7 +28,7 @@ type HydrateOfflineDevice = (input: PrepareOfflineDeviceSetupInput) => void | Pr
  *
  * **`null` is a decision, not a gap.** It means "this device's entire state
  * reaches the offline node as plain `parameterValues`, which the strategy already
- * replays". Nine of twelve are genuinely in that position, which is what makes an
+ * replays". Eight of twelve are genuinely in that position, which is what makes an
  * exhaustive table cheap enough to be worth having.
  *
  * The table is exhaustive over `NativeDspDeviceType`, so adding a native device to
@@ -45,14 +46,10 @@ const OFFLINE_DEVICE_HYDRATION: Record<NativeDspDeviceType, HydrateOfflineDevice
     // Its patch reaches project truth as plain numbers, which the offline strategy
     // already replays. There is nothing else to send.
     fermenter: null,
-    // Its per-pad kit is pushed after construction and does not reach the offline
-    // node — but wiring that up here is blocked, not merely unfinished. The kit
-    // lives in a store with no creation path, so both paths currently leave the
-    // engine at its constructor kit and therefore agree. Hydrating only the
-    // offline side would post the *application* default kit against live's
-    // *engine* default and make an export differ from the session for the first
-    // time. Fill this in together with the store fix, not before it.
-    toaster: null,
+    // Its per-pad kit — engine type, tuning, decay, tone, drive, filtering, sends
+    // — is pushed after construction and is not in `parameterValues`, so an export
+    // rendered the engine's built-in kit: right notes, wrong drums.
+    toaster: ({ deviceId, port }) => prepareOfflineToaster({ deviceId, port }),
     // The only entry that fetches: its sample zones come over the network, so it
     // is also the only one that needs the abort signal.
     levain: ({ deviceId, port, signal }) => prepareOfflineLevain({ deviceId, port, signal }),
