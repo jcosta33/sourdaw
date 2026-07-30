@@ -1,0 +1,23 @@
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_ac9b259eab20ba::t_6f0a26c603dcb6 265-285,288-299,303-311
+src/modules/AiRuntime/useCases/__tests__/validateActions.spec.ts
+  s_ac9b259eab20ba::t_dbe2c45e93a25f 3-7,124,127-141
+src/modules/AiRuntime/useCases/validateActions.ts
+  s_ac9b259eab20ba::t_62d33c43fcabe0 7,33-37,39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "4288d3d70d45ba826c2649c67fb8a9d88193035f",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
