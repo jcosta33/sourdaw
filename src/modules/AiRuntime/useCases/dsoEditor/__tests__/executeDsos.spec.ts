@@ -152,6 +152,24 @@ describe('executeDsos', () => {
         );
     });
 
+    it('compiles an enabled loop into separate bounds and enabled-state writes', async () => {
+        mocks.trackStoreValue.value = trackState([]);
+        mocks.executeAppAction.mockResolvedValue(undefined);
+
+        await executeDsos([{ op: 'set_loop', enabled: true, start_beats: 8, end_beats: 16 }]);
+
+        expect(mocks.executeAppAction).toHaveBeenNthCalledWith(
+            1,
+            { type: 'setLoopRegion', payload: { startBeat: 8, endBeat: 16 } },
+            expect.objectContaining({ source: 'ai', skipUndo: true })
+        );
+        expect(mocks.executeAppAction).toHaveBeenNthCalledWith(
+            2,
+            { type: 'setLoopEnabled', payload: { enabled: true } },
+            expect.objectContaining({ source: 'ai', skipUndo: true })
+        );
+    });
+
     it('should route compiled DAW mutations through executeAppAction instead of direct writers', async () => {
         mocks.trackStoreValue.value = {
             tracks: [
@@ -229,7 +247,7 @@ describe('executeDsos', () => {
             expect.objectContaining({ source: 'ai', skipUndo: true })
         );
         expect(mocks.executeAppAction).toHaveBeenCalledWith(
-            { type: 'toggleLoop' },
+            { type: 'setLoopEnabled', payload: { enabled: false } },
             expect.objectContaining({ source: 'ai', skipUndo: true })
         );
     });

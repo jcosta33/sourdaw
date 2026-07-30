@@ -27,6 +27,11 @@ function createProjectState(): ProjectContext {
     return {
         tempo: 120,
         timeSignature: [4, 4],
+        isLooping: false,
+        loopStart: 0,
+        loopEnd: 0,
+        metronomeEnabled: false,
+        metronomeVolume: 0.5,
         tracks,
         selectedTrackId: 'track-vocals',
         selectedClipId: null,

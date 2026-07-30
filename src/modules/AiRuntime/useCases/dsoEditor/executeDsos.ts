@@ -5,7 +5,6 @@
 import { logger } from '#/infra/logger/appLogger';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { executeAppAction } from '#/modules/Command/useCases';
-import { transportStore } from '#/modules/Transport/stores';
 
 import { type Dso } from '../../models/DsoTypes';
 
@@ -471,9 +470,8 @@ async function executeSingleDso(dso: Dso, context: DsoExecContext): Promise<void
                     { type: 'setLoopRegion', payload: { startBeat: dso.start_beats, endBeat: dso.end_beats } },
                     DSO_EXEC_OPTIONS
                 );
-            } else if (transportStore.value?.isLooping) {
-                await executeAppAction({ type: 'toggleLoop' }, DSO_EXEC_OPTIONS);
             }
+            await executeAppAction({ type: 'setLoopEnabled', payload: { enabled: dso.enabled } }, DSO_EXEC_OPTIONS);
             break;
         }
 

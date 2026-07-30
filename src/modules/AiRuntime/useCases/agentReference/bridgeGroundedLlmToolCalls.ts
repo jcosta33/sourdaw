@@ -407,7 +407,7 @@ function maskProjectReferences(prompt: string, context: ProjectContext): string 
 
 function getPromptClauses(prompt: string, maskedPrompt: string): PromptClause[] {
     const clauses: PromptClause[] = [];
-    const separatorPattern = /\s+(?:and then|then|and)\s+|[;,\n]+|(?<!\d)\.|\.(?!\d)/giu;
+    const separatorPattern = /\s+(?:and then|then|and|but)\s+|[;,\n]+|(?<!\d)\.|\.(?!\d)/giu;
     let start = 0;
     for (const match of maskedPrompt.matchAll(separatorPattern)) {
         if (prompt.slice(start, match.index).trim().length > 0) {
@@ -487,6 +487,27 @@ function findConnectorBoundNumber(maskedScope: string, numbers: readonly PromptN
     return boundNumber;
 }
 
+function findNamedConnectorBoundNumber(
+    maskedScope: string,
+    numbers: readonly PromptNumber[],
+    connectorName: 'from' | 'to'
+): PromptNumber | null {
+    const connectorPattern = new RegExp(`\\b${connectorName}\\b`, 'giu');
+    for (const connector of maskedScope.matchAll(connectorPattern)) {
+        const connectorEnd = connector.index + connector[0].length;
+        const number = numbers.find((candidate) => {
+            if (candidate.index < connectorEnd) {
+                return false;
+            }
+            return /^[\s:=]*(?:beat\s*)?$/iu.test(maskedScope.slice(connectorEnd, candidate.index));
+        });
+        if (number) {
+            return number;
+        }
+    }
+    return null;
+}
+
 function findDirectionBoundNumber(maskedScope: string, numbers: readonly PromptNumber[]): PromptNumber | null {
     return numbers.find((number) => /^\s*(?:left|right)\b/iu.test(maskedScope.slice(number.end))) ?? null;
 }
@@ -529,6 +550,13 @@ function getExpectedNumbers(actionScope: ActionPromptScope, valueRule: Grounding
     }));
     if (numbers.length === 0) {
         return [];
+    }
+    if (valueRule.connector) {
+        const connectorBoundNumber = findNamedConnectorBoundNumber(actionScope.masked, numbers, valueRule.connector);
+        if (!connectorBoundNumber) {
+            return null;
+        }
+        return [normalizePromptNumber(connectorBoundNumber, actionScope, valueRule)];
     }
     const boundNumber =
         findConnectorBoundNumber(actionScope.masked, numbers) ?? findDirectionBoundNumber(actionScope.masked, numbers);
@@ -902,7 +930,6 @@ function groundToolCall({
     if (!actionScope) {
         return rejection(index, call.name, 'Provider action is not grounded in the user request');
     }
-
     const groundedArguments = { ...call.arguments };
     for (const targetRule of groundingRules.targetRules) {
         const assertedValue = groundedArguments[targetRule.argument];
@@ -968,11 +995,32 @@ function groundToolCall({
     return { ...call, arguments: groundedArguments };
 }
 
+function hasExplicitPromptIntent(prompt: string, catalog: GroundingCatalog, actionName: string): boolean {
+    return getPromptClauses(prompt, prompt).some(
+        (clause) => resolveClauseActionIntent(clause.masked, catalog)?.actionType === actionName
+    );
+}
+
 export function bridgeGroundedLlmToolCalls({ calls, context, prompt }: BridgeGroundedLlmToolCallsInput) {
     if (calls.length > MAX_LLM_ACTIONS_PER_BATCH) {
         return bridgeLlmToolCalls({ calls, context });
     }
     const catalog = getExecutableAppActionGroundingCatalog();
+    const promptRequestsLoopRegion = hasExplicitPromptIntent(prompt, catalog, 'setLoopRegion');
+    const promptRequestsLoopEnabled = hasExplicitPromptIntent(prompt, catalog, 'setLoopEnabled');
+    const requiresCompoundLoop = promptRequestsLoopRegion && promptRequestsLoopEnabled;
+    if (requiresCompoundLoop) {
+        const hasLoopRegionCall = calls.some((call) => call.name === 'setLoopRegion');
+        const hasLoopEnabledCall = calls.some((call) => call.name === 'setLoopEnabled');
+        if (!hasLoopRegionCall || !hasLoopEnabledCall) {
+            return {
+                actions: [],
+                rejections: [
+                    rejection(0, '<batch>', 'Provider omitted an explicit loop command from the compound request'),
+                ],
+            };
+        }
+    }
     const groundingRejections = new Map<number, LlmActionRejection>();
     const groundedCalls = calls.map((call, index) => {
         const actionOrdinal = calls.slice(0, index).filter((candidate) => candidate.name === call.name).length;
@@ -994,13 +1042,19 @@ export function bridgeGroundedLlmToolCalls({ calls, context, prompt }: BridgeGro
         return grounded;
     });
     const bridged = bridgeLlmToolCalls({ calls: groundedCalls, context });
-    return {
-        actions: bridged.actions,
-        rejections: bridged.rejections.map((bridgeRejection) => {
-            if (bridgeRejection.name === '<batch>') {
-                return bridgeRejection;
-            }
-            return groundingRejections.get(bridgeRejection.index) ?? bridgeRejection;
-        }),
-    };
+    const rejections = bridged.rejections.map((bridgeRejection) => {
+        if (bridgeRejection.name === '<batch>') {
+            return bridgeRejection;
+        }
+        return groundingRejections.get(bridgeRejection.index) ?? bridgeRejection;
+    });
+    const hasGroundedLoopRegion = bridged.actions.some((action) => action.type === 'setLoopRegion');
+    const hasGroundedLoopEnabled = bridged.actions.some((action) => action.type === 'setLoopEnabled');
+    if (requiresCompoundLoop && (!hasGroundedLoopRegion || !hasGroundedLoopEnabled)) {
+        if (rejections.length === 0) {
+            rejections.push(rejection(0, '<batch>', 'Provider failed to ground the complete compound loop request'));
+        }
+        return { actions: [], rejections };
+    }
+    return { actions: bridged.actions, rejections };
 }

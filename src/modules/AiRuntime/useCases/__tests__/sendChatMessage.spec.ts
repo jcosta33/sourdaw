@@ -153,6 +153,11 @@ describe('sendChatMessage injectables', () => {
         mocks.getProjectContext.mockReturnValue({
             tempo: 120,
             timeSignature: [4, 4],
+            isLooping: false,
+            loopStart: 0,
+            loopEnd: 0,
+            metronomeEnabled: false,
+            metronomeVolume: 0.5,
             tracks: [],
             selectedTrackId: null,
             selectedClipId: null,
@@ -185,6 +190,11 @@ describe('sendChatMessage injectables', () => {
         mocks.getProjectContext.mockReturnValue({
             tempo: 120,
             timeSignature: [4, 4],
+            isLooping: false,
+            loopStart: 0,
+            loopEnd: 0,
+            metronomeEnabled: false,
+            metronomeVolume: 0.5,
             tracks: [
                 {
                     id: 'track-1',
@@ -244,6 +254,11 @@ describe('sendChatMessage injectables', () => {
         mocks.getProjectContext.mockReturnValue({
             tempo: 120,
             timeSignature: [4, 4],
+            isLooping: false,
+            loopStart: 0,
+            loopEnd: 0,
+            metronomeEnabled: false,
+            metronomeVolume: 0.5,
             tracks: [
                 {
                     id: 'track-1',

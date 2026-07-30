@@ -177,7 +177,25 @@ const validators = {
         (param.denominator === 2 || param.denominator === 4 || param.denominator === 8 || param.denominator === 16),
     setMasterGain: (param): param is PayloadOf<'setMasterGain'> => isObj(param) && isInRange(param.gain, 0, 1),
     setMetronomeVolume: (param): param is PayloadOf<'setMetronomeVolume'> =>
-        isObj(param) && isInRange(param.volume, 0, 1),
+        isObj(param) && hasExactKeys(param, ['volume']) && isInRange(param.volume, 0, 1),
+    setLoopEnabled: (param): param is PayloadOf<'setLoopEnabled'> =>
+        isObj(param) && hasExactKeys(param, ['enabled']) && typeof param.enabled === 'boolean',
+    setMetronomeEnabled: (param): param is PayloadOf<'setMetronomeEnabled'> =>
+        isObj(param) && hasExactKeys(param, ['enabled']) && typeof param.enabled === 'boolean',
+    setLoopRegion: (param): param is PayloadOf<'setLoopRegion'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['startBeat', 'endBeat']) &&
+        isNonNegativeNumber(param.startBeat) &&
+        isPositiveNumber(param.endBeat) &&
+        param.endBeat > param.startBeat,
+    restoreLoopRegion: (param): param is PayloadOf<'restoreLoopRegion'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['loopStart', 'loopEnd', 'isLooping']) &&
+        isNonNegativeNumber(param.loopStart) &&
+        isNonNegativeNumber(param.loopEnd) &&
+        param.loopEnd >= param.loopStart &&
+        typeof param.isLooping === 'boolean' &&
+        (!param.isLooping || param.loopEnd > param.loopStart),
 
     // Automation
     addAutomationLane: (param): param is PayloadOf<'addAutomationLane'> =>
@@ -254,7 +272,6 @@ const validators = {
     togglePunch: 'unchecked',
     toggleCountIn: 'unchecked',
     togglePreRoll: 'unchecked',
-    setLoopRegion: 'unchecked',
     setPunchIn: hasFinitePunchBeat,
     setPunchOut: hasFinitePunchBeat,
     setCountInBars: 'unchecked',

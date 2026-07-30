@@ -28,6 +28,16 @@ describe('setLoopRegion', () => {
         expect(update).toHaveBeenCalledWith({ loopStart: 4, loopEnd: 16, isLooping: true });
     });
 
+    it('can update bounds without changing loop enabled state', () => {
+        const update = vi.fn();
+        vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState, isLooping: false });
+        vi.mocked(updateTransportState).mockImplementation(update);
+
+        setLoopRegion(4, 16, false);
+
+        expect(update).toHaveBeenCalledWith({ loopStart: 4, loopEnd: 16 });
+    });
+
     it('should not update when transport state is missing', () => {
         const update = vi.fn();
         vi.mocked(getTransportState).mockReturnValue(null);
