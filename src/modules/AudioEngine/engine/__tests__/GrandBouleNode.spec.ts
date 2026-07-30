@@ -38,7 +38,12 @@ describe('createGrandBouleNode', () => {
     let nodeConnect: ReturnType<typeof vi.fn>;
     let nodeDisconnect: ReturnType<typeof vi.fn>;
     let resume: ReturnType<typeof vi.fn>;
-    let lastWorker: { onmessage: ((e: MessageEvent) => void) | null } | undefined;
+    let lastWorker:
+        | {
+              onmessage: ((e: MessageEvent) => void) | null;
+              onerror: ((e: ErrorEvent) => void) | null;
+          }
+        | undefined;
     let ctx: BaseAudioContext;
 
     beforeEach(() => {
@@ -58,6 +63,7 @@ describe('createGrandBouleNode', () => {
             const instance = {
                 postMessage: workerPostMessage,
                 onmessage: null as ((e: MessageEvent) => void) | null,
+                onerror: null as ((e: ErrorEvent) => void) | null,
                 terminate: workerTerminate,
             };
             lastWorker = instance;
@@ -68,12 +74,8 @@ describe('createGrandBouleNode', () => {
             connect = nodeConnect;
             disconnect = nodeDisconnect;
         }
-        class FakeSharedArrayBuffer {
-            constructor(_byteLength: number) {}
-        }
         vi.stubGlobal('Worker', FakeWorker);
         vi.stubGlobal('AudioWorkletNode', FakeWorkletNode);
-        vi.stubGlobal('SharedArrayBuffer', FakeSharedArrayBuffer);
         const fetchResponse = { ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)) };
         vi.stubGlobal('fetch', vi.fn().mockResolvedValue(fetchResponse));
         ctx = { currentTime: 0, state: 'running', sampleRate: 48000 } as unknown as BaseAudioContext;
@@ -102,6 +104,18 @@ describe('createGrandBouleNode', () => {
         result.allNotesOff();
 
         expect(workerPostMessage).toHaveBeenCalledWith({ type: 'allNotesOff' });
+    });
+
+    it('projects DSP lifecycle from shared state and reports worker faults as unmanaged', async () => {
+        const result = await createGrandBouleNode(ctx);
+        const initMessage = workerPostMessage.mock.calls[0]?.[0] as { sab: SharedArrayBuffer };
+        const controls = new Int32Array(initMessage.sab, 0, 7);
+
+        Atomics.store(controls, 4, 3);
+        expect(result.processorLifecycle()).toBe('sleep');
+
+        lastWorker?.onerror?.({ message: 'worker crashed' } as ErrorEvent);
+        expect(result.processorLifecycle()).toBeNull();
     });
 
     it('setBypass only gates new notes — release is TrackNode-owned, no in-node post', async () => {

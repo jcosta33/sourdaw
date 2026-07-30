@@ -33,13 +33,33 @@ const BLOCK_SIZE = 128;
 /** Minimum frames of headroom to maintain in the ring buffer. The worker
  *  tries to stay this far ahead of the worklet's read position. */
 const TARGET_AHEAD = BLOCK_SIZE * 6; // ~16 ms at 48 kHz
+const MAX_BLOCKS_PER_RENDER = Math.ceil(TARGET_AHEAD / BLOCK_SIZE) + 1;
+
+const WRITE_HEAD_IDX = 0;
+const READ_HEAD_IDX = 1;
+const RENDER_REQUEST_IDX = 2;
+const SLEEP_HEAD_IDX = 3;
+const LIFECYCLE_IDX = 4;
+const FLUSH_GENERATION_IDX = 5;
+const FLUSH_HEAD_IDX = 6;
+const LIFECYCLE_SLEEP = 3;
 
 /** Zero-delay yield via MessageChannel. Posts a message to ourselves that
  *  fires as a macrotask — after any pending onmessage handlers (MIDI events)
  *  but without the artificial 1–4 ms floor that setTimeout imposes. */
 const yieldChannel = new MessageChannel();
-const scheduleRender = (): void => yieldChannel.port2.postMessage(null);
-yieldChannel.port1.onmessage = () => renderLoop();
+let renderScheduled = false;
+const scheduleRender = (): void => {
+    if (!running || renderScheduled) {
+        return;
+    }
+    renderScheduled = true;
+    yieldChannel.port2.postMessage(null);
+};
+yieldChannel.port1.onmessage = () => {
+    renderScheduled = false;
+    renderLoop();
+};
 
 /** Map camelCase param names from TypeScript to snake_case for Rust. */
 const PARAM_MAP: Record<string, string> = {
@@ -60,15 +80,19 @@ const PARAM_MAP: Record<string, string> = {
 let instance: GrandBouleInstance | null = null;
 let memory: WebAssembly.Memory | null = null;
 let running = false;
+let waitingForDemand = false;
+let demandWaitGeneration = 0;
+let wasmBuffer: ArrayBuffer | SharedArrayBuffer | null = null;
+let leftOutputView: Float32Array | null = null;
+let rightOutputView: Float32Array | null = null;
+let leftOutputPointer = -1;
+let rightOutputPointer = -1;
 
 // SAB layout: [writeHead: Int32, readHead: Int32, leftRing: Float32[], rightRing: Float32[]]
 let controlInts: Int32Array | null = null;
 let leftRing: Float32Array | null = null;
 let rightRing: Float32Array | null = null;
 let ringFrames = 0;
-
-const WRITE_HEAD_IDX = 0;
-const READ_HEAD_IDX = 1;
 
 /**
  * Release-publish one rendered block into the SPSC ring.
@@ -95,12 +119,15 @@ export function writeBlockRelease(
     const firstChunk = Math.min(blockSize, ringFrames - offset);
     const secondChunk = blockSize - firstChunk;
 
-    // Data writes — must be sequenced-before the release store below.
-    leftRing.set(leftSrc.subarray(0, firstChunk), offset);
-    rightRing.set(rightSrc.subarray(0, firstChunk), offset);
-    if (secondChunk > 0) {
-        leftRing.set(leftSrc.subarray(firstChunk), 0);
-        rightRing.set(rightSrc.subarray(firstChunk), 0);
+    // Copy directly instead of constructing short-lived subarray views on every
+    // render block.
+    for (let index = 0; index < firstChunk; index++) {
+        leftRing[offset + index] = leftSrc[index] ?? 0;
+        rightRing[offset + index] = rightSrc[index] ?? 0;
+    }
+    for (let index = 0; index < secondChunk; index++) {
+        leftRing[index] = leftSrc[firstChunk + index] ?? 0;
+        rightRing[index] = rightSrc[firstChunk + index] ?? 0;
     }
 
     const nextWriteHead = (writeHead + blockSize) | 0;
@@ -111,8 +138,8 @@ export function writeBlockRelease(
 
 function initEngine(wasmBytes: ArrayBuffer, sab: SharedArrayBuffer, workerSampleRate: number): void {
     // Parse SAB layout.
-    controlInts = new Int32Array(sab, 0, 2);
-    const headerBytes = 2 * Int32Array.BYTES_PER_ELEMENT; // 8 bytes
+    controlInts = new Int32Array(sab, 0, 7);
+    const headerBytes = 7 * Int32Array.BYTES_PER_ELEMENT;
     const floatBytes = sab.byteLength - headerBytes;
     ringFrames = floatBytes / (2 * Float32Array.BYTES_PER_ELEMENT);
     leftRing = new Float32Array(sab, headerBytes, ringFrames);
@@ -121,14 +148,61 @@ function initEngine(wasmBytes: ArrayBuffer, sab: SharedArrayBuffer, workerSample
     // Reset heads.
     Atomics.store(controlInts, WRITE_HEAD_IDX, 0);
     Atomics.store(controlInts, READ_HEAD_IDX, 0);
+    Atomics.store(controlInts, RENDER_REQUEST_IDX, 0);
+    Atomics.store(controlInts, FLUSH_GENERATION_IDX, 0);
+    Atomics.store(controlInts, FLUSH_HEAD_IDX, 0);
 
     // Init WASM.
     const exports = initSync({ module: new WebAssembly.Module(wasmBytes) });
     memory = exports.memory;
     instance = new GrandBouleInstance(workerSampleRate, 64);
     running = true;
+    waitingForDemand = false;
+    demandWaitGeneration++;
+    wasmBuffer = null;
+    leftOutputView = null;
+    rightOutputView = null;
+    leftOutputPointer = -1;
+    rightOutputPointer = -1;
+    const lifecycleState = instance.lifecycle_state();
+    Atomics.store(controlInts, SLEEP_HEAD_IDX, lifecycleState === LIFECYCLE_SLEEP ? 0 : -1);
+    Atomics.store(controlInts, LIFECYCLE_IDX, lifecycleState);
     self.postMessage({ type: 'ready' });
-    scheduleRender();
+    if (lifecycleState !== LIFECYCLE_SLEEP) {
+        scheduleRender();
+    }
+}
+
+function waitForRenderDemand(): void {
+    if (!running || waitingForDemand || !controlInts) {
+        return;
+    }
+
+    const expectedRequest = Atomics.load(controlInts, RENDER_REQUEST_IDX);
+    const writeHead = Atomics.load(controlInts, WRITE_HEAD_IDX);
+    const readHead = Atomics.load(controlInts, READ_HEAD_IDX);
+    const buffered = (writeHead - readHead) | 0;
+    if (buffered < TARGET_AHEAD && ringFrames - buffered >= BLOCK_SIZE) {
+        scheduleRender();
+        return;
+    }
+
+    const generation = demandWaitGeneration;
+    const waitResult = Atomics.waitAsync(controlInts, RENDER_REQUEST_IDX, expectedRequest);
+    if (!waitResult.async) {
+        scheduleRender();
+        return;
+    }
+
+    waitingForDemand = true;
+    void waitResult.value.then(() => {
+        if (generation !== demandWaitGeneration) {
+            return false;
+        }
+        waitingForDemand = false;
+        scheduleRender();
+        return true;
+    });
 }
 
 function renderLoop(): void {
@@ -138,13 +212,10 @@ function renderLoop(): void {
 
     // Render as many blocks as needed to stay TARGET_AHEAD of the consumer,
     // using a bounded loop instead of recursion to avoid stack overflow.
-    const maxBlocksPerTick = Math.ceil(TARGET_AHEAD / BLOCK_SIZE) + 1;
-    let buffered = 0;
-
-    for (let index = 0; index < maxBlocksPerTick; index++) {
+    for (let index = 0; index < MAX_BLOCKS_PER_RENDER; index++) {
         const writeHead = Atomics.load(controlInts, WRITE_HEAD_IDX);
         const readHead = Atomics.load(controlInts, READ_HEAD_IDX);
-        buffered = (writeHead - readHead) | 0;
+        const buffered = (writeHead - readHead) | 0;
 
         if (buffered >= TARGET_AHEAD || ringFrames - buffered < BLOCK_SIZE) {
             break; // Enough headroom or ring is full.
@@ -154,24 +225,49 @@ function renderLoop(): void {
         const leftPtr = instance.process(BLOCK_SIZE);
         const rightPtr = instance.get_right_ptr();
         const mem = memory.buffer;
-        const leftSrc = new Float32Array(mem, leftPtr, BLOCK_SIZE);
-        const rightSrc = new Float32Array(mem, rightPtr, BLOCK_SIZE);
+        if (
+            mem !== wasmBuffer ||
+            leftPtr !== leftOutputPointer ||
+            rightPtr !== rightOutputPointer ||
+            !leftOutputView ||
+            !rightOutputView
+        ) {
+            wasmBuffer = mem;
+            leftOutputPointer = leftPtr;
+            rightOutputPointer = rightPtr;
+            leftOutputView = new Float32Array(mem, leftPtr, BLOCK_SIZE);
+            rightOutputView = new Float32Array(mem, rightPtr, BLOCK_SIZE);
+        }
 
         // Write into the ring (wrapping) and release-publish the new write head.
-        writeBlockRelease(controlInts, leftRing, rightRing, ringFrames, writeHead, leftSrc, rightSrc, BLOCK_SIZE);
+        const nextWriteHead = writeBlockRelease(
+            controlInts,
+            leftRing,
+            rightRing,
+            ringFrames,
+            writeHead,
+            leftOutputView,
+            rightOutputView,
+            BLOCK_SIZE
+        );
+
+        const lifecycleState = instance.lifecycle_state();
+        if (lifecycleState === LIFECYCLE_SLEEP) {
+            Atomics.store(controlInts, SLEEP_HEAD_IDX, nextWriteHead);
+            Atomics.store(controlInts, LIFECYCLE_IDX, lifecycleState);
+            return;
+        }
+        Atomics.store(controlInts, SLEEP_HEAD_IDX, -1);
+        Atomics.store(controlInts, LIFECYCLE_IDX, lifecycleState);
 
         // Atomics.pause is a Stage 3 proposal — cast to an extended type that includes it
         type AtomicsWithPause = typeof Atomics & { pause?: () => void };
         (Atomics as AtomicsWithPause).pause?.();
     }
 
-    // Yield to the event loop so pending MIDI messages can be dispatched.
-    // If the buffer is full, sleep for 2ms instead of spinning immediately.
-    if (buffered >= TARGET_AHEAD) {
-        setTimeout(scheduleRender, 2);
-    } else {
-        scheduleRender();
-    }
+    // Sleep without polling until the worklet consumes frames. Atomics.waitAsync
+    // keeps the worker's message queue responsive to MIDI and control messages.
+    waitForRenderDemand();
 }
 
 type GrandBouleDispatchMsg =
@@ -206,7 +302,7 @@ type GrandBouleWorkerMsg =
     | GrandBouleDispatchMsg;
 
 function dispatch(msg: GrandBouleDispatchMsg): void {
-    if (!instance) {
+    if (!instance || !controlInts) {
         return;
     }
     switch (msg.type) {
@@ -255,8 +351,19 @@ function dispatch(msg: GrandBouleDispatchMsg): void {
             break;
         case 'allNotesOff':
             instance.all_notes_off();
+            Atomics.store(controlInts, FLUSH_HEAD_IDX, Atomics.load(controlInts, WRITE_HEAD_IDX));
+            Atomics.add(controlInts, FLUSH_GENERATION_IDX, 1);
             break;
     }
+
+    const lifecycleState = instance.lifecycle_state();
+    if (lifecycleState === LIFECYCLE_SLEEP) {
+        Atomics.store(controlInts, SLEEP_HEAD_IDX, Atomics.load(controlInts, WRITE_HEAD_IDX));
+        Atomics.store(controlInts, LIFECYCLE_IDX, lifecycleState);
+        return;
+    }
+    Atomics.store(controlInts, LIFECYCLE_IDX, lifecycleState);
+    scheduleRender();
 }
 
 self.onmessage = ({ data }: MessageEvent<GrandBouleWorkerMsg>): void => {
@@ -264,6 +371,13 @@ self.onmessage = ({ data }: MessageEvent<GrandBouleWorkerMsg>): void => {
         initEngine(data.wasmBytes, data.sab, data.sampleRate);
     } else if (data.type === 'stop') {
         running = false;
+        renderScheduled = false;
+        waitingForDemand = false;
+        demandWaitGeneration++;
+        if (controlInts) {
+            Atomics.add(controlInts, RENDER_REQUEST_IDX, 1);
+            Atomics.notify(controlInts, RENDER_REQUEST_IDX);
+        }
     } else {
         dispatch(data);
     }

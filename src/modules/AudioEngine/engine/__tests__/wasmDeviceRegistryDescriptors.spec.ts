@@ -766,6 +766,7 @@ describe('wasmDeviceRegistry descriptors', () => {
                 loadAttackClip: vi.fn(),
                 allNotesOff: vi.fn(),
                 setBypass: vi.fn(),
+                processorLifecycle: vi.fn(() => 'sleep' as const),
                 connect: vi.fn(),
                 disconnect: vi.fn(),
                 destroy: vi.fn(),
@@ -786,6 +787,7 @@ describe('wasmDeviceRegistry descriptors', () => {
             const loaded = lastLoadedNode(deps.onLoaded);
             expect(loaded.grandBouleControls?.ready).toBe(true);
             expect(loaded.workerInstances).toBe(1);
+            expect(loaded.processorLifecycle?.()).toBe('sleep');
         });
     });
 

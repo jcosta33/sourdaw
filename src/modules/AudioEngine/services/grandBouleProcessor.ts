@@ -10,14 +10,20 @@
  *   { type: 'init', sab: SharedArrayBuffer }
  *
  * SAB layout:
- *   [0..3]  writeHead (Int32, atomic) — total frames written by engine worker
- *   [4..7]  readHead  (Int32, atomic) — total frames read by this processor
- *   [8..]   left ring  (Float32, ringFrames entries)
- *   [8 + ringFrames*4..] right ring (Float32, ringFrames entries)
+ *   [0] writeHead, [1] readHead, [2] render request generation,
+ *   [3] sleep-after head, [4] DSP lifecycle, [5] hard-flush generation,
+ *   [6] hard-flush write boundary,
+ *   followed by the left and right Float32 rings.
  */
 
 const WRITE_HEAD_IDX = 0;
 const READ_HEAD_IDX = 1;
+const RENDER_REQUEST_IDX = 2;
+const SLEEP_HEAD_IDX = 3;
+const LIFECYCLE_IDX = 4;
+const FLUSH_GENERATION_IDX = 5;
+const FLUSH_HEAD_IDX = 6;
+const LIFECYCLE_SLEEP = 3;
 
 /**
  * Int32 slot indices of the shared dropout SAB (audit RT-10) — mirrored by
@@ -39,9 +45,8 @@ type GrandBouleMsg = { type: 'init'; sab: SharedArrayBuffer; dropoutSab?: Shared
  * `subarray` reads below. When fewer than `frames` are published the ring is
  * left untouched (underrun) and `consumed` is 0 — no stale frames are copied.
  *
- * Returns the number of frames consumed and the advanced read head, so the
- * caller publishes the read head with a release store. Hot-path safe: no
- * allocation, no blocking.
+ * Returns whether a complete block was consumed. Hot-path safe: no allocation,
+ * no blocking.
  */
 export function readBlockAcquire(
     controlInts: Int32Array,
@@ -51,34 +56,37 @@ export function readBlockAcquire(
     out0: Float32Array,
     out1: Float32Array | undefined,
     frames: number
-): { consumed: number; nextReadHead: number } {
+): boolean {
     // Acquire fence — must precede the ring reads below.
     const writeHead = Atomics.load(controlInts, WRITE_HEAD_IDX);
     const readHead = Atomics.load(controlInts, READ_HEAD_IDX);
     const available = (writeHead - readHead) | 0;
 
     if (available < frames) {
-        // Underrun — caller outputs silence. The engine worker will catch up.
-        return { consumed: 0, nextReadHead: readHead };
+        return false;
     }
 
     const offset = (readHead >>> 0) % ringFrames;
     const firstChunk = Math.min(frames, ringFrames - offset);
     const secondChunk = frames - firstChunk;
 
-    out0.set(leftRing.subarray(offset, offset + firstChunk));
-    if (secondChunk > 0) {
-        out0.set(leftRing.subarray(0, secondChunk), firstChunk);
+    for (let index = 0; index < firstChunk; index++) {
+        out0[index] = leftRing[offset + index] ?? 0;
     }
-
-    if (out1) {
-        out1.set(rightRing.subarray(offset, offset + firstChunk));
-        if (secondChunk > 0) {
-            out1.set(rightRing.subarray(0, secondChunk), firstChunk);
+    for (let index = 0; index < secondChunk; index++) {
+        out0[firstChunk + index] = leftRing[index] ?? 0;
+    }
+    if (out1 !== undefined) {
+        for (let index = 0; index < firstChunk; index++) {
+            out1[index] = rightRing[offset + index] ?? 0;
+        }
+        for (let index = 0; index < secondChunk; index++) {
+            out1[firstChunk + index] = rightRing[index] ?? 0;
         }
     }
 
-    return { consumed: frames, nextReadHead: (readHead + frames) | 0 };
+    Atomics.store(controlInts, READ_HEAD_IDX, (readHead + frames) | 0);
+    return true;
 }
 
 class GrandBouleProcessor extends AudioWorkletProcessor {
@@ -94,6 +102,7 @@ class GrandBouleProcessor extends AudioWorkletProcessor {
      * before that is the startup pre-roll, not a dropout, and is not counted.
      */
     _hasDelivered = false;
+    _flushGeneration = 0;
 
     constructor() {
         super();
@@ -123,8 +132,8 @@ class GrandBouleProcessor extends AudioWorkletProcessor {
     }
 
     _initSab(sab: SharedArrayBuffer): void {
-        this._controlInts = new Int32Array(sab, 0, 2);
-        const headerBytes = 2 * Int32Array.BYTES_PER_ELEMENT;
+        this._controlInts = new Int32Array(sab, 0, 7);
+        const headerBytes = 7 * Int32Array.BYTES_PER_ELEMENT;
         const floatBytes = sab.byteLength - headerBytes;
         this._ringFrames = floatBytes / (2 * Float32Array.BYTES_PER_ELEMENT);
         this._leftRing = new Float32Array(sab, headerBytes, this._ringFrames);
@@ -133,8 +142,18 @@ class GrandBouleProcessor extends AudioWorkletProcessor {
             headerBytes + this._ringFrames * Float32Array.BYTES_PER_ELEMENT,
             this._ringFrames
         );
+        this._flushGeneration = Atomics.load(this._controlInts, FLUSH_GENERATION_IDX);
         this._ready = true;
         this.port.postMessage({ type: 'ready' });
+    }
+
+    _requestRender(): void {
+        const controls = this._controlInts;
+        if (!controls) {
+            return;
+        }
+        Atomics.add(controls, RENDER_REQUEST_IDX, 1);
+        Atomics.notify(controls, RENDER_REQUEST_IDX);
     }
 
     process(_inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
@@ -154,7 +173,21 @@ class GrandBouleProcessor extends AudioWorkletProcessor {
         const frames = out0.length;
         const out1 = output[1];
 
-        const { consumed, nextReadHead } = readBlockAcquire(
+        const flushGeneration = Atomics.load(this._controlInts, FLUSH_GENERATION_IDX);
+        if (flushGeneration !== this._flushGeneration) {
+            this._flushGeneration = flushGeneration;
+            const flushHead = Atomics.load(this._controlInts, FLUSH_HEAD_IDX);
+            Atomics.store(this._controlInts, READ_HEAD_IDX, flushHead);
+            out0.fill(0);
+            out1?.fill(0);
+            this._hasDelivered = false;
+            if (Atomics.load(this._controlInts, LIFECYCLE_IDX) !== LIFECYCLE_SLEEP) {
+                this._requestRender();
+            }
+            return true;
+        }
+
+        const consumed = readBlockAcquire(
             this._controlInts,
             this._leftRing,
             this._rightRing,
@@ -164,19 +197,28 @@ class GrandBouleProcessor extends AudioWorkletProcessor {
             frames
         );
 
-        if (consumed === 0) {
-            // Underrun — output silence. The engine worker will catch up. This
-            // used to vanish without a trace; now it lands in the shared dropout
-            // counters so the glitch is diagnosable after the fact (audit RT-10).
-            if (this._hasDelivered) {
+        if (!consumed) {
+            out0.fill(0);
+            out1?.fill(0);
+            const readHead = Atomics.load(this._controlInts, READ_HEAD_IDX);
+            const sleepHead = Atomics.load(this._controlInts, SLEEP_HEAD_IDX);
+            const lifecycleState = Atomics.load(this._controlInts, LIFECYCLE_IDX);
+            const expectedSilence = lifecycleState === LIFECYCLE_SLEEP || sleepHead === readHead;
+            if (!expectedSilence && this._hasDelivered) {
                 this._recordUnderrun(frames);
+            }
+            if (lifecycleState !== LIFECYCLE_SLEEP) {
+                this._requestRender();
             }
             return true;
         }
         this._hasDelivered = true;
 
-        // Release the read head only after the frames have been copied out.
-        Atomics.store(this._controlInts, READ_HEAD_IDX, nextReadHead);
+        const readHead = Atomics.load(this._controlInts, READ_HEAD_IDX);
+        const sleepHead = Atomics.load(this._controlInts, SLEEP_HEAD_IDX);
+        if (readHead !== sleepHead) {
+            this._requestRender();
+        }
 
         return true;
     }

@@ -690,6 +690,14 @@ export class GrandBouleInstance {
         return ret >>> 0;
     }
     /**
+     * Current DSP-owned render lifecycle for the worker host.
+     * @returns {number}
+     */
+    lifecycle_state() {
+        const ret = wasm.grandbouleinstance_lifecycle_state(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
      * Load an attack-sample clip into the hybrid sampled-attack set.
      * @param {number} key
      * @param {Float32Array} samples

@@ -932,6 +932,7 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
                     workerInstances: 1,
+                    processorLifecycle: result.processorLifecycle,
                     controller: {
                         ready: true,
                         noteOn: result.noteOn,

@@ -24,8 +24,33 @@ const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 
 /** Ring buffer: 8192 stereo frames ≈ 170 ms at 48 kHz. */
 const RING_FRAMES = 8192;
-const HEADER_BYTES = 2 * Int32Array.BYTES_PER_ELEMENT; // writeHead + readHead
+const CONTROL_INT_COUNT = 7;
+const HEADER_BYTES = CONTROL_INT_COUNT * Int32Array.BYTES_PER_ELEMENT;
 const SAB_BYTES = HEADER_BYTES + RING_FRAMES * 2 * Float32Array.BYTES_PER_ELEMENT;
+const LIFECYCLE_IDX = 4;
+
+type GrandBouleProcessorLifecycle = 'continue' | 'continueIfNotQuiet' | 'tail' | 'sleep';
+
+function projectGrandBouleLifecycle(
+    controls: Int32Array,
+    runtimeFaulted: boolean
+): GrandBouleProcessorLifecycle | null {
+    if (runtimeFaulted) {
+        return null;
+    }
+    switch (Atomics.load(controls, LIFECYCLE_IDX)) {
+        case 0:
+            return 'continue';
+        case 1:
+            return 'continueIfNotQuiet';
+        case 2:
+            return 'tail';
+        case 3:
+            return 'sleep';
+        default:
+            return null;
+    }
+}
 
 /**
  * Grand Boule uses its own fetcher (not the shared cache) because it appends
@@ -74,6 +99,7 @@ export type GrandBouleNodeResult = {
     loadAttackClip: (key: number, samples: Float32Array) => void;
     allNotesOff: () => void;
     setBypass: (bypassed: boolean) => void;
+    processorLifecycle: () => GrandBouleProcessorLifecycle | null;
     connect: (dest: AudioNode) => void;
     disconnect: () => void;
     destroy: () => void;
@@ -114,6 +140,7 @@ export async function createGrandBouleNode(
     // Create SAB ring buffer shared between Worker and AudioWorklet.
     // Requires cross-origin isolation (COOP + COEP headers) — guarded above.
     const sab = new SharedArrayBuffer(SAB_BYTES);
+    const controls = new Int32Array(sab, 0, CONTROL_INT_COUNT);
 
     // Create the engine Worker.
     const engineWorker = new Worker(new URL('../workers/grandBouleEngineWorker.ts', import.meta.url), {
@@ -121,6 +148,7 @@ export async function createGrandBouleNode(
     });
 
     let bypassed = false;
+    let runtimeFaulted = false;
 
     const handshake = createReadyHandshake({ pluginName: 'GrandBouleNode' });
     engineWorker.onmessage = (event: MessageEvent) => {
@@ -131,6 +159,12 @@ export async function createGrandBouleNode(
             // producing silence (audit RT-10).
             node.port.postMessage({ type: 'init', sab, dropoutSab: dropoutCounters.getSab() });
         }
+    };
+    engineWorker.onerror = (event: ErrorEvent) => {
+        runtimeFaulted = true;
+        handshake.onMessage({
+            data: { type: 'error', message: event.message || 'Grand Boule engine worker failed' },
+        } as MessageEvent);
     };
     const readyPromise = handshake.promise;
 
@@ -219,6 +253,9 @@ export async function createGrandBouleNode(
             // entry is owned by TrackNode.updateBypass via controller.allNotesOff
             // (wired above) — no in-node post, or the release would run twice.
             bypassed = state;
+        },
+        processorLifecycle() {
+            return projectGrandBouleLifecycle(controls, runtimeFaulted);
         },
         connect(dest: AudioNode) {
             node.connect(dest);
