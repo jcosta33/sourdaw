@@ -4,8 +4,8 @@ import { type RuntimeAction } from '../models/RuntimeAction';
 import { MAX_LLM_ACTIONS_PER_BATCH } from './llmActionLimits';
 import { type ToolCallResult } from './toolCallParser';
 
-type ExecutableTrackKind = 'audio' | 'midi' | 'bus' | 'folder';
-const executableTrackKinds: ReadonlySet<string> = new Set(['audio', 'midi', 'bus', 'folder']);
+type ExecutableTrackKind = 'audio' | 'midi' | 'folder';
+const executableTrackKinds: ReadonlySet<string> = new Set(['audio', 'midi', 'folder']);
 
 export type LlmActionRejection = {
     index: number;
@@ -183,12 +183,24 @@ function bridgeToolCall({
     if (call.name === 'addTrack') {
         const name = normalizeProjectName(args.name);
         if (!hasExactKeys(args, ['name', 'kind']) || !name || !isExecutableTrackKind(args.kind)) {
-            return rejection(index, call.name, 'Expected a safe name and one of audio, midi, bus, or folder');
+            return rejection(index, call.name, 'Expected a safe name and one of audio, midi, or folder');
         }
         return {
             type: 'addTrack',
             payload: { name, kind: args.kind, select: false },
         };
+    }
+
+    if (call.name === 'createBus') {
+        const name = normalizeProjectName(args.name);
+        if (!hasExactKeys(args, ['name']) || !name) {
+            return rejection(
+                index,
+                call.name,
+                'Expected only a non-empty bus name no longer than 120 characters without framing or control characters'
+            );
+        }
+        return { type: 'createBus', payload: { name } };
     }
 
     if (call.name === 'renameTrack') {
@@ -435,7 +447,7 @@ function bridgeToolCall({
 }
 
 function getMutationKey(action: RuntimeAction): string | null {
-    if (action.type === 'addTrack' || action.type === 'duplicateTrack') {
+    if (action.type === 'addTrack' || action.type === 'createBus' || action.type === 'duplicateTrack') {
         return null;
     }
     if (action.type === 'setTempo' || action.type === 'setTimeSignature') {

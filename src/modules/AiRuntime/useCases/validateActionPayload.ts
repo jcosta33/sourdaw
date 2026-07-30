@@ -322,7 +322,8 @@ const validators = {
     duplicateTimeRange: 'unchecked',
 
     // Bus / folder / send
-    createBus: 'unchecked',
+    createBus: (param): param is PayloadOf<'createBus'> =>
+        isObj(param) && hasExactKeys(param, ['name']) && isNonEmptyString(param.name),
     createFolder: 'unchecked',
     setSend: 'unchecked',
     addSend: 'unchecked',

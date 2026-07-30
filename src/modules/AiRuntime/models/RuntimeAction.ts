@@ -245,6 +245,7 @@ type AppActionPayload<ActionType extends AppActionType> =
 
 export const RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS = {
     armTrack: ['trackId', 'armed'],
+    createBus: ['name'],
     createTrackAlternative: ['trackId', 'name', 'duplicateActive'],
     deleteTrackAlternative: ['trackId', 'alternativeId'],
     duplicateClip: ['clipId'],
@@ -265,6 +266,7 @@ export const RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS = {
 
 export const RUNTIME_ACTION_OVERRIDE_REQUIRED_PAYLOAD_KEYS = {
     armTrack: ['trackId', 'armed'],
+    createBus: ['name'],
     createTrackAlternative: ['trackId', 'name', 'duplicateActive'],
     deleteTrackAlternative: ['trackId', 'alternativeId'],
     duplicateClip: ['clipId'],

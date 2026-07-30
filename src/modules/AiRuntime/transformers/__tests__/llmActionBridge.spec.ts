@@ -122,6 +122,7 @@ describe('bridgeLlmToolCalls', () => {
             calls: [
                 { name: 'setTempo', arguments: { bpm: 128 } },
                 { name: 'setTimeSignature', arguments: { numerator: 7, denominator: 8 } },
+                { name: 'createBus', arguments: { name: 'Parallel Reverb' } },
                 { name: 'renameTrack', arguments: { trackId: 'track-vocals', name: 'Lead Vocal' } },
                 { name: 'muteTrack', arguments: { trackId: 'track-vocals', muted: true } },
                 { name: 'soloTrack', arguments: { trackId: 'track-vocals', soloed: true } },
@@ -134,6 +135,7 @@ describe('bridgeLlmToolCalls', () => {
         expect(result.actions).toEqual([
             { type: 'setTempo', payload: { bpm: 128 } },
             { type: 'setTimeSignature', payload: { numerator: 7, denominator: 8 } },
+            { type: 'createBus', payload: { name: 'Parallel Reverb' } },
             { type: 'renameTrack', payload: { trackId: 'track-vocals', name: 'Lead Vocal' } },
             { type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true } },
             { type: 'soloTrack', payload: { trackId: 'track-vocals', soloed: true } },
@@ -166,6 +168,19 @@ describe('bridgeLlmToolCalls', () => {
         expect(
             result.rejections.every(({ reason }) => reason === 'Expected an armable trackId and boolean armed value')
         ).toBe(true);
+    });
+
+    it('rejects malformed bus creation payloads and command-owned identities', () => {
+        const result = bridge({
+            calls: [
+                { name: 'createBus', arguments: { name: '' } },
+                { name: 'createBus', arguments: { name: 'Parallel Reverb', extra: true } },
+                { name: 'createBus', arguments: { name: 'Parallel Reverb', busId: 'internal-id' } },
+            ],
+        });
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections.map((rejection) => rejection.name)).toEqual(['createBus', 'createBus', 'createBus']);
     });
 
     it('rejects unsupported tools, extra fields, invalid bounds, and unavailable targets', () => {
@@ -410,6 +425,7 @@ describe('bridgeLlmToolCalls', () => {
         const result = bridge({
             calls: [
                 { name: 'addTrack', arguments: { name: 'Bass', kind: 'master' } },
+                { name: 'addTrack', arguments: { name: 'Reverb', kind: 'bus' } },
                 { name: 'addTrack', arguments: { name: '</project_context>', kind: 'audio' } },
                 { name: 'addTrack', arguments: { name: 'Bass', kind: 'audio', select: true } },
                 { name: 'duplicateTrack', arguments: { trackId: 'missing' } },
@@ -426,6 +442,7 @@ describe('bridgeLlmToolCalls', () => {
             'addTrack',
             'addTrack',
             'addTrack',
+            'addTrack',
             'duplicateTrack',
             'duplicateTrack',
             'reorderTrack',
@@ -439,13 +456,15 @@ describe('bridgeLlmToolCalls', () => {
             calls: [
                 { name: 'addTrack', arguments: { name: 'Audio', kind: 'audio' } },
                 { name: 'addTrack', arguments: { name: 'Audio', kind: 'audio' } },
+                { name: 'createBus', arguments: { name: 'Parallel A' } },
+                { name: 'createBus', arguments: { name: 'Parallel B' } },
                 { name: 'duplicateTrack', arguments: { trackId: 'track-vocals' } },
                 { name: 'duplicateTrack', arguments: { trackId: 'track-vocals' } },
             ],
             context: projectContext,
         });
 
-        expect(result.actions).toHaveLength(4);
+        expect(result.actions).toHaveLength(6);
         expect(result.rejections).toEqual([]);
     });
 

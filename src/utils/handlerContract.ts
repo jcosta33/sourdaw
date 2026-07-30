@@ -370,7 +370,7 @@ export type AppAction =
     | { type: 'removeDevice'; payload: { deviceId: string } }
     | { type: 'setDeviceParameter'; payload: { deviceId: string; paramId: string; value: number } }
     | { type: 'setExternalPluginState'; payload: { deviceId: string; stateChunk: string } }
-    | { type: 'createBus'; payload: { name: string } }
+    | { type: 'createBus'; payload: { name: string; /** Internal replay identity. */ busId?: string } }
     | { type: 'createFolder'; payload: { name: string } }
     | {
           type: 'setSend';

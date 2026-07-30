@@ -166,6 +166,14 @@ describe('bridgeGroundedLlmToolCalls', () => {
             [{ name: 'addTrack', arguments: { name: 'Bass', kind: 'midi' } }],
             'create an audio track named Drums'
         );
+        const createdBus = bridge(
+            [{ name: 'createBus', arguments: { name: 'Parallel Reverb' } }],
+            'create a bus called Parallel Reverb'
+        );
+        const wrongCreatedBus = bridge(
+            [{ name: 'createBus', arguments: { name: 'Drum Crush' } }],
+            'create a bus called Parallel Reverb'
+        );
 
         expect(valid.actions).toEqual([
             { type: 'setTempo', payload: { bpm: 128 } },
@@ -180,6 +188,8 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(wrongTempo.actions).toEqual([]);
         expect(wrongColor.actions).toEqual([]);
         expect(wrongCreatedTrack.actions).toEqual([]);
+        expect(createdBus.actions).toEqual([{ type: 'createBus', payload: { name: 'Parallel Reverb' } }]);
+        expect(wrongCreatedBus.actions).toEqual([]);
     });
 
     it('grounds arm polarity to eligible named or selected tracks and respects cancellation', () => {
