@@ -1,0 +1,22 @@
+crates/daw-dsp/src/toaster/mod.rs
+  s_ac9b259eab20ba::t_bddf33e2be4cf3 127
+  s_ac9b259eab20ba::t_8adf082ec32f1d 141-150
+  s_ac9b259eab20ba::t_0e008673dc4cd6 101-103
+  s_ac9b259eab20ba::t_728d93ee42face 140
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "02a350b00c64c86f1540b530ed911d60dbc7a6a1",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
