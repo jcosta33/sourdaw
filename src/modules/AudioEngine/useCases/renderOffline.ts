@@ -153,6 +153,38 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
         const deviceEntriesByTrack = new Map<string, DeviceNodeEntry[]>();
         const busStripsById = new Map<string, OfflineBusStrip>();
 
+        // FX-8 — a muted track is silenced by its own `postFaderGain`, which sits
+        // downstream of the pre-fader send tap. Live, that leaves its pre-fader
+        // (cue) sends still feeding their buses, which is the defining property of
+        // a pre-fader tap. The mixdown expressed the mute a second time by refusing
+        // to schedule the track at all, so export silently lost cue-send content the
+        // engineer was monitoring. Those tracks are scheduled again; their strip's
+        // mute node still keeps their direct output out of the mix.
+        //
+        // Solo gating is the opposite case and stays excluded: solo-in-place means
+        // "play me only this", so a gated track must feed nothing, return buses
+        // included. A muted track with no live pre-fader send is also still skipped,
+        // so the render never does work whose output cannot reach the mix.
+        //
+        // Resolved *before* the strips are built, because a strip has to know
+        // whether it will be scheduled: a strip that is never scheduled
+        // contributes silence, so an unrenderable device on it must degrade
+        // rather than fail the whole export. Bus membership is read off the
+        // track kind rather than off `busStripsById`, which does not exist yet
+        // and is filled from exactly this set of tracks.
+        const busTrackIds = new Set(
+            allRenderableTracks.filter((track) => track.kind === 'bus').map((track) => track.id)
+        );
+        const sourceTrackIds = new Set(sourceTracks.map((track) => track.id));
+        const cueSendOnlyTracks = allRenderableTracks.filter((track) => {
+            if (sourceTrackIds.has(track.id) || (soloGatedByTrackId.get(track.id) ?? false)) {
+                return false;
+            }
+            return track.sends.some((send) => send.preFader && busTrackIds.has(send.busId));
+        });
+        const scheduledTracks = [...sourceTracks, ...cueSendOnlyTracks];
+        const scheduledTrackIds = new Set(scheduledTracks.map((track) => track.id));
+
         for (const track of allRenderableTracks) {
             checkCancel();
             // A VCA-member track plays through its group master, so the bounce
@@ -162,7 +194,11 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
             // the strip so the strip builder stays a pure function of what it is
             // handed.
             const vcaMultiplier = deriveVcaMultiplier({ vcaGroupId: track.vcaGroupId, groups: vcaGroups });
-            const strip = await createOfflineTrackStrip(offlineCtx, track, { vcaMultiplier });
+            const strip = await createOfflineTrackStrip(offlineCtx, track, {
+                vcaMultiplier,
+                onWarning,
+                contributesAudio: scheduledTrackIds.has(track.id),
+            });
             trackStripsById.set(track.id, strip);
             deviceEntriesByTrack.set(track.id, strip.deviceEntries);
             if (track.kind === 'bus') {
@@ -213,27 +249,6 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
                 sendGain.connect(busStrip.gainNode);
             }
         }
-
-        // FX-8 — a muted track is silenced by its own `postFaderGain`, which sits
-        // downstream of the pre-fader send tap. Live, that leaves its pre-fader
-        // (cue) sends still feeding their buses, which is the defining property of
-        // a pre-fader tap. The mixdown expressed the mute a second time by refusing
-        // to schedule the track at all, so export silently lost cue-send content the
-        // engineer was monitoring. Those tracks are scheduled again; their strip's
-        // mute node still keeps their direct output out of the mix.
-        //
-        // Solo gating is the opposite case and stays excluded: solo-in-place means
-        // "play me only this", so a gated track must feed nothing, return buses
-        // included. A muted track with no live pre-fader send is also still skipped,
-        // so the render never does work whose output cannot reach the mix.
-        const sourceTrackIds = new Set(sourceTracks.map((track) => track.id));
-        const cueSendOnlyTracks = allRenderableTracks.filter((track) => {
-            if (sourceTrackIds.has(track.id) || (soloGatedByTrackId.get(track.id) ?? false)) {
-                return false;
-            }
-            return track.sends.some((send) => send.preFader && busStripsById.has(send.busId));
-        });
-        const scheduledTracks = [...sourceTracks, ...cueSendOnlyTracks];
 
         // Schedule the tracks that can still reach the mix — audible ones plus the
         // cue-send-only ones above — while keeping the full routing graph alive so

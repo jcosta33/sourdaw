@@ -2,6 +2,8 @@
  * Use case: resolve built-in synthesizer parameters from device descriptors.
  */
 
+import { isBuiltinSynthDevice } from '#/utils/deviceTypeMatching';
+
 import { type BuiltinSynthParams } from '../models/BuiltinSynthTypes';
 
 // Consumer-local shape (AGENTS.md §95 — model isolation). Only fields used here.
@@ -95,7 +97,7 @@ function resolveEnumParam<TValue extends string>(
  * to avoid re-reading the live store mid-render.
  */
 export function getSynthParamsFromDevices(devices: Device[]): BuiltinSynthParams {
-    const synthDevice = devices.find((d) => d.type === 'synth' || d.type.startsWith('builtin-synth'));
+    const synthDevice = devices.find((d) => isBuiltinSynthDevice(d.type));
     if (!synthDevice) {
         return { ...defaultSynthParams };
     }

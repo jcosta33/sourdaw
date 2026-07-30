@@ -1,5 +1,6 @@
 import { renderTrackSubgraphOffline } from '#/modules/AudioEngine/useCases';
 import { sidechainStore } from '#/modules/Routing/stores';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type Track } from '../../models/Track';
 import { getUpstreamSubgraph } from '../../services/getUpstreamSubgraph';
@@ -8,6 +9,11 @@ import { trackStore } from '../../stores/trackStore';
 
 /** Seconds of extra render an auto-tail bounce gets before the silence trim. */
 const AUTO_TAIL_SECONDS = 10;
+
+/** Default warning sink: this buffer is persisted, so the user has to be told. */
+function reportDroppedDeviceToUser(message: string): void {
+    notifyUser(message, 'warning');
+}
 
 export type RenderOfflineOptions = {
     onProgress?: (progress: number) => void;
@@ -34,6 +40,22 @@ export type RenderOfflineOptions = {
      * that very strip; every other caller's output is finished audio.
      */
     targetMixer?: 'bake' | 'keepLive';
+    /**
+     * Where a dropped-device warning from the offline chain goes. Defaults to
+     * the user-facing notification channel, and that default is the point.
+     *
+     * This output is *persisted* — a frozen buffer replaces the track's live
+     * sound, and a bounced buffer becomes a project clip that later enters
+     * exports — so a device the chain could not build is baked in as a
+     * permanent absence. Freezing a track carrying a third-party plugin, which
+     * is hosted live under Tauri, writes a buffer without it. Every export path
+     * routes this to the user; before this default, freeze and bounce sent it
+     * to `logger.warn` and stopped, because `renderTrackSubgraphOffline` took
+     * an `onWarning` no caller here could supply.
+     *
+     * Pass an explicit handler to collect instead of notify.
+     */
+    onWarning?: (message: string) => void;
 };
 
 /**
@@ -95,6 +117,7 @@ export async function renderTrackOffline(
         includeAutomation: options?.includeAutomation ?? true,
         includeSends: options?.includeSends ?? true,
         onProgress: options?.onProgress,
+        onWarning: options?.onWarning ?? reportDroppedDeviceToUser,
         abortSignal: options?.abortSignal,
     });
 

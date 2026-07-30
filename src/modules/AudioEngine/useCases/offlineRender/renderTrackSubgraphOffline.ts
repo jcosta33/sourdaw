@@ -168,6 +168,7 @@ export async function renderTrackSubgraphOffline({
                     isTarget: track.id === targetTrackId,
                     groups: vcaGroups,
                 }),
+                onWarning,
             }
         );
         trackStripsById.set(track.id, strip);

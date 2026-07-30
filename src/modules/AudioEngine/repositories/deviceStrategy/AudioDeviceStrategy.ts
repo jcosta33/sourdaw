@@ -1,6 +1,8 @@
 import { type Device } from '../../models/TrackViewTypes';
 import { type OfflineDeviceNode } from '../devices/types';
 
+import { UnsupportedDeviceTypeError } from './unsupportedDeviceTypeError';
+
 export type OfflineAutomationSegment = {
     startFrame: number;
     endFrame: number;
@@ -67,6 +69,6 @@ export class DeviceFactoryRegistry {
                 return matcher.creator(ctx, device);
             }
         }
-        throw new Error(`No device factory registered for type: ${device.type}`);
+        throw new UnsupportedDeviceTypeError(device.type, 'no registered factory matches this device type');
     }
 }
