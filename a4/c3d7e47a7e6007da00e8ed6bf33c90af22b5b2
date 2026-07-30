@@ -1,0 +1,103 @@
+src/modules/AiRuntime/useCases/getProjectContext.ts
+  s_bc88af7d3b054c::t_023b10fb839ab6 3,13-14,22,24,29,37,47,59,83-98,167
+src/modules/Automation/useCases/automation/__tests__/addAutomationLane.spec.ts
+  s_bc88af7d3b054c::t_58548f7bf2bc01 1,3-4,7-25
+  s_bc88af7d3b054c::t_a4f94beea15c07 26-28
+src/modules/AiRuntime/models/PresetActions/Presets/MixAndAutomation.ts
+  s_bc88af7d3b054c::t_a1dce6aa9fa866 1,41-44
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_bc88af7d3b054c::t_12dbe698ba7b48 71
+src/modules/AiRuntime/models/ProjectContext.ts
+  s_bc88af7d3b054c::t_023b10fb839ab6 10,24-39
+  s_bc88af7d3b054c::t_1aa3efc1d5a7a0 40
+src/modules/AiRuntime/useCases/__tests__/getProjectContext.spec.ts
+  s_bc88af7d3b054c::t_b568f529570bb9 11,34-41,74,93,252-313
+  s_bc88af7d3b054c::t_a90158c19c50f9 314
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_bc88af7d3b054c::t_2282bcc4bee013 92
+  s_bc88af7d3b054c::t_12dbe698ba7b48 73-76,80-90,93-94,228-231,233-242,244-250,252-256
+  s_bc88af7d3b054c::t_85ecdefb82d635 243
+  s_bc88af7d3b054c::t_44cce94d8546a9 77-79,91
+src/modules/AiRuntime/transformers/promptParser/__tests__/parsing.spec.ts
+  s_bc88af7d3b054c::t_90801b85c33739 77-89
+src/modules/AiRuntime/useCases/agentReference/__tests__/resolveAgentReference.spec.ts
+  s_bc88af7d3b054c::t_b568f529570bb9 83-124,235-265,267-268
+  s_bc88af7d3b054c::t_3f4f499b3fe17e 266
+src/modules/Automation/useCases/automation/addAutomationLane.ts
+  s_bc88af7d3b054c::t_12dbe698ba7b48 17-18
+  s_ac9b259eab20ba::t_1b7c4a6c02dfd7 10-12
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_bc88af7d3b054c::t_58548f7bf2bc01 383-396,411-484
+  s_bc88af7d3b054c::t_d09c6acc7d44cc 485-487
+src/modules/AiRuntime/useCases/agentReference/resolveAgentReference.ts
+  s_bc88af7d3b054c::t_023b10fb839ab6 14,233-249
+  s_bc88af7d3b054c::t_edbb1550c22a78 250,327-337
+  s_bc88af7d3b054c::t_c3a44b687b3611 251
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_bc88af7d3b054c::t_475e0c7ebb39f1 4,336-381
+  s_bc88af7d3b054c::t_84e8d444299827 693-739,785-788
+  s_bc88af7d3b054c::t_1d862567a94dad 789
+src/modules/AiRuntime/models/Tools/MidiAutomationRouting.ts
+  s_bc88af7d3b054c::t_ab161294b8fb9d 93-97,99,107,110,116-123
+  s_bc88af7d3b054c::t_cd92027e3b0b25 124
+src/modules/AiRuntime/models/Tools/__tests__/MidiAutomationRouting.spec.ts
+  s_bc88af7d3b054c::t_1bdb67d63943da 1-49
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_bc88af7d3b054c::t_1628788a8b1fde 17,41-42,646-731
+  s_bc88af7d3b054c::t_bde78eba3ccb80 732
+src/modules/AiRuntime/models/__tests__/RuntimeAction.spec.ts
+  s_bc88af7d3b054c::t_cd251df599477b 23
+  s_bc88af7d3b054c::t_5fe6060b375689 21,36,44-46
+  s_bc88af7d3b054c::t_6f3e081dffc173 34-35
+  s_ac9b259eab20ba::t_036c4bdc04e06e 52-53
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_bc88af7d3b054c::t_4bfe3ddd59f39a 14-25,1205-1208,1222-1248,1273-1369
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_bc88af7d3b054c::t_5f94cddba2f57d 139-170,261-338,795-803,920-921,935-950,1025-1034
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_ac9b259eab20ba::t_1c6d8eeb088510 48-59,1160-1308
+src/modules/Automation/handlers/automation/handleAddAutomationPoint.ts
+  s_bc88af7d3b054c::t_4819cfd6093604 6-14,18,34,40
+src/modules/Automation/handlers/automation/handleRemoveAutomationPoint.ts
+  s_ac9b259eab20ba::t_9f270a4e366d9a 4,7-26,29-30,33-34,37,48-49,53,62
+src/modules/Automation/models/Automation.ts
+  s_bc88af7d3b054c::t_1f7072b878fa80 4
+src/modules/Automation/stores/__tests__/automationStore.spec.ts
+  s_ac9b259eab20ba::t_60344365847f07 117,153,249
+src/modules/Automation/stores/automationStore.ts
+  s_ac9b259eab20ba::t_b1c4cb1d9a9059 48,87-90,162,191-194
+src/modules/Automation/useCases/automation/__tests__/removeAutomationPointById.spec.ts
+  s_bc88af7d3b054c::t_f72ad94a550196 1-63
+src/modules/Automation/useCases/automation/removeAutomationPointById.ts
+  s_bc88af7d3b054c::t_d02d8fe9639e9c 1-20
+src/modules/Command/useCases/macro/__tests__/playback.spec.ts
+  s_ac9b259eab20ba::t_db999857f59af3 66-206
+src/modules/Command/useCases/macro/playback.ts
+  s_ac9b259eab20ba::t_568fa816d15097 8-9,73-97,150-157,164-184,262,289-290
+src/utils/handlerContract.ts
+  s_bc88af7d3b054c::t_8da31ca559d56e 96,445-446,520-528
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "a4c3d7e47a7e6007da00e8ed6bf33c90af22b5b2",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
