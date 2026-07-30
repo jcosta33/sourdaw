@@ -425,7 +425,9 @@ describe('wasmDeviceRegistry descriptors', () => {
     });
 
     describe('bacteria', () => {
-        function makeBacteriaResult(ready: Record<string, unknown>): BacteriaNodeResult & {
+        function makeBacteriaResult(
+            ready: Record<string, unknown> | Promise<Record<string, unknown>>
+        ): BacteriaNodeResult & {
             emitLatency: (latency: number) => void;
         } {
             let latencyCallback: ((latency: number) => void) | undefined;
@@ -474,6 +476,29 @@ describe('wasmDeviceRegistry descriptors', () => {
 
             expect(externalLatencyRegistry.get('bac-2')).toBe(0);
         });
+
+        it('destroys an invalidated late load before it reports latency or installs callbacks', async () => {
+            const readiness = Promise.withResolvers<Record<string, unknown>>();
+            const result = makeBacteriaResult(readiness.promise);
+            factoryMocks.createBacteriaNode.mockResolvedValue(result);
+            let current = true;
+            const deps = createDeps({
+                deviceType: 'bacteria',
+                deviceId: 'bac-late',
+                isCurrent: () => current,
+            });
+
+            const { loadPromise } = requireDescriptor('bacteria').create(deps);
+            current = false;
+            readiness.resolve({ latency: 96 });
+            await loadPromise;
+
+            expect(result.destroy).toHaveBeenCalledTimes(1);
+            expect(deps.onLoaded).not.toHaveBeenCalled();
+            expect(externalLatencyRegistry.has('bac-late')).toBe(false);
+            expect(result.onLatencyChanged).not.toHaveBeenCalled();
+            expect(result.onMeterData).not.toHaveBeenCalled();
+        });
     });
 
     describe('grinder', () => {
@@ -503,6 +528,42 @@ describe('wasmDeviceRegistry descriptors', () => {
             expect(result.setParam).toHaveBeenCalledWith('drive', 0.7);
             expect(result.setPatch).toHaveBeenCalledWith({ amp: 'lead' });
             expect(result.setBypass).toHaveBeenCalledWith(true);
+        });
+
+        it('destroys an invalidated late load before replaying state or reporting latency', async () => {
+            const readiness = Promise.withResolvers<{ latency: number }>();
+            const result: GrinderNodeResult = {
+                workletNode: makeWorkletNode(),
+                setParam: vi.fn(),
+                setPatch: vi.fn(),
+                setBypass: vi.fn(),
+                onMeterData: vi.fn(),
+                onLatencyChanged: vi.fn(),
+                connect: vi.fn(),
+                disconnect: vi.fn(),
+                destroy: vi.fn(),
+                ready: readiness.promise,
+            };
+            factoryMocks.createGrinderNode.mockResolvedValue(result);
+            let current = true;
+            const deps = createDeps({
+                deviceType: 'grinder',
+                deviceId: 'grind-late',
+                isCurrent: () => current,
+            });
+
+            const { placeholder, loadPromise } = requireDescriptor('grinder').create(deps);
+            placeholder.controller?.setParam('drive', 0.7);
+            current = false;
+            readiness.resolve({ latency: 96 });
+            await loadPromise;
+
+            expect(result.destroy).toHaveBeenCalledTimes(1);
+            expect(deps.onLoaded).not.toHaveBeenCalled();
+            expect(externalLatencyRegistry.has('grind-late')).toBe(false);
+            expect(result.setParam).not.toHaveBeenCalled();
+            expect(result.onLatencyChanged).not.toHaveBeenCalled();
+            expect(result.onMeterData).not.toHaveBeenCalled();
         });
 
         it('forwards worklet telemetry frames to the grinder sink', async () => {

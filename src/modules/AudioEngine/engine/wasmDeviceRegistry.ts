@@ -418,7 +418,7 @@ const glutenDescriptor: WasmDeviceDescriptor = {
 
 const bacteriaDescriptor: WasmDeviceDescriptor = {
     matches: isBacteriaDevice,
-    create({ context, deviceId, deviceType, onLoaded }) {
+    create({ context, deviceId, deviceType, isCurrent, onLoaded }) {
         const pendingParams: Array<[string, number]> = [];
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.nativeDspControls = {
@@ -430,6 +430,10 @@ const bacteriaDescriptor: WasmDeviceDescriptor = {
         const loadPromise = createBacteriaNode(context)
             .then(async (result: BacteriaNodeResult) => {
                 const readyData = await result.ready;
+                if (isCurrent?.() === false) {
+                    result.destroy();
+                    return;
+                }
                 const initialLatency = typeof readyData.latency === 'number' ? readyData.latency : 0;
                 reportLatency(deviceId, (initialLatency / context.sampleRate) * 1000);
 
@@ -471,7 +475,7 @@ const bacteriaDescriptor: WasmDeviceDescriptor = {
 
 const grinderDescriptor: WasmDeviceDescriptor = {
     matches: isGrinderDevice,
-    create({ context, deviceId, deviceType, onLoaded }) {
+    create({ context, deviceId, deviceType, isCurrent, onLoaded }) {
         const pendingParams: Array<[string, number]> = [];
         let pendingPatch: Record<string, unknown> | null = null;
         let pendingBypass = false;
@@ -498,6 +502,10 @@ const grinderDescriptor: WasmDeviceDescriptor = {
         const loadPromise = createGrinderNode(context)
             .then(async (result: GrinderNodeResult) => {
                 const readyData = await result.ready;
+                if (isCurrent?.() === false) {
+                    result.destroy();
+                    return;
+                }
                 const initialLatency = typeof readyData.latency === 'number' ? readyData.latency : 0;
                 reportLatency(deviceId, (initialLatency / context.sampleRate) * 1000);
 
