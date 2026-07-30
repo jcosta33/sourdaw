@@ -2,11 +2,36 @@ import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { trackStore, vcaGroupStore } from '#/modules/Arrangement/stores';
 
-import { RUNTIME_ACTION_TYPES, type RuntimeAction, type RuntimeActionType } from '../models/RuntimeAction';
+import {
+    RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS,
+    RUNTIME_ACTION_TYPES,
+    type RuntimeAction,
+    type RuntimeActionType,
+} from '../models/RuntimeAction';
 
 import { PAYLOAD_VALIDATORS, type PayloadValidator } from './validateActionPayload';
 
 const KNOWN_ACTION_TYPES: ReadonlySet<RuntimeActionType> = new Set(RUNTIME_ACTION_TYPES);
+
+type RuntimePayloadOverrideType = keyof typeof RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS;
+
+function isRuntimePayloadOverrideType(actionType: RuntimeActionType): actionType is RuntimePayloadOverrideType {
+    return actionType in RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS;
+}
+
+function hasOnlyInitiatingPayloadKeys(action: RuntimeAction): boolean {
+    if (!isRuntimePayloadOverrideType(action.type)) {
+        return true;
+    }
+
+    const payload: unknown = action.payload;
+    if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+        return false;
+    }
+
+    const allowedKeys: readonly string[] = RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS[action.type];
+    return Object.keys(payload).every((key) => allowedKeys.includes(key));
+}
 
 const UNAWAITED_AI_ACTION_TYPES: ReadonlySet<RuntimeActionType> = new Set([
     'exportProject',
@@ -53,6 +78,11 @@ export const validateActions = inject({ logger })(
 
                 if (UNAWAITED_AI_ACTION_TYPES.has(action.type)) {
                     logger.warn(`Unawaited AI action rejected: ${action.type}`);
+                    return false;
+                }
+
+                if (!hasOnlyInitiatingPayloadKeys(action)) {
+                    logger.warn(`Command-owned payload fields rejected for action ${action.type}`);
                     return false;
                 }
 

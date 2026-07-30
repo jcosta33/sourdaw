@@ -243,23 +243,88 @@ type AppActionOf<ActionType extends AppActionType> = Extract<AppAction, { type: 
 type AppActionPayload<ActionType extends AppActionType> =
     AppActionOf<ActionType> extends { payload: infer Payload } ? Payload : never;
 
+export const RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS = {
+    createTrackAlternative: ['trackId', 'name', 'duplicateActive'],
+    deleteTrackAlternative: ['trackId', 'alternativeId'],
+    duplicateClip: ['clipId'],
+    duplicateClipToNextBar: ['clipId'],
+    addMarker: ['beat', 'name'],
+    addSection: ['startBeat', 'endBeat', 'name'],
+    addAutomationLane: ['trackId', 'parameterId', 'parameterName'],
+    generateDrumPattern: ['style', 'trackId', 'bars', 'density'],
+    generateMelody: ['style', 'key', 'scale', 'trackId', 'bars'],
+    generateChordProgression: ['style', 'key', 'scale', 'trackId', 'bars', 'voicing'],
+    extractGroove: ['clipId'],
+    createCollabSession: ['name'],
+    joinCollabSession: ['inviteString', 'peerName'],
+    createVcaGroup: ['name', 'trackIds'],
+    addChordEvent: ['beat', 'root', 'quality', 'duration'],
+    createAdjustmentLayer: ['name', 'effectType'],
+} as const satisfies Partial<Record<RuntimeActionType, readonly string[]>>;
+
 type RuntimePayloadOverrides = {
-    createTrackAlternative: Omit<AppActionPayload<'createTrackAlternative'>, 'alternativeId'>;
-    deleteTrackAlternative: Omit<AppActionPayload<'deleteTrackAlternative'>, 'fallbackAlternativeId'>;
-    duplicateClip: Omit<AppActionPayload<'duplicateClip'>, 'targetClipId'>;
-    duplicateClipToNextBar: Omit<AppActionPayload<'duplicateClipToNextBar'>, 'targetClipId'>;
-    addMarker: Omit<AppActionPayload<'addMarker'>, 'markerId' | 'color'>;
-    addSection: Omit<AppActionPayload<'addSection'>, 'sectionId' | 'color'>;
-    addAutomationLane: Omit<AppActionPayload<'addAutomationLane'>, 'laneId'>;
-    generateDrumPattern: Omit<AppActionPayload<'generateDrumPattern'>, 'startBeat'>;
-    generateMelody: Omit<AppActionPayload<'generateMelody'>, 'octave' | 'density' | 'startBeat'>;
-    generateChordProgression: Omit<AppActionPayload<'generateChordProgression'>, 'startBeat'>;
-    extractGroove: Pick<AppActionPayload<'extractGroove'>, 'clipId'>;
-    createCollabSession: AppActionPayload<'createCollabSession'> & { name: string };
-    joinCollabSession: AppActionPayload<'joinCollabSession'> & { peerName: string };
-    createVcaGroup: Omit<AppActionPayload<'createVcaGroup'>, 'vcaGroupId'>;
-    addChordEvent: Omit<AppActionPayload<'addChordEvent'>, 'eventId'>;
-    createAdjustmentLayer: Omit<AppActionPayload<'createAdjustmentLayer'>, 'layerId'>;
+    createTrackAlternative: Pick<
+        AppActionPayload<'createTrackAlternative'>,
+        (typeof RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS.createTrackAlternative)[number]
+    >;
+    deleteTrackAlternative: Pick<
+        AppActionPayload<'deleteTrackAlternative'>,
+        (typeof RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS.deleteTrackAlternative)[number]
+    >;
+    duplicateClip: Pick<
+        AppActionPayload<'duplicateClip'>,
+        (typeof RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS.duplicateClip)[number]
+    >;
+    duplicateClipToNextBar: Pick<
+        AppActionPayload<'duplicateClipToNextBar'>,
+        (typeof RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS.duplicateClipToNextBar)[number]
+    >;
+    addMarker: Pick<AppActionPayload<'addMarker'>, (typeof RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS.addMarker)[number]>;
+    addSection: Pick<AppActionPayload<'addSection'>, (typeof RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS.addSection)[number]>;
+    addAutomationLane: Pick<
+        AppActionPayload<'addAutomationLane'>,
+        (typeof RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS.addAutomationLane)[number]
+    >;
+    generateDrumPattern: Pick<
+        AppActionPayload<'generateDrumPattern'>,
+        (typeof RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS.generateDrumPattern)[number]
+    >;
+    generateMelody: Pick<
+        AppActionPayload<'generateMelody'>,
+        (typeof RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS.generateMelody)[number]
+    >;
+    generateChordProgression: Pick<
+        AppActionPayload<'generateChordProgression'>,
+        (typeof RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS.generateChordProgression)[number]
+    >;
+    extractGroove: Pick<
+        AppActionPayload<'extractGroove'>,
+        (typeof RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS.extractGroove)[number]
+    >;
+    createCollabSession: Required<
+        Pick<
+            AppActionPayload<'createCollabSession'>,
+            (typeof RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS.createCollabSession)[number]
+        >
+    >;
+    joinCollabSession: Required<
+        Pick<
+            AppActionPayload<'joinCollabSession'>,
+            (typeof RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS.joinCollabSession)[number]
+        >
+    >;
+    createVcaGroup: Pick<
+        AppActionPayload<'createVcaGroup'>,
+        (typeof RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS.createVcaGroup)[number]
+    >;
+    addChordEvent: Pick<
+        AppActionPayload<'addChordEvent'>,
+        (typeof RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS.addChordEvent)[number]
+    >;
+    createAdjustmentLayer: Pick<
+        AppActionPayload<'createAdjustmentLayer'>,
+        (typeof RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS.createAdjustmentLayer)[number]
+    >;
 };
 
 type RuntimePayloadOverrideType = keyof RuntimePayloadOverrides;

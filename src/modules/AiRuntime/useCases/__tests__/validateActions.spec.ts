@@ -85,6 +85,43 @@ describe('validateActions', () => {
         );
     });
 
+    it.each([
+        {
+            type: 'createTrackAlternative',
+            payload: { trackId: 'track-1', name: 'Alt', duplicateActive: false, alternativeId: 'alt-1' },
+        },
+        {
+            type: 'deleteTrackAlternative',
+            payload: { trackId: 'track-1', alternativeId: 'alt-1', fallbackAlternativeId: 'alt-2' },
+        },
+        { type: 'duplicateClip', payload: { clipId: 'clip-1', targetClipId: 'clip-2' } },
+        { type: 'duplicateClipToNextBar', payload: { clipId: 'clip-1', targetClipId: 'clip-2' } },
+        { type: 'addMarker', payload: { beat: 4, name: 'Verse', markerId: 'marker-1' } },
+        { type: 'addSection', payload: { startBeat: 0, endBeat: 8, name: 'Verse', sectionId: 'section-1' } },
+        {
+            type: 'addAutomationLane',
+            payload: { trackId: 'track-1', parameterId: 'gain', parameterName: 'Gain', laneId: 'lane-1' },
+        },
+        { type: 'generateDrumPattern', payload: { style: 'house', startBeat: 4 } },
+        { type: 'generateMelody', payload: { style: 'ambient', octave: 4 } },
+        { type: 'generateChordProgression', payload: { style: 'jazz', startBeat: 4 } },
+        { type: 'extractGroove', payload: { clipId: 'clip-1', templateId: 'groove-1' } },
+        { type: 'createCollabSession', payload: { name: 'Review', sessionId: 'session-1' } },
+        {
+            type: 'joinCollabSession',
+            payload: { inviteString: 'invite', peerName: 'Mixer', sessionId: 'session-1' },
+        },
+        { type: 'createVcaGroup', payload: { name: 'Band', trackIds: [], vcaGroupId: 'vca-new' } },
+        { type: 'addChordEvent', payload: { beat: 0, root: 0, quality: 'major', eventId: 'chord-1' } },
+        {
+            type: 'createAdjustmentLayer',
+            payload: { name: 'Glue', effectType: 'compressor', layerId: 'layer-1' },
+        },
+    ])('should reject non-initiating payload fields for $type', (action) => {
+        expect(validateActions([action] as unknown as RuntimeAction[])).toEqual([]);
+        expect(mockLogger.warn).toHaveBeenCalledWith(`Command-owned payload fields rejected for action ${action.type}`);
+    });
+
     it('should reject invalid setTempo bpm', () => {
         const actions = [{ type: 'setTempo', payload: { bpm: 5 } }] as unknown as RuntimeAction[];
         expect(validateActions(actions)).toEqual([]);
