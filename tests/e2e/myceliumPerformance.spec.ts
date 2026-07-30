@@ -552,6 +552,7 @@ test('captures bounded Mycelium playback and CDP runtime evidence in stable Chro
             playbackElapsedMs,
             sampleCount: samples.length,
             metrics: summarizeCdpMetrics(samples),
+            runtime: { initial, playing, stopped },
             samples,
         });
 
