@@ -1,0 +1,41 @@
+crates/daw-dsp/src/fermenter/mod.rs
+  s_ac9b259eab20ba::t_03bf6455828086 28-29,48,57-58,71-72,130-159,167-172,215-222
+  s_ac9b259eab20ba::t_7c8a31b2358e8c 254-257
+  s_ac9b259eab20ba::t_7293694c7c9df7 230
+  s_ac9b259eab20ba::t_1a215cf5ef1128 223,244-253,258-287
+crates/daw-dsp/src/fermenter/synth.rs
+  s_ac9b259eab20ba::t_f92de5ffc1bf52 874,889,905,921,935-936,970
+  s_ac9b259eab20ba::t_7c8a31b2358e8c 461-464,623-627,670,675-685,794-796,882-885,983-986,1004-1011,1313
+  s_ac9b259eab20ba::t_03bf6455828086 15,18,20-76,696-707
+  s_ac9b259eab20ba::t_59f0cdecbb55d1 688
+src/modules/AudioEngine/services/fermenterProcessor.ts
+  s_ac9b259eab20ba::t_8506553cc8efc8 287-288,291,294-316,318
+src/modules/AudioEngine/services/__tests__/fermenterProcessor.spec.ts
+  s_ac9b259eab20ba::t_fa19a97bbfc120 18-29,44,50-51,67-111,169,174-175,178,229,234-235,239-248,250-265,267,269-272,274,276-282,290-327
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_ac9b259eab20ba::t_7c7bf2b69d7c6e 1,134-145,587,608-620,623-650,692-729,733-742
+public/wasm/daw-dsp/daw_dsp.js
+  s_ac9b259eab20ba::t_156be3b81ea2ab 266-302
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_ac9b259eab20ba::t_6313600a2d7bec 1,6,27-39,42-69,111-148,152-161
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_ac9b259eab20ba::t_da49cba762e436 1,134-145,587,608-620,623-650,692-729,733-742
+src/modules/AudioEngine/wasm/daw_dsp.js
+  s_ac9b259eab20ba::t_20aa9a2fd287d1 443-479
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "b66bbffd117a0e8fc0bb878692e6df67f8bf5910",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
