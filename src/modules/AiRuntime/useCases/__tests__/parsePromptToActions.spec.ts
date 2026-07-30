@@ -5,7 +5,6 @@ import { type ProjectContext } from '../../models/ProjectContext';
 import { tryPresetMatch, tryParameterizedPath, tryCompoundFastPath } from '../../transformers/promptParser/parsing';
 import { executeDsoEdit } from '../dsoEditor/executeDsoEdit';
 import { getProjectContext } from '../getProjectContext';
-import { isDsoBackendAvailable } from '../llmOrchestration/backendResolution/isDsoBackendAvailable';
 import { generateToolPlanningOutcome as generateToolCalls } from '../llmOrchestration/inference';
 import { parsePromptToActions } from '../parsePromptToActions';
 
@@ -37,10 +36,6 @@ vi.mock('../../transformers/promptParser/parsing', () => ({
     buildPresetContext: vi.fn(() => ({})),
     tryParameterizedPath: vi.fn(() => []),
     tryCompoundFastPath: vi.fn(() => null),
-}));
-
-vi.mock('../llmOrchestration/backendResolution/isDsoBackendAvailable', () => ({
-    isDsoBackendAvailable: vi.fn(() => false),
 }));
 
 vi.mock('../getProjectContext', () => ({
@@ -83,16 +78,9 @@ describe('parsePromptToActions', () => {
         vi.mocked(tryPresetMatch).mockReturnValue([]);
         vi.mocked(tryParameterizedPath).mockReturnValue([]);
         vi.mocked(tryCompoundFastPath).mockReturnValue(null);
-        vi.mocked(isDsoBackendAvailable).mockReturnValue(false);
         vi.mocked(getProjectContext).mockReturnValue(baseContext);
         vi.mocked(generateToolCalls).mockReset();
         vi.mocked(executeDsoEdit).mockReset();
-        vi.mocked(executeDsoEdit).mockResolvedValue({
-            success: false,
-            plan: null,
-            summaries: [],
-            error: 'No DSO match',
-        });
         mockBridgeLlmToolCalls.mockReset();
         mockBuildLlmActionSystemPrompt.mockClear();
         mockBuildLlmActionUserMessage.mockClear();
@@ -156,8 +144,6 @@ describe('parsePromptToActions', () => {
         { prompt: 'import midi', actionType: 'importMidiFile' },
         { prompt: 'leave session', actionType: 'leaveCollabSession' },
     ] as const)('recognizes denied intent $prompt without provider or DSO planning', async ({ prompt, actionType }) => {
-        vi.mocked(isDsoBackendAvailable).mockReturnValue(true);
-
         const result = await parsePromptToActions(prompt, baseContext);
 
         expect(result).toEqual({
@@ -250,7 +236,6 @@ describe('parsePromptToActions', () => {
             actions: [],
             rejections: [{ index: 0, name: 'removeTrack', reason: 'Tool is not allowlisted' }],
         });
-        vi.mocked(isDsoBackendAvailable).mockReturnValue(true);
 
         const result = await parsePromptToActions('delete the vocals', baseContext);
 
@@ -268,7 +253,6 @@ describe('parsePromptToActions', () => {
             actions: [{ type: 'saveProject' }],
             rejections: [],
         });
-        vi.mocked(isDsoBackendAvailable).mockReturnValue(true);
 
         const result = await parsePromptToActions('save the project', baseContext);
 
@@ -285,7 +269,6 @@ describe('parsePromptToActions', () => {
             status: 'rejected',
             reason: 'Native text tool planning did not complete (finish_reason: length)',
         });
-        vi.mocked(isDsoBackendAvailable).mockReturnValue(true);
 
         const result = await parsePromptToActions('mute the vocals', baseContext);
 
@@ -306,7 +289,6 @@ describe('parsePromptToActions', () => {
         'Provider returned an incomplete tool plan',
     ])('returns provider planning failure %s without falling through to DSO', async (reason) => {
         vi.mocked(generateToolCalls).mockRejectedValue(new Error(reason));
-        vi.mocked(isDsoBackendAvailable).mockReturnValue(true);
 
         const result = await parsePromptToActions('mute the vocals', baseContext);
 
@@ -319,21 +301,22 @@ describe('parsePromptToActions', () => {
         expect(executeDsoEdit).not.toHaveBeenCalled();
     });
 
-    it('allows DSO fallback after successful provider planning returns no tool calls', async () => {
-        vi.mocked(generateToolCalls).mockResolvedValue(completePlan([]));
-        mockBridgeLlmToolCalls.mockReturnValue({ actions: [], rejections: [] });
-        vi.mocked(isDsoBackendAvailable).mockReturnValue(true);
+    it.each(['set tempo to 128', 'create a send from vocals to reverb'])(
+        'does not route %s through the retired legacy DSO mutation path after an empty provider plan',
+        async (prompt) => {
+            vi.mocked(generateToolCalls).mockResolvedValue(completePlan([]));
+            mockBridgeLlmToolCalls.mockReturnValue({ actions: [], rejections: [] });
 
-        const result = await parsePromptToActions('make the mix warmer', baseContext);
+            const result = await parsePromptToActions(prompt, baseContext);
 
-        expect(executeDsoEdit).toHaveBeenCalledWith('make the mix warmer', undefined);
-        expect(result).toEqual({
-            actions: [],
-            rawText: 'make the mix warmer',
-            requiresConfirmation: false,
-            _jsonEditAttempted: true,
-        });
-    });
+            expect(executeDsoEdit).not.toHaveBeenCalled();
+            expect(result).toEqual({
+                actions: [],
+                rawText: prompt,
+                requiresConfirmation: false,
+            });
+        }
+    );
 
     it('preserves configuration-change cancellation instead of reporting no actions', async () => {
         vi.mocked(generateToolCalls).mockRejectedValue(new AiRuntimeConfigurationChangedError());
