@@ -1,0 +1,21 @@
+src/modules/AudioEngine/services/__tests__/kneadProcessor.spec.ts
+  s_ac9b259eab20ba::t_bdb218c0c65e7a 126-136
+src/modules/AudioEngine/services/kneadProcessor.ts
+  s_ac9b259eab20ba::t_bdb218c0c65e7a 94-96
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "1bdb3c06d2cead41269fa408be52cfab82fc195a",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
