@@ -35,6 +35,19 @@ const guardedPayloadContractCases = [
         ],
     }),
     guardedPayloadCase({
+        actionType: 'createBus',
+        validPayload: { name: 'Parallel Reverb' },
+        invalidPayloads: [
+            { name: '' },
+            { name: 42 },
+            {},
+            { name: 'x'.repeat(121) },
+            { name: 'Bad <bus>' },
+            { name: 'Bad\u0000Bus' },
+            { name: 'Parallel Reverb', busId: 'internal-id' },
+        ],
+    }),
+    guardedPayloadCase({
         actionType: 'splitClip',
         validPayload: { clipId: 'clip-1', beat: 4 },
         invalidPayloads: [
@@ -144,6 +157,13 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
         expectTypeOf<ArmTrackHasExpectedMidiRoute>().toEqualTypeOf<false>();
         expectTypeOf<ArmTrackHasMidiOwner>().toEqualTypeOf<false>();
         expectTypeOf<ArmTrackHasExpectedMidiOwner>().toEqualTypeOf<false>();
+    });
+
+    it('excludes the command-owned bus identity from the RuntimeAction type', () => {
+        type CreateBusPayload = Extract<RuntimeAction, { type: 'createBus' }>['payload'];
+        type CreateBusHasIdentity = 'busId' extends keyof CreateBusPayload ? true : false;
+
+        expectTypeOf<CreateBusHasIdentity>().toEqualTypeOf<false>();
     });
 
     describe('removeTrack', () => {

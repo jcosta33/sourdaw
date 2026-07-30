@@ -85,10 +85,6 @@ export const executableAppActionDescriptors = [
             'create midi track',
             'add a midi track',
             'create a midi track',
-            'add bus track',
-            'create bus track',
-            'add a bus track',
-            'create a bus track',
             'add folder track',
             'create folder track',
             'add a folder track',
@@ -97,14 +93,35 @@ export const executableAppActionDescriptors = [
         targetRules: [],
         valueRules: [
             { argument: 'name', kind: 'text-after-keyword-if-present', keywords: ['named', 'called'] },
-            { argument: 'kind', kind: 'enum-if-present', values: ['audio', 'midi', 'bus', 'folder'] },
+            { argument: 'kind', kind: 'enum-if-present', values: ['audio', 'midi', 'folder'] },
         ],
         parameters: {
             properties: {
                 name: { type: 'string', description: 'Display name (e.g. "Kick", "Vocals", "Synth Pad")' },
-                kind: { type: 'string', enum: ['audio', 'midi', 'bus', 'folder'], description: 'Track type' },
+                kind: { type: 'string', enum: ['audio', 'midi', 'folder'], description: 'Track type' },
             },
             required: ['name', 'kind'],
+        },
+    },
+    {
+        actionType: 'createBus',
+        risk: 'bounded-reversible',
+        description: 'Create a new bus track in the session.',
+        intentPhrases: [
+            'add bus',
+            'create bus',
+            'add a bus',
+            'create a bus',
+            'add bus track',
+            'create bus track',
+            'add a bus track',
+            'create a bus track',
+        ],
+        targetRules: [],
+        valueRules: [{ argument: 'name', kind: 'text-after-keyword-if-present', keywords: ['named', 'called'] }],
+        parameters: {
+            properties: { name: { type: 'string', description: 'Display name for the new bus track' } },
+            required: ['name'],
         },
     },
     {

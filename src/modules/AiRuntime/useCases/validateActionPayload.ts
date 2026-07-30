@@ -28,6 +28,7 @@
  * cause data loss, persistent corruption, or an exploit".
  */
 import { type RuntimeAction, type RuntimeActionType } from '../models/RuntimeAction';
+import { normalizeSafeProjectName } from '../validators/normalizeSafeProjectName';
 
 type Extract2<ActionUnion, TypeString> = ActionUnion extends { type: TypeString } ? ActionUnion : never;
 type PayloadOf<ActionType extends RuntimeActionType> =
@@ -322,7 +323,8 @@ const validators = {
     duplicateTimeRange: 'unchecked',
 
     // Bus / folder / send
-    createBus: 'unchecked',
+    createBus: (param): param is PayloadOf<'createBus'> =>
+        isObj(param) && hasExactKeys(param, ['name']) && normalizeSafeProjectName(param.name) !== null,
     createFolder: 'unchecked',
     setSend: 'unchecked',
     addSend: 'unchecked',

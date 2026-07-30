@@ -1,11 +1,12 @@
 import { type ProjectContext } from '../models/ProjectContext';
 import { type RuntimeAction } from '../models/RuntimeAction';
+import { normalizeSafeProjectName } from '../validators/normalizeSafeProjectName';
 
 import { MAX_LLM_ACTIONS_PER_BATCH } from './llmActionLimits';
 import { type ToolCallResult } from './toolCallParser';
 
-type ExecutableTrackKind = 'audio' | 'midi' | 'bus' | 'folder';
-const executableTrackKinds: ReadonlySet<string> = new Set(['audio', 'midi', 'bus', 'folder']);
+type ExecutableTrackKind = 'audio' | 'midi' | 'folder';
+const executableTrackKinds: ReadonlySet<string> = new Set(['audio', 'midi', 'folder']);
 
 export type LlmActionRejection = {
     index: number;
@@ -100,34 +101,6 @@ function findDevice(context: ProjectContext, deviceId: unknown) {
     return context.tracks.flatMap((track) => track.devices).find((device) => device.id === deviceId);
 }
 
-function hasUnsafeProjectNameCharacters(name: string): boolean {
-    for (const character of name) {
-        const codePoint = character.codePointAt(0);
-        if (
-            character === '<' ||
-            character === '>' ||
-            character === '&' ||
-            codePoint === undefined ||
-            codePoint < 32 ||
-            codePoint === 127
-        ) {
-            return true;
-        }
-    }
-    return false;
-}
-
-function normalizeProjectName(value: unknown): string | null {
-    if (typeof value !== 'string') {
-        return null;
-    }
-    const name = value.trim();
-    if (name.length === 0 || name.length > 120 || hasUnsafeProjectNameCharacters(name)) {
-        return null;
-    }
-    return name;
-}
-
 function isSafeTrackColor(value: unknown): value is string {
     return typeof value === 'string' && /^#[\dA-Fa-f]{6}$/.test(value);
 }
@@ -181,9 +154,9 @@ function bridgeToolCall({
     }
 
     if (call.name === 'addTrack') {
-        const name = normalizeProjectName(args.name);
+        const name = normalizeSafeProjectName(args.name);
         if (!hasExactKeys(args, ['name', 'kind']) || !name || !isExecutableTrackKind(args.kind)) {
-            return rejection(index, call.name, 'Expected a safe name and one of audio, midi, bus, or folder');
+            return rejection(index, call.name, 'Expected a safe name and one of audio, midi, or folder');
         }
         return {
             type: 'addTrack',
@@ -191,11 +164,23 @@ function bridgeToolCall({
         };
     }
 
+    if (call.name === 'createBus') {
+        const name = normalizeSafeProjectName(args.name);
+        if (!hasExactKeys(args, ['name']) || !name) {
+            return rejection(
+                index,
+                call.name,
+                'Expected only a non-empty bus name no longer than 120 characters without framing or control characters'
+            );
+        }
+        return { type: 'createBus', payload: { name } };
+    }
+
     if (call.name === 'renameTrack') {
         if (!hasExactKeys(args, ['trackId', 'name']) || !hasTrack(context, args.trackId)) {
             return rejection(index, call.name, 'Expected an available trackId and name');
         }
-        const name = normalizeProjectName(args.name);
+        const name = normalizeSafeProjectName(args.name);
         if (!name) {
             return rejection(
                 index,
@@ -435,7 +420,7 @@ function bridgeToolCall({
 }
 
 function getMutationKey(action: RuntimeAction): string | null {
-    if (action.type === 'addTrack' || action.type === 'duplicateTrack') {
+    if (action.type === 'addTrack' || action.type === 'createBus' || action.type === 'duplicateTrack') {
         return null;
     }
     if (action.type === 'setTempo' || action.type === 'setTimeSignature') {

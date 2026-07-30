@@ -244,6 +244,22 @@ describe('parsePromptToActions', () => {
         expect(result.executionMode).toBe('atomic');
     });
 
+    it('proposes a provider bus creation as one bounded atomic action', async () => {
+        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
+            '../agentReference/bridgeGroundedLlmToolCalls'
+        );
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        vi.mocked(generateToolCalls).mockResolvedValue(
+            completePlan([{ name: 'createBus', arguments: { name: 'Parallel Reverb' } }])
+        );
+
+        const result = await parsePromptToActions('create a bus called Parallel Reverb', baseContext);
+
+        expect(result.actions).toEqual([{ type: 'createBus', payload: { name: 'Parallel Reverb' } }]);
+        expect(result.requiresConfirmation).toBe(false);
+        expect(result.executionMode).toBe('atomic');
+    });
+
     it('rejects a provider time signature that does not match the prompt', async () => {
         const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
             '../agentReference/bridgeGroundedLlmToolCalls'

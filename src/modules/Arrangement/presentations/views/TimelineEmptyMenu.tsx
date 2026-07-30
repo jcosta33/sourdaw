@@ -154,7 +154,12 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
             <DawMenuButton role="menuitem" onClick={act(() => addTrack({ name: 'MIDI', kind: 'midi' }))}>
                 Add MIDI Track
             </DawMenuButton>
-            <DawMenuButton role="menuitem" onClick={act(() => addTrack({ name: 'Bus', kind: 'bus' }))}>
+            <DawMenuButton
+                role="menuitem"
+                onClick={act(() => {
+                    void executeAppAction({ type: 'createBus', payload: { name: 'Bus' } });
+                })}
+            >
                 Add Bus Track
             </DawMenuButton>
             <DawMenuSeparator className="border-border/50" />

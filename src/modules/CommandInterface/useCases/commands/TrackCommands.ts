@@ -29,7 +29,9 @@ export const trackCommands: CallableCommandEntry[] = [
         label: 'Add Bus Track',
         description: 'Create a new bus track',
         category: 'Track',
-        action: { type: 'createBus', payload: { name: 'Bus' } },
+        action: () => {
+            void executeAppAction({ type: 'createBus', payload: { name: 'Bus' } });
+        },
     },
     {
         id: 'add-folder',

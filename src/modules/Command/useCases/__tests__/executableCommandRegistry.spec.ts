@@ -24,9 +24,17 @@ const EXPECTED_COMMANDS = [
         'Create a new track in the session.',
         {
             name: { type: 'string', description: 'Display name (e.g. "Kick", "Vocals", "Synth Pad")' },
-            kind: { type: 'string', enum: ['audio', 'midi', 'bus', 'folder'], description: 'Track type' },
+            kind: { type: 'string', enum: ['audio', 'midi', 'folder'], description: 'Track type' },
         },
         ['name', 'kind'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
+        'createBus',
+        'Create a new bus track in the session.',
+        { name: { type: 'string', description: 'Display name for the new bus track' } },
+        ['name'],
         'bounded-reversible',
         false
     ),
@@ -210,10 +218,6 @@ const EXPECTED_GROUNDING = [
             'create midi track',
             'add a midi track',
             'create a midi track',
-            'add bus track',
-            'create bus track',
-            'add a bus track',
-            'create a bus track',
             'add folder track',
             'create folder track',
             'add a folder track',
@@ -222,8 +226,23 @@ const EXPECTED_GROUNDING = [
         targetRules: [],
         valueRules: [
             { argument: 'name', kind: 'text-after-keyword-if-present', keywords: ['named', 'called'] },
-            { argument: 'kind', kind: 'enum-if-present', values: ['audio', 'midi', 'bus', 'folder'] },
+            { argument: 'kind', kind: 'enum-if-present', values: ['audio', 'midi', 'folder'] },
         ],
+    },
+    {
+        actionType: 'createBus',
+        intentPhrases: [
+            'add bus',
+            'create bus',
+            'add a bus',
+            'create a bus',
+            'add bus track',
+            'create bus track',
+            'add a bus track',
+            'create a bus track',
+        ],
+        targetRules: [],
+        valueRules: [{ argument: 'name', kind: 'text-after-keyword-if-present', keywords: ['named', 'called'] }],
     },
     {
         actionType: 'renameTrack',
