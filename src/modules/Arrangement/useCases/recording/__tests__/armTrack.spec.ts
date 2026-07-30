@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
     getTrackById: vi.fn(),
     setMidiInputTrack: vi.fn(),
     getMidiInputTrack: vi.fn<() => string | null>(),
+    getMidiInputTrackRevision: vi.fn<() => number>(),
 }));
 
 vi.mock('../../../repositories/track/updateTrack', () => ({
@@ -20,12 +21,14 @@ vi.mock('../../../repositories/track/getTrackById', () => ({
 vi.mock('#/modules/MIDI/useCases', () => ({
     setMidiInputTrack: mocks.setMidiInputTrack,
     getMidiInputTrack: mocks.getMidiInputTrack,
+    getMidiInputTrackRevision: mocks.getMidiInputTrackRevision,
 }));
 
 describe('armTrack', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.getMidiInputTrack.mockReturnValue(null);
+        mocks.getMidiInputTrackRevision.mockReturnValue(0);
     });
 
     it('returns no write for a missing track', () => {
@@ -131,6 +134,37 @@ describe('armTrack', () => {
         expect(mocks.setMidiInputTrack).toHaveBeenCalledWith('t1');
     });
 
+    it('applies ordered deferred routing for two arms in one committed batch', () => {
+        mocks.getTrackById.mockImplementation((trackId: string) => ({
+            id: trackId,
+            kind: 'midi',
+            armed: false,
+        }));
+        let routing: string | null = 't0';
+        let routingRevision = 0;
+        mocks.getMidiInputTrack.mockImplementation(() => routing);
+        mocks.getMidiInputTrackRevision.mockImplementation(() => routingRevision);
+        mocks.setMidiInputTrack.mockImplementation((next: string | null) => {
+            routing = next;
+            routingRevision += 1;
+        });
+
+        const firstEffect = armTrack('t1', true, { deferRuntimeEffect: true });
+        const secondEffect = armTrack('t2', true, { deferRuntimeEffect: true });
+        expect(firstEffect).not.toBeNull();
+        expect(secondEffect).not.toBeNull();
+        if (!firstEffect || !secondEffect) {
+            return;
+        }
+
+        firstEffect.afterCommit();
+        secondEffect.afterCommit();
+
+        expect(routing).toBe('t2');
+        expect(mocks.setMidiInputTrack).toHaveBeenNthCalledWith(1, 't1');
+        expect(mocks.setMidiInputTrack).toHaveBeenNthCalledWith(2, 't2');
+    });
+
     it('preserves a MIDI route selected during the deferred commit window', () => {
         mocks.getTrackById.mockReturnValue({ id: 't1', kind: 'midi', armed: false });
         let routing: string | null = 't0';
@@ -230,6 +264,37 @@ describe('armTrack', () => {
         runtimeEffect.afterAmbiguousCommit();
 
         expect(mocks.setMidiInputTrack).toHaveBeenCalledWith('t1');
+    });
+
+    it('reconciles ordered routing for two arms in one ambiguous committed batch', () => {
+        mocks.getTrackById
+            .mockReturnValueOnce({ id: 't1', kind: 'midi', armed: false })
+            .mockReturnValueOnce({ id: 't2', kind: 'midi', armed: false })
+            .mockReturnValueOnce({ id: 't1', kind: 'midi', armed: true })
+            .mockReturnValueOnce({ id: 't2', kind: 'midi', armed: true });
+        let routing: string | null = 't0';
+        let routingRevision = 0;
+        mocks.getMidiInputTrack.mockImplementation(() => routing);
+        mocks.getMidiInputTrackRevision.mockImplementation(() => routingRevision);
+        mocks.setMidiInputTrack.mockImplementation((next: string | null) => {
+            routing = next;
+            routingRevision += 1;
+        });
+
+        const firstEffect = armTrack('t1', true, { deferRuntimeEffect: true });
+        const secondEffect = armTrack('t2', true, { deferRuntimeEffect: true });
+        expect(firstEffect).not.toBeNull();
+        expect(secondEffect).not.toBeNull();
+        if (!firstEffect || !secondEffect) {
+            return;
+        }
+
+        firstEffect.afterAmbiguousCommit();
+        secondEffect.afterAmbiguousCommit();
+
+        expect(routing).toBe('t2');
+        expect(mocks.setMidiInputTrack).toHaveBeenNthCalledWith(1, 't1');
+        expect(mocks.setMidiInputTrack).toHaveBeenNthCalledWith(2, 't2');
     });
 
     it('preserves a newer route after an ambiguous committed transaction', () => {

@@ -1,4 +1,4 @@
-import { getMidiInputTrack, setMidiInputTrack } from '#/modules/MIDI/useCases';
+import { getMidiInputTrack, getMidiInputTrackRevision, setMidiInputTrack } from '#/modules/MIDI/useCases';
 
 import { getTrackById } from '../../repositories/track/getTrackById';
 import { updateTrack } from '../../repositories/track/updateTrack';
@@ -17,6 +17,8 @@ type DeferredArmTrackRuntimeEffect = {
 
 type DeferredArmTrackOptions = ArmTrackOptions & { deferRuntimeEffect: true };
 
+let lastArmTrackMidiInputRevision: number | null = null;
+
 export function armTrack(trackId: string, armed: boolean): boolean;
 export function armTrack(
     trackId: string,
@@ -34,6 +36,8 @@ export function armTrack(
     }
 
     const previousMidiInputTrackId = getMidiInputTrack();
+    const previousMidiInputTrackRevision = getMidiInputTrackRevision();
+    const hasExplicitRouteExpectation = options.expectedMidiInputTrackId !== undefined;
     const runtimeRouteExpectation =
         options.expectedMidiInputTrackId === undefined ? previousMidiInputTrackId : options.expectedMidiInputTrackId;
     const expectedRouteMatches = previousMidiInputTrackId === runtimeRouteExpectation;
@@ -61,9 +65,30 @@ export function armTrack(
     }
 
     function applyMidiInputTrack(nextTrackId: string | null): void {
-        if (getMidiInputTrack() !== nextTrackId) {
-            setMidiInputTrack(nextTrackId);
+        if (getMidiInputTrack() === nextTrackId) {
+            return;
         }
+        setMidiInputTrack(nextTrackId);
+        lastArmTrackMidiInputRevision = getMidiInputTrackRevision();
+    }
+
+    function ownsRuntimeRoute(): boolean {
+        const currentMidiInputTrackId = getMidiInputTrack();
+        const currentMidiInputTrackRevision = getMidiInputTrackRevision();
+        const stillOwnsOriginalRoute =
+            expectedRouteMatches &&
+            currentMidiInputTrackId === runtimeRouteExpectation &&
+            currentMidiInputTrackRevision === previousMidiInputTrackRevision;
+        if (stillOwnsOriginalRoute) {
+            return true;
+        }
+        if (hasExplicitRouteExpectation || lastArmTrackMidiInputRevision === null) {
+            return false;
+        }
+        return (
+            currentMidiInputTrackRevision === lastArmTrackMidiInputRevision &&
+            currentMidiInputTrackRevision > previousMidiInputTrackRevision
+        );
     }
 
     let runtimeEffectFinalized = false;
@@ -71,7 +96,7 @@ export function armTrack(
         if (runtimeEffectFinalized) {
             return;
         }
-        if (expectedRouteMatches && getMidiInputTrack() === runtimeRouteExpectation) {
+        if (ownsRuntimeRoute()) {
             applyMidiInputTrack(desiredMidiInputTrackId);
         }
         runtimeEffectFinalized = true;
@@ -82,7 +107,7 @@ export function armTrack(
         if (committedTrack?.armed !== armed) {
             return;
         }
-        if (!expectedRouteMatches || getMidiInputTrack() !== runtimeRouteExpectation) {
+        if (!ownsRuntimeRoute()) {
             return;
         }
         applyMidiInputTrack(desiredMidiInputTrackId);
