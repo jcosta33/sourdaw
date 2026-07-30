@@ -585,9 +585,10 @@ describe('AudioEngine', () => {
 
     // ── Fix 2: dispose() teardown contract ───────────────────────────────────────
     describe('dispose', () => {
-        it('awaits context.close, resets the worklet latch, and releases the transport SAB', async () => {
+        it('awaits context.close, makes disposal terminal, and releases the transport SAB', async () => {
             await engine.initialize();
             expect(engine.getHealth().workletReady).toBe(true);
+            const lateSource = mockCtx.createOscillator();
 
             await engine.dispose();
 
@@ -597,10 +598,28 @@ describe('AudioEngine', () => {
             // SAB released: a post-dispose transport write must not throw.
             expect(() => engine.setTransportInfo(1, 120, true)).not.toThrow();
 
-            // initPromise reset: a re-initialize reloads the worklet modules.
             const addModuleCallsBefore = mockCtx.audioWorklet.addModule.mock.calls.length;
-            await engine.initialize();
-            expect(mockCtx.audioWorklet.addModule.mock.calls.length).toBe(addModuleCallsBefore + 5);
+            await expect(engine.initialize()).rejects.toThrow('Audio engine has been disposed');
+            expect(mockCtx.audioWorklet.addModule.mock.calls.length).toBe(addModuleCallsBefore);
+            expect(() => engine.ensureTrackStrip('late-track')).toThrow('Audio engine has been disposed');
+            expect(() => engine.scheduleOscillator(440, 0, 1)).toThrow('Audio engine has been disposed');
+            expect(() => engine.registerScheduledSource(lateSource)).toThrow('Audio engine has been disposed');
+            expect(() => engine.applyAdjustmentLayerTick?.([])).toThrow('Audio engine has been disposed');
+            expect(engine.getDiagnostics().graph.trackStrips).toBe(0);
+            expect(engine.getDiagnostics().runtime.trackedAudioScheduledSources).toBe(0);
+        });
+
+        it('does not restore worklet state when initialization completes after disposal', async () => {
+            const workletLoad = Promise.withResolvers<void>();
+            mockCtx.audioWorklet.addModule.mockReturnValue(workletLoad.promise);
+
+            const initialization = engine.initialize();
+            await engine.dispose();
+            await expect(initialization).rejects.toThrow('Audio engine was disposed during initialization');
+            workletLoad.resolve();
+
+            expect(engine.getHealth().workletReady).toBe(false);
+            expect(engine.getDiagnostics().graph.masterMeterWorklets).toBe(0);
         });
 
         it('posts a shutdown message to live track worklet ports before teardown', async () => {
@@ -825,6 +844,28 @@ describe('AudioEngine', () => {
         it('reports fallback state (engine did not get a live context)', () => {
             expect(fbEngine.getState().isReady).toBe(false);
             expect(fbEngine.getState().state).toBe('closed');
+            const actual = fbEngine.getDiagnostics();
+            expect(actual.context).toEqual({ state: 'closed', sampleRate: 44_100, baseLatency: 0, outputLatency: 0 });
+        });
+
+        it('does not report fallback shim strips as a live graph', () => {
+            fbEngine.ensureTrackStrip('track-1');
+            fbEngine.ensureBusStrip('bus-1');
+
+            expect(fbEngine.getDiagnostics().graph).toEqual({
+                trackStrips: 0,
+                busStrips: 0,
+                sends: 0,
+                sidechains: 0,
+                deviceInstances: 0,
+                pendingDeviceInstances: 0,
+                failedDeviceInstances: 0,
+                deviceInstancesByType: {},
+                deviceAudioNodes: 0,
+                stripMeterWorklets: 0,
+                masterMeterWorklets: 0,
+                adjustmentLayerBuses: 0,
+            });
         });
 
         it('addDeviceToStrip does not build a track node on the shim in fallback mode', () => {

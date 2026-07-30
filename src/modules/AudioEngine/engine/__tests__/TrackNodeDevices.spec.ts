@@ -475,6 +475,7 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             track.updateBypass('wasm-1', true);
 
             expect(track.strip.deviceNodes[0]).toBe(deferred.placeholder);
+            expect(track.getDeviceLoadState('wasm-1')).toBe('pending');
             expect(pendingDevicePromises.size).toBe(1);
 
             const loaded = createLoadedDevice();
@@ -487,11 +488,26 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             expect(loaded.controller.setBypass).toHaveBeenCalledWith(true);
             expect(loaded.device.bypassed).toBe(true);
             expect(onDeviceLoaded).toHaveBeenCalledWith('t1', loaded.device);
+            expect(track.getDeviceLoadState('wasm-1')).toBe('ready');
 
             deferred.settle();
             await Promise.resolve();
             await Promise.resolve();
             expect(pendingDevicePromises.size).toBe(0);
+        });
+
+        it('reports a settled descriptor-owned placeholder that never loaded as failed', async () => {
+            const deferred = installDeferredWasmDevice({ controller: { setParam: vi.fn() } });
+            const track = new TrackNode('t1', makeDeps(ctx));
+
+            track.addDevice('wasm-1', 'levain');
+            expect(track.getDeviceLoadState('wasm-1')).toBe('pending');
+
+            deferred.settle();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(track.getDeviceLoadState('wasm-1')).toBe('failed');
         });
 
         it('preserves the descriptor-owned Proof parameter barrier', () => {
