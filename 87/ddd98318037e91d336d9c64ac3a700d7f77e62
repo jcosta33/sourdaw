@@ -1,0 +1,23 @@
+src/modules/AiRuntime/transformers/llmActionLimits.ts
+  s_bc88af7d3b054c::t_d8367d1c53d47e 1
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_bc88af7d3b054c::t_1e3764e56b5024 5,73-75
+src/modules/AiRuntime/useCases/agentReference/resolveAgentReference.ts
+  s_bc88af7d3b054c::t_5635ffbf4b44f1 48-52,104-120,127-133,153,156-157,160-165,167-168
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "87ddd98318037e91d336d9c64ac3a700d7f77e62",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
