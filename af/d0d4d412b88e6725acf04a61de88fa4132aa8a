@@ -1,0 +1,59 @@
+src/modules/Transport/useCases/scheduling/applyAutomation/restoreAutomationBaseValue.ts
+  s_ac9b259eab20ba::t_5d2ad41b3a4dea 3-6,104-114
+  s_ac9b259eab20ba::t_122efa7aba8ca9 13
+  s_ac9b259eab20ba::t_c50478c93a1a88 2
+src/modules/Fermenter/useCases/index.ts
+  s_ac9b259eab20ba::t_122efa7aba8ca9 1
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomationDiscontinuity.spec.ts
+  s_ac9b259eab20ba::t_122efa7aba8ca9 55
+src/modules/Fermenter/useCases/__tests__/applyFermenterRuntimeParam.spec.ts
+  s_ac9b259eab20ba::t_122efa7aba8ca9 1-9,11-14,17-37,39,41-42,44-45,48-51,53,55-65
+  s_ac9b259eab20ba::t_e704b1007aa355 38,40,43,46-47
+  s_ac9b259eab20ba::t_1d55867fb8c8a0 10,15-16
+  s_ac9b259eab20ba::t_5d2ad41b3a4dea 54
+  s_ac9b259eab20ba::t_789f2dd81b5c80 52
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomation.spec.ts
+  s_ac9b259eab20ba::t_9306b7b309430a 200,705
+  s_ac9b259eab20ba::t_c06ed10074810a 201
+  s_ac9b259eab20ba::t_e05ea1cef734e0 536,566,568-569
+  s_ac9b259eab20ba::t_f18343ac922b46 176
+  s_ac9b259eab20ba::t_159daa847214bd 15,89,170,179-180,183
+  s_ac9b259eab20ba::t_5d2ad41b3a4dea 181
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/restoreAutomationBaseValue.spec.ts
+  s_ac9b259eab20ba::t_159daa847214bd 4,33,79,81-83,85-93,95-96,98-99
+  s_ac9b259eab20ba::t_47fdcebae1c387 80,84,97
+  s_ac9b259eab20ba::t_5d2ad41b3a4dea 94
+  s_ac9b259eab20ba::t_7146476ecf3d0a 100-101
+src/modules/Fermenter/useCases/setFermenterMappedParam.ts
+  s_ac9b259eab20ba::t_122efa7aba8ca9 4,13,18
+src/modules/Fermenter/useCases/fermenterQueries/isFermenterParamId.ts
+  s_ac9b259eab20ba::t_aef8de9406282b 2-3
+  s_ac9b259eab20ba::t_122efa7aba8ca9 1,4-9
+src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts
+  s_ac9b259eab20ba::t_e05ea1cef734e0 260-262,280,326-328,336
+  s_ac9b259eab20ba::t_122efa7aba8ca9 17
+  s_ac9b259eab20ba::t_aef8de9406282b 283-285
+  s_ac9b259eab20ba::t_5d2ad41b3a4dea 286-291
+src/modules/Fermenter/useCases/fermenterParamBridge/mapFermenterParamToDspParam.ts
+  s_ac9b259eab20ba::t_5d2ad41b3a4dea 7-8,14-16,19-22
+src/modules/Fermenter/useCases/applyFermenterRuntimeParam.ts
+  s_ac9b259eab20ba::t_789f2dd81b5c80 14
+  s_ac9b259eab20ba::t_122efa7aba8ca9 1-7,9-13,21-25,27,29
+  s_ac9b259eab20ba::t_5d2ad41b3a4dea 8,15-20,26,28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "afd0d4d412b88e6725acf04a61de88fa4132aa8a",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
