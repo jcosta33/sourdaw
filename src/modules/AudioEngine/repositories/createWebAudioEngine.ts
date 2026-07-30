@@ -402,6 +402,7 @@ class AudioEngineImpl implements AudioEngine {
                 stripMeterWorklets++;
             }
             for (const device of trackNode.strip.deviceNodes) {
+                deviceAudioNodes += device.nodes.length;
                 const loadState = trackNode.getDeviceLoadState(device.deviceId);
                 if (loadState === 'pending') {
                     pendingDeviceInstances++;
@@ -412,7 +413,6 @@ class AudioEngineImpl implements AudioEngine {
                     continue;
                 }
                 deviceInstances++;
-                deviceAudioNodes += device.nodes.length;
                 deviceInstancesByType.set(device.type, (deviceInstancesByType.get(device.type) ?? 0) + 1);
             }
         }

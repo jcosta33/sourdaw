@@ -326,7 +326,7 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
                     'builtin-sidechain-compressor': 1,
                     fermenter: 1,
                 },
-                deviceAudioNodes: 4,
+                deviceAudioNodes: 6,
                 stripMeterWorklets: 1,
                 masterMeterWorklets: 1,
                 adjustmentLayerBuses: 1,

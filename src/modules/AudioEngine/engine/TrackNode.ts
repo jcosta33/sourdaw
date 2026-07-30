@@ -515,10 +515,6 @@ export class TrackNode {
         if (this._failedDeviceLoads.has(deviceId)) {
             return 'failed';
         }
-        const device = this.strip.deviceNodes.find((candidate) => candidate.deviceId === deviceId);
-        if (device?.controller?.ready === false) {
-            return 'failed';
-        }
         return 'ready';
     }
 
