@@ -1,0 +1,43 @@
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_ac9b259eab20ba::t_49b94a5f9401a6 68-81,88-92,113-122,127-270,283-288,292,331-384,390-397,407-417,420-472
+src/modules/AiRuntime/useCases/agentReference/__tests__/resolveAgentReference.spec.ts
+  s_bc88af7d3b054c::t_cdb0a4931442e3 67-73,83-95
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_ac9b259eab20ba::t_c65d33cc170713 1-4,20,22,26-47,54-563,566-576,579,590,592,615-618,627,630-640
+src/modules/AiRuntime/useCases/agentReference/resolveAgentReference.ts
+  s_bc88af7d3b054c::t_54e71eec8f1bed 58-71,73-75,77-81,83,122-127,143,145-162,167-175,196,202-203,207-209
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_bc88af7d3b054c::t_c8590a6d851db6 7,175-328,365-370
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_bc88af7d3b054c::t_61928d224d7063 13,16-34,39,41,53,58,67-88,90-93,106-108,118,120-127,140,142-149,162,170,172-179,192,194-196,209,211,224,226,239,241,248,257,274,276-283,293,295,309,311,325,336,338-339
+src/modules/Command/useCases/getExecutableAppActionGroundingCatalog.ts
+  s_bc88af7d3b054c::t_b2cf586e23ebaa 1-8
+src/modules/Command/useCases/getExecutableAppActionGroundingRules.ts
+  s_bc88af7d3b054c::t_c0f642d7dadd7b 1-5,7-14,19-24
+src/modules/Command/useCases/index.ts
+  s_bc88af7d3b054c::t_b55562004aad23 10-11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "bf732537d3b0cce602ff1deaf1ae0529e3320f9c",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
