@@ -1,0 +1,21 @@
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_ac9b259eab20ba::t_d12164febc1bed 13,21,49-50,53-63,88,167,184,187,193-219,227,229-232,244,261,278,308,334,364
+src/modules/AiRuntime/useCases/agentReference/resolveAgentReference.ts
+  s_ac9b259eab20ba::t_da3e4b237f63a3 58-67,103-107
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "d5ef1a8897ba8e00d522328c0cdd484fd8bbd674",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
