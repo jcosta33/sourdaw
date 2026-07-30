@@ -1,0 +1,23 @@
+src/modules/AudioEngine/engine/telemetry/deviceTelemetryScheduler.ts
+  s_ac9b259eab20ba::t_db65326ee942b4 154,173
+  s_ac9b259eab20ba::t_b876b79b6549d9 151,155-172,174-175,177,181-182,195-199,211
+src/modules/AudioEngine/engine/telemetry/__tests__/deviceTelemetryScheduler.spec.ts
+  s_ac9b259eab20ba::t_b876b79b6549d9 140-154
+  s_ac9b259eab20ba::t_10d69d202322e9 155
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "3674063b8dc9ce3a349c29e851201cf5def959c8",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
