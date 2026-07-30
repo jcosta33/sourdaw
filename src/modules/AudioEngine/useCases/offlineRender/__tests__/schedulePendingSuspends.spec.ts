@@ -32,7 +32,7 @@ describe('schedulePendingSuspends', () => {
 
         schedulePendingSuspends(offlineCtx, [evt], 10);
 
-        expect(noteOn).toHaveBeenCalledWith(60, 0.75, undefined, 48_000);
+        expect(noteOn).toHaveBeenCalledWith({ noteOrPad: 60, velocity: 0.75, sampleFrame: 48_000 });
         expect(noteOff).not.toHaveBeenCalled();
     });
 
@@ -55,7 +55,7 @@ describe('schedulePendingSuspends', () => {
 
         schedulePendingSuspends(offlineCtx, [evt], 10);
 
-        expect(noteOn).toHaveBeenCalledWith(4, 0.9, 60, 24_000);
+        expect(noteOn).toHaveBeenCalledWith({ noteOrPad: 4, velocity: 0.9, midiNote: 60, sampleFrame: 24_000 });
     });
 
     it('resolves legacy Toaster events through the canonical GM pad banks', () => {
@@ -79,8 +79,8 @@ describe('schedulePendingSuspends', () => {
 
         schedulePendingSuspends(offlineCtx, [invalid, highBank, lowBank], 10);
 
-        expect(noteOn).toHaveBeenNthCalledWith(1, 0, 0.9, 36, 24_000);
-        expect(noteOn).toHaveBeenNthCalledWith(2, 0, 0.9, 60, 48_000);
+        expect(noteOn).toHaveBeenNthCalledWith(1, { noteOrPad: 0, velocity: 0.9, midiNote: 36, sampleFrame: 24_000 });
+        expect(noteOn).toHaveBeenNthCalledWith(2, { noteOrPad: 0, velocity: 0.9, midiNote: 60, sampleFrame: 48_000 });
         expect(noteOn).toHaveBeenCalledTimes(2);
         expect(noteOff).not.toHaveBeenCalled();
     });
@@ -113,8 +113,8 @@ describe('schedulePendingSuspends', () => {
 
         schedulePendingSuspends(offlineCtx, [onEvt, offEvt], 10);
 
-        expect(noteOff).toHaveBeenCalledWith(60, 48_000);
-        expect(noteOn).toHaveBeenCalledWith(60, 0.5, undefined, 48_000);
+        expect(noteOff).toHaveBeenCalledWith({ noteOrPad: 60, sampleFrame: 48_000 });
+        expect(noteOn).toHaveBeenCalledWith({ noteOrPad: 60, velocity: 0.5, sampleFrame: 48_000 });
 
         // Check order
         const offCall = noteOff.mock.invocationCallOrder[0]!;

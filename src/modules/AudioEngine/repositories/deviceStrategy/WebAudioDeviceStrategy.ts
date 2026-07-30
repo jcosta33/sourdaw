@@ -7,6 +7,9 @@ import { type AudioDeviceStrategy, type OfflineAutomationBinding } from './Audio
 import { UnsupportedDeviceTypeError } from './unsupportedDeviceTypeError';
 
 export class WebAudioDeviceStrategy implements AudioDeviceStrategy {
+    /** Builtin Web Audio graphs are inserts and generators driven by params, never by notes. */
+    public readonly acceptsNotes = false;
+
     constructor(
         public readonly node: OfflineDeviceNode,
         private readonly deviceType: string

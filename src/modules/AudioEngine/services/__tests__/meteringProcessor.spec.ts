@@ -106,6 +106,15 @@ describe('MeteringWorkletProcessor peak capture', () => {
         expect(peakView[0]).toBeCloseTo(0.7, 5);
     });
 
+    it('terminates its render callback after shutdown', async () => {
+        const proc = await loadProcessor();
+        sendInit(proc, sab);
+
+        proc.port.onmessage?.({ data: { type: 'shutdown' } });
+
+        expect(proc.process([], [])).toBe(false);
+    });
+
     it('passes audio through unchanged (it is an in-chain tap)', async () => {
         const proc = await loadProcessor();
         sendInit(proc, sab);

@@ -33,6 +33,7 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
     compileFaustDSP: vi.fn(),
     createFaustNode: vi.fn(),
     isFaustModule: () => false,
+    isFaustInstrumentModule: () => false,
 }));
 
 vi.mock('../../engine/FermenterNode', () => ({

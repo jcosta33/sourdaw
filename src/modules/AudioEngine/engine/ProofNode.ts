@@ -7,6 +7,7 @@
  * Effect processor: 1 input, 1 output.
  */
 
+import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from '#/infra/audioWorklet/workletInitShared';
 
 import proofProcessorUrl from '../services/proofProcessor.ts?worker&url';
@@ -77,18 +78,25 @@ function projectProofMeter(view: Float32Array): ProofMeterData {
     };
 }
 
-export async function createProofNode(ctx: BaseAudioContext, wasmUrl?: string): Promise<ProofNodeResult> {
+export async function createProofNode(
+    ctx: BaseAudioContext,
+    wasmUrl?: string,
+    signal?: AbortSignal
+): Promise<ProofNodeResult> {
     // Proof's mastering telemetry (LUFS, true-peak, limiter GR) is SAB-backed.
     // Without SAB the UI would show flat curves and no GR indicator; the DSP
     // itself would run but the user experience is "knobs do nothing" (§8.20).
     // Fail fast with a typed error.
     requireSharedArrayBuffer('Proof');
 
-    await ensureWorkletRegistered(ctx, proofProcessorUrl);
+    await raceAbortSignal(ensureWorkletRegistered(ctx, proofProcessorUrl), signal);
 
     if (ctx instanceof AudioContext && ctx.state === 'suspended') {
-        await ctx.resume();
+        await raceAbortSignal(ctx.resume(), signal);
     }
+    const wasmBytes = await raceAbortSignal(fetchWasmBinary(wasmUrl ?? DEFAULT_WASM_URL), signal);
+
+    signal?.throwIfAborted();
 
     const node = new AudioWorkletNode(ctx, 'proof-processor', {
         numberOfInputs: 1,
@@ -130,7 +138,6 @@ export async function createProofNode(ctx: BaseAudioContext, wasmUrl?: string): 
     };
     const readyPromise = handshake.promise;
 
-    const wasmBytes = await fetchWasmBinary(wasmUrl ?? DEFAULT_WASM_URL);
     const copy = wasmBytes.slice(0);
     node.port.postMessage({ type: 'init', wasmBytes: copy }, [copy]);
 

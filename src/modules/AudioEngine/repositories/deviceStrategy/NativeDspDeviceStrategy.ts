@@ -3,6 +3,8 @@ import { type OfflineDeviceNode } from '../devices/types';
 
 import {
     type AudioDeviceStrategy,
+    type DeviceNoteOffRequest,
+    type DeviceNoteOnRequest,
     type OfflineAutomationBinding,
     type OfflineAutomationSegment,
 } from './AudioDeviceStrategy';
@@ -12,8 +14,17 @@ export class NativeDspDeviceStrategy implements AudioDeviceStrategy {
     public readonly node: OfflineDeviceNode;
     public readonly acceptsScheduledParam?: (name: string) => boolean;
     public readonly scheduleParam?: (name: string, segments: readonly OfflineAutomationSegment[]) => void;
+    /**
+     * Read off the DSP node the factory table built, not off this class. Every
+     * device that comes through here gets the same forwarding methods whether
+     * or not the node behind them implements anything, so the methods say
+     * nothing about the device; the node's own surface does. Gluten, Proof,
+     * Bacteria, Grinder, Knead, ProofChamber and Scoring supply no `noteOn`.
+     */
+    public readonly acceptsNotes: boolean;
 
     constructor(private readonly dspNode: NativeDspNode) {
+        this.acceptsNotes = dspNode.noteOn !== undefined;
         this.node = {
             inputNode: dspNode.workletNode,
             outputNode: dspNode.workletNode,
@@ -43,12 +54,12 @@ export class NativeDspDeviceStrategy implements AudioDeviceStrategy {
         this.dspNode.setBypass?.(bypassed);
     }
 
-    noteOn(noteOrPad: number, velocity: number, midiNote?: number, sampleFrame?: number): void {
-        this.dspNode.noteOn?.(noteOrPad, velocity, midiNote, sampleFrame);
+    noteOn(request: DeviceNoteOnRequest): void {
+        this.dspNode.noteOn?.(request);
     }
 
-    noteOff(noteOrPad: number, sampleFrame?: number): void {
-        this.dspNode.noteOff?.(noteOrPad, sampleFrame);
+    noteOff(request: DeviceNoteOffRequest): void {
+        this.dspNode.noteOff?.(request);
     }
 
     connectPadOutput(pad: number, destination: AudioNode): void {

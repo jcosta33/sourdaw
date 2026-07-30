@@ -372,9 +372,15 @@ describe('scheduleMidiNotes', () => {
         await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
 
         expect(scheduleNote).not.toHaveBeenCalled();
-        // noteOn(pitch, velocity, sampleFrame, channel)
-        expect(noteOn.mock.calls[0]?.slice(0, 2)).toEqual([62, 96]);
-        expect(noteOff.mock.calls[0]?.[0]).toBe(62);
+        // Every slot, not just pitch and velocity. Crumbs' node was written
+        // against Toaster's pad order at first — `(pad, velocity, midiNote?,
+        // sampleFrame?)` — which put this call's `sampleFrame` in a slot Crumbs
+        // discards and its channel in `sampleFrame`, voicing every note at
+        // frame 0. All four slots are `number`, so only asserting the values
+        // catches it. At 120 bpm / 48 kHz, beat 0.25 is frame 6000 and the note
+        // ends half a beat later at 18000.
+        expect(noteOn.mock.calls[0]).toEqual([62, 96, 6000, 0]);
+        expect(noteOff.mock.calls[0]).toEqual([62, 18000, 0]);
     });
 
     it('does not schedule synth when MIDI store is uninitialized', async () => {

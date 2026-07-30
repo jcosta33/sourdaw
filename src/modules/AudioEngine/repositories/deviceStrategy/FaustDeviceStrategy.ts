@@ -3,7 +3,12 @@ import { logger } from '#/infra/logger/appLogger';
 import { type Device } from '../../models/TrackViewTypes';
 import { type OfflineDeviceNode } from '../devices/types';
 
-import { type AudioDeviceStrategy, type OfflineAutomationBinding } from './AudioDeviceStrategy';
+import {
+    type AudioDeviceStrategy,
+    type DeviceNoteOffRequest,
+    type DeviceNoteOnRequest,
+    type OfflineAutomationBinding,
+} from './AudioDeviceStrategy';
 
 type FaustNodeLike = AudioNode & {
     setParamValue(name: string, value: number): void;
@@ -44,14 +49,55 @@ type FaustDeviceCreator = (input: {
     faustModuleId: string;
 }) => Promise<OfflineDeviceNode | null>;
 
+/** Where a note goes when the request names no MPE member channel. */
+const FAUST_BASE_CHANNEL = 0;
+
 export class FaustDeviceStrategy implements AudioDeviceStrategy {
     private readonly paramAddressCache: Map<string, string>;
 
     constructor(
         public readonly node: OfflineDeviceNode,
-        private readonly faustNode: FaustNodeLike
+        private readonly faustNode: FaustNodeLike,
+        /**
+         * Whether this module is a Faust *instrument*, as recorded by
+         * `registerFaustDSP`. Not derived from the `faust-` id prefix (every
+         * Faust module carries it) and not from the presence of
+         * `wamControls.keyOn` (the factory always defines that wrapper, which
+         * then checks the node inside). The flag is the only honest signal.
+         */
+        public readonly acceptsNotes: boolean,
+        /** Needed to turn the scheduler's sample frame into the seconds Faust wants. */
+        private readonly sampleRate: number
     ) {
         this.paramAddressCache = buildFaustParamAddressCache(faustNode.parameters);
+    }
+
+    /**
+     * Voice a note offline through the same control surface the live descriptor
+     * wires (`wamControls.keyOn`), which `createFaustDevice` already backs with
+     * an `OfflineAudioContext`-aware scheduler that batches each sample frame
+     * behind one `ctx.suspend`. Until this existed, a Faust instrument's chain
+     * entry carried no note surface, `scheduleTrackClips` read the track as
+     * having no instrument, and the part bounced as the builtin fallback synth
+     * — a sawtooth at 0.3 gain — while playing correctly in the session.
+     */
+    noteOn({ noteOrPad, velocity, sampleFrame, channel }: DeviceNoteOnRequest): void {
+        this.node.wamControls?.keyOn?.(channel ?? FAUST_BASE_CHANNEL, noteOrPad, velocity, this.toSeconds(sampleFrame));
+    }
+
+    noteOff({ noteOrPad, sampleFrame }: DeviceNoteOffRequest): void {
+        // Faust's `keyOff` takes a release velocity in slot 3. Offline note-offs
+        // carry none, and the poly voice allocator only needs the note released,
+        // so it goes out at zero.
+        this.node.wamControls?.keyOff?.(FAUST_BASE_CHANNEL, noteOrPad, 0, this.toSeconds(sampleFrame));
+    }
+
+    /** `undefined` means "as soon as possible", which the Faust scheduler honours. */
+    private toSeconds(sampleFrame: number | undefined): number | undefined {
+        if (sampleFrame === undefined) {
+            return undefined;
+        }
+        return sampleFrame / this.sampleRate;
     }
 
     setParam(name: string, value: number): void {
@@ -80,12 +126,15 @@ type CreateFaustStrategyInput = {
     ctx: BaseAudioContext;
     device: Device;
     createFaustDevice: FaustDeviceCreator;
+    /** `isFaustInstrumentModule`, injected so this repository stays off the PluginHost barrel. */
+    isFaustInstrument: (moduleId: string) => boolean;
 };
 
 export async function createFaustStrategy({
     ctx,
     device,
     createFaustDevice,
+    isFaustInstrument,
 }: CreateFaustStrategyInput): Promise<FaustDeviceStrategy> {
     const node = await createFaustDevice({ ctx, faustModuleId: device.type });
     if (!node) {
@@ -93,7 +142,7 @@ export async function createFaustStrategy({
     }
 
     const faustNode = node.nodes[0] as FaustNodeLike;
-    const strategy = new FaustDeviceStrategy(node, faustNode);
+    const strategy = new FaustDeviceStrategy(node, faustNode, isFaustInstrument(device.type), ctx.sampleRate);
 
     // Apply initial params
     for (const [key, val] of Object.entries(device.parameterValues)) {

@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => {
     const webLlmEngine: { value: MockWebLlmEngine | null } = { value: null };
     return {
         chatStoreValue: { value: null as ChatState | null },
+        projectRevision: { value: 'revision-1' },
         executeAppAction: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
         executeAppActionBatch: vi.fn<ExecuteAppActionBatch>(),
         describeAction: vi.fn((_action: AppAction) => 'Remove track'),
@@ -34,6 +35,7 @@ const mocks = vi.hoisted(() => {
         appendChatMessage: vi.fn<(message: ChatMessage) => void>(),
         updateChatMessage: vi.fn<(messageId: string, updates: Partial<ChatMessage>) => void>(),
         setActiveAborter: vi.fn<(aborter: AbortController | null) => void>(),
+        proposePendingActionConfirmation: vi.fn(),
         nativeEngineReady: { value: true },
         backend,
         cloudAvailable: { value: false },
@@ -50,6 +52,10 @@ const mocks = vi.hoisted(() => {
             >(),
     };
 });
+
+vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectRevision: () => mocks.projectRevision.value,
+}));
 
 vi.mock('../llmOrchestration/backendResolution/helpers', () => ({
     resolveBackend: vi.fn(() => mocks.backend.value),
@@ -107,6 +113,10 @@ vi.mock('../../stores/chatStore', () => ({
     setActiveAborter: mocks.setActiveAborter,
 }));
 
+vi.mock('../../stores/pendingActionConfirmationStore', () => ({
+    proposePendingActionConfirmation: mocks.proposePendingActionConfirmation,
+}));
+
 vi.mock('../../stores/aiActionHistoryStore', () => ({
     pushAiActionGroup: mocks.pushAiActionGroup,
 }));
@@ -119,6 +129,7 @@ describe('sendChatMessage injectables', () => {
         mocks.backend.value = 'native';
         mocks.cloudAvailable.value = false;
         mocks.webLlmEngine.value = null;
+        mocks.projectRevision.value = 'revision-1';
         aiBackendPreferenceStore.set('auto');
         llmStatusStore.set({ state: 'idle' });
         mocks.streamCloudChatCompletion.mockResolvedValue({ status: 'complete' });
@@ -177,11 +188,43 @@ describe('sendChatMessage injectables', () => {
         expect(mocks.executeAppAction).not.toHaveBeenCalled();
         expect(mocks.pushAiActionGroup).not.toHaveBeenCalled();
         expect(mocks.notifyAiChange).not.toHaveBeenCalled();
+        expect(mocks.proposePendingActionConfirmation).toHaveBeenCalledWith(
+            expect.objectContaining({ projectRevision: 'revision-1' })
+        );
         const confirmationUpdate = mocks.updateChatMessage.mock.calls[0]?.[1];
         expect(confirmationUpdate?.isStreaming).toBe(false);
         expect(confirmationUpdate?.content).toContain('requires confirmation');
         expect(confirmationUpdate?.pendingActionConfirmationId).toMatch(/^prompt-confirmation-/);
         expect(confirmationUpdate?.pendingActionConfirmationStatus).toBe('proposed');
+    });
+
+    it('invalidates a prompt when the project changes during planning', async () => {
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'prompt',
+        };
+        mocks.parsePromptToActions.mockImplementationOnce(() => {
+            mocks.projectRevision.value = 'revision-2';
+            return Promise.resolve({
+                actions: [{ type: 'removeTrack', payload: { trackId: 'track-1' } }],
+                rawText: 'delete drums',
+                requiresConfirmation: true,
+            });
+        });
+
+        await sendChatMessage('delete drums');
+
+        expect(mocks.proposePendingActionConfirmation).not.toHaveBeenCalled();
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
+        expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+            expect.any(String),
+            expect.objectContaining({
+                error: 'The project changed after this proposal was created. Review and submit the command again.',
+                content: expect.stringContaining('project changed while this command was being planned'),
+            })
+        );
     });
 
     it('lets prompt mode use provider fallback when the preferred native engine is not ready', async () => {
@@ -237,7 +280,7 @@ describe('sendChatMessage injectables', () => {
         );
     });
 
-    it('executes validated provider actions through one atomic command batch', async () => {
+    it('binds validated provider actions and admission to one project revision', async () => {
         const action = { type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true } } as const;
         const secondAction = { type: 'setTrackPan', payload: { trackId: 'track-guitar', pan: -20 } } as const;
         mocks.chatStoreValue.value = {
@@ -283,6 +326,22 @@ describe('sendChatMessage injectables', () => {
             'muteTrack',
             'setTrackPan',
         ]);
+
+        mocks.executeAppActionBatch.mockImplementationOnce((_actions, options) => {
+            mocks.projectRevision.value = 'revision-2';
+            expect(options?.shouldExecute?.()).toBe(false);
+            return Promise.resolve({ status: 'cancelled', reason: 'Execution authority revoked', actions: [] });
+        });
+
+        await sendChatMessage('mute vocals and pan guitar left');
+
+        expect(mocks.pushAiActionGroup).toHaveBeenCalledTimes(1);
+        expect(mocks.notifyAiChange).toHaveBeenCalledTimes(1);
+        expect(mocks.updateChatMessage.mock.lastCall?.[1]).toEqual({
+            isStreaming: false,
+            error: 'The project changed after this proposal was created. Review and submit the command again.',
+            content: 'The project changed before this command could commit. Review it and submit the command again.',
+        });
     });
 
     it('does not report a false command error when provider planning is stopped', async () => {

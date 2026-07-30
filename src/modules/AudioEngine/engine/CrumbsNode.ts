@@ -20,7 +20,17 @@ const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 
 export type CrumbsNodeResult = {
     workletNode: AudioWorkletNode;
-    noteOn: (note: number, velocity: number, midiNote?: number, sampleFrame?: number) => void;
+    /**
+     * `(note, velocity, sampleFrame?, channel?)` — the melodic slot order the
+     * other pitched instruments publish, which is what both callers use:
+     * `bindMelodicNotes` in the offline factory table, and `scheduleMidiNotes`
+     * through `crumbsControls`. It is *not* Toaster's pad order
+     * (`pad, velocity, midiNote?, sampleFrame?`); writing that here silently
+     * fed `sampleFrame` into a slot Crumbs discards and the MPE channel into
+     * `sampleFrame`, so every scheduled note lost its placement. All four slots
+     * are `number`, so nothing but this signature holds the distinction.
+     */
+    noteOn: (note: number, velocity: number, sampleFrame?: number, channel?: number) => void;
     noteOff: (note: number, sampleFrame?: number) => void;
     allNotesOff: () => void;
     allSoundOff: () => void;
@@ -97,10 +107,11 @@ export async function createCrumbsNode(
     // `prepareOfflineCrumbs` for a render). Nothing is loaded eagerly here:
     // which sample a device plays is project state, not a node default.
 
-    // The offline scheduler's instrument signature passes the note first and a
-    // `midiNote` third for pad-addressed devices like Toaster. Crumbs is
-    // note-addressed, so the third argument is unused.
-    const noteOn = (note: number, velocity: number, _midiNote?: number, sampleFrame?: number): void => {
+    // `channel` is accepted and dropped: `CrumbsEngine` allocates and releases
+    // voices by pitch and has no MPE member-channel concept, which is also why
+    // Crumbs is absent from `NOTE_EXPRESSION_DEVICES`. Taking the parameter
+    // keeps the melodic slot order intact for callers that pass it.
+    const noteOn = (note: number, velocity: number, sampleFrame?: number, _channel?: number): void => {
         if (!bypassed) {
             node.port.postMessage({ type: 'noteOn', note, velocity, sampleFrame });
         }

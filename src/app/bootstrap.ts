@@ -83,7 +83,7 @@ import { setGrandBouleEventBus } from '#/modules/GrandBoule/useCases';
 import { updateGrinderTelemetry } from '#/modules/Grinder/stores';
 import { getPitchHandlers, setPitchEditDependencies } from '#/modules/Knead/useCases';
 import { setEngineReady } from '#/modules/Levain/stores';
-import { prepareOfflineLevain, registerLevainDevice, unregisterLevainDevice } from '#/modules/Levain/useCases';
+import { registerLevainDevice, unregisterLevainDevice } from '#/modules/Levain/useCases';
 import {
     getChordTrackHandlers,
     getMidiGrooveHandlers,
@@ -140,6 +140,7 @@ import {
 import { logCapabilities } from '#/utils/capabilities';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
+import { prepareOfflineDeviceSetup } from './prepareOfflineDeviceSetup';
 import { eventBus, logger } from './registerDependencies';
 import { registerGlobalErrorHandlers } from './registerGlobalErrorHandlers';
 
@@ -295,22 +296,15 @@ configureAudioDeviceRuntimeSink({
     setLevainEngineReady: ({ deviceId, isReady }) => {
         setEngineReady(deviceId, isReady);
     },
-    // The offline render builds instrument nodes through a different
-    // registry than live playback, so nothing here ran for an export and Levain
-    // bounced silence. Dispatch stays in the composition root; each module owns
-    // what its own instrument needs.
-    prepareOfflineInstrument: async ({ deviceId, deviceType, port, signal }) => {
-        if (deviceType === 'levain') {
-            await prepareOfflineLevain({ deviceId, port, signal });
-        }
-        if (deviceType === 'builtin-crumbs') {
-            await prepareCrumbsEngine({ deviceId, port, signal });
-        }
-    },
-    // Deliberately the same use case the offline arm above calls: a Crumbs
-    // instance built by the live registry and one built by the offline registry
-    // must end up holding the same sample, and one shared call is what
-    // guarantees it.
+    // The offline render builds device nodes through a different registry than
+    // live playback, so nothing here ran for an export and Levain bounced
+    // silence. Dispatch stays in the composition root; each module owns what its
+    // own device needs. See `prepareOfflineDeviceSetup`.
+    prepareOfflineInstrument: prepareOfflineDeviceSetup,
+    // The live registry's Crumbs descriptor calls this, and the offline chain
+    // reaches the same use case through the `builtin-crumbs` row of
+    // `OFFLINE_DEVICE_HYDRATION`. One shared call is what stops the two
+    // registries from configuring two differently loaded engines.
     prepareCrumbsDevice: ({ deviceId, port }) => prepareCrumbsEngine({ deviceId, port }),
     setFermenterTelemetry: (deviceId, telemetry) => {
         setFermenterTelemetry(deviceId, telemetry.peakL, telemetry.peakR, telemetry.scopeBuffer);

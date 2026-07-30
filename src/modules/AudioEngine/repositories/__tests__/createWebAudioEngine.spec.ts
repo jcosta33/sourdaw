@@ -590,11 +590,14 @@ describe('AudioEngine', () => {
         it('awaits context.close, makes disposal terminal, and releases the transport SAB', async () => {
             await engine.initialize();
             expect(engine.getHealth().workletReady).toBe(true);
+            const masterMeterPort = (engine as unknown as { masterMeterNode: { port: { postMessage: Mock } } })
+                .masterMeterNode.port;
             const lateSource = mockCtx.createOscillator();
 
             await engine.dispose();
 
             expect(mockCtx.close).toHaveBeenCalledTimes(1);
+            expect(masterMeterPort.postMessage).toHaveBeenCalledWith({ type: 'shutdown' });
             expect(engine.getHealth().workletReady).toBe(false);
 
             // SAB released: a post-dispose transport write must not throw.

@@ -37,6 +37,7 @@ export type TrackNodeDeps = {
 };
 
 type PendingDeviceLoad = {
+    abortController: AbortController;
     bypassed?: boolean;
     parameterWrites: Array<[string, number]>;
     loadPromise?: Promise<unknown>;
@@ -453,25 +454,29 @@ export class TrackNode {
         this._pendingDeviceLoads.set(deviceId, pendingLoad);
         this.deps.pendingDevicePromises.add(loadPromise);
         void loadPromise.finally(() => {
-            this.deps.pendingDevicePromises.delete(loadPromise);
             if (this._pendingDeviceLoads.get(deviceId) === pendingLoad) {
-                if (!pendingLoad.resolved) {
-                    this._failedDeviceLoads.add(deviceId);
-                }
-                this._pendingDeviceLoads.delete(deviceId);
-                pendingLoad.parameterWrites.length = 0;
+                this.invalidatePendingDeviceLoad(deviceId, !pendingLoad.resolved);
+            } else {
+                this.deps.pendingDevicePromises.delete(loadPromise);
             }
         });
     }
 
-    private invalidatePendingDeviceLoad(deviceId: string): void {
-        this._failedDeviceLoads.delete(deviceId);
+    private invalidatePendingDeviceLoad(deviceId: string, failed = false): void {
+        if (failed) {
+            this._failedDeviceLoads.add(deviceId);
+        } else {
+            this._failedDeviceLoads.delete(deviceId);
+        }
         const pendingLoad = this._pendingDeviceLoads.get(deviceId);
         if (!pendingLoad) {
             return;
         }
         this._pendingDeviceLoads.delete(deviceId);
         pendingLoad.parameterWrites.length = 0;
+        if (!pendingLoad.resolved) {
+            pendingLoad.abortController.abort();
+        }
         if (pendingLoad.loadPromise) {
             this.deps.pendingDevicePromises.delete(pendingLoad.loadPromise);
         }
@@ -505,6 +510,12 @@ export class TrackNode {
         this.deps.onDeviceLoaded?.(this.trackId, finalDn);
         this.scheduleRebuildChain();
         return true;
+    }
+
+    public timeoutPendingDeviceLoads(): void {
+        for (const deviceId of this._pendingDeviceLoads.keys()) {
+            this.invalidatePendingDeviceLoad(deviceId, true);
+        }
     }
 
     public getDeviceLoadState(deviceId: string): DeviceLoadState {
@@ -574,7 +585,11 @@ export class TrackNode {
             // cpal audio thread. A SharedArrayBuffer cannot reach the host
             // process, so the hop to Rust is IPC; the instance id is the key.
             const loadingBypass = context.createGain();
-            const pendingLoad: PendingDeviceLoad = { parameterWrites: [], resolved: false };
+            const pendingLoad: PendingDeviceLoad = {
+                abortController: new AbortController(),
+                parameterWrites: [],
+                resolved: false,
+            };
             dn = {
                 deviceId,
                 type: deviceType,
@@ -644,13 +659,18 @@ export class TrackNode {
                 if (!descriptor) {
                     return;
                 }
-                const pendingLoad: PendingDeviceLoad = { parameterWrites: [], resolved: false };
+                const pendingLoad: PendingDeviceLoad = {
+                    abortController: new AbortController(),
+                    parameterWrites: [],
+                    resolved: false,
+                };
                 const { placeholder, loadPromise } = descriptor.create({
                     context,
                     deviceId,
                     deviceType,
                     transportSAB: this.deps.transportSAB,
                     isCurrent: () => this._pendingDeviceLoads.get(deviceId) === pendingLoad && !this._disposed,
+                    signal: pendingLoad.abortController.signal,
                     onLoaded: (finalDn) => this.completePendingDeviceLoad(deviceId, pendingLoad, finalDn),
                 });
                 if (!placeholder.controller) {
@@ -782,6 +802,7 @@ export class TrackNode {
         this.strip.analyserNode.disconnect();
         this._outputDestination = null;
         if (this.strip.meterNode) {
+            this.strip.meterNode.port.postMessage({ type: 'shutdown' });
             this.strip.meterNode.port.close();
             this.strip.meterNode.disconnect();
         }

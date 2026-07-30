@@ -9,6 +9,7 @@ const { mocks } = vi.hoisted(() => ({
         createFaustDevice: vi.fn(),
         createFaustNode: vi.fn(),
         isFaustModule: vi.fn(),
+        isFaustInstrumentModule: vi.fn(),
         loggerWarn: vi.fn(),
     },
 }));
@@ -21,6 +22,7 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
     compileFaustDSP: mocks.compileFaustDSP,
     createFaustNode: mocks.createFaustNode,
     isFaustModule: mocks.isFaustModule,
+    isFaustInstrumentModule: mocks.isFaustInstrumentModule,
 }));
 
 vi.mock('../../repositories/faustDeviceFactory', () => ({
@@ -35,6 +37,7 @@ describe('buildDeviceChain', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.isFaustModule.mockReturnValue(false);
+        mocks.isFaustInstrumentModule.mockReturnValue(false);
     });
 
     it('should connect input to output when there are no active devices', async () => {

@@ -107,16 +107,21 @@ function installDeferredWasmDevice({
         controller,
     };
     let onLoaded: ((finalDn: BuiltinDeviceNode) => void) | undefined;
+    let signal: AbortSignal | undefined;
     const load = Promise.withResolvers<void>();
     mocks.findWasmDescriptor.mockReturnValue({
         matches: () => true,
-        create: (deps: { onLoaded: (finalDn: BuiltinDeviceNode) => void }) => {
+        create: (deps: { onLoaded: (finalDn: BuiltinDeviceNode) => void; signal?: AbortSignal }) => {
             onLoaded = deps.onLoaded;
+            signal = deps.signal;
             return { placeholder, loadPromise: load.promise };
         },
     });
     return {
         placeholder,
+        get signal(): AbortSignal | undefined {
+            return signal;
+        },
         resolve(finalDn: BuiltinDeviceNode): void {
             if (!onLoaded) {
                 throw new Error('expected the deferred descriptor to capture onLoaded');
@@ -510,6 +515,22 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             expect(track.getDeviceLoadState('wasm-1')).toBe('failed');
         });
 
+        it('marks a timed-out descriptor load failed and rejects its late result', () => {
+            const deferred = installDeferredWasmDevice({ controller: { setParam: vi.fn() } });
+            const pendingDevicePromises = new Set<Promise<unknown>>();
+            const track = new TrackNode('t1', makeDeps(ctx, { pendingDevicePromises }));
+            track.addDevice('wasm-1', 'levain');
+
+            track.timeoutPendingDeviceLoads();
+
+            expect(track.getDeviceLoadState('wasm-1')).toBe('failed');
+            expect(pendingDevicePromises.size).toBe(0);
+            expect(deferred.signal?.aborted).toBe(true);
+            const loaded = createLoadedDevice();
+            deferred.resolve(loaded.device);
+            expect(loaded.dispose).toHaveBeenCalledTimes(1);
+        });
+
         it('preserves the descriptor-owned Proof parameter barrier', () => {
             const pendingParams: Array<[string, number]> = [];
             const order: string[] = [];
@@ -601,6 +622,7 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
 
             track.dispose();
 
+            expect(meterNode.port.postMessage).toHaveBeenCalledWith({ type: 'shutdown' });
             expect(meterNode.port.close).toHaveBeenCalledTimes(1);
             expect(meterNode.disconnect).toHaveBeenCalled();
             expect(controller.destroy).toHaveBeenCalledTimes(1);

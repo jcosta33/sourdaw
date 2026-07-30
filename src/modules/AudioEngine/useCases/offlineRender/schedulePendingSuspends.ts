@@ -9,6 +9,14 @@ import { type PendingWorkletEvent } from './types';
  *
  * This uses the sample-accurate `sampleFrame` parameter instead of main-thread
  * OfflineAudioContext.suspend() polling, preventing timing drift.
+ *
+ * The note surface is addressed by name (`DeviceNoteOnRequest`). It used to be
+ * positional, and the two branches below disagreed about what slot three meant:
+ * the pad branch put a MIDI note there — correct for Toaster — while the pitch
+ * branch put `undefined` there and the frame in slot four, which is Toaster's
+ * layout, not the melodic one. Fermenter, Levain and Grand Boule read slot three
+ * as `sampleFrame`, so every note of an offline part for those devices arrived
+ * frameless and fired the moment its message was handled.
  */
 export function schedulePendingSuspends(
     offlineCtx: OfflineAudioContext,
@@ -35,9 +43,14 @@ export function schedulePendingSuspends(
                 if (pad === null) {
                     continue;
                 }
-                evt.instrumentControls.noteOn(pad, evt.velocity, evt.pitch, sampleFrame);
+                evt.instrumentControls.noteOn({
+                    noteOrPad: pad,
+                    velocity: evt.velocity,
+                    midiNote: evt.pitch,
+                    sampleFrame,
+                });
             } else {
-                evt.instrumentControls.noteOn(evt.pitch, evt.velocity, undefined, sampleFrame);
+                evt.instrumentControls.noteOn({ noteOrPad: evt.pitch, velocity: evt.velocity, sampleFrame });
             }
         } else {
             if (evt.isToaster) {
@@ -45,9 +58,9 @@ export function schedulePendingSuspends(
                 if (pad === null) {
                     continue;
                 }
-                evt.instrumentControls.noteOff(pad, sampleFrame);
+                evt.instrumentControls.noteOff({ noteOrPad: pad, sampleFrame });
             } else {
-                evt.instrumentControls.noteOff(evt.pitch, sampleFrame);
+                evt.instrumentControls.noteOff({ noteOrPad: evt.pitch, sampleFrame });
             }
         }
     }

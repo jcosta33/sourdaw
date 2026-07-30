@@ -5,6 +5,7 @@
  * provides noteOn/noteOff/setParam/setPadParam via MessagePort.
  */
 
+import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from '#/infra/audioWorklet/workletInitShared';
 
 import toasterProcessorUrl from '../services/toasterProcessor.ts?worker&url';
@@ -78,12 +79,19 @@ export function isToasterDevice(deviceType: string): boolean {
     return deviceType === 'toaster';
 }
 
-export async function createToasterNode(ctx: BaseAudioContext, wasmUrl?: string): Promise<ToasterNodeResult> {
+export async function createToasterNode(
+    ctx: BaseAudioContext,
+    wasmUrl?: string,
+    signal?: AbortSignal
+): Promise<ToasterNodeResult> {
     if (ctx instanceof AudioContext && ctx.state === 'suspended') {
-        await ctx.resume();
+        await raceAbortSignal(ctx.resume(), signal);
     }
 
-    await ensureWorkletRegistered(ctx, toasterProcessorUrl);
+    await raceAbortSignal(ensureWorkletRegistered(ctx, toasterProcessorUrl), signal);
+    const wasmBytes = await raceAbortSignal(fetchWasmBinary(wasmUrl ?? DEFAULT_WASM_URL), signal);
+
+    signal?.throwIfAborted();
 
     const node = new AudioWorkletNode(ctx, 'toaster-processor', {
         numberOfInputs: 0,
@@ -110,7 +118,6 @@ export async function createToasterNode(ctx: BaseAudioContext, wasmUrl?: string)
     };
     const readyPromise = handshake.promise;
 
-    const wasmBytes = await fetchWasmBinary(wasmUrl ?? DEFAULT_WASM_URL);
     const copy = wasmBytes.slice(0);
     node.port.postMessage({ type: 'init', wasmBytes: copy }, [copy]);
 

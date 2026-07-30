@@ -2,7 +2,7 @@ import { type Logger } from '#/infra/logger/types';
 import { resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
 import { getToasterDeviceControls } from '#/modules/AudioEngine/useCases';
 
-import { toasterStore } from '../stores/toasterStore';
+import { registerToasterDevice, toasterStore } from '../stores/toasterStore';
 
 import { disposeToasterDevice } from './disposeToasterDevice';
 import { TOASTER_ENGINE_MAP } from './loadToasterKit';
@@ -38,6 +38,16 @@ export function initToasterSubscribers({ eventBus, logger }: InitToasterSubscrib
         logger.info('Hydrating newly loaded Toaster WASM engine with store state');
 
         const deviceId = payload.deviceId;
+
+        // Device load is the registration seam, and registration is the only
+        // thing that creates this device's store record. Without it the store
+        // stays empty for the whole session: every mutator refuses an unknown
+        // deviceId (so a post-teardown write cannot resurrect a device), so
+        // panel edits, step toggles and kit loads all no-op, and the hydration
+        // below never has a kit to send. Idempotent — a reload keeps the edits
+        // the record already holds.
+        registerToasterDevice(deviceId);
+
         const state = toasterStore.value?.[deviceId];
         const kit = state?.kit;
 
