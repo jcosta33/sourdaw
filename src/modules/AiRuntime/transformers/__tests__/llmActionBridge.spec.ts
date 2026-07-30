@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { getAppActionExecutionPolicy } from '#/modules/Command/useCases';
+
 import { type ProjectContext } from '../../models/ProjectContext';
 import {
     bridgeLlmToolCalls,
@@ -541,6 +543,10 @@ describe('bridgeLlmToolCalls', () => {
         expect(
             LLM_EXECUTABLE_TOOL_SCHEMAS.every((schema) => schema.function.parameters.additionalProperties === false)
         ).toBe(true);
+        const unclassifiedActionTypes = LLM_EXECUTABLE_TOOL_SCHEMAS.map((schema) => schema.function.name).filter(
+            (actionType) => getAppActionExecutionPolicy(actionType).classification !== 'explicit'
+        );
+        expect(unclassifiedActionTypes).toEqual([]);
     });
 
     it('serializes only command-relevant project state and labels it as untrusted data', () => {

@@ -37,7 +37,6 @@ vi.mock('../../transformers/promptParser/parsing', () => ({
     buildPresetContext: vi.fn(() => ({})),
     tryParameterizedPath: vi.fn(() => []),
     tryCompoundFastPath: vi.fn(() => null),
-    requiresConfirmation: vi.fn(() => false),
 }));
 
 vi.mock('../llmOrchestration/backendResolution/isDsoBackendAvailable', () => ({
@@ -97,6 +96,43 @@ describe('parsePromptToActions', () => {
         mockBridgeLlmToolCalls.mockReset();
         mockBuildLlmActionSystemPrompt.mockClear();
         mockBuildLlmActionUserMessage.mockClear();
+    });
+
+    it.each([
+        {
+            prompt: 'set tempo to 128',
+            action: { type: 'setTempo' as const, payload: { bpm: 128 } },
+            producer: 'parameterized' as const,
+        },
+        {
+            prompt: 'remove all tracks',
+            action: { type: 'removeAllTracks' as const },
+            producer: 'preset' as const,
+        },
+    ])('applies app-owned confirmation policy to a single $producer action', async ({ prompt, action, producer }) => {
+        if (producer === 'parameterized') {
+            vi.mocked(tryParameterizedPath).mockReturnValue([action]);
+        } else {
+            vi.mocked(tryPresetMatch).mockReturnValue([action]);
+        }
+
+        const result = await parsePromptToActions(prompt, baseContext);
+
+        expect(result.actions).toEqual([action]);
+        expect(result.requiresConfirmation).toBe(true);
+    });
+
+    it('requires confirmation for a multi-action compound fast path', async () => {
+        const actions = [
+            { type: 'muteTrack' as const, payload: { trackId: 'track-vocals', muted: true } },
+            { type: 'setTrackGain' as const, payload: { trackId: 'track-guitar', gain: 0.6 } },
+        ];
+        vi.mocked(tryCompoundFastPath).mockReturnValue(actions);
+
+        const result = await parsePromptToActions('mute vocals and lower guitar', baseContext);
+
+        expect(result.actions).toEqual(actions);
+        expect(result.requiresConfirmation).toBe(true);
     });
 
     it('should return empty intent when signal is aborted before LLM path', async () => {

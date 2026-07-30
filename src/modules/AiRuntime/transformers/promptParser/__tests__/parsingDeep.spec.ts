@@ -1,8 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
 import { type ProjectContext } from '../../../models/ProjectContext';
-import { type RuntimeAction } from '../../../models/RuntimeAction';
-import { buildPresetContext, findTrack, isComplexPrompt, requiresConfirmation, tryParameterizedPath } from '../parsing';
+import { buildPresetContext, findTrack, isComplexPrompt, tryParameterizedPath } from '../parsing';
 
 function makeCtx(overrides: Partial<ProjectContext> = {}): ProjectContext {
     return {
@@ -198,24 +197,5 @@ describe('findTrack', () => {
 
     it('returns undefined when nothing matches', () => {
         expect(findTrack(ctx, 'Strings')).toBeUndefined();
-    });
-});
-
-describe('requiresConfirmation', () => {
-    it('is false for an empty action list', () => {
-        expect(requiresConfirmation([])).toBe(false);
-    });
-
-    it('is false for non-destructive actions', () => {
-        const actions: RuntimeAction[] = [{ type: 'setTempo', payload: { bpm: 120 } }];
-        expect(requiresConfirmation(actions)).toBe(false);
-    });
-
-    it('is true when a destructive action is present', () => {
-        const actions: RuntimeAction[] = [
-            { type: 'setTempo', payload: { bpm: 120 } },
-            { type: 'removeClip', payload: { clipId: 'c1' } },
-        ];
-        expect(requiresConfirmation(actions)).toBe(true);
     });
 });

@@ -5,6 +5,8 @@ export { describeAction } from './actionLabels';
 export { setActionHistoryMetadataPort } from './actionHistoryMetadataPort';
 export { CommandEventBus, setCommandEventBus } from './commandEventBus';
 export { createCallbackUndoEntry } from './createCallbackUndoEntry';
+export { getAppActionExecutionPolicy } from './getAppActionExecutionPolicy';
+export { requiresAppActionConfirmation } from './requiresAppActionConfirmation';
 export { createUndoEntry } from './createUndoEntry';
 
 export { generateGroupId } from './generateGroupId';

@@ -8,7 +8,6 @@ import {
     tryCompoundFastPath,
     matchSoundDesignRecipe,
     findTrack,
-    requiresConfirmation,
 } from '../parsing';
 
 describe('promptParser parsing', () => {
@@ -251,23 +250,6 @@ describe('promptParser parsing', () => {
 
         it('returns undefined if not found', () => {
             expect(findTrack(context, 'drums')).toBeUndefined();
-        });
-    });
-
-    describe('requiresConfirmation', () => {
-        it('returns true for destructive actions', () => {
-            expect(requiresConfirmation([{ type: 'removeTrack', payload: { trackId: 't1' } }])).toBe(true);
-            expect(requiresConfirmation([{ type: 'removeClip', payload: { clipId: 'c1' } }])).toBe(true);
-            expect(requiresConfirmation([{ type: 'bounceInPlace', payload: { trackId: 't1' } }])).toBe(true);
-        });
-
-        it('returns false for safe actions', () => {
-            expect(
-                requiresConfirmation([
-                    { type: 'setTempo', payload: { bpm: 120 } },
-                    { type: 'addTrack', payload: { name: 't', kind: 'audio' } },
-                ])
-            ).toBe(false);
         });
     });
 });

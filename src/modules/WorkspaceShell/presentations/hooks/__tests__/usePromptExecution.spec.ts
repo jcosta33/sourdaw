@@ -19,6 +19,7 @@ import {
     initEngine,
 } from '#/modules/AiRuntime/useCases';
 import { clipSelectionStore, trackStore } from '#/modules/Arrangement/stores';
+import { requiresAppActionConfirmation } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { usePromptExecution } from '../usePromptExecution';
@@ -50,6 +51,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 }));
 vi.mock('#/modules/Command/useCases', () => ({
     describeAction: vi.fn((action: { type: string }) => action.type),
+    requiresAppActionConfirmation: vi.fn(() => false),
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRevision: vi.fn(() => 'revision-1'),
@@ -110,6 +112,7 @@ describe('usePromptExecution', () => {
         vi.mocked(getAvailablePresets).mockReturnValue([]);
         vi.mocked(searchPresets).mockReturnValue([]);
         vi.mocked(resolvePresetActions).mockReturnValue([]);
+        vi.mocked(requiresAppActionConfirmation).mockReturnValue(false);
     });
 
     it('starts with an empty, idle default state', () => {
@@ -219,6 +222,28 @@ describe('usePromptExecution', () => {
         expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith('Executed: Play', ['togglePlayback']);
         expect(result.current.isProcessing).toBe(false);
         expect(result.current.value).toBe('');
+    });
+
+    it('uses app-owned action policy even when preset metadata says an action is safe', async () => {
+        const routingAction: AppAction = {
+            type: 'setTrackOutput',
+            payload: { trackId: 'track-1', outputId: 'master' },
+        };
+        vi.mocked(resolvePresetActions).mockReturnValue([routingAction]);
+        vi.mocked(requiresAppActionConfirmation).mockReturnValue(true);
+        const { result } = renderHook(() => usePromptExecution());
+
+        await act(async () => {
+            await result.current.executePreset(
+                fuzzy(preset({ id: 'route-track', label: 'Route track', isDestructive: false }))
+            );
+        });
+
+        expect(vi.mocked(requiresAppActionConfirmation)).toHaveBeenCalledWith([routingAction]);
+        expect(result.current.preview).toEqual(
+            expect.objectContaining({ actions: [routingAction], requiresConfirmation: true })
+        );
+        expect(vi.mocked(executePlannedActions)).not.toHaveBeenCalled();
     });
 
     it('keeps a direct preset locked until Stop cancellation settles', async () => {

@@ -1,5 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
+import { requiresAppActionConfirmation } from '#/modules/Command/useCases';
 
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
 import { type IntentResult } from '../models/IntentResult';
@@ -16,7 +17,6 @@ import {
     buildPresetContext,
     tryParameterizedPath,
     tryCompoundFastPath,
-    requiresConfirmation,
 } from '../transformers/promptParser/parsing';
 
 import { executeDsoEdit } from './dsoEditor/executeDsoEdit';
@@ -48,7 +48,7 @@ function createFastPathResult(input: CreateFastPathResultInput): IntentResult {
     return {
         actions: validated,
         rawText: input.prompt,
-        requiresConfirmation: requiresConfirmation(validated),
+        requiresConfirmation: requiresAppActionConfirmation(validated),
     };
 }
 
@@ -164,7 +164,7 @@ export const parsePromptToActions = inject({ logger })(
                     return {
                         actions: validated,
                         rawText: prompt,
-                        requiresConfirmation: validated.length > 1 || requiresConfirmation(validated),
+                        requiresConfirmation: requiresAppActionConfirmation(validated),
                         executionMode: 'atomic',
                     };
                 }
