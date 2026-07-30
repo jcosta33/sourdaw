@@ -1,0 +1,35 @@
+src/modules/Transport/useCases/scheduling/scheduleFrozenTrack.ts
+  s_ac9b259eab20ba::t_13999f43ec3be5 20-21,62
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_ac9b259eab20ba::t_13999f43ec3be5 135-136,166-172,309
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_ac9b259eab20ba::t_96a3b5571d0679 348-350
+  s_ac9b259eab20ba::t_13999f43ec3be5 13,351,369-370,383-384,389,395
+src/modules/AudioEngine/useCases/engineAccess/refreshSidechainAlignment.ts
+  s_ac9b259eab20ba::t_13999f43ec3be5 17-20
+  s_ac9b259eab20ba::t_b0d2aca421ead8 7-12
+src/modules/Transport/useCases/scheduling/scheduleAudioClips.ts
+  s_ac9b259eab20ba::t_13999f43ec3be5 60-61,83-89,97
+src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts
+  s_ac9b259eab20ba::t_26097231ce9bb7 115,123
+  s_ac9b259eab20ba::t_13999f43ec3be5 84-87,120
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadScheduler.spec.ts
+  s_ac9b259eab20ba::t_26097231ce9bb7 26-29,51
+  s_ac9b259eab20ba::t_5ecea7d71f891c 49-50,132,206-209,263,282-286
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "0edf578f83f1f44a2d30db1a7c8082504962c03f",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
