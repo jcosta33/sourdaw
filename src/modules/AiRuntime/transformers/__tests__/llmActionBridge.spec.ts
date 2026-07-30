@@ -484,6 +484,62 @@ describe('bridgeLlmToolCalls', () => {
         });
     });
 
+    it('converts catalog-backed device insertion and exact device removal', () => {
+        const context = {
+            ...projectContext,
+            availableDeviceTypes: [
+                { id: 'builtin-eq', name: 'EQ' },
+                { id: 'builtin-compressor', name: 'Compressor' },
+            ],
+        };
+        const result = bridge({
+            calls: [
+                { name: 'addDevice', arguments: { trackId: 'bus-reverb', deviceType: 'EQ' } },
+                { name: 'removeDevice', arguments: { deviceId: 'device-eq' } },
+            ],
+            context,
+        });
+
+        expect(result).toEqual({
+            actions: [
+                { type: 'addDevice', payload: { trackId: 'bus-reverb', deviceType: 'builtin-eq' } },
+                { type: 'removeDevice', payload: { deviceId: 'device-eq' } },
+            ],
+            rejections: [],
+        });
+    });
+
+    it('rejects unavailable device types, ineligible tracks, and missing removal targets', () => {
+        const context = {
+            ...projectContext,
+            availableDeviceTypes: [{ id: 'builtin-eq', name: 'EQ' }],
+        };
+        const result = bridge({
+            calls: [
+                { name: 'addDevice', arguments: { trackId: 'track-vocals', deviceType: 'Invented' } },
+                { name: 'addDevice', arguments: { trackId: 'vca-mix', deviceType: 'EQ' } },
+                { name: 'removeDevice', arguments: { deviceId: 'missing' } },
+            ],
+            context: {
+                ...context,
+                tracks: [
+                    ...context.tracks,
+                    {
+                        ...context.tracks[0]!,
+                        id: 'vca-mix',
+                        name: 'Mix VCA',
+                        kind: 'vca',
+                        devices: [],
+                        deviceCount: 0,
+                    },
+                ],
+            },
+        });
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections.map(({ name }) => name)).toEqual(['addDevice', 'addDevice', 'removeDevice']);
+    });
+
     it('converts exact output and send topology changes for available project routes', () => {
         const withoutSend: ProjectContext = {
             ...projectContext,
@@ -902,6 +958,113 @@ describe('bridgeLlmToolCalls', () => {
                 },
             ]);
         }
+    });
+
+    it('rejects device removal mixed with same-device writes in either action order', () => {
+        const cases = [
+            {
+                calls: [
+                    {
+                        name: 'setDeviceParameter',
+                        arguments: { deviceId: 'device-eq', paramId: 'frequency', value: 1800 },
+                    },
+                    { name: 'removeDevice', arguments: { deviceId: 'device-eq' } },
+                ],
+                acceptedType: 'setDeviceParameter',
+                rejectedType: 'removeDevice',
+            },
+            {
+                calls: [
+                    { name: 'removeDevice', arguments: { deviceId: 'device-eq' } },
+                    { name: 'bypassDevice', arguments: { deviceId: 'device-eq', bypassed: true } },
+                ],
+                acceptedType: 'removeDevice',
+                rejectedType: 'bypassDevice',
+            },
+        ];
+
+        for (const testCase of cases) {
+            const result = bridge({ calls: testCase.calls });
+            expect.soft(result.actions.map(({ type }) => type)).toEqual([testCase.acceptedType]);
+            expect.soft(result.rejections).toEqual([
+                {
+                    index: 1,
+                    name: testCase.rejectedType,
+                    reason: 'Provider batch mixes incompatible device lifecycle writes',
+                },
+            ]);
+        }
+    });
+
+    it('rejects device insertion and removal on the same track in either action order', () => {
+        const context = {
+            ...projectContext,
+            availableDeviceTypes: [{ id: 'builtin-eq', name: 'EQ' }],
+        };
+        const cases = [
+            {
+                calls: [
+                    { name: 'addDevice', arguments: { trackId: 'track-vocals', deviceType: 'EQ' } },
+                    { name: 'removeDevice', arguments: { deviceId: 'device-eq' } },
+                ],
+                acceptedType: 'addDevice',
+                rejectedType: 'removeDevice',
+            },
+            {
+                calls: [
+                    { name: 'removeDevice', arguments: { deviceId: 'device-eq' } },
+                    { name: 'addDevice', arguments: { trackId: 'track-vocals', deviceType: 'EQ' } },
+                ],
+                acceptedType: 'removeDevice',
+                rejectedType: 'addDevice',
+            },
+        ];
+
+        for (const testCase of cases) {
+            const result = bridge({ calls: testCase.calls, context });
+            expect.soft(result.actions.map(({ type }) => type)).toEqual([testCase.acceptedType]);
+            expect.soft(result.rejections).toEqual([
+                {
+                    index: 1,
+                    name: testCase.rejectedType,
+                    reason: 'Provider batch mixes incompatible device lifecycle writes',
+                },
+            ]);
+        }
+    });
+
+    it('rejects multiple removals from the same device chain because numeric inverses do not compose', () => {
+        const vocals = projectContext.tracks[0]!;
+        const context: ProjectContext = {
+            ...projectContext,
+            tracks: [
+                {
+                    ...vocals,
+                    deviceCount: 2,
+                    devices: [
+                        ...vocals.devices,
+                        { id: 'device-compressor', type: 'Compressor', bypassed: false, parameters: [] },
+                    ],
+                },
+                ...projectContext.tracks.slice(1),
+            ],
+        };
+        const result = bridge({
+            calls: [
+                { name: 'removeDevice', arguments: { deviceId: 'device-eq' } },
+                { name: 'removeDevice', arguments: { deviceId: 'device-compressor' } },
+            ],
+            context,
+        });
+
+        expect(result.actions).toEqual([{ type: 'removeDevice', payload: { deviceId: 'device-eq' } }]);
+        expect(result.rejections).toEqual([
+            {
+                index: 1,
+                name: 'removeDevice',
+                reason: 'Provider batch mixes incompatible device lifecycle writes',
+            },
+        ]);
     });
 
     it('rejects a zero-beat nudge instead of committing a false movement receipt', () => {

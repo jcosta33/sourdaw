@@ -107,11 +107,33 @@ function findSend(context: ProjectContext, trackId: unknown, busId: unknown) {
     return source.sends?.find((send) => send.busId === busId);
 }
 
-function findDevice(context: ProjectContext, deviceId: unknown) {
+function findDeviceTarget(context: ProjectContext, deviceId: unknown) {
     if (typeof deviceId !== 'string') {
         return undefined;
     }
-    return context.tracks.flatMap((track) => track.devices).find((device) => device.id === deviceId);
+    for (const track of context.tracks) {
+        const device = track.devices.find((candidate) => candidate.id === deviceId);
+        if (device) {
+            return { device, track };
+        }
+    }
+    return undefined;
+}
+
+function findDevice(context: ProjectContext, deviceId: unknown) {
+    return findDeviceTarget(context, deviceId)?.device;
+}
+
+function findAvailableDeviceType(context: ProjectContext, assertedType: unknown) {
+    if (typeof assertedType !== 'string') {
+        return undefined;
+    }
+    const normalized = assertedType.toLocaleLowerCase();
+    const matches = (context.availableDeviceTypes ?? []).filter(
+        (deviceType) =>
+            deviceType.id.toLocaleLowerCase() === normalized || deviceType.name.toLocaleLowerCase() === normalized
+    );
+    return matches.length === 1 ? matches[0] : undefined;
 }
 
 function isSafeTrackColor(value: unknown): value is string {
@@ -458,6 +480,27 @@ function bridgeToolCall({
         };
     }
 
+    if (call.name === 'addDevice') {
+        const track = findTrack(context, args.trackId);
+        const deviceType = findAvailableDeviceType(context, args.deviceType);
+        if (!hasExactKeys(args, ['trackId', 'deviceType']) || !track || track.kind === 'vca' || !deviceType) {
+            return rejection(
+                index,
+                call.name,
+                'Expected a device-capable track and one platform-available built-in device type'
+            );
+        }
+        return { type: 'addDevice', payload: { trackId: track.id, deviceType: deviceType.id } };
+    }
+
+    if (call.name === 'removeDevice') {
+        const target = findDeviceTarget(context, args.deviceId);
+        if (!hasExactKeys(args, ['deviceId']) || !target) {
+            return rejection(index, call.name, 'Expected one existing deviceId');
+        }
+        return { type: 'removeDevice', payload: { deviceId: target.device.id } };
+    }
+
     if (call.name === 'setDeviceParameter') {
         if (
             !hasExactKeys(args, ['deviceId', 'paramId', 'value']) ||
@@ -590,6 +633,30 @@ function getClipTargetId(action: RuntimeAction): string | null {
     return null;
 }
 
+type DeviceBatchTarget = {
+    deviceId: string | null;
+    trackId: string;
+    kind: 'add' | 'remove' | 'update';
+};
+
+function getDeviceBatchTarget(action: RuntimeAction, context: ProjectContext): DeviceBatchTarget | null {
+    if (action.type === 'addDevice') {
+        return { deviceId: null, trackId: action.payload.trackId, kind: 'add' };
+    }
+    if (action.type !== 'removeDevice' && action.type !== 'setDeviceParameter' && action.type !== 'bypassDevice') {
+        return null;
+    }
+    const target = findDeviceTarget(context, action.payload.deviceId);
+    if (!target) {
+        return null;
+    }
+    return {
+        deviceId: target.device.id,
+        trackId: target.track.id,
+        kind: action.type === 'removeDevice' ? 'remove' : 'update',
+    };
+}
+
 function getMutationKeys(action: RuntimeAction): string[] {
     if (
         action.type === 'addTrack' ||
@@ -716,12 +783,17 @@ export function bridgeLlmToolCalls({ calls, context }: BridgeLlmToolCallsInput):
     const removedClipIds = new Set<string>();
     const clipTrackIds = new Set<string>();
     const removedClipTrackIds = new Set<string>();
+    const deviceTargetIds = new Set<string>();
+    const removedDeviceIds = new Set<string>();
+    const addedDeviceTrackIds = new Set<string>();
+    const removedDeviceTrackIds = new Set<string>();
 
     for (const [index, call] of calls.entries()) {
         const result = bridgeToolCall({ call, context: prospectiveContext, index });
         if ('type' in result) {
             const clipTargetId = getClipTargetId(result);
             const clipTrackId = clipTargetId === null ? null : (findClip(context, clipTargetId)?.track.id ?? null);
+            const deviceTarget = getDeviceBatchTarget(result, context);
             const mutationKeysForAction = getMutationKeys(result);
             const hasClipLifecycleConflict =
                 clipTargetId !== null &&
@@ -731,6 +803,15 @@ export function bridgeLlmToolCalls({ calls, context }: BridgeLlmToolCallsInput):
                 clipTrackId !== null &&
                 ((result.type === 'removeClip' && clipTrackIds.has(clipTrackId)) ||
                     removedClipTrackIds.has(clipTrackId));
+            const hasDeviceLifecycleConflict =
+                deviceTarget !== null &&
+                ((deviceTarget.deviceId !== null &&
+                    ((deviceTarget.kind === 'remove' && deviceTargetIds.has(deviceTarget.deviceId)) ||
+                        removedDeviceIds.has(deviceTarget.deviceId))) ||
+                    (deviceTarget.kind === 'add' && removedDeviceTrackIds.has(deviceTarget.trackId)) ||
+                    (deviceTarget.kind === 'remove' &&
+                        (addedDeviceTrackIds.has(deviceTarget.trackId) ||
+                            removedDeviceTrackIds.has(deviceTarget.trackId))));
             if (hasClipLifecycleConflict || hasMutationConflict) {
                 rejections.push(
                     rejection(index, call.name, 'Provider batch writes the same target field more than once')
@@ -740,6 +821,12 @@ export function bridgeLlmToolCalls({ calls, context }: BridgeLlmToolCallsInput):
             if (hasRippleCouplingConflict) {
                 rejections.push(
                     rejection(index, call.name, 'Provider batch writes ripple-coupled clips on the same track')
+                );
+                continue;
+            }
+            if (hasDeviceLifecycleConflict) {
+                rejections.push(
+                    rejection(index, call.name, 'Provider batch mixes incompatible device lifecycle writes')
                 );
                 continue;
             }
@@ -756,6 +843,20 @@ export function bridgeLlmToolCalls({ calls, context }: BridgeLlmToolCallsInput):
                 clipTrackIds.add(clipTrackId);
                 if (result.type === 'removeClip') {
                     removedClipTrackIds.add(clipTrackId);
+                }
+            }
+            if (deviceTarget !== null) {
+                if (deviceTarget.deviceId !== null) {
+                    deviceTargetIds.add(deviceTarget.deviceId);
+                    if (deviceTarget.kind === 'remove') {
+                        removedDeviceIds.add(deviceTarget.deviceId);
+                    }
+                }
+                if (deviceTarget.kind === 'add') {
+                    addedDeviceTrackIds.add(deviceTarget.trackId);
+                }
+                if (deviceTarget.kind === 'remove') {
+                    removedDeviceTrackIds.add(deviceTarget.trackId);
                 }
             }
             actions.push(result);
@@ -784,6 +885,7 @@ export function buildLlmActionUserMessage({ prompt, context }: { prompt: string;
         loopEnd: context.loopEnd,
         metronomeEnabled: context.metronomeEnabled,
         metronomeVolume: context.metronomeVolume,
+        availableDeviceTypes: context.availableDeviceTypes ?? [],
         selectedTrackId: context.selectedTrackId,
         selectedClipId: context.selectedClipId,
         selectedClipIds: context.selectedClipIds,

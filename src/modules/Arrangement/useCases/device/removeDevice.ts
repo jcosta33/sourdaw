@@ -5,12 +5,26 @@ import { unloadPlugin } from '#/modules/PluginHost/useCases';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { mapAllTracks } from '../../repositories/track/mapAllTracks';
 import { getTrackEligibility, shouldCreateLiveTrackStrip } from '../../stores/trackEligibility';
+import { projectTrackToLiveStrip } from '../projectTrackToLiveStrip';
 
 import type { Device, Track } from '../../models/Track';
 
 type RemoveDeviceOutcome = 'written' | 'missing' | 'conflict';
+type DeferredRemoveDeviceUnload = {
+    outcome: 'written';
+    afterCommit: () => Promise<void>;
+    afterAmbiguousCommit: () => Promise<void>;
+};
 
-export function removeDevice(deviceId: string): RemoveDeviceOutcome {
+export function removeDevice(deviceId: string): RemoveDeviceOutcome;
+export function removeDevice(
+    deviceId: string,
+    options: { deferExternalUnload: true }
+): RemoveDeviceOutcome | DeferredRemoveDeviceUnload;
+export function removeDevice(
+    deviceId: string,
+    options: { deferExternalUnload?: boolean } = {}
+): RemoveDeviceOutcome | DeferredRemoveDeviceUnload {
     const state = getTrackState();
     if (!state) {
         return 'missing';
@@ -101,14 +115,41 @@ export function removeDevice(deviceId: string): RemoveDeviceOutcome {
         }
     }
 
-    for (const instanceId of externalInstanceIds) {
-        try {
-            void unloadPlugin(instanceId).catch((error: unknown) => {
-                logger.warn(`Failed to unload external plugin instance ${instanceId}: ${String(error)}`);
-            });
-        } catch (error) {
-            logger.warn(`Failed to unload external plugin instance ${instanceId}: ${String(error)}`);
+    let unloadPromise: Promise<void> | null = null;
+    function finalizeExternalUnloads(): Promise<void> {
+        if (unloadPromise) {
+            return unloadPromise;
+        }
+        unloadPromise = Promise.all(
+            [...externalInstanceIds].map(async (instanceId) => {
+                try {
+                    await unloadPlugin(instanceId);
+                } catch (error) {
+                    logger.warn(`Failed to unload external plugin instance ${instanceId}: ${String(error)}`);
+                }
+            })
+        ).then(() => undefined);
+        return unloadPromise;
+    }
+    async function reconcileExternalUnloads(): Promise<void> {
+        const currentOwners = (getTrackState()?.tracks ?? []).filter((candidate) =>
+            candidate.devices.some((candidateDevice) => candidateDevice.id === deviceId)
+        );
+        if (currentOwners.length === 0) {
+            await finalizeExternalUnloads();
+            return;
+        }
+        if (currentOwners.length === 1) {
+            projectTrackToLiveStrip({ trackId: currentOwners[0]!.id, activateDormantExternalPlugins: true });
         }
     }
+    if (options.deferExternalUnload) {
+        return {
+            outcome: 'written',
+            afterCommit: finalizeExternalUnloads,
+            afterAmbiguousCommit: reconcileExternalUnloads,
+        };
+    }
+    void finalizeExternalUnloads();
     return 'written';
 }

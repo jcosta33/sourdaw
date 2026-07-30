@@ -544,7 +544,12 @@ export class TrackNode {
         }
     }
 
-    public addDevice(deviceId: string, deviceType: string, externalInstanceId?: string): void {
+    public addDevice(
+        deviceId: string,
+        deviceType: string,
+        externalInstanceId?: string,
+        precedingDeviceIds?: readonly string[]
+    ): void {
         if (this._disposed) {
             return;
         }
@@ -681,7 +686,17 @@ export class TrackNode {
             }
         }
 
-        this.strip.deviceNodes.push(dn);
+        let targetIndex = this.strip.deviceNodes.length;
+        if (precedingDeviceIds !== undefined) {
+            const precedingIds = new Set(precedingDeviceIds);
+            targetIndex = 0;
+            for (const [index, existingDevice] of this.strip.deviceNodes.entries()) {
+                if (precedingIds.has(existingDevice.deviceId)) {
+                    targetIndex = index + 1;
+                }
+            }
+        }
+        this.strip.deviceNodes.splice(targetIndex, 0, dn);
         this.rebuildChain();
     }
 

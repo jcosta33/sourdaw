@@ -95,7 +95,7 @@ describe('projectTrackToLiveStrip', () => {
         expect(mocks.setTrackGain).toHaveBeenCalledWith('audio-1', 0.75);
         expect(mocks.setTrackPan).toHaveBeenCalledWith('audio-1', -0.25);
         expect(mocks.setTrackMute).toHaveBeenCalledWith('audio-1', false);
-        expect(mocks.addDeviceToStrip.mock.calls[0]).toEqual(['audio-1', 'device-1', 'external-plugin']);
+        expect(mocks.addDeviceToStrip.mock.calls[0]).toEqual(['audio-1', 'device-1', 'external-plugin', undefined, []]);
         expect(mocks.activateExternalPlugin).not.toHaveBeenCalled();
         expect(mocks.updateDeviceParam).toHaveBeenNthCalledWith(1, 'audio-1', 'device-1', 'feedback', 0.6);
         expect(mocks.updateDeviceParam).toHaveBeenNthCalledWith(2, 'audio-1', 'device-1', 'mix', 0.3);
@@ -112,7 +112,8 @@ describe('projectTrackToLiveStrip', () => {
             'audio-1',
             'device-1',
             'external-plugin',
-            'persisted-native-instance'
+            'persisted-native-instance',
+            []
         );
         expect(mocks.activateExternalPlugin).toHaveBeenCalledWith(
             expect.objectContaining({
@@ -247,7 +248,7 @@ describe('projectTrackToLiveStrip', () => {
 
         expect(mocks.ensureTrackStrip).toHaveBeenCalledOnce();
         expect(mocks.ensureTrackStrip).toHaveBeenCalledWith(toaster.id);
-        expect(mocks.addDeviceToStrip).toHaveBeenCalledWith(toaster.id, 'toaster-device', 'toaster');
+        expect(mocks.addDeviceToStrip).toHaveBeenCalledWith(toaster.id, 'toaster-device', 'toaster', undefined, []);
     });
 
     it('projects Toaster pad ownership independently from the audible output', () => {

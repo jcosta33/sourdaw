@@ -11,8 +11,8 @@ describe('addDeviceToStrip', () => {
     it('forwards add-device requests to the engine', () => {
         const addDeviceSpy = vi.spyOn(audioEngine, 'addDeviceToStrip').mockImplementation(() => {});
 
-        addDeviceToStrip('track', 'dev', 'device-type', 'external-instance');
+        addDeviceToStrip('track', 'dev', 'device-type', 'external-instance', ['earlier']);
 
-        expect(addDeviceSpy).toHaveBeenCalledWith('track', 'dev', 'device-type', 'external-instance');
+        expect(addDeviceSpy).toHaveBeenCalledWith('track', 'dev', 'device-type', 'external-instance', ['earlier']);
     });
 });

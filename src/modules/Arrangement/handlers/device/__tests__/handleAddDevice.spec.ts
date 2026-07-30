@@ -22,7 +22,7 @@ describe('handleAddDevice', () => {
             payload: { trackId: 't1', deviceType: 'EQ' },
         });
 
-        expect(mocks.addDevice).toHaveBeenCalledWith('t1', 'EQ');
+        expect(mocks.addDevice).toHaveBeenCalledWith('t1', 'EQ', undefined, expect.stringMatching(/^device-/));
         expect(result).toEqual({ status: 'written' });
     });
 
@@ -42,6 +42,17 @@ describe('handleAddDevice', () => {
             payload: { trackId: 't1', deviceType: 'EQ' },
         });
         expect(desc.label).toBe('Add EQ');
+    });
+
+    it('reserves an identity and describes an exact removal inverse', () => {
+        const action = { type: 'addDevice', payload: { trackId: 't1', deviceType: 'builtin-eq' } } as const;
+
+        const desc = handleAddDevice.describe(action);
+
+        expect(desc.inverseAction).toEqual({
+            type: 'removeDevice',
+            payload: { deviceId: expect.stringMatching(/^device-/) },
+        });
     });
 
     it('is undoable', () => {

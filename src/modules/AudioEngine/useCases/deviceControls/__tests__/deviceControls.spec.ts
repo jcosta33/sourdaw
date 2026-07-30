@@ -27,8 +27,8 @@ describe('deviceControls delegators', () => {
 
     it('addDeviceToStrip forwards to audioEngine.addDeviceToStrip', () => {
         const spy = vi.spyOn(audioEngine, 'addDeviceToStrip').mockImplementation(() => undefined);
-        addDeviceToStrip('t1', 'd1', 'grinder', 'ext-1');
-        expect(spy).toHaveBeenCalledWith('t1', 'd1', 'grinder', 'ext-1');
+        addDeviceToStrip('t1', 'd1', 'grinder', 'ext-1', ['earlier']);
+        expect(spy).toHaveBeenCalledWith('t1', 'd1', 'grinder', 'ext-1', ['earlier']);
     });
 
     it('addMidiFxToStrip forwards to audioEngine.addMidiFxToStrip', () => {

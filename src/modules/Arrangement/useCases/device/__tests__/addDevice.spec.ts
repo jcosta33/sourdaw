@@ -137,6 +137,28 @@ describe('addDevice', () => {
         expect(mocks.updateDeviceParam).toHaveBeenCalledWith('t1', result?.id, 'wet', 0.5);
     });
 
+    it('uses a caller-reserved device ID for project and runtime identity', () => {
+        mocks.getPlatformPlugins.mockReturnValue([{ id: 'p1', name: 'Reverb', parameters: [] }]);
+
+        const result = addDevice('t1', 'p1', undefined, 'reserved-device');
+
+        expect(result?.id).toBe('reserved-device');
+        expect(mocks.addDeviceToStrip).toHaveBeenCalledWith('t1', 'reserved-device', 'p1');
+    });
+
+    it('rejects a caller-reserved device ID that already exists anywhere in the project', () => {
+        mocks.getTrackState.mockReturnValue({
+            tracks: [
+                { id: 't1', kind: 'audio', devices: [] },
+                { id: 't2', kind: 'audio', devices: [{ id: 'reserved-device' }] },
+            ],
+        });
+
+        expect(addDevice('t1', 'p1', undefined, 'reserved-device')).toBeNull();
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(mocks.addDeviceToStrip).not.toHaveBeenCalled();
+    });
+
     // Resolving by id costs the caller's label unless it survives the call:
     // without the override the device is named after the plugin that matched, so
     // a preset labelled `Drum Comp` would land in the device chain, inspector,

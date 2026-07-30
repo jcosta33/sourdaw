@@ -807,9 +807,29 @@ function validateTimeSignatureValue(
 function validateStringLiteralValue(
     valueRule: Extract<GroundingValueRule, { kind: 'string-literal' }>,
     assertedValue: unknown,
-    actionScope: ActionPromptScope
+    actionScope: ActionPromptScope,
+    context: ProjectContext
 ): string | null {
-    if (typeof assertedValue !== 'string' || getIntentPhraseIndex(actionScope.masked, assertedValue) < 0) {
+    if (typeof assertedValue !== 'string') {
+        return getValueMismatchReason(valueRule.argument);
+    }
+    if (valueRule.argument === 'deviceType') {
+        const normalizedAssertedValue = normalizePromptText(assertedValue);
+        const matchingDeviceTypes = (context.availableDeviceTypes ?? []).filter(
+            (deviceType) =>
+                normalizePromptText(deviceType.id) === normalizedAssertedValue ||
+                normalizePromptText(deviceType.name) === normalizedAssertedValue
+        );
+        if (
+            matchingDeviceTypes.length === 1 &&
+            [matchingDeviceTypes[0]!.id, matchingDeviceTypes[0]!.name].some(
+                (reference) => getIntentPhraseIndex(actionScope.masked, reference) >= 0
+            )
+        ) {
+            return null;
+        }
+    }
+    if (getIntentPhraseIndex(actionScope.masked, assertedValue) < 0) {
         return getValueMismatchReason(valueRule.argument);
     }
     return null;
@@ -876,7 +896,7 @@ function validateGroundedValue(
         case 'time-signature':
             return validateTimeSignatureValue(valueRule, assertedValue, actionScope, groundedArguments, context);
         case 'string-literal':
-            return validateStringLiteralValue(valueRule, assertedValue, actionScope);
+            return validateStringLiteralValue(valueRule, assertedValue, actionScope, context);
         case 'enum-if-present':
             return validateEnumValue(valueRule, assertedValue, actionScope);
         case 'text-after-keyword-if-present':

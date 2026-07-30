@@ -73,17 +73,17 @@ export function projectTrackToLiveStrip({
     setTrackPan(track.id, track.pan);
     applySoloLogic({ trackId: track.id });
 
-    for (const device of track.devices) {
+    for (const [deviceIndex, device] of track.devices.entries()) {
         const target = resolveEligibleDeviceWriteTarget(device.id);
         if (target.status !== 'eligible' || target.trackId !== track.id) {
             continue;
         }
-        const addDeviceArgs: [string, string, string, string?] = [target.trackId, target.deviceId, device.type];
+        let instanceId: string | undefined;
         if (activateDormantExternalPlugins && device.type === 'external-plugin' && device.externalInstanceId) {
-            addDeviceArgs[3] = device.externalInstanceId;
+            instanceId = device.externalInstanceId;
         }
-        addDeviceToStrip(...addDeviceArgs);
-        const instanceId = addDeviceArgs[3];
+        const precedingDeviceIds = track.devices.slice(0, deviceIndex).map((candidate) => candidate.id);
+        addDeviceToStrip(target.trackId, target.deviceId, device.type, instanceId, precedingDeviceIds);
         const pluginId = device.externalPluginId;
         if (instanceId && pluginId) {
             // Idempotent load + state restore; skips if the instance is already live,

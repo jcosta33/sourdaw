@@ -162,9 +162,12 @@ const validators = {
 
     // Device lifecycle
     addDevice: (param): param is PayloadOf<'addDevice'> =>
-        isObj(param) && isString(param.trackId) && isString(param.deviceType),
+        isObj(param) &&
+        hasExactKeys(param, ['trackId', 'deviceType']) &&
+        isNonEmptyString(param.trackId) &&
+        isNonEmptyString(param.deviceType),
     removeDevice: (param): param is PayloadOf<'removeDevice'> =>
-        isObj(param) && isString(param.trackId) && isString(param.deviceId),
+        isObj(param) && hasExactKeys(param, ['deviceId']) && isNonEmptyString(param.deviceId),
     setDeviceParameter: (param): param is PayloadOf<'setDeviceParameter'> =>
         isObj(param) && isString(param.deviceId) && isString(param.paramId) && isNumber(param.value),
     loadExternalPlugin: (param): param is PayloadOf<'loadExternalPlugin'> => isObj(param) && isString(param.pluginPath),

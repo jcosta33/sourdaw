@@ -7,6 +7,17 @@
  * Snapshot payloads stay structural so this contract does not depend on concrete models
  * owned by other modules.
  */
+
+export type DeviceSnapshot = {
+    readonly id: string;
+    readonly name: string;
+    readonly type: string;
+    readonly bypassed: boolean;
+    readonly parameterValues: Readonly<Record<string, number>>;
+    readonly externalPluginId?: string;
+    readonly externalInstanceId?: string;
+    readonly externalStateChunk?: string;
+};
 export type TrackSnapshot = { readonly id: string };
 export type TrackSendSnapshot = {
     readonly busId: string;
@@ -372,9 +383,14 @@ export type AppAction =
     | { type: 'splitClip'; payload: { clipId: string; beat: number } }
     | { type: 'trimClipStart'; payload: { clipId: string; newStartBeat: number } }
     | { type: 'trimClipEnd'; payload: { clipId: string; newEndBeat: number } }
-    | { type: 'addDevice'; payload: { trackId: string; deviceType: string } }
+    | { type: 'addDevice'; payload: { trackId: string; deviceType: string; deviceId?: string } }
     | { type: 'bypassDevice'; payload: { deviceId: string; bypassed: boolean } }
     | { type: 'removeDevice'; payload: { deviceId: string } }
+    | {
+          /** Inverse of `removeDevice`; emitted only from the device handler's pre-execute snapshot. */
+          type: 'restoreDevice';
+          payload: { trackId: string; deviceSnapshot: DeviceSnapshot; deviceIndex: number };
+      }
     | { type: 'setDeviceParameter'; payload: { deviceId: string; paramId: string; value: number } }
     | { type: 'setExternalPluginState'; payload: { deviceId: string; stateChunk: string } }
     | { type: 'createBus'; payload: { name: string; /** Internal replay identity. */ busId?: string } }

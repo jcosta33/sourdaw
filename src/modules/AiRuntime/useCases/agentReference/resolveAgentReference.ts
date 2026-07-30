@@ -8,6 +8,7 @@ type AgentReferenceCapability =
     | 'routable-source'
     | 'bus'
     | 'output'
+    | 'device-host-track'
     | 'device'
     | 'device-parameter'
     | 'clip'
@@ -114,6 +115,8 @@ function containsQualifiedTrackOwnerReference(prompt: string, reference: string)
         ` on the ${normalizedReference} `,
         ` in ${normalizedReference} `,
         ` in the ${normalizedReference} `,
+        ` from ${normalizedReference} `,
+        ` from the ${normalizedReference} `,
     ].some((qualifiedReference) => normalizedPrompt.includes(qualifiedReference));
 }
 
@@ -173,6 +176,9 @@ function getTrackCandidates(
     }
     if (capability === 'output') {
         return context.tracks.filter((track) => track.kind === 'bus' || track.kind === 'master');
+    }
+    if (capability === 'device-host-track') {
+        return context.tracks.filter((track) => track.kind !== 'vca');
     }
     return null;
 }

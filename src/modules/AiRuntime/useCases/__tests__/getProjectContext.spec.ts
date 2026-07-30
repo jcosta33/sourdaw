@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
     workspaceStoreValue: { value: null } as any,
     clipSelectionStoreValue: { value: null } as any,
     getPluginById: vi.fn(),
+    getPlatformPlugins: vi.fn(),
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
@@ -26,6 +27,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
     getPluginById: mocks.getPluginById,
+    getPlatformPlugins: mocks.getPlatformPlugins,
 }));
 
 vi.mock('#/modules/MIDI/stores', () => ({
@@ -61,6 +63,10 @@ describe('getProjectContext', () => {
         mocks.workspaceStoreValue.value = null;
         mocks.clipSelectionStoreValue.value = null;
         mocks.getPluginById.mockReturnValue(undefined);
+        mocks.getPlatformPlugins.mockReturnValue([
+            { id: 'builtin-eq', name: 'EQ' },
+            { id: 'crust', name: 'Crust' },
+        ]);
     });
 
     it('returns context with default values when stores are empty', () => {
@@ -73,6 +79,7 @@ describe('getProjectContext', () => {
         expect(context.loopEnd).toBe(0);
         expect(context.metronomeEnabled).toBe(false);
         expect(context.metronomeVolume).toBe(0.5);
+        expect(context.availableDeviceTypes).toEqual([{ id: 'builtin-eq', name: 'EQ' }]);
         expect(context.tracks).toEqual([]);
         expect(context.selectedTrackId).toBeNull();
         expect(context.selectedClipId).toBeNull();

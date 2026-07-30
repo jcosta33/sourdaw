@@ -4,10 +4,15 @@ import { handleRemoveDevice } from '../handleRemoveDevice';
 
 const mocks = vi.hoisted(() => ({
     removeDevice: vi.fn(),
+    getTrackStoreState: vi.fn(),
 }));
 
 vi.mock('../../../useCases/device/removeDevice', () => ({
     removeDevice: mocks.removeDevice,
+}));
+
+vi.mock('../../../useCases/getTrackStoreState', () => ({
+    getTrackStoreState: mocks.getTrackStoreState,
 }));
 
 describe('handleRemoveDevice', () => {
@@ -27,8 +32,21 @@ describe('handleRemoveDevice', () => {
             payload: { deviceId: 'd1' },
         });
 
-        expect(mocks.removeDevice).toHaveBeenCalledWith('d1');
+        expect(mocks.removeDevice).toHaveBeenCalledWith('d1', { deferExternalUnload: true });
         expect(result).toEqual(expected);
+    });
+
+    it('defers external unload until commit and preserves ambiguous-commit reconciliation', () => {
+        const afterCommit = vi.fn();
+        const afterAmbiguousCommit = vi.fn();
+        mocks.removeDevice.mockReturnValue({ outcome: 'written', afterCommit, afterAmbiguousCommit });
+
+        const result = handleRemoveDevice.execute({
+            type: 'removeDevice',
+            payload: { deviceId: 'd1' },
+        });
+
+        expect(result).toEqual({ status: 'written', afterCommit, afterAmbiguousCommit });
     });
 
     it('provides a description', () => {
@@ -37,6 +55,26 @@ describe('handleRemoveDevice', () => {
             payload: { deviceId: 'd1' },
         });
         expect(desc.label).toBe('Remove device');
+    });
+
+    it('snapshots the exact device and chain index for undo', () => {
+        const device = {
+            id: 'd1',
+            name: 'EQ',
+            type: 'builtin-eq',
+            bypassed: true,
+            parameterValues: { frequency: 2400 },
+        };
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', devices: [{ id: 'before' }, device, { id: 'after' }] }],
+        });
+
+        const desc = handleRemoveDevice.describe({ type: 'removeDevice', payload: { deviceId: 'd1' } });
+
+        expect(desc.inverseAction).toEqual({
+            type: 'restoreDevice',
+            payload: { trackId: 't1', deviceSnapshot: device, deviceIndex: 1 },
+        });
     });
 
     it('is undoable', () => {

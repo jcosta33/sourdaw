@@ -753,6 +753,43 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(wrongOwner.actions).toEqual([]);
     });
 
+    it('grounds catalog device insertion and destructive removal to explicit project references', () => {
+        const context = {
+            ...projectContext,
+            availableDeviceTypes: [
+                { id: 'builtin-eq', name: 'EQ' },
+                { id: 'builtin-compressor', name: 'Compressor' },
+            ],
+        };
+        const insertion = bridge(
+            [{ name: 'addDevice', arguments: { trackId: vocals.id, deviceType: 'builtin-compressor' } }],
+            'add Compressor to Vocals',
+            context
+        );
+        const removal = bridge(
+            [{ name: 'removeDevice', arguments: { deviceId: 'device-eq' } }],
+            'remove the EQ device from Vocals',
+            context
+        );
+        const invented = bridge(
+            [{ name: 'addDevice', arguments: { trackId: vocals.id, deviceType: 'Limiter' } }],
+            'add Limiter to Vocals',
+            context
+        );
+        const mismatchedOwner = bridge(
+            [{ name: 'removeDevice', arguments: { deviceId: 'device-eq' } }],
+            'remove the EQ device from Guitar',
+            context
+        );
+
+        expect(insertion.actions).toEqual([
+            { type: 'addDevice', payload: { trackId: vocals.id, deviceType: 'builtin-compressor' } },
+        ]);
+        expect(removal.actions).toEqual([{ type: 'removeDevice', payload: { deviceId: 'device-eq' } }]);
+        expect(invented.actions).toEqual([]);
+        expect(mismatchedOwner.actions).toEqual([]);
+    });
+
     it('reports an exact distinct-target rejection for same-endpoint routing', () => {
         const bus = createTrack({ id: 'bus-reverb', name: 'Reverb Bus', kind: 'bus' });
         const result = bridge(

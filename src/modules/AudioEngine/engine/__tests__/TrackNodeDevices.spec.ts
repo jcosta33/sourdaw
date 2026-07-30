@@ -459,6 +459,27 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             expect(mocks.loggerDebug).toHaveBeenCalledWith(expect.stringContaining('already exists'));
         });
 
+        it('inserts a restored device after its nearest live project predecessor', () => {
+            const track = new TrackNode('t1', makeDeps(ctx));
+            track.addDevice('first', 'builtin-gain');
+            track.addDevice('last', 'builtin-gain');
+
+            track.addDevice('middle', 'builtin-gain', undefined, ['first']);
+
+            expect(track.strip.deviceNodes.map((device) => device.deviceId)).toEqual(['first', 'middle', 'last']);
+        });
+
+        it('preserves project order when unsupported predecessors have no live node', () => {
+            mocks.findWasmDescriptor.mockReturnValue(undefined);
+            const track = new TrackNode('t1', makeDeps(ctx));
+            track.addDevice('last', 'builtin-gain');
+            track.addDevice('unsupported', 'mystery-device');
+
+            track.addDevice('middle', 'builtin-gain', undefined, ['unsupported']);
+
+            expect(track.strip.deviceNodes.map((device) => device.deviceId)).toEqual(['middle', 'last']);
+        });
+
         it('adds nothing when the type has no factory and no wasm descriptor', () => {
             mocks.findWasmDescriptor.mockReturnValue(undefined);
             const track = new TrackNode('t1', makeDeps(ctx));

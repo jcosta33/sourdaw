@@ -6,12 +6,18 @@ export type ProjectContext = {
     loopEnd: number;
     metronomeEnabled: boolean;
     metronomeVolume: number;
+    availableDeviceTypes?: ProjectContextAvailableDeviceType[];
     tracks: ProjectContextTrack[];
     selectedTrackId: string | null;
     selectedClipId: string | null;
     selectedClipIds: string[];
     activeView: 'arrange' | 'automation' | 'clip' | 'mix';
     playheadPosition: number;
+};
+
+export type ProjectContextAvailableDeviceType = {
+    id: string;
+    name: string;
 };
 
 export type ProjectContextClip = {

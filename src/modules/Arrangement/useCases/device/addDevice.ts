@@ -24,13 +24,17 @@ function nextDeviceIdStr(): string {
  * plugin. Presets need it — the type picks the device, the preset picks the
  * label — and it belongs in this call so the device is written once.
  */
-export function addDevice(trackId: string, deviceType: string, displayName?: string): Device | null {
+export function addDevice(trackId: string, deviceType: string, displayName?: string, deviceId?: string): Device | null {
     const state = getTrackState();
     if (!state) {
         return null;
     }
     const matchingTracks = state.tracks.filter((candidate) => candidate.id === trackId);
     if (matchingTracks.length !== 1) {
+        return null;
+    }
+    const resolvedDeviceId = deviceId ?? nextDeviceIdStr();
+    if (state.tracks.some((candidate) => candidate.devices.some((device) => device.id === resolvedDeviceId))) {
         return null;
     }
     const track = matchingTracks[0];
@@ -67,7 +71,7 @@ export function addDevice(trackId: string, deviceType: string, displayName?: str
     }
 
     const device: Device = {
-        id: nextDeviceIdStr(),
+        id: resolvedDeviceId,
         name: displayName ?? (plugin ? plugin.name : deviceType),
         type: plugin ? plugin.id : deviceType,
         bypassed: false,

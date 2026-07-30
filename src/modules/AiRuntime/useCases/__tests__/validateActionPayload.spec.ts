@@ -34,6 +34,23 @@ const guardedPayloadContractCases = [
             { trackId: 'track-1', armed: true, expectedMidiInputOwnerId: 'owner-1' },
         ],
     }),
+
+    guardedPayloadCase({
+        actionType: 'addDevice',
+        validPayload: { trackId: 'track-1', deviceType: 'builtin-eq' },
+        invalidPayloads: [
+            { trackId: '', deviceType: 'builtin-eq' },
+            { trackId: 'track-1', deviceType: '' },
+            { trackId: 'track-1' },
+            { deviceType: 'builtin-eq' },
+            { trackId: 'track-1', deviceType: 'builtin-eq', deviceId: 'internal-id' },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'removeDevice',
+        validPayload: { deviceId: 'device-1' },
+        invalidPayloads: [{ deviceId: '' }, {}, { deviceId: 1 }, { deviceId: 'device-1', trackId: 'track-1' }],
+    }),
     guardedPayloadCase({
         actionType: 'createBus',
         validPayload: { name: 'Parallel Reverb' },
