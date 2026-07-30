@@ -174,6 +174,12 @@ export const NavCard = ({
 
 // ── EffectItem ───────────────────────────────────────────────────────────────
 
+/**
+ * Adds by `plugin.id`, never by `plugin.name`. `addDevice` matches on name *or*
+ * id, and `De-esser`, `LUFS Meter` and `Stereo Widener` each name two catalog
+ * plugins — a builtin and a Faust build — so a name lookup returns whichever the
+ * registry lists first rather than the card the user clicked or dragged.
+ */
 export const EffectItem = ({
     plugin,
     selectedTrackId,
@@ -193,7 +199,7 @@ export const EffectItem = ({
         }}
         onClick={() => {
             if (selectedTrackId) {
-                addDevice(selectedTrackId, plugin.name);
+                addDevice(selectedTrackId, plugin.id);
             }
         }}
         title={selectedTrackId ? `Add "${plugin.name}" to selected track` : 'Drag to a track or select a track first'}
@@ -201,7 +207,7 @@ export const EffectItem = ({
         tabIndex={0}
         onKeyDown={(event) => {
             if ((event.key === 'Enter' || event.key === ' ') && selectedTrackId) {
-                addDevice(selectedTrackId, plugin.name);
+                addDevice(selectedTrackId, plugin.id);
             }
         }}
     >

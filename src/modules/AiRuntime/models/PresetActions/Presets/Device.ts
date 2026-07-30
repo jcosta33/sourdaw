@@ -1,5 +1,16 @@
 import { type PresetAction, trackAction } from './Types';
 
+/**
+ * Every entry names a plugin by its catalog **id**, never by its display label.
+ *
+ * `addDevice` matches on name *or* id and, on a miss, stores the string it was
+ * handed as the device type — so a label the catalog does not carry under that
+ * exact spelling mints a device no descriptor matches: silent in playback and
+ * absent from a render. `Gate`, `DeEsser` and `AutoPan` were three such labels
+ * (the catalog says `Noise Gate`, `De-esser` and `Auto-Pan`). Ids are also the
+ * only unambiguous key: `De-esser`, `LUFS Meter` and `Stereo Widener` each name
+ * two catalog plugins, a builtin and a Faust build.
+ */
 export const devicePresets: readonly PresetAction[] = [
     {
         id: 'add-eq',
@@ -7,7 +18,7 @@ export const devicePresets: readonly PresetAction[] = [
         keywords: ['eq', 'equalizer', 'add eq', 'parametric'],
         category: 'Device',
         requiresSelection: 'track',
-        buildAction: trackAction('addDevice', (id) => ({ trackId: id, deviceType: 'EQ' })),
+        buildAction: trackAction('addDevice', (id) => ({ trackId: id, deviceType: 'builtin-eq' })),
     },
     {
         id: 'add-compressor',
@@ -15,7 +26,7 @@ export const devicePresets: readonly PresetAction[] = [
         keywords: ['compressor', 'comp', 'add compressor', 'dynamics'],
         category: 'Device',
         requiresSelection: 'track',
-        buildAction: trackAction('addDevice', (id) => ({ trackId: id, deviceType: 'Compressor' })),
+        buildAction: trackAction('addDevice', (id) => ({ trackId: id, deviceType: 'builtin-compressor' })),
     },
     {
         id: 'add-reverb',
@@ -23,7 +34,7 @@ export const devicePresets: readonly PresetAction[] = [
         keywords: ['reverb', 'add reverb', 'room', 'hall', 'plate'],
         category: 'Device',
         requiresSelection: 'track',
-        buildAction: trackAction('addDevice', (id) => ({ trackId: id, deviceType: 'Reverb' })),
+        buildAction: trackAction('addDevice', (id) => ({ trackId: id, deviceType: 'builtin-reverb' })),
     },
     {
         id: 'add-delay',
@@ -31,7 +42,7 @@ export const devicePresets: readonly PresetAction[] = [
         keywords: ['delay', 'add delay', 'echo', 'repeat'],
         category: 'Device',
         requiresSelection: 'track',
-        buildAction: trackAction('addDevice', (id) => ({ trackId: id, deviceType: 'Delay' })),
+        buildAction: trackAction('addDevice', (id) => ({ trackId: id, deviceType: 'builtin-delay' })),
     },
     {
         id: 'add-gain',
@@ -39,7 +50,7 @@ export const devicePresets: readonly PresetAction[] = [
         keywords: ['gain', 'utility', 'add gain', 'trim', 'level'],
         category: 'Device',
         requiresSelection: 'track',
-        buildAction: trackAction('addDevice', (id) => ({ trackId: id, deviceType: 'Gain' })),
+        buildAction: trackAction('addDevice', (id) => ({ trackId: id, deviceType: 'builtin-gain' })),
     },
     {
         id: 'add-chorus',
@@ -47,7 +58,7 @@ export const devicePresets: readonly PresetAction[] = [
         keywords: ['chorus', 'add chorus', 'ensemble'],
         category: 'Device',
         requiresSelection: 'track',
-        buildAction: trackAction('addDevice', (id) => ({ trackId: id, deviceType: 'Chorus' })),
+        buildAction: trackAction('addDevice', (id) => ({ trackId: id, deviceType: 'builtin-chorus' })),
     },
     {
         id: 'add-flanger',
@@ -55,7 +66,7 @@ export const devicePresets: readonly PresetAction[] = [
         keywords: ['flanger', 'add flanger'],
         category: 'Device',
         requiresSelection: 'track',
-        buildAction: trackAction('addDevice', (id) => ({ trackId: id, deviceType: 'Flanger' })),
+        buildAction: trackAction('addDevice', (id) => ({ trackId: id, deviceType: 'builtin-flanger' })),
     },
     {
         id: 'add-phaser',
@@ -63,7 +74,7 @@ export const devicePresets: readonly PresetAction[] = [
         keywords: ['phaser', 'add phaser', 'phase'],
         category: 'Device',
         requiresSelection: 'track',
-        buildAction: trackAction('addDevice', (id) => ({ trackId: id, deviceType: 'Phaser' })),
+        buildAction: trackAction('addDevice', (id) => ({ trackId: id, deviceType: 'builtin-phaser' })),
     },
     {
         id: 'add-distortion',
@@ -71,7 +82,7 @@ export const devicePresets: readonly PresetAction[] = [
         keywords: ['distortion', 'add distortion', 'overdrive', 'drive', 'saturation'],
         category: 'Device',
         requiresSelection: 'track',
-        buildAction: trackAction('addDevice', (id) => ({ trackId: id, deviceType: 'Distortion' })),
+        buildAction: trackAction('addDevice', (id) => ({ trackId: id, deviceType: 'builtin-distortion' })),
     },
     {
         id: 'add-limiter',
@@ -79,7 +90,7 @@ export const devicePresets: readonly PresetAction[] = [
         keywords: ['limiter', 'add limiter', 'brick wall'],
         category: 'Device',
         requiresSelection: 'track',
-        buildAction: trackAction('addDevice', (id) => ({ trackId: id, deviceType: 'Limiter' })),
+        buildAction: trackAction('addDevice', (id) => ({ trackId: id, deviceType: 'builtin-limiter' })),
     },
     {
         id: 'add-gate',
@@ -87,7 +98,7 @@ export const devicePresets: readonly PresetAction[] = [
         keywords: ['gate', 'noise gate', 'add gate', 'expander'],
         category: 'Device',
         requiresSelection: 'track',
-        buildAction: trackAction('addDevice', (id) => ({ trackId: id, deviceType: 'Gate' })),
+        buildAction: trackAction('addDevice', (id) => ({ trackId: id, deviceType: 'faust-noise-gate' })),
     },
     {
         id: 'add-deesser',
@@ -95,7 +106,7 @@ export const devicePresets: readonly PresetAction[] = [
         keywords: ['deesser', 'de-esser', 'sibilance'],
         category: 'Device',
         requiresSelection: 'track',
-        buildAction: trackAction('addDevice', (id) => ({ trackId: id, deviceType: 'DeEsser' })),
+        buildAction: trackAction('addDevice', (id) => ({ trackId: id, deviceType: 'builtin-deesser' })),
     },
     {
         id: 'add-autopan',
@@ -103,7 +114,7 @@ export const devicePresets: readonly PresetAction[] = [
         keywords: ['auto pan', 'autopan', 'panner', 'tremolo'],
         category: 'Device',
         requiresSelection: 'track',
-        buildAction: trackAction('addDevice', (id) => ({ trackId: id, deviceType: 'AutoPan' })),
+        buildAction: trackAction('addDevice', (id) => ({ trackId: id, deviceType: 'builtin-autopan' })),
     },
     {
         id: 'add-bitcrusher',
@@ -111,7 +122,7 @@ export const devicePresets: readonly PresetAction[] = [
         keywords: ['bitcrusher', 'bit crusher', 'downsample', 'lo-fi', 'lofi'],
         category: 'Device',
         requiresSelection: 'track',
-        buildAction: trackAction('addDevice', (id) => ({ trackId: id, deviceType: 'BitCrusher' })),
+        buildAction: trackAction('addDevice', (id) => ({ trackId: id, deviceType: 'builtin-bitcrusher' })),
     },
     {
         id: 'add-filter',
@@ -119,6 +130,6 @@ export const devicePresets: readonly PresetAction[] = [
         keywords: ['filter', 'add filter', 'lowpass', 'highpass', 'bandpass'],
         category: 'Device',
         requiresSelection: 'track',
-        buildAction: trackAction('addDevice', (id) => ({ trackId: id, deviceType: 'Filter' })),
+        buildAction: trackAction('addDevice', (id) => ({ trackId: id, deviceType: 'builtin-filter' })),
     },
 ];

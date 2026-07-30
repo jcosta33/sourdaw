@@ -259,7 +259,9 @@ describe('TrackDevicesSection', () => {
 
         fireEvent.click(chorusMenuItem);
 
-        expect(mockAddDevice).toHaveBeenCalledWith('track-1', 'Chorus');
+        // By id, not by the label on the menu item: `addDevice` matches on name
+        // *or* id, and three catalog names are carried by two plugins each.
+        expect(mockAddDevice).toHaveBeenCalledWith('track-1', 'chorus');
         expect(screen.queryByRole('menuitem', { name: 'Chorus' })).not.toBeInTheDocument();
     });
 

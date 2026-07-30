@@ -237,7 +237,11 @@ export const useTimelineFileDrop = ({
                     notifyUser('Drop the plugin onto a track to add it.', 'warning');
                     return;
                 }
-                addDevice(targetTrackId, plugin.name);
+                // The payload carries both, and `addDevice` matches on name *or*
+                // id. `De-esser`, `LUFS Meter` and `Stereo Widener` each name two
+                // catalog plugins, so a name lookup returns whichever the registry
+                // lists first rather than the card that was dragged.
+                addDevice(targetTrackId, plugin.id);
             } catch {
                 notifyUser('Could not add the dropped plugin — its data was malformed.', 'error');
             }

@@ -91,7 +91,7 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                             key={param.id}
                             onClick={(event) => {
                                 event.stopPropagation();
-                                addDevice(track.id, param.name);
+                                addDevice(track.id, param.id);
                                 setShowAdd(false);
                             }}
                         >
