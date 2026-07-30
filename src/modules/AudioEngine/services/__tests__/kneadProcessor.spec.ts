@@ -123,6 +123,17 @@ describe('KneadProcessor pitch-shift computation', () => {
         legacyBinary = false;
     });
 
+    it('ignores a duplicate init after becoming ready', async () => {
+        const proc = await loadProcessor();
+        sendMessage(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        postedMessages.length = 0;
+
+        sendMessage(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+
+        expect(postedMessages).toEqual([]);
+        expect(proc._faulted).toBe(false);
+    });
+
     it('feeds a finite shift to the WASM instance when both pitch centers are present', async () => {
         const proc = await loadProcessor();
         const transportSAB = makePlayingTransport(2, 120);
