@@ -34,8 +34,9 @@ export function armTrack(
     }
 
     const previousMidiInputTrackId = getMidiInputTrack();
-    const expectedRouteMatches =
-        options.expectedMidiInputTrackId === undefined || previousMidiInputTrackId === options.expectedMidiInputTrackId;
+    const runtimeRouteExpectation =
+        options.expectedMidiInputTrackId === undefined ? previousMidiInputTrackId : options.expectedMidiInputTrackId;
+    const expectedRouteMatches = previousMidiInputTrackId === runtimeRouteExpectation;
     let desiredMidiInputTrackId = previousMidiInputTrackId;
     if (expectedRouteMatches) {
         if (options.midiInputTrackId !== undefined) {
@@ -70,17 +71,21 @@ export function armTrack(
         if (runtimeEffectFinalized) {
             return;
         }
-        applyMidiInputTrack(desiredMidiInputTrackId);
+        if (expectedRouteMatches && getMidiInputTrack() === runtimeRouteExpectation) {
+            applyMidiInputTrack(desiredMidiInputTrackId);
+        }
         runtimeEffectFinalized = true;
     }
 
     function reconcileRuntimeEffect(): void {
         const committedTrack = getTrackById(trackId);
-        if (committedTrack?.armed === armed) {
-            applyMidiInputTrack(desiredMidiInputTrackId);
+        if (committedTrack?.armed !== armed) {
             return;
         }
-        applyMidiInputTrack(previousMidiInputTrackId);
+        if (!expectedRouteMatches || getMidiInputTrack() !== runtimeRouteExpectation) {
+            return;
+        }
+        applyMidiInputTrack(desiredMidiInputTrackId);
     }
 
     if (options.deferRuntimeEffect) {
