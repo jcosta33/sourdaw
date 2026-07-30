@@ -1,0 +1,35 @@
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_bc88af7d3b054c::t_02bad9ef04629e 177-179,186-187
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_bc88af7d3b054c::t_3e39dc250e75df 3,157,168,183
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_bc88af7d3b054c::t_08c4e3360c2f78 40-48
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_bc88af7d3b054c::t_66a268e9adaa8f 31,327
+src/modules/AiRuntime/validators/normalizeSafeProjectName.ts
+  s_bc88af7d3b054c::t_673b96c90757c3 1-26
+src/modules/Arrangement/presentations/views/TimelineEmptyMenu.tsx
+  s_bc88af7d3b054c::t_9133f32923d397 157-162
+src/modules/Arrangement/presentations/views/__tests__/TimelineEmptyMenu.spec.tsx
+  s_bc88af7d3b054c::t_a882fb2c36d563 159-168
+src/modules/CommandInterface/useCases/commands/TrackCommands.ts
+  s_bc88af7d3b054c::t_63e00910a11c5f 32-34
+src/modules/CommandInterface/useCases/commands/__tests__/TrackCommands.spec.ts
+  s_bc88af7d3b054c::t_c4db129d453376 1-44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "801b51b45df9e73c171751207d3d4947e8a85662",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
