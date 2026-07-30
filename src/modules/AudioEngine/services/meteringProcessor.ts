@@ -15,21 +15,28 @@
  * value that is decaying anyway. Wrapping it in Atomics would add render-thread
  * RMWs to buy nothing.
  */
-type MeteringMsg = { type: 'init'; sab: SharedArrayBuffer };
+type MeteringMsg = { type: 'init'; sab: SharedArrayBuffer } | { type: 'shutdown' };
 
 export class MeteringWorkletProcessor extends AudioWorkletProcessor {
+    private _active = true;
     private _sab: Float32Array | null = null;
 
     constructor() {
         super();
         this.port.onmessage = (event: MessageEvent<MeteringMsg>) => {
-            if (event.data.type === 'init') {
-                this._sab = new Float32Array(event.data.sab);
+            if (event.data.type === 'shutdown') {
+                this._active = false;
+                this._sab = null;
+                return;
             }
+            this._sab = new Float32Array(event.data.sab);
         };
     }
 
     process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
+        if (!this._active) {
+            return false;
+        }
         const input = inputs[0];
         if (!input || input.length === 0 || !this._sab) {
             return true;

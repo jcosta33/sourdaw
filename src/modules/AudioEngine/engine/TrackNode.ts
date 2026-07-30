@@ -793,6 +793,7 @@ export class TrackNode {
         this.strip.analyserNode.disconnect();
         this._outputDestination = null;
         if (this.strip.meterNode) {
+            this.strip.meterNode.port.postMessage({ type: 'shutdown' });
             this.strip.meterNode.port.close();
             this.strip.meterNode.disconnect();
         }

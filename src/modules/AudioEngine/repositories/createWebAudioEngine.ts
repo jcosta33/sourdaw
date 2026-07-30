@@ -1421,6 +1421,9 @@ class AudioEngineImpl implements AudioEngine {
     private postShutdownToWorklets(): void {
         const shutdown = { type: 'shutdown' as const };
         const hasWorkletNode = typeof AudioWorkletNode !== 'undefined';
+        if (hasWorkletNode && this.masterMeterNode instanceof AudioWorkletNode) {
+            this.masterMeterNode.port.postMessage(shutdown);
+        }
         for (const [, trackNode] of this.trackNodes) {
             trackNode.strip.meterNode?.port.postMessage(shutdown);
             for (const dn of trackNode.strip.deviceNodes) {
