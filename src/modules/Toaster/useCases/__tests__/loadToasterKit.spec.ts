@@ -3,7 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { type ToasterKit, type PadState } from '../../models/ToasterKit';
 import { loadKit } from '../../stores/toasterStore';
 import { getToasterControls } from '../getToasterControls';
-import { loadToasterKitPreset, TOASTER_ENGINE_MAP } from '../loadToasterKit';
+import { loadToasterKitPreset } from '../loadToasterKit';
+import { TOASTER_ENGINE_MAP } from '../toasterEngineMap';
 
 type MockTrack = {
     id: string;

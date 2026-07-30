@@ -9,11 +9,11 @@ import { transportStore } from '#/modules/Transport/stores';
 import { type Step, type ToasterKit, createDefaultKit } from '../../models/ToasterKit';
 import { toasterStore, defaultToasterState } from '../../stores/toasterStore';
 import { cancelScheduledToasterHits } from '../cancelScheduledToasterHits';
-import { TOASTER_ENGINE_MAP } from '../loadToasterKit';
 import { releaseToasterNotes } from '../releaseToasterNotes';
 import { scheduleToasterHit } from '../scheduleToasterHit';
 import { startSequencer } from '../startSequencer';
 import { stopSequencer } from '../stopSequencer';
+import { TOASTER_ENGINE_MAP } from '../toasterEngineMap';
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     getAudioTime: vi.fn(() => 0),

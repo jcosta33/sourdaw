@@ -12,13 +12,13 @@ import { toasterStore, type ToasterState } from '../stores/toasterStore';
 
 import { cancelScheduledToasterHits } from './cancelScheduledToasterHits';
 import { getSequencerPlaybackState } from './getSequencerPlaybackState';
-import { TOASTER_ENGINE_MAP } from './loadToasterKit';
 import { morphPatterns } from './patternMorph';
 import { projectToasterPatternGroove } from './projectToasterPatternGroove';
 import { projectToasterStepEvents } from './projectToasterStepEvents';
 import { scheduleToasterHit } from './scheduleToasterHit';
 import { shouldTriggerSequencerStep } from './shouldTriggerSequencerStep';
 import { stopSequencer } from './stopSequencer';
+import { TOASTER_ENGINE_MAP } from './toasterEngineMap';
 
 type RunSequencerTickInput = {
     deviceId: string;
