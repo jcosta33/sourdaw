@@ -1,0 +1,25 @@
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_bc88af7d3b054c::t_9aa843ba3169f6 1,3-238,240-241
+src/modules/AiRuntime/models/__tests__/RuntimeAction.spec.ts
+  s_bc88af7d3b054c::t_9e73866766c37f 1-40
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_bc88af7d3b054c::t_2dcb2b890591a4 169,201,210
+src/modules/AiRuntime/useCases/validateActions.ts
+  s_bc88af7d3b054c::t_e7c31dc474401a 5,9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "43905d40921e9d465304640b73bde8550bfe5015",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
