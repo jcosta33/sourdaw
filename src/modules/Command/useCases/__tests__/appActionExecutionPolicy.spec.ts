@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { getAppActionExecutionPolicy } from '../getAppActionExecutionPolicy';
 import { requiresAppActionConfirmation } from '../requiresAppActionConfirmation';
 
 describe('app action execution policy', () => {
@@ -17,9 +18,12 @@ describe('app action execution policy', () => {
         }
     );
 
-    it('requires confirmation for a single broad reversible action', () => {
-        expect(requiresAppActionConfirmation([{ type: 'duplicateTrack' }])).toBe(true);
-    });
+    it.each(['duplicateTrack', 'clearSolos'] as const)(
+        'requires confirmation for a single broad reversible %s action',
+        (type) => {
+            expect(requiresAppActionConfirmation([{ type }])).toBe(true);
+        }
+    );
 
     it('requires confirmation for a multi-action batch even when every action is bounded', () => {
         expect(requiresAppActionConfirmation([{ type: 'muteTrack' }, { type: 'setTrackGain' }])).toBe(true);
@@ -34,5 +38,14 @@ describe('app action execution policy', () => {
 
     it('does not require confirmation for an empty batch', () => {
         expect(requiresAppActionConfirmation([])).toBe(false);
+    });
+
+    it('fails closed for an unclassified action type', () => {
+        expect(getAppActionExecutionPolicy('futureAction')).toEqual({
+            classification: 'default',
+            risk: 'unclassified',
+            requiresConfirmation: true,
+            reason: 'This action has no explicit execution policy and must be reviewed.',
+        });
     });
 });
