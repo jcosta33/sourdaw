@@ -57,7 +57,8 @@ export function scheduleAudioClips(
     scheduledFrozenTracks: Set<string>,
     activeAudioSources: AudioBufferSourceNode[],
     transport: TransportState,
-    currentTempo: number
+    currentTempo: number,
+    resolveCompensationDelay: typeof getCompensationDelay = getCompensationDelay
 ): void {
     const tracks = trackStore.value?.tracks;
     if (!tracks) {
@@ -79,7 +80,13 @@ export function scheduleAudioClips(
             // entry and leave the refrozen track silent for the whole session.
             const frozenKey = `${track.id}:${track.freezeState.frozenBufferId}`;
             if (!scheduledFrozenTracks.has(frozenKey)) {
-                const scheduled = scheduleFrozenTrack(track, accumulatedPosition, activeAudioSources, currentTempo);
+                const scheduled = scheduleFrozenTrack(
+                    track,
+                    accumulatedPosition,
+                    activeAudioSources,
+                    currentTempo,
+                    resolveCompensationDelay
+                );
                 if (scheduled) {
                     scheduledFrozenTracks.add(frozenKey);
                 }
@@ -87,7 +94,7 @@ export function scheduleAudioClips(
             continue;
         }
 
-        const compensation = getCompensationDelay(track.id);
+        const compensation = resolveCompensationDelay(track.id);
         const resolvedAudioClips = resolveClipsWithComping(track.id, track.clips);
 
         for (const clip of resolvedAudioClips) {

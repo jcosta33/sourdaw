@@ -23,6 +23,10 @@ const takeLaneStoreState: { value: { lanes: unknown[] } | null } = { value: { la
 // currentTime holder so tests can advance the clock BETWEEN init and a tick
 // without vi.mocked() overrides that don't reach the module's bound import.
 const ctxTime = { now: 0 };
+type TestLatencySnapshot = {
+    getCompensationDelay: (trackId: string) => number;
+    getSidechainKeyDelay: (input: unknown) => number;
+};
 // AudioEngine mock holder. The vi.mock factory wraps each export in a thin
 // forwarder to these vi.fn instances; both the module-under-test and the test
 // assertions read/write the SAME spies (the factory's arrow wrappers are stable
@@ -42,6 +46,9 @@ const audioEngineMocks = {
     cacheAudioBuffer: vi.fn(),
     refreshSidechainAlignment: vi.fn(),
     scheduleAdjustmentLayers: vi.fn(),
+    getCompensationDelay: vi.fn(() => 0),
+    getSidechainKeyDelay: vi.fn(() => 0),
+    captureLatencyCompensationSnapshot: vi.fn<() => TestLatencySnapshot>(),
 };
 
 vi.mock('#/modules/Arrangement/stores', () => ({
@@ -122,6 +129,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
         (audioEngineMocks.refreshSidechainAlignment as (...a: unknown[]) => unknown)(...args),
     scheduleAdjustmentLayers: (...args: unknown[]) =>
         (audioEngineMocks.scheduleAdjustmentLayers as (...a: unknown[]) => unknown)(...args),
+    captureLatencyCompensationSnapshot: () => audioEngineMocks.captureLatencyCompensationSnapshot(),
 }));
 vi.mock('#/modules/Automation/useCases', () => ({
     startAutomationRecording: (...args: unknown[]) =>
@@ -195,6 +203,10 @@ describe('startPlayheadScheduler', () => {
                 return ctxTime.now;
             },
         }));
+        audioEngineMocks.captureLatencyCompensationSnapshot.mockImplementation(() => ({
+            getCompensationDelay: audioEngineMocks.getCompensationDelay,
+            getSidechainKeyDelay: audioEngineMocks.getSidechainKeyDelay,
+        }));
         arrangementMocks.startRecording.mockImplementation(() => []);
         evaluateFollowActionsMock.mockImplementation(() => ({ jumpToPosition: null, shouldStop: false }));
         transportStoreState.value = playingState();
@@ -248,7 +260,7 @@ describe('startPlayheadScheduler', () => {
         expect(worker.postMessage).toHaveBeenCalledWith({ type: 'start', interval: 25 });
     });
 
-    it('runs a tick that schedules metronome, midi, audio, and automation in order', async () => {
+    it('runs every latency-aware scheduler consumer from one immutable snapshot per tick', async () => {
         transportStoreState.value = playingState({ playheadPosition: 0 });
         ctxTime.now = 0.1;
 
@@ -267,6 +279,11 @@ describe('startPlayheadScheduler', () => {
         expect(vi.mocked(applyVcaGains)).toHaveBeenCalledTimes(1);
         expect(audioEngineMocks.refreshSidechainAlignment).toHaveBeenCalledTimes(1);
         expect(audioEngineMocks.scheduleAdjustmentLayers).toHaveBeenCalledTimes(1);
+        expect(audioEngineMocks.captureLatencyCompensationSnapshot).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(scheduleMidiNotes).mock.calls[0]?.[9]).toBe(audioEngineMocks.getCompensationDelay);
+        expect(vi.mocked(scheduleAudioClips).mock.calls[0]?.[8]).toBe(audioEngineMocks.getCompensationDelay);
+        expect(vi.mocked(applyAutomation).mock.calls[0]?.[1]).toBe(audioEngineMocks.getCompensationDelay);
+        expect(audioEngineMocks.refreshSidechainAlignment).toHaveBeenCalledWith(audioEngineMocks.getSidechainKeyDelay);
         expect(schedulerTimingDiagnostics.snapshot().messagesReceived).toBe(1);
         expect(schedulerTimingDiagnostics.snapshot().ticksSettled).toBe(1);
     });

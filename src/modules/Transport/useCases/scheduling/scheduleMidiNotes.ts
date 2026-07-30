@@ -132,7 +132,8 @@ export async function scheduleMidiNotes(
     activeAudioSources: AudioBufferSourceNode[],
     transport: TransportState,
     currentTempo: number,
-    cancellation?: SchedulerCancellation
+    cancellation?: SchedulerCancellation,
+    resolveCompensationDelay: typeof getCompensationDelay = getCompensationDelay
 ): Promise<void> {
     const isCurrent = cancellation?.isCurrent ?? (() => true);
     const tracks = trackStore.value?.tracks;
@@ -162,7 +163,13 @@ export async function scheduleMidiNotes(
             // rest of the session.
             const frozenKey = `${track.id}:${track.freezeState.frozenBufferId}`;
             if (!scheduledFrozenTracks.has(frozenKey)) {
-                const scheduled = scheduleFrozenTrack(track, accumulatedPosition, activeAudioSources, currentTempo);
+                const scheduled = scheduleFrozenTrack(
+                    track,
+                    accumulatedPosition,
+                    activeAudioSources,
+                    currentTempo,
+                    resolveCompensationDelay
+                );
                 if (scheduled) {
                     scheduledFrozenTracks.add(frozenKey);
                 }
@@ -299,7 +306,7 @@ export async function scheduleMidiNotes(
 
             const clipMidiOffset = clip.midiOffsetBeats ?? 0;
             const synthParams = drumKit || drumKitDef ? null : getSynthParamsForTrack(track.id);
-            const compensation = getCompensationDelay(track.id);
+            const compensation = resolveCompensationDelay(track.id);
             const clipVisualLength = clip.endBeat - clip.startBeat;
             const loopLen = clip.loopEnabled ? (clip.loopLength ?? clipVisualLength) : clipVisualLength;
             if (loopLen <= 0) {

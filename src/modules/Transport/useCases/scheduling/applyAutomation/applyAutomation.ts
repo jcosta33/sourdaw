@@ -81,7 +81,10 @@ const automationState: {
     drivingLanes: new Set<string>(),
 };
 
-export function applyAutomation(currentBeat: number): Set<string> {
+export function applyAutomation(
+    currentBeat: number,
+    resolveCompensationDelay: typeof getCompensationDelay = getCompensationDelay
+): Set<string> {
     // Track ids whose fader gain this tick's automation composed and wrote.
     // applyVcaGains skips these so the VCA writer defers to the composed value
     // instead of racing it (see the gain branch below).
@@ -109,15 +112,15 @@ export function applyAutomation(currentBeat: number): Set<string> {
     // track's compensation so every lane schedules at `now + compensation`.
     const now = getCurrentTime();
     const compensationByTrack = new Map<string, number>();
-    const compensationFor = (trackId: string): number => {
+    function compensationFor(trackId: string): number {
         const cached = compensationByTrack.get(trackId);
         if (cached !== undefined) {
             return cached;
         }
-        const compensation = getCompensationDelay(trackId);
+        const compensation = resolveCompensationDelay(trackId);
         compensationByTrack.set(trackId, compensation);
         return compensation;
-    };
+    }
 
     const tracks = trackStore.value?.tracks;
 

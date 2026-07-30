@@ -10,6 +10,7 @@ import {
     scheduleAdjustmentLayers,
     cacheAudioBuffer,
     refreshSidechainAlignment,
+    captureLatencyCompensationSnapshot,
 } from '#/modules/AudioEngine/useCases';
 import { startAutomationRecording, applyModulation, applyModulationToEngine } from '#/modules/Automation/useCases';
 
@@ -344,6 +345,10 @@ export function startPlayheadScheduler(): void {
 
         const lookAheadBeats = SCHEDULE_AHEAD_SECONDS * beatsPerSecond;
         const scheduleUpTo = newPosition + lookAheadBeats;
+        // Capture one versioned PDC projection for every latency-aware consumer
+        // in this tick. Unchanged graph versions reuse the existing immutable
+        // projection; a graph/plugin-latency change rebuilds before this grain.
+        const latencyCompensation = captureLatencyCompensationSnapshot();
 
         scheduleMetronome(
             schedulerSession.lastScheduledBeat,
@@ -361,7 +366,8 @@ export function startPlayheadScheduler(): void {
             schedulerSession.activeAudioSources,
             current,
             currentTempo,
-            cancellation
+            cancellation,
+            latencyCompensation.getCompensationDelay
         );
         if (!cancellation.isCurrent()) {
             return;
@@ -374,18 +380,19 @@ export function startPlayheadScheduler(): void {
             schedulerSession.scheduledFrozenTracks,
             schedulerSession.activeAudioSources,
             current,
-            currentTempo
+            currentTempo,
+            latencyCompensation.getCompensationDelay
         );
         // applyAutomation runs first and returns the tracks whose fader gain it
         // composed (VCA multiplier folded in); applyVcaGains then drives only the
         // VCA-member tracks it did NOT write, so the two never race the fader.
-        const gainAutomatedTrackIds = applyAutomation(newPosition);
+        const gainAutomatedTrackIds = applyAutomation(newPosition, latencyCompensation.getCompensationDelay);
         applyVcaGains(gainAutomatedTrackIds);
         // FX-5 — same per-tick recompute discipline applyAutomation uses for its
         // compensation: a latency change anywhere (native plugin push, device
         // added/removed/bypassed) moves the sidechain key alignment within one
         // grain instead of holding a stale value for the rest of the session.
-        refreshSidechainAlignment();
+        refreshSidechainAlignment(latencyCompensation.getSidechainKeyDelay);
         applyModulation(newPosition);
         // Hand modulation the values applyAutomation just applied, so a
         // param both automated and modulated combines onto the value the engine

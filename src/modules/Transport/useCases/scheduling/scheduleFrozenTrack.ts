@@ -17,7 +17,8 @@ export function scheduleFrozenTrack(
     },
     accumulatedPosition: number,
     activeAudioSources: AudioBufferSourceNode[],
-    currentTempo: number
+    currentTempo: number,
+    resolveCompensationDelay: typeof getCompensationDelay = getCompensationDelay
 ): boolean {
     if (track.freezeState.status !== 'frozen' || !track.freezeState.frozenBufferId) {
         return false;
@@ -58,7 +59,7 @@ export function scheduleFrozenTrack(
     // changes, and nothing marks the track stale to force a re-render, so the
     // drift is permanent. Tracks frozen before the snapshot existed fall back
     // to the live lookup — the pre-existing behaviour, not a worse one.
-    const compensation = track.freezeState.compensationSeconds ?? getCompensationDelay(track.id);
+    const compensation = track.freezeState.compensationSeconds ?? resolveCompensationDelay(track.id);
     const startTime = getCurrentTime() + beatOffset / (currentTempo / 60) + compensation;
     const now = getCurrentTime();
 
