@@ -2,254 +2,42 @@ import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { trackStore, vcaGroupStore } from '#/modules/Arrangement/stores';
 
-import { type RuntimeAction, type RuntimeActionType } from '../models/RuntimeAction';
+import {
+    RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS,
+    RUNTIME_ACTION_OVERRIDE_REQUIRED_PAYLOAD_KEYS,
+    RUNTIME_ACTION_TYPES,
+    type RuntimeAction,
+    type RuntimeActionType,
+} from '../models/RuntimeAction';
 
 import { PAYLOAD_VALIDATORS, type PayloadValidator } from './validateActionPayload';
 
-// `satisfies Record<RuntimeActionType, true>` below forces the compiler to
-// verify this list contains every RuntimeActionType — if a new action is
-// added to RuntimeAction without adding it here, the type check fails.
-// This replaces the hand-maintained list that silently diverged (§91.2).
-const KNOWN_ACTION_TYPES_MAP = {
-    addTrack: true,
-    removeTrack: true,
-    removeAllTracks: true,
-    renameTrack: true,
-    selectTrack: true,
-    muteTrack: true,
-    soloTrack: true,
-    toggleSoloSafe: true,
-    armTrack: true,
-    freezeTrack: true,
-    unfreezeTrack: true,
-    flattenTrack: true,
-    bounceInPlace: true,
-    duplicateTrack: true,
-    reorderTrack: true,
-    setTrackGain: true,
-    setTrackPan: true,
-    setTrackColor: true,
-    setTempo: true,
-    setTimeSignature: true,
-    togglePlayback: true,
-    stopPlayback: true,
-    toggleRecording: true,
-    setMasterGain: true,
-    toggleLoop: true,
-    toggleMetronome: true,
-    setMetronomeVolume: true,
-    setLoopRegion: true,
-    addClip: true,
-    moveClip: true,
-    duplicateClip: true,
-    duplicateClipToNextBar: true,
-    removeClip: true,
-    splitClip: true,
-    trimClipStart: true,
-    trimClipEnd: true,
-    setClipFade: true,
-    copyClip: true,
-    cutClip: true,
-    pasteClip: true,
-    addDevice: true,
-    bypassDevice: true,
-    removeDevice: true,
-    setDeviceParameter: true,
-    createBus: true,
-    createFolder: true,
-    setSend: true,
-    setWorkspaceMode: true,
-    openPreferencesDialog: true,
-    openMixer: true,
-    closeMixer: true,
-    toggleSidebar: true,
-    toggleInspector: true,
-    toggleChatPanel: true,
-    setEditingTool: true,
-    setMarqueeSelection: true,
-    addMarker: true,
-    removeMarker: true,
-    setMarkerColor: true,
-    addSection: true,
-    removeSection: true,
-    renameSection: true,
-    addAutomationLane: true,
-    addAutomationPoint: true,
-    quantizeNotes: true,
-    quantizeNoteLengths: true,
-    transposeNotes: true,
-    humanizeNotes: true,
-    invertNotes: true,
-    retrogradeNotes: true,
-    scaleVelocities: true,
-    scaleAllVelocities: true,
-    setAllVelocities: true,
-    importMidiFile: true,
-    normalizeClip: true,
-    reverseClip: true,
-    glueClips: true,
-    nudgeClip: true,
-    crossfadeClips: true,
-    setClipGain: true,
-    setClipColor: true,
-    lockClip: true,
-    renameClip: true,
-    consolidateSelection: true,
-    bounceSelection: true,
-    seekPlayhead: true,
-    setPunchIn: true,
-    setPunchOut: true,
-    togglePunch: true,
-    toggleCountIn: true,
-    setCountInBars: true,
-    togglePreRoll: true,
-    setPreRollBars: true,
-    addTimeSignatureChange: true,
-    removeTimeSignatureChange: true,
-    setTrackOutput: true,
-    addSend: true,
-    removeSend: true,
-    removeAutomationPoint: true,
-    setAutomationMode: true,
-    hideTrack: true,
-    disableTrack: true,
-    setTrackHeight: true,
-    setSnapValue: true,
-    zoomToFit: true,
-    zoomToSelection: true,
-    exportProject: true,
-    saveProject: true,
-    newProject: true,
-    importAudioFile: true,
-    exportMidi: true,
-    foldTrack: true,
-    groupTracks: true,
-    ungroupTracks: true,
-    scaleAutomation: true,
-    stretchAutomation: true,
-    invertAutomation: true,
-    reverseAutomation: true,
-    thinAutomation: true,
-    quantizeAutomation: true,
-    loadPreset: true,
-    savePreset: true,
-    generateDrumPattern: true,
-    generateMelody: true,
-    generateChordProgression: true,
-    setClipLoop: true,
-    setClipLoopLength: true,
-    extractGroove: true,
-    applyGroove: true,
-    setClipStretchMode: true,
-    setClipStretchRatio: true,
-    fitClipToBeats: true,
-    analyzeMix: true,
-    autoFixMix: true,
-    enableMpe: true,
-    disableMpe: true,
-    getLatencyReport: true,
-    createCollabSession: true,
-    joinCollabSession: true,
-    leaveCollabSession: true,
-    scanPlugins: true,
-    loadExternalPlugin: true,
-    audioToMidi: true,
-    muteClip: true,
-    clearSolos: true,
-    setTrackNotes: true,
-    setTrackInput: true,
-    zoomTracksVertical: true,
-    deleteTime: true,
-    insertTime: true,
-    duplicateTimeRange: true,
-    stripSilence: true,
-    detectTempo: true,
-    detectKey: true,
-    consolidateAllTracks: true,
-    arpeggiate: true,
-    addSidechainRoute: true,
-    removeSidechainRoute: true,
-    bounceToNewTrack: true,
-    createTrackAlternative: true,
-    switchTrackAlternative: true,
-    renameTrackAlternative: true,
-    deleteTrackAlternative: true,
-    addChordEvent: true,
-    addCvOutput: true,
-    addNotes: true,
-    assignToVca: true,
-    autoOrganizeProject: true,
-    captureScratchPad: true,
-    clearAllMidiMappings: true,
-    clearChordTrack: true,
-    clearMidiOutput: true,
-    clearScratchPad: true,
-    commitScratchPad: true,
-    compareToReference: true,
-    completeMidi: true,
-    connectPush: true,
-    createAdjustmentLayer: true,
-    createCompGroup: true,
-    createPatternInstance: true,
-    createProjectVersion: true,
-    createVcaGroup: true,
-    createVersionBranch: true,
-    deleteMacro: true,
-    deleteTrackTemplate: true,
-    detachPatternInstance: true,
-    detectSongStructure: true,
-    detectTransients: true,
-    disconnectPush: true,
-    enableWarping: true,
-    exportDawProject: true,
-    generateAllTransitions: true,
-    generateAudio: true,
-    generateBassline: true,
-    generateFill: true,
-    getMentorTips: true,
-    labelUndoBranch: true,
-    loadRaveModel: true,
-    loadTrackTemplate: true,
-    nextSetlistItem: true,
-    playMacro: true,
-    previousSetlistItem: true,
-    quantizeTransients: true,
-    redo: true,
-    removeChordEvent: true,
-    removeFromVca: true,
-    restoreAutomationLanePoints: true,
-    restoreClip: true,
-    restoreDsoSnapshot: true,
-    restoreProjectVersion: true,
-    restoreTrack: true,
-    saveTrackTemplate: true,
-    searchSamples: true,
-    setControlSurface: true,
-    setMidiOutput: true,
-    setRaveBlend: true,
-    setVcaGain: true,
-    setWarpAlgorithm: true,
-    setWarpPitchShift: true,
-    startMacroRecording: true,
-    stemSeparate: true,
-    stopMacroRecording: true,
-    switchMonitor: true,
-    toggleChordTrack: true,
-    toggleControlRoomDim: true,
-    toggleControlRoomMono: true,
-    toggleLoopRecord: true,
-    toggleNodeView: true,
-    togglePunchRecording: true,
-    toggleScratchPad: true,
-    toggleUndoTree: true,
-    triggerScene: true,
-    undo: true,
-    variationMidi: true,
-} as const satisfies Record<RuntimeActionType, true>;
+const KNOWN_ACTION_TYPES: ReadonlySet<RuntimeActionType> = new Set(RUNTIME_ACTION_TYPES);
 
-const KNOWN_ACTION_TYPES: ReadonlySet<RuntimeActionType> = new Set(
-    Object.keys(KNOWN_ACTION_TYPES_MAP) as RuntimeActionType[]
-);
+type RuntimePayloadOverrideType = keyof typeof RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS;
+
+function isRuntimePayloadOverrideType(actionType: RuntimeActionType): actionType is RuntimePayloadOverrideType {
+    return actionType in RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS;
+}
+
+function hasOnlyInitiatingPayloadKeys(action: RuntimeAction): boolean {
+    if (!isRuntimePayloadOverrideType(action.type)) {
+        return true;
+    }
+
+    const payload: unknown = action.payload;
+    if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+        return false;
+    }
+
+    const requiredKeys: readonly string[] = RUNTIME_ACTION_OVERRIDE_REQUIRED_PAYLOAD_KEYS[action.type];
+    if (!requiredKeys.every((key) => Object.hasOwn(payload, key))) {
+        return false;
+    }
+
+    const allowedKeys: readonly string[] = RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS[action.type];
+    return Reflect.ownKeys(payload).every((key) => typeof key === 'string' && allowedKeys.includes(key));
+}
 
 const UNAWAITED_AI_ACTION_TYPES: ReadonlySet<RuntimeActionType> = new Set([
     'exportProject',
@@ -296,6 +84,11 @@ export const validateActions = inject({ logger })(
 
                 if (UNAWAITED_AI_ACTION_TYPES.has(action.type)) {
                     logger.warn(`Unawaited AI action rejected: ${action.type}`);
+                    return false;
+                }
+
+                if (!hasOnlyInitiatingPayloadKeys(action)) {
+                    logger.warn(`Command-owned payload fields rejected for action ${action.type}`);
                     return false;
                 }
 

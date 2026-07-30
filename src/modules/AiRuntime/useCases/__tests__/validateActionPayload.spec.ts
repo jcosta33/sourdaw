@@ -166,7 +166,7 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
     });
 
     describe('addAutomationLane', () => {
-        it('should accept only the public runtime payload', () => {
+        it('should accept the provider payload and reject replay-only lane identities', () => {
             const guard = PAYLOAD_VALIDATORS.addAutomationLane;
             expect(guard).not.toBe('unchecked');
             if (guard === 'unchecked') {
@@ -198,7 +198,7 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
             expect(guard({ ...payload, parameterName: null })).toBe(false);
         });
 
-        it('should reject command-only automation identities from RuntimeAction', () => {
+        it('should exclude the command-owned identity field and inverse action', () => {
             type AddAutomationLanePayload = Extract<RuntimeAction, { type: 'addAutomationLane' }>['payload'];
             type AddAutomationLaneHasLaneId = 'laneId' extends keyof AddAutomationLanePayload ? true : false;
             type RemoveAutomationLaneAction = Extract<RuntimeAction, { type: 'removeAutomationLane' }>;

@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { type RuntimeAction } from '../../models/RuntimeAction';
+import {
+    RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS,
+    RUNTIME_ACTION_OVERRIDE_REQUIRED_PAYLOAD_KEYS,
+    type RuntimeAction,
+} from '../../models/RuntimeAction';
 import { validateActions } from '../validateActions';
 
 const { mockLogger } = vi.hoisted(() => ({
@@ -83,6 +87,71 @@ describe('validateActions', () => {
         expect(mockLogger.warn).toHaveBeenCalledWith(
             expect.stringContaining('Unknown action type rejected: restoreLegacyVcaState')
         );
+    });
+
+    it.each([
+        {
+            type: 'createTrackAlternative',
+            payload: { trackId: 'track-1', name: 'Alt', duplicateActive: false, alternativeId: 'alt-1' },
+        },
+        {
+            type: 'deleteTrackAlternative',
+            payload: { trackId: 'track-1', alternativeId: 'alt-1', fallbackAlternativeId: 'alt-2' },
+        },
+        { type: 'duplicateClip', payload: { clipId: 'clip-1', targetClipId: 'clip-2' } },
+        { type: 'duplicateClipToNextBar', payload: { clipId: 'clip-1', targetClipId: 'clip-2' } },
+        { type: 'addMarker', payload: { beat: 4, name: 'Verse', markerId: 'marker-1' } },
+        { type: 'addSection', payload: { startBeat: 0, endBeat: 8, name: 'Verse', sectionId: 'section-1' } },
+        {
+            type: 'addAutomationLane',
+            payload: { trackId: 'track-1', parameterId: 'gain', parameterName: 'Gain', laneId: 'lane-1' },
+        },
+        { type: 'generateDrumPattern', payload: { style: 'house', startBeat: 4 } },
+        { type: 'generateMelody', payload: { style: 'ambient', octave: 4 } },
+        { type: 'generateChordProgression', payload: { style: 'jazz', startBeat: 4 } },
+        { type: 'extractGroove', payload: { clipId: 'clip-1', templateId: 'groove-1' } },
+        { type: 'createCollabSession', payload: { name: 'Review', sessionId: 'session-1' } },
+        {
+            type: 'joinCollabSession',
+            payload: { inviteString: 'invite', peerName: 'Mixer', sessionId: 'session-1' },
+        },
+        { type: 'createVcaGroup', payload: { name: 'Band', trackIds: [], vcaGroupId: 'vca-new' } },
+        { type: 'addChordEvent', payload: { beat: 0, root: 0, quality: 'major', eventId: 'chord-1' } },
+        {
+            type: 'createAdjustmentLayer',
+            payload: { name: 'Glue', effectType: 'compressor', layerId: 'layer-1' },
+        },
+    ] as const)('should reject payloads outside the initiating contract for $type', (action) => {
+        expect(validateActions([action] as unknown as RuntimeAction[])).toEqual([]);
+        expect(mockLogger.warn).toHaveBeenCalledWith(`Command-owned payload fields rejected for action ${action.type}`);
+
+        const allowedKeys: readonly string[] = RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS[action.type];
+        const initiatingPayload = Object.fromEntries(
+            Object.entries(action.payload).filter(([key]) => allowedKeys.includes(key))
+        );
+        for (const missingRequiredKey of RUNTIME_ACTION_OVERRIDE_REQUIRED_PAYLOAD_KEYS[action.type]) {
+            const missingRequiredPayload = Object.fromEntries(
+                Object.entries(initiatingPayload).filter(([key]) => key !== missingRequiredKey)
+            );
+            const missingRequiredAction = { ...action, payload: missingRequiredPayload };
+
+            expect(validateActions([missingRequiredAction] as unknown as RuntimeAction[])).toEqual([]);
+            expect(mockLogger.warn).toHaveBeenLastCalledWith(
+                `Command-owned payload fields rejected for action ${action.type}`
+            );
+        }
+    });
+
+    it('should reject hidden and symbol payload fields', () => {
+        const hiddenPayload = Object.defineProperty({ clipId: 'clip-1' }, 'targetClipId', { value: 'clip-2' });
+        const symbolPayload = { clipId: 'clip-1', [Symbol('targetClipId')]: 'clip-2' };
+        const actions = [
+            { type: 'duplicateClip', payload: hiddenPayload },
+            { type: 'duplicateClip', payload: symbolPayload },
+        ] as unknown as RuntimeAction[];
+
+        expect(validateActions(actions)).toEqual([]);
+        expect(mockLogger.warn).toHaveBeenCalledTimes(2);
     });
 
     it('should reject invalid setTempo bpm', () => {
