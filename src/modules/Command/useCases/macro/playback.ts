@@ -74,6 +74,15 @@ function remapAutomationLaneId(laneId: string, mappings: ReplayIdMappings): stri
     return mappings.automationLaneIds.get(laneId) ?? laneId;
 }
 
+function remapAutomationPointSnapshots(
+    points: Extract<AppAction, { type: 'restoreAutomationLanePoints' }>['payload']['points'],
+    mappings: ReplayIdMappings
+): Extract<AppAction, { type: 'restoreAutomationLanePoints' }>['payload']['points'] {
+    return points.map((point) =>
+        point.id ? { ...point, id: mappings.automationPointIds.get(point.id) ?? point.id } : point
+    );
+}
+
 function remapAutomationReferences(action: AppAction, mappings: ReplayIdMappings): void {
     if (
         action.type === 'removeAutomationLane' ||
@@ -89,6 +98,13 @@ function remapAutomationReferences(action: AppAction, mappings: ReplayIdMappings
         action.type === 'restoreAutomationLanePoints'
     ) {
         action.payload.laneId = remapAutomationLaneId(action.payload.laneId, mappings);
+    }
+
+    if (action.type === 'restoreAutomationLanePoints') {
+        action.payload.points = remapAutomationPointSnapshots(action.payload.points, mappings);
+        if (action.payload.expectedPoints) {
+            action.payload.expectedPoints = remapAutomationPointSnapshots(action.payload.expectedPoints, mappings);
+        }
     }
     if (action.type === 'removeAutomationPoint' && action.payload.pointId) {
         action.payload.pointId = mappings.automationPointIds.get(action.payload.pointId) ?? action.payload.pointId;

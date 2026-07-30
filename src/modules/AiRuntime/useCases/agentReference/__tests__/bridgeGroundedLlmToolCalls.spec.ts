@@ -21,6 +21,7 @@ function createTrack({ id, name, kind = 'audio', devices = [] }: CreateTrackInpu
         armed: false,
         gain: 0.8,
         pan: 0,
+        automationMode: 'read',
         outputId: kind === 'master' ? 'hw_out' : 'master',
         clipCount: 0,
         deviceCount: devices.length,
@@ -1243,6 +1244,134 @@ describe('bridgeGroundedLlmToolCalls', () => {
         ]);
         expect(omittedRequestedCurve.actions).toEqual([]);
         expect(omittedRequestedCurve.rejections[0]?.reason).toContain('curve');
+    });
+
+    it('grounds whole-lane transforms to the named lane owner and explicit factor', () => {
+        const populatedContext: ProjectContext = {
+            ...projectContext,
+            automationLanes: [
+                {
+                    ...projectContext.automationLanes![0]!,
+                    points: [
+                        { beat: 0, value: 0.25, curve: 'linear' },
+                        { beat: 4, value: 0.75, curve: 'linear' },
+                    ],
+                },
+                {
+                    ...projectContext.automationLanes![0]!,
+                    id: 'lane-guitar-gain',
+                    trackId: 'track-guitar',
+                    points: [
+                        { beat: 0, value: 0.4, curve: 'linear' },
+                        { beat: 4, value: 0.6, curve: 'linear' },
+                    ],
+                },
+            ],
+        };
+        const grounded = bridge(
+            [{ name: 'scaleAutomation', arguments: { laneId: 'lane-vocal-gain', factor: 1.5 } }],
+            'scale automation for Gain on Vocals by 1.5',
+            populatedContext
+        );
+        const wrongOwner = bridge(
+            [{ name: 'scaleAutomation', arguments: { laneId: 'lane-guitar-gain', factor: 1.5 } }],
+            'scale automation for Gain on Vocals by 1.5',
+            populatedContext
+        );
+
+        expect(grounded.actions).toEqual([
+            { type: 'scaleAutomation', payload: { laneId: 'lane-vocal-gain', factor: 1.5 } },
+        ]);
+        expect(wrongOwner.actions).toEqual([]);
+        expect(wrongOwner.rejections[0]?.reason).toContain('laneId');
+    });
+
+    it('defaults omitted thinning tolerance but rejects provider-invented or omitted requested values', () => {
+        const context: ProjectContext = {
+            ...projectContext,
+            automationLanes: [
+                {
+                    ...projectContext.automationLanes![0]!,
+                    points: [
+                        { beat: 0, value: 0.2, curve: 'linear' },
+                        { beat: 2, value: 0.5, curve: 'linear' },
+                        { beat: 4, value: 0.8, curve: 'linear' },
+                    ],
+                },
+            ],
+        };
+        const omitted = bridge(
+            [{ name: 'thinAutomation', arguments: { laneId: 'lane-vocal-gain' } }],
+            'thin automation for Gain on Vocals',
+            context
+        );
+        const explicit = bridge(
+            [{ name: 'thinAutomation', arguments: { laneId: 'lane-vocal-gain', tolerance: 0.05 } }],
+            'thin automation for Gain on Vocals with tolerance 0.05',
+            context
+        );
+        const invented = bridge(
+            [{ name: 'thinAutomation', arguments: { laneId: 'lane-vocal-gain', tolerance: 0.05 } }],
+            'thin automation for Gain on Vocals',
+            context
+        );
+        const dropped = bridge(
+            [{ name: 'thinAutomation', arguments: { laneId: 'lane-vocal-gain' } }],
+            'thin automation for Gain on Vocals with tolerance 0.05',
+            context
+        );
+
+        expect(omitted.actions).toEqual([{ type: 'thinAutomation', payload: { laneId: 'lane-vocal-gain' } }]);
+        expect(explicit.actions).toEqual([
+            { type: 'thinAutomation', payload: { laneId: 'lane-vocal-gain', tolerance: 0.05 } },
+        ]);
+        expect(invented.actions).toEqual([]);
+        expect(invented.rejections[0]?.reason).toContain('tolerance');
+        expect(dropped.actions).toEqual([]);
+        expect(dropped.rejections[0]?.reason).toContain('tolerance');
+    });
+
+    it('grounds automation mode changes to the named track and explicit mode', () => {
+        const context: ProjectContext = {
+            ...projectContext,
+            tracks: projectContext.tracks.map((track) => ({ ...track, automationMode: 'read' })),
+        };
+        const grounded = bridge(
+            [{ name: 'setAutomationMode', arguments: { trackId: 'track-vocals', mode: 'touch' } }],
+            'set Vocals automation mode to touch',
+            context
+        );
+        const wrongTrack = bridge(
+            [{ name: 'setAutomationMode', arguments: { trackId: 'track-guitar', mode: 'touch' } }],
+            'set Vocals automation mode to touch',
+            context
+        );
+        const vague = bridge(
+            [{ name: 'setAutomationMode', arguments: { trackId: 'track-vocals', mode: 'write' } }],
+            'set automation mode on Vocals',
+            context
+        );
+        const ambiguous = bridge(
+            [{ name: 'setAutomationMode', arguments: { trackId: 'track-vocals', mode: 'write' } }],
+            'set Vocals automation mode to read or write',
+            context
+        );
+        const off = bridge(
+            [{ name: 'setAutomationMode', arguments: { trackId: 'track-vocals', mode: 'off' } }],
+            'turn automation mode off on Vocals',
+            context
+        );
+
+        expect(grounded.actions).toEqual([
+            { type: 'setAutomationMode', payload: { trackId: 'track-vocals', mode: 'touch' } },
+        ]);
+        expect(wrongTrack.actions).toEqual([]);
+        expect(wrongTrack.rejections[0]?.reason).toContain('trackId');
+        expect(vague.actions).toEqual([]);
+        expect(vague.rejections[0]?.reason).toContain('mode');
+        expect(ambiguous.actions).toEqual([]);
+        expect(ambiguous.rejections[0]?.reason).toContain('mode');
+        expect(off.actions).toEqual([{ type: 'setAutomationMode', payload: { trackId: 'track-vocals', mode: 'off' } }]);
     });
 
     it('grounds percentages against arbitrary existing lane bounds', () => {

@@ -248,6 +248,67 @@ const guardedPayloadContractCases = [
             { volume: 0.25, extra: true },
         ],
     }),
+    guardedPayloadCase({
+        actionType: 'setAutomationMode',
+        validPayload: { trackId: 'track-1', mode: 'touch' },
+        invalidPayloads: [
+            { trackId: '', mode: 'touch' },
+            { trackId: 'track-1', mode: 'scribble' },
+            { trackId: 'track-1', mode: 'touch', extra: true },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'scaleAutomation',
+        validPayload: { laneId: 'lane-1', factor: 1.5 },
+        invalidPayloads: [
+            { laneId: '', factor: 1.5 },
+            { laneId: 'lane-1', factor: 0 },
+            { laneId: 'lane-1', factor: 17 },
+            { laneId: 'lane-1', factor: Number.NaN },
+            { laneId: 'lane-1', factor: 1.5, anchor: 0.5 },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'stretchAutomation',
+        validPayload: { laneId: 'lane-1', factor: 2 },
+        invalidPayloads: [
+            { laneId: '', factor: 2 },
+            { laneId: 'lane-1', factor: -1 },
+            { laneId: 'lane-1', factor: Number.POSITIVE_INFINITY },
+            { laneId: 'lane-1', factor: 2, anchorBeat: 4 },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'invertAutomation',
+        validPayload: { laneId: 'lane-1' },
+        invalidPayloads: [{ laneId: '' }, {}, { laneId: 'lane-1', extra: true }],
+    }),
+    guardedPayloadCase({
+        actionType: 'reverseAutomation',
+        validPayload: { laneId: 'lane-1' },
+        invalidPayloads: [{ laneId: '' }, {}, { laneId: 'lane-1', extra: true }],
+    }),
+    guardedPayloadCase({
+        actionType: 'thinAutomation',
+        validPayload: { laneId: 'lane-1', tolerance: 0.01 },
+        invalidPayloads: [
+            { laneId: '' },
+            { laneId: 'lane-1', tolerance: 0 },
+            { laneId: 'lane-1', tolerance: Number.NaN },
+            { laneId: 'lane-1', extra: true },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'quantizeAutomation',
+        validPayload: { laneId: 'lane-1', gridSize: 0.25 },
+        invalidPayloads: [
+            { laneId: '', gridSize: 0.25 },
+            { laneId: 'lane-1', gridSize: 0 },
+            { laneId: 'lane-1', gridSize: 65 },
+            { laneId: 'lane-1', gridSize: Number.NaN },
+            { laneId: 'lane-1', gridSize: 0.25, extra: true },
+        ],
+    }),
 ] as const;
 
 describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
@@ -277,6 +338,15 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
                 }
             }
         );
+    });
+
+    it('accepts thinAutomation with its default tolerance omitted', () => {
+        const guard = PAYLOAD_VALIDATORS.thinAutomation;
+        expect(guard).not.toBe('unchecked');
+        if (guard === 'unchecked') {
+            return;
+        }
+        expect(guard({ laneId: 'lane-1' })).toBe(true);
     });
 
     it('excludes internal MIDI routing metadata from the RuntimeAction type', () => {

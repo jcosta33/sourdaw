@@ -82,6 +82,7 @@ export type ProjectContextTrack = {
     armed: boolean;
     gain: number;
     pan: number;
+    automationMode: 'read' | 'write' | 'touch' | 'latch' | 'off';
     outputId?: string;
     clipCount: number;
     deviceCount: number;

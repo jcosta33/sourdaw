@@ -80,7 +80,19 @@ const KEYWORD_TOOLS: Array<{ keywords: RegExp; tools: string[] }> = [
     },
     {
         keywords: /automat|envelope|curve|fade/i,
-        tools: ['addAutomationPoint', 'removeAutomationPoint', 'setAutomationMode'],
+        tools: [
+            'addAutomationLane',
+            'addAutomationPoint',
+            'removeAutomationPoint',
+            'setAutomationLaneEnabled',
+            'setAutomationMode',
+            'scaleAutomation',
+            'stretchAutomation',
+            'invertAutomation',
+            'reverseAutomation',
+            'thinAutomation',
+            'quantizeAutomation',
+        ],
     },
     {
         keywords: /record|arm|punch|take/i,

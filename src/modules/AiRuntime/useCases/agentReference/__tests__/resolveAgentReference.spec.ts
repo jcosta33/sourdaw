@@ -16,6 +16,7 @@ function createProjectState(): ProjectContext {
         armed: false,
         gain: 0.8,
         pan: 0,
+        automationMode: 'read' as const,
         outputId: 'master',
         clipCount: 0,
         deviceCount: 0,

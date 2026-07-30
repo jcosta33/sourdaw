@@ -133,22 +133,50 @@ export const automationTools: readonly ToolSchema[] = [
     ),
     tool(
         'scaleAutomation',
-        'Scale all automation values in a lane by a factor.',
+        'Scale all automation values in a lane by a factor greater than 0 and at most 16.',
         {
             laneId: { type: 'string' },
-            factor: { type: 'number' },
+            factor: { type: 'number', description: 'Value scale factor, greater than 0 and at most 16' },
+        },
+        ['laneId', 'factor']
+    ),
+    tool(
+        'stretchAutomation',
+        'Stretch automation timing by a factor greater than 0 and at most 16.',
+        {
+            laneId: { type: 'string' },
+            factor: { type: 'number', description: 'Time scale factor, greater than 0 and at most 16' },
         },
         ['laneId', 'factor']
     ),
     tool(
         'invertAutomation',
-        'Invert an automation lane (1.0 becomes 0.0 and vice versa).',
+        'Invert automation values across the selected lane range.',
         { laneId: { type: 'string' } },
         ['laneId']
     ),
-    tool('reverseAutomation', 'Reverse the direction of an automation lane.', { laneId: { type: 'string' } }, [
-        'laneId',
-    ]),
+    tool('reverseAutomation', 'Reverse automation timing within the lane.', { laneId: { type: 'string' } }, ['laneId']),
+    tool(
+        'thinAutomation',
+        'Reduce redundant automation points within an optional tolerance.',
+        {
+            laneId: { type: 'string' },
+            tolerance: {
+                type: 'number',
+                description: 'Optional value tolerance greater than 0 and within the lane range',
+            },
+        },
+        ['laneId']
+    ),
+    tool(
+        'quantizeAutomation',
+        'Snap automation point timing to a beat grid.',
+        {
+            laneId: { type: 'string' },
+            gridSize: { type: 'number', description: 'Beat grid greater than 0 and at most 64' },
+        },
+        ['laneId', 'gridSize']
+    ),
 ];
 
 export const routingTools: readonly ToolSchema[] = [

@@ -154,6 +154,16 @@ function findAutomationLane(context: ProjectContext, laneId: unknown) {
     return (context.automationLanes ?? []).find((lane) => lane.id === laneId);
 }
 
+function wouldScaleAutomationChange(
+    lane: NonNullable<ProjectContext['automationLanes']>[number],
+    factor: number
+): boolean {
+    return lane.points.some((point) => {
+        const scaledValue = Math.min(lane.maxValue, Math.max(lane.minValue, point.value * factor));
+        return scaledValue !== point.value;
+    });
+}
+
 function isProviderAutomationCurve(
     value: unknown
 ): value is 'linear' | 'step' | 'exponential' | 's-curve' | 'stairs' | 'smooth' | 'bezier' {
@@ -166,6 +176,12 @@ function isProviderAutomationCurve(
         value === 'smooth' ||
         value === 'bezier'
     );
+}
+
+type ProviderAutomationMode = NonNullable<ProjectContext['tracks'][number]['automationMode']>;
+
+function isProviderAutomationMode(value: unknown): value is ProviderAutomationMode {
+    return value === 'read' || value === 'write' || value === 'touch' || value === 'latch' || value === 'off';
 }
 
 function isSafeTrackColor(value: unknown): value is string {
@@ -334,6 +350,123 @@ function bridgeToolCall({
             type: 'setAutomationLaneEnabled',
             payload: { laneId: lane.id, enabled: args.enabled },
         };
+    }
+
+    if (call.name === 'setAutomationMode') {
+        const track = findTrack(context, args.trackId);
+        if (
+            !hasExactKeys(args, ['trackId', 'mode']) ||
+            !track ||
+            !isProviderAutomationMode(args.mode) ||
+            args.mode === track.automationMode
+        ) {
+            return rejection(index, call.name, 'Expected an existing track and a changed automation mode');
+        }
+        return { type: 'setAutomationMode', payload: { trackId: track.id, mode: args.mode } };
+    }
+
+    if (call.name === 'scaleAutomation') {
+        const lane = findAutomationLane(context, args.laneId);
+        if (
+            !hasExactKeys(args, ['laneId', 'factor']) ||
+            !lane ||
+            lane.points.length === 0 ||
+            !isFiniteNumber(args.factor) ||
+            args.factor <= 0 ||
+            args.factor > 16 ||
+            args.factor === 1 ||
+            !wouldScaleAutomationChange(lane, args.factor)
+        ) {
+            return rejection(
+                index,
+                call.name,
+                'Expected a populated automation lane and a changed factor above 0 and at most 16'
+            );
+        }
+        return { type: 'scaleAutomation', payload: { laneId: lane.id, factor: args.factor } };
+    }
+
+    if (call.name === 'stretchAutomation') {
+        const lane = findAutomationLane(context, args.laneId);
+        if (
+            !hasExactKeys(args, ['laneId', 'factor']) ||
+            !lane ||
+            lane.points.length < 2 ||
+            !isFiniteNumber(args.factor) ||
+            args.factor <= 0 ||
+            args.factor > 16 ||
+            args.factor === 1
+        ) {
+            return rejection(
+                index,
+                call.name,
+                'Expected an automation lane with at least two points and a changed factor above 0 and at most 16'
+            );
+        }
+        return { type: 'stretchAutomation', payload: { laneId: lane.id, factor: args.factor } };
+    }
+
+    if (call.name === 'invertAutomation') {
+        const lane = findAutomationLane(context, args.laneId);
+        if (!hasExactKeys(args, ['laneId']) || !lane || lane.points.length === 0) {
+            return rejection(index, call.name, 'Expected a populated automation lane');
+        }
+        return { type: 'invertAutomation', payload: { laneId: lane.id } };
+    }
+
+    if (call.name === 'reverseAutomation') {
+        const lane = findAutomationLane(context, args.laneId);
+        if (!hasExactKeys(args, ['laneId']) || !lane || lane.points.length < 2) {
+            return rejection(index, call.name, 'Expected an automation lane with at least two points');
+        }
+        return { type: 'reverseAutomation', payload: { laneId: lane.id } };
+    }
+
+    if (call.name === 'thinAutomation') {
+        const lane = findAutomationLane(context, args.laneId);
+        const hasValidKeys = hasExactKeys(args, ['laneId']) || hasExactKeys(args, ['laneId', 'tolerance']);
+        const tolerance = args.tolerance ?? 0.01;
+        const laneSpan = lane ? lane.maxValue - lane.minValue : 0;
+        if (
+            !hasValidKeys ||
+            !lane ||
+            lane.points.length <= 2 ||
+            !isFiniteNumber(tolerance) ||
+            tolerance <= 0 ||
+            !Number.isFinite(laneSpan) ||
+            tolerance > laneSpan
+        ) {
+            return rejection(
+                index,
+                call.name,
+                'Expected an automation lane with more than two points and a positive tolerance within its value span'
+            );
+        }
+        return {
+            type: 'thinAutomation',
+            payload: { laneId: lane.id, ...(args.tolerance === undefined ? {} : { tolerance }) },
+        };
+    }
+
+    if (call.name === 'quantizeAutomation') {
+        const lane = findAutomationLane(context, args.laneId);
+        const gridSize = args.gridSize;
+        if (
+            !hasExactKeys(args, ['laneId', 'gridSize']) ||
+            !lane ||
+            lane.points.length === 0 ||
+            !isFiniteNumber(gridSize) ||
+            gridSize <= 0 ||
+            gridSize > 64 ||
+            lane.points.every((point) => Math.round(point.beat / gridSize) * gridSize === point.beat)
+        ) {
+            return rejection(
+                index,
+                call.name,
+                'Expected a populated lane and a changed beat grid above 0 and at most 64'
+            );
+        }
+        return { type: 'quantizeAutomation', payload: { laneId: lane.id, gridSize } };
     }
 
     if (call.name === 'addTrack') {
@@ -801,6 +934,16 @@ function getMutationKeys(action: RuntimeAction): string[] {
     if (action.type === 'setAutomationLaneEnabled') {
         return [`automation-lane-enabled:${action.payload.laneId}`];
     }
+    if (
+        action.type === 'scaleAutomation' ||
+        action.type === 'stretchAutomation' ||
+        action.type === 'invertAutomation' ||
+        action.type === 'reverseAutomation' ||
+        action.type === 'thinAutomation' ||
+        action.type === 'quantizeAutomation'
+    ) {
+        return [`automation-lane-points:${action.payload.laneId}`];
+    }
     if (action.type === 'setDeviceParameter') {
         return [`${action.type}:${action.payload.deviceId}:${action.payload.paramId}`];
     }
@@ -821,7 +964,8 @@ function getMutationKeys(action: RuntimeAction): string[] {
         action.type === 'removeTrack' ||
         action.type === 'setTrackGain' ||
         action.type === 'setTrackPan' ||
-        action.type === 'setTrackColor'
+        action.type === 'setTrackColor' ||
+        action.type === 'setAutomationMode'
     ) {
         return [`${action.type}:${action.payload.trackId}`];
     }
@@ -906,6 +1050,8 @@ export function bridgeLlmToolCalls({ calls, context }: BridgeLlmToolCallsInput):
     const removedDeviceIds = new Set<string>();
     const addedDeviceTrackIds = new Set<string>();
     const removedDeviceTrackIds = new Set<string>();
+    const automationPointWriteLaneIds = new Set<string>();
+    const automationTransformLaneIds = new Set<string>();
 
     for (const [index, call] of calls.entries()) {
         const result = bridgeToolCall({ call, context: prospectiveContext, index });
@@ -914,6 +1060,14 @@ export function bridgeLlmToolCalls({ calls, context }: BridgeLlmToolCallsInput):
             const clipTrackId = clipTargetId === null ? null : (findClip(context, clipTargetId)?.track.id ?? null);
             const deviceTarget = getDeviceBatchTarget(result, context);
             const mutationKeysForAction = getMutationKeys(result);
+            const automationPointLaneId = result.type === 'addAutomationPoint' ? result.payload.laneId : null;
+            const automationTransformKey = mutationKeysForAction.find((key) =>
+                key.startsWith('automation-lane-points:')
+            );
+            const automationTransformLaneId = automationTransformKey?.slice('automation-lane-points:'.length) ?? null;
+            const hasAutomationCollectionConflict =
+                (automationPointLaneId !== null && automationTransformLaneIds.has(automationPointLaneId)) ||
+                (automationTransformLaneId !== null && automationPointWriteLaneIds.has(automationTransformLaneId));
             const hasClipLifecycleConflict =
                 clipTargetId !== null &&
                 ((result.type === 'removeClip' && clipTargetIds.has(clipTargetId)) || removedClipIds.has(clipTargetId));
@@ -932,6 +1086,28 @@ export function bridgeLlmToolCalls({ calls, context }: BridgeLlmToolCallsInput):
                     (deviceTarget.kind === 'remove' &&
                         (addedDeviceTrackIds.has(deviceTarget.trackId) ||
                             removedDeviceTrackIds.has(deviceTarget.trackId))));
+            if (hasAutomationCollectionConflict) {
+                const conflictingLaneId = automationPointLaneId ?? automationTransformLaneId;
+                for (let actionIndex = actions.length - 1; actionIndex >= 0; actionIndex -= 1) {
+                    const priorAction = actions[actionIndex];
+                    if (!priorAction || conflictingLaneId === null) {
+                        continue;
+                    }
+                    const priorPointLaneId =
+                        priorAction.type === 'addAutomationPoint' ? priorAction.payload.laneId : null;
+                    const priorTransformKey = getMutationKeys(priorAction).find((key) =>
+                        key.startsWith('automation-lane-points:')
+                    );
+                    const priorTransformLaneId = priorTransformKey?.slice('automation-lane-points:'.length) ?? null;
+                    if (priorPointLaneId === conflictingLaneId || priorTransformLaneId === conflictingLaneId) {
+                        actions.splice(actionIndex, 1);
+                    }
+                }
+                rejections.push(
+                    rejection(index, call.name, 'Provider batch mixes point insertion with a whole-lane transform')
+                );
+                continue;
+            }
             if (conflictingMutationKey?.startsWith('automation-lane-point:')) {
                 for (let actionIndex = actions.length - 1; actionIndex >= 0; actionIndex -= 1) {
                     const priorAction = actions[actionIndex];
@@ -968,6 +1144,12 @@ export function bridgeLlmToolCalls({ calls, context }: BridgeLlmToolCallsInput):
             }
             for (const mutationKey of mutationKeysForAction) {
                 mutationKeys.add(mutationKey);
+            }
+            if (automationPointLaneId !== null) {
+                automationPointWriteLaneIds.add(automationPointLaneId);
+            }
+            if (automationTransformLaneId !== null) {
+                automationTransformLaneIds.add(automationTransformLaneId);
             }
             if (clipTargetId !== null) {
                 clipTargetIds.add(clipTargetId);
@@ -1045,6 +1227,7 @@ export function buildLlmActionUserMessage({ prompt, context }: { prompt: string;
             armed: track.armed,
             gain: track.gain,
             pan: track.pan,
+            automationMode: track.automationMode,
             outputId: track.outputId,
             devices: track.devices,
             sends: track.sends ?? [],

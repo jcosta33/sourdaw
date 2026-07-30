@@ -733,15 +733,21 @@ function validateNumberValue(
     groundedArguments: Record<string, unknown>,
     context: ProjectContext
 ): string | null {
-    if (typeof assertedValue !== 'number') {
-        return getValueMismatchReason(valueRule.argument);
-    }
     const automationLane = getAutomationLaneValueRange(valueRule, groundedArguments, context);
     if (automationLane === null) {
         return getValueMismatchReason(valueRule.argument);
     }
     const expectedNumbers = getExpectedNumbers(actionScope, valueRule, automationLane);
     if (expectedNumbers === null) {
+        return getValueMismatchReason(valueRule.argument);
+    }
+    if (assertedValue === undefined && valueRule.mayOmitWhenUnmentioned === true && expectedNumbers.length === 0) {
+        return null;
+    }
+    if (typeof assertedValue !== 'number') {
+        return getValueMismatchReason(valueRule.argument);
+    }
+    if (valueRule.mayOmitWhenUnmentioned === true && expectedNumbers.length === 0) {
         return getValueMismatchReason(valueRule.argument);
     }
     if (valueRule.requiredInPrompt === true && expectedNumbers.length === 0) {
@@ -899,7 +905,13 @@ function validateEnumValue(
     actionScope: ActionPromptScope
 ): string | null {
     const mentionedValues = valueRule.values.filter((value) => getIntentPhraseIndex(actionScope.masked, value) >= 0);
-    if (mentionedValues.length > 0 && !mentionedValues.includes(String(assertedValue))) {
+    if (mentionedValues.length > 1) {
+        return getValueMismatchReason(valueRule.argument);
+    }
+    if (valueRule.requiredInPrompt === true && mentionedValues.length !== 1) {
+        return getValueMismatchReason(valueRule.argument);
+    }
+    if (mentionedValues.length === 1 && mentionedValues[0] !== assertedValue) {
         return getValueMismatchReason(valueRule.argument);
     }
     return null;

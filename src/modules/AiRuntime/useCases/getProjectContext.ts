@@ -105,6 +105,7 @@ export function getProjectContext(): ProjectContext {
             armed: time.armed,
             gain: time.gain,
             pan: time.pan,
+            automationMode: time.automationMode,
             outputId: time.outputId,
             clipCount: time.clips.length,
             deviceCount: time.devices.length,

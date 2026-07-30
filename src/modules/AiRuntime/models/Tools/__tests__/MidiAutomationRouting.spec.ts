@@ -46,4 +46,33 @@ describe('automation tool schemas', () => {
             required: ['laneId', 'enabled'],
         });
     });
+
+    it('publishes the complete bounded automation transform surface', () => {
+        expect(
+            automationTools
+                .filter((candidate) =>
+                    [
+                        'setAutomationMode',
+                        'scaleAutomation',
+                        'stretchAutomation',
+                        'invertAutomation',
+                        'reverseAutomation',
+                        'thinAutomation',
+                        'quantizeAutomation',
+                    ].includes(candidate.function.name)
+                )
+                .map((candidate) => ({
+                    name: candidate.function.name,
+                    required: candidate.function.parameters.required,
+                }))
+        ).toEqual([
+            { name: 'setAutomationMode', required: ['trackId', 'mode'] },
+            { name: 'scaleAutomation', required: ['laneId', 'factor'] },
+            { name: 'stretchAutomation', required: ['laneId', 'factor'] },
+            { name: 'invertAutomation', required: ['laneId'] },
+            { name: 'reverseAutomation', required: ['laneId'] },
+            { name: 'thinAutomation', required: ['laneId'] },
+            { name: 'quantizeAutomation', required: ['laneId', 'gridSize'] },
+        ]);
+    });
 });

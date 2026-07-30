@@ -38,13 +38,14 @@ export type ExecutableAppActionValueRule =
           argument: string;
           kind: 'number-if-present';
           requiredInPrompt?: boolean;
+          mayOmitWhenUnmentioned?: boolean;
           connector?: 'from' | 'to' | 'beat';
           scale?: 'unit-interval' | 'percentage-only' | 'automation-lane-range';
           direction?: 'pan';
           qualitativeDirection?: 'track-gain' | 'track-pan' | 'device-parameter';
       }
     | { argument: string; kind: 'string-literal' }
-    | { argument: string; kind: 'enum-if-present'; values: readonly string[] }
+    | { argument: string; kind: 'enum-if-present'; values: readonly string[]; requiredInPrompt?: boolean }
     | { argument: string; kind: 'text-after-keyword-if-present'; keywords: readonly string[] }
     | { argument: string; denominatorArgument: string; kind: 'time-signature' };
 
@@ -728,6 +729,119 @@ export const executableAppActionDescriptors = [
                 enabled: { type: 'boolean', description: 'true=enable, false=disable' },
             },
             required: ['laneId', 'enabled'],
+        },
+    },
+    {
+        actionType: 'setAutomationMode',
+        risk: 'authority-sensitive',
+        description: "Set an existing track's automation mode.",
+        intentPhrases: [
+            'set automation mode',
+            'automation mode',
+            'set to read',
+            'set to write',
+            'set to touch',
+            'set to latch',
+            'set to off',
+            'turn automation mode off',
+        ],
+        targetRules: trackTargetRules,
+        valueRules: [
+            {
+                argument: 'mode',
+                kind: 'enum-if-present',
+                values: ['read', 'write', 'touch', 'latch', 'off'],
+                requiredInPrompt: true,
+            },
+        ],
+        parameters: {
+            properties: {
+                trackId: { type: 'string', description: 'Existing track ID' },
+                mode: { type: 'string', enum: ['read', 'write', 'touch', 'latch', 'off'] },
+            },
+            required: ['trackId', 'mode'],
+        },
+    },
+    {
+        actionType: 'scaleAutomation',
+        risk: 'broad-reversible',
+        description: 'Scale values on one existing track automation lane.',
+        intentPhrases: ['scale automation', 'multiply automation values', 'amplify automation'],
+        targetRules: [{ argument: 'laneId', capability: 'automation-lane' }],
+        valueRules: [{ argument: 'factor', kind: 'number-if-present', requiredInPrompt: true }],
+        parameters: {
+            properties: {
+                laneId: { type: 'string', description: 'Existing track automation lane ID' },
+                factor: { type: 'number', description: 'Greater than 0 and at most 16' },
+            },
+            required: ['laneId', 'factor'],
+        },
+    },
+    {
+        actionType: 'stretchAutomation',
+        risk: 'broad-reversible',
+        description: 'Stretch timing on one existing track automation lane.',
+        intentPhrases: ['stretch automation', 'compress automation timing', 'expand automation timing'],
+        targetRules: [{ argument: 'laneId', capability: 'automation-lane' }],
+        valueRules: [{ argument: 'factor', kind: 'number-if-present', requiredInPrompt: true }],
+        parameters: {
+            properties: {
+                laneId: { type: 'string', description: 'Existing track automation lane ID' },
+                factor: { type: 'number', description: 'Greater than 0 and at most 16' },
+            },
+            required: ['laneId', 'factor'],
+        },
+    },
+    {
+        actionType: 'invertAutomation',
+        risk: 'broad-reversible',
+        description: 'Invert values across one existing track automation lane range.',
+        intentPhrases: ['invert automation', 'flip automation values'],
+        targetRules: [{ argument: 'laneId', capability: 'automation-lane' }],
+        parameters: {
+            properties: { laneId: { type: 'string', description: 'Existing track automation lane ID' } },
+            required: ['laneId'],
+        },
+    },
+    {
+        actionType: 'reverseAutomation',
+        risk: 'broad-reversible',
+        description: 'Reverse the timing of one existing track automation lane.',
+        intentPhrases: ['reverse automation', 'reverse automation timing'],
+        targetRules: [{ argument: 'laneId', capability: 'automation-lane' }],
+        parameters: {
+            properties: { laneId: { type: 'string', description: 'Existing track automation lane ID' } },
+            required: ['laneId'],
+        },
+    },
+    {
+        actionType: 'thinAutomation',
+        risk: 'destructive-reversible',
+        description: 'Reduce redundant points on one existing track automation lane.',
+        intentPhrases: ['thin automation', 'simplify automation', 'reduce automation points'],
+        targetRules: [{ argument: 'laneId', capability: 'automation-lane' }],
+        valueRules: [{ argument: 'tolerance', kind: 'number-if-present', mayOmitWhenUnmentioned: true }],
+        parameters: {
+            properties: {
+                laneId: { type: 'string', description: 'Existing track automation lane ID' },
+                tolerance: { type: 'number', description: 'Optional positive tolerance within the lane value span' },
+            },
+            required: ['laneId'],
+        },
+    },
+    {
+        actionType: 'quantizeAutomation',
+        risk: 'destructive-reversible',
+        description: 'Snap point timing on one existing track automation lane to a beat grid.',
+        intentPhrases: ['quantize automation', 'snap automation', 'quantize automation timing'],
+        targetRules: [{ argument: 'laneId', capability: 'automation-lane' }],
+        valueRules: [{ argument: 'gridSize', kind: 'number-if-present', requiredInPrompt: true }],
+        parameters: {
+            properties: {
+                laneId: { type: 'string', description: 'Existing track automation lane ID' },
+                gridSize: { type: 'number', description: 'Beat grid greater than 0 and at most 64' },
+            },
+            required: ['laneId', 'gridSize'],
         },
     },
 ] as const satisfies readonly ExecutableAppActionDescriptor[];

@@ -112,6 +112,7 @@ describe('getProjectContext', () => {
                     armed: false,
                     gain: 0.8,
                     pan: -10,
+                    automationMode: 'touch',
                     outputId: 'master',
                     clips: [
                         { id: 'c1', name: 'Vox 1', type: 'audio', startBeat: 0, endBeat: 4, gain: 1.2, locked: false },
@@ -210,6 +211,7 @@ describe('getProjectContext', () => {
             armed: false,
             gain: 0.8,
             pan: -10,
+            automationMode: 'touch',
             outputId: 'master',
             clipCount: 1,
             deviceCount: 1,

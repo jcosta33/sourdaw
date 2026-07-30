@@ -21,6 +21,7 @@ const context: ProjectContext = {
             armed: false,
             gain: 0.8,
             pan: 0,
+            automationMode: 'read',
             outputId: 'master',
             clipCount: 0,
             deviceCount: 0,
