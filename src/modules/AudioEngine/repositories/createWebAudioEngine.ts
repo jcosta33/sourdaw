@@ -809,12 +809,18 @@ class AudioEngineImpl implements AudioEngine {
         return this.busNodes.get(busId)?.getPeakLevel() ?? 0;
     }
 
-    public addDeviceToStrip(trackId: string, deviceId: string, deviceType: string, externalInstanceId?: string): void {
+    public addDeviceToStrip(
+        trackId: string,
+        deviceId: string,
+        deviceType: string,
+        externalInstanceId?: string,
+        precedingDeviceIds?: readonly string[]
+    ): void {
         if (this.fallbackMode) {
             return;
         }
         this.ensureTrackStrip(trackId);
-        this.trackNodes.get(trackId)?.addDevice(deviceId, deviceType, externalInstanceId);
+        this.trackNodes.get(trackId)?.addDevice(deviceId, deviceType, externalInstanceId, precedingDeviceIds);
     }
 
     public removeDeviceFromStrip(trackId: string, deviceId: string): void {

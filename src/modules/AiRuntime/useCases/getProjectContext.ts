@@ -1,5 +1,5 @@
 import { clipSelectionStore, trackStore } from '#/modules/Arrangement/stores';
-import { getPluginById } from '#/modules/Arrangement/useCases';
+import { getPlatformPlugins, getPluginById } from '#/modules/Arrangement/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { transportStore } from '#/modules/Transport/stores';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
@@ -8,6 +8,7 @@ import { type ProjectContext } from '../models/ProjectContext';
 
 export type {
     ProjectContext,
+    ProjectContextAvailableDeviceType,
     ProjectContextClip,
     ProjectContextDevice,
     ProjectContextDeviceParameter,
@@ -69,6 +70,9 @@ export function getProjectContext(): ProjectContext {
         loopEnd: transportState?.loopEnd ?? 0,
         metronomeEnabled: transportState?.metronomeEnabled ?? false,
         metronomeVolume: transportState?.metronomeVolume ?? 0.5,
+        availableDeviceTypes: getPlatformPlugins()
+            .filter((plugin) => plugin.id !== 'crust')
+            .map((plugin) => ({ id: plugin.id, name: plugin.name })),
         tracks: (trackState?.tracks ?? []).map((time) => ({
             id: time.id,
             name: time.name,

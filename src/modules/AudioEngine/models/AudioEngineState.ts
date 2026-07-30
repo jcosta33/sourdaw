@@ -356,7 +356,13 @@ export type AudioEngine = {
     getTrackPeakLevel(trackId: string): number;
     getMasterPeakLevel(): number;
     getBusPeakLevel(busId: string): number;
-    addDeviceToStrip(trackId: string, deviceId: string, deviceType: string, externalInstanceId?: string): void;
+    addDeviceToStrip(
+        trackId: string,
+        deviceId: string,
+        deviceType: string,
+        externalInstanceId?: string,
+        precedingDeviceIds?: readonly string[]
+    ): void;
     removeDeviceFromStrip(trackId: string, deviceId: string): void;
     updateDeviceParam(trackId: string, deviceId: string, paramId: string, value: number): void;
     updateDevicePatch(trackId: string, deviceId: string, patch: Record<string, unknown>): void;

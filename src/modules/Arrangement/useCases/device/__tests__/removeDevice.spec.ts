@@ -8,6 +8,7 @@ import type { unloadPlugin } from '#/modules/PluginHost/useCases';
 import type { Device, Track } from '../../../models/Track';
 import type { getTrackState } from '../../../repositories/track/getTrackState';
 import type { mapAllTracks } from '../../../repositories/track/mapAllTracks';
+import type { projectTrackToLiveStrip } from '../../projectTrackToLiveStrip';
 
 const mocks = vi.hoisted(() => ({
     logger: { warn: vi.fn() },
@@ -17,6 +18,7 @@ const mocks = vi.hoisted(() => ({
     removeTrackStrip: vi.fn(),
     clearReportedLatency: vi.fn<(deviceId: string) => void>(),
     unloadPlugin: vi.fn<typeof unloadPlugin>(),
+    projectTrackToLiveStrip: vi.fn<typeof projectTrackToLiveStrip>(),
 }));
 
 /** Device ids whose reported latency this removal dropped. */
@@ -36,16 +38,18 @@ vi.mock('../../../repositories/track/mapAllTracks', () => ({
     mapAllTracks: mocks.mapAllTracks,
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
+vi.mock('#/modules/AudioEngine/useCases', () => ({
     removeDeviceFromStrip: mocks.removeDeviceFromStrip,
     removeTrackStrip: mocks.removeTrackStrip,
     clearReportedLatency: mocks.clearReportedLatency,
 }));
 
-vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/PluginHost/useCases')>()),
+vi.mock('#/modules/PluginHost/useCases', () => ({
     unloadPlugin: mocks.unloadPlugin,
+}));
+
+vi.mock('../../projectTrackToLiveStrip', () => ({
+    projectTrackToLiveStrip: mocks.projectTrackToLiveStrip,
 }));
 
 function createExternalDevice(id = 'external-1', instanceId = 'instance-1'): Device {
@@ -101,6 +105,49 @@ describe('removeDevice', () => {
         removeDevice('d1');
 
         expect(mocks.unloadPlugin).toHaveBeenCalledWith('inst1');
+    });
+
+    it('defers external unload until the owning transaction commits', async () => {
+        mocks.getTrackState.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    kind: 'audio',
+                    devices: [createExternalDevice('d1', 'inst1')],
+                } as unknown as Track,
+            ],
+            selectedTrackId: null,
+        });
+
+        const result = removeDevice('d1', { deferExternalUnload: true });
+        if (typeof result === 'string') {
+            throw new TypeError('Expected deferred unload result');
+        }
+
+        expect(mocks.unloadPlugin).not.toHaveBeenCalled();
+        await result.afterCommit();
+        expect(mocks.unloadPlugin).toHaveBeenCalledWith('inst1');
+    });
+
+    it('reprojects a restored external device after an ambiguous rollback without unloading it', async () => {
+        const track = {
+            id: 't1',
+            kind: 'audio',
+            devices: [createExternalDevice('d1', 'inst1')],
+        } as unknown as Track;
+        mocks.getTrackState.mockReturnValue({ tracks: [track], selectedTrackId: null });
+
+        const result = removeDevice('d1', { deferExternalUnload: true });
+        if (typeof result === 'string') {
+            throw new TypeError('Expected deferred unload result');
+        }
+        await result.afterAmbiguousCommit();
+
+        expect(mocks.unloadPlugin).not.toHaveBeenCalled();
+        expect(mocks.projectTrackToLiveStrip).toHaveBeenCalledWith({
+            trackId: 't1',
+            activateDormantExternalPlugins: true,
+        });
     });
 
     it('removes the strip after removing the last Toaster from a folder', () => {

@@ -422,8 +422,8 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
     });
 
     it('routes device lifecycle and parameter calls through the owning strip', () => {
-        engine.addDeviceToStrip('t1', 'dev-1', 'levain', 'inst-9');
-        expect(trackMocks('t1').addDevice).toHaveBeenCalledWith('dev-1', 'levain', 'inst-9');
+        engine.addDeviceToStrip('t1', 'dev-1', 'levain', 'inst-9', ['earlier']);
+        expect(trackMocks('t1').addDevice).toHaveBeenCalledWith('dev-1', 'levain', 'inst-9', ['earlier']);
 
         engine.updateDeviceParam('t1', 'dev-1', 'cutoff', 0.3);
         expect(trackMocks('t1').updateParam).toHaveBeenCalledWith('dev-1', 'cutoff', 0.3);

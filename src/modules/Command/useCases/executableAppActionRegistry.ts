@@ -11,6 +11,7 @@ export type ExecutableAppActionTargetCapability =
     | 'routable-source'
     | 'bus'
     | 'output'
+    | 'device-host-track'
     | 'device'
     | 'device-parameter'
     | 'clip'
@@ -507,6 +508,33 @@ export const executableAppActionDescriptors = [
         parameters: {
             properties: { volume: { type: 'number', description: '0.0 to 1.0' } },
             required: ['volume'],
+        },
+    },
+
+    {
+        actionType: 'addDevice',
+        risk: 'bounded-reversible',
+        description: 'Insert a platform-available built-in device at the end of a track device chain.',
+        intentPhrases: ['add device', 'insert device', 'add plugin', 'insert plugin', 'add'],
+        targetRules: [{ argument: 'trackId', capability: 'device-host-track' }],
+        valueRules: [{ argument: 'deviceType', kind: 'string-literal' }],
+        parameters: {
+            properties: {
+                trackId: { type: 'string', description: 'Existing track ID that accepts devices' },
+                deviceType: { type: 'string', description: 'Available built-in device ID or unique display name' },
+            },
+            required: ['trackId', 'deviceType'],
+        },
+    },
+    {
+        actionType: 'removeDevice',
+        risk: 'destructive-reversible',
+        description: 'Remove an existing device from its track device chain.',
+        intentPhrases: ['remove device', 'delete device', 'remove plugin', 'delete plugin', 'remove', 'delete'],
+        targetRules: [{ argument: 'deviceId', capability: 'device' }],
+        parameters: {
+            properties: { deviceId: { type: 'string', description: 'Existing device ID' } },
+            required: ['deviceId'],
         },
     },
     {

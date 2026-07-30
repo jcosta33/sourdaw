@@ -255,6 +255,25 @@ const EXPECTED_COMMANDS = [
         false
     ),
     expectedCommand(
+        'addDevice',
+        'Insert a platform-available built-in device at the end of a track device chain.',
+        {
+            trackId: { type: 'string', description: 'Existing track ID that accepts devices' },
+            deviceType: { type: 'string', description: 'Available built-in device ID or unique display name' },
+        },
+        ['trackId', 'deviceType'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
+        'removeDevice',
+        'Remove an existing device from its track device chain.',
+        { deviceId: { type: 'string', description: 'Existing device ID' } },
+        ['deviceId'],
+        'destructive-reversible',
+        true
+    ),
+    expectedCommand(
         'setDeviceParameter',
         'Adjust a parameter on an existing device.',
         {
@@ -567,6 +586,18 @@ const EXPECTED_GROUNDING = [
         valueRules: [
             { argument: 'volume', kind: 'number-if-present', requiredInPrompt: true, scale: 'percentage-only' },
         ],
+    },
+    {
+        actionType: 'addDevice',
+        intentPhrases: ['add device', 'insert device', 'add plugin', 'insert plugin', 'add'],
+        targetRules: [{ argument: 'trackId', capability: 'device-host-track' }],
+        valueRules: [{ argument: 'deviceType', kind: 'string-literal' }],
+    },
+    {
+        actionType: 'removeDevice',
+        intentPhrases: ['remove device', 'delete device', 'remove plugin', 'delete plugin', 'remove', 'delete'],
+        targetRules: [{ argument: 'deviceId', capability: 'device' }],
+        valueRules: [],
     },
     {
         actionType: 'setDeviceParameter',

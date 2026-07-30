@@ -13,6 +13,7 @@ import { handleLoadExternalPlugin } from '../handlers/device/handleLoadExternalP
 import { handleRemoveDevice } from '../handlers/device/handleRemoveDevice';
 import { handleRemoveSend } from '../handlers/device/handleRemoveSend';
 import { handleRemoveSidechainRoute } from '../handlers/device/handleRemoveSidechainRoute';
+import { handleRestoreDevice } from '../handlers/device/handleRestoreDevice';
 import { handleSetDeviceParameter } from '../handlers/device/handleSetDeviceParameter';
 import { handleSetExternalPluginState } from '../handlers/device/handleSetExternalPluginState';
 import { handleSetSend } from '../handlers/device/handleSetSend';
@@ -154,6 +155,7 @@ export function getArrangementHandlers() {
         loadExternalPlugin: handleLoadExternalPlugin,
         bypassDevice: handleBypassDevice,
         removeDevice: handleRemoveDevice,
+        restoreDevice: handleRestoreDevice,
         setDeviceParameter: handleSetDeviceParameter,
         setExternalPluginState: handleSetExternalPluginState,
         setSend: handleSetSend,
