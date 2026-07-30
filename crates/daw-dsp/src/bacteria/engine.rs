@@ -21,6 +21,7 @@ use crate::primitives::oversample::OversamplingChain;
 
 const MAX_BANDS: usize = 6;
 const MAX_MOD_ASSIGNMENTS: usize = 64;
+const MODULATED_PARAM_COUNT: usize = 1 + MAX_BANDS;
 
 /// Ring size for the per-band alignment delay.
 ///
@@ -538,9 +539,9 @@ pub struct BacteriaEngine {
     /// present its reported latency at every mix value, not only fully wet.
     dry_alignment: AlignmentDelay,
 
-    // Computed parameter offsets per-block from modulations.
+    // Computed parameter offsets per sample from modulations.
     // Convention: [0] = global mix; [1..=6] = per-band gain offsets (linear scale, bands 0-5).
-    param_offsets: [f32; 1024],
+    param_offsets: [f32; MODULATED_PARAM_COUNT],
 }
 
 /// Simple step sequencer modulation source.
@@ -626,7 +627,7 @@ impl BacteriaEngine {
             bands_l: [0.0; MAX_BANDS],
             bands_r: [0.0; MAX_BANDS],
             dry_alignment: AlignmentDelay::new(),
-            param_offsets: [0.0; 1024],
+            param_offsets: [0.0; MODULATED_PARAM_COUNT],
         }
     }
 
@@ -1052,6 +1053,17 @@ mod tests {
 
     fn rms(samples: &[f32]) -> f32 {
         (samples.iter().map(|s| s * s).sum::<f32>() / samples.len() as f32).sqrt()
+    }
+
+    #[test]
+    fn modulation_scratch_covers_only_consumed_offsets() {
+        let engine = BacteriaEngine::new(48_000.0);
+
+        assert_eq!(
+            engine.param_offsets.len(),
+            1 + MAX_BANDS,
+            "the audio path consumes only global mix plus one gain offset per band"
+        );
     }
 
     /// bandCount must reach the crossover: with 2 bands engaged, the high band
