@@ -1,0 +1,61 @@
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_ac9b259eab20ba::t_4e6551cf5662b1 128,140,147-170,557-574,625
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_ac9b259eab20ba::t_e2eee8922452ce 239-251,463,533
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_bc88af7d3b054c::t_3b5151157689e0 209-246
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_bc88af7d3b054c::t_90c8797424cdde 23-32
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_ac9b259eab20ba::t_f551e9b0de2443 185-213
+src/modules/AiRuntime/useCases/agentReference/resolveAgentReference.ts
+  s_ac9b259eab20ba::t_a026df9699af8d 4-11,100-102
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_ac9b259eab20ba::t_d2d1c1e8938c6f 275-279
+src/modules/Arrangement/presentations/views/TrackContextMenu.tsx
+  s_ac9b259eab20ba::t_76fb93600e143d 7,126-129
+src/modules/Arrangement/presentations/views/TrackHeader.tsx
+  s_ac9b259eab20ba::t_46154fb8fbfeac 23,266-269
+src/modules/Arrangement/presentations/views/__tests__/TrackContextMenu.spec.tsx
+  s_ac9b259eab20ba::t_b85be2f9fb0e69 5,61-62,452,461-464
+src/modules/Arrangement/presentations/views/__tests__/TrackHeader.spec.tsx
+  s_ac9b259eab20ba::t_927e97c12fbb08 5,31-32,160-170
+src/modules/Arrangement/useCases/recording/__tests__/armTrack.spec.ts
+  s_bc88af7d3b054c::t_efd39fbad1002a 31-50,52,62,71,81,92,99,108,117,126,131
+src/modules/Arrangement/useCases/recording/armTrack.ts
+  s_ac9b259eab20ba::t_566566aa1a591e 9-12,19
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_ac9b259eab20ba::t_eedd0936294c81 63-73,260-272
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_ac9b259eab20ba::t_baa5acedc1b61f 6-13,166-187
+src/modules/MixerConsole/presentations/hooks/__tests__/useChannelStripActions.spec.tsx
+  s_ac9b259eab20ba::t_0918f533dc0012 18,45-48,141,146-149
+src/modules/MixerConsole/presentations/hooks/useChannelStripActions.ts
+  s_ac9b259eab20ba::t_065f9e67f111cf 18,59-64
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/ExpandedChannelStrip.spec.tsx
+  s_ac9b259eab20ba::t_3c56b55ebb0213 20,43-46,132-135
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "e7b62d7f28f5f94320d38a96fd7662905d77a091",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
