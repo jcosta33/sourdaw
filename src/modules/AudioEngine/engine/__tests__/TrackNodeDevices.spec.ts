@@ -622,6 +622,7 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
 
             track.dispose();
 
+            expect(meterNode.port.postMessage).toHaveBeenCalledWith({ type: 'shutdown' });
             expect(meterNode.port.close).toHaveBeenCalledTimes(1);
             expect(meterNode.disconnect).toHaveBeenCalled();
             expect(controller.destroy).toHaveBeenCalledTimes(1);
