@@ -218,13 +218,11 @@ describe('sendChatMessage injectables', () => {
 
         expect(mocks.proposePendingActionConfirmation).not.toHaveBeenCalled();
         expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
-        expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
-            expect.any(String),
-            expect.objectContaining({
-                error: 'The project changed after this proposal was created. Review and submit the command again.',
-                content: expect.stringContaining('project changed while this command was being planned'),
-            })
+        const invalidationMessage = mocks.appendChatMessage.mock.lastCall?.[0];
+        expect(invalidationMessage?.error).toBe(
+            'The project changed after this proposal was created. Review and submit the command again.'
         );
+        expect(invalidationMessage?.content).toContain('project changed while this command was being planned');
     });
 
     it('lets prompt mode use provider fallback when the preferred native engine is not ready', async () => {
@@ -637,8 +635,8 @@ describe('sendChatMessage injectables', () => {
         expect(mocks.pushAiActionGroup).not.toHaveBeenCalled();
     });
 
-    it('should record a committed prompt action as executed and warn against retrying', async () => {
-        const committedFailure = new Error('Action committed but history failed');
+    it('reports a committed prompt action with a distinct follow-up warning', async () => {
+        const committedFailure = new Error('Transport synchronization failed');
         const action = { type: 'removeTrack', payload: { trackId: 'track-1' } } as const;
         mocks.chatStoreValue.value = {
             messages: [],
@@ -665,12 +663,15 @@ describe('sendChatMessage injectables', () => {
                 actions: [{ kind: 'appAction', actionType: 'removeTrack', label: 'Remove track' }],
             })
         );
-        expect(mocks.notifyAiChange).toHaveBeenCalledWith('Executed: delete drums', ['removeTrack']);
+        expect(mocks.notifyAiChange).toHaveBeenCalledWith(
+            'Executed: delete drums. Committed with follow-up warning: Transport synchronization failed',
+            ['removeTrack']
+        );
         const assistant_message = mocks.appendChatMessage.mock.calls[1]?.[0];
         const committedUpdate = mocks.updateChatMessage.mock.lastCall;
         expect(committedUpdate?.[0]).toBe(assistant_message?.id);
         expect(committedUpdate?.[1].isStreaming).toBe(false);
-        expect(committedUpdate?.[1].content).toMatch(/applied.*history.*do not retry/is);
+        expect(committedUpdate?.[1].content).toMatch(/post-commit project follow-up warning.*do not retry/is);
     });
 
     it('does not report execution failure when AI history reporting throws after commit', async () => {
@@ -700,7 +701,7 @@ describe('sendChatMessage injectables', () => {
         expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
             assistantMessage?.id,
             expect.objectContaining({
-                error: 'AI history unavailable',
+                error: 'AI history or notification reporting warning: history: AI history unavailable',
                 content: expect.stringMatching(/project change committed.*do not retry/is),
             })
         );
@@ -778,7 +779,7 @@ describe('sendChatMessage injectables', () => {
         );
     });
 
-    it('reports a full committed batch when post-commit history recording warns', async () => {
+    it('reports a full committed batch with a distinct post-commit warning', async () => {
         const warning = 'batch history failed';
         const firstAction = { type: 'removeTrack', payload: { trackId: 'track-1' } } as const;
         const secondAction = { type: 'removeClip', payload: { clipId: 'clip-1' } } as const;
@@ -815,7 +816,7 @@ describe('sendChatMessage injectables', () => {
         const assistant_message = mocks.appendChatMessage.mock.calls[1]?.[0];
         const combinedFailureUpdate = mocks.updateChatMessage.mock.lastCall;
         expect(combinedFailureUpdate?.[0]).toBe(assistant_message?.id);
-        expect(combinedFailureUpdate?.[1].error).toBe(warning);
-        expect(combinedFailureUpdate?.[1].content).toMatch(/applied.*history.*do not retry/is);
+        expect(combinedFailureUpdate?.[1].error).toBe(`Post-commit project follow-up warning: ${warning}`);
+        expect(combinedFailureUpdate?.[1].content).toMatch(/post-commit project follow-up warning.*do not retry/is);
     });
 });
