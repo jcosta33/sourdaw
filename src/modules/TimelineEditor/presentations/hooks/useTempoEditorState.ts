@@ -1,14 +1,9 @@
 import { type RefObject, useState, useRef, useEffect } from 'react';
 
 import { useStore } from '#/infra/store/useStore';
+import { executeAppAction } from '#/modules/Command/useCases';
 import { tempoMapStore } from '#/modules/Transport/stores';
-import {
-    setTempo,
-    setTimeSignature,
-    addTempoChange,
-    removeTempoChange,
-    updateTempoChange,
-} from '#/modules/Transport/useCases';
+import { setTempo, addTempoChange, removeTempoChange, updateTempoChange } from '#/modules/Transport/useCases';
 
 import { useTransportState } from './useTransportState';
 
@@ -113,7 +108,7 @@ export const useTempoEditorState = (): TempoEditorState => {
     const commitTimeSig = (): void => {
         const num = parseInt(numValue, 10);
         const den = parseInt(denValue, 10);
-        setTimeSignature(num, den);
+        void executeAppAction({ type: 'setTimeSignature', payload: { numerator: num, denominator: den } });
         setEditingTimeSig(false);
     };
 

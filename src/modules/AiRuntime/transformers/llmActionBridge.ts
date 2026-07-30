@@ -132,6 +132,10 @@ function isSafeTrackColor(value: unknown): value is string {
     return typeof value === 'string' && /^#[\dA-Fa-f]{6}$/.test(value);
 }
 
+function isValidTimeSignatureDenominator(value: unknown): value is 2 | 4 | 8 | 16 {
+    return value === 2 || value === 4 || value === 8 || value === 16;
+}
+
 function serializePromptData(value: unknown): string {
     return JSON.stringify(value).replaceAll('&', '\\u0026').replaceAll('<', '\\u003c').replaceAll('>', '\\u003e');
 }
@@ -156,6 +160,24 @@ function bridgeToolCall({
             return rejection(index, call.name, 'Expected only a finite bpm from 20 through 300');
         }
         return { type: 'setTempo', payload: { bpm: args.bpm } };
+    }
+
+    if (call.name === 'setTimeSignature') {
+        if (
+            !hasExactKeys(args, ['numerator', 'denominator']) ||
+            !isFiniteNumber(args.numerator) ||
+            !Number.isInteger(args.numerator) ||
+            args.numerator < 1 ||
+            args.numerator > 32 ||
+            !isValidTimeSignatureDenominator(args.denominator)
+        ) {
+            return rejection(
+                index,
+                call.name,
+                'Expected an integer numerator from 1 through 32 and denominator 2, 4, 8, or 16'
+            );
+        }
+        return { type: 'setTimeSignature', payload: { numerator: args.numerator, denominator: args.denominator } };
     }
 
     if (call.name === 'addTrack') {
@@ -403,7 +425,7 @@ function getMutationKey(action: RuntimeAction): string | null {
     if (action.type === 'addTrack' || action.type === 'duplicateTrack') {
         return null;
     }
-    if (action.type === 'setTempo') {
+    if (action.type === 'setTempo' || action.type === 'setTimeSignature') {
         return action.type;
     }
     if (action.type === 'reorderTrack') {

@@ -30,7 +30,8 @@ export type ExecutableAppActionValueRule =
       }
     | { argument: string; kind: 'string-literal' }
     | { argument: string; kind: 'enum-if-present'; values: readonly string[] }
-    | { argument: string; kind: 'text-after-keyword-if-present'; keywords: readonly string[] };
+    | { argument: string; kind: 'text-after-keyword-if-present'; keywords: readonly string[] }
+    | { argument: string; denominatorArgument: string; kind: 'time-signature' };
 
 type ExecutableAppActionDescriptor = {
     actionType: AppActionType;
@@ -240,6 +241,30 @@ export const executableAppActionDescriptors = [
         targetRules: [],
         valueRules: [{ argument: 'bpm', kind: 'number-if-present' }],
         parameters: { properties: { bpm: { type: 'number' } }, required: ['bpm'] },
+    },
+    {
+        actionType: 'setTimeSignature',
+        risk: 'authority-sensitive',
+        description: 'Set the project time signature.',
+        intentPhrases: [
+            'set time signature',
+            'set the time signature',
+            'change time signature',
+            'change the time signature',
+            'set meter',
+            'set the meter',
+            'change meter',
+            'change the meter',
+        ],
+        targetRules: [],
+        valueRules: [{ argument: 'numerator', denominatorArgument: 'denominator', kind: 'time-signature' }],
+        parameters: {
+            properties: {
+                numerator: { type: 'integer', description: 'Whole-number beat count from 1 through 32' },
+                denominator: { type: 'integer', enum: [2, 4, 8, 16], description: 'Beat unit' },
+            },
+            required: ['numerator', 'denominator'],
+        },
     },
     {
         actionType: 'setDeviceParameter',

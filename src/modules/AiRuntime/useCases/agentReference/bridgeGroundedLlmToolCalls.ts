@@ -23,6 +23,7 @@ type GroundToolCallInput = {
     context: ProjectContext;
     index: number;
     prompt: string;
+    plannedActionNames: readonly string[];
     sameActionCallCount: number;
 };
 
@@ -44,6 +45,7 @@ type ResolveActionPromptScopeInput = {
     catalog: GroundingCatalog;
     context: ProjectContext;
     prompt: string;
+    plannedActionNames: readonly string[];
     sameActionCallCount: number;
 };
 
@@ -80,6 +82,79 @@ function isNegatedIntent(text: string, intentPhrase: string): boolean {
     return /\b(?:do not|don t|dont|never|not)\b/u.test(prefix);
 }
 
+type CancellationCue = {
+    index: number;
+    text: string;
+};
+
+function getCancellationCues(text: string): CancellationCue[] {
+    const patterns = [
+        /\b(?:never mind|on second thought|actually\s*,?\s+no)\b/gu,
+        /\b(?:abort|cancel|disregard|scratch)\s+(?:it\b|(?:that|this)\b(?!\s+\p{L})|(?:the|that|this)\s+(?:\p{L}+\s+){0,2}(?:change|command|request)\b)/gu,
+        /\bleave\s+(?:(?:it|that|this)\s+)?unchanged\b/gu,
+        /\b(?:do not|don['’]t|don t|dont|never|not)\b(?:\s+\p{L}+){0,3}\s+(?:apply|change|do|execute|make)\s+(?:it\b|(?:that|this)\b(?!\s+\p{L})|(?:the|that|this)\s+(?:\p{L}+\s+){0,2}(?:change|command|request)\b)/gu,
+    ];
+    return patterns.flatMap((pattern) =>
+        [...text.matchAll(pattern)].map((match) => ({ index: match.index, text: match[0] }))
+    );
+}
+
+function getReferencedCancellationAction(cue: CancellationCue, catalog: GroundingCatalog): string | null {
+    const matches = catalog
+        .flatMap((entry) =>
+            entry.intentPhrases
+                .filter((phrase) => !isGenericDeviceIntent(phrase) && getIntentPhraseIndex(cue.text, phrase) >= 0)
+                .map((phrase) => ({ actionType: entry.actionType, phrase }))
+        )
+        .sort((left, right) => normalizePromptText(right.phrase).length - normalizePromptText(left.phrase).length);
+    const first = matches[0];
+    const second = matches[1];
+    if (!first) {
+        return null;
+    }
+    if (
+        second &&
+        normalizePromptText(second.phrase).length === normalizePromptText(first.phrase).length &&
+        second.actionType !== first.actionType
+    ) {
+        return null;
+    }
+    return first.actionType;
+}
+
+function getNearestIntentAction(
+    text: string,
+    catalog: GroundingCatalog,
+    beforeIndex: number,
+    plannedActionNames: readonly string[]
+): string | null {
+    const prefix = text.slice(0, beforeIndex);
+    const plannedCatalog = catalog.filter((entry) => plannedActionNames.includes(entry.actionType));
+    let actionType: string | null = null;
+    for (const clause of getPromptClauses(prefix, prefix)) {
+        const intent = resolveClauseActionIntent(clause.text, clause.masked, plannedCatalog);
+        if (intent) {
+            actionType = intent.actionType;
+        }
+    }
+    return actionType;
+}
+
+function hasTrailingIntentCancellation(
+    text: string,
+    actionName: string,
+    catalog: GroundingCatalog,
+    plannedActionNames: readonly string[]
+): boolean {
+    const searchableText = text.toLocaleLowerCase();
+    return getCancellationCues(searchableText).some((cue) => {
+        const referencedAction = getReferencedCancellationAction(cue, catalog);
+        const cancelledAction =
+            referencedAction ?? getNearestIntentAction(searchableText, catalog, cue.index, plannedActionNames);
+        return cancelledAction === actionName;
+    });
+}
+
 const genericDeviceIntentPhrases: ReadonlySet<string> = new Set(['adjust', 'change', 'decrease', 'increase', 'set']);
 
 function isGenericDeviceIntent(phrase: string): boolean {
@@ -102,7 +177,14 @@ function isExplicitCommandClause(maskedText: string, catalog: GroundingCatalog):
     return catalog.some((entry) =>
         entry.intentPhrases.some((phrase) => {
             const normalizedPhrase = normalizePromptText(phrase);
-            return commandText === normalizedPhrase || commandText.startsWith(`${normalizedPhrase} `);
+            if (commandText === normalizedPhrase) {
+                return true;
+            }
+            if (!commandText.startsWith(`${normalizedPhrase} `)) {
+                return false;
+            }
+            const suffix = commandText.slice(normalizedPhrase.length).trim();
+            return !/^(?:is|means|seems|sounds|was|were)\b/u.test(suffix);
         })
     );
 }
@@ -201,10 +283,14 @@ function resolveActionPromptScope({
     catalog,
     context,
     prompt,
+    plannedActionNames,
     sameActionCallCount,
 }: ResolveActionPromptScopeInput): ActionPromptScope | null {
     const groundingRules = getExecutableAppActionGroundingRules(actionName);
-    const maskedPrompt = groundingRules?.targetRules.length === 0 ? prompt : maskProjectReferences(prompt, context);
+    if (!groundingRules || hasTrailingIntentCancellation(prompt, actionName, catalog, plannedActionNames)) {
+        return null;
+    }
+    const maskedPrompt = groundingRules.targetRules.length === 0 ? prompt : maskProjectReferences(prompt, context);
     const matchingScopes: ActionPromptScope[] = [];
     for (const clause of getPromptClauses(prompt, maskedPrompt)) {
         const intent = resolveClauseActionIntent(clause.text, clause.masked, catalog);
@@ -452,6 +538,94 @@ function validateNumberValue(
     return matchesDirection ? null : getValueMismatchReason(valueRule.argument);
 }
 
+function getConnectorBoundTimeSignatures(
+    maskedScope: string,
+    matches: readonly RegExpExecArray[],
+    connectorName: 'from' | 'to'
+): RegExpExecArray[] {
+    const boundMatches: RegExpExecArray[] = [];
+    const connectorPattern = new RegExp(`\\b${connectorName}\\b`, 'giu');
+    for (const connector of maskedScope.matchAll(connectorPattern)) {
+        const connectorEnd = connector.index + connector[0].length;
+        const candidate = matches.find((item) => {
+            if (item.index < connectorEnd) {
+                return false;
+            }
+            return /^[\s:=]*$/u.test(maskedScope.slice(connectorEnd, item.index));
+        });
+        if (candidate && !boundMatches.includes(candidate)) {
+            boundMatches.push(candidate);
+        }
+    }
+    return boundMatches;
+}
+
+function isExplicitTimeSignatureDestination(actionScope: ActionPromptScope, match: RegExpExecArray): boolean {
+    const fromConnector = /\bfrom\b/iu.exec(actionScope.masked);
+    if (fromConnector && fromConnector.index < match.index) {
+        return false;
+    }
+    const normalizedPrefix = normalizePromptText(actionScope.masked.slice(0, match.index));
+    const normalizedIntent = normalizePromptText(actionScope.matchedIntentPhrase);
+    const intentIndex = normalizedPrefix.lastIndexOf(normalizedIntent);
+    if (intentIndex < 0) {
+        return false;
+    }
+    const intentSuffix = normalizedPrefix.slice(intentIndex + normalizedIntent.length).trim();
+    return (
+        intentSuffix.length === 0 ||
+        intentSuffix === 'to' ||
+        intentSuffix === 'as' ||
+        intentSuffix === 'at' ||
+        intentSuffix.endsWith(' to') ||
+        intentSuffix.endsWith(' as')
+    );
+}
+
+function validateTimeSignatureValue(
+    valueRule: Extract<GroundingValueRule, { kind: 'time-signature' }>,
+    assertedValue: unknown,
+    actionScope: ActionPromptScope,
+    groundedArguments: Record<string, unknown>,
+    context: ProjectContext
+): string | null {
+    if (/\b(?:either|or)\b/iu.test(actionScope.masked)) {
+        return `Provider value ${valueRule.argument} is not grounded in the user request`;
+    }
+    const matches = [...actionScope.masked.matchAll(/\b(\d{1,2})\s*\/\s*(\d{1,2})\b/gu)];
+    let match = matches.length === 1 ? matches[0] : null;
+    if (match && !isExplicitTimeSignatureDestination(actionScope, match)) {
+        match = null;
+    }
+    if (matches.length === 2) {
+        const sourceMatches = getConnectorBoundTimeSignatures(actionScope.masked, matches, 'from');
+        const destinationMatches = getConnectorBoundTimeSignatures(actionScope.masked, matches, 'to');
+        const source = sourceMatches[0];
+        const destination = destinationMatches[0];
+        const sourceNumerator = Number.parseInt(source?.[1] ?? '', 10);
+        const sourceDenominator = Number.parseInt(source?.[2] ?? '', 10);
+        if (
+            sourceMatches.length === 1 &&
+            destinationMatches.length === 1 &&
+            source === matches[0] &&
+            destination === matches[1] &&
+            sourceNumerator === context.timeSignature[0] &&
+            sourceDenominator === context.timeSignature[1]
+        ) {
+            match = destination;
+        }
+    }
+    if (!match) {
+        return `Provider value ${valueRule.argument} is not grounded in the user request`;
+    }
+    const numerator = Number.parseInt(match[1] ?? '', 10);
+    const denominator = Number.parseInt(match[2] ?? '', 10);
+    if (assertedValue !== numerator || groundedArguments[valueRule.denominatorArgument] !== denominator) {
+        return getValueMismatchReason(valueRule.argument);
+    }
+    return null;
+}
+
 function validateStringLiteralValue(
     valueRule: Extract<GroundingValueRule, { kind: 'string-literal' }>,
     assertedValue: unknown,
@@ -521,6 +695,8 @@ function validateGroundedValue(
             return validateBooleanIntentValue(valueRule, assertedValue, actionScope);
         case 'number-if-present':
             return validateNumberValue(valueRule, assertedValue, actionScope, groundedArguments, context);
+        case 'time-signature':
+            return validateTimeSignatureValue(valueRule, assertedValue, actionScope, groundedArguments, context);
         case 'string-literal':
             return validateStringLiteralValue(valueRule, assertedValue, actionScope);
         case 'enum-if-present':
@@ -557,6 +733,7 @@ function groundToolCall({
     context,
     index,
     prompt,
+    plannedActionNames,
     sameActionCallCount,
 }: GroundToolCallInput): ToolCallResult | LlmActionRejection {
     const groundingRules = getExecutableAppActionGroundingRules(call.name);
@@ -569,6 +746,7 @@ function groundToolCall({
         catalog,
         context,
         prompt,
+        plannedActionNames,
         sameActionCallCount,
     });
     if (!actionScope) {
@@ -636,6 +814,7 @@ export function bridgeGroundedLlmToolCalls({ calls, context, prompt }: BridgeGro
             context,
             index,
             prompt,
+            plannedActionNames: calls.map((candidate) => candidate.name),
             sameActionCallCount,
         });
         if ('reason' in grounded) {
