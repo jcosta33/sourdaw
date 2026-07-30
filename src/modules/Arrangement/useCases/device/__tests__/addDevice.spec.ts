@@ -137,6 +137,48 @@ describe('addDevice', () => {
         expect(mocks.updateDeviceParam).toHaveBeenCalledWith('t1', result?.id, 'wet', 0.5);
     });
 
+    // Resolving by id costs the caller's label unless it survives the call:
+    // without the override the device is named after the plugin that matched, so
+    // a preset labelled `Drum Comp` would land in the device chain, inspector,
+    // automation lane and modulation matrix as `Compressor`.
+    it('labels the device with the caller-supplied name instead of the resolved plugin name', () => {
+        mocks.getPlatformPlugins.mockReturnValue([
+            { id: 'builtin-compressor', name: 'Compressor', parameters: [{ id: 'comp-ratio', value: 4 }] },
+        ]);
+
+        const result = addDevice('t1', 'builtin-compressor', 'Drum Comp');
+
+        expect(result).toMatchObject({
+            name: 'Drum Comp',
+            type: 'builtin-compressor',
+            parameterValues: { 'comp-ratio': 4 },
+        });
+    });
+
+    it('falls back to the resolved plugin name when no label is supplied', () => {
+        mocks.getPlatformPlugins.mockReturnValue([{ id: 'builtin-compressor', name: 'Compressor', parameters: [] }]);
+
+        expect(addDevice('t1', 'builtin-compressor')).toMatchObject({
+            name: 'Compressor',
+            type: 'builtin-compressor',
+        });
+    });
+
+    // Three catalog names are carried by two plugins each — `De-esser`,
+    // `LUFS Meter` and `Stereo Widener` all exist as a builtin and as a Faust
+    // build. The name branch is a `.find()`, so it returns whichever the
+    // registry lists first no matter which one the caller meant; only the id
+    // identifies a plugin. Callers holding both must pass the id.
+    it('resolves an id to exactly that plugin where two catalog entries share a name', () => {
+        mocks.getPlatformPlugins.mockReturnValue([
+            { id: 'builtin-deesser', name: 'De-esser', parameters: [] },
+            { id: 'faust-de-esser', name: 'De-esser', parameters: [] },
+        ]);
+
+        expect(addDevice('t1', 'faust-de-esser')).toMatchObject({ type: 'faust-de-esser' });
+        expect(addDevice('t1', 'De-esser')).toMatchObject({ type: 'builtin-deesser' });
+    });
+
     it('persists a registered non-Toaster on an ordinary folder without allocating an engine strip', () => {
         mocks.getTrackState.mockReturnValue({ tracks: [{ id: 'folder-1', kind: 'folder', devices: [] }] });
         mocks.getPlatformPlugins.mockReturnValue([

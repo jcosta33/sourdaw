@@ -128,7 +128,9 @@ describe('DeviceChainSection', () => {
         fireEvent.click(screen.getByText('+ add'));
         fireEvent.click(screen.getByText('+ Delay Line'));
 
-        expect(mocks.addDevice).toHaveBeenCalledWith('track-7', 'Delay Line');
+        // By id, not by the label on the button: `addDevice` matches on name
+        // *or* id, and three catalog names are carried by two plugins each.
+        expect(mocks.addDevice).toHaveBeenCalledWith('track-7', 'plug-1');
         expect(screen.queryByText('+ Delay Line')).not.toBeInTheDocument();
     });
 });

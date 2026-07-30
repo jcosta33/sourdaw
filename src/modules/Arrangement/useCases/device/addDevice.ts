@@ -14,7 +14,17 @@ function nextDeviceIdStr(): string {
     return `device-${crypto.randomUUID().slice(0, 8)}`;
 }
 
-export function addDevice(trackId: string, deviceType: string): Device | null {
+/**
+ * `deviceType` must be a catalog **id**. The lookup below also accepts a display
+ * name, which is a trap: `De-esser`, `LUFS Meter` and `Stereo Widener` each name
+ * two catalog plugins, and a name that matches nothing at all is stored verbatim
+ * as the device type, producing a device no descriptor matches.
+ *
+ * `displayName` overrides the label this would otherwise take from the resolved
+ * plugin. Presets need it — the type picks the device, the preset picks the
+ * label — and it belongs in this call so the device is written once.
+ */
+export function addDevice(trackId: string, deviceType: string, displayName?: string): Device | null {
     const state = getTrackState();
     if (!state) {
         return null;
@@ -58,7 +68,7 @@ export function addDevice(trackId: string, deviceType: string): Device | null {
 
     const device: Device = {
         id: nextDeviceIdStr(),
-        name: plugin ? plugin.name : deviceType,
+        name: displayName ?? (plugin ? plugin.name : deviceType),
         type: plugin ? plugin.id : deviceType,
         bypassed: false,
         parameterValues,
