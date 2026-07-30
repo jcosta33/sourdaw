@@ -112,10 +112,13 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                 return { status: 'complete', toolCalls: results };
             }
         } catch (error) {
-            if (signal?.aborted) {
-                throw createToolPlanningAbortError();
-            }
             if (isToolPlanningRejectedError(error) || isNativeToolCallingProtocolError(error)) {
+                throw error;
+            }
+            if (signal?.aborted) {
+                if (error instanceof Error && error.name === 'AbortError') {
+                    throw createToolPlanningAbortError();
+                }
                 throw error;
             }
             const msg = error instanceof Error ? error.message : String(error);
@@ -234,6 +237,11 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     llmStatusStore.set({ state: 'idle' });
                     throw error;
                 }
+                const isTerminalModelRejection = isToolPlanningRejectedError(error);
+                const isExplicitAbort = error instanceof Error && error.name === 'AbortError';
+                if (!isTerminalModelRejection && !isExplicitAbort) {
+                    failedBackends.add(backend);
+                }
                 if (signal?.aborted) {
                     const currentPreference = aiBackendPreferenceStore.value ?? 'auto';
                     const previousBackendFailed =
@@ -249,11 +257,10 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     }
                     throw createToolPlanningAbortError();
                 }
-                if (isToolPlanningRejectedError(error)) {
+                if (isTerminalModelRejection) {
                     llmStatusStore.set({ state: 'ready', backend, modelId: getBackendModelId(backend) });
                     return { status: 'rejected', reason: error.message };
                 }
-                failedBackends.add(backend);
                 lastError = error instanceof Error ? error : new Error(String(error));
                 logger.warn(`[AI Engine] Backend "${backend}" failed: ${lastError.message}. Trying next...`);
             }

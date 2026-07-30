@@ -127,11 +127,14 @@ describe('generateOpenAiCompatibleToolCalls', () => {
             label: 'a refused second choice',
             choices: [validToolChoice(), { finish_reason: 'stop', message: { refusal: 'cannot comply' } }],
         },
-        { label: 'a malformed second choice', choices: [validToolChoice(), null] },
+        { label: 'two valid choices', choices: [validToolChoice(), validToolChoice()] },
     ])('rejects $label instead of selecting the first choice', async ({ choices }) => {
         respondWith({ choices });
 
-        await expect(generateToolCalls()).rejects.toThrow('Hosted AI returned an invalid tool-planning response');
+        await expect(generateToolCalls()).rejects.toMatchObject({
+            name: 'HostedToolCallingProtocolError',
+            message: 'Hosted AI returned an invalid response choice count',
+        });
     });
 
     it('rejects the entire declared batch when any tool call is malformed', async () => {
@@ -304,14 +307,7 @@ describe('generateOpenAiCompatibleToolCalls', () => {
         ).rejects.toThrow('Hosted AI refused tool planning');
 
         fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ choices: [] }), { status: 200 }));
-        await expect(
-            generateOpenAiCompatibleToolCalls({
-                runtime,
-                systemPrompt: 'system',
-                userMessage: 'mute drums',
-                toolSchemas: tools,
-            })
-        ).rejects.toThrow('Hosted AI returned an invalid tool-planning response');
+        await expect(generateToolCalls()).rejects.toMatchObject({ name: 'HostedToolCallingProtocolError' });
     });
 
     it.each([

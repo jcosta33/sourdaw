@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { AiRuntimeConfigurationChangedError } from '../../../errors/AiRuntimeConfigurationChangedError';
+import { HostedToolCallingProtocolError } from '../../../errors/HostedToolCallingProtocolError';
 import { NativeToolCallingProtocolError } from '../../../errors/NativeToolCallingProtocolError';
 import { ToolPlanningRejectedError } from '../../../errors/ToolPlanningRejectedError';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
@@ -223,6 +224,36 @@ describe('generateToolPlanningOutcome', () => {
         }
     );
 
+    it('falls back after hosted response cardinality violates the n:1 contract', async () => {
+        mocks.backendChain.value = ['cloud', 'webllm'];
+        mocks.isWebLlmLoaded.mockReturnValue(true);
+        mocks.generateCloudToolCalls.mockRejectedValue(
+            new HostedToolCallingProtocolError('Hosted AI returned an invalid response choice count')
+        );
+        mocks.generateWebLlmToolCalls.mockResolvedValue(completePlan([{ name: 'soloTrack', arguments: {} }]));
+
+        await expect(generateToolCalls('sys', 'solo drums')).resolves.toEqual(
+            completePlan([{ name: 'soloTrack', arguments: {} }])
+        );
+        expect(mocks.llmStatusSet).not.toHaveBeenCalledWith({ state: 'ready', backend: 'cloud', modelId: 'cloud' });
+        expect(mocks.llmStatusSet).toHaveBeenLastCalledWith(
+            expect.objectContaining({ state: 'ready', backend: 'webllm' })
+        );
+    });
+
+    it('marks a lone hosted response cardinality failure as an operational error', async () => {
+        const protocolError = new HostedToolCallingProtocolError('Hosted AI returned an invalid response choice count');
+        mocks.backendChain.value = ['cloud'];
+        mocks.generateCloudToolCalls.mockRejectedValue(protocolError);
+
+        await expect(generateToolCalls('sys', 'mute drums')).rejects.toBe(protocolError);
+        expect(mocks.llmStatusSet).toHaveBeenLastCalledWith({
+            state: 'error',
+            message: 'Hosted AI returned an invalid response choice count',
+        });
+        expect(mocks.llmStatusSet).not.toHaveBeenCalledWith({ state: 'ready', backend: 'cloud', modelId: 'cloud' });
+    });
+
     it('does not bypass a token-limited WebLLM plan through native fallback', async () => {
         mocks.backendChain.value = ['webllm', 'native'];
         mocks.isWebLlmLoaded.mockReturnValue(true);
@@ -297,6 +328,23 @@ describe('generateToolPlanningOutcome', () => {
         controller.abort();
 
         await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+        expect(mocks.llmStatusSet).toHaveBeenLastCalledWith({ state: 'idle' });
+        expect(mocks.generateNativeCompletion).not.toHaveBeenCalled();
+    });
+
+    it('does not restore native readiness after a same-tick protocol failure and abort', async () => {
+        mocks.llmStatusValue.value = { state: 'ready', backend: 'native', modelId: 'native' };
+        mocks.backendChain.value = ['native'];
+        mocks.nativeEngineReady.value = true;
+        const controller = new AbortController();
+        mocks.generateNativeToolCalls.mockImplementation(() => {
+            controller.abort();
+            throw new NativeToolCallingProtocolError('Invalid native_tool_calling response envelope');
+        });
+
+        await expect(generateToolCalls('sys', 'mute drums', undefined, controller.signal)).rejects.toMatchObject({
+            name: 'AbortError',
+        });
         expect(mocks.llmStatusSet).toHaveBeenLastCalledWith({ state: 'idle' });
         expect(mocks.generateNativeCompletion).not.toHaveBeenCalled();
     });

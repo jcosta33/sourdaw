@@ -47,12 +47,12 @@ export async function generateNativeToolCalls(input: GenerateNativeToolCallsInpu
 }
 
 function narrowNativeToolCallingResponse(response: unknown): NativeToolCallResult[] {
-    if (!isRecord(response)) {
+    if (!isRecord(response) || response.protocolVersion !== 1) {
         throw new NativeToolCallingProtocolError('Invalid native_tool_calling response envelope');
     }
     if (response.status === 'rejected') {
         if (
-            !hasExactKeys(response, ['status', 'reason']) ||
+            Object.hasOwn(response, 'toolCalls') ||
             typeof response.reason !== 'string' ||
             response.reason.trim().length === 0
         ) {
@@ -60,11 +60,7 @@ function narrowNativeToolCallingResponse(response: unknown): NativeToolCallResul
         }
         throw new ToolPlanningRejectedError(response.reason);
     }
-    if (
-        response.status !== 'complete' ||
-        !hasExactKeys(response, ['status', 'toolCalls']) ||
-        !Array.isArray(response.toolCalls)
-    ) {
+    if (response.status !== 'complete' || Object.hasOwn(response, 'reason') || !Array.isArray(response.toolCalls)) {
         throw new NativeToolCallingProtocolError('Invalid native_tool_calling response envelope');
     }
     return narrowNativeToolCallResults(response.toolCalls);
@@ -81,9 +77,9 @@ function narrowNativeToolCallResults(response: unknown): NativeToolCallResult[] 
                 `Invalid native_tool_calling response: item ${String(index)} is not an object`
             );
         }
-        if (!hasExactKeys(item, ['name', 'arguments'])) {
+        if (Object.hasOwn(item, 'parameters')) {
             throw new NativeToolCallingProtocolError(
-                `Invalid native_tool_calling response: item ${String(index)} has unexpected fields`
+                `Invalid native_tool_calling response: item ${String(index)} has contradictory fields`
             );
         }
 
@@ -107,9 +103,4 @@ function narrowNativeToolCallResults(response: unknown): NativeToolCallResult[] 
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function hasExactKeys(value: Record<string, unknown>, expectedKeys: readonly string[]): boolean {
-    const actualKeys = Object.keys(value);
-    return actualKeys.length === expectedKeys.length && expectedKeys.every((key) => Object.hasOwn(value, key));
 }

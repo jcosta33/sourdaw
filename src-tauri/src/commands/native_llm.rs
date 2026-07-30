@@ -76,13 +76,19 @@ pub struct ToolCallResult {
 #[serde(tag = "status", rename_all = "camelCase")]
 pub enum NativeToolCallingResponse {
     Complete {
+        #[serde(rename = "protocolVersion")]
+        protocol_version: u8,
         #[serde(rename = "toolCalls")]
         tool_calls: Vec<ToolCallResult>,
     },
     Rejected {
+        #[serde(rename = "protocolVersion")]
+        protocol_version: u8,
         reason: String,
     },
 }
+
+const NATIVE_TOOL_CALLING_PROTOCOL_VERSION: u8 = 1;
 
 // ── Model config ─────────────────────────────────────────────────────────
 
@@ -588,9 +594,7 @@ pub async fn native_tool_calling(
             return Ok(rejected_native_tool_calling(reason));
         }
         if !has_tool_calls {
-            return Ok(NativeToolCallingResponse::Complete {
-                tool_calls: Vec::new(),
-            });
+            return Ok(completed_native_tool_calling(Vec::new()));
         }
         let mut results = Vec::new();
 
@@ -603,9 +607,7 @@ pub async fn native_tool_calling(
             }
         }
 
-        Ok(NativeToolCallingResponse::Complete {
-            tool_calls: results,
-        })
+        Ok(completed_native_tool_calling(results))
     }
     .await;
     clear_generation_cancellation(&state, &request_id).await;
@@ -614,7 +616,15 @@ pub async fn native_tool_calling(
 
 fn rejected_native_tool_calling(reason: impl Into<String>) -> NativeToolCallingResponse {
     NativeToolCallingResponse::Rejected {
+        protocol_version: NATIVE_TOOL_CALLING_PROTOCOL_VERSION,
         reason: reason.into(),
+    }
+}
+
+fn completed_native_tool_calling(tool_calls: Vec<ToolCallResult>) -> NativeToolCallingResponse {
+    NativeToolCallingResponse::Complete {
+        protocol_version: NATIVE_TOOL_CALLING_PROTOCOL_VERSION,
+        tool_calls,
     }
 }
 
@@ -1019,15 +1029,20 @@ mod tests {
     fn should_serialize_native_tool_calling_response_with_camel_case_fields() {
         assert_eq!(
             serde_json::to_value(NativeToolCallingResponse::Complete {
+                protocol_version: NATIVE_TOOL_CALLING_PROTOCOL_VERSION,
                 tool_calls: Vec::new(),
             })
             .expect("complete tool-planning DTO must serialize"),
-            serde_json::json!({"status": "complete", "toolCalls": []})
+            serde_json::json!({"status": "complete", "protocolVersion": 1, "toolCalls": []})
         );
         assert_eq!(
             serde_json::to_value(rejected_native_tool_calling("Native planning rejected"))
                 .expect("rejected tool-planning DTO must serialize"),
-            serde_json::json!({"status": "rejected", "reason": "Native planning rejected"})
+            serde_json::json!({
+                "status": "rejected",
+                "protocolVersion": 1,
+                "reason": "Native planning rejected"
+            })
         );
     }
 
