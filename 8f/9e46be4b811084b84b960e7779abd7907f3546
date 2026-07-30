@@ -1,0 +1,27 @@
+src/utils/UI/__tests__/useContextMenuDismiss.spec.tsx
+  s_ac9b259eab20ba::t_48eef8790b0b06 68-91
+src/modules/TimelineEditor/presentations/components/ResizeHandle.tsx
+  s_ac9b259eab20ba::t_6434fe6180fd57 1,14-15,25,35,44
+  s_ac9b259eab20ba::t_ce45979a6b4e74 12-13,19,23-24,29,32,48-49
+src/utils/UI/useContextMenuDismiss.ts
+  s_ac9b259eab20ba::t_6434fe6180fd57 1,7-8,12,17,26
+src/modules/TimelineEditor/presentations/components/__tests__/ResizeHandle.spec.tsx
+  s_ac9b259eab20ba::t_2e10e7d2a51766 16-17,19-21,24,27,32-33
+  s_ac9b259eab20ba::t_48eef8790b0b06 1-15,18,22-23,25-26,28-31,34-35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "8f9e46be4b811084b84b960e7779abd7907f3546",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
