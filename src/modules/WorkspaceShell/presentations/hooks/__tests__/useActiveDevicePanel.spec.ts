@@ -32,6 +32,14 @@ type TrackStoreValue = { selectedTrackId: string | null } | null;
 
 const trackStoreState = vi.hoisted(() => ({ value: null as TrackStoreValue }));
 const trackStoreSubscribers = vi.hoisted(() => new Set<(value: TrackStoreValue) => void>());
+const telemetryMocks = vi.hoisted(() => ({
+    subscribe: vi.fn(),
+    unsubscribe: vi.fn(),
+}));
+
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    subscribeDeviceTelemetry: telemetryMocks.subscribe.mockImplementation(() => telemetryMocks.unsubscribe),
+}));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: {
@@ -58,11 +66,13 @@ describe('useActiveDevicePanel', () => {
     let bus: ReturnType<typeof createFakeEventBus>;
 
     beforeEach(() => {
+        vi.clearAllMocks();
         Container.clear();
         bus = createFakeEventBus();
         setWorkspaceEventBus(bus);
         trackStoreState.value = null;
         trackStoreSubscribers.clear();
+        telemetryMocks.subscribe.mockImplementation(() => telemetryMocks.unsubscribe);
     });
 
     it('starts with no active panel', () => {
@@ -84,6 +94,7 @@ describe('useActiveDevicePanel', () => {
             deviceId: 'fermenter-device-1',
             trackId: 'track-1',
         });
+        expect(telemetryMocks.subscribe).toHaveBeenCalledWith({ deviceId: 'fermenter-device-1' });
     });
 
     it('closes the panel when the show event carries a null deviceId', () => {
@@ -110,6 +121,7 @@ describe('useActiveDevicePanel', () => {
         });
 
         expect(result.current.activePanel).toEqual({ kind: 'yeast', trackId: 'track-yeast' });
+        expect(telemetryMocks.subscribe).not.toHaveBeenCalled();
     });
 
     it('opens a grinder panel through the generic onShowDevicePanel event', () => {
@@ -201,6 +213,7 @@ describe('useActiveDevicePanel', () => {
         });
 
         expect(result.current.activePanel).toBeNull();
+        expect(telemetryMocks.unsubscribe).toHaveBeenCalledTimes(1);
     });
 
     it('unsubscribes from all events and the track store on unmount', () => {

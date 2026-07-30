@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { trackStore } from '#/modules/Arrangement/stores';
+import { subscribeDeviceTelemetry } from '#/modules/AudioEngine/useCases';
 
 import { onPanelShowBacteria } from '../../useCases/panels/devicePanels/onPanelShowBacteria';
 import { onPanelShowCrumbs } from '../../useCases/panels/devicePanels/onPanelShowCrumbs';
@@ -141,6 +142,13 @@ export function useActiveDevicePanel(): UseActiveDevicePanelResult {
             }
         };
     }, []);
+
+    useEffect(() => {
+        if (activePanel === null || activePanel.kind === 'yeast') {
+            return undefined;
+        }
+        return subscribeDeviceTelemetry({ deviceId: activePanel.deviceId });
+    }, [activePanel]);
 
     const closeActivePanel = (): void => {
         setActivePanel(null);
