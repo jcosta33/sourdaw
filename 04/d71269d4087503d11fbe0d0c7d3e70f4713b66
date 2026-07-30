@@ -1,0 +1,21 @@
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_ac9b259eab20ba::t_d034c914ade184 4,111,115-116,276
+src/modules/AiRuntime/useCases/agentReference/resolveAgentReference.ts
+  s_ac9b259eab20ba::t_a5fcc72ca6cb99 88-91
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "04d71269d4087503d11fbe0d0c7d3e70f4713b66",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
