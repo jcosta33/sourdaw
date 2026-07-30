@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createTrack, getTrackStoreState } from '#/modules/Arrangement/useCases';
+import { prepareCrumbsEngine } from '#/modules/Crumbs/useCases';
 import { prepareOfflineLevain } from '#/modules/Levain/useCases';
 import { NATIVE_DSP_DEVICE_TYPES } from '#/utils/nativeDspDeviceTypes';
 
@@ -18,6 +19,12 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
 // Levain's offline setup fetches sample manifests; this spec never exercises it.
 vi.mock('#/modules/Levain/useCases', () => ({
     prepareOfflineLevain: vi.fn(() => Promise.resolve()),
+}));
+
+// Crumbs' offline setup reads a sample off disk over the native bridge and
+// decodes it; likewise never exercised here.
+vi.mock('#/modules/Crumbs/useCases', () => ({
+    prepareCrumbsEngine: vi.fn(() => Promise.resolve()),
 }));
 
 type ReorderMessage = { type: string; order: number[] };
@@ -119,6 +126,7 @@ describe('prepareOfflineDeviceSetup — hydration table routing', () => {
         vi.mocked(getTrackStoreState).mockReset();
         vi.mocked(getTrackStoreState).mockReturnValue({ tracks: [], selectedTrackId: null });
         vi.mocked(prepareOfflineLevain).mockClear();
+        vi.mocked(prepareCrumbsEngine).mockClear();
     });
 
     it('routes levain to its own hydration, forwarding the abort signal it needs to cancel a fetch', async () => {
@@ -139,11 +147,36 @@ describe('prepareOfflineDeviceSetup — hydration table routing', () => {
         });
     });
 
-    // Nine of the eleven native types are an explicit `null` in the table. That is
+    // Crumbs is the third hydrating entry. A `CrumbsInstance` is built with an
+    // empty sample pool and `note_on` returns before allocating a voice when
+    // there is no active sample, so `null` here would have rendered every
+    // Crumbs track as digital silence with every parameter faithfully replayed.
+    // It takes the signal because it reads a file and decodes it.
+    it('routes crumbs to its own hydration, forwarding the abort signal its decode needs', async () => {
+        const { port } = makePort();
+        const controller = new AbortController();
+
+        await prepareOfflineDeviceSetup({
+            deviceId: 'crumbs-1',
+            deviceType: 'builtin-crumbs',
+            port,
+            signal: controller.signal,
+        });
+
+        expect(prepareCrumbsEngine).toHaveBeenCalledExactlyOnceWith({
+            deviceId: 'crumbs-1',
+            port,
+            signal: controller.signal,
+        });
+    });
+
+    // Nine of the twelve native types are an explicit `null` in the table. That is
     // a recorded decision — their whole state arrives as `parameterValues` — so the
     // observable contract is that they post nothing at all, not that they happen to
     // have no branch.
-    const NON_HYDRATING_TYPES = NATIVE_DSP_DEVICE_TYPES.filter((type) => type !== 'levain' && type !== 'proof');
+    const NON_HYDRATING_TYPES = NATIVE_DSP_DEVICE_TYPES.filter(
+        (type) => type !== 'levain' && type !== 'proof' && type !== 'builtin-crumbs'
+    );
 
     it.each(NON_HYDRATING_TYPES)('posts nothing at the port for %s', async (deviceType) => {
         const { port, postMessage } = makePort();
@@ -152,13 +185,15 @@ describe('prepareOfflineDeviceSetup — hydration table routing', () => {
 
         expect(postMessage).not.toHaveBeenCalled();
         expect(prepareOfflineLevain).not.toHaveBeenCalled();
+        expect(prepareCrumbsEngine).not.toHaveBeenCalled();
     });
 
     it('covers every native device type, so a new one cannot arrive untested', () => {
         // Guards the split above: if a device moves off `null`, this count changes
-        // and whoever moved it has to say so here.
+        // and whoever moved it has to say so here. Crumbs is what moved it from
+        // 9-of-11 to 9-of-12 — it arrived hydrating, not `null`.
         expect(NON_HYDRATING_TYPES).toHaveLength(9);
-        expect(NATIVE_DSP_DEVICE_TYPES).toHaveLength(11);
+        expect(NATIVE_DSP_DEVICE_TYPES).toHaveLength(12);
     });
 
     it('does nothing for a device type no native factory builds', async () => {
@@ -168,5 +203,6 @@ describe('prepareOfflineDeviceSetup — hydration table routing', () => {
 
         expect(postMessage).not.toHaveBeenCalled();
         expect(prepareOfflineLevain).not.toHaveBeenCalled();
+        expect(prepareCrumbsEngine).not.toHaveBeenCalled();
     });
 });

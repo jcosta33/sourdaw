@@ -214,6 +214,26 @@ export type BuiltinDeviceNode = {
         setBypass: (bypassed: boolean) => void;
         destroy: () => void;
     };
+    /**
+     * Controls for the Crumbs sampler/slicer (MIDI + param updates via
+     * MessagePort).
+     *
+     * No `noteExpression`: `CrumbsEngine` has no per-note bend, pressure or
+     * timbre path, so Crumbs is absent from `NOTE_EXPRESSION_DEVICES` and the
+     * editor never offers those lanes for it. `channel` is accepted on
+     * `noteOn`/`noteOff` only because the shared worklet-synth scheduling path
+     * passes it positionally; the engine releases by pitch.
+     */
+    crumbsControls?: {
+        ready: boolean;
+        noteOn: (note: number, velocity: number, sampleFrame?: number, channel?: number) => void;
+        noteOff: (note: number, sampleFrame?: number, channel?: number) => void;
+        allNotesOff: () => void;
+        setParam: (name: string, value: number) => void;
+        setMode: (mode: string) => void;
+        setBypass: (bypassed: boolean) => void;
+        destroy: () => void;
+    };
     /** Controls for the Levain suite (MIDI + CC + param updates via MessagePort) */
     levainControls?: {
         ready: boolean;

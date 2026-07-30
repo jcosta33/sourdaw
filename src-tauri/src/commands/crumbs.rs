@@ -17,7 +17,7 @@ use daw_dsp::crumbs::analysis::peaks::{flatten_level, generate_mipmap, generate_
 use daw_dsp::crumbs::analysis::pitch::detect_pitch;
 use daw_dsp::crumbs::engine::{CrumbsEngine, CrumbsMetering};
 use daw_dsp::crumbs::sample::SampleData;
-use daw_dsp::crumbs::types::{CrumbsCommand, CrumbsMode, CrumbsParam, SampleId};
+use daw_dsp::crumbs::types::{CrumbsCommand, CrumbsParam, SampleId};
 use rtrb::Producer;
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -436,14 +436,9 @@ pub async fn set_crumbs_mode(
     mode: String,
     state: State<'_, CrumbsState>,
 ) -> Result<(), String> {
-    let mode_enum = match mode.as_str() {
-        "quick" => CrumbsMode::Quick,
-        "drum" => CrumbsMode::Drum,
-        "slice" => CrumbsMode::Slice,
-        "warp" => CrumbsMode::Warp,
-        "record" => CrumbsMode::Record,
-        _ => return Err(format!("Unknown crumbs mode: {mode}")),
-    };
+    // Shared with the wasm binding for the same reason as `parse_crumbs_param`.
+    let mode_enum = daw_dsp::crumbs::types::parse_crumbs_mode(&mode)
+        .ok_or_else(|| format!("Unknown crumbs mode: {mode}"))?;
 
     let mut instances = state
         .instances
@@ -734,30 +729,12 @@ pub async fn stop_recording(
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
+/// The name table lives in `daw_dsp::crumbs::types` so this command and the
+/// wasm `CrumbsInstance` binding cannot disagree about what `filterCutoff`
+/// means; only the error shape is local to the IPC boundary.
 fn parse_crumbs_param(name: &str) -> Result<CrumbsParam, String> {
-    match name {
-        "masterGain" => Ok(CrumbsParam::MasterGain),
-        "attack" => Ok(CrumbsParam::Attack),
-        "hold" => Ok(CrumbsParam::Hold),
-        "decay" => Ok(CrumbsParam::Decay),
-        "sustain" => Ok(CrumbsParam::Sustain),
-        "release" => Ok(CrumbsParam::Release),
-        "filterCutoff" => Ok(CrumbsParam::FilterCutoff),
-        "filterResonance" => Ok(CrumbsParam::FilterResonance),
-        "filterType" => Ok(CrumbsParam::FilterType),
-        "loopMode" => Ok(CrumbsParam::LoopMode),
-        "loopStart" => Ok(CrumbsParam::LoopStart),
-        "loopEnd" => Ok(CrumbsParam::LoopEnd),
-        "loopCrossfade" => Ok(CrumbsParam::LoopCrossfade),
-        "playbackMode" => Ok(CrumbsParam::PlaybackMode),
-        "rootNote" => Ok(CrumbsParam::RootNote),
-        "tune" => Ok(CrumbsParam::Tune),
-        "pan" => Ok(CrumbsParam::Pan),
-        "stackCount" => Ok(CrumbsParam::StackCount),
-        "detuneSpread" => Ok(CrumbsParam::DetuneSpread),
-        "stackSpread" => Ok(CrumbsParam::StackSpread),
-        _ => Err(format!("Unknown crumbs parameter: {name}")),
-    }
+    daw_dsp::crumbs::types::parse_crumbs_param(name)
+        .ok_or_else(|| format!("Unknown crumbs parameter: {name}"))
 }
 
 fn classify_sample(

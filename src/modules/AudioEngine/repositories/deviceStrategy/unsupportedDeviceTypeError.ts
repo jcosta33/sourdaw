@@ -5,11 +5,14 @@
  *
  * This exists because "no factory matched the type" is not the only shape a
  * coverage hole takes, and matching on message text is not a contract. The
- * `builtin-` prefix matcher claims every `builtin-*` id, so `builtin-crumbs`
- * reached `createWebAudioDevice`, which then threw a plain `Error` reading
- * "Unknown WebAudio device type". Splitting on "did a factory match?" would
- * therefore have filed Crumbs — a device with no WebAudio node anywhere — as a
- * runtime failure to degrade past, which is exactly the wrong bucket.
+ * `builtin-` arm claims `builtin-*` ids, so `builtin-crumbs` reached
+ * `createWebAudioDevice`, which then threw a plain `Error` reading "Unknown
+ * WebAudio device type". Splitting on "did a factory match?" would therefore
+ * have filed Crumbs — a device with no WebAudio node anywhere — as a runtime
+ * failure to degrade past, which is exactly the wrong bucket. (Crumbs itself is
+ * no longer in that state: it has a native DSP factory, and the `builtin-` arm
+ * now excludes native ids. The distinction this class draws still holds for the
+ * next device to land in the same shape.)
  *
  * Both "no matcher claimed this type" and "a matcher claimed it but no node
  * exists for it" are the same defect from the user's side: the export cannot

@@ -203,6 +203,49 @@ fn bacteria_process_does_not_allocate_with_codec_and_distortion_engaged() {
 }
 
 #[test]
+fn crumbs_process_does_not_allocate_with_a_sample_playing() {
+    use daw_dsp::crumbs::CrumbsInstance;
+
+    let mut instance = CrumbsInstance::new(SAMPLE_RATE);
+
+    // An empty pool makes `note_on` return before allocating a voice, so the
+    // guard has to run against a loaded, selected sample or it covers nothing.
+    let frame_count = 4_800_usize;
+    let pcm: Vec<f32> = (0..frame_count)
+        .map(|i| (i as f32 / SAMPLE_RATE * 220.0 * std::f32::consts::TAU).sin() * 0.8)
+        .collect();
+    let sample_id = instance.add_sample(pcm, 1, SAMPLE_RATE as u32);
+    instance.set_active_sample(sample_id);
+    // Forward looping so the voice is still sounding at the end of the guarded
+    // region rather than having run off the end of a 100 ms sample.
+    instance.set_param("loopMode", 1.0);
+    // Engage the filter as well: it is bypassed at the shipped 20 kHz default,
+    // so leaving it there would exclude the SVF from the guarded path.
+    instance.set_param("filterCutoff", 2_000.0);
+    instance.set_param("filterResonance", 0.4);
+
+    instance.note_on(60, 100);
+    instance.note_on(67, 90);
+
+    let warmup = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
+    assert_all_finite(&warmup, "crumbs");
+
+    assert_no_alloc(|| {
+        for _ in 0..GUARDED_BLOCKS {
+            instance.process(BLOCK as u32);
+        }
+    });
+
+    let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
+    assert_all_finite(&out, "crumbs");
+    assert!(
+        peak(&out) > 1e-6,
+        "crumbs produced silence with two notes held, so the guarded region \
+         did not exercise the sampler voice path"
+    );
+}
+
+#[test]
 fn fermenter_process_does_not_allocate_with_voices_sounding() {
     use daw_dsp::fermenter::FermenterInstance;
 

@@ -1,6 +1,7 @@
 import { type NativeDspDeviceType } from '#/utils/nativeDspDeviceTypes';
 
 import { isBacteriaDevice, createBacteriaNode } from '../../engine/BacteriaNode';
+import { isCrumbsDevice, createCrumbsNode } from '../../engine/CrumbsNode';
 import { isFermenterDevice, createFermenterNode } from '../../engine/FermenterNode';
 import { isGlutenDevice, createGlutenNode } from '../../engine/GlutenNode';
 import { isGrandBouleDevice, createGrandBouleNode } from '../../engine/GrandBouleNode';
@@ -113,7 +114,7 @@ type NativeDspDeviceFactory = {
  * each one sits beside the device whose signature it encodes. The compiler will
  * not catch an entry bound to the wrong adapter — the two adapter parameter
  * types are mutually assignable — so `nativeDspNoteBinding.spec.ts` asserts the
- * slots each of these four bindings actually produces.
+ * slots each of these five bindings actually produces.
  */
 export const NATIVE_DSP_DEVICE_FACTORIES: readonly NativeDspDeviceFactory[] = [
     {
@@ -123,6 +124,15 @@ export const NATIVE_DSP_DEVICE_FACTORIES: readonly NativeDspDeviceFactory[] = [
     },
     { type: 'toaster', matches: isToasterDevice, create: async (ctx) => bindPadNotes(await createToasterNode(ctx)) },
     { type: 'levain', matches: isLevainDevice, create: async (ctx) => bindMelodicNotes(await createLevainNode(ctx)) },
+    // Crumbs' catalog id carries the `builtin-` prefix, so `createDeviceRegistry`
+    // has to let this table claim it ahead of the `builtin-` WebAudio arm — see
+    // the exclusion there. Every other native id is unprefixed. Melodic, not pad:
+    // Crumbs is addressed by pitch against the active sample's root note.
+    {
+        type: 'builtin-crumbs',
+        matches: isCrumbsDevice,
+        create: async (ctx) => bindMelodicNotes(await createCrumbsNode(ctx)),
+    },
     {
         type: 'grand-boule',
         matches: isGrandBouleDevice,

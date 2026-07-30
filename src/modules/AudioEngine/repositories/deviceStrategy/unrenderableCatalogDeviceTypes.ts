@@ -57,9 +57,6 @@
  * different class and stay degradable everywhere.
  */
 export const UNRENDERABLE_CATALOG_DEVICE_TYPES: Readonly<Record<string, string>> = {
-    'builtin-crumbs':
-        'Crumbs runs in the Rust backend behind the live `crumbs_*` Tauri commands. There is no WebAudio node and ' +
-        'no offline bridge to the native engine, so no render path exists on either platform.',
     crust:
         'Crust is catalog-only: `addDevice` refuses to place it ("Crust is not fully implemented"), so it can ' +
         'never reach a track or a device chain.',
