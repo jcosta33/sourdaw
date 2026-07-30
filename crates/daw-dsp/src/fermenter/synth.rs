@@ -12,10 +12,68 @@ use crate::primitives::{ProcessLifecycle, TailLength};
 /// MIDI event passed from JS to WASM.
 #[derive(Clone, Copy)]
 pub struct MidiEvent {
-    pub kind: u8, // 0=noteOff, 1=noteOn
+    pub kind: u8, // 0=noteOff, 1=noteOn, 2=noteExpression
     pub note: u8,
     pub velocity: u8,
+    pub channel: u8,
     pub offset: u32, // Sample offset within the block
+    pub bend_semitones: f32,
+    pub pressure: f32,
+    pub slide: f32,
+}
+
+impl MidiEvent {
+    pub const EMPTY: Self = Self {
+        kind: u8::MAX,
+        note: 0,
+        velocity: 0,
+        channel: 0,
+        offset: 0,
+        bend_semitones: 0.0,
+        pressure: 0.0,
+        slide: 0.0,
+    };
+
+    pub const fn note_on(note: u8, velocity: u8, channel: u8, offset: u32) -> Self {
+        Self {
+            kind: 1,
+            note,
+            velocity,
+            channel,
+            offset,
+            ..Self::EMPTY
+        }
+    }
+
+    pub const fn note_off(note: u8, channel: u8, offset: u32) -> Self {
+        Self {
+            kind: 0,
+            note,
+            channel,
+            offset,
+            ..Self::EMPTY
+        }
+    }
+
+    pub const fn note_expression(
+        note: u8,
+        channel: u8,
+        offset: u32,
+        bend_semitones: f32,
+        pressure: f32,
+        slide: f32,
+    ) -> Self {
+        Self {
+            kind: 2,
+            note,
+            channel,
+            offset,
+            bend_semitones,
+            pressure,
+            slide,
+            ..Self::EMPTY
+        }
+    }
 }
 
 const MAX_LAYERS: usize = 4;
@@ -400,7 +458,10 @@ impl MasterSynth {
         }
 
         if cursor < block_size {
-            self.render_layers(&mut left[cursor..block_size], &mut right[cursor..block_size]);
+            self.render_layers(
+                &mut left[cursor..block_size],
+                &mut right[cursor..block_size],
+            );
         }
 
         // ── Global effects ──────────────────────────────────────────
@@ -559,8 +620,11 @@ impl MasterSynth {
         self.reverb_mix.tick();
         self.reverb_decay.tick();
         if comp_mix > 0.001 {
-            self.compressor
-                .advance_silence(RENDER_QUANTUM_FRAMES as usize, self.comp_release, self.sample_rate);
+            self.compressor.advance_silence(
+                RENDER_QUANTUM_FRAMES as usize,
+                self.comp_release,
+                self.sample_rate,
+            );
         }
         if chorus_mix > 0.001 {
             self.chorus
@@ -603,19 +667,25 @@ impl MasterSynth {
     }
 
     fn block_is_quiet(left: &[f32], right: &[f32]) -> bool {
-        left
-            .iter()
+        left.iter()
             .chain(right)
             .all(|sample| sample.is_finite() && sample.abs() <= OUTPUT_QUIET_THRESHOLD)
     }
 
-    fn update_lifecycle_after_block(&mut self, output_quiet: bool, frames: usize, had_active_voices: bool) {
-        if had_active_voices || self.renderable_active_voice_count() > 0 || self.wake_requested || !output_quiet {
+    fn update_lifecycle_after_block(
+        &mut self,
+        output_quiet: bool,
+        frames: usize,
+        had_active_voices: bool,
+    ) {
+        if had_active_voices
+            || self.renderable_active_voice_count() > 0
+            || self.wake_requested
+            || !output_quiet
+        {
             self.tail_samples_remaining = self.configured_tail_gap_samples();
         } else {
-            self.tail_samples_remaining = self
-                .tail_samples_remaining
-                .saturating_sub(frames as u64);
+            self.tail_samples_remaining = self.tail_samples_remaining.saturating_sub(frames as u64);
         }
         self.last_output_quiet = output_quiet;
         self.wake_requested = false;
@@ -623,8 +693,18 @@ impl MasterSynth {
 
     fn apply_midi_event(&mut self, event: &MidiEvent) {
         match event.kind {
-            1 => self.note_on(event.note, event.velocity),
-            0 => self.note_off(event.note),
+            1 => self.note_on_with_channel(event.note, event.velocity, event.channel),
+            0 => {
+                let channel = (event.channel != u8::MAX).then_some(event.channel);
+                self.note_off_matching(event.note, channel);
+            }
+            2 => self.note_expression(
+                event.note,
+                event.channel,
+                event.bend_semitones,
+                event.pressure,
+                event.slide,
+            ),
             _ => {}
         }
     }
@@ -711,7 +791,9 @@ impl MasterSynth {
     }
 
     fn renderable_active_voice_count(&self) -> usize {
-        let any_solo = self.layers[..self.num_active_layers].iter().any(|layer| layer.solo);
+        let any_solo = self.layers[..self.num_active_layers]
+            .iter()
+            .any(|layer| layer.solo);
         self.layers[..self.num_active_layers]
             .iter()
             .filter(|layer| !layer.muted && (!any_solo || layer.solo))
@@ -789,12 +871,7 @@ mod tests {
         let mut synth = MasterSynth::new(48_000.0, 8);
         let mut left = [0.0; 256];
         let mut right = [0.0; 256];
-        let events = [MidiEvent {
-            kind: 1,
-            note: 60,
-            velocity: 100,
-            offset: 0,
-        }];
+        let events = [MidiEvent::note_on(60, 100, 0, 0)];
 
         synth.set_param("engine", engine as f32);
         synth.process_block(&mut left, &mut right, &events);
@@ -802,16 +879,14 @@ mod tests {
         (left, right)
     }
 
-    fn render_note_for_engine_with_params(engine: u8, params: &[(&str, f32)]) -> ([f32; 512], [f32; 512]) {
+    fn render_note_for_engine_with_params(
+        engine: u8,
+        params: &[(&str, f32)],
+    ) -> ([f32; 512], [f32; 512]) {
         let mut synth = MasterSynth::new(48_000.0, 8);
         let mut left = [0.0; 512];
         let mut right = [0.0; 512];
-        let events = [MidiEvent {
-            kind: 1,
-            note: 60,
-            velocity: 100,
-            offset: 0,
-        }];
+        let events = [MidiEvent::note_on(60, 100, 0, 0)];
 
         synth.set_param("engine", engine as f32);
         for (name, value) in params {
@@ -827,12 +902,7 @@ mod tests {
         let mut synth = MasterSynth::new(48_000.0, 8);
         let mut left = [0.0; 128];
         let mut right = [0.0; 128];
-        let events = [MidiEvent {
-            kind: 1,
-            note: 60,
-            velocity: 100,
-            offset: 0,
-        }];
+        let events = [MidiEvent::note_on(60, 100, 0, 0)];
 
         synth.process_block(&mut left, &mut right, &events);
 
@@ -848,12 +918,7 @@ mod tests {
         let mut synth = MasterSynth::new(48_000.0, 8);
         let mut left = [0.0; 128];
         let mut right = [0.0; 128];
-        let events = [MidiEvent {
-            kind: 1,
-            note: 60,
-            velocity: 100,
-            offset: 64,
-        }];
+        let events = [MidiEvent::note_on(60, 100, 0, 64)];
 
         synth.process_block(&mut left, &mut right, &events);
 
@@ -867,18 +932,8 @@ mod tests {
         let mut left = [0.0; 128];
         let mut right = [0.0; 128];
         let events = [
-            MidiEvent {
-                kind: 1,
-                note: 60,
-                velocity: 100,
-                offset: 32,
-            },
-            MidiEvent {
-                kind: 1,
-                note: 67,
-                velocity: 100,
-                offset: 96,
-            },
+            MidiEvent::note_on(60, 100, 0, 32),
+            MidiEvent::note_on(67, 100, 0, 96),
         ];
 
         synth.process_block(&mut left, &mut right, &events);
@@ -912,12 +967,7 @@ mod tests {
         let mut synth = MasterSynth::new(48_000.0, 8);
         let mut left = [0.0; 256];
         let mut right = [0.0; 256];
-        let events = [MidiEvent {
-            kind: 1,
-            note: 60,
-            velocity: 100,
-            offset: 0,
-        }];
+        let events = [MidiEvent::note_on(60, 100, 0, 0)];
 
         synth.set_param("unison_voices", 4.0);
         synth.set_param("unison_detune", 12.0);
@@ -930,8 +980,10 @@ mod tests {
 
     #[test]
     fn additive_params_change_rendered_output() {
-        let (simple_left, simple_right) =
-            render_note_for_engine_with_params(5, &[("additive_partials", 1.0), ("additive_tilt", -6.0)]);
+        let (simple_left, simple_right) = render_note_for_engine_with_params(
+            5,
+            &[("additive_partials", 1.0), ("additive_tilt", -6.0)],
+        );
         let (rich_left, rich_right) = render_note_for_engine_with_params(
             5,
             &[
@@ -949,8 +1001,14 @@ mod tests {
 
     #[test]
     fn granular_params_change_rendered_output() {
-        let (sparse_left, sparse_right) =
-            render_note_for_engine_with_params(4, &[("grain_density", 1.0), ("grain_size", 20.0), ("grain_pan_spread", 0.0)]);
+        let (sparse_left, sparse_right) = render_note_for_engine_with_params(
+            4,
+            &[
+                ("grain_density", 1.0),
+                ("grain_size", 20.0),
+                ("grain_pan_spread", 0.0),
+            ],
+        );
         let (dense_left, dense_right) = render_note_for_engine_with_params(
             4,
             &[
@@ -1252,11 +1310,7 @@ mod tests {
     }
 
     fn difference_rms(left: &[f32], right: &[f32]) -> f32 {
-        let differences: Vec<f32> = left
-            .iter()
-            .zip(right.iter())
-            .map(|(a, b)| a - b)
-            .collect();
+        let differences: Vec<f32> = left.iter().zip(right.iter()).map(|(a, b)| a - b).collect();
         rms(&differences)
     }
 

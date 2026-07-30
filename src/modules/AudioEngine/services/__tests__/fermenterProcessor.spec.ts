@@ -15,6 +15,18 @@ import {
 // machine with a recording instance mock and asserts the scheduling decisions.
 
 type NoteEvent = { kind: 'on' | 'off'; note: number; velocity?: number };
+type ScheduledEvent =
+    | { kind: 'on'; note: number; velocity: number; channel: number; offset: number }
+    | { kind: 'off'; note: number; channel: number; offset: number }
+    | {
+          kind: 'expression';
+          note: number;
+          channel: number;
+          offset: number;
+          bendSemitones: number;
+          pressure: number;
+          slide: number;
+      };
 type FermenterProcessorLike = {
     port: { onmessage: ((event: { data: unknown }) => void) | null; postMessage: ReturnType<typeof vi.fn> };
     process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean;
@@ -29,11 +41,14 @@ const FRAMES = 128;
 const memory: GrowableMemory = createGrowableMemory(HEAP_BYTES);
 
 const noteEvents: NoteEvent[] = [];
+const scheduledEvents: ScheduledEvent[] = [];
 const paramCalls: Array<{ name: string; value: number }> = [];
 const paramByIdCalls: Array<{ id: number; value: number }> = [];
 const processSizes: number[] = [];
 // Flip to simulate a Rust-side panic propagating through the bindgen glue.
 let processShouldThrow = false;
+let scheduleShouldThrow = false;
+let scheduleShouldFail = false;
 let lifecycleState = 0;
 let advanceSilenceCalls = 0;
 
@@ -48,6 +63,51 @@ class FermenterInstanceMock {
     }
     note_off(note: number): void {
         noteEvents.push({ kind: 'off', note });
+    }
+    schedule_note_on(note: number, velocity: number, channel: number, offset: number): boolean {
+        if (scheduleShouldThrow) {
+            throw new Error('wasm trap: scheduled event write failed');
+        }
+        if (scheduleShouldFail) {
+            return false;
+        }
+        scheduledEvents.push({ kind: 'on', note, velocity, channel, offset });
+        return true;
+    }
+    schedule_note_off(note: number, channel: number, offset: number): boolean {
+        if (scheduleShouldThrow) {
+            throw new Error('wasm trap: scheduled event write failed');
+        }
+        if (scheduleShouldFail) {
+            return false;
+        }
+        scheduledEvents.push({ kind: 'off', note, channel, offset });
+        return true;
+    }
+    schedule_note_expression(
+        note: number,
+        channel: number,
+        offset: number,
+        bendSemitones: number,
+        pressure: number,
+        slide: number
+    ): boolean {
+        if (scheduleShouldThrow) {
+            throw new Error('wasm trap: scheduled event write failed');
+        }
+        if (scheduleShouldFail) {
+            return false;
+        }
+        scheduledEvents.push({
+            kind: 'expression',
+            note,
+            channel,
+            offset,
+            bendSemitones,
+            pressure,
+            slide,
+        });
+        return true;
     }
     set_param(name: string, value: number): void {
         paramCalls.push({ name, value });
@@ -106,12 +166,16 @@ function makeStereoBlock(): Float32Array[][] {
 
 function resetRecording(): void {
     noteEvents.length = 0;
+    scheduledEvents.length = 0;
     paramCalls.length = 0;
     paramByIdCalls.length = 0;
     processSizes.length = 0;
     processShouldThrow = false;
+    scheduleShouldThrow = false;
+    scheduleShouldFail = false;
     lifecycleState = 0;
     advanceSilenceCalls = 0;
+    vi.stubGlobal('currentFrame', 0);
 }
 
 describe('FermenterProcessor message handling', () => {
@@ -162,30 +226,60 @@ describe('FermenterProcessor message handling', () => {
     });
 
     describe('scheduled note queue', () => {
-        it('enqueues future notes in sampleFrame order and drains due notes within the block window', async () => {
+        it('schedules future events at exact in-block offsets and defers the exclusive block boundary', async () => {
             const proc = await loadProcessor();
             send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
             resetRecording();
 
-            // currentFrame is stubbed at 0, so blockEndFrame = 0 + 128 = 128 every block.
-            // Insert out of order to exercise the binary-search insertion sort, then verify
-            // the drain preserves ascending sampleFrame order and stops at the window edge.
+            // Insert out of order to exercise the binary-search insertion sort. Events
+            // sharing a frame retain insertion order so expression follows note-on.
             send(proc, { type: 'noteOn', note: 64, velocity: 80, sampleFrame: 256 });
             send(proc, { type: 'noteOff', note: 60, sampleFrame: 200 });
             send(proc, { type: 'noteOn', note: 60, velocity: 90, sampleFrame: 128 });
+            send(proc, { type: 'noteOn', note: 62, velocity: 70, channel: 3, sampleFrame: 64 });
+            send(proc, {
+                type: 'noteExpression',
+                note: 62,
+                channel: 3,
+                bendSemitones: 2,
+                pressure: 0.5,
+                slide: -0.25,
+                sampleFrame: 64,
+            });
 
-            // Nothing dispatched before the first process() call.
-            expect(noteEvents).toEqual([]);
-
-            // First block: blockEndFrame=128 ⇒ noteOn(60)@128 (==edge) drains,
-            // but noteOff(60)@200 and noteOn(64)@256 stay queued (>128).
+            lifecycleState = 3;
             proc.process([], makeStereoBlock());
-            expect(noteEvents).toEqual([{ kind: 'on', note: 60, velocity: 90 }]);
+            expect(scheduledEvents).toEqual([
+                { kind: 'on', note: 62, velocity: 70, channel: 3, offset: 64 },
+                {
+                    kind: 'expression',
+                    note: 62,
+                    channel: 3,
+                    offset: 64,
+                    bendSemitones: 2,
+                    pressure: 0.5,
+                    slide: -0.25,
+                },
+            ]);
+            expect(processSizes).toEqual([FRAMES]);
+            expect(advanceSilenceCalls).toBe(0);
 
-            // The queue is compacted but the remaining notes are still > 128, so
-            // repeated blocks (static currentFrame) drain nothing further.
+            vi.stubGlobal('currentFrame', 128);
             proc.process([], makeStereoBlock());
-            expect(noteEvents).toEqual([{ kind: 'on', note: 60, velocity: 90 }]);
+            expect(scheduledEvents.slice(2)).toEqual([
+                { kind: 'on', note: 60, velocity: 90, channel: 0, offset: 0 },
+                { kind: 'off', note: 60, channel: 255, offset: 72 },
+            ]);
+
+            vi.stubGlobal('currentFrame', 256);
+            proc.process([], makeStereoBlock());
+            expect(scheduledEvents.at(-1)).toEqual({
+                kind: 'on',
+                note: 64,
+                velocity: 80,
+                channel: 0,
+                offset: 0,
+            });
         });
 
         it('ignores a scheduled note for a processor that is not ready yet', async () => {
@@ -193,7 +287,44 @@ describe('FermenterProcessor message handling', () => {
             // No init yet — _ready is false, so the message branch is skipped.
             send(proc, { type: 'noteOn', note: 60, velocity: 100, sampleFrame: 128 });
             proc.process([], makeStereoBlock());
-            expect(noteEvents).toEqual([]);
+            expect(scheduledEvents).toEqual([]);
+        });
+
+        it('faults and reports a WASM trap while writing a scheduled event', async () => {
+            const proc = await loadProcessor();
+            send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+            resetRecording();
+            scheduleShouldThrow = true;
+            send(proc, { type: 'noteOn', note: 60, velocity: 100, sampleFrame: 64 });
+
+            proc.process([], makeStereoBlock());
+
+            const errorCalls = proc.port.postMessage.mock.calls.filter(
+                (call) => (call[0] as { type?: string }).type === 'error'
+            );
+            expect(errorCalls).toHaveLength(1);
+            expect((errorCalls[0]![0] as { message: string }).message).toContain('wasm trap');
+
+            scheduleShouldThrow = false;
+            proc.process([], makeStereoBlock());
+            expect(processSizes).toEqual([]);
+        });
+
+        it('faults when the fixed scheduled-event buffer reports capacity exhaustion', async () => {
+            const proc = await loadProcessor();
+            send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+            resetRecording();
+            scheduleShouldFail = true;
+            send(proc, { type: 'noteOn', note: 60, velocity: 100, sampleFrame: 64 });
+
+            proc.process([], makeStereoBlock());
+
+            const errorCalls = proc.port.postMessage.mock.calls.filter(
+                (call) => (call[0] as { type?: string }).type === 'error'
+            );
+            expect(errorCalls).toHaveLength(1);
+            expect((errorCalls[0]![0] as { message: string }).message).toContain('scheduled event capacity exceeded');
+            expect(processSizes).toEqual([]);
         });
     });
 

@@ -264,6 +264,43 @@ export class FermenterInstance {
         return ret >>> 0;
     }
     /**
+     * Queue one sample-offset MPE expression event for the next process call.
+     * @param {number} note
+     * @param {number} channel
+     * @param {number} offset
+     * @param {number} bend_semitones
+     * @param {number} pressure
+     * @param {number} slide
+     * @returns {boolean}
+     */
+    schedule_note_expression(note, channel, offset, bend_semitones, pressure, slide) {
+        const ret = wasm.fermenterinstance_schedule_note_expression(this.__wbg_ptr, note, channel, offset, bend_semitones, pressure, slide);
+        return ret !== 0;
+    }
+    /**
+     * Queue one sample-offset note-off for the next process call. Channel 255 releases all channels.
+     * @param {number} note
+     * @param {number} channel
+     * @param {number} offset
+     * @returns {boolean}
+     */
+    schedule_note_off(note, channel, offset) {
+        const ret = wasm.fermenterinstance_schedule_note_off(this.__wbg_ptr, note, channel, offset);
+        return ret !== 0;
+    }
+    /**
+     * Queue one sample-offset note-on for the next process call.
+     * @param {number} note
+     * @param {number} velocity
+     * @param {number} channel
+     * @param {number} offset
+     * @returns {boolean}
+     */
+    schedule_note_on(note, velocity, channel, offset) {
+        const ret = wasm.fermenterinstance_schedule_note_on(this.__wbg_ptr, note, velocity, channel, offset);
+        return ret !== 0;
+    }
+    /**
      * Set a named parameter value.
      * @param {string} name
      * @param {number} value

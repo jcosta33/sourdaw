@@ -284,19 +284,44 @@ class FermenterProcessor extends AudioWorkletProcessor {
         }
     }
 
-    _drainQueue(blockEndFrame: number): void {
+    _drainQueue(inst: FermenterInstance, blockStartFrame: number, blockEndFrame: number): number {
+        let scheduledEventCount = 0;
         while (this._queueHead < this._queue.length) {
             const queued = this._queue[this._queueHead];
-            if (!queued || queued.sampleFrame > blockEndFrame) {
+            if (!queued || queued.sampleFrame >= blockEndFrame) {
                 break;
             }
-            this._dispatch(queued);
+            const offset = Math.max(0, Math.trunc(queued.sampleFrame - blockStartFrame));
+            let scheduled = false;
+            switch (queued.type) {
+                case 'noteOn':
+                    scheduled = inst.schedule_note_on(queued.note, queued.velocity, queued.channel ?? 0, offset);
+                    break;
+                case 'noteOff':
+                    scheduled = inst.schedule_note_off(queued.note, queued.channel ?? 255, offset);
+                    break;
+                case 'noteExpression':
+                    scheduled = inst.schedule_note_expression(
+                        queued.note,
+                        queued.channel,
+                        offset,
+                        queued.bendSemitones,
+                        queued.pressure,
+                        queued.slide
+                    );
+                    break;
+            }
+            if (!scheduled) {
+                throw new Error('Fermenter scheduled event capacity exceeded');
+            }
             this._queueHead++;
+            scheduledEventCount++;
         }
         if (this._queueHead >= this._queue.length) {
             this._queue.length = 0;
             this._queueHead = 0;
         }
+        return scheduledEventCount;
     }
 
     _applyParamAutomation(frame: number): void {
@@ -373,9 +398,6 @@ class FermenterProcessor extends AudioWorkletProcessor {
         }
         const frames = out0.length;
 
-        const blockEndFrame = currentFrame + frames;
-        this._drainQueue(blockEndFrame);
-
         try {
             const inst = this._instance;
             const mem = this._memory?.buffer;
@@ -383,10 +405,12 @@ class FermenterProcessor extends AudioWorkletProcessor {
                 return true;
             }
 
+            const blockEndFrame = currentFrame + frames;
+            const scheduledEventCount = this._drainQueue(inst, currentFrame, blockEndFrame);
             this._applyParamAutomation(currentFrame);
             const lifecycleState = inst.lifecycle_state();
             const out1 = output[1] ?? null;
-            if (lifecycleState === PROCESS_LIFECYCLE_SLEEP) {
+            if (lifecycleState === PROCESS_LIFECYCLE_SLEEP && scheduledEventCount === 0) {
                 inst.advance_silence();
                 out0.fill(0);
                 out1?.fill(0);

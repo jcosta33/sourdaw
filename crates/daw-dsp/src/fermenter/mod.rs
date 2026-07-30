@@ -24,9 +24,9 @@ pub mod stepseq;
 pub mod synth;
 pub mod voice;
 
-use synth::MasterSynth;
-use wasm_bindgen::prelude::*;
 use crate::primitives::{sanitize_block, TailLength};
+use synth::{MasterSynth, MidiEvent};
+use wasm_bindgen::prelude::*;
 
 const AUTOMATION_PARAM_NAMES: [&str; 15] = [
     "osc_level",
@@ -45,6 +45,7 @@ const AUTOMATION_PARAM_NAMES: [&str; 15] = [
     "grain_size",
     "grain_spray",
 ];
+const MAX_SCHEDULED_EVENTS: usize = 256;
 
 /// WASM-exported Fermenter instance for AudioWorklet.
 #[wasm_bindgen]
@@ -53,6 +54,8 @@ pub struct FermenterInstance {
     left_buf: Vec<f32>,
     right_buf: Vec<f32>,
     nan_flush_count: u64,
+    scheduled_events: [MidiEvent; MAX_SCHEDULED_EVENTS],
+    scheduled_event_count: usize,
 }
 
 #[wasm_bindgen]
@@ -65,6 +68,8 @@ impl FermenterInstance {
             left_buf: vec![0.0; block_size],
             right_buf: vec![0.0; block_size],
             nan_flush_count: 0,
+            scheduled_events: [MidiEvent::EMPTY; MAX_SCHEDULED_EVENTS],
+            scheduled_event_count: 0,
         }
     }
 
@@ -122,6 +127,36 @@ impl FermenterInstance {
             .note_expression(note, channel, bend_semitones, pressure, slide);
     }
 
+    /// Queue one sample-offset note-on for the next process call.
+    pub fn schedule_note_on(&mut self, note: u8, velocity: u8, channel: u8, offset: u32) -> bool {
+        self.push_scheduled_event(MidiEvent::note_on(note, velocity, channel, offset))
+    }
+
+    /// Queue one sample-offset note-off for the next process call. Channel 255 releases all channels.
+    pub fn schedule_note_off(&mut self, note: u8, channel: u8, offset: u32) -> bool {
+        self.push_scheduled_event(MidiEvent::note_off(note, channel, offset))
+    }
+
+    /// Queue one sample-offset MPE expression event for the next process call.
+    pub fn schedule_note_expression(
+        &mut self,
+        note: u8,
+        channel: u8,
+        offset: u32,
+        bend_semitones: f32,
+        pressure: f32,
+        slide: f32,
+    ) -> bool {
+        self.push_scheduled_event(MidiEvent::note_expression(
+            note,
+            channel,
+            offset,
+            bend_semitones,
+            pressure,
+            slide,
+        ))
+    }
+
     /// Process a block of 128 samples. Returns pointer to left channel.
     /// Caller reads left + right from WASM memory.
     pub fn process(&mut self, block_size: u32) -> *const f32 {
@@ -129,8 +164,12 @@ impl FermenterInstance {
         self.left_buf[..size].fill(0.0);
         self.right_buf[..size].fill(0.0);
 
-        self.synth
-            .process_block(&mut self.left_buf[..size], &mut self.right_buf[..size], &[]);
+        self.synth.process_block(
+            &mut self.left_buf[..size],
+            &mut self.right_buf[..size],
+            &self.scheduled_events[..self.scheduled_event_count],
+        );
+        self.scheduled_event_count = 0;
 
         self.nan_flush_count += sanitize_block(&mut self.left_buf[..size]) as u64;
         self.nan_flush_count += sanitize_block(&mut self.right_buf[..size]) as u64;
@@ -173,13 +212,22 @@ impl FermenterInstance {
     pub fn active_voices(&self) -> u32 {
         self.synth.active_voice_count() as u32
     }
+
+    fn push_scheduled_event(&mut self, event: MidiEvent) -> bool {
+        let Some(slot) = self.scheduled_events.get_mut(self.scheduled_event_count) else {
+            return false;
+        };
+        *slot = event;
+        self.scheduled_event_count += 1;
+        true
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use assert_no_alloc::assert_no_alloc;
 
-    use super::FermenterInstance;
+    use super::{FermenterInstance, MAX_SCHEDULED_EVENTS};
     use crate::primitives::ProcessLifecycle;
 
     #[test]
@@ -190,6 +238,50 @@ mod tests {
                 instance.set_param_by_id(param_id, 0.5);
             }
             instance.set_param_by_id(u32::MAX, 0.5);
+        });
+    }
+
+    #[test]
+    fn scheduled_note_starts_at_its_sample_offset() {
+        let mut instance = FermenterInstance::new(48_000.0, 32);
+        assert!(instance.schedule_note_on(60, 100, 0, 64));
+
+        let left_ptr = instance.process(128);
+        let right_ptr = instance.get_right_ptr();
+        let left = unsafe { std::slice::from_raw_parts(left_ptr, 128) };
+        let right = unsafe { std::slice::from_raw_parts(right_ptr, 128) };
+
+        assert!(left[..64]
+            .iter()
+            .chain(&right[..64])
+            .all(|sample| *sample == 0.0));
+        let sounding_energy = left[64..]
+            .iter()
+            .chain(&right[64..])
+            .map(|sample| sample.abs())
+            .sum::<f32>();
+        assert!(sounding_energy > 0.0);
+    }
+
+    #[test]
+    fn scheduled_event_capacity_is_fixed_and_reports_overflow() {
+        let mut instance = FermenterInstance::new(48_000.0, 32);
+
+        for offset in 0..MAX_SCHEDULED_EVENTS {
+            assert!(instance.schedule_note_on(60, 100, 0, offset as u32));
+        }
+        assert!(!instance.schedule_note_off(60, 0, 127));
+    }
+
+    #[test]
+    fn scheduling_and_processing_events_does_not_allocate() {
+        let mut instance = FermenterInstance::new(48_000.0, 32);
+
+        assert_no_alloc(|| {
+            assert!(instance.schedule_note_on(60, 100, 2, 16));
+            assert!(instance.schedule_note_expression(60, 2, 32, 1.0, 0.5, -0.25));
+            assert!(instance.schedule_note_off(60, 2, 96));
+            instance.process(128);
         });
     }
 
