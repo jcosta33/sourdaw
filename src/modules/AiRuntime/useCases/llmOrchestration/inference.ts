@@ -44,7 +44,10 @@ async function waitForInference<TResult>(inference: Promise<TResult>, signal?: A
 
     return new Promise<TResult>((resolve, reject) => {
         function onAbort(): void {
-            reject(createToolPlanningAbortError());
+            // Let an already-settled inference promise win this race.
+            queueMicrotask(() => {
+                reject(createToolPlanningAbortError());
+            });
         }
 
         async function settleInference(): Promise<void> {

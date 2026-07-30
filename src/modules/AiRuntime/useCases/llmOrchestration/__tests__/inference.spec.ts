@@ -332,19 +332,19 @@ describe('generateToolPlanningOutcome', () => {
         expect(mocks.generateNativeCompletion).not.toHaveBeenCalled();
     });
 
-    it('does not restore native readiness after a same-tick protocol failure and abort', async () => {
+    it('does not restore native readiness when an already-rejected protocol failure races abort', async () => {
         mocks.llmStatusValue.value = { state: 'ready', backend: 'native', modelId: 'native' };
         mocks.backendChain.value = ['native'];
         mocks.nativeEngineReady.value = true;
+        mocks.generateNativeToolCalls.mockRejectedValue(
+            new NativeToolCallingProtocolError('Invalid native_tool_calling response envelope')
+        );
         const controller = new AbortController();
-        mocks.generateNativeToolCalls.mockImplementation(() => {
-            controller.abort();
-            throw new NativeToolCallingProtocolError('Invalid native_tool_calling response envelope');
-        });
 
-        await expect(generateToolCalls('sys', 'mute drums', undefined, controller.signal)).rejects.toMatchObject({
-            name: 'AbortError',
-        });
+        const pending = generateToolCalls('sys', 'mute drums', undefined, controller.signal);
+        controller.abort();
+
+        await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
         expect(mocks.llmStatusSet).toHaveBeenLastCalledWith({ state: 'idle' });
         expect(mocks.generateNativeCompletion).not.toHaveBeenCalled();
     });
