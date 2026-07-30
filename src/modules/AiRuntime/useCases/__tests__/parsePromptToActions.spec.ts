@@ -151,18 +151,16 @@ describe('parsePromptToActions', () => {
         expect(executeDsoEdit).not.toHaveBeenCalled();
     });
 
-    it('turns provider tool calls into validated action proposals', async () => {
+    it('turns provider tool calls into validated proposals against the frozen planning context', async () => {
         const currentContext = { ...baseContext, tempo: 121 };
         vi.mocked(getProjectContext).mockReturnValue(currentContext);
-        vi.mocked(generateToolCalls).mockResolvedValue(
-            completePlan([{ name: 'muteTrack', arguments: { trackId: 'track-vocals', muted: true } }])
-        );
+        vi.mocked(generateToolCalls).mockResolvedValue(completePlan([{ name: 'setTempo', arguments: { bpm: 128 } }]));
         mockBridgeLlmToolCalls.mockReturnValue({
-            actions: [{ type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true } }],
+            actions: [{ type: 'setTempo', payload: { bpm: 128 } }],
             rejections: [],
         });
 
-        const result = await parsePromptToActions('mute the vocals', baseContext);
+        const result = await parsePromptToActions('make the project faster', baseContext);
 
         expect(generateToolCalls).toHaveBeenCalledWith(
             'command system prompt',
@@ -171,14 +169,14 @@ describe('parsePromptToActions', () => {
             undefined
         );
         expect(mockBuildLlmActionUserMessage).toHaveBeenCalledWith({
-            prompt: 'mute the vocals',
+            prompt: 'make the project faster',
             context: baseContext,
         });
         expect(mockBridgeLlmToolCalls).toHaveBeenCalledWith({
-            calls: [{ name: 'muteTrack', arguments: { trackId: 'track-vocals', muted: true } }],
-            context: currentContext,
+            calls: [{ name: 'setTempo', arguments: { bpm: 128 } }],
+            context: baseContext,
         });
-        expect(result.actions).toEqual([{ type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true } }]);
+        expect(result.actions).toEqual([{ type: 'setTempo', payload: { bpm: 128 } }]);
         expect(result.executionMode).toBe('atomic');
     });
 

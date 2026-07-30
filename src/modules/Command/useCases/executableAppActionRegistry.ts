@@ -2,21 +2,46 @@ import { type AppActionType } from '#/utils/handlerContract';
 
 export type ExecutableAppActionRisk = 'bounded-reversible' | 'broad-reversible' | 'authority-sensitive';
 
+export type ExecutableAppActionTargetCapability =
+    'track' | 'duplicable-track' | 'routable-source' | 'bus' | 'output' | 'device' | 'device-parameter';
+
+export type ExecutableAppActionTargetRule = {
+    argument: string;
+    capability: ExecutableAppActionTargetCapability;
+    dependsOn?: string;
+    distinctFrom?: string;
+};
+
 type ExecutableAppActionDescriptor = {
     actionType: AppActionType;
     risk: ExecutableAppActionRisk;
     description: string;
+    targetRules: readonly ExecutableAppActionTargetRule[];
     parameters: {
         properties: Record<string, unknown>;
         required: readonly string[];
     };
 };
 
+const trackTargetRules = [
+    { argument: 'trackId', capability: 'track' },
+] as const satisfies readonly ExecutableAppActionTargetRule[];
+
+const sendTargetRules = [
+    { argument: 'busId', capability: 'bus' },
+    {
+        argument: 'trackId',
+        capability: 'routable-source',
+        distinctFrom: 'busId',
+    },
+] as const satisfies readonly ExecutableAppActionTargetRule[];
+
 export const executableAppActionDescriptors = [
     {
         actionType: 'addTrack',
         risk: 'bounded-reversible',
         description: 'Create a new track in the session.',
+        targetRules: [],
         parameters: {
             properties: {
                 name: { type: 'string', description: 'Display name (e.g. "Kick", "Vocals", "Synth Pad")' },
@@ -29,6 +54,7 @@ export const executableAppActionDescriptors = [
         actionType: 'renameTrack',
         risk: 'bounded-reversible',
         description: 'Rename a track.',
+        targetRules: trackTargetRules,
         parameters: {
             properties: { trackId: { type: 'string' }, name: { type: 'string' } },
             required: ['trackId', 'name'],
@@ -38,6 +64,7 @@ export const executableAppActionDescriptors = [
         actionType: 'muteTrack',
         risk: 'bounded-reversible',
         description: 'Mute or unmute a track.',
+        targetRules: trackTargetRules,
         parameters: {
             properties: {
                 trackId: { type: 'string' },
@@ -50,6 +77,7 @@ export const executableAppActionDescriptors = [
         actionType: 'soloTrack',
         risk: 'bounded-reversible',
         description: 'Solo or unsolo a track (only hear this track).',
+        targetRules: trackTargetRules,
         parameters: {
             properties: {
                 trackId: { type: 'string' },
@@ -62,12 +90,14 @@ export const executableAppActionDescriptors = [
         actionType: 'duplicateTrack',
         risk: 'broad-reversible',
         description: 'Duplicate a track with all clips and devices.',
+        targetRules: [{ argument: 'trackId', capability: 'duplicable-track' }],
         parameters: { properties: { trackId: { type: 'string' } }, required: ['trackId'] },
     },
     {
         actionType: 'setTrackGain',
         risk: 'bounded-reversible',
         description: 'Set track volume. 0.0=silence, 0.8=default, 1.0=max.',
+        targetRules: trackTargetRules,
         parameters: {
             properties: {
                 trackId: { type: 'string' },
@@ -80,6 +110,7 @@ export const executableAppActionDescriptors = [
         actionType: 'setTrackPan',
         risk: 'bounded-reversible',
         description: 'Pan a track left/right. -50=hard left, 0=center, 50=hard right.',
+        targetRules: trackTargetRules,
         parameters: {
             properties: {
                 trackId: { type: 'string' },
@@ -92,6 +123,7 @@ export const executableAppActionDescriptors = [
         actionType: 'setTrackColor',
         risk: 'bounded-reversible',
         description: 'Color-code a track for visual organization.',
+        targetRules: trackTargetRules,
         parameters: {
             properties: {
                 trackId: { type: 'string' },
@@ -104,6 +136,7 @@ export const executableAppActionDescriptors = [
         actionType: 'reorderTrack',
         risk: 'bounded-reversible',
         description: 'Move a track to a new position in the track list.',
+        targetRules: trackTargetRules,
         parameters: {
             properties: {
                 trackId: { type: 'string' },
@@ -116,12 +149,21 @@ export const executableAppActionDescriptors = [
         actionType: 'setTempo',
         risk: 'authority-sensitive',
         description: 'Set the project tempo in BPM. Range: 20–300.',
+        targetRules: [],
         parameters: { properties: { bpm: { type: 'number' } }, required: ['bpm'] },
     },
     {
         actionType: 'setDeviceParameter',
         risk: 'bounded-reversible',
         description: 'Adjust a parameter on an existing device.',
+        targetRules: [
+            { argument: 'deviceId', capability: 'device' },
+            {
+                argument: 'paramId',
+                capability: 'device-parameter',
+                dependsOn: 'deviceId',
+            },
+        ],
         parameters: {
             properties: {
                 deviceId: { type: 'string' },
@@ -138,6 +180,7 @@ export const executableAppActionDescriptors = [
         actionType: 'bypassDevice',
         risk: 'bounded-reversible',
         description: 'Bypass or re-enable an effect (keeps settings, just disables processing).',
+        targetRules: [{ argument: 'deviceId', capability: 'device' }],
         parameters: {
             properties: { deviceId: { type: 'string' }, bypassed: { type: 'boolean' } },
             required: ['deviceId', 'bypassed'],
@@ -147,6 +190,7 @@ export const executableAppActionDescriptors = [
         actionType: 'addSend',
         risk: 'authority-sensitive',
         description: "Route a copy of a track's signal to a bus (parallel processing).",
+        targetRules: sendTargetRules,
         parameters: {
             properties: {
                 trackId: { type: 'string' },
@@ -160,6 +204,7 @@ export const executableAppActionDescriptors = [
         actionType: 'setSend',
         risk: 'authority-sensitive',
         description: 'Adjust the send level from a track to a bus.',
+        targetRules: sendTargetRules,
         parameters: {
             properties: {
                 trackId: { type: 'string' },
@@ -173,6 +218,7 @@ export const executableAppActionDescriptors = [
         actionType: 'removeSend',
         risk: 'authority-sensitive',
         description: 'Remove a send from a track to a bus.',
+        targetRules: sendTargetRules,
         parameters: {
             properties: { trackId: { type: 'string' }, busId: { type: 'string' } },
             required: ['trackId', 'busId'],
@@ -182,6 +228,10 @@ export const executableAppActionDescriptors = [
         actionType: 'setTrackOutput',
         risk: 'authority-sensitive',
         description: "Route a track's output to a specific bus or master.",
+        targetRules: [
+            { argument: 'outputId', capability: 'output' },
+            { argument: 'trackId', capability: 'routable-source', distinctFrom: 'outputId' },
+        ],
         parameters: {
             properties: {
                 trackId: { type: 'string' },

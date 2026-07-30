@@ -5,11 +5,7 @@ import { getExecutableAppActionToolSchemas, requiresAppActionConfirmation } from
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
 import { type IntentResult } from '../models/IntentResult';
 import { type RuntimeAction } from '../models/RuntimeAction';
-import {
-    bridgeLlmToolCalls,
-    buildLlmActionSystemPrompt,
-    buildLlmActionUserMessage,
-} from '../transformers/llmActionBridge';
+import { buildLlmActionSystemPrompt, buildLlmActionUserMessage } from '../transformers/llmActionBridge';
 import { findDeniedPromptIntent } from '../transformers/promptParser/findDeniedPromptIntent';
 import {
     tryPresetMatch,
@@ -18,7 +14,8 @@ import {
     tryCompoundFastPath,
 } from '../transformers/promptParser/parsing';
 
-import { getProjectContext, type ProjectContext } from './getProjectContext';
+import { bridgeGroundedLlmToolCalls } from './agentReference/bridgeGroundedLlmToolCalls';
+import { type ProjectContext } from './getProjectContext';
 import { generateToolPlanningOutcome } from './llmOrchestration/inference';
 import { validateActions } from './validateActions';
 
@@ -122,7 +119,7 @@ export const parsePromptToActions = inject({ logger })(
                     };
                 }
                 const toolCalls = planningOutcome.toolCalls;
-                const bridged = bridgeLlmToolCalls({ calls: toolCalls, context: getProjectContext() });
+                const bridged = bridgeGroundedLlmToolCalls({ calls: toolCalls, context, prompt });
                 for (const rejected of bridged.rejections) {
                     logger.warn(
                         `[AI] Rejected tool call ${String(rejected.index)} (${rejected.name}): ${rejected.reason}`
