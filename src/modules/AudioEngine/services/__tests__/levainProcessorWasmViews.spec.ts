@@ -43,8 +43,13 @@ class LevainInstanceMock {
     note_on(): void {}
     note_off(): void {}
     all_notes_off(): void {}
+    all_sounds_off(): void {}
     set_param(): void {}
     handle_cc(): void {}
+    lifecycle_state(): number {
+        return 0;
+    }
+    advance_silence(): void {}
     process(): number {
         if (growOnNextProcess) {
             growOnNextProcess = false;

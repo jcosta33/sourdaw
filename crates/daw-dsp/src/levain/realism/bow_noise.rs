@@ -77,6 +77,10 @@ impl BowNoise {
         self.burst_decay = 1.0;
     }
 
+    pub fn has_active_burst(&self) -> bool {
+        self.burst_decay > 1e-5
+    }
+
     /// Reconfigure for a new sample rate (e.g. when engine reinitializes).
     #[allow(dead_code)]
     pub fn set_sample_rate(&mut self, sample_rate: f32) {

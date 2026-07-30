@@ -280,6 +280,10 @@ impl RealismEngine {
         self.breath.level = cc11_normalized.clamp(0.0, 1.0);
     }
 
+    pub fn has_active_tail(&self) -> bool {
+        self.bow_noise.has_active_burst()
+    }
+
     /// Process one mono sample through the realism stack.
     ///
     /// `voices_active` gates the continuous bow/breath noise components so

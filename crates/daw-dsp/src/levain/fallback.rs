@@ -142,6 +142,12 @@ impl FallbackToneEngine {
         }
     }
 
+    pub fn stop_all(&mut self) {
+        for voice in self.voices.iter_mut() {
+            voice.active = false;
+        }
+    }
+
     /// Render one sample (mono).
     #[inline]
     pub fn tick(&mut self) -> f32 {

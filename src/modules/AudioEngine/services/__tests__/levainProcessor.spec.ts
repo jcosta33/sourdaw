@@ -29,12 +29,15 @@ const memory: GrowableMemory = createGrowableMemory(HEAP_BYTES);
 const calls: Array<{ method: string; args: unknown[] }> = [];
 let processShouldThrow = false;
 let addSampleShouldThrow = false;
+let lifecycleState = 3;
 
 class LevainInstanceMock {
     note_on(note: number, velocity: number): void {
+        lifecycleState = 0;
         calls.push({ method: 'note_on', args: [note, velocity] });
     }
     note_on_with_channel(note: number, velocity: number, _channel: number): void {
+        lifecycleState = 0;
         calls.push({ method: 'note_on', args: [note, velocity] });
     }
     note_off(note: number): void {
@@ -42,6 +45,10 @@ class LevainInstanceMock {
     }
     all_notes_off(): void {
         calls.push({ method: 'all_notes_off', args: [] });
+    }
+    all_sounds_off(): void {
+        lifecycleState = 3;
+        calls.push({ method: 'all_sounds_off', args: [] });
     }
     set_param(name: string, value: number): void {
         calls.push({ method: 'set_param', args: [name, value] });
@@ -71,6 +78,7 @@ class LevainInstanceMock {
         calls.push({ method: 'clear_zones', args: [] });
     }
     process(frames: number): number {
+        calls.push({ method: 'process', args: [frames] });
         if (processShouldThrow) {
             throw new Error('wasm trap');
         }
@@ -84,6 +92,12 @@ class LevainInstanceMock {
     }
     get_right_ptr(): number {
         return OUT_RIGHT_PTR;
+    }
+    lifecycle_state(): number {
+        return lifecycleState;
+    }
+    advance_silence(frames: number): void {
+        calls.push({ method: 'advance_silence', args: [frames] });
     }
 }
 
@@ -117,6 +131,7 @@ describe('LevainProcessor message handling', () => {
         calls.length = 0;
         processShouldThrow = false;
         addSampleShouldThrow = false;
+        lifecycleState = 3;
     });
 
     it('buffers messages that arrive before init and replays them once ready', async () => {
@@ -161,6 +176,25 @@ describe('LevainProcessor message handling', () => {
         expect(method('note_on')!.args).toEqual([64, 80]);
     });
 
+    it('dispatches allSoundsOff as a hard bypass stop', async () => {
+        const proc = await loadProcessor();
+        const sab = new SharedArrayBuffer(32 * Float32Array.BYTES_PER_ELEMENT);
+        send(proc, { type: 'init-sab', sab, byteOffset: 0 });
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'noteOn', note: 60, velocity: 100 });
+        proc.process([], [makeChannels(2, FRAMES)]);
+        send(proc, { type: 'noteOn', note: 67, velocity: 90, sampleFrame: 64 });
+        calls.length = 0;
+
+        send(proc, { type: 'allSoundsOff' });
+
+        expect(method('all_sounds_off')?.args).toEqual([]);
+        expect(new Float32Array(sab)[0]).toBe(3);
+
+        proc.process([], [makeChannels(2, FRAMES)]);
+        expect(calls.some((call) => call.method === 'note_on')).toBe(false);
+    });
+
     it('maps known params through PARAM_MAP and falls back to the raw name', async () => {
         const proc = await loadProcessor();
         send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
@@ -174,31 +208,68 @@ describe('LevainProcessor message handling', () => {
         expect(setParams).toContainEqual({ method: 'set_param', args: ['unknownX', 0.3] });
     });
 
-    it('forwards cc, setInstrument and bypass messages', async () => {
+    it('forwards cc and setInstrument messages', async () => {
         const proc = await loadProcessor();
         send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
         calls.length = 0;
 
         send(proc, { type: 'cc', cc: 74, value: 100 });
         send(proc, { type: 'setInstrument', instrumentId: 'strings-legion' });
-        send(proc, { type: 'bypass', bypassed: true });
 
         expect(method('handle_cc')!.args).toEqual([74, 100]);
         expect(method('set_instrument')!.args).toEqual(['strings-legion']);
-        // bypass does not call the instance; it flips the _bypassed flag (tested below).
     });
 
-    it('suppresses process() output while bypassed', async () => {
+    it('sleeps without rendering, advances control time, and clears stale output', async () => {
         const proc = await loadProcessor();
         send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
-        send(proc, { type: 'bypass', bypassed: true });
         calls.length = 0;
 
         const output = makeChannels(2, FRAMES);
+        output[0]?.fill(0.8);
+        output[1]?.fill(-0.8);
         proc.process([], [output]);
 
-        // No instance.process call while bypassed.
         expect(calls.find((c) => c.method === 'process')).toBeUndefined();
+        expect(method('advance_silence')?.args).toEqual([FRAMES]);
+        expect(output[0]).toEqual(new Float32Array(FRAMES));
+        expect(output[1]).toEqual(new Float32Array(FRAMES));
+    });
+
+    it('publishes DSP lifecycle transitions through the shared telemetry slot', async () => {
+        const proc = await loadProcessor();
+        const sab = new SharedArrayBuffer(32 * Float32Array.BYTES_PER_ELEMENT);
+        send(proc, { type: 'init-sab', sab, byteOffset: 0 });
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+
+        proc.process([], [makeChannels(2, FRAMES)]);
+
+        const values = new Float32Array(sab);
+        const sequence = new Int32Array(sab);
+        expect(values[0]).toBe(3);
+        expect(Atomics.load(sequence, 31)).toBe(2);
+
+        send(proc, { type: 'noteOn', note: 76, velocity: 100 });
+        proc.process([], [makeChannels(2, FRAMES)]);
+
+        expect(values[0]).toBe(0);
+        expect(Atomics.load(sequence, 31)).toBe(4);
+    });
+
+    it('stops processing and acknowledges after detaching telemetry on disposal', async () => {
+        const proc = await loadProcessor();
+        const sab = new SharedArrayBuffer(32 * Float32Array.BYTES_PER_ELEMENT);
+        send(proc, { type: 'init-sab', sab, byteOffset: 0 });
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        proc.process([], [makeChannels(2, FRAMES)]);
+        const sequence = new Int32Array(sab);
+        const publishedSequence = Atomics.load(sequence, 31);
+
+        send(proc, { type: 'dispose' });
+
+        expect(proc.port.postMessage).toHaveBeenCalledWith({ type: 'disposed' });
+        expect(proc.process([], [makeChannels(2, FRAMES)])).toBe(false);
+        expect(Atomics.load(sequence, 31)).toBe(publishedSequence);
     });
 
     it('loads a sample and forwards addSample args to the instance', async () => {
@@ -286,11 +357,11 @@ describe('LevainProcessor message handling', () => {
         expect(calls).toEqual([]);
 
         proc.process([], [makeChannels(2, FRAMES)]);
-        expect(calls.map((c) => c.method)).toEqual(['note_on']); // only the @64 note
+        expect(calls.map((c) => c.method)).toEqual(['note_on', 'process']); // only the @64 note wakes DSP
 
         // Further blocks (static currentFrame=0 → still blockEndFrame 128) drain nothing.
         proc.process([], [makeChannels(2, FRAMES)]);
-        expect(calls.map((c) => c.method)).toEqual(['note_on']);
+        expect(calls.map((c) => c.method)).toEqual(['note_on', 'process', 'process']);
     });
 
     it('process guards: not-ready and <2-channel outputs bail without instance calls', async () => {
@@ -309,6 +380,7 @@ describe('LevainProcessor message handling', () => {
     it('renders a stereo block and copies the seeded output views', async () => {
         const proc = await loadProcessor();
         send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        lifecycleState = 0;
         calls.length = 0;
 
         const output = makeChannels(2, FRAMES);
@@ -325,6 +397,7 @@ describe('LevainProcessor message handling', () => {
     it('faults and posts an error when instance.process throws', async () => {
         const proc = await loadProcessor();
         send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        lifecycleState = 0;
         calls.length = 0;
         processShouldThrow = true;
 

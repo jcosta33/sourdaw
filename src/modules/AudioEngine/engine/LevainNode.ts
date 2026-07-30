@@ -12,7 +12,34 @@ import { logger } from '#/infra/logger/appLogger';
 
 import levainProcessorUrl from '../services/levainProcessor.ts?worker&url';
 
+import {
+    createTelemetryReader,
+    LEVAIN_IDX,
+    telemetryAllocator,
+    TELEMETRY_SEQ_IDX,
+    type TelemetrySlot,
+} from './telemetryAllocator';
+
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
+
+type LevainProcessorLifecycle = 'continue' | 'continueIfNotQuiet' | 'tail' | 'sleep';
+
+function projectLevainLifecycle(view: Float32Array): LevainProcessorLifecycle | null {
+    switch (view[LEVAIN_IDX.lifecycle]) {
+        case 0:
+            return 'continue';
+        case 1:
+            return 'continueIfNotQuiet';
+        case 2:
+            return 'tail';
+        case 3:
+            return 'sleep';
+        case undefined:
+            return null;
+        default:
+            return null;
+    }
+}
 
 export type LevainNodeResult = {
     workletNode: AudioWorkletNode;
@@ -31,6 +58,7 @@ export type LevainNodeResult = {
     handleCc: (cc: number, value: number) => void;
     setInstrument: (instrumentId: string) => void;
     setBypass: (bypassed: boolean) => void;
+    processorLifecycle: () => LevainProcessorLifecycle | null;
     connect: (dest: AudioNode) => void;
     disconnect: () => void;
     destroy: () => void;
@@ -76,9 +104,26 @@ export async function createLevainNode(
     });
 
     let bypassed = false;
+    let slot: TelemetrySlot | null =
+        typeof SharedArrayBuffer === 'undefined' ? null : telemetryAllocator.allocateSlot();
+    if (slot) {
+        node.port.postMessage({ type: 'init-sab', sab: slot.sab, byteOffset: slot.byteOffset });
+    }
+    const lifecycleReader = slot ? createTelemetryReader({ slot, project: projectLevainLifecycle }) : null;
+    let lastLifecycle: LevainProcessorLifecycle | null = null;
+    let destroyRequested = false;
+    let runtimeFaulted = false;
 
     const handshake = createReadyHandshake({ pluginName: 'LevainNode' });
     node.port.onmessage = (event: MessageEvent<unknown>) => {
+        if (event.data && typeof event.data === 'object' && 'type' in event.data && event.data.type === 'disposed') {
+            if (slot) {
+                telemetryAllocator.releaseSlot(slot.byteOffset);
+                slot = null;
+            }
+            node.port.close();
+            return;
+        }
         const outcome = handshake.onMessage(event);
         if (
             outcome === 'late' &&
@@ -88,6 +133,7 @@ export async function createLevainNode(
             event.data.type === 'error'
         ) {
             const message = 'message' in event.data ? String(event.data.message) : 'Unknown error';
+            runtimeFaulted = true;
             logger.warn('LevainNode runtime fault (WASM panic — processor faulted):', message);
             onFault?.(message);
         }
@@ -166,14 +212,14 @@ export async function createLevainNode(
     };
 
     const setBypass = (b: boolean): void => {
-        // Mutes the processor (process() short-circuits while bypassed) and
-        // gates new noteOn. Releasing voices already held on bypass entry is
-        // owned by TrackNode.updateBypass via controller.allNotesOff (wired
-        // above) — the worklet's message handler dispatches allNotesOff to the
-        // WASM instance even while muted, so the release lands regardless of
-        // arrival order.
+        // TrackNode removes the generator from the audible graph and sends
+        // allNotesOff on bypass entry. The disconnected generator will no
+        // longer be pulled, so hard-stop its sounding state before that graph
+        // change to prevent a frozen release from resuming on un-bypass.
         bypassed = b;
-        node.port.postMessage({ type: 'bypass', bypassed: b });
+        if (b) {
+            node.port.postMessage({ type: 'allSoundsOff' });
+        }
     };
 
     const connect = (dest: AudioNode): void => {
@@ -189,8 +235,12 @@ export async function createLevainNode(
     };
 
     const destroy = (): void => {
+        if (destroyRequested) {
+            return;
+        }
+        destroyRequested = true;
         disconnect();
-        node.port.close();
+        node.port.postMessage({ type: 'dispose' });
     };
 
     return {
@@ -203,6 +253,22 @@ export async function createLevainNode(
         handleCc,
         setInstrument,
         setBypass,
+        processorLifecycle() {
+            if (destroyRequested || runtimeFaulted || !slot || !lifecycleReader) {
+                return null;
+            }
+            const before = Atomics.load(slot.seqView, TELEMETRY_SEQ_IDX);
+            if (before === 0 || (before & 1) !== 0) {
+                return lastLifecycle;
+            }
+            const lifecycle = lifecycleReader();
+            const after = Atomics.load(slot.seqView, TELEMETRY_SEQ_IDX);
+            if (before !== after || (after & 1) !== 0) {
+                return lastLifecycle;
+            }
+            lastLifecycle = lifecycle;
+            return lifecycle;
+        },
         connect,
         disconnect,
         destroy,

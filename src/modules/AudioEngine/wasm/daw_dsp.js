@@ -1146,12 +1146,22 @@ export class LevainInstance {
         wasm.levaininstance_add_zone(this.__wbg_ptr, zone_id, sample_id, articulation_id, root_note, lo_key, hi_key, lo_vel, hi_vel, rr_pos, rr_len, mic_id, is_release, loop_mode, loop_start, loop_end, loop_crossfade, gain_db, attack, decay, sustain, release);
     }
     /**
+     * Advance control-rate state while the processor is DSP-owned asleep.
+     * @param {number} block_size
+     */
+    advance_silence(block_size) {
+        wasm.levaininstance_advance_silence(this.__wbg_ptr, block_size);
+    }
+    /**
      * Silent all-notes-off. Releases every active voice without firing
      * per-note realism release transients. Used by the transport on stop
      * so we don't spawn a 128-note bow-lift noise burst.
      */
     all_notes_off() {
         wasm.levaininstance_all_notes_off(this.__wbg_ptr);
+    }
+    all_sounds_off() {
+        wasm.levaininstance_all_sounds_off(this.__wbg_ptr);
     }
     /**
      * Build the zone lookup table after all zones and samples are loaded.
@@ -1192,6 +1202,14 @@ export class LevainInstance {
      */
     handle_cc(cc, value) {
         wasm.levaininstance_handle_cc(this.__wbg_ptr, cc, value);
+    }
+    /**
+     * Stable numeric lifecycle code consumed by the AudioWorklet host.
+     * @returns {number}
+     */
+    lifecycle_state() {
+        const ret = wasm.levaininstance_lifecycle_state(this.__wbg_ptr);
+        return ret >>> 0;
     }
     /**
      * @param {number} sample_rate

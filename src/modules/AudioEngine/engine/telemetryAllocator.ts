@@ -110,6 +110,10 @@ export const PROOF_IDX = Object.freeze({
     latency: 24,
 });
 
+export const LEVAIN_IDX = Object.freeze({
+    lifecycle: 0,
+});
+
 // ── Wide slot layout: Fermenter ──────────────────────────────────────────────
 //
 // Fermenter's telemetry is a 128-sample oscilloscope waveform plus two peak

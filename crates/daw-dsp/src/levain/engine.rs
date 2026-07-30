@@ -16,6 +16,10 @@ use super::release::{PedalDeferredRelease, ReleaseTracker};
 use super::types::*;
 use super::voice::VoicePool;
 use super::zone::{SamplePool, ZoneMap};
+use crate::primitives::ProcessLifecycle;
+
+const OUTPUT_QUIET_THRESHOLD: f32 = 3.162_277_6e-8;
+const QUIET_BLOCKS_BEFORE_SLEEP: u8 = 4;
 
 // ---------------------------------------------------------------------------
 // LevainEngine
@@ -71,6 +75,8 @@ pub struct LevainEngine {
 
     /// Scratch buffer for dynamic layer gains.
     layer_gains: [f32; MAX_VEL_LAYERS],
+    /// Consecutive complete output blocks below -150 dBFS.
+    quiet_block_count: u8,
 }
 
 impl LevainEngine {
@@ -99,6 +105,7 @@ impl LevainEngine {
             num_articulations: 1,
             num_mics: 1,
             layer_gains: [0.0; MAX_VEL_LAYERS],
+            quiet_block_count: QUIET_BLOCKS_BEFORE_SLEEP,
         }
     }
 
@@ -111,6 +118,7 @@ impl LevainEngine {
         self.auto_divisi.clear();
         self.fallback.enabled = true;
         self.realism.reset();
+        self.quiet_block_count = QUIET_BLOCKS_BEFORE_SLEEP;
     }
 
     // -----------------------------------------------------------------------
@@ -349,6 +357,17 @@ impl LevainEngine {
         self.pedal_deferred.clear();
     }
 
+    pub fn all_sounds_off(&mut self) {
+        self.voice_pool.stop_all();
+        self.fallback.stop_all();
+        self.legato.all_notes_off();
+        self.auto_divisi.clear();
+        self.release_tracker.clear_all();
+        self.pedal_deferred.clear();
+        self.realism.reset();
+        self.quiet_block_count = QUIET_BLOCKS_BEFORE_SLEEP;
+    }
+
     /// Apply MPE per-note expression to the voices held on `channel` at
     /// `note` (audit MD-2). A divisi or legato-crossfading note can own more
     /// than one voice, so every match is addressed rather than the first.
@@ -579,6 +598,39 @@ impl LevainEngine {
             left[i] = l;
             right[i] = r;
         }
+
+        let output_quiet = left[..len]
+            .iter()
+            .chain(&right[..len])
+            .all(|sample| sample.is_finite() && sample.abs() <= OUTPUT_QUIET_THRESHOLD);
+        if output_quiet {
+            self.quiet_block_count = self.quiet_block_count.saturating_add(1);
+        } else {
+            self.quiet_block_count = 0;
+        }
+    }
+
+    pub fn lifecycle(&self) -> ProcessLifecycle {
+        if self.active_voice_count() > 0 {
+            return ProcessLifecycle::Continue;
+        }
+        if self.realism.has_active_tail() || self.quiet_block_count < QUIET_BLOCKS_BEFORE_SLEEP {
+            return ProcessLifecycle::ContinueIfNotQuiet;
+        }
+        ProcessLifecycle::Sleep
+    }
+
+    pub fn advance_silent_block(&mut self, frames: usize) {
+        self.legato.advance(frames);
+        self.release_tracker.advance(frames);
+        let _ = self.expression.expression_gain();
+        self.expression
+            .crossfader
+            .get_layer_gains(&mut self.layer_gains);
+        self.realism.update_expression(
+            self.expression.crossfader.current_cc1(),
+            self.expression.cc11 as f32 / 127.0,
+        );
     }
 
     /// Get the number of currently active voices.

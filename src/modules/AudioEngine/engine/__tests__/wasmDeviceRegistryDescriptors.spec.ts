@@ -253,6 +253,7 @@ describe('wasmDeviceRegistry descriptors', () => {
                 handleCc: vi.fn(),
                 setInstrument: vi.fn(),
                 setBypass: vi.fn(),
+                processorLifecycle: vi.fn(() => 'sleep' as const),
                 connect: vi.fn(),
                 disconnect: vi.fn(),
                 destroy: vi.fn(),
@@ -274,6 +275,8 @@ describe('wasmDeviceRegistry descriptors', () => {
             await loadPromise;
 
             expect(result.setParam).toHaveBeenCalledWith('cutoff', 0.4);
+            expect(lastLoadedNode(deps.onLoaded).processorLifecycle?.()).toBe('sleep');
+            expect(result.processorLifecycle).toHaveBeenCalledTimes(1);
             expect(registerLevainDevice).toHaveBeenCalledWith({
                 deviceId: 'lev-1',
                 device: {

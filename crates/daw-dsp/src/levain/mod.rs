@@ -20,9 +20,9 @@ pub mod types;
 pub mod voice;
 pub mod zone;
 
+use crate::primitives::sanitize_block;
 use engine::LevainEngine;
 use wasm_bindgen::prelude::*;
-use crate::primitives::sanitize_block;
 
 /// WASM-exported Levain instance for AudioWorklet.
 #[wasm_bindgen]
@@ -105,6 +105,10 @@ impl LevainInstance {
     /// so we don't spawn a 128-note bow-lift noise burst.
     pub fn all_notes_off(&mut self) {
         self.engine.all_notes_off();
+    }
+
+    pub fn all_sounds_off(&mut self) {
+        self.engine.all_sounds_off();
     }
 
     /// Process a MIDI CC event.
@@ -223,6 +227,16 @@ impl LevainInstance {
         self.left_buf.as_ptr()
     }
 
+    /// Advance control-rate state while the processor is DSP-owned asleep.
+    pub fn advance_silence(&mut self, block_size: u32) {
+        self.engine.advance_silent_block(block_size as usize);
+    }
+
+    /// Stable numeric lifecycle code consumed by the AudioWorklet host.
+    pub fn lifecycle_state(&self) -> u32 {
+        self.engine.lifecycle().code()
+    }
+
     /// Number of non-finite output samples scrubbed to silence since
     /// construction (DSP-8). Non-zero means a poisoned block was caught at the
     /// wasm output boundary and surfaced for health telemetry.
@@ -238,5 +252,108 @@ impl LevainInstance {
     /// Get number of currently sounding voices.
     pub fn active_voices(&self) -> u32 {
         self.engine.active_voice_count() as u32
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::LevainInstance;
+    use crate::primitives::ProcessLifecycle;
+    use assert_no_alloc::assert_no_alloc;
+
+    #[test]
+    fn lifecycle_sleeps_cold_wakes_for_note_and_preserves_release_tail() {
+        let mut instance = LevainInstance::new(48_000.0, 64);
+        let sample_id = instance.add_sample(vec![0.25; 48_000], 48_000, 1, 48_000.0);
+        instance.add_zone(
+            0, sample_id, 0, 76, 0, 127, 0, 127, 0, 1, 0, false, 1, 0, 48_000, 0, 0.0, 0.001,
+            0.001, 1.0, 0.02,
+        );
+        instance.build_zone_map(1, 1);
+        instance.set_instrument("violin-1");
+
+        assert_eq!(instance.lifecycle_state(), ProcessLifecycle::SLEEP_CODE);
+
+        instance.note_on(76, 100);
+        assert_eq!(instance.lifecycle_state(), ProcessLifecycle::CONTINUE_CODE);
+        instance.process(128);
+        instance.note_off(76);
+
+        let mut observed_tail_without_voices = false;
+        for _ in 0..20_000 {
+            instance.process(128);
+            let state = instance.lifecycle_state();
+            if instance.active_voices() == 0 && state != ProcessLifecycle::SLEEP_CODE {
+                observed_tail_without_voices = true;
+            }
+            if state == ProcessLifecycle::SLEEP_CODE {
+                break;
+            }
+        }
+
+        assert!(
+            observed_tail_without_voices,
+            "the realism tail must outlive the last sample/fallback voice"
+        );
+        assert_eq!(instance.lifecycle_state(), ProcessLifecycle::SLEEP_CODE);
+
+        let left_ptr = instance.process(128);
+        let right_ptr = instance.get_right_ptr();
+        let left = unsafe { std::slice::from_raw_parts(left_ptr, 128) };
+        let right = unsafe { std::slice::from_raw_parts(right_ptr, 128) };
+        let post_sleep_peak = left
+            .iter()
+            .chain(right)
+            .fold(0.0f32, |peak, sample| peak.max(sample.abs()));
+        assert!(
+            post_sleep_peak <= 3.162_277_6e-8,
+            "post-sleep peak {post_sleep_peak} exceeded the lifecycle quiet threshold"
+        );
+
+        instance.note_on(79, 90);
+        assert_eq!(instance.lifecycle_state(), ProcessLifecycle::CONTINUE_CODE);
+        let left_ptr = instance.process(128);
+        let left = unsafe { std::slice::from_raw_parts(left_ptr, 128) };
+        assert!(left.iter().any(|sample| sample.abs() > 1e-5));
+    }
+
+    #[test]
+    fn silent_advance_keeps_control_time_moving_without_rendering_audio() {
+        let mut instance = LevainInstance::new(48_000.0, 64);
+        assert_eq!(instance.lifecycle_state(), ProcessLifecycle::SLEEP_CODE);
+
+        for _ in 0..128 {
+            instance.advance_silence(128);
+        }
+
+        assert_eq!(instance.lifecycle_state(), ProcessLifecycle::SLEEP_CODE);
+        assert_eq!(instance.active_voices(), 0);
+    }
+
+    #[test]
+    fn lifecycle_queries_and_silent_advance_do_not_allocate() {
+        let mut instance = LevainInstance::new(48_000.0, 64);
+
+        assert_no_alloc(|| {
+            assert_eq!(instance.lifecycle_state(), ProcessLifecycle::SLEEP_CODE);
+            instance.advance_silence(128);
+        });
+    }
+
+    #[test]
+    fn all_sounds_off_hard_stops_bypass_state_and_allows_a_clean_wake() {
+        let mut instance = LevainInstance::new(48_000.0, 64);
+        instance.clear_zones();
+        instance.note_on(60, 100);
+        assert_eq!(instance.lifecycle_state(), ProcessLifecycle::CONTINUE_CODE);
+
+        assert_no_alloc(|| {
+            instance.all_sounds_off();
+        });
+
+        assert_eq!(instance.active_voices(), 0);
+        assert_eq!(instance.lifecycle_state(), ProcessLifecycle::SLEEP_CODE);
+        instance.note_on(67, 90);
+        assert_eq!(instance.lifecycle_state(), ProcessLifecycle::CONTINUE_CODE);
     }
 }

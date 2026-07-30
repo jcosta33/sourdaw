@@ -6,12 +6,14 @@
  *
  * Messages from main thread:
  *   { type: 'init', wasmBytes: ArrayBuffer }
+ *   { type: 'init-sab', sab: SharedArrayBuffer, byteOffset: number }
+ *   { type: 'dispose' }
  *   { type: 'noteOn', note, velocity, sampleFrame? }
  *   { type: 'noteOff', note, sampleFrame? }
  *   { type: 'allNotesOff' }
+ *   { type: 'allSoundsOff' }
  *   { type: 'param', name, value }
  *   { type: 'cc', cc, value }
- *   { type: 'bypass', bypassed }
  *   { type: 'addSample', sampleId, data, frameCount, channels, sampleRate }
  *   { type: 'addZone', ... }
  *   { type: 'buildZoneMap', numArticulations, numMics }
@@ -20,7 +22,12 @@
 
 import { initSync, LevainInstance } from '../wasm/daw_dsp.js';
 
+import { beginTelemetryPublish, endTelemetryPublish } from './telemetrySeqlock';
 import { WasmView } from './wasmView';
+
+const TELEMETRY_SLOT_FLOATS = 32;
+const TELEMETRY_LIFECYCLE_IDX = 0;
+const PROCESS_LIFECYCLE_SLEEP = 3;
 
 const PARAM_MAP: Record<string, string> = {
     masterGain: 'master_gain',
@@ -75,14 +82,16 @@ type NoteExpressionMsg = {
 };
 type LevainMsg =
     | { type: 'init'; wasmBytes: BufferSource }
+    | { type: 'init-sab'; sab: SharedArrayBuffer; byteOffset: number }
+    | { type: 'dispose' }
     | { type: 'noteOn'; note: number; velocity: number; sampleFrame?: number; channel?: number }
     | { type: 'noteOff'; note: number; sampleFrame?: number; channel?: number }
     | NoteExpressionMsg
     | { type: 'allNotesOff' }
+    | { type: 'allSoundsOff' }
     | { type: 'param'; name: string; value: number }
     | { type: 'cc'; cc: number; value: number }
     | { type: 'setInstrument'; instrumentId: string }
-    | { type: 'bypass'; bypassed: boolean }
     | { type: 'addSample'; data: Float32Array; frameCount: number; channels: number; sampleRate: number }
     | LevainAddZoneMsg
     | { type: 'buildZoneMap'; numArticulations: number; numMics: number }
@@ -98,7 +107,7 @@ class LevainProcessor extends AudioWorkletProcessor {
     _memory: WebAssembly.Memory | null = null;
     _ready = false;
     _faulted = false;
-    _bypassed = false;
+    _disposed = false;
     _pendingMessages: LevainMsg[] = [];
     _queue: LevainQueued[] = [];
     _queueHead = 0;
@@ -107,17 +116,28 @@ class LevainProcessor extends AudioWorkletProcessor {
     // on a memory.grow() buffer-identity change (audit RT-7). See wasmView.ts.
     _outLeftView = new WasmView();
     _outRightView = new WasmView();
+    _telemetryView: Float32Array | null = null;
+    _telemetrySeqView: Int32Array | null = null;
+    _lastLifecycleState = -1;
 
     constructor() {
         super();
         this.port.onmessage = (event: MessageEvent<LevainMsg>) => {
             const msg = event.data;
             try {
-                if (msg.type === 'init') {
+                if (msg.type === 'dispose') {
+                    this._disposed = true;
+                    this._telemetryView = null;
+                    this._telemetrySeqView = null;
+                    this.port.postMessage({ type: 'disposed' });
+                } else if (msg.type === 'init') {
                     if (this._ready) {
                         return;
                     }
                     this._initWasm(msg.wasmBytes);
+                } else if (msg.type === 'init-sab') {
+                    this._telemetryView = new Float32Array(msg.sab, msg.byteOffset, TELEMETRY_SLOT_FLOATS);
+                    this._telemetrySeqView = new Int32Array(msg.sab, msg.byteOffset, TELEMETRY_SLOT_FLOATS);
                 } else if (!this._ready) {
                     this._pendingMessages.push(msg);
                 } else if (!this._faulted) {
@@ -191,6 +211,8 @@ class LevainProcessor extends AudioWorkletProcessor {
         }
         switch (msg.type) {
             case 'init':
+            case 'init-sab':
+            case 'dispose':
                 break;
             case 'noteOn':
                 inst.note_on_with_channel(msg.note, msg.velocity, msg.channel ?? 0);
@@ -213,6 +235,12 @@ class LevainProcessor extends AudioWorkletProcessor {
             case 'allNotesOff':
                 inst.all_notes_off();
                 break;
+            case 'allSoundsOff':
+                inst.all_sounds_off();
+                this._queue.length = 0;
+                this._queueHead = 0;
+                this._publishLifecycle(inst.lifecycle_state());
+                break;
             case 'param': {
                 const rustName = PARAM_MAP[msg.name] ?? msg.name;
                 inst.set_param(rustName, msg.value);
@@ -223,9 +251,6 @@ class LevainProcessor extends AudioWorkletProcessor {
                 break;
             case 'setInstrument':
                 inst.set_instrument(msg.instrumentId);
-                break;
-            case 'bypass':
-                this._bypassed = msg.bypassed;
                 break;
             case 'addSample':
                 inst.add_sample(msg.data, msg.frameCount, msg.channels, msg.sampleRate);
@@ -289,8 +314,23 @@ class LevainProcessor extends AudioWorkletProcessor {
         }
     }
 
+    _publishLifecycle(lifecycleState: number): void {
+        const telemetryView = this._telemetryView;
+        const telemetrySeqView = this._telemetrySeqView;
+        if (!telemetryView || !telemetrySeqView || lifecycleState === this._lastLifecycleState) {
+            return;
+        }
+        beginTelemetryPublish(telemetrySeqView);
+        telemetryView[TELEMETRY_LIFECYCLE_IDX] = lifecycleState;
+        endTelemetryPublish(telemetrySeqView);
+        this._lastLifecycleState = lifecycleState;
+    }
+
     process(_inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
-        if (!this._ready || !this._instance || this._faulted || this._bypassed) {
+        if (this._disposed) {
+            return false;
+        }
+        if (!this._ready || !this._instance || this._faulted) {
             return true;
         }
 
@@ -316,6 +356,16 @@ class LevainProcessor extends AudioWorkletProcessor {
                 return true;
             }
 
+            const lifecycleState = inst.lifecycle_state();
+            const out1 = output[1] ?? null;
+            if (lifecycleState === PROCESS_LIFECYCLE_SLEEP) {
+                inst.advance_silence(frames);
+                out0.fill(0);
+                out1?.fill(0);
+                this._publishLifecycle(lifecycleState);
+                return true;
+            }
+
             const leftPtr = inst.process(processFrames);
             const rightPtr = inst.get_right_ptr();
 
@@ -326,10 +376,10 @@ class LevainProcessor extends AudioWorkletProcessor {
             const outMem = this._memory?.buffer ?? mem;
 
             out0.set(this._outLeftView.get(outMem, leftPtr, processFrames));
-            const out1 = output[1];
             if (out1) {
                 out1.set(this._outRightView.get(outMem, rightPtr, processFrames));
             }
+            this._publishLifecycle(inst.lifecycle_state());
         } catch (error) {
             this._faulted = true;
             this.port.postMessage({ type: 'error', message: String(error) });

@@ -783,6 +783,12 @@ impl VoicePool {
         }
     }
 
+    pub fn stop_all(&mut self) {
+        for voice in self.voices.iter_mut() {
+            voice.active = false;
+        }
+    }
+
     /// Apply MPE per-note expression to the voices currently *held* on
     /// `channel` at `note` (audit MD-2). Addressing by note alone would also
     /// bend a still-ringing release tail at that pitch, or the other member

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { createLevainNode, isLevainDevice } from '../LevainNode';
+import { LEVAIN_IDX, telemetryAllocator, TELEMETRY_SEQ_IDX } from '../telemetryAllocator';
 
 describe('isLevainDevice', () => {
     it('should return true only for the levain device type string', () => {
@@ -87,10 +88,9 @@ describe('createLevainNode runtime-fault notification', () => {
 });
 
 // Bypass-entry voice release is owned by TrackNode.updateBypass, which calls
-// controller.allNotesOff() (the Levain worklet's message handler dispatches it
-// to the WASM instance even while the processor is muted). setBypass itself
-// only posts the bypass mute — no in-node allNotesOff, or the release burst
-// suppression path would run twice per bypass entry.
+// controller.allNotesOff(). setBypass only gates new noteOn locally: TrackNode
+// removes the generator from the audible graph while the processor completes
+// its release and reaches DSP-owned sleep.
 describe('createLevainNode bypass and allNotesOff surfaces', () => {
     let postMessage: ReturnType<typeof vi.fn>;
 
@@ -120,7 +120,7 @@ describe('createLevainNode bypass and allNotesOff surfaces', () => {
         expect(postMessage).toHaveBeenCalledWith({ type: 'allNotesOff' });
     });
 
-    it('setBypass posts only the bypass mute — release is TrackNode-owned', async () => {
+    it('setBypass hard-stops sounding state before TrackNode disconnects the generator', async () => {
         const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
         const result = await createLevainNode(ctx);
         postMessage.mockClear();
@@ -128,18 +128,17 @@ describe('createLevainNode bypass and allNotesOff surfaces', () => {
         result.setBypass(true);
 
         expect(postMessage).toHaveBeenCalledTimes(1);
-        expect(postMessage).toHaveBeenCalledWith({ type: 'bypass', bypassed: true });
+        expect(postMessage).toHaveBeenCalledWith({ type: 'allSoundsOff' });
     });
 
-    it('un-bypass posts only the bypass unmute', async () => {
+    it('un-bypass does not send processor control messages', async () => {
         const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
         const result = await createLevainNode(ctx);
         postMessage.mockClear();
 
         result.setBypass(false);
 
-        expect(postMessage).toHaveBeenCalledTimes(1);
-        expect(postMessage).toHaveBeenCalledWith({ type: 'bypass', bypassed: false });
+        expect(postMessage).not.toHaveBeenCalled();
     });
 
     it('noteOn posts while unbypassed and is suppressed while bypassed', async () => {
@@ -151,8 +150,7 @@ describe('createLevainNode bypass and allNotesOff surfaces', () => {
         result.noteOn(60, 100);
         expect(postMessage).toHaveBeenCalledWith({ type: 'noteOn', note: 60, velocity: 100, sampleFrame: undefined });
 
-        // Bypassed → noteOn is a no-op. setBypass itself posts the bypass mute;
-        // clear after it so only the subsequent noteOn is observed.
+        // Bypassed → noteOn is a no-op.
         result.setBypass(true);
         postMessage.mockClear();
         result.noteOn(60, 100);
@@ -197,5 +195,91 @@ describe('createLevainNode bypass and allNotesOff surfaces', () => {
 
         await createLevainNode(suspendedCtx);
         expect(resume).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('createLevainNode processor lifecycle telemetry', () => {
+    let postMessage: ReturnType<typeof vi.fn>;
+    let close: ReturnType<typeof vi.fn>;
+    let onmessage: ((event: MessageEvent<unknown>) => void) | null;
+
+    beforeEach(() => {
+        postMessage = vi.fn();
+        close = vi.fn();
+        onmessage = null;
+        class FakeWorkletNode {
+            port = {
+                postMessage,
+                close,
+                get onmessage() {
+                    return onmessage;
+                },
+                set onmessage(handler: ((event: MessageEvent<unknown>) => void) | null) {
+                    onmessage = handler;
+                },
+            };
+            connect = vi.fn();
+            disconnect = vi.fn();
+        }
+        vi.stubGlobal('AudioWorkletNode', FakeWorkletNode);
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        vi.clearAllMocks();
+    });
+
+    it('projects stable lifecycle codes published by the worklet SAB', async () => {
+        const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
+        const result = await createLevainNode(ctx);
+        const initMessage = postMessage.mock.calls
+            .map(([message]) => message as { type?: string; sab?: SharedArrayBuffer; byteOffset?: number })
+            .find((message) => message.type === 'init-sab');
+
+        expect(initMessage?.sab).toBeInstanceOf(SharedArrayBuffer);
+        expect(result.processorLifecycle()).toBeNull();
+
+        const byteOffset = initMessage?.byteOffset ?? 0;
+        const values = new Float32Array(initMessage!.sab!, byteOffset);
+        const sequence = new Int32Array(initMessage!.sab!, byteOffset);
+        values[LEVAIN_IDX.lifecycle] = 3;
+        Atomics.store(sequence, TELEMETRY_SEQ_IDX, 2);
+
+        expect(result.processorLifecycle()).toBe('sleep');
+    });
+
+    it('releases the telemetry slot only after the processor acknowledges disposal', async () => {
+        const releaseSlot = vi.spyOn(telemetryAllocator, 'releaseSlot');
+        const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
+        const result = await createLevainNode(ctx);
+
+        result.destroy();
+
+        expect(postMessage).toHaveBeenCalledWith({ type: 'dispose' });
+        expect(releaseSlot).not.toHaveBeenCalled();
+        expect(close).not.toHaveBeenCalled();
+
+        onmessage?.({ data: { type: 'disposed' } } as MessageEvent<unknown>);
+
+        expect(releaseSlot).toHaveBeenCalledTimes(1);
+        expect(close).toHaveBeenCalledTimes(1);
+    });
+
+    it('stops reporting stale lifecycle state after a runtime fault', async () => {
+        const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
+        const result = await createLevainNode(ctx);
+        const initMessage = postMessage.mock.calls
+            .map(([message]) => message as { type?: string; sab?: SharedArrayBuffer; byteOffset?: number })
+            .find((message) => message.type === 'init-sab');
+        const byteOffset = initMessage?.byteOffset ?? 0;
+        const values = new Float32Array(initMessage!.sab!, byteOffset);
+        const sequence = new Int32Array(initMessage!.sab!, byteOffset);
+        values[LEVAIN_IDX.lifecycle] = 0;
+        Atomics.store(sequence, TELEMETRY_SEQ_IDX, 2);
+        expect(result.processorLifecycle()).toBe('continue');
+
+        onmessage?.({ data: { type: 'error', message: 'wasm trap' } } as MessageEvent<unknown>);
+
+        expect(result.processorLifecycle()).toBeNull();
     });
 });
