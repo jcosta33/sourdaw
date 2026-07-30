@@ -1,0 +1,31 @@
+src/modules/AudioEngine/engine/KneadNode.ts
+  s_66d4924c65dcd2::t_e772b509f0dd11 18,72-79
+src/modules/AudioEngine/engine/TrackNode.ts
+  s_66d4924c65dcd2::t_1ddc0072b873fb 40,477-479,588-592,662-666,673
+src/modules/AudioEngine/engine/__tests__/KneadNode.spec.ts
+  s_66d4924c65dcd2::t_ec6f3ef9d0fc42 119-127
+src/modules/AudioEngine/engine/__tests__/TrackNodeDevices.spec.ts
+  s_66d4924c65dcd2::t_0666690feebe21 110,114,116,122-124,528
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistryDescriptors.spec.ts
+  s_66d4924c65dcd2::t_b2475a68e72058 484,488,492-493,548,552,557-558,789-796,829-836
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_66d4924c65dcd2::t_a6e8dd29966905 39,59-108,113,134-136,187,208-210,282,306-308,374,385-388,425,436-438,483,494-497,543,569-572,636,652-655,734,739-741,775,798-800,935,949-951,961,967,974
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngineBranches.spec.ts
+  s_66d4924c65dcd2::t_c716411a9709b3 129,548,560
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "76155666c6042ef86bb4ca8f6a8c981aac0d9309",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
