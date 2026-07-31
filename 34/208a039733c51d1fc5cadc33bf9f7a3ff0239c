@@ -1,0 +1,29 @@
+src/modules/AudioEngine/engine/GrandBouleNode.ts
+  s_46858aea59fe96::t_91660a910213d7 118-123,138,143-146,148-158
+src/modules/AudioEngine/engine/__tests__/GrandBouleNode.spec.ts
+  s_46858aea59fe96::t_2e5487dd8cb50c 33-51,53,55,159-161,166,169-185
+src/modules/AudioEngine/services/grandBouleProcessor.ts
+  s_46858aea59fe96::t_8e1ad6a9080775 22-33,43-48,109-110,125-127,147-164,207-210
+src/modules/AudioEngine/workers/__tests__/grandBouleEngineWorker.noteTiming.spec.ts
+  s_46858aea59fe96::t_73fc6dc532b26b 1-223
+src/modules/AudioEngine/workers/__tests__/grandBouleEngineWorker.offlineNoteTiming.spec.ts
+  s_46858aea59fe96::t_e57f0862981ef2 1-246
+src/modules/AudioEngine/workers/grandBouleEngineWorker.ts
+  s_46858aea59fe96::t_249ede4b9c4fd0 11-28,30-31,33-35,92-127,167-191,213-285,305-310,335-366,368-370,381-388,441-444,450-481,484-490,493-494,496
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.18",
+  "base_commit_sha": "34208a039733c51d1fc5cadc33bf9f7a3ff0239c",
+  "prompts": {},
+  "sessions": {
+    "s_46858aea59fe96": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a405248ad93ec234c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
