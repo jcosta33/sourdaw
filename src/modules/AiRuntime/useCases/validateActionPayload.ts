@@ -271,9 +271,17 @@ const validators = {
 
     // MIDI note batch ops
     quantizeNotes: (param): param is PayloadOf<'quantizeNotes'> =>
-        isObj(param) && isString(param.clipId) && isNumber(param.gridSize),
+        isObj(param) &&
+        hasExactKeys(param, ['clipId', 'gridSize']) &&
+        isNonEmptyString(param.clipId) &&
+        isInRange(param.gridSize, Number.EPSILON, 64),
     transposeNotes: (param): param is PayloadOf<'transposeNotes'> =>
-        isObj(param) && isString(param.clipId) && isNumber(param.semitones),
+        isObj(param) &&
+        hasExactKeys(param, ['clipId', 'semitones']) &&
+        isNonEmptyString(param.clipId) &&
+        isInRange(param.semitones, -127, 127) &&
+        Number.isInteger(param.semitones) &&
+        param.semitones !== 0,
 
     // Marker + section
     removeMarker: (param): param is PayloadOf<'removeMarker'> => isObj(param) && isString(param.markerId),

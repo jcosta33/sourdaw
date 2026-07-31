@@ -106,7 +106,73 @@ function createClipContext(): ProjectContext {
     };
 }
 
+function createMidiClipContext(): ProjectContext {
+    const context = createClipContext();
+    const sourceTrack = context.tracks.find((track) => track.id === 'track-vocals');
+    const sourceClip = sourceTrack?.clips[0];
+    if (!sourceTrack || !sourceClip) {
+        throw new Error('Expected clip fixtures');
+    }
+    const midiClip = {
+        ...sourceClip,
+        id: 'clip-midi',
+        name: 'Piano MIDI',
+        type: 'midi' as const,
+        noteCount: 4,
+    };
+    return {
+        ...context,
+        tracks: context.tracks.map((track) =>
+            track.id === sourceTrack.id ? { ...track, clipCount: 1, clips: [midiClip] } : track
+        ),
+        selectedClipId: midiClip.id,
+        selectedClipIds: [midiClip.id],
+    };
+}
+
 describe('bridgeGroundedLlmToolCalls', () => {
+    it('grounds whole-clip MIDI transforms and rejects selected-note or mismatched values', () => {
+        const context = createMidiClipContext();
+        const quantize = bridge(
+            [{ name: 'quantizeNotes', arguments: { clipId: 'clip-midi', gridSize: 0.25 } }],
+            'quantize notes in Piano MIDI to a 0.25 beat grid',
+            context
+        );
+        const transpose = bridge(
+            [{ name: 'transposeNotes', arguments: { clipId: 'clip-midi', semitones: -7 } }],
+            'transpose notes in Piano MIDI by -7 semitones',
+            context
+        );
+        const selectedNotes = bridge(
+            [{ name: 'transposeNotes', arguments: { clipId: 'clip-midi', semitones: 7 } }],
+            'transpose notes in Piano MIDI by 7 semitones, but only the selected notes',
+            context
+        );
+        const wrongValue = bridge(
+            [{ name: 'quantizeNotes', arguments: { clipId: 'clip-midi', gridSize: 0.5 } }],
+            'quantize notes in Piano MIDI to a 0.25 beat grid',
+            context
+        );
+        const audioTarget = bridge(
+            [{ name: 'transposeNotes', arguments: { clipId: 'clip-intro', semitones: 7 } }],
+            'transpose notes in Intro by 7 semitones',
+            createClipContext()
+        );
+
+        expect(quantize.actions).toEqual([
+            { type: 'quantizeNotes', payload: { clipId: 'clip-midi', gridSize: 0.25 } },
+        ]);
+        expect(transpose.actions).toEqual([
+            { type: 'transposeNotes', payload: { clipId: 'clip-midi', semitones: -7 } },
+        ]);
+        expect(selectedNotes.actions).toEqual([]);
+        expect(selectedNotes.rejections[0]?.reason).toContain('Selected-note edits are not supported');
+        expect(wrongValue.actions).toEqual([]);
+        expect(wrongValue.rejections[0]?.reason).toContain('does not match');
+        expect(audioTarget.actions).toEqual([]);
+        expect(audioTarget.rejections[0]?.reason).toContain('not grounded');
+    });
+
     it('grounds multiple distinct targets from one provider plan', () => {
         const result = bridge(
             [

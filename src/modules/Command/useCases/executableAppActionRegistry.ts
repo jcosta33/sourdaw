@@ -16,7 +16,8 @@ export type ExecutableAppActionTargetCapability =
     | 'device-parameter'
     | 'automation-lane'
     | 'clip'
-    | 'editable-clip';
+    | 'editable-clip'
+    | 'editable-midi-clip';
 
 export type ExecutableAppActionTargetRule = {
     argument: string;
@@ -72,6 +73,10 @@ const clipTargetRules = [
 
 const editableClipTargetRules = [
     { argument: 'clipId', capability: 'editable-clip' },
+] as const satisfies readonly ExecutableAppActionTargetRule[];
+
+const editableMidiClipTargetRules = [
+    { argument: 'clipId', capability: 'editable-midi-clip' },
 ] as const satisfies readonly ExecutableAppActionTargetRule[];
 
 const sendTargetRules = [
@@ -253,6 +258,36 @@ export const executableAppActionDescriptors = [
         parameters: {
             properties: { clipId: { type: 'string' }, gain: { type: 'number', description: '0.0 to 2.0' } },
             required: ['clipId', 'gain'],
+        },
+    },
+    {
+        actionType: 'quantizeNotes',
+        risk: 'destructive-reversible',
+        description: 'Snap every note in one MIDI clip to an explicit beat grid.',
+        intentPhrases: ['quantize notes', 'quantize midi', 'snap midi notes'],
+        targetRules: editableMidiClipTargetRules,
+        valueRules: [{ argument: 'gridSize', kind: 'number-if-present', requiredInPrompt: true }],
+        parameters: {
+            properties: {
+                clipId: { type: 'string', description: 'Existing unlocked non-empty MIDI clip ID' },
+                gridSize: { type: 'number', description: 'Beat grid greater than 0 and at most 64' },
+            },
+            required: ['clipId', 'gridSize'],
+        },
+    },
+    {
+        actionType: 'transposeNotes',
+        risk: 'broad-reversible',
+        description: 'Transpose every note in one MIDI clip by an explicit semitone delta.',
+        intentPhrases: ['transpose notes', 'transpose midi', 'shift midi notes', 'shift notes'],
+        targetRules: editableMidiClipTargetRules,
+        valueRules: [{ argument: 'semitones', kind: 'number-if-present', requiredInPrompt: true }],
+        parameters: {
+            properties: {
+                clipId: { type: 'string', description: 'Existing unlocked non-empty MIDI clip ID' },
+                semitones: { type: 'integer', description: 'Non-zero semitone delta from -127 through 127' },
+            },
+            required: ['clipId', 'semitones'],
         },
     },
     {
