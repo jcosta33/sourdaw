@@ -118,6 +118,19 @@ export type AutomationPointSnapshot = {
 };
 export type TakeLaneSnapshot = { readonly id: string; readonly trackId: string };
 export type MidiNotesSnapshot = readonly { readonly id: string }[];
+export type MidiClipNoteSnapshot = {
+    readonly id: string;
+    readonly pitch: number;
+    readonly startBeat: number;
+    readonly duration: number;
+    readonly velocity: number;
+    readonly probability?: number;
+    readonly pressure?: number;
+    readonly slide?: number;
+    readonly pitchBend?: number;
+    readonly pitchBendRangeSemitones?: number;
+    readonly channel?: number;
+};
 export type MidiCcSnapshot = readonly { readonly id: string }[];
 export type MidiPitchBendSnapshot = readonly { readonly id: string }[];
 export type RippleShiftSnapshot = {
@@ -469,6 +482,15 @@ export type AppAction =
           };
       }
     | { type: 'quantizeNotes'; payload: { clipId: string; gridSize: number; strength?: number; swing?: number } }
+    | {
+          /** Internal inverse for whole-clip MIDI note transforms. Provider payloads never carry snapshots. */
+          type: 'restoreMidiClipNotes';
+          payload: {
+              clipId: string;
+              notes: readonly MidiClipNoteSnapshot[];
+              expectedNotes: readonly MidiClipNoteSnapshot[];
+          };
+      }
     | { type: 'quantizeNoteLengths'; payload: { clipId: string; gridSize: number } }
     | { type: 'transposeNotes'; payload: { clipId: string; semitones: number } }
     | {

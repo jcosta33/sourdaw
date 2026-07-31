@@ -5,6 +5,7 @@ import { handleHumanizeNotes } from '../handlers/noteTransform/handleHumanizeNot
 import { handleInvertNotes } from '../handlers/noteTransform/handleInvertNotes';
 import { handleQuantizeNoteLengths } from '../handlers/noteTransform/handleQuantizeNoteLengths';
 import { handleQuantizeNotes } from '../handlers/noteTransform/handleQuantizeNotes';
+import { handleRestoreMidiClipNotes } from '../handlers/noteTransform/handleRestoreMidiClipNotes';
 import { handleRetrogradeNotes } from '../handlers/noteTransform/handleRetrogradeNotes';
 import { handleScaleAllVelocities } from '../handlers/noteTransform/handleScaleAllVelocities';
 import { handleScaleVelocities } from '../handlers/noteTransform/handleScaleVelocities';
@@ -17,6 +18,7 @@ type MidiNoteTransformAppAction =
     | Extract<AppAction, { type: 'invertNotes' }>
     | Extract<AppAction, { type: 'quantizeNoteLengths' }>
     | Extract<AppAction, { type: 'quantizeNotes' }>
+    | Extract<AppAction, { type: 'restoreMidiClipNotes' }>
     | Extract<AppAction, { type: 'retrogradeNotes' }>
     | Extract<AppAction, { type: 'scaleAllVelocities' }>
     | Extract<AppAction, { type: 'scaleVelocities' }>
@@ -37,6 +39,7 @@ export function getMidiNoteTransformHandlers(): MidiNoteTransformHandlersMap {
         invertNotes: handleInvertNotes,
         quantizeNoteLengths: handleQuantizeNoteLengths,
         quantizeNotes: handleQuantizeNotes,
+        restoreMidiClipNotes: handleRestoreMidiClipNotes,
         retrogradeNotes: handleRetrogradeNotes,
         scaleAllVelocities: handleScaleAllVelocities,
         scaleVelocities: handleScaleVelocities,
