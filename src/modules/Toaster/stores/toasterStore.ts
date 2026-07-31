@@ -58,12 +58,16 @@ export const toasterStore = createStore<ToasterInstances>({
  * `defaultToasterState.kit`, so no two instances can ever alias the same
  * pads/patterns arrays.
  */
-export function registerToasterDevice(deviceId: string): void {
+export function registerToasterDevice(deviceId: string, initialKit?: ToasterKit): void {
     const instances = toasterStore.value ?? {};
     if (instances[deviceId]) {
         return;
     }
-    toasterStore.set({ ...instances, [deviceId]: { ...defaultToasterState, kit: createDefaultKit() } });
+    // `initialKit` is the kit project truth already holds for this device. Taking it
+    // here rather than loading it in a second write matters: the record is created
+    // holding its saved kit, so nothing ever observes this device carrying a default
+    // kit it did not have, and a load produces no store change that looks like an edit.
+    toasterStore.set({ ...instances, [deviceId]: { ...defaultToasterState, kit: initialKit ?? createDefaultKit() } });
 }
 
 export function unregisterToasterDevice(deviceId: string): void {

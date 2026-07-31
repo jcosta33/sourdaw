@@ -252,6 +252,19 @@ function isKneadState(value: unknown): boolean {
     );
 }
 
+/**
+ * `deviceState` is deliberately not validated here, for the same reason
+ * `externalStateChunk` is not: a failure in this predicate does not drop a field or a
+ * device, it makes `isHydratableProjectData` reject the **entire project file**
+ * (`isTrack` → `return false` → `applyImportedProjectData` abandons the import).
+ *
+ * A device-state chunk is opaque to this layer and written by whichever module owns
+ * the device, so a version this build has never seen is an ordinary, expected value —
+ * not a corrupt file. Checking it here would let one unrecognised chunk make a
+ * project unopenable. The chunk is validated where a failure costs only the chunk:
+ * `normalize_device_state` in the track projection, which every import path runs
+ * through afterwards, and which degrades a malformed chunk to the module default.
+ */
 function isDevice(value: unknown): boolean {
     return (
         isRecord(value) &&

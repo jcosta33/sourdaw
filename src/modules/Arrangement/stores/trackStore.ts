@@ -9,6 +9,8 @@ import type {
     ClipKneadBlob,
     ClipKneadState,
     Device,
+    DeviceStateChunk,
+    DeviceStateValue,
     FreezeState,
     InputMonitoring,
     MidiFxDevice,
@@ -22,6 +24,8 @@ export type {
     AutomationMode,
     Clip,
     Device,
+    DeviceStateChunk,
+    DeviceStateValue,
     FollowAction,
     InputMonitoring,
     Send,
@@ -344,8 +348,77 @@ function normalize_device(value: unknown): Device | null {
     if (typeof value.externalStateChunk === 'string') {
         device.externalStateChunk = value.externalStateChunk;
     }
+    const device_state = normalize_device_state(value.deviceState);
+    if (device_state) {
+        device.deviceState = device_state;
+    }
 
     return device;
+}
+
+/**
+ * Keep only values Automerge can actually store and merge. A chunk arriving from a
+ * hand-edited file, a foreign peer or an older build can carry anything; anything
+ * this returns null for is dropped from the chunk rather than persisted as garbage.
+ */
+function normalize_device_state_value(value: unknown): DeviceStateValue | null {
+    if (value === null || typeof value === 'string' || typeof value === 'boolean') {
+        return value;
+    }
+    // Non-finite numbers are the reason this is not a plain `typeof` check: NaN and
+    // Infinity survive an Automerge write but not the JSON round-trip the `.sourdaw`
+    // snapshot takes, so a kit holding one would reload as `null` and read as a
+    // structurally valid chunk carrying a value no device can use.
+    if (is_finite_number(value)) {
+        return value;
+    }
+    if (Array.isArray(value)) {
+        return value.map(normalize_device_state_value).filter(is_not_null);
+    }
+    if (is_plain_object(value)) {
+        return normalize_device_state_record(value);
+    }
+    return null;
+}
+
+function normalize_device_state_record(value: PlainObject): { [key: string]: DeviceStateValue } {
+    const record: { [key: string]: DeviceStateValue } = {};
+    for (const [key, entry] of Object.entries(value)) {
+        const normalized = normalize_device_state_value(entry);
+        if (normalized !== null || entry === null) {
+            record[key] = normalized;
+        }
+    }
+    return record;
+}
+
+/**
+ * Project a device-state chunk, or null when the slot holds something that is not
+ * one.
+ *
+ * Disposition follows `normalize_freeze_state`: a malformed chunk costs the device
+ * its state and nothing more. The device, its track and the rest of the project all
+ * still load, and the owning module falls back to its own default — the same outcome
+ * as a device that never wrote state. Rejecting the track or the document here would
+ * turn one junk scalar written by one build into an unopenable project.
+ *
+ * `version` is required because it is the only thing that lets a future reader tell
+ * a payload it understands from one it does not. A chunk without a finite version is
+ * not an old chunk, it is an unidentifiable one, so it is dropped rather than
+ * assigned a version it never claimed.
+ */
+function normalize_device_state(value: unknown): DeviceStateChunk | null {
+    if (!is_plain_object(value) || !is_finite_number(value.version)) {
+        return null;
+    }
+    if (!is_plain_object(value.data)) {
+        return null;
+    }
+
+    return {
+        version: value.version,
+        data: normalize_device_state_record(value.data),
+    };
 }
 
 function normalize_device_array(value: unknown): Device[] | null {

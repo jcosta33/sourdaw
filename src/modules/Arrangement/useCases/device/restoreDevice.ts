@@ -42,6 +42,10 @@ export function restoreDevice({ trackId, deviceSnapshot, deviceIndex }: RestoreD
         ...(deviceSnapshot.externalStateChunk !== undefined
             ? { externalStateChunk: deviceSnapshot.externalStateChunk }
             : {}),
+        // Undoing a device removal has to bring its state back with it, or the
+        // restored device reads as one that never wrote state and silently resets to
+        // its module default — losing the kit the removal was supposed to be undoing.
+        ...(deviceSnapshot.deviceState !== undefined ? { deviceState: deviceSnapshot.deviceState } : {}),
     };
     const wasLive = shouldCreateLiveTrackStrip(track);
     const activatesFolderStrip = !wasLive && track.kind === 'folder' && device.type === 'toaster';

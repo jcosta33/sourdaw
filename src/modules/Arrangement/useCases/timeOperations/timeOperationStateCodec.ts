@@ -101,7 +101,12 @@ const FREEZE_STATE_UNDEFINED_PROPERTIES = new Set([
     'renderedAt',
 ]);
 const KNEAD_BLOB_UNDEFINED_PROPERTIES = new Set(['originalPitchCenterCents']);
-const DEVICE_UNDEFINED_PROPERTIES = new Set(['externalPluginId', 'externalInstanceId', 'externalStateChunk']);
+const DEVICE_UNDEFINED_PROPERTIES = new Set([
+    'externalPluginId',
+    'externalInstanceId',
+    'externalStateChunk',
+    'deviceState',
+]);
 
 function readDataObject(value: unknown, expectedKeys: readonly string[]): Record<string, unknown> | null {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {

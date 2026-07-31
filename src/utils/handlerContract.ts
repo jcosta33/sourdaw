@@ -8,6 +8,19 @@
  * owned by other modules.
  */
 
+/**
+ * Structural mirror of the `DeviceStateChunk` model. Kept structural, like every
+ * other snapshot here, so this neutral contract does not depend on a model owned by
+ * the Arrangement module.
+ */
+export type DeviceStateValueSnapshot =
+    string | number | boolean | null | DeviceStateValueSnapshot[] | { [key: string]: DeviceStateValueSnapshot };
+
+export type DeviceStateChunkSnapshot = {
+    readonly version: number;
+    readonly data: { readonly [key: string]: DeviceStateValueSnapshot };
+};
+
 export type DeviceSnapshot = {
     readonly id: string;
     readonly name: string;
@@ -17,6 +30,7 @@ export type DeviceSnapshot = {
     readonly externalPluginId?: string;
     readonly externalInstanceId?: string;
     readonly externalStateChunk?: string;
+    readonly deviceState?: DeviceStateChunkSnapshot;
 };
 export type TrackSnapshot = { readonly id: string };
 export type TrackSendSnapshot = {
@@ -394,6 +408,7 @@ export type AppAction =
       }
     | { type: 'setDeviceParameter'; payload: { deviceId: string; paramId: string; value: number } }
     | { type: 'setExternalPluginState'; payload: { deviceId: string; stateChunk: string } }
+    | { type: 'setDeviceState'; payload: { deviceId: string; state: DeviceStateChunkSnapshot } }
     | { type: 'createBus'; payload: { name: string; /** Internal replay identity. */ busId?: string } }
     | { type: 'createFolder'; payload: { name: string } }
     | {

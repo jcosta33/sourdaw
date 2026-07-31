@@ -5,6 +5,7 @@ import { getToasterDeviceControls } from '#/modules/AudioEngine/useCases';
 import { registerToasterDevice, toasterStore } from '../stores/toasterStore';
 
 import { disposeToasterDevice } from './disposeToasterDevice';
+import { hydrateToasterKitFromProject } from './hydrateToasterKitFromProject';
 import { projectToasterKitToEngineMessages } from './projectToasterKitToEngineMessages';
 
 type AudioDeviceLifecyclePayload = {
@@ -46,7 +47,11 @@ export function initToasterSubscribers({ eventBus, logger }: InitToasterSubscrib
         // panel edits, step toggles and kit loads all no-op, and the hydration
         // below never has a kit to send. Idempotent — a reload keeps the edits
         // the record already holds.
-        registerToasterDevice(deviceId);
+        // The kit project truth holds for this device, so the record is created
+        // carrying it. `registerToasterDevice` ignores it when a record already
+        // exists, which is what makes a mid-session device reload keep the edits in
+        // memory instead of rolling them back to the last mirrored state.
+        registerToasterDevice(deviceId, hydrateToasterKitFromProject(deviceId) ?? undefined);
 
         const state = toasterStore.value?.[deviceId];
         const kit = state?.kit;

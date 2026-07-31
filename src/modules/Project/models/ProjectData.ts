@@ -312,6 +312,23 @@ export type ProjectDevice = {
     /** Opaque native-plugin state chunk (base64) persisted in the `.sourdaw` snapshot
      *  so a native plugin reopens with its saved state (PH-3). */
     externalStateChunk?: string;
+    /** Versioned device-owned state that `parameterValues` cannot express — pad
+     *  names, enum strings, booleans, step sequences. Written and read by the owning
+     *  module; this format carries it without interpreting it. */
+    deviceState?: ProjectDeviceStateChunk;
+};
+
+/**
+ * Local mirror of the Arrangement `DeviceStateValue` model. Duplicated rather than
+ * imported because models do not cross module boundaries; structural typing keeps the
+ * two assignable, which `buildProjectData` relies on.
+ */
+export type ProjectDeviceStateValue =
+    string | number | boolean | null | ProjectDeviceStateValue[] | { [key: string]: ProjectDeviceStateValue };
+
+export type ProjectDeviceStateChunk = {
+    version: number;
+    data: { [key: string]: ProjectDeviceStateValue };
 };
 
 export type ProjectSend = {

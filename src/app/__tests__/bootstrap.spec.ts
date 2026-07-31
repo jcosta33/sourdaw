@@ -276,6 +276,7 @@ vi.mock('#/modules/Setlist/useCases', () => ({
 
 vi.mock('#/modules/Toaster/useCases', () => ({
     initToasterSubscribers: noop,
+    initToasterKitPersistence: noop,
     setToasterEventBus: noop,
     setToasterGrooveAssignmentExecutor: noop,
 }));

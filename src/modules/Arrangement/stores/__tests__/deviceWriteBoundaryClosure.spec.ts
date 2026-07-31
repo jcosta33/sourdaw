@@ -337,6 +337,12 @@ const DEVICE_DATA_COUNTS = {
         // devices to store the captured native-plugin state chunk; the single
         // `devices:` is the reviewed CRDT-backed write through executeAppAction.
         'src/modules/Arrangement/useCases/device/setExternalPluginState.ts': 1,
+        // Count provenance: 0 -> 1, measured. New sink. `setDeviceState` maps
+        // track devices to store a built-in device's own versioned state chunk —
+        // the non-numeric half of device state that `parameterValues` cannot
+        // hold. The single `devices:` is the reviewed CRDT-backed write through
+        // executeAppAction, the same shape as setExternalPluginState above.
+        'src/modules/Arrangement/useCases/device/setDeviceState.ts': 1,
         'src/modules/Arrangement/useCases/device/updateMidiFxParam.ts': 1,
         'src/modules/Arrangement/useCases/duplicateTrack.ts': 1,
         'src/modules/Arrangement/useCases/freezeBounce/bounceTrack.ts': 2,

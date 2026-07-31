@@ -66,6 +66,12 @@ function validateStoredDevice(value: unknown): Device | null {
         return null;
     }
 
+    // Carried so a template saved from a device with state reloads with it rather
+    // than resetting to the module default. Omitted rather than rejected when it is
+    // not shaped like a chunk: the state is opaque here, so an unrecognised one must
+    // not cost the user the whole template. The projection validates it properly.
+    const deviceState = isStoredDeviceState(value.deviceState) ? value.deviceState : undefined;
+
     return {
         id: value.id,
         name: value.name,
@@ -75,7 +81,22 @@ function validateStoredDevice(value: unknown): Device | null {
         externalPluginId: value.externalPluginId,
         externalInstanceId: value.externalInstanceId,
         externalStateChunk: value.externalStateChunk,
+        deviceState,
     };
+}
+
+function isStoredDeviceState(value: unknown): value is Device['deviceState'] {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+        return false;
+    }
+    const candidate: Record<string, unknown> = { ...value };
+    return (
+        typeof candidate.version === 'number' &&
+        Number.isFinite(candidate.version) &&
+        typeof candidate.data === 'object' &&
+        candidate.data !== null &&
+        !Array.isArray(candidate.data)
+    );
 }
 
 function validateStoredDevices(value: unknown): Device[] | null {

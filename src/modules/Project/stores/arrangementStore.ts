@@ -74,6 +74,22 @@ export type ProjectDevice = {
     /** Opaque native-plugin state chunk (base64) carried through arrangement
      *  snapshots so per-arrangement native plugin state survives reopen (PH-3). */
     externalStateChunk?: string;
+    /** Built-in device state `parameterValues` cannot express, versioned and owned
+     *  by the device's own module. Carried verbatim; this layer never reads it. */
+    deviceState?: ArrangementDeviceStateChunk;
+};
+
+/**
+ * Local mirror of the Arrangement `DeviceStateValue` model — duplicated rather than
+ * imported, like the rest of the shapes in this file; structural typing keeps them
+ * assignable across the snapshot boundary.
+ */
+type ArrangementDeviceStateValue =
+    string | number | boolean | null | ArrangementDeviceStateValue[] | { [key: string]: ArrangementDeviceStateValue };
+
+type ArrangementDeviceStateChunk = {
+    version: number;
+    data: { [key: string]: ArrangementDeviceStateValue };
 };
 
 export type ProjectSend = {
