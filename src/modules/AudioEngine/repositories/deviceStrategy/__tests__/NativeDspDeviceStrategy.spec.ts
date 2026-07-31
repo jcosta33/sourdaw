@@ -238,6 +238,32 @@ describe('createNativeDspStrategy factory dispatch', () => {
         );
     });
 
+    it('does not hand back a strategy before the device reports ready', async () => {
+        let settle: (value: Record<string, unknown>) => void = () => {};
+        const ready = new Promise<Record<string, unknown>>((resolve) => {
+            settle = resolve;
+        });
+        creators.createFermenterNode.mockResolvedValueOnce({ workletNode: {} as AudioWorkletNode, ready });
+
+        let built = false;
+        const pending = (async () => {
+            await createNativeDspStrategy(ctx, { type: 'fermenter', parameterValues: {} } as never);
+            built = true;
+        })();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        const beforeReady = built;
+
+        settle({});
+        await pending;
+
+        // Every offline device is built through here, and `renderOffline` starts
+        // the render as soon as this resolves. Grand Boule's worklet holds no ring
+        // buffer until its own `ready` settles, and a render begun before that is
+        // total silence which records zero dropouts — so returning early here is
+        // the difference between a correct export and an empty one.
+        expect({ beforeReady, afterReady: built }).toEqual({ beforeReady: false, afterReady: true });
+    });
+
     it('seeds the strategy with the device parameterValues after ready', async () => {
         const setParam = vi.fn();
         const seeded = { workletNode: {} as AudioWorkletNode, ready: Promise.resolve({}), setParam };

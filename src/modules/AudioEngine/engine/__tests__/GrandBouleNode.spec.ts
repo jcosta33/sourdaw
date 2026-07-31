@@ -12,13 +12,50 @@ describe('isGrandBouleDevice', () => {
 
 // Mock worklet-init + SharedArrayBuffer guard so createGrandBouleNode resolves
 // without a real AudioContext / worklet module / cross-origin isolation.
+//
+// The handshake stand-in settles only when a `ready` message actually arrives,
+// because that is the property under test. The previous stand-in resolved
+// unconditionally, which is precisely why nothing here could observe that
+// `ready` was answering for the engine worker alone.
 vi.mock('#/infra/audioWorklet/workletInitShared', () => ({
     ensureWorkletRegistered: vi.fn().mockResolvedValue(undefined),
-    createReadyHandshake: vi.fn(() => ({
-        promise: Promise.resolve({}),
-        onMessage: () => 'ready' as const,
-        isSettled: () => true,
-    })),
+    createReadyHandshake: vi.fn(() => {
+        let settle: (data: Record<string, unknown>) => void = () => {};
+        let fail: (reason: Error) => void = () => {};
+        let settled = false;
+        const promise = new Promise<Record<string, unknown>>((resolve, reject) => {
+            settle = resolve;
+            fail = reject;
+        });
+        return {
+            promise,
+            onMessage: (event: MessageEvent) => {
+                const data: unknown = event.data;
+                if (data === null || typeof data !== 'object') {
+                    return 'other' as const;
+                }
+                const { type } = data as { type?: unknown };
+                if (type !== 'ready' && type !== 'error') {
+                    return 'other' as const;
+                }
+                if (settled) {
+                    return 'late' as const;
+                }
+                settled = true;
+                if (type === 'error') {
+                    // Same narrowing the real helper does, so a non-string
+                    // message degrades to the generic text rather than to
+                    // '[object Object]'.
+                    const { message } = data as { message?: unknown };
+                    fail(new Error(typeof message === 'string' ? message : 'init error'));
+                    return 'error' as const;
+                }
+                settle(data as Record<string, unknown>);
+                return 'ready' as const;
+            },
+            isSettled: () => settled,
+        };
+    }),
 }));
 
 vi.mock('../pluginHostingErrors', () => ({ requireSharedArrayBuffer: vi.fn() }));
@@ -37,13 +74,18 @@ vi.mock('../../services/grandBouleProcessor.ts?worker&url', () => ({ default: 'g
 type PostMessageSpy = ReturnType<typeof vi.fn<(message: unknown, transfer?: readonly unknown[]) => void>>;
 
 /** The `init` payload out of a `postMessage` spy's recorded calls, if it sent one. */
-type PostedInit = { type: 'init'; syncSab?: unknown; contextFrame?: number };
+type PostedInit = {
+    type: 'init';
+    syncSab?: unknown;
+    contextFrame?: number;
+    countPreRollStarvation?: boolean;
+};
 
 function findInitMessage(spy: PostMessageSpy): PostedInit | undefined {
     for (const [message] of spy.mock.calls) {
         if (message !== null && typeof message === 'object' && 'type' in message && message.type === 'init') {
-            const { syncSab, contextFrame } = message as PostedInit;
-            return { type: 'init', syncSab, contextFrame };
+            const { syncSab, contextFrame, countPreRollStarvation } = message as PostedInit;
+            return { type: 'init', syncSab, contextFrame, countPreRollStarvation };
         }
     }
     return undefined;
@@ -58,6 +100,8 @@ describe('createGrandBouleNode', () => {
     let nodeDisconnect: ReturnType<typeof vi.fn>;
     let resume: ReturnType<typeof vi.fn>;
     let lastWorker: { onmessage: ((e: MessageEvent) => void) | null } | undefined;
+    let lastNodePort: { onmessage: ((e: MessageEvent) => void) | null } | undefined;
+    let lastWorkletNode: object | undefined;
     let ctx: BaseAudioContext;
 
     beforeEach(() => {
@@ -69,6 +113,8 @@ describe('createGrandBouleNode', () => {
         nodeDisconnect = vi.fn();
         resume = vi.fn().mockResolvedValue(undefined);
         lastWorker = undefined;
+        lastNodePort = undefined;
+        lastWorkletNode = undefined;
 
         // A plain constructor function (not a class) so the fake worker instance
         // can be captured without aliasing `this` — returning an object from a
@@ -82,10 +128,22 @@ describe('createGrandBouleNode', () => {
             lastWorker = instance;
             return instance;
         }
-        class FakeWorkletNode {
-            port = { postMessage: nodePostMessage, close: nodeClose };
-            connect = nodeConnect;
-            disconnect = nodeDisconnect;
+        // Same plain-constructor trick as FakeWorker above, for the same reason:
+        // the created node has to be captured, and returning an object from a
+        // `new`-invoked function replaces the implicit `this` with that object.
+        function FakeWorkletNode() {
+            const instance = {
+                port: {
+                    postMessage: nodePostMessage,
+                    close: nodeClose,
+                    onmessage: null as ((e: MessageEvent) => void) | null,
+                },
+                connect: nodeConnect,
+                disconnect: nodeDisconnect,
+            };
+            lastNodePort = instance.port;
+            lastWorkletNode = instance;
+            return instance;
         }
         class FakeSharedArrayBuffer {
             constructor(_byteLength: number) {}
@@ -149,12 +207,15 @@ describe('createGrandBouleNode', () => {
         await expect(freshCreate(ctx)).rejects.toThrow('Failed to fetch Grand Boule WASM: 500');
     });
 
-    it('should post an init message to the worklet once the engine worker reports ready', async () => {
+    it('hands the worklet its ring at construction, without waiting for the engine worker', async () => {
         await createGrandBouleNode(ctx);
-        nodePostMessage.mockClear();
 
-        lastWorker?.onmessage?.({ data: { type: 'ready' } } as MessageEvent);
-
+        // Nothing in the worklet's init depends on the engine worker having
+        // started: the ring, the dropout counters and the sync slot all exist
+        // before either side runs. Gating this on the worker's `ready` only
+        // narrowed the window in which the worklet could still be holding no
+        // ring once a render began.
+        //
         // The worklet is handed the ring SAB plus the shared dropout counters, so
         // ring starvation is tallied instead of silently emitting silence (RT-10),
         // plus the sync slot it publishes its render-cursor offset into — the only
@@ -164,12 +225,77 @@ describe('createGrandBouleNode', () => {
             sab: expect.anything(),
             dropoutSab: dropoutCounters.getSab(),
             syncSab: expect.anything(),
+            countPreRollStarvation: false,
         });
+    });
+
+    it('does not report ready until the worklet confirms it holds the ring', async () => {
+        const node = await createGrandBouleNode(ctx);
+        let resolved = false;
+        const watching = (async () => {
+            await node.ready;
+            resolved = true;
+        })();
+
+        lastWorker?.onmessage?.({ data: { type: 'ready' } } as MessageEvent);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        const afterWorkerOnly = resolved;
+
+        lastNodePort?.onmessage?.({ data: { type: 'ready' } } as MessageEvent);
+        await watching;
+
+        // The offline strategy awaits this promise and then starts rendering. A
+        // render that begins while the worklet still holds no ring emits total
+        // silence and records zero dropouts, because `process()` returns at its
+        // not-ready guard before the underrun is ever counted.
+        expect({ afterWorkerOnly, afterBoth: resolved }).toEqual({ afterWorkerOnly: false, afterBoth: true });
+    });
+
+    it('rejects ready when either side reports an init error', async () => {
+        const workerFailed = createGrandBouleNode(ctx).then((node) => {
+            lastWorker?.onmessage?.({ data: { type: 'error', message: 'wasm compile failed' } } as MessageEvent);
+            lastNodePort?.onmessage?.({ data: { type: 'ready' } } as MessageEvent);
+            return node.ready;
+        });
+        await expect(workerFailed).rejects.toThrow('wasm compile failed');
+
+        const workletFailed = createGrandBouleNode(ctx).then((node) => {
+            lastWorker?.onmessage?.({ data: { type: 'ready' } } as MessageEvent);
+            lastNodePort?.onmessage?.({ data: { type: 'error', message: 'ring map failed' } } as MessageEvent);
+            return node.ready;
+        });
+        // A device that cannot come up has to reach `buildDeviceChain`, which
+        // warns the export and drops it. Resolving `ready` on a half-built device
+        // is what put an unannounced silent track in the file.
+        await expect(workletFailed).rejects.toThrow('ring map failed');
+    });
+
+    it('tells the worklet to count starved quanta from the first only when rendering offline', async () => {
+        class FakeOfflineAudioContext {
+            state = 'suspended';
+            currentTime = 0;
+            sampleRate = 48000;
+        }
+        vi.stubGlobal('OfflineAudioContext', FakeOfflineAudioContext);
+
+        await createGrandBouleNode(new FakeOfflineAudioContext() as unknown as BaseAudioContext);
+        const offlineInit = findInitMessage(nodePostMessage);
+
+        nodePostMessage.mockClear();
+        await createGrandBouleNode(ctx);
+        const liveInit = findInitMessage(nodePostMessage);
+
+        // Live those quanta are pre-roll nobody hears; offline frame 0 is content,
+        // and a ring that never delivers at all is the one case the pre-roll rule
+        // reports as zero dropouts.
+        expect({
+            offline: offlineInit?.countPreRollStarvation,
+            live: liveInit?.countPreRollStarvation,
+        }).toEqual({ offline: true, live: false });
     });
 
     it('hands the engine worker the same sync slot it gave the worklet, plus the context anchor', async () => {
         await createGrandBouleNode(ctx);
-        lastWorker?.onmessage?.({ data: { type: 'ready' } } as MessageEvent);
 
         const workletInit = findInitMessage(nodePostMessage);
         const workerInit = findInitMessage(workerPostMessage);
@@ -311,10 +437,15 @@ describe('createGrandBouleNode', () => {
         expect(workerTerminate).toHaveBeenCalled();
     });
 
-    it('should expose the underlying worklet node and a ready promise', async () => {
+    it('should expose the underlying worklet node and a ready promise carrying the worker payload', async () => {
         const node = await createGrandBouleNode(ctx);
 
-        expect(node.workletNode).toBeDefined();
-        await expect(node.ready).resolves.toEqual({});
+        lastWorker?.onmessage?.({ data: { type: 'ready', engine: 'grand-boule' } } as MessageEvent);
+        lastNodePort?.onmessage?.({ data: { type: 'ready' } } as MessageEvent);
+
+        expect(node.workletNode).toBe(lastWorkletNode);
+        // The worker's payload is the one callers read; the worklet ack carries
+        // nothing but its own arrival.
+        await expect(node.ready).resolves.toEqual({ type: 'ready', engine: 'grand-boule' });
     });
 });
