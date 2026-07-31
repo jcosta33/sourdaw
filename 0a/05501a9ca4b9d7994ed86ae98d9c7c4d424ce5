@@ -1,0 +1,69 @@
+src/modules/AiRuntime/useCases/__tests__/describePlannedAction.spec.ts
+  s_bc88af7d3b054c::t_4675c30b233a53 80-106
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_bc88af7d3b054c::t_e16e298c384815 619-622,1084-1085,1088-1089
+  s_bc88af7d3b054c::t_daaeba50cea47d 1086-1087
+  s_66d4924c65dcd2::t_1f4e9ba80c5208 1090
+src/modules/AiRuntime/useCases/describePlannedAction.ts
+  s_bc88af7d3b054c::t_279fdb6b6d2b07 26-33,38-40
+  s_bc88af7d3b054c::t_c0ea163c48ee69 34-37
+src/modules/AiRuntime/models/__tests__/RuntimeAction.spec.ts
+  s_bc88af7d3b054c::t_adc8cb80fcf0bd 40-41,57-58,73-74
+src/modules/AiRuntime/useCases/agentReference/__tests__/resolveAgentReference.spec.ts
+  s_bc88af7d3b054c::t_da35bfb66121ff 69-71,75,87-90,244-261
+  s_ac9b259eab20ba::t_ae2f9008077c4a 262-263
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_bc88af7d3b054c::t_06bf5fab132049 109-132,134-147,149-175
+  s_bc88af7d3b054c::t_5c693dfb426117 148
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_bc88af7d3b054c::t_20366618b552ba 265-266,298-299
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_bc88af7d3b054c::t_20366618b552ba 19-20,78-81,263-292
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_bc88af7d3b054c::t_dc42c3d7d0c828 5,121-142,596-607,991
+src/modules/AiRuntime/useCases/agentReference/resolveAgentReference.ts
+  s_bc88af7d3b054c::t_e9a76081c3b4a8 16-17,107,205,210,365-369
+  s_bc88af7d3b054c::t_792d0920de62db 206-209
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_bc88af7d3b054c::t_79207e7e92d99e 92-99,532-569,1010-1012,1121,1133-1135
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_bc88af7d3b054c::t_e8ca484f5f0f57 426-432,436,438-466,468-470
+  s_bc88af7d3b054c::t_5fec5824addf73 193-219,425,433-435,437,467,471-524
+  s_bc88af7d3b054c::t_a372fa649e5480 525
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_bc88af7d3b054c::t_e7fdad6e6728ae 640,646,650-672
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_bc88af7d3b054c::t_20366618b552ba 274-277,279-284
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.19",
+  "base_commit_sha": "0a05501a9ca4b9d7994ed86ae98d9c7c4d424ce5",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
