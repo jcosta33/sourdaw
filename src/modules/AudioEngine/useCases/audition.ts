@@ -1,4 +1,5 @@
 import { trackStore } from '#/modules/Arrangement/stores';
+import { isFaustInstrumentModule } from '#/modules/PluginHost/useCases';
 import {
     scheduleNote,
     getDrumKitDefByIndex,
@@ -125,7 +126,12 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
         }
     }
 
-    const faustDevice = track?.devices.find((data) => data.type.startsWith('faust-'));
+    // Same instrument test the live scheduler and the offline chain builder use.
+    // The `faust-` prefix is on every Faust module, so matching it auditioned the
+    // note into the first Faust *effect* on the track — `startFaustNote` writes
+    // freq/gain/gate params a reverb has no address for — and the early return
+    // below then skipped the builtin-synth fallback, so the preview was silent.
+    const faustDevice = track?.devices.find((data) => isFaustInstrumentModule(data.type));
     if (faustDevice) {
         return startFaustNote(trackId, faustDevice.id, pitch, velocity, now);
     }
