@@ -1,0 +1,39 @@
+src/modules/AudioEngine/useCases/__tests__/audition.spec.ts
+  s_66d4924c65dcd2::t_d05c24e9e63e13 16-23
+  s_66d4924c65dcd2::t_ef2533bba38ace 3
+  s_66d4924c65dcd2::t_c93cfc8f2fbc6c 438
+  s_66d4924c65dcd2::t_a409f2191c08a2 439-449
+  s_66d4924c65dcd2::t_2b1c06791e1f4a 405,408-412,419-437
+  s_66d4924c65dcd2::t_b66a2f9ad0b1aa 450-451
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_66d4924c65dcd2::t_d82b547e403c2c 129-139
+  s_66d4924c65dcd2::t_1188a54823d0e2 1286-1298,1300,1302-1312
+  s_66d4924c65dcd2::t_b57e48491d6afc 21
+  s_66d4924c65dcd2::t_a3a14f36c458a4 1242-1285,1299,1301,1313
+  s_66d4924c65dcd2::t_4e3cfbe12a97cd 1219
+src/modules/AudioEngine/services/__tests__/toasterProcessor.spec.ts
+  s_66d4924c65dcd2::t_547553b0623e18 390-416
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_66d4924c65dcd2::t_6dbce856338923 414
+  s_66d4924c65dcd2::t_78332718d416d0 23
+  s_66d4924c65dcd2::t_cf4842a578bc66 400-410
+src/modules/AudioEngine/useCases/audition.ts
+  s_66d4924c65dcd2::t_e67cee9376781f 2
+  s_66d4924c65dcd2::t_37243ed3c5e8a0 129-134
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.18",
+  "base_commit_sha": "c9e19ed147006ad2bd1c576d5242aaf061637501",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
