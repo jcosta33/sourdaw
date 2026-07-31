@@ -1,0 +1,194 @@
+src/modules/Routing/useCases/sidechain/removeSidechainRouteSnapshot.ts
+  s_bc88af7d3b054c::t_6b3cb76bf5fe49 7
+  s_bc88af7d3b054c::t_a333abbb365699 1,4-5,9-14,16-22,25-27,31,33-34,38-41,43-45
+  s_bc88af7d3b054c::t_e2c76d34aa91fc 3,6,8
+  s_bc88af7d3b054c::t_165982d075640d 2
+  s_bc88af7d3b054c::t_f755c8e673ea3d 15
+  s_bc88af7d3b054c::t_eebe49498bc407 23-24,28-30,32,35-37,42
+  s_bc88af7d3b054c::t_5dbbcc9b8a2e16 46-48
+src/modules/AiRuntime/useCases/__tests__/getProjectContext.spec.ts
+  s_bc88af7d3b054c::t_07a05d4433d8ae 3,12,43-50,84,104,266-287
+  s_bc88af7d3b054c::t_971d4f06d00872 288-289
+src/modules/Command/useCases/__tests__/actionLabels.spec.ts
+  s_bc88af7d3b054c::t_80cd8273c4e39d 64-72
+src/modules/Routing/useCases/sidechain/addSidechainRouteSnapshot.ts
+  s_bc88af7d3b054c::t_a333abbb365699 1,6,8-11,17,24-49,51-76,79-81,85,87-88,92-95,97-99
+  s_bc88af7d3b054c::t_e2c76d34aa91fc 5,7,12
+  s_bc88af7d3b054c::t_ceaa40ea97621c 3
+  s_bc88af7d3b054c::t_f755c8e673ea3d 13-16,50
+  s_bc88af7d3b054c::t_eebe49498bc407 18-23,77-78,82-84,86,89-91,96
+  s_bc88af7d3b054c::t_165982d075640d 4
+  s_bc88af7d3b054c::t_6f0057aad9be27 2
+  s_bc88af7d3b054c::t_d89d28df891c2d 100-102
+src/modules/Arrangement/handlers/device/__tests__/handleAddSidechainRoute.spec.ts
+  s_bc88af7d3b054c::t_7359d5c9a8c31f 3,34,101-102
+  s_bc88af7d3b054c::t_e2e7d83a805354 1,8,13,20-24,29,31,33,36-41,43-45,47-54,58,60,65,68-69,72,74-79,84,87-88,91-97,99,103-112,114
+  s_bc88af7d3b054c::t_6f0057aad9be27 42,46
+  s_bc88af7d3b054c::t_7fa2634a91e536 2
+src/modules/Routing/useCases/sidechain/__tests__/sidechainRouteActions.spec.ts
+  s_bc88af7d3b054c::t_f755c8e673ea3d 138-147
+  s_bc88af7d3b054c::t_6f0057aad9be27 69,76-77,148,152-153,160,169-170,195,200-201
+  s_bc88af7d3b054c::t_1b034f073c66c1 92-100,178-184,186-187,204
+  s_bc88af7d3b054c::t_e2e7d83a805354 1-68,70-75,78-79,81-91,101-102,127,132-137,149-151,154-155,157-159,161-168,171-172,174-177,188-190,193-194,196-199,202-203,205-206
+  s_bc88af7d3b054c::t_7359d5c9a8c31f 80,103-126,128-131,156,173
+  s_bc88af7d3b054c::t_a6aa0d178a656d 185,191-192
+  s_bc88af7d3b054c::t_99f9bc26fc0af0 207-209
+  s_cd3209a2f50eb5::t_f17e7f22ad5e7d 210-228
+src/modules/Routing/useCases/__tests__/hydrateSidechainRoutes.spec.ts
+  s_bc88af7d3b054c::t_240f1030042e56 1-36,39-48,53-63,66-68,71-78,80-109
+src/modules/Routing/useCases/index.ts
+  s_bc88af7d3b054c::t_a333abbb365699 7,9
+src/modules/Arrangement/handlers/device/handleRemoveSidechainRoute.ts
+  s_bc88af7d3b054c::t_a333abbb365699 1,3-5,8-10,12,14-17,19-20,24-53,56-67,74-75,87,89-90
+  s_bc88af7d3b054c::t_ceaa40ea97621c 6-7
+  s_bc88af7d3b054c::t_6f0057aad9be27 11,13,18,21-23,68-72,76-86
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_bc88af7d3b054c::t_240f1030042e56 148-192,1238-1250,1271-1273,1608-1909
+src/modules/Routing/useCases/hydrateSidechainRoutes.ts
+  s_bc88af7d3b054c::t_240f1030042e56 1-2,5-6,8-10,13,15-36
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_bc88af7d3b054c::t_0ec5f0c3ed6a59 1251
+  s_bc88af7d3b054c::t_240f1030042e56 1-2,12,113-122,733-742,854-863,893-951,1051-1053,1121-1250,1252-1279,1294-1297,1438-1440,1446-1459,1491-1497
+  s_bc88af7d3b054c::t_016867a822cf26 1498
+src/modules/Command/useCases/actionLabels.ts
+  s_bc88af7d3b054c::t_80cd8273c4e39d 128
+src/modules/Routing/models/SidechainRoute.ts
+  s_bc88af7d3b054c::t_f755c8e673ea3d 18-28
+src/modules/Arrangement/handlers/device/handleAddSidechainRoute.ts
+  s_bc88af7d3b054c::t_a333abbb365699 1,3,6-9,12-18,20-55,58-64,66,68-69,76-77,89-92
+  s_bc88af7d3b054c::t_ceaa40ea97621c 10-11
+  s_bc88af7d3b054c::t_6f0057aad9be27 19,70-75,78-88
+src/modules/Arrangement/handlers/device/__tests__/handleRemoveSidechainRoute.spec.ts
+  s_bc88af7d3b054c::t_7359d5c9a8c31f 3,33
+  s_bc88af7d3b054c::t_e2e7d83a805354 1,9,14,17-25,29,32,35-36,38-51,54,56-57,60,62,65-66,69-72,74,76-78,81-87,89-92,95-96
+  s_bc88af7d3b054c::t_a3085b57ef6e15 2
+src/modules/Routing/useCases/sidechain/reconcileSidechainRouteRuntime.ts
+  s_bc88af7d3b054c::t_a333abbb365699 1-25
+  s_bc88af7d3b054c::t_1d040c56487abf 26
+src/modules/AiRuntime/models/Tools/__tests__/MidiAutomationRouting.spec.ts
+  s_bc88af7d3b054c::t_07a05d4433d8ae 3,9-12,82-88,102-103
+  s_bc88af7d3b054c::t_3a1f5e68d11791 89-101
+  s_bc88af7d3b054c::t_afc393e026e197 104
+docs/architecture/decisions/0028-llm-sidechain-routing-command-surface.md
+  s_bc88af7d3b054c::t_f481322c803f85 1-25
+src/modules/AiRuntime/models/ProjectContext.ts
+  s_b7d26a4910952b::t_dfa9bfa3a6c88a 11,42-50
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_5b10772d092dbe::t_da7bdb2e97295a 263-264,294-295
+src/modules/AiRuntime/models/Tools/MidiAutomationRouting.ts
+  s_b7d26a4910952b::t_69126ee5a7b425 239,248
+src/modules/AiRuntime/models/__tests__/RuntimeAction.spec.ts
+  s_b7d26a4910952b::t_e106917bb913f0 38-39,53-54,65-68
+src/modules/AiRuntime/transformers/__tests__/toolSelector.spec.ts
+  s_08802e9ea64204::t_be3e68eb401cd4 42-43,68-76
+src/modules/AiRuntime/useCases/__tests__/describePlannedAction.spec.ts
+  s_ac9b259eab20ba::t_a32cfd627bd0e6 79-108
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_5b10772d092dbe::t_f725c45e45f636 251-270
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_08802e9ea64204::t_f21c500fb24647 1162-1198
+src/modules/AiRuntime/useCases/describePlannedAction.ts
+  s_de1fd56a650771::t_fad0c94b78a40c 26-34
+src/modules/AiRuntime/useCases/getProjectContext.ts
+  s_b7d26a4910952b::t_3bc9818c83174e 5,20,36,45,58,68-69,105-112,187
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_b7d26a4910952b::t_b6fbc4c5909649 261-264,266-270
+src/modules/Arrangement/handlers/vca/__tests__/legacyVcaActionHistory.spec.ts
+  s_bc88af7d3b054c::t_619de6b7677cea 59,449,464,479,494,509,540,549,569,571,575-579
+src/modules/Command/useCases/__tests__/appActionExecutionPolicy.spec.ts
+  s_b7d26a4910952b::t_36cb9f632ad50b 16-17
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_b7d26a4910952b::t_82702ebc793ae7 336-357,786-802
+src/modules/Command/useCases/__tests__/executeAppAction.spec.ts
+  s_1898bd427abf27::t_c4e957a48206d4 174,177,182,187,189,191-207,210-215
+src/modules/Command/useCases/__tests__/executeAppActionBatch.spec.ts
+  s_cd3209a2f50eb5::t_910112b4a5b77a 132,134,137-154,168-169,171-172
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_b7d26a4910952b::t_07a9d4f60a015b 87-96,657-685
+src/modules/Command/useCases/executeAppAction.ts
+  s_cd3209a2f50eb5::t_1d60288af98d24 204-225
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_1898bd427abf27::t_38c5aa6decc154 401-420
+src/modules/Command/useCases/macro/__tests__/playback.spec.ts
+  s_08802e9ea64204::t_531d621cb50494 644-735
+src/modules/Command/useCases/macro/playback.ts
+  s_08802e9ea64204::t_e819d486d4d6ab 10,56-61,181-184,191-200,300,329
+src/modules/Routing/stores/__tests__/sidechainStore.spec.ts
+  s_cd3209a2f50eb5::t_c0ea0719462e2f 65-104
+src/modules/Routing/stores/sidechainStore.ts
+  s_cd3209a2f50eb5::t_d4f49773b264f1 85-147,156-157,171
+src/utils/handlerContract.ts
+  s_5b10772d092dbe::t_2ae945e7138283 678-701
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.18",
+  "base_commit_sha": "d58175e9bc4af3bf8373f492dd42ee3e9a151d2c",
+  "prompts": {},
+  "sessions": {
+    "s_08802e9ea64204": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fb3db-60ae-7fa1-8896-d41f8331ac72",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_1898bd427abf27": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a116c7572f05400dd",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_5b10772d092dbe": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fb3db-4ab8-74a3-95bc-31c92a72f6cc",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_b7d26a4910952b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fb3db-2a7b-7f11-b181-2c0321361e45",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_cd3209a2f50eb5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fb4f8-9442-79b0-8dac-f1afd7908c82",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_de1fd56a650771": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fb4f8-bbcc-7102-b91d-57c2a92a0c21",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
