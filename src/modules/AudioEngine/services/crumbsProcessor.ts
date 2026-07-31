@@ -176,7 +176,7 @@ class CrumbsProcessor extends AudioWorkletProcessor {
     _drainQueue(blockEndFrame: number): void {
         while (this._queueHead < this._queue.length) {
             const queued = this._queue[this._queueHead];
-            if (!queued || queued.sampleFrame > blockEndFrame) {
+            if (!queued || queued.sampleFrame >= blockEndFrame) {
                 break;
             }
             this._dispatch(queued);

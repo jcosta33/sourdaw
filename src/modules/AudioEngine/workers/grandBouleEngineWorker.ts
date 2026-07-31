@@ -267,11 +267,10 @@ function enqueueFramed(msg: GrandBouleQueuedMsg): void {
  * Voice everything due before `blockEnd`, which is exclusive — see
  * `blockEndContextFrame`.
  *
- * Note for anyone porting this back to the worklet processors: Levain, Fermenter
- * and Toaster break on `sampleFrame > blockEnd`, which drains a frame sitting
- * exactly on the boundary one block early. That off-by-one is deliberately not
- * reproduced here, and it is not fixed here either — it lives in three other
- * files and belongs in one change that moves all of them together.
+ * Levain, Fermenter, Toaster and Crumbs used to break on `sampleFrame > blockEnd`,
+ * which drained a frame sitting exactly on the boundary one block early. All four
+ * now use the same exclusive `>=` comparison as this worker, each covered by a
+ * boundary test in its own spec.
  *
  * Steady state costs nothing beyond the comparison: no allocation, no atomics,
  * and the backing array is truncated only once the queue has fully drained.
