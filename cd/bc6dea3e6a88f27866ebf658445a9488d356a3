@@ -1,0 +1,23 @@
+src/modules/AudioEngine/repositories/deviceStrategy/__tests__/NativeDspDeviceStrategy.spec.ts
+  s_66d4924c65dcd2::t_96576ddfbb6c5a 241-266
+src/modules/AudioEngine/engine/GrandBouleNode.ts
+  s_66d4924c65dcd2::t_e080b573c26b27 131-142,144-147,149-167
+src/modules/AudioEngine/engine/__tests__/GrandBouleNode.spec.ts
+  s_66d4924c65dcd2::t_8ae98060434912 15-19,22-44,84-85,97-98,112-127,191,194-199,212-233,377,380-386
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.19",
+  "base_commit_sha": "cdbc6dea3e6a88f27866ebf658445a9488d356a3",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
