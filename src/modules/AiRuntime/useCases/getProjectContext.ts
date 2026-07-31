@@ -2,6 +2,7 @@ import { clipSelectionStore, trackStore } from '#/modules/Arrangement/stores';
 import { getPlatformPlugins, getPluginById } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { midiStore } from '#/modules/MIDI/stores';
+import { sidechainStore } from '#/modules/Routing/stores';
 import { transportStore } from '#/modules/Transport/stores';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 
@@ -16,6 +17,7 @@ export type {
     ProjectContextDevice,
     ProjectContextDeviceParameter,
     ProjectContextSend,
+    ProjectContextSidechainRoute,
     ProjectContextTrack,
 } from '../models/ProjectContext';
 
@@ -31,6 +33,7 @@ const contextCache: {
     workspace: unknown;
     selection: unknown;
     midi: unknown;
+    sidechain: unknown;
     context: ProjectContext | null;
 } = {
     track: null,
@@ -39,6 +42,7 @@ const contextCache: {
     workspace: null,
     selection: null,
     midi: null,
+    sidechain: null,
     context: null,
 };
 
@@ -51,6 +55,7 @@ export function getProjectContext(): ProjectContext {
     // Read once per call instead of once per clip (§92.1). For a 100-track
     // project at ~20 clips each that's 2000 store dereferences → 1.
     const midiState = midiStore.value;
+    const sidechainState = sidechainStore.value;
     const notesByClipId = midiState?.notesByClipId;
 
     if (
@@ -60,7 +65,8 @@ export function getProjectContext(): ProjectContext {
         contextCache.transport === transportState &&
         contextCache.workspace === workspaceState &&
         contextCache.selection === selectionState &&
-        contextCache.midi === midiState
+        contextCache.midi === midiState &&
+        contextCache.sidechain === sidechainState
     ) {
         return contextCache.context;
     }
@@ -96,6 +102,14 @@ export function getProjectContext(): ProjectContext {
                     curve: point.curve,
                 })),
             })),
+        sidechainRoutes: (sidechainState?.routes ?? []).map((route) => ({
+            id: route.id,
+            sourceTrackId: route.sourceTrackId,
+            targetTrackId: route.targetTrackId,
+            targetDeviceId: route.targetDeviceId,
+            targetParameterId: route.targetParameterId,
+            gain: route.gain,
+        })),
         tracks: (trackState?.tracks ?? []).map((time) => ({
             id: time.id,
             name: time.name,
@@ -170,6 +184,7 @@ export function getProjectContext(): ProjectContext {
     contextCache.workspace = workspaceState;
     contextCache.selection = selectionState;
     contextCache.midi = midiState;
+    contextCache.sidechain = sidechainState;
     contextCache.context = built;
     return built;
 }

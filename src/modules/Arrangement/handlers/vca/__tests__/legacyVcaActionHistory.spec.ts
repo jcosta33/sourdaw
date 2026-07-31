@@ -56,7 +56,7 @@ function seedState(): void {
         {
             id: 'sidechain-device',
             name: 'Sidechain Compressor',
-            type: 'Compressor (Sidechain)',
+            type: 'builtin-sidechain-compressor',
             bypassed: false,
             parameterValues: {},
         },
@@ -446,6 +446,7 @@ describe('legacy VCA action history', () => {
     it.each([
         {
             label: 'a dormant source',
+            expectConflict: true,
             prepare: () => {
                 const source = trackStore.value?.tracks.find((track) => track.id === 'track-1');
                 if (!source) {
@@ -460,6 +461,7 @@ describe('legacy VCA action history', () => {
         },
         {
             label: 'a dormant destination',
+            expectConflict: true,
             prepare: () => {
                 const target = trackStore.value?.tracks.find((track) => track.id === 'track-2');
                 if (!target) {
@@ -474,6 +476,7 @@ describe('legacy VCA action history', () => {
         },
         {
             label: 'a malformed source',
+            expectConflict: true,
             prepare: () => {
                 const source = trackStore.value?.tracks.find((track) => track.id === 'track-1');
                 if (!source) {
@@ -488,6 +491,7 @@ describe('legacy VCA action history', () => {
         },
         {
             label: 'a malformed destination',
+            expectConflict: true,
             prepare: () => {
                 const target = trackStore.value?.tracks.find((track) => track.id === 'track-2');
                 if (!target) {
@@ -502,6 +506,7 @@ describe('legacy VCA action history', () => {
         },
         {
             label: 'a missing source',
+            expectConflict: true,
             prepare: () => undefined,
             action: {
                 type: 'addSidechainRoute',
@@ -532,6 +537,7 @@ describe('legacy VCA action history', () => {
         },
         {
             label: 'missing Routing store state',
+            expectConflict: true,
             prepare: () => sidechainStore.set(null),
             action: {
                 type: 'addSidechainRoute',
@@ -540,6 +546,7 @@ describe('legacy VCA action history', () => {
         },
         {
             label: 'a duplicate route',
+            expectConflict: true,
             prepare: () => {
                 sidechainStore.set({
                     routes: [
@@ -559,13 +566,17 @@ describe('legacy VCA action history', () => {
                 payload: { sourceTrackId: 'track-1', targetTrackId: 'track-2' },
             },
         },
-    ] satisfies Array<{ label: string; prepare: () => void; action: AppAction }>)(
+    ] satisfies Array<{ label: string; expectConflict?: boolean; prepare: () => void; action: AppAction }>)(
         'records no macro, replay, or undo history for $label',
-        async ({ action, prepare }) => {
+        async ({ action, expectConflict, prepare }) => {
             prepare();
             const routesBefore = structuredClone(sidechainStore.value);
 
-            await executeAppAction(action);
+            if (expectConflict) {
+                await expect(executeAppAction(action)).rejects.toThrow('Action conflicts with current project state');
+            } else {
+                await executeAppAction(action);
+            }
 
             expect(sidechainStore.value).toEqual(routesBefore);
             expect(macroStore.value?.currentRecording).toEqual([]);

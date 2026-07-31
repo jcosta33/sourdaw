@@ -15,6 +15,17 @@ export type SidechainRoute = {
     gain: number;
 };
 
+export function sidechainRoutesMatch(left: SidechainRoute, right: SidechainRoute): boolean {
+    return (
+        left.id === right.id &&
+        left.sourceTrackId === right.sourceTrackId &&
+        left.targetTrackId === right.targetTrackId &&
+        left.targetDeviceId === right.targetDeviceId &&
+        left.targetParameterId === right.targetParameterId &&
+        left.gain === right.gain
+    );
+}
+
 export function createSidechainRoute(
     sourceTrackId: string,
     targetTrackId: string,

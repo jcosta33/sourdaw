@@ -125,7 +125,7 @@ export function describeAction(action: AppAction): string {
     if ('semitones' in param) {
         return `${base}: ${param.semitones > 0 ? '+' : ''}${param.semitones}st`;
     }
-    if ('gain' in param) {
+    if ('gain' in param && typeof param.gain === 'number') {
         return `${base}: ${Math.round(param.gain * 100)}%`;
     }
     if ('tool' in param) {

@@ -23,5 +23,14 @@ export function describePlannedAction({ action, context }: DescribePlannedAction
             return `Remove clip "${clip.name}"`;
         }
     }
+
+    if (action.type === 'addSidechainRoute' || action.type === 'removeSidechainRoute') {
+        const source = context.tracks.find((track) => track.id === action.payload.sourceTrackId);
+        const target = context.tracks.find((track) => track.id === action.payload.targetTrackId);
+        if (source && target) {
+            const operation = action.type === 'addSidechainRoute' ? 'Add' : 'Remove';
+            return `${operation} sidechain route: "${source.name}" (${source.id}) → "${target.name}" (${target.id})`;
+        }
+    }
     return describeAction(action);
 }

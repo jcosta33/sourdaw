@@ -1,72 +1,98 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { type AppAction } from '#/utils/handlerContract';
 
 import { handleRemoveSidechainRoute } from '../handleRemoveSidechainRoute';
 
 const mocks = vi.hoisted(() => ({
     getSidechainRoutesForTrack: vi.fn(),
-    removeSidechainRoute: vi.fn(),
+    removeSidechainRouteSnapshot: vi.fn(),
 }));
 
 vi.mock('#/modules/Routing/useCases', () => ({
     getSidechainRoutesForTrack: mocks.getSidechainRoutesForTrack,
-    removeSidechainRoute: mocks.removeSidechainRoute,
+    removeSidechainRouteSnapshot: mocks.removeSidechainRouteSnapshot,
 }));
+
+const route = {
+    id: 'route-1',
+    sourceTrackId: 'source',
+    targetTrackId: 'target',
+    targetDeviceId: 'sidechain-device',
+    targetParameterId: 'threshold',
+    gain: 0.75,
+};
 
 describe('handleRemoveSidechainRoute', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.getSidechainRoutesForTrack.mockReturnValue([route]);
     });
 
-    it('bails if the route cannot be found for the target track', () => {
-        mocks.getSidechainRoutesForTrack.mockReturnValue([]);
-
-        void handleRemoveSidechainRoute.execute({
+    it('captures the exact removed route for deterministic undo and replay', () => {
+        const action: Extract<AppAction, { type: 'removeSidechainRoute' }> = {
             type: 'removeSidechainRoute',
-            payload: { sourceTrackId: 't1', targetTrackId: 't2' },
-        });
+            payload: { sourceTrackId: 'source', targetTrackId: 'target' },
+        };
 
-        expect(mocks.removeSidechainRoute).not.toHaveBeenCalled();
+        const description = handleRemoveSidechainRoute.describe(action);
+
+        expect(action.payload).toEqual({
+            sourceTrackId: 'source',
+            targetTrackId: 'target',
+            routeId: 'route-1',
+            targetDeviceId: 'sidechain-device',
+            targetParameterId: 'threshold',
+            gain: 0.75,
+        });
+        expect(description.inverseAction).toEqual({
+            type: 'addSidechainRoute',
+            payload: action.payload,
+        });
     });
 
-    it('removes the sidechain route if it matches the source track', () => {
+    it('reports ambiguous endpoint matches as a conflict', () => {
         mocks.getSidechainRoutesForTrack.mockReturnValue([
-            { id: 'r1', sourceTrackId: 't1' },
-            { id: 'r2', sourceTrackId: 't3' },
+            route,
+            { ...route, id: 'route-2', targetDeviceId: 'other-device' },
         ]);
 
-        void handleRemoveSidechainRoute.execute({
+        const result = handleRemoveSidechainRoute.execute({
             type: 'removeSidechainRoute',
-            payload: { sourceTrackId: 't1', targetTrackId: 't2' },
+            payload: { sourceTrackId: 'source', targetTrackId: 'target' },
         });
 
-        expect(mocks.removeSidechainRoute).toHaveBeenCalledWith('r1');
+        expect(result).toEqual({ status: 'conflict' });
+        expect(mocks.removeSidechainRouteSnapshot).not.toHaveBeenCalled();
     });
 
-    it('provides a description', () => {
-        const desc = handleRemoveSidechainRoute.describe({
+    it('treats a missing endpoint route as a no-write', () => {
+        mocks.getSidechainRoutesForTrack.mockReturnValue([]);
+
+        const result = handleRemoveSidechainRoute.execute({
             type: 'removeSidechainRoute',
-            payload: { sourceTrackId: 't1', targetTrackId: 't2' },
+            payload: { sourceTrackId: 'source', targetTrackId: 'target' },
         });
-        expect(desc.label).toBe('Remove sidechain route');
+
+        expect(result).toEqual({ status: 'no-write' });
+        expect(mocks.removeSidechainRouteSnapshot).not.toHaveBeenCalled();
     });
 
-    // Regression: undo must re-derive engine wiring rather than rely on a CRDT store
-    // revert. The undo engine replays `describe().inverseAction`; without the inverse
-    // `addSidechainRoute`, undo is an inert no-op that leaves the route unwired and absent
-    // from the store. Asserting the inverse is the public seam that proves undo re-wires
-    // the route through the same use case that removed it.
-    it('describes the inverse addSidechainRoute so undo rewires the route', () => {
-        const desc = handleRemoveSidechainRoute.describe({
-            type: 'removeSidechainRoute',
-            payload: { sourceTrackId: 't1', targetTrackId: 't2' },
+    it('forwards the exact snapshot and deferred runtime effects from Routing', () => {
+        const afterCommit = vi.fn();
+        const afterAmbiguousCommit = vi.fn();
+        mocks.removeSidechainRouteSnapshot.mockReturnValue({
+            status: 'written',
+            afterCommit,
+            afterAmbiguousCommit,
         });
-        expect(desc.inverseAction).toEqual({
-            type: 'addSidechainRoute',
-            payload: { sourceTrackId: 't1', targetTrackId: 't2' },
-        });
-    });
 
-    it('is undoable', () => {
-        expect(handleRemoveSidechainRoute.undoable).toBe(true);
+        const result = handleRemoveSidechainRoute.execute({
+            type: 'removeSidechainRoute',
+            payload: { sourceTrackId: 'source', targetTrackId: 'target' },
+        });
+
+        expect(mocks.removeSidechainRouteSnapshot).toHaveBeenCalledWith(route);
+        expect(result).toEqual({ status: 'written', afterCommit, afterAmbiguousCommit });
     });
 });

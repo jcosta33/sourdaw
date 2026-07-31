@@ -7,6 +7,7 @@ import { generateGroupId } from '../generateGroupId';
 type ReplayIdMappings = {
     automationLaneIds: Map<string, string>;
     automationPointIds: Map<string, string>;
+    sidechainRouteIds: Map<string, string>;
     chordEventIds: Map<string, string>;
     layerIds: Map<string, string>;
     regionIds: Map<string, string>;
@@ -49,6 +50,12 @@ function remapTrackAlternativeReferences(action: AppAction, mappings: ReplayIdMa
         action.payload.fallbackAlternativeId =
             mappings.trackAlternativeIds.get(action.payload.fallbackAlternativeId) ??
             action.payload.fallbackAlternativeId;
+    }
+}
+
+function remapSidechainReferences(action: AppAction, mappings: ReplayIdMappings): void {
+    if (action.type === 'removeSidechainRoute' && action.payload.routeId) {
+        action.payload.routeId = mappings.sidechainRouteIds.get(action.payload.routeId) ?? action.payload.routeId;
     }
 }
 
@@ -171,12 +178,26 @@ function getGeneratedAutomationPointId(action: AppAction): string | undefined {
     return action.type === 'addAutomationPoint' ? action.payload.pointId : undefined;
 }
 
+function getGeneratedSidechainRouteId(action: AppAction): string | undefined {
+    return action.type === 'addSidechainRoute' ? action.payload.routeId : undefined;
+}
+
 async function executeMacroAction(
     action: AppAction,
     mappings: ReplayIdMappings,
     options: { groupId: string; groupLabel: string }
 ): Promise<void> {
     const replayAction = structuredClone(action);
+    if (replayAction.type === 'addSidechainRoute') {
+        const recordedRouteId = replayAction.payload.routeId;
+        delete replayAction.payload.routeId;
+        await executeAppAction(replayAction, options);
+        const generatedRouteId = getGeneratedSidechainRouteId(replayAction);
+        if (recordedRouteId && generatedRouteId) {
+            mappings.sidechainRouteIds.set(recordedRouteId, generatedRouteId);
+        }
+        return;
+    }
     if (replayAction.type === 'addAutomationLane') {
         const recordedLaneId = replayAction.payload.laneId;
         delete replayAction.payload.laneId;
@@ -276,6 +297,7 @@ async function executeMacroAction(
     }
 
     remapAutomationReferences(replayAction, mappings);
+    remapSidechainReferences(replayAction, mappings);
     remapAdjustmentReferences(replayAction, mappings);
     remapChordReferences(replayAction, mappings);
     remapVcaReferences(replayAction, mappings);
@@ -304,6 +326,7 @@ export async function playMacro(macroId: string): Promise<void> {
     const replayIdMappings: ReplayIdMappings = {
         automationLaneIds: new Map(),
         automationPointIds: new Map(),
+        sidechainRouteIds: new Map(),
         chordEventIds: new Map(),
         layerIds: new Map(),
         regionIds: new Map(),

@@ -61,6 +61,15 @@ describe('describeAction', () => {
         expect(describeAction({ type: 'setTrackGain', payload: { gain: 0.75 } } as never)).toBe('Set gain: 75%');
     });
 
+    it('uses the base label when an internal sidechain gain has not been captured yet', () => {
+        expect(
+            describeAction({
+                type: 'addSidechainRoute',
+                payload: { sourceTrackId: 'source', targetTrackId: 'target' },
+            })
+        ).toBe('Add sidechain route');
+    });
+
     it('appends tool name', () => {
         expect(describeAction({ type: 'setEditingTool', payload: { tool: 'marquee' } } as never)).toBe(
             'Set tool: marquee'

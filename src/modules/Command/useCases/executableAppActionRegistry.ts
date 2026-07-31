@@ -84,6 +84,16 @@ const sendTargetRules = [
     },
 ] as const satisfies readonly ExecutableAppActionTargetRule[];
 
+const sidechainTargetRules = [
+    { argument: 'targetTrackId', capability: 'routable-source', promptRole: 'destination' },
+    {
+        argument: 'sourceTrackId',
+        capability: 'routable-source',
+        distinctFrom: 'targetTrackId',
+        promptRole: 'source',
+    },
+] as const satisfies readonly ExecutableAppActionTargetRule[];
+
 export const executableAppActionDescriptors = [
     {
         actionType: 'addTrack',
@@ -642,6 +652,35 @@ export const executableAppActionDescriptors = [
                 outputId: { type: 'string', description: 'Destination track/bus ID' },
             },
             required: ['trackId', 'outputId'],
+        },
+    },
+    {
+        actionType: 'addSidechainRoute',
+        risk: 'authority-sensitive',
+        description:
+            'Route one source track into the single supported sidechain compressor on a distinct target track.',
+        intentPhrases: ['add sidechain', 'create sidechain', 'route sidechain', 'sidechain'],
+        targetRules: sidechainTargetRules,
+        parameters: {
+            properties: {
+                sourceTrackId: { type: 'string', description: 'Existing routable trigger track ID' },
+                targetTrackId: { type: 'string', description: 'Distinct routable destination track ID' },
+            },
+            required: ['sourceTrackId', 'targetTrackId'],
+        },
+    },
+    {
+        actionType: 'removeSidechainRoute',
+        risk: 'authority-sensitive',
+        description: 'Remove the single existing sidechain route between two distinct tracks.',
+        intentPhrases: ['remove sidechain', 'delete sidechain', 'disconnect sidechain'],
+        targetRules: sidechainTargetRules,
+        parameters: {
+            properties: {
+                sourceTrackId: { type: 'string', description: 'Existing routable trigger track ID' },
+                targetTrackId: { type: 'string', description: 'Distinct routable destination track ID' },
+            },
+            required: ['sourceTrackId', 'targetTrackId'],
         },
     },
     {

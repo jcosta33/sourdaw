@@ -249,6 +249,26 @@ const guardedPayloadContractCases = [
         ],
     }),
     guardedPayloadCase({
+        actionType: 'addSidechainRoute',
+        validPayload: { sourceTrackId: 'track-kick', targetTrackId: 'track-bass' },
+        invalidPayloads: [
+            { sourceTrackId: '', targetTrackId: 'track-bass' },
+            { sourceTrackId: 'track-kick', targetTrackId: 'track-kick' },
+            { sourceTrackId: 'track-kick', targetTrackId: 'track-bass', routeId: 'provider-owned' },
+            { sourceTrackId: 'track-kick', targetTrackId: 'track-bass', targetDeviceId: 'device-sidechain' },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'removeSidechainRoute',
+        validPayload: { sourceTrackId: 'track-kick', targetTrackId: 'track-bass' },
+        invalidPayloads: [
+            { routeId: 'route-kick-bass' },
+            { sourceTrackId: 'track-kick', targetTrackId: '' },
+            { sourceTrackId: 'track-kick', targetTrackId: 'track-kick' },
+            { sourceTrackId: 'track-kick', targetTrackId: 'track-bass', gain: 1 },
+        ],
+    }),
+    guardedPayloadCase({
         actionType: 'setAutomationMode',
         validPayload: { trackId: 'track-1', mode: 'touch' },
         invalidPayloads: [

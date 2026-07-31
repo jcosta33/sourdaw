@@ -398,10 +398,26 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 }
                 try {
                     await executed.afterCommit();
-                } catch (error) {
-                    const warning = `${executed.action.type} post-commit effect failed: ${failureReason(error)}`;
-                    logger.error(new Error(warning, { cause: error }));
-                    warnings.push(warning);
+                } catch (effectError) {
+                    if (!executed.afterAmbiguousCommit) {
+                        const warning = `${executed.action.type} post-commit effect failed: ${failureReason(effectError)}`;
+                        logger.error(new Error(warning, { cause: effectError }));
+                        warnings.push(warning);
+                        continue;
+                    }
+
+                    try {
+                        await executed.afterAmbiguousCommit();
+                    } catch (reconciliationError) {
+                        const warning = `${executed.action.type} post-commit effect failed: ${failureReason(effectError)}; runtime reconciliation failed: ${failureReason(reconciliationError)}`;
+                        logger.error(
+                            new AggregateError(
+                                [effectError, reconciliationError],
+                                `${executed.action.type} post-commit effect and runtime reconciliation both failed`
+                            )
+                        );
+                        warnings.push(warning);
+                    }
                 }
             }
 

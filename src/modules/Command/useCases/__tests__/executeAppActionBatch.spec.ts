@@ -129,11 +129,29 @@ describe('executeAppActionBatch', () => {
         expect(afterCommit).toHaveBeenCalledOnce();
     });
 
-    it('reports a deferred-effect failure as committed truth instead of retryable failure', async () => {
+    it('recovers a deferred-effect failure by reconciling durable truth', async () => {
         const afterCommit = vi.fn().mockRejectedValue(new Error('event unavailable'));
+        const reconcileRuntime = vi.fn();
         registerHandlerMap({
             setEditingTool: createHandler<SetEditingToolAction>({
-                execute: () => ({ status: 'written', afterCommit, afterAmbiguousCommit: afterCommit }),
+                execute: () => ({ status: 'written', afterCommit, afterAmbiguousCommit: reconcileRuntime }),
+            }),
+        });
+
+        const result = await executeAppActionBatch([{ type: 'setEditingTool', payload: { tool: 'marquee' } }]);
+
+        expect(result.status).toBe('committed');
+        expect(afterCommit).toHaveBeenCalledOnce();
+        expect(reconcileRuntime).toHaveBeenCalledOnce();
+        expect(mocks.commitUndoEntry).toHaveBeenCalledOnce();
+    });
+
+    it('reports both deferred-effect and reconciliation failures as committed truth', async () => {
+        const afterCommit = vi.fn().mockRejectedValue(new Error('event unavailable'));
+        const reconcileRuntime = vi.fn().mockRejectedValue(new Error('runtime unavailable'));
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({
+                execute: () => ({ status: 'written', afterCommit, afterAmbiguousCommit: reconcileRuntime }),
             }),
         });
 
@@ -147,8 +165,11 @@ describe('executeAppActionBatch', () => {
                     label: 'Batch action',
                 },
             ],
-            warning: 'setEditingTool post-commit effect failed: event unavailable',
+            warning:
+                'setEditingTool post-commit effect failed: event unavailable; runtime reconciliation failed: runtime unavailable',
         });
+        expect(afterCommit).toHaveBeenCalledOnce();
+        expect(reconcileRuntime).toHaveBeenCalledOnce();
         expect(mocks.commitUndoEntry).toHaveBeenCalledOnce();
     });
 
