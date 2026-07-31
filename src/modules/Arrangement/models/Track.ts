@@ -158,6 +158,40 @@ export type ClipKneadBlob = {
     voicedConfidence: number;
 };
 
+/**
+ * A JSON-shaped leaf or container inside a device-state chunk. The document must
+ * be able to serialize and merge every value, so `undefined`, functions and class
+ * instances are excluded by construction.
+ */
+export type DeviceStateValue =
+    string | number | boolean | null | DeviceStateValue[] | { [key: string]: DeviceStateValue };
+
+/**
+ * Non-automatable state a device serialises for itself and the host stores without
+ * interpreting — the slot VST3 fills with `IComponent::getState` and CLAP with its
+ * state extension. It exists because `parameterValues` is `Record<string, number>`
+ * and cannot hold names, colours, enum strings, booleans or step sequences.
+ *
+ * Two deliberate departures from the native-host shape:
+ *
+ * 1. `data` is a **structured subtree**, not an opaque byte blob. A native host can
+ *    use opaque bytes because it has no concurrent editors; this document is
+ *    Automerge-backed and `reconcileCrdtSlot` merges it field by field, so two
+ *    people editing different parts of one device converge instead of clobbering
+ *    the whole chunk. An opaque string would make every edit conflict on everything.
+ * 2. `version` is mandatory and owned by the writing device. The chunk is wire
+ *    format: a reader that does not recognise the version must degrade to its own
+ *    default rather than misread the payload, and a chunk with no version at all is
+ *    a migration nobody can write later.
+ *
+ * Generic on purpose — the slot is addressed by the owning module, not by device
+ * type. Nothing device-specific belongs in this model.
+ */
+export type DeviceStateChunk = {
+    version: number;
+    data: { [key: string]: DeviceStateValue };
+};
+
 export type Device = {
     id: string;
     name: string;
@@ -170,6 +204,9 @@ export type Device = {
      *  into project truth at save so editor-driven state survives reopen; preserved
      *  verbatim when the referenced plugin is absent (Decision 0003). */
     externalStateChunk?: string;
+    /** Built-in device state that `parameterValues` cannot express. Owned and
+     *  versioned by the device's own module; the host stores it without reading it. */
+    deviceState?: DeviceStateChunk;
 };
 
 export type Send = {

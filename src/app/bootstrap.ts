@@ -113,6 +113,7 @@ import { getNodeViewHandlers } from '#/modules/Routing/useCases';
 import { getSessionLauncherHandlers } from '#/modules/SessionLauncher/useCases';
 import { getSetlistHandlers, setSetlistEventBus } from '#/modules/Setlist/useCases';
 import {
+    initToasterKitPersistence,
     initToasterSubscribers,
     setToasterEventBus,
     setToasterGrooveAssignmentExecutor,
@@ -357,6 +358,9 @@ registerHandlerMap(getControlRoomHandlers());
 registerHandlerMap(getDsoSnapshotHandlers());
 
 initToasterSubscribers({ eventBus, logger });
+// Registered after the lifecycle subscriber so a device's first appearance is
+// already carrying the kit read back from the document by the time this observes it.
+initToasterKitPersistence();
 initStalenessDetection();
 
 trackStore.subscribe(() => markDirty());
