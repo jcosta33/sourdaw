@@ -1,0 +1,24 @@
+src/modules/MIDI/stores/__tests__/midiStore.spec.ts
+  s_bc88af7d3b054c::t_81d051e8e61ebf 187,235
+src/modules/MIDI/stores/midiStore.ts
+  s_bc88af7d3b054c::t_81d051e8e61ebf 36-43,94-96,134-135
+  s_bc88af7d3b054c::t_88a51e505b2d5a 136
+src/modules/MIDI/handlers/noteTransform/__tests__/midiNoteTransformUndo.spec.ts
+  s_bc88af7d3b054c::t_81d051e8e61ebf 28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.19",
+  "base_commit_sha": "c9970b4a9e8aa56eea64641fe442e913ddd5e861",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
