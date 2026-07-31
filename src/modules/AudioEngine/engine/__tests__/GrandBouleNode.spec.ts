@@ -30,10 +30,29 @@ vi.mock('../../services/grandBouleProcessor.ts?worker&url', () => ({ default: 'g
 // controller.allNotesOff() — this surface must post to the engine Worker, and
 // setBypass itself must stay a flag flip (no in-node post, or the release
 // would run twice per bypass entry).
+/**
+ * A `postMessage` spy typed at the surface it actually stands in for, so the
+ * recorded calls read back as `unknown` rather than `any`.
+ */
+type PostMessageSpy = ReturnType<typeof vi.fn<(message: unknown, transfer?: readonly unknown[]) => void>>;
+
+/** The `init` payload out of a `postMessage` spy's recorded calls, if it sent one. */
+type PostedInit = { type: 'init'; syncSab?: unknown; contextFrame?: number };
+
+function findInitMessage(spy: PostMessageSpy): PostedInit | undefined {
+    for (const [message] of spy.mock.calls) {
+        if (message !== null && typeof message === 'object' && 'type' in message && message.type === 'init') {
+            const { syncSab, contextFrame } = message as PostedInit;
+            return { type: 'init', syncSab, contextFrame };
+        }
+    }
+    return undefined;
+}
+
 describe('createGrandBouleNode', () => {
-    let workerPostMessage: ReturnType<typeof vi.fn>;
+    let workerPostMessage: PostMessageSpy;
     let workerTerminate: ReturnType<typeof vi.fn>;
-    let nodePostMessage: ReturnType<typeof vi.fn>;
+    let nodePostMessage: PostMessageSpy;
     let nodeClose: ReturnType<typeof vi.fn>;
     let nodeConnect: ReturnType<typeof vi.fn>;
     let nodeDisconnect: ReturnType<typeof vi.fn>;
@@ -137,12 +156,32 @@ describe('createGrandBouleNode', () => {
         lastWorker?.onmessage?.({ data: { type: 'ready' } } as MessageEvent);
 
         // The worklet is handed the ring SAB plus the shared dropout counters, so
-        // ring starvation is tallied instead of silently emitting silence (RT-10).
+        // ring starvation is tallied instead of silently emitting silence (RT-10),
+        // plus the sync slot it publishes its render-cursor offset into — the only
+        // thing that tells the engine worker where the context clock stands.
         expect(nodePostMessage).toHaveBeenCalledWith({
             type: 'init',
             sab: expect.anything(),
             dropoutSab: dropoutCounters.getSab(),
+            syncSab: expect.anything(),
         });
+    });
+
+    it('hands the engine worker the same sync slot it gave the worklet, plus the context anchor', async () => {
+        await createGrandBouleNode(ctx);
+        lastWorker?.onmessage?.({ data: { type: 'ready' } } as MessageEvent);
+
+        const workletInit = findInitMessage(nodePostMessage);
+        const workerInit = findInitMessage(workerPostMessage);
+
+        // A different buffer on each side would leave the worker reading an
+        // offset nobody writes, and every scheduled note would fall back to the
+        // anchor for the whole session.
+        expect({
+            sameSyncSab: workerInit?.syncSab === workletInit?.syncSab,
+            syncSabExists: workerInit?.syncSab !== undefined,
+            contextFrame: workerInit?.contextFrame,
+        }).toEqual({ sameSyncSab: true, syncSabExists: true, contextFrame: 0 });
     });
 
     it('should post noteOn to the engine worker unless bypassed', async () => {

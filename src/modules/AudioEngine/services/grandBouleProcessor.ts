@@ -20,6 +20,18 @@ const WRITE_HEAD_IDX = 0;
 const READ_HEAD_IDX = 1;
 
 /**
+ * Slot in the one-Int32 sync SAB carrying `currentFrame - readHead` — how far
+ * the context clock is ahead of the engine's own frame count.
+ *
+ * The engine worker schedules notes against the frames it produces, but every
+ * `sampleFrame` in the app is a context frame; this is the only thing that
+ * relates the two, and only this side can measure it. It is not a constant: a
+ * ring underrun advances `currentFrame` while `readHead` stands still, so the
+ * two clocks separate permanently at every dropout.
+ */
+const CONSUMER_OFFSET_IDX = 0;
+
+/**
  * Int32 slot indices of the shared dropout SAB (audit RT-10) — mirrored by
  * literal from `engine/dropoutCounter.ts`, since worklet code stays isolated
  * from app modules.
@@ -28,7 +40,12 @@ const DROPOUT_BLOCKS_IDX = 0;
 const DROPOUT_SILENT_FRAMES_IDX = 1;
 const DROPOUT_LAST_FRAME_IDX = 2;
 
-type GrandBouleMsg = { type: 'init'; sab: SharedArrayBuffer; dropoutSab?: SharedArrayBuffer };
+type GrandBouleMsg = {
+    type: 'init';
+    sab: SharedArrayBuffer;
+    dropoutSab?: SharedArrayBuffer;
+    syncSab?: SharedArrayBuffer;
+};
 
 /**
  * Acquire-read one block of stereo frames from the SPSC ring into `out0`/`out1`.
@@ -89,6 +106,8 @@ class GrandBouleProcessor extends AudioWorkletProcessor {
     _ready = false;
     /** Shared dropout counters (audit RT-10); null when the host supplied none. */
     _dropoutInts: Int32Array | null = null;
+    /** Shared consumer-offset slot the engine worker schedules notes against. */
+    _syncInts: Int32Array | null = null;
     /**
      * True once the ring has delivered at least one full block. Starvation
      * before that is the startup pre-roll, not a dropout, and is not counted.
@@ -102,6 +121,9 @@ class GrandBouleProcessor extends AudioWorkletProcessor {
             if (msg.type === 'init' && !this._ready) {
                 if (msg.dropoutSab) {
                     this._dropoutInts = new Int32Array(msg.dropoutSab);
+                }
+                if (msg.syncSab) {
+                    this._syncInts = new Int32Array(msg.syncSab);
                 }
                 this._initSab(msg.sab);
             }
@@ -120,6 +142,24 @@ class GrandBouleProcessor extends AudioWorkletProcessor {
         Atomics.add(counters, DROPOUT_BLOCKS_IDX, 1);
         Atomics.add(counters, DROPOUT_SILENT_FRAMES_IDX, frames);
         Atomics.store(counters, DROPOUT_LAST_FRAME_IDX, currentFrame | 0);
+    }
+
+    /**
+     * Tell the engine worker where the context clock stands relative to the
+     * frames it has produced, so it can place a scheduled note in the block that
+     * will actually be heard at that frame.
+     *
+     * Published on every quantum, underruns included: while the ring is starved
+     * `readHead` holds still and the gap genuinely grows, and the worker has to
+     * see that or it schedules against a mapping that stopped being true. RT-safe
+     * — one `Atomics` store on an already-mapped view, no allocation, no lock.
+     */
+    _publishConsumerOffset(readHead: number): void {
+        const sync = this._syncInts;
+        if (!sync) {
+            return;
+        }
+        Atomics.store(sync, CONSUMER_OFFSET_IDX, (currentFrame - readHead) | 0);
     }
 
     _initSab(sab: SharedArrayBuffer): void {
@@ -163,6 +203,10 @@ class GrandBouleProcessor extends AudioWorkletProcessor {
             out1,
             frames
         );
+
+        // `nextReadHead` equals the pre-call read head on an underrun, so this is
+        // the head of the block being delivered either way.
+        this._publishConsumerOffset(nextReadHead - consumed);
 
         if (consumed === 0) {
             // Underrun — output silence. The engine worker will catch up. This

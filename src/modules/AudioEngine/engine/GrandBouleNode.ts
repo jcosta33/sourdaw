@@ -115,6 +115,12 @@ export async function createGrandBouleNode(
     // Requires cross-origin isolation (COOP + COEP headers) — guarded above.
     const sab = new SharedArrayBuffer(SAB_BYTES);
 
+    // One Int32 the worklet publishes its render-cursor offset into, so the
+    // engine worker can place a scheduled note in the block whose frames the
+    // worklet will actually deliver at that context frame. Separate from the
+    // ring SAB so the ring layout stays exactly as the SPSC proofs describe it.
+    const syncSab = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT);
+
     // Create the engine Worker.
     const engineWorker = new Worker(new URL('../workers/grandBouleEngineWorker.ts', import.meta.url), {
         type: 'module',
@@ -129,14 +135,27 @@ export async function createGrandBouleNode(
             // Now init the worklet side with the same SAB, plus the shared
             // dropout counters so ring starvation is tallied instead of silently
             // producing silence (audit RT-10).
-            node.port.postMessage({ type: 'init', sab, dropoutSab: dropoutCounters.getSab() });
+            node.port.postMessage({ type: 'init', sab, dropoutSab: dropoutCounters.getSab(), syncSab });
         }
     };
     const readyPromise = handshake.promise;
 
-    // Send the preloaded WASM bytes + SAB to the engine worker.
+    // Send the preloaded WASM bytes + SAB to the engine worker. `contextFrame`
+    // anchors the engine's frame 0 on the host clock for the window before the
+    // worklet has run a block — which is the entirety of an offline render's
+    // scheduling phase, where an `OfflineAudioContext` is still sitting at 0.
     const copy = wasmBytes.slice(0);
-    engineWorker.postMessage({ type: 'init', wasmBytes: copy, sab, sampleRate: ctx.sampleRate }, [copy]);
+    engineWorker.postMessage(
+        {
+            type: 'init',
+            wasmBytes: copy,
+            sab,
+            sampleRate: ctx.sampleRate,
+            syncSab,
+            contextFrame: Math.round(ctx.currentTime * ctx.sampleRate),
+        },
+        [copy]
+    );
 
     /** Post a message to the engine worker (not the AudioWorklet). */
     const post = (msg: Record<string, unknown>): void => {
