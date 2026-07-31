@@ -1,3 +1,5 @@
+import { wouldCreateRoutingCycle } from '#/utils/routingCycle';
+
 import { type ProjectContext } from '../models/ProjectContext';
 import { type RuntimeAction } from '../models/RuntimeAction';
 import { normalizeSafeProjectName } from '../validators/normalizeSafeProjectName';
@@ -7,6 +9,7 @@ import { type ToolCallResult } from './toolCallParser';
 
 type ExecutableTrackKind = 'audio' | 'midi' | 'folder';
 const executableTrackKinds: ReadonlySet<string> = new Set(['audio', 'midi', 'folder']);
+const SUPPORTED_SIDECHAIN_DEVICE_TYPE = 'builtin-sidechain-compressor';
 
 export type LlmActionRejection = {
     index: number;
@@ -105,6 +108,16 @@ function findSend(context: ProjectContext, trackId: unknown, busId: unknown) {
         return undefined;
     }
     return source.sends?.find((send) => send.busId === busId);
+}
+
+function findSidechainRoutes(context: ProjectContext, sourceTrackId: string, targetTrackId: string) {
+    return (context.sidechainRoutes ?? []).filter(
+        (route) => route.sourceTrackId === sourceTrackId && route.targetTrackId === targetTrackId
+    );
+}
+
+function findSupportedSidechainDevices(target: ProjectContext['tracks'][number]) {
+    return target.devices.filter((device) => device.type === SUPPORTED_SIDECHAIN_DEVICE_TYPE);
 }
 
 function findDeviceTarget(context: ProjectContext, deviceId: unknown) {
@@ -717,6 +730,16 @@ function bridgeToolCall({
         ) {
             return rejection(index, call.name, 'Expected a routable source track and a distinct bus or master output');
         }
+        if (
+            wouldCreateRoutingCycle({
+                sourceId: source.id,
+                targetId: target.id,
+                tracks: context.tracks,
+                sidechainRoutes: context.sidechainRoutes ?? [],
+            })
+        ) {
+            return rejection(index, call.name, 'Expected a new acyclic output route');
+        }
         return {
             type: 'setTrackOutput',
             payload: { trackId: source.id, outputId: target.id, expectedOutputId: source.outputId },
@@ -828,6 +851,16 @@ function bridgeToolCall({
                 'Expected an available source, a distinct bus without an existing send, and a finite level from 0 through 1'
             );
         }
+        if (
+            wouldCreateRoutingCycle({
+                sourceId: source.id,
+                targetId: bus.id,
+                tracks: context.tracks,
+                sidechainRoutes: context.sidechainRoutes ?? [],
+            })
+        ) {
+            return rejection(index, call.name, 'Expected a new acyclic send route');
+        }
         return {
             type: 'addSend',
             payload: { trackId: source.id, busId: bus.id, level: args.level, expectedAbsent: true },
@@ -854,6 +887,65 @@ function bridgeToolCall({
                 expectedLevel: existing.level,
                 expectedPreFader: existing.preFader,
             },
+        };
+    }
+
+    if (call.name === 'addSidechainRoute') {
+        const source = findTrack(context, args.sourceTrackId);
+        const target = findTrack(context, args.targetTrackId);
+        if (
+            !hasExactKeys(args, ['sourceTrackId', 'targetTrackId']) ||
+            !isProviderRoutableSource(source) ||
+            !isProviderRoutableSource(target) ||
+            source.id === target.id
+        ) {
+            return rejection(index, call.name, 'Expected two distinct routable source and target tracks');
+        }
+        const supportedDevices = findSupportedSidechainDevices(target);
+        if (supportedDevices.length !== 1) {
+            return rejection(
+                index,
+                call.name,
+                'Expected exactly one supported sidechain compressor on the target track'
+            );
+        }
+        const targetDevice = supportedDevices[0]!;
+        const duplicate = (context.sidechainRoutes ?? []).some(
+            (route) => route.sourceTrackId === source.id && route.targetDeviceId === targetDevice.id
+        );
+        const closesCycle = wouldCreateRoutingCycle({
+            sourceId: source.id,
+            targetId: target.id,
+            tracks: context.tracks,
+            sidechainRoutes: context.sidechainRoutes ?? [],
+        });
+        if (duplicate || closesCycle) {
+            return rejection(index, call.name, 'Expected a new acyclic sidechain route');
+        }
+        return {
+            type: 'addSidechainRoute',
+            payload: { sourceTrackId: source.id, targetTrackId: target.id },
+        };
+    }
+
+    if (call.name === 'removeSidechainRoute') {
+        const source = findTrack(context, args.sourceTrackId);
+        const target = findTrack(context, args.targetTrackId);
+        if (
+            !hasExactKeys(args, ['sourceTrackId', 'targetTrackId']) ||
+            !isProviderRoutableSource(source) ||
+            !isProviderRoutableSource(target) ||
+            source.id === target.id
+        ) {
+            return rejection(index, call.name, 'Expected two distinct routable source and target tracks');
+        }
+        const matches = findSidechainRoutes(context, source.id, target.id);
+        if (matches.length !== 1) {
+            return rejection(index, call.name, 'Expected exactly one existing sidechain route between the tracks');
+        }
+        return {
+            type: 'removeSidechainRoute',
+            payload: { sourceTrackId: source.id, targetTrackId: target.id },
         };
     }
 
@@ -956,6 +1048,9 @@ function getMutationKeys(action: RuntimeAction): string[] {
     if (action.type === 'setTrackOutput') {
         return [`output:${action.payload.trackId}`];
     }
+    if (action.type === 'addSidechainRoute' || action.type === 'removeSidechainRoute') {
+        return [`sidechain:${action.payload.sourceTrackId}:${action.payload.targetTrackId}`];
+    }
     if (
         action.type === 'renameTrack' ||
         action.type === 'muteTrack' ||
@@ -1023,6 +1118,165 @@ function canonicalizeLoopActionOrder(actions: RuntimeAction[]): RuntimeAction[] 
     return orderedActions;
 }
 
+type AddSidechainRuntimeAction = Extract<RuntimeAction, { type: 'addSidechainRoute' }>;
+
+function isAddSidechainRuntimeAction(action: RuntimeAction): action is AddSidechainRuntimeAction {
+    return action.type === 'addSidechainRoute';
+}
+
+function applyAcceptedRoutingAction(context: ProjectContext, action: RuntimeAction): ProjectContext {
+    if (action.type === 'addSidechainRoute') {
+        const target = findTrack(context, action.payload.targetTrackId);
+        const targetDevice = target ? findSupportedSidechainDevices(target)[0] : undefined;
+        if (!targetDevice) {
+            return context;
+        }
+        return {
+            ...context,
+            sidechainRoutes: [
+                ...(context.sidechainRoutes ?? []),
+                {
+                    id: `provider-batch:${action.payload.sourceTrackId}:${action.payload.targetTrackId}`,
+                    sourceTrackId: action.payload.sourceTrackId,
+                    targetTrackId: action.payload.targetTrackId,
+                    targetDeviceId: targetDevice.id,
+                    targetParameterId: 'threshold',
+                    gain: 1,
+                },
+            ],
+        };
+    }
+    if (action.type === 'removeSidechainRoute') {
+        return {
+            ...context,
+            sidechainRoutes: (context.sidechainRoutes ?? []).filter(
+                (route) =>
+                    route.sourceTrackId !== action.payload.sourceTrackId ||
+                    route.targetTrackId !== action.payload.targetTrackId
+            ),
+        };
+    }
+    if (action.type === 'setTrackOutput') {
+        return {
+            ...context,
+            tracks: context.tracks.map((track) => {
+                if (track.id !== action.payload.trackId) {
+                    return track;
+                }
+                return { ...track, outputId: action.payload.outputId };
+            }),
+        };
+    }
+    if (action.type === 'addSend') {
+        return {
+            ...context,
+            tracks: context.tracks.map((track) => {
+                if (track.id !== action.payload.trackId) {
+                    return track;
+                }
+                return {
+                    ...track,
+                    sends: [
+                        ...(track.sends ?? []),
+                        { busId: action.payload.busId, level: action.payload.level, preFader: false },
+                    ],
+                };
+            }),
+        };
+    }
+    if (action.type === 'removeSend') {
+        return {
+            ...context,
+            tracks: context.tracks.map((track) => {
+                if (track.id !== action.payload.trackId) {
+                    return track;
+                }
+                return {
+                    ...track,
+                    sends: (track.sends ?? []).filter((send) => send.busId !== action.payload.busId),
+                };
+            }),
+        };
+    }
+    if (action.type === 'removeDevice') {
+        const target = findDeviceTarget(context, action.payload.deviceId);
+        if (!target) {
+            return context;
+        }
+        return {
+            ...context,
+            tracks: context.tracks.map((track) => {
+                if (track.id !== target.track.id) {
+                    return track;
+                }
+                const devices = track.devices.filter((device) => device.id !== action.payload.deviceId);
+                return { ...track, devices, deviceCount: devices.length };
+            }),
+            sidechainRoutes: (context.sidechainRoutes ?? []).filter(
+                (route) => route.targetDeviceId !== action.payload.deviceId
+            ),
+        };
+    }
+    if (action.type === 'removeTrack') {
+        return {
+            ...context,
+            tracks: context.tracks.filter((track) => track.id !== action.payload.trackId),
+            sidechainRoutes: (context.sidechainRoutes ?? []).filter(
+                (route) =>
+                    route.sourceTrackId !== action.payload.trackId && route.targetTrackId !== action.payload.trackId
+            ),
+        };
+    }
+    return context;
+}
+
+function hasInvalidatingSidechainLifecycleMutation(
+    actions: readonly RuntimeAction[],
+    context: ProjectContext
+): boolean {
+    const allSidechainAdds = actions.filter(isAddSidechainRuntimeAction);
+    const plannedSidechainAdds: AddSidechainRuntimeAction[] = [];
+
+    for (const action of actions) {
+        if (isAddSidechainRuntimeAction(action)) {
+            plannedSidechainAdds.push(action);
+            continue;
+        }
+        if (action.type === 'removeSidechainRoute') {
+            continue;
+        }
+        if (
+            action.type === 'addDevice' &&
+            action.payload.deviceType === SUPPORTED_SIDECHAIN_DEVICE_TYPE &&
+            allSidechainAdds.some((sidechainAction) => sidechainAction.payload.targetTrackId === action.payload.trackId)
+        ) {
+            return true;
+        }
+        if (
+            action.type === 'removeTrack' &&
+            plannedSidechainAdds.some(
+                (sidechainAction) =>
+                    sidechainAction.payload.sourceTrackId === action.payload.trackId ||
+                    sidechainAction.payload.targetTrackId === action.payload.trackId
+            )
+        ) {
+            return true;
+        }
+        if (action.type === 'removeDevice') {
+            const target = findDeviceTarget(context, action.payload.deviceId);
+            if (
+                target?.device.type === SUPPORTED_SIDECHAIN_DEVICE_TYPE &&
+                plannedSidechainAdds.some(
+                    (sidechainAction) => sidechainAction.payload.targetTrackId === target.track.id
+                )
+            ) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 export function bridgeLlmToolCalls({ calls, context }: BridgeLlmToolCallsInput): LlmActionBridgeResult {
     if (calls.length > MAX_LLM_ACTIONS_PER_BATCH) {
         return {
@@ -1037,7 +1291,10 @@ export function bridgeLlmToolCalls({ calls, context }: BridgeLlmToolCallsInput):
         };
     }
 
-    const prospectiveContext = getProspectiveLoopContext(calls, context);
+    let prospectiveContext = getProspectiveLoopContext(calls, context);
+    const hasSidechainCall = calls.some(
+        (call) => call.name === 'addSidechainRoute' || call.name === 'removeSidechainRoute'
+    );
 
     const actions: RuntimeAction[] = [];
     const rejections: LlmActionRejection[] = [];
@@ -1178,9 +1435,26 @@ export function bridgeLlmToolCalls({ calls, context }: BridgeLlmToolCallsInput):
                 }
             }
             actions.push(result);
+            if (hasSidechainCall) {
+                prospectiveContext = applyAcceptedRoutingAction(prospectiveContext, result);
+            }
         } else {
             rejections.push(result);
         }
+    }
+
+    if (hasInvalidatingSidechainLifecycleMutation(actions, context)) {
+        return {
+            actions: [],
+            rejections: [
+                ...rejections,
+                rejection(
+                    0,
+                    '<batch>',
+                    'Provider batch invalidates a planned sidechain route through a lifecycle mutation'
+                ),
+            ],
+        };
     }
 
     return { actions: canonicalizeLoopActionOrder(actions), rejections };
@@ -1213,6 +1487,14 @@ export function buildLlmActionUserMessage({ prompt, context }: { prompt: string;
             minValue: lane.minValue,
             maxValue: lane.maxValue,
             pointCount: lane.points.length,
+        })),
+        sidechainRoutes: (context.sidechainRoutes ?? []).map((route) => ({
+            id: route.id,
+            sourceTrackId: route.sourceTrackId,
+            targetTrackId: route.targetTrackId,
+            targetDeviceId: route.targetDeviceId,
+            targetParameterId: route.targetParameterId,
+            gain: route.gain,
         })),
         selectedTrackId: context.selectedTrackId,
         selectedClipId: context.selectedClipId,

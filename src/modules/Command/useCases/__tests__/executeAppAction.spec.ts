@@ -171,25 +171,48 @@ describe('executeAppAction', () => {
         expect(mocks.recordActionHistoryMetadata).toHaveBeenCalledOnce();
     });
 
-    it('classifies a deferred-effect failure as committed', async () => {
+    it('recovers a deferred-effect failure by reconciling durable truth', async () => {
         const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
         const failure = new Error('event unavailable');
+        const reconcileRuntime = vi.fn();
         const handler = create_mock_handler<SetEditingToolAction>({
             execute: () => ({
                 status: 'written',
                 afterCommit: () => Promise.reject(failure),
-                afterAmbiguousCommit: () => undefined,
+                afterAmbiguousCommit: reconcileRuntime,
             }),
         });
         registerHandlerMap({ [action.type]: handler });
 
-        const execution = executeAppAction(action);
+        await expect(executeAppAction(action)).resolves.toBeUndefined();
 
-        await expect(execution).rejects.toBeInstanceOf(AppActionCommittedError);
+        expect(reconcileRuntime).toHaveBeenCalledOnce();
         expect(mocks.recordActionHistoryMetadata).toHaveBeenCalledOnce();
+    });
+
+    it('reports both deferred-effect and reconciliation failures as committed', async () => {
+        const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
+        const effectFailure = new Error('event unavailable');
+        const reconciliationFailure = new Error('runtime unavailable');
+        const handler = create_mock_handler<SetEditingToolAction>({
+            execute: () => ({
+                status: 'written',
+                afterCommit: () => Promise.reject(effectFailure),
+                afterAmbiguousCommit: () => Promise.reject(reconciliationFailure),
+            }),
+        });
+        registerHandlerMap({ [action.type]: handler });
+
+        await expect(executeAppAction(action)).rejects.toBeInstanceOf(AppActionCommittedError);
+
         const reportedError = mocks.logger.error.mock.calls.at(-1)?.[0];
         expect(reportedError).toBeInstanceOf(AppActionCommittedError);
-        expect(reportedError?.cause).toBe(failure);
+        const reportedCause = reportedError?.cause;
+        expect(reportedCause).toBeInstanceOf(AggregateError);
+        if (!(reportedCause instanceof AggregateError)) {
+            throw new Error('Expected an AggregateError cause');
+        }
+        expect(reportedCause.errors).toEqual([effectFailure, reconciliationFailure]);
     });
 
     it('skips execution, macro recording, history metadata, and undo for a semantic no-op', async () => {

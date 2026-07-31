@@ -39,6 +39,8 @@ describe('toolSelector', () => {
         'addDevice',
         'removeDevice',
         'addSend',
+        'addSidechainRoute',
+        'removeSidechainRoute',
         'stemSeparate',
         // RANDOM UNRELATED TOOLS
         'unrelatedTool1',
@@ -61,6 +63,15 @@ describe('toolSelector', () => {
 
         expect(selectedNames).toContain('addNotes');
         expect(selectedNames).toContain('completeMidi');
+    });
+
+    it('keeps sidechain commands reachable from routing prompts', () => {
+        const selectedNames = selectToolsForPrompt(allTools, 'sidechain Kick into Bass').map(
+            (toolSchema) => toolSchema.function.name
+        );
+
+        expect(selectedNames).toContain('addSidechainRoute');
+        expect(selectedNames).toContain('removeSidechainRoute');
     });
 
     it('includes specific tools based on keywords (e.g. mix)', () => {

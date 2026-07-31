@@ -236,7 +236,7 @@ export const routingTools: readonly ToolSchema[] = [
     ),
     tool(
         'addSidechainRoute',
-        'Set up sidechain routing (e.g. kick ducking the bass).',
+        'Route one source track into the single supported sidechain compressor on a distinct target track.',
         {
             sourceTrackId: { type: 'string', description: 'The trigger track (e.g. kick)' },
             targetTrackId: { type: 'string', description: 'The track being ducked (e.g. bass)' },
@@ -245,7 +245,7 @@ export const routingTools: readonly ToolSchema[] = [
     ),
     tool(
         'removeSidechainRoute',
-        'Remove a sidechain routing.',
+        'Remove the single existing sidechain route between two distinct tracks.',
         {
             sourceTrackId: { type: 'string' },
             targetTrackId: { type: 'string' },

@@ -1159,6 +1159,43 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(explicitTrackRequest.actions).toEqual([]);
     });
 
+    it('grounds sidechain endpoints by source and destination roles', () => {
+        const kick = createTrack({ id: 'track-kick', name: 'Kick' });
+        const bass = createTrack({
+            id: 'track-bass',
+            name: 'Bass',
+            devices: [
+                {
+                    id: 'device-sidechain',
+                    type: 'builtin-sidechain-compressor',
+                    bypassed: false,
+                    parameters: [],
+                },
+            ],
+        });
+        const context: ProjectContext = {
+            ...projectContext,
+            tracks: [kick, bass, master],
+            sidechainRoutes: [],
+        };
+        const grounded = bridge(
+            [{ name: 'addSidechainRoute', arguments: { sourceTrackId: kick.id, targetTrackId: bass.id } }],
+            'add sidechain from Kick to Bass',
+            context
+        );
+        const reversed = bridge(
+            [{ name: 'addSidechainRoute', arguments: { sourceTrackId: bass.id, targetTrackId: kick.id } }],
+            'add sidechain from Kick to Bass',
+            context
+        );
+
+        expect(grounded.actions).toEqual([
+            { type: 'addSidechainRoute', payload: { sourceTrackId: kick.id, targetTrackId: bass.id } },
+        ]);
+        expect(reversed.actions).toEqual([]);
+        expect(reversed.rejections[0]?.reason).toContain('targetTrackId');
+    });
+
     it('grounds gain and pan lane creation only when the requested parameter is explicit', () => {
         const contextWithoutAutomation = { ...projectContext, automationLanes: [] };
         const gain = bridge(

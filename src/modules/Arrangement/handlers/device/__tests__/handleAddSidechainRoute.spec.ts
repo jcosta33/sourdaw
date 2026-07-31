@@ -1,105 +1,116 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { type AppAction } from '#/utils/handlerContract';
 
 import { handleAddSidechainRoute } from '../handleAddSidechainRoute';
 
 const mocks = vi.hoisted(() => ({
-    addSidechainRoute: vi.fn(),
+    addSidechainRouteSnapshot: vi.fn(),
     getTrackStoreState: vi.fn(),
 }));
 
 vi.mock('#/modules/Routing/useCases', () => ({
-    addSidechainRoute: mocks.addSidechainRoute,
+    addSidechainRouteSnapshot: mocks.addSidechainRouteSnapshot,
 }));
 
 vi.mock('../../../useCases/getTrackStoreState', () => ({
     getTrackStoreState: mocks.getTrackStoreState,
 }));
 
+const supportedDevice = {
+    id: 'sidechain-device',
+    type: 'builtin-sidechain-compressor',
+};
+
 describe('handleAddSidechainRoute', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-    });
-
-    it('bails if the target track cannot be found', () => {
-        mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
-
-        const result = handleAddSidechainRoute.execute({
-            type: 'addSidechainRoute',
-            payload: { sourceTrackId: 't1', targetTrackId: 't2' },
-        });
-
-        expect(mocks.addSidechainRoute).not.toHaveBeenCalled();
-        expect(result).toEqual({ status: 'no-write' });
-    });
-
-    it('bails if the target track has no sidechain device', () => {
         mocks.getTrackStoreState.mockReturnValue({
-            tracks: [{ id: 't2', devices: [{ id: 'd1', type: 'EQ' }] }],
+            tracks: [{ id: 'target', devices: [supportedDevice] }],
         });
-
-        const result = handleAddSidechainRoute.execute({
-            type: 'addSidechainRoute',
-            payload: { sourceTrackId: 't1', targetTrackId: 't2' },
-        });
-
-        expect(mocks.addSidechainRoute).not.toHaveBeenCalled();
-        expect(result).toEqual({ status: 'no-write' });
     });
 
-    it('adds a route if a sidechain device exists', () => {
-        mocks.addSidechainRoute.mockReturnValue(true);
-        mocks.getTrackStoreState.mockReturnValue({
-            tracks: [{ id: 't2', devices: [{ id: 'd1', type: 'Compressor (Sidechain)' }] }],
-        });
-
-        const result = handleAddSidechainRoute.execute({
+    it('mints one stable route identity and captures the complete inverse snapshot', () => {
+        const action: Extract<AppAction, { type: 'addSidechainRoute' }> = {
             type: 'addSidechainRoute',
-            payload: { sourceTrackId: 't1', targetTrackId: 't2' },
+            payload: { sourceTrackId: 'source', targetTrackId: 'target' },
+        };
+
+        const firstDescription = handleAddSidechainRoute.describe(action);
+        const secondDescription = handleAddSidechainRoute.describe(action);
+
+        expect(action.payload.routeId?.startsWith('sidechain-')).toBe(true);
+        expect(action.payload).toEqual({
+            sourceTrackId: 'source',
+            targetTrackId: 'target',
+            routeId: action.payload.routeId,
+            targetDeviceId: 'sidechain-device',
+            targetParameterId: 'threshold',
+            gain: 1,
         });
-
-        expect(mocks.addSidechainRoute).toHaveBeenCalledWith('t1', 't2', 'd1');
-        expect(result).toEqual({ status: 'written' });
-    });
-
-    it('reports no-write when Routing rejects the route', () => {
-        mocks.addSidechainRoute.mockReturnValue(false);
-        mocks.getTrackStoreState.mockReturnValue({
-            tracks: [{ id: 't2', devices: [{ id: 'd1', type: 'Compressor (Sidechain)' }] }],
-        });
-
-        const result = handleAddSidechainRoute.execute({
-            type: 'addSidechainRoute',
-            payload: { sourceTrackId: 't1', targetTrackId: 't2' },
-        });
-
-        expect(result).toEqual({ status: 'no-write' });
-    });
-
-    it('provides a description', () => {
-        const desc = handleAddSidechainRoute.describe({
-            type: 'addSidechainRoute',
-            payload: { sourceTrackId: 't1', targetTrackId: 't2' },
-        });
-        expect(desc.label).toBe('Add sidechain route');
-    });
-
-    // Regression: undo must re-derive engine wiring rather than rely on a CRDT store
-    // revert. The undo engine replays `describe().inverseAction`; without the inverse
-    // `removeSidechainRoute`, undo is an inert no-op that leaves the route wired and in
-    // the post-add store. Asserting the inverse is the public seam that proves undo
-    // un-wires the route through the same use case that added it.
-    it('describes the inverse removeSidechainRoute so undo unwires the route', () => {
-        const desc = handleAddSidechainRoute.describe({
-            type: 'addSidechainRoute',
-            payload: { sourceTrackId: 't1', targetTrackId: 't2' },
-        });
-        expect(desc.inverseAction).toEqual({
+        expect(secondDescription.inverseAction).toEqual(firstDescription.inverseAction);
+        expect(firstDescription.inverseAction).toEqual({
             type: 'removeSidechainRoute',
-            payload: { sourceTrackId: 't1', targetTrackId: 't2' },
+            payload: action.payload,
         });
     });
 
-    it('is undoable', () => {
-        expect(handleAddSidechainRoute.undoable).toBe(true);
+    it('accepts only the exact supported device type', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 'target', devices: [{ id: 'lookalike', type: 'my-sidechain-helper' }] }],
+        });
+
+        const result = handleAddSidechainRoute.execute({
+            type: 'addSidechainRoute',
+            payload: { sourceTrackId: 'source', targetTrackId: 'target' },
+        });
+
+        expect(result).toEqual({ status: 'no-write' });
+        expect(mocks.addSidechainRouteSnapshot).not.toHaveBeenCalled();
+    });
+
+    it('reports ambiguous supported-device ownership as a conflict', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 'target',
+                    devices: [supportedDevice, { id: 'second-sidechain-device', type: 'builtin-sidechain-compressor' }],
+                },
+            ],
+        });
+
+        const result = handleAddSidechainRoute.execute({
+            type: 'addSidechainRoute',
+            payload: { sourceTrackId: 'source', targetTrackId: 'target' },
+        });
+
+        expect(result).toEqual({ status: 'conflict' });
+        expect(mocks.addSidechainRouteSnapshot).not.toHaveBeenCalled();
+    });
+
+    it('forwards explicit status and deferred runtime effects from Routing', () => {
+        const afterCommit = vi.fn();
+        const afterAmbiguousCommit = vi.fn();
+        mocks.addSidechainRouteSnapshot.mockReturnValue({
+            status: 'written',
+            afterCommit,
+            afterAmbiguousCommit,
+        });
+        const action: Extract<AppAction, { type: 'addSidechainRoute' }> = {
+            type: 'addSidechainRoute',
+            payload: { sourceTrackId: 'source', targetTrackId: 'target' },
+        };
+
+        const result = handleAddSidechainRoute.execute(action);
+
+        expect(mocks.addSidechainRouteSnapshot).toHaveBeenCalledWith({
+            id: action.payload.routeId,
+            sourceTrackId: 'source',
+            targetTrackId: 'target',
+            targetDeviceId: 'sidechain-device',
+            targetParameterId: 'threshold',
+            gain: 1,
+        });
+        expect(result).toEqual({ status: 'written', afterCommit, afterAmbiguousCommit });
     });
 });

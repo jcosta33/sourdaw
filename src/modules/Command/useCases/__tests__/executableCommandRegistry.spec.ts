@@ -334,6 +334,28 @@ const EXPECTED_COMMANDS = [
         true
     ),
     expectedCommand(
+        'addSidechainRoute',
+        'Route one source track into the single supported sidechain compressor on a distinct target track.',
+        {
+            sourceTrackId: { type: 'string', description: 'Existing routable trigger track ID' },
+            targetTrackId: { type: 'string', description: 'Distinct routable destination track ID' },
+        },
+        ['sourceTrackId', 'targetTrackId'],
+        'authority-sensitive',
+        true
+    ),
+    expectedCommand(
+        'removeSidechainRoute',
+        'Remove the single existing sidechain route between two distinct tracks.',
+        {
+            sourceTrackId: { type: 'string', description: 'Existing routable trigger track ID' },
+            targetTrackId: { type: 'string', description: 'Distinct routable destination track ID' },
+        },
+        ['sourceTrackId', 'targetTrackId'],
+        'authority-sensitive',
+        true
+    ),
+    expectedCommand(
         'addAutomationLane',
         'Create a gain or pan automation lane on an existing track.',
         {
@@ -761,6 +783,23 @@ const EXPECTED_GROUNDING = [
         ],
         valueRules: [],
     },
+    ...['addSidechainRoute', 'removeSidechainRoute'].map((actionType, index) => ({
+        actionType,
+        intentPhrases: [
+            ['add sidechain', 'create sidechain', 'route sidechain', 'sidechain'],
+            ['remove sidechain', 'delete sidechain', 'disconnect sidechain'],
+        ][index],
+        targetRules: [
+            { argument: 'targetTrackId', capability: 'routable-source', promptRole: 'destination' },
+            {
+                argument: 'sourceTrackId',
+                capability: 'routable-source',
+                distinctFrom: 'targetTrackId',
+                promptRole: 'source',
+            },
+        ],
+        valueRules: [],
+    })),
     {
         actionType: 'addAutomationLane',
         intentPhrases: [

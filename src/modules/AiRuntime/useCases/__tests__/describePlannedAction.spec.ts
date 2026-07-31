@@ -76,4 +76,34 @@ describe('describePlannedAction', () => {
             })
         ).toBe('Remove clip');
     });
+
+    it('names both sidechain endpoints with IDs and direction for confirmation', () => {
+        const bassTrack = {
+            ...context.tracks[0]!,
+            id: 'track-bass',
+            name: 'Bass',
+            clips: [],
+            clipCount: 0,
+        };
+        const sidechainContext = { ...context, tracks: [context.tracks[0]!, bassTrack] };
+
+        expect(
+            describePlannedAction({
+                action: {
+                    type: 'addSidechainRoute',
+                    payload: { sourceTrackId: 'track-drums', targetTrackId: 'track-bass' },
+                },
+                context: sidechainContext,
+            })
+        ).toBe('Add sidechain route: "Drums" (track-drums) → "Bass" (track-bass)');
+        expect(
+            describePlannedAction({
+                action: {
+                    type: 'removeSidechainRoute',
+                    payload: { sourceTrackId: 'track-drums', targetTrackId: 'track-bass' },
+                },
+                context: sidechainContext,
+            })
+        ).toBe('Remove sidechain route: "Drums" (track-drums) → "Bass" (track-bass)');
+    });
 });

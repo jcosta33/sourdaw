@@ -258,11 +258,16 @@ const validators = {
     // Sidechain routing
     addSidechainRoute: (param): param is PayloadOf<'addSidechainRoute'> =>
         isObj(param) &&
-        isString(param.sourceTrackId) &&
-        isString(param.targetTrackId) &&
-        isString(param.targetDeviceId),
+        hasExactKeys(param, ['sourceTrackId', 'targetTrackId']) &&
+        isNonEmptyString(param.sourceTrackId) &&
+        isNonEmptyString(param.targetTrackId) &&
+        param.sourceTrackId !== param.targetTrackId,
     removeSidechainRoute: (param): param is PayloadOf<'removeSidechainRoute'> =>
-        isObj(param) && isString(param.routeId),
+        isObj(param) &&
+        hasExactKeys(param, ['sourceTrackId', 'targetTrackId']) &&
+        isNonEmptyString(param.sourceTrackId) &&
+        isNonEmptyString(param.targetTrackId) &&
+        param.sourceTrackId !== param.targetTrackId,
 
     // MIDI note batch ops
     quantizeNotes: (param): param is PayloadOf<'quantizeNotes'> =>

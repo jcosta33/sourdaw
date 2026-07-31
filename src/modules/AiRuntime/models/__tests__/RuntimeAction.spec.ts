@@ -35,6 +35,8 @@ describe('RuntimeAction', () => {
             { type: 'removeAutomationPoint', payload: { laneId: 'lane-1', pointIndex: 0 } },
             { type: 'setAutomationLaneEnabled', payload: { laneId: 'lane-1', enabled: false } },
             { type: 'setAutomationMode', payload: { trackId: 'track-1', mode: 'touch' } },
+            { type: 'addSidechainRoute', payload: { sourceTrackId: 'track-1', targetTrackId: 'track-2' } },
+            { type: 'removeSidechainRoute', payload: { sourceTrackId: 'track-1', targetTrackId: 'track-2' } },
             { type: 'scaleAutomation', payload: { laneId: 'lane-1', factor: 1.5 } },
             { type: 'stretchAutomation', payload: { laneId: 'lane-1', factor: 2 } },
             { type: 'createVcaGroup', payload: { name: 'Band', trackIds: ['track-1'] } },
@@ -48,6 +50,8 @@ describe('RuntimeAction', () => {
             'removeAutomationPoint',
             'setAutomationLaneEnabled',
             'setAutomationMode',
+            'addSidechainRoute',
+            'removeSidechainRoute',
             'scaleAutomation',
             'stretchAutomation',
             'createVcaGroup',
@@ -58,6 +62,10 @@ describe('RuntimeAction', () => {
         expectTypeOf<PayloadHasKey<'addAutomationPoint', 'pointId'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'removeAutomationPoint', 'pointId'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'setAutomationMode', 'expectedMode'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'addSidechainRoute', 'routeId'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'addSidechainRoute', 'targetDeviceId'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'removeSidechainRoute', 'routeId'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'removeSidechainRoute', 'gain'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'scaleAutomation', 'anchor'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'stretchAutomation', 'anchorBeat'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'createVcaGroup', 'vcaGroupId'>>().toEqualTypeOf<false>();

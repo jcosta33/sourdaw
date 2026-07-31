@@ -82,6 +82,69 @@ function normalize_sidechain_route(route: SidechainRoute): SidechainRoute {
     };
 }
 
+function get_sidechain_runtime_key(route: SidechainRoute): string {
+    return JSON.stringify([route.sourceTrackId, route.targetDeviceId]);
+}
+
+function get_sidechain_route_sort_key(route: SidechainRoute): string {
+    return JSON.stringify([
+        route.id,
+        route.sourceTrackId,
+        route.targetTrackId,
+        route.targetDeviceId,
+        route.targetParameterId,
+        route.gain,
+    ]);
+}
+
+function has_unique_sidechain_routes(routes: readonly SidechainRoute[]): boolean {
+    const route_ids = new Set<string>();
+    const runtime_keys = new Set<string>();
+    for (const route of routes) {
+        const runtime_key = get_sidechain_runtime_key(route);
+        if (route_ids.has(route.id) || runtime_keys.has(runtime_key)) {
+            return false;
+        }
+        route_ids.add(route.id);
+        runtime_keys.add(runtime_key);
+    }
+    return true;
+}
+
+function canonicalize_sidechain_routes(values: readonly unknown[]): SidechainRoute[] {
+    const routes = values.filter(is_valid_sidechain_route).map(normalize_sidechain_route);
+    if (has_unique_sidechain_routes(routes)) {
+        return routes;
+    }
+
+    const sorted_routes = [...routes].sort((left, right) => {
+        const left_key = get_sidechain_route_sort_key(left);
+        const right_key = get_sidechain_route_sort_key(right);
+        if (left_key < right_key) {
+            return -1;
+        }
+        if (left_key > right_key) {
+            return 1;
+        }
+        return 0;
+    });
+    const route_ids = new Set<string>();
+    const runtime_keys = new Set<string>();
+    return sorted_routes.filter((route) => {
+        const runtime_key = get_sidechain_runtime_key(route);
+        if (route_ids.has(route.id) || runtime_keys.has(runtime_key)) {
+            return false;
+        }
+        route_ids.add(route.id);
+        runtime_keys.add(runtime_key);
+        return true;
+    });
+}
+
+function is_exact_sidechain_route_array(routes: unknown[]): routes is SidechainRoute[] {
+    return routes.every((route) => is_valid_sidechain_route(route) && has_exact_keys(route, SIDECHAIN_ROUTE_KEYS));
+}
+
 function is_exact_sidechain_store_state(value: unknown): value is SidechainStoreState {
     const routes = get_route_values(value);
 
@@ -90,7 +153,8 @@ function is_exact_sidechain_store_state(value: unknown): value is SidechainStore
         typeof value === 'object' &&
         has_exact_keys(value, SIDECHAIN_STORE_STATE_KEYS) &&
         routes !== null &&
-        routes.every((route) => is_valid_sidechain_route(route) && has_exact_keys(route, SIDECHAIN_ROUTE_KEYS))
+        is_exact_sidechain_route_array(routes) &&
+        has_unique_sidechain_routes(routes)
     );
 }
 
@@ -104,7 +168,7 @@ export function sanitize_sidechain_store_state(value: unknown): SidechainStoreSt
         return defaultSidechainStoreState;
     }
 
-    return { routes: routes.filter(is_valid_sidechain_route).map(normalize_sidechain_route) };
+    return { routes: canonicalize_sidechain_routes(routes) };
 }
 
 export const sidechainStore = createStore<SidechainStoreState>({

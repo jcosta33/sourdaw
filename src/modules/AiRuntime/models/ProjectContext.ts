@@ -8,6 +8,7 @@ export type ProjectContext = {
     metronomeVolume: number;
     availableDeviceTypes?: ProjectContextAvailableDeviceType[];
     automationLanes?: ProjectContextAutomationLane[];
+    sidechainRoutes?: ProjectContextSidechainRoute[];
     tracks: ProjectContextTrack[];
     selectedTrackId: string | null;
     selectedClipId: string | null;
@@ -36,6 +37,15 @@ export type ProjectContextAutomationLane = {
     minValue: number;
     maxValue: number;
     points: ProjectContextAutomationPoint[];
+};
+
+export type ProjectContextSidechainRoute = {
+    id: string;
+    sourceTrackId: string;
+    targetTrackId: string;
+    targetDeviceId: string;
+    targetParameterId: string;
+    gain: number;
 };
 
 export type ProjectContextClip = {

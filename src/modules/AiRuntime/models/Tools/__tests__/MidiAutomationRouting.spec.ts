@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { automationTools } from '../MidiAutomationRouting';
+import { automationTools, routingTools } from '../MidiAutomationRouting';
 
 function getAutomationTool(name: string) {
     return automationTools.find((candidate) => candidate.function.name === name);
+}
+
+function getRoutingTool(name: string) {
+    return routingTools.find((candidate) => candidate.function.name === name);
 }
 
 describe('automation tool schemas', () => {
@@ -74,5 +78,28 @@ describe('automation tool schemas', () => {
             { name: 'thinAutomation', required: ['laneId'] },
             { name: 'quantizeAutomation', required: ['laneId', 'gridSize'] },
         ]);
+    });
+
+    it('limits sidechain tools to provider-owned endpoint IDs', () => {
+        for (const name of ['addSidechainRoute', 'removeSidechainRoute']) {
+            const parameters = getRoutingTool(name)?.function.parameters;
+
+            expect(parameters?.type).toBe('object');
+            expect(Object.keys(parameters?.properties ?? {})).toEqual(['sourceTrackId', 'targetTrackId']);
+            if (name === 'addSidechainRoute') {
+                expect(parameters?.properties.sourceTrackId).toEqual({
+                    type: 'string',
+                    description: 'The trigger track (e.g. kick)',
+                });
+                expect(parameters?.properties.targetTrackId).toEqual({
+                    type: 'string',
+                    description: 'The track being ducked (e.g. bass)',
+                });
+            } else {
+                expect(parameters?.properties.sourceTrackId).toEqual({ type: 'string' });
+                expect(parameters?.properties.targetTrackId).toEqual({ type: 'string' });
+            }
+            expect(parameters?.required).toEqual(['sourceTrackId', 'targetTrackId']);
+        }
     });
 });

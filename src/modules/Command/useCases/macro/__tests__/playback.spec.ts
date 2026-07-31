@@ -641,4 +641,96 @@ describe('playMacro', () => {
         ]);
         expect(macroStore.value?.macros[0]?.actions).toEqual(inverseMacro.actions);
     });
+
+    it('regenerates sidechain route IDs and remaps later inverse references on every playback', async () => {
+        const sidechainMacro: Macro = {
+            id: 'sidechain-route-1',
+            name: 'Sidechain route',
+            actions: [
+                {
+                    type: 'addSidechainRoute',
+                    payload: {
+                        sourceTrackId: 'kick',
+                        targetTrackId: 'bass',
+                        routeId: 'recorded-route',
+                        targetDeviceId: 'compressor-1',
+                        targetParameterId: 'threshold',
+                        gain: 0.75,
+                    },
+                },
+                {
+                    type: 'removeSidechainRoute',
+                    payload: {
+                        sourceTrackId: 'kick',
+                        targetTrackId: 'bass',
+                        routeId: 'recorded-route',
+                        targetDeviceId: 'compressor-1',
+                        targetParameterId: 'threshold',
+                        gain: 0.75,
+                    },
+                },
+            ],
+            createdAt: 0,
+        };
+        macroStore.set({ macros: [sidechainMacro], recording: false, currentRecording: [] });
+        let generatedRouteId = 0;
+        executeAppActionMock.mockImplementation((action) => {
+            if (action.type === 'addSidechainRoute' && action.payload.routeId === undefined) {
+                generatedRouteId += 1;
+                action.payload.routeId = `replayed-route-${String(generatedRouteId)}`;
+            }
+            return Promise.resolve();
+        });
+
+        await playMacro('sidechain-route-1');
+        await playMacro('sidechain-route-1');
+
+        expect(executeAppActionMock.mock.calls.map(([action]) => action)).toEqual([
+            {
+                type: 'addSidechainRoute',
+                payload: {
+                    sourceTrackId: 'kick',
+                    targetTrackId: 'bass',
+                    routeId: 'replayed-route-1',
+                    targetDeviceId: 'compressor-1',
+                    targetParameterId: 'threshold',
+                    gain: 0.75,
+                },
+            },
+            {
+                type: 'removeSidechainRoute',
+                payload: {
+                    sourceTrackId: 'kick',
+                    targetTrackId: 'bass',
+                    routeId: 'replayed-route-1',
+                    targetDeviceId: 'compressor-1',
+                    targetParameterId: 'threshold',
+                    gain: 0.75,
+                },
+            },
+            {
+                type: 'addSidechainRoute',
+                payload: {
+                    sourceTrackId: 'kick',
+                    targetTrackId: 'bass',
+                    routeId: 'replayed-route-2',
+                    targetDeviceId: 'compressor-1',
+                    targetParameterId: 'threshold',
+                    gain: 0.75,
+                },
+            },
+            {
+                type: 'removeSidechainRoute',
+                payload: {
+                    sourceTrackId: 'kick',
+                    targetTrackId: 'bass',
+                    routeId: 'replayed-route-2',
+                    targetDeviceId: 'compressor-1',
+                    targetParameterId: 'threshold',
+                    gain: 0.75,
+                },
+            },
+        ]);
+        expect(macroStore.value?.macros[0]?.actions).toEqual(sidechainMacro.actions);
+    });
 });

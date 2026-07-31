@@ -201,8 +201,28 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
 
             try {
                 await execution_result?.afterCommit?.();
-            } catch (error) {
-                committed_failure ??= error;
+            } catch (effect_error) {
+                const reconcile_runtime = execution_result?.afterAmbiguousCommit;
+                if (!reconcile_runtime) {
+                    committed_failure ??= effect_error;
+                } else {
+                    try {
+                        await reconcile_runtime();
+                    } catch (reconciliation_error) {
+                        const runtime_failure = new AggregateError(
+                            [effect_error, reconciliation_error],
+                            'Post-commit effect and runtime reconciliation both failed'
+                        );
+                        if (committed_failure) {
+                            committed_failure = new AggregateError(
+                                [committed_failure, runtime_failure],
+                                'Post-commit processing and runtime recovery failed'
+                            );
+                        } else {
+                            committed_failure = runtime_failure;
+                        }
+                    }
+                }
             }
 
             if (committed_failure) {

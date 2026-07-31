@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { getProjectContext } from '../getProjectContext';
+import { getProjectContext, type ProjectContextSidechainRoute } from '../getProjectContext';
 
 const mocks = vi.hoisted(() => ({
     trackStoreValue: { value: null } as any,
@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
     workspaceStoreValue: { value: null } as any,
     clipSelectionStoreValue: { value: null } as any,
     automationStoreValue: { value: null } as any,
+    sidechainStoreValue: { value: null as { routes: ProjectContextSidechainRoute[] } | null },
     getPluginById: vi.fn(),
     getPlatformPlugins: vi.fn(),
 }));
@@ -35,6 +36,14 @@ vi.mock('#/modules/Automation/stores', () => ({
     automationStore: {
         get value() {
             return mocks.automationStoreValue.value;
+        },
+    },
+}));
+
+vi.mock('#/modules/Routing/stores', () => ({
+    sidechainStore: {
+        get value() {
+            return mocks.sidechainStoreValue.value;
         },
     },
 }));
@@ -72,6 +81,7 @@ describe('getProjectContext', () => {
         mocks.workspaceStoreValue.value = null;
         mocks.clipSelectionStoreValue.value = null;
         mocks.automationStoreValue.value = null;
+        mocks.sidechainStoreValue.value = null;
         mocks.getPluginById.mockReturnValue(undefined);
         mocks.getPlatformPlugins.mockReturnValue([
             { id: 'builtin-eq', name: 'EQ' },
@@ -91,6 +101,7 @@ describe('getProjectContext', () => {
         expect(context.metronomeVolume).toBe(0.5);
         expect(context.availableDeviceTypes).toEqual([{ id: 'builtin-eq', name: 'EQ' }]);
         expect(context.automationLanes).toEqual([]);
+        expect(context.sidechainRoutes).toEqual([]);
         expect(context.tracks).toEqual([]);
         expect(context.selectedTrackId).toBeNull();
         expect(context.selectedClipId).toBeNull();
@@ -250,6 +261,30 @@ describe('getProjectContext', () => {
             type: 'midi',
             noteCount: 3,
         });
+    });
+
+    it('maps bounded sidechain routes and invalidates the cache when routing state changes', () => {
+        mocks.sidechainStoreValue.value = {
+            routes: [
+                {
+                    id: 'route-kick-bass',
+                    sourceTrackId: 'track-kick',
+                    targetTrackId: 'track-bass',
+                    targetDeviceId: 'device-sidechain',
+                    targetParameterId: 'threshold',
+                    gain: 0.75,
+                },
+            ],
+        };
+
+        const first = getProjectContext();
+        expect(first.sidechainRoutes).toEqual(mocks.sidechainStoreValue.value.routes);
+
+        mocks.sidechainStoreValue.value = { routes: [] };
+        const second = getProjectContext();
+
+        expect(second).not.toBe(first);
+        expect(second.sidechainRoutes).toEqual([]);
     });
 
     it('maps non-clip automation lanes and invalidates the cache when automation state changes', () => {

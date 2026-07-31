@@ -675,8 +675,30 @@ export type AppAction =
           type: 'arpeggiate';
           payload: { clipId: string; pattern?: string; rate?: number; octaves?: number; gate?: number };
       }
-    | { type: 'addSidechainRoute'; payload: { sourceTrackId: string; targetTrackId: string } }
-    | { type: 'removeSidechainRoute'; payload: { sourceTrackId: string; targetTrackId: string } }
+    | {
+          type: 'addSidechainRoute';
+          payload: {
+              sourceTrackId: string;
+              targetTrackId: string;
+              /** Command-owned replay identity and route snapshot fields. AiRuntime exposes only endpoints. */
+              routeId?: string;
+              targetDeviceId?: string;
+              targetParameterId?: string;
+              gain?: number;
+          };
+      }
+    | {
+          type: 'removeSidechainRoute';
+          payload: {
+              sourceTrackId: string;
+              targetTrackId: string;
+              /** Command-owned replay identity and exact removed route snapshot. AiRuntime exposes only endpoints. */
+              routeId?: string;
+              targetDeviceId?: string;
+              targetParameterId?: string;
+              gain?: number;
+          };
+      }
     | { type: 'bounceToNewTrack'; payload: { trackId: string } }
     | { type: 'saveTrackTemplate'; payload: { trackId: string; name: string; category: string } }
     | { type: 'loadTrackTemplate'; payload: { templateId: string } }
