@@ -387,6 +387,33 @@ describe('ToasterProcessor dispatch paths & process guards', () => {
         expect(padParamCalls).toContainEqual([2, 'unknownPad', 0.4]);
     });
 
+    /**
+     * This processor is the camelCase/snake_case boundary, and both runtimes cross
+     * it. A panel edit reaches `ToasterNode.setPadParam` with the `PadState` key —
+     * `filterCutoff` — because that key also addresses the store; the offline
+     * projection (`projectToasterKitToEngineMessages`) posts the engine spelling
+     * `filter_cutoff` directly. `PAD_PARAM_MAP` is what makes those the same write,
+     * so the two runtimes converge here rather than in either caller.
+     *
+     * Worth pinning explicitly: `filterCutoff` is the only mapped name the live
+     * pad-param use cases actually emit (`ToasterPanel`'s cutoff knob and
+     * `trigger16Level`), so it — not `engineType` — is the entry whose removal
+     * would silently drop a real user edit at `Pad::set_param`'s `_ => {}` arm.
+     */
+    it('resolves a live pad edit and the offline projection to the same engine param name', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+
+        // What `setToasterPadParam`/`setPadParamImmediate` put on the wire: the
+        // `PadState` key, unchanged.
+        send(proc, { type: 'padParam', pad: 3, name: 'filterCutoff', value: 8000 });
+        // What `projectToasterKitToEngineMessages` posts for the same field.
+        send(proc, { type: 'padParam', pad: 3, name: 'filter_cutoff', value: 8000 });
+
+        const namesForPad3 = padParamCalls.filter(([pad]) => pad === 3).map(([, name]) => name);
+        expect(namesForPad3).toEqual(['filter_cutoff', 'filter_cutoff']);
+    });
+
     it('dispatches immediate noteOn/noteOff (sampleFrame <= currentFrame) without queueing', async () => {
         const proc = await loadProcessor();
         send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });

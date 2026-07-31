@@ -18,6 +18,7 @@ import {
     shouldPlayMidiEvent,
     transposeForChordTrack,
 } from '#/modules/MIDI/useCases';
+import { isFaustInstrumentModule, registerFaustDSP } from '#/modules/PluginHost/useCases';
 import { getDrumKitDefByIndex, scheduleDrumKitNote, scheduleKitNote, scheduleNote } from '#/modules/Synth/useCases';
 import { processYeastMidi } from '#/modules/Yeast/useCases';
 
@@ -124,6 +125,17 @@ function midiClip(overrides: Record<string, unknown> = {}): Clip {
         ...overrides,
     } as Clip;
 }
+
+/**
+ * Registered through the real `registerFaustDSP`, not a stubbed lookup: the
+ * `isInstrument` flag these fixtures carry is the same record
+ * `createFaustStrategy` reads to decide `FaustDeviceStrategy.acceptsNotes`.
+ * A hand-written fake registry here would let live and offline "agree" about a
+ * module state neither one could actually be in.
+ */
+const PASSTHROUGH_DSP = 'process = _,_;';
+const FAUST_INSTRUMENT_TYPE = registerFaustDSP('Synth', PASSTHROUGH_DSP, [], true).id;
+const FAUST_EFFECT_TYPE = registerFaustDSP('Parity Fixture Reverb', PASSTHROUGH_DSP, [], false).id;
 
 describe('scheduleMidiNotes', () => {
     beforeEach(() => {
@@ -1204,7 +1216,7 @@ describe('scheduleMidiNotes', () => {
         it('routes a faust-device track through scheduleFaustNote', async () => {
             const track = midiTrack({
                 clips: [midiClip()],
-                devices: [{ id: 'f1', type: 'faust-synth' }],
+                devices: [{ id: 'f1', type: FAUST_INSTRUMENT_TYPE }],
             });
             (trackStore as { value: unknown }).value = { tracks: [track] };
             (midiStore as { value: unknown }).value = {
@@ -1226,6 +1238,78 @@ describe('scheduleMidiNotes', () => {
             );
             expect(scheduleNote).not.toHaveBeenCalled();
         });
+
+        /**
+         * A MIDI track whose only Faust device is an *effect* has no instrument.
+         * Writing freq/gain/gate into a reverb voices nothing, and because the
+         * Faust branch is an `else if`, taking it also skips the builtin-synth
+         * fallback — the part is silent live while the export renders it.
+         */
+        it('falls back to the builtin synth when the track carries only a faust effect', async () => {
+            const track = midiTrack({
+                clips: [midiClip()],
+                devices: [{ id: 'fx1', type: FAUST_EFFECT_TYPE }],
+            });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 60, startBeat: 0, duration: 0.5, velocity: 80 }] },
+            };
+
+            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(scheduleFaustNote).not.toHaveBeenCalled();
+            expect(scheduleNote).toHaveBeenCalledTimes(1);
+            // The fallback voices the note the clip actually holds, not a
+            // placeholder: pitch 60 at velocity 80.
+            expect(vi.mocked(scheduleNote).mock.calls[0]?.[2]).toBe(60);
+            expect(vi.mocked(scheduleNote).mock.calls[0]?.[5]).toBe(80);
+        });
+
+        /**
+         * Convergence, not one-sided correctness. `isFaustInstrumentModule` is the
+         * predicate the offline path bottoms out in: `buildDeviceChain` injects it
+         * into `createFaustStrategy`, which stores it as `FaustDeviceStrategy.acceptsNotes`,
+         * which is the only thing that gives a chain entry `instrumentControls` —
+         * and `scheduleTrackClips` picks its offline note target by
+         * `deviceEntries.find((entry) => entry.instrumentControls)`. `isOfflineInstrumentDevice`
+         * returns the same flag for the dry-bounce insert filter.
+         *
+         * So asserting live's routing decision *equals* that predicate for both
+         * kinds of Faust module is the same statement as "live and offline send
+         * this track's notes to the same device". A test that only asserted live
+         * no longer matches effects would go green again the next time the two
+         * predicates drift apart.
+         */
+        it.each([
+            { label: 'instrument', deviceType: FAUST_INSTRUMENT_TYPE },
+            { label: 'effect', deviceType: FAUST_EFFECT_TYPE },
+        ])(
+            'routes a faust $label exactly as the offline instrument predicate classifies it',
+            async ({ deviceType }) => {
+                const track = midiTrack({
+                    clips: [midiClip()],
+                    devices: [{ id: 'faust-device', type: deviceType }],
+                });
+                (trackStore as { value: unknown }).value = { tracks: [track] };
+                (midiStore as { value: unknown }).value = {
+                    notesByClipId: {
+                        'clip-1': [{ id: 'n1', pitch: 60, startBeat: 0, duration: 0.5, velocity: 80 }],
+                    },
+                };
+
+                await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+
+                const offlineAcceptsNotes = isFaustInstrumentModule(deviceType);
+                const liveSentNotesToTheFaustDevice = vi.mocked(scheduleFaustNote).mock.calls.length > 0;
+                expect(liveSentNotesToTheFaustDevice).toBe(offlineAcceptsNotes);
+                // And the note is voiced either way — exactly one of the two
+                // targets takes it, so neither side can converge by both doing
+                // nothing.
+                const faustCalls = vi.mocked(scheduleFaustNote).mock.calls.length;
+                const fallbackCalls = vi.mocked(scheduleNote).mock.calls.length;
+                expect(faustCalls + fallbackCalls).toBe(1);
+            }
+        );
 
         it('routes a grand-boule worklet synth and normalises velocity by /127', async () => {
             const noteOn = vi.fn();

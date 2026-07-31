@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { registerFaustDSP } from '#/modules/PluginHost/useCases';
 import {
     scheduleDrumKitNote as scheduleDrumKitNoteReal,
     getDrumKitDefByIndex as getDrumKitDefByIndexReal,
@@ -11,6 +12,14 @@ import { startFaustNote as startFaustNoteReal } from '../faustScheduler/startFau
 const scheduleDrumKitNote = vi.mocked(scheduleDrumKitNoteReal);
 const getDrumKitDefByIndex = vi.mocked(getDrumKitDefByIndexReal);
 const startFaustNote = vi.mocked(startFaustNoteReal);
+
+/**
+ * Registered through the real `registerFaustDSP` so the `isInstrument` flag under
+ * test is the one production records, not a stubbed lookup.
+ */
+const PASSTHROUGH_DSP = 'process = _,_;';
+const FAUST_INSTRUMENT_TYPE = registerFaustDSP('Osc', PASSTHROUGH_DSP, [], true).id;
+const FAUST_EFFECT_TYPE = registerFaustDSP('Audition Fixture Reverb', PASSTHROUGH_DSP, [], false).id;
 
 type MockToasterControls = {
     ready: boolean;
@@ -393,14 +402,51 @@ describe('playAuditionNote device dispatch', () => {
         expect(noteOff).toHaveBeenCalledWith(55);
     });
 
-    it('faust device: delegates to startFaustNote', () => {
+    it('faust instrument: delegates to startFaustNote', () => {
         setTrack({
             tracks: [
-                { id: 'tk', devices: [{ id: 'faust-d', type: 'faust-osc', parameterValues: {} }], parentId: null },
+                {
+                    id: 'tk',
+                    devices: [{ id: 'faust-d', type: FAUST_INSTRUMENT_TYPE, parameterValues: {} }],
+                    parentId: null,
+                },
             ],
         });
         playAuditionNote('tk', 60, 100);
         expect(startFaustNote).toHaveBeenCalledWith('tk', 'faust-d', 60, 100, expect.any(Number));
+    });
+
+    /**
+     * Same selector defect as the live scheduler: every Faust module carries the
+     * `faust-` prefix, so matching it auditioned notes into the first Faust
+     * *effect* on the track. `startFaustNote` writes freq/gain/gate params a
+     * reverb does not have, so the preview was silent — and the guard is an early
+     * `return`, so the builtin-synth fallback below never ran.
+     */
+    it('faust effect: does not take the audition note, and the builtin synth voices it', () => {
+        setTrack({
+            tracks: [
+                {
+                    id: 'tk',
+                    devices: [{ id: 'faust-fx', type: FAUST_EFFECT_TYPE, parameterValues: {} }],
+                    parentId: null,
+                },
+            ],
+        });
+        playAuditionNote('tk', 60, 100);
+        expect(startFaustNote).not.toHaveBeenCalled();
+        expect(mocks.scheduleNote).toHaveBeenCalledTimes(1);
+        // Pitch 60 at velocity 100 — the fallback voices the audition, it does
+        // not merely get reached.
+        expect(mocks.scheduleNote).toHaveBeenCalledWith(
+            mocks.audioContext,
+            mocks.defaultTrackStrip.gainNode,
+            60,
+            0,
+            60,
+            100,
+            mocks.synthParams
+        );
     });
 
     it('toaster device: no-ops when controls not ready', () => {

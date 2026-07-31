@@ -20,6 +20,7 @@ import {
     shouldPlayMidiEvent,
     transposeForChordTrack,
 } from '#/modules/MIDI/useCases';
+import { isFaustInstrumentModule } from '#/modules/PluginHost/useCases';
 import { scheduleDrumKitNote, scheduleKitNote, scheduleNote } from '#/modules/Synth/useCases';
 import { toasterStore } from '#/modules/Toaster/stores';
 import { resolveToasterPadIndex, TOASTER_NEUTRAL_MIDI_NOTE } from '#/utils/toasterNoteProjection';
@@ -396,10 +397,21 @@ export async function scheduleMidiNotes(
                     ? (workletSynthNode[workletSynthEntry.controlsKey] ?? null)
                     : null;
 
+            // The `faust-` prefix is carried by every Faust module, effect or
+            // instrument, so matching it took a MIDI track's notes into the
+            // first Faust *effect* in the rack — freq/gain/gate written into a
+            // reverb voice nothing. Because the branch below is an `else if`,
+            // taking it also skipped the builtin-synth fallback, so such a
+            // track was silent live while the export rendered the fallback:
+            // offline picks its note target from `instrumentControls`, which
+            // `buildDeviceChain` only attaches when the strategy declares
+            // `acceptsNotes` — and `FaustDeviceStrategy` takes that from
+            // `isFaustInstrumentModule`. Asking the same question here is what
+            // keeps the two runtimes on the same device.
             const faustDevice =
                 toasterRoute || drumKitDef || drumKit || workletSynthControls
                     ? null
-                    : track.devices.find((data) => data.type.startsWith('faust-'));
+                    : track.devices.find((data) => isFaustInstrumentModule(data.type));
 
             for (let iter = 0; iter < maxIterations; iter++) {
                 const absoluteOccurrenceIndex = sourceOccurrenceOffset + iter;
