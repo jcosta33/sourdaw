@@ -25,6 +25,7 @@ function note(id: string, pitch: number, startBeat: number): MidiNote {
         pressure: 0.45,
         slide: -0.1,
         pitchBend: 1_024,
+        pitchBendRangeSemitones: 12,
         channel: 3,
     };
 }
