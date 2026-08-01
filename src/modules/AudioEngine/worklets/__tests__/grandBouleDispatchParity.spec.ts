@@ -218,6 +218,7 @@ describe('the worker and the offline processor dispatch identically', () => {
         workerSelf.onmessage?.({
             data: {
                 type: 'init',
+                initId: 1,
                 wasmModule: EMPTY_WASM_MODULE,
                 sab: ringSab,
                 sampleRate: HOST_SAMPLE_RATE,
