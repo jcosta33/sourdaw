@@ -1,0 +1,31 @@
+.agents/decisions/README.md
+  s_bc88af7d3b054c::t_6f533f724b9331 31
+.agents/decisions/0015-a-guard-must-be-able-to-fail.md
+  s_66d4924c65dcd2::t_11ed698c861412 1-84
+.agents/specs/render-parity-instrumentation/spec.md
+  s_66d4924c65dcd2::t_b29d9addb2ae45 1-111
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.19",
+  "base_commit_sha": "167299533c0defa68d3a76db2b7502bdf7d97bf8",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
