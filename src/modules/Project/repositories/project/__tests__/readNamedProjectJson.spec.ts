@@ -1,62 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-function installFakeIndexedDb(): Map<string, string> {
-    const values = new Map<string, string>();
+import { installFakeIndexedDb } from '../../../__tests__/fakeIndexedDb';
 
-    function makeRequest<T>(run: () => T) {
-        const request: {
-            result: T | undefined;
-            error: unknown;
-            onsuccess: (() => void) | null;
-            onerror: (() => void) | null;
-        } = { result: undefined, error: null, onsuccess: null, onerror: null };
-        queueMicrotask(() => {
-            request.result = run();
-            request.onsuccess?.();
-        });
-        return request;
-    }
+const KEY = 'sourdaw:project:1700000000000';
 
-    const objectStore = {
-        get: (key: string) => makeRequest(() => values.get(key) ?? null),
-        put: (value: string, key: string) =>
-            makeRequest(() => {
-                values.set(key, value);
-                return undefined;
-            }),
-        delete: (key: string) =>
-            makeRequest(() => {
-                values.delete(key);
-                return undefined;
-            }),
-    };
-    const database = {
-        objectStoreNames: { contains: () => true },
-        createObjectStore: () => objectStore,
-        transaction: () => ({ objectStore: () => objectStore }),
-    };
-    const indexedDb = {
-        open: () => {
-            const request: {
-                result: typeof database;
-                error: unknown;
-                onsuccess: (() => void) | null;
-                onerror: (() => void) | null;
-                onupgradeneeded: (() => void) | null;
-            } = {
-                result: database,
-                error: null,
-                onsuccess: null,
-                onerror: null,
-                onupgradeneeded: null,
-            };
-            queueMicrotask(() => request.onsuccess?.());
-            return request;
-        },
-    };
-
-    vi.stubGlobal('indexedDB', indexedDb);
-    return values;
+function snapshot(name: string, updatedAt: number): string {
+    return JSON.stringify({ version: 1, meta: { name, createdAt: 1700000000000, updatedAt } });
 }
 
 describe('readNamedProjectJson', () => {
@@ -69,22 +18,57 @@ describe('readNamedProjectJson', () => {
         vi.resetModules();
     });
 
-    it('prefers the named project in localStorage', async () => {
-        const key = 'sourdaw:project:1700000000000';
-        const json = JSON.stringify({ version: 1, name: 'Small' });
-        localStorage.setItem(key, json);
+    // AC-4. The defect: the localStorage mirror froze at the moment the project
+    // first exceeded quota, while IndexedDB kept receiving every later save.
+    // Mutation: restoring `if (local !== null) { return local; }` at the top of
+    // readNamedProjectJson reds this — it resolves to the stale mirror.
+    it('resolves the fresh IndexedDB copy over a stale localStorage mirror', async () => {
+        const controls = installFakeIndexedDb();
+        const stale = snapshot('Frozen', 1700000000000);
+        const fresh = snapshot('Current', 1800000000000);
+        localStorage.setItem(KEY, stale);
+        controls.values.set(KEY, fresh);
         const { readNamedProjectJson } = await import('../readNamedProjectJson');
 
-        await expect(readNamedProjectJson(key)).resolves.toBe(json);
+        await expect(readNamedProjectJson(KEY)).resolves.toBe(fresh);
     });
 
-    it('falls back to IndexedDB when localStorage has no copy', async () => {
-        const values = installFakeIndexedDb();
-        const key = 'sourdaw:project:1700000000000';
-        const json = JSON.stringify({ version: 1, name: 'Large' });
-        values.set(key, json);
+    // AC-4. Recency, not store rank: an unmigrated mirror that is genuinely
+    // newer than the primary still wins. Mutation: hardcoding "IndexedDB always
+    // wins when present" reds this.
+    it('resolves the localStorage mirror when it is newer than the IndexedDB copy', async () => {
+        const controls = installFakeIndexedDb();
+        const newerMirror = snapshot('Mirror', 1800000000000);
+        const olderPrimary = snapshot('Primary', 1700000000000);
+        localStorage.setItem(KEY, newerMirror);
+        controls.values.set(KEY, olderPrimary);
         const { readNamedProjectJson } = await import('../readNamedProjectJson');
 
-        await expect(readNamedProjectJson(key)).resolves.toBe(json);
+        await expect(readNamedProjectJson(KEY)).resolves.toBe(newerMirror);
+    });
+
+    it('resolves the localStorage mirror when IndexedDB has no copy', async () => {
+        installFakeIndexedDb();
+        const mirror = snapshot('OnlyCopy', 1700000000000);
+        localStorage.setItem(KEY, mirror);
+        const { readNamedProjectJson } = await import('../readNamedProjectJson');
+
+        await expect(readNamedProjectJson(KEY)).resolves.toBe(mirror);
+    });
+
+    it('resolves the IndexedDB copy when localStorage has no mirror', async () => {
+        const controls = installFakeIndexedDb();
+        const primary = snapshot('Large', 1700000000000);
+        controls.values.set(KEY, primary);
+        const { readNamedProjectJson } = await import('../readNamedProjectJson');
+
+        await expect(readNamedProjectJson(KEY)).resolves.toBe(primary);
+    });
+
+    it('resolves null when neither store holds the key', async () => {
+        installFakeIndexedDb();
+        const { readNamedProjectJson } = await import('../readNamedProjectJson');
+
+        await expect(readNamedProjectJson(KEY)).resolves.toBeNull();
     });
 });

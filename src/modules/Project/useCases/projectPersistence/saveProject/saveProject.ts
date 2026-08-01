@@ -2,6 +2,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { persistCrdtProject } from '#/modules/CrdtDocument/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { NAMED_PROJECT_KEY_PREFIX } from '../../../models/ProjectData';
 import { writeNamedProjectJsonByKey } from '../../../repositories/project/writeNamedProjectJsonByKey';
 import { projectStore } from '../../../stores/projectStore';
 import { addToRecentProjects } from '../../recentProjects/addToRecentProjects';
@@ -21,7 +22,7 @@ export async function saveProject(): Promise<boolean> {
     // creation and preserved across renames and reloads) rather than the
     // mutable display name — so duplicate names don't collide and a rename
     // doesn't orphan the old key.
-    const recentKey = `sourdaw:project:${project.createdAt}`;
+    const recentKey = `${NAMED_PROJECT_KEY_PREFIX}${project.createdAt}`;
 
     // Capture each loaded native plugin's live state chunk into project truth
     // before serialization, so a reopened project restores editor-driven state
@@ -45,24 +46,33 @@ export async function saveProject(): Promise<boolean> {
                 projectStore.set({ ...current, updatedAt, dirty: false });
             }
 
-            // Option A: write a flat-JSON ProjectData snapshot under the SAME key
-            // the recent entry uses, so loadRecentProject can reopen it. The
-            // snapshot is the persisted per-project save; the CRDT doc (above) is
-            // the live active document. One shared buildProjectData() serializer
-            // backs both this snapshot and the .sourdaw export, so they can't
-            // drift from the shape hydrateModuleStoresFromProjectData expects.
+            // Write a flat-JSON ProjectData snapshot under the SAME key the
+            // recent entry uses, so loadRecentProject can reopen it. The
+            // snapshot is the persisted per-project save; the CRDT doc (above)
+            // is the live active document. One shared buildProjectData()
+            // serializer backs both this snapshot and the .sourdaw export, so
+            // they can't drift from the shape
+            // hydrateModuleStoresFromProjectData expects.
             const built = await buildProjectData();
-            if (built) {
-                writeNamedProjectJsonByKey(recentKey, JSON.stringify(built.data));
+            if (!built) {
+                // No snapshot means nothing under recentKey to reopen. Listing
+                // the project anyway is how a recent entry came to point at
+                // nothing (ADR 0013).
+                throw new Error('[saveProject] Project snapshot could not be built');
             }
 
-            // Only record the recent-projects entry once persistence succeeds —
-            // otherwise we'd list a project that was never actually saved.
+            // Awaited, so a rejected transaction reaches the catch below rather
+            // than being reported as a successful save.
+            await writeNamedProjectJsonByKey(recentKey, JSON.stringify(built.data));
+
+            // Only record the recent-projects entry once the snapshot write is
+            // observed to have committed — otherwise we'd list a project that
+            // was never actually saved.
             addToRecentProjects(project.name, recentKey);
             return true;
         })
         .catch((error) => {
-            logger.warn('[saveProject] CRDT persistence failed:', error);
+            logger.warn('[saveProject] Project persistence failed:', error);
             notifyUser('Save failed — your latest changes could not be persisted.', 'error');
             return false;
         });

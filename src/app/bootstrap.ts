@@ -103,6 +103,7 @@ import {
     getProjectHandlers,
     initGrooveTemplateDirtyTracking,
     markDirty,
+    migrateLegacyProjectSnapshots,
     setProjectIdentityTransitionDependencies,
 } from '#/modules/Project/useCases';
 import { getVersionControlHandlers } from '#/modules/ProjectVersioning/useCases';
@@ -365,6 +366,28 @@ initStalenessDetection();
 
 trackStore.subscribe(() => markDirty());
 initGrooveTemplateDirtyTracking();
+
+// Drain pre-ADR-0013 project content out of localStorage into IndexedDB. A
+// mirror is removed only once its own rewrite has been observed to commit, or
+// once a copy is confirmed equal or newer; anything it cannot account for is
+// left in place. Safe to race a concurrent *load* — reads resolve by recency —
+// but not audited against a concurrent *save* to the same key, which startup
+// timing makes unreachable today. The report is logged as instrumentation for
+// ADR 0013's stop condition, which ADR 0016 settles rather than leaves open.
+migrateLegacyProjectSnapshots()
+    .then((report) => {
+        if (report.inspected === 0) {
+            return;
+        }
+        logger.info(
+            `Legacy project snapshot migration: inspected=${report.inspected} recovered=${report.recovered} ` +
+                `supersededByPrimary=${report.supersededByPrimary} ` +
+                `mirrorsWithoutPrimary=${report.mirrorsWithoutPrimary} failed=${report.failed}`
+        );
+    })
+    .catch((error: unknown) => {
+        logger.warn(`Legacy project snapshot migration failed (non-fatal): ${String(error)}`);
+    });
 
 // Initialize browser AI module asynchronously — non-blocking, non-fatal.
 // Detects WebGPU capability and populates model registry from OPFS cache.

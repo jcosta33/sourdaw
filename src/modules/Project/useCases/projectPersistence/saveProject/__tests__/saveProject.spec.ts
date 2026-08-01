@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { installFakeIndexedDb } from '../../../../__tests__/fakeIndexedDb';
 import { saveProject } from '../saveProject';
 
 import type { ProjectStoreState } from '../../../../stores/projectStore';
@@ -11,6 +12,11 @@ const mocks = vi.hoisted(() => ({
     addToRecentProjects: vi.fn<(name: string, key: string) => void>(),
     loggerWarn: vi.fn<(...args: unknown[]) => void>(),
     notifyUser: vi.fn<(message: string, level?: 'info' | 'success' | 'warning' | 'error') => void>(),
+    buildProjectData: vi.fn<() => Promise<{ data: unknown } | null>>(),
+}));
+
+vi.mock('../../fileIO/buildProjectData', () => ({
+    buildProjectData: mocks.buildProjectData,
 }));
 
 vi.mock('../../../../stores/projectStore', () => ({
@@ -51,12 +57,14 @@ function makeProject(): ProjectStoreState {
 describe('saveProject', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        installFakeIndexedDb();
         mocks.projectStoreValue.value = makeProject();
         mocks.persistCrdtProject.mockResolvedValue(undefined);
+        mocks.buildProjectData.mockResolvedValue({ data: { version: 1, meta: { name: 'My Song' } } });
     });
 
-    it('should export saveProject', () => {
-        expect(saveProject).toBeDefined();
+    afterEach(() => {
+        vi.unstubAllGlobals();
     });
 
     it('keys the recent-project entry by the stable project id, not the display name', async () => {

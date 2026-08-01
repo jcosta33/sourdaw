@@ -31,7 +31,10 @@ import type { HydratableProjectData } from './isHydratableProjectData';
 import type { ProjectLoadTransaction } from './runProjectLoadTransaction';
 
 type ReplaceProjectDataInput = {
-    afterCommit?: () => void;
+    // May be async: post-commit persistence is an observed IndexedDB
+    // transaction, and a rejected one must degrade the load rather than escape
+    // as an unhandled rejection.
+    afterCommit?: () => void | Promise<void>;
     context: 'applyImportedProjectData' | 'loadRecentProject';
     data: HydratableProjectData;
     transaction: ProjectLoadTransaction;
@@ -190,7 +193,16 @@ export async function replaceProjectData({
     }
 
     if (afterCommit) {
-        runCommittedStep('post-commit persistence', afterCommit);
+        try {
+            await afterCommit();
+        } catch (error) {
+            degraded = true;
+            logger.error(
+                new Error(`[${context}] Committed project replacement failed during post-commit persistence`, {
+                    cause: error,
+                })
+            );
+        }
     }
 
     try {
