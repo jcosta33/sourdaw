@@ -1,0 +1,37 @@
+src/modules/Transport/useCases/__tests__/getSchedulerTimingDiagnostics.spec.ts
+  s_66d4924c65dcd2::t_82638eadeeb32e 1-28
+src/modules/Transport/useCases/getSchedulerTimingDiagnostics.ts
+  s_66d4924c65dcd2::t_85920b464776c0 1-5
+src/modules/Transport/useCases/index.ts
+  s_66d4924c65dcd2::t_d9a49085788ab0 5
+src/modules/Transport/useCases/playheadScheduler/__tests__/schedulerTimingDiagnostics.spec.ts
+  s_ac9b259eab20ba::t_e698b072f6fbbe 1-95
+src/modules/Transport/useCases/playheadScheduler/schedulerTimingDiagnostics.ts
+  s_ac9b259eab20ba::t_ad249400370a84 1-134
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_ac9b259eab20ba::t_ff8a42618cf48a 34,42-73,138,147,151,156,404-405,407-415
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "f148076910437da2998afc5e6239de8c85e4a4cc",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
