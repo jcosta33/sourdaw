@@ -42,19 +42,20 @@ export async function autoLoadLevainSamples(
     setSampleLoadProgress(deviceId, 0.01); // trigger UI loading state
 
     try {
-        await loadInstrumentFromManifest(
+        await loadInstrumentFromManifest({
             manifestUrl,
-            manifestBase,
+            basePath: manifestBase,
+            expectedInstrumentId: instrumentId,
             nodePort,
-            WEB_LOD,
-            (progress) => {
+            lod: WEB_LOD,
+            onProgress: (progress) => {
                 if (signal?.aborted) {
                     return;
                 }
                 setSampleLoadProgress(deviceId, progress);
             },
-            signal
-        );
+            signal,
+        });
     } catch (error) {
         // A superseding load aborted this one; it owns the UI now, stay silent.
         if (signal?.aborted) {
