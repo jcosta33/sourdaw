@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { deviceReadinessDiagnostics } from '../deviceReadinessDiagnostics';
+import { createDeviceReadinessDiagnostics } from '../deviceReadinessDiagnostics';
 
 describe('deviceReadinessDiagnostics', () => {
+    let deviceReadinessDiagnostics: ReturnType<typeof createDeviceReadinessDiagnostics>;
+
     beforeEach(() => {
-        deviceReadinessDiagnostics.reset();
+        deviceReadinessDiagnostics = createDeviceReadinessDiagnostics();
     });
 
     it('records node, graph, and playable readiness for a worklet device', () => {
@@ -288,5 +290,21 @@ describe('deviceReadinessDiagnostics', () => {
         expect(devices).toHaveLength(256);
         expect(devices[0]?.deviceId).toBe('ready-1');
         expect(devices.at(-1)?.deviceId).toBe('delayed');
+    });
+
+    it('isolates records and counters between engine-owned collectors', () => {
+        const otherDiagnostics = createDeviceReadinessDiagnostics();
+        deviceReadinessDiagnostics.begin({
+            deviceId: 'fermenter-1',
+            deviceType: 'fermenter',
+            requiresContent: false,
+            atMs: 13_000,
+        });
+
+        expect(deviceReadinessDiagnostics.snapshot().counts.requested).toBe(1);
+        expect(otherDiagnostics.snapshot()).toMatchObject({
+            counts: { requested: 0 },
+            devices: [],
+        });
     });
 });
