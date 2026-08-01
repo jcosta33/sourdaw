@@ -1,0 +1,19 @@
+tests/e2e/myceliumPerformanceEvidence.ts
+  s_ac9b259eab20ba::t_a5e2248bd97e5e 159-165,293-295
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "7e8f049bc4da0e71e4019674134bf14c5b385f88",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
