@@ -73,21 +73,28 @@ export async function createGrinderNode(
     }
 
     await raceAbortSignal(ensureWorkletRegistered(ctx, grinderProcessorUrl), signal);
-    const wasmModule = await raceAbortSignal(
-        fetchWasmModule({ ctx, bundleId: 'daw-dsp', url: wasmUrl ?? DEFAULT_WASM_URL }),
+    const wasmLease = await raceAbortSignal(
+        fetchWasmModule({ ctx, bundleId: 'daw-dsp', url: wasmUrl ?? DEFAULT_WASM_URL, signal }),
         signal
     );
 
     signal?.throwIfAborted();
 
-    const node = new AudioWorkletNode(ctx, 'grinder-processor', {
-        numberOfInputs: 1,
-        numberOfOutputs: 1,
-        outputChannelCount: [2],
-        channelCount: 2,
-        channelCountMode: 'explicit',
-        processorOptions: { wasmModule },
-    });
+    let node: AudioWorkletNode;
+    try {
+        node = new AudioWorkletNode(ctx, 'grinder-processor', {
+            numberOfInputs: 1,
+            numberOfOutputs: 1,
+            outputChannelCount: [2],
+            channelCount: 2,
+            channelCountMode: 'explicit',
+            processorOptions: { wasmModule: wasmLease.module },
+        });
+        wasmLease.commit();
+    } catch (error) {
+        wasmLease.release();
+        throw error;
+    }
 
     let slot: TelemetrySlot | null = telemetryAllocator.allocateSlot();
     let meterRafId: number | null = null;

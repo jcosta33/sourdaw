@@ -71,16 +71,23 @@ export async function createCrumbsNode(
     }
 
     await ensureWorkletRegistered(ctx, crumbsProcessorUrl);
-    const wasmModule = await fetchWasmModule({ ctx, bundleId: 'daw-dsp', url: wasmUrl ?? DEFAULT_WASM_URL });
+    const wasmLease = await fetchWasmModule({ ctx, bundleId: 'daw-dsp', url: wasmUrl ?? DEFAULT_WASM_URL });
 
-    const node = new AudioWorkletNode(ctx, 'crumbs-processor', {
-        numberOfInputs: 0,
-        numberOfOutputs: 1,
-        outputChannelCount: [2],
-        channelCount: 2,
-        channelCountMode: 'explicit',
-        processorOptions: { wasmModule },
-    });
+    let node: AudioWorkletNode;
+    try {
+        node = new AudioWorkletNode(ctx, 'crumbs-processor', {
+            numberOfInputs: 0,
+            numberOfOutputs: 1,
+            outputChannelCount: [2],
+            channelCount: 2,
+            channelCountMode: 'explicit',
+            processorOptions: { wasmModule: wasmLease.module },
+        });
+        wasmLease.commit();
+    } catch (error) {
+        wasmLease.release();
+        throw error;
+    }
 
     let bypassed = false;
 

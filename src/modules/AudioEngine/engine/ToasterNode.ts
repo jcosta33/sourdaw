@@ -89,21 +89,28 @@ export async function createToasterNode(
     }
 
     await raceAbortSignal(ensureWorkletRegistered(ctx, toasterProcessorUrl), signal);
-    const wasmModule = await raceAbortSignal(
-        fetchWasmModule({ ctx, bundleId: 'daw-dsp', url: wasmUrl ?? DEFAULT_WASM_URL }),
+    const wasmLease = await raceAbortSignal(
+        fetchWasmModule({ ctx, bundleId: 'daw-dsp', url: wasmUrl ?? DEFAULT_WASM_URL, signal }),
         signal
     );
 
     signal?.throwIfAborted();
 
-    const node = new AudioWorkletNode(ctx, 'toaster-processor', {
-        numberOfInputs: 0,
-        numberOfOutputs: 1 + TOASTER_PAD_COUNT,
-        outputChannelCount: Array.from({ length: 1 + TOASTER_PAD_COUNT }, () => 2),
-        channelCount: 2,
-        channelCountMode: 'explicit',
-        processorOptions: { wasmModule },
-    });
+    let node: AudioWorkletNode;
+    try {
+        node = new AudioWorkletNode(ctx, 'toaster-processor', {
+            numberOfInputs: 0,
+            numberOfOutputs: 1 + TOASTER_PAD_COUNT,
+            outputChannelCount: Array.from({ length: 1 + TOASTER_PAD_COUNT }, () => 2),
+            channelCount: 2,
+            channelCountMode: 'explicit',
+            processorOptions: { wasmModule: wasmLease.module },
+        });
+        wasmLease.commit();
+    } catch (error) {
+        wasmLease.release();
+        throw error;
+    }
     const outputNode = ctx.createGain();
     outputNode.gain.value = 1;
     node.connect(outputNode, 0, 0);

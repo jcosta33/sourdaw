@@ -6,7 +6,11 @@ import { PROOF_IDX, TELEMETRY_SEQ_IDX } from '../telemetryAllocator';
 const mocks = vi.hoisted(() => ({
     ensureWorkletRegistered: vi.fn(() => Promise.resolve()),
     fetchWasmModule: vi.fn(() =>
-        Promise.resolve(new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0])))
+        Promise.resolve({
+            module: new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0])),
+            commit: vi.fn(),
+            release: vi.fn(),
+        })
     ),
     requireSharedArrayBuffer: vi.fn(),
     allocateSlot: vi.fn(),

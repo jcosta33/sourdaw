@@ -17,8 +17,8 @@
  * reports whether it was handled, so callers can interleave their own logic
  * without duplicating the settled/timeout bookkeeping.
  *
- * All semantics (10s default timeout, error messages, settled-flag behaviour)
- * are preserved exactly — this is a pure refactor with no behaviour change.
+ * Handshake semantics (10s default timeout, error messages, settled-flag
+ * behaviour) are shared without changing each node's observable contract.
  */
 
 const DEFAULT_INIT_TIMEOUT_MS = 10_000;
@@ -62,11 +62,22 @@ type FetchWasmModuleInput = {
     ctx: BaseAudioContext;
     bundleId: WasmBundleId;
     url: string;
+    signal?: AbortSignal;
 };
 
 type WasmBundleLoad = {
     url: string;
     promise: Promise<WebAssembly.Module>;
+    activeLeases: number;
+    committed: boolean;
+};
+
+export type WasmModuleLease = {
+    module: WebAssembly.Module;
+    /** Permanently bind this bundle version after a host receives the module. */
+    commit: () => void;
+    /** Give up an uncommitted claim after cancellation or construction failure. */
+    release: () => void;
 };
 
 /**
@@ -84,7 +95,11 @@ function loadWasmModule(url: string): Promise<WebAssembly.Module> {
         return cached;
     }
 
-    const promise = fetch(url).then(async (response) => {
+    // Public WASM assets currently use stable filenames rather than content-
+    // hashed URLs. Revalidate once per app realm so a deployment cannot pair
+    // freshly generated glue with a stale cached binary; the in-memory promise
+    // still guarantees one network/compile operation for every runtime URL.
+    const promise = fetch(url, { cache: 'no-cache' }).then(async (response) => {
         if (!response.ok) {
             throw new Error(`Failed to fetch WASM (${url}): ${response.status}`);
         }
@@ -101,20 +116,23 @@ function loadWasmModule(url: string): Promise<WebAssembly.Module> {
 }
 
 /**
- * Claim one bundle version for this context, then fetch and asynchronously
- * compile its module once per URL. A compiled `WebAssembly.Module` is
+ * Acquire a short-lived claim on one bundle version for this context, then
+ * fetch and asynchronously compile its module once per URL. A compiled
+ * `WebAssembly.Module` is
  * structured-cloneable, so node factories can send the cached module to
  * worklets and workers without compiling synchronously on their
  * real-time-adjacent threads.
  */
-export async function fetchWasmModule({ ctx, bundleId, url }: FetchWasmModuleInput): Promise<WebAssembly.Module> {
+export async function fetchWasmModule({ ctx, bundleId, url, signal }: FetchWasmModuleInput): Promise<WasmModuleLease> {
+    signal?.throwIfAborted();
+
     let bundleLoads = contextBundleLoads.get(ctx);
     if (!bundleLoads) {
         bundleLoads = new Map();
         contextBundleLoads.set(ctx, bundleLoads);
     }
 
-    const existing = bundleLoads.get(bundleId);
+    let existing = bundleLoads.get(bundleId);
     if (existing) {
         if (existing.url !== url) {
             throw new Error(
@@ -122,19 +140,57 @@ export async function fetchWasmModule({ ctx, bundleId, url }: FetchWasmModuleInp
                     `create a new AudioContext before loading ${url}`
             );
         }
-        return existing.promise;
+    } else {
+        const promise = loadWasmModule(url);
+        existing = { url, promise, activeLeases: 0, committed: false };
+        bundleLoads.set(bundleId, existing);
     }
 
-    const promise = loadWasmModule(url);
-    bundleLoads.set(bundleId, { url, promise });
-    try {
-        return await promise;
-    } catch (error) {
-        // A failed load did not initialize the bundle singleton, so release
-        // this context's claim and allow a retry or an explicit replacement.
-        if (bundleLoads.get(bundleId)?.promise === promise) {
+    const load = existing;
+    load.activeLeases++;
+    let settled = false;
+
+    const finish = (committed: boolean): void => {
+        if (settled) {
+            return;
+        }
+        settled = true;
+        signal?.removeEventListener('abort', release);
+        load.activeLeases--;
+        if (committed) {
+            load.committed = true;
+        }
+        if (!load.committed && load.activeLeases === 0 && bundleLoads.get(bundleId) === load) {
             bundleLoads.delete(bundleId);
         }
+    };
+
+    const commit = (): void => finish(true);
+    const release = (): void => finish(false);
+    signal?.addEventListener('abort', release, { once: true });
+
+    // Adding an event listener to an already-aborted signal does not replay the
+    // abort event. Check again after registration so a future signal
+    // implementation that can abort concurrently cannot strand this context's
+    // uncommitted bundle-version claim while compilation continues in the URL
+    // cache.
+    if (signal?.aborted) {
+        release();
+        signal.throwIfAborted();
+    }
+
+    try {
+        const module = await load.promise;
+        if (signal?.aborted) {
+            release();
+            signal.throwIfAborted();
+        }
+        return { module, commit, release };
+    } catch (error) {
+        // A failed load did not initialize the bundle singleton. Release this
+        // caller's lease; the last failed/aborted consumer frees the context to
+        // retry the same URL or choose a replacement.
+        release();
         throw error;
     }
 }

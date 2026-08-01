@@ -295,18 +295,24 @@ export async function createGrandBouleNode(
     const processorUrl = isOfflineRender ? grandBouleOfflineProcessorUrl : grandBouleProcessorUrl;
 
     await raceAbortSignal(ensureWorkletRegistered(ctx, processorUrl), signal);
-    const wasmModule = await raceAbortSignal(
-        fetchWasmModule({ ctx, bundleId: 'daw-dsp', url: wasmUrl ?? DEFAULT_WASM_URL }),
+    const wasmLease = await raceAbortSignal(
+        fetchWasmModule({ ctx, bundleId: 'daw-dsp', url: wasmUrl ?? DEFAULT_WASM_URL, signal }),
         signal
     );
 
     signal?.throwIfAborted();
 
     let transport: GrandBouleTransport;
-    if (isOfflineRender) {
-        transport = createInlineWorkletTransport({ ctx, wasmModule });
-    } else {
-        transport = createWorkerRingTransport({ ctx, wasmModule });
+    try {
+        if (isOfflineRender) {
+            transport = createInlineWorkletTransport({ ctx, wasmModule: wasmLease.module });
+        } else {
+            transport = createWorkerRingTransport({ ctx, wasmModule: wasmLease.module });
+        }
+        wasmLease.commit();
+    } catch (error) {
+        wasmLease.release();
+        throw error;
     }
 
     const node = transport.workletNode;

@@ -7,7 +7,11 @@ import { createBacteriaNode, isBacteriaDevice } from '../BacteriaNode';
 // immediately so the factory's `await` chain completes.
 vi.mock('#/infra/audioWorklet/workletInitShared', () => ({
     ensureWorkletRegistered: vi.fn().mockResolvedValue(undefined),
-    fetchWasmModule: vi.fn().mockResolvedValue(new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]))),
+    fetchWasmModule: vi.fn().mockResolvedValue({
+        module: new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0])),
+        commit: vi.fn(),
+        release: vi.fn(),
+    }),
     createReadyHandshake: vi.fn(() => ({
         promise: Promise.resolve({}),
         onMessage: () => 'other' as const,

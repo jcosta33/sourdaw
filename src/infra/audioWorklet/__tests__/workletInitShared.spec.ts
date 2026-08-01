@@ -14,8 +14,8 @@ const createFakeContext = (addModule: (moduleUrl: string) => Promise<void>): Fak
 
 type WasmBundleId = Parameters<typeof fetchWasmModule>[0]['bundleId'];
 
-function fetchForContext(ctx: BaseAudioContext, url: string, bundleId: WasmBundleId = 'daw-dsp') {
-    return fetchWasmModule({ ctx, bundleId, url });
+function fetchForContext(ctx: BaseAudioContext, url: string, bundleId: WasmBundleId = 'daw-dsp', signal?: AbortSignal) {
+    return fetchWasmModule({ ctx, bundleId, url, signal });
 }
 
 function createWasmContext(): BaseAudioContext {
@@ -87,8 +87,8 @@ describe('fetchWasmModule', () => {
 
         const result = await fetchForContext(ctx, 'https://example.test/module-a.wasm');
 
-        expect(result).toBe(module);
-        expect(fetchMock).toHaveBeenCalledExactlyOnceWith('https://example.test/module-a.wasm');
+        expect(result.module).toBe(module);
+        expect(fetchMock).toHaveBeenCalledExactlyOnceWith('https://example.test/module-a.wasm', { cache: 'no-cache' });
         expect(compileMock).toHaveBeenCalledExactlyOnceWith(buffer);
     });
 
@@ -108,8 +108,8 @@ describe('fetchWasmModule', () => {
             fetchForContext(ctx, 'https://example.test/module-b.wasm'),
         ]);
 
-        expect(first).toBe(module);
-        expect(second).toBe(module);
+        expect(first.module).toBe(module);
+        expect(second.module).toBe(module);
         expect(fetchMock).toHaveBeenCalledOnce();
         expect(compileMock).toHaveBeenCalledOnce();
     });
@@ -141,7 +141,8 @@ describe('fetchWasmModule', () => {
         vi.spyOn(WebAssembly, 'compile').mockResolvedValue(module);
         globalThis.fetch = fetchMock;
 
-        await fetchForContext(ctx, 'https://example.test/daw-dsp-v1.wasm');
+        const first = await fetchForContext(ctx, 'https://example.test/daw-dsp-v1.wasm');
+        first.commit();
 
         await expect(fetchForContext(ctx, 'https://example.test/daw-dsp-v2.wasm')).rejects.toThrow(
             'WASM bundle "daw-dsp" is already bound to https://example.test/daw-dsp-v1.wasm in this AudioContext'
@@ -193,7 +194,7 @@ describe('fetchWasmModule', () => {
         await expect(fetchForContext(ctx, 'https://example.test/retry.wasm')).rejects.toThrow();
         const result = await fetchForContext(ctx, 'https://example.test/retry.wasm');
 
-        expect(result).toBe(module);
+        expect(result.module).toBe(module);
         expect(fetchMock).toHaveBeenCalledTimes(2);
         expect(compileMock).toHaveBeenCalledOnce();
     });
@@ -214,7 +215,7 @@ describe('fetchWasmModule', () => {
         await expect(fetchForContext(ctx, 'https://example.test/retry-compile.wasm')).rejects.toThrow('invalid module');
         const result = await fetchForContext(ctx, 'https://example.test/retry-compile.wasm');
 
-        expect(result).toBe(module);
+        expect(result.module).toBe(module);
         expect(fetchMock).toHaveBeenCalledTimes(2);
         expect(compileMock).toHaveBeenCalledTimes(2);
     });
@@ -232,8 +233,93 @@ describe('fetchWasmModule', () => {
         await expect(fetchForContext(ctx, 'https://example.test/failed-version.wasm')).rejects.toThrow();
         const result = await fetchForContext(ctx, 'https://example.test/replacement-version.wasm');
 
-        expect(result).toBe(module);
+        expect(result.module).toBe(module);
         expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('releases an aborted in-flight claim before compilation settles', async () => {
+        const ctx = createWasmContext();
+        const controller = new AbortController();
+        const module = new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]));
+        let resolveCompile: (compiled: WebAssembly.Module) => void = () => {};
+        const deferredCompile = new Promise<WebAssembly.Module>((resolve) => {
+            resolveCompile = resolve;
+        });
+        const fetchMock = vi.fn().mockResolvedValue({
+            ok: true,
+            arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
+        });
+        vi.spyOn(WebAssembly, 'compile').mockReturnValueOnce(deferredCompile).mockResolvedValueOnce(module);
+        globalThis.fetch = fetchMock;
+
+        const abandoned = fetchForContext(
+            ctx,
+            'https://example.test/abandoned-version.wasm',
+            'daw-dsp',
+            controller.signal
+        );
+        await vi.waitFor(() => {
+            expect(fetchMock).toHaveBeenCalledOnce();
+        });
+        controller.abort();
+
+        const replacement = fetchForContext(ctx, 'https://example.test/replacement-after-abort.wasm');
+        resolveCompile(module);
+
+        await expect(abandoned).rejects.toThrow();
+        await expect(replacement).resolves.toMatchObject({ module });
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not claim a bundle version for an already-aborted caller', async () => {
+        const ctx = createWasmContext();
+        const controller = new AbortController();
+        const module = new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]));
+        const fetchMock = vi.fn().mockResolvedValue({
+            ok: true,
+            arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
+        });
+        vi.spyOn(WebAssembly, 'compile').mockResolvedValue(module);
+        globalThis.fetch = fetchMock;
+        controller.abort();
+
+        await expect(
+            fetchForContext(ctx, 'https://example.test/pre-aborted-version.wasm', 'daw-dsp', controller.signal)
+        ).rejects.toThrow();
+        await expect(
+            fetchForContext(ctx, 'https://example.test/replacement-after-pre-abort.wasm')
+        ).resolves.toMatchObject({ module });
+
+        expect(fetchMock).toHaveBeenCalledOnce();
+    });
+
+    it('keeps a shared bundle claim while another active consumer releases its lease', async () => {
+        const ctx = createWasmContext();
+        const firstController = new AbortController();
+        const module = new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]));
+        const fetchMock = vi.fn().mockResolvedValue({
+            ok: true,
+            arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
+        });
+        vi.spyOn(WebAssembly, 'compile').mockResolvedValue(module);
+        globalThis.fetch = fetchMock;
+
+        const first = await fetchForContext(
+            ctx,
+            'https://example.test/shared-version.wasm',
+            'daw-dsp',
+            firstController.signal
+        );
+        const second = await fetchForContext(ctx, 'https://example.test/shared-version.wasm');
+        firstController.abort();
+
+        await expect(fetchForContext(ctx, 'https://example.test/conflicting-version.wasm')).rejects.toThrow(
+            'WASM bundle "daw-dsp" is already bound to https://example.test/shared-version.wasm in this AudioContext'
+        );
+        second.commit();
+        expect(first.module).toBe(module);
+        expect(second.module).toBe(module);
+        expect(fetchMock).toHaveBeenCalledOnce();
     });
 });
 

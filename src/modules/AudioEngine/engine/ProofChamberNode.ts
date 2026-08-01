@@ -46,21 +46,28 @@ export async function createProofChamberNode(
     }
 
     await raceAbortSignal(ensureWorkletRegistered(ctx, proofChamberProcessorUrl), signal);
-    const wasmModule = await raceAbortSignal(
-        fetchWasmModule({ ctx, bundleId: 'proof-chamber', url: DEFAULT_WASM_URL }),
+    const wasmLease = await raceAbortSignal(
+        fetchWasmModule({ ctx, bundleId: 'proof-chamber', url: DEFAULT_WASM_URL, signal }),
         signal
     );
 
     signal?.throwIfAborted();
 
-    const node = new AudioWorkletNode(ctx, 'proof-chamber-processor', {
-        numberOfInputs: 1,
-        numberOfOutputs: 1,
-        outputChannelCount: [2],
-        channelCount: 2,
-        channelCountMode: 'explicit',
-        processorOptions: { wasmModule },
-    });
+    let node: AudioWorkletNode;
+    try {
+        node = new AudioWorkletNode(ctx, 'proof-chamber-processor', {
+            numberOfInputs: 1,
+            numberOfOutputs: 1,
+            outputChannelCount: [2],
+            channelCount: 2,
+            channelCountMode: 'explicit',
+            processorOptions: { wasmModule: wasmLease.module },
+        });
+        wasmLease.commit();
+    } catch (error) {
+        wasmLease.release();
+        throw error;
+    }
 
     const handshake = createReadyHandshake({ pluginName: 'ProofChamberNode' });
     node.port.onmessage = (event: MessageEvent) => {

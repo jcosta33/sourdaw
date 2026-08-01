@@ -72,21 +72,28 @@ export async function createGlutenNode(
     }
 
     await raceAbortSignal(ensureWorkletRegistered(ctx, glutenProcessorUrl), signal);
-    const wasmModule = await raceAbortSignal(
-        fetchWasmModule({ ctx, bundleId: 'daw-dsp', url: wasmUrl ?? DEFAULT_WASM_URL }),
+    const wasmLease = await raceAbortSignal(
+        fetchWasmModule({ ctx, bundleId: 'daw-dsp', url: wasmUrl ?? DEFAULT_WASM_URL, signal }),
         signal
     );
 
     signal?.throwIfAborted();
 
-    const node = new AudioWorkletNode(ctx, 'gluten-processor', {
-        numberOfInputs: 2, // Input 0: main audio, Input 1: external sidechain
-        numberOfOutputs: 1,
-        outputChannelCount: [2],
-        channelCount: 2,
-        channelCountMode: 'explicit',
-        processorOptions: { wasmModule },
-    });
+    let node: AudioWorkletNode;
+    try {
+        node = new AudioWorkletNode(ctx, 'gluten-processor', {
+            numberOfInputs: 2, // Input 0: main audio, Input 1: external sidechain
+            numberOfOutputs: 1,
+            outputChannelCount: [2],
+            channelCount: 2,
+            channelCountMode: 'explicit',
+            processorOptions: { wasmModule: wasmLease.module },
+        });
+        wasmLease.commit();
+    } catch (error) {
+        wasmLease.release();
+        throw error;
+    }
 
     let slot: TelemetrySlot | null = telemetryAllocator.allocateSlot();
     let meterRafId: number | null = null;
