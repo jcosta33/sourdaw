@@ -15,6 +15,8 @@ export type ActionUndoEntry = UndoEntryBase & {
     kind: 'action';
     action: AppAction;
     inverseAction: AppAction | null;
+    /** Optional snapshot-exact replay used when recomputing `action` against later state is unsafe. */
+    redoAction?: AppAction;
 };
 
 export type CallbackUndoEntry = UndoEntryBase & {

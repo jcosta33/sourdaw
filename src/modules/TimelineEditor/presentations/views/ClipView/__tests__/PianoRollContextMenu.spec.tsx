@@ -10,13 +10,11 @@ import {
     getNotesForClip,
     humanizeNotes,
     moveMidiNote,
-    quantizeNotes,
     removeMidiNote,
     restoreStrumOriginals,
     setNoteVelocity,
     snapClipToScale,
     strumNotes,
-    transposeNotes,
 } from '#/modules/MIDI/useCases';
 
 import { PianoRollContextMenu } from '../PianoRollContextMenu';
@@ -81,8 +79,6 @@ vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
     setNoteVelocity: vi.fn(),
     getNotesForClip: vi.fn(() => []),
     humanizeNotes: vi.fn(),
-    quantizeNotes: vi.fn(),
-    transposeNotes: vi.fn(),
     restoreStrumOriginals: vi.fn(),
     strumNotes: vi.fn(),
     restoreGrooveOriginals: vi.fn(),
@@ -238,39 +234,26 @@ describe('PianoRollContextMenu', () => {
         expect(removeMidiNote).toHaveBeenCalledWith('clip-1', 'n2');
     });
 
-    it('should quantize notes and restore prior beats on undo', () => {
-        vi.mocked(getNotesForClip)
-            .mockReturnValueOnce([{ id: 'n1', pitch: 60, startBeat: 0.1, duration: 1, velocity: 100 }])
-            .mockReturnValueOnce([{ id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }]);
+    it('should quantize notes through the AppAction boundary', () => {
         renderWithTooltip(<PianoRollContextMenu {...defaultProps} />);
         fireEvent.click(screen.getByText('1/4'));
 
-        expect(quantizeNotes).toHaveBeenCalledWith('clip-1', 0.25);
-        expect(pushUndoEntry).toHaveBeenCalledWith('Quantize notes (1/4)', expect.any(Function), expect.any(Function));
-
-        const [, undo, redo] = vi.mocked(pushUndoEntry).mock.calls[0]!;
-        undo();
-        expect(moveMidiNote).toHaveBeenCalledWith('clip-1', 'n1', 60, 0.1);
-        redo();
-        expect(moveMidiNote).toHaveBeenCalledWith('clip-1', 'n1', 60, 0);
+        expect(executeAppAction).toHaveBeenCalledWith({
+            type: 'quantizeNotes',
+            payload: { clipId: 'clip-1', gridSize: 0.25 },
+        });
+        expect(pushUndoEntry).not.toHaveBeenCalled();
     });
 
-    it('should transpose notes up an octave and invert on undo', () => {
+    it('should transpose notes through the AppAction boundary', () => {
         renderWithTooltip(<PianoRollContextMenu {...defaultProps} />);
         fireEvent.click(screen.getByText('+Oct'));
 
-        expect(transposeNotes).toHaveBeenCalledWith('clip-1', 12);
-        expect(pushUndoEntry).toHaveBeenCalledWith(
-            'Transpose +12 semitones',
-            expect.any(Function),
-            expect.any(Function)
-        );
-
-        const [, undo, redo] = vi.mocked(pushUndoEntry).mock.calls[0]!;
-        undo();
-        expect(transposeNotes).toHaveBeenLastCalledWith('clip-1', -12);
-        redo();
-        expect(transposeNotes).toHaveBeenLastCalledWith('clip-1', 12);
+        expect(executeAppAction).toHaveBeenCalledWith({
+            type: 'transposeNotes',
+            payload: { clipId: 'clip-1', semitones: 12 },
+        });
+        expect(pushUndoEntry).not.toHaveBeenCalled();
     });
 
     it('should snap notes to scale and restore original pitches on undo', () => {
