@@ -1,0 +1,44 @@
+src/modules/MIDI/handlers/noteTransform/prepareMidiNoteTransformUndo.ts
+  s_bc88af7d3b054c::t_5fec5710c59e73 40-43
+docs/architecture/decisions/0029-llm-midi-note-transform-command-surface.md
+  s_bc88af7d3b054c::t_5fec5710c59e73 18-19
+src/modules/Command/useCases/__tests__/redo.spec.ts
+  s_bc88af7d3b054c::t_1ee3f3bb6e14e6 85-99
+src/utils/handlerContract.ts
+  s_bc88af7d3b054c::t_5fec5710c59e73 920,924
+src/modules/Command/useCases/__tests__/executeAppActionBatch.spec.ts
+  s_bc88af7d3b054c::t_1ee3f3bb6e14e6 118-137
+src/modules/Command/models/UndoEntry.ts
+  s_bc88af7d3b054c::t_5fec5710c59e73 18-19
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollContextMenu.spec.tsx
+  s_bc88af7d3b054c::t_9aec6139acb094 237,241-245,248,252-256
+src/modules/MIDI/handlers/noteTransform/__tests__/midiNoteTransformUndo.spec.ts
+  s_bc88af7d3b054c::t_9aec6139acb094 71,77-78,244-267
+  s_bc88af7d3b054c::t_422404697ef430 268
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_bc88af7d3b054c::t_5fec5710c59e73 205-211
+src/modules/TimelineEditor/presentations/views/ClipView/PianoRollContextMenu.tsx
+  s_bc88af7d3b054c::t_5fec5710c59e73 162-165,184-187
+src/modules/Command/useCases/redo.ts
+  s_bc88af7d3b054c::t_5fec5710c59e73 6,36-45
+src/modules/Command/useCases/executeAppAction.ts
+  s_bc88af7d3b054c::t_5fec5710c59e73 51-55,193-194
+src/modules/Command/useCases/createUndoEntry.ts
+  s_bc88af7d3b054c::t_5fec5710c59e73 9-10,12,21-24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.19",
+  "base_commit_sha": "e582a82b00a4e02335a0c8c9cb533a324d734ffc",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
