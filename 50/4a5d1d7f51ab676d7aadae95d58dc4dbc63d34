@@ -1,0 +1,35 @@
+src/modules/Levain/useCases/levainParamBridge/__tests__/registerLevainDevice.spec.ts
+  s_ac9b259eab20ba::t_0bebad1cad64e3 20,23,25,28
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_ac9b259eab20ba::t_a6268c6194e684 290
+  s_ac9b259eab20ba::t_2ac2e55c4e51b7 363,373,379
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistryDescriptors.spec.ts
+  s_ac9b259eab20ba::t_82091ca59af50b 300,303-305,310,313-315,317
+  s_ac9b259eab20ba::t_37020ced22c0ba 298-299,301-302,306-309,311-312,316,318-320
+src/modules/AudioEngine/engine/audioDeviceRuntimeSink.ts
+  s_ac9b259eab20ba::t_2ac2e55c4e51b7 19-20,38-43
+src/app/bootstrap.ts
+  s_ac9b259eab20ba::t_2ac2e55c4e51b7 293-294
+src/modules/Levain/useCases/levainParamBridge/helpers.ts
+  s_ac9b259eab20ba::t_d6940dec8a645c 20-21,36,82-91,105-121,124-126,129-138,141,146-149,162,178-179,191
+src/modules/Levain/useCases/levainParamBridge/registerLevainDevice.ts
+  s_ac9b259eab20ba::t_2ac2e55c4e51b7 5-11
+src/modules/Levain/useCases/levainParamBridge/__tests__/helpers.spec.ts
+  s_ac9b259eab20ba::t_0bebad1cad64e3 347-393
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.19",
+  "base_commit_sha": "504a5d1d7f51ab676d7aadae95d58dc4dbc63d34",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
