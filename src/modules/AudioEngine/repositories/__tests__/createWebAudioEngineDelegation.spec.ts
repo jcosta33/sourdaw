@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createMockAudioContext, type MockAudioContext } from '../../../../helpers/__tests__/audioContext.mock';
 import { DROPOUT_IDX, dropoutCounters } from '../../engine/dropoutCounter';
 import { createAudioEngine } from '../createWebAudioEngine';
+import { createPhaser } from '../devices/modulation/createPhaser';
 
 import type { AdjustmentLayerTickInput, AudioEngine, BuiltinDeviceNode } from '../../models/AudioEngineState';
 
@@ -493,6 +494,26 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
             masterGain: 0.8,
             currentTime: 0,
             baseLatency: 0.01,
+        });
+    });
+
+    it('counts device-owned audio node identities across registry and boundary nodes', () => {
+        const track = engine.ensureTrackStrip('t1');
+        const phaser = createPhaser(asAudioContext(mockCtx));
+        track.deviceNodes.push({
+            ...phaser,
+            deviceId: 'phaser-1',
+            type: 'phaser',
+        });
+
+        const diagnostics = engine.getDiagnostics();
+
+        expect({
+            deviceAudioNodes: diagnostics.graph.deviceAudioNodes,
+            readyAudioNodes: diagnostics.graph.graphSlotResourcesByLoadState.ready.audioNodes,
+        }).toEqual({
+            deviceAudioNodes: 11,
+            readyAudioNodes: 11,
         });
     });
 
