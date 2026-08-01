@@ -46,11 +46,17 @@ type SchedulerWorkerTick = {
     sentAtMs: number;
 };
 
+// Window and Worker timestamps share the High Resolution Time monotonic clock,
+// but browser privacy quantization can round two adjacent reads differently.
+// One millisecond is well below the scheduler grain while still rejecting
+// genuinely future-dated messages.
+const CLOCK_PRECISION_TOLERANCE_MS = 1;
+
 function highResolutionEpochMs(): number {
     return performance.timeOrigin + performance.now();
 }
 
-function isSchedulerWorkerTick(value: unknown): value is SchedulerWorkerTick {
+function isSchedulerWorkerTick(value: unknown, receivedAtMs: number): value is SchedulerWorkerTick {
     if (typeof value !== 'object' || value === null) {
         return false;
     }
@@ -59,7 +65,7 @@ function isSchedulerWorkerTick(value: unknown): value is SchedulerWorkerTick {
         value.type === 'tick' &&
         'sequence' in value &&
         typeof value.sequence === 'number' &&
-        Number.isInteger(value.sequence) &&
+        Number.isSafeInteger(value.sequence) &&
         value.sequence > 0 &&
         'scheduledAtMs' in value &&
         typeof value.scheduledAtMs === 'number' &&
@@ -67,7 +73,8 @@ function isSchedulerWorkerTick(value: unknown): value is SchedulerWorkerTick {
         'sentAtMs' in value &&
         typeof value.sentAtMs === 'number' &&
         Number.isFinite(value.sentAtMs) &&
-        value.sentAtMs >= value.scheduledAtMs
+        value.sentAtMs >= value.scheduledAtMs &&
+        value.sentAtMs <= receivedAtMs + CLOCK_PRECISION_TOLERANCE_MS
     );
 }
 
@@ -401,14 +408,18 @@ export function startPlayheadScheduler(): void {
             type: 'module',
         });
         schedulerSession.worker.onmessage = (event: MessageEvent<unknown>) => {
-            if (!isSchedulerWorkerTick(event.data) || schedulerSession.generation !== schedulerGeneration) {
+            const receivedAtMs = highResolutionEpochMs();
+            if (
+                !isSchedulerWorkerTick(event.data, receivedAtMs) ||
+                schedulerSession.generation !== schedulerGeneration
+            ) {
                 return;
             }
             schedulerTimingDiagnostics.recordTickMessage({
                 sequence: event.data.sequence,
                 scheduledAtMs: event.data.scheduledAtMs,
                 sentAtMs: event.data.sentAtMs,
-                receivedAtMs: highResolutionEpochMs(),
+                receivedAtMs,
             });
             tick().catch((error: unknown) => {
                 logger.error(new Error('Transport scheduler tick failed', { cause: error }));

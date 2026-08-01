@@ -16,6 +16,21 @@ type SchedulerTick = {
     sentAtMs: number;
 };
 
+function isSchedulerMessage(value: unknown): value is SchedulerMessage {
+    if (typeof value !== 'object' || value === null || !('type' in value)) {
+        return false;
+    }
+    if (value.type === 'stop') {
+        return true;
+    }
+    return (
+        value.type === 'start' &&
+        'interval' in value &&
+        typeof value.interval === 'number' &&
+        Number.isFinite(value.interval)
+    );
+}
+
 function highResolutionEpochMs(): number {
     return performance.timeOrigin + performance.now();
 }
@@ -24,8 +39,12 @@ let timerId: ReturnType<typeof setInterval> | null = null;
 let nextScheduledAtMs = 0;
 let tickSequence = 0;
 
-self.onmessage = (event: MessageEvent<SchedulerMessage>) => {
+self.onmessage = (event: MessageEvent<unknown>) => {
     const msg = event.data;
+
+    if (!isSchedulerMessage(msg)) {
+        return;
+    }
 
     if (msg.type === 'start') {
         const intervalMs = msg.interval > 0 ? msg.interval : 10;

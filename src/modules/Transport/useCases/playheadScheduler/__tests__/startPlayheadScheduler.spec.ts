@@ -581,10 +581,27 @@ describe('startPlayheadScheduler', () => {
         transportStoreState.value = playingState();
         startPlayheadScheduler();
         const worker = schedulerSession.worker as unknown as SchedulerWorkerHarness;
+        const receivedAtMs = performance.timeOrigin + performance.now();
         worker.onmessage?.({ data: { type: 'other' } });
         worker.onmessage?.({ data: { type: 'tick', scheduledAtMs: 1, sentAtMs: 2 } });
         worker.onmessage?.({
             data: { type: 'tick', sequence: 1, scheduledAtMs: 2, sentAtMs: 1 },
+        });
+        worker.onmessage?.({
+            data: {
+                type: 'tick',
+                sequence: Number.MAX_SAFE_INTEGER + 1,
+                scheduledAtMs: receivedAtMs - 2,
+                sentAtMs: receivedAtMs - 1,
+            },
+        });
+        worker.onmessage?.({
+            data: {
+                type: 'tick',
+                sequence: 1,
+                scheduledAtMs: receivedAtMs + 4,
+                sentAtMs: receivedAtMs + 5,
+            },
         });
         await new Promise((resolve) => setTimeout(resolve, 0));
 

@@ -95,6 +95,20 @@ describe('schedulerWorker', () => {
         expect(postedMessages.length).toBeGreaterThanOrEqual(2);
     });
 
+    it('ignores malformed commands without stopping an active interval', async () => {
+        await loadWorker();
+        expect(() => {
+            self.onmessage?.({ data: null } as MessageEvent);
+        }).not.toThrow();
+
+        self.onmessage?.({ data: { type: 'start', interval: 10 } } as MessageEvent);
+        self.onmessage?.({ data: { type: 'unknown' } } as MessageEvent);
+        self.onmessage?.({ data: { type: 'start', interval: Number.POSITIVE_INFINITY } } as MessageEvent);
+        vi.advanceTimersByTime(10);
+
+        expect(postedMessages).toHaveLength(1);
+    });
+
     it('clears the previous interval and restarts when start arrives twice', async () => {
         await loadWorker();
         self.onmessage?.({ data: { type: 'start', interval: 10 } } as MessageEvent);
