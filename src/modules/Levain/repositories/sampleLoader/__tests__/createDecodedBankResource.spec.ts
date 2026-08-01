@@ -490,11 +490,12 @@ describe('createDecodedBankResource', () => {
 
     it('settles bank consumers while an invalidated sample loader finishes physically', async () => {
         const sample = createDeferred<DecodedSample>();
+        const loadSample = vi.fn(() => sample.promise);
         const resource = createDecodedBankResource({
             maxDecodedBytes: 1024,
             maxConcurrentSampleLoads: 1,
             loadManifest: vi.fn().mockResolvedValue(createManifest({ files: ['a.wav'] })),
-            loadSample: vi.fn(() => sample.promise),
+            loadSample,
         });
 
         const staleLoad = resource.load(DEFAULT_INPUT);
@@ -508,12 +509,19 @@ describe('createDecodedBankResource', () => {
             resolvedBanks: 0,
         });
 
-        sample.resolve(createSample(1));
+        const retry = resource.load(DEFAULT_INPUT);
         await flushPromises();
+        expect(loadSample).toHaveBeenCalledTimes(1);
+        expect(resource.getDiagnostics()).toMatchObject({ activeSampleLoads: 1, queuedSampleLoads: 1 });
+
+        sample.resolve(createSample(1));
+        await expect(retry).resolves.toMatchObject({ decodedByteLength: 4 });
+        expect(loadSample).toHaveBeenCalledTimes(2);
         expect(resource.getDiagnostics()).toMatchObject({
             activeSampleLoads: 0,
             inFlightBanks: 0,
-            resolvedBanks: 0,
+            queuedSampleLoads: 0,
+            resolvedBanks: 1,
         });
     });
 
