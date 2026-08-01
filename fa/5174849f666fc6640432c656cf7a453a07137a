@@ -1,0 +1,29 @@
+src/modules/Levain/repositories/sampleLoader/__tests__/createDecodedBankResource.spec.ts
+  s_ac9b259eab20ba::t_4b5e60283f42ae 193-226,401-422,445-458,464-518
+  s_ac9b259eab20ba::t_fb1219e16ae50d 423-443
+  s_ac9b259eab20ba::t_8ba099fcce78d7 444,459-463
+  s_ac9b259eab20ba::t_6ff2f5600bf213 519
+src/modules/Levain/repositories/sampleLoader/createDecodedBankResource.ts
+  s_ac9b259eab20ba::t_f426f1a89a563c 162,204-208,215,235,237,239,263-266,272-273,296-313,642-648,683-686,700-704,715
+  s_ac9b259eab20ba::t_798fb82c1bea64 73,180-183,185,340-349,382,387,397-399,538,560,584,603-605
+  s_ac9b259eab20ba::t_bebe32a7126e20 161,165,218,238,240,487-490,494-498,506-511,606,640-641,649-653,682,699,714
+  s_ac9b259eab20ba::t_4373c49cd2efba 104-109,184,501
+  s_ac9b259eab20ba::t_f9b6ef50583b9c 314
+  s_ac9b259eab20ba::t_3980cda3a00668 499-500
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.19",
+  "base_commit_sha": "fa5174849f666fc6640432c656cf7a453a07137a",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
