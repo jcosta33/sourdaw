@@ -1,0 +1,27 @@
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_ac9b259eab20ba::t_cba180e9bf37c1 49-54,59,68,76-77,411-415,422
+src/modules/Transport/workers/__tests__/schedulerWorker.spec.ts
+  s_ac9b259eab20ba::t_c2b9c73196f33b 100-102
+  s_ac9b259eab20ba::t_ae0ddfe7bc4e26 98-99,103-111
+src/modules/Transport/workers/schedulerWorker.ts
+  s_ac9b259eab20ba::t_cba180e9bf37c1 19-33,42,45-47
+  s_ac9b259eab20ba::t_541391272c1961 48
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadScheduler.spec.ts
+  s_ac9b259eab20ba::t_ae0ddfe7bc4e26 584,590-605
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.19",
+  "base_commit_sha": "c41df951f07f466c69af2bb6c58c96888b6818e8",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
