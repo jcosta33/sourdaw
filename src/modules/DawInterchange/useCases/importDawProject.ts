@@ -41,10 +41,16 @@ export async function importDawProject(input: ImportDawProjectInput): ImportDawP
         bufferIdsByPath,
         fileName: input.fileName,
     });
-    projectData.audioBuffers = audioBuffers;
 
     try {
-        const ok = await applyImportedProjectData({ data: projectData, transaction });
+        // The decoded PCM travels beside the project data rather than inside
+        // it: `projectData.audioBuffers` is the base64 shape a `.sourdaw` file
+        // carries, and nothing here needs to survive JSON (ADR 0013).
+        const ok = await applyImportedProjectData({
+            data: projectData,
+            decodedAudioBuffers: audioBuffers,
+            transaction,
+        });
         if (ok) {
             const trackCount = projectData.arrangement.tracks.length;
             notifyUser(`Imported ${parsed.meta.title || input.fileName} (${String(trackCount)} tracks)`, 'success');

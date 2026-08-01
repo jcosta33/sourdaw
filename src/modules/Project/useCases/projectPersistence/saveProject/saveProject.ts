@@ -53,7 +53,15 @@ export async function saveProject(): Promise<boolean> {
             // serializer backs both this snapshot and the .sourdaw export, so
             // they can't drift from the shape
             // hydrateModuleStoresFromProjectData expects.
-            const built = await buildProjectData();
+            //
+            // The snapshot references audio by buffer id and embeds no PCM
+            // (ADR 0013 decision 2). The audio of record is the runtime cache's
+            // own IndexedDB store, which already holds the same samples as raw
+            // Float32Array; base64 in this snapshot was a second copy of it,
+            // paid for at ~430 ms of main thread per minute of stereo and 1.333x
+            // in bytes. loadRecentProject resolves the ids through the cache,
+            // exactly as the boot restore path already does.
+            const built = await buildProjectData({ includeAudioBuffers: false });
             if (!built) {
                 // No snapshot means nothing under recentKey to reopen. Listing
                 // the project anyway is how a recent entry came to point at
