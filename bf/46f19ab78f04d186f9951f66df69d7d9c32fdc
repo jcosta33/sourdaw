@@ -1,0 +1,48 @@
+src/app/bootstrap.ts
+  s_66d4924c65dcd2::t_09ee4df31840c4 370-376
+src/modules/Project/models/ProjectData.ts
+  s_66d4924c65dcd2::t_b30ec64e5fd0c9 610-618
+src/modules/Project/useCases/projectPersistence/migrateLegacyProjectSnapshots.ts
+  s_66d4924c65dcd2::t_9d8ec125c8a243 3-4,11-24,26,30,33-36,41-48,52-114,116,127,130,133-136,138,140,142-146,149,151-161,164-168
+  s_66d4924c65dcd2::t_47041b321b4956 169
+src/modules/Project/repositories/project/listLegacyProjectSnapshotKeys.ts
+  s_66d4924c65dcd2::t_c9df3a316b56d8 6-9
+src/modules/Project/useCases/recentProjects/loadRecentProject.ts
+  s_66d4924c65dcd2::t_2af3149740f850 23-27
+src/modules/Project/repositories/project/readNamedProjectJson.ts
+  s_66d4924c65dcd2::t_411d675a4ecc2a 19-21,33
+  s_66d4924c65dcd2::t_9c3c22c075689e 1
+src/modules/Project/repositories/project/__tests__/writeNamedProjectJsonByKey.spec.ts
+  s_66d4924c65dcd2::t_c19fefecec23be 57-76
+src/modules/Project/repositories/project/storageSupport.ts
+  s_66d4924c65dcd2::t_bbda69beeaa2b8 16-17
+  s_66d4924c65dcd2::t_84386f809cbc40 65-79,84,89-92
+  s_66d4924c65dcd2::t_d73b286133fb23 93-94,141,168
+src/modules/Project/repositories/project/compareProjectSnapshots.ts
+  s_66d4924c65dcd2::t_5c51bfb40bc655 1-73
+src/modules/Project/__tests__/fakeIndexedDb.ts
+  s_66d4924c65dcd2::t_200b329b54a146 32-37
+  s_66d4924c65dcd2::t_c0f0afbbf78ede 238-245
+  s_66d4924c65dcd2::t_0e9aba83feb03c 184,186
+  s_66d4924c65dcd2::t_98d2340b848821 144-150,153-180
+  s_66d4924c65dcd2::t_17911b5a6fcffc 181
+src/modules/Project/useCases/projectPersistence/__tests__/migrateLegacyProjectSnapshots.spec.ts
+  s_66d4924c65dcd2::t_602c42ee43dd4f 104,106,112,116-202
+  s_66d4924c65dcd2::t_6bee7293458003 4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "bf46f19ab78f04d186f9951f66df69d7d9c32fdc",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
