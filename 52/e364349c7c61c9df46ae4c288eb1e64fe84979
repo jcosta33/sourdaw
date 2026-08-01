@@ -1,0 +1,32 @@
+tests/e2e/myceliumPerformanceEvidence.ts
+  s_ac9b259eab20ba::t_1940e0d2bc50d7 147
+tests/e2e/myceliumPlaybackEvidence.ts
+  s_ac9b259eab20ba::t_1940e0d2bc50d7 1-5,7-68,70-112,115-187,193-233,238-255,258-264,268-309,313-317,319-332,334,336-339,344-349
+  s_ac9b259eab20ba::t_49edb5dfe122e4 69,188-192,234-237,256-257,265-267,310-312,340-343
+  s_ac9b259eab20ba::t_811ea952a9b312 6,113-114,318,333,335
+tests/e2e/myceliumPerformance.spec.ts
+  s_ac9b259eab20ba::t_63658ee2e73e57 15,175-209,212-213
+  s_ac9b259eab20ba::t_099c240991a95c 210-211
+  s_ac9b259eab20ba::t_7fd488e9e6c24e 214-216
+  s_ac9b259eab20ba::t_870a212ca20b36 217-221
+tests/e2e/__tests__/myceliumPlaybackEvidence.spec.ts
+  s_ac9b259eab20ba::t_4c9522e100ca14 1-41,43-48,50-54,61-64
+  s_ac9b259eab20ba::t_1003a4ca31920e 42,49
+  s_ac9b259eab20ba::t_811ea952a9b312 55-60
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "52e364349c7c61c9df46ae4c288eb1e64fe84979",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
