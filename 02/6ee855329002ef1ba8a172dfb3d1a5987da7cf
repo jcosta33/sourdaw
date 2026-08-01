@@ -1,0 +1,23 @@
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_ac9b259eab20ba::t_5145ead66670ce 1610
+src/modules/AudioEngine/models/AudioEngineState.ts
+  s_ac9b259eab20ba::t_5145ead66670ce 65-91,413
+src/modules/AudioEngine/engine/deviceReadinessDiagnostics.ts
+  s_ac9b259eab20ba::t_5145ead66670ce 1-2,237
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.19",
+  "base_commit_sha": "026ee855329002ef1ba8a172dfb3d1a5987da7cf",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
