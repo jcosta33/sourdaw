@@ -2,6 +2,7 @@ crates/daw-dsp/src/primitives/lifecycle.rs
   s_ac9b259eab20ba::t_142cd1b1b315d9 1-59
 crates/daw-dsp/src/primitives/mod.rs
   s_ac9b259eab20ba::t_142cd1b1b315d9 6,14
+  s_ac9b259eab20ba::t_2bc10fbf2e60d9 11-13
 public/wasm/daw-dsp/daw_dsp.d.ts
   s_ac9b259eab20ba::t_88da33004b8725 715,717-719,721-734,735-754,816
   s_ac9b259eab20ba::t_9c03e7aebc9aa1 715,717-719,721-734,735-754
@@ -57,10 +58,12 @@ src/modules/AudioEngine/workers/__tests__/grandBouleEngineWorker.renderLoop.spec
   s_ac9b259eab20ba::t_89e80f52b75179 45,53-55,134,151-155,157-168,224-228,238,244,254-255,259,280
   s_ac9b259eab20ba::t_53d5aa046df8b1 131,141,145,256,262,268,270
   s_ac9b259eab20ba::t_6dd42af8a57d2a 258,279
+  s_ac9b259eab20ba::t_93ed67bac828a9 43,48,102,104,116-130
 src/modules/AudioEngine/workers/grandBouleEngineWorker.ts
   s_ac9b259eab20ba::t_e2379a700ec4b3 83-84,89-100,105-106,185-191,254-255,256,261-269,279,281-288,290-292,294,329,352-357,360-363,368-369,382,429-430,435-436,442,456-458,460,463
   s_ac9b259eab20ba::t_3d6aa235865109 273-278
   s_ac9b259eab20ba::t_222f55c88270c2 289,293,332
+  s_ac9b259eab20ba::t_dbd9ad3ce4cff5 63-75,183-184,196,231-232,234-239,242-246,257-258,260,270-272,280,330-331,364-367,370-374,380-381,416,420-428,431-434,437-441,461-462
 crates/daw-dsp/src/grand_boule/mod.rs
   s_ac9b259eab20ba::t_da12ec83f11fb7 25,72-73,192-196
   s_ac9b259eab20ba::t_6735d136d123b9 146-150,179-191,197-200
@@ -68,8 +71,12 @@ crates/daw-dsp/src/grand_boule/mod.rs
 src/modules/AudioEngine/services/grandBouleProcessor.ts
   s_ac9b259eab20ba::t_4ed4a5307b9651 246-247
   s_ac9b259eab20ba::t_42f856ad68379d 13-14,80,87,94-95,97-105,110,144,210-214,217-218,237-238,242-244,248-250,252,264-266,277-278,285-286
+  s_ac9b259eab20ba::t_bb7ca5e239ce34 15,18-29,69-70,82-83,109,143,196-197,199,202,205,215-216,236,239-241,245,251,262,270-273,276,283-284
+  s_ac9b259eab20ba::t_6d3972102bafe2 150
 src/modules/AudioEngine/engine/GrandBouleNode.ts
   s_ac9b259eab20ba::t_56eb1d80888967 184
+  s_ac9b259eab20ba::t_dc4be12aba8305 49
+  s_ac9b259eab20ba::t_a71420d8a325cc 36-40,151-154
 src/modules/AudioEngine/workers/__tests__/grandBouleEngineWorker.spec.ts
   s_ac9b259eab20ba::t_8a8039a2f0e0df 41,43
   s_ac9b259eab20ba::t_8e4a17267fd64d 148-149,159
@@ -77,6 +84,7 @@ src/modules/AudioEngine/services/__tests__/grandBouleDropoutCounter.spec.ts
   s_ac9b259eab20ba::t_ca167b8edc63e7 42-43,125-135
   s_ac9b259eab20ba::t_8a8039a2f0e0df 46,50
   s_ac9b259eab20ba::t_ae86056c265e7d 136-137
+  s_ac9b259eab20ba::t_a71420d8a325cc 51
 src/modules/AudioEngine/workers/__tests__/grandBouleEngineWorker.dispatch.spec.ts
   s_ac9b259eab20ba::t_8a6bb8b39ea80e 185
   s_ac9b259eab20ba::t_4c6c1c31d45700 22,29,57,69-71,130,148,153,179
@@ -96,6 +104,11 @@ public/wasm/daw-dsp/daw_dsp.js
   s_ac9b259eab20ba::t_93969ed61e23bc 609-616
 src/modules/AudioEngine/wasm/daw_dsp.js
   s_ac9b259eab20ba::t_f77b63ece6570f 786-793
+src/modules/AudioEngine/engine/__tests__/GrandBouleNode.spec.ts
+  s_ac9b259eab20ba::t_fda5f637849f91 82-83,92-93,238-240,242,244-245
+  s_ac9b259eab20ba::t_c02a57d2789ff8 161-164
+src/modules/AudioEngine/worklets/grandBouleRingProtocol.ts
+  s_ac9b259eab20ba::t_dc4be12aba8305 1-19
 ---
 {
   "schema_version": "authorship/3.0.0",
