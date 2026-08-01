@@ -6,6 +6,7 @@ import { type BuiltinDeviceNode } from '../../models/AudioEngineState';
 import { externalLatencyRegistry } from '../../useCases/latencyCompensation/compensation/externalLatencyRegistry';
 import { setAudioDeviceRuntimeSink } from '../audioDeviceRuntimeSink';
 import { type BacteriaNodeResult } from '../BacteriaNode';
+import { type CrumbsNodeResult } from '../CrumbsNode';
 import { type GlutenNodeResult } from '../GlutenNode';
 import { type GrandBouleNodeResult } from '../GrandBouleNode';
 import { type GrinderNodeResult } from '../GrinderNode';
@@ -19,6 +20,7 @@ import { findWasmDescriptor, type WasmDeviceCreateDeps } from '../wasmDeviceRegi
 const factoryMocks = vi.hoisted(() => ({
     createToasterNode: vi.fn(),
     createLevainNode: vi.fn(),
+    createCrumbsNode: vi.fn(),
     createProofChamberNode: vi.fn(),
     createGlutenNode: vi.fn(),
     createBacteriaNode: vi.fn(),
@@ -38,6 +40,10 @@ vi.mock('../ToasterNode', async (importOriginal) => ({
 vi.mock('../LevainNode', async (importOriginal) => ({
     ...(await importOriginal<typeof import('../LevainNode')>()),
     createLevainNode: factoryMocks.createLevainNode,
+}));
+vi.mock('../CrumbsNode', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../CrumbsNode')>()),
+    createCrumbsNode: factoryMocks.createCrumbsNode,
 }));
 vi.mock('../ProofChamberNode', async (importOriginal) => ({
     ...(await importOriginal<typeof import('../ProofChamberNode')>()),
@@ -123,6 +129,14 @@ function requireDescriptor(deviceType: string) {
 }
 
 describe('wasmDeviceRegistry descriptors', () => {
+    it('declares content readiness as registry metadata', () => {
+        expect(findWasmDescriptor('levain')?.requiresContent).toBe(true);
+        expect(findWasmDescriptor('fermenter')?.requiresContent).toBe(false);
+        expect(findWasmDescriptor('toaster')?.requiresContent).toBe(false);
+        expect(findWasmDescriptor('builtin-crumbs')?.requiresContent).toBe(true);
+        expect(findWasmDescriptor('grand-boule')?.requiresContent).toBe(false);
+    });
+
     beforeEach(() => {
         vi.clearAllMocks();
         factoryMocks.isFaustModule.mockImplementation((moduleId: string) => moduleId === 'faust-flanger');
@@ -318,6 +332,84 @@ describe('wasmDeviceRegistry descriptors', () => {
             expect(() => loaded.controller?.destroy?.()).not.toThrow();
             expect(result.destroy).toHaveBeenCalledTimes(1);
             expect(unregisterLevainDevice).toHaveBeenCalledWith('lev-3');
+        });
+    });
+
+    describe('crumbs', () => {
+        function createResult(): CrumbsNodeResult {
+            return {
+                workletNode: makeWorkletNode(),
+                noteOn: vi.fn(),
+                noteOff: vi.fn(),
+                allNotesOff: vi.fn(),
+                allSoundOff: vi.fn(),
+                setParam: vi.fn(),
+                setMode: vi.fn(),
+                setBypass: vi.fn(),
+                connect: vi.fn(),
+                disconnect: vi.fn(),
+                destroy: vi.fn(),
+                ready: Promise.resolve({}),
+            };
+        }
+
+        it('settles content readiness only after project sample preparation completes', async () => {
+            const preparation = Promise.withResolvers<void>();
+            const prepareCrumbsDevice = vi.fn(() => preparation.promise);
+            const onContentLoadSettled = vi.fn();
+            const result = createResult();
+            setAudioDeviceRuntimeSink({ prepareCrumbsDevice });
+            factoryMocks.createCrumbsNode.mockResolvedValue(result);
+
+            const { loadPromise } = requireDescriptor('builtin-crumbs').create(
+                createDeps({ deviceType: 'builtin-crumbs', onContentLoadSettled })
+            );
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(prepareCrumbsDevice).toHaveBeenCalledWith({
+                deviceId: 'dev-1',
+                port: result.workletNode.port,
+            });
+            expect(onContentLoadSettled).not.toHaveBeenCalled();
+
+            preparation.resolve();
+            await loadPromise;
+            expect(onContentLoadSettled).toHaveBeenCalledWith('ready');
+        });
+
+        it('reports project sample preparation failure as content failure', async () => {
+            const onContentLoadSettled = vi.fn();
+            setAudioDeviceRuntimeSink({
+                prepareCrumbsDevice: vi.fn().mockRejectedValue(new Error('sample preparation failed')),
+            });
+            factoryMocks.createCrumbsNode.mockResolvedValue(createResult());
+
+            const { loadPromise } = requireDescriptor('builtin-crumbs').create(
+                createDeps({ deviceType: 'builtin-crumbs', onContentLoadSettled })
+            );
+            await loadPromise;
+
+            expect(onContentLoadSettled).toHaveBeenCalledWith('failed');
+        });
+
+        it('reports content cancellation when the owner rejects the loaded node', async () => {
+            const prepareCrumbsDevice = vi.fn();
+            const onContentLoadSettled = vi.fn();
+            setAudioDeviceRuntimeSink({ prepareCrumbsDevice });
+            factoryMocks.createCrumbsNode.mockResolvedValue(createResult());
+
+            const { loadPromise } = requireDescriptor('builtin-crumbs').create(
+                createDeps({
+                    deviceType: 'builtin-crumbs',
+                    onLoaded: vi.fn(() => false),
+                    onContentLoadSettled,
+                })
+            );
+            await loadPromise;
+
+            expect(onContentLoadSettled).toHaveBeenCalledWith('cancelled');
+            expect(prepareCrumbsDevice).not.toHaveBeenCalled();
         });
     });
 

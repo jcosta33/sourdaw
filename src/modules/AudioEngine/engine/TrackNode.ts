@@ -8,6 +8,11 @@ import { createBuiltinDeviceNode } from '../useCases/deviceResolvers/createBuilt
 import { createNativePluginBridgeNode } from './NativePluginBridgeNode';
 import { findWasmDescriptor } from './wasmDeviceRegistry';
 
+import type {
+    createDeviceReadinessDiagnostics,
+    DeviceReadinessFailureStage,
+    DeviceReadinessToken,
+} from './deviceReadinessDiagnostics';
 import type { TrackChannelStrip, BuiltinDeviceNode, DeviceController, SendNode } from '../models/AudioEngineState';
 
 /**
@@ -27,6 +32,7 @@ export type TrackNodeDeps = {
     getTrackGainNode: (id: string) => GainNode | undefined;
     getSendsForTrack: (tId: string) => SendNode[];
     pendingDevicePromises: Set<Promise<unknown>>;
+    readinessDiagnostics: ReturnType<typeof createDeviceReadinessDiagnostics>;
     transportSAB?: SharedArrayBuffer;
     /** Adjustment-layer insert: when non-null for this track, `analyserNode`
      *  routes to this node instead of the track's default destination. */
@@ -41,6 +47,8 @@ type PendingDeviceLoad = {
     bypassed?: boolean;
     parameterWrites: Array<[string, number]>;
     loadPromise?: Promise<unknown>;
+    placeholder?: BuiltinDeviceNode;
+    readinessToken: DeviceReadinessToken;
     resolved: boolean;
 };
 
@@ -55,6 +63,8 @@ export class TrackNode {
     // disconnect/reconnect sweeps. `_rebuildScheduled` coalesces them so at
     // most one rebuild runs per microtask turn.
     private _rebuildScheduled = false;
+    private readonly _deviceReadinessTokens = new Map<string, DeviceReadinessToken>();
+    private readonly _pendingGraphReadinessTokens = new Set<DeviceReadinessToken>();
     private _disposed = false;
     private _outputDestination: AudioNode | null = null;
     private readonly _failedDeviceLoads = new Set<string>();
@@ -365,7 +375,20 @@ export class TrackNode {
             if (this._disposed) {
                 return;
             }
-            this.rebuildChain();
+            try {
+                this.rebuildChain();
+                for (const token of this._pendingGraphReadinessTokens) {
+                    this.deps.readinessDiagnostics.markGraphReady({ token });
+                }
+            } catch (error) {
+                for (const token of this._pendingGraphReadinessTokens) {
+                    this._failedDeviceLoads.add(token.deviceId);
+                    this.deps.readinessDiagnostics.markFailed({ token, stage: 'graph' });
+                }
+                throw error;
+            } finally {
+                this._pendingGraphReadinessTokens.clear();
+            }
         });
     }
 
@@ -455,15 +478,15 @@ export class TrackNode {
         this.deps.pendingDevicePromises.add(loadPromise);
         void loadPromise.finally(() => {
             if (this._pendingDeviceLoads.get(deviceId) === pendingLoad) {
-                this.invalidatePendingDeviceLoad(deviceId, !pendingLoad.resolved);
+                this.invalidatePendingDeviceLoad(deviceId, pendingLoad.resolved ? undefined : 'node');
             } else {
                 this.deps.pendingDevicePromises.delete(loadPromise);
             }
         });
     }
 
-    private invalidatePendingDeviceLoad(deviceId: string, failed = false): void {
-        if (failed) {
+    private invalidatePendingDeviceLoad(deviceId: string, failureStage?: DeviceReadinessFailureStage): void {
+        if (failureStage) {
             this._failedDeviceLoads.add(deviceId);
         } else {
             this._failedDeviceLoads.delete(deviceId);
@@ -473,6 +496,13 @@ export class TrackNode {
             return;
         }
         this._pendingDeviceLoads.delete(deviceId);
+        if (!pendingLoad.resolved) {
+            if (failureStage) {
+                this.deps.readinessDiagnostics.markFailed({ token: pendingLoad.readinessToken, stage: failureStage });
+            } else {
+                this.deps.readinessDiagnostics.cancel(pendingLoad.readinessToken);
+            }
+        }
         pendingLoad.parameterWrites.length = 0;
         if (!pendingLoad.resolved) {
             pendingLoad.abortController.abort();
@@ -497,24 +527,47 @@ export class TrackNode {
             return false;
         }
 
+        let deviceLoadNotificationStarted = false;
+        try {
+            for (const [name, value] of pendingLoad.parameterWrites) {
+                finalDn.controller?.setParam(name, value);
+            }
+            if (pendingLoad.bypassed !== undefined) {
+                finalDn.controller?.setBypass?.(pendingLoad.bypassed);
+                finalDn.bypassed = pendingLoad.bypassed;
+            }
+            this.strip.deviceNodes[index] = finalDn;
+            if (this.deps.onDeviceLoaded) {
+                deviceLoadNotificationStarted = true;
+                this.deps.onDeviceLoaded(this.trackId, finalDn);
+            }
+        } catch (error) {
+            if (pendingLoad.placeholder) {
+                this.strip.deviceNodes[index] = pendingLoad.placeholder;
+            }
+            if (deviceLoadNotificationStarted) {
+                try {
+                    this.deps.onDeviceRemoved?.(this.trackId, finalDn);
+                } catch (rollbackError) {
+                    logger.warn(`[WebAudioEngine] Device promotion rollback failed: ${String(rollbackError)}`);
+                }
+            }
+            this.invalidatePendingDeviceLoad(deviceId, 'node');
+            this.destroyRejectedDeviceNode(finalDn);
+            throw error;
+        }
+
         pendingLoad.resolved = true;
-        for (const [name, value] of pendingLoad.parameterWrites) {
-            finalDn.controller?.setParam(name, value);
-        }
-        if (pendingLoad.bypassed !== undefined) {
-            finalDn.controller?.setBypass?.(pendingLoad.bypassed);
-            finalDn.bypassed = pendingLoad.bypassed;
-        }
         pendingLoad.parameterWrites.length = 0;
-        this.strip.deviceNodes[index] = finalDn;
-        this.deps.onDeviceLoaded?.(this.trackId, finalDn);
+        this.deps.readinessDiagnostics.markNodeReady({ token: pendingLoad.readinessToken });
+        this._pendingGraphReadinessTokens.add(pendingLoad.readinessToken);
         this.scheduleRebuildChain();
         return true;
     }
 
     public timeoutPendingDeviceLoads(): void {
         for (const deviceId of this._pendingDeviceLoads.keys()) {
-            this.invalidatePendingDeviceLoad(deviceId, true);
+            this.invalidatePendingDeviceLoad(deviceId, 'node');
         }
     }
 
@@ -544,6 +597,20 @@ export class TrackNode {
         }
     }
 
+    private failDeviceConstruction(
+        deviceId: string,
+        readinessToken: DeviceReadinessToken,
+        error: unknown,
+        partialDevice?: BuiltinDeviceNode
+    ): never {
+        if (partialDevice) {
+            this.destroyRejectedDeviceNode(partialDevice);
+        }
+        this._deviceReadinessTokens.delete(deviceId);
+        this.deps.readinessDiagnostics.markFailed({ token: readinessToken, stage: 'node' });
+        throw error;
+    }
+
     public addDevice(
         deviceId: string,
         deviceType: string,
@@ -559,14 +626,27 @@ export class TrackNode {
         }
 
         const { context } = this.deps;
+        const descriptor = findWasmDescriptor(deviceType);
+        const readinessToken = this.deps.readinessDiagnostics.begin({
+            deviceId,
+            deviceType,
+            requiresContent: descriptor?.requiresContent ?? false,
+        });
+        this._deviceReadinessTokens.set(deviceId, readinessToken);
         let dn: BuiltinDeviceNode;
+        let awaitsAsyncNode = false;
 
         if (deviceType === 'builtin-sidechain-compressor') {
-            const workletNode = new AudioWorkletNode(context, 'sidechain-compressor-processor', {
-                numberOfInputs: 2,
-                numberOfOutputs: 1,
-                outputChannelCount: [2],
-            });
+            let workletNode: AudioWorkletNode;
+            try {
+                workletNode = new AudioWorkletNode(context, 'sidechain-compressor-processor', {
+                    numberOfInputs: 2,
+                    numberOfOutputs: 1,
+                    outputChannelCount: [2],
+                });
+            } catch (error) {
+                this.failDeviceConstruction(deviceId, readinessToken, error);
+            }
             dn = { deviceId, type: deviceType, nodes: [workletNode], inputNode: workletNode, outputNode: workletNode };
             dn.controller = {
                 setParam: (name: string, value: number) => {
@@ -589,12 +669,19 @@ export class TrackNode {
             // Native plugin bridge: relays audio between Web Audio and the Rust
             // cpal audio thread. A SharedArrayBuffer cannot reach the host
             // process, so the hop to Rust is IPC; the instance id is the key.
-            const loadingBypass = context.createGain();
+            let loadingBypass: GainNode;
+            try {
+                loadingBypass = context.createGain();
+            } catch (error) {
+                this.failDeviceConstruction(deviceId, readinessToken, error);
+            }
             const pendingLoad: PendingDeviceLoad = {
                 abortController: new AbortController(),
                 parameterWrites: [],
+                readinessToken,
                 resolved: false,
             };
+            awaitsAsyncNode = true;
             dn = {
                 deviceId,
                 type: deviceType,
@@ -613,31 +700,42 @@ export class TrackNode {
                 setBypass: (bypassed) => loadingControls.setBypass?.(bypassed),
             };
             dn.controller = loadingControls;
+            pendingLoad.placeholder = dn;
 
-            const loadPromise = createNativePluginBridgeNode(context, externalInstanceId ?? deviceId)
-                .then((result) => {
-                    const controls = {
-                        setParam: (name: string, value: number) => result.setParam(parseInt(name, 10) || 0, value),
-                        setBypass: result.setBypass,
-                        destroy: result.destroy,
-                    };
-                    const bridgeDn: BuiltinDeviceNode = {
-                        deviceId,
-                        type: deviceType,
-                        nodes: [result.workletNode],
-                        inputNode: result.workletNode,
-                        outputNode: result.workletNode,
-                        nativeDspControls: controls,
-                        controller: controls,
-                        dispose: result.destroy,
-                    };
-                    this.completePendingDeviceLoad(deviceId, pendingLoad, bridgeDn);
-                    return;
-                })
-                .catch((error) => logger.warn(`[WebAudioEngine] Native plugin bridge failed: ${String(error)}`));
+            let loadPromise: Promise<void>;
+            try {
+                loadPromise = createNativePluginBridgeNode(context, externalInstanceId ?? deviceId)
+                    .then((result) => {
+                        const controls = {
+                            setParam: (name: string, value: number) => result.setParam(parseInt(name, 10) || 0, value),
+                            setBypass: result.setBypass,
+                            destroy: result.destroy,
+                        };
+                        const bridgeDn: BuiltinDeviceNode = {
+                            deviceId,
+                            type: deviceType,
+                            nodes: [result.workletNode],
+                            inputNode: result.workletNode,
+                            outputNode: result.workletNode,
+                            nativeDspControls: controls,
+                            controller: controls,
+                            dispose: result.destroy,
+                        };
+                        this.completePendingDeviceLoad(deviceId, pendingLoad, bridgeDn);
+                        return;
+                    })
+                    .catch((error) => logger.warn(`[WebAudioEngine] Native plugin bridge failed: ${String(error)}`));
+            } catch (error) {
+                this.failDeviceConstruction(deviceId, readinessToken, error, dn);
+            }
             this.registerPendingDeviceLoad(deviceId, pendingLoad, loadPromise);
         } else {
-            const factoryNode = createBuiltinDeviceNode({ context, deviceType });
+            let factoryNode: ReturnType<typeof createBuiltinDeviceNode>;
+            try {
+                factoryNode = createBuiltinDeviceNode({ context, deviceType });
+            } catch (error) {
+                this.failDeviceConstruction(deviceId, readinessToken, error);
+            }
             if (factoryNode) {
                 dn = {
                     deviceId,
@@ -660,28 +758,41 @@ export class TrackNode {
                     },
                 };
             } else {
-                const descriptor = findWasmDescriptor(deviceType);
                 if (!descriptor) {
+                    this._deviceReadinessTokens.delete(deviceId);
+                    this.deps.readinessDiagnostics.markFailed({ token: readinessToken, stage: 'node' });
                     return;
                 }
                 const pendingLoad: PendingDeviceLoad = {
                     abortController: new AbortController(),
                     parameterWrites: [],
+                    readinessToken,
                     resolved: false,
                 };
-                const { placeholder, loadPromise } = descriptor.create({
-                    context,
-                    deviceId,
-                    deviceType,
-                    transportSAB: this.deps.transportSAB,
-                    isCurrent: () => this._pendingDeviceLoads.get(deviceId) === pendingLoad && !this._disposed,
-                    signal: pendingLoad.abortController.signal,
-                    onLoaded: (finalDn) => this.completePendingDeviceLoad(deviceId, pendingLoad, finalDn),
-                });
+                awaitsAsyncNode = true;
+                let created: ReturnType<typeof descriptor.create>;
+                try {
+                    created = descriptor.create({
+                        context,
+                        deviceId,
+                        deviceType,
+                        transportSAB: this.deps.transportSAB,
+                        isCurrent: () => this._pendingDeviceLoads.get(deviceId) === pendingLoad && !this._disposed,
+                        signal: pendingLoad.abortController.signal,
+                        onLoaded: (finalDn) => this.completePendingDeviceLoad(deviceId, pendingLoad, finalDn),
+                        onContentLoadSettled: (outcome) => {
+                            this.deps.readinessDiagnostics.markContentSettled({ token: readinessToken, outcome });
+                        },
+                    });
+                } catch (error) {
+                    this.failDeviceConstruction(deviceId, readinessToken, error);
+                }
+                const { placeholder, loadPromise } = created;
                 if (!placeholder.controller) {
                     placeholder.controller = this.createPlaceholderController(deviceId, pendingLoad);
                 }
                 dn = placeholder;
+                pendingLoad.placeholder = placeholder;
                 this.registerPendingDeviceLoad(deviceId, pendingLoad, loadPromise);
             }
         }
@@ -697,7 +808,27 @@ export class TrackNode {
             }
         }
         this.strip.deviceNodes.splice(targetIndex, 0, dn);
-        this.rebuildChain();
+        if (awaitsAsyncNode) {
+            try {
+                this.rebuildChain();
+            } catch (error) {
+                this.invalidatePendingDeviceLoad(deviceId, 'graph');
+                this._deviceReadinessTokens.delete(deviceId);
+                this.strip.deviceNodes = this.strip.deviceNodes.filter((device) => device.deviceId !== deviceId);
+                this.destroyRejectedDeviceNode(dn);
+                throw error;
+            }
+            return;
+        }
+        this.deps.readinessDiagnostics.markNodeReady({ token: readinessToken });
+        try {
+            this.rebuildChain();
+            this.deps.readinessDiagnostics.markGraphReady({ token: readinessToken });
+        } catch (error) {
+            this._failedDeviceLoads.add(deviceId);
+            this.deps.readinessDiagnostics.markFailed({ token: readinessToken, stage: 'graph' });
+            throw error;
+        }
     }
 
     public removeDevice(deviceId: string): void {
@@ -707,6 +838,12 @@ export class TrackNode {
         }
 
         this.invalidatePendingDeviceLoad(deviceId);
+        const readinessToken = this._deviceReadinessTokens.get(deviceId);
+        if (readinessToken) {
+            this._pendingGraphReadinessTokens.delete(readinessToken);
+            this.deps.readinessDiagnostics.removeDevice(readinessToken);
+            this._deviceReadinessTokens.delete(deviceId);
+        }
         this.strip.deviceNodes = this.strip.deviceNodes.filter((d) => d.deviceId !== deviceId);
         this.deps.onDeviceRemoved?.(this.trackId, dn);
         if (dn.controller) {
@@ -805,6 +942,7 @@ export class TrackNode {
         }
         this._disposed = true;
         this._rebuildScheduled = false;
+        this._pendingGraphReadinessTokens.clear();
         for (const deviceId of this._pendingDeviceLoads.keys()) {
             this.invalidatePendingDeviceLoad(deviceId);
         }
@@ -822,6 +960,10 @@ export class TrackNode {
             this.strip.meterNode.disconnect();
         }
         for (const dn of this.strip.deviceNodes) {
+            const readinessToken = this._deviceReadinessTokens.get(dn.deviceId);
+            if (readinessToken) {
+                this.deps.readinessDiagnostics.removeDevice(readinessToken);
+            }
             if (dn.controller) {
                 dn.controller.destroy?.();
             } else if (dn.dispose) {
@@ -836,6 +978,7 @@ export class TrackNode {
                 }
             }
         }
+        this._deviceReadinessTokens.clear();
         this.strip.deviceNodes = [];
     }
 }

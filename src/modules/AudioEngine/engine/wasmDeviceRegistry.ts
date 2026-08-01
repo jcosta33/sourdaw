@@ -29,6 +29,8 @@ import { isProofDevice, createProofNode, type ProofNodeResult } from './ProofNod
 import { isScoringDevice, createScoringNode, type ScoringNodeResult } from './ScoringNode';
 import { isToasterDevice, createToasterNode, type ToasterNodeResult } from './ToasterNode';
 
+import type { DeviceContentLoadOutcome } from './deviceReadinessDiagnostics';
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export type WasmDeviceCreateDeps = {
@@ -40,9 +42,11 @@ export type WasmDeviceCreateDeps = {
     signal?: AbortSignal;
     /** Returns false when the owner rejected and destroyed a stale loaded node. */
     onLoaded: (finalDn: BuiltinDeviceNode) => boolean | void;
+    onContentLoadSettled?: (outcome: DeviceContentLoadOutcome) => void;
 };
 
 export type WasmDeviceDescriptor = {
+    requiresContent: boolean;
     matches(deviceType: string): boolean;
     create(deps: WasmDeviceCreateDeps): {
         placeholder: BuiltinDeviceNode;
@@ -110,6 +114,7 @@ async function waitForDeviceReady(input: WaitForDeviceReadyInput): Promise<Recor
 // ── Descriptors ──────────────────────────────────────────────────────────────
 
 const fermenterDescriptor: WasmDeviceDescriptor = {
+    requiresContent: false,
     matches: isFermenterDevice,
     create({ context, deviceId, deviceType, signal, onLoaded }) {
         const pendingParams: Array<[string, number | number[]]> = [];
@@ -184,6 +189,7 @@ const fermenterDescriptor: WasmDeviceDescriptor = {
 };
 
 const toasterDescriptor: WasmDeviceDescriptor = {
+    requiresContent: false,
     matches: isToasterDevice,
     create({ context, deviceId, deviceType, signal, onLoaded }) {
         const pendingParams: Array<[string, number]> = [];
@@ -279,6 +285,7 @@ const toasterDescriptor: WasmDeviceDescriptor = {
 };
 
 const levainDescriptor: WasmDeviceDescriptor = {
+    requiresContent: true,
     matches: isLevainDevice,
     create({ context, deviceId, deviceType, signal, onLoaded }) {
         const pendingParams: Array<[string, number]> = [];
@@ -376,8 +383,9 @@ const levainDescriptor: WasmDeviceDescriptor = {
 };
 
 const crumbsDescriptor: WasmDeviceDescriptor = {
+    requiresContent: true,
     matches: isCrumbsDevice,
-    create({ context, deviceId, deviceType, onLoaded }) {
+    create({ context, deviceId, deviceType, onLoaded, onContentLoadSettled }) {
         const pendingParams: Array<[string, number]> = [];
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.crumbsControls = {
@@ -426,15 +434,22 @@ const crumbsDescriptor: WasmDeviceDescriptor = {
                     },
                 });
                 if (accepted === false) {
+                    onContentLoadSettled?.('cancelled');
                     return;
                 }
                 // Load the project's sample into the live instance through the
                 // same use case the offline chain awaits, so the two registries
                 // cannot configure two different engines.
-                await getAudioDeviceRuntimeSink().prepareCrumbsDevice({
-                    deviceId,
-                    port: result.workletNode.port,
-                });
+                try {
+                    await getAudioDeviceRuntimeSink().prepareCrumbsDevice({
+                        deviceId,
+                        port: result.workletNode.port,
+                    });
+                    onContentLoadSettled?.('ready');
+                } catch (error) {
+                    onContentLoadSettled?.('failed');
+                    throw error;
+                }
                 return;
             })
             .catch((error) => {
@@ -446,6 +461,7 @@ const crumbsDescriptor: WasmDeviceDescriptor = {
 };
 
 const proofChamberDescriptor: WasmDeviceDescriptor = {
+    requiresContent: false,
     matches: isProofChamberDevice,
     create({ context, deviceId, deviceType, signal, onLoaded }) {
         const pendingParams: Array<[string, number]> = [];
@@ -497,6 +513,7 @@ const proofChamberDescriptor: WasmDeviceDescriptor = {
 };
 
 const glutenDescriptor: WasmDeviceDescriptor = {
+    requiresContent: false,
     matches: isGlutenDevice,
     create({ context, deviceId, deviceType, signal, onLoaded }) {
         const pendingParams: Array<[string, number]> = [];
@@ -555,6 +572,7 @@ const glutenDescriptor: WasmDeviceDescriptor = {
 };
 
 const bacteriaDescriptor: WasmDeviceDescriptor = {
+    requiresContent: false,
     matches: isBacteriaDevice,
     create({ context, deviceId, deviceType, isCurrent, signal, onLoaded }) {
         const pendingParams: Array<[string, number]> = [];
@@ -615,6 +633,7 @@ const bacteriaDescriptor: WasmDeviceDescriptor = {
 };
 
 const grinderDescriptor: WasmDeviceDescriptor = {
+    requiresContent: false,
     matches: isGrinderDevice,
     create({ context, deviceId, deviceType, isCurrent, signal, onLoaded }) {
         const pendingParams: Array<[string, number]> = [];
@@ -708,6 +727,7 @@ const grinderDescriptor: WasmDeviceDescriptor = {
 };
 
 const proofDescriptor: WasmDeviceDescriptor = {
+    requiresContent: false,
     matches: isProofDevice,
     create({ context, deviceId, deviceType, isCurrent, signal, onLoaded }) {
         const pendingParams: Array<[string, number]> = [];
@@ -806,6 +826,7 @@ const proofDescriptor: WasmDeviceDescriptor = {
 };
 
 const scoringDescriptor: WasmDeviceDescriptor = {
+    requiresContent: false,
     matches: isScoringDevice,
     create({ context, deviceId, deviceType, signal, onLoaded }) {
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
@@ -847,6 +868,7 @@ const scoringDescriptor: WasmDeviceDescriptor = {
 };
 
 const grandBouleDescriptor: WasmDeviceDescriptor = {
+    requiresContent: false,
     matches: isGrandBouleDevice,
     create({ context, deviceId, deviceType, signal, onLoaded }) {
         const pendingParams: Array<[string, number]> = [];
@@ -931,6 +953,7 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
 };
 
 const faustDescriptor: WasmDeviceDescriptor = {
+    requiresContent: false,
     matches: isFaustModule,
     create({ context, deviceId, deviceType, isCurrent, signal, onLoaded }) {
         type PendingParam = { kind: 'param'; name: string; value: number; time?: number };
@@ -1012,6 +1035,7 @@ const faustDescriptor: WasmDeviceDescriptor = {
 };
 
 const kneadDescriptor: WasmDeviceDescriptor = {
+    requiresContent: false,
     matches: isKneadDevice,
     create({ context, deviceId, deviceType, transportSAB, signal, onLoaded }) {
         const pendingParams: Array<[string, number | number[]]> = [];
