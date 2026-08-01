@@ -188,10 +188,10 @@ fn grand_boule_instance(sounding: usize) -> GrandBouleInstance {
 ///
 /// `GrandBouleEngine` exposes no active-voice count, so occupancy is
 /// established two ways. Structurally: every note struck here is distinct, so
-/// the retrigger branch never fires; `PianoVoice::steal_score` returns 1000.0
-/// for `Idle` against at most 200.0 for `Active`, so with 64 slots and at most
-/// 64 notes the allocator always lands on an empty slot and never steals a
-/// sounding one. Empirically: the RMS printed at the warm-up point and again
+/// the retrigger branch never fires; `PianoVoice::steal_priority` ranks `Idle`
+/// above every sounding lifecycle/key-ownership class, so with 64 slots and at
+/// most 64 notes the allocator always lands on an empty slot and never steals
+/// a sounding one. Empirically: the RMS printed at the warm-up point and again
 /// after ~10 s of rendered audio — longer than any criterion sample — shows the
 /// strings still moving, and shows it growing with voice count.
 ///
