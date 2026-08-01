@@ -154,6 +154,23 @@ describe('GrandBouleProcessor dropout counting (audit RT-10)', () => {
         expect(Atomics.load(dropoutInts, BLOCKS_IDX)).toBe(1);
     });
 
+    it('counts starvation from the first quantum when the host asks it to', async () => {
+        const proc = await loadProcessor();
+        proc.port.onmessage?.({ data: { type: 'init', sab: ring.sab, dropoutSab, countPreRollStarvation: true } });
+
+        // Ring never delivers anything at all. Under the pre-roll rule this is
+        // the one case that reports zero — the counter is still waiting for a
+        // first delivery to license it — which is exactly the outcome of an
+        // export whose engine worker never got a turn. A render has no pre-roll:
+        // frame 0 is content, and silence there is a hole in the file.
+        renderBlock(proc);
+        renderBlock(proc);
+        renderBlock(proc);
+
+        expect(Atomics.load(dropoutInts, BLOCKS_IDX)).toBe(3);
+        expect(Atomics.load(dropoutInts, SILENT_FRAMES_IDX)).toBe(FRAMES * 3);
+    });
+
     it('renders without a dropout buffer when the host supplies none', async () => {
         const proc = await loadProcessor();
         proc.port.onmessage?.({ data: { type: 'init', sab: ring.sab } });

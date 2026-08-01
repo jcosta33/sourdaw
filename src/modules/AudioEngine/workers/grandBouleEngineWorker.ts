@@ -173,8 +173,16 @@ type InitEngineInput = {
 };
 
 function initEngine({ wasmBytes, sab, workerSampleRate, syncSab, contextFrame }: InitEngineInput): void {
-    // Consumer sync plane. Reset before the consumer can publish, so a stale
-    // offset from a previous instance can never be read as this one's.
+    // Consumer sync plane. Reset so an offset left by a previous engine instance
+    // sharing this slot can never be read as this one's.
+    //
+    // The consumer is initialised at node construction and so may already have
+    // published into this slot by the time we get here. That value is not stale:
+    // it is this ring's own consumer reporting a `readHead` still at 0, which is
+    // a sharper estimate than `contextFrame` — taken earlier — and it is
+    // republished on the consumer's next quantum regardless. Offline the
+    // consumer has not run a block yet, so the anchor still stands in for the
+    // whole scheduling phase, which is the case it exists for.
     if (syncSab) {
         syncInts = new Int32Array(syncSab);
         Atomics.store(syncInts, CONSUMER_OFFSET_IDX, CONSUMER_OFFSET_UNSET);

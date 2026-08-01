@@ -128,17 +128,60 @@ export async function createGrandBouleNode(
 
     let bypassed = false;
 
-    const handshake = createReadyHandshake({ pluginName: 'GrandBouleNode' });
+    // Two sides have to come up, and both of them have to be waited for.
+    //
+    // `ready` used to be the engine worker's handshake alone. The worklet does
+    // reply to its own `init` — `grandBouleProcessor` posts `{type:'ready'}` once
+    // it has mapped the ring — but nothing listened, so a caller could await
+    // `ready` and start a render against a worklet still holding no ring. Its
+    // `process()` returns at the not-ready guard before it can even detect an
+    // underrun, so the outcome is a completely silent export that reports zero
+    // dropouts: the one failure the dropout counters exist to make visible.
+    const workerHandshake = createReadyHandshake({ pluginName: 'GrandBouleNode engine worker' });
+    const workletHandshake = createReadyHandshake({ pluginName: 'GrandBouleNode worklet' });
+
     engineWorker.onmessage = (event: MessageEvent) => {
-        const outcome = handshake.onMessage(event);
-        if (outcome === 'ready') {
-            // Now init the worklet side with the same SAB, plus the shared
-            // dropout counters so ring starvation is tallied instead of silently
-            // producing silence (audit RT-10).
-            node.port.postMessage({ type: 'init', sab, dropoutSab: dropoutCounters.getSab(), syncSab });
-        }
+        workerHandshake.onMessage(event);
     };
-    const readyPromise = handshake.promise;
+    node.port.onmessage = (event: MessageEvent) => {
+        workletHandshake.onMessage(event);
+    };
+
+    // Init the worklet straight away rather than from the worker's ready handler.
+    // Nothing in this payload comes from the worker — the ring, the dropout
+    // counters and the sync slot all exist already — so the sequencing bought
+    // nothing and cost both handshakes an honest timeout: the worklet's clock
+    // would have started while it was still waiting for the worker's turn. The
+    // worklet reads an empty ring as an underrun and emits silence, which is what
+    // it does for the first few quanta of every live session anyway.
+    //
+    // The dropout counters travel with it so ring starvation is tallied instead
+    // of silently producing silence (audit RT-10).
+    //
+    // `countPreRollStarvation` is the difference between a render and a session.
+    // The worklet normally waits for the ring to deliver once before it counts a
+    // starved quantum, because live the quanta before the engine worker's first
+    // block are pre-roll nobody is listening to. A render has no pre-roll: frame
+    // 0 is content. Without this, the worst outcome — a ring that never delivers
+    // at all, so the export is silence end to end — is the one case the counter
+    // stays at zero for, because it is still waiting for the first delivery.
+    // Branching on the context type rather than on the presence of a DOM global,
+    // the same way `faustDeviceFactory` picks its scheduler.
+    const isOfflineRender = typeof OfflineAudioContext !== 'undefined' && ctx instanceof OfflineAudioContext;
+    node.port.postMessage({
+        type: 'init',
+        sab,
+        dropoutSab: dropoutCounters.getSab(),
+        syncSab,
+        countPreRollStarvation: isOfflineRender,
+    });
+
+    // Callers read the worker's payload; the worklet ack carries only its own
+    // arrival. `Promise.all` subscribes to both, so whichever side fails first
+    // rejects `ready` and the other's later rejection is still handled.
+    const readyPromise = Promise.all([workerHandshake.promise, workletHandshake.promise]).then(
+        ([workerData]) => workerData
+    );
 
     // Send the preloaded WASM bytes + SAB to the engine worker. `contextFrame`
     // anchors the engine's frame 0 on the host clock for the window before the

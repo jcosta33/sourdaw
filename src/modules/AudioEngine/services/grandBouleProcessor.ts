@@ -45,6 +45,7 @@ type GrandBouleMsg = {
     sab: SharedArrayBuffer;
     dropoutSab?: SharedArrayBuffer;
     syncSab?: SharedArrayBuffer;
+    countPreRollStarvation?: boolean;
 };
 
 /**
@@ -113,6 +114,21 @@ class GrandBouleProcessor extends AudioWorkletProcessor {
      * before that is the startup pre-roll, not a dropout, and is not counted.
      */
     _hasDelivered = false;
+    /**
+     * Count starvation from the very first quantum instead of waiting for the
+     * ring to deliver once.
+     *
+     * Live, the quanta before the engine worker's first block are genuine
+     * pre-roll — the context has been running for seconds and nothing is
+     * scheduled yet — so counting them would put a few false dropouts into the
+     * health metric every time a device is built. A render has no such window:
+     * frame 0 of the export is content, and a quantum of silence there is a hole
+     * in the file. Gating on `_hasDelivered` alone meant the *worst* offline
+     * outcome — a ring that never delivers at all, so the whole export is
+     * silence — reported zero dropouts, because the counter was still waiting
+     * for the first delivery that would license it to count.
+     */
+    _countPreRoll = false;
 
     constructor() {
         super();
@@ -125,6 +141,7 @@ class GrandBouleProcessor extends AudioWorkletProcessor {
                 if (msg.syncSab) {
                     this._syncInts = new Int32Array(msg.syncSab);
                 }
+                this._countPreRoll = msg.countPreRollStarvation === true;
                 this._initSab(msg.sab);
             }
         };
@@ -212,7 +229,7 @@ class GrandBouleProcessor extends AudioWorkletProcessor {
             // Underrun — output silence. The engine worker will catch up. This
             // used to vanish without a trace; now it lands in the shared dropout
             // counters so the glitch is diagnosable after the fact (audit RT-10).
-            if (this._hasDelivered) {
+            if (this._hasDelivered || this._countPreRoll) {
                 this._recordUnderrun(frames);
             }
             return true;
