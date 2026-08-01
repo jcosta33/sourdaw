@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { ensureWorkletRegistered } from '#/infra/audioWorklet/workletInitShared';
+
 import { dropoutCounters } from '../dropoutCounter';
 import { createGrandBouleNode, isGrandBouleDevice } from '../GrandBouleNode';
+import { requireSharedArrayBuffer } from '../pluginHostingErrors';
 
 describe('isGrandBouleDevice', () => {
     it('should return true only for the grand-boule device type string', () => {
@@ -102,6 +105,9 @@ describe('createGrandBouleNode', () => {
     let lastWorker: { onmessage: ((e: MessageEvent) => void) | null } | undefined;
     let lastNodePort: { onmessage: ((e: MessageEvent) => void) | null } | undefined;
     let lastWorkletNode: object | undefined;
+    let lastProcessorName: string | undefined;
+    let workerConstructed = 0;
+    let sharedArrayBuffersAllocated = 0;
     let ctx: BaseAudioContext;
 
     beforeEach(() => {
@@ -115,11 +121,15 @@ describe('createGrandBouleNode', () => {
         lastWorker = undefined;
         lastNodePort = undefined;
         lastWorkletNode = undefined;
+        lastProcessorName = undefined;
+        workerConstructed = 0;
+        sharedArrayBuffersAllocated = 0;
 
         // A plain constructor function (not a class) so the fake worker instance
         // can be captured without aliasing `this` — returning an object from a
         // `new`-invoked function replaces the implicit `this` with that object.
         function FakeWorker() {
+            workerConstructed++;
             const instance = {
                 postMessage: workerPostMessage,
                 onmessage: null as ((e: MessageEvent) => void) | null,
@@ -131,7 +141,8 @@ describe('createGrandBouleNode', () => {
         // Same plain-constructor trick as FakeWorker above, for the same reason:
         // the created node has to be captured, and returning an object from a
         // `new`-invoked function replaces the implicit `this` with that object.
-        function FakeWorkletNode() {
+        function FakeWorkletNode(_context: unknown, processorName?: string) {
+            lastProcessorName = processorName;
             const instance = {
                 port: {
                     postMessage: nodePostMessage,
@@ -146,7 +157,9 @@ describe('createGrandBouleNode', () => {
             return instance;
         }
         class FakeSharedArrayBuffer {
-            constructor(_byteLength: number) {}
+            constructor(_byteLength: number) {
+                sharedArrayBuffersAllocated++;
+            }
         }
         vi.stubGlobal('Worker', FakeWorker);
         vi.stubGlobal('AudioWorkletNode', FakeWorkletNode);
@@ -270,7 +283,7 @@ describe('createGrandBouleNode', () => {
         await expect(workletFailed).rejects.toThrow('ring map failed');
     });
 
-    it('tells the worklet to count starved quanta from the first only when rendering offline', async () => {
+    it('builds the inline engine worklet offline and the worker ring live', async () => {
         class FakeOfflineAudioContext {
             state = 'suspended';
             currentTime = 0;
@@ -279,19 +292,107 @@ describe('createGrandBouleNode', () => {
         vi.stubGlobal('OfflineAudioContext', FakeOfflineAudioContext);
 
         await createGrandBouleNode(new FakeOfflineAudioContext() as unknown as BaseAudioContext);
-        const offlineInit = findInitMessage(nodePostMessage);
+        const offline = {
+            processor: lastProcessorName,
+            workers: workerConstructed,
+            sharedBuffers: sharedArrayBuffersAllocated,
+        };
 
-        nodePostMessage.mockClear();
+        workerConstructed = 0;
+        sharedArrayBuffersAllocated = 0;
         await createGrandBouleNode(ctx);
-        const liveInit = findInitMessage(nodePostMessage);
+        const live = {
+            processor: lastProcessorName,
+            workers: workerConstructed,
+            sharedBuffers: sharedArrayBuffersAllocated,
+        };
 
-        // Live those quanta are pre-roll nobody hears; offline frame 0 is content,
-        // and a ring that never delivers at all is the one case the pre-roll rule
-        // reports as zero dropouts.
+        // This is the transport split. Offline there is no deadline for the ring
+        // to protect (Web Audio §2.6) and its back-pressure is what starves an
+        // export into silence, so the engine runs in the worklet itself: no
+        // Worker, and no shared memory at all — not the ring, not the sync slot.
+        // Live keeps both, because a starved ring drops out one device instead of
+        // missing the graph deadline for every track.
+        expect({ offline, live }).toEqual({
+            offline: { processor: 'grand-boule-offline-processor', workers: 0, sharedBuffers: 0 },
+            live: { processor: 'grand-boule-processor', workers: 1, sharedBuffers: 2 },
+        });
+    });
+
+    it('hands the offline worklet the engine bytes, and nothing the ring needed', async () => {
+        class FakeOfflineAudioContext {
+            state = 'suspended';
+            currentTime = 0;
+            sampleRate = 48000;
+        }
+        vi.stubGlobal('OfflineAudioContext', FakeOfflineAudioContext);
+
+        await createGrandBouleNode(new FakeOfflineAudioContext() as unknown as BaseAudioContext);
+        const init = nodePostMessage.mock.calls
+            .map(([message]) => message)
+            .find(
+                (message): message is Record<string, unknown> =>
+                    message !== null && typeof message === 'object' && 'type' in message && message.type === 'init'
+            );
+
+        // The offline processor constructs its own `GrandBouleInstance`, so its
+        // init is the WASM bytes and nothing else. A ring field surviving here
+        // would mean the ring consumer was built by mistake — the failure mode
+        // that produced a silent export reporting zero dropouts.
         expect({
-            offline: offlineInit?.countPreRollStarvation,
-            live: liveInit?.countPreRollStarvation,
-        }).toEqual({ offline: true, live: false });
+            hasWasmBytes: init?.wasmBytes instanceof ArrayBuffer,
+            ringFields: ['sab', 'syncSab', 'dropoutSab', 'countPreRollStarvation'].filter(
+                (field) => init !== undefined && field in init
+            ),
+        }).toEqual({ hasWasmBytes: true, ringFields: [] });
+    });
+
+    it('refuses a live node without cross-origin isolation before doing any work for it', async () => {
+        const gate = vi.mocked(requireSharedArrayBuffer);
+        const registered = vi.mocked(ensureWorkletRegistered);
+        const fetchSpy = vi.mocked(fetch);
+        gate.mockImplementationOnce(() => {
+            throw new Error('Grand Boule requires cross-origin isolation');
+        });
+
+        const rejected = createGrandBouleNode(ctx);
+
+        // The gate has to precede the awaits, not just live inside the live
+        // transport. Past them the user has already paid a `resume()`, a
+        // permanent `addModule` registration on the context and a 554 KB wasm
+        // download before being told the device cannot run — and an abort landing
+        // during any of those replaces the typed error `buildDeviceChain` maps to
+        // the isolation notification with an `AbortError`.
+        await expect(rejected).rejects.toThrow('cross-origin isolation');
+        expect({
+            workletRegistrations: registered.mock.calls.length,
+            wasmFetches: fetchSpy.mock.calls.length,
+        }).toEqual({ workletRegistrations: 0, wasmFetches: 0 });
+    });
+
+    it('gates on SharedArrayBuffer only for the live ring, never for a render', async () => {
+        class FakeOfflineAudioContext {
+            state = 'suspended';
+            currentTime = 0;
+            sampleRate = 48000;
+        }
+        vi.stubGlobal('OfflineAudioContext', FakeOfflineAudioContext);
+        const gate = vi.mocked(requireSharedArrayBuffer);
+
+        gate.mockClear();
+        await createGrandBouleNode(new FakeOfflineAudioContext() as unknown as BaseAudioContext);
+        const offlineChecks = gate.mock.calls.length;
+
+        gate.mockClear();
+        await createGrandBouleNode(ctx);
+        const liveChecks = gate.mock.calls.length;
+
+        // A browser without cross-origin isolation cannot host the live ring, so
+        // the node refuses there. An export uses no shared memory at all, and
+        // refusing it would make a project unexportable over a capability the
+        // render never touches. The gate belongs to the transport, not the
+        // factory.
+        expect({ offlineChecks, liveChecks }).toEqual({ offlineChecks: 0, liveChecks: 1 });
     });
 
     it('hands the engine worker the same sync slot it gave the worklet, plus the context anchor', async () => {
