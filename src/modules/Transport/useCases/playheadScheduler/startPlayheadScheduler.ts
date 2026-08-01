@@ -41,6 +41,7 @@ const SCHEDULE_AHEAD_SECONDS = 0.1;
 
 type SchedulerWorkerTick = {
     type: 'tick';
+    generation: number;
     sequence: number;
     scheduledAtMs: number;
     sentAtMs: number;
@@ -63,6 +64,10 @@ function isSchedulerWorkerTick(value: unknown, receivedAtMs: number): value is S
     return (
         'type' in value &&
         value.type === 'tick' &&
+        'generation' in value &&
+        typeof value.generation === 'number' &&
+        Number.isSafeInteger(value.generation) &&
+        value.generation > 0 &&
         'sequence' in value &&
         typeof value.sequence === 'number' &&
         Number.isSafeInteger(value.sequence) &&
@@ -108,6 +113,7 @@ export function startPlayheadScheduler(): void {
     schedulerSession.generation += 1;
     advanceSchedulerDiscontinuityEpoch();
     const schedulerGeneration = schedulerSession.generation;
+    schedulerSession.tickInFlight = false;
     const cancellation: SchedulerCancellation = {
         generation: schedulerGeneration,
         get discontinuityEpoch() {
@@ -403,30 +409,33 @@ export function startPlayheadScheduler(): void {
         schedulerSession.lastScheduledBeat = scheduleUpTo;
     }
 
-    if (!schedulerSession.worker) {
-        schedulerSession.worker = new Worker(new URL('../../workers/schedulerWorker.ts', import.meta.url), {
+    let worker = schedulerSession.worker;
+    if (!worker) {
+        worker = new Worker(new URL('../../workers/schedulerWorker.ts', import.meta.url), {
             type: 'module',
         });
-        schedulerSession.worker.onmessage = (event: MessageEvent<unknown>) => {
-            const receivedAtMs = highResolutionEpochMs();
-            if (
-                !isSchedulerWorkerTick(event.data, receivedAtMs) ||
-                schedulerSession.generation !== schedulerGeneration
-            ) {
-                return;
-            }
-            schedulerTimingDiagnostics.recordTickMessage({
-                sequence: event.data.sequence,
-                scheduledAtMs: event.data.scheduledAtMs,
-                sentAtMs: event.data.sentAtMs,
-                receivedAtMs,
-            });
-            tick().catch((error: unknown) => {
-                logger.error(new Error('Transport scheduler tick failed', { cause: error }));
-            });
-        };
+        schedulerSession.worker = worker;
     }
-    schedulerSession.worker.postMessage({ type: 'start', interval: grainMs });
+    worker.onmessage = (event: MessageEvent<unknown>) => {
+        const receivedAtMs = highResolutionEpochMs();
+        if (
+            !isSchedulerWorkerTick(event.data, receivedAtMs) ||
+            event.data.generation !== schedulerGeneration ||
+            schedulerSession.generation !== schedulerGeneration
+        ) {
+            return;
+        }
+        schedulerTimingDiagnostics.recordTickMessage(
+            event.data.sequence,
+            event.data.scheduledAtMs,
+            event.data.sentAtMs,
+            receivedAtMs
+        );
+        tick().catch((error: unknown) => {
+            logger.error(new Error('Transport scheduler tick failed', { cause: error }));
+        });
+    };
+    worker.postMessage({ type: 'start', interval: grainMs, generation: schedulerGeneration });
 }
 
 // Vite HMR: dispose all scheduler holders before this module is replaced so a

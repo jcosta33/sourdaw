@@ -7,10 +7,11 @@
  * DAW is running in an inactive tab.
  */
 
-type SchedulerMessage = { type: 'start'; interval: number } | { type: 'stop' };
+type SchedulerMessage = { type: 'start'; interval: number; generation: number } | { type: 'stop' };
 
 type SchedulerTick = {
     type: 'tick';
+    generation: number;
     sequence: number;
     scheduledAtMs: number;
     sentAtMs: number;
@@ -27,7 +28,11 @@ function isSchedulerMessage(value: unknown): value is SchedulerMessage {
         value.type === 'start' &&
         'interval' in value &&
         typeof value.interval === 'number' &&
-        Number.isFinite(value.interval)
+        Number.isFinite(value.interval) &&
+        'generation' in value &&
+        typeof value.generation === 'number' &&
+        Number.isSafeInteger(value.generation) &&
+        value.generation > 0
     );
 }
 
@@ -38,6 +43,7 @@ function highResolutionEpochMs(): number {
 let timerId: ReturnType<typeof setInterval> | null = null;
 let nextScheduledAtMs = 0;
 let tickSequence = 0;
+let schedulerGeneration = 0;
 
 self.onmessage = (event: MessageEvent<unknown>) => {
     const msg = event.data;
@@ -51,6 +57,7 @@ self.onmessage = (event: MessageEvent<unknown>) => {
         if (timerId !== null) {
             clearInterval(timerId);
         }
+        schedulerGeneration = msg.generation;
         tickSequence = 0;
         nextScheduledAtMs = highResolutionEpochMs() + intervalMs;
         timerId = setInterval(() => {
@@ -61,6 +68,7 @@ self.onmessage = (event: MessageEvent<unknown>) => {
             nextScheduledAtMs += elapsedIntervals * intervalMs;
             const tick: SchedulerTick = {
                 type: 'tick',
+                generation: schedulerGeneration,
                 sequence: tickSequence,
                 scheduledAtMs,
                 sentAtMs,
@@ -73,6 +81,7 @@ self.onmessage = (event: MessageEvent<unknown>) => {
             timerId = null;
             nextScheduledAtMs = 0;
             tickSequence = 0;
+            schedulerGeneration = 0;
         }
     }
 };

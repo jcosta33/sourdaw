@@ -9,13 +9,6 @@ type TimingSnapshot = TimingAccumulator & {
     average: number;
 };
 
-type SchedulerTickTiming = {
-    sequence: number;
-    scheduledAtMs: number;
-    sentAtMs: number;
-    receivedAtMs: number;
-};
-
 type SchedulerTimingSnapshot = {
     intervalMs: number;
     messagesReceived: number;
@@ -84,20 +77,20 @@ export const schedulerTimingDiagnostics = {
         tickExecutionMs = createAccumulator();
     },
 
-    recordTickMessage(input: SchedulerTickTiming): void {
+    recordTickMessage(sequence: number, scheduledAtMs: number, sentAtMs: number, receivedAtMs: number): void {
         messagesReceived++;
         if (lastSequence === 0) {
-            sequenceGaps += Math.max(0, input.sequence - 1);
-        } else if (input.sequence <= lastSequence) {
+            sequenceGaps += Math.max(0, sequence - 1);
+        } else if (sequence <= lastSequence) {
             outOfOrderMessages++;
-        } else if (input.sequence > lastSequence + 1) {
-            sequenceGaps += input.sequence - lastSequence - 1;
+        } else if (sequence > lastSequence + 1) {
+            sequenceGaps += sequence - lastSequence - 1;
         }
-        lastSequence = Math.max(lastSequence, input.sequence);
+        lastSequence = Math.max(lastSequence, sequence);
 
-        const workerWakeLateness = normalizeDuration(input.sentAtMs - input.scheduledAtMs);
-        const mainDeliveryLateness = normalizeDuration(input.receivedAtMs - input.scheduledAtMs);
-        const messageTransit = normalizeDuration(input.receivedAtMs - input.sentAtMs);
+        const workerWakeLateness = normalizeDuration(sentAtMs - scheduledAtMs);
+        const mainDeliveryLateness = normalizeDuration(receivedAtMs - scheduledAtMs);
+        const messageTransit = normalizeDuration(receivedAtMs - sentAtMs);
         recordTiming(workerWakeLatenessMs, workerWakeLateness);
         recordTiming(mainDeliveryLatenessMs, mainDeliveryLateness);
         recordTiming(messageTransitMs, messageTransit);
