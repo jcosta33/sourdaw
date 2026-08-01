@@ -1,0 +1,72 @@
+src/modules/AudioEngine/worklets/__tests__/grandBouleDispatchParity.spec.ts
+  s_ac9b259eab20ba::t_a845d08567fe7c 105-107
+  s_ac9b259eab20ba::t_4bbd17e5539dda 3,220
+src/modules/AudioEngine/engine/GrandBouleNode.ts
+  s_ac9b259eab20ba::t_ed690d043d1362 185-188,194
+  s_ac9b259eab20ba::t_52b39254d0630c 40
+  s_ac9b259eab20ba::t_334d4966df9a1f 41-42
+  s_ac9b259eab20ba::t_94e8ddffbfefa2 35-36,163
+  s_ac9b259eab20ba::t_fc03d072dccbd4 189-193
+src/modules/AudioEngine/models/GrandBouleRingProtocol.ts
+  s_ac9b259eab20ba::t_52b39254d0630c 4-6
+  s_ac9b259eab20ba::t_94e8ddffbfefa2 21-23
+src/modules/AudioEngine/workers/grandBouleEngineWorker.ts
+  s_ac9b259eab20ba::t_52b39254d0630c 69
+  s_ac9b259eab20ba::t_c1bd9d15e47ef8 56-57
+  s_ac9b259eab20ba::t_94e8ddffbfefa2 305-306
+  s_ac9b259eab20ba::t_334d4966df9a1f 70-77
+src/modules/AudioEngine/engine/__tests__/GrandBouleNode.spec.ts
+  s_ac9b259eab20ba::t_fc03d072dccbd4 289-290,303-314
+  s_ac9b259eab20ba::t_334d4966df9a1f 251,253
+  s_ac9b259eab20ba::t_ed690d043d1362 107-112,143,284
+  s_ac9b259eab20ba::t_0f9941a9b0233d 82-84,246-248,257
+  s_ac9b259eab20ba::t_c0027f388c1128 315-316
+src/modules/AudioEngine/services/__tests__/grandBouleProcessor.spec.ts
+  s_ac9b259eab20ba::t_aa452b88e4889f 61,78,123,153-154,259-279,281-288,290,292-293,295-298
+  s_ac9b259eab20ba::t_17864c5727b214 186,242-258,280,299-300
+  s_ac9b259eab20ba::t_3e1b4dd112e438 18
+  s_ac9b259eab20ba::t_fc03d072dccbd4 29-33,175-185
+  s_ac9b259eab20ba::t_f17115fb963776 26,289,291,294
+  s_ac9b259eab20ba::t_8bb6b961e5ac4d 187
+src/modules/AudioEngine/workers/__tests__/grandBouleEngineWorker.renderLoop.spec.ts
+  s_ac9b259eab20ba::t_334d4966df9a1f 87-95
+  s_ac9b259eab20ba::t_085f8b785e134a 44,50,112,141-157
+  s_ac9b259eab20ba::t_2e339214d5d2be 158-159
+src/modules/AudioEngine/workers/__tests__/grandBouleEngineWorker.spec.ts
+  s_ac9b259eab20ba::t_8ee71a72d6653a 144,148
+src/modules/AudioEngine/services/grandBouleProcessor.ts
+  s_ac9b259eab20ba::t_fc03d072dccbd4 51-59,120,152-155,225-227
+  s_ac9b259eab20ba::t_94e8ddffbfefa2 19,197
+  s_ac9b259eab20ba::t_f17115fb963776 192,248-250
+  s_ac9b259eab20ba::t_3adc6b3de71256 70-72,294-297
+  s_ac9b259eab20ba::t_17864c5727b214 293,298-299
+  s_ac9b259eab20ba::t_52b39254d0630c 30
+src/modules/AudioEngine/workers/__tests__/grandBouleEngineWorker.noteTiming.spec.ts
+  s_ac9b259eab20ba::t_a845d08567fe7c 64-66
+  s_ac9b259eab20ba::t_4bbd17e5539dda 3,6-8,29-32
+  s_ac9b259eab20ba::t_23514c885fb8e3 4-5,139
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_ac9b259eab20ba::t_2848b452420888 1
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_ac9b259eab20ba::t_3881785e3e12a0 1
+public/wasm/manifest.json
+  s_ac9b259eab20ba::t_a0497586b885da 12,17-18,21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_ac9b259eab20ba::t_a171d16bbcdff8 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.19",
+  "base_commit_sha": "da72b7f80e8b425625d07cdbecf5b06bd8421df1",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
