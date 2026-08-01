@@ -1,0 +1,56 @@
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistryDescriptors.spec.ts
+  s_ac9b259eab20ba::t_bc3fbab16c09c8 9,23,44-47,136,338-359,361,363-371,373-393
+  s_ac9b259eab20ba::t_a2bf7cfcfdb600 132-135,137-139,414
+  s_ac9b259eab20ba::t_c38457a4802e26 360,362,372
+  s_ac9b259eab20ba::t_26edece6ae00db 394-413
+  s_66d4924c65dcd2::t_c3097ebeac6434 415
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_ac9b259eab20ba::t_46068dbdc36480 32
+  s_ac9b259eab20ba::t_5a6a7d46282246 49,117,192,288,464,516,575,636,730,829,871,956,1038
+  s_ac9b259eab20ba::t_77f52b9db84e14 45
+  s_ac9b259eab20ba::t_9fc6d6a193fa07 386,388,437,443-452
+  s_ac9b259eab20ba::t_3beb98c148f336 33
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_ac9b259eab20ba::t_855d16fd8ab2d2 784,796
+src/modules/AudioEngine/engine/TrackNode.ts
+  s_ac9b259eab20ba::t_4a77b93beb373d 35,51,66-67,378-384,386-391,499,502-505,562-563,629-635,637,681,684,762-763,769,772,811,821-827,829-831,841-846,945,963-966,981
+  s_ac9b259eab20ba::t_f866d06315bd56 11-15,50,385,481,488-489,500-501,531-539,554-556,559-560,570,703,795,812-820,828
+  s_ac9b259eab20ba::t_45cba484023cba 545-547
+  s_ac9b259eab20ba::t_8fc2516bf739f0 530,540-543,548-553
+  s_ac9b259eab20ba::t_062ba846d623e0 600-613,640-649,672-677,705-730,733-738,773-790
+  s_ac9b259eab20ba::t_a20c89f94936c1 544,557
+src/modules/AudioEngine/engine/__tests__/TrackNodeDevices.spec.ts
+  s_ac9b259eab20ba::t_45cba484023cba 554-558
+  s_ac9b259eab20ba::t_15d5e5c297fe69 6,62,97,102,114,118,120-124,126,144-149,469-500,516-527
+  s_ac9b259eab20ba::t_a2bf7cfcfdb600 501-515,678,681,687-688,696-699,733-737,752-755
+  s_ac9b259eab20ba::t_85a2a8d49b58e8 551-553,559-561,565,572
+  s_ac9b259eab20ba::t_0897a685e34501 528-547
+  s_ac9b259eab20ba::t_9408ab8b25798e 548-550,562-564,566-571,573-591,680
+  s_66d4924c65dcd2::t_0ddd4055509d31 667-668,679
+src/modules/AudioEngine/engine/__tests__/TrackNode.spec.ts
+  s_ac9b259eab20ba::t_855d16fd8ab2d2 4,42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.19",
+  "base_commit_sha": "e63f1745e282e8491477b63c4ad6ccd6bca8f26f",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
