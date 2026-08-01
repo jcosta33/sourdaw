@@ -617,7 +617,11 @@ function getValueMismatchReason(argument: string): string {
 }
 
 function hasSelectedNoteScope(text: string): boolean {
-    return /\b(?:selected|current|these) notes?\b/iu.test(text);
+    return (
+        /\b(?:selected|current|these)(?: midi)? notes?\b/iu.test(text) ||
+        /\b(?:midi )?notes? (?:that are |currently )?selected\b/iu.test(text) ||
+        /\b(?:note selection|selection of (?:midi )?notes?)\b/iu.test(text)
+    );
 }
 
 function validateBooleanIntentValue(
@@ -757,7 +761,12 @@ function validateNumberValue(
     if (valueRule.requiredInPrompt === true && expectedNumbers.length === 0) {
         return getValueMismatchReason(valueRule.argument);
     }
-    const matchesExpectedValue = expectedNumbers.some((expected) => Math.abs(expected - assertedValue) < 0.000_001);
+    const matchesExpectedValue = expectedNumbers.some((expected) => {
+        if (valueRule.match === 'exact') {
+            return Object.is(expected, assertedValue);
+        }
+        return Math.abs(expected - assertedValue) < 0.000_001;
+    });
     if (expectedNumbers.length > 0 && !matchesExpectedValue) {
         return getValueMismatchReason(valueRule.argument);
     }

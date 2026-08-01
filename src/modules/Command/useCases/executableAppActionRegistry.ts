@@ -40,6 +40,7 @@ export type ExecutableAppActionValueRule =
           kind: 'number-if-present';
           requiredInPrompt?: boolean;
           mayOmitWhenUnmentioned?: boolean;
+          match?: 'exact';
           connector?: 'from' | 'to' | 'beat';
           scale?: 'unit-interval' | 'percentage-only' | 'automation-lane-range';
           direction?: 'pan';
@@ -266,7 +267,7 @@ export const executableAppActionDescriptors = [
         description: 'Snap every note in one MIDI clip to an explicit beat grid.',
         intentPhrases: ['quantize notes', 'quantize midi', 'snap midi notes'],
         targetRules: editableMidiClipTargetRules,
-        valueRules: [{ argument: 'gridSize', kind: 'number-if-present', requiredInPrompt: true }],
+        valueRules: [{ argument: 'gridSize', kind: 'number-if-present', requiredInPrompt: true, match: 'exact' }],
         parameters: {
             properties: {
                 clipId: { type: 'string', description: 'Existing unlocked non-empty MIDI clip ID' },

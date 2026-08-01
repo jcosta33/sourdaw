@@ -645,6 +645,7 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
             }
 
             expect(guard({ clipId: 'clip-1', gridSize: 0.25 })).toBe(true);
+            expect(guard({ clipId: 'clip-1', gridSize: Number.MIN_VALUE })).toBe(true);
             expect(guard({ clipId: 'clip-1', grid: 0.25 })).toBe(false);
             expect(guard({ clipId: 'clip-1' })).toBe(false);
             expect(guard({ clipId: '', gridSize: 0.25 })).toBe(false);

@@ -203,11 +203,7 @@ function getReferenceCandidates(input: ResolveAgentReferenceInput): ReferenceCan
             }
         }
         const clips = tracks.flatMap((track) => track.clips);
-        let eligibleClips = clips;
-        if (input.capability === 'editable-midi-clip') {
-            eligibleClips = clips.filter((clip) => clip.type === 'midi' && clip.locked !== true && clip.noteCount > 0);
-        }
-        return eligibleClips.map((clip) => ({ id: clip.id, name: clip.name }));
+        return clips.map((clip) => ({ id: clip.id, name: clip.name }));
     }
 
     if (input.capability === 'device') {

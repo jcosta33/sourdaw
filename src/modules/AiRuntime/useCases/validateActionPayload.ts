@@ -274,7 +274,8 @@ const validators = {
         isObj(param) &&
         hasExactKeys(param, ['clipId', 'gridSize']) &&
         isNonEmptyString(param.clipId) &&
-        isInRange(param.gridSize, Number.EPSILON, 64),
+        isPositiveNumber(param.gridSize) &&
+        param.gridSize <= 64,
     transposeNotes: (param): param is PayloadOf<'transposeNotes'> =>
         isObj(param) &&
         hasExactKeys(param, ['clipId', 'semitones']) &&

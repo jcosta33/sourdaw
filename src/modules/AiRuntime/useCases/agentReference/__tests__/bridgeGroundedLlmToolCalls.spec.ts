@@ -148,8 +148,18 @@ describe('bridgeGroundedLlmToolCalls', () => {
             'transpose notes in Piano MIDI by 7 semitones, but only the selected notes',
             context
         );
+        const selectedMidiNotes = bridge(
+            [{ name: 'transposeNotes', arguments: { clipId: 'clip-midi', semitones: 7 } }],
+            'transpose notes in Piano MIDI by 7 semitones, but only the selected MIDI notes',
+            context
+        );
         const wrongValue = bridge(
             [{ name: 'quantizeNotes', arguments: { clipId: 'clip-midi', gridSize: 0.5 } }],
+            'quantize notes in Piano MIDI to a 0.25 beat grid',
+            context
+        );
+        const nearValue = bridge(
+            [{ name: 'quantizeNotes', arguments: { clipId: 'clip-midi', gridSize: 0.250_000_5 } }],
             'quantize notes in Piano MIDI to a 0.25 beat grid',
             context
         );
@@ -165,8 +175,12 @@ describe('bridgeGroundedLlmToolCalls', () => {
         ]);
         expect(selectedNotes.actions).toEqual([]);
         expect(selectedNotes.rejections[0]?.reason).toContain('Selected-note edits are not supported');
+        expect(selectedMidiNotes.actions).toEqual([]);
+        expect(selectedMidiNotes.rejections[0]?.reason).toContain('Selected-note edits are not supported');
         expect(wrongValue.actions).toEqual([]);
         expect(wrongValue.rejections[0]?.reason).toContain('does not match');
+        expect(nearValue.actions).toEqual([]);
+        expect(nearValue.rejections[0]?.reason).toContain('does not match');
         expect(audioTarget.actions).toEqual([]);
         expect(audioTarget.rejections[0]?.reason).toContain('not grounded');
     });

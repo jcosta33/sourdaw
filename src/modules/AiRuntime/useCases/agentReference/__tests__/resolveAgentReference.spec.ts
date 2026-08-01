@@ -242,6 +242,30 @@ describe('resolveAgentReference', () => {
     });
 
     it('resolves only unlocked non-empty MIDI clips for note transforms', () => {
+        const project = createClipProjectState();
+        const bass = project.tracks[1];
+        if (!bass) {
+            throw new Error('Expected bass fixture');
+        }
+        const ambiguousContext = {
+            ...project,
+            tracks: project.tracks.map((track) =>
+                track.id === bass.id
+                    ? {
+                          ...track,
+                          clips: [
+                              ...track.clips,
+                              {
+                                  ...project.tracks[0]!.clips[0]!,
+                                  id: 'clip-audio-piano',
+                                  name: 'Piano MIDI',
+                              },
+                          ],
+                      }
+                    : track
+            ),
+        };
+
         expect(resolveMidiClip('quantize notes in Piano MIDI', 'clip-midi')).toEqual({
             status: 'resolved',
             id: 'clip-midi',
@@ -258,6 +282,10 @@ describe('resolveAgentReference', () => {
         expect(resolveMidiClip('transpose notes in Locked MIDI', 'clip-locked-midi')).toMatchObject({
             status: 'rejected',
             reason: 'ungrounded-target',
+        });
+        expect(resolveMidiClip('quantize notes in Piano MIDI', 'clip-midi', ambiguousContext)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
         });
     });
 

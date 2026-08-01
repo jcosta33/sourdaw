@@ -597,7 +597,7 @@ const EXPECTED_GROUNDING = [
         actionType: 'quantizeNotes',
         intentPhrases: ['quantize notes', 'quantize midi', 'snap midi notes'],
         targetRules: [{ argument: 'clipId', capability: 'editable-midi-clip' }],
-        valueRules: [{ argument: 'gridSize', kind: 'number-if-present', requiredInPrompt: true }],
+        valueRules: [{ argument: 'gridSize', kind: 'number-if-present', requiredInPrompt: true, match: 'exact' }],
     },
     {
         actionType: 'transposeNotes',
