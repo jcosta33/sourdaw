@@ -331,6 +331,31 @@ const DEVICE_DATA_COUNTS = {
         'src/modules/Arrangement/useCases/device/addMidiFx.ts': 1,
         'src/modules/Arrangement/useCases/device/bypassDevice.ts': 1,
         'src/modules/Arrangement/useCases/device/removeDevice.ts': 1,
+        // Count provenance: 0 -> 1, measured. New sink from `c7d271e15`
+        // ("make device lifecycle executable"), which added `restoreDevice` as
+        // the compensating action for `removeDevice`'s undo and did not update
+        // this census. The single hit is `parameterValues: { ...snapshot }` — it
+        // rebuilds a Device from a DeviceSnapshot and writes through
+        // `updateTrack` inside a handler, i.e. inside an executeAppAction
+        // transaction, the same shape as `addDevice` and `removeDevice` above.
+        // Not a param-write path, so correctly absent from GUARDED_EXECUTABLE_PATHS
+        // as its siblings are; not in RUNTIME_ACTION_TYPES, so not AI-reachable.
+        //
+        // The file's actual store write is `return { ...current, devices };` —
+        // shorthand, no colon — which this census's pattern cannot see, so the
+        // measured 1 undercounts the writes in this file by one. Recorded as the
+        // measurement it is rather than rounded up to what the file does.
+        //
+        // Which means this census did not really catch `restoreDevice`: it caught
+        // the unrelated `parameterValues:` on line 37. A file that writes devices
+        // only in shorthand scores 0 and is never asked for. One already exists —
+        // `useCases/device/reorderDevices.ts` writes `return { ...time, devices };`
+        // and appears nowhere in this census, unclassified and fully live. Widening
+        // the pattern would surface that file and about nine more that are
+        // undercounted the same way, each needing a human verdict, so it is not
+        // being done in a commit whose job is getting main green. Written down here
+        // rather than left to be rediscovered.
+        'src/modules/Arrangement/useCases/device/restoreDevice.ts': 1,
         'src/modules/Arrangement/useCases/device/setDeviceParameter/persistDevicePatch.ts': 1,
         'src/modules/Arrangement/useCases/device/setDeviceParameter/setDeviceParameter.ts': 2,
         // Count provenance: PH-3 (#730) — setExternalPluginState maps track
