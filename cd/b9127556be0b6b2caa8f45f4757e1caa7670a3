@@ -1,0 +1,94 @@
+src/modules/AudioEngine/engine/CrumbsNode.ts
+  s_ac9b259eab20ba::t_bb4cfbc2bdfbda 74,76-90
+src/modules/AudioEngine/engine/BacteriaNode.ts
+  s_ac9b259eab20ba::t_957d5799940d19 84-85,91-105
+src/modules/AudioEngine/engine/__tests__/LevainNode.spec.ts
+  s_ac9b259eab20ba::t_95419ca0caa317 19-23
+src/modules/AudioEngine/engine/__tests__/GrinderNode.spec.ts
+  s_ac9b259eab20ba::t_95419ca0caa317 12-16
+src/modules/AudioEngine/engine/GrandBouleNode.ts
+  s_ac9b259eab20ba::t_95bb9c585d81a6 298-299,306-315
+src/modules/AudioEngine/engine/__tests__/KneadNode.spec.ts
+  s_ac9b259eab20ba::t_3155616e12bb3a 10-14
+src/modules/AudioEngine/engine/__tests__/ProofNodeCreate.spec.ts
+  s_ac9b259eab20ba::t_e30c83138a4e17 9-13
+src/modules/AudioEngine/engine/__tests__/ProofChamberNode.spec.ts
+  s_ac9b259eab20ba::t_95419ca0caa317 10-14
+src/modules/AudioEngine/engine/LevainNode.ts
+  s_ac9b259eab20ba::t_c5d072f9439db9 66-67,73-87
+src/modules/AudioEngine/engine/__tests__/BacteriaNode.spec.ts
+  s_ac9b259eab20ba::t_3155616e12bb3a 10-14
+src/infra/audioWorklet/raceAbortSignal.ts
+  s_ac9b259eab20ba::t_b62acff5993425 15-19
+src/modules/AudioEngine/engine/KneadNode.ts
+  s_ac9b259eab20ba::t_c5d072f9439db9 37-38,44-58
+src/modules/AudioEngine/engine/GlutenNode.ts
+  s_ac9b259eab20ba::t_c5d072f9439db9 75-76,82-96
+src/modules/AudioEngine/engine/ProofNode.ts
+  s_ac9b259eab20ba::t_bb4cfbc2bdfbda 97-98,104-116
+src/modules/AudioEngine/engine/__tests__/ToasterNode.spec.ts
+  s_ac9b259eab20ba::t_3155616e12bb3a 12-16
+src/modules/AudioEngine/engine/__tests__/ScoringNode.spec.ts
+  s_ac9b259eab20ba::t_3155616e12bb3a 10-14
+src/modules/AudioEngine/engine/__tests__/GlutenNode.spec.ts
+  s_ac9b259eab20ba::t_3155616e12bb3a 10-14
+src/modules/AudioEngine/AGENTS.md
+  s_ac9b259eab20ba::t_d933c8cdbdc432 9
+src/infra/audioWorklet/workletInitShared.ts
+  s_ac9b259eab20ba::t_a509ea70e96995 127-128,173-176
+  s_ac9b259eab20ba::t_5a4a8b0d149aae 98-102
+  s_ac9b259eab20ba::t_f942e7505ad73c 20-21,119-121,126,171-172,177-180
+  s_ac9b259eab20ba::t_64c587bb8b64b3 135
+  s_ac9b259eab20ba::t_2829c94630075c 65,71-80,143-146,149-163,166-170,181-193
+src/modules/AudioEngine/engine/ToasterNode.ts
+  s_ac9b259eab20ba::t_bb4cfbc2bdfbda 92-93,99-113
+src/modules/AudioEngine/engine/__tests__/FermenterNode.spec.ts
+  s_ac9b259eab20ba::t_95419ca0caa317 17-21
+  s_ac9b259eab20ba::t_0e4748a889f831 283-286,291,293-303,305,307-309
+  s_ac9b259eab20ba::t_e7416eb40b3265 263-265
+  s_ac9b259eab20ba::t_ead3f037b46f0c 287-290,292,306
+  s_ac9b259eab20ba::t_19f89268950117 304
+  s_ac9b259eab20ba::t_44b67ff4560524 281,310-331
+  s_ac9b259eab20ba::t_9589b4b2a69a9e 332-346
+  s_ac9b259eab20ba::t_4f731cda5ea564 282
+src/modules/AudioEngine/engine/__tests__/grinderControlRateParams.spec.ts
+  s_ac9b259eab20ba::t_3155616e12bb3a 7-11
+src/modules/AudioEngine/engine/ScoringNode.ts
+  s_ac9b259eab20ba::t_bb4cfbc2bdfbda 82-83,89-103
+src/modules/AudioEngine/engine/__tests__/CrumbsNode.spec.ts
+  s_ac9b259eab20ba::t_95419ca0caa317 9-13
+src/infra/audioWorklet/__tests__/workletInitShared.spec.ts
+  s_ac9b259eab20ba::t_f942e7505ad73c 17,272-292,294-318
+  s_ac9b259eab20ba::t_a509ea70e96995 293
+  s_ac9b259eab20ba::t_5a4a8b0d149aae 91
+  s_ac9b259eab20ba::t_885a285d4a2dca 18,90,111-112,144-145,197,218,236,239-270
+  s_ac9b259eab20ba::t_c1c5e6db15d0ce 271
+  s_ac9b259eab20ba::t_e99f072ab90ed3 319-321
+  s_ac9b259eab20ba::t_c58bd1265ce973 322-323
+docs/architecture/07-wasm-dsp-pipeline.md
+  s_ac9b259eab20ba::t_e5224100a454eb 23,37
+src/modules/AudioEngine/engine/__tests__/GrandBouleNode.spec.ts
+  s_ac9b259eab20ba::t_95419ca0caa317 25-29
+src/modules/AudioEngine/engine/FermenterNode.ts
+  s_ac9b259eab20ba::t_2b42392c259a33 122-123,129-143
+src/modules/AudioEngine/engine/ProofChamberNode.ts
+  s_ac9b259eab20ba::t_bb4cfbc2bdfbda 49-50,56-70
+src/modules/AudioEngine/engine/GrinderNode.ts
+  s_ac9b259eab20ba::t_c5d072f9439db9 76-77,83-97
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.19",
+  "base_commit_sha": "cdb9127556be0b6b2caa8f45f4757e1caa7670a3",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
