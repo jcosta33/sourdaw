@@ -1,0 +1,54 @@
+crates/daw-dsp/src/levain/zone.rs
+  s_ac9b259eab20ba::t_28007fb3606e5c 24-31,143-150,152-165,183,192,195,200-212,214,218-224
+  s_ac9b259eab20ba::t_4d48a00d47c418 316-369
+src/modules/AudioEngine/services/__tests__/levainProcessor.spec.ts
+  s_ac9b259eab20ba::t_5f24da4d298069 32,68,70,122,280-284
+  s_ac9b259eab20ba::t_852a99503153ea 285-292
+  s_ac9b259eab20ba::t_9403eff5e14744 293-294
+src/modules/Levain/useCases/levainParamBridge/__tests__/helpers.spec.ts
+  s_ac9b259eab20ba::t_7c90929298c55d 254-273
+crates/daw-dsp/src/levain/engine.rs
+  s_ac9b259eab20ba::t_ff835e9b500e3d 670-672
+  s_ac9b259eab20ba::t_28007fb3606e5c 18,146-151,160
+src/modules/Levain/repositories/sampleLoader/sampleManifest.ts
+  s_ac9b259eab20ba::t_1cdcec8c0608d7 180
+  s_ac9b259eab20ba::t_9fb12b13273377 1,39-45,59-64,75,100-101,103-104,106-107,115-116,118-119,121-122,124-125,127-128,130-131,136-137,170-172,195-196,198-203,214,220-222,227-232
+  s_ac9b259eab20ba::t_bcf670958c8004 233
+src/modules/AudioEngine/services/levainProcessor.ts
+  s_ac9b259eab20ba::t_ff347b0755636a 269-271
+crates/daw-dsp/src/levain/mod.rs
+  s_ac9b259eab20ba::t_28007fb3606e5c 198,200-201
+src/modules/Levain/models/LevainPatch.ts
+  s_ac9b259eab20ba::t_5e516aa88c6071 96-126
+src/modules/Levain/useCases/levainParamBridge/helpers.ts
+  s_ac9b259eab20ba::t_9fb12b13273377 9,192-194
+src/modules/Levain/repositories/sampleLoader/__tests__/sampleManifest.spec.ts
+  s_ac9b259eab20ba::t_7c90929298c55d 8-27,29-39,112-167
+  s_ac9b259eab20ba::t_1cdcec8c0608d7 28
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_ac9b259eab20ba::t_c385f497be12f7 1,465,647-709,715,811
+public/wasm/daw-dsp/daw_dsp.js
+  s_ac9b259eab20ba::t_a2e90ffe0b3974 1077,1080-1081
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_ac9b259eab20ba::t_aebeb1c0cba3c5 1,5-67,73,169
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_ac9b259eab20ba::t_4c116dcd5c816b 1,465,647-709,715,811
+src/modules/AudioEngine/wasm/daw_dsp.js
+  s_ac9b259eab20ba::t_7a8f0469e347bf 1254,1257-1258
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.19",
+  "base_commit_sha": "394a83b4df3446230eebd274dc8ecba3125c1c5c",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
