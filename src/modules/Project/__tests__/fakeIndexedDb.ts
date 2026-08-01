@@ -29,6 +29,12 @@ type FakeIndexedDbControls = {
     failOpen: () => void;
     /** Aborts every subsequent readwrite transaction, after its requests succeed. */
     abortWrites: () => void;
+    /**
+     * Kills the live connection the way a `versionchange` from another tab or a
+     * UA-forced close does: fires `onversionchange` then `onclose`, after which
+     * `transaction()` throws `InvalidStateError`. A fresh `open()` still works.
+     */
+    closeConnection: () => void;
     /** Number of readwrite transactions opened against the database. */
     writeTransactionCount: () => number;
 };
@@ -135,23 +141,49 @@ export function installFakeIndexedDb({ deferOpen = false }: InstallFakeIndexedDb
     let writeTransactionCount = 0;
     const pendingOpens: Array<{ succeed: () => void; fail: () => void }> = [];
 
-    const database = {
-        objectStoreNames: { contains: () => true },
-        createObjectStore: () => undefined,
-        close: () => undefined,
-        transaction: (_storeName: string, mode: IDBTransactionMode = 'readonly') => {
-            const isWrite = mode === 'readwrite';
-            if (isWrite) {
-                writeTransactionCount++;
-            }
-            return new FakeTransaction(values, new Map<string, string | null>(), isWrite && abortWrites);
-        },
+    type FakeDatabase = {
+        objectStoreNames: { contains: () => boolean };
+        createObjectStore: () => undefined;
+        close: () => void;
+        onversionchange: (() => void) | null;
+        onclose: (() => void) | null;
+        transaction: (storeName: string, mode?: IDBTransactionMode) => FakeTransaction;
     };
+
+    const liveDatabases: FakeDatabase[] = [];
+
+    function createDatabase(): FakeDatabase {
+        let closed = false;
+        const database: FakeDatabase = {
+            objectStoreNames: { contains: () => true },
+            createObjectStore: () => undefined,
+            close: () => {
+                closed = true;
+            },
+            onversionchange: null,
+            onclose: null,
+            transaction: (_storeName: string, mode: IDBTransactionMode = 'readonly') => {
+                if (closed) {
+                    const error = new Error('Failed to execute transaction: The database connection is closing.');
+                    error.name = 'InvalidStateError';
+                    throw error;
+                }
+                const isWrite = mode === 'readwrite';
+                if (isWrite) {
+                    writeTransactionCount++;
+                }
+                return new FakeTransaction(values, new Map<string, string | null>(), isWrite && abortWrites);
+            },
+        };
+        liveDatabases.push(database);
+        return database;
+    }
 
     const indexedDb = {
         open: () => {
+            const database = createDatabase();
             const request: {
-                result: typeof database;
+                result: FakeDatabase;
                 error: unknown;
                 onsuccess: (() => void) | null;
                 onerror: (() => void) | null;
@@ -202,6 +234,14 @@ export function installFakeIndexedDb({ deferOpen = false }: InstallFakeIndexedDb
         },
         abortWrites: () => {
             abortWrites = true;
+        },
+        closeConnection: () => {
+            const databases = liveDatabases.splice(0, liveDatabases.length);
+            for (const database of databases) {
+                database.onversionchange?.();
+                database.close();
+                database.onclose?.();
+            }
         },
         writeTransactionCount: () => writeTransactionCount,
     };

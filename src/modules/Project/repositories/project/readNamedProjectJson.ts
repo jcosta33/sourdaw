@@ -1,4 +1,4 @@
-import { pickNewerProjectSnapshot } from './pickNewerProjectSnapshot';
+import { compareProjectSnapshots } from './compareProjectSnapshots';
 import { readNamedProjectJsonFromIndexedDb } from './readNamedProjectJsonFromIndexedDb';
 import { readNamedProjectJsonFromLocalStorage } from './readNamedProjectJsonFromLocalStorage';
 
@@ -16,7 +16,9 @@ import { readNamedProjectJsonFromLocalStorage } from './readNamedProjectJsonFrom
  *
  * IndexedDB is now the only store project content is written to. A localStorage
  * mirror can only be a pre-migration leftover, so it wins only when it can
- * prove it is newer — see {@link pickNewerProjectSnapshot}.
+ * prove it is newer — see {@link compareProjectSnapshots}. When neither copy
+ * can be shown to supersede the other, the store of record wins; a read has to
+ * return something, and returning the primary keeps one rule rather than two.
  */
 export async function readNamedProjectJson(key: string): Promise<string | null> {
     const mirror = readNamedProjectJsonFromLocalStorage(key);
@@ -28,7 +30,7 @@ export async function readNamedProjectJson(key: string): Promise<string | null> 
     if (mirror === null) {
         return primary;
     }
-    if (pickNewerProjectSnapshot({ primary, mirror }) === 'mirror') {
+    if (compareProjectSnapshots({ primary, mirror }).verdict === 'mirror-newer') {
         return mirror;
     }
     return primary;

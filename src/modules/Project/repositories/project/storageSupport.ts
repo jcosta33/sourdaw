@@ -13,11 +13,11 @@
  * and reject outright when the database cannot be opened at all.
  */
 
+import { ACTIVE_PROJECT_KEY, LEGACY_PROJECT_STORAGE_KEY } from '../../models/ProjectData';
+
 const DB_NAME = 'sourdaw-projects';
 const STORE_NAME = 'projects';
 const DB_VERSION = 1;
-const PRIMARY_KEY = 'current';
-const LEGACY_PROJECT_STORAGE_KEY = 'sourdaw-project';
 
 // In-memory cache for synchronous reads. Populated from IndexedDB on
 // init or from in-process writes. Independent of the IDB connection — the
@@ -62,18 +62,34 @@ function openDatabase(): Promise<IDBDatabase> {
                 database.createObjectStore(STORE_NAME);
             }
         };
-        request.onsuccess = () => resolve(request.result);
+        request.onsuccess = () => {
+            const database = request.result;
+            // A connection can die after a successful open — another tab
+            // upgrading the schema, a UA-forced close, storage eviction. The
+            // handle then throws InvalidStateError on every `transaction()`.
+            // Caching it forever would turn a transient event into permanent
+            // save failure until reload, so drop it and let the next call
+            // reopen. Matches CrdtDocument's crdtPersistence helpers.
+            database.onversionchange = () => {
+                database.close();
+                invalidate(promise);
+            };
+            database.onclose = () => invalidate(promise);
+            resolve(database);
+        };
         request.onerror = () => reject(createUnavailableError(request.error));
     });
 
     databasePromise = promise;
-    promise.catch(() => {
-        if (databasePromise === promise) {
-            databasePromise = null;
-        }
-    });
+    promise.catch(() => invalidate(promise));
 
     return promise;
+}
+
+function invalidate(promise: Promise<IDBDatabase>): void {
+    if (databasePromise === promise) {
+        databasePromise = null;
+    }
 }
 
 async function runTransaction<Result>(
@@ -122,7 +138,7 @@ function idbDelete(key: string): Promise<void> {
 }
 
 async function warmCache(): Promise<void> {
-    const stored = await idbGet(PRIMARY_KEY);
+    const stored = await idbGet(ACTIVE_PROJECT_KEY);
     if (stored && !cachedJson) {
         cachedJson = stored;
     }
@@ -149,7 +165,7 @@ const storageSupport = {
     getIndexedDb: idbGet,
     initializeIndexedDb: initDB,
     legacyProjectStorageKey: LEGACY_PROJECT_STORAGE_KEY,
-    primaryKey: PRIMARY_KEY,
+    primaryKey: ACTIVE_PROJECT_KEY,
     putIndexedDb: idbPut,
     setCachedJson,
 };

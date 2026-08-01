@@ -54,6 +54,26 @@ describe('writeNamedProjectJsonByKey', () => {
         expect(controls.values.get(KEY)).toBe(JSON_BODY);
     });
 
+    // F5. A connection can die after a successful open — another tab's
+    // `versionchange`, a UA-forced close, eviction. Before this change that made
+    // writes silent no-ops; caching the dead handle instead makes every
+    // subsequent save reject permanently until reload, which is a worse
+    // failure. The cached connection must be dropped and reopened.
+    // Mutation: removing the `onversionchange`/`onclose` invalidation from
+    // storageSupport reds `await write` with InvalidStateError.
+    it('reopens after the cached connection is closed underneath it', async () => {
+        const controls = installFakeIndexedDb();
+        const { writeNamedProjectJsonByKey } = await import('../writeNamedProjectJsonByKey');
+        await writeNamedProjectJsonByKey(KEY, JSON_BODY);
+
+        controls.closeConnection();
+
+        const second = JSON.stringify({ version: 1, meta: { name: 'After', updatedAt: 6 } });
+        await writeNamedProjectJsonByKey(KEY, second);
+
+        expect(controls.values.get(KEY)).toBe(second);
+    });
+
     // AC-2. A write that can never be observed must be reported as a failure,
     // not swallowed. Mutation: resolving instead of rejecting when the database
     // is unavailable reds `rejects.toThrow(/unavailable/i)`.
