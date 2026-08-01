@@ -1,0 +1,19 @@
+src/infra/audioWorklet/__tests__/workletInitShared.spec.ts
+  s_ac9b259eab20ba::t_a926343c300213 3,59,67,69,74,77,79,81,84,86,91,95-96,99-100,102-118,129,134-135,140-160,163-164,166,168
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.19",
+  "base_commit_sha": "d345a5505ff82f9d536099fa144aef6f8be6d0c7",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
