@@ -1,0 +1,49 @@
+tests/e2e/myceliumPerformance.spec.ts
+  s_ac9b259eab20ba::t_a8e8433dacc877 1-4,6-34,36-37,39-45,47-51,60,62-63
+  s_ac9b259eab20ba::t_8ce79067a4f368 5,52-59
+  s_ac9b259eab20ba::t_f17e3075c6d14c 61
+  s_ac9b259eab20ba::t_c07239565b9df8 46
+  s_ac9b259eab20ba::t_2f817b82e7bda4 35,38
+tests/e2e/playwright.mycelium.performance.config.cjs
+  s_ac9b259eab20ba::t_e96260e78b9a29 1-7,9-11,14-17,19-34,36,38-52,54-57
+  s_ac9b259eab20ba::t_4d69bf70546be0 8,12-13,18,35,37,53
+tests/e2e/myceliumPerformanceEvidence.ts
+  s_ac9b259eab20ba::t_0605c2fc303709 276
+  s_ac9b259eab20ba::t_dfc3a40d11e4f7 6,22-24,26,191,197-199,203,207-210,224-226
+  s_ac9b259eab20ba::t_c07239565b9df8 25,190,200,211-223,254
+  s_ac9b259eab20ba::t_887048c36660e8 311-312,316-317,319
+  s_ac9b259eab20ba::t_fc29188ce6b6a1 85-92,233-236,239-243
+  s_ac9b259eab20ba::t_e96260e78b9a29 31,39,98,112,125,237-238,244-246,249-253,255-257,259
+  s_ac9b259eab20ba::t_01a6caebc91eaf 201-202,204
+  s_ac9b259eab20ba::t_8ce79067a4f368 63-69,138-145,147-148,150-174,293-310,313-315,318,320-322
+  s_ac9b259eab20ba::t_2f817b82e7bda4 227,229,247,258,263
+  s_ac9b259eab20ba::t_300024a546dec5 1-5,7-21,27-30,32-38,40-62,70-84,93-97,99-111,113-124,126-137,146,149,175-189,228,230-232,248,260-262,264-275,277-292,323-330
+  s_ac9b259eab20ba::t_c0a600a61a63d8 192-196
+  s_ac9b259eab20ba::t_7ba9eacec09c32 205-206
+  s_ac9b259eab20ba::t_513d0ca2d4cbab 331-333
+  s_bc88af7d3b054c::t_83817fa89dd98c 334-335
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "377a3618e34374972e15ccbbb57d3c5a1b84ea49",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
