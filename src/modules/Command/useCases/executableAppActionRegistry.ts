@@ -282,7 +282,7 @@ export const executableAppActionDescriptors = [
         description: 'Transpose every note in one MIDI clip by an explicit semitone delta.',
         intentPhrases: ['transpose notes', 'transpose midi', 'shift midi notes', 'shift notes'],
         targetRules: editableMidiClipTargetRules,
-        valueRules: [{ argument: 'semitones', kind: 'number-if-present', requiredInPrompt: true }],
+        valueRules: [{ argument: 'semitones', kind: 'number-if-present', requiredInPrompt: true, match: 'exact' }],
         parameters: {
             properties: {
                 clipId: { type: 'string', description: 'Existing unlocked non-empty MIDI clip ID' },

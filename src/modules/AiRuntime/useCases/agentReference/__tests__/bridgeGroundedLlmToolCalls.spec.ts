@@ -163,6 +163,11 @@ describe('bridgeGroundedLlmToolCalls', () => {
             'quantize notes in Piano MIDI to a 0.25 beat grid',
             context
         );
+        const nearTransposeValue = bridge(
+            [{ name: 'transposeNotes', arguments: { clipId: 'clip-midi', semitones: 7 } }],
+            'transpose notes in Piano MIDI by 7.0000005 semitones',
+            context
+        );
         const audioTarget = bridge(
             [{ name: 'transposeNotes', arguments: { clipId: 'clip-intro', semitones: 7 } }],
             'transpose notes in Intro by 7 semitones',
@@ -181,6 +186,8 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(wrongValue.rejections[0]?.reason).toContain('does not match');
         expect(nearValue.actions).toEqual([]);
         expect(nearValue.rejections[0]?.reason).toContain('does not match');
+        expect(nearTransposeValue.actions).toEqual([]);
+        expect(nearTransposeValue.rejections[0]?.reason).toContain('does not match');
         expect(audioTarget.actions).toEqual([]);
         expect(audioTarget.rejections[0]?.reason).toContain('not grounded');
     });

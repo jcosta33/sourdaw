@@ -603,7 +603,7 @@ const EXPECTED_GROUNDING = [
         actionType: 'transposeNotes',
         intentPhrases: ['transpose notes', 'transpose midi', 'shift midi notes', 'shift notes'],
         targetRules: [{ argument: 'clipId', capability: 'editable-midi-clip' }],
-        valueRules: [{ argument: 'semitones', kind: 'number-if-present', requiredInPrompt: true }],
+        valueRules: [{ argument: 'semitones', kind: 'number-if-present', requiredInPrompt: true, match: 'exact' }],
     },
     {
         actionType: 'renameTrack',
