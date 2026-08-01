@@ -293,6 +293,28 @@ describe('LevainProcessor message handling', () => {
         expect(calls.map((c) => c.method)).toEqual(['note_on']);
     });
 
+    it('voices a note landing on a block boundary in that block, not the one before it', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        calls.length = 0;
+
+        // Block 1 renders frames [0, 127]; block 2 renders [128, 255].
+        // The noteOn @127 is the last frame of block 1; the noteOff @128 is the
+        // FIRST frame of block 2 and must not fire until block 2.
+        send(proc, { type: 'noteOn', note: 60, velocity: 90, sampleFrame: 127 });
+        send(proc, { type: 'noteOff', note: 60, sampleFrame: 128 });
+
+        vi.stubGlobal('currentFrame', 0);
+        proc.process([], [makeChannels(2, FRAMES)]);
+        expect(calls.filter((c) => c.method !== 'process').map((c) => c.method)).toEqual(['note_on']);
+
+        vi.stubGlobal('currentFrame', 128);
+        proc.process([], [makeChannels(2, FRAMES)]);
+        expect(calls.filter((c) => c.method !== 'process').map((c) => c.method)).toEqual(['note_on', 'note_off']);
+
+        vi.stubGlobal('currentFrame', 0);
+    });
+
     it('process guards: not-ready and <2-channel outputs bail without instance calls', async () => {
         const proc = await loadProcessor();
         // not ready

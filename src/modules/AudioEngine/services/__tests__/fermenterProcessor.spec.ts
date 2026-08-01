@@ -155,25 +155,52 @@ describe('FermenterProcessor message handling', () => {
             send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
             resetRecording();
 
-            // currentFrame is stubbed at 0, so blockEndFrame = 0 + 128 = 128 every block.
-            // Insert out of order to exercise the binary-search insertion sort, then verify
-            // the drain preserves ascending sampleFrame order and stops at the window edge.
+            // currentFrame is stubbed at 0, so blockEndFrame = 0 + 128 = 128 every block,
+            // and the block covers frames [0, 127]. Insert out of order to exercise the
+            // binary-search insertion sort, then verify the drain preserves ascending
+            // sampleFrame order and stops at the window edge.
             send(proc, { type: 'noteOn', note: 64, velocity: 80, sampleFrame: 256 });
             send(proc, { type: 'noteOff', note: 60, sampleFrame: 200 });
-            send(proc, { type: 'noteOn', note: 60, velocity: 90, sampleFrame: 128 });
+            send(proc, { type: 'noteOn', note: 60, velocity: 90, sampleFrame: 127 });
 
             // Nothing dispatched before the first process() call.
             expect(noteEvents).toEqual([]);
 
-            // First block: blockEndFrame=128 ⇒ noteOn(60)@128 (==edge) drains,
-            // but noteOff(60)@200 and noteOn(64)@256 stay queued (>128).
+            // First block covers [0, 127] ⇒ noteOn(60)@127 (last in-block frame) drains,
+            // but noteOff(60)@200 and noteOn(64)@256 stay queued (>=128).
             proc.process([], makeStereoBlock());
             expect(noteEvents).toEqual([{ kind: 'on', note: 60, velocity: 90 }]);
 
-            // The queue is compacted but the remaining notes are still > 128, so
-            // repeated blocks (static currentFrame) drain nothing further.
+            // _queueHead is 1 of 3, so the truncation branch has not run and the
+            // backing array is unchanged. The two remaining notes are still >= 128,
+            // so repeated blocks (static currentFrame) drain nothing further.
             proc.process([], makeStereoBlock());
             expect(noteEvents).toEqual([{ kind: 'on', note: 60, velocity: 90 }]);
+        });
+
+        it('voices a note landing on a block boundary in that block, not the one before it', async () => {
+            const proc = await loadProcessor();
+            send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+            resetRecording();
+
+            // Block 1 renders frames [0, 127]; block 2 renders [128, 255].
+            // Note 60 @127 is the last frame of block 1; note 72 @128 is the
+            // FIRST frame of block 2 and must not be heard until block 2.
+            send(proc, { type: 'noteOn', note: 60, velocity: 90, sampleFrame: 127 });
+            send(proc, { type: 'noteOn', note: 72, velocity: 80, sampleFrame: 128 });
+
+            vi.stubGlobal('currentFrame', 0);
+            proc.process([], makeStereoBlock());
+            expect(noteEvents).toEqual([{ kind: 'on', note: 60, velocity: 90 }]);
+
+            vi.stubGlobal('currentFrame', 128);
+            proc.process([], makeStereoBlock());
+            expect(noteEvents).toEqual([
+                { kind: 'on', note: 60, velocity: 90 },
+                { kind: 'on', note: 72, velocity: 80 },
+            ]);
+
+            vi.stubGlobal('currentFrame', 0);
         });
 
         it('ignores a scheduled note for a processor that is not ready yet', async () => {

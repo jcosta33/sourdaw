@@ -57,7 +57,7 @@ function loadProcessorClass(filePath: string, className: string) {
 }
 
 describe('AudioWorklet Processor Queues (_queueHead Read Index)', () => {
-    for (const processorName of ['LevainProcessor', 'FermenterProcessor', 'ToasterProcessor']) {
+    for (const processorName of ['LevainProcessor', 'FermenterProcessor', 'ToasterProcessor', 'CrumbsProcessor']) {
         describe(processorName, () => {
             let ProcessorClass: any;
             let processor: any;
@@ -117,6 +117,29 @@ describe('AudioWorklet Processor Queues (_queueHead Read Index)', () => {
                 ]);
 
                 // Once fully drained, it should clear in place
+                expect(processor._queueHead).toBe(0);
+                expect(processor._queue.length).toBe(0);
+            });
+
+            it('treats blockEndFrame as exclusive: a frame exactly on the bound waits for the next block', () => {
+                processor.dispatched = [];
+                processor._enqueue({ sampleFrame: 128, val: 'onBound' });
+                processor._enqueue({ sampleFrame: 200, val: 'later' });
+
+                // Block [0, 127]: the bound 128 is the FIRST frame of the next
+                // block, so nothing here is due yet. Every other case in this
+                // spec keeps queued frames strictly inside the bound, which is
+                // why a `>` vs `>=` drain reads identically to them.
+                processor._drainQueue(128);
+                expect(processor.dispatched).toEqual([]);
+                expect(processor._queueHead).toBe(0);
+
+                // Block [128, 255]: bound 256 now covers frame 128.
+                processor._drainQueue(256);
+                expect(processor.dispatched).toEqual([
+                    { sampleFrame: 128, val: 'onBound' },
+                    { sampleFrame: 200, val: 'later' },
+                ]);
                 expect(processor._queueHead).toBe(0);
                 expect(processor._queue.length).toBe(0);
             });

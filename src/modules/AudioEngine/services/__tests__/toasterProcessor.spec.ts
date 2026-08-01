@@ -542,6 +542,28 @@ describe('ToasterProcessor dispatch paths & process guards', () => {
         vi.stubGlobal('currentFrame', 0);
     });
 
+    it('voices a hit landing on a block boundary in that block, not the one before it', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        noteOnCalls.length = 0;
+
+        // Block 1 renders frames [0, 127]; block 2 renders [128, 255].
+        // Pad 2 @127 is the last frame of block 1; pad 5 @128 is the FIRST
+        // frame of block 2 and must not be struck until block 2.
+        send(proc, { type: 'noteOn', pad: 2, velocity: 100, sampleFrame: 127 });
+        send(proc, { type: 'noteOn', pad: 5, velocity: 100, sampleFrame: 128 });
+
+        vi.stubGlobal('currentFrame', 0);
+        proc.process([[]], [[new Float32Array(128), new Float32Array(128)]]);
+        expect(noteOnCalls).toEqual([2]);
+
+        vi.stubGlobal('currentFrame', 128);
+        proc.process([[]], [[new Float32Array(128), new Float32Array(128)]]);
+        expect(noteOnCalls).toEqual([2, 5]);
+
+        vi.stubGlobal('currentFrame', 0);
+    });
+
     // ── onmessage guards (lines 165, 174, 177) ──────────────────────────────
 
     it('ignores a second init once already ready (posts ready exactly once)', async () => {
