@@ -15,8 +15,24 @@ function reportDroppedDeviceToUser(message: string): void {
     notifyUser(message, 'warning');
 }
 
+/**
+ * What the offline scheduler actually put into the graph for this render.
+ *
+ * Derived from the engine's own signature rather than restated, so the two
+ * cannot drift; use-case barrels do not re-export types across modules.
+ */
+export type RenderScheduleTally = Parameters<
+    NonNullable<Parameters<typeof renderTrackSubgraphOffline>[0]['onScheduled']>
+>[0];
+
 export type RenderOfflineOptions = {
     onProgress?: (progress: number) => void;
+    /**
+     * Receives the scheduler's own account of what reached the graph. The
+     * silence guard reads it instead of predicting what *should* have been
+     * scheduled — see `detectSilentBake`.
+     */
+    onScheduled?: (tally: RenderScheduleTally) => void;
     abortSignal?: AbortSignal;
     includeInserts?: boolean;
     includeSends?: boolean;
@@ -117,6 +133,7 @@ export async function renderTrackOffline(
         includeAutomation: options?.includeAutomation ?? true,
         includeSends: options?.includeSends ?? true,
         onProgress: options?.onProgress,
+        onScheduled: options?.onScheduled,
         onWarning: options?.onWarning ?? reportDroppedDeviceToUser,
         abortSignal: options?.abortSignal,
     });

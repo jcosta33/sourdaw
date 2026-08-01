@@ -1,5 +1,6 @@
 import { cacheAudioBuffer, getCompensationDelay, getDeviceChainTailSeconds } from '#/modules/AudioEngine/useCases';
 import { FREEZE_BAKE_VERSION } from '#/utils/frozenBufferTail';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { computeTrackHash } from '../../services/computeTrackHash';
@@ -7,7 +8,8 @@ import { getTrackEligibility } from '../../stores/trackEligibility';
 import { trackStore } from '../../stores/trackStore';
 import { getPluginById } from '../getPluginById';
 
-import { renderTrackOffline } from './renderOffline';
+import { detectSilentBake } from './detectSilentBake';
+import { renderTrackOffline, type RenderScheduleTally } from './renderOffline';
 
 export const activeFreezeTasks = new Map<string, AbortController>();
 
@@ -66,8 +68,12 @@ export async function freezeTrack(trackId: string): Promise<boolean> {
             tailForDeviceType: (deviceType) => getPluginById(deviceType)?.tail,
         }).seconds;
 
+        let scheduleTally: RenderScheduleTally = { scheduledNotes: 0, scheduledBuffers: [] };
         const renderedBuffer = await renderTrackOffline(track, startBeat, endBeat, {
             tailSeconds,
+            onScheduled: (tally) => {
+                scheduleTally = tally;
+            },
             // The buffer is replayed through this track's own fader and panner —
             // live attaches it to `preFaderTap`, the mixdown to the fader node —
             // so those two values must stay out of the print or they are applied
@@ -86,6 +92,41 @@ export async function freezeTrack(trackId: string): Promise<boolean> {
 
         if (!renderedBuffer) {
             throw new Error('Render failed');
+        }
+
+        // Refuse the bake, not just the later flatten. A frozen buffer replaces
+        // the track's live sound, so committing silence here already silences
+        // the session; and once it is cached and pinned to `freezeState`, every
+        // downstream path — flatten, the mixdown that replays frozen buffers,
+        // the staleness check that sees no content change — treats it as the
+        // track's true sound. Failing at the render keeps the silent buffer out
+        // of the project entirely, and freeze is the one operation here the
+        // user can simply run again.
+        const silentBake = detectSilentBake({
+            track,
+            buffer: renderedBuffer,
+            tally: scheduleTally,
+            // `targetMixer: 'keepLive'` prints the target at unity, so the
+            // track's own fader is not part of this render and cannot excuse a
+            // silent result.
+            bakedFaderGain: 1,
+            // Mixer lanes are withheld from the target on this path, but device
+            // lanes are baked and any of them can resolve to a gain of zero.
+            bakesAutomation: true,
+            operation: 'Freeze',
+        });
+        if (silentBake.silentBake) {
+            // `freezeState.status === 'error'` is rendered nowhere, so recording
+            // it alone would tell no one. Notify on the same channel a dropped
+            // offline device uses, and report the refusal as a non-write:
+            // `handleFreezeTrack` maps a `true` here to `{status: 'written'}`,
+            // which would file a refusal as an undoable edit.
+            notifyUser(silentBake.message, 'error');
+            updateTrack(trackId, (time) => ({
+                ...time,
+                freezeState: { status: 'error', errorMessage: silentBake.message },
+            }));
+            return false;
         }
 
         const freezeId = `freeze-${trackId}-${Date.now()}`;

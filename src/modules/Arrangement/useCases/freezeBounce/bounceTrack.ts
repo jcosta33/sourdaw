@@ -1,12 +1,14 @@
 import { cacheAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { transportStore } from '#/modules/Transport/stores';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type Clip, type Track } from '../../models/Track';
 import { getTrackEligibility } from '../../stores/trackEligibility';
 import { trackStore } from '../../stores/trackStore';
 
-import { renderTrackOffline } from './renderOffline';
+import { detectSilentBake } from './detectSilentBake';
+import { renderTrackOffline, type RenderScheduleTally } from './renderOffline';
 
 export type BounceOptions = {
     includeInserts: boolean;
@@ -49,7 +51,11 @@ export async function bounceTrack(trackId: string, options: BounceOptions): Prom
         finalEndBeat += (5 * tempo) / 60; // 5 seconds fixed tail
     }
 
+    let scheduleTally: RenderScheduleTally = { scheduledNotes: 0, scheduledBuffers: [] };
     const renderedBuffer = await renderTrackOffline(track, startBeat, finalEndBeat, {
+        onScheduled: (tally) => {
+            scheduleTally = tally;
+        },
         includeInserts: options.includeInserts,
         includeSends: options.includeSends,
         includeAutomation: options.includeAutomation,
@@ -58,6 +64,31 @@ export async function bounceTrack(trackId: string, options: BounceOptions): Prom
     });
 
     if (!renderedBuffer) {
+        return false;
+    }
+
+    // `destination: 'replace'` overwrites the track's clips and — when inserts
+    // were included — its devices, which is the same unrecoverable write
+    // flatten performs. `'new-track'` is recoverable but still writes a silent
+    // clip that later enters exports, so both are refused.
+    const silentBake = detectSilentBake({
+        track,
+        buffer: renderedBuffer,
+        tally: scheduleTally,
+        // Only an automation-including bounce seeds the strip from the track's
+        // fader; without it `projectStripTrack` prints at a fixed neutral level
+        // that is never zero.
+        bakedFaderGain: options.includeAutomation ? track.gain : 1,
+        // A bounce runs `targetMixer: 'bake'`, so a gain lane's absolute values
+        // are written over the seeded fader — and lanes are painted linear
+        // 0..1, making a lane held at the bottom exactly zero. That is
+        // deliberate silence, and the guard cannot tell it from a defect
+        // without modelling automation, so it stands down.
+        bakesAutomation: options.includeAutomation,
+        operation: 'Bounce',
+    });
+    if (silentBake.silentBake) {
+        notifyUser(silentBake.message, 'error');
         return false;
     }
 

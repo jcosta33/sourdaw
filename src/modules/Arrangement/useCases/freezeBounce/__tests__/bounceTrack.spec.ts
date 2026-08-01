@@ -168,6 +168,7 @@ describe('bounceTrack', () => {
 
         const expectedBufferId = 'bounce-track-1-1234567890';
         expect(mocks.renderTrackOffline).toHaveBeenCalledWith(sourceTrack, 2, 8, {
+            onScheduled: expect.any(Function),
             includeInserts: true,
             includeSends: false,
             includeAutomation: true,

@@ -16,6 +16,32 @@ export type PendingWorkletEvent = {
     toasterPadIndex: number;
 };
 
+/**
+ * What a render actually put into the graph, accumulated as it schedules.
+ *
+ * An *observation*, deliberately not a prediction. Whether a clip contributes
+ * sound is decided by a long chain — comping, region trimming, loop iteration,
+ * groove projection dropping notes past the clip's own length, probability
+ * rolls, missing buffers, zero-length windows — and any second implementation
+ * of that chain is a source of truth that agrees today and drifts tomorrow.
+ * Counting what survived it cannot drift, because it is the same code.
+ *
+ * Consumed by the freeze/bounce silence guard: "nothing was scheduled" is
+ * legitimate silence whatever the reason, and the reasons never have to be
+ * enumerated.
+ */
+export type OfflineScheduleTally = {
+    /** MIDI notes handed to an instrument, after every filter the scheduler applies. */
+    scheduledNotes: number;
+    /**
+     * Source buffers actually started — audio clips and frozen-track playback.
+     * The buffers themselves, not a count: a caller that has to distinguish a
+     * silent take from a broken render needs to read them, and it can do that
+     * lazily rather than making every render pay for a peak scan.
+     */
+    scheduledBuffers: AudioBuffer[];
+};
+
 export type OfflineTrackStrip = {
     inputNode: GainNode;
     preFaderTap: GainNode;

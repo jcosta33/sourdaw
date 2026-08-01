@@ -28,7 +28,7 @@ import { getCompensationDelay } from '../latencyCompensation/compensation/getCom
 
 import { MICRO_FADE_SECONDS, MIXER_AUTOMATION_PARAMETER_IDS, YIELD_EVERY_N_NOTES } from './constants';
 import { projectOfflineYeastTrackNotes } from './projectOfflineYeastTrackNotes';
-import { type PendingWorkletEvent } from './types';
+import { type OfflineScheduleTally, type PendingWorkletEvent } from './types';
 import { yieldToMain } from './yieldToMain';
 
 type ResolvedClip = Track['clips'][number] & {
@@ -205,6 +205,12 @@ export type ScheduleTrackClipsInput = {
      * replay, so its automation only survives if it is in the samples.
      */
     includeMixerAutomation?: boolean;
+    /**
+     * Accumulator the scheduler records what it actually put into the graph on.
+     * Shared across every track of one render; omitted by callers that do not
+     * need the observation. See `OfflineScheduleTally`.
+     */
+    tally?: OfflineScheduleTally;
 };
 
 export async function scheduleTrackClips({
@@ -228,6 +234,7 @@ export async function scheduleTrackClips({
     includeAutomation = true,
     vcaMultiplier = 1,
     includeMixerAutomation = true,
+    tally,
 }: ScheduleTrackClipsInput): Promise<void> {
     const {
         evaluateAutomationValue,
@@ -284,6 +291,7 @@ export async function scheduleTrackClips({
                 source.buffer = frozenBuf;
                 source.connect(trackGainNode); // Skip trackInputNode to bypass device chain processing, but keep fader/pan
                 source.start(when, bufferOffset, remaining);
+                tally?.scheduledBuffers.push(frozenBuf);
             }
         } else {
             onWarning?.(
@@ -490,6 +498,12 @@ export async function scheduleTrackClips({
             }
 
             noteCount++;
+            // Counted here, past every `continue` above, so this is the number
+            // of notes an instrument was actually asked to play — not the
+            // number the store holds.
+            if (tally) {
+                tally.scheduledNotes++;
+            }
             if (noteCount % YIELD_EVERY_N_NOTES === 0) {
                 await yieldToMain();
             }
@@ -772,6 +786,7 @@ export async function scheduleTrackClips({
 
                 // duration arg is destination-timeline seconds — NOT buffer-time scaled by playbackRate.
                 source.start(startSec, bufferOffsetSec, playDuration);
+                tally?.scheduledBuffers.push(buffer);
             }
         }
     }

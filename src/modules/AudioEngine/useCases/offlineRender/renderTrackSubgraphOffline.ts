@@ -14,7 +14,7 @@ import { renderInSegments } from './renderInSegments';
 import { resolveRenderContext } from './resolveRenderContext';
 import { schedulePendingSuspends } from './schedulePendingSuspends';
 import { scheduleTrackClips } from './scheduleTrackClips';
-import { type OfflineTrackStrip, type PendingWorkletEvent } from './types';
+import { type OfflineScheduleTally, type OfflineTrackStrip, type PendingWorkletEvent } from './types';
 import { yieldToMain } from './yieldToMain';
 
 /** Stand-in note tables for a render started before the MIDI store is hydrated. */
@@ -85,6 +85,13 @@ type RenderTrackSubgraphOfflineInput = {
     targetMixer?: TargetMixerDisposition;
     onProgress?: (fraction: number) => void;
     onWarning?: (message: string) => void;
+    /**
+     * Reports what the scheduler actually put into the graph, once scheduling
+     * is complete and before the render runs. Every track of the subgraph feeds
+     * one tally: they all sum into the target's output, so the target being
+     * silent while *anything* upstream was scheduled is the interesting case.
+     */
+    onScheduled?: (tally: OfflineScheduleTally) => void;
     abortSignal?: AbortSignal;
 };
 
@@ -111,6 +118,7 @@ export async function renderTrackSubgraphOffline({
     targetMixer = 'bake',
     onProgress,
     onWarning,
+    onScheduled,
     abortSignal,
 }: RenderTrackSubgraphOfflineInput): Promise<AudioBuffer | null> {
     const durationBeats = endBeat - startBeat;
@@ -222,6 +230,7 @@ export async function renderTrackSubgraphOffline({
     // scheduler only reads note tables, so an empty one is the honest input.
     const midiState = midi ?? EMPTY_MIDI_STATE;
     const pendingWorkletEvents: PendingWorkletEvent[] = [];
+    const tally: OfflineScheduleTally = { scheduledNotes: 0, scheduledBuffers: [] };
     for (const track of renderTracks) {
         const strip = trackStripsById.get(track.id);
         if (!strip) {
@@ -268,8 +277,11 @@ export async function renderTrackSubgraphOffline({
                 isTarget: track.id === targetTrackId,
                 groups: vcaGroups,
             }),
+            tally,
         });
     }
+
+    onScheduled?.(tally);
 
     schedulePendingSuspends(offlineCtx, pendingWorkletEvents, durationSeconds);
 
