@@ -103,6 +103,7 @@ import {
     getProjectHandlers,
     initGrooveTemplateDirtyTracking,
     markDirty,
+    migrateLegacyProjectSnapshots,
     setProjectIdentityTransitionDependencies,
 } from '#/modules/Project/useCases';
 import { getVersionControlHandlers } from '#/modules/ProjectVersioning/useCases';
@@ -365,6 +366,25 @@ initStalenessDetection();
 
 trackStore.subscribe(() => markDirty());
 initGrooveTemplateDirtyTracking();
+
+// Drain pre-ADR-0013 per-project localStorage snapshots into IndexedDB. Safe to
+// race a load: reads resolve by recency, and a mirror is only unmirrored once
+// its rewrite has been observed to commit. The report is logged because ADR
+// 0013's stop condition turns on how many mirrors had no IndexedDB counterpart.
+migrateLegacyProjectSnapshots()
+    .then((report) => {
+        if (report.inspected === 0) {
+            return;
+        }
+        logger.info(
+            `Legacy project snapshot migration: inspected=${report.inspected} recovered=${report.recovered} ` +
+                `supersededByPrimary=${report.supersededByPrimary} ` +
+                `mirrorsWithoutPrimary=${report.mirrorsWithoutPrimary} failed=${report.failed}`
+        );
+    })
+    .catch((error: unknown) => {
+        logger.warn(`Legacy project snapshot migration failed (non-fatal): ${String(error)}`);
+    });
 
 // Initialize browser AI module asynchronously — non-blocking, non-fatal.
 // Detects WebGPU capability and populates model registry from OPFS cache.

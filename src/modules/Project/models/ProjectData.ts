@@ -600,3 +600,10 @@ export type ProjectArrangementSnapshot = {
 };
 
 export const RECENT_PROJECTS_KEY = 'sourdaw-recent-projects';
+
+/**
+ * Prefix of the per-project storage key, completed with the project's stable
+ * `createdAt` id. Shared by the writer, the reader, and the localStorage
+ * migration so a change here cannot orphan snapshots in one of them.
+ */
+export const NAMED_PROJECT_KEY_PREFIX = 'sourdaw:project:';
