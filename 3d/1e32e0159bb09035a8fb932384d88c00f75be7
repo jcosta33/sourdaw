@@ -1,0 +1,26 @@
+playwright.config.ts
+  s_ac9b259eab20ba::t_4bcb64d09aadd8 5
+package.json
+  s_ac9b259eab20ba::t_4bcb64d09aadd8 17
+tests/e2e/myceliumPerformanceEvidence.ts
+  s_ac9b259eab20ba::t_4bcb64d09aadd8 1,63,115-122,175,182,191,196,214,217
+  s_ac9b259eab20ba::t_b1f76ca0a96c24 168,170-174,178
+tests/e2e/myceliumPerformance.spec.ts
+  s_ac9b259eab20ba::t_4bcb64d09aadd8 45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "3d1e32e0159bb09035a8fb932384d88c00f75be7",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
