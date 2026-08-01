@@ -158,4 +158,68 @@ describe('deviceReadinessDiagnostics', () => {
             devices: [{ graphToContentReadyMs: 0, requestToPlayableReadyMs: 15 }],
         });
     });
+
+    it('keeps the first content-ready result terminal against later failure or cancellation races', () => {
+        const token = deviceReadinessDiagnostics.begin({
+            deviceId: 'levain-1',
+            deviceType: 'levain',
+            requiresContent: true,
+            atMs: 7_000,
+        });
+
+        deviceReadinessDiagnostics.markContentSettled({ token, outcome: 'ready', atMs: 7_010 });
+        deviceReadinessDiagnostics.markContentSettled({ token, outcome: 'failed', atMs: 7_011 });
+        deviceReadinessDiagnostics.markContentSettled({ token, outcome: 'cancelled', atMs: 7_012 });
+        deviceReadinessDiagnostics.markGraphReady({ token, atMs: 7_015 });
+
+        expect(deviceReadinessDiagnostics.snapshot()).toMatchObject({
+            counts: { contentReady: 1, playableReady: 1, failed: 0, cancelled: 0 },
+            devices: [{ status: 'ready', requestToPlayableReadyMs: 15 }],
+        });
+    });
+
+    it('keeps phase timestamps monotonic when completions arrive with backward clocks', () => {
+        const token = deviceReadinessDiagnostics.begin({
+            deviceId: 'fermenter-1',
+            deviceType: 'fermenter',
+            requiresContent: false,
+            atMs: 100,
+        });
+
+        deviceReadinessDiagnostics.markNodeReady({ token, atMs: 200 });
+        deviceReadinessDiagnostics.markGraphReady({ token, atMs: 150 });
+
+        expect(deviceReadinessDiagnostics.snapshot().devices[0]).toMatchObject({
+            requestToNodeReadyMs: 100,
+            requestToGraphReadyMs: 100,
+            requestToPlayableReadyMs: 100,
+        });
+    });
+
+    it('never admits non-finite values into timing aggregates', () => {
+        const token = deviceReadinessDiagnostics.begin({
+            deviceId: 'fermenter-1',
+            deviceType: 'fermenter',
+            requiresContent: false,
+            atMs: -Number.MAX_VALUE,
+        });
+        deviceReadinessDiagnostics.markGraphReady({ token, atMs: Number.MAX_VALUE });
+
+        const timing = deviceReadinessDiagnostics.snapshot().timing.requestToPlayableReadyMs;
+
+        expect(Object.values(timing).every(Number.isFinite)).toBe(true);
+    });
+
+    it('treats tokens as immutable capabilities instead of caller-owned record state', () => {
+        const token = deviceReadinessDiagnostics.begin({
+            deviceId: 'levain-1',
+            deviceType: 'levain',
+            requiresContent: true,
+            atMs: 8_000,
+        });
+
+        expect(Reflect.set(token, 'deviceId', 'corrupted')).toBe(false);
+        expect(Reflect.set(token, 'tokenId', token.tokenId + 1)).toBe(false);
+        expect(deviceReadinessDiagnostics.snapshot().devices[0]?.deviceId).toBe('levain-1');
+    });
 });
