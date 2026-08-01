@@ -1,0 +1,27 @@
+src/modules/AudioEngine/engine/__tests__/deviceReadinessDiagnostics.spec.ts
+  s_ac9b259eab20ba::t_30fadeb1cd729d 12-21
+src/modules/AudioEngine/models/AudioEngineState.ts
+  s_ac9b259eab20ba::t_ade7e0533e50e6 66-67
+tests/e2e/myceliumPerformanceEvidence.ts
+  s_ac9b259eab20ba::t_16750306f1fae7 32,38,133-140,457,508,525,531,543,546-552,561-568
+tests/e2e/myceliumPerformance.spec.ts
+  s_ac9b259eab20ba::t_16750306f1fae7 128,146-149
+src/modules/AudioEngine/engine/deviceReadinessDiagnostics.ts
+  s_ac9b259eab20ba::t_ade7e0533e50e6 84,100,241
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "93d7dbdeda9aa9ace52553ea19d59de7383d7df6",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
