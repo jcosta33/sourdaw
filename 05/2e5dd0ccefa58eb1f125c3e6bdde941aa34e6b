@@ -1,0 +1,20 @@
+src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts
+  s_ac9b259eab20ba::t_6819926ef786dd 168,172,187-200,228
+  s_ac9b259eab20ba::t_5ed3d14e9b6a34 638,651,771
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.19",
+  "base_commit_sha": "052e5dd0ccefa58eb1f125c3e6bdde941aa34e6b",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
