@@ -1,0 +1,40 @@
+src/modules/CrdtDocument/useCases/sdawFileFormat/decodeSdawFile.ts
+  s_66d4924c65dcd2::t_922f8752b07340 10-14
+  s_66d4924c65dcd2::t_f8e9aa5c3a45d8 15
+  s_66d4924c65dcd2::t_ea37862a04fd5a 55-61
+src/modules/CrdtDocument/useCases/sdawFileFormat/__tests__/sdawCrossLanguageConformance.spec.ts
+  s_66d4924c65dcd2::t_adc525383e5384 186-190
+  s_66d4924c65dcd2::t_cb7ab566aa4eb3 4
+  s_66d4924c65dcd2::t_e6da941545f7ed 205-214
+  s_66d4924c65dcd2::t_57b8fc63498d8d 23-33,36
+  s_66d4924c65dcd2::t_bb67d86212670d 192-204,215-219
+  s_66d4924c65dcd2::t_8826f49f482297 175-180
+  s_66d4924c65dcd2::t_ab6934fd26fe12 1,3,5-21,34,38,42,46,50,64,68,70,81-85,87,92,94,121-125,127-148,150,154-156,164-167,182-185,191,220-238
+  s_66d4924c65dcd2::t_29b8cf85c139d0 2
+  s_66d4924c65dcd2::t_f7c209a0a5e8dd 51-61,65-67
+  s_66d4924c65dcd2::t_522c27a1d6cc6f 96-97,99-107
+  s_66d4924c65dcd2::t_b58a28104eaaad 22
+  s_66d4924c65dcd2::t_7875b519b5ef49 35,37,39-41,43-45,47-49,62-63,69,86,88-89,93
+  s_66d4924c65dcd2::t_e4ada2cf4871f2 71-80,90-91
+  s_66d4924c65dcd2::t_db07736163531b 95,98,108,119
+  s_66d4924c65dcd2::t_3cc6c0346fa1a7 109-118,120,126
+  s_66d4924c65dcd2::t_8647af4294e90f 149,151-153,157-163,168-174,181
+crates/daw-collab/src/persistence.rs
+  s_66d4924c65dcd2::t_e7b3db4833e54b 188-468
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "af6e289cc17b81464243464793848f029c320a02",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": null
+    }
+  }
+}
