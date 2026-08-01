@@ -79,7 +79,11 @@ export function tryPresetMatch(normalized: string, context: PresetContext): Runt
     if (result === null) {
         return [];
     }
-    return Array.isArray(result) ? result : [result];
+    const actions = Array.isArray(result) ? result : [result];
+    if (actions.some((action) => action.type === 'quantizeNotes' || action.type === 'transposeNotes')) {
+        return [];
+    }
+    return actions;
 }
 
 export function buildPresetContext(context: ProjectContext): PresetContext {
@@ -130,21 +134,10 @@ export function tryParameterizedPath(normalized: string, context: ProjectContext
         return [{ type: 'renameClip', payload: { clipId: selectedClipId, name: renameClipMatch[1]!.trim() } }];
     }
 
-    const transposeMatch = normalized.match(/^transpose\s+(up|down)\s+(\d+)\s*(?:semitone|st)?s?$/i);
-    if (transposeMatch && selectedClipId) {
-        const semitones = parseInt(transposeMatch[2]!, 10) * (transposeMatch[1]!.toLowerCase() === 'down' ? -1 : 1);
-        return [{ type: 'transposeNotes', payload: { clipId: selectedClipId, semitones } }];
-    }
-
     if (/^quantize\s+(note\s+)?lengths?|^quantize\s+durations?/i.test(normalized) && selectedClipId) {
         const gridMatch = normalized.match(/(?:to\s+)?(?:1\/)?(\d+)/i);
         const gridSize = gridMatch?.[1] ? 1 / parseInt(gridMatch[1], 10) : 0.25;
         return [{ type: 'quantizeNoteLengths', payload: { clipId: selectedClipId, gridSize } }];
-    }
-    if (/^quantize/i.test(normalized) && selectedClipId) {
-        const gridMatch = normalized.match(/(?:to\s+)?(?:1\/)?(\d+)/i);
-        const gridSize = gridMatch?.[1] ? 1 / parseInt(gridMatch[1], 10) : 0.25;
-        return [{ type: 'quantizeNotes', payload: { clipId: selectedClipId, gridSize } }];
     }
 
     const setVelMatch = normalized.match(/^set\s+(?:all\s+)?velocit(?:y|ies)\s+(?:to\s+)?(\d+)$/i);

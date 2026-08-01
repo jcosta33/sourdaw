@@ -86,6 +86,18 @@ describe('promptParser parsing', () => {
 
             expect(actions).toEqual([]);
         });
+
+        it('leaves provider-governed MIDI transforms for exact grounding', () => {
+            const context = {
+                selectedTrackId: 'track-midi',
+                selectedClipId: 'clip-selected',
+                selectedClipType: 'midi' as const,
+                trackCount: 1,
+            };
+
+            expect(tryPresetMatch('quantize', context)).toEqual([]);
+            expect(tryPresetMatch('transpose up an octave', context)).toEqual([]);
+        });
     });
 
     describe('tryParameterizedPath', () => {
@@ -131,12 +143,10 @@ describe('promptParser parsing', () => {
             expect(actions).toEqual([{ type: 'setTrackGain', payload: { trackId: 't1', gain: 0.8 } }]);
         });
 
-        it('parses transpose', () => {
-            const actions1 = tryParameterizedPath('transpose up 2 semitones', context);
-            expect(actions1).toEqual([{ type: 'transposeNotes', payload: { clipId: 'c1', semitones: 2 } }]);
-
-            const actions2 = tryParameterizedPath('transpose down 5 sts', context);
-            expect(actions2).toEqual([{ type: 'transposeNotes', payload: { clipId: 'c1', semitones: -5 } }]);
+        it('leaves quantize and transpose for the grounded provider path', () => {
+            expect(tryParameterizedPath('transpose up 2 semitones', context)).toEqual([]);
+            expect(tryParameterizedPath('transpose down 5 sts', context)).toEqual([]);
+            expect(tryParameterizedPath('quantize Piano MIDI to 0.25', context)).toEqual([]);
         });
 
         it('parses add device to track by name', () => {
