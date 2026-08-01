@@ -1,0 +1,21 @@
+src/modules/AiRuntime/transformers/promptParser/parsing.ts
+  s_bc88af7d3b054c::t_fdef0a40042d38 137-145
+src/modules/AiRuntime/transformers/promptParser/__tests__/parsing.spec.ts
+  s_bc88af7d3b054c::t_a3b6830e6ca8cd 152-159
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.19",
+  "base_commit_sha": "2c76deff18dc61d562c83e4278e8035dc2e25b69",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
