@@ -1,0 +1,55 @@
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngineDelegation.spec.ts
+  s_ac9b259eab20ba::t_c3c631036a95e4 322,406
+  s_ac9b259eab20ba::t_fc5bc7425d75a2 438-440
+  s_ac9b259eab20ba::t_3b780c9e4d5710 461
+  s_ac9b259eab20ba::t_733d98b2fbedeb 237-242,245-250
+  s_ac9b259eab20ba::t_1ef7a6d75cbe69 13-20
+  s_ac9b259eab20ba::t_cb545a70a64aa4 32,458-460,462-466
+  s_ac9b259eab20ba::t_f536554fa3a3ee 323-326,335-337,407-410,419-421
+  s_ac9b259eab20ba::t_3e22263905f8fd 467-468
+src/modules/AudioEngine/engine/AdjustmentBusNode.ts
+  s_ac9b259eab20ba::t_4873c0dc5b576f 14-19,266-292
+  s_ac9b259eab20ba::t_b7bc950b4b66ff 293-294
+src/modules/AudioEngine/engine/AdjustmentLayerRuntime.ts
+  s_ac9b259eab20ba::t_41301ebcb7fa82 32-38,45,237-254
+  s_ac9b259eab20ba::t_7c8d6f6d83bcc6 255
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_ac9b259eab20ba::t_35678a012044d7 91,96-100,112,124-126,128-138,495-497,523,544-549,574-577,582,592-596
+  s_ac9b259eab20ba::t_c3c631036a95e4 127,486,508,529,566
+  s_ac9b259eab20ba::t_3a3b828be3b76c 597-598
+src/modules/AudioEngine/engine/__tests__/AdjustmentLayerRuntime.spec.ts
+  s_ac9b259eab20ba::t_cb545a70a64aa4 244-248,250-253,255-258,261-263
+  s_ac9b259eab20ba::t_3b780c9e4d5710 254
+  s_ac9b259eab20ba::t_733d98b2fbedeb 260
+  s_ac9b259eab20ba::t_7dfc10d514d455 249,259
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngine.spec.ts
+  s_ac9b259eab20ba::t_c3c631036a95e4 871
+  s_ac9b259eab20ba::t_80583633cb96f1 872-875,884-886
+src/modules/AudioEngine/models/AudioEngineState.ts
+  s_ac9b259eab20ba::t_139945feb49b9f 52-54,84,92-94,106-108,386-387
+  s_ac9b259eab20ba::t_c3c631036a95e4 86-91
+  s_ac9b259eab20ba::t_63fee41f3fa138 100,102
+src/modules/AudioEngine/useCases/engineAccess/resetEnginePlaybackLatencyStats.ts
+  s_ac9b259eab20ba::t_d7140fc2d86c46 1-6
+src/modules/AudioEngine/useCases/index.ts
+  s_ac9b259eab20ba::t_d7140fc2d86c46 69
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useStatusBarMetrics.spec.ts
+  s_ac9b259eab20ba::t_c3c631036a95e4 75
+  s_ac9b259eab20ba::t_1ef7a6d75cbe69 76-79,88-90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.19",
+  "base_commit_sha": "1bee0b72df754c164fe9bc6540929517fd098c39",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
