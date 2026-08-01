@@ -1,0 +1,26 @@
+src/modules/AudioEngine/useCases/engineAccess/getEngineHealth.ts
+  s_ac9b259eab20ba::t_f95acbd2516f78 1-5
+src/modules/AudioEngine/useCases/index.ts
+  s_ac9b259eab20ba::t_f95acbd2516f78 69
+tests/e2e/myceliumPerformanceEvidence.ts
+  s_ac9b259eab20ba::t_f95acbd2516f78 23,647
+src/modules/AudioEngine/useCases/engineAccess/__tests__/getEngineHealth.spec.ts
+  s_ac9b259eab20ba::t_af9903b5dc964a 1-11,18-23
+  s_ac9b259eab20ba::t_f95acbd2516f78 12-17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "2ed842b9579c1fa60f228252d0046ad0d43479d3",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
