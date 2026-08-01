@@ -1,0 +1,19 @@
+tests/e2e/__tests__/myceliumPlaybackEvidence.spec.ts
+  s_ac9b259eab20ba::t_8bcb799fe12168 3,8,10,33,38-58,87-154
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "0a17f99f150df965c72d30872c85986b57312244",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
