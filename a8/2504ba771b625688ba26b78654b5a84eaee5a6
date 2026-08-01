@@ -1,0 +1,35 @@
+src/modules/AudioEngine/engine/audioDeviceRuntimeSink.ts
+  s_ac9b259eab20ba::t_74df6a7bf47706 43
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_ac9b259eab20ba::t_74df6a7bf47706 291-298,327-328,337,360,377,380-381,388-390,392,397
+  s_ac9b259eab20ba::t_ee0f2859dafa36 329-335,361,382-387,391
+src/app/bootstrap.ts
+  s_ac9b259eab20ba::t_74df6a7bf47706 294
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistryDescriptors.spec.ts
+  s_ac9b259eab20ba::t_ee0f2859dafa36 287,366,369,378
+  s_ac9b259eab20ba::t_66d4b4d2ae5098 322-343
+src/modules/Levain/useCases/levainParamBridge/__tests__/helpers.spec.ts
+  s_ac9b259eab20ba::t_66d4b4d2ae5098 394-452
+src/modules/Levain/useCases/levainParamBridge/helpers.ts
+  s_ac9b259eab20ba::t_191dc29b1a2823 22-29,38,62,81,84-85,88-93,96-99,105,110,112-122,124,127,129,133,136,141,147-151
+  s_ac9b259eab20ba::t_0fbd1cc17dd080 154-183,191,195,198-219,221-238,240-242,244,248-250
+  s_ac9b259eab20ba::t_ce11d38be75c97 152-153
+src/modules/Levain/useCases/levainParamBridge/registerLevainDevice.ts
+  s_ac9b259eab20ba::t_74df6a7bf47706 10-11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "a82504ba771b625688ba26b78654b5a84eaee5a6",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
