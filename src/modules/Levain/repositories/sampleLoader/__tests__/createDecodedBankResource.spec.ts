@@ -190,6 +190,40 @@ describe('createDecodedBankResource', () => {
         await expect(bankPromise).resolves.toMatchObject({ decodedByteLength: 12 });
     });
 
+    it('does not enqueue every file in a large bank before a worker is available', async () => {
+        const firstSample = createDeferred<DecodedSample>();
+        const secondSample = createDeferred<DecodedSample>();
+        const files = Array.from({ length: 64 }, (_, index) => `sample-${index}.wav`);
+        const loadSample = vi.fn(() => {
+            if (loadSample.mock.calls.length === 1) {
+                return firstSample.promise;
+            }
+            if (loadSample.mock.calls.length === 2) {
+                return secondSample.promise;
+            }
+            return Promise.resolve(createSample(loadSample.mock.calls.length));
+        });
+        const resource = createDecodedBankResource({
+            maxDecodedBytes: 1024,
+            maxConcurrentSampleLoads: 2,
+            loadManifest: vi.fn().mockResolvedValue(createManifest({ files })),
+            loadSample,
+        });
+
+        const bankPromise = resource.load(DEFAULT_INPUT);
+        await flushPromises();
+
+        expect(loadSample).toHaveBeenCalledTimes(2);
+        expect(resource.getDiagnostics()).toMatchObject({ activeSampleLoads: 2, queuedSampleLoads: 0 });
+
+        firstSample.resolve(createSample(1));
+        secondSample.resolve(createSample(2));
+
+        await expect(bankPromise).resolves.toMatchObject({ decodedByteLength: 256 });
+        expect(loadSample).toHaveBeenCalledTimes(64);
+        expect(resource.getDiagnostics()).toMatchObject({ activeSampleLoads: 0, queuedSampleLoads: 0 });
+    });
+
     it('accounts decoded PCM incrementally while a bank is still loading', async () => {
         const firstSample = createDeferred<DecodedSample>();
         const secondSample = createDeferred<DecodedSample>();
@@ -361,6 +395,125 @@ describe('createDecodedBankResource', () => {
             cacheMisses: 2,
             failedBanks: 1,
             resolvedBanks: 1,
+        });
+    });
+
+    it('releases the global sample slot when a loader throws synchronously', async () => {
+        const loadSample = vi
+            .fn()
+            .mockImplementationOnce(() => {
+                throw new Error('synchronous decode failure');
+            })
+            .mockResolvedValueOnce(createSample(1));
+        const resource = createDecodedBankResource({
+            maxDecodedBytes: 1024,
+            maxConcurrentSampleLoads: 1,
+            loadManifest: vi.fn().mockResolvedValue(createManifest({ files: ['a.wav'] })),
+            loadSample,
+        });
+
+        await expect(resource.load(DEFAULT_INPUT)).rejects.toThrow('synchronous decode failure');
+        expect(resource.getDiagnostics()).toMatchObject({ activeSampleLoads: 0, sampleLoadFailures: 1 });
+
+        await expect(resource.load(DEFAULT_INPUT)).resolves.toMatchObject({ decodedByteLength: 4 });
+        expect(loadSample).toHaveBeenCalledTimes(2);
+        expect(resource.getDiagnostics()).toMatchObject({ activeSampleLoads: 0, resolvedBanks: 1 });
+    });
+
+    it('removes a manifest entry when its loader throws synchronously', async () => {
+        const loadManifest = vi
+            .fn()
+            .mockImplementationOnce(() => {
+                throw new Error('synchronous manifest failure');
+            })
+            .mockResolvedValueOnce(createManifest({ files: ['a.wav'] }));
+        const resource = createDecodedBankResource({
+            maxDecodedBytes: 1024,
+            maxConcurrentSampleLoads: 1,
+            loadManifest,
+            loadSample: vi.fn().mockResolvedValue(createSample(1)),
+        });
+
+        await expect(resource.load(DEFAULT_INPUT)).rejects.toThrow('synchronous manifest failure');
+        await expect(resource.load(DEFAULT_INPUT)).resolves.toMatchObject({ decodedByteLength: 4 });
+
+        expect(loadManifest).toHaveBeenCalledTimes(2);
+        expect(resource.getDiagnostics()).toMatchObject({ manifestLoads: 2, resolvedBanks: 1 });
+    });
+
+    it('settles invalidated manifest consumers without allowing stale work to resurrect a bank', async () => {
+        const manifest = createDeferred<SampleManifest>();
+        const loadSample = vi.fn().mockResolvedValue(createSample(1));
+        const resource = createDecodedBankResource({
+            maxDecodedBytes: 1024,
+            maxConcurrentSampleLoads: 1,
+            loadManifest: vi.fn(() => manifest.promise),
+            loadSample,
+        });
+
+        const staleLoad = resource.load(DEFAULT_INPUT);
+        await flushPromises();
+        resource.invalidate(DEFAULT_INPUT);
+
+        await expect(staleLoad).rejects.toMatchObject({ name: 'AbortError' });
+        expect(loadSample).not.toHaveBeenCalled();
+        expect(resource.getDiagnostics()).toMatchObject({ inFlightBanks: 0, resolvedBanks: 0 });
+
+        manifest.resolve(createManifest({ files: ['a.wav'] }));
+        await flushPromises();
+        expect(loadSample).not.toHaveBeenCalled();
+        expect(resource.getDiagnostics()).toMatchObject({ inFlightBanks: 0, resolvedBanks: 0 });
+    });
+
+    it('settles manifest consumers when clear aborts a loader that ignores its signal', async () => {
+        const manifest = createDeferred<SampleManifest>();
+        const loadSample = vi.fn().mockResolvedValue(createSample(1));
+        const resource = createDecodedBankResource({
+            maxDecodedBytes: 1024,
+            maxConcurrentSampleLoads: 1,
+            loadManifest: vi.fn(() => manifest.promise),
+            loadSample,
+        });
+
+        const staleLoad = resource.load(DEFAULT_INPUT);
+        await flushPromises();
+        resource.clear();
+
+        await expect(staleLoad).rejects.toMatchObject({ name: 'AbortError' });
+        expect(resource.getDiagnostics()).toMatchObject({ inFlightBanks: 0, resolvedBanks: 0 });
+
+        manifest.resolve(createManifest({ files: ['a.wav'] }));
+        await flushPromises();
+        expect(loadSample).not.toHaveBeenCalled();
+        expect(resource.getDiagnostics()).toMatchObject({ inFlightBanks: 0, resolvedBanks: 0 });
+    });
+
+    it('settles bank consumers while an invalidated sample loader finishes physically', async () => {
+        const sample = createDeferred<DecodedSample>();
+        const resource = createDecodedBankResource({
+            maxDecodedBytes: 1024,
+            maxConcurrentSampleLoads: 1,
+            loadManifest: vi.fn().mockResolvedValue(createManifest({ files: ['a.wav'] })),
+            loadSample: vi.fn(() => sample.promise),
+        });
+
+        const staleLoad = resource.load(DEFAULT_INPUT);
+        await flushPromises();
+        resource.invalidate(DEFAULT_INPUT);
+
+        await expect(staleLoad).rejects.toMatchObject({ name: 'AbortError' });
+        expect(resource.getDiagnostics()).toMatchObject({
+            activeSampleLoads: 1,
+            inFlightBanks: 0,
+            resolvedBanks: 0,
+        });
+
+        sample.resolve(createSample(1));
+        await flushPromises();
+        expect(resource.getDiagnostics()).toMatchObject({
+            activeSampleLoads: 0,
+            inFlightBanks: 0,
+            resolvedBanks: 0,
         });
     });
 

@@ -70,6 +70,7 @@ type CreateDecodedBankResourceInput = {
 
 type BankEntry = {
     baseKey: string;
+    consumerController: AbortController;
     controller: AbortController;
     consumers: Set<symbol>;
     decodedBytes: number;
@@ -98,6 +99,12 @@ const DEFAULT_MAX_CONCURRENT_SAMPLE_LOADS = 4;
 
 function createAbortError(): DOMException {
     return new DOMException('Levain bank load aborted', 'AbortError');
+}
+
+function throwIfAborted(signal: AbortSignal): void {
+    if (signal.aborted) {
+        throw createAbortError();
+    }
 }
 
 function normalizeError(error: unknown): Error {
@@ -151,8 +158,11 @@ export function createDecodedBankResource({
     const entries = new Map<string, BankEntry>();
     const currentBankKeys = new Map<string, string>();
     const manifestEntries = new Map<string, ManifestEntry>();
+    const baseEpochs = new Map<string, number>();
+    const pendingManifestConsumers = new Map<string, Set<AbortController>>();
     const sampleQueue: SampleTask[] = [];
     let sampleQueueHead = 0;
+    let clearEpoch = 0;
     let activeSampleLoads = 0;
     let decodedBytes = 0;
     let cacheHits = 0;
@@ -167,7 +177,12 @@ export function createDecodedBankResource({
     function createManifestEntry(manifestUrl: string): ManifestEntry {
         const controller = new AbortController();
         manifestLoads++;
-        const promise = loadManifest(manifestUrl, controller.signal);
+        let promise: Promise<SampleManifest>;
+        try {
+            promise = loadManifest(manifestUrl, controller.signal);
+        } catch (error) {
+            promise = Promise.reject(normalizeError(error));
+        }
         const entry: ManifestEntry = { controller, consumers: new Set(), promise };
         void promise.then(
             () => {
@@ -186,16 +201,21 @@ export function createDecodedBankResource({
         return entry;
     }
 
-    function consumeManifest(entry: ManifestEntry, manifestUrl: string, signal?: AbortSignal): Promise<SampleManifest> {
+    function consumeManifest(
+        entry: ManifestEntry,
+        manifestUrl: string,
+        consumerSignals: readonly AbortSignal[]
+    ): Promise<SampleManifest> {
         const token = Symbol('Levain manifest consumer');
         entry.consumers.add(token);
         return new Promise((resolve, reject) => {
             let settled = false;
 
             function release(): void {
-                if (signal) {
+                for (const signal of consumerSignals) {
                     signal.removeEventListener('abort', onAbort);
                 }
+                entry.controller.signal.removeEventListener('abort', onAbort);
                 entry.consumers.delete(token);
                 if (entry.consumers.size === 0 && manifestEntries.get(manifestUrl) === entry) {
                     manifestEntries.delete(manifestUrl);
@@ -212,11 +232,12 @@ export function createDecodedBankResource({
                 reject(createAbortError());
             }
 
-            if (signal) {
+            for (const signal of consumerSignals) {
                 signal.addEventListener('abort', onAbort, { once: true });
-                if (signal.aborted) {
-                    onAbort();
-                }
+            }
+            entry.controller.signal.addEventListener('abort', onAbort, { once: true });
+            if (consumerSignals.some((signal) => signal.aborted) || entry.controller.signal.aborted) {
+                onAbort();
             }
             void entry.promise.then(
                 (manifest) => {
@@ -239,13 +260,17 @@ export function createDecodedBankResource({
         });
     }
 
-    async function loadValidatedManifest(input: LoadDecodedBankInput): Promise<SampleManifest> {
+    async function loadValidatedManifest(
+        input: LoadDecodedBankInput,
+        resourceSignal: AbortSignal
+    ): Promise<SampleManifest> {
         let entry = manifestEntries.get(input.manifestUrl);
         if (!entry) {
             entry = createManifestEntry(input.manifestUrl);
             manifestEntries.set(input.manifestUrl, entry);
         }
-        const manifest = await consumeManifest(entry, input.manifestUrl, input.signal);
+        const consumerSignals = input.signal ? [input.signal, resourceSignal] : [resourceSignal];
+        const manifest = await consumeManifest(entry, input.manifestUrl, consumerSignals);
         if (manifest.instrumentId !== input.expectedInstrumentId) {
             throw new TypeError(
                 `Levain manifest instrument ${manifest.instrumentId} does not match requested ${input.expectedInstrumentId}`
@@ -265,6 +290,25 @@ export function createDecodedBankResource({
         } catch (error) {
             entry.listeners.delete(token);
             logger.warn('Levain decoded-bank progress listener failed:', error);
+        }
+    }
+
+    function registerPendingManifestConsumer(baseKey: string): AbortController {
+        const controller = new AbortController();
+        const consumers = pendingManifestConsumers.get(baseKey) ?? new Set<AbortController>();
+        consumers.add(controller);
+        pendingManifestConsumers.set(baseKey, consumers);
+        return controller;
+    }
+
+    function releasePendingManifestConsumer(baseKey: string, controller: AbortController): void {
+        const consumers = pendingManifestConsumers.get(baseKey);
+        if (!consumers) {
+            return;
+        }
+        consumers.delete(controller);
+        if (consumers.size === 0) {
+            pendingManifestConsumers.delete(baseKey);
         }
     }
 
@@ -293,8 +337,16 @@ export function createDecodedBankResource({
 
             activeSampleLoads++;
             sampleLoads++;
-            void task
-                .run()
+            let samplePromise: Promise<DecodedSample>;
+            try {
+                samplePromise = task.run();
+            } catch (error) {
+                activeSampleLoads--;
+                sampleLoadFailures++;
+                task.reject(error);
+                continue;
+            }
+            void samplePromise
                 .then(task.resolve, (error: unknown) => {
                     sampleLoadFailures++;
                     task.reject(error);
@@ -327,10 +379,12 @@ export function createDecodedBankResource({
         entry,
         key,
         recordEviction = false,
+        notifyConsumers = true,
     }: {
         entry: BankEntry;
         key: string;
         recordEviction?: boolean;
+        notifyConsumers?: boolean;
     }): void {
         if (entries.get(key) === entry) {
             entries.delete(key);
@@ -340,6 +394,9 @@ export function createDecodedBankResource({
         }
         if (entry.state === 'loading') {
             entry.controller.abort();
+            if (notifyConsumers) {
+                entry.consumerController.abort();
+            }
         } else if (recordEviction) {
             evictions++;
         }
@@ -427,19 +484,31 @@ export function createDecodedBankResource({
             notifyProgress(entry, 1);
         } else {
             let completed = 0;
-            await Promise.all(
-                files.map(async (file) => {
-                    const url = `${input.basePath}/${encodePath(file)}`;
-                    const sample = await scheduleSampleLoad({ signal: controller.signal, url });
+            let nextFileIndex = 0;
+
+            async function decodeNextFile(): Promise<void> {
+                while (nextFileIndex < files.length) {
                     if (controller.signal.aborted) {
                         throw createAbortError();
                     }
+                    const file = files[nextFileIndex];
+                    nextFileIndex++;
+                    if (!file) {
+                        return;
+                    }
+                    const url = `${input.basePath}/${encodePath(file)}`;
+                    const sample = await scheduleSampleLoad({ signal: controller.signal, url });
+                    throwIfAborted(controller.signal);
                     reserveDecodedSample(entry, sample);
                     samples.set(file, sample);
                     completed++;
                     notifyProgress(entry, completed / files.length);
-                })
-            ).catch((error: unknown) => {
+                }
+            }
+
+            const workerCount = Math.min(files.length, maxConcurrentSampleLoads);
+            const workers = Array.from({ length: workerCount }, () => decodeNextFile());
+            await Promise.all(workers).catch((error: unknown) => {
                 controller.abort();
                 throw error;
             });
@@ -466,6 +535,7 @@ export function createDecodedBankResource({
         const controller = new AbortController();
         const entry: BankEntry = {
             baseKey,
+            consumerController: new AbortController(),
             controller,
             consumers: new Set(),
             decodedBytes: 0,
@@ -487,7 +557,7 @@ export function createDecodedBankResource({
                 if (!(error instanceof DOMException && error.name === 'AbortError')) {
                     failedBanks++;
                 }
-                removeEntry({ entry, key });
+                removeEntry({ entry, key, notifyConsumers: false });
                 throw error;
             }
         );
@@ -511,6 +581,7 @@ export function createDecodedBankResource({
                 if (signal) {
                     signal.removeEventListener('abort', onAbort);
                 }
+                entry.consumerController.signal.removeEventListener('abort', onAbort);
                 entry.listeners.delete(token);
                 entry.consumers.delete(token);
                 if (entry.state === 'loading' && entry.consumers.size === 0 && entries.get(key) === entry) {
@@ -529,9 +600,10 @@ export function createDecodedBankResource({
 
             if (signal) {
                 signal.addEventListener('abort', onAbort, { once: true });
-                if (signal.aborted) {
-                    onAbort();
-                }
+            }
+            entry.consumerController.signal.addEventListener('abort', onAbort, { once: true });
+            if (signal?.aborted || entry.consumerController.signal.aborted) {
+                onAbort();
             }
             if (!signal?.aborted && listener) {
                 entry.listeners.set(token, listener);
@@ -565,8 +637,20 @@ export function createDecodedBankResource({
             }
 
             const baseKey = createCacheBaseKey(input);
-            const manifest = await loadValidatedManifest(input);
-            if (input.signal?.aborted) {
+            const expectedBaseEpoch = baseEpochs.get(baseKey) ?? 0;
+            const expectedClearEpoch = clearEpoch;
+            const manifestConsumer = registerPendingManifestConsumer(baseKey);
+            let manifest: SampleManifest;
+            try {
+                manifest = await loadValidatedManifest(input, manifestConsumer.signal);
+            } finally {
+                releasePendingManifestConsumer(baseKey, manifestConsumer);
+            }
+            if (
+                input.signal?.aborted ||
+                clearEpoch !== expectedClearEpoch ||
+                (baseEpochs.get(baseKey) ?? 0) !== expectedBaseEpoch
+            ) {
                 throw createAbortError();
             }
 
@@ -595,6 +679,11 @@ export function createDecodedBankResource({
         },
         invalidate(input): void {
             const baseKey = createCacheBaseKey(input);
+            baseEpochs.set(baseKey, (baseEpochs.get(baseKey) ?? 0) + 1);
+            for (const controller of pendingManifestConsumers.get(baseKey) ?? []) {
+                controller.abort();
+            }
+            pendingManifestConsumers.delete(baseKey);
             const key = currentBankKeys.get(baseKey);
             if (!key) {
                 return;
@@ -607,6 +696,12 @@ export function createDecodedBankResource({
             removeEntry({ entry, key });
         },
         clear(): void {
+            clearEpoch++;
+            for (const consumers of pendingManifestConsumers.values()) {
+                for (const controller of consumers) {
+                    controller.abort();
+                }
+            }
             for (const [key, entry] of entries) {
                 removeEntry({ entry, key });
             }
@@ -616,6 +711,8 @@ export function createDecodedBankResource({
             entries.clear();
             currentBankKeys.clear();
             manifestEntries.clear();
+            baseEpochs.clear();
+            pendingManifestConsumers.clear();
         },
         getDiagnostics(): DecodedBankResourceDiagnostics {
             let resolvedBanks = 0;
