@@ -1,0 +1,35 @@
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadScheduler.spec.ts
+  s_ac9b259eab20ba::t_5d2ca5078dedfb 592-595,600,609
+  s_ac9b259eab20ba::t_68d208a2c938b5 157,163,645,653-654
+  s_ac9b259eab20ba::t_eb2440b9513f4c 640-644,646-652,655-661
+  s_ac9b259eab20ba::t_c43d46ce7cde5f 249-253
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_ac9b259eab20ba::t_1e394caa9ac61a 116,412-414,417,419-420,426-437
+  s_ac9b259eab20ba::t_f811d781ad4ba7 44,67-70,421-425,438
+src/modules/Transport/useCases/playheadScheduler/__tests__/schedulerTimingDiagnostics.spec.ts
+  s_ac9b259eab20ba::t_45f1fc8397a0b1 11,31-32,51
+src/modules/Transport/useCases/playheadScheduler/schedulerTimingDiagnostics.ts
+  s_ac9b259eab20ba::t_1e394caa9ac61a 80,83-84,86-87,89,91-93
+src/modules/Transport/workers/schedulerWorker.ts
+  s_ac9b259eab20ba::t_f811d781ad4ba7 10,14,31-35,46,60,71,84
+src/modules/Transport/workers/__tests__/schedulerWorker.spec.ts
+  s_ac9b259eab20ba::t_2ac8ae7da88e3b 10,49,55,69,90,94,106,108-110,118,121,131
+src/modules/Transport/useCases/__tests__/getSchedulerTimingDiagnostics.spec.ts
+  s_ac9b259eab20ba::t_45f1fc8397a0b1 12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.19",
+  "base_commit_sha": "0dce1f4815889685aba6855ed25e22dbddc7c7f5",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
