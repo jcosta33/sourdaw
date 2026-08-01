@@ -84,9 +84,11 @@ describe('buildProjectData', () => {
         expect(built?.missingBufferCount).toBe(0);
     });
 
-    // Presence pin for the assertion above (ADR 0015 rule 4): the default shape
-    // — the explicit `.sourdaw` export — really does reach the exporter and
-    // really does embed what it returns.
+    // Presence pin for the assertion above (ADR 0015 rule 4): the opt-in shape
+    // — the explicit `.sourdaw` export, now the only caller that asks for it —
+    // really does reach the exporter and really does embed what it returns.
+    // Without this, "no live path embeds audio" would be satisfiable by an
+    // exporter that never runs at all.
     it('embeds the exporter output when audio embedding is on', async () => {
         arrangementStoreMock.value = sanitize_arrangement_store_state({
             arrangements: [],
@@ -96,7 +98,7 @@ describe('buildProjectData', () => {
             'buffer-1': { sampleRate: 48_000, numberOfChannels: 1, channelData: ['QUJD'] },
         });
 
-        const built = await buildProjectData();
+        const built = await buildProjectData({ includeAudioBuffers: true });
 
         expect(exportCachedAudioBuffersMock).toHaveBeenCalledWith({ bufferIds: [] });
         expect(built?.data.audioBuffers).toEqual({
