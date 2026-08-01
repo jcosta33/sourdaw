@@ -1,0 +1,39 @@
+.agents/decisions/0008-recent-projects-load-backend.md
+  s_66d4924c65dcd2::t_9c7e5b0be6aaaa 14-22
+  s_66d4924c65dcd2::t_a0ab2651bb3e88 5
+.agents/decisions/0014-project-persistence-architecture.md
+  s_66d4924c65dcd2::t_9697f441b0f0a7 1-118
+.agents/specs/project-durability/spec.md
+  s_66d4924c65dcd2::t_8038d949d7ac9f 1-133
+.agents/decisions/README.md
+  s_66d4924c65dcd2::t_c903770d3a1775 29-30
+  s_66d4924c65dcd2::t_3e1e25341a1c42 28
+.agents/decisions/0013-retire-the-flat-json-project-snapshot.md
+  s_66d4924c65dcd2::t_1548b545462b5f 1-115
+.agents/decisions/0012-neither-target-degrades-the-other.md
+  s_ac9b259eab20ba::t_39decd8bdddddb 1-99
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.19",
+  "base_commit_sha": "ed6253854aaec8405d6482fd89dfab5babf30cd2",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
