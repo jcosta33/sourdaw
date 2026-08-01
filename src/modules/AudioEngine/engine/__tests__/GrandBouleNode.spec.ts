@@ -79,9 +79,9 @@ type PostMessageSpy = ReturnType<typeof vi.fn<(message: unknown, transfer?: read
 /** The `init` payload out of a `postMessage` spy's recorded calls, if it sent one. */
 type PostedInit = {
     type: 'init';
-    sab?: unknown;
-    dropoutSab?: unknown;
-    syncSab?: unknown;
+    sab?: SharedArrayBuffer;
+    dropoutSab?: SharedArrayBuffer;
+    syncSab?: SharedArrayBuffer;
     contextFrame?: number;
     countPreRollStarvation?: boolean;
 };
@@ -104,7 +104,12 @@ describe('createGrandBouleNode', () => {
     let nodeConnect: ReturnType<typeof vi.fn>;
     let nodeDisconnect: ReturnType<typeof vi.fn>;
     let resume: ReturnType<typeof vi.fn>;
-    let lastWorker: { onmessage: ((e: MessageEvent) => void) | null } | undefined;
+    let lastWorker:
+        | {
+              onmessage: ((e: MessageEvent) => void) | null;
+              onerror: ((e: ErrorEvent) => void) | null;
+          }
+        | undefined;
     let lastNodePort: { onmessage: ((e: MessageEvent) => void) | null } | undefined;
     let lastWorkletNode: object | undefined;
     let lastProcessorName: string | undefined;
@@ -135,6 +140,7 @@ describe('createGrandBouleNode', () => {
             const instance = {
                 postMessage: workerPostMessage,
                 onmessage: null as ((e: MessageEvent) => void) | null,
+                onerror: null as ((e: ErrorEvent) => void) | null,
                 terminate: workerTerminate,
             };
             lastWorker = instance;
@@ -237,14 +243,18 @@ describe('createGrandBouleNode', () => {
         // thing that tells the engine worker where the context clock stands.
         const workletInit = findInitMessage(nodePostMessage);
         const workerInit = findInitMessage(workerPostMessage);
+        if (!workerInit?.syncSab) {
+            throw new Error('worker init did not receive its consumer-offset slot');
+        }
         expect(workletInit).toEqual({
             type: 'init',
-            sab: workerInit?.sab,
+            sab: workerInit.sab,
             dropoutSab: dropoutCounters.getSab(),
-            syncSab: workerInit?.syncSab,
+            syncSab: workerInit.syncSab,
             contextFrame: undefined,
             countPreRollStarvation: false,
         });
+        expect(Atomics.load(new Int32Array(workerInit.syncSab), 0)).toBe(-1);
     });
 
     it('does not report ready until the worklet confirms it holds the ring', async () => {
@@ -271,11 +281,13 @@ describe('createGrandBouleNode', () => {
 
     it('rejects ready when either side reports an init error', async () => {
         const workerFailed = createGrandBouleNode(ctx).then((node) => {
-            lastWorker?.onmessage?.({ data: { type: 'error', message: 'wasm compile failed' } } as MessageEvent);
+            lastWorker?.onerror?.({ message: 'wasm compile failed' } as ErrorEvent);
             lastNodePort?.onmessage?.({ data: { type: 'ready' } } as MessageEvent);
             return node.ready;
         });
         await expect(workerFailed).rejects.toThrow('wasm compile failed');
+        expect(nodePostMessage).toHaveBeenCalledWith({ type: 'engineError' });
+        expect(workerTerminate).toHaveBeenCalledOnce();
 
         const workletFailed = createGrandBouleNode(ctx).then((node) => {
             lastWorker?.onmessage?.({ data: { type: 'ready' } } as MessageEvent);
@@ -286,6 +298,20 @@ describe('createGrandBouleNode', () => {
         // warns the export and drops it. Resolving `ready` on a half-built device
         // is what put an unannounced silent track in the file.
         await expect(workletFailed).rejects.toThrow('ring map failed');
+    });
+
+    it('stops the live consumer after a post-ready engine Worker crash', async () => {
+        const node = await createGrandBouleNode(ctx);
+        lastWorker?.onmessage?.({ data: { type: 'ready' } } as MessageEvent);
+        lastNodePort?.onmessage?.({ data: { type: 'ready' } } as MessageEvent);
+        await node.ready;
+        nodePostMessage.mockClear();
+        workerTerminate.mockClear();
+
+        lastWorker?.onerror?.({ message: 'render failed' } as ErrorEvent);
+
+        expect(nodePostMessage).toHaveBeenCalledWith({ type: 'engineError' });
+        expect(workerTerminate).toHaveBeenCalledOnce();
     });
 
     it('builds the inline engine worklet offline and the worker ring live', async () => {

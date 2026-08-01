@@ -1,8 +1,9 @@
 /**
  * Shared control-plane layout for Grand Boule's live Worker-to-Worklet ring.
  *
- * Keep this module data-only: both isolated hosts import it, and a numeric drift
- * between producer and consumer would reinterpret audio samples as atomics.
+ * This is a data-only transport model. Both isolated hosts consume it, and a
+ * numeric drift between producer and consumer would reinterpret audio samples
+ * as atomics.
  */
 export const GRAND_BOULE_CONTROL_INT_COUNT = 7;
 export const GRAND_BOULE_CONTROL_HEADER_BYTES = GRAND_BOULE_CONTROL_INT_COUNT * Int32Array.BYTES_PER_ELEMENT;
@@ -17,3 +18,6 @@ export const GRAND_BOULE_FLUSH_HEAD_IDX = 6;
 
 export const GRAND_BOULE_LIFECYCLE_CONTINUE = 0;
 export const GRAND_BOULE_LIFECYCLE_SLEEP = 3;
+
+export const GRAND_BOULE_CONSUMER_OFFSET_IDX = 0;
+export const GRAND_BOULE_CONSUMER_OFFSET_UNSET = -1;

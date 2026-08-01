@@ -31,13 +31,15 @@
 import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 import { createReadyHandshake, ensureWorkletRegistered } from '#/infra/audioWorklet/workletInitShared';
 
-import grandBouleProcessorUrl from '../services/grandBouleProcessor.ts?worker&url';
-import grandBouleOfflineProcessorUrl from '../worklets/grandBouleOfflineProcessor.ts?worker&url';
 import {
+    GRAND_BOULE_CONSUMER_OFFSET_IDX,
+    GRAND_BOULE_CONSUMER_OFFSET_UNSET,
     GRAND_BOULE_CONTROL_HEADER_BYTES,
     GRAND_BOULE_CONTROL_INT_COUNT,
     GRAND_BOULE_SLEEP_HEAD_IDX,
-} from '../worklets/grandBouleRingProtocol';
+} from '../models/GrandBouleRingProtocol';
+import grandBouleProcessorUrl from '../services/grandBouleProcessor.ts?worker&url';
+import grandBouleOfflineProcessorUrl from '../worklets/grandBouleOfflineProcessor.ts?worker&url';
 
 import { dropoutCounters } from './dropoutCounter';
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
@@ -158,6 +160,7 @@ function createWorkerRingTransport({ ctx, wasmBytes }: CreateGrandBouleTransport
     // worklet will actually deliver at that context frame. Separate from the
     // ring SAB so the ring layout stays exactly as the SPSC proofs describe it.
     const syncSab = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT);
+    Atomics.store(new Int32Array(syncSab), GRAND_BOULE_CONSUMER_OFFSET_IDX, GRAND_BOULE_CONSUMER_OFFSET_UNSET);
 
     // Create the engine Worker.
     const engineWorker = new Worker(new URL('../workers/grandBouleEngineWorker.ts', import.meta.url), {
@@ -178,6 +181,16 @@ function createWorkerRingTransport({ ctx, wasmBytes }: CreateGrandBouleTransport
 
     engineWorker.onmessage = (event: MessageEvent) => {
         workerHandshake.onMessage(event);
+    };
+    engineWorker.onerror = (event: ErrorEvent) => {
+        workerHandshake.onMessage({
+            data: { type: 'error', message: event.message || 'Grand Boule engine worker failed' },
+        } as MessageEvent);
+        // An uncaught Worker error is fatal: no producer remains to refill the
+        // ring. Stop the consumer as well so a post-ready crash cannot leave a
+        // permanently scheduled worklet draining silence.
+        node.port.postMessage({ type: 'engineError' });
+        engineWorker.terminate();
     };
     node.port.onmessage = (event: MessageEvent) => {
         workletHandshake.onMessage(event);

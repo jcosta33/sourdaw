@@ -141,9 +141,11 @@ describe('producer release ↔ consumer acquire round-trip', () => {
         const out0a = new Float32Array(BLOCK);
         const out1a = new Float32Array(BLOCK);
         const r1 = readBlockAcquire(controlInts, leftRing, rightRing, ringFrames, out0a, out1a, BLOCK);
+        Atomics.store(controlInts, 1, BLOCK);
         const out0b = new Float32Array(BLOCK);
         const out1b = new Float32Array(BLOCK);
         const r2 = readBlockAcquire(controlInts, leftRing, rightRing, ringFrames, out0b, out1b, BLOCK);
+        Atomics.store(controlInts, 1, BLOCK * 2);
 
         expect(r1).toBe(true);
         expect(r2).toBe(true);

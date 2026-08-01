@@ -41,11 +41,13 @@ const RIGHT_PTR = MEM_FRAMES * Float32Array.BYTES_PER_ELEMENT; // byte offset 51
 
 let processCalls = 0;
 let noteOnCalls = 0;
+let noteOnAtProcessCall = -1;
 let lifecycleState = 3;
 let sleepAfterProcessCalls: number | null = null;
 class GrandBouleInstanceMock {
     note_on_with_channel(): void {
         noteOnCalls++;
+        noteOnAtProcessCall = processCalls;
         lifecycleState = 0;
     }
     process(): number {
@@ -82,8 +84,15 @@ function makeSab(ringFrames: number): SharedArrayBuffer {
     return new SharedArrayBuffer(HEADER + ringFrames * 2 * Float32Array.BYTES_PER_ELEMENT);
 }
 
-function sendInit(sab: SharedArrayBuffer, sampleRate = 48_000): void {
-    onmessage({ data: { type: 'init', wasmBytes: MINIMAL_WASM, sab, sampleRate } } as MessageEvent);
+function sendInit(
+    sab: SharedArrayBuffer,
+    sampleRate = 48_000,
+    syncSab?: SharedArrayBuffer,
+    contextFrame?: number
+): void {
+    onmessage({
+        data: { type: 'init', wasmBytes: MINIMAL_WASM, sab, sampleRate, syncSab, contextFrame },
+    } as MessageEvent);
 }
 
 function sendStop(): void {
@@ -100,6 +109,7 @@ describe('grandBouleEngineWorker renderLoop', () => {
     it('leaves a cold sleeping DSP idle until a note wakes it', async () => {
         processCalls = 0;
         noteOnCalls = 0;
+        noteOnAtProcessCall = -1;
         lifecycleState = 3;
         sleepAfterProcessCalls = null;
         const sab = makeSab(128 * 8);
@@ -126,6 +136,25 @@ describe('grandBouleEngineWorker renderLoop', () => {
 
         expect(noteOnCalls).toBe(1);
         expect(processCalls).toBeGreaterThanOrEqual(4);
+    });
+
+    it('preserves a consumer offset published before Worker init for the first scheduled note', async () => {
+        processCalls = 0;
+        noteOnCalls = 0;
+        noteOnAtProcessCall = -1;
+        lifecycleState = 3;
+        sleepAfterProcessCalls = null;
+        const sab = makeSab(128 * 8);
+        const syncSab = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT);
+        Atomics.store(new Int32Array(syncSab), 0, 512);
+
+        sendInit(sab, 48_000, syncSab, 0);
+        onmessage({ data: { type: 'noteOn', midiNote: 60, velocity: 1, sampleFrame: 640 } } as MessageEvent);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+
+        // 640 is the exclusive end of the first block under offset 512, so it
+        // belongs to the second block and voices after exactly one process call.
+        expect({ noteOnCalls, noteOnAtProcessCall }).toEqual({ noteOnCalls: 1, noteOnAtProcessCall: 1 });
     });
 
     it('renders blocks up to TARGET_AHEAD headroom, then waits for consumer demand', async () => {

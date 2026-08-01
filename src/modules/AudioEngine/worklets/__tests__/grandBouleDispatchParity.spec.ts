@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest';
 
+import { GRAND_BOULE_CONTROL_HEADER_BYTES } from '../../models/GrandBouleRingProtocol';
 import { type GrandBouleDispatchMsg } from '../../worklets/grandBouleEngineCore';
 
 /**
@@ -100,6 +101,9 @@ class GrandBouleInstanceMock {
     }
     get_right_ptr(): number {
         return wasmStub.RIGHT_PTR;
+    }
+    lifecycle_state(): number {
+        return 0;
     }
 }
 
@@ -213,7 +217,7 @@ describe('the worker and the offline processor dispatch identically', () => {
         // --- Host A: the engine Worker, ring mapped, anchored at context frame 0.
         await import('../../workers/grandBouleEngineWorker');
         const ringSab = new SharedArrayBuffer(
-            2 * Int32Array.BYTES_PER_ELEMENT + BLOCK_FRAMES * 32 * 2 * Float32Array.BYTES_PER_ELEMENT
+            GRAND_BOULE_CONTROL_HEADER_BYTES + BLOCK_FRAMES * 32 * 2 * Float32Array.BYTES_PER_ELEMENT
         );
         workerSelf.onmessage?.({
             data: {

@@ -52,15 +52,9 @@
  *   ← { type: 'stop' }
  */
 
-import { type GrandBouleInstance } from '../wasm/daw_dsp.js';
 import {
-    createGrandBouleBlockViews,
-    createGrandBouleInstance,
-    createGrandBouleNoteQueue,
-    receiveGrandBouleMessage,
-    type GrandBouleDispatchMsg,
-} from '../worklets/grandBouleEngineCore';
-import {
+    GRAND_BOULE_CONSUMER_OFFSET_IDX,
+    GRAND_BOULE_CONSUMER_OFFSET_UNSET,
     GRAND_BOULE_CONTROL_HEADER_BYTES,
     GRAND_BOULE_CONTROL_INT_COUNT,
     GRAND_BOULE_FLUSH_GENERATION_IDX,
@@ -72,7 +66,15 @@ import {
     GRAND_BOULE_RENDER_REQUEST_IDX,
     GRAND_BOULE_SLEEP_HEAD_IDX,
     GRAND_BOULE_WRITE_HEAD_IDX,
-} from '../worklets/grandBouleRingProtocol';
+} from '../models/GrandBouleRingProtocol';
+import { type GrandBouleInstance } from '../wasm/daw_dsp.js';
+import {
+    createGrandBouleBlockViews,
+    createGrandBouleInstance,
+    createGrandBouleNoteQueue,
+    receiveGrandBouleMessage,
+    type GrandBouleDispatchMsg,
+} from '../worklets/grandBouleEngineCore';
 
 /** Render block size — matches AudioWorklet quantum. */
 const BLOCK_SIZE = 128;
@@ -120,8 +122,6 @@ let ringFrames = 0;
  * one is never negative: `readHead` only advances on a quantum in which
  * `currentFrame` also advanced, so the consumer can never be behind itself.
  */
-const CONSUMER_OFFSET_IDX = 0;
-const CONSUMER_OFFSET_UNSET = -1;
 let syncInts: Int32Array | null = null;
 
 /**
@@ -216,7 +216,6 @@ function initEngine({ wasmBytes, sab, workerSampleRate, syncSab, contextFrame }:
     // republished on the consumer's next quantum regardless.
     if (syncSab) {
         syncInts = new Int32Array(syncSab);
-        Atomics.store(syncInts, CONSUMER_OFFSET_IDX, CONSUMER_OFFSET_UNSET);
     } else {
         syncInts = null;
     }
@@ -303,8 +302,8 @@ function waitForRenderDemand(): void {
  */
 function consumerOffset(): number {
     if (syncInts) {
-        const published = Atomics.load(syncInts, CONSUMER_OFFSET_IDX);
-        if (published !== CONSUMER_OFFSET_UNSET) {
+        const published = Atomics.load(syncInts, GRAND_BOULE_CONSUMER_OFFSET_IDX);
+        if (published !== GRAND_BOULE_CONSUMER_OFFSET_UNSET) {
             return published;
         }
     }

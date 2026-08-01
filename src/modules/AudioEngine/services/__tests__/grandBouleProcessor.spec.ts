@@ -15,7 +15,7 @@ import { describe, it, expect, vi, beforeAll } from 'vitest';
 // captures the processor constructor so the real instance can be exercised.
 const registry = new Map<string, new () => GrandBouleProcessorLike>();
 (globalThis as unknown as { AudioWorkletProcessor: unknown }).AudioWorkletProcessor = class {
-    port = { onmessage: null as unknown, postMessage: vi.fn() };
+    port = { close: vi.fn(), onmessage: null as unknown, postMessage: vi.fn() };
 };
 (globalThis as unknown as { registerProcessor: unknown }).registerProcessor = (
     name: string,
@@ -23,9 +23,14 @@ const registry = new Map<string, new () => GrandBouleProcessorLike>();
 ) => {
     registry.set(name, proc);
 };
+(globalThis as unknown as { currentFrame: number }).currentFrame = 12_800;
 
 type GrandBouleProcessorLike = {
-    port: { onmessage: ((event: { data: unknown }) => void) | null; postMessage: ReturnType<typeof vi.fn> };
+    port: {
+        close: ReturnType<typeof vi.fn>;
+        onmessage: ((event: { data: unknown }) => void) | null;
+        postMessage: ReturnType<typeof vi.fn>;
+    };
     process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean;
 };
 
@@ -53,7 +58,7 @@ function makeSab(ringFrames: number): {
 }
 
 describe('readBlockAcquire (SPSC acquire read)', () => {
-    it('copies the published block into both output channels and advances the read head', () => {
+    it('copies the published block without releasing the read head owned by the processor', () => {
         const ringFrames = 16;
         const { controlInts, leftRing, rightRing } = makeSab(ringFrames);
 
@@ -70,7 +75,7 @@ describe('readBlockAcquire (SPSC acquire read)', () => {
         const consumed = readBlockAcquire(controlInts, leftRing, rightRing, ringFrames, out0, out1, frames);
 
         expect(consumed).toBe(true);
-        expect(Atomics.load(controlInts, READ_HEAD_IDX)).toBe(frames);
+        expect(Atomics.load(controlInts, READ_HEAD_IDX)).toBe(0);
         expect(Array.from(out0)).toEqual([1, 2, 3, 4]);
         expect(Array.from(out1)).toEqual([-1, -2, -3, -4]);
     });
@@ -115,7 +120,7 @@ describe('readBlockAcquire (SPSC acquire read)', () => {
         const consumed = readBlockAcquire(controlInts, leftRing, rightRing, ringFrames, out0, out1, 4);
 
         expect(consumed).toBe(true);
-        expect(Atomics.load(controlInts, READ_HEAD_IDX)).toBe(6);
+        expect(Atomics.load(controlInts, READ_HEAD_IDX)).toBe(2);
         expect(Array.from(out0)).toEqual([30, 40, 50, 60]);
         expect(Array.from(out1)).toEqual([-30, -40, -50, -60]);
     });
@@ -145,8 +150,8 @@ describe('GrandBouleProcessor (real instance)', () => {
         return new GrandBouleProcessor();
     }
 
-    function send(proc: GrandBouleProcessorLike, sab: SharedArrayBuffer): void {
-        proc.port.onmessage?.({ data: { type: 'init', sab } });
+    function send(proc: GrandBouleProcessorLike, sab: SharedArrayBuffer, syncSab?: SharedArrayBuffer): void {
+        proc.port.onmessage?.({ data: { type: 'init', sab, syncSab } });
     }
 
     it('init posts ready, parses the ring layout, and ignores a second init', () => {
@@ -165,6 +170,19 @@ describe('GrandBouleProcessor (real instance)', () => {
         const out = [new Float32Array(4).fill(9), new Float32Array(4).fill(9)];
         proc.process([], [out]);
         expect(Array.from(out[0]!)).toEqual([9, 9, 9, 9]);
+    });
+
+    it('terminates permanently when the engine Worker reports a fatal error', () => {
+        const proc = newProc();
+        const { sab } = makeSab(8);
+        send(proc, sab);
+
+        proc.port.onmessage?.({ data: { type: 'engineError' } });
+
+        expect({ keepAlive: proc.process([], []), closeCalls: proc.port.close.mock.calls.length }).toEqual({
+            keepAlive: false,
+            closeCalls: 1,
+        });
     });
 
     it('process guards: returns early when output absent, empty, or left channel absent', () => {
@@ -219,6 +237,65 @@ describe('GrandBouleProcessor (real instance)', () => {
 
         expect(Array.from(out[0]!)).toEqual([0, 0, 0, 0]);
         expect(Atomics.load(controlInts, 2)).toBe(0);
+    });
+
+    it('notifies a waiting worker while draining buffered tail up to the sleep boundary', () => {
+        const proc = newProc();
+        const { controlInts, leftRing, rightRing, sab } = makeSab(8);
+        leftRing.fill(1);
+        rightRing.fill(-1);
+        Atomics.store(controlInts, WRITE_HEAD_IDX, 8);
+        Atomics.store(controlInts, 3, 8);
+        Atomics.store(controlInts, 4, 3);
+        send(proc, sab);
+
+        proc.process([], [[new Float32Array(4), new Float32Array(4)]]);
+        const requestBeforeBoundary = Atomics.load(controlInts, 2);
+        proc.process([], [[new Float32Array(4), new Float32Array(4)]]);
+
+        expect({ requestBeforeBoundary, requestAtBoundary: Atomics.load(controlInts, 2) }).toEqual({
+            requestBeforeBoundary: 1,
+            requestAtBoundary: 1,
+        });
+    });
+
+    it('publishes the clock offset before releasing an advanced read head on consume and hard flush', () => {
+        const proc = newProc();
+        const { controlInts, leftRing, rightRing, sab } = makeSab(8);
+        const syncSab = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT);
+        leftRing.fill(1);
+        rightRing.fill(-1);
+        Atomics.store(controlInts, WRITE_HEAD_IDX, 8);
+        send(proc, sab, syncSab);
+
+        const originalStore = Atomics.store;
+        const publications: string[] = [];
+        const storeSpy = vi.spyOn(Atomics, 'store').mockImplementation((typedArray, index, value) => {
+            if (typedArray.buffer === syncSab && index === 0) {
+                publications.push('sync');
+            } else if (typedArray.buffer === sab && index === READ_HEAD_IDX) {
+                publications.push('read');
+            }
+            return originalStore(typedArray, index, value);
+        });
+
+        try {
+            proc.process([], [[new Float32Array(4), new Float32Array(4)]]);
+            const consumeOrder = publications.splice(0);
+
+            Atomics.store(controlInts, 6, 8);
+            Atomics.add(controlInts, 5, 1);
+            proc.process([], [[new Float32Array(4), new Float32Array(4)]]);
+            const flushOffset = Atomics.load(new Int32Array(syncSab), 0);
+
+            expect({ consumeOrder, flushOrder: publications, flushOffset }).toEqual({
+                consumeOrder: ['sync', 'read'],
+                flushOrder: ['sync', 'read'],
+                flushOffset: 12_796,
+            });
+        } finally {
+            storeSpy.mockRestore();
+        }
     });
 
     it('drops only through the hard-flush boundary and preserves audio rendered by a later wake', () => {

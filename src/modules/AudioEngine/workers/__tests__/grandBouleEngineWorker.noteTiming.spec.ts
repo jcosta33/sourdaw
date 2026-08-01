@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import {
+    GRAND_BOULE_CONSUMER_OFFSET_IDX,
+    GRAND_BOULE_CONSUMER_OFFSET_UNSET,
+    GRAND_BOULE_CONTROL_HEADER_BYTES,
+    GRAND_BOULE_CONTROL_INT_COUNT,
+} from '../../models/GrandBouleRingProtocol';
 import { installWorkletGlobals, makeChannels } from '../../services/__tests__/wasmViewGrowthHarness';
 
 /**
@@ -16,13 +22,14 @@ import { installWorkletGlobals, makeChannels } from '../../services/__tests__/wa
 
 const BLOCK_FRAMES = 128;
 const RING_FRAMES = BLOCK_FRAMES * 32;
-const RING_HEADER_BYTES = 2 * Int32Array.BYTES_PER_ELEMENT;
 const WRITE_HEAD_IDX = 0;
 /** Frames of headroom the worker keeps ahead of the consumer (TARGET_AHEAD). */
 const PRE_ROLL_FRAMES = BLOCK_FRAMES * 6;
 
-const ringSab = new SharedArrayBuffer(RING_HEADER_BYTES + RING_FRAMES * 2 * Float32Array.BYTES_PER_ELEMENT);
-const ringControlInts = new Int32Array(ringSab, 0, 2);
+const ringSab = new SharedArrayBuffer(
+    GRAND_BOULE_CONTROL_HEADER_BYTES + RING_FRAMES * 2 * Float32Array.BYTES_PER_ELEMENT
+);
+const ringControlInts = new Int32Array(ringSab, 0, GRAND_BOULE_CONTROL_INT_COUNT);
 const syncSab = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT);
 
 const wasmMemory = new WebAssembly.Memory({ initial: 1 });
@@ -53,6 +60,9 @@ class GrandBouleInstanceMock {
     }
     get_right_ptr(): number {
         return RIGHT_PTR;
+    }
+    lifecycle_state(): number {
+        return 0;
     }
 }
 
@@ -126,6 +136,7 @@ function runEngineTo(blocks: number): void {
 describe('Grand Boule engine worker note placement', () => {
     beforeEach(async () => {
         voiced.length = 0;
+        Atomics.store(new Int32Array(syncSab), GRAND_BOULE_CONSUMER_OFFSET_IDX, GRAND_BOULE_CONSUMER_OFFSET_UNSET);
         await import('../grandBouleEngineWorker');
         await import('../../services/grandBouleProcessor');
 

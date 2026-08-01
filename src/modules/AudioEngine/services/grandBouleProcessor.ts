@@ -16,6 +16,7 @@
  */
 
 import {
+    GRAND_BOULE_CONSUMER_OFFSET_IDX,
     GRAND_BOULE_CONTROL_HEADER_BYTES,
     GRAND_BOULE_CONTROL_INT_COUNT,
     GRAND_BOULE_FLUSH_GENERATION_IDX,
@@ -26,7 +27,7 @@ import {
     GRAND_BOULE_RENDER_REQUEST_IDX,
     GRAND_BOULE_SLEEP_HEAD_IDX,
     GRAND_BOULE_WRITE_HEAD_IDX,
-} from '../worklets/grandBouleRingProtocol';
+} from '../models/GrandBouleRingProtocol';
 
 /**
  * Slot in the one-Int32 sync SAB carrying `currentFrame - readHead` — how far
@@ -38,8 +39,6 @@ import {
  * ring underrun advances `currentFrame` while `readHead` stands still, so the
  * two clocks separate permanently at every dropout.
  */
-const CONSUMER_OFFSET_IDX = 0;
-
 /**
  * Int32 slot indices of the shared dropout SAB (audit RT-10) — mirrored by
  * literal from `engine/dropoutCounter.ts`, since worklet code stays isolated
@@ -49,13 +48,15 @@ const DROPOUT_BLOCKS_IDX = 0;
 const DROPOUT_SILENT_FRAMES_IDX = 1;
 const DROPOUT_LAST_FRAME_IDX = 2;
 
-type GrandBouleMsg = {
-    type: 'init';
-    sab: SharedArrayBuffer;
-    dropoutSab?: SharedArrayBuffer;
-    syncSab?: SharedArrayBuffer;
-    countPreRollStarvation?: boolean;
-};
+type GrandBouleMsg =
+    | {
+          type: 'init';
+          sab: SharedArrayBuffer;
+          dropoutSab?: SharedArrayBuffer;
+          syncSab?: SharedArrayBuffer;
+          countPreRollStarvation?: boolean;
+      }
+    | { type: 'engineError' };
 
 /**
  * Acquire-read one block of stereo frames from the SPSC ring into `out0`/`out1`.
@@ -66,8 +67,9 @@ type GrandBouleMsg = {
  * `subarray` reads below. When fewer than `frames` are published the ring is
  * left untouched (underrun) and `consumed` is 0 — no stale frames are copied.
  *
- * Publishes the advanced read head after copying and returns whether a complete
- * block was consumed. Hot-path safe: no allocation, no blocking.
+ * Returns whether a complete block was copied. The caller publishes the
+ * matching clock offset before releasing the advanced read head to the Worker.
+ * Hot-path safe: no allocation, no blocking.
  */
 export function readBlockAcquire(
     controlInts: Int32Array,
@@ -106,7 +108,6 @@ export function readBlockAcquire(
         }
     }
 
-    Atomics.store(controlInts, GRAND_BOULE_READ_HEAD_IDX, (readHead + frames) | 0);
     return true;
 }
 
@@ -116,6 +117,7 @@ class GrandBouleProcessor extends AudioWorkletProcessor {
     _rightRing: Float32Array | null = null;
     _ringFrames = 0;
     _ready = false;
+    _failed = false;
     /** Shared dropout counters (audit RT-10); null when the host supplied none. */
     _dropoutInts: Int32Array | null = null;
     /** Shared consumer-offset slot the engine worker schedules notes against. */
@@ -147,7 +149,10 @@ class GrandBouleProcessor extends AudioWorkletProcessor {
         super();
         this.port.onmessage = (event: MessageEvent<GrandBouleMsg>) => {
             const msg = event.data;
-            if (!this._ready) {
+            if (msg.type === 'engineError') {
+                this._failed = true;
+                this.port.close();
+            } else if (!this._ready) {
                 if (msg.dropoutSab) {
                     this._dropoutInts = new Int32Array(msg.dropoutSab);
                 }
@@ -184,12 +189,12 @@ class GrandBouleProcessor extends AudioWorkletProcessor {
      * see that or it schedules against a mapping that stopped being true. RT-safe
      * — one `Atomics` store on an already-mapped view, no allocation, no lock.
      */
-    _publishConsumerOffset(readHead: number): void {
+    _publishConsumerOffset(readHead: number, audibleContextFrame = currentFrame): void {
         const sync = this._syncInts;
         if (!sync) {
             return;
         }
-        Atomics.store(sync, CONSUMER_OFFSET_IDX, (currentFrame - readHead) | 0);
+        Atomics.store(sync, GRAND_BOULE_CONSUMER_OFFSET_IDX, (audibleContextFrame - readHead) | 0);
     }
 
     _initSab(sab: SharedArrayBuffer): void {
@@ -217,6 +222,9 @@ class GrandBouleProcessor extends AudioWorkletProcessor {
     }
 
     process(_inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
+        if (this._failed) {
+            return false;
+        }
         if (!this._ready || !this._controlInts || !this._leftRing || !this._rightRing) {
             return true;
         }
@@ -237,8 +245,10 @@ class GrandBouleProcessor extends AudioWorkletProcessor {
         if (flushGeneration !== this._flushGeneration) {
             this._flushGeneration = flushGeneration;
             const flushHead = Atomics.load(this._controlInts, GRAND_BOULE_FLUSH_HEAD_IDX);
+            // This quantum is forced to silence. The first preserved or newly
+            // rendered frame at `flushHead` can be audible only next quantum.
+            this._publishConsumerOffset(flushHead, currentFrame + frames);
             Atomics.store(this._controlInts, GRAND_BOULE_READ_HEAD_IDX, flushHead);
-            this._publishConsumerOffset(flushHead);
             out0.fill(0);
             out1?.fill(0);
             this._hasDelivered = false;
@@ -280,8 +290,13 @@ class GrandBouleProcessor extends AudioWorkletProcessor {
         }
         this._hasDelivered = true;
 
-        const lifecycleState = Atomics.load(this._controlInts, GRAND_BOULE_LIFECYCLE_IDX);
-        if (lifecycleState !== GRAND_BOULE_LIFECYCLE_SLEEP) {
+        const nextReadHead = (readHead + frames) | 0;
+        // Publish the context-to-engine clock mapping before release-publishing
+        // capacity. A Worker that sees the advanced read head must also see the
+        // offset for the block that freed it.
+        Atomics.store(this._controlInts, GRAND_BOULE_READ_HEAD_IDX, nextReadHead);
+        const sleepHead = Atomics.load(this._controlInts, GRAND_BOULE_SLEEP_HEAD_IDX);
+        if (nextReadHead !== sleepHead) {
             this._requestRender();
         }
 
