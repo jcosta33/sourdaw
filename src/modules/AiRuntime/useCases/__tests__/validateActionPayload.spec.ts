@@ -637,17 +637,40 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
     });
 
     describe('quantizeNotes', () => {
-        it('should require clipId string and gridSize number (the payload field, not `grid`)', () => {
+        it('should require an exact clipId and finite gridSize greater than zero and at most 64', () => {
             const guard = PAYLOAD_VALIDATORS.quantizeNotes;
             expect(guard).not.toBe('unchecked');
             if (guard === 'unchecked') {
                 return;
             }
-            // Payload type + fast path emit { clipId, gridSize }; the old validator
-            // checked `param.grid`, so every legitimate call was dropped.
+
             expect(guard({ clipId: 'clip-1', gridSize: 0.25 })).toBe(true);
+            expect(guard({ clipId: 'clip-1', gridSize: Number.MIN_VALUE })).toBe(true);
             expect(guard({ clipId: 'clip-1', grid: 0.25 })).toBe(false);
             expect(guard({ clipId: 'clip-1' })).toBe(false);
+            expect(guard({ clipId: '', gridSize: 0.25 })).toBe(false);
+            expect(guard({ clipId: 'clip-1', gridSize: 0 })).toBe(false);
+            expect(guard({ clipId: 'clip-1', gridSize: 65 })).toBe(false);
+            expect(guard({ clipId: 'clip-1', gridSize: Number.POSITIVE_INFINITY })).toBe(false);
+            expect(guard({ clipId: 'clip-1', gridSize: 0.25, strength: 0.5 })).toBe(false);
+        });
+    });
+
+    describe('transposeNotes', () => {
+        it('should require an exact non-zero integer semitone delta from -127 through 127', () => {
+            const guard = PAYLOAD_VALIDATORS.transposeNotes;
+            expect(guard).not.toBe('unchecked');
+            if (guard === 'unchecked') {
+                return;
+            }
+
+            expect(guard({ clipId: 'clip-1', semitones: -127 })).toBe(true);
+            expect(guard({ clipId: 'clip-1', semitones: 127 })).toBe(true);
+            expect(guard({ clipId: '', semitones: 7 })).toBe(false);
+            expect(guard({ clipId: 'clip-1', semitones: 0 })).toBe(false);
+            expect(guard({ clipId: 'clip-1', semitones: 1.5 })).toBe(false);
+            expect(guard({ clipId: 'clip-1', semitones: 128 })).toBe(false);
+            expect(guard({ clipId: 'clip-1', semitones: 7, notes: [] })).toBe(false);
         });
     });
 

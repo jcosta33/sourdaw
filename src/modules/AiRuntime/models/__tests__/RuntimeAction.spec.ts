@@ -37,6 +37,8 @@ describe('RuntimeAction', () => {
             { type: 'setAutomationMode', payload: { trackId: 'track-1', mode: 'touch' } },
             { type: 'addSidechainRoute', payload: { sourceTrackId: 'track-1', targetTrackId: 'track-2' } },
             { type: 'removeSidechainRoute', payload: { sourceTrackId: 'track-1', targetTrackId: 'track-2' } },
+            { type: 'quantizeNotes', payload: { clipId: 'clip-1', gridSize: 0.25 } },
+            { type: 'transposeNotes', payload: { clipId: 'clip-1', semitones: 7 } },
             { type: 'scaleAutomation', payload: { laneId: 'lane-1', factor: 1.5 } },
             { type: 'stretchAutomation', payload: { laneId: 'lane-1', factor: 2 } },
             { type: 'createVcaGroup', payload: { name: 'Band', trackIds: ['track-1'] } },
@@ -52,6 +54,8 @@ describe('RuntimeAction', () => {
             'setAutomationMode',
             'addSidechainRoute',
             'removeSidechainRoute',
+            'quantizeNotes',
+            'transposeNotes',
             'scaleAutomation',
             'stretchAutomation',
             'createVcaGroup',
@@ -66,6 +70,8 @@ describe('RuntimeAction', () => {
         expectTypeOf<PayloadHasKey<'addSidechainRoute', 'targetDeviceId'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'removeSidechainRoute', 'routeId'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'removeSidechainRoute', 'gain'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'quantizeNotes', 'strength'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'quantizeNotes', 'swing'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'scaleAutomation', 'anchor'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'stretchAutomation', 'anchorBeat'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'createVcaGroup', 'vcaGroupId'>>().toEqualTypeOf<false>();
