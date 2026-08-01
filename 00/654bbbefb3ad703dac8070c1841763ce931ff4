@@ -1,0 +1,81 @@
+src/modules/AudioEngine/services/bacteriaProcessor.ts
+  s_ac9b259eab20ba::t_7f5884404c73ba 10
+src/modules/AudioEngine/services/glutenProcessor.ts
+  s_ac9b259eab20ba::t_7f5884404c73ba 10
+src/modules/AudioEngine/workers/__tests__/grandBouleEngineWorker.noteTiming.spec.ts
+  s_ac9b259eab20ba::t_ac7fa541f8a900 136
+  s_ac9b259eab20ba::t_c560c8f89a734f 91
+src/modules/AudioEngine/worklets/__tests__/grandBouleDispatchParity.spec.ts
+  s_ac9b259eab20ba::t_c560c8f89a734f 31
+  s_ac9b259eab20ba::t_d4017762636fc8 122
+  s_ac9b259eab20ba::t_cef2bf515c8ec4 195,221,239,244
+src/modules/AudioEngine/worklets/__tests__/grandBouleOfflineRender.spec.ts
+  s_ac9b259eab20ba::t_ac7fa541f8a900 39,205-206
+src/modules/AudioEngine/services/scoringProcessor.ts
+  s_ac9b259eab20ba::t_7f5884404c73ba 16
+src/modules/AudioEngine/services/toasterProcessor.ts
+  s_ac9b259eab20ba::t_10c92f1aaebbd7 20
+src/modules/AudioEngine/services/__tests__/crumbsProcessor.spec.ts
+  s_ac9b259eab20ba::t_c560c8f89a734f 73
+src/modules/AudioEngine/worklets/__tests__/grandBouleOfflineNoteTiming.spec.ts
+  s_ac9b259eab20ba::t_cef2bf515c8ec4 113,144,153,202
+  s_ac9b259eab20ba::t_ac7fa541f8a900 35
+src/modules/AudioEngine/services/fermenterProcessor.ts
+  s_ac9b259eab20ba::t_7f5884404c73ba 22
+src/modules/AudioEngine/AGENTS.md
+  s_ac9b259eab20ba::t_fa8a321b1b9e57 11
+docs/architecture/07-wasm-dsp-pipeline.md
+  s_ac9b259eab20ba::t_6de1e537329c5e 39
+  s_ac9b259eab20ba::t_fa8a321b1b9e57 37,45
+src/modules/AudioEngine/services/grinderProcessor.ts
+  s_ac9b259eab20ba::t_7f5884404c73ba 10
+src/modules/AudioEngine/worklets/__tests__/grandBouleOfflineRenderBudget.spec.ts
+  s_ac9b259eab20ba::t_cef2bf515c8ec4 64,86,96-101,105,111
+src/modules/AudioEngine/worklets/__tests__/grandBouleFreezeAudio.spec.ts
+  s_ac9b259eab20ba::t_ac7fa541f8a900 40
+src/modules/AudioEngine/services/crumbsProcessor.ts
+  s_ac9b259eab20ba::t_7f5884404c73ba 33
+src/modules/AudioEngine/engine/__tests__/GrandBouleNode.spec.ts
+  s_ac9b259eab20ba::t_ccd0858e38fbed 346-347,352-353
+src/modules/AudioEngine/engine/GrandBouleNode.ts
+  s_ac9b259eab20ba::t_ccd0858e38fbed 236
+src/modules/AudioEngine/worklets/grandBouleOfflineProcessor.ts
+  s_ac9b259eab20ba::t_ccd0858e38fbed 37,76-77,80-89
+  s_ac9b259eab20ba::t_4a1826ef1a3aec 42
+  s_ac9b259eab20ba::t_7cced9c588bad3 74
+src/modules/AudioEngine/services/proofProcessor.ts
+  s_ac9b259eab20ba::t_7f5884404c73ba 12
+src/modules/AudioEngine/services/proofChamberProcessor.ts
+  s_ac9b259eab20ba::t_7f5884404c73ba 15
+src/infra/audioWorklet/workletInitShared.ts
+  s_ac9b259eab20ba::t_929c26df1dfcfa 54-56,83-85
+src/modules/AudioEngine/services/kneadProcessor.ts
+  s_ac9b259eab20ba::t_10c92f1aaebbd7 8
+src/modules/AudioEngine/services/__tests__/toasterProcessor.spec.ts
+  s_ac9b259eab20ba::t_e3e9a023b7cd0a 405,547
+src/modules/AudioEngine/services/__tests__/fermenterProcessor.spec.ts
+  s_ac9b259eab20ba::t_e3e9a023b7cd0a 186
+src/modules/AudioEngine/services/__tests__/levainProcessor.spec.ts
+  s_ac9b259eab20ba::t_e3e9a023b7cd0a 302
+src/helpers/__tests__/offlineWorkletRenderHarness.ts
+  s_ac9b259eab20ba::t_7f5884404c73ba 336
+  s_ac9b259eab20ba::t_8d93f4fa61b0b6 84,223,333-335,337-338
+src/modules/AudioEngine/services/levainProcessor.ts
+  s_ac9b259eab20ba::t_7f5884404c73ba 21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.19",
+  "base_commit_sha": "00654bbbefb3ad703dac8070c1841763ce931ff4",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
