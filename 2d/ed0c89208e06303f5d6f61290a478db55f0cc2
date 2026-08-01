@@ -14,6 +14,7 @@ src/modules/AudioEngine/services/proofChamberProcessor.ts
 src/modules/AudioEngine/services/__tests__/levainProcessor.spec.ts
   s_ac9b259eab20ba::t_0c1d860985066f 95,103
   s_ac9b259eab20ba::t_aded865467c45b 129,138-139,144-148,150,157,170,183,210,227,271,283,328,371
+  s_ac9b259eab20ba::t_95e24bc5f87c6c 197,337,353
 src/modules/AudioEngine/services/levainProcessor.ts
   s_ac9b259eab20ba::t_94cf73459eadbb 152-153
   s_ac9b259eab20ba::t_7675fdd3c3bd81 112,114
@@ -50,6 +51,7 @@ src/modules/AudioEngine/services/resolveProcessorWasmModule.ts
 src/modules/AudioEngine/engine/__tests__/GrandBouleNode.spec.ts
   s_ac9b259eab20ba::t_c19792730f990f 25,230-232,234
   s_ac9b259eab20ba::t_a8c683f71e71df 203-211
+  s_ac9b259eab20ba::t_f5023ec76260a5 110,127,147-151,153,336,346-347,351-353,359-360
 src/modules/AudioEngine/services/__tests__/levainProcessorWasmViews.spec.ts
   s_ac9b259eab20ba::t_b72901290575ca 93,111
   s_ac9b259eab20ba::t_0c1d860985066f 65,73
@@ -111,6 +113,7 @@ src/modules/AudioEngine/engine/__tests__/ProofChamberNode.spec.ts
   s_ac9b259eab20ba::t_0384e7fa0b032f 10
 src/modules/AudioEngine/engine/GrandBouleNode.ts
   s_ac9b259eab20ba::t_a39174d4484c70 32
+  s_ac9b259eab20ba::t_4add3f33ad28e5 105,112,188,191-198,222,229,281,287,289
 src/modules/AudioEngine/engine/__tests__/GrinderNode.spec.ts
   s_ac9b259eab20ba::t_0384e7fa0b032f 12
   s_ac9b259eab20ba::t_0f651f57a5a965 96-98,100
@@ -202,6 +205,20 @@ src/modules/AudioEngine/services/__tests__/proofProcessorWasmViews.spec.ts
 src/modules/AudioEngine/services/__tests__/glutenProcessor.spec.ts
   s_ac9b259eab20ba::t_0c1d860985066f 103,111
   s_ac9b259eab20ba::t_c0255492239f78 139-140,147,149-150,157,186,198,215,224,258,272,289,302,324,334,358,371,386,403
+src/modules/AudioEngine/workers/grandBouleEngineWorker.ts
+  s_ac9b259eab20ba::t_4add3f33ad28e5 38,175,182,218,312,349
+src/modules/AudioEngine/services/__tests__/crumbsProcessor.spec.ts
+  s_ac9b259eab20ba::t_a28a9cd220da79 73-75,83,103,125
+src/modules/AudioEngine/worklets/grandBouleEngineCore.ts
+  s_ac9b259eab20ba::t_4add3f33ad28e5 117-118,138,141
+src/modules/AudioEngine/worklets/grandBouleOfflineProcessor.ts
+  s_ac9b259eab20ba::t_4add3f33ad28e5 36,42,73,75,78,98-112,115-116
+src/modules/AudioEngine/engine/CrumbsNode.ts
+  s_ac9b259eab20ba::t_a28a9cd220da79 14,56,74,82,104
+src/modules/AudioEngine/services/crumbsProcessor.ts
+  s_ac9b259eab20ba::t_a28a9cd220da79 23,35,39,67,69,77-81,103-104
+src/modules/AudioEngine/engine/__tests__/CrumbsNode.spec.ts
+  s_ac9b259eab20ba::t_a28a9cd220da79 9,32,36,39-41,133-138
 ---
 {
   "schema_version": "authorship/3.0.0",
