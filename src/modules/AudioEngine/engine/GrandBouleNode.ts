@@ -1,21 +1,38 @@
 /**
- * GrandBouleNode — double-buffered AudioWorkletNode for the Grand Boule piano.
+ * GrandBouleNode — one control surface for the Grand Boule piano, over two
+ * transports.
  *
- * Architecture:
+ * **Live** (`createWorkerRingTransport`):
  *   Main thread  →  Web Worker (WASM engine)  →  SAB ring buffer  →  AudioWorklet (consumer)
  *
- * The WASM physical-modeling engine runs on a dedicated Web Worker that
- * renders ahead into a SharedArrayBuffer. The AudioWorklet process() just
- * copies from the ring buffer — microseconds of work, zero risk of
- * real-time underrun from DSP load.
+ * The WASM physical-modeling engine runs on a dedicated Web Worker that renders
+ * ahead into a SharedArrayBuffer. The AudioWorklet `process()` just copies from
+ * the ring — microseconds of work, and an overload starves this device's own
+ * ring instead of missing the graph's deadline and glitching every track.
  *
- * MIDI and control messages are routed to the Worker, not the worklet.
+ * **Offline** (`createInlineWorkletTransport`):
+ *   Main thread  →  AudioWorklet (WASM engine)
+ *
+ * An `OfflineAudioContext` has no system-level audio callback and therefore no
+ * load value and no underrun (Web Audio §2.6): a slow worklet makes the render
+ * slower, not worse. There is no deadline for the ring to protect, and its
+ * back-pressure and macrotask pacing are what collapse an export into 97–99 %
+ * silence (INVENTORY-device-clock-parity G-1) — the consumer cannot wait for the
+ * producer, because `Atomics.wait` is banned in `AudioWorkletGlobalScope`.
+ *
+ * The split is the shape every serious plugin API formalises: VST3
+ * `ProcessSetup::processMode`, CLAP `clap_plugin_render`. Both transports run the
+ * same engine and the same control surface — see `services/grandBouleEngineCore`,
+ * which both hosts import and neither may re-implement.
+ *
+ * Every method below is written once and posts through `transport.post`.
  */
 
 import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 import { createReadyHandshake, ensureWorkletRegistered } from '#/infra/audioWorklet/workletInitShared';
 
 import grandBouleProcessorUrl from '../services/grandBouleProcessor.ts?worker&url';
+import grandBouleOfflineProcessorUrl from '../worklets/grandBouleOfflineProcessor.ts?worker&url';
 
 import { dropoutCounters } from './dropoutCounter';
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
@@ -84,24 +101,39 @@ export function isGrandBouleDevice(deviceType: string): boolean {
     return deviceType === 'grand-boule';
 }
 
-export async function createGrandBouleNode(
-    ctx: BaseAudioContext,
-    wasmUrl?: string,
-    signal?: AbortSignal
-): Promise<GrandBouleNodeResult> {
-    // Fail fast before doing any AudioContext / worklet / WASM work when
-    // SharedArrayBuffer is unavailable. The typed error is caught in
-    // `buildDeviceChain` and mapped to a user-visible notification.
+/**
+ * How one Grand Boule node reaches its engine.
+ *
+ * The node factory below owns the whole control surface and knows nothing else
+ * about the engine's whereabouts: two implementations, one seam, so a guard or a
+ * range check added to a method is added once for both hosts.
+ */
+type GrandBouleTransport = {
+    /** The node in the audio graph, whichever side of the seam produces its samples. */
+    workletNode: AudioWorkletNode;
+    /** Deliver one control message to wherever the engine actually lives. */
+    post: (msg: Record<string, unknown>) => void;
+    /** Resolves once the engine can render; rejects if any side fails to come up. */
+    ready: Promise<Record<string, unknown>>;
+    /** Release the transport's own resources. Graph disconnection is the caller's. */
+    destroy: () => void;
+};
+
+type CreateGrandBouleTransportInput = {
+    ctx: BaseAudioContext;
+    wasmBytes: ArrayBuffer;
+};
+
+/**
+ * Live transport: engine in a Worker, samples through a SharedArrayBuffer ring,
+ * worklet as consumer. Behaviour is exactly as it has always been.
+ */
+function createWorkerRingTransport({ ctx, wasmBytes }: CreateGrandBouleTransportInput): GrandBouleTransport {
+    // Fail fast when SharedArrayBuffer is unavailable. The typed error is caught
+    // in `buildDeviceChain` and mapped to a user-visible notification. Only this
+    // transport needs it — the offline one has no shared memory at all, which is
+    // why the check moved out of the factory body and in here.
     requireSharedArrayBuffer('Grand Boule');
-
-    if (ctx instanceof AudioContext && ctx.state === 'suspended') {
-        await raceAbortSignal(ctx.resume(), signal);
-    }
-
-    await raceAbortSignal(ensureWorkletRegistered(ctx, grandBouleProcessorUrl), signal);
-    const wasmBytes = await raceAbortSignal(fetchGrandBouleWasm(wasmUrl ?? DEFAULT_WASM_URL), signal);
-
-    signal?.throwIfAborted();
 
     const node = new AudioWorkletNode(ctx, 'grand-boule-processor', {
         numberOfInputs: 0,
@@ -125,8 +157,6 @@ export async function createGrandBouleNode(
     const engineWorker = new Worker(new URL('../workers/grandBouleEngineWorker.ts', import.meta.url), {
         type: 'module',
     });
-
-    let bypassed = false;
 
     // Two sides have to come up, and both of them have to be waited for.
     //
@@ -158,35 +188,27 @@ export async function createGrandBouleNode(
     // The dropout counters travel with it so ring starvation is tallied instead
     // of silently producing silence (audit RT-10).
     //
-    // `countPreRollStarvation` is the difference between a render and a session.
-    // The worklet normally waits for the ring to deliver once before it counts a
-    // starved quantum, because live the quanta before the engine worker's first
-    // block are pre-roll nobody is listening to. A render has no pre-roll: frame
-    // 0 is content. Without this, the worst outcome — a ring that never delivers
-    // at all, so the export is silence end to end — is the one case the counter
-    // stays at zero for, because it is still waiting for the first delivery.
-    // Branching on the context type rather than on the presence of a DOM global,
-    // the same way `faustDeviceFactory` picks its scheduler.
-    const isOfflineRender = typeof OfflineAudioContext !== 'undefined' && ctx instanceof OfflineAudioContext;
+    // `countPreRollStarvation` is false here because this transport is now only
+    // ever built for a live context. It used to be set for an offline render, to
+    // make a ring that never delivered visible in the dropout tally; offline no
+    // longer has a ring, and the starvation it was counting is what the inline
+    // transport removes rather than reports.
     node.port.postMessage({
         type: 'init',
         sab,
         dropoutSab: dropoutCounters.getSab(),
         syncSab,
-        countPreRollStarvation: isOfflineRender,
+        countPreRollStarvation: false,
     });
 
     // Callers read the worker's payload; the worklet ack carries only its own
     // arrival. `Promise.all` subscribes to both, so whichever side fails first
     // rejects `ready` and the other's later rejection is still handled.
-    const readyPromise = Promise.all([workerHandshake.promise, workletHandshake.promise]).then(
-        ([workerData]) => workerData
-    );
+    const ready = Promise.all([workerHandshake.promise, workletHandshake.promise]).then(([workerData]) => workerData);
 
     // Send the preloaded WASM bytes + SAB to the engine worker. `contextFrame`
     // anchors the engine's frame 0 on the host clock for the window before the
-    // worklet has run a block — which is the entirety of an offline render's
-    // scheduling phase, where an `OfflineAudioContext` is still sitting at 0.
+    // worklet has run a block.
     const copy = wasmBytes.slice(0);
     engineWorker.postMessage(
         {
@@ -200,9 +222,93 @@ export async function createGrandBouleNode(
         [copy]
     );
 
-    /** Post a message to the engine worker (not the AudioWorklet). */
+    return {
+        workletNode: node,
+        post: (msg) => {
+            engineWorker.postMessage(msg);
+        },
+        ready,
+        destroy: () => {
+            node.port.close();
+            engineWorker.postMessage({ type: 'stop' });
+            engineWorker.terminate();
+        },
+    };
+}
+
+/**
+ * Offline transport: the engine runs inside the worklet, and there is nothing
+ * else. No Worker, no ring SAB, no sync plane, no dropout counters, and no
+ * `requireSharedArrayBuffer` — none of them has anything to protect in a context
+ * with no deadline, and each one is a way for an export to come out silent.
+ *
+ * One handshake, because there is one side to come up.
+ */
+function createInlineWorkletTransport({ ctx, wasmBytes }: CreateGrandBouleTransportInput): GrandBouleTransport {
+    const node = new AudioWorkletNode(ctx, 'grand-boule-offline-processor', {
+        numberOfInputs: 0,
+        numberOfOutputs: 1,
+        outputChannelCount: [2],
+        channelCount: 2,
+        channelCountMode: 'explicit',
+    });
+
+    const handshake = createReadyHandshake({ pluginName: 'GrandBouleNode offline worklet' });
+    node.port.onmessage = (event: MessageEvent) => {
+        handshake.onMessage(event);
+    };
+
+    // Transferred, like the Worker's copy, so the bytes are not cloned into the
+    // worklet scope. `fetchGrandBouleWasm` keeps its own cached original.
+    const copy = wasmBytes.slice(0);
+    node.port.postMessage({ type: 'init', wasmBytes: copy }, [copy]);
+
+    return {
+        workletNode: node,
+        post: (msg) => {
+            node.port.postMessage(msg);
+        },
+        ready: handshake.promise,
+        destroy: () => {
+            node.port.close();
+        },
+    };
+}
+
+export async function createGrandBouleNode(
+    ctx: BaseAudioContext,
+    wasmUrl?: string,
+    signal?: AbortSignal
+): Promise<GrandBouleNodeResult> {
+    if (ctx instanceof AudioContext && ctx.state === 'suspended') {
+        await raceAbortSignal(ctx.resume(), signal);
+    }
+
+    // Branching on the context type rather than on the presence of a DOM global,
+    // the same way `faustDeviceFactory` picks its scheduler. This branch already
+    // existed here and only flipped a dropout-counting flag; it now decides which
+    // engine host is built, which is the thing the flag was compensating for.
+    const isOfflineRender = typeof OfflineAudioContext !== 'undefined' && ctx instanceof OfflineAudioContext;
+    const processorUrl = isOfflineRender ? grandBouleOfflineProcessorUrl : grandBouleProcessorUrl;
+
+    await raceAbortSignal(ensureWorkletRegistered(ctx, processorUrl), signal);
+    const wasmBytes = await raceAbortSignal(fetchGrandBouleWasm(wasmUrl ?? DEFAULT_WASM_URL), signal);
+
+    signal?.throwIfAborted();
+
+    let transport: GrandBouleTransport;
+    if (isOfflineRender) {
+        transport = createInlineWorkletTransport({ ctx, wasmBytes });
+    } else {
+        transport = createWorkerRingTransport({ ctx, wasmBytes });
+    }
+
+    const node = transport.workletNode;
+    let bypassed = false;
+
+    /** Post a control message to wherever this node's engine lives. */
     const post = (msg: Record<string, unknown>): void => {
-        engineWorker.postMessage(msg);
+        transport.post(msg);
     };
 
     return {
@@ -298,10 +404,8 @@ export async function createGrandBouleNode(
             } catch (error) {
                 console.error('[GrandBouleNode] Disconnect failed during destroy:', error);
             }
-            node.port.close();
-            engineWorker.postMessage({ type: 'stop' });
-            engineWorker.terminate();
+            transport.destroy();
         },
-        ready: readyPromise,
+        ready: transport.ready,
     };
 }
