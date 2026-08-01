@@ -28,6 +28,7 @@ ADR numbers 0001 and 0002 are reserved and must not be reused.
 | [0012](0012-neither-target-degrades-the-other.md) | Neither target may be degraded to accommodate the other; share only at full quality |
 | [0013](0013-retire-the-flat-json-project-snapshot.md) | Retire the flat-JSON project snapshot and its base64 audio — **supersedes 0008** |
 | [0014](0014-project-persistence-architecture.md)  | Project persistence architecture — project-as-directory (Option C) — **status: proposed**, pending owner ratification and gates M1–M10 |
+| [0015](0015-a-guard-must-be-able-to-fail.md)      | A guard must be able to fail, and a census must enumerate from a registry |
 
 Genuinely open decisions that are not yet ADRs live in the
 [open-decision docket](open-decision-docket.md).
