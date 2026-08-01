@@ -1,0 +1,163 @@
+crates/daw-dsp/src/primitives/lifecycle.rs
+  s_ac9b259eab20ba::t_142cd1b1b315d9 1-59
+crates/daw-dsp/src/primitives/mod.rs
+  s_ac9b259eab20ba::t_142cd1b1b315d9 6,14
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_ac9b259eab20ba::t_88da33004b8725 715,717-719,721-734,735-754,816
+  s_ac9b259eab20ba::t_9c03e7aebc9aa1 715,717-719,721-734,735-754
+  s_ac9b259eab20ba::t_8799be70c5b20d 798,801-815
+  s_95be442b22963a::t_d64ee6d14b5ab2 715,717-719,721-734,816
+  s_ac9b259eab20ba::t_7c7bf2b69d7c6e 651,655-667,715,717-719,721-734,755,756-765
+  s_ac9b259eab20ba::t_60afa8815d190a 651,655-667,756-765,798,801-815
+  s_ac9b259eab20ba::t_067e23db993686 310-313,716,735-754,756-765
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_ac9b259eab20ba::t_4cc635568a0312 69,71-73,75-88,89-108,170
+  s_ac9b259eab20ba::t_b99c6b329d5974 69,71-73,75-88,89-108
+  s_ac9b259eab20ba::t_df8ec39530eece 152,155-169
+  s_95be442b22963a::t_f62aa764d7e1db 69,71-73,75-88,170
+  s_ac9b259eab20ba::t_6313600a2d7bec 5,9-21,69,71-73,75-88,109,110-119
+  s_ac9b259eab20ba::t_f82ae8a905de6d 5,9-21,110-119,152,155-169
+  s_ac9b259eab20ba::t_8482144b92b515 70,89-108,110-119
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_ac9b259eab20ba::t_fe57f89a225c46 715,717-719,721-734,735-754,816
+  s_ac9b259eab20ba::t_64ada14ef11345 715,717-719,721-734,735-754
+  s_ac9b259eab20ba::t_24292a9325ef8c 798,801-815
+  s_95be442b22963a::t_58a53df2b56a3a 715,717-719,721-734,816
+  s_ac9b259eab20ba::t_da49cba762e436 651,655-667,715,717-719,721-734,755,756-765
+  s_ac9b259eab20ba::t_ac0cbe5ae41ea0 651,655-667,756-765,798,801-815
+  s_ac9b259eab20ba::t_9142311694fd3e 310-313,716,735-754,756-765
+crates/daw-dsp/src/fermenter/mod.rs
+  s_ac9b259eab20ba::t_03bf6455828086 28
+crates/daw-dsp/src/fermenter/synth.rs
+  s_ac9b259eab20ba::t_7c8a31b2358e8c 792-793,795
+src/modules/AudioEngine/services/fermenterProcessor.ts
+  s_ac9b259eab20ba::t_8506553cc8efc8 288
+src/modules/AudioEngine/services/__tests__/fermenterProcessor.spec.ts
+  s_ac9b259eab20ba::t_fa19a97bbfc120 182-184,185,191,195,197,204-205,207,210
+src/modules/AudioEngine/services/meteringProcessor.ts
+  s_ac9b259eab20ba::t_dc7a59f056cf2b 48,73
+src/modules/Metering/presentations/views/__tests__/LevelMeter.spec.tsx
+  s_ac9b259eab20ba::t_84608276a04c39 25-26,86
+crates/daw-dsp/src/grand_boule/engine.rs
+  s_ac9b259eab20ba::t_996f05011dc2d4 597
+  s_ac9b259eab20ba::t_6b4637451bdb9b 634-635
+  s_ac9b259eab20ba::t_13207bbd371983 622-633,636-637
+  s_ac9b259eab20ba::t_95201ffe99155c 769-775,783-788,817-820,1148-1149
+  s_ac9b259eab20ba::t_6735d136d123b9 16,24-26,104-105,140,179,303,561-580,598-601
+  s_ac9b259eab20ba::t_e5d61efe6ef522 621
+crates/daw-dsp/src/grand_boule/pedals.rs
+  s_ac9b259eab20ba::t_996f05011dc2d4 143
+  s_ac9b259eab20ba::t_95201ffe99155c 144-147
+src/modules/AudioEngine/workers/__tests__/grandBouleEngineWorker.renderLoop.spec.ts
+  s_ac9b259eab20ba::t_7d5c41b39b9102 169,193-220
+  s_ac9b259eab20ba::t_8a8039a2f0e0df 81,156,229
+  s_ac9b259eab20ba::t_5e7015f995e2e9 170-192,221-223
+  s_ac9b259eab20ba::t_6c17372018e9a1 230-237,239-243,245-253
+  s_ac9b259eab20ba::t_e1eca6eeec260f 44,47,49-50,61-63,100-101,103,105-115,133
+  s_ac9b259eab20ba::t_89e80f52b75179 45,53-55,134,151-155,157-168,224-228,238,244,254-255,259,280
+  s_ac9b259eab20ba::t_53d5aa046df8b1 131,141,145,256,262,268,270
+  s_ac9b259eab20ba::t_6dd42af8a57d2a 258,279
+src/modules/AudioEngine/workers/grandBouleEngineWorker.ts
+  s_ac9b259eab20ba::t_e2379a700ec4b3 83-84,89-100,105-106,185-191,254-255,256,261-269,279,281-288,290-292,294,329,352-357,360-363,368-369,382,429-430,435-436,442,456-458,460,463
+  s_ac9b259eab20ba::t_3d6aa235865109 273-278
+  s_ac9b259eab20ba::t_222f55c88270c2 289,293,332
+crates/daw-dsp/src/grand_boule/mod.rs
+  s_ac9b259eab20ba::t_da12ec83f11fb7 25,72-73,192-196
+  s_ac9b259eab20ba::t_6735d136d123b9 146-150,179-191,197-200
+  s_ac9b259eab20ba::t_4f5831ad35ff7b 201
+src/modules/AudioEngine/services/grandBouleProcessor.ts
+  s_ac9b259eab20ba::t_4ed4a5307b9651 246-247
+  s_ac9b259eab20ba::t_42f856ad68379d 13-14,80,87,94-95,97-105,110,144,210-214,217-218,237-238,242-244,248-250,252,264-266,277-278,285-286
+src/modules/AudioEngine/engine/GrandBouleNode.ts
+  s_ac9b259eab20ba::t_56eb1d80888967 184
+src/modules/AudioEngine/workers/__tests__/grandBouleEngineWorker.spec.ts
+  s_ac9b259eab20ba::t_8a8039a2f0e0df 41,43
+  s_ac9b259eab20ba::t_8e4a17267fd64d 148-149,159
+src/modules/AudioEngine/services/__tests__/grandBouleDropoutCounter.spec.ts
+  s_ac9b259eab20ba::t_ca167b8edc63e7 42-43,125-135
+  s_ac9b259eab20ba::t_8a8039a2f0e0df 46,50
+  s_ac9b259eab20ba::t_ae86056c265e7d 136-137
+src/modules/AudioEngine/workers/__tests__/grandBouleEngineWorker.dispatch.spec.ts
+  s_ac9b259eab20ba::t_8a6bb8b39ea80e 185
+  s_ac9b259eab20ba::t_4c6c1c31d45700 22,29,57,69-71,130,148,153,179
+  s_ac9b259eab20ba::t_8a8039a2f0e0df 99,132,182
+  s_ac9b259eab20ba::t_69744d9544be28 183-184
+src/modules/AudioEngine/services/__tests__/grandBouleProcessor.spec.ts
+  s_ac9b259eab20ba::t_b5bd96fcbd0b83 224,232,234-237,243-247
+  s_ac9b259eab20ba::t_5d9f9a3e19843e 209-223,225-231,233,238-242,248
+  s_ac9b259eab20ba::t_bb8bbf5d6fb7c1 70,88,115
+  s_ac9b259eab20ba::t_0f9cd2b681afc6 72-73,90-91,117-118,131-132,203,206
+  s_ac9b259eab20ba::t_8a8039a2f0e0df 47,49
+  s_ac9b259eab20ba::t_52a414bd99f2a0 184
+  s_ac9b259eab20ba::t_67cee267666162 71
+  s_ac9b259eab20ba::t_95cd13ddf0e0a1 89
+  s_ac9b259eab20ba::t_90b8e38dd40e4b 116
+public/wasm/daw-dsp/daw_dsp.js
+  s_ac9b259eab20ba::t_93969ed61e23bc 609-616
+src/modules/AudioEngine/wasm/daw_dsp.js
+  s_ac9b259eab20ba::t_f77b63ece6570f 786-793
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "9b7907031b3a195f26a19bd8dbf5cf89fec5df8a",
+  "prompts": {},
+  "sessions": {
+    "s_0f3ab06e2b0c6f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fb0fa-f596-7bf3-9fcb-e81c4bc77b6d",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_7567a24331687e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a05f4915d962b9ed7",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_95be442b22963a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fb1f9-78f9-7dd0-8dbe-406de3a9c454",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_f0bc25a6a2f53c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ad9c8c5d0ea28eaf6",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
