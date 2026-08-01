@@ -999,3 +999,24 @@ do, that table is the record and this list is the pointer.
   feature built on it believes it enforces something.
 - **Model integrity policy.** Failing closed on a missing digest breaks every catalog entry today,
   because none carries one. Security-posture call.
+
+## RESOLVED 2026-08-01 by ADR 0016
+
+Four rulings that close a large part of the docket above. Recorded here so the entries are not
+re-litigated; ADR 0016 is the record.
+
+- **Native plugin hosting: ship or gate** — neither. **Desktop is out of scope** for this work
+  entirely, and the plugin host is a desktop concern. Survey Phase 4 is dropped. The findings stay;
+  the work is deferred.
+- **Unbuilt feature subsystems (finish-or-remove)** — **finish, wherever it can run in the browser.**
+  That is the scope rule now, and it replaces the per-row finish-or-remove call for every
+  browser-capable entry in the table above. Two rows (RAVE, DDSP/TF.js) carry an unproven premise:
+  establish that the models run in-browser at acceptable cost before committing to a shape. Rows
+  whose home is native — the Tauri CRDT backend, Push hardware, MIDI hardware controllers — follow
+  the desktop deferral.
+- **Correctness versus existing mixes** — **there are no users; correctness wins outright.** No
+  compatibility shims, no version-gated legacy behaviour. This answers Gluten's +6.31 dB, Knead's
+  latency, turning on offline automation, and restoring lost device state, and it collapses the
+  ADR 0014 owner decisions that assumed existing projects had to be preserved.
+- **Collaboration transport-permission** — **delete the scaffold.** Remove the unreachable role
+  machinery and document that an invite string is unconditional write access.
