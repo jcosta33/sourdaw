@@ -222,4 +222,71 @@ describe('deviceReadinessDiagnostics', () => {
         expect(Reflect.set(token, 'tokenId', token.tokenId + 1)).toBe(false);
         expect(deviceReadinessDiagnostics.snapshot().devices[0]?.deviceId).toBe('levain-1');
     });
+
+    it('does not let stale device teardown remove a same-id successor', () => {
+        const staleToken = deviceReadinessDiagnostics.begin({
+            deviceId: 'levain-1',
+            deviceType: 'levain',
+            requiresContent: true,
+            atMs: 9_000,
+        });
+        const currentToken = deviceReadinessDiagnostics.begin({
+            deviceId: 'levain-1',
+            deviceType: 'levain',
+            requiresContent: true,
+            atMs: 9_010,
+        });
+
+        deviceReadinessDiagnostics.removeDevice(staleToken);
+        deviceReadinessDiagnostics.markGraphReady({ token: currentToken, atMs: 9_020 });
+
+        expect(deviceReadinessDiagnostics.snapshot()).toMatchObject({
+            counts: { graphReady: 1 },
+            devices: [{ deviceId: 'levain-1', status: 'content-pending' }],
+        });
+    });
+
+    it('retains only the most recent 256 terminal device records', () => {
+        for (let index = 0; index < 260; index++) {
+            const token = deviceReadinessDiagnostics.begin({
+                deviceId: `fermenter-${String(index)}`,
+                deviceType: 'fermenter',
+                requiresContent: false,
+                atMs: 10_000 + index,
+            });
+            deviceReadinessDiagnostics.markGraphReady({ token, atMs: 10_001 + index });
+        }
+
+        const snapshot = deviceReadinessDiagnostics.snapshot();
+
+        expect(snapshot.counts).toMatchObject({ requested: 260, playableReady: 260 });
+        expect(snapshot.devices).toHaveLength(256);
+        expect(snapshot.devices[0]?.deviceId).toBe('fermenter-4');
+        expect(snapshot.devices.at(-1)?.deviceId).toBe('fermenter-259');
+    });
+
+    it('orders terminal retention by settlement rather than request time', () => {
+        const delayedToken = deviceReadinessDiagnostics.begin({
+            deviceId: 'delayed',
+            deviceType: 'fermenter',
+            requiresContent: false,
+            atMs: 11_000,
+        });
+        for (let index = 0; index < 256; index++) {
+            const token = deviceReadinessDiagnostics.begin({
+                deviceId: `ready-${String(index)}`,
+                deviceType: 'fermenter',
+                requiresContent: false,
+                atMs: 11_001 + index,
+            });
+            deviceReadinessDiagnostics.markGraphReady({ token, atMs: 11_002 + index });
+        }
+
+        deviceReadinessDiagnostics.markGraphReady({ token: delayedToken, atMs: 12_000 });
+
+        const devices = deviceReadinessDiagnostics.snapshot().devices;
+        expect(devices).toHaveLength(256);
+        expect(devices[0]?.deviceId).toBe('ready-1');
+        expect(devices.at(-1)?.deviceId).toBe('delayed');
+    });
 });

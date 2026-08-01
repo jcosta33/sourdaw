@@ -29,6 +29,8 @@ type DeviceReadinessRecord = {
     failureStage: DeviceReadinessFailureStage | null;
 };
 
+const MAX_RETAINED_TERMINAL_RECORDS = 256;
+
 function highResolutionEpochMs(): number {
     return performance.timeOrigin + performance.now();
 }
@@ -75,6 +77,33 @@ function isPending(status: DeviceReadinessStatus): boolean {
     return status === 'node-pending' || status === 'graph-pending' || status === 'content-pending';
 }
 
+function trimTerminalRecords(): void {
+    let terminalRecords = 0;
+    for (const record of records.values()) {
+        if (!isPending(record.status)) {
+            terminalRecords++;
+        }
+    }
+    if (terminalRecords <= MAX_RETAINED_TERMINAL_RECORDS) {
+        return;
+    }
+    for (const [deviceId, record] of records) {
+        if (isPending(record.status)) {
+            continue;
+        }
+        records.delete(deviceId);
+        terminalRecords--;
+        if (terminalRecords === MAX_RETAINED_TERMINAL_RECORDS) {
+            return;
+        }
+    }
+}
+
+function moveTerminalRecordToNewest(record: DeviceReadinessRecord): void {
+    records.delete(record.token.deviceId);
+    records.set(record.token.deviceId, record);
+}
+
 let nextTokenId = 0;
 let requested = 0;
 let nodeReady = 0;
@@ -105,6 +134,8 @@ function markPlayable(record: DeviceReadinessRecord, atMs: number): void {
     record.status = 'ready';
     playableReady++;
     recordTiming(requestToPlayableReadyMs, atMs - record.requestedAtMs);
+    moveTerminalRecordToNewest(record);
+    trimTerminalRecords();
 }
 
 export const deviceReadinessDiagnostics = {
@@ -133,6 +164,7 @@ export const deviceReadinessDiagnostics = {
         if (previous && isPending(previous.status)) {
             cancelled++;
         }
+        records.delete(input.deviceId);
         nextTokenId++;
         const token: DeviceReadinessToken = Object.freeze({ deviceId: input.deviceId, tokenId: nextTokenId });
         records.set(input.deviceId, {
@@ -230,6 +262,8 @@ export const deviceReadinessDiagnostics = {
         record.status = 'failed';
         record.failureStage = input.stage;
         failed++;
+        moveTerminalRecordToNewest(record);
+        trimTerminalRecords();
     },
 
     cancel(token: DeviceReadinessToken): void {
@@ -243,12 +277,15 @@ export const deviceReadinessDiagnostics = {
         records.delete(token.deviceId);
     },
 
-    removeDevice(deviceId: string): void {
-        const record = records.get(deviceId);
-        if (record && isPending(record.status)) {
+    removeDevice(token: DeviceReadinessToken): void {
+        const record = currentRecord(token);
+        if (!record) {
+            return;
+        }
+        if (isPending(record.status)) {
             cancelled++;
         }
-        records.delete(deviceId);
+        records.delete(token.deviceId);
     },
 
     snapshot() {
