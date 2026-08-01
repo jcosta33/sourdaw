@@ -68,11 +68,14 @@ describe('MIDI note transform handlers', () => {
 
         const description = handleQuantizeNotes.describe(action);
         const inverse = requireRestoreAction(description.inverseAction);
+        const replay = requireRestoreAction(description.redoAction);
 
         expect(handleQuantizeNotes.execute(action)).toEqual({ status: 'written' });
         const expectedPostState = currentNotes().map((candidate) => ({ ...candidate }));
         expect(inverse.payload.expectedNotes).toEqual(expectedPostState);
         expect(inverse.payload.notes).toEqual(before);
+        expect(replay.payload.expectedNotes).toEqual(before);
+        expect(replay.payload.notes).toEqual(expectedPostState);
 
         expect(handleRestoreMidiClipNotes.execute(inverse)).toEqual({ status: 'written' });
         expect(currentNotes()).toEqual(before);
@@ -237,5 +240,30 @@ describe('MIDI note transforms through AppAction execution', () => {
         expect(currentNotes()).toContainEqual(laterNote);
         expect(undoStore.value?.past).toHaveLength(1);
         expect(undoStore.value?.future).toHaveLength(0);
+    });
+
+    it('keeps a stale redo entry and preserves edits made after undo', async () => {
+        const before = seedNotes([note('a', 60, 0.11)]);
+        await executeAppAction({
+            type: 'transposeNotes',
+            payload: { clipId: CLIP_ID, semitones: 7 },
+        });
+        await undo();
+
+        const laterNote = note('later', 72, 1.25);
+        const state = midiStore.value;
+        if (!state) {
+            throw new Error('Expected MIDI state');
+        }
+        midiStore.set({
+            ...state,
+            notesByClipId: { ...state.notesByClipId, [CLIP_ID]: [...before, laterNote] },
+        });
+
+        await expect(redo()).resolves.toBeUndefined();
+
+        expect(currentNotes()).toEqual([...before, laterNote]);
+        expect(undoStore.value?.past).toHaveLength(0);
+        expect(undoStore.value?.future).toHaveLength(1);
     });
 });

@@ -115,6 +115,26 @@ describe('executeAppActionBatch', () => {
         expect(mocks.commitUndoEntry).toHaveBeenCalledTimes(2);
     });
 
+    it('retains a handler-provided guarded redo action in the committed undo entry', async () => {
+        const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
+        const redoAction: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({
+                execute: () => ({ status: 'written' }),
+                describe: () => ({
+                    label: 'Set editing tool',
+                    inverseAction: { type: 'setEditingTool', payload: { tool: 'select' } },
+                    redoAction,
+                }),
+            }),
+        });
+
+        const result = await executeAppActionBatch([action]);
+
+        expect(result.status).toBe('committed');
+        expect(mocks.commitUndoEntry).toHaveBeenCalledWith(expect.objectContaining({ action, redoAction }));
+    });
+
     it('runs deferred external effects after the project transaction commits', async () => {
         const afterCommit = vi.fn();
         registerHandlerMap({

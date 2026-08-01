@@ -37,6 +37,10 @@ export function prepareMidiNoteTransformUndo({
                 type: 'restoreMidiClipNotes',
                 payload: { clipId, notes, expectedNotes },
             },
+            redoAction: {
+                type: 'restoreMidiClipNotes',
+                payload: { clipId, notes: expectedNotes, expectedNotes: notes },
+            },
         },
         isNoop: false,
     };

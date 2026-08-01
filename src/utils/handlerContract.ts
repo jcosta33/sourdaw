@@ -917,10 +917,11 @@ export type TrackKind = 'audio' | 'midi' | 'bus' | 'master' | 'folder';
 export type AppActionType = AppAction['type'];
 
 /** Result of a handler's `describe(action)` — the human label for the undo/history
- *  entry plus the optional inverse action that redo/undo replays. */
+ *  entry plus optional guarded inverse and redo actions. */
 export type HandlerDescribeResult = {
     label: string;
     inverseAction?: AppAction | null;
+    redoAction?: AppAction;
 };
 
 export type HandlerAfterCommit = () => void | Promise<void>;
