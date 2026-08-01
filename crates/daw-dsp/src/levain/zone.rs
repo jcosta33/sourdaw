@@ -45,6 +45,7 @@ pub struct SamplePool {
     /// Interleaved f32 PCM data indexed by SampleId.
     /// Each entry: (data_ptr, frame_count, channel_count, sample_rate).
     entries: Vec<SampleEntry>,
+    decoded_bytes: usize,
 }
 
 pub struct SampleEntry {
@@ -58,11 +59,13 @@ impl SamplePool {
     pub fn new() -> Self {
         Self {
             entries: Vec::new(),
+            decoded_bytes: 0,
         }
     }
 
     pub fn clear(&mut self) {
         self.entries.clear();
+        self.decoded_bytes = 0;
     }
 
     /// Add a sample and return its SampleId.
@@ -72,15 +75,18 @@ impl SamplePool {
         frame_count: u32,
         channels: u8,
         sample_rate: f32,
-    ) -> SampleId {
-        let id = self.entries.len() as SampleId;
+    ) -> Option<SampleId> {
+        let id = SampleId::try_from(self.entries.len()).ok()?;
+        let sample_bytes = data.capacity().checked_mul(std::mem::size_of::<f32>())?;
+        let decoded_bytes = self.decoded_bytes.checked_add(sample_bytes)?;
         self.entries.push(SampleEntry {
             data,
             frame_count,
             channels,
             sample_rate,
         });
-        id
+        self.decoded_bytes = decoded_bytes;
+        Some(id)
     }
 
     /// Get sample data for reading. Returns None if id is out of range.
@@ -91,6 +97,10 @@ impl SamplePool {
 
     pub fn len(&self) -> usize {
         self.entries.len()
+    }
+
+    pub fn decoded_bytes(&self) -> usize {
+        self.decoded_bytes
     }
 }
 
@@ -209,10 +219,7 @@ impl ZoneMap {
                 let offset = u32::try_from(arena.len())
                     .map_err(|_| ZoneMapBuildError::ArenaCapacityExceeded)?;
                 arena.extend_from_slice(bucket);
-                lut[i] = ZoneListRef {
-                    offset,
-                    count,
-                };
+                lut[i] = ZoneListRef { offset, count };
             }
         }
 

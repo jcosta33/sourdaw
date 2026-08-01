@@ -20,6 +20,7 @@ vi.mock('#/infra/audioWorklet/workletInitShared', () => ({
     createReadyHandshake: vi.fn(() => ({
         promise: Promise.resolve({}),
         onMessage: () => 'late' as const,
+        cancel: vi.fn(),
         isSettled: () => true,
     })),
 }));
@@ -31,15 +32,25 @@ vi.mock('../../services/levainProcessor.ts?worker&url', () => ({ default: 'levai
 // write-once latch that never reflected a WASM panic).
 describe('createLevainNode runtime-fault notification', () => {
     let postMessage: ReturnType<typeof vi.fn>;
-    let node: { port: { postMessage: ReturnType<typeof vi.fn>; onmessage: ((e: MessageEvent) => void) | null } };
+    let close: ReturnType<typeof vi.fn>;
+    let disconnect: ReturnType<typeof vi.fn>;
+    let node: {
+        port: {
+            postMessage: ReturnType<typeof vi.fn>;
+            close: ReturnType<typeof vi.fn>;
+            onmessage: ((e: MessageEvent) => void) | null;
+        };
+    };
 
     beforeEach(() => {
         postMessage = vi.fn();
-        node = { port: { postMessage, onmessage: null } };
+        close = vi.fn();
+        disconnect = vi.fn();
+        node = { port: { postMessage, close, onmessage: null } };
         class FakeWorkletNode {
             port = node.port;
             connect = vi.fn();
-            disconnect = vi.fn();
+            disconnect = disconnect;
         }
         vi.stubGlobal('AudioWorkletNode', FakeWorkletNode);
     });
@@ -84,6 +95,24 @@ describe('createLevainNode runtime-fault notification', () => {
 
         expect(onFault).toHaveBeenCalledWith('Unknown error');
     });
+
+    it('waits for the processor disposal acknowledgement before closing the port', async () => {
+        const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
+        const result = await createLevainNode(ctx);
+        postMessage.mockClear();
+
+        result.destroy();
+        result.destroy();
+
+        expect(disconnect).toHaveBeenCalledTimes(1);
+        expect(postMessage).toHaveBeenCalledTimes(1);
+        expect(postMessage).toHaveBeenCalledWith({ type: 'dispose' });
+        expect(close).not.toHaveBeenCalled();
+
+        node.port.onmessage?.({ data: { type: 'disposed' } } as MessageEvent);
+
+        expect(close).toHaveBeenCalledTimes(1);
+    });
 });
 
 // Bypass-entry voice release is owned by TrackNode.updateBypass, which calls
@@ -96,7 +125,9 @@ describe('createLevainNode bypass and allNotesOff surfaces', () => {
 
     beforeEach(() => {
         postMessage = vi.fn();
-        const node = { port: { postMessage, onmessage: null as ((e: MessageEvent) => void) | null } };
+        const node = {
+            port: { postMessage, close: vi.fn(), onmessage: null as ((e: MessageEvent) => void) | null },
+        };
         class FakeWorkletNode {
             port = node.port;
             connect = vi.fn();

@@ -268,6 +268,7 @@ describe('createBacteriaNode', () => {
             promise: Promise.resolve({}),
             onMessage: () => 'ready' as const,
             isSettled: () => true,
+            cancel: vi.fn(),
         });
 
         const node = await createBacteriaNode(makeCtx());

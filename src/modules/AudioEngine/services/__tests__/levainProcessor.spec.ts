@@ -29,7 +29,11 @@ const memory: GrowableMemory = createGrowableMemory(HEAP_BYTES);
 const calls: Array<{ method: string; args: unknown[] }> = [];
 let processShouldThrow = false;
 let addSampleShouldThrow = false;
+let abortSampleBankShouldThrow = false;
+let allNotesOffShouldThrow = false;
+let setParamShouldThrow = false;
 let zoneMapShouldBuild = true;
+const sharedBanks = new Set<string>();
 
 class LevainInstanceMock {
     note_on(note: number, velocity: number): void {
@@ -43,17 +47,20 @@ class LevainInstanceMock {
     }
     all_notes_off(): void {
         calls.push({ method: 'all_notes_off', args: [] });
+        if (allNotesOffShouldThrow) {
+            throw new Error('all notes off trapped');
+        }
     }
     set_param(name: string, value: number): void {
+        if (setParamShouldThrow) {
+            throw new Error('parameter trap');
+        }
         calls.push({ method: 'set_param', args: [name, value] });
     }
     handle_cc(cc: number, value: number): void {
         calls.push({ method: 'handle_cc', args: [cc, value] });
     }
-    set_instrument(id: string): void {
-        calls.push({ method: 'set_instrument', args: [id] });
-    }
-    add_sample(data: Float32Array, frameCount: number, channels: number, sampleRate: number): void {
+    add_sample(data: Float32Array, frameCount: number, channels: number, sampleRate: number): number {
         if (addSampleShouldThrow) {
             // Sample loading is the likeliest place for this device to fail
             // after startup: the copy into linear memory is hundreds of MiB for
@@ -61,6 +68,7 @@ class LevainInstanceMock {
             throw new Error('memory allocation failed');
         }
         calls.push({ method: 'add_sample', args: [Array.from(data), frameCount, channels, sampleRate] });
+        return calls.filter((call) => call.method === 'add_sample').length - 1;
     }
     add_zone(...args: unknown[]): void {
         calls.push({ method: 'add_zone', args });
@@ -69,8 +77,30 @@ class LevainInstanceMock {
         calls.push({ method: 'build_zone_map', args: [numArticulations, numMics] });
         return zoneMapShouldBuild;
     }
-    clear_zones(): void {
-        calls.push({ method: 'clear_zones', args: [] });
+    begin_sample_bank(instrumentId: string): void {
+        calls.push({ method: 'begin_sample_bank', args: [instrumentId] });
+    }
+    attach_sample_bank(bankKey: string): boolean {
+        calls.push({ method: 'attach_sample_bank', args: [bankKey] });
+        return sharedBanks.has(bankKey);
+    }
+    publish_sample_bank(bankKey: string): boolean {
+        calls.push({ method: 'publish_sample_bank', args: [bankKey] });
+        sharedBanks.add(bankKey);
+        return true;
+    }
+    abort_sample_bank(): void {
+        calls.push({ method: 'abort_sample_bank', args: [] });
+        if (abortSampleBankShouldThrow) {
+            throw new Error('abort trapped');
+        }
+    }
+    commit_sample_bank(): boolean {
+        calls.push({ method: 'commit_sample_bank', args: [] });
+        return true;
+    }
+    sample_bank_bytes(): number {
+        return 16;
     }
     process(frames: number): number {
         if (processShouldThrow) {
@@ -115,11 +145,17 @@ function method(name: string): { method: string; args: unknown[] } | undefined {
 
 describe('LevainProcessor message handling', () => {
     beforeEach(() => {
+        vi.resetModules();
+        vi.clearAllMocks();
         resetGrowableMemory(memory, HEAP_BYTES);
         calls.length = 0;
         processShouldThrow = false;
         addSampleShouldThrow = false;
+        abortSampleBankShouldThrow = false;
+        allNotesOffShouldThrow = false;
+        setParamShouldThrow = false;
         zoneMapShouldBuild = true;
+        sharedBanks.clear();
     });
 
     it('buffers messages that arrive before init and replays them once ready', async () => {
@@ -177,17 +213,15 @@ describe('LevainProcessor message handling', () => {
         expect(setParams).toContainEqual({ method: 'set_param', args: ['unknownX', 0.3] });
     });
 
-    it('forwards cc, setInstrument and bypass messages', async () => {
+    it('forwards cc and bypass messages', async () => {
         const proc = await loadProcessor();
         send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
         calls.length = 0;
 
         send(proc, { type: 'cc', cc: 74, value: 100 });
-        send(proc, { type: 'setInstrument', instrumentId: 'strings-legion' });
         send(proc, { type: 'bypass', bypassed: true });
 
         expect(method('handle_cc')!.args).toEqual([74, 100]);
-        expect(method('set_instrument')!.args).toEqual(['strings-legion']);
         // bypass does not call the instance; it flips the _bypassed flag (tested below).
     });
 
@@ -209,8 +243,17 @@ describe('LevainProcessor message handling', () => {
         send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
         calls.length = 0;
 
+        send(proc, { type: 'beginSampleBank', bankKey: 'single-bank', instrumentId: 'violin', loadToken: 1 });
         const data = new Float32Array([0.1, 0.2, 0.3, 0.4]);
-        send(proc, { type: 'addSample', data, frameCount: 4, channels: 1, sampleRate: 48000 });
+        send(proc, {
+            type: 'addSample',
+            loadToken: 1,
+            sampleId: 0,
+            data,
+            frameCount: 4,
+            channels: 1,
+            sampleRate: 48000,
+        });
 
         const args = method('add_sample')!.args;
         expect(args[1]).toBe(4);
@@ -221,13 +264,331 @@ describe('LevainProcessor message handling', () => {
         expect(passed.map((v) => Number(v.toFixed(6)))).toEqual([0.1, 0.2, 0.3, 0.4]);
     });
 
+    it('initializes one WASM module and uploads one PCM bank for two Levain processors', async () => {
+        const owner = await loadProcessor();
+        const follower = await loadProcessor();
+        send(owner, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(follower, { type: 'init', wasmBytes: MINIMAL_WASM });
+        const wasmModule = await import('../../wasm/daw_dsp.js');
+        expect(wasmModule.initSync).toHaveBeenCalledTimes(1);
+        calls.length = 0;
+
+        send(owner, { type: 'beginSampleBank', bankKey: 'shared-bank', instrumentId: 'violin', loadToken: 1 });
+        send(follower, { type: 'beginSampleBank', bankKey: 'shared-bank', instrumentId: 'violin', loadToken: 2 });
+        expect(owner.port.postMessage).toHaveBeenCalledWith({
+            type: 'sampleBankUploadDecision',
+            loadToken: 1,
+            uploadRequired: true,
+        });
+        expect(follower.port.postMessage).toHaveBeenCalledWith({
+            type: 'sampleBankUploadDecision',
+            loadToken: 2,
+            uploadRequired: false,
+        });
+        const sample = {
+            type: 'addSample',
+            sampleId: 0,
+            data: new Float32Array([0.1]),
+            frameCount: 1,
+            channels: 1,
+            sampleRate: 48_000,
+        };
+        send(owner, { ...sample, loadToken: 1 });
+        send(follower, { ...sample, loadToken: 2 });
+        send(follower, { type: 'buildZoneMap', loadToken: 2, numArticulations: 1, numMics: 1 });
+        send(owner, { type: 'buildZoneMap', loadToken: 1, numArticulations: 1, numMics: 1 });
+
+        expect(calls.filter((call) => call.method === 'add_sample')).toHaveLength(1);
+        expect(calls.filter((call) => call.method === 'publish_sample_bank')).toHaveLength(1);
+        expect(calls.filter((call) => call.method === 'build_zone_map')).toHaveLength(2);
+        expect(calls.filter((call) => call.method === 'attach_sample_bank')).toHaveLength(2);
+        expect(owner.port.postMessage).toHaveBeenCalledWith({ type: 'sampleBankLoaded', loadToken: 1 });
+        expect(follower.port.postMessage).toHaveBeenCalledWith({ type: 'sampleBankLoaded', loadToken: 2 });
+    });
+
+    it('attaches a later processor to a published PCM bank without another upload', async () => {
+        const owner = await loadProcessor();
+        send(owner, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(owner, { type: 'beginSampleBank', bankKey: 'cached-bank', instrumentId: 'violin', loadToken: 1 });
+        send(owner, {
+            type: 'addSample',
+            loadToken: 1,
+            sampleId: 0,
+            data: new Float32Array([0.1]),
+            frameCount: 1,
+            channels: 1,
+            sampleRate: 48_000,
+        });
+        send(owner, { type: 'buildZoneMap', loadToken: 1, numArticulations: 1, numMics: 1 });
+
+        const cached = await loadProcessor();
+        send(cached, { type: 'init', wasmBytes: MINIMAL_WASM });
+        calls.length = 0;
+        send(cached, { type: 'beginSampleBank', bankKey: 'cached-bank', instrumentId: 'violin', loadToken: 2 });
+        expect(cached.port.postMessage).toHaveBeenCalledWith({
+            type: 'sampleBankUploadDecision',
+            loadToken: 2,
+            uploadRequired: false,
+        });
+        send(cached, {
+            type: 'addSample',
+            loadToken: 2,
+            sampleId: 0,
+            data: new Float32Array([0.1]),
+            frameCount: 1,
+            channels: 1,
+            sampleRate: 48_000,
+        });
+        send(cached, { type: 'buildZoneMap', loadToken: 2, numArticulations: 1, numMics: 1 });
+
+        expect(calls.filter((call) => call.method === 'attach_sample_bank')).toHaveLength(1);
+        expect(calls.filter((call) => call.method === 'add_sample')).toHaveLength(0);
+        expect(calls.filter((call) => call.method === 'publish_sample_bank')).toHaveLength(0);
+        expect(calls.filter((call) => call.method === 'build_zone_map')).toHaveLength(1);
+        expect(cached.port.postMessage).toHaveBeenCalledWith({ type: 'sampleBankLoaded', loadToken: 2 });
+    });
+
+    it('rejects owner and follower loads when an upload fails and permits a clean same-key retry', async () => {
+        const owner = await loadProcessor();
+        const follower = await loadProcessor();
+        send(owner, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(follower, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(owner, { type: 'beginSampleBank', bankKey: 'retry-bank', instrumentId: 'violin', loadToken: 1 });
+        send(follower, { type: 'beginSampleBank', bankKey: 'retry-bank', instrumentId: 'violin', loadToken: 2 });
+        addSampleShouldThrow = true;
+
+        send(owner, {
+            type: 'addSample',
+            loadToken: 1,
+            sampleId: 0,
+            data: new Float32Array([0.1]),
+            frameCount: 1,
+            channels: 1,
+            sampleRate: 48_000,
+        });
+
+        expect(owner.port.postMessage).toHaveBeenCalledWith(
+            expect.objectContaining({ type: 'sampleBankError', message: 'memory allocation failed' })
+        );
+        expect(follower.port.postMessage).toHaveBeenCalledWith(
+            expect.objectContaining({ type: 'sampleBankError', message: 'memory allocation failed' })
+        );
+
+        addSampleShouldThrow = false;
+        calls.length = 0;
+        send(follower, { type: 'beginSampleBank', bankKey: 'retry-bank', instrumentId: 'violin', loadToken: 3 });
+        send(follower, {
+            type: 'addSample',
+            loadToken: 3,
+            sampleId: 0,
+            data: new Float32Array([0.2]),
+            frameCount: 1,
+            channels: 1,
+            sampleRate: 48_000,
+        });
+        send(follower, { type: 'buildZoneMap', loadToken: 3, numArticulations: 1, numMics: 1 });
+
+        expect(calls.filter((call) => call.method === 'add_sample')).toHaveLength(1);
+        expect(calls.filter((call) => call.method === 'publish_sample_bank')).toHaveLength(1);
+    });
+
+    it('ignores stale tail messages after a rejected load and accepts a fresh attempt', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'beginSampleBank', bankKey: 'stale-tail-bank', instrumentId: 'violin', loadToken: 1 });
+        addSampleShouldThrow = true;
+        send(proc, {
+            type: 'addSample',
+            loadToken: 1,
+            sampleId: 0,
+            data: new Float32Array([0.1]),
+            frameCount: 1,
+            channels: 1,
+            sampleRate: 48_000,
+        });
+
+        addSampleShouldThrow = false;
+        calls.length = 0;
+        send(proc, {
+            type: 'addSample',
+            loadToken: 1,
+            sampleId: 1,
+            data: new Float32Array([0.2]),
+            frameCount: 1,
+            channels: 1,
+            sampleRate: 48_000,
+        });
+        send(proc, {
+            type: 'addZone',
+            loadToken: 1,
+            zoneId: 0,
+            sampleId: 0,
+            articulationId: 0,
+            rootNote: 60,
+            loKey: 0,
+            hiKey: 127,
+            loVel: 0,
+            hiVel: 127,
+            rrPos: 0,
+            rrLen: 1,
+            micId: 0,
+            loopStart: 0,
+            loopEnd: 1,
+            loopCrossfade: 0,
+            gainDb: 0,
+            attack: 0,
+            decay: 0,
+            sustain: 1,
+            release: 0.1,
+        });
+        send(proc, { type: 'buildZoneMap', loadToken: 1, numArticulations: 1, numMics: 1 });
+
+        expect(calls.filter((call) => call.method === 'add_sample')).toHaveLength(0);
+        expect(calls.filter((call) => call.method === 'add_zone')).toHaveLength(0);
+        expect(calls.filter((call) => call.method === 'build_zone_map')).toHaveLength(0);
+
+        send(proc, { type: 'beginSampleBank', bankKey: 'stale-tail-bank', instrumentId: 'violin', loadToken: 2 });
+        send(proc, {
+            type: 'addSample',
+            loadToken: 2,
+            sampleId: 0,
+            data: new Float32Array([0.3]),
+            frameCount: 1,
+            channels: 1,
+            sampleRate: 48_000,
+        });
+        send(proc, { type: 'buildZoneMap', loadToken: 2, numArticulations: 1, numMics: 1 });
+
+        expect(calls.filter((call) => call.method === 'add_sample')).toHaveLength(1);
+        expect(calls.filter((call) => call.method === 'publish_sample_bank')).toHaveLength(1);
+    });
+
+    it('releases followers and permits retry when an owner faults during process', async () => {
+        const owner = await loadProcessor();
+        const follower = await loadProcessor();
+        send(owner, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(follower, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(owner, {
+            type: 'beginSampleBank',
+            bankKey: 'process-fault-bank',
+            instrumentId: 'violin',
+            loadToken: 1,
+        });
+        send(follower, {
+            type: 'beginSampleBank',
+            bankKey: 'process-fault-bank',
+            instrumentId: 'violin',
+            loadToken: 2,
+        });
+        processShouldThrow = true;
+        abortSampleBankShouldThrow = true;
+
+        owner.process([], [makeChannels(2, FRAMES)]);
+
+        expect(owner.port.postMessage).toHaveBeenCalledWith(
+            expect.objectContaining({ type: 'error', message: 'wasm trap' })
+        );
+        expect(follower.port.postMessage).toHaveBeenCalledWith(
+            expect.objectContaining({ type: 'sampleBankError', message: 'wasm trap' })
+        );
+
+        processShouldThrow = false;
+        abortSampleBankShouldThrow = false;
+        calls.length = 0;
+        const retry = await loadProcessor();
+        send(retry, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(retry, {
+            type: 'beginSampleBank',
+            bankKey: 'process-fault-bank',
+            instrumentId: 'violin',
+            loadToken: 3,
+        });
+        send(retry, {
+            type: 'addSample',
+            loadToken: 3,
+            sampleId: 0,
+            data: new Float32Array([0.2]),
+            frameCount: 1,
+            channels: 1,
+            sampleRate: 48_000,
+        });
+        send(retry, { type: 'buildZoneMap', loadToken: 3, numArticulations: 1, numMics: 1 });
+
+        expect(calls.filter((call) => call.method === 'add_sample')).toHaveLength(1);
+        expect(calls.filter((call) => call.method === 'publish_sample_bank')).toHaveLength(1);
+    });
+
+    it('acknowledges disposal, releases followers, and stops rendering', async () => {
+        const owner = await loadProcessor();
+        const follower = await loadProcessor();
+        send(owner, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(follower, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(owner, { type: 'beginSampleBank', bankKey: 'disposed-bank', instrumentId: 'violin', loadToken: 1 });
+        send(follower, { type: 'beginSampleBank', bankKey: 'disposed-bank', instrumentId: 'violin', loadToken: 2 });
+
+        send(owner, { type: 'dispose' });
+
+        expect(owner.port.postMessage).toHaveBeenCalledWith({ type: 'disposed' });
+        expect(follower.port.postMessage).toHaveBeenCalledWith(
+            expect.objectContaining({
+                type: 'sampleBankError',
+                message: 'Levain processor was disposed during sample loading',
+            })
+        );
+        expect(owner.process([], [makeChannels(2, FRAMES)])).toBe(false);
+
+        calls.length = 0;
+        const retry = await loadProcessor();
+        send(retry, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(retry, { type: 'beginSampleBank', bankKey: 'disposed-bank', instrumentId: 'violin', loadToken: 3 });
+        send(retry, {
+            type: 'addSample',
+            loadToken: 3,
+            sampleId: 0,
+            data: new Float32Array([0.3]),
+            frameCount: 1,
+            channels: 1,
+            sampleRate: 48_000,
+        });
+        send(retry, { type: 'buildZoneMap', loadToken: 3, numArticulations: 1, numMics: 1 });
+
+        expect(calls.filter((call) => call.method === 'add_sample')).toHaveLength(1);
+        expect(calls.filter((call) => call.method === 'publish_sample_bank')).toHaveLength(1);
+    });
+
+    it('always acknowledges disposal even when best-effort WASM cleanup traps', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'beginSampleBank', bankKey: 'trapped-dispose-bank', instrumentId: 'violin', loadToken: 1 });
+        abortSampleBankShouldThrow = true;
+        allNotesOffShouldThrow = true;
+
+        send(proc, { type: 'dispose' });
+
+        expect(proc.port.postMessage).toHaveBeenCalledWith({ type: 'disposed' });
+        expect(proc.process([], [makeChannels(2, FRAMES)])).toBe(false);
+    });
+
+    it('acknowledges disposal before initialization and ignores a later init', async () => {
+        const proc = await loadProcessor();
+
+        send(proc, { type: 'dispose' });
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+
+        expect(proc.port.postMessage).toHaveBeenCalledWith({ type: 'disposed' });
+        expect(proc.port.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'ready' }));
+        expect(proc.process([], [makeChannels(2, FRAMES)])).toBe(false);
+    });
+
     it('maps addZone loop modes forward→1, pingpong→2, other/absent→0', async () => {
         const proc = await loadProcessor();
         send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'beginSampleBank', bankKey: 'zone-mode-bank', instrumentId: 'violin', loadToken: 1 });
         calls.length = 0;
 
         const baseZone = {
             type: 'addZone',
+            loadToken: 1,
             zoneId: 1,
             sampleId: 2,
             articulationId: 0,
@@ -265,31 +626,49 @@ describe('LevainProcessor message handling', () => {
         expect(zones[3]!.args[11]).toBe(false); // isRelease default false
     });
 
-    it('forwards buildZoneMap and clearZones', async () => {
+    it('forwards buildZoneMap', async () => {
         const proc = await loadProcessor();
         send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'beginSampleBank', bankKey: 'forward-build-bank', instrumentId: 'violin', loadToken: 1 });
         calls.length = 0;
 
-        send(proc, { type: 'buildZoneMap', numArticulations: 4, numMics: 3 });
-        send(proc, { type: 'clearZones' });
+        send(proc, { type: 'buildZoneMap', loadToken: 1, numArticulations: 4, numMics: 3 });
 
         expect(method('build_zone_map')!.args).toEqual([4, 3]);
-        expect(calls.some((c) => c.method === 'clear_zones')).toBe(true);
     });
 
     it('rejects an invalid DSP zone-map build instead of reporting a hydrated instrument', async () => {
         const proc = await loadProcessor();
         send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'beginSampleBank', bankKey: 'invalid-build-bank', instrumentId: 'violin', loadToken: 1 });
         zoneMapShouldBuild = false;
 
-        send(proc, { type: 'buildZoneMap', numArticulations: 33, numMics: 1 });
-        send(proc, { type: 'clearZones' });
+        send(proc, { type: 'buildZoneMap', loadToken: 1, numArticulations: 33, numMics: 1 });
 
         expect(proc.port.postMessage).toHaveBeenCalledWith({
-            type: 'error',
+            type: 'sampleBankError',
+            loadToken: 1,
             message: 'Levain DSP rejected zone-map dimensions or capacity',
         });
-        expect(calls.some((call) => call.method === 'clear_zones')).toBe(false);
+        expect(calls.some((call) => call.method === 'abort_sample_bank')).toBe(true);
+    });
+
+    it('aborts only the sample-bank transaction carrying the active load token', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'beginSampleBank', bankKey: 'abort-bank', instrumentId: 'violin', loadToken: 7 });
+        calls.length = 0;
+
+        send(proc, { type: 'abortSampleBank', loadToken: 6 });
+        expect(calls.some((call) => call.method === 'abort_sample_bank')).toBe(false);
+
+        send(proc, { type: 'abortSampleBank', loadToken: 7 });
+        expect(calls.some((call) => call.method === 'abort_sample_bank')).toBe(true);
+        expect(proc.port.postMessage).toHaveBeenCalledWith({
+            type: 'sampleBankError',
+            loadToken: 7,
+            message: 'Levain sample bank load was aborted',
+        });
     });
 
     it('enqueues a future-dated note and drains it within the process block window', async () => {
@@ -385,27 +764,20 @@ describe('LevainProcessor message handling', () => {
         send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
         calls.length = 0;
         proc.port.postMessage.mockClear();
-        addSampleShouldThrow = true;
+        setParamShouldThrow = true;
 
-        send(proc, {
-            type: 'addSample',
-            sampleId: 1,
-            data: new RealFloat32Array(8),
-            frameCount: 8,
-            channels: 1,
-            sampleRate: 48000,
-        });
+        send(proc, { type: 'param', name: 'masterGain', value: 0.5 });
 
         // The main thread has to hear about it. Before, the report was gated on
         // `!_ready`, so a post-startup throw reached only a worklet console.
         const errors = proc.port.postMessage.mock.calls.filter((c) => (c[0] as { type?: string }).type === 'error');
         expect(errors).toHaveLength(1);
-        expect((errors[0]![0] as { message: string }).message).toBe('memory allocation failed');
+        expect((errors[0]![0] as { message: string }).message).toBe('parameter trap');
 
         // And the instance stops taking work, exactly as the process() catch
         // already does. Before, `_faulted` stayed false and the next message
         // was handed to a possibly-trapped instance.
-        addSampleShouldThrow = false;
+        setParamShouldThrow = false;
         send(proc, { type: 'noteOn', note: 60, velocity: 90 });
         expect(calls.find((c) => c.method === 'note_on')).toBeUndefined();
 

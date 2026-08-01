@@ -30,12 +30,7 @@ describe('prepareOfflineLevain', () => {
         levainStore.set({});
     });
 
-    it('tells the engine which instrument it is, using the id the device patch selects', async () => {
-        // `setInstrument` is the only route to the realism layer's
-        // `configure_for`. Without it an offline instance renders as
-        // `Instrument::Other`: no body resonance, no sympathetic strings, no bow
-        // noise, and no bow-scrape/bow-lift transients. Right samples, wrong
-        // instrument, on every exported orchestral track.
+    it('loads the instrument selected by the device patch without mutating the engine first', async () => {
         const { port, posted } = fakePort();
         levainStore.set({
             'device-a': { ...defaultLevainState, patch: { ...defaultLevainState.patch, instrumentId: 'cello' } },
@@ -43,14 +38,11 @@ describe('prepareOfflineLevain', () => {
 
         await prepareOfflineLevain({ deviceId: 'device-a', port });
 
-        expect(posted).toEqual([{ type: 'setInstrument', instrumentId: 'cello' }]);
+        expect(posted).toEqual([]);
+        expect(mocks.autoLoadLevainSamples).toHaveBeenCalledWith('device-a', port, 'cello', undefined);
     });
 
-    it('posts the instrument identity before starting the load that clears zones', async () => {
-        // Order matters, and it is only safe in this direction because the
-        // loader's first message is `clearZones`, whose `realism.reset()` clears
-        // filter state and not the configuration. Reversed, the engine would be
-        // configured only after the samples arrive.
+    it('leaves instrument identity and sample-bank replacement in one loader transaction', async () => {
         const { port, posted } = fakePort();
         const postedWhenLoadStarted: PostedMessage[] = [];
         mocks.autoLoadLevainSamples.mockImplementation(() => {
@@ -60,9 +52,7 @@ describe('prepareOfflineLevain', () => {
 
         await prepareOfflineLevain({ deviceId: 'device-a', port });
 
-        expect(postedWhenLoadStarted).toEqual([
-            { type: 'setInstrument', instrumentId: defaultLevainState.patch.instrumentId },
-        ]);
+        expect(postedWhenLoadStarted).toEqual([]);
     });
 
     it('loads the selected instrument into that device port, forwarding the abort signal', async () => {
@@ -82,7 +72,7 @@ describe('prepareOfflineLevain', () => {
 
         await prepareOfflineLevain({ deviceId: 'never-opened', port });
 
-        expect(posted).toEqual([{ type: 'setInstrument', instrumentId: defaultLevainState.patch.instrumentId }]);
+        expect(posted).toEqual([]);
         expect(mocks.autoLoadLevainSamples).toHaveBeenCalledWith(
             'never-opened',
             port,
@@ -115,5 +105,13 @@ describe('prepareOfflineLevain', () => {
         releaseLoad();
         await pending;
         expect(settled).toBe(true);
+    });
+
+    it('rejects the offline preparation when the DSP bank cannot be committed', async () => {
+        mocks.autoLoadLevainSamples.mockRejectedValueOnce(new Error('bank commit rejected'));
+
+        await expect(prepareOfflineLevain({ deviceId: 'device-a', port: fakePort().port })).rejects.toThrow(
+            'bank commit rejected'
+        );
     });
 });

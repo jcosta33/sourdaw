@@ -12,10 +12,12 @@
  *   { type: 'param', name, value }
  *   { type: 'cc', cc, value }
  *   { type: 'bypass', bypassed }
- *   { type: 'addSample', sampleId, data, frameCount, channels, sampleRate }
- *   { type: 'addZone', ... }
- *   { type: 'buildZoneMap', numArticulations, numMics }
- *   { type: 'clearZones' }
+ *   { type: 'beginSampleBank', bankKey, instrumentId, loadToken }
+ *   { type: 'abortSampleBank', loadToken }
+ *   { type: 'addSample', loadToken, sampleId, data, frameCount, channels, sampleRate }
+ *   { type: 'addZone', loadToken, ... }
+ *   { type: 'buildZoneMap', loadToken, numArticulations, numMics }
+ *   { type: 'dispose' }
  */
 
 import { initSync, LevainInstance } from '../wasm/daw_dsp.js';
@@ -37,6 +39,7 @@ const PARAM_MAP: Record<string, string> = {
 
 type LevainAddZoneMsg = {
     type: 'addZone';
+    loadToken: number;
     zoneId: number;
     sampleId: number;
     articulationId: number;
@@ -81,27 +84,56 @@ type LevainMsg =
     | { type: 'allNotesOff' }
     | { type: 'param'; name: string; value: number }
     | { type: 'cc'; cc: number; value: number }
-    | { type: 'setInstrument'; instrumentId: string }
     | { type: 'bypass'; bypassed: boolean }
-    | { type: 'addSample'; data: Float32Array; frameCount: number; channels: number; sampleRate: number }
+    | { type: 'beginSampleBank'; bankKey: string; instrumentId: string; loadToken: number }
+    | { type: 'abortSampleBank'; loadToken: number }
+    | {
+          type: 'addSample';
+          loadToken: number;
+          sampleId: number;
+          data: Float32Array;
+          frameCount: number;
+          channels: number;
+          sampleRate: number;
+      }
     | LevainAddZoneMsg
-    | { type: 'buildZoneMap'; numArticulations: number; numMics: number }
-    | { type: 'clearZones' };
+    | { type: 'buildZoneMap'; loadToken: number; numArticulations: number; numMics: number }
+    | { type: 'dispose' };
 
 type LevainQueued =
     | { type: 'noteOn'; note: number; velocity: number; sampleFrame: number; channel?: number }
     | { type: 'noteOff'; note: number; sampleFrame: number; channel?: number }
     | (NoteExpressionMsg & { sampleFrame: number });
 
+type BankRole = 'owner' | 'follower' | 'ready';
+type BankBuild = { numArticulations: number; numMics: number };
+type InFlightBank = { owner: LevainProcessor; followers: Set<LevainProcessor> };
+
+const inFlightBanks = new Map<string, InFlightBank>();
+let sharedWasmMemory: WebAssembly.Memory | null = null;
+
+function initializeLevainWasm(wasmBytes: BufferSource): WebAssembly.Memory {
+    if (!sharedWasmMemory) {
+        const wasmExports = initSync({ module: new WebAssembly.Module(wasmBytes) });
+        sharedWasmMemory = wasmExports.memory;
+    }
+    return sharedWasmMemory;
+}
+
 class LevainProcessor extends AudioWorkletProcessor {
     _instance: LevainInstance | null = null;
     _memory: WebAssembly.Memory | null = null;
     _ready = false;
     _faulted = false;
+    _disposed = false;
     _bypassed = false;
     _pendingMessages: LevainMsg[] = [];
     _queue: LevainQueued[] = [];
     _queueHead = 0;
+    _bankKey: string | null = null;
+    _bankRole: BankRole | null = null;
+    _bankLoadToken: number | null = null;
+    _pendingBankBuild: BankBuild | null = null;
     // Cached WASM linear-memory views — reused across render quanta so process()
     // performs no per-block Float32Array allocation (audit RT-1); each revalidates
     // on a memory.grow() buffer-identity change (audit RT-7). See wasmView.ts.
@@ -112,6 +144,13 @@ class LevainProcessor extends AudioWorkletProcessor {
         super();
         this.port.onmessage = (event: MessageEvent<LevainMsg>) => {
             const msg = event.data;
+            if (msg.type === 'dispose') {
+                this._dispose();
+                return;
+            }
+            if (this._disposed) {
+                return;
+            }
             try {
                 if (msg.type === 'init') {
                     if (this._ready) {
@@ -128,24 +167,21 @@ class LevainProcessor extends AudioWorkletProcessor {
                 // A throw here is an OOM, a malformed message, or a wasm trap
                 // left by an earlier panic — and a trap arrives with no message
                 // at all, so the three are not distinguishable from this side.
-                // Sample loading runs through here and copies hundreds of MiB
-                // per instrument, which is exactly where an OOM lands. Treat
-                // the instance as unrecoverable and say so: reporting only
-                // while `!_ready` left a post-startup fault in a worklet
-                // console, with the device still accepting work afterwards.
+                // Sample-bank failures are transactional and reject only that
+                // load. Throws elsewhere mean the instance can no longer be
+                // trusted and fault it permanently.
                 console.error('LevainProcessor error:', error);
-                this._faulted = true;
-                this.port.postMessage({
-                    type: 'error',
-                    message: error instanceof Error ? error.message : String(error),
-                });
+                if (this._bankRole) {
+                    this._rejectBankLoad(error);
+                } else {
+                    this._faultWithError(error);
+                }
             }
         };
     }
 
     _initWasm(wasmBytes: BufferSource): void {
-        const wasmExports = initSync({ module: new WebAssembly.Module(wasmBytes) });
-        this._memory = wasmExports.memory;
+        this._memory = initializeLevainWasm(wasmBytes);
         this._instance = new LevainInstance(sampleRate, 64);
         this._ready = true;
 
@@ -155,6 +191,195 @@ class LevainProcessor extends AudioWorkletProcessor {
         this._pendingMessages = [];
 
         this.port.postMessage({ type: 'ready' });
+    }
+
+    _beginSampleBank(bankKey: string, instrumentId: string, loadToken: number): void {
+        const inst = this._instance;
+        if (
+            !inst ||
+            bankKey.length === 0 ||
+            instrumentId.length === 0 ||
+            !Number.isSafeInteger(loadToken) ||
+            loadToken <= 0
+        ) {
+            throw new Error('Levain sample bank identity and load token must be valid');
+        }
+
+        this._leaveBankLoad(new Error('Levain sample bank load was superseded'));
+        inst.begin_sample_bank(instrumentId);
+        this._bankKey = bankKey;
+        this._bankLoadToken = loadToken;
+        this._pendingBankBuild = null;
+
+        const inFlight = inFlightBanks.get(bankKey);
+        if (inFlight) {
+            this._bankRole = 'follower';
+            inFlight.followers.add(this);
+            this._postSampleBankUploadDecision(loadToken, false);
+            return;
+        }
+        if (inst.attach_sample_bank(bankKey)) {
+            this._bankRole = 'ready';
+            this._postSampleBankUploadDecision(loadToken, false);
+            return;
+        }
+
+        this._bankRole = 'owner';
+        inFlightBanks.set(bankKey, { owner: this, followers: new Set() });
+        this._postSampleBankUploadDecision(loadToken, true);
+    }
+
+    _postSampleBankUploadDecision(loadToken: number, uploadRequired: boolean): void {
+        this.port.postMessage({ type: 'sampleBankUploadDecision', loadToken, uploadRequired });
+    }
+
+    _completeSampleBankLoad(loadToken: number): void {
+        this._bankKey = null;
+        this._bankRole = null;
+        this._bankLoadToken = null;
+        this._pendingBankBuild = null;
+        this.port.postMessage({ type: 'sampleBankLoaded', loadToken });
+    }
+
+    _buildZoneMap(build: BankBuild): void {
+        const inst = this._instance;
+        if (!inst) {
+            return;
+        }
+        if (this._bankRole === 'follower') {
+            this._pendingBankBuild = build;
+            return;
+        }
+        if (!inst.build_zone_map(build.numArticulations, build.numMics)) {
+            throw new Error('Levain DSP rejected zone-map dimensions or capacity');
+        }
+        if (this._bankRole === 'ready') {
+            const loadToken = this._bankLoadToken;
+            if (loadToken === null) {
+                throw new Error('Levain sample bank lost its load token before commit');
+            }
+            if (!inst.commit_sample_bank()) {
+                throw new Error('Levain DSP could not commit the staged sample bank');
+            }
+            this._completeSampleBankLoad(loadToken);
+            return;
+        }
+        if (this._bankRole !== 'owner') {
+            return;
+        }
+
+        const bankKey = this._bankKey;
+        if (!bankKey) {
+            throw new Error('Levain sample bank ownership changed before publication');
+        }
+        const inFlight = inFlightBanks.get(bankKey);
+        if (!inFlight || inFlight.owner !== this) {
+            throw new Error('Levain sample bank ownership changed before publication');
+        }
+        const loadToken = this._bankLoadToken;
+        if (loadToken === null) {
+            throw new Error('Levain sample bank lost its load token before publication');
+        }
+        if (!inst.publish_sample_bank(bankKey)) {
+            throw new Error('Levain DSP could not publish the decoded sample bank');
+        }
+        if (!inst.commit_sample_bank()) {
+            throw new Error('Levain DSP could not commit the staged sample bank');
+        }
+        inFlightBanks.delete(bankKey);
+        for (const follower of inFlight.followers) {
+            follower._completeSharedBank(bankKey);
+        }
+        this._completeSampleBankLoad(loadToken);
+    }
+
+    _completeSharedBank(bankKey: string): void {
+        if (this._faulted || this._bankKey !== bankKey || this._bankRole !== 'follower') {
+            return;
+        }
+        try {
+            const inst = this._instance;
+            if (!inst || !inst.attach_sample_bank(bankKey)) {
+                throw new Error('Levain DSP could not attach the published sample bank');
+            }
+            this._bankRole = 'ready';
+            const pendingBuild = this._pendingBankBuild;
+            this._pendingBankBuild = null;
+            if (pendingBuild) {
+                this._buildZoneMap(pendingBuild);
+            }
+        } catch (error) {
+            this._rejectBankLoad(error);
+        }
+    }
+
+    _rejectBankLoad(error: unknown): void {
+        const loadToken = this._bankLoadToken;
+        try {
+            this._leaveBankLoad(error);
+        } finally {
+            this.port.postMessage({
+                type: 'sampleBankError',
+                loadToken,
+                message: error instanceof Error ? error.message : String(error),
+            });
+        }
+    }
+
+    _faultWithError(error: unknown): void {
+        this._faulted = true;
+        this._leaveBankLoad(error);
+        this.port.postMessage({
+            type: 'error',
+            message: error instanceof Error ? error.message : String(error),
+        });
+    }
+
+    _dispose(): void {
+        if (this._disposed) {
+            this.port.postMessage({ type: 'disposed' });
+            return;
+        }
+        this._disposed = true;
+        this._pendingMessages = [];
+        this._queue = [];
+        this._queueHead = 0;
+        try {
+            this._leaveBankLoad(new Error('Levain processor was disposed during sample loading'));
+            try {
+                this._instance?.all_notes_off();
+            } catch (error) {
+                console.error('LevainProcessor disposal note release failed:', error);
+            }
+        } finally {
+            this.port.postMessage({ type: 'disposed' });
+        }
+    }
+
+    _leaveBankLoad(error: unknown): void {
+        const bankKey = this._bankKey;
+        const inFlight = bankKey ? inFlightBanks.get(bankKey) : undefined;
+        this._bankKey = null;
+        this._bankRole = null;
+        this._bankLoadToken = null;
+        this._pendingBankBuild = null;
+        if (bankKey && inFlight?.owner === this) {
+            inFlightBanks.delete(bankKey);
+            for (const follower of inFlight.followers) {
+                try {
+                    follower._rejectBankLoad(error);
+                } catch (followerError) {
+                    console.error('LevainProcessor follower cleanup failed:', followerError);
+                }
+            }
+        } else {
+            inFlight?.followers.delete(this);
+        }
+        try {
+            this._instance?.abort_sample_bank();
+        } catch (abortError) {
+            console.error('LevainProcessor sample-bank abort failed:', abortError);
+        }
     }
 
     _enqueue(msg: LevainQueued): void {
@@ -221,16 +446,34 @@ class LevainProcessor extends AudioWorkletProcessor {
             case 'cc':
                 inst.handle_cc(msg.cc, msg.value);
                 break;
-            case 'setInstrument':
-                inst.set_instrument(msg.instrumentId);
-                break;
             case 'bypass':
                 this._bypassed = msg.bypassed;
                 break;
-            case 'addSample':
-                inst.add_sample(msg.data, msg.frameCount, msg.channels, msg.sampleRate);
+            case 'beginSampleBank':
+                this._beginSampleBank(msg.bankKey, msg.instrumentId, msg.loadToken);
                 break;
+            case 'abortSampleBank':
+                if (msg.loadToken === this._bankLoadToken) {
+                    this._rejectBankLoad(new Error('Levain sample bank load was aborted'));
+                }
+                break;
+            case 'addSample': {
+                if (msg.loadToken !== this._bankLoadToken) {
+                    break;
+                }
+                if (this._bankRole === 'follower' || this._bankRole === 'ready') {
+                    break;
+                }
+                const sampleId = inst.add_sample(msg.data, msg.frameCount, msg.channels, msg.sampleRate);
+                if (sampleId === undefined || sampleId !== msg.sampleId) {
+                    throw new Error('Levain DSP rejected sample-bank mutation or sample ordering');
+                }
+                break;
+            }
             case 'addZone': {
+                if (msg.loadToken !== this._bankLoadToken) {
+                    break;
+                }
                 const loopMode = (() => {
                     if (msg.loopMode === 'forward') {
                         return 1;
@@ -266,12 +509,13 @@ class LevainProcessor extends AudioWorkletProcessor {
                 break;
             }
             case 'buildZoneMap':
-                if (!inst.build_zone_map(msg.numArticulations, msg.numMics)) {
-                    throw new Error('Levain DSP rejected zone-map dimensions or capacity');
+                if (msg.loadToken !== this._bankLoadToken) {
+                    break;
                 }
+                this._buildZoneMap(msg);
                 break;
-            case 'clearZones':
-                inst.clear_zones();
+            case 'dispose':
+                this._dispose();
                 break;
         }
     }
@@ -292,6 +536,9 @@ class LevainProcessor extends AudioWorkletProcessor {
     }
 
     process(_inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
+        if (this._disposed) {
+            return false;
+        }
         if (!this._ready || !this._instance || this._faulted || this._bypassed) {
             return true;
         }
@@ -333,8 +580,7 @@ class LevainProcessor extends AudioWorkletProcessor {
                 out1.set(this._outRightView.get(outMem, rightPtr, processFrames));
             }
         } catch (error) {
-            this._faulted = true;
-            this.port.postMessage({ type: 'error', message: String(error) });
+            this._faultWithError(error);
         }
 
         return true;

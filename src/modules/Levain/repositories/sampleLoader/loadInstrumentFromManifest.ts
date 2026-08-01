@@ -10,6 +10,123 @@ export const DEFAULT_LOD: SampleLodConfig = {
     maxRoundRobins: 0,
 };
 
+let bankLoadSequence = 0;
+
+type SampleBankHandshake = {
+    uploadRequired: Promise<boolean>;
+    completed: Promise<void>;
+    cancel: () => void;
+};
+
+function allocateBankLoadToken(): number {
+    if (bankLoadSequence >= Number.MAX_SAFE_INTEGER) {
+        throw new Error('Levain sample-bank load token capacity exhausted');
+    }
+    bankLoadSequence += 1;
+    return bankLoadSequence;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
+}
+
+function createSampleBankHandshake(
+    nodePort: MessagePort,
+    loadToken: number,
+    signal?: AbortSignal
+): SampleBankHandshake {
+    let uploadSettled = false;
+    let completedSettled = false;
+    let resolveUpload = (_uploadRequired: boolean): void => {};
+    let rejectUpload = (_error: Error): void => {};
+    let resolveCompleted = (): void => {};
+    let rejectCompleted = (_error: Error): void => {};
+
+    const uploadRequired = new Promise<boolean>((resolve, reject) => {
+        resolveUpload = resolve;
+        rejectUpload = reject;
+    });
+    const completed = new Promise<void>((resolve, reject) => {
+        resolveCompleted = resolve;
+        rejectCompleted = reject;
+    });
+    void uploadRequired.catch(() => {});
+    void completed.catch(() => {});
+
+    const cleanup = (): void => {
+        nodePort.removeEventListener('message', onMessage);
+        signal?.removeEventListener('abort', onAbort);
+    };
+    const reject = (error: Error): void => {
+        if (!uploadSettled) {
+            uploadSettled = true;
+            rejectUpload(error);
+        }
+        if (!completedSettled) {
+            completedSettled = true;
+            rejectCompleted(error);
+        }
+        cleanup();
+    };
+    const onMessage = (event: MessageEvent<unknown>): void => {
+        const message = event.data;
+        if (!isRecord(message)) {
+            return;
+        }
+        if (message.type === 'disposed' || message.type === 'error') {
+            const detail = typeof message.message === 'string' ? `: ${message.message}` : '';
+            reject(new Error(`Levain processor ended during sample-bank loading${detail}`));
+            return;
+        }
+        if (message.loadToken !== loadToken) {
+            return;
+        }
+        if (message.type === 'sampleBankUploadDecision' && typeof message.uploadRequired === 'boolean') {
+            if (!uploadSettled) {
+                uploadSettled = true;
+                resolveUpload(message.uploadRequired);
+            }
+            return;
+        }
+        if (message.type === 'sampleBankLoaded') {
+            if (!uploadSettled) {
+                reject(new Error('Levain processor committed a sample bank before its upload decision'));
+                return;
+            }
+            if (!completedSettled) {
+                completedSettled = true;
+                resolveCompleted();
+                cleanup();
+            }
+            return;
+        }
+        if (message.type === 'sampleBankError') {
+            const detail = typeof message.message === 'string' ? `: ${message.message}` : '';
+            reject(new Error(`Levain sample-bank load failed${detail}`));
+        }
+    };
+    const onAbort = (): void => {
+        if (uploadSettled && completedSettled) {
+            return;
+        }
+        try {
+            nodePort.postMessage({ type: 'abortSampleBank', loadToken });
+        } catch {
+            // The port may already be closed; local cancellation still settles.
+        }
+        const reason: unknown = signal?.reason;
+        reject(reason instanceof Error ? reason : new DOMException('Levain sample-bank load aborted', 'AbortError'));
+    };
+
+    nodePort.addEventListener('message', onMessage);
+    signal?.addEventListener('abort', onAbort, { once: true });
+    if (signal?.aborted) {
+        onAbort();
+    }
+
+    return { uploadRequired, completed, cancel: onAbort };
+}
+
 export type LoadInstrumentFromManifestInput = {
     manifestUrl: string;
     basePath: string;
@@ -26,7 +143,8 @@ export type LoadInstrumentFromManifestInput = {
 
 /**
  * Load a complete instrument from a manifest file.
- * Sends addSample, addZone, and buildZoneMap messages to the worklet node.
+ * Negotiates shared-bank ownership, uploads PCM only for the elected owner,
+ * and resolves only after the worklet commits the bank.
  *
  * @param manifestUrl URL to the JSON manifest
  * @param basePath Base path for sample file URLs
@@ -34,9 +152,8 @@ export type LoadInstrumentFromManifestInput = {
  * @param lod LOD configuration for memory management
  * @param onProgress Optional progress callback (0-1)
  * @param signal Optional abort signal. When a newer load supersedes this one,
- *   the caller aborts it; this loader then bails without posting `clearZones`,
- *   `addSample`, or `buildZoneMap`, so the superseded load never overwrites the
- *   worklet zone map the newer load built.
+ *   the caller aborts it; per-load tokens fence any messages already queued for
+ *   the superseded transaction from the replacement bank.
  */
 export async function loadInstrumentFromManifest({
     manifestUrl,
@@ -67,63 +184,87 @@ export async function loadInstrumentFromManifest({
         return;
     }
 
-    nodePort.postMessage({ type: 'clearZones' });
-
-    const sampleIdMap = new Map<string, number>();
-    for (const [sampleId, file] of bank.files.entries()) {
-        const decoded = bank.samples.get(file);
-        if (!decoded) {
-            throw new Error(`Decoded Levain bank ${bank.instrumentId}@${bank.version} is missing ${file}`);
-        }
-        sampleIdMap.set(file, sampleId);
+    const loadToken = allocateBankLoadToken();
+    const handshake = createSampleBankHandshake(nodePort, loadToken, signal);
+    let completed = false;
+    try {
         nodePort.postMessage({
-            type: 'addSample',
-            sampleId,
-            data: decoded.data,
-            frameCount: decoded.frameCount,
-            channels: decoded.channels,
-            sampleRate: decoded.sampleRate,
+            type: 'beginSampleBank',
+            bankKey: bank.bankKey,
+            instrumentId: bank.instrumentId,
+            loadToken,
         });
-    }
 
-    let zoneId = 0;
-    for (const { zone, articulationId } of bank.zones) {
-        const sampleId = sampleIdMap.get(zone.file);
-        if (sampleId === undefined) {
-            throw new Error(`Decoded Levain bank ${bank.instrumentId}@${bank.version} has no id for ${zone.file}`);
+        const uploadRequired = await handshake.uploadRequired;
+        signal?.throwIfAborted();
+        const sampleIdMap = new Map<string, number>();
+        for (const [sampleId, file] of bank.files.entries()) {
+            signal?.throwIfAborted();
+            const decoded = bank.samples.get(file);
+            if (!decoded) {
+                throw new Error(`Decoded Levain bank ${bank.instrumentId}@${bank.version} is missing ${file}`);
+            }
+            sampleIdMap.set(file, sampleId);
+            if (uploadRequired) {
+                nodePort.postMessage({
+                    type: 'addSample',
+                    loadToken,
+                    sampleId,
+                    data: decoded.data,
+                    frameCount: decoded.frameCount,
+                    channels: decoded.channels,
+                    sampleRate: decoded.sampleRate,
+                });
+            }
+        }
+
+        let zoneId = 0;
+        for (const { zone, articulationId } of bank.zones) {
+            signal?.throwIfAborted();
+            const sampleId = sampleIdMap.get(zone.file);
+            if (sampleId === undefined) {
+                throw new Error(`Decoded Levain bank ${bank.instrumentId}@${bank.version} has no id for ${zone.file}`);
+            }
+
+            nodePort.postMessage({
+                type: 'addZone',
+                loadToken,
+                zoneId,
+                sampleId,
+                articulationId,
+                rootNote: zone.rootNote,
+                loKey: zone.loKey,
+                hiKey: zone.hiKey,
+                loVel: zone.loVel,
+                hiVel: zone.hiVel,
+                rrPos: zone.rrPos,
+                rrLen: zone.rrLen,
+                micId: zone.micId,
+                isRelease: zone.isRelease,
+                loopMode: zone.loopMode,
+                loopStart: zone.loopStart,
+                loopEnd: zone.loopEnd,
+                loopCrossfade: zone.loopCrossfade,
+                gainDb: zone.gainDb,
+                attack: zone.attack,
+                decay: zone.decay,
+                sustain: zone.sustain,
+                release: zone.release,
+            });
+            zoneId++;
         }
 
         nodePort.postMessage({
-            type: 'addZone',
-            zoneId,
-            sampleId,
-            articulationId,
-            rootNote: zone.rootNote,
-            loKey: zone.loKey,
-            hiKey: zone.hiKey,
-            loVel: zone.loVel,
-            hiVel: zone.hiVel,
-            rrPos: zone.rrPos,
-            rrLen: zone.rrLen,
-            micId: zone.micId,
-            isRelease: zone.isRelease,
-            loopMode: zone.loopMode,
-            loopStart: zone.loopStart,
-            loopEnd: zone.loopEnd,
-            loopCrossfade: zone.loopCrossfade,
-            gainDb: zone.gainDb,
-            attack: zone.attack,
-            decay: zone.decay,
-            sustain: zone.sustain,
-            release: zone.release,
+            type: 'buildZoneMap',
+            loadToken,
+            numArticulations: bank.numArticulations,
+            numMics: bank.numMics,
         });
-        zoneId++;
+        await handshake.completed;
+        completed = true;
+    } finally {
+        if (!completed) {
+            handshake.cancel();
+        }
     }
-
-    // Build the zone lookup table.
-    nodePort.postMessage({
-        type: 'buildZoneMap',
-        numArticulations: bank.numArticulations,
-        numMics: bank.numMics,
-    });
 }

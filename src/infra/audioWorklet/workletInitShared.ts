@@ -103,6 +103,8 @@ export type ReadyHandshakeResult = {
      *   - 'other'   — not a ready/error event; caller should process it
      */
     onMessage: (event: MessageEvent) => 'ready' | 'error' | 'late' | 'other';
+    /** Reject an unsettled handshake when its owning node is torn down. */
+    cancel: (reason: Error) => void;
     /** True once the handshake has resolved, rejected, or timed out. */
     isSettled: () => boolean;
 };
@@ -166,9 +168,19 @@ export function createReadyHandshake(input: CreateReadyHandshakeInput): ReadyHan
         return 'other';
     };
 
+    const cancel = (reason: Error): void => {
+        if (settled) {
+            return;
+        }
+        settled = true;
+        clearTimeout(timeout);
+        rejectFn(reason);
+    };
+
     return {
         promise,
         onMessage,
+        cancel,
         isSettled: () => settled,
     };
 }

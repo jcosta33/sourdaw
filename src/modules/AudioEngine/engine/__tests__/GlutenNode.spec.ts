@@ -273,6 +273,7 @@ describe('createGlutenNode', () => {
             promise: Promise.resolve({}),
             onMessage: () => 'ready' as const,
             isSettled: () => true,
+            cancel: vi.fn(),
         });
 
         const node = await createGlutenNode(makeCtx());

@@ -454,29 +454,31 @@ fn levain_process_does_not_allocate_with_notes_held() {
     let sample: Vec<f32> = (0..frame_count)
         .map(|i| (i as f32 / SAMPLE_RATE * 220.0 * std::f32::consts::TAU).sin() * 0.8)
         .collect();
-    let sample_id = instance.add_sample(sample, frame_count, 1, SAMPLE_RATE);
+    let sample_id = instance
+        .add_sample(sample, frame_count, 1, SAMPLE_RATE)
+        .expect("test sample should fit the bank");
     instance.add_zone(
-        0,          // zone_id
-        sample_id,  // sample_id
-        0,          // articulation_id
-        69,         // root_note
-        0,          // lo_key
-        127,        // hi_key
-        0,          // lo_vel
-        127,        // hi_vel
-        0,          // rr_pos
-        1,          // rr_len
-        0,          // mic_id
-        false,      // is_release
-        1,          // loop_mode: forward, so the voice never runs out of sample
-        0,          // loop_start
+        0,           // zone_id
+        sample_id,   // sample_id
+        0,           // articulation_id
+        69,          // root_note
+        0,           // lo_key
+        127,         // hi_key
+        0,           // lo_vel
+        127,         // hi_vel
+        0,           // rr_pos
+        1,           // rr_len
+        0,           // mic_id
+        false,       // is_release
+        1,           // loop_mode: forward, so the voice never runs out of sample
+        0,           // loop_start
         frame_count, // loop_end
-        0,          // loop_crossfade
-        0.0,        // gain_db
-        0.005,      // attack
-        0.1,        // decay
-        1.0,        // sustain
-        0.3,        // release
+        0,           // loop_crossfade
+        0.0,         // gain_db
+        0.005,       // attack
+        0.1,         // decay
+        1.0,         // sustain
+        0.3,         // release
     );
     instance.build_zone_map(1, 1);
 

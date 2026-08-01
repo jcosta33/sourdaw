@@ -18,6 +18,7 @@ export type DecodedBankZone = {
 };
 
 export type DecodedBank = {
+    bankKey: string;
     version: number;
     instrumentId: string;
     files: readonly string[];
@@ -69,6 +70,8 @@ type CreateDecodedBankResourceInput = {
 };
 
 type BankEntry = {
+    key: string;
+    publicationKey: string;
     baseKey: string;
     consumerController: AbortController;
     controller: AbortController;
@@ -81,6 +84,16 @@ type BankEntry = {
     samples: Map<string, DecodedSample>;
     state: 'loading' | 'resolved';
 };
+
+let bankPublicationSequence = 0;
+
+function allocateBankPublicationKey(cacheKey: string): string {
+    if (bankPublicationSequence >= Number.MAX_SAFE_INTEGER) {
+        throw new Error('Levain decoded-bank publication key capacity exhausted');
+    }
+    bankPublicationSequence += 1;
+    return `${cacheKey}\u0000${bankPublicationSequence}`;
+}
 
 type ManifestEntry = {
     controller: AbortController;
@@ -521,6 +534,7 @@ export function createDecodedBankResource({
         }
 
         return Object.freeze({
+            bankKey: entry.publicationKey,
             version: manifest.version,
             instrumentId: manifest.instrumentId,
             files: Object.freeze(files),
@@ -540,6 +554,8 @@ export function createDecodedBankResource({
     ): BankEntry {
         const controller = new AbortController();
         const entry: BankEntry = {
+            key,
+            publicationKey: allocateBankPublicationKey(key),
             baseKey,
             consumerController: new AbortController(),
             controller,

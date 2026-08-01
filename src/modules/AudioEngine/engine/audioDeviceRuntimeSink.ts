@@ -14,7 +14,6 @@ type DeviceLifecyclePayload = {
 type LevainRuntimeDevice = {
     setParam: LevainNodeResult['setParam'];
     handleCc: LevainNodeResult['handleCc'];
-    setInstrument: LevainNodeResult['setInstrument'];
 };
 
 type ProofRuntimeBridge = {
@@ -54,10 +53,8 @@ export type AudioDeviceRuntimeSink = {
      * The offline render builds its nodes through a different registry than live
      * playback, so none of the per-device setup the live descriptors perform ever
      * ran for an export. Levain therefore rendered digital silence: no zones, and
-     * a fallback tone that only `clear_zones()` arms — and, once that was fixed,
-     * still rendered as an unconfigured engine, because `setInstrument` is what
-     * configures the realism layer and it was never posted either. This is the
-     * seam where the offline path asks for that setup, and — unlike the live
+     * a fallback tone that only a hydrated sample bank disarms. This is the seam
+     * where the offline path asks for that setup, and — unlike the live
      * registration, which is deliberately fire-and-forget — waits for it.
      *
      * The offline device chain calls this for every worklet-backed device it

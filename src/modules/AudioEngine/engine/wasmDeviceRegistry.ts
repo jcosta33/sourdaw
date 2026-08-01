@@ -360,7 +360,6 @@ const levainDescriptor: WasmDeviceDescriptor = {
                     device: {
                         setParam: result.setParam,
                         handleCc: result.handleCc,
-                        setInstrument: result.setInstrument,
                     },
                     port: result.workletNode.port,
                 });

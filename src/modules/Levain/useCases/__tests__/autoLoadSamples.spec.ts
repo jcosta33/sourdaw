@@ -89,7 +89,7 @@ describe('autoLoadLevainSamples', () => {
         it('records an error and never claims completion when the loader rejects', async () => {
             vi.mocked(loadInstrumentFromManifest).mockRejectedValueOnce(new Error('boom'));
 
-            await autoLoadLevainSamples('d1', {} as MessagePort, 'cello');
+            await expect(autoLoadLevainSamples('d1', {} as MessagePort, 'cello')).rejects.toThrow('boom');
 
             expect(setSampleLoadError).toHaveBeenCalledWith('d1', 'boom');
             // The old code set progress to 1.0 in a finally even on error.

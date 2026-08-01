@@ -144,6 +144,21 @@ describe('createDecodedBankResource', () => {
         });
     });
 
+    it('publishes a new worklet bank identity after cache invalidation', async () => {
+        const resource = createDecodedBankResource({
+            maxDecodedBytes: 1024,
+            maxConcurrentSampleLoads: 1,
+            loadManifest: vi.fn().mockResolvedValue(createManifest({ files: ['a.wav'] })),
+            loadSample: vi.fn().mockResolvedValue(createSample(1)),
+        });
+
+        const first = await resource.load(DEFAULT_INPUT);
+        resource.invalidate(DEFAULT_INPUT);
+        const replacement = await resource.load(DEFAULT_INPUT);
+
+        expect(replacement.bankKey).not.toBe(first.bankKey);
+    });
+
     it('sizes the DSP articulation lookup for sparse canonical articulation ids', async () => {
         const resource = createDecodedBankResource({
             maxDecodedBytes: 1024,

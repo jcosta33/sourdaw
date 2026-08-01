@@ -278,21 +278,6 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Levain/useCases/levainParamBridge/helpers.ts': 3,
         'src/modules/Levain/useCases/levainParamBridge/loadSamplesForInstrument.ts': 2,
         'src/modules/Levain/useCases/loadPreset.ts': 4,
-        // Count provenance: 1 = the single word `loadSamplesForInstrument` in this
-        // file's JSDoc, under the **Order.** heading. It is a deliberate
-        // cross-reference, not an incidental mention: the offline path must post
-        // `setInstrument` and only then start the load, and that ordering is only
-        // legible next to the live bridge function it copies. Deleting the word
-        // would drop this row to 0 and the census would go green — so a future
-        // change here is a debt retired only if the *cross-reference* was retired
-        // (the offline path stopped mirroring the live order, or that function was
-        // renamed). If the count falls and the ordering requirement still holds,
-        // the comment was lost, not the debt.
-        //
-        // The file holds no device write of its own: it posts one worklet message
-        // and delegates the load to `autoLoadLevainSamples`, whose sinks stay
-        // censused on `autoLoadSamples.ts`.
-        'src/modules/Levain/useCases/prepareOfflineLevain.ts': 1,
         'src/modules/Levain/presentations/views/LevainPanel.tsx': 2,
         'src/modules/PluginHost/useCases/faustEngine/compileAllFaustModules.ts': 4,
         'src/modules/PluginHost/useCases/faustEngine/compileFaustDSP.ts': 1,

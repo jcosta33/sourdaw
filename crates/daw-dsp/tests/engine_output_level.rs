@@ -408,10 +408,31 @@ fn levain_level() -> Level {
     let sample: Vec<f32> = (0..frame_count)
         .map(|f| (f as f32 / SAMPLE_RATE * 220.0 * std::f32::consts::TAU).sin() * 0.8)
         .collect();
-    let sample_id = i.add_sample(sample, frame_count, 1, SAMPLE_RATE);
+    let sample_id = i
+        .add_sample(sample, frame_count, 1, SAMPLE_RATE)
+        .expect("test sample should fit the bank");
     i.add_zone(
-        0, sample_id, 0, 69, 0, 127, 0, 127, 0, 1, 0, false, 1, 0, frame_count, 0, 0.0, 0.005,
-        0.1, 1.0, 0.3,
+        0,
+        sample_id,
+        0,
+        69,
+        0,
+        127,
+        0,
+        127,
+        0,
+        1,
+        0,
+        false,
+        1,
+        0,
+        frame_count,
+        0,
+        0.0,
+        0.005,
+        0.1,
+        1.0,
+        0.3,
     );
     i.build_zone_map(1, 1);
     i.note_on(60, 100);

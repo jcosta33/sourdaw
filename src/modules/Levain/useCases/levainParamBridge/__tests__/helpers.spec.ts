@@ -37,14 +37,12 @@ function makeDeps(
 type MockedLevainDevice = {
     setParam: Mock<LevainDevice['setParam']>;
     handleCc: Mock<LevainDevice['handleCc']>;
-    setInstrument: Mock<NonNullable<LevainDevice['setInstrument']>>;
 };
 
 function makeDevice(): MockedLevainDevice {
     return {
         setParam: vi.fn<LevainDevice['setParam']>(),
         handleCc: vi.fn<LevainDevice['handleCc']>(),
-        setInstrument: vi.fn<NonNullable<LevainDevice['setInstrument']>>(),
     };
 }
 
@@ -94,7 +92,6 @@ describe('createLevainBridge', () => {
                 expect(levainStore.value).toEqual({});
                 expect(deps.autoLoadLevainSamples).not.toHaveBeenCalled();
                 expect(deps.persistDeviceParam).not.toHaveBeenCalled();
-                expect(device.setInstrument).not.toHaveBeenCalled();
                 expect(rafCallbacks).toEqual([]);
 
                 deps.setResolutionStatus('eligible');
@@ -120,12 +117,10 @@ describe('createLevainBridge', () => {
                 bridge.registerLevainDevice('d1', device, {} as MessagePort);
                 expect(signals).toHaveLength(1);
                 deps.autoLoadLevainSamples.mockClear();
-                device.setInstrument.mockClear();
                 deps.setResolutionStatus(status);
 
                 bridge.loadSamplesForInstrument('d1', 'cello');
 
-                expect(device.setInstrument).not.toHaveBeenCalled();
                 expect(deps.autoLoadLevainSamples).not.toHaveBeenCalled();
                 expect(signals[0]?.aborted).toBe(false);
             }

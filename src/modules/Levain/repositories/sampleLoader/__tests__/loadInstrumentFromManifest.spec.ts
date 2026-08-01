@@ -67,8 +67,63 @@ function mockFetchOk(): void {
     );
 }
 
-function makePort(): MessagePort & { postMessage: ReturnType<typeof vi.fn> } {
-    return { postMessage: vi.fn() } as unknown as MessagePort & { postMessage: ReturnType<typeof vi.fn> };
+type FakePort = MessagePort & {
+    postMessage: ReturnType<typeof vi.fn>;
+    emit: (message: unknown) => void;
+};
+
+type MakePortOptions = {
+    uploadRequired?: boolean;
+    autoComplete?: boolean;
+    commitError?: string;
+};
+
+function makePort(options: MakePortOptions = {}): FakePort {
+    const listeners = new Set<(event: MessageEvent<unknown>) => void>();
+    const emit = (message: unknown): void => {
+        const event = { data: message } as MessageEvent<unknown>;
+        for (const listener of listeners) {
+            listener(event);
+        }
+    };
+    const postMessage = vi.fn((message: unknown) => {
+        if (!isRecord(message) || typeof message.loadToken !== 'number') {
+            return;
+        }
+        if (message.type === 'beginSampleBank') {
+            queueMicrotask(() => {
+                emit({
+                    type: 'sampleBankUploadDecision',
+                    loadToken: message.loadToken,
+                    uploadRequired: options.uploadRequired ?? true,
+                });
+            });
+            return;
+        }
+        if (message.type === 'buildZoneMap' && options.autoComplete !== false) {
+            queueMicrotask(() => {
+                if (options.commitError) {
+                    emit({ type: 'sampleBankError', loadToken: message.loadToken, message: options.commitError });
+                    return;
+                }
+                emit({ type: 'sampleBankLoaded', loadToken: message.loadToken });
+            });
+        }
+    });
+    return {
+        postMessage,
+        emit,
+        addEventListener: (_type: string, listener: EventListenerOrEventListenerObject) => {
+            if (typeof listener === 'function') {
+                listeners.add(listener);
+            }
+        },
+        removeEventListener: (_type: string, listener: EventListenerOrEventListenerObject) => {
+            if (typeof listener === 'function') {
+                listeners.delete(listener);
+            }
+        },
+    } as unknown as FakePort;
 }
 
 function postedTypes(port: { postMessage: ReturnType<typeof vi.fn> }): string[] {
@@ -110,13 +165,105 @@ describe('loadInstrumentFromManifest', () => {
         });
 
         const types = postedTypes(port);
-        expect(types).toContain('clearZones');
+        expect(types).toContain('beginSampleBank');
         expect(types).toContain('addSample');
         expect(types).toContain('buildZoneMap');
+        expect(types.indexOf('beginSampleBank')).toBeLessThan(types.indexOf('addSample'));
+        const beginCall = port.postMessage.mock.calls.find(([message]) => {
+            return (message as { type: string }).type === 'beginSampleBank';
+        });
         const addSampleCall = port.postMessage.mock.calls.find(([message]) => {
             return (message as { type: string }).type === 'addSample';
         });
+        const beginMessage: unknown = beginCall?.[0];
+        const addSampleMessage: unknown = addSampleCall?.[0];
+        if (!isRecord(beginMessage) || !isRecord(addSampleMessage)) {
+            throw new Error('Expected beginSampleBank and addSample messages');
+        }
         expect(addSampleCall).toHaveLength(1);
+        expect(beginMessage.instrumentId).toBe('violin-1');
+        expect(addSampleMessage.loadToken).toBe(beginMessage.loadToken);
+        const zoneAndBuildMessages = port.postMessage.mock.calls
+            .map(([message]) => message as { type: string; loadToken?: number })
+            .filter((message) => message.type === 'addZone' || message.type === 'buildZoneMap');
+        expect(zoneAndBuildMessages.every((message) => message.loadToken === beginMessage.loadToken)).toBe(true);
+    });
+
+    it('skips PCM upload when the worklet assigns this loader as a shared-bank follower', async () => {
+        const port = makePort({ uploadRequired: false });
+
+        await loadInstrumentFromManifest({
+            manifestUrl: '/m.json',
+            basePath: '/base',
+            expectedInstrumentId: 'violin-1',
+            nodePort: port,
+        });
+
+        expect(postedTypes(port)).not.toContain('addSample');
+        expect(postedTypes(port)).toContain('addZone');
+        expect(postedTypes(port)).toContain('buildZoneMap');
+    });
+
+    it('rejects when the worklet cannot commit the staged bank', async () => {
+        const port = makePort({ commitError: 'zone map rejected' });
+
+        await expect(
+            loadInstrumentFromManifest({
+                manifestUrl: '/m.json',
+                basePath: '/base',
+                expectedInstrumentId: 'violin-1',
+                nodePort: port,
+            })
+        ).rejects.toThrow('zone map rejected');
+    });
+
+    it('does not resolve before the worklet acknowledges the committed bank', async () => {
+        const port = makePort({ autoComplete: false });
+        let settled = false;
+        const pending = loadInstrumentFromManifest({
+            manifestUrl: '/m.json',
+            basePath: '/base',
+            expectedInstrumentId: 'violin-1',
+            nodePort: port,
+        }).then(() => {
+            settled = true;
+            return undefined;
+        });
+
+        await vi.waitFor(() => {
+            expect(postedTypes(port)).toContain('buildZoneMap');
+        });
+        expect(settled).toBe(false);
+        const buildMessage: unknown = port.postMessage.mock.calls.find(([message]) => {
+            return isRecord(message) && message.type === 'buildZoneMap';
+        })?.[0];
+        if (!isRecord(buildMessage) || typeof buildMessage.loadToken !== 'number') {
+            throw new Error('Expected a buildZoneMap message');
+        }
+        port.emit({ type: 'sampleBankLoaded', loadToken: buildMessage.loadToken });
+
+        await pending;
+        expect(settled).toBe(true);
+    });
+
+    it('aborts the active worklet transaction while waiting for its commit acknowledgement', async () => {
+        const port = makePort({ autoComplete: false });
+        const controller = new AbortController();
+        const pending = loadInstrumentFromManifest({
+            manifestUrl: '/m.json',
+            basePath: '/base',
+            expectedInstrumentId: 'violin-1',
+            nodePort: port,
+            signal: controller.signal,
+        });
+        await vi.waitFor(() => {
+            expect(postedTypes(port)).toContain('buildZoneMap');
+        });
+
+        controller.abort();
+
+        await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+        expect(postedTypes(port)).toContain('abortSampleBank');
     });
 
     it('hydrates two concurrent instances from one manifest fetch and one decoded sample', async () => {
@@ -149,6 +296,26 @@ describe('loadInstrumentFromManifest', () => {
         expect(firstSample?.[0]).toMatchObject({ type: 'addSample', sampleId: 0 });
         expect(secondSample?.[0]).toMatchObject({ type: 'addSample', sampleId: 0 });
         expect(getPostedSampleData(firstSample).buffer).toBe(getPostedSampleData(secondSample).buffer);
+        const firstBegin = firstPort.postMessage.mock.calls.find(([message]) => {
+            return (message as { type: string }).type === 'beginSampleBank';
+        });
+        const secondBegin = secondPort.postMessage.mock.calls.find(([message]) => {
+            return (message as { type: string }).type === 'beginSampleBank';
+        });
+        const firstBeginMessage: unknown = firstBegin?.[0];
+        expect(
+            isRecord(firstBeginMessage) &&
+                firstBeginMessage.type === 'beginSampleBank' &&
+                typeof firstBeginMessage.bankKey === 'string'
+        ).toBe(true);
+        const secondBeginMessage: unknown = secondBegin?.[0];
+        expect(
+            isRecord(secondBeginMessage) &&
+                secondBeginMessage.type === 'beginSampleBank' &&
+                secondBeginMessage.bankKey === (firstBeginMessage as Record<string, unknown>).bankKey &&
+                secondBeginMessage.instrumentId === 'violin-1' &&
+                secondBeginMessage.loadToken !== (firstBeginMessage as Record<string, unknown>).loadToken
+        ).toBe(true);
     });
 
     it('rejects mismatched bank identity before decoding or mutating the worklet', async () => {
@@ -236,7 +403,7 @@ describe('loadInstrumentFromManifest', () => {
             });
 
             const types = postedTypes(port);
-            expect(types).not.toContain('clearZones');
+            expect(types).not.toContain('beginSampleBank');
             expect(types).not.toContain('buildZoneMap');
         });
 

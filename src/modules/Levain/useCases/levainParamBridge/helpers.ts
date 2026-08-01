@@ -15,7 +15,6 @@ import { camelToSnake } from './camelToSnake';
 export type LevainDevice = {
     setParam: (name: string, value: number) => void;
     handleCc: (cc: number, value: number) => void;
-    setInstrument?: (instrumentId: string) => void;
 };
 
 export type LevainBridgeDeps = {
@@ -83,9 +82,6 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
             return;
         }
 
-        // Tell the engine which instrument it now is, so the realism layer
-        // (body modes, sympathetic strings, breath/bow noise) reconfigures.
-        activeDevices.get(deviceId)?.setInstrument?.(instrumentId);
         const port = activePorts.get(deviceId);
         if (!port) {
             return;

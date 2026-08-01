@@ -180,6 +180,17 @@ describe('createReadyHandshake', () => {
         await expect(handshake.promise).resolves.toEqual({ type: 'ready' });
     });
 
+    it('cancels an unsettled handshake without leaving its timeout alive', async () => {
+        const handshake = createReadyHandshake({ pluginName: 'TestNode', timeoutMs: 5_000 });
+        const assertion = expect(handshake.promise).rejects.toThrow('node disposed');
+
+        handshake.cancel(new Error('node disposed'));
+        await vi.advanceTimersByTimeAsync(5_000);
+
+        await assertion;
+        expect(handshake.isSettled()).toBe(true);
+    });
+
     it('rejects with a timeout error once the timeout elapses without a message', async () => {
         const handshake = createReadyHandshake({ pluginName: 'TestNode', timeoutMs: 5_000 });
 

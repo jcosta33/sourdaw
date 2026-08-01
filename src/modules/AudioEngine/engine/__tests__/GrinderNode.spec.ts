@@ -182,6 +182,7 @@ describe('createGrinderNode', () => {
             promise: Promise.resolve({}),
             onMessage: () => 'late' as const,
             isSettled: () => true,
+            cancel: vi.fn(),
         });
 
         const node = await createGrinderNode(makeCtx());

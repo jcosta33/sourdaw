@@ -65,7 +65,7 @@ export async function autoLoadLevainSamples(
         // Fallback sine tone will continue to work. Surface the failure instead
         // of flashing a synthetic 100% then "Ready".
         setSampleLoadError(deviceId, error instanceof Error ? error.message : 'Sample load failed');
-        return;
+        throw error;
     }
 
     // Completed but superseded — don't claim 100%/Ready over the newer load.
