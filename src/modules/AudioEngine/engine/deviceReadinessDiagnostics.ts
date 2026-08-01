@@ -1,3 +1,5 @@
+import type { AudioEngineDeviceReadinessDiagnostics } from '../models/AudioEngineState';
+
 export type DeviceReadinessToken = {
     readonly deviceId: string;
     readonly tokenId: number;
@@ -232,7 +234,7 @@ class DeviceReadinessDiagnosticsCollector {
         this.cancel(token);
     }
 
-    snapshot() {
+    snapshot(): AudioEngineDeviceReadinessDiagnostics {
         return {
             counts: {
                 requested: this.requested,

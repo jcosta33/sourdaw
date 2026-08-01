@@ -1607,7 +1607,7 @@ class AudioEngineImpl implements AudioEngine {
     }
 }
 
-export function createAudioEngine(providedContext?: AudioContext) {
+export function createAudioEngine(providedContext?: AudioContext): AudioEngine {
     return new AudioEngineImpl(providedContext);
 }
 
