@@ -1,0 +1,162 @@
+crates/daw-dsp/src/levain/realism/mod.rs
+  s_ac9b259eab20ba::t_e0d8054619c88d 568-570,675-677,764-766
+  s_ac9b259eab20ba::t_2953eec12ba2e4 125-127,156-159,364-367,437-440,442-445,487-490
+  s_ac9b259eab20ba::t_ea0cbe9e12d477 225-229
+src/modules/Levain/useCases/autoLoadSamples.ts
+  s_ac9b259eab20ba::t_af266df81f985c 68
+crates/daw-dsp/tests/levain_instrument_identity_is_audible.rs
+  s_ac9b259eab20ba::t_9e5e5d6df16888 105-108
+src/modules/Levain/useCases/prepareOfflineLevain.ts
+  s_ac9b259eab20ba::t_5a360ac1a1a11b 15-16,21-23
+src/modules/AudioEngine/engine/__tests__/LevainNode.spec.ts
+  s_ac9b259eab20ba::t_c9535f1698a954 23
+  s_ac9b259eab20ba::t_6404c93eefbd83 35-43,47-49,53,98-115,128-130
+src/modules/AudioEngine/engine/LevainNode.ts
+  s_ac9b259eab20ba::t_c9535f1698a954 83
+  s_ac9b259eab20ba::t_6404c93eefbd83 78,84-86,193-196,198
+  s_ac9b259eab20ba::t_0b7290b22b083a 82
+src/modules/Levain/useCases/__tests__/prepareOfflineLevain.spec.ts
+  s_ac9b259eab20ba::t_af266df81f985c 109-116
+  s_ac9b259eab20ba::t_af61cc9f3304db 33,41-42,45,55,75
+crates/daw-dsp/tests/device_process_rt.rs
+  s_ac9b259eab20ba::t_2953eec12ba2e4 461-474,476-481
+  s_ac9b259eab20ba::t_2f549827cdfa35 457-459
+crates/daw-dsp/src/levain/zone.rs
+  s_ac9b259eab20ba::t_f382e5fd683563 48,62,68,78-79,81,88-89,101-103
+  s_ac9b259eab20ba::t_2953eec12ba2e4 80,222
+  s_ac9b259eab20ba::t_8347499696ca4f 104
+src/modules/AudioEngine/engine/__tests__/BacteriaNode.spec.ts
+  s_ac9b259eab20ba::t_66855b6c1afc27 271
+src/modules/AudioEngine/engine/__tests__/GlutenNode.spec.ts
+  s_ac9b259eab20ba::t_66855b6c1afc27 276
+src/modules/AudioEngine/engine/audioDeviceRuntimeSink.ts
+  s_ac9b259eab20ba::t_d2970f7d29a5fb 56-57
+src/modules/Levain/repositories/sampleLoader/loadInstrumentFromManifest.ts
+  s_ac9b259eab20ba::t_ec81e544cbb560 109-111
+  s_ac9b259eab20ba::t_e22c420d46a90a 146-147
+  s_ac9b259eab20ba::t_8c9ea6b1b7d190 25
+  s_ac9b259eab20ba::t_f58417ba14a4b1 117
+  s_ac9b259eab20ba::t_a11db784c54b8a 22-23
+  s_ac9b259eab20ba::t_ae418342c2dc41 13-14,21,24,26,128-129,187,195,259
+  s_ac9b259eab20ba::t_e6fabc42a139d1 188-190,192-194,198-254,258,260-261,263-268
+  s_ac9b259eab20ba::t_510d28c206bbbb 15-20,27-108,112-116,118-127
+  s_ac9b259eab20ba::t_d2970f7d29a5fb 155-156
+src/modules/Levain/useCases/__tests__/autoLoadSamples.spec.ts
+  s_ac9b259eab20ba::t_af266df81f985c 92
+crates/daw-dsp/tests/levain_unloaded_instance_is_silent.rs
+  s_ac9b259eab20ba::t_9e5e5d6df16888 63
+crates/daw-dsp/src/levain/engine.rs
+  s_ac9b259eab20ba::t_bd76075a364f07 154-155,178-179,197-198
+  s_ac9b259eab20ba::t_b863eb93dbd8e6 190-192
+  s_ac9b259eab20ba::t_f382e5fd683563 7-10,24-27,61,115,141,162,168-169,176-177,180-182,184-189,194-196,199,205-208,210,212,214-215,242-245
+  s_ac9b259eab20ba::t_34c35ca4c283d3 183,209
+  s_ac9b259eab20ba::t_ea0cbe9e12d477 32,39,43,170-171,236,1089,1101,1125,1140,1142,1144,1152
+  s_ac9b259eab20ba::t_72cbd8900f87db 745-746,749
+  s_ac9b259eab20ba::t_2422cebd1151ca 1086-1088,1097,1099-1100,1102,1107,1112-1114,1155-1156
+  s_ac9b259eab20ba::t_2953eec12ba2e4 452-453,685,934-938,981-984,1090-1093,1108-1111
+  s_ac9b259eab20ba::t_b344c46b028110 29-31,33-38,40-42,44-50,62,116,139,163-167,172-175,193,200-204,211,213,216-235,237-241,250-253,271-277
+  s_ac9b259eab20ba::t_d7e10cf5231a05 770-772
+  s_ac9b259eab20ba::t_8cf748136db936 1094-1096,1098,1103-1106,1135-1139,1141,1143,1145-1151,1153-1154
+  s_ac9b259eab20ba::t_bf9ca08bb09936 1115-1124,1126-1134
+  s_ac9b259eab20ba::t_7303c3dbabc3f5 28
+src/modules/AudioEngine/services/__tests__/levainProcessor.spec.ts
+  s_ac9b259eab20ba::t_effca3bc4cf176 767,769,775,780
+  s_ac9b259eab20ba::t_2ff82e1e43c685 216,629
+  s_ac9b259eab20ba::t_b52b2ed9017b45 356-357,362,379-400,402,404-415,417-455,460,471-482,500-505,508,515
+  s_ac9b259eab20ba::t_3d0f779bbb9722 34,55-57,156,246,248-256,276-277,296-299,312,315,322,327,335,342
+  s_ac9b259eab20ba::t_a56f993b87b96b 309-311,313-314,316-321,323-326,333-334,336-341,343-347,349-350,352-355,358-361,363-370,372-373,375-378,506-507,509-510,549-552,554-558
+  s_ac9b259eab20ba::t_ab6180c13cb4e2 484,496
+  s_ac9b259eab20ba::t_13ca61169c3824 91-93,97-101,351,371,374,401,403,416,456-459,461-470,483,485-495,497-499,511-514,516-525,528-542,544-545,547-548
+  s_ac9b259eab20ba::t_d67d45df40e6c3 272-273
+  s_ac9b259eab20ba::t_0349efe2f7cb5c 288-295
+  s_ac9b259eab20ba::t_6d6fa38558a104 278-287,305-306,328-332,348,650
+  s_ac9b259eab20ba::t_a85693554c6242 32-33,50-52,80-81,94-96,154-155
+  s_ac9b259eab20ba::t_00a136a09f114a 36,63,71,82-90,102-103,148-149,158,267-271,274-275,300-304
+  s_ac9b259eab20ba::t_f3c10b071199e4 307,526-527,543,546,553,559-582,586,591,632,635,643,646,649,653-654
+  s_ac9b259eab20ba::t_6387aff715b70f 656-671
+  s_ac9b259eab20ba::t_e648eba8c46d6c 308
+  s_ac9b259eab20ba::t_36d9a53ac82568 655
+src/modules/Levain/repositories/sampleLoader/__tests__/loadInstrumentFromManifest.spec.ts
+  s_ac9b259eab20ba::t_2bcd19327cb178 172,174,178-182,185
+  s_ac9b259eab20ba::t_f4c40979bb28e2 305-309,318
+  s_ac9b259eab20ba::t_9e046d8b2cf58f 190,192-232,236-248
+  s_ac9b259eab20ba::t_88710fb081b2dd 70-117,119-122,124-126
+  s_ac9b259eab20ba::t_af8694a0b5a025 233-235
+  s_ac9b259eab20ba::t_27bfada7bc9374 249-266
+  s_ac9b259eab20ba::t_00a136a09f114a 168,171,299-304,406
+  s_ac9b259eab20ba::t_9d98f36d211427 173,184,186-189,310-317
+  s_ac9b259eab20ba::t_f58417ba14a4b1 118,123
+  s_ac9b259eab20ba::t_0ef7581fdeb91d 191
+src/infra/audioWorklet/__tests__/workletInitShared.spec.ts
+  s_ac9b259eab20ba::t_c9535f1698a954 183-193
+src/modules/Levain/repositories/sampleLoader/createDecodedBankResource.ts
+  s_ac9b259eab20ba::t_d67d45df40e6c3 21,73,557
+  s_ac9b259eab20ba::t_ca2d232c70fac1 74,88-97,537,558
+src/infra/audioWorklet/workletInitShared.ts
+  s_ac9b259eab20ba::t_c9535f1698a954 106-107,171-179,183
+src/modules/AudioEngine/services/levainProcessor.ts
+  s_ac9b259eab20ba::t_d2970f7d29a5fb 15,17-19
+  s_ac9b259eab20ba::t_1d44e6a3a7e368 272-274,276
+  s_ac9b259eab20ba::t_3e3f4f2e2983a1 42,88,92,100,135,196,205,209,211,318-322,324-326,331,340,343,347-356,361-365,369-373,378-382,453,461-463,474-476,512-513
+  s_ac9b259eab20ba::t_ed656b7b7e2e09 170-172,198-204
+  s_ac9b259eab20ba::t_13ca61169c3824 20,128,147-153,336-339,341-342,344-346,518,539-541
+  s_ac9b259eab20ba::t_0349efe2f7cb5c 93,468
+  s_ac9b259eab20ba::t_bf1bd25cb87db5 366-367
+  s_ac9b259eab20ba::t_0fe76262909168 16,89,218,223,229,232-243,257-259,264,288,293,317,323,454-458
+  s_ac9b259eab20ba::t_08d0e7297da43c 90-91,94-98,108-122,133-134,136,184,197,206-208,210,212-217,219-222,224-228,230-231,244-254,266-271,275,277,285,289-292,294-311,313,327,329-330,332-335,357-360,368,374-377,383-384,452,460,464-467,469-472,515
+  s_ac9b259eab20ba::t_4e08d8d9644aa4 101,174-178,255-256,260,265,286-287,312,314-316,517,583
+  s_ac9b259eab20ba::t_32ffeed46916a4 261-263,278-281
+  s_ac9b259eab20ba::t_34c35ca4c283d3 282-284
+  s_ac9b259eab20ba::t_64466ad7498559 328
+src/modules/AudioEngine/engine/__tests__/GrinderNode.spec.ts
+  s_ac9b259eab20ba::t_66855b6c1afc27 185
+crates/daw-dsp/tests/engine_output_level.rs
+  s_ac9b259eab20ba::t_2953eec12ba2e4 415-435
+  s_ac9b259eab20ba::t_2f549827cdfa35 411-413
+src/modules/Levain/repositories/sampleLoader/__tests__/createDecodedBankResource.spec.ts
+  s_ac9b259eab20ba::t_ca2d232c70fac1 147-161
+crates/daw-dsp/src/levain/mod.rs
+  s_ac9b259eab20ba::t_f382e5fd683563 123,131-132,139-142,144-145,151-152,154-156
+  s_ac9b259eab20ba::t_aa99c72af6c390 133-137,146-150
+  s_ac9b259eab20ba::t_bd76075a364f07 115-116
+  s_ac9b259eab20ba::t_2953eec12ba2e4 23
+  s_ac9b259eab20ba::t_e495bacb4b3df6 128,138,143,153
+  s_ac9b259eab20ba::t_ea0cbe9e12d477 129-130
+  s_ac9b259eab20ba::t_e980592bf2cd3b 157
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_ac9b259eab20ba::t_5b6253962bd697 1,443-446,452-453,455,466-473,482-485,535-542,671,673-688,704-721,726-727,730,741-742,745-790,792,807-818
+public/wasm/daw-dsp/daw_dsp.js
+  s_c6be6ce49916a2::t_783a59a8230100 1015-1020,1030-1031,1036,1042,1079-1098,1115-1122,1221-1239
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_ac9b259eab20ba::t_76c2325163cff4 1,5,7-22,38-55,60-61,64,75-76,79-124,126,141-152
+public/wasm/manifest.json
+  s_ac9b259eab20ba::t_7da56871046b3f 12,15-18,20-21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_ac9b259eab20ba::t_50194f2f35c328 1,443-446,452-453,455,466-473,482-485,535-542,671,673-688,704-721,726-727,730,741-742,745-790,792,807-818
+src/modules/AudioEngine/wasm/daw_dsp.js
+  s_ac9b259eab20ba::t_fddb738a8417bc 1192-1197,1207-1208,1213,1219,1256-1275,1292-1299,1398-1416
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.19",
+  "base_commit_sha": "d8bfb2ff1913f366bf6feb1badd1744fed0eb9c3",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c6be6ce49916a2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fbcd0-a9ad-7963-8860-80cdf4035770",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
