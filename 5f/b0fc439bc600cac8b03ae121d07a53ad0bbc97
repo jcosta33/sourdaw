@@ -1,0 +1,23 @@
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/buildProjectData.spec.ts
+  s_66d4924c65dcd2::t_162685454c4f89 87-91,101
+src/modules/Project/useCases/projectPersistence/fileIO/buildProjectData.ts
+  s_66d4924c65dcd2::t_fd4dcae2412c08 67-79,94
+src/modules/Project/useCases/projectPersistence/fileIO/exportProjectFile.ts
+  s_66d4924c65dcd2::t_13a0a4b538da02 13-15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "5fb0fc439bc600cac8b03ae121d07a53ad0bbc97",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
