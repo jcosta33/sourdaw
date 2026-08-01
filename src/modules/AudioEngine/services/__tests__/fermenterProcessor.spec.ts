@@ -171,8 +171,9 @@ describe('FermenterProcessor message handling', () => {
             proc.process([], makeStereoBlock());
             expect(noteEvents).toEqual([{ kind: 'on', note: 60, velocity: 90 }]);
 
-            // The queue is compacted but the remaining notes are still >= 128, so
-            // repeated blocks (static currentFrame) drain nothing further.
+            // _queueHead is 1 of 3, so the truncation branch has not run and the
+            // backing array is unchanged. The two remaining notes are still >= 128,
+            // so repeated blocks (static currentFrame) drain nothing further.
             proc.process([], makeStereoBlock());
             expect(noteEvents).toEqual([{ kind: 'on', note: 60, velocity: 90 }]);
         });

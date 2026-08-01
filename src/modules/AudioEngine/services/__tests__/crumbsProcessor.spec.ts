@@ -118,17 +118,30 @@ describe('CrumbsProcessor scheduled note queue', () => {
         vi.stubGlobal('currentFrame', 0);
     });
 
-    it('dispatches a note at exactly currentFrame immediately instead of queueing it', async () => {
+    it('sounds a note at exactly currentFrame even while bypassed, where a queued one is withheld', async () => {
         const proc = await loadProcessor();
         send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'bypass', bypassed: true });
         calls.length = 0;
 
-        // sampleFrame === currentFrame is the first frame of the block about to
-        // render, so dispatching it now places it at that block's start.
-        // Queueing it instead would defer it to the following block — late.
+        // The `> currentFrame` enqueue guard is NOT the drain bound restated: it
+        // decides whether a message enters the queue at all. Both paths would
+        // otherwise reach the instance in the same block, because _drainQueue
+        // runs inside the very next process(). What separates them is that the
+        // queue can be abandoned — process() early-returns while bypassed (and
+        // when faulted, or on a malformed output), so a queued event never
+        // drains. Dispatching a same-frame event immediately keeps it out of
+        // that trap; queueing it would silently drop it.
         vi.stubGlobal('currentFrame', 256);
         send(proc, { type: 'noteOn', note: 64, velocity: 70, sampleFrame: 256 });
+        send(proc, { type: 'noteOn', note: 67, velocity: 70, sampleFrame: 257 });
+
+        proc.process([], [makeChannels(2, FRAMES)]);
+
+        // Note 64 (== currentFrame) sounded; note 67 (> currentFrame) is stuck
+        // in a queue this bypassed block will never drain.
         expect(noteCalls()).toEqual(['note_on']);
+        expect(calls.filter((c) => c.method === 'note_on').map((c) => c.args[0])).toEqual([64]);
 
         vi.stubGlobal('currentFrame', 0);
     });
