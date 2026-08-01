@@ -1,0 +1,25 @@
+src/modules/Arrangement/useCases/__tests__/removeTrack.spec.ts
+  s_ac9b259eab20ba::t_716c6ecc961118 195
+  s_ac9b259eab20ba::t_65b1b3982bac05 13,38-41,73,165-194
+  s_ac9b259eab20ba::t_423cfc2c20682e 196-197
+src/modules/Arrangement/useCases/removeTrack.ts
+  s_ac9b259eab20ba::t_65b1b3982bac05 4,47-48,120-121
+  s_ac9b259eab20ba::t_716c6ecc961118 45-46
+  s_ac9b259eab20ba::t_a3f819bf9f6f76 122
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "fe69f8c740dc1f05312ade8c144c7da7f7b80a8e",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
