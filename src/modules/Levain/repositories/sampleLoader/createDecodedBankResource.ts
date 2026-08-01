@@ -78,6 +78,7 @@ type BankEntry = {
     listeners: Map<symbol, (progress: number) => void>;
     progress: number;
     promise: Promise<DecodedBank> | null;
+    samples: Map<string, DecodedSample>;
     state: 'loading' | 'resolved';
 };
 
@@ -386,10 +387,11 @@ export function createDecodedBankResource({
         recordEviction?: boolean;
         notifyConsumers?: boolean;
     }): void {
-        if (entries.get(key) === entry) {
+        const ownsCacheSlot = entries.get(key) === entry;
+        if (ownsCacheSlot) {
             entries.delete(key);
         }
-        if (currentBankKeys.get(entry.baseKey) === key) {
+        if (ownsCacheSlot && currentBankKeys.get(entry.baseKey) === key) {
             currentBankKeys.delete(entry.baseKey);
         }
         if (entry.state === 'loading') {
@@ -397,6 +399,7 @@ export function createDecodedBankResource({
             if (notifyConsumers) {
                 entry.consumerController.abort();
             }
+            entry.samples.clear();
         } else if (recordEviction) {
             evictions++;
         }
@@ -479,7 +482,7 @@ export function createDecodedBankResource({
             files.push(zone.file);
         }
 
-        const samples = new Map<string, DecodedSample>();
+        const samples = entry.samples;
         if (files.length === 0) {
             notifyProgress(entry, 1);
         } else {
@@ -508,10 +511,13 @@ export function createDecodedBankResource({
 
             const workerCount = Math.min(files.length, maxConcurrentSampleLoads);
             const workers = Array.from({ length: workerCount }, () => decodeNextFile());
-            await Promise.all(workers).catch((error: unknown) => {
+            try {
+                await Promise.all(workers);
+            } catch (error) {
                 controller.abort();
+                samples.clear();
                 throw error;
-            });
+            }
         }
 
         return Object.freeze({
@@ -543,6 +549,7 @@ export function createDecodedBankResource({
             listeners: new Map(),
             progress: 0,
             promise: null,
+            samples: new Map(),
             state: 'loading',
         };
         entry.promise = decodeBank({ controller, entry, input, manifest }).then(

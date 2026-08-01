@@ -523,6 +523,60 @@ describe('createDecodedBankResource', () => {
             queuedSampleLoads: 0,
             resolvedBanks: 1,
         });
+
+        resource.invalidate(DEFAULT_INPUT);
+        expect(resource.getDiagnostics()).toMatchObject({ decodedBytes: 0, resolvedBanks: 0 });
+    });
+
+    it('clears cancelled bank PCM before reusing its decoded-memory budget', async () => {
+        const decodedSample = createDeferred<DecodedSample>();
+        const pendingSample = createDeferred<DecodedSample>();
+        const celloInput = {
+            ...DEFAULT_INPUT,
+            manifestUrl: '/samples/levain/cello/manifest.json',
+            basePath: '/samples/levain/cello',
+            expectedInstrumentId: 'cello',
+        };
+        const loadManifest = vi.fn((url: string) => {
+            if (url.includes('cello')) {
+                return Promise.resolve(createManifest({ files: ['cello.wav'], instrumentId: 'cello' }));
+            }
+            return Promise.resolve(createManifest({ files: ['decoded.wav', 'pending.wav'] }));
+        });
+        const loadSample = vi.fn((url: string) => {
+            if (url.includes('decoded.wav')) {
+                return decodedSample.promise;
+            }
+            if (url.includes('pending.wav')) {
+                return pendingSample.promise;
+            }
+            return Promise.resolve(createSample(1));
+        });
+        const resource = createDecodedBankResource({
+            maxDecodedBytes: 4,
+            maxConcurrentSampleLoads: 2,
+            loadManifest,
+            loadSample,
+        });
+
+        const cancelledLoad = resource.load(DEFAULT_INPUT);
+        await flushPromises();
+        expect(resource.getDiagnostics()).toMatchObject({ activeSampleLoads: 2, decodedBytes: 0, inFlightBanks: 1 });
+
+        decodedSample.resolve(createSample(1));
+        await flushPromises();
+        expect(resource.getDiagnostics()).toMatchObject({ activeSampleLoads: 1, decodedBytes: 4, inFlightBanks: 1 });
+
+        resource.invalidate(DEFAULT_INPUT);
+        await expect(cancelledLoad).rejects.toMatchObject({ name: 'AbortError' });
+        expect(resource.getDiagnostics()).toMatchObject({ activeSampleLoads: 1, decodedBytes: 0, inFlightBanks: 0 });
+
+        await expect(resource.load(celloInput)).resolves.toMatchObject({ decodedByteLength: 4 });
+        expect(resource.getDiagnostics()).toMatchObject({ activeSampleLoads: 1, decodedBytes: 4, resolvedBanks: 1 });
+
+        pendingSample.resolve(createSample(2));
+        await flushPromises();
+        expect(resource.getDiagnostics()).toMatchObject({ activeSampleLoads: 0, decodedBytes: 4, resolvedBanks: 1 });
     });
 
     it('rejects a manifest whose identity does not match the requested instrument', async () => {
