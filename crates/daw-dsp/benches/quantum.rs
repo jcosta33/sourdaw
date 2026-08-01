@@ -4,15 +4,36 @@
 //! 128 / 48_000 = 2.667 ms of wall clock. `grandBouleEngineWorker.ts` asserts
 //! that Grand Boule cannot meet it and must therefore render on a dedicated
 //! Web Worker behind a SharedArrayBuffer ring, unlike every other device in the
-//! project. That assertion had never been measured. This bench measures it, and
-//! measures two devices that *do* run in a plain worklet today (Fermenter, the
-//! polyphonic synth; Grinder, the amp sim) so the Grand Boule figure is read
-//! against a shipped worklet load rather than against an abstract budget.
+//! project. That assertion had never been measured. This bench measures it,
+//! against Fermenter — the other polyphonic instrument, which runs in a plain
+//! worklet today — so the Grand Boule figure is read against a shipped worklet
+//! load rather than against an abstract budget. Grinder is included as a table
+//! row only: it is a monophonic effect with no voice pool, so it can answer
+//! "does *some* shipped device fit", which is not the question.
 //!
 //! A native aarch64/x86 number is a lower bound, not the answer: production
 //! runs this compiled to wasm inside a browser worklet. The browser figure is
 //! taken separately by driving the same `*Instance::process(128)` exports in
 //! headless Chromium.
+//!
+//! What these numbers do and do not establish
+//! ------------------------------------------
+//! They establish *compute cost per quantum*. They do not observe a dropout.
+//! No underrun and no over-budget render was ever caught in the act:
+//! `AudioContext.renderCapacity` is not exposed in the Chromium the harness
+//! drives, and the leg that runs inside a real `AudioWorkletGlobalScope` runs
+//! on an `OfflineAudioContext`, which has no deadline. So the correct claim is
+//! that the compute exceeds the budget, and that a dropout follows from that —
+//! inferred from the cost, not measured.
+//!
+//! 64 voices is the common case, not the worst case
+//! ------------------------------------------------
+//! `GrandBouleEngine::note_off` skips `voice.note_off()` entirely while
+//! `pedals.sustain_position() > 0.5`. With the sustain pedal down, released
+//! notes stay `VoiceStage::Active` at `amplitude == 1.0` and keep paying the
+//! full `Standard`-tier cost, so ordinary pedalled playing walks the pool up to
+//! 64 within a few bars and holds it there. The 64-voice row is what pedalled
+//! piano costs, not an artificial ceiling.
 //!
 //! Sounding voices, not allocated ones
 //! -----------------------------------
@@ -74,6 +95,12 @@ const FERMENTER_POOL: u32 = 32;
 /// fans one note out to every active layer, and each layer holds 16 voices, so
 /// 64 sounding Fermenter voices means 4 layers × 16 held notes — the only way
 /// to put a 64-voice load on this synth at all.
+///
+/// Read the comparison off the **16-voice** row, not the 64-voice one, when the
+/// question is production-vs-production. Production Fermenter is one layer, so
+/// 16 is its real ceiling; the stacked rows are a charitable control that gives
+/// Grand Boule the benefit of a load Fermenter never actually carries, and they
+/// make the gap look four times smaller than it is.
 const MAX_VOICES_PER_LAYER: usize = 16;
 
 /// Blocks rendered before any timed region, to get past note-on transients
@@ -218,6 +245,17 @@ fn bench_grand_boule_process_block(criterion: &mut Criterion) {
             &sounding,
             |bencher, _| {
                 bencher.iter(|| {
+                    // `process_block` sums into the buffers with `+=`; it is the
+                    // caller's job to clear them, which is what
+                    // `GrandBouleInstance::process` does before delegating here.
+                    // Skipping it lets the buffers grow without bound across a
+                    // run. That does not change the cost — the values stay
+                    // finite, never reach denormals, and nothing reads them back
+                    // into the engine — but a bench whose job is to be the
+                    // trustworthy artifact should not render a signal that could
+                    // not come out of the device.
+                    left.fill(0.0);
+                    right.fill(0.0);
                     engine.process_block(black_box(&mut left), black_box(&mut right));
                     black_box(&left);
                     black_box(&right);
