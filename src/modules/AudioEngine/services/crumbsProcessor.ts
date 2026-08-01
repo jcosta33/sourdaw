@@ -30,9 +30,9 @@
  *   { type: 'bypass', bypassed }
  */
 
+import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
 import { CrumbsInstance, initSync } from '../wasm/daw_dsp.js';
 
-import { resolveProcessorWasmModule } from './resolveProcessorWasmModule';
 import { WasmView } from './wasmView';
 
 type CrumbsMsg =

@@ -233,6 +233,7 @@ function createInlineWorkletTransport({ ctx, wasmModule }: CreateGrandBouleTrans
     node.port.onmessage = (event: MessageEvent) => {
         handshake.onMessage(event);
     };
+    node.port.postMessage({ type: 'init' });
 
     return {
         workletNode: node,

@@ -343,14 +343,14 @@ describe('createGrandBouleNode', () => {
 
         await createGrandBouleNode(new FakeOfflineAudioContext() as unknown as BaseAudioContext);
         // The offline processor constructs its own `GrandBouleInstance`, so its
-        // constructor receives the compiled module and no ring setup message. A
-        // ring field surviving here
+        // constructor receives the compiled module and its init message carries
+        // no ring setup. A ring field surviving here
         // would mean the ring consumer was built by mistake — the failure mode
         // that produced a silent export reporting zero dropouts.
         expect({
             hasWasmModule: lastProcessorOptions?.processorOptions?.wasmModule instanceof WebAssembly.Module,
-            initMessages: nodePostMessage.mock.calls.length,
-        }).toEqual({ hasWasmModule: true, initMessages: 0 });
+            initMessages: nodePostMessage.mock.calls.map(([message]) => message),
+        }).toEqual({ hasWasmModule: true, initMessages: [{ type: 'init' }] });
     });
 
     it('refuses a live node without cross-origin isolation before doing any work for it', async () => {

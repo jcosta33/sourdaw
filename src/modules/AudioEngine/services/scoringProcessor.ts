@@ -13,9 +13,9 @@
  *   { type: 'bypass', bypassed }
  */
 
+import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
 import { initSync, ScoringInstance } from '../wasm/scoring.js';
 
-import { resolveProcessorWasmModule } from './resolveProcessorWasmModule';
 import { beginTelemetryPublish, endTelemetryPublish } from './telemetrySeqlock';
 import { WasmView } from './wasmView';
 

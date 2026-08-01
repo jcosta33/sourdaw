@@ -19,9 +19,9 @@
  * already-mapped view between two `Atomics` counter bumps.
  */
 
+import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
 import { initSync, FermenterInstance } from '../wasm/daw_dsp.js';
 
-import { resolveProcessorWasmModule } from './resolveProcessorWasmModule';
 import { beginTelemetryPublish, endTelemetryPublish } from './telemetrySeqlock';
 import { WasmView } from './wasmView';
 

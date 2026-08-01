@@ -12,9 +12,9 @@
  *   { type: 'bypass', bypassed }
  */
 
+import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
 import { initSync, ProofChamberInstance } from '../wasm/proof_chamber.js';
 
-import { resolveProcessorWasmModule } from './resolveProcessorWasmModule';
 import { WasmView } from './wasmView';
 
 type ParamAutomationSegment = {

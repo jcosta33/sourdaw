@@ -299,7 +299,7 @@ describe('LevainProcessor message handling', () => {
 
     it('voices a note landing on a block boundary in that block, not the one before it', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init' });
         calls.length = 0;
 
         // Block 1 renders frames [0, 127]; block 2 renders [128, 255].

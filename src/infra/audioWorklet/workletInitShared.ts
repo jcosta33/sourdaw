@@ -51,7 +51,9 @@ export async function ensureWorkletRegistered(ctx: BaseAudioContext, moduleUrl: 
 
 /**
  * URL-keyed cache of fetched and compiled WASM modules. Stores the in-flight
- * promise so concurrent callers share both network and compilation work.
+ * promise so concurrent callers share both network and compilation work. The
+ * complete URL is the bundle-version identity: changing it explicitly
+ * invalidates a successful entry.
  */
 const wasmModuleCache = new Map<string, Promise<WebAssembly.Module>>();
 
@@ -78,7 +80,9 @@ export async function fetchWasmModule(url: string): Promise<WebAssembly.Module> 
         return await promise;
     } catch (error) {
         // Drop failed fetches or compilations so a later retry can succeed.
-        wasmModuleCache.delete(url);
+        if (wasmModuleCache.get(url) === promise) {
+            wasmModuleCache.delete(url);
+        }
         throw error;
     }
 }

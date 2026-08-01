@@ -7,10 +7,10 @@
  * Effect processor: reads from inputs[0], writes to outputs[0].
  */
 
+import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
 import { initSync, GrinderInstance } from '../wasm/daw_dsp.js';
 
 import grinderAudioParamContract from './grinderAudioParamContract.json';
-import { resolveProcessorWasmModule } from './resolveProcessorWasmModule';
 import { beginTelemetryPublish, endTelemetryPublish } from './telemetrySeqlock';
 
 type GrinderAudioParamDescriptor = {

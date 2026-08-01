@@ -5,9 +5,8 @@
  * the current playback position and the active clip's NoteBlobs.
  */
 
+import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
 import { initSync, KneadInstance } from '../wasm/daw_dsp.js';
-
-import { resolveProcessorWasmModule } from './resolveProcessorWasmModule';
 
 /**
  * Runtime surface of the current daw-dsp crate's KneadInstance (knead/mod.rs).

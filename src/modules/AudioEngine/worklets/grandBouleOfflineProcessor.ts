@@ -34,12 +34,13 @@
  *
  * Messages from the main thread:
  *   `processorOptions.wasmModule: WebAssembly.Module`
+ *   { type: 'init' }
  *   → { type: 'ready' }
  *   every member of `GrandBouleDispatchMsg`
  */
 
+import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
 import { type GrandBouleInstance } from '../wasm/daw_dsp.js';
-import { resolveProcessorWasmModule } from '../services/resolveProcessorWasmModule';
 
 import {
     createGrandBouleBlockViews,
@@ -70,12 +71,22 @@ class GrandBouleOfflineProcessor extends AudioWorkletProcessor {
     // primitive comparisons and allocates nothing.
     _blockViews = createGrandBouleBlockViews();
 
-    constructor(options?: AudioWorkletNodeOptions) {
+    constructor(...args: unknown[]) {
         super();
-        this.port.onmessage = (event: MessageEvent<GrandBouleDispatchMsg>) => {
+        let wasmModule = resolveProcessorWasmModule(args[0]);
+        this.port.onmessage = (event: MessageEvent<{ type: 'init' } | GrandBouleDispatchMsg>) => {
             const msg = event.data;
             try {
-                if (!this._ready) {
+                if (msg.type === 'init') {
+                    if (this._ready) {
+                        return;
+                    }
+                    if (!wasmModule) {
+                        throw new TypeError('GrandBouleOfflineProcessor requires a compiled WASM module');
+                    }
+                    this._initWasm(wasmModule);
+                    wasmModule = null;
+                } else if (!this._ready) {
                     this._pendingMessages.push(msg);
                 } else if (!this._faulted) {
                     this._handleMessage(msg);
@@ -95,21 +106,6 @@ class GrandBouleOfflineProcessor extends AudioWorkletProcessor {
                 });
             }
         };
-
-        try {
-            const wasmModule = resolveProcessorWasmModule(options);
-            if (!wasmModule) {
-                throw new Error('GrandBouleOfflineProcessor requires processorOptions.wasmModule');
-            }
-            this._initWasm(wasmModule);
-        } catch (error) {
-            console.error('GrandBouleOfflineProcessor init error:', error);
-            this._faulted = true;
-            this.port.postMessage({
-                type: 'error',
-                message: error instanceof Error ? error.message : String(error),
-            });
-        }
     }
 
     _initWasm(wasmModule: WebAssembly.Module): void {

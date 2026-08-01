@@ -9,9 +9,9 @@
  * Writes metering data (LUFS, GR, correlation, tap levels) into a shared telemetry slot.
  */
 
+import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
 import { initSync, ProofInstance } from '../wasm/daw_dsp.js';
 
-import { resolveProcessorWasmModule } from './resolveProcessorWasmModule';
 import { beginTelemetryPublish, endTelemetryPublish } from './telemetrySeqlock';
 import { WasmView } from './wasmView';
 

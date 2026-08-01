@@ -17,9 +17,9 @@
  *   { type: 'resetPadDryRouting' }
  */
 
+import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
 import { initSync, ToasterInstance } from '../wasm/daw_dsp.js';
 
-import { resolveProcessorWasmModule } from './resolveProcessorWasmModule';
 /** Pad count the ToasterInstance is created with; the allNotesOff release loop spans 0..PAD_COUNT-1. */
 const TOASTER_PAD_COUNT = 16;
 const TOASTER_MAX_BLOCK_SIZE = 4096;

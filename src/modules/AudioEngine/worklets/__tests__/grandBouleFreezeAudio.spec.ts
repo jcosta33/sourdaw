@@ -37,7 +37,7 @@ const SAMPLE_RATE = 44_100;
 const TEMPO = 120;
 const SECONDS_PER_BEAT = 60 / TEMPO;
 
-/** `\0asm` + version 1 — the shortest byte string `new WebAssembly.Module` accepts. */
+/** `\0asm` + version 1 — the shortest byte string `WebAssembly.compile` accepts. */
 const EMPTY_WASM_MODULE = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]).buffer;
 
 const wasmStub = vi.hoisted(() => {

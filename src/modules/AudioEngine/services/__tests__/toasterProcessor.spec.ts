@@ -402,7 +402,7 @@ describe('ToasterProcessor dispatch paths & process guards', () => {
      */
     it('resolves a live pad edit and the offline projection to the same engine param name', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init' });
 
         // What `setToasterPadParam`/`setPadParamImmediate` put on the wire: the
         // `PadState` key, unchanged.
@@ -544,7 +544,7 @@ describe('ToasterProcessor dispatch paths & process guards', () => {
 
     it('voices a hit landing on a block boundary in that block, not the one before it', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init' });
         noteOnCalls.length = 0;
 
         // Block 1 renders frames [0, 127]; block 2 renders [128, 255].

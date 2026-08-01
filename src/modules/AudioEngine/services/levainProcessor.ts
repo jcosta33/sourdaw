@@ -18,9 +18,9 @@
  *   { type: 'clearZones' }
  */
 
+import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
 import { initSync, LevainInstance } from '../wasm/daw_dsp.js';
 
-import { resolveProcessorWasmModule } from './resolveProcessorWasmModule';
 import { WasmView } from './wasmView';
 
 const PARAM_MAP: Record<string, string> = {
