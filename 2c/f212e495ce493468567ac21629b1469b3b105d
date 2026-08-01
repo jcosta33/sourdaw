@@ -1,0 +1,27 @@
+src/modules/Arrangement/handlers/device/__tests__/handleRemoveDevice.spec.ts
+  s_ac9b259eab20ba::t_aed49940a7a03e 35
+src/modules/Arrangement/handlers/device/handleRemoveDevice.ts
+  s_ac9b259eab20ba::t_0aed50c215b836 8
+src/modules/Arrangement/useCases/device/removeDevice.ts
+  s_ac9b259eab20ba::t_0aed50c215b836 3,14,23-24,27-28,81,120-123,125-132,141,148,155,158,162
+  s_ac9b259eab20ba::t_aed49940a7a03e 143,159
+src/modules/Arrangement/useCases/device/__tests__/removeDevice.spec.ts
+  s_ac9b259eab20ba::t_0aed50c215b836 7,21,53-56,128,185
+  s_ac9b259eab20ba::t_aed49940a7a03e 138-176
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "2cf212e495ce493468567ac21629b1469b3b105d",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
