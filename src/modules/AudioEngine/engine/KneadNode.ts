@@ -34,7 +34,10 @@ export async function createKneadNode(
     }
 
     await raceAbortSignal(ensureWorkletRegistered(ctx, kneadProcessorUrl), signal);
-    const wasmModule = await raceAbortSignal(fetchWasmModule(DEFAULT_WASM_URL), signal);
+    const wasmModule = await raceAbortSignal(
+        fetchWasmModule({ ctx, bundleId: 'daw-dsp', url: DEFAULT_WASM_URL }),
+        signal
+    );
 
     signal?.throwIfAborted();
 

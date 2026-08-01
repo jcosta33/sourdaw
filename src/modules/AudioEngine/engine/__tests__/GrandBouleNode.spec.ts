@@ -57,6 +57,14 @@ vi.mock('#/infra/audioWorklet/workletInitShared', () => ({
                 settle(data as Record<string, unknown>);
                 return 'ready' as const;
             },
+            reject: (error: Error) => {
+                if (settled) {
+                    return 'late' as const;
+                }
+                settled = true;
+                fail(error);
+                return 'error' as const;
+            },
             isSettled: () => settled,
         };
     }),
@@ -103,7 +111,13 @@ describe('createGrandBouleNode', () => {
     let nodeConnect: ReturnType<typeof vi.fn>;
     let nodeDisconnect: ReturnType<typeof vi.fn>;
     let resume: ReturnType<typeof vi.fn>;
-    let lastWorker: { onmessage: ((e: MessageEvent) => void) | null } | undefined;
+    let lastWorker:
+        | {
+              onmessage: ((event: MessageEvent) => void) | null;
+              onerror: ((event: ErrorEvent) => void) | null;
+              onmessageerror: ((event: MessageEvent) => void) | null;
+          }
+        | undefined;
     let lastNodePort: { onmessage: ((e: MessageEvent) => void) | null } | undefined;
     let lastWorkletNode: object | undefined;
     let lastProcessorName: string | undefined;
@@ -136,6 +150,8 @@ describe('createGrandBouleNode', () => {
             const instance = {
                 postMessage: workerPostMessage,
                 onmessage: null as ((e: MessageEvent) => void) | null,
+                onerror: null as ((e: ErrorEvent) => void) | null,
+                onmessageerror: null as ((e: MessageEvent) => void) | null,
                 terminate: workerTerminate,
             };
             lastWorker = instance;
@@ -295,6 +311,22 @@ describe('createGrandBouleNode', () => {
         // warns the export and drops it. Resolving `ready` on a half-built device
         // is what put an unannounced silent track in the file.
         await expect(workletFailed).rejects.toThrow('ring map failed');
+    });
+
+    it('rejects ready immediately when the engine Worker transport fails', async () => {
+        const workerCrashed = createGrandBouleNode(ctx).then((node) => {
+            lastNodePort?.onmessage?.({ data: { type: 'ready' } } as MessageEvent);
+            lastWorker?.onerror?.({ message: 'worker boot crashed' } as ErrorEvent);
+            return node.ready;
+        });
+        await expect(workerCrashed).rejects.toThrow('worker boot crashed');
+
+        const unreadableMessage = createGrandBouleNode(ctx).then((node) => {
+            lastNodePort?.onmessage?.({ data: { type: 'ready' } } as MessageEvent);
+            lastWorker?.onmessageerror?.({ data: null } as MessageEvent);
+            return node.ready;
+        });
+        await expect(unreadableMessage).rejects.toThrow('sent an unreadable initialization message');
     });
 
     it('builds the inline engine worklet offline and the worker ring live', async () => {

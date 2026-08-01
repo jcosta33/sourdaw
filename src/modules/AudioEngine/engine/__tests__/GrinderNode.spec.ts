@@ -182,6 +182,7 @@ describe('createGrinderNode', () => {
         vi.mocked(createReadyHandshake).mockReturnValueOnce({
             promise: Promise.resolve({}),
             onMessage: () => 'late' as const,
+            reject: () => 'late' as const,
             isSettled: () => true,
         });
 

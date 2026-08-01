@@ -94,7 +94,10 @@ export async function createProofNode(
     if (ctx instanceof AudioContext && ctx.state === 'suspended') {
         await raceAbortSignal(ctx.resume(), signal);
     }
-    const wasmModule = await raceAbortSignal(fetchWasmModule(wasmUrl ?? DEFAULT_WASM_URL), signal);
+    const wasmModule = await raceAbortSignal(
+        fetchWasmModule({ ctx, bundleId: 'daw-dsp', url: wasmUrl ?? DEFAULT_WASM_URL }),
+        signal
+    );
 
     signal?.throwIfAborted();
 

@@ -46,7 +46,10 @@ export async function createProofChamberNode(
     }
 
     await raceAbortSignal(ensureWorkletRegistered(ctx, proofChamberProcessorUrl), signal);
-    const wasmModule = await raceAbortSignal(fetchWasmModule(DEFAULT_WASM_URL), signal);
+    const wasmModule = await raceAbortSignal(
+        fetchWasmModule({ ctx, bundleId: 'proof-chamber', url: DEFAULT_WASM_URL }),
+        signal
+    );
 
     signal?.throwIfAborted();
 

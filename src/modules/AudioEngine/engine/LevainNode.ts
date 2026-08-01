@@ -63,7 +63,10 @@ export async function createLevainNode(
     }
 
     await raceAbortSignal(ensureWorkletRegistered(ctx, levainProcessorUrl), signal);
-    const wasmModule = await raceAbortSignal(fetchWasmModule(wasmUrl ?? DEFAULT_WASM_URL), signal);
+    const wasmModule = await raceAbortSignal(
+        fetchWasmModule({ ctx, bundleId: 'daw-dsp', url: wasmUrl ?? DEFAULT_WASM_URL }),
+        signal
+    );
 
     signal?.throwIfAborted();
 

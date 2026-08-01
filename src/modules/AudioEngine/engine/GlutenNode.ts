@@ -72,7 +72,10 @@ export async function createGlutenNode(
     }
 
     await raceAbortSignal(ensureWorkletRegistered(ctx, glutenProcessorUrl), signal);
-    const wasmModule = await raceAbortSignal(fetchWasmModule(wasmUrl ?? DEFAULT_WASM_URL), signal);
+    const wasmModule = await raceAbortSignal(
+        fetchWasmModule({ ctx, bundleId: 'daw-dsp', url: wasmUrl ?? DEFAULT_WASM_URL }),
+        signal
+    );
 
     signal?.throwIfAborted();
 

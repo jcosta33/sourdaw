@@ -71,7 +71,7 @@ export async function createCrumbsNode(
     }
 
     await ensureWorkletRegistered(ctx, crumbsProcessorUrl);
-    const wasmModule = await fetchWasmModule(wasmUrl ?? DEFAULT_WASM_URL);
+    const wasmModule = await fetchWasmModule({ ctx, bundleId: 'daw-dsp', url: wasmUrl ?? DEFAULT_WASM_URL });
 
     const node = new AudioWorkletNode(ctx, 'crumbs-processor', {
         numberOfInputs: 0,

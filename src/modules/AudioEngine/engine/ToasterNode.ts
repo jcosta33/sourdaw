@@ -89,7 +89,10 @@ export async function createToasterNode(
     }
 
     await raceAbortSignal(ensureWorkletRegistered(ctx, toasterProcessorUrl), signal);
-    const wasmModule = await raceAbortSignal(fetchWasmModule(wasmUrl ?? DEFAULT_WASM_URL), signal);
+    const wasmModule = await raceAbortSignal(
+        fetchWasmModule({ ctx, bundleId: 'daw-dsp', url: wasmUrl ?? DEFAULT_WASM_URL }),
+        signal
+    );
 
     signal?.throwIfAborted();
 

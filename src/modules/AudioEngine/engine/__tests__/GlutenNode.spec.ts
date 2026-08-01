@@ -91,9 +91,14 @@ describe('createGlutenNode', () => {
     it('should fetch the canonical combined daw-dsp binary, not the legacy gluten snapshot', async () => {
         const { fetchWasmModule } = await import('#/infra/audioWorklet/workletInitShared');
 
-        await createGlutenNode(makeCtx());
+        const context = makeCtx();
+        await createGlutenNode(context);
 
-        expect(fetchWasmModule).toHaveBeenCalledWith('/wasm/daw-dsp/daw_dsp_bg.wasm');
+        expect(fetchWasmModule).toHaveBeenCalledWith({
+            ctx: context,
+            bundleId: 'daw-dsp',
+            url: '/wasm/daw-dsp/daw_dsp_bg.wasm',
+        });
     });
 
     it('should guard on SharedArrayBuffer availability and post init-sab only when a slot was allocated', async () => {
@@ -272,6 +277,7 @@ describe('createGlutenNode', () => {
         vi.mocked(createReadyHandshake).mockReturnValueOnce({
             promise: Promise.resolve({}),
             onMessage: () => 'ready' as const,
+            reject: () => 'late' as const,
             isSettled: () => true,
         });
 

@@ -79,7 +79,10 @@ export async function createScoringNode(ctx: BaseAudioContext, signal?: AbortSig
     }
 
     await raceAbortSignal(ensureWorkletRegistered(ctx, scoringProcessorUrl), signal);
-    const wasmModule = await raceAbortSignal(fetchWasmModule(DEFAULT_WASM_URL), signal);
+    const wasmModule = await raceAbortSignal(
+        fetchWasmModule({ ctx, bundleId: 'scoring', url: DEFAULT_WASM_URL }),
+        signal
+    );
 
     signal?.throwIfAborted();
 

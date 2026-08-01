@@ -267,6 +267,7 @@ describe('createBacteriaNode', () => {
         vi.mocked(createReadyHandshake).mockReturnValueOnce({
             promise: Promise.resolve({}),
             onMessage: () => 'ready' as const,
+            reject: () => 'late' as const,
             isSettled: () => true,
         });
 

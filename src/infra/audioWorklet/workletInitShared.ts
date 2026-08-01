@@ -3,7 +3,8 @@
  *
  * Consolidates the three duplicated patterns identified in audit §39.1/§39.2:
  *   1. Per-context worklet-module registration caching (`ensureWorkletRegistered`)
- *   2. Fetched and compiled WASM module caching keyed by URL (`fetchWasmModule`)
+ *   2. Per-context WASM bundle-version ownership plus compiled-module caching
+ *      (`fetchWasmModule`)
  *   3. "ready / error / timeout" handshake factory (`createReadyHandshake`)
  *
  * Used by every `create*Node` factory under `src/modules/AudioEngine/engine/`.
@@ -51,23 +52,38 @@ export async function ensureWorkletRegistered(ctx: BaseAudioContext, moduleUrl: 
 
 /**
  * URL-keyed cache of fetched and compiled WASM modules. Stores the in-flight
- * promise so concurrent callers share both network and compilation work. The
- * complete URL is the bundle-version identity: changing it explicitly
- * invalidates a successful entry.
+ * promise so concurrent callers share both network and compilation work.
  */
 const wasmModuleCache = new Map<string, Promise<WebAssembly.Module>>();
 
+type WasmBundleId = 'daw-dsp' | 'proof-chamber' | 'scoring';
+
+type FetchWasmModuleInput = {
+    ctx: BaseAudioContext;
+    bundleId: WasmBundleId;
+    url: string;
+};
+
+type WasmBundleLoad = {
+    url: string;
+    promise: Promise<WebAssembly.Module>;
+};
+
 /**
- * Fetch and asynchronously compile a WASM module once per URL. A compiled
- * `WebAssembly.Module` is structured-cloneable, so node factories can send
- * the cached module to worklets and workers without compiling synchronously
- * on their real-time-adjacent threads.
+ * A loaded worklet realm owns one initialized wasm-bindgen singleton per
+ * bundle. Passing a second module to the same generated glue does not replace
+ * the first instance, so silently accepting another URL would report `ready`
+ * while continuing to execute the old binary. Pin the bundle identity to its
+ * `BaseAudioContext` and reject mixed versions before a node is constructed.
  */
-export async function fetchWasmModule(url: string): Promise<WebAssembly.Module> {
+const contextBundleLoads = new WeakMap<BaseAudioContext, Map<WasmBundleId, WasmBundleLoad>>();
+
+function loadWasmModule(url: string): Promise<WebAssembly.Module> {
     const cached = wasmModuleCache.get(url);
     if (cached) {
         return cached;
     }
+
     const promise = fetch(url).then(async (response) => {
         if (!response.ok) {
             throw new Error(`Failed to fetch WASM (${url}): ${response.status}`);
@@ -76,12 +92,48 @@ export async function fetchWasmModule(url: string): Promise<WebAssembly.Module> 
         return WebAssembly.compile(bytes);
     });
     wasmModuleCache.set(url, promise);
+    promise.catch(() => {
+        if (wasmModuleCache.get(url) === promise) {
+            wasmModuleCache.delete(url);
+        }
+    });
+    return promise;
+}
+
+/**
+ * Claim one bundle version for this context, then fetch and asynchronously
+ * compile its module once per URL. A compiled `WebAssembly.Module` is
+ * structured-cloneable, so node factories can send the cached module to
+ * worklets and workers without compiling synchronously on their
+ * real-time-adjacent threads.
+ */
+export async function fetchWasmModule({ ctx, bundleId, url }: FetchWasmModuleInput): Promise<WebAssembly.Module> {
+    let bundleLoads = contextBundleLoads.get(ctx);
+    if (!bundleLoads) {
+        bundleLoads = new Map();
+        contextBundleLoads.set(ctx, bundleLoads);
+    }
+
+    const existing = bundleLoads.get(bundleId);
+    if (existing) {
+        if (existing.url !== url) {
+            throw new Error(
+                `WASM bundle "${bundleId}" is already bound to ${existing.url} in this AudioContext; ` +
+                    `create a new AudioContext before loading ${url}`
+            );
+        }
+        return existing.promise;
+    }
+
+    const promise = loadWasmModule(url);
+    bundleLoads.set(bundleId, { url, promise });
     try {
         return await promise;
     } catch (error) {
-        // Drop failed fetches or compilations so a later retry can succeed.
-        if (wasmModuleCache.get(url) === promise) {
-            wasmModuleCache.delete(url);
+        // A failed load did not initialize the bundle singleton, so release
+        // this context's claim and allow a retry or an explicit replacement.
+        if (bundleLoads.get(bundleId)?.promise === promise) {
+            bundleLoads.delete(bundleId);
         }
         throw error;
     }
@@ -105,6 +157,8 @@ export type ReadyHandshakeResult = {
      *   - 'other'   — not a ready/error event; caller should process it
      */
     onMessage: (event: MessageEvent) => 'ready' | 'error' | 'late' | 'other';
+    /** Reject from a transport-level failure such as Worker `error`. */
+    reject: (error: Error) => 'error' | 'late';
     /** True once the handshake has resolved, rejected, or timed out. */
     isSettled: () => boolean;
 };
@@ -133,11 +187,18 @@ export function createReadyHandshake(input: CreateReadyHandshakeInput): ReadyHan
         rejectFn = reject;
     });
 
-    const timeout = setTimeout(() => {
-        if (!settled) {
-            settled = true;
-            rejectFn(new Error(`${pluginName} init timeout (${timeoutMs / 1000}s)`));
+    const reject = (error: Error): 'error' | 'late' => {
+        if (settled) {
+            return 'late';
         }
+        settled = true;
+        clearTimeout(timeout);
+        rejectFn(error);
+        return 'error';
+    };
+
+    const timeout = setTimeout(() => {
+        reject(new Error(`${pluginName} init timeout (${timeoutMs / 1000}s)`));
     }, timeoutMs);
 
     const onMessage = (event: MessageEvent): 'ready' | 'error' | 'late' | 'other' => {
@@ -159,11 +220,8 @@ export function createReadyHandshake(input: CreateReadyHandshakeInput): ReadyHan
             if (settled) {
                 return 'late';
             }
-            settled = true;
-            clearTimeout(timeout);
             const message = (data as { message?: unknown }).message;
-            rejectFn(new Error(typeof message === 'string' ? message : `${pluginName} init error`));
-            return 'error';
+            return reject(new Error(typeof message === 'string' ? message : `${pluginName} init error`));
         }
         return 'other';
     };
@@ -171,6 +229,7 @@ export function createReadyHandshake(input: CreateReadyHandshakeInput): ReadyHan
     return {
         promise,
         onMessage,
+        reject,
         isSettled: () => settled,
     };
 }

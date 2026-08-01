@@ -43,6 +43,7 @@ const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 const RING_FRAMES = 8192;
 const HEADER_BYTES = 2 * Int32Array.BYTES_PER_ELEMENT; // writeHead + readHead
 const SAB_BYTES = HEADER_BYTES + RING_FRAMES * 2 * Float32Array.BYTES_PER_ELEMENT;
+let nextWorkerInitId = 0;
 
 export type GrandBouleNodeResult = {
     workletNode: AudioWorkletNode;
@@ -149,8 +150,22 @@ function createWorkerRingTransport({ ctx, wasmModule }: CreateGrandBouleTranspor
     const workerHandshake = createReadyHandshake({ pluginName: 'GrandBouleNode engine worker' });
     const workletHandshake = createReadyHandshake({ pluginName: 'GrandBouleNode worklet' });
 
+    const reportWorkerFailure = (error: Error): void => {
+        const outcome = workerHandshake.reject(error);
+        if (outcome === 'late') {
+            console.error('[GrandBouleNode] Engine worker failed after initialization:', error);
+        }
+    };
+
     engineWorker.onmessage = (event: MessageEvent) => {
         workerHandshake.onMessage(event);
+    };
+    engineWorker.onerror = (event: ErrorEvent) => {
+        const message = event.message || 'GrandBouleNode engine worker crashed during initialization';
+        reportWorkerFailure(new Error(message));
+    };
+    engineWorker.onmessageerror = () => {
+        reportWorkerFailure(new Error('GrandBouleNode engine worker sent an unreadable initialization message'));
     };
     node.port.onmessage = (event: MessageEvent) => {
         workletHandshake.onMessage(event);
@@ -190,6 +205,7 @@ function createWorkerRingTransport({ ctx, wasmModule }: CreateGrandBouleTranspor
     // worklet has run a block.
     engineWorker.postMessage({
         type: 'init',
+        initId: ++nextWorkerInitId,
         wasmModule,
         sab,
         sampleRate: ctx.sampleRate,
@@ -279,7 +295,10 @@ export async function createGrandBouleNode(
     const processorUrl = isOfflineRender ? grandBouleOfflineProcessorUrl : grandBouleProcessorUrl;
 
     await raceAbortSignal(ensureWorkletRegistered(ctx, processorUrl), signal);
-    const wasmModule = await raceAbortSignal(fetchWasmModule(wasmUrl ?? DEFAULT_WASM_URL), signal);
+    const wasmModule = await raceAbortSignal(
+        fetchWasmModule({ ctx, bundleId: 'daw-dsp', url: wasmUrl ?? DEFAULT_WASM_URL }),
+        signal
+    );
 
     signal?.throwIfAborted();
 

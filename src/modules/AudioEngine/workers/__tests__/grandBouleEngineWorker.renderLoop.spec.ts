@@ -69,8 +69,12 @@ function makeSab(ringFrames: number): SharedArrayBuffer {
     return new SharedArrayBuffer(HEADER + ringFrames * 2 * Float32Array.BYTES_PER_ELEMENT);
 }
 
+let nextInitId = 0;
+
 function sendInit(sab: SharedArrayBuffer, sampleRate = 48_000): void {
-    onmessage({ data: { type: 'init', wasmModule: MINIMAL_WASM_MODULE, sab, sampleRate } } as MessageEvent);
+    onmessage({
+        data: { type: 'init', initId: ++nextInitId, wasmModule: MINIMAL_WASM_MODULE, sab, sampleRate },
+    } as MessageEvent);
 }
 
 function sendStop(): void {
