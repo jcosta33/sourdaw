@@ -294,6 +294,6 @@ describe('Grand Boule renders audible audio offline', () => {
     // reds for it. Every way of collapsing the note queue drains the note-offs
     // along with the note-ons, so a broken transport produces *silence* in the
     // gap too, not early sound. Note placement is measured where it can actually
-    // fail, in `services/__tests__/grandBouleOfflineNoteTiming.spec.ts`, which
+    // fail, in `worklets/__tests__/grandBouleOfflineNoteTiming.spec.ts`, which
     // asserts the render block each note is voiced in.
 });

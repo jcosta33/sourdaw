@@ -22,11 +22,19 @@ import { RENDER_TIMEOUT_MULTIPLIER } from '../../useCases/offlineRender/constant
  * suspend round trips, neither of which is Grand Boule's cost and both of which
  * are small next to a physical-model piano.
  *
- * The threshold below is not a performance target anyone tuned. It is the named
+ * The threshold is not a performance target anyone tuned. It is the named
  * blocker from the spec: over `RENDER_TIMEOUT_MULTIPLIER` and the offline
  * transport is not viable as built, and the answer becomes block batching rather
- * than this. The margin is deliberately the real budget, so this fails when the
- * product breaks rather than when a laptop is busy.
+ * than this.
+ *
+ * **The explicit `MEASUREMENT_TIMEOUT_MS` is load-bearing, not decoration.**
+ * Without it the case inherits vitest's 5000 ms default, which is ~2.5x realtime
+ * for two seconds of audio — so the ceiling that actually fires is a quarter of
+ * the budget this claims to assert, and it fires as `Test timed out in 5000ms`
+ * rather than as the property. That is a flaky test wearing a product assertion's
+ * clothes, and it was: one full-suite run went red at 2.567x on a busy machine.
+ * The timeout is set far above any plausible render so the assertion below is the
+ * one that decides.
  */
 
 const HOST_SAMPLE_RATE = 48_000;
@@ -37,6 +45,13 @@ const VOICE_COUNT = 64;
 const LOWEST_PIANO_NOTE = 21;
 /** Long enough for the measurement to survive one scheduler hiccup. */
 const AUDIO_SECONDS = 2;
+
+/**
+ * Well past `RENDER_TIMEOUT_MULTIPLIER * AUDIO_SECONDS` (20 s), plus room for
+ * wasm compilation and a loaded CI box. Nothing about the product is expressed
+ * here — its only job is to stay out of the way of the assertion.
+ */
+const MEASUREMENT_TIMEOUT_MS = 120_000;
 
 const WASM_PATH = resolve(process.cwd(), 'public/wasm/daw-dsp/daw_dsp_bg.wasm');
 
@@ -100,47 +115,59 @@ describe('a 64-voice Grand Boule offline render fits the export budget', () => {
         } as MessageEvent);
     });
 
-    it('renders faster than the timeout multiplier allows', () => {
-        for (let voice = 0; voice < VOICE_COUNT; voice++) {
-            port.onmessage?.({
-                data: { type: 'noteOn', midiNote: LOWEST_PIANO_NOTE + voice, velocity: 0.9 },
-            } as MessageEvent);
-        }
+    it(
+        'renders faster than the timeout multiplier allows',
+        async ({ annotate }) => {
+            for (let voice = 0; voice < VOICE_COUNT; voice++) {
+                port.onmessage?.({
+                    data: { type: 'noteOn', midiNote: LOWEST_PIANO_NOTE + voice, velocity: 0.9 },
+                } as MessageEvent);
+            }
 
-        const quanta = Math.round((AUDIO_SECONDS * HOST_SAMPLE_RATE) / QUANTUM_FRAMES);
-        const left = new Float32Array(QUANTUM_FRAMES);
-        const right = new Float32Array(QUANTUM_FRAMES);
+            const quanta = Math.round((AUDIO_SECONDS * HOST_SAMPLE_RATE) / QUANTUM_FRAMES);
+            const left = new Float32Array(QUANTUM_FRAMES);
+            const right = new Float32Array(QUANTUM_FRAMES);
 
-        // One warm-up block so the measurement excludes wasm tier-up on the very
-        // first call rather than attributing it to the render.
-        processor.process([], [[left, right]]);
-
-        let peak = 0;
-        const startedAt = performance.now();
-        for (let quantum = 0; quantum < quanta; quantum++) {
-            harnessFrame = quantum * QUANTUM_FRAMES;
+            // One warm-up block so the measurement excludes wasm tier-up on the very
+            // first call rather than attributing it to the render.
             processor.process([], [[left, right]]);
-            for (let index = 0; index < QUANTUM_FRAMES; index++) {
-                const magnitude = Math.abs(left[index] ?? 0);
-                if (magnitude > peak) {
-                    peak = magnitude;
+
+            let peak = 0;
+            const startedAt = performance.now();
+            for (let quantum = 0; quantum < quanta; quantum++) {
+                harnessFrame = quantum * QUANTUM_FRAMES;
+                processor.process([], [[left, right]]);
+                for (let index = 0; index < QUANTUM_FRAMES; index++) {
+                    const magnitude = Math.abs(left[index] ?? 0);
+                    if (magnitude > peak) {
+                        peak = magnitude;
+                    }
                 }
             }
-        }
-        const elapsedSeconds = (performance.now() - startedAt) / 1000;
-        const realtimeRatio = elapsedSeconds / AUDIO_SECONDS;
+            const elapsedSeconds = (performance.now() - startedAt) / 1000;
+            const realtimeRatio = elapsedSeconds / AUDIO_SECONDS;
 
-        // Reported either way: a number nobody can read is not a measurement.
-        console.info(
-            `[grand-boule] 64 voices, ${AUDIO_SECONDS}s of audio in ${elapsedSeconds.toFixed(3)}s wall clock ` +
-                `= ${realtimeRatio.toFixed(3)}x realtime (budget ${RENDER_TIMEOUT_MULTIPLIER}x)`
-        );
+            // Annotated, not logged. `console.info` from a *passing* test is
+            // swallowed by the suite's `--silent=passed-only`, so the figure would
+            // only ever appear on the run where it no longer matters. An annotation
+            // is reported for a green test, which is the only way a number in a
+            // commit message is reproducible by the person reading it.
+            const summary =
+                `${VOICE_COUNT} voices, ${AUDIO_SECONDS}s of audio in ${elapsedSeconds.toFixed(3)}s wall clock ` +
+                `= ${realtimeRatio.toFixed(3)}x realtime (budget ${RENDER_TIMEOUT_MULTIPLIER}x)`;
+            await annotate(summary, 'notice');
 
-        // `peak` guards the measurement itself: an engine that produced silence
-        // would render very fast and pass a timing assertion alone.
-        expect({
-            producedAudio: peak > 0.001,
-            withinBudget: realtimeRatio < RENDER_TIMEOUT_MULTIPLIER,
-        }).toEqual({ producedAudio: true, withinBudget: true });
-    });
+            // `peak` guards the measurement itself: an engine that produced silence
+            // renders very fast and would sail past a timing assertion alone. Note
+            // what it does *not* prove — the output buffer is reused across quanta,
+            // so a fault partway through leaves the last good block in it and this
+            // still passes. It catches the case it is here for, a device that never
+            // came up at all, and no more.
+            expect({
+                producedAudio: peak > 0.001,
+                withinBudget: realtimeRatio < RENDER_TIMEOUT_MULTIPLIER,
+            }).toEqual({ producedAudio: true, withinBudget: true });
+        },
+        MEASUREMENT_TIMEOUT_MS
+    );
 });

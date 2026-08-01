@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { ensureWorkletRegistered } from '#/infra/audioWorklet/workletInitShared';
+
 import { dropoutCounters } from '../dropoutCounter';
 import { createGrandBouleNode, isGrandBouleDevice } from '../GrandBouleNode';
 import { requireSharedArrayBuffer } from '../pluginHostingErrors';
@@ -343,6 +345,29 @@ describe('createGrandBouleNode', () => {
                 (field) => init !== undefined && field in init
             ),
         }).toEqual({ hasWasmBytes: true, ringFields: [] });
+    });
+
+    it('refuses a live node without cross-origin isolation before doing any work for it', async () => {
+        const gate = vi.mocked(requireSharedArrayBuffer);
+        const registered = vi.mocked(ensureWorkletRegistered);
+        const fetchSpy = vi.mocked(fetch);
+        gate.mockImplementationOnce(() => {
+            throw new Error('Grand Boule requires cross-origin isolation');
+        });
+
+        const rejected = createGrandBouleNode(ctx);
+
+        // The gate has to precede the awaits, not just live inside the live
+        // transport. Past them the user has already paid a `resume()`, a
+        // permanent `addModule` registration on the context and a 554 KB wasm
+        // download before being told the device cannot run — and an abort landing
+        // during any of those replaces the typed error `buildDeviceChain` maps to
+        // the isolation notification with an `AbortError`.
+        await expect(rejected).rejects.toThrow('cross-origin isolation');
+        expect({
+            workletRegistrations: registered.mock.calls.length,
+            wasmFetches: fetchSpy.mock.calls.length,
+        }).toEqual({ workletRegistrations: 0, wasmFetches: 0 });
     });
 
     it('gates on SharedArrayBuffer only for the live ring, never for a render', async () => {

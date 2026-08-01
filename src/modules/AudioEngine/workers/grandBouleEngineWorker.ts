@@ -8,23 +8,31 @@
  * deadline (~2.67 ms per 128-sample quantum at 48 kHz). The Worker gets a
  * full OS timeslice and can absorb occasional spikes without causing glitches.
  *
+ * **Live playback only.** Offline rendering used to come through here too and
+ * that is what starved exports into 97-99 % silence: an `OfflineAudioContext`
+ * has no deadline for the ring to protect (Web Audio §2.6), so its back-pressure
+ * and macrotask pacing were pure cost. Renders now run the engine inside
+ * `worklets/grandBouleOfflineProcessor`, over the shared
+ * `worklets/grandBouleEngineCore` this file also uses. Nothing below is reached
+ * by an export; do not reason about one from it.
+ *
  * Note timing
  * -----------
  * `noteOn`, `noteOff` and `noteExpression` carry an optional `sampleFrame` — an
  * absolute frame on the *AudioContext* clock, the same domain the transport
- * scheduler and the offline renderer already speak. The engine's own clock is
- * the ring write head, which counts frames the engine has produced, so the two
- * are related by a constant the worker cannot see on its own:
+ * scheduler speaks. The engine's own clock is the ring write head, which counts
+ * frames the engine has produced, so the two are related by a constant the
+ * worker cannot see on its own:
  *
  *     contextFrame = engineFrame + consumerOffset
  *
  * The consumer publishes `consumerOffset` (`currentFrame - readHead`) into
  * `syncSab` once per render quantum, and `init` carries a `contextFrame` anchor
- * for the window before the consumer has run a single block — which is the whole
- * of an offline render's scheduling phase, where every note is posted before
- * `startRendering()`. A note whose frame is not yet reached is queued and drained
- * against the block the engine is about to produce; a note already past it voices
- * immediately, exactly as an unscheduled one does.
+ * for the window before the consumer has run a single block — a few milliseconds
+ * at node construction, long before the transport can schedule into it. A note
+ * whose frame is not yet reached is queued and drained against the block the
+ * engine is about to produce; a note already past it voices immediately, exactly
+ * as an unscheduled one does.
  *
  * Port protocol (self.onmessage):
  *   ← { type: 'init', wasmBytes: ArrayBuffer, sab: SharedArrayBuffer, sampleRate: number,
@@ -95,10 +103,13 @@ let syncInts: Int32Array | null = null;
 
 /**
  * Context frame the engine's frame 0 is expected to be heard at, taken from the
- * host context's clock at node-construction time. Exact for an offline render
- * (its clock is still at 0); live it is an estimate that the consumer's first
- * published offset replaces within a few milliseconds of the node existing —
- * long before the transport can schedule anything into it.
+ * host context's clock at node-construction time.
+ *
+ * An estimate, and only ever a short-lived one: the consumer's first published
+ * offset replaces it within a few milliseconds of the node existing, long before
+ * the transport can schedule anything into it. It used to be exact for the one
+ * case that no longer arrives here — an offline render, whose clock sits at 0
+ * through its whole scheduling phase.
  */
 let anchorContextFrame = 0;
 
@@ -176,9 +187,7 @@ function initEngine({ wasmBytes, sab, workerSampleRate, syncSab, contextFrame }:
     // published into this slot by the time we get here. That value is not stale:
     // it is this ring's own consumer reporting a `readHead` still at 0, which is
     // a sharper estimate than `contextFrame` — taken earlier — and it is
-    // republished on the consumer's next quantum regardless. Offline the
-    // consumer has not run a block yet, so the anchor still stands in for the
-    // whole scheduling phase, which is the case it exists for.
+    // republished on the consumer's next quantum regardless.
     if (syncSab) {
         syncInts = new Int32Array(syncSab);
         Atomics.store(syncInts, CONSUMER_OFFSET_IDX, CONSUMER_OFFSET_UNSET);
@@ -269,10 +278,19 @@ function renderLoop(): void {
         const rightPtr = instance.get_right_ptr();
         // Read the buffer fresh after `process()`: a Rust-side allocation can
         // grow linear memory mid-call and detach the previous one.
-        const [leftSrc, rightSrc] = blockViews.get(memory.buffer, leftPtr, rightPtr, BLOCK_SIZE);
+        blockViews.update(memory.buffer, leftPtr, rightPtr, BLOCK_SIZE);
 
         // Write into the ring (wrapping) and release-publish the new write head.
-        writeBlockRelease(controlInts, leftRing, rightRing, ringFrames, writeHead, leftSrc, rightSrc, BLOCK_SIZE);
+        writeBlockRelease(
+            controlInts,
+            leftRing,
+            rightRing,
+            ringFrames,
+            writeHead,
+            blockViews.left,
+            blockViews.right,
+            BLOCK_SIZE
+        );
 
         // Atomics.pause is a Stage 3 proposal — cast to an extended type that includes it
         type AtomicsWithPause = typeof Atomics & { pause?: () => void };

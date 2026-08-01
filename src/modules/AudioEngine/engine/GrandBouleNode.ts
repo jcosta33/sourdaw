@@ -22,7 +22,7 @@
  *
  * The split is the shape every serious plugin API formalises: VST3
  * `ProcessSetup::processMode`, CLAP `clap_plugin_render`. Both transports run the
- * same engine and the same control surface — see `services/grandBouleEngineCore`,
+ * same engine and the same control surface — see `worklets/grandBouleEngineCore`,
  * which both hosts import and neither may re-implement.
  *
  * Every method below is written once and posts through `transport.post`.
@@ -129,12 +129,10 @@ type CreateGrandBouleTransportInput = {
  * worklet as consumer. Behaviour is exactly as it has always been.
  */
 function createWorkerRingTransport({ ctx, wasmBytes }: CreateGrandBouleTransportInput): GrandBouleTransport {
-    // Fail fast when SharedArrayBuffer is unavailable. The typed error is caught
-    // in `buildDeviceChain` and mapped to a user-visible notification. Only this
-    // transport needs it — the offline one has no shared memory at all, which is
-    // why the check moved out of the factory body and in here.
-    requireSharedArrayBuffer('Grand Boule');
-
+    // `requireSharedArrayBuffer` guards this transport and is called by the
+    // factory *before* its awaits, not here: by the time this runs the context
+    // has been resumed and the wasm downloaded, which is exactly the work the
+    // guard exists to avoid paying. The allocations below are what it protects.
     const node = new AudioWorkletNode(ctx, 'grand-boule-processor', {
         numberOfInputs: 0,
         numberOfOutputs: 1,
@@ -280,15 +278,30 @@ export async function createGrandBouleNode(
     wasmUrl?: string,
     signal?: AbortSignal
 ): Promise<GrandBouleNodeResult> {
-    if (ctx instanceof AudioContext && ctx.state === 'suspended') {
-        await raceAbortSignal(ctx.resume(), signal);
-    }
-
     // Branching on the context type rather than on the presence of a DOM global,
     // the same way `faustDeviceFactory` picks its scheduler. This branch already
     // existed here and only flipped a dropout-counting flag; it now decides which
     // engine host is built, which is the thing the flag was compensating for.
     const isOfflineRender = typeof OfflineAudioContext !== 'undefined' && ctx instanceof OfflineAudioContext;
+
+    // Fail fast, before any AudioContext / worklet / WASM work — the ordering
+    // every sibling factory keeps, and the reason it matters here: past this
+    // point the caller has resumed the context, permanently registered a
+    // processor module on it and downloaded 554 KB of wasm, and an abort landing
+    // in any of those awaits would replace the typed error `buildDeviceChain`
+    // maps to the cross-origin-isolation notification with an `AbortError`.
+    //
+    // Only the live transport needs it: an offline render has no shared memory
+    // at all, and refusing there would make a project unexportable over a
+    // capability the render never touches.
+    if (!isOfflineRender) {
+        requireSharedArrayBuffer('Grand Boule');
+    }
+
+    if (ctx instanceof AudioContext && ctx.state === 'suspended') {
+        await raceAbortSignal(ctx.resume(), signal);
+    }
+
     const processorUrl = isOfflineRender ? grandBouleOfflineProcessorUrl : grandBouleProcessorUrl;
 
     await raceAbortSignal(ensureWorkletRegistered(ctx, processorUrl), signal);

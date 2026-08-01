@@ -67,8 +67,8 @@ class GrandBouleOfflineProcessor extends AudioWorkletProcessor {
     _pendingMessages: GrandBouleDispatchMsg[] = [];
     _queue = createGrandBouleNoteQueue();
     // Cached WASM linear-memory views, revalidated on a memory.grow() buffer
-    // identity change, so process() allocates nothing per render quantum
-    // (audit RT-7).
+    // identity change (audit RT-7). In steady state `update` performs four
+    // primitive comparisons and allocates nothing.
     _blockViews = createGrandBouleBlockViews();
 
     constructor() {
@@ -171,11 +171,11 @@ class GrandBouleOfflineProcessor extends AudioWorkletProcessor {
             // can grow linear memory mid-call and detach the previous buffer.
             const outMem = this._memory?.buffer ?? mem;
 
-            const [leftSrc, rightSrc] = this._blockViews.get(outMem, leftPtr, rightPtr, processFrames);
-            out0.set(leftSrc);
+            this._blockViews.update(outMem, leftPtr, rightPtr, processFrames);
+            out0.set(this._blockViews.left);
             const out1 = output[1];
             if (out1) {
-                out1.set(rightSrc);
+                out1.set(this._blockViews.right);
             }
         } catch (error) {
             this._faulted = true;

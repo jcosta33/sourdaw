@@ -146,12 +146,19 @@ export function createGrandBouleInstance({
 }
 
 export type GrandBouleBlockViews = {
+    /** The engine's left output for the block `update` was last called for. */
+    readonly left: Float32Array;
+    /** The engine's right output for the block `update` was last called for. */
+    readonly right: Float32Array;
     /**
-     * The engine's rendered block as `[left, right]`, reusing the cached views
-     * whenever the backing buffer, the pointers and the length are unchanged.
-     * Pass `memory.buffer` read fresh after `process()`.
+     * Point `left` and `right` at the block the engine just rendered, reusing
+     * the cached views whenever the backing buffer, the pointers and the length
+     * are unchanged. Pass `memory.buffer` read fresh after `process()`.
+     *
+     * Returns nothing on purpose: handing back a tuple would allocate an array
+     * per block on the hit path and give back exactly what the cache saved.
      */
-    get: (buffer: ArrayBufferLike, leftPtr: number, rightPtr: number, frames: number) => [Float32Array, Float32Array];
+    update: (buffer: ArrayBufferLike, leftPtr: number, rightPtr: number, frames: number) => void;
 };
 
 /**
@@ -172,38 +179,50 @@ export type GrandBouleBlockViews = {
  * file thirty-one others depend on. In exchange both Grand Boule hosts now share
  * one cache — the engine Worker was allocating a fresh pair every block.
  *
- * Positional arguments deliberately: an options object would allocate one object
- * per call and defeat the purpose.
+ * **Shared blind spot, inherited deliberately.** Buffer *identity* is the growth
+ * signal, and that only holds for a non-shared `WebAssembly.Memory`, where
+ * `grow()` detaches the old `ArrayBuffer` and installs a new one. A memory
+ * declared `shared` grows in place: `memory.buffer` keeps the same identity and
+ * the same `byteLength`, so neither this nor `services/wasmView.ts` would notice.
+ * It is safe today because `daw-dsp` is built without threads and its memory is
+ * not shared; a threaded build would have to compare `byteLength` as well. Stated
+ * here so the next reader does not have to re-derive it.
+ *
+ * Positional arguments and no return value, deliberately: an options object or a
+ * returned tuple would allocate once per block and give back what the cache
+ * saved. Read `left` / `right` after `update`.
  */
 export function createGrandBouleBlockViews(): GrandBouleBlockViews {
-    let left: Float32Array | null = null;
-    let right: Float32Array | null = null;
     let cachedBuffer: ArrayBufferLike | null = null;
     let cachedLeftPtr = -1;
     let cachedRightPtr = -1;
     let cachedFrames = -1;
 
-    return {
-        get(buffer, leftPtr, rightPtr, frames) {
+    // Annotated rather than inferred: `new Float32Array(0)` infers a view over a
+    // plain `ArrayBuffer`, while a view minted over `WebAssembly.Memory`'s buffer
+    // is `Float32Array<ArrayBufferLike>` — the wider type has to be the field's.
+    const views: { left: Float32Array; right: Float32Array; update: GrandBouleBlockViews['update'] } = {
+        left: new Float32Array(0),
+        right: new Float32Array(0),
+        update(buffer: ArrayBufferLike, leftPtr: number, rightPtr: number, frames: number): void {
             if (
-                left !== null &&
-                right !== null &&
                 buffer === cachedBuffer &&
                 leftPtr === cachedLeftPtr &&
                 rightPtr === cachedRightPtr &&
                 frames === cachedFrames
             ) {
-                return [left, right];
+                return;
             }
-            left = new Float32Array(buffer, leftPtr, frames);
-            right = new Float32Array(buffer, rightPtr, frames);
+            views.left = new Float32Array(buffer, leftPtr, frames);
+            views.right = new Float32Array(buffer, rightPtr, frames);
             cachedBuffer = buffer;
             cachedLeftPtr = leftPtr;
             cachedRightPtr = rightPtr;
             cachedFrames = frames;
-            return [left, right];
         },
     };
+
+    return views;
 }
 
 /**
@@ -211,7 +230,9 @@ export function createGrandBouleBlockViews(): GrandBouleBlockViews {
  *
  * The `default` arm is the whole point of centralising this: a new member of
  * `GrandBouleDispatchMsg` that nobody handles fails to compile here rather than
- * being ignored in whichever host was not updated. It is unreachable at runtime.
+ * being ignored in whichever host was not updated. It is *not* unreachable at
+ * runtime — the senders are not type-welded — so see the arm itself for why it
+ * ignores rather than raises.
  */
 export function dispatch(instance: GrandBouleInstance, msg: GrandBouleDispatchMsg): void {
     switch (msg.type) {
@@ -262,8 +283,27 @@ export function dispatch(instance: GrandBouleInstance, msg: GrandBouleDispatchMs
             instance.all_notes_off();
             break;
         default: {
+            // Compile-time exhaustiveness, runtime tolerance — and the second
+            // half is not a hedge.
+            //
+            // `never` fails the build for any member of `GrandBouleDispatchMsg`
+            // nobody handled, which is the property worth having. But the weld
+            // stops at the type: `GrandBouleNodeResult`'s `post` takes a
+            // `Record<string, unknown>`, and `createWebAudioEngine` already
+            // broadcasts `{type:'shutdown'}` to every device worklet, so an
+            // unrecognised `type` can arrive here at runtime.
+            //
+            // Throwing on it was actively dangerous. The offline processor
+            // catches whatever escapes its message handler, sets `_faulted`, and
+            // then returns early from every remaining `process()`; its
+            // `{type:'error'}` reply lands after `ready` has settled and is
+            // dropped as 'late'. One stray message would silently produce the
+            // exact silent export this transport exists to eliminate. The
+            // pre-existing worker switch had no `default` and ignored unknowns;
+            // that is the runtime behaviour, restated deliberately.
             const exhaustive: never = msg;
-            throw new Error(`Grand Boule engine core: unhandled message ${JSON.stringify(exhaustive)}`);
+            void exhaustive;
+            break;
         }
     }
 }

@@ -60,6 +60,27 @@ function receive(
     receiveGrandBouleMessage({ instance, queue, msg, blockEndFrame });
 }
 
+describe('an unrecognised message', () => {
+    it('is ignored, not raised', () => {
+        const { calls, instance } = createRecordingInstance();
+        const queue = createGrandBouleNoteQueue();
+
+        // `createWebAudioEngine` already broadcasts `{type:'shutdown'}` to every
+        // device worklet, and `post` is untyped at the sender, so an unknown
+        // `type` can reach here. The offline processor catches whatever this
+        // throws, sets `_faulted`, and then returns early from `process()` for
+        // the rest of the render — its `{type:'error'}` reply arrives after
+        // `ready` has settled and is dropped as 'late'. One stray message would
+        // silently produce exactly the silent export this transport exists to
+        // eliminate. The old worker's switch had no `default` and ignored
+        // unknowns; that is the behaviour to keep at runtime. The `never` arm is
+        // still there, and it is what fails the build.
+        const unknown = { type: 'shutdown' } as unknown as GrandBouleDispatchMsg;
+        expect(() => receive(instance, queue, unknown, 128)).not.toThrow();
+        expect(calls).toEqual([]);
+    });
+});
+
 describe('the Grand Boule note queue', () => {
     it('drops pending notes when the device panics', () => {
         const { calls, instance } = createRecordingInstance();
