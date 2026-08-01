@@ -1,0 +1,88 @@
+src/modules/AudioEngine/engine/KneadNode.ts
+  s_ac9b259eab20ba::t_9050b0bc5c84bf 37-40
+src/modules/AudioEngine/engine/ScoringNode.ts
+  s_ac9b259eab20ba::t_9050b0bc5c84bf 82-85
+src/modules/AudioEngine/engine/__tests__/GrinderNode.spec.ts
+  s_ac9b259eab20ba::t_4dc5aa5ba2b089 185
+src/modules/AudioEngine/workers/grandBouleEngineWorker.ts
+  s_ac9b259eab20ba::t_af594b9c40660b 38-39,75-76,81-82,177,185-186,188-193,195-198,200-215,224-225,228,232-235,243,245,247-262,290,350,352,359,396-424,426
+  s_ac9b259eab20ba::t_0922f9dfbe8fed 187,194,291-299
+  s_ac9b259eab20ba::t_74d7bebd017802 199
+src/modules/AudioEngine/engine/BacteriaNode.ts
+  s_ac9b259eab20ba::t_9050b0bc5c84bf 84-87
+src/modules/AudioEngine/engine/CrumbsNode.ts
+  s_ac9b259eab20ba::t_9050b0bc5c84bf 74
+src/modules/AudioEngine/engine/GlutenNode.ts
+  s_ac9b259eab20ba::t_9050b0bc5c84bf 75-78
+src/modules/AudioEngine/engine/GrinderNode.ts
+  s_ac9b259eab20ba::t_9050b0bc5c84bf 76-79
+docs/architecture/07-wasm-dsp-pipeline.md
+  s_ac9b259eab20ba::t_1b7f0c441700c5 37
+  s_0a3429e31e555d::t_5cf98fe01b66ec 43-48
+src/modules/AudioEngine/engine/FermenterNode.ts
+  s_ac9b259eab20ba::t_9050b0bc5c84bf 122-125
+src/modules/AudioEngine/engine/LevainNode.ts
+  s_ac9b259eab20ba::t_9050b0bc5c84bf 66-69
+src/modules/AudioEngine/workers/__tests__/grandBouleEngineWorker.renderLoop.spec.ts
+  s_ac9b259eab20ba::t_9d423049fd19ac 72-73,75-77
+src/infra/audioWorklet/__tests__/workletInitShared.spec.ts
+  s_ac9b259eab20ba::t_2b39640e235ad4 15-24,78,88,96,107-108,118,127-128,134-168,170,178,184,193-194,202,214-215,221-237,277
+  s_ac9b259eab20ba::t_8a2e55d55d689e 278-286
+src/modules/AudioEngine/engine/__tests__/GrandBouleNode.spec.ts
+  s_ac9b259eab20ba::t_0ca287140d46db 60-67,114-120,153-154,316-329
+  s_ac9b259eab20ba::t_61714f4e85dd98 330-331
+src/modules/AudioEngine/AGENTS.md
+  s_ac9b259eab20ba::t_1b7f0c441700c5 9
+src/modules/AudioEngine/engine/__tests__/BacteriaNode.spec.ts
+  s_ac9b259eab20ba::t_4dc5aa5ba2b089 270
+src/modules/AudioEngine/engine/ToasterNode.ts
+  s_ac9b259eab20ba::t_9050b0bc5c84bf 92-95
+src/modules/AudioEngine/engine/ProofNode.ts
+  s_ac9b259eab20ba::t_9050b0bc5c84bf 97-100
+src/modules/AudioEngine/engine/GrandBouleNode.ts
+  s_ac9b259eab20ba::t_9050b0bc5c84bf 298-301
+  s_ac9b259eab20ba::t_4ee51e448e8a8e 46,153-159,163-169,208
+src/modules/AudioEngine/engine/ProofChamberNode.ts
+  s_ac9b259eab20ba::t_9050b0bc5c84bf 49-52
+src/modules/AudioEngine/workers/__tests__/grandBouleEngineWorker.dispatch.spec.ts
+  s_ac9b259eab20ba::t_216a26a306bfa9 134,156-218
+  s_ac9b259eab20ba::t_39a80953726882 1,79,84,130-133
+  s_ac9b259eab20ba::t_9d423049fd19ac 149,221,234,248,263,277,289
+  s_ac9b259eab20ba::t_fabd540e7cab39 135
+src/modules/AudioEngine/workers/__tests__/grandBouleEngineWorker.noteTiming.spec.ts
+  s_ac9b259eab20ba::t_9d423049fd19ac 138
+  s_ac9b259eab20ba::t_bc3c5c293c246a 73-74
+  s_ac9b259eab20ba::t_8a0dbc25dfaed5 71,75
+  s_ac9b259eab20ba::t_82368ed901dec7 72
+src/infra/audioWorklet/workletInitShared.ts
+  s_ac9b259eab20ba::t_6f111557363e60 6-7,55,59-71,73-77,79-81,86,95-129,133-136
+  s_ac9b259eab20ba::t_7c145511f3dd54 160-161,190-192,194-201,224,232
+src/modules/AudioEngine/engine/__tests__/GlutenNode.spec.ts
+  s_ac9b259eab20ba::t_bc3c5c293c246a 94-95,98
+  s_ac9b259eab20ba::t_4dc5aa5ba2b089 280
+  s_ac9b259eab20ba::t_63c805e4a82426 97,99-101
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.19",
+  "base_commit_sha": "a1f05525fda67a1ffd60306b04a7f24953dd440d",
+  "prompts": {},
+  "sessions": {
+    "s_0a3429e31e555d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1568-8dda-7540-97a5-9da760eadac4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
