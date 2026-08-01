@@ -1,0 +1,21 @@
+src/modules/Arrangement/useCases/__tests__/projectTrackToLiveStrip.spec.ts
+  s_ac9b259eab20ba::t_dea85c69fdc79e 136-165
+src/modules/Arrangement/useCases/projectTrackToLiveStrip.ts
+  s_ac9b259eab20ba::t_2bde72e74a74ad 76-80,89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "8d405213b9d5c693017c5d364f14cd1ce7692916",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
