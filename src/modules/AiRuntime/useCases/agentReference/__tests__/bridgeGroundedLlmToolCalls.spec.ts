@@ -159,9 +159,7 @@ describe('bridgeGroundedLlmToolCalls', () => {
             createClipContext()
         );
 
-        expect(quantize.actions).toEqual([
-            { type: 'quantizeNotes', payload: { clipId: 'clip-midi', gridSize: 0.25 } },
-        ]);
+        expect(quantize.actions).toEqual([{ type: 'quantizeNotes', payload: { clipId: 'clip-midi', gridSize: 0.25 } }]);
         expect(transpose.actions).toEqual([
             { type: 'transposeNotes', payload: { clipId: 'clip-midi', semitones: -7 } },
         ]);

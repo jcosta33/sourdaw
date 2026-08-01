@@ -1083,8 +1083,7 @@ function groundToolCall({
     }
     if (
         (call.name === 'quantizeNotes' || call.name === 'transposeNotes') &&
-        (hasSelectedNoteScope(actionScope.text) ||
-            (plannedActionNames.length === 1 && hasSelectedNoteScope(prompt)))
+        (hasSelectedNoteScope(actionScope.text) || (plannedActionNames.length === 1 && hasSelectedNoteScope(prompt)))
     ) {
         return rejection(index, call.name, 'Selected-note edits are not supported; target the whole MIDI clip');
     }

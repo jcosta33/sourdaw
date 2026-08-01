@@ -208,10 +208,7 @@ function createMidiClipContext(): ProjectContext {
     };
     return {
         ...projectContext,
-        tracks: [
-            { ...track, kind: 'midi', clips: [midiClip] },
-            ...projectContext.tracks.slice(1),
-        ],
+        tracks: [{ ...track, kind: 'midi', clips: [midiClip] }, ...projectContext.tracks.slice(1)],
         selectedClipId: midiClip.id,
         selectedClipIds: [midiClip.id],
     };

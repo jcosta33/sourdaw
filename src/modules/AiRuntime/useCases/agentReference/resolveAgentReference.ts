@@ -362,8 +362,7 @@ export function resolveAgentReference(input: ResolveAgentReferenceInput): Resolv
         const clip = input.context.tracks
             .flatMap((track) => track.clips)
             .find((candidate) => candidate.id === input.assertedId);
-        const requiresEditableClip =
-            input.capability === 'editable-clip' || input.capability === 'editable-midi-clip';
+        const requiresEditableClip = input.capability === 'editable-clip' || input.capability === 'editable-midi-clip';
         const hasEligibleMidiContent =
             input.capability !== 'editable-midi-clip' || (clip?.type === 'midi' && clip.noteCount > 0);
         if (!clip || (requiresEditableClip && clip.locked === true) || !hasEligibleMidiContent) {
