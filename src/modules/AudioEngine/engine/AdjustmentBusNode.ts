@@ -11,6 +11,12 @@ export type AdjustmentBusDeps = {
     parameters: Record<string, number>;
 };
 
+export type AdjustmentBusRuntimeResources = {
+    effectType: AdjustmentEffectType;
+    audioNodes: number;
+    audioWorkletProcessors: number;
+};
+
 export const ADJUSTMENT_DEVICE_TYPE: Record<AdjustmentEffectType, string | null> = {
     eq: 'builtin-eq',
     compressor: 'builtin-compressor',
@@ -255,6 +261,35 @@ export class AdjustmentBusNode {
 
     public hasSource(source: AudioNode): boolean {
         return this.sources.has(source);
+    }
+
+    public getRuntimeResources(): AdjustmentBusRuntimeResources {
+        const ownedNodes = new Set<AudioNode>([this.inputNode, this.outputNode, this.dryGain, this.wetGain]);
+        if (this.panNode) {
+            ownedNodes.add(this.panNode);
+        }
+        if (this.deviceNode) {
+            ownedNodes.add(this.deviceNode.inputNode);
+            ownedNodes.add(this.deviceNode.outputNode);
+            for (const node of this.deviceNode.nodes) {
+                ownedNodes.add(node);
+            }
+        }
+
+        let audioWorkletProcessors = 0;
+        if (typeof AudioWorkletNode !== 'undefined') {
+            for (const node of ownedNodes) {
+                if (node instanceof AudioWorkletNode) {
+                    audioWorkletProcessors++;
+                }
+            }
+        }
+
+        return {
+            effectType: this.effectType,
+            audioNodes: ownedNodes.size,
+            audioWorkletProcessors,
+        };
     }
 
     public dispose(): void {

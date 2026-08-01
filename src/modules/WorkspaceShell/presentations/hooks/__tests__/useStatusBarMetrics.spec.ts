@@ -72,6 +72,11 @@ function makeEngineDiagnostics(deviceInstances = 24): ReturnType<typeof getEngin
             failedDeviceInstances: 2,
             deviceInstancesByType: { fermenter: 14 },
             deviceAudioNodes: 31,
+            graphSlotResourcesByLoadState: {
+                ready: { audioNodes: 29, audioWorkletProcessors: 24, workers: 1 },
+                pending: { audioNodes: 1, audioWorkletProcessors: 0, workers: 0 },
+                failed: { audioNodes: 1, audioWorkletProcessors: 0, workers: 0 },
+            },
             deviceAudioWorkletProcessors: 24,
             deviceAudioWorkletProcessorsByType: { fermenter: 14 },
             stripMeterWorklets: 39,
@@ -80,6 +85,9 @@ function makeEngineDiagnostics(deviceInstances = 24): ReturnType<typeof getEngin
             workerInstances: 1,
             workerInstancesByType: { 'grand-boule': 1 },
             adjustmentLayerBuses: 0,
+            adjustmentLayerBusesByEffectType: {},
+            adjustmentLayerAudioNodes: 0,
+            adjustmentLayerAudioWorkletProcessors: 0,
         },
         runtime: {
             trackedAudioScheduledSources: 0,

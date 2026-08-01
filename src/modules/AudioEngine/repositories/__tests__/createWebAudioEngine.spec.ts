@@ -868,6 +868,11 @@ describe('AudioEngine', () => {
                 failedDeviceInstances: 0,
                 deviceInstancesByType: {},
                 deviceAudioNodes: 0,
+                graphSlotResourcesByLoadState: {
+                    ready: { audioNodes: 0, audioWorkletProcessors: 0, workers: 0 },
+                    pending: { audioNodes: 0, audioWorkletProcessors: 0, workers: 0 },
+                    failed: { audioNodes: 0, audioWorkletProcessors: 0, workers: 0 },
+                },
                 deviceAudioWorkletProcessors: 0,
                 deviceAudioWorkletProcessorsByType: {},
                 stripMeterWorklets: 0,
@@ -876,6 +881,9 @@ describe('AudioEngine', () => {
                 workerInstances: 0,
                 workerInstancesByType: {},
                 adjustmentLayerBuses: 0,
+                adjustmentLayerBusesByEffectType: {},
+                adjustmentLayerAudioNodes: 0,
+                adjustmentLayerAudioWorkletProcessors: 0,
             });
         });
 

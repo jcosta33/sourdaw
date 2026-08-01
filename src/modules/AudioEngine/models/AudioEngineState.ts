@@ -49,6 +49,9 @@ export type AudioEngineHealth = {
  * Current-Chrome playback quality counters sampled from `AudioContext.playbackStats`.
  * Durations and latencies are seconds; Chrome refreshes the underlying counters at
  * most once per second while the context is running and the document is observable.
+ * Underrun and total-duration fields are cumulative for the AudioContext lifetime;
+ * measurement windows compare before/after snapshots. Latency fields cover the
+ * window since `resetPlaybackLatencyStats()` was last called.
  */
 export type AudioEnginePlaybackStats = {
     underrunDuration: number;
@@ -78,18 +81,31 @@ export type AudioEngineDiagnostics = {
         pendingDeviceInstances: number;
         failedDeviceInstances: number;
         deviceInstancesByType: Record<string, number>;
+        /** AudioNodes owned by every device slot still present in the graph, including pending/failed placeholders. */
         deviceAudioNodes: number;
+        /**
+         * Resources reachable from each TrackNode's current device slot, partitioned by load state.
+         * Factory-owned resources that have not reached `onLoaded` are intentionally excluded and
+         * belong to the staged-readiness telemetry slice.
+         */
+        graphSlotResourcesByLoadState: Record<
+            'ready' | 'pending' | 'failed',
+            { audioNodes: number; audioWorkletProcessors: number; workers: number }
+        >;
         /** AudioWorklet processor instances owned by devices; meter worklets are reported separately. */
         deviceAudioWorkletProcessors: number;
         deviceAudioWorkletProcessorsByType: Record<string, number>;
         stripMeterWorklets: number;
         masterMeterWorklets: number;
-        /** Device processors plus strip and master meter processors. */
+        /** Track-device, adjustment-layer, strip-meter, and master-meter processors. */
         graphAudioWorkletProcessors: number;
-        /** Dedicated Workers owned by loaded graph devices; excludes transient recording/export workers. */
+        /** Dedicated Workers owned by current graph device slots; excludes transient recording/export workers. */
         workerInstances: number;
         workerInstancesByType: Record<string, number>;
         adjustmentLayerBuses: number;
+        adjustmentLayerBusesByEffectType: Record<string, number>;
+        adjustmentLayerAudioNodes: number;
+        adjustmentLayerAudioWorkletProcessors: number;
     };
     runtime: {
         trackedAudioScheduledSources: number;
@@ -367,6 +383,8 @@ export type AudioEngine = {
     getState(): AudioEngineState;
     getHealth(): AudioEngineHealth;
     getDiagnostics(): AudioEngineDiagnostics;
+    /** Start a new Chrome latency min/average/max measurement window. */
+    resetPlaybackLatencyStats(): void;
     dispose(): Promise<void>;
     resetGraph(): void;
     ensureTrackStrip(trackId: string): TrackChannelStrip;
