@@ -1,4 +1,4 @@
-import type { ArticulationType } from '../../models/LevainPatch';
+import { ARTICULATION_ID_BY_TYPE, type ArticulationType } from '../../models/LevainPatch';
 
 export type ManifestZone = {
     file: string;
@@ -36,36 +36,13 @@ export type SampleManifest = {
     micPositions: readonly string[];
 };
 
-const ARTICULATION_TYPES = [
-    'sustain',
-    'sustain-non-vib',
-    'con-sordino',
-    'flautando',
-    'sul-tasto',
-    'sul-ponticello',
-    'harmonics',
-    'spiccato',
-    'staccato',
-    'staccatissimo',
-    'pizzicato',
-    'bartok-pizz',
-    'col-legno',
-    'tremolo',
-    'trill-half',
-    'trill-whole',
-    'legato',
-    'legato-portamento',
-    'marcato',
-    'sforzando',
-    'flutter-tongue',
-    'muted-straight',
-    'muted-cup',
-    'muted-harmon',
-    'muted-plunger',
-    'crescendo',
-    'decrescendo',
-    'runs',
-] as const satisfies readonly ArticulationType[];
+const MAX_F32 = 3.402_823_466_385_288_6e38;
+const MAX_U32 = 4_294_967_295;
+const MAX_MICS = 8;
+const MAX_RR = 12;
+const MAX_ZONE_ARENA = 65_536;
+const MAX_ZONE_LIST_COUNT = 65_535;
+const VELOCITY_BUCKET_SIZE = 8;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null;
@@ -79,8 +56,12 @@ function isIntegerInRange(value: unknown, minimum: number, maximum: number): val
     return Number.isInteger(value) && typeof value === 'number' && value >= minimum && value <= maximum;
 }
 
-function isNonNegativeFiniteNumber(value: unknown): value is number {
-    return isFiniteNumber(value) && value >= 0;
+function fitsF32(value: unknown): value is number {
+    return isFiniteNumber(value) && Math.abs(value) <= MAX_F32;
+}
+
+function isNonNegativeF32(value: unknown): value is number {
+    return fitsF32(value) && value >= 0;
 }
 
 function isSafeRelativeSamplePath(value: unknown): value is string {
@@ -91,7 +72,7 @@ function isSafeRelativeSamplePath(value: unknown): value is string {
 }
 
 function isArticulationType(value: unknown): value is ArticulationType {
-    return typeof value === 'string' && ARTICULATION_TYPES.some((candidate) => candidate === value);
+    return typeof value === 'string' && Object.hasOwn(ARTICULATION_ID_BY_TYPE, value);
 }
 
 function parseZone(value: unknown, path: string): ManifestZone {
@@ -116,14 +97,14 @@ function parseZone(value: unknown, path: string): ManifestZone {
     if (!isIntegerInRange(value.hiVel, 0, 127) || value.hiVel < value.loVel) {
         throw new TypeError(`${path}.hiVel must be an integer from loVel through 127`);
     }
-    if (!isIntegerInRange(value.rrPos, 0, Number.MAX_SAFE_INTEGER)) {
-        throw new TypeError(`${path}.rrPos must be a non-negative integer`);
+    if (!isIntegerInRange(value.rrPos, 0, MAX_RR - 1)) {
+        throw new TypeError(`${path}.rrPos must be an integer from 0 through ${MAX_RR - 1}`);
     }
-    if (!isIntegerInRange(value.rrLen, 1, Number.MAX_SAFE_INTEGER) || value.rrPos >= value.rrLen) {
-        throw new TypeError(`${path}.rrLen must be a positive integer greater than rrPos`);
+    if (!isIntegerInRange(value.rrLen, 1, MAX_RR) || value.rrPos >= value.rrLen) {
+        throw new TypeError(`${path}.rrLen must be an integer from 1 through ${MAX_RR} greater than rrPos`);
     }
-    if (!isIntegerInRange(value.micId, 0, Number.MAX_SAFE_INTEGER)) {
-        throw new TypeError(`${path}.micId must be a non-negative integer`);
+    if (!isIntegerInRange(value.micId, 0, MAX_MICS - 1)) {
+        throw new TypeError(`${path}.micId must be an integer from 0 through ${MAX_MICS - 1}`);
     }
     if (typeof value.isRelease !== 'boolean') {
         throw new TypeError(`${path}.isRelease must be a boolean`);
@@ -131,29 +112,29 @@ function parseZone(value: unknown, path: string): ManifestZone {
     if (value.loopMode !== 'none' && value.loopMode !== 'forward' && value.loopMode !== 'pingpong') {
         throw new TypeError(`${path}.loopMode must be none, forward, or pingpong`);
     }
-    if (!isIntegerInRange(value.loopStart, 0, Number.MAX_SAFE_INTEGER)) {
-        throw new TypeError(`${path}.loopStart must be a non-negative integer`);
+    if (!isIntegerInRange(value.loopStart, 0, MAX_U32)) {
+        throw new TypeError(`${path}.loopStart must be an integer from 0 through ${MAX_U32}`);
     }
-    if (!isIntegerInRange(value.loopEnd, 0, Number.MAX_SAFE_INTEGER)) {
-        throw new TypeError(`${path}.loopEnd must be a non-negative integer`);
+    if (!isIntegerInRange(value.loopEnd, 0, MAX_U32)) {
+        throw new TypeError(`${path}.loopEnd must be an integer from 0 through ${MAX_U32}`);
     }
-    if (!isIntegerInRange(value.loopCrossfade, 0, Number.MAX_SAFE_INTEGER)) {
-        throw new TypeError(`${path}.loopCrossfade must be a non-negative integer`);
+    if (!isIntegerInRange(value.loopCrossfade, 0, MAX_U32)) {
+        throw new TypeError(`${path}.loopCrossfade must be an integer from 0 through ${MAX_U32}`);
     }
-    if (!isFiniteNumber(value.gainDb)) {
-        throw new TypeError(`${path}.gainDb must be a finite number`);
+    if (!fitsF32(value.gainDb)) {
+        throw new TypeError(`${path}.gainDb must fit a finite 32-bit float`);
     }
-    if (!isNonNegativeFiniteNumber(value.attack)) {
-        throw new TypeError(`${path}.attack must be a non-negative finite number`);
+    if (!isNonNegativeF32(value.attack)) {
+        throw new TypeError(`${path}.attack must be a non-negative finite 32-bit float`);
     }
-    if (!isNonNegativeFiniteNumber(value.decay)) {
-        throw new TypeError(`${path}.decay must be a non-negative finite number`);
+    if (!isNonNegativeF32(value.decay)) {
+        throw new TypeError(`${path}.decay must be a non-negative finite 32-bit float`);
     }
     if (!isFiniteNumber(value.sustain) || value.sustain < 0 || value.sustain > 1) {
         throw new TypeError(`${path}.sustain must be a finite number from 0 through 1`);
     }
-    if (!isNonNegativeFiniteNumber(value.release)) {
-        throw new TypeError(`${path}.release must be a non-negative finite number`);
+    if (!isNonNegativeF32(value.release)) {
+        throw new TypeError(`${path}.release must be a non-negative finite 32-bit float`);
     }
 
     return Object.freeze({
@@ -186,8 +167,9 @@ function parseArticulation(value: unknown, path: string): ManifestArticulation {
     if (!isArticulationType(value.type)) {
         throw new TypeError(`${path}.type is not a supported Levain articulation`);
     }
-    if (!isIntegerInRange(value.id, 0, Number.MAX_SAFE_INTEGER)) {
-        throw new TypeError(`${path}.id must be a non-negative integer`);
+    const canonicalId = ARTICULATION_ID_BY_TYPE[value.type];
+    if (value.id !== canonicalId) {
+        throw new TypeError(`${path}.id must be ${canonicalId} for ${value.type}`);
     }
     if (!Array.isArray(value.zones)) {
         throw new TypeError(`${path}.zones must be an array`);
@@ -195,7 +177,7 @@ function parseArticulation(value: unknown, path: string): ManifestArticulation {
 
     return Object.freeze({
         type: value.type,
-        id: value.id,
+        id: canonicalId,
         zones: Object.freeze(value.zones.map((zone, index) => parseZone(zone, `${path}.zones[${index}]`))),
     });
 }
@@ -210,11 +192,15 @@ export function parseSampleManifest(value: unknown): SampleManifest {
     if (typeof value.instrumentId !== 'string' || value.instrumentId.length === 0) {
         throw new TypeError('Levain sample manifest instrumentId must be a non-empty string');
     }
-    if (!isNonNegativeFiniteNumber(value.sampleRate) || value.sampleRate === 0) {
-        throw new TypeError('Levain sample manifest sampleRate must be greater than zero');
+    if (!isNonNegativeF32(value.sampleRate) || value.sampleRate === 0) {
+        throw new TypeError('Levain sample manifest sampleRate must be a finite 32-bit float greater than zero');
     }
-    if (!Array.isArray(value.micPositions) || !value.micPositions.every((position) => typeof position === 'string')) {
-        throw new TypeError('Levain sample manifest micPositions must contain only strings');
+    if (
+        !Array.isArray(value.micPositions) ||
+        value.micPositions.length > MAX_MICS ||
+        !value.micPositions.every((position) => typeof position === 'string')
+    ) {
+        throw new TypeError(`Levain sample manifest micPositions must contain at most ${MAX_MICS} strings`);
     }
     if (!Array.isArray(value.articulations)) {
         throw new TypeError('Levain sample manifest articulations must be an array');
@@ -225,14 +211,25 @@ export function parseSampleManifest(value: unknown): SampleManifest {
         value.articulations.map((articulation, index) => parseArticulation(articulation, `articulations[${index}]`))
     );
     const articulationIds = new Set<number>();
+    let zoneArenaEntries = 0;
     for (const articulation of articulations) {
         if (articulationIds.has(articulation.id)) {
             throw new TypeError('Levain sample manifest articulation ids must be unique');
         }
         articulationIds.add(articulation.id);
+        if (articulation.zones.length > MAX_ZONE_LIST_COUNT) {
+            throw new TypeError(`Levain sample manifest articulation ${articulation.type} has too many zones`);
+        }
         for (const zone of articulation.zones) {
             if (zone.micId >= micPositions.length) {
                 throw new TypeError(`Levain sample manifest zone micId ${zone.micId} has no mic position`);
+            }
+            const noteCount = zone.hiKey - zone.loKey + 1;
+            const loVelocityBucket = Math.floor(zone.loVel / VELOCITY_BUCKET_SIZE);
+            const hiVelocityBucket = Math.floor(zone.hiVel / VELOCITY_BUCKET_SIZE);
+            zoneArenaEntries += noteCount * (hiVelocityBucket - loVelocityBucket + 1);
+            if (zoneArenaEntries > MAX_ZONE_ARENA) {
+                throw new TypeError(`Levain sample manifest zones exceed the ${MAX_ZONE_ARENA}-entry DSP lookup arena`);
             }
         }
     }

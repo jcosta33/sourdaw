@@ -1074,9 +1074,11 @@ export class LevainInstance {
      * Build the zone lookup table after all zones and samples are loaded.
      * @param {number} num_articulations
      * @param {number} num_mics
+     * @returns {boolean}
      */
     build_zone_map(num_articulations, num_mics) {
-        wasm.levaininstance_build_zone_map(this.__wbg_ptr, num_articulations, num_mics);
+        const ret = wasm.levaininstance_build_zone_map(this.__wbg_ptr, num_articulations, num_mics);
+        return ret !== 0;
     }
     /**
      * Clear all loaded zones and samples from the engine.

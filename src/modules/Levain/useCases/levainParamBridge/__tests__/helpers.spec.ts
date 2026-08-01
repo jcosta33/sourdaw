@@ -251,6 +251,26 @@ describe('createLevainBridge', () => {
     });
 
     describe('setLevainParamWithAudio — nested patch forwarding', () => {
+        it.each([
+            ['spiccato', 7],
+            ['staccato', 8],
+            ['pizzicato', 10],
+            ['tremolo', 13],
+        ] as const)('forwards %s with its canonical DSP articulation id', (articulation, expectedId) => {
+            const deps = makeDeps();
+            const bridge = createLevainBridge(deps);
+            const device = makeDevice();
+            seedDevice('d1');
+            bridge.registerLevainDevice('d1', device);
+
+            bridge.setLevainParamWithAudio('d1', 'currentArticulation', articulation);
+            flushRaf();
+
+            expect(levainStore.value?.d1?.patch.currentArticulation).toBe(articulation);
+            expect(device.setParam).toHaveBeenCalledWith('current_articulation', expectedId);
+            expect(deps.persistDeviceParam).toHaveBeenCalledWith('d1', 'current_articulation', expectedId);
+        });
+
         it('should forward nested number and boolean fields to engine params', () => {
             const deps = makeDeps();
             const bridge = createLevainBridge(deps);

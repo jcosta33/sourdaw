@@ -195,9 +195,10 @@ impl LevainInstance {
     }
 
     /// Build the zone lookup table after all zones and samples are loaded.
-    pub fn build_zone_map(&mut self, num_articulations: u32, num_mics: u32) {
+    pub fn build_zone_map(&mut self, num_articulations: u32, num_mics: u32) -> bool {
         self.engine
-            .build_zone_map(num_articulations as usize, num_mics as usize);
+            .build_zone_map(num_articulations as usize, num_mics as usize)
+            .is_ok()
     }
 
     /// Clear all loaded zones and samples from the engine.

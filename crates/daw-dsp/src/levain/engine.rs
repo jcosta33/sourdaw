@@ -15,7 +15,7 @@ use super::realism::RealismEngine;
 use super::release::{PedalDeferredRelease, ReleaseTracker};
 use super::types::*;
 use super::voice::VoicePool;
-use super::zone::{SamplePool, ZoneMap};
+use super::zone::{SamplePool, ZoneMap, ZoneMapBuildError};
 
 // ---------------------------------------------------------------------------
 // LevainEngine
@@ -143,16 +143,21 @@ impl LevainEngine {
 
     /// Build the zone lookup table. Must be called after all zones and samples are loaded.
     /// Disables the fallback tone since real samples are now available.
-    pub fn build_zone_map(&mut self, num_articulations: usize, num_mics: usize) {
+    pub fn build_zone_map(
+        &mut self,
+        num_articulations: usize,
+        num_mics: usize,
+    ) -> Result<(), ZoneMapBuildError> {
+        self.zone_map.build_lut(num_articulations, num_mics)?;
         self.num_articulations = num_articulations;
         self.num_mics = num_mics;
-        self.zone_map.build_lut(num_articulations, num_mics);
         self.mic_mixer = MicMixer::new(num_mics);
         // Disable fallback — real samples are loaded
         self.fallback.enabled = false;
         self.expression
             .crossfader
             .configure(3, ExpressionConfig::default().cc1_curve);
+        Ok(())
     }
 
     // -----------------------------------------------------------------------
@@ -662,7 +667,9 @@ mod tests {
             },
             gain_db: 0.0,
         });
-        engine.build_zone_map(1, 1);
+        engine
+            .build_zone_map(1, 1)
+            .expect("test zone map should build");
         engine
     }
 

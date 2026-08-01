@@ -6,7 +6,7 @@ import {
 } from '#/modules/Arrangement/stores';
 import { createRafBatcher } from '#/utils/DOM/createRafBatcher';
 
-import { type LevainPatch } from '../../models/LevainPatch';
+import { ARTICULATION_ID_BY_TYPE, type LevainPatch } from '../../models/LevainPatch';
 import { defaultLevainState, levainStore, setLevainParam, setMacro } from '../../stores/levainStore';
 import { type autoLoadLevainSamples } from '../autoLoadSamples';
 
@@ -189,9 +189,9 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         if (key === 'currentArticulation' && typeof value === 'string') {
             const patch = levainStore.value?.[deviceId]?.patch;
             if (patch) {
-                const artIndex = patch.articulations.findIndex((a) => a.type === value);
-                if (artIndex !== -1) {
-                    queueParam(deviceId, 'current_articulation', artIndex);
+                const articulation = patch.articulations.find((candidate) => candidate.type === value);
+                if (articulation) {
+                    queueParam(deviceId, 'current_articulation', ARTICULATION_ID_BY_TYPE[articulation.type]);
                 }
             }
         } else if (typeof value === 'number') {

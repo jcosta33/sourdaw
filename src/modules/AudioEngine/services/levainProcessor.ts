@@ -266,7 +266,9 @@ class LevainProcessor extends AudioWorkletProcessor {
                 break;
             }
             case 'buildZoneMap':
-                inst.build_zone_map(msg.numArticulations, msg.numMics);
+                if (!inst.build_zone_map(msg.numArticulations, msg.numMics)) {
+                    throw new Error('Levain DSP rejected zone-map dimensions or capacity');
+                }
                 break;
             case 'clearZones':
                 inst.clear_zones();

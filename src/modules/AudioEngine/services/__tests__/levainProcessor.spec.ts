@@ -29,6 +29,7 @@ const memory: GrowableMemory = createGrowableMemory(HEAP_BYTES);
 const calls: Array<{ method: string; args: unknown[] }> = [];
 let processShouldThrow = false;
 let addSampleShouldThrow = false;
+let zoneMapShouldBuild = true;
 
 class LevainInstanceMock {
     note_on(note: number, velocity: number): void {
@@ -64,8 +65,9 @@ class LevainInstanceMock {
     add_zone(...args: unknown[]): void {
         calls.push({ method: 'add_zone', args });
     }
-    build_zone_map(numArticulations: number, numMics: number): void {
+    build_zone_map(numArticulations: number, numMics: number): boolean {
         calls.push({ method: 'build_zone_map', args: [numArticulations, numMics] });
+        return zoneMapShouldBuild;
     }
     clear_zones(): void {
         calls.push({ method: 'clear_zones', args: [] });
@@ -117,6 +119,7 @@ describe('LevainProcessor message handling', () => {
         calls.length = 0;
         processShouldThrow = false;
         addSampleShouldThrow = false;
+        zoneMapShouldBuild = true;
     });
 
     it('buffers messages that arrive before init and replays them once ready', async () => {
@@ -272,6 +275,21 @@ describe('LevainProcessor message handling', () => {
 
         expect(method('build_zone_map')!.args).toEqual([4, 3]);
         expect(calls.some((c) => c.method === 'clear_zones')).toBe(true);
+    });
+
+    it('rejects an invalid DSP zone-map build instead of reporting a hydrated instrument', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        zoneMapShouldBuild = false;
+
+        send(proc, { type: 'buildZoneMap', numArticulations: 33, numMics: 1 });
+        send(proc, { type: 'clearZones' });
+
+        expect(proc.port.postMessage).toHaveBeenCalledWith({
+            type: 'error',
+            message: 'Levain DSP rejected zone-map dimensions or capacity',
+        });
+        expect(calls.some((call) => call.method === 'clear_zones')).toBe(false);
     });
 
     it('enqueues a future-dated note and drains it within the process block window', async () => {
