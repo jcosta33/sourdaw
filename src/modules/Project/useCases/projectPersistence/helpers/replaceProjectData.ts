@@ -37,6 +37,9 @@ type ReplaceProjectDataInput = {
     afterCommit?: () => void | Promise<void>;
     context: 'applyImportedProjectData' | 'loadRecentProject';
     data: HydratableProjectData;
+    /** Buffers an importer already decoded, keyed by buffer id — staged and
+     * persisted through the same candidate as the embedded ones. */
+    decodedAudioBuffers?: Record<string, AudioBuffer>;
     transaction: ProjectLoadTransaction;
 };
 
@@ -58,6 +61,7 @@ export async function replaceProjectData({
     afterCommit,
     context,
     data,
+    decodedAudioBuffers,
     transaction,
 }: ReplaceProjectDataInput): Promise<ProjectReplacementResult> {
     const currentProject = projectStore.value;
@@ -79,10 +83,14 @@ export async function replaceProjectData({
     try {
         const audioContext = getAudioContext();
         const referencedIds = collectProjectAudioBufferIds({ data });
-        const embeddedBufferIds = new Set(Object.keys(data.audioBuffers ?? {}));
+        const embeddedBufferIds = new Set([
+            ...Object.keys(data.audioBuffers ?? {}),
+            ...Object.keys(decodedAudioBuffers ?? {}),
+        ]);
         const embeddedCandidate = await importCachedAudioBuffers({
             audioContext,
             buffers: data.audioBuffers ?? {},
+            decodedBuffers: decodedAudioBuffers,
             cacheIds: referencedIds,
             shouldContinue: transaction.isCurrent,
         });

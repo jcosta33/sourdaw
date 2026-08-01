@@ -22,7 +22,7 @@ const mocks = vi.hoisted(() => ({
     projectStoreSet: vi.fn<(value: ProjectStoreState) => void>(),
     persistCrdtProject: vi.fn<() => Promise<void>>(),
     addToRecentProjects: vi.fn<(name: string, key: string) => void>(),
-    buildProjectData: vi.fn<() => Promise<{ data: unknown } | null>>(),
+    buildProjectData: vi.fn<(input?: { includeAudioBuffers?: boolean }) => Promise<{ data: unknown } | null>>(),
     captureExternalPluginStates: vi.fn<() => Promise<void>>(),
     loggerWarn: vi.fn<(...args: unknown[]) => void>(),
     notifyUser: vi.fn<(message: string, level?: 'info' | 'success' | 'warning' | 'error') => void>(),
@@ -173,6 +173,48 @@ describe('saveProject durability', () => {
         await expect(saveProject()).resolves.toBe(false);
 
         expect(mocks.addToRecentProjects).not.toHaveBeenCalled();
+    });
+
+    // AC-5. The live save snapshot references audio by id; the PCM itself lives
+    // in the runtime audio cache's IndexedDB store as raw Float32Array. The
+    // stand-in below embeds base64 PCM whenever the caller lets it, so the
+    // persisted bytes prove which shape `saveProject` asked for.
+    //
+    // Mutation: reverting saveProject to `buildProjectData()` (no argument) reds
+    // both `toHaveBeenCalledWith({ includeAudioBuffers: false })` and the exact
+    // persisted-snapshot equality — the stand-in then embeds 30 MB of base64.
+    it('persists a save snapshot that carries no embedded audio payload', async () => {
+        const controls = installFakeIndexedDb();
+        const snapshotWithoutAudio = { version: 1, meta: { name: 'My Song', updatedAt: 1700000000000 } };
+        const embedAudio = (data: Record<string, unknown>): Record<string, unknown> => ({
+            ...data,
+            audioBuffers: {
+                'buffer-1': {
+                    sampleRate: 48_000,
+                    numberOfChannels: 2,
+                    channelData: ['A'.repeat(BASE64_CHARS_FOR_60S_STEREO / 2)],
+                },
+            },
+        });
+        mocks.buildProjectData.mockImplementation((input) =>
+            Promise.resolve({
+                data: input?.includeAudioBuffers === false ? snapshotWithoutAudio : embedAudio(snapshotWithoutAudio),
+            })
+        );
+
+        // Fixture pin: the stand-in really is capable of embedding base64 PCM,
+        // so the assertions below cannot be satisfied by an inert fixture.
+        await expect(mocks.buildProjectData({ includeAudioBuffers: true })).resolves.toHaveProperty(
+            'data.audioBuffers',
+            expect.any(Object)
+        );
+        mocks.buildProjectData.mockClear();
+
+        const saveProject = await importSaveProject();
+        await expect(saveProject()).resolves.toBe(true);
+
+        expect(mocks.buildProjectData).toHaveBeenCalledWith({ includeAudioBuffers: false });
+        expect(controls.values.get(RECENT_KEY)).toBe(JSON.stringify(snapshotWithoutAudio));
     });
 
     // AC-1 + AC-3. A project small enough for the localStorage write to succeed
