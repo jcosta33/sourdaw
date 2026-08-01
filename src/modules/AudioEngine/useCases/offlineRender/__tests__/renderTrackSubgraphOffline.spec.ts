@@ -748,4 +748,180 @@ describe('renderTrackSubgraphOffline', () => {
             expect(renderedContext().scheduledCheckpointCount()).toBe(3);
         });
     });
+
+    // The silence guard reads this tally instead of predicting what the
+    // scheduler ought to have done. These cases pin the property that makes
+    // that sound: the count is taken *downstream* of every filter, so a note
+    // sitting in the store contributes nothing to it.
+    describe('schedule tally', () => {
+        it('counts a note the scheduler actually handed to an instrument', async () => {
+            const track = TrackDummy.create({
+                id: 'track-1',
+                kind: 'midi',
+                clips: [midiClip()],
+                devices: [
+                    { id: 'fermenter-1', name: 'Fermenter', type: 'fermenter', bypassed: false, parameterValues: {} },
+                ],
+            });
+            mocks.buildDeviceChain.mockResolvedValue([createInstrumentEntry('fermenter-1', 'fermenter')]);
+            const onScheduled = vi.fn();
+
+            await renderTrackSubgraphOffline({
+                targetTrackId: track.id,
+                renderTracks: [track],
+                startBeat: 0,
+                endBeat: 4,
+                onScheduled,
+            });
+
+            expect(onScheduled).toHaveBeenCalledWith({ scheduledNotes: 1, scheduledBuffers: [] });
+        });
+
+        it('counts nothing when the clip length has projected every note away', async () => {
+            // What a non-destructive right-edge trim leaves behind: the note is
+            // still in `notesByClipId`, and `getGrooveProjection` drops it for
+            // starting at or past the clip's own length. Presence in the store
+            // is not scheduling, and the tally must agree with the scheduler.
+            const { configureOfflineMidiEventProjection } = await import('../../configureOfflineMidiEventProjection');
+            configureOfflineMidiEventProjection({
+                createProjector: () => () => [],
+                selectProbability: () => true,
+                createChordPitchProjector: () => (input) => input.pitch,
+                evaluateAutomationValue: () => 0,
+            });
+            const { midiStore } = await import('#/modules/MIDI/stores');
+            const track = TrackDummy.create({
+                id: 'track-1',
+                kind: 'midi',
+                clips: [midiClip()],
+                devices: [
+                    { id: 'fermenter-1', name: 'Fermenter', type: 'fermenter', bypassed: false, parameterValues: {} },
+                ],
+            });
+            mocks.buildDeviceChain.mockResolvedValue([createInstrumentEntry('fermenter-1', 'fermenter')]);
+            const onScheduled = vi.fn();
+
+            await renderTrackSubgraphOffline({
+                targetTrackId: track.id,
+                renderTracks: [track],
+                startBeat: 0,
+                endBeat: 4,
+                onScheduled,
+            });
+
+            expect(midiStore.value?.notesByClipId['clip-1']).toHaveLength(1);
+            expect(onScheduled).toHaveBeenCalledWith({ scheduledNotes: 0, scheduledBuffers: [] });
+        });
+
+        it('counts nothing when every note loses its probability roll', async () => {
+            const { configureOfflineMidiEventProjection } = await import('../../configureOfflineMidiEventProjection');
+            configureOfflineMidiEventProjection({
+                createProjector: () => (input) => input.events,
+                selectProbability: () => false,
+                createChordPitchProjector: () => (input) => input.pitch,
+                evaluateAutomationValue: () => 0,
+            });
+            const track = TrackDummy.create({
+                id: 'track-1',
+                kind: 'midi',
+                clips: [midiClip()],
+                devices: [
+                    { id: 'fermenter-1', name: 'Fermenter', type: 'fermenter', bypassed: false, parameterValues: {} },
+                ],
+            });
+            mocks.buildDeviceChain.mockResolvedValue([createInstrumentEntry('fermenter-1', 'fermenter')]);
+            const onScheduled = vi.fn();
+
+            await renderTrackSubgraphOffline({
+                targetTrackId: track.id,
+                renderTracks: [track],
+                startBeat: 0,
+                endBeat: 4,
+                onScheduled,
+            });
+
+            expect(onScheduled).toHaveBeenCalledWith({ scheduledNotes: 0, scheduledBuffers: [] });
+        });
+
+        it('records the source buffer of an audio clip it started, so the caller can read its samples', async () => {
+            const { audioBufferCache } = await import('../../../stores/audioBufferCache');
+            const sourceBuffer = {
+                duration: 2,
+                length: 2 * SAMPLE_RATE,
+                numberOfChannels: 1,
+                sampleRate: SAMPLE_RATE,
+                getChannelData: () => new Float32Array(2 * SAMPLE_RATE),
+            } as unknown as AudioBuffer;
+            audioBufferCache.set('take-1', sourceBuffer);
+            const track = TrackDummy.create({
+                id: 'track-1',
+                kind: 'audio',
+                clips: [midiClip({ type: 'audio', audioBufferId: 'take-1' })],
+            });
+            const onScheduled = vi.fn();
+
+            await renderTrackSubgraphOffline({
+                targetTrackId: track.id,
+                renderTracks: [track],
+                startBeat: 0,
+                endBeat: 4,
+                onScheduled,
+            });
+
+            expect(onScheduled).toHaveBeenCalledWith({ scheduledNotes: 0, scheduledBuffers: [sourceBuffer] });
+        });
+
+        it('records the frozen buffer an already-frozen contributor plays back', async () => {
+            // A frozen track inside the subgraph feeds the target from its
+            // buffer and never reaches clip scheduling, so this is the only
+            // place its contribution can be observed.
+            const { audioBufferCache } = await import('../../../stores/audioBufferCache');
+            const frozenBuffer = {
+                duration: 2,
+                length: 2 * SAMPLE_RATE,
+                numberOfChannels: 1,
+                sampleRate: SAMPLE_RATE,
+                getChannelData: () => new Float32Array(2 * SAMPLE_RATE),
+            } as unknown as AudioBuffer;
+            audioBufferCache.set('frozen-1', frozenBuffer);
+            const track = TrackDummy.create({
+                id: 'track-1',
+                kind: 'audio',
+                clips: [midiClip({ type: 'audio' })],
+                frozen: true,
+                frozenBufferId: 'frozen-1',
+                freezeState: { status: 'frozen', frozenBufferId: 'frozen-1' },
+            });
+            const onScheduled = vi.fn();
+
+            await renderTrackSubgraphOffline({
+                targetTrackId: track.id,
+                renderTracks: [track],
+                startBeat: 0,
+                endBeat: 4,
+                onScheduled,
+            });
+
+            expect(onScheduled).toHaveBeenCalledWith({ scheduledNotes: 0, scheduledBuffers: [frozenBuffer] });
+        });
+
+        it('records nothing for an audio clip whose buffer is missing from the cache', async () => {
+            const track = TrackDummy.create({
+                id: 'track-1',
+                kind: 'audio',
+                clips: [midiClip({ type: 'audio', audioBufferId: 'evicted' })],
+            });
+            const onScheduled = vi.fn();
+
+            await renderTrackSubgraphOffline({
+                targetTrackId: track.id,
+                renderTracks: [track],
+                startBeat: 0,
+                endBeat: 4,
+                onScheduled,
+            });
+
+            expect(onScheduled).toHaveBeenCalledWith({ scheduledNotes: 0, scheduledBuffers: [] });
+        });
+    });
 });

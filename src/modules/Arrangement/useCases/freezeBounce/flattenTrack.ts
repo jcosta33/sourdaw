@@ -5,10 +5,9 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type Clip } from '../../models/Track';
 import { updateTrack } from '../../repositories/track/updateTrack';
+import { isSilentAudioBuffer } from '../../services/isSilentAudioBuffer';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 import { trackStore } from '../../stores/trackStore';
-
-import { detectSilentBake } from './detectSilentBake';
 
 export function flattenTrack(trackId: string): boolean {
     const target = resolveEligibleClipWriteTarget({ trackId });
@@ -48,27 +47,30 @@ export function flattenTrack(trackId: string): boolean {
         endBeat = 1;
     }
 
-    // The last stop before the destructive write below, and the only one that
-    // can catch a buffer this session did not bake — a project loaded with a
-    // frozen track, or one frozen by a build that predates the freeze-side
-    // guard. A buffer missing from the cache cannot be judged and is left to
-    // the existing behaviour; only a buffer proved silent is refused.
+    // Flatten judges by a different rule from freeze and bounce, on purpose.
+    //
+    // Those two observe what their own render scheduled. Flatten has no render
+    // to observe: it may be handed a buffer baked in another session, by
+    // another build, or by another machine through a loaded project — the case
+    // the freeze-side guard structurally cannot cover. Reconstructing "should
+    // this have sounded?" from the track alone would be exactly the prediction
+    // that guard was rebuilt to avoid.
+    //
+    // So it asks a question it can answer without any model: would this write
+    // trade the track's clips and devices for a clip containing no audio at
+    // all? That outcome has no legitimate value — a user who wants an empty
+    // track deletes the clips — so refusing costs nothing even in the cases
+    // where the silence was deliberate. A buffer absent from the cache cannot
+    // be read, and is left to the existing behaviour.
     const frozenBuffer = audioBufferCache.get(frozenBufferId);
-    if (frozenBuffer) {
-        const silentBake = detectSilentBake({
-            track,
-            buffer: frozenBuffer,
-            startBeat,
-            endBeat,
-            // The buffer was printed with the target fader kept live, so the
-            // track's own gain is not baked into it.
-            bakedFaderGain: 1,
-            operation: 'Flatten',
-        });
-        if (silentBake.silentBake) {
-            notifyUser(silentBake.message, 'error');
-            return false;
-        }
+    if (frozenBuffer && isSilentAudioBuffer(frozenBuffer)) {
+        notifyUser(
+            `Track "${track.name}" is frozen to a buffer that contains no audio. Flatten stopped rather than ` +
+                `replacing the track's clips and devices with a silent clip. Unfreeze the track to keep working ` +
+                `on it, or delete its clips if it is meant to be empty.`,
+            'error'
+        );
+        return false;
     }
 
     const bakedTail = resolveFrozenBufferTail(track.freezeState.renderSettings);

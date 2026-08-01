@@ -398,7 +398,10 @@ describe('bounceSelection', () => {
                 clips: [expect.objectContaining({ id: 'clip-selected', startBeat: 2, endBeat: 6 })],
             }),
             2,
-            6
+            6,
+            // The selection bounce now watches what the render scheduled, so it
+            // can refuse to delete the MIDI in exchange for a silent clip.
+            { onScheduled: expect.any(Function) }
         );
         expect(mocks.cacheAudioBuffer).toHaveBeenCalledWith({ buffer: renderedBuffer, bufferId: expectedBufferId });
 

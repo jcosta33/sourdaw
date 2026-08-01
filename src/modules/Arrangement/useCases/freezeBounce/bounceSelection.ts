@@ -6,12 +6,14 @@ import {
     restoreMidiClipData,
     splitMidiNotesAtBeat,
 } from '#/modules/MIDI/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type Clip, type Track } from '../../models/Track';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 import { trackStore } from '../../stores/trackStore';
 
-import { renderTrackOffline } from './renderOffline';
+import { detectSilentBake } from './detectSilentBake';
+import { renderTrackOffline, type RenderScheduleTally } from './renderOffline';
 
 /** Frozen notes/CC/pitch-bend for one clip id; null when the key is absent. */
 type MidiClipDataSnapshot = {
@@ -76,9 +78,34 @@ export async function bounceSelection(trackId: string, startBeat: number, endBea
         })),
     };
 
-    const renderedBuffer = await renderTrackOffline(virtualTrack, startBeat, endBeat);
+    let scheduleTally: RenderScheduleTally = { scheduledNotes: 0, scheduledBuffers: [] };
+    const renderedBuffer = await renderTrackOffline(virtualTrack, startBeat, endBeat, {
+        onScheduled: (tally) => {
+            scheduleTally = tally;
+        },
+    });
 
     if (!renderedBuffer) {
+        return false;
+    }
+
+    // The most destructive of the four bake paths: it replaces clips *and*
+    // calls `removeMidiClipData`, so the notes are gone from the MIDI store
+    // outright rather than merely detached from the track. The virtual track is
+    // already clipped to the selection, so the tally observes exactly what this
+    // range scheduled.
+    const silentBake = detectSilentBake({
+        track: virtualTrack,
+        buffer: renderedBuffer,
+        tally: scheduleTally,
+        // Defaults: `targetMixer: 'bake'` with automation included, so the
+        // track's fader and its lanes are both folded into the samples.
+        bakedFaderGain: track.gain,
+        bakesAutomation: true,
+        operation: 'Bounce',
+    });
+    if (silentBake.silentBake) {
+        notifyUser(silentBake.message, 'error');
         return false;
     }
 
