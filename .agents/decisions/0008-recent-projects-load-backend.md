@@ -2,7 +2,7 @@
 type: adr
 id: 0008
 title: Recent-projects load uses flat-JSON snapshots (Option A)
-status: accepted
+status: superseded by 0013
 date: 2026-07-16
 owner: The Sourdaw team
 sources:
@@ -10,6 +10,15 @@ sources:
 ---
 
 # 0008 — Recent-projects load uses flat-JSON snapshots (Option A)
+
+> **Superseded by [0013](0013-retire-the-flat-json-project-snapshot.md) on 2026-08-01.** The bridge
+> this ADR adopted became a silent data-loss path: the localStorage snapshot write fails past quota
+> at roughly ten seconds of stereo audio, `setItem` throws before mutating so the undersized copy
+> survives, and `readNamedProjectJson` prefers the localStorage copy whenever it is *present* rather
+> than when it is current — so the frozen snapshot loads and is then written back over good CRDT
+> state. The diagnosis in this ADR was sound and the bridge was labelled honestly; the blast radius
+> was larger than its cost table anticipated. Option B (per-project addressing) is carried forward
+> into [0014](0014-project-persistence-architecture.md).
 
 ## Context
 
