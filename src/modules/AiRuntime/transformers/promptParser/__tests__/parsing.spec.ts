@@ -149,6 +149,14 @@ describe('promptParser parsing', () => {
             expect(tryParameterizedPath('quantize Piano MIDI to 0.25', context)).toEqual([]);
         });
 
+        it('keeps note-length quantize restricted to valid selection-only syntax', () => {
+            expect(tryParameterizedPath('quantize note lengths to 1/16', context)).toEqual([
+                { type: 'quantizeNoteLengths', payload: { clipId: 'c1', gridSize: 1 / 16 } },
+            ]);
+            expect(tryParameterizedPath('quantize note lengths on Piano MIDI to 1/16', context)).toEqual([]);
+            expect(tryParameterizedPath('quantize note lengths to 1/0', context)).toEqual([]);
+        });
+
         it('parses add device to track by name', () => {
             const actions = tryParameterizedPath('add compressor to vocals', context);
             expect(actions).toEqual([{ type: 'addDevice', payload: { trackId: 't1', deviceType: 'Compressor' } }]);

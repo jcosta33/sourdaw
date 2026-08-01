@@ -134,9 +134,15 @@ export function tryParameterizedPath(normalized: string, context: ProjectContext
         return [{ type: 'renameClip', payload: { clipId: selectedClipId, name: renameClipMatch[1]!.trim() } }];
     }
 
-    if (/^quantize\s+(note\s+)?lengths?|^quantize\s+durations?/i.test(normalized) && selectedClipId) {
-        const gridMatch = normalized.match(/(?:to\s+)?(?:1\/)?(\d+)/i);
-        const gridSize = gridMatch?.[1] ? 1 / parseInt(gridMatch[1], 10) : 0.25;
+    const quantizeNoteLengthsMatch = normalized.match(
+        /^quantize\s+(?:(?:note\s+)?lengths?|durations?)(?:\s+to\s+(?:1\/)?(\d+))?$/i
+    );
+    if (quantizeNoteLengthsMatch && selectedClipId) {
+        const denominator = quantizeNoteLengthsMatch[1] ? parseInt(quantizeNoteLengthsMatch[1], 10) : undefined;
+        if (denominator === 0) {
+            return [];
+        }
+        const gridSize = denominator ? 1 / denominator : 0.25;
         return [{ type: 'quantizeNoteLengths', payload: { clipId: selectedClipId, gridSize } }];
     }
 
