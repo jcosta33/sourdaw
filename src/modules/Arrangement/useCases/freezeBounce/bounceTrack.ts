@@ -1,11 +1,13 @@
 import { cacheAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { transportStore } from '#/modules/Transport/stores';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type Clip, type Track } from '../../models/Track';
 import { getTrackEligibility } from '../../stores/trackEligibility';
 import { trackStore } from '../../stores/trackStore';
 
+import { detectSilentBake } from './detectSilentBake';
 import { renderTrackOffline } from './renderOffline';
 
 export type BounceOptions = {
@@ -58,6 +60,26 @@ export async function bounceTrack(trackId: string, options: BounceOptions): Prom
     });
 
     if (!renderedBuffer) {
+        return false;
+    }
+
+    // `destination: 'replace'` overwrites the track's clips and — when inserts
+    // were included — its devices, which is the same unrecoverable write
+    // flatten performs. `'new-track'` is recoverable but still writes a silent
+    // clip that later enters exports, so both are refused.
+    const silentBake = detectSilentBake({
+        track,
+        buffer: renderedBuffer,
+        startBeat,
+        endBeat: finalEndBeat,
+        // Only an automation-including bounce seeds the strip from the track's
+        // fader; without it `projectStripTrack` prints at a fixed neutral level
+        // that is never zero.
+        bakedFaderGain: options.includeAutomation ? track.gain : 1,
+        operation: 'Bounce',
+    });
+    if (silentBake.silentBake) {
+        notifyUser(silentBake.message, 'error');
         return false;
     }
 

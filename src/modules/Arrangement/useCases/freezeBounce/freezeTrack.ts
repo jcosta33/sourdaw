@@ -1,5 +1,6 @@
 import { cacheAudioBuffer, getCompensationDelay, getDeviceChainTailSeconds } from '#/modules/AudioEngine/useCases';
 import { FREEZE_BAKE_VERSION } from '#/utils/frozenBufferTail';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { computeTrackHash } from '../../services/computeTrackHash';
@@ -7,6 +8,7 @@ import { getTrackEligibility } from '../../stores/trackEligibility';
 import { trackStore } from '../../stores/trackStore';
 import { getPluginById } from '../getPluginById';
 
+import { detectSilentBake } from './detectSilentBake';
 import { renderTrackOffline } from './renderOffline';
 
 export const activeFreezeTasks = new Map<string, AbortController>();
@@ -86,6 +88,33 @@ export async function freezeTrack(trackId: string): Promise<boolean> {
 
         if (!renderedBuffer) {
             throw new Error('Render failed');
+        }
+
+        // Refuse the bake, not just the later flatten. A frozen buffer replaces
+        // the track's live sound, so committing silence here already silences
+        // the session; and once it is cached and pinned to `freezeState`, every
+        // downstream path — flatten, the mixdown that replays frozen buffers,
+        // the staleness check that sees no content change — treats it as the
+        // track's true sound. Failing at the render keeps the silent buffer out
+        // of the project entirely, and freeze is the one operation here the
+        // user can simply run again.
+        const silentBake = detectSilentBake({
+            track,
+            buffer: renderedBuffer,
+            startBeat,
+            endBeat,
+            // `targetMixer: 'keepLive'` prints the target at unity, so the
+            // track's own fader is not part of this render and cannot excuse a
+            // silent result.
+            bakedFaderGain: 1,
+            operation: 'Freeze',
+        });
+        if (silentBake.silentBake) {
+            // `freezeState.status === 'error'` is not rendered anywhere, so the
+            // throw below records the reason without telling anyone. Notify on
+            // the same channel a dropped offline device uses.
+            notifyUser(silentBake.message, 'error');
+            throw new Error(silentBake.message);
         }
 
         const freezeId = `freeze-${trackId}-${Date.now()}`;

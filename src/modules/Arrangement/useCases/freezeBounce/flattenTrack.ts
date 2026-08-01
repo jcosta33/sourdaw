@@ -1,10 +1,14 @@
+import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { transportStore } from '#/modules/Transport/stores';
 import { resolveFrozenBufferTail } from '#/utils/frozenBufferTail';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type Clip } from '../../models/Track';
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 import { trackStore } from '../../stores/trackStore';
+
+import { detectSilentBake } from './detectSilentBake';
 
 export function flattenTrack(trackId: string): boolean {
     const target = resolveEligibleClipWriteTarget({ trackId });
@@ -42,6 +46,29 @@ export function flattenTrack(trackId: string): boolean {
     }
     if (endBeat === -Infinity) {
         endBeat = 1;
+    }
+
+    // The last stop before the destructive write below, and the only one that
+    // can catch a buffer this session did not bake — a project loaded with a
+    // frozen track, or one frozen by a build that predates the freeze-side
+    // guard. A buffer missing from the cache cannot be judged and is left to
+    // the existing behaviour; only a buffer proved silent is refused.
+    const frozenBuffer = audioBufferCache.get(frozenBufferId);
+    if (frozenBuffer) {
+        const silentBake = detectSilentBake({
+            track,
+            buffer: frozenBuffer,
+            startBeat,
+            endBeat,
+            // The buffer was printed with the target fader kept live, so the
+            // track's own gain is not baked into it.
+            bakedFaderGain: 1,
+            operation: 'Flatten',
+        });
+        if (silentBake.silentBake) {
+            notifyUser(silentBake.message, 'error');
+            return false;
+        }
     }
 
     const bakedTail = resolveFrozenBufferTail(track.freezeState.renderSettings);
