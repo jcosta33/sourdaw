@@ -48,10 +48,15 @@ implementations.**
 
 ```
 projects/<uuid>/
-  manifest.json          small, versioned, written last — the commit point
-  document.automerge     Automerge save() bytes (self-verifying: per-chunk SHA-256)
-  media/<hash>.wav       raw float32 PCM, content-addressed, byte-range readable
+  manifest.json                small, versioned, written last — the commit point
+  document.<sha256>.automerge  Automerge save() bytes, content-addressed
+  media/<hash>.wav             raw float32 PCM, content-addressed, byte-range readable
 ```
+
+> **Amended 2026-08-02 after gate M6.** This layout originally drew the document as a fixed
+> `document.automerge`, annotated "(self-verifying: per-chunk SHA-256)". **That is the one line
+> M6 broke** — see §Gates reported. The document is now content-addressed like the media beside it,
+> which is what the rest of this ADR's recovery story already assumed.
 
 Web: OPFS behind a dedicated worker (forced — sync access handles are `[Exposed=DedicatedWorker]`).
 Desktop: the real filesystem through Rust, no webview storage at all. The shared surface is a
@@ -113,6 +118,80 @@ a shared library; version policy and whether web users get a pinned-build escape
 budget the desktop store gets — because if it is not funded, the honest move is to amend ADR 0012
 and choose Option B, not to adopt C and under-build it.
 
+## Gates reported — 2026-08-02
+
+All ten have now reported or been formally deferred. Harnesses:
+`scripts/measureAutomergeProjectCost.ts`, `scripts/measureStorageCapability.ts`,
+`scripts/measureCommitProtocol.ts`. Every figure carries the condition that produced it in its
+harness output; the load-bearing ones were re-run by the orchestrator rather than accepted on a
+lane's report.
+
+| Gate | Result | What it forced |
+| --- | --- | --- |
+| **M1** | `persist()` **false** — plain tab, installed PWA, standalone window, max engagement. A force-granted control returns `true`, so the API works and Chromium is declining. | Install is **not** a remedy. There is no measured way for a web user to obtain durable storage. |
+| **M2** | Deferred — Tauri webview, out of scope per ADR 0016. | Recorded unmeasured, not deleted. |
+| **M3** (web) | `estimate().quota` is **`usage + 10 GiB` to the byte** — a rolling headroom, not a ceiling. The origin wrote **2.6× its reported quota** with no error. | `quota - usage > size` is wrong in both directions as a precondition. Refutes research claim CR-27. |
+| **M4** | 100 MB-audio document: **2431–3677 ms** load floor (ceiling ~2 s), **8.68–9.58×** audio in peak RSS (ceiling ~2×). Both breach. | **Option A is dead on measurement.** The ADR's "do not close Option A on inference" is discharged. |
+| **M5** | Automation drags grow **sublinearly**; a blob does **not** duplicate on sibling edits (1.84 B/edit). | Trigger **not** met. M5 does not confirm the split. Whole-value *replacement* is still 4× with no compaction — that is BA-11, and M5 as written does not reach it. |
+| **M6** | **FAILED, then fixed.** See below. | Layout amended. |
+| **M7** | OPFS `createSyncAccessHandle` present in a dedicated worker, absent on the window. Throughput **at parity with Node `fs`**. | Adverse branch not triggered. No second visible store needed on web. |
+| **M8** | Not run — `durability: "strict"` is an IndexedDB option and Option A is dead. | Moot. |
+| **M9** | Closed in Phase 0 (#963). | The two `.sdaw` codecs agree; one real UTF-8 divergence was found and fixed. |
+| **M10** | Blob records land as separate files — **and so do ArrayBuffers**, 4 of 4 each, established by walking the profile directory. `onsuccess` fired **281 ms before commit** on a 500 MB put. | Refines BA-18: at project scale the Blob-vs-ArrayBuffer distinction does not exist. |
+
+### M6 — the stop condition, and why it did not end in Option B
+
+**Six of 72 injected renderer crashes produced a project that opens as valid and is neither
+generation.** All six in the layout as originally drawn. One opened with **52 tracks** where
+generation 1 had 40 and generation 2 had 64 — an arrangement that never existed.
+
+The mechanism is one line, and it does not depend on the write mechanism. `document.automerge` was a
+**fixed filename**, so writing generation 2 destroyed generation 1's document in place. Generation
+1's manifest still named that file, the file still existed, every media file it named still
+hash-matched, and `Automerge.load` accepted the bytes — because generation 2's document is a
+perfectly valid Automerge document. It is simply not the one the manifest describes. Nothing in the
+open protocol looked, and "fall back to the previous generation" referred to something no longer on
+disk.
+
+**Per-chunk SHA-256 does not cover truncation.** A cut at an exact Automerge chunk boundary produced
+a valid short document. The original "(self-verifying)" annotation did not do the work the layout
+asked of it.
+
+This ADR pre-committed to *"adopt Option B and amend ADR 0012 explicitly"* if M6 failed. **That
+pre-commitment was reasoned on a premise the measurement removed** — that a failure would mean
+hand-writing an unverifiable commit protocol. Two one-line variants each took all six tears to
+**zero of 72**: hashing the document in the manifest, or content-addressing its filename. The second
+is adopted, because it is the only variant in which the ADR's own recovery story describes something
+that still exists on disk, and because it makes the document consistent with the media beside it —
+the inconsistency was the defect.
+
+Coverage tested: 12 interruption points × 3 layouts × 2 write mechanisms, each a real CDP
+`Page.crash` with handles open, reproduced across two full runs. **Not tested, and named rather than
+implied:** OS power loss or kernel panic; killing the browser process; disk-full mid-sequence; a
+second concurrent writer; the desktop `rename()`+`fsync` half (ADR 0016); WebKit and Gecko OPFS; and
+whether bytes reached the device — a renderer crash does not test `flush()` durability.
+
+## Owner decisions taken — 2026-08-02
+
+- **Browser storage is a cache, never the authority.** Given M1, the authoritative copy is a file the
+  user controls, written through the File System Access API and kept in sync; browser-resident
+  storage is a fast local cache that may be evicted. This is what ADR 0012 requires: a desktop app
+  does not lose a project to disk pressure, so the web target must not either. It also settles the
+  docket's *"whether browser-resident storage may ever be described as safe"* — no — and *"whether
+  'install the app' becomes a stated durability requirement"* — no, because M1 measured that it
+  would not work.
+- **The project is a directory with a content-addressed document.** Settled by the standard the
+  campaign is held to rather than by preference: Git's object store, SQLite's WAL and
+  atomic-rename-and-fsync all make a new version unable to destroy the old one and then flip a small
+  pointer. Detecting damage without being able to repair it is not a shipped standard anywhere, and
+  a project stored as one opaque database record cannot be inspected, backed up or moved between
+  machines — which no DAW accepts.
+
+**Still open and not decided here:** whether audio belongs to a project or to a shared library;
+version policy and whether web users get a pinned-build escape hatch; how much budget the desktop
+store gets. Those remain in `open-decision-docket.md`.
+
 ## Status
 
-proposed — pending owner ratification and gates M1–M10
+proposed — layout amended after M6; gates M1–M10 reported or formally deferred; the durability model
+and the project shape are ratified. Remaining owner decisions listed above.

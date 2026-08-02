@@ -942,21 +942,29 @@ Decisions the architecture cannot be chosen without. Evidence:
 `.agents/artifacts/sourdaw/RESEARCH-project-persistence.md`. Each changes what a project file *is*
 or how a user moves work between machines, which is why none of them is engineering's to make.
 
-- **Is a project one file, or a folder?** Logic ships both shapes for one logical project. Option C's
-  live form is a folder and its portable form is a ZIP. Changes the UI, the mental model and the
-  support burden, not just the code.
+- ~~**Is a project one file, or a folder?**~~ **DECIDED 2026-08-02 — a folder, with a
+  content-addressed document.** Recorded in ADR 0014 §Owner decisions taken. Settled by the standard
+  the campaign is held to rather than by preference: gate M6 tore the layout as originally drawn
+  (6 of 72 injected crashes opened as a project that was neither generation, one of them with 52
+  tracks where the two real saves had 40 and 64), and content-addressing the document took that to
+  0 of 72. Git's object store, SQLite's WAL and atomic-rename-and-fsync all work this way. The
+  portable form is still a ZIP.
 - **Does a project file contain its audio, or reference it?** All four shipping DAWs default to
   *reference* and make consolidation an explicit action; DAWproject makes it a per-file attribute.
   **Reference-by-path is desktop-only** — the web cannot re-open a user's file across sessions
   without a prompt. So this is two answers, and whether the format expresses both.
-- **May browser-resident storage ever be described as "safe"?** Per the Storage Standard it may not:
-  even persistent buckets may be offered for clearing under continued pressure. The honest copy is
-  "stored on this device; the browser will ask before removing it". Also: whether the product may
-  ship without an export path (it should not).
-- **Is "install the app" a stated durability requirement?** Chrome and WebKit reach the same gate by
-  unrelated machinery — persistence is granted to installed apps, not to plain tabs. If gate M1
-  confirms it, a plain-tab visitor cannot get durable storage however the app asks. Either the
-  product says so and offers install, or it accepts silent loss for uninstalled users.
+- ~~**May browser-resident storage ever be described as "safe"?**~~ **DECIDED 2026-08-02 — no.
+  Browser storage is a cache, never the authority.** The authoritative copy is a file the user
+  controls, written through the File System Access API and kept in sync. Recorded in ADR 0014
+  §Owner decisions taken. ADR 0012 requires it: a desktop app does not lose a project to disk
+  pressure, so the web target must not either.
+- ~~**Is "install the app" a stated durability requirement?**~~ **DECIDED 2026-08-02 — no, because
+  gate M1 measured that it would not work.** `persist()` resolves **false** in an installed PWA and
+  in a standalone app window, not only in a plain tab, with the permission stuck at `prompt`; a
+  force-granted control returns `true`, so this is Chromium's heuristic declining rather than a dead
+  API. The premise this question rested on — "persistence is granted to installed apps, not to plain
+  tabs" — is refuted on this target. There is no measured way for a web user to obtain durable
+  storage, which is why the previous item is decided the way it is.
 - **Does a project's audio belong to the project, or to a shared library?** A global pool dedups
   across projects but forces an all-projects scan to answer "is this sample safe to delete".
   Per-project ownership avoids the scan and duplicates shared samples on disk.
