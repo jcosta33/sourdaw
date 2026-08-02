@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <title>Per-quantum device cost — wasm leg</title>
+    </head>
+    <body>
+        <pre id="log">starting…</pre>
+        <script type="module">
+            import { DEVICE_IDS, QUANTUM } from './deviceRecipes.js';
+
+            const log = document.getElementById('log');
+            const say = (line) => {
+                log.textContent += `\n${line}`;
+            };
+
+            /**
+             * Fetch the *committed* wasm binaries under `public/wasm/`. These are the
+             * artifacts `pnpm wasm:verify` pins and the artifacts production loads;
+             * the harness builds nothing.
+             */
+            async function fetchWasm(path) {
+                const response = await fetch(path);
+                if (!response.ok) {
+                    throw new Error(`${path}: HTTP ${response.status}`);
+                }
+                return response.arrayBuffer();
+            }
+
+            /**
+             * Start the shared-memory tick clock the worklet reads.
+             *
+             * Chrome exposes no `performance` inside an `AudioWorkletGlobalScope`
+             * (probed: only `Date`, `currentTime`, `Atomics` and `SharedArrayBuffer`
+             * are there), so a spinning worker is the clock. See tickClock.js.
+             */
+            async function startClock() {
+                const worker = new Worker('./tickClock.js', { type: 'module' });
+                const buffer = await new Promise((resolve) => {
+                    worker.onmessage = (event) => resolve(event.data.buffer);
+                });
+                return { worker, buffer, ticks: new Int32Array(buffer) };
+            }
+
+            /**
+             * Ticks per millisecond, measured against the page's own
+             * `performance.now()` over `windowMs`. Taken before and after the run;
+             * the runner prints both, because a spin rate that drifted invalidates
+             * every figure derived from it.
+             */
+            function calibrate(ticks, windowMs) {
+                const startTick = Atomics.load(ticks, 0);
+                const startMs = performance.now();
+                let nowMs = startMs;
+                while (nowMs - startMs < windowMs) {
+                    nowMs = performance.now();
+                }
+                const endTick = Atomics.load(ticks, 0);
+                return ((endTick - startTick) | 0) / (nowMs - startMs);
+            }
+
+            async function measure({ deviceId, clockBuffer, dspBytes, chamberBytes, scoringBytes, warmupQuanta, measureQuanta }) {
+                // Length covers warm-up plus the timed run plus slack; the
+                // processor posts its result and returns false well before the
+                // context reaches the end, and the render promise is never awaited.
+                const length = (warmupQuanta + measureQuanta + 16) * QUANTUM;
+                const context = new OfflineAudioContext({ numberOfChannels: 1, length, sampleRate: 48000 });
+                await context.audioWorklet.addModule('./quantumCostProcessor.js');
+
+                const node = new AudioWorkletNode(context, 'quantum-cost', {
+                    numberOfInputs: 0,
+                    numberOfOutputs: 1,
+                    outputChannelCount: [1],
+                    processorOptions: {
+                        deviceId,
+                        clockBuffer,
+                        dspBytes,
+                        chamberBytes,
+                        scoringBytes,
+                        warmupQuanta,
+                        measureQuanta,
+                    },
+                });
+                node.connect(context.destination);
+
+                const settled = new Promise((resolve, reject) => {
+                    node.port.onmessage = (event) => {
+                        if (event.data.type === 'fatal') {
+                            reject(new Error(event.data.message));
+                            return;
+                        }
+                        resolve(event.data);
+                    };
+                    node.onprocessorerror = () => reject(new Error(`${deviceId}: the worklet processor threw`));
+                });
+
+                const startedMs = performance.now();
+                context.startRendering();
+                const result = await settled;
+                result.mainThreadWallMs = performance.now() - startedMs;
+                return result;
+            }
+
+            window.runQuantumCostTable = async ({ warmupQuanta, measureQuanta }) => {
+                const [dspBytes, chamberBytes, scoringBytes] = await Promise.all([
+                    fetchWasm('/public/wasm/daw-dsp/daw_dsp_bg.wasm'),
+                    fetchWasm('/public/wasm/proof-chamber/proof_chamber_bg.wasm'),
+                    fetchWasm('/public/wasm/scoring/scoring_bg.wasm'),
+                ]);
+
+                const clock = await startClock();
+                // Let the spin loop reach steady state before it is calibrated.
+                await new Promise((resolve) => setTimeout(resolve, 250));
+                const ticksPerMsBefore = calibrate(clock.ticks, 400);
+
+                const results = [];
+                for (const deviceId of DEVICE_IDS) {
+                    say(`measuring ${deviceId}…`);
+                    const result = await measure({
+                        deviceId,
+                        clockBuffer: clock.buffer,
+                        // Each context gets its own copy: a transferred/detached
+                        // buffer cannot be handed to the next one.
+                        dspBytes: dspBytes.slice(0),
+                        chamberBytes: chamberBytes.slice(0),
+                        scoringBytes: scoringBytes.slice(0),
+                        warmupQuanta,
+                        measureQuanta,
+                    });
+                    results.push({
+                        ...result,
+                        samplesTicks: Array.from(result.samplesTicks),
+                        harnessFloorTicks: Array.from(result.harnessFloorTicks),
+                    });
+                }
+
+                const ticksPerMsAfter = calibrate(clock.ticks, 400);
+                clock.worker.terminate();
+
+                return {
+                    pageCrossOriginIsolated: self.crossOriginIsolated === true,
+                    ticksPerMsBefore,
+                    ticksPerMsAfter,
+                    userAgent: navigator.userAgent,
+                    userAgentData: navigator.userAgentData
+                        ? await navigator.userAgentData.getHighEntropyValues(['platform', 'platformVersion', 'architecture', 'fullVersionList'])
+                        : null,
+                    hardwareConcurrency: navigator.hardwareConcurrency,
+                    deviceMemoryGb: navigator.deviceMemory ?? null,
+                    results,
+                };
+            };
+
+            say('ready');
+        </script>
+    </body>
+</html>

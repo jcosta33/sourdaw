@@ -1,7 +1,81 @@
-//! What one AudioWorklet quantum of device DSP costs.
+//! What one AudioWorklet quantum of device DSP costs, for every device.
 //!
-//! The budget an `AudioWorkletProcessor` has to render 128 frames at 48 kHz is
-//! 128 / 48_000 = 2.667 ms of wall clock. `grandBouleEngineWorker.ts` asserts
+//! # The budget, and why it is that number
+//!
+//! **2.667 ms.** An `AudioWorkletProcessor` is called once per render quantum
+//! and must return before the next one is due. A quantum is 128 frames, fixed
+//! by the Web Audio specification, and the project runs at 48 kHz, so the wall
+//! clock available to render one is 128 / 48_000 = 2.6667 ms. Nothing about
+//! this is a policy choice that can be revisited: it is the sample rate and the
+//! spec. Exceeding it does not degrade quality, it drops audio.
+//!
+//! The whole budget belongs to the *sum* of everything on the audio thread, not
+//! to any one device. A row at 40% of budget is not comfortable — three of them
+//! and a reverb is over.
+//!
+//! # Two legs, and only one of them answers the question
+//!
+//! Production compiles this DSP to wasm and runs it in a browser worklet. A
+//! native aarch64 figure is a lower bound, not the answer — the original
+//! measurement put wasm at 2.17x native. This file is the **native** leg;
+//! `benches/wasm/` is the wasm leg, and it drives the same devices through the
+//! committed `_bg.wasm` artifacts inside a real `AudioWorkletGlobalScope`:
+//!
+//! ```text
+//! node crates/daw-dsp/benches/wasm/run.mjs --json /tmp/wasm-cost.json
+//! CARGO_PROFILE_BENCH_LTO=false cargo bench -p daw-dsp --bench quantum
+//! ```
+//!
+//! Both legs are recorded in **`benches/quantum-cost-table.md`**, with the
+//! machine, the browser and the `main` SHA every number was taken at. **A number
+//! without its machine is not a measurement.** Read that file before arguing
+//! from any figure here: it carries the reference-project total, the
+//! wasm-vs-native ratios, and the caveats that decide what the numbers mean.
+//!
+//! # The machine is part of the measurement
+//!
+//! `cost_table` reads the 1-minute load average before and after its run and
+//! **fails** if it went above half the logical cores. The first full run of this
+//! table was taken while another agent worktree ran the whole vitest suite —
+//! load average 25 on a 12-core machine — and Grand Boule's p99 came out at
+//! 17.9 ms against a 1.1 ms median, with nothing in the output to say why. Do
+//! not raise that ceiling to make a run pass; wait for the machine to go quiet.
+//!
+//! `CARGO_PROFILE_BENCH_LTO=false` is required and is not optional cleanliness:
+//! the workspace release profile sets `lto = true`, which conflicts with the
+//! `-C embed-bitcode=no` criterion's build passes, and `cargo bench` fails
+//! without it. Do not fix that by editing `[profile.release]` — that profile is
+//! hashed into all four wasm crate-source fingerprints and editing it
+//! invalidates every committed wasm artifact.
+//!
+//! # Which devices are here, and which are not
+//!
+//! Every `#[wasm_bindgen]` render export in this crate: Bacteria, Crumbs,
+//! Fermenter, Gluten, Grand Boule, Grinder, Knead, Levain, Proof, Toaster.
+//!
+//! **ProofChamber and Scoring are measured in the wasm leg only, and natively
+//! by `crates/proof-chamber/tests/quantum_cost.rs` and
+//! `crates/scoring/tests/quantum_cost.rs` rather than here.** They live in
+//! sibling crates, and adding them as dev-dependencies of `daw-dsp` would pull
+//! their sources into `daw-dsp`'s wasm crate-source hash, so that editing a
+//! reverb would invalidate the DSP crate's committed artifacts. A coupled gate
+//! is worse than a bench split across three files.
+//!
+//! **Crust, Yeast and CvGate are absent because they have no Rust engine at
+//! all.** Their cost is JavaScript, which this instrument does not measure and
+//! does not claim to.
+//!
+//! # Distribution, not a mean
+//!
+//! A worklet that misses one quantum in a hundred still glitches, so every row
+//! reports median, p95, p99 and max, and states its sample count. **The max is
+//! not a worst case.** 20 000 samples is 53 s of one device's rendered audio; a
+//! session renders on the order of 1.7M quanta an hour. The tail is
+//! understated, not bounded.
+//!
+//! # The precedent this file exists because of
+//!
+//! `grandBouleEngineWorker.ts` asserts
 //! that Grand Boule cannot meet it and must therefore render on a dedicated
 //! Web Worker behind a SharedArrayBuffer ring, unlike every other device in the
 //! project. That assertion had never been measured. This bench measures it,
@@ -11,23 +85,20 @@
 //! row only: it is a monophonic effect with no voice pool, so it can answer
 //! "does *some* shipped device fit", which is not the question.
 //!
-//! A native aarch64/x86 number is a lower bound, not the answer: production
-//! runs this compiled to wasm inside a browser worklet. The browser figure is
-//! taken separately by driving the same `*Instance::process(128)` exports in
-//! headless Chromium.
+//! # What these numbers do and do not establish
 //!
-//! What these numbers do and do not establish
-//! ------------------------------------------
 //! They establish *compute cost per quantum*. They do not observe a dropout.
 //! No underrun and no over-budget render was ever caught in the act:
 //! `AudioContext.renderCapacity` is not exposed in the Chromium the harness
 //! drives, and the leg that runs inside a real `AudioWorkletGlobalScope` runs
 //! on an `OfflineAudioContext`, which has no deadline. So the correct claim is
 //! that the compute exceeds the budget, and that a dropout follows from that —
-//! inferred from the cost, not measured.
+//! inferred from the cost, not measured. **"Its compute exceeds the budget" and
+//! "it misses the deadline" are different claims;** the second one belongs to
+//! AC-3 of `SPEC-render-parity-instrumentation` and is not made here.
 //!
-//! 64 voices is the common case, not the worst case
-//! ------------------------------------------------
+//! # 64 voices is the common case, not the worst case
+//!
 //! `GrandBouleEngine::note_off` skips `voice.note_off()` entirely while
 //! `pedals.sustain_position() > 0.5`. With the sustain pedal down, released
 //! notes stay `VoiceStage::Active` at `amplitude == 1.0` and keep paying the
@@ -35,27 +106,34 @@
 //! 64 within a few bars and holds it there. The 64-voice row is what pedalled
 //! piano costs, not an artificial ceiling.
 //!
-//! Sounding voices, not allocated ones
-//! -----------------------------------
+//! # Sounding voices, not allocated ones — and still sounding at the end
+//!
 //! A voice that has been `note_on`'d and is still ringing costs what a real one
 //! costs; an allocated-but-silent slot does not. `PianoVoice::tick` returns
 //! immediately when `stage == Idle`, and `MasterSynth` skips idle voices too,
 //! so "64 voices" only means something once the voices are actually running.
-//! Each setup here therefore:
+//! Every row therefore drives its device into an audibly active state and
+//! **verifies occupancy after the timed run**, through the device's own
+//! `active_voices()` export where it has one and output RMS where it does not.
+//! A row that fails its check fails the bench rather than printing a number.
 //!
-//! 1. allocates the production pool size (Grand Boule 64, Fermenter 32),
-//! 2. strikes `sounding` *distinct* notes and never releases them,
-//! 3. renders a warm-up run before the timed region, and
-//! 4. verifies occupancy before benchmarking — Fermenter through its own
-//!    `active_voices()` export, Grand Boule through output RMS plus the
-//!    structural argument in `verify_grand_boule_voices_stay_sounding`.
+//! Holding notes is not sufficient, and the cost table found where it stops
+//! being sufficient. Over the 53 s a row is timed for, 64 held Grand Boule
+//! notes decay to an output RMS of 1e-9 and 16 struck Toaster pads decay to
+//! *exact zero* — while still paying full price, because the quality demotion
+//! reads the release envelope, which is pinned at 1.0 with the key down. Both
+//! rows now re-strike once a second, which is what a pedalled piano and a drum
+//! machine do anyway. Fermenter sustains, and Levain and Crumbs loop their
+//! zones, so those three hold their level without help.
 //!
-//! Holding the notes is what makes the timed region stationary. A held Grand
-//! Boule voice sits in `VoiceStage::Active` with `amplitude` pinned at 1.0, so
-//! it never crosses the `< 0.3` / `< 0.05` thresholds that would demote it from
-//! `VoiceQuality::Standard` to a cheaper tier mid-run; a released voice decays
-//! into the cheap tiers within a second and would quietly measure something
-//! easier than what it claims to measure.
+//! Two things the setups turned up, both recorded rather than smoothed over:
+//!
+//! * **Fermenter's constructed 32 voices cannot exceed 16.** `MasterSynth::new`
+//!   discards its `max_voices` argument and a `Layer` owns a fixed 16-voice
+//!   pool, so the shipped single-layer patch tops out at 16.
+//! * **Levain's constructed 64 voices settle at 32.** Legato ships enabled and
+//!   collapses any note within 12 semitones of a held one onto the held voice,
+//!   so 64 notes spread over 88 keys become 32 sounding voices.
 
 use std::hint::black_box;
 use std::time::Duration;
@@ -477,12 +555,815 @@ fn bench_grinder_instance(criterion: &mut Criterion) {
     );
 }
 
+// ---------------------------------------------------------------------------
+// The rest of the devices, and the cost table
+// ---------------------------------------------------------------------------
+
+/// Untimed quanta rendered before any distribution is sampled.
+///
+/// Longer than `WARMUP_BLOCKS`, which exists only to clear a note-on transient.
+/// This one also has to get the *branch predictors and caches* into the state a
+/// device spends its life in, and it is chosen to match the wasm leg exactly so
+/// the two columns are comparable. The harness does not take it on trust: every
+/// row reports the mean of its first and last 500 timed samples, so a run that
+/// was still settling shows up as a drifting mean rather than hiding in the
+/// average.
+const TABLE_WARMUP_QUANTA: usize = 4_000;
+
+/// Timed quanta per row. 20 000 x 128 frames is 53 s of rendered audio.
+const TABLE_SAMPLE_QUANTA: usize = 20_000;
+
+/// The one-minute load average, or `None` where it cannot be read.
+///
+/// Shelling out to `uptime` once, before and after the table, is not elegant.
+/// It is here because the first full run of this table was taken while another
+/// agent worktree was running the whole vitest suite: load average 25 on a
+/// 12-core machine, every core saturated. Grand Boule's p99 came out at 17.9 ms
+/// against a 1.1 ms median, and *nothing in the output said why*. The table
+/// looked like a measurement of a device and was partly a measurement of the
+/// scheduler.
+///
+/// A parseable, dependency-free load reading is worth an `uptime` fork.
+fn load_average() -> Option<f64> {
+    let output = std::process::Command::new("/usr/bin/uptime").output().ok()?;
+    let text = String::from_utf8_lossy(&output.stdout).to_string();
+    let tail = text.rsplit_once("load averages:").or_else(|| text.rsplit_once("load average:"))?.1;
+    tail.split_whitespace()
+        .next()?
+        .trim_end_matches(',')
+        .parse()
+        .ok()
+}
+
+/// Load above which the table refuses to stand behind its own numbers.
+///
+/// Half the logical cores. The bench itself is single-threaded, so a quiet
+/// machine sits near 1; anything above this means the DSP is sharing cores with
+/// something, and a per-quantum figure taken under that condition is a
+/// measurement of the two together.
+fn load_ceiling() -> f64 {
+    std::thread::available_parallelism().map_or(4.0, |cores| cores.get() as f64 / 2.0)
+}
+
+/// A device's per-quantum cost distribution, in nanoseconds.
+struct Distribution {
+    n: usize,
+    median: f64,
+    p95: f64,
+    p99: f64,
+    p999: f64,
+    max: f64,
+    first_five_hundred_mean: f64,
+    last_five_hundred_mean: f64,
+}
+
+fn quantile(sorted: &[u64], fraction: f64) -> f64 {
+    if sorted.is_empty() {
+        return f64::NAN;
+    }
+    let rank = (fraction * sorted.len() as f64).ceil() as usize;
+    let index = rank.saturating_sub(1).min(sorted.len() - 1);
+    sorted[index] as f64
+}
+
+fn mean_of(samples: &[u64]) -> f64 {
+    if samples.is_empty() {
+        return f64::NAN;
+    }
+    samples.iter().map(|value| *value as f64).sum::<f64>() / samples.len() as f64
+}
+
+fn summarise(mut samples: Vec<u64>) -> Distribution {
+    let head = mean_of(&samples[..500.min(samples.len())]);
+    let tail_start = samples.len().saturating_sub(500);
+    let tail = mean_of(&samples[tail_start..]);
+    samples.sort_unstable();
+    Distribution {
+        n: samples.len(),
+        median: quantile(&samples, 0.5),
+        p95: quantile(&samples, 0.95),
+        p99: quantile(&samples, 0.99),
+        p999: quantile(&samples, 0.999),
+        max: *samples.last().unwrap_or(&0) as f64,
+        first_five_hundred_mean: head,
+        last_five_hundred_mean: tail,
+    }
+}
+
+/// The harness's own cost: `Instant::now()` twice with nothing in between.
+///
+/// Inside every figure below, and reported as its own row rather than assumed
+/// negligible — a 5 us device read against a 30 ns floor is a different claim
+/// from a 5 us device read against a 500 ns one.
+fn timer_floor() -> Distribution {
+    let mut samples = Vec::with_capacity(TABLE_SAMPLE_QUANTA);
+    for _ in 0..TABLE_SAMPLE_QUANTA {
+        let start = std::time::Instant::now();
+        samples.push(black_box(start.elapsed()).as_nanos() as u64);
+    }
+    summarise(samples)
+}
+
+/// Time `render` for `TABLE_SAMPLE_QUANTA` quanta after `TABLE_WARMUP_QUANTA`
+/// discarded ones, feeding the device each block *outside* the timed region.
+///
+/// `feed` is untimed on purpose and the wasm leg does the same: a worklet pays
+/// the input marshalling against `inputs[0]` whichever device consumes it, so
+/// including it would attribute a host cost to a device. `feed` is also where a
+/// one-shot instrument re-strikes — see `row_toaster` and `row_grand_boule`.
+///
+/// **The warm-up is the timed loop, run twice and the first pass thrown away.**
+/// An earlier version warmed up through a *different*, untimed loop body, and
+/// every row's first 500 timed samples came out 20-60% above its own median:
+/// the timed loop's own branch prediction and instruction cache were cold even
+/// though the DSP was hot. Warming up through a cheaper path than the one being
+/// measured is a way to measure the transition into the real path.
+fn sample_quanta<D>(
+    device: &mut D,
+    feed: &mut dyn FnMut(&mut D, usize),
+    render: &mut dyn FnMut(&mut D) -> *const f32,
+) -> Vec<u64> {
+    let mut run = |device: &mut D, from: usize, count: usize| {
+        let mut samples = Vec::with_capacity(count);
+        for block in 0..count {
+            feed(device, from + block);
+            let start = std::time::Instant::now();
+            let produced = render(device);
+            let elapsed = start.elapsed();
+            black_box(produced);
+            samples.push(elapsed.as_nanos() as u64);
+        }
+        samples
+    };
+    black_box(run(device, 0, TABLE_WARMUP_QUANTA));
+    run(device, TABLE_WARMUP_QUANTA, TABLE_SAMPLE_QUANTA)
+}
+
+/// Blocks between re-strikes for a device whose voices decay.
+///
+/// 375 quanta is one second of audio. Two rows need it, and both are findings
+/// in their own right: over the 53 s a row is timed for, a struck Grand Boule
+/// voice decays to an RMS of 1e-9 and 16 struck Toaster pads decay to *exact
+/// zero*. An earlier version of this file held them and reported the cost of an
+/// instrument that had stopped making sound — which is precisely the trap its
+/// own header warns about. Re-striking is also what the devices are for: a
+/// pedalled piano and a drum machine both retrigger constantly.
+const RESTRIKE_INTERVAL_QUANTA: usize = 375;
+
+/// The excitation `tests/engine_output_level.rs` uses, duplicated here rather
+/// than shared because a bench cannot import a sibling integration test. The
+/// wasm leg's `deviceRecipes.js` carries the same function for the same reason.
+fn excitation(frame: usize) -> (f32, f32) {
+    let t = frame as f32 / SAMPLE_RATE;
+    let fundamental = (t * 110.0 * std::f32::consts::TAU).sin();
+    let second = (t * 220.0 * std::f32::consts::TAU).sin() * 0.5;
+    let third = (t * 440.0 * std::f32::consts::TAU).sin() * 0.25;
+    let phase = (frame % 4_800) as f32 / SAMPLE_RATE;
+    let pick = (-phase * 60.0).exp() * 0.6;
+    let body = (fundamental + second + third) * 0.28;
+    (body * (1.0 + pick), body * (1.0 + pick * 0.8))
+}
+
+/// # Safety
+/// `left` and `right` must each point to at least `QUANTUM` writable `f32`s.
+unsafe fn fill_input(left: *mut f32, right: *mut f32, block: usize) {
+    for frame in 0..QUANTUM {
+        let (l, r) = excitation(block * QUANTUM + frame);
+        *left.add(frame) = l;
+        *right.add(frame) = r;
+    }
+}
+
+/// # Safety
+/// `left` and `right` must each point to at least `QUANTUM` readable `f32`s.
+unsafe fn rms_at(left: *const f32, right: *const f32) -> f32 {
+    let mut sum = 0.0_f64;
+    for frame in 0..QUANTUM {
+        let l = *left.add(frame) as f64;
+        let r = *right.add(frame) as f64;
+        sum += l * l + r * r;
+    }
+    (sum / (2 * QUANTUM) as f64).sqrt() as f32
+}
+
+/// One row of the cost table.
+struct Row {
+    id: &'static str,
+    label: &'static str,
+    /// Where production sets this row's load parameter, or why it has none.
+    load: &'static str,
+    distribution: Distribution,
+    /// Occupancy evidence taken *after* the timed run, so a pool that drained
+    /// mid-run cannot be reported as a steady-state cost.
+    occupancy: String,
+    /// Whether that evidence is acceptable. A false here fails the bench.
+    occupancy_ok: bool,
+}
+
+/// Build an effect row: an engine whose input arrives through raw wasm-facing
+/// pointers, driven with the shared excitation.
+macro_rules! effect_row {
+    ($id:expr, $label:expr, $load:expr, $instance:expr) => {{
+        let mut instance = $instance;
+        let samples = sample_quanta(
+            &mut instance,
+            &mut |device, block| unsafe {
+                fill_input(device.get_input_left_ptr(), device.get_input_right_ptr(), block)
+            },
+            &mut |device| device.process(QUANTUM as u32),
+        );
+        let level = unsafe { rms_at(instance.process(QUANTUM as u32), instance.get_right_ptr()) };
+        Row {
+            id: $id,
+            label: $label,
+            load: $load,
+            distribution: summarise(samples),
+            occupancy: format!("output RMS {level:.3e}"),
+            occupancy_ok: level > 1.0e-5,
+        }
+    }};
+}
+
+fn row_bacteria() -> Row {
+    effect_row!(
+        "bacteria",
+        "Bacteria (3 bands, mix 1.0)",
+        "effect; no voice pool",
+        {
+            let mut i = daw_dsp::bacteria::BacteriaInstance::new(SAMPLE_RATE);
+            i.set_param("bandCount", 3.0);
+            i.set_param("mix", 1.0);
+            i
+        }
+    )
+}
+
+fn row_gluten() -> Row {
+    effect_row!(
+        "gluten",
+        "Gluten (4:1, -24 dB, compressing)",
+        "effect; no voice pool",
+        {
+            let mut i = daw_dsp::gluten::GlutenInstance::new(SAMPLE_RATE);
+            i.set_param("threshold", -24.0);
+            i.set_param("ratio", 4.0);
+            i.set_param("attack", 5.0);
+            i.set_param("release", 100.0);
+            i.set_param("makeup", 3.0);
+            i
+        }
+    )
+}
+
+fn row_proof() -> Row {
+    effect_row!(
+        "proof",
+        "Proof (limiter engaged)",
+        "effect; no voice pool",
+        {
+            let mut i = daw_dsp::proof::ProofInstance::new(SAMPLE_RATE);
+            i.set_param("limiter_ceiling", -1.0);
+            i.set_param("limiter_threshold", -12.0);
+            i
+        }
+    )
+}
+
+fn row_knead() -> Row {
+    effect_row!(
+        "knead",
+        "Knead (+4 semitones, PSOLA engaged)",
+        "effect; no voice pool",
+        {
+            let mut i = daw_dsp::knead::KneadInstance::new(SAMPLE_RATE);
+            // PSOLA is a passthrough at 0 semitones; shifting engages the
+            // analysis/overlap-add path, which is the thing that costs.
+            i.set_shift_semitones(4.0);
+            i
+        }
+    )
+}
+
+/// Grinder at the model `GrinderPatch.ts:299` actually ships, `crunch-jcm`,
+/// rather than at the `lead_jcm` the model sweep above happens to start from.
+fn row_grinder() -> Row {
+    let mut instance = GrinderInstance::new(SAMPLE_RATE);
+    instance.set_param("ampModel", 1.0); // crunch-jcm — the shipped default patch
+    instance.set_param("channel", 2.0);
+    instance.set_param("gain", 8.2);
+    instance.set_param("master", 8.0);
+    instance.set_param("bass", 5.0);
+    instance.set_param("mid", 5.0);
+    instance.set_param("treble", 5.0);
+    instance.set_param("fat", 0.0);
+    let samples = sample_quanta(
+        &mut instance,
+        &mut |device, block| unsafe {
+            fill_input(device.get_input_left_ptr(), device.get_input_right_ptr(), block)
+        },
+        &mut |device| device.process(QUANTUM as u32),
+    );
+    let output_db = instance.get_output_db();
+    Row {
+        id: "grinder",
+        label: "Grinder (Crunch JCM, lead ch, gain 8.2)",
+        load: "effect; ampModel from GrinderPatch.ts:299 default 'crunch-jcm'",
+        distribution: summarise(samples),
+        occupancy: format!("engine output {output_db:.2} dBFS"),
+        occupancy_ok: output_db > -60.0,
+    }
+}
+
+fn row_fermenter() -> Row {
+    let struck = 16;
+    let mut instance = fermenter_instance(struck);
+    let samples = sample_quanta(
+        &mut instance,
+        &mut |_, _| {},
+        &mut |device| device.process(QUANTUM as u32),
+    );
+    let active = instance.active_voices();
+    Row {
+        id: "fermenter",
+        label: "Fermenter (16 sounding voices, 1 layer)",
+        load: "fermenterProcessor.ts:164 constructs 32; one layer holds 16, which is production",
+        distribution: summarise(samples),
+        occupancy: format!("active_voices() = {active}, expected {struck}"),
+        occupancy_ok: active as usize == struck,
+    }
+}
+
+/// Grand Boule with its 64 notes re-struck once a second.
+///
+/// Held indefinitely, a struck string runs out of energy: over the 53 s this
+/// row is timed for, output RMS fell to 1e-9 and the figure became the cost of
+/// 64 inaudible voices. `amplitude` — the release envelope the quality
+/// demotion reads — stays pinned at 1.0 while the key is down, so the voices
+/// never demote to a cheaper tier; they simply stop making sound while still
+/// paying full price, which is the worst of both for a measurement. Re-striking
+/// is what a pedalled piano does anyway.
+fn row_grand_boule() -> Row {
+    let mut instance = grand_boule_instance(GRAND_BOULE_POOL);
+    let samples = sample_quanta(
+        &mut instance,
+        &mut |device, block| {
+            if block % RESTRIKE_INTERVAL_QUANTA == 0 {
+                for note in spread_notes(GRAND_BOULE_POOL) {
+                    device.note_on(note, 0.8);
+                }
+            }
+        },
+        &mut |device| device.process(QUANTUM as u32),
+    );
+    let level = unsafe { rms_at(instance.process(QUANTUM as u32), instance.get_right_ptr()) };
+    Row {
+        id: "grand_boule",
+        label: "Grand Boule (64 voices, re-struck 1/s)",
+        load: "grandBouleEngineCore.ts:143 constructs 64; pedalled playing fills and holds the pool",
+        distribution: summarise(samples),
+        occupancy: format!("64 voices (no active-voice export), output RMS {level:.3e}"),
+        occupancy_ok: level > 1.0e-5,
+    }
+}
+
+/// Toaster with its 16 pads re-struck once a second.
+///
+/// A drum voice is a one-shot. Struck once and left, all 16 pads decayed to an
+/// output of *exact zero* long before the timed run ended, and the row reported
+/// the cost of sixteen idle voices. One strike per second is a slow drum
+/// machine, not a fast one.
+fn row_toaster() -> Row {
+    let struck = 16_u8;
+    let mut instance = daw_dsp::toaster::ToasterInstance::new(SAMPLE_RATE, u32::from(struck));
+    instance.set_param("master_gain", 0.63);
+    let samples = sample_quanta(
+        &mut instance,
+        &mut |device, block| {
+            if block % RESTRIKE_INTERVAL_QUANTA == 0 {
+                for pad in 0..16_u8 {
+                    // Velocity is 0..127 here, not 0..1: the RT guard's 1.0
+                    // drives the pads 45 dB under a real hit and still clears
+                    // its non-silence check.
+                    device.note_on(pad, 127.0, 36 + pad);
+                }
+            }
+        },
+        &mut |device| device.process(QUANTUM as u32),
+    );
+    let level = unsafe { rms_at(instance.process(QUANTUM as u32), instance.get_right_ptr()) };
+    Row {
+        id: "toaster",
+        label: "Toaster (16 pads, re-struck 1/s)",
+        load: "toasterProcessor.ts:191 constructs TOASTER_PAD_COUNT = 16",
+        distribution: summarise(samples),
+        occupancy: format!("16 pads (no active-voice export), output RMS {level:.3e}"),
+        occupancy_ok: level > 1.0e-5,
+    }
+}
+
+/// A one-second 220 Hz loop body, the sample Levain and Crumbs are driven with.
+fn loop_sample(frames: u32) -> Vec<f32> {
+    (0..frames)
+        .map(|frame| (frame as f32 / SAMPLE_RATE * 220.0 * std::f32::consts::TAU).sin() * 0.8)
+        .collect()
+}
+
+/// Levain at the polyphony it actually reaches, which is **not** the 64 voices
+/// `levainProcessor.ts:149` constructs.
+///
+/// Legato ships enabled (`DEFAULT_LEGATO_CONFIG.enabled = true`,
+/// `LevainPatch.ts:225`) and `LegatoEngine::note_on` returns `SyntheticGlide`
+/// for a note within `MAX_LEGATO_INTERVAL` — 12 semitones,
+/// `levain/types.rs:199` — of a held one, which *reuses* the held voice rather
+/// than triggering the freshly allocated one. 64 notes spread across 88 keys
+/// are ~1.4 semitones apart, so every other note glides and the pool settles at
+/// 32.
+///
+/// Reported at the 32 it reaches, not at a 64 obtained by switching off a
+/// shipped default. Same shape as the Fermenter finding: a constructed pool
+/// size the device cannot fill.
+fn row_levain() -> Row {
+    let frame_count = 48_000_u32;
+    let mut instance = daw_dsp::levain::LevainInstance::new(SAMPLE_RATE, 64);
+    let sample_id = instance.add_sample(loop_sample(frame_count), frame_count, 1, SAMPLE_RATE);
+    instance.add_zone(
+        0, sample_id, 0, 69, 0, 127, 0, 127, 0, 1, 0, false, 1, 0, frame_count, 0, 0.0, 0.005,
+        0.1, 1.0, 0.3,
+    );
+    instance.build_zone_map(1, 1);
+    for note in spread_notes(64) {
+        instance.note_on(note, 100);
+    }
+    let samples = sample_quanta(
+        &mut instance,
+        &mut |_, _| {},
+        &mut |device| device.process(QUANTUM as u32),
+    );
+    let active = instance.active_voices();
+    Row {
+        id: "levain",
+        label: "Levain (32 sounding voices, looped zone)",
+        load: "levainProcessor.ts:149 constructs 64 = MAX_VOICES_WASM; shipped legato collapses 64 note-ons to 32",
+        distribution: summarise(samples),
+        occupancy: format!("active_voices() = {active}, expected 32 from 64 note-ons"),
+        occupancy_ok: active == 32,
+    }
+}
+
+/// Crumbs with 32 held, looping voices.
+///
+/// The zone loops deliberately. A one-shot voice pitched 48 semitones above the
+/// root plays a one-second sample in 62 ms and frees itself; unlooped, the pool
+/// drained from 32 to 12 inside the warm-up and the row would have reported the
+/// cost of a sampler two thirds idle.
+fn row_crumbs() -> Row {
+    let frame_count = 48_000_u32;
+    let mut instance = daw_dsp::crumbs::CrumbsInstance::new(SAMPLE_RATE);
+    let sample_id = instance.add_sample(loop_sample(frame_count), 1, SAMPLE_RATE as u32);
+    instance.set_active_sample(sample_id);
+    instance.set_param("loopMode", 1.0); // forward
+    instance.set_param("loopStart", 0.0);
+    instance.set_param("loopEnd", frame_count as f32);
+    instance.set_param("sustain", 1.0);
+    for note in spread_notes(32) {
+        instance.note_on(note, 100);
+    }
+    let samples = sample_quanta(
+        &mut instance,
+        &mut |_, _| {},
+        &mut |device| device.process(QUANTUM as u32),
+    );
+    let active = instance.active_voices();
+    Row {
+        id: "crumbs",
+        label: "Crumbs (32 sounding voices, in-memory pool)",
+        load: "crumbsProcessor.ts:100 takes no voice count; crate MAX_VOICES = 128",
+        distribution: summarise(samples),
+        occupancy: format!("active_voices() = {active}, expected 32"),
+        occupancy_ok: active == 32,
+    }
+}
+
+/// The reference project, defined here because **nothing in the repository
+/// defines it**.
+///
+/// `SPEC-render-parity-instrumentation` AC-2 and `SPEC-browser-dsp-offload`
+/// AC-002 both argue from "the reference project" and neither says what it
+/// contains. Rather than quietly pick numbers, this is the composition every
+/// total below is computed from, so a later reader can dispute the mix instead
+/// of the arithmetic: a six-track session with an ordinary effect load.
+///
+/// Scoring is excluded — the tuner renders only while its surface is open.
+/// ProofChamber's contribution is not in this native total, because it is not
+/// in this crate; the wasm total in `quantum-cost-table.md` includes it.
+const REFERENCE_PROJECT: [(&str, usize); 9] = [
+    // Five instrument tracks.
+    ("grand_boule", 1),
+    ("fermenter", 1),
+    ("levain", 1),
+    ("toaster", 1),
+    ("crumbs", 1),
+    // A guitar track, a tuned vocal, one creative send.
+    ("grinder", 1),
+    ("knead", 1),
+    ("bacteria", 1),
+    // The master bus.
+    ("proof", 1),
+];
+
+/// Instances of a device in the reference project that are *not* in the table
+/// under their own id, kept separate so the table stays one row per device.
+const REFERENCE_PROJECT_GLUTEN_INSTANCES: usize = 3;
+
+fn percent_of_budget(nanoseconds: f64) -> f64 {
+    (nanoseconds / BUDGET_NS) * 100.0
+}
+
+/// Print the whole native cost table. Registered as a criterion group entry
+/// because that is how the existing verification passes in this file run; it
+/// registers no benchmark of its own.
+fn cost_table(_criterion: &mut Criterion) {
+    let load_before = load_average();
+    let floor = timer_floor();
+    let rows = vec![
+        row_bacteria(),
+        row_gluten(),
+        row_proof(),
+        row_knead(),
+        row_grinder(),
+        row_fermenter(),
+        row_grand_boule(),
+        row_toaster(),
+        row_levain(),
+        row_crumbs(),
+    ];
+
+    let load_after = load_average();
+    let describe_load = |load: Option<f64>| match load {
+        Some(value) => format!("{value:.2}"),
+        None => "unavailable".to_string(),
+    };
+
+    eprintln!("\n=== Per-quantum device cost — NATIVE ===\n");
+    eprintln!(
+        "budget {:.4} ms = 128 frames / 48 kHz; arch {}; {} warm-up quanta, {} timed quanta per row",
+        BUDGET_NS / 1.0e6,
+        std::env::consts::ARCH,
+        TABLE_WARMUP_QUANTA,
+        TABLE_SAMPLE_QUANTA
+    );
+    eprintln!(
+        "1-minute load average {} before, {} after, on {} logical cores (ceiling {:.1})",
+        describe_load(load_before),
+        describe_load(load_after),
+        std::thread::available_parallelism().map_or(0, |cores| cores.get()),
+        load_ceiling()
+    );
+    eprintln!(
+        "\n{:<44} {:>9} {:>9} {:>9} {:>9} {:>9} | {:>8} {:>7} {:>7} {:>8} {:>8}",
+        "device", "median", "p95", "p99", "p99.9", "max", "median", "p95", "p99", "p99.9", "max"
+    );
+    for row in &rows {
+        let d = &row.distribution;
+        eprintln!(
+            "{:<44} {:>8.1}us {:>8.1}us {:>8.1}us {:>8.1}us {:>8.1}us | {:>7.2}% {:>6.2}% {:>6.2}% {:>7.2}% {:>7.2}%",
+            row.label,
+            d.median / 1000.0,
+            d.p95 / 1000.0,
+            d.p99 / 1000.0,
+            d.p999 / 1000.0,
+            d.max / 1000.0,
+            percent_of_budget(d.median),
+            percent_of_budget(d.p95),
+            percent_of_budget(d.p99),
+            percent_of_budget(d.p999),
+            percent_of_budget(d.max),
+        );
+    }
+    eprintln!(
+        "{:<44} {:>8.3}us {:>8.3}us {:>8.3}us {:>8.3}us {:>8.1}us | {:>7.4}% {:>6.4}% {:>6.4}% {:>7.4}% {:>7.2}%",
+        "(timer floor — Instant::now() twice)",
+        floor.median / 1000.0,
+        floor.p95 / 1000.0,
+        floor.p99 / 1000.0,
+        floor.p999 / 1000.0,
+        floor.max / 1000.0,
+        percent_of_budget(floor.median),
+        percent_of_budget(floor.p95),
+        percent_of_budget(floor.p99),
+        percent_of_budget(floor.p999),
+        percent_of_budget(floor.max),
+    );
+    eprintln!(
+        "\nThe far tail is not DSP cost. This bench thread runs at normal priority, not the \n\
+         realtime priority a browser gives its audio thread, so a p99.9 or max in the tens of \n\
+         milliseconds is the OS descheduling the thread mid-render. Read median through p99 as \n\
+         the device; read the tail as an upper bound that includes the scheduler."
+    );
+
+    eprintln!("\nper row: occupancy after the timed run, stationarity, and where the load comes from");
+    for row in &rows {
+        let d = &row.distribution;
+        let drift = (d.last_five_hundred_mean / d.first_five_hundred_mean - 1.0) * 100.0;
+        eprintln!("  {}", row.id);
+        eprintln!(
+            "      occupancy: {} — {}",
+            if row.occupancy_ok { "ok" } else { "FAILED" },
+            row.occupancy
+        );
+        eprintln!("      load     : {}", row.load);
+        eprintln!(
+            "      drift    : first 500 {:.1}us -> last 500 {:.1}us ({drift:+.1}%), n = {}",
+            d.first_five_hundred_mean / 1000.0,
+            d.last_five_hundred_mean / 1000.0,
+            d.n
+        );
+    }
+
+    // -- the reference project ---------------------------------------------
+    let lookup = |id: &str| -> &Distribution {
+        &rows
+            .iter()
+            .find(|row| row.id == id)
+            .unwrap_or_else(|| panic!("the reference project names {id}, which is not a table row"))
+            .distribution
+    };
+    let mut median_total = 0.0;
+    let mut p99_total = 0.0;
+    for (id, count) in REFERENCE_PROJECT {
+        let distribution = lookup(id);
+        median_total += distribution.median * count as f64;
+        p99_total += distribution.p99 * count as f64;
+    }
+    let gluten = lookup("gluten");
+    median_total += gluten.median * REFERENCE_PROJECT_GLUTEN_INSTANCES as f64;
+    p99_total += gluten.p99 * REFERENCE_PROJECT_GLUTEN_INSTANCES as f64;
+
+    eprintln!("\n=== Reference project (defined in this file — nothing in the repo defines it) ===");
+    for (id, count) in REFERENCE_PROJECT {
+        eprintln!("  {count} x {id}");
+    }
+    eprintln!("  {REFERENCE_PROJECT_GLUTEN_INSTANCES} x gluten");
+    eprintln!("  (Scoring excluded: the tuner renders only while its surface is open.)");
+    eprintln!("  (ProofChamber excluded from this native total: sibling crate, see the header.)");
+    eprintln!(
+        "\n  summed median {:.3} ms = {:.1}% of the {:.4} ms budget",
+        median_total / 1.0e6,
+        percent_of_budget(median_total),
+        BUDGET_NS / 1.0e6
+    );
+    eprintln!(
+        "  summed p99    {:.3} ms = {:.1}% of budget  (a pessimistic sum: it assumes every device \
+         hits its own p99 in the same quantum)",
+        p99_total / 1.0e6,
+        percent_of_budget(p99_total)
+    );
+    eprintln!(
+        "\n  Read against the wasm column, not this one. Native is a lower bound; production runs \
+         wasm in a worklet."
+    );
+
+    let failed: Vec<&str> = rows
+        .iter()
+        .filter(|row| !row.occupancy_ok)
+        .map(|row| row.id)
+        .collect();
+    assert!(
+        failed.is_empty(),
+        "these rows were not in the state they claim to measure, so their cost figures are \
+         meaningless: {failed:?}"
+    );
+
+    // Asserted last so the table still prints — a contended run is useful to
+    // look at, it is just not publishable.
+    let ceiling = load_ceiling();
+    let busiest = [load_before, load_after].into_iter().flatten().fold(0.0_f64, f64::max);
+    assert!(
+        busiest <= ceiling,
+        "the machine was not idle: 1-minute load average reached {busiest:.2} against a ceiling \
+         of {ceiling:.1}. The table above is a measurement of this DSP *and* whatever else was \
+         running, and must not be published. Wait for the machine to go quiet and re-run."
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Criterion coverage for the devices the original file did not reach
+// ---------------------------------------------------------------------------
+
+/// An independent statistical read on the same devices the cost table above
+/// times by hand. Two estimators disagreeing is the signal worth having; the
+/// table is the artifact, criterion is the cross-check.
+fn bench_remaining_devices(criterion: &mut Criterion) {
+    let mut group = criterion.benchmark_group("device/instance_process_128");
+    group.measurement_time(Duration::from_secs(3));
+
+    macro_rules! bench_effect {
+        ($name:expr, $instance:expr) => {{
+            let mut instance = $instance;
+            let (left_in, right_in) = (
+                instance.get_input_left_ptr(),
+                instance.get_input_right_ptr(),
+            );
+            let mut block = 0_usize;
+            for warm in 0..WARMUP_BLOCKS {
+                unsafe { fill_input(left_in, right_in, warm) };
+                instance.process(QUANTUM as u32);
+            }
+            group.bench_function(BenchmarkId::from_parameter($name), |bencher| {
+                bencher.iter(|| {
+                    unsafe { fill_input(left_in, right_in, block) };
+                    block += 1;
+                    black_box(instance.process(black_box(QUANTUM as u32)))
+                });
+            });
+        }};
+    }
+
+    bench_effect!("bacteria", {
+        let mut i = daw_dsp::bacteria::BacteriaInstance::new(SAMPLE_RATE);
+        i.set_param("bandCount", 3.0);
+        i.set_param("mix", 1.0);
+        i
+    });
+    bench_effect!("gluten", {
+        let mut i = daw_dsp::gluten::GlutenInstance::new(SAMPLE_RATE);
+        i.set_param("threshold", -24.0);
+        i.set_param("ratio", 4.0);
+        i.set_param("attack", 5.0);
+        i.set_param("release", 100.0);
+        i.set_param("makeup", 3.0);
+        i
+    });
+    bench_effect!("proof", {
+        let mut i = daw_dsp::proof::ProofInstance::new(SAMPLE_RATE);
+        i.set_param("limiter_ceiling", -1.0);
+        i.set_param("limiter_threshold", -12.0);
+        i
+    });
+    bench_effect!("knead", {
+        let mut i = daw_dsp::knead::KneadInstance::new(SAMPLE_RATE);
+        i.set_shift_semitones(4.0);
+        i
+    });
+
+    let mut toaster = daw_dsp::toaster::ToasterInstance::new(SAMPLE_RATE, 16);
+    toaster.set_param("master_gain", 0.63);
+    for pad in 0..16_u8 {
+        toaster.note_on(pad, 127.0, 36 + pad);
+    }
+    for _ in 0..WARMUP_BLOCKS {
+        toaster.process(QUANTUM as u32);
+    }
+    group.bench_function(BenchmarkId::from_parameter("toaster"), |bencher| {
+        bencher.iter(|| black_box(toaster.process(black_box(QUANTUM as u32))));
+    });
+
+    let frame_count = 48_000_u32;
+    let mut levain = daw_dsp::levain::LevainInstance::new(SAMPLE_RATE, 64);
+    let levain_sample = levain.add_sample(loop_sample(frame_count), frame_count, 1, SAMPLE_RATE);
+    levain.add_zone(
+        0, levain_sample, 0, 69, 0, 127, 0, 127, 0, 1, 0, false, 1, 0, frame_count, 0, 0.0, 0.005,
+        0.1, 1.0, 0.3,
+    );
+    levain.build_zone_map(1, 1);
+    for note in spread_notes(64) {
+        levain.note_on(note, 100);
+    }
+    for _ in 0..WARMUP_BLOCKS {
+        levain.process(QUANTUM as u32);
+    }
+    group.bench_function(BenchmarkId::from_parameter("levain"), |bencher| {
+        bencher.iter(|| black_box(levain.process(black_box(QUANTUM as u32))));
+    });
+
+    let mut crumbs = daw_dsp::crumbs::CrumbsInstance::new(SAMPLE_RATE);
+    let crumbs_sample = crumbs.add_sample(loop_sample(frame_count), 1, SAMPLE_RATE as u32);
+    crumbs.set_active_sample(crumbs_sample);
+    crumbs.set_param("loopMode", 1.0);
+    crumbs.set_param("loopStart", 0.0);
+    crumbs.set_param("loopEnd", frame_count as f32);
+    crumbs.set_param("sustain", 1.0);
+    for note in spread_notes(32) {
+        crumbs.note_on(note, 100);
+    }
+    for _ in 0..WARMUP_BLOCKS {
+        crumbs.process(QUANTUM as u32);
+    }
+    group.bench_function(BenchmarkId::from_parameter("crumbs"), |bencher| {
+        bencher.iter(|| black_box(crumbs.process(black_box(QUANTUM as u32))));
+    });
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
+    cost_table,
     bench_grand_boule_process_block,
     bench_grand_boule_instance,
     bench_grand_boule_saturated_steal,
     bench_fermenter_instance,
     bench_grinder_instance,
+    bench_remaining_devices,
 );
 criterion_main!(benches);
