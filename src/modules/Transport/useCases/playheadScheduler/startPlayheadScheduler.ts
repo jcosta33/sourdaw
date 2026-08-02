@@ -85,9 +85,10 @@ function isSchedulerWorkerTick(value: unknown, receivedAtMs: number): value is S
 
 /**
  * How far behind the live position the MIDI high-water mark is rewound when a
- * window has to be re-emitted. The gate is `startBeat <= lastScheduledBeat`, so
- * a note sitting exactly on the current beat needs the mark strictly below it.
- * Matches the nudge the loop-wrap path already uses.
+ * window has to be re-emitted. The normal gate is the half-open interval
+ * `[lastScheduledBeat, scheduleUpTo)`. Rewinding by this amount also re-opens
+ * notes infinitesimally before the live position after their scheduled voices
+ * have been stopped. Matches the nudge the loop-wrap path already uses.
  */
 const REEMIT_EPSILON_BEATS = 0.0001;
 
@@ -121,6 +122,7 @@ export function startPlayheadScheduler(): void {
         },
         isCurrent: () =>
             schedulerSession.generation === schedulerGeneration && transportStore.value?.isPlaying === true,
+        yeastRouteLineage: new Map(),
     };
 
     startAutomationRecording();
@@ -214,7 +216,7 @@ export function startPlayheadScheduler(): void {
             // high-water mark, which `stopAllScheduled`'s allNotesOff does not
             // move. Without rewinding it, every note already emitted into the
             // current look-ahead is silenced here and then blocked from
-            // re-emission (`unswungStartBeat <= lastScheduledBeat`), so a
+            // re-emission (`unswungStartBeat < lastScheduledBeat`), so a
             // tempo or loop edit drops a window of notes outright while audio
             // clips re-align (audit MD-5). Rewinding to the live position
             // re-opens exactly the window that was just cut, at the new rate.
