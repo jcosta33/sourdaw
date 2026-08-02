@@ -1,0 +1,25 @@
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistryDescriptors.spec.ts
+  s_ac9b259eab20ba::t_566cdef14bf93b 269-293
+  s_ac9b259eab20ba::t_ac10d13c59ee7b 236-268,294
+  s_ac9b259eab20ba::t_f695eed0418637 295
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_ac9b259eab20ba::t_566cdef14bf93b 217,219-221
+  s_ac9b259eab20ba::t_1fd0aefba1b687 190,193-216,218,222-230,247,252-255,259,311-312,316-319
+  s_ac9b259eab20ba::t_2c3a441a209f21 320-321
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "5382398cb290e7164d1167f344a89f4dae3cfcb5",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
