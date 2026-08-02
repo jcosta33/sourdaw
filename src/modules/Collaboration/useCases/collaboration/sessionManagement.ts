@@ -285,6 +285,12 @@ function buildAutomergeSyncHooks(): AutomergeSyncHooks {
         onPersistError: () => {
             setCollaborationError('Failed to save received changes locally.');
         },
+        onSendError: () => {
+            // The peer is still connected but has not received these changes.
+            // Saying so is the whole point: the alternative is a session that
+            // looks healthy while the other side silently falls behind.
+            setCollaborationError('Could not send project changes to a peer — they may be out of date.');
+        },
     };
 }
 
@@ -335,6 +341,10 @@ function initializeSessionRuntime(): PeerConnectionManager {
         onMessage: handlePeerMessage,
         onConnected: handlePeerConnected,
         onDisconnected: handlePeerDisconnected,
+        onSendError: ({ error }) => {
+            logger.warn('[Collaboration] Failed to broadcast to a peer:', error);
+            setCollaborationError('Could not send project changes to a peer — they may be out of date.');
+        },
     });
     sessionState.peerManager = peerManager;
 
@@ -502,10 +512,14 @@ function handlePeerConnected(peerId: PeerId): void {
 
     sessionState.automergeSync?.addPeer(peerId);
 
-    sessionState.peerManager?.sendCrdtSync({
-        peerId,
-        message: { type: 'peer-info', peer: getLocalPeerInfo() },
-    });
+    void sessionState.peerManager
+        ?.sendCrdtSync({
+            peerId,
+            message: { type: 'peer-info', peer: getLocalPeerInfo() },
+        })
+        .catch((error: unknown) => {
+            logger.warn('[Collaboration] Failed to send peer-info to', peerId, error);
+        });
 
     // §fix-16 — As host, tell the joiner the color we assigned it (chosen in
     // acceptAnswer) so it can reconcile its locally-picked color. The joiner
@@ -515,10 +529,14 @@ function handlePeerConnected(peerId: PeerId): void {
     if (hostState?.isHost) {
         const assigned = hostState.peers.find((param) => param.id === peerId);
         if (assigned) {
-            sessionState.peerManager?.sendCrdtSync({
-                peerId,
-                message: { type: 'peer-info', peer: { ...assigned, isConnected: true, lastSeen: Date.now() } },
-            });
+            void sessionState.peerManager
+                ?.sendCrdtSync({
+                    peerId,
+                    message: { type: 'peer-info', peer: { ...assigned, isConnected: true, lastSeen: Date.now() } },
+                })
+                .catch((error: unknown) => {
+                    logger.warn('[Collaboration] Failed to send assigned peer-info to', peerId, error);
+                });
         }
     }
 
