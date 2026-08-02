@@ -20,11 +20,15 @@
 import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
 import { initSync, ToasterInstance } from '../wasm/daw_dsp.js';
 
+import { beginTelemetryPublish, endTelemetryPublish } from './telemetrySeqlock';
+
 /** Pad count the ToasterInstance is created with; the allNotesOff release loop spans 0..PAD_COUNT-1. */
 const TOASTER_PAD_COUNT = 16;
 const TOASTER_MAX_BLOCK_SIZE = 4096;
 const TOASTER_OUTPUT_COUNT = 1 + TOASTER_PAD_COUNT;
 const TOASTER_AUTOMATION_PARAM_COUNT = 3;
+const PROCESS_LIFECYCLE_SLEEP = 3;
+const TELEMETRY_LIFECYCLE_IDX = 0;
 
 type ParamAutomationSegment = {
     startFrame: number;
@@ -110,6 +114,8 @@ const KIT_PARAM_MAP: Record<string, string> = {
 
 type ToasterMsg =
     | { type: 'init' }
+    | { type: 'init-sab'; sab: SharedArrayBuffer; byteOffset: number }
+    | { type: 'dispose' }
     | { type: 'noteOn'; pad: number; velocity: number; note?: number; sampleFrame?: number }
     | { type: 'noteOff'; pad: number; sampleFrame?: number }
     | {
@@ -156,6 +162,10 @@ class ToasterProcessor extends AudioWorkletProcessor {
     _outputBasePtr = 0;
     _outputViews: Array<[Float32Array, Float32Array]> = [];
     _paramAutomation: ParamAutomationSchedule[] = [];
+    _telemetryView: Float32Array | null = null;
+    _telemetrySeqView: Int32Array | null = null;
+    _lastLifecycleState = -1;
+    _disposed = false;
 
     constructor(...args: unknown[]) {
         super();
@@ -163,7 +173,15 @@ class ToasterProcessor extends AudioWorkletProcessor {
         this.port.onmessage = (event: MessageEvent<ToasterMsg>) => {
             const msg = event.data;
             try {
-                if (msg.type === 'init') {
+                if (msg.type === 'dispose') {
+                    this._disposed = true;
+                    this._telemetryView = null;
+                    this._telemetrySeqView = null;
+                    this.port.postMessage({ type: 'disposed' });
+                } else if (msg.type === 'init-sab') {
+                    this._telemetryView = new Float32Array(msg.sab, msg.byteOffset);
+                    this._telemetrySeqView = new Int32Array(msg.sab, msg.byteOffset);
+                } else if (msg.type === 'init') {
                     if (this._ready) {
                         return;
                     }
@@ -197,6 +215,7 @@ class ToasterProcessor extends AudioWorkletProcessor {
         this._instance = new ToasterInstance(sampleRate, TOASTER_PAD_COUNT);
         this._cacheOutputViews(this._instance.process(0), this._memory.buffer);
         this._ready = true;
+        this._publishLifecycle(this._instance.lifecycle_state());
         this.port.postMessage({ type: 'ready' });
     }
 
@@ -265,6 +284,8 @@ class ToasterProcessor extends AudioWorkletProcessor {
         }
         switch (msg.type) {
             case 'init':
+            case 'init-sab':
+            case 'dispose':
                 break;
             case 'noteOn':
                 inst.note_on(msg.pad, msg.velocity, msg.note ?? 60);
@@ -331,6 +352,7 @@ class ToasterProcessor extends AudioWorkletProcessor {
                 inst.reset_pad_dry_routing();
                 break;
         }
+        this._publishLifecycle(inst.lifecycle_state());
     }
 
     _drainQueue(blockEndFrame: number): void {
@@ -376,7 +398,22 @@ class ToasterProcessor extends AudioWorkletProcessor {
         }
     }
 
+    _publishLifecycle(lifecycleState: number): void {
+        const telemetryView = this._telemetryView;
+        const telemetrySeqView = this._telemetrySeqView;
+        if (!telemetryView || !telemetrySeqView || lifecycleState === this._lastLifecycleState) {
+            return;
+        }
+        beginTelemetryPublish(telemetrySeqView);
+        telemetryView[TELEMETRY_LIFECYCLE_IDX] = lifecycleState;
+        endTelemetryPublish(telemetrySeqView);
+        this._lastLifecycleState = lifecycleState;
+    }
+
     process(_inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
+        if (this._disposed) {
+            return false;
+        }
         if (!this._ready || this._faulted) {
             return true;
         }
@@ -402,10 +439,9 @@ class ToasterProcessor extends AudioWorkletProcessor {
             return true;
         }
 
-        const blockEndFrame = currentFrame + frames;
-        this._drainQueue(blockEndFrame);
-
         try {
+            const blockEndFrame = currentFrame + frames;
+            this._drainQueue(blockEndFrame);
             const inst = this._instance;
             const mem = this._memory?.buffer;
             if (!inst || !mem) {
@@ -413,6 +449,21 @@ class ToasterProcessor extends AudioWorkletProcessor {
             }
 
             this._applyParamAutomation(currentFrame);
+            const lifecycleState = inst.lifecycle_state();
+            if (lifecycleState === PROCESS_LIFECYCLE_SLEEP) {
+                inst.advance_silence(frames);
+                for (let outputIndex = 0; outputIndex < outputs.length; outputIndex++) {
+                    const output = outputs[outputIndex];
+                    if (!output) {
+                        continue;
+                    }
+                    for (let channelIndex = 0; channelIndex < output.length; channelIndex++) {
+                        output[channelIndex]?.fill(0);
+                    }
+                }
+                this._publishLifecycle(lifecycleState);
+                return true;
+            }
             const leftPtr = inst.process(frames);
             // Re-read the live buffer AFTER process(): a Rust-side allocation can
             // grow the linear memory mid-call and detach the pre-call `mem`, so the
@@ -444,6 +495,7 @@ class ToasterProcessor extends AudioWorkletProcessor {
                     }
                 }
             }
+            this._publishLifecycle(inst.lifecycle_state());
         } catch (error) {
             this._faulted = true;
             this.port.postMessage({ type: 'error', message: String(error) });
