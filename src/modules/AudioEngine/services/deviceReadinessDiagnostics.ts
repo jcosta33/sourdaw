@@ -1,6 +1,6 @@
 export type DeviceReadinessToken = {
-    deviceId: string;
-    tokenId: number;
+    readonly deviceId: string;
+    readonly tokenId: number;
 };
 
 export type DeviceContentLoadOutcome = 'ready' | 'failed' | 'cancelled';
@@ -29,15 +29,21 @@ type DeviceReadinessRecord = {
     failureStage: DeviceReadinessFailureStage | null;
 };
 
+const MAX_RETAINED_TERMINAL_RECORDS = 256;
+
 function highResolutionEpochMs(): number {
     return performance.timeOrigin + performance.now();
 }
 
 function timestamp(atMs: number | undefined): number {
-    if (atMs === undefined || !Number.isFinite(atMs)) {
+    if (atMs === undefined || !Number.isFinite(atMs) || atMs < 0 || atMs > Number.MAX_SAFE_INTEGER) {
         return highResolutionEpochMs();
     }
     return atMs;
+}
+
+function timestampAtOrAfter(atMs: number | undefined, minimumMs: number): number {
+    return Math.max(minimumMs, timestamp(atMs));
 }
 
 function durationBetween(startMs: number, endMs: number | null): number | null {
@@ -52,6 +58,9 @@ function createTimingAccumulator(): TimingAccumulator {
 }
 
 function recordTiming(accumulator: TimingAccumulator, durationMs: number): void {
+    if (!Number.isFinite(durationMs)) {
+        return;
+    }
     const normalizedDurationMs = Math.max(0, durationMs);
     accumulator.samples++;
     accumulator.totalMs += normalizedDurationMs;
@@ -66,6 +75,33 @@ function snapshotTiming(accumulator: TimingAccumulator) {
 
 function isPending(status: DeviceReadinessStatus): boolean {
     return status === 'node-pending' || status === 'graph-pending' || status === 'content-pending';
+}
+
+function trimTerminalRecords(): void {
+    let terminalRecords = 0;
+    for (const record of records.values()) {
+        if (!isPending(record.status)) {
+            terminalRecords++;
+        }
+    }
+    if (terminalRecords <= MAX_RETAINED_TERMINAL_RECORDS) {
+        return;
+    }
+    for (const [deviceId, record] of records) {
+        if (isPending(record.status)) {
+            continue;
+        }
+        records.delete(deviceId);
+        terminalRecords--;
+        if (terminalRecords === MAX_RETAINED_TERMINAL_RECORDS) {
+            return;
+        }
+    }
+}
+
+function moveTerminalRecordToNewest(record: DeviceReadinessRecord): void {
+    records.delete(record.token.deviceId);
+    records.set(record.token.deviceId, record);
 }
 
 let nextTokenId = 0;
@@ -84,7 +120,7 @@ const records = new Map<string, DeviceReadinessRecord>();
 
 function currentRecord(token: DeviceReadinessToken): DeviceReadinessRecord | null {
     const record = records.get(token.deviceId);
-    if (!record || record.token.tokenId !== token.tokenId) {
+    if (!record || record.token !== token) {
         return null;
     }
     return record;
@@ -98,6 +134,8 @@ function markPlayable(record: DeviceReadinessRecord, atMs: number): void {
     record.status = 'ready';
     playableReady++;
     recordTiming(requestToPlayableReadyMs, atMs - record.requestedAtMs);
+    moveTerminalRecordToNewest(record);
+    trimTerminalRecords();
 }
 
 export const deviceReadinessDiagnostics = {
@@ -126,8 +164,9 @@ export const deviceReadinessDiagnostics = {
         if (previous && isPending(previous.status)) {
             cancelled++;
         }
+        records.delete(input.deviceId);
         nextTokenId++;
-        const token = { deviceId: input.deviceId, tokenId: nextTokenId };
+        const token: DeviceReadinessToken = Object.freeze({ deviceId: input.deviceId, tokenId: nextTokenId });
         records.set(input.deviceId, {
             token,
             deviceType: input.deviceType,
@@ -150,7 +189,7 @@ export const deviceReadinessDiagnostics = {
         if (!record || record.nodeReadyAtMs !== null || !isPending(record.status)) {
             return;
         }
-        const atMs = timestamp(input.atMs);
+        const atMs = timestampAtOrAfter(input.atMs, record.requestedAtMs);
         record.nodeReadyAtMs = atMs;
         record.status = 'graph-pending';
         nodeReady++;
@@ -162,10 +201,11 @@ export const deviceReadinessDiagnostics = {
         if (!record || record.graphReadyAtMs !== null || !isPending(record.status)) {
             return;
         }
-        const atMs = timestamp(input.atMs);
+        const candidateAtMs = timestamp(input.atMs);
         if (record.nodeReadyAtMs === null) {
-            deviceReadinessDiagnostics.markNodeReady({ token: input.token, atMs });
+            deviceReadinessDiagnostics.markNodeReady({ token: input.token, atMs: candidateAtMs });
         }
+        const atMs = Math.max(record.requestedAtMs, record.nodeReadyAtMs ?? record.requestedAtMs, candidateAtMs);
         record.graphReadyAtMs = atMs;
         graphReady++;
         recordTiming(requestToGraphReadyMs, atMs - record.requestedAtMs);
@@ -185,6 +225,9 @@ export const deviceReadinessDiagnostics = {
         if (!record || !record.requiresContent || !isPending(record.status)) {
             return;
         }
+        if (record.contentReadyAtMs !== null) {
+            return;
+        }
         if (input.outcome === 'cancelled') {
             cancelled++;
             records.delete(input.token.deviceId);
@@ -194,10 +237,8 @@ export const deviceReadinessDiagnostics = {
             deviceReadinessDiagnostics.markFailed({ token: input.token, stage: 'content', atMs: input.atMs });
             return;
         }
-        if (record.contentReadyAtMs !== null) {
-            return;
-        }
-        const atMs = timestamp(input.atMs);
+        const minimumAtMs = record.graphReadyAtMs ?? record.requestedAtMs;
+        const atMs = timestampAtOrAfter(input.atMs, minimumAtMs);
         record.contentReadyAtMs = atMs;
         contentReady++;
         if (record.graphReadyAtMs !== null) {
@@ -211,10 +252,18 @@ export const deviceReadinessDiagnostics = {
         if (!record || !isPending(record.status)) {
             return;
         }
-        record.failedAtMs = timestamp(input.atMs);
+        const minimumAtMs = Math.max(
+            record.requestedAtMs,
+            record.nodeReadyAtMs ?? record.requestedAtMs,
+            record.graphReadyAtMs ?? record.requestedAtMs,
+            record.contentReadyAtMs ?? record.requestedAtMs
+        );
+        record.failedAtMs = timestampAtOrAfter(input.atMs, minimumAtMs);
         record.status = 'failed';
         record.failureStage = input.stage;
         failed++;
+        moveTerminalRecordToNewest(record);
+        trimTerminalRecords();
     },
 
     cancel(token: DeviceReadinessToken): void {
@@ -228,12 +277,15 @@ export const deviceReadinessDiagnostics = {
         records.delete(token.deviceId);
     },
 
-    removeDevice(deviceId: string): void {
-        const record = records.get(deviceId);
-        if (record && isPending(record.status)) {
+    removeDevice(token: DeviceReadinessToken): void {
+        const record = currentRecord(token);
+        if (!record) {
+            return;
+        }
+        if (isPending(record.status)) {
             cancelled++;
         }
-        records.delete(deviceId);
+        records.delete(token.deviceId);
     },
 
     snapshot() {
