@@ -16,7 +16,6 @@
  */
 
 import {
-    GRAND_BOULE_CONSUMER_OFFSET_IDX,
     GRAND_BOULE_CONTROL_HEADER_BYTES,
     GRAND_BOULE_CONTROL_INT_COUNT,
     GRAND_BOULE_FLUSH_GENERATION_IDX,
@@ -29,9 +28,11 @@ import {
     GRAND_BOULE_WRITE_HEAD_IDX,
 } from '../models/GrandBouleRingProtocol';
 
+import { publishGrandBouleConsumerClock } from './grandBouleConsumerClock';
+
 /**
- * Slot in the one-Int32 sync SAB carrying `currentFrame - readHead` — how far
- * the context clock is ahead of the engine's own frame count.
+ * Seqlocked sync SAB carrying an absolute context frame and the modular read
+ * head that maps to it.
  *
  * The engine worker schedules notes against the frames it produces, but every
  * `sampleFrame` in the app is a context frame; this is the only thing that
@@ -187,14 +188,15 @@ class GrandBouleProcessor extends AudioWorkletProcessor {
      * Published on every quantum, underruns included: while the ring is starved
      * `readHead` holds still and the gap genuinely grows, and the worker has to
      * see that or it schedules against a mapping that stopped being true. RT-safe
-     * — one `Atomics` store on an already-mapped view, no allocation, no lock.
+     * — bounded `Atomics` operations on an already-mapped view, no allocation
+     * and no blocking lock.
      */
-    _publishConsumerOffset(readHead: number, audibleContextFrame = currentFrame): void {
+    _publishConsumerClock(readHead: number, audibleContextFrame = currentFrame): void {
         const sync = this._syncInts;
         if (!sync) {
             return;
         }
-        Atomics.store(sync, GRAND_BOULE_CONSUMER_OFFSET_IDX, (audibleContextFrame - readHead) | 0);
+        publishGrandBouleConsumerClock(sync, audibleContextFrame, readHead);
     }
 
     _initSab(sab: SharedArrayBuffer): void {
@@ -247,7 +249,7 @@ class GrandBouleProcessor extends AudioWorkletProcessor {
             const flushHead = Atomics.load(this._controlInts, GRAND_BOULE_FLUSH_HEAD_IDX);
             // This quantum is forced to silence. The first preserved or newly
             // rendered frame at `flushHead` can be audible only next quantum.
-            this._publishConsumerOffset(flushHead, currentFrame + frames);
+            this._publishConsumerClock(flushHead, currentFrame + frames);
             Atomics.store(this._controlInts, GRAND_BOULE_READ_HEAD_IDX, flushHead);
             out0.fill(0);
             out1?.fill(0);
@@ -269,9 +271,10 @@ class GrandBouleProcessor extends AudioWorkletProcessor {
             frames
         );
 
-        this._publishConsumerOffset(readHead);
-
         if (!consumed) {
+            // This quantum is forced to silence. The unchanged read head can
+            // first become audible in the following context quantum.
+            this._publishConsumerClock(readHead, currentFrame + frames);
             out0.fill(0);
             out1?.fill(0);
             // Underrun — output silence. The engine worker will catch up. This
@@ -288,6 +291,7 @@ class GrandBouleProcessor extends AudioWorkletProcessor {
             }
             return true;
         }
+        this._publishConsumerClock(readHead);
         this._hasDelivered = true;
 
         const nextReadHead = (readHead + frames) | 0;

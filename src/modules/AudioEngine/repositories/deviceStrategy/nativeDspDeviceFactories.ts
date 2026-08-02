@@ -32,6 +32,8 @@ export type NativeDspNode = {
     setPadDryRouted?: (pad: number, routed: boolean) => void;
     destroy?: () => void;
     ready: Promise<Record<string, unknown>>;
+    runtimeFailure?: Promise<never>;
+    runtimeHealthCheck?: () => Promise<void>;
 };
 
 /**
@@ -78,6 +80,22 @@ function bindPadNotes<TNode extends PadNoteNode>(node: TNode): NoteBoundNode<TNo
             node.noteOn(noteOrPad, velocity, midiNote, sampleFrame),
         noteOff: ({ noteOrPad, sampleFrame }) => node.noteOff(noteOrPad, sampleFrame),
     };
+}
+
+async function createGrandBouleOfflineNode(ctx: BaseAudioContext): Promise<NativeDspNode> {
+    let rejectRuntimeFailure: ((error: Error) => void) | undefined;
+    const runtimeFailure = new Promise<never>((_resolve, reject) => {
+        rejectRuntimeFailure = reject;
+    });
+    // Rendering attaches its race after all strips and events are prepared. Keep
+    // a failure during that preparation observed until the render kernel adopts
+    // the same promise, rather than producing an unhandled rejection.
+    void runtimeFailure.catch(() => undefined);
+
+    const node = await createGrandBouleNode(ctx, undefined, (message) => {
+        rejectRuntimeFailure?.(new Error(message));
+    });
+    return { ...bindMelodicNotes(node), runtimeFailure, runtimeHealthCheck: node.runtimeHealthCheck };
 }
 
 type NativeDspDeviceFactory = {
@@ -136,7 +154,7 @@ export const NATIVE_DSP_DEVICE_FACTORIES: readonly NativeDspDeviceFactory[] = [
     {
         type: 'grand-boule',
         matches: isGrandBouleDevice,
-        create: async (ctx) => bindMelodicNotes(await createGrandBouleNode(ctx)),
+        create: createGrandBouleOfflineNode,
     },
     { type: 'gluten', matches: isGlutenDevice, create: createGlutenNode },
     { type: 'bacteria', matches: isBacteriaDevice, create: createBacteriaNode },

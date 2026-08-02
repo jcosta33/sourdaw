@@ -24,10 +24,11 @@
  * frames the engine has produced, so the two are related by a constant the
  * worker cannot see on its own:
  *
- *     contextFrame = engineFrame + consumerOffset
+ *     producerContextFrame = consumerContextFrame + (writeHead - readHead)
  *
- * The consumer publishes `consumerOffset` (`currentFrame - readHead`) into
- * `syncSab` once per render quantum, and `init` carries a `contextFrame` anchor
+ * The consumer publishes its absolute context frame beside the matching modular
+ * ring read head into `syncSab` once per render quantum. The worker unwraps its
+ * write head relative to that snapshot, and `init` carries a `contextFrame` anchor
  * for the window before the consumer has run a single block — a few milliseconds
  * at node construction, long before the transport can schedule into it. A note
  * whose frame is not yet reached is queued and drained against the block the
@@ -53,8 +54,6 @@
  */
 
 import {
-    GRAND_BOULE_CONSUMER_OFFSET_IDX,
-    GRAND_BOULE_CONSUMER_OFFSET_UNSET,
     GRAND_BOULE_CONTROL_HEADER_BYTES,
     GRAND_BOULE_CONTROL_INT_COUNT,
     GRAND_BOULE_FLUSH_GENERATION_IDX,
@@ -68,6 +67,7 @@ import {
     GRAND_BOULE_WRITE_HEAD_IDX,
 } from '../models/GrandBouleRingProtocol';
 import { type GrandBouleInstance } from '../wasm/daw_dsp.js';
+import { type GrandBouleConsumerClock, readGrandBouleConsumerClock } from '../worklets/grandBouleConsumerClock';
 import {
     createGrandBouleBlockViews,
     createGrandBouleInstance,
@@ -119,13 +119,11 @@ let rightRing: Float32Array | null = null;
 let ringFrames = 0;
 
 /**
- * Consumer sync: a one-slot SAB the AudioWorklet publishes `currentFrame -
- * readHead` into every render quantum. Kept out of the ring SAB so the ring
- * layout — and every acquire/release proof written against it — is untouched.
- *
- * `CONSUMER_OFFSET_UNSET` is distinguishable from a real offset because a real
- * one is never negative: `readHead` only advances on a quantum in which
- * `currentFrame` also advanced, so the consumer can never be behind itself.
+ * Consumer sync: a seqlocked SAB carrying the AudioWorklet's absolute context
+ * frame and the modular read head observed at that frame. The split low/high
+ * context value preserves the AudioContext epoch when the ring's Int32 cursors
+ * wrap. Kept out of the ring SAB so the ring layout — and every acquire/release
+ * proof written against it — is untouched.
  */
 let syncInts: Int32Array | null = null;
 
@@ -134,12 +132,14 @@ let syncInts: Int32Array | null = null;
  * host context's clock at node-construction time.
  *
  * An estimate, and only ever a short-lived one: the consumer's first published
- * offset replaces it within a few milliseconds of the node existing, long before
+ * clock snapshot replaces it within a few milliseconds of the node existing, long before
  * the transport can schedule anything into it. It used to be exact for the one
  * case that no longer arrives here — an offline render, whose clock sits at 0
  * through its whole scheduling phase.
  */
 let anchorContextFrame = 0;
+const consumerClock: GrandBouleConsumerClock = { contextFrame: 0, readHead: 0 };
+let hasConsumerClock = false;
 
 /**
  * Notes waiting for the block that contains their frame.
@@ -241,8 +241,8 @@ function initEngine({ initId, wasmModule, sab, workerSampleRate, syncSab, contex
     // without leaving a half-initialized renderer behind.
     const engine = createGrandBouleInstance({ wasmModule, sampleRate: workerSampleRate });
 
-    // Consumer sync plane. Reset so an offset left by a previous engine instance
-    // sharing this slot can never be read as this one's.
+    // Consumer sync plane. Reset the worker-local cache so an offset read by a
+    // previous engine instance can never be reused as this one's.
     //
     // The consumer is initialised at node construction and so may already have
     // published into this slot by the time we get here. That value is not stale:
@@ -251,6 +251,7 @@ function initEngine({ initId, wasmModule, sab, workerSampleRate, syncSab, contex
     // republished on the consumer's next quantum regardless.
     syncInts = nextSyncInts;
     anchorContextFrame = nextAnchorContextFrame;
+    hasConsumerClock = false;
     noteQueue.clear();
 
     // Parse SAB layout.
@@ -334,32 +335,29 @@ function stopEngine(): void {
     ringFrames = 0;
     syncInts = null;
     anchorContextFrame = 0;
+    hasConsumerClock = false;
     noteQueue.clear();
-}
-
-/**
- * Frames the engine has produced, translated into the consumer's clock.
- *
- * The published offset wins whenever the consumer has run a block; before that
- * the `init` anchor stands in. Both express the same thing — the context frame
- * engine frame 0 lands on.
- */
-function consumerOffset(): number {
-    if (syncInts) {
-        const published = Atomics.load(syncInts, GRAND_BOULE_CONSUMER_OFFSET_IDX);
-        if (published !== GRAND_BOULE_CONSUMER_OFFSET_UNSET) {
-            return published;
-        }
-    }
-    return anchorContextFrame;
 }
 
 /**
  * First context frame *after* the block starting at `writeHead`. Exclusive: a
  * note landing exactly on it belongs to the next block, not this one.
+ *
+ * Once the consumer has published, the modular difference between this write
+ * head and the matching read head unwraps the producer position across signed
+ * Int32 rollover. Before that first snapshot, the short-lived construction-time
+ * anchor maps producer frame zero onto the host clock.
  */
 function blockEndContextFrame(writeHead: number): number {
-    return writeHead + BLOCK_SIZE + consumerOffset();
+    if (syncInts && readGrandBouleConsumerClock(syncInts, consumerClock)) {
+        hasConsumerClock = true;
+    }
+    if (!hasConsumerClock) {
+        return writeHead + BLOCK_SIZE + anchorContextFrame;
+    }
+
+    const framesAhead = (writeHead - consumerClock.readHead) | 0;
+    return consumerClock.contextFrame + framesAhead + BLOCK_SIZE;
 }
 
 function renderLoop(generation: number): void {

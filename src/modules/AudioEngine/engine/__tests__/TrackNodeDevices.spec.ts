@@ -107,12 +107,18 @@ function installDeferredWasmDevice({
         controller,
     };
     let onLoaded: ((finalDn: BuiltinDeviceNode) => void) | undefined;
+    let onRuntimeFailure: ((failedDn: BuiltinDeviceNode, replacementDn: BuiltinDeviceNode) => void) | undefined;
     let signal: AbortSignal | undefined;
     const load = Promise.withResolvers<void>();
     mocks.findWasmDescriptor.mockReturnValue({
         matches: () => true,
-        create: (deps: { onLoaded: (finalDn: BuiltinDeviceNode) => void; signal?: AbortSignal }) => {
+        create: (deps: {
+            onLoaded: (finalDn: BuiltinDeviceNode) => void;
+            onRuntimeFailure?: (failedDn: BuiltinDeviceNode, replacementDn: BuiltinDeviceNode) => void;
+            signal?: AbortSignal;
+        }) => {
             onLoaded = deps.onLoaded;
+            onRuntimeFailure = deps.onRuntimeFailure;
             signal = deps.signal;
             return { placeholder, loadPromise: load.promise };
         },
@@ -128,6 +134,12 @@ function installDeferredWasmDevice({
             }
             beforeLoaded?.(finalDn);
             onLoaded(finalDn);
+        },
+        fail(finalDn: BuiltinDeviceNode): void {
+            if (!onRuntimeFailure) {
+                throw new Error('expected the deferred descriptor to capture onRuntimeFailure');
+            }
+            onRuntimeFailure(finalDn, placeholder);
         },
         settle: load.resolve,
     };
@@ -533,6 +545,24 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             await Promise.resolve();
             await Promise.resolve();
 
+            expect(track.getDeviceLoadState('wasm-1')).toBe('failed');
+        });
+
+        it('replaces a terminally failed loaded device with its bypass and marks the graph slot failed', async () => {
+            const deferred = installDeferredWasmDevice();
+            const track = new TrackNode('t1', makeDeps(ctx));
+            track.addDevice('wasm-1', 'levain');
+            const loaded = createLoadedDevice();
+            deferred.resolve(loaded.device);
+            deferred.settle();
+            await Promise.resolve();
+            await Promise.resolve();
+            expect(track.getDeviceLoadState('wasm-1')).toBe('ready');
+
+            deferred.fail(loaded.device);
+            await Promise.resolve();
+
+            expect(track.strip.deviceNodes[0]).toBe(deferred.placeholder);
             expect(track.getDeviceLoadState('wasm-1')).toBe('failed');
         });
 

@@ -126,7 +126,7 @@ vi.mock('../../wasm/daw_dsp.js', () => ({
 
 // The `?worker&url` imports resolve to a bundler URL that vitest cannot serve;
 // this spec registers the processor itself by importing its module.
-vi.mock('../../services/grandBouleProcessor.ts?worker&url', () => ({ default: 'grand-boule-processor-url' }));
+vi.mock('../grandBouleProcessor.ts?worker&url', () => ({ default: 'grand-boule-processor-url' }));
 vi.mock('../grandBouleOfflineProcessor.ts?worker&url', () => ({
     default: 'grand-boule-offline-processor-url',
 }));

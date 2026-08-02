@@ -455,7 +455,13 @@ export class TrackNode {
         this.deps.pendingDevicePromises.add(loadPromise);
         void loadPromise.finally(() => {
             if (this._pendingDeviceLoads.get(deviceId) === pendingLoad) {
-                this.invalidatePendingDeviceLoad(deviceId, !pendingLoad.resolved);
+                if (!pendingLoad.resolved) {
+                    this.invalidatePendingDeviceLoad(deviceId, true);
+                    return;
+                }
+                this._pendingDeviceLoads.delete(deviceId);
+                pendingLoad.parameterWrites.length = 0;
+                this.deps.pendingDevicePromises.delete(loadPromise);
             } else {
                 this.deps.pendingDevicePromises.delete(loadPromise);
             }
@@ -498,6 +504,7 @@ export class TrackNode {
         }
 
         pendingLoad.resolved = true;
+        this._failedDeviceLoads.delete(deviceId);
         for (const [name, value] of pendingLoad.parameterWrites) {
             finalDn.controller?.setParam(name, value);
         }
@@ -508,6 +515,19 @@ export class TrackNode {
         pendingLoad.parameterWrites.length = 0;
         this.strip.deviceNodes[index] = finalDn;
         this.deps.onDeviceLoaded?.(this.trackId, finalDn);
+        this.scheduleRebuildChain();
+        return true;
+    }
+
+    private failLoadedDevice(deviceId: string, failedDn: BuiltinDeviceNode, replacementDn: BuiltinDeviceNode): boolean {
+        const index = this.strip.deviceNodes.findIndex((device) => device === failedDn && device.deviceId === deviceId);
+        if (this._disposed || index === -1) {
+            return false;
+        }
+
+        this._failedDeviceLoads.add(deviceId);
+        replacementDn.bypassed = failedDn.bypassed;
+        this.strip.deviceNodes[index] = replacementDn;
         this.scheduleRebuildChain();
         return true;
     }
@@ -677,6 +697,8 @@ export class TrackNode {
                     isCurrent: () => this._pendingDeviceLoads.get(deviceId) === pendingLoad && !this._disposed,
                     signal: pendingLoad.abortController.signal,
                     onLoaded: (finalDn) => this.completePendingDeviceLoad(deviceId, pendingLoad, finalDn),
+                    onRuntimeFailure: (failedDn, replacementDn) =>
+                        this.failLoadedDevice(deviceId, failedDn, replacementDn),
                 });
                 if (!placeholder.controller) {
                     placeholder.controller = this.createPlaceholderController(deviceId, pendingLoad);

@@ -109,7 +109,7 @@ vi.mock('../../wasm/daw_dsp.js', () => ({
     GrandBouleInstance: wasmStub.GrandBouleInstanceStub,
 }));
 
-vi.mock('../../services/grandBouleProcessor.ts?worker&url', () => ({ default: 'grand-boule-processor-url' }));
+vi.mock('../grandBouleProcessor.ts?worker&url', () => ({ default: 'grand-boule-processor-url' }));
 vi.mock('../grandBouleOfflineProcessor.ts?worker&url', () => ({
     default: 'grand-boule-offline-processor-url',
 }));

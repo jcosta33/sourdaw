@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 
+import { GRAND_BOULE_SYNC_INT_COUNT } from '../../models/GrandBouleRingProtocol';
+import { publishGrandBouleConsumerClock } from '../../worklets/grandBouleConsumerClock';
+
 /**
  * renderLoop coverage for the Grand Boule engine worker.
  *
@@ -155,8 +158,8 @@ describe('grandBouleEngineWorker renderLoop', () => {
         lifecycleState = 3;
         sleepAfterProcessCalls = null;
         const sab = makeSab(128 * 8);
-        const syncSab = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT);
-        Atomics.store(new Int32Array(syncSab), 0, 512);
+        const syncSab = new SharedArrayBuffer(GRAND_BOULE_SYNC_INT_COUNT * Int32Array.BYTES_PER_ELEMENT);
+        publishGrandBouleConsumerClock(new Int32Array(syncSab), 512, 0);
 
         sendInit(sab, 48_000, syncSab, 0);
         onmessage({ data: { type: 'noteOn', midiNote: 60, velocity: 1, sampleFrame: 640 } } as MessageEvent);

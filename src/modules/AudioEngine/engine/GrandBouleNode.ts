@@ -32,14 +32,13 @@ import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
 
 import {
-    GRAND_BOULE_CONSUMER_OFFSET_IDX,
-    GRAND_BOULE_CONSUMER_OFFSET_UNSET,
     GRAND_BOULE_CONTROL_HEADER_BYTES,
     GRAND_BOULE_CONTROL_INT_COUNT,
     GRAND_BOULE_SLEEP_HEAD_IDX,
+    GRAND_BOULE_SYNC_INT_COUNT,
 } from '../models/GrandBouleRingProtocol';
-import grandBouleProcessorUrl from '../services/grandBouleProcessor.ts?worker&url';
 import grandBouleOfflineProcessorUrl from '../worklets/grandBouleOfflineProcessor.ts?worker&url';
+import grandBouleProcessorUrl from '../worklets/grandBouleProcessor.ts?worker&url';
 
 import { dropoutCounters } from './dropoutCounter';
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
@@ -50,6 +49,7 @@ const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 const RING_FRAMES = 8192;
 const SAB_BYTES = GRAND_BOULE_CONTROL_HEADER_BYTES + RING_FRAMES * 2 * Float32Array.BYTES_PER_ELEMENT;
 let nextWorkerInitId = 0;
+const RUNTIME_HEALTH_CHECK_TIMEOUT_MS = 2000;
 
 export type GrandBouleNodeResult = {
     workletNode: AudioWorkletNode;
@@ -83,6 +83,8 @@ export type GrandBouleNodeResult = {
     disconnect: () => void;
     destroy: () => void;
     ready: Promise<Record<string, unknown>>;
+    /** Confirms that an offline processor did not fault in its final render quantum. */
+    runtimeHealthCheck?: () => Promise<void>;
 };
 
 export function isGrandBouleDevice(deviceType: string): boolean {
@@ -103,6 +105,8 @@ type GrandBouleTransport = {
     post: (msg: Record<string, unknown>) => void;
     /** Resolves once the engine can render; rejects if any side fails to come up. */
     ready: Promise<Record<string, unknown>>;
+    /** Round-trips terminal state from an offline worklet after rendering. */
+    runtimeHealthCheck?: () => Promise<void>;
     /** Release the transport's own resources. Graph disconnection is the caller's. */
     destroy: () => void;
 };
@@ -110,13 +114,49 @@ type GrandBouleTransport = {
 type CreateGrandBouleTransportInput = {
     ctx: BaseAudioContext;
     wasmModule: WebAssembly.Module;
+    onFault?: (message: string) => void;
 };
+
+function readHandshakeError(event: MessageEvent, fallback: string): Error {
+    const data: unknown = event.data;
+    if (data !== null && typeof data === 'object' && 'type' in data && data.type === 'error' && 'message' in data) {
+        const message: unknown = data.message;
+        if (typeof message === 'string') {
+            return new Error(message);
+        }
+    }
+    return new Error(fallback);
+}
+
+function reportsTransportError(event: MessageEvent): boolean {
+    const data: unknown = event.data;
+    return data !== null && typeof data === 'object' && 'type' in data && data.type === 'error';
+}
+
+type RuntimeHealthResponse = { requestId: number; error: string | null };
+
+function readRuntimeHealthResponse(event: MessageEvent): RuntimeHealthResponse | null {
+    const data: unknown = event.data;
+    if (
+        data === null ||
+        typeof data !== 'object' ||
+        !('type' in data) ||
+        data.type !== 'runtimeHealth' ||
+        !('requestId' in data) ||
+        typeof data.requestId !== 'number' ||
+        !('error' in data) ||
+        (data.error !== null && typeof data.error !== 'string')
+    ) {
+        return null;
+    }
+    return { requestId: data.requestId, error: data.error };
+}
 
 /**
  * Live transport: engine in a Worker, samples through a SharedArrayBuffer ring,
  * worklet as consumer. Behaviour is exactly as it has always been.
  */
-function createWorkerRingTransport({ ctx, wasmModule }: CreateGrandBouleTransportInput): GrandBouleTransport {
+function createWorkerRingTransport({ ctx, wasmModule, onFault }: CreateGrandBouleTransportInput): GrandBouleTransport {
     // `requireSharedArrayBuffer` guards this transport and is called by the
     // factory *before* its awaits, not here: by the time this runs the context
     // has been resumed and the wasm downloaded, which is exactly the work the
@@ -137,12 +177,12 @@ function createWorkerRingTransport({ ctx, wasmModule }: CreateGrandBouleTranspor
     // deliberately gone to sleep at frame zero.
     Atomics.store(controls, GRAND_BOULE_SLEEP_HEAD_IDX, -1);
 
-    // One Int32 the worklet publishes its render-cursor offset into, so the
-    // engine worker can place a scheduled note in the block whose frames the
-    // worklet will actually deliver at that context frame. Separate from the
+    // A seqlocked consumer-clock snapshot: the worklet publishes an absolute
+    // context frame beside the ring read head observed at that frame. The worker
+    // can then unwrap its signed write head relative to the matching read head,
+    // including when either cursor crosses the Int32 boundary. Separate from the
     // ring SAB so the ring layout stays exactly as the SPSC proofs describe it.
-    const syncSab = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT);
-    Atomics.store(new Int32Array(syncSab), GRAND_BOULE_CONSUMER_OFFSET_IDX, GRAND_BOULE_CONSUMER_OFFSET_UNSET);
+    const syncSab = new SharedArrayBuffer(GRAND_BOULE_SYNC_INT_COUNT * Int32Array.BYTES_PER_ELEMENT);
 
     // Create the engine Worker.
     const engineWorker = new Worker(new URL('../workers/grandBouleEngineWorker.ts', import.meta.url), {
@@ -161,32 +201,64 @@ function createWorkerRingTransport({ ctx, wasmModule }: CreateGrandBouleTranspor
     const workerHandshake = createReadyHandshake({ pluginName: 'GrandBouleNode engine worker' });
     const workletHandshake = createReadyHandshake({ pluginName: 'GrandBouleNode worklet' });
 
-    const reportWorkerFailure = (error: Error): void => {
-        const outcome = workerHandshake.reject(error);
-        if (outcome === 'late') {
-            console.error('[GrandBouleNode] Engine worker failed after initialization:', error);
+    let stopped = false;
+    let transportReady = false;
+    const stopTransport = (): void => {
+        if (stopped) {
+            return;
         }
+        stopped = true;
+        node.onprocessorerror = null;
+        engineWorker.onerror = null;
+        engineWorker.onmessageerror = null;
+        node.port.close();
+        engineWorker.postMessage({ type: 'stop' });
+        engineWorker.terminate();
     };
-
-    engineWorker.onmessage = (event: MessageEvent) => {
-        workerHandshake.onMessage(event);
-    };
-    const stopFailedWorker = (error: Error): void => {
-        reportWorkerFailure(error);
+    const stopFailedTransport = (error: Error): void => {
+        if (stopped) {
+            return;
+        }
+        const failedAfterReady = transportReady;
+        // Reject both halves. If one side already completed, rejecting only that
+        // handshake leaves Promise.all waiting for the other side until its
+        // timeout even though this transport is already irrecoverable.
+        workerHandshake.reject(error);
+        workletHandshake.reject(error);
         // No producer remains to refill the ring. Stop the consumer as well so
         // a post-ready failure cannot leave a permanent worklet draining silence.
         node.port.postMessage({ type: 'engineError' });
-        engineWorker.terminate();
+        stopTransport();
+        if (failedAfterReady) {
+            console.error('[GrandBouleNode] Transport failed after initialization:', error);
+            try {
+                onFault?.(error.message);
+            } catch (callbackError) {
+                console.error('[GrandBouleNode] Runtime-failure callback failed:', callbackError);
+            }
+        }
+    };
+    engineWorker.onmessage = (event: MessageEvent) => {
+        const outcome = workerHandshake.onMessage(event);
+        if (outcome === 'error' || reportsTransportError(event)) {
+            stopFailedTransport(readHandshakeError(event, 'GrandBouleNode engine worker failed during initialization'));
+        }
     };
     engineWorker.onerror = (event: ErrorEvent) => {
         const message = event.message || 'GrandBouleNode engine worker crashed during initialization';
-        stopFailedWorker(new Error(message));
+        stopFailedTransport(new Error(message));
     };
     engineWorker.onmessageerror = () => {
-        stopFailedWorker(new Error('GrandBouleNode engine worker sent an unreadable initialization message'));
+        stopFailedTransport(new Error('GrandBouleNode engine worker sent an unreadable initialization message'));
     };
     node.port.onmessage = (event: MessageEvent) => {
-        workletHandshake.onMessage(event);
+        const outcome = workletHandshake.onMessage(event);
+        if (outcome === 'error' || reportsTransportError(event)) {
+            stopFailedTransport(readHandshakeError(event, 'GrandBouleNode worklet failed during initialization'));
+        }
+    };
+    node.onprocessorerror = () => {
+        stopFailedTransport(new Error('GrandBouleNode worklet processor failed'));
     };
 
     // Init the worklet straight away rather than from the worker's ready handler.
@@ -216,7 +288,17 @@ function createWorkerRingTransport({ ctx, wasmModule }: CreateGrandBouleTranspor
     // Callers read the worker's payload; the worklet ack carries only its own
     // arrival. `Promise.all` subscribes to both, so whichever side fails first
     // rejects `ready` and the other's later rejection is still handled.
-    const ready = Promise.all([workerHandshake.promise, workletHandshake.promise]).then(([workerData]) => workerData);
+    const ready = Promise.all([workerHandshake.promise, workletHandshake.promise]).then(
+        ([workerData]) => {
+            transportReady = true;
+            return workerData;
+        },
+        (error: unknown) => {
+            const failure = error instanceof Error ? error : new Error(String(error));
+            stopFailedTransport(failure);
+            throw failure;
+        }
+    );
 
     // Send the precompiled WASM module + SAB to the engine worker. `contextFrame`
     // anchors the engine's frame 0 on the host clock for the window before the
@@ -237,11 +319,7 @@ function createWorkerRingTransport({ ctx, wasmModule }: CreateGrandBouleTranspor
             engineWorker.postMessage(msg);
         },
         ready,
-        destroy: () => {
-            node.port.close();
-            engineWorker.postMessage({ type: 'stop' });
-            engineWorker.terminate();
-        },
+        destroy: stopTransport,
     };
 }
 
@@ -253,7 +331,11 @@ function createWorkerRingTransport({ ctx, wasmModule }: CreateGrandBouleTranspor
  *
  * One handshake, because there is one side to come up.
  */
-function createInlineWorkletTransport({ ctx, wasmModule }: CreateGrandBouleTransportInput): GrandBouleTransport {
+function createInlineWorkletTransport({
+    ctx,
+    wasmModule,
+    onFault,
+}: CreateGrandBouleTransportInput): GrandBouleTransport {
     const node = new AudioWorkletNode(ctx, 'grand-boule-offline-processor', {
         numberOfInputs: 0,
         numberOfOutputs: 1,
@@ -264,26 +346,131 @@ function createInlineWorkletTransport({ ctx, wasmModule }: CreateGrandBouleTrans
     });
 
     const handshake = createReadyHandshake({ pluginName: 'GrandBouleNode offline worklet' });
+    let stopped = false;
+    let transportReady = false;
+    let terminalError: Error | null = null;
+    let nextHealthCheckId = 0;
+    const pendingHealthChecks = new Map<
+        number,
+        { resolve: () => void; reject: (error: Error) => void; timeout: ReturnType<typeof setTimeout> }
+    >();
+    const stopTransport = (): void => {
+        if (stopped) {
+            return;
+        }
+        stopped = true;
+        const stopError = terminalError ?? new Error('GrandBouleNode offline transport stopped');
+        for (const pending of pendingHealthChecks.values()) {
+            clearTimeout(pending.timeout);
+            pending.reject(stopError);
+        }
+        pendingHealthChecks.clear();
+        node.onprocessorerror = null;
+        node.port.close();
+    };
+    const stopFailedTransport = (error: Error): void => {
+        if (stopped) {
+            return;
+        }
+        terminalError = error;
+        const failedAfterReady = transportReady;
+        handshake.reject(error);
+        stopTransport();
+        if (failedAfterReady) {
+            console.error('[GrandBouleNode] Offline transport failed after initialization:', error);
+            try {
+                onFault?.(error.message);
+            } catch (callbackError) {
+                console.error('[GrandBouleNode] Runtime-failure callback failed:', callbackError);
+            }
+        }
+    };
     node.port.onmessage = (event: MessageEvent) => {
-        handshake.onMessage(event);
+        const health = readRuntimeHealthResponse(event);
+        if (health) {
+            const pending = pendingHealthChecks.get(health.requestId);
+            if (!pending) {
+                return;
+            }
+            pendingHealthChecks.delete(health.requestId);
+            clearTimeout(pending.timeout);
+            if (health.error !== null) {
+                const error = new Error(health.error);
+                pending.reject(error);
+                stopFailedTransport(error);
+            } else {
+                pending.resolve();
+            }
+            return;
+        }
+        const outcome = handshake.onMessage(event);
+        if (outcome === 'error' || reportsTransportError(event)) {
+            stopFailedTransport(
+                readHandshakeError(event, 'GrandBouleNode offline worklet failed during initialization')
+            );
+        }
+    };
+    node.onprocessorerror = () => {
+        stopFailedTransport(new Error('GrandBouleNode offline worklet processor failed'));
     };
     node.port.postMessage({ type: 'init' });
+
+    const ready = handshake.promise.then(
+        (data) => {
+            transportReady = true;
+            return data;
+        },
+        (error: unknown) => {
+            const failure = error instanceof Error ? error : new Error(String(error));
+            stopFailedTransport(failure);
+            throw failure;
+        }
+    );
+
+    const runtimeHealthCheck = (): Promise<void> => {
+        if (terminalError) {
+            return Promise.reject(terminalError);
+        }
+        if (stopped) {
+            return Promise.reject(new Error('GrandBouleNode offline transport stopped before its health check'));
+        }
+
+        const requestId = ++nextHealthCheckId;
+        return new Promise<void>((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                pendingHealthChecks.delete(requestId);
+                const error = new Error('GrandBouleNode offline worklet health check timed out');
+                reject(error);
+                stopFailedTransport(error);
+            }, RUNTIME_HEALTH_CHECK_TIMEOUT_MS);
+            pendingHealthChecks.set(requestId, { resolve, reject, timeout });
+            try {
+                node.port.postMessage({ type: 'runtimeHealthCheck', requestId });
+            } catch (error) {
+                clearTimeout(timeout);
+                pendingHealthChecks.delete(requestId);
+                const failure = error instanceof Error ? error : new Error(String(error));
+                reject(failure);
+                stopFailedTransport(failure);
+            }
+        });
+    };
 
     return {
         workletNode: node,
         post: (msg) => {
             node.port.postMessage(msg);
         },
-        ready: handshake.promise,
-        destroy: () => {
-            node.port.close();
-        },
+        ready,
+        runtimeHealthCheck,
+        destroy: stopTransport,
     };
 }
 
 export async function createGrandBouleNode(
     ctx: BaseAudioContext,
     wasmUrl?: string,
+    onFault?: (message: string) => void,
     signal?: AbortSignal
 ): Promise<GrandBouleNodeResult> {
     // Branching on the context type rather than on the presence of a DOM global,
@@ -323,9 +510,9 @@ export async function createGrandBouleNode(
     let transport: GrandBouleTransport;
     try {
         if (isOfflineRender) {
-            transport = createInlineWorkletTransport({ ctx, wasmModule: wasmLease.module });
+            transport = createInlineWorkletTransport({ ctx, wasmModule: wasmLease.module, onFault });
         } else {
-            transport = createWorkerRingTransport({ ctx, wasmModule: wasmLease.module });
+            transport = createWorkerRingTransport({ ctx, wasmModule: wasmLease.module, onFault });
         }
         wasmLease.commit();
     } catch (error) {
@@ -335,6 +522,7 @@ export async function createGrandBouleNode(
 
     const node = transport.workletNode;
     let bypassed = false;
+    let destroyed = false;
 
     /** Post a control message to wherever this node's engine lives. */
     const post = (msg: Record<string, unknown>): void => {
@@ -429,6 +617,10 @@ export async function createGrandBouleNode(
             }
         },
         destroy() {
+            if (destroyed) {
+                return;
+            }
+            destroyed = true;
             try {
                 node.disconnect();
             } catch (error) {
@@ -437,5 +629,6 @@ export async function createGrandBouleNode(
             transport.destroy();
         },
         ready: transport.ready,
+        runtimeHealthCheck: transport.runtimeHealthCheck,
     };
 }

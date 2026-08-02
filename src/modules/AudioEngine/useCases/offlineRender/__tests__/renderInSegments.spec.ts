@@ -326,6 +326,57 @@ describe('renderInSegments', () => {
         expect(harness.closeCount()).toBe(0);
     });
 
+    it('rejects and abandons the context when an offline device processor fails', async () => {
+        const harness = createSegmentedContext(2);
+        let rejectRuntimeFailure: ((error: Error) => void) | undefined;
+        const runtimeFailure = new Promise<never>((_resolve, reject) => {
+            rejectRuntimeFailure = reject;
+        });
+
+        const rendering = renderInSegments({
+            offlineCtx: harness.offlineCtx,
+            durationSeconds: 2,
+            timeoutMs: 60_000,
+            segmentSeconds: 1,
+            runtimeFailures: [runtimeFailure],
+        });
+
+        rejectRuntimeFailure?.(new Error('GrandBoule offline worklet processor failed'));
+        await harness.finishRendering();
+
+        await expect(rendering).rejects.toThrow('GrandBoule offline worklet processor failed');
+        expect(harness.closeCount()).toBe(1);
+        expect(harness.pendingCheckpoints()).toEqual([]);
+    });
+
+    it('checks terminal device health before accepting a completed render', async () => {
+        const harness = createSegmentedContext(2);
+        let rejectHealthCheck: ((error: Error) => void) | undefined;
+        const runtimeHealthCheck = vi.fn(
+            () =>
+                new Promise<void>((_resolve, reject) => {
+                    rejectHealthCheck = reject;
+                })
+        );
+
+        const rendering = renderInSegments({
+            offlineCtx: harness.offlineCtx,
+            durationSeconds: 2,
+            timeoutMs: 60_000,
+            segmentSeconds: 1,
+            runtimeHealthChecks: [runtimeHealthCheck],
+        });
+
+        await harness.reachCheckpoint(1);
+        await harness.finishRendering();
+        expect(runtimeHealthCheck).toHaveBeenCalledOnce();
+
+        rejectHealthCheck?.(new Error('fault delivered after render completion'));
+
+        await expect(rendering).rejects.toThrow('fault delivered after render completion');
+        expect(harness.closeCount()).toBe(1);
+    });
+
     it('still aborts on a context that does not implement close()', async () => {
         const checkpointResolvers = new Map<number, () => void>();
         const offlineCtx = {

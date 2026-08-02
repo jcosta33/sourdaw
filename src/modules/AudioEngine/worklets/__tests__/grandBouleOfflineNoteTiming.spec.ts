@@ -79,7 +79,7 @@ vi.mock('../../wasm/daw_dsp.js', () => ({
     GrandBouleInstance: GrandBouleInstanceMock,
 }));
 
-vi.mock('../../services/grandBouleProcessor.ts?worker&url', () => ({ default: 'grand-boule-processor-url' }));
+vi.mock('../grandBouleProcessor.ts?worker&url', () => ({ default: 'grand-boule-processor-url' }));
 vi.mock('../grandBouleOfflineProcessor.ts?worker&url', () => ({ default: 'grand-boule-offline-processor-url' }));
 
 // The factory table imports every engine node at module load; stub the ones this

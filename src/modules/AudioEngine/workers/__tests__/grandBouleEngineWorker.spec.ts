@@ -18,7 +18,7 @@ Object.defineProperty(globalThis, 'self', {
 });
 
 let writeBlockRelease: typeof import('../grandBouleEngineWorker').writeBlockRelease;
-let readBlockAcquire: typeof import('../../services/grandBouleProcessor').readBlockAcquire;
+let readBlockAcquire: typeof import('../../worklets/grandBouleProcessor').readBlockAcquire;
 
 beforeAll(async () => {
     ({ writeBlockRelease } = await import('../grandBouleEngineWorker'));
@@ -27,7 +27,7 @@ beforeAll(async () => {
         port = { onmessage: null as unknown, postMessage: vi.fn() };
     };
     (globalThis as unknown as { registerProcessor: unknown }).registerProcessor = () => {};
-    ({ readBlockAcquire } = await import('../../services/grandBouleProcessor'));
+    ({ readBlockAcquire } = await import('../../worklets/grandBouleProcessor'));
 });
 
 const WRITE_HEAD_IDX = 0;
