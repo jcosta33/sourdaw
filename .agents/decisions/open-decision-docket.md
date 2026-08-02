@@ -51,7 +51,7 @@ code: no (all dormant).
 | **Toaster performance features** | Toaster | Note-Repeat / 16-Levels / Sound-Locks / Pattern-Morph / multi-pattern / polymetric — full impls, no UI/command entry; their sequencer reader branches are dead | Ship each (UI + command + e2e) or retire it with its branches |
 | **Yeast param-readback / introspection UI** | Yeast | StepPatternEditor edits never reach the Arpeggiator; all panel knobs uncontrolled; 12 introspection methods + reorder are unbuilt-feature groundwork. (`yeastPanic` is now wired via Transport `panicYeastRuntime` → Yeast `yeastPanic` — no longer part of this row) | Build the param-projection store + pattern/reorder wiring, or retire |
 | **SoundLibrary vs SampleLibrary** | SoundLibrary | Two modules own "the sample library"; only SampleLibrary has a UI; their `findSimilarSamples` return types are incompatible (`SampleEntry[]` vs `string[]`) | Decide the owner; retire or merge the other (cross-module model-merge is forbidden — an ownership/migration decision) |
-| **Collaboration transport-permission** | Collaboration | `canControlTransport`/`getRole`/`transport` capability + `transport-controller`/`viewer` roles never granted (only `editor` is) (`useCases/permissions.ts:93`) | Enforce transport perms + role-grant UI, or remove the scaffold |
+| ~~**Collaboration transport-permission**~~ *(closed — ADR 0016 ruling 4)* | Collaboration | The role scaffold (`PermissionManager`, `canControlTransport`, `getRole`, `transport-controller`/`viewer`) was deleted; an invite is documented as unconditional write access in `useCases/collaboration/generateInvite.ts` and `Collaboration/AGENTS.md` | Resolved: scaffold removed |
 | **GrandBoule sampled-attack** | GrandBoule | Hybrid attack-clip pathway wired through types, no production caller | Wire the attack-clip load flow, or remove |
 | **Synth CV/Gate** | Synth | Convert+write path inert; only `addCvOutput` wired | Build the modular CV/Gate UI, or remove the convert/write ops |
 | **SampleLibrary embedding (Find-Similar / UMAP)** | SampleLibrary | `setEmbedding` never called (`stores/embeddingStore.ts:22`, zero callers) → embeddings map always empty → Find-Similar returns `[]`. The `presentations/views/LibraryBrowser.tsx:449` "Re-project UMAP" button is live but silently no-ops for the same reason — hide or wire it regardless of the finish-or-remove call | Build embedding population, or remove the G2/G3 controls |
@@ -394,15 +394,13 @@ code: no (all dormant).
 
 ## Collaboration
 
-- **Host auto-grants editor to every connecting peer**, so a wired permission
-  filter would still say yes to everyone. Options: role-selection UX on join
-  vs deliberate open-by-default. Blocks code: yes, for permissions work.
-  Source:
-  `src/modules/Collaboration/useCases/collaboration/sessionManagement.ts:531-532`.
-- **Role-revocation semantics undefined**: PermissionManager epoch increments
-  on grant, last-writer-by-epoch wins, no revoke/reorder defined. Blocks code:
-  yes, for permissions work. Source:
-  `src/modules/Collaboration/useCases/permissions.ts:41-63,126-129`.
+- ~~**Host auto-grants editor to every connecting peer**~~ — **closed by ADR 0016
+  ruling 4.** Answered as deliberate open-by-default: the role scaffold is
+  deleted and an invite is documented as unconditional write access. No
+  role-selection UX.
+- ~~**Role-revocation semantics undefined**~~ — **closed by ADR 0016 ruling 4.**
+  Moot: `PermissionManager` and its epoch/grant model no longer exist. The only
+  way to revoke access is to end the session.
 - **Is manual SDP copy-paste signaling permanent or a placeholder** for a
   signaling server (SignalingMessage types exist)? Blocks code: no. Source:
   `src/modules/Collaboration/models/CollaborationTypes.ts:51`.

@@ -220,23 +220,23 @@ describe('AutomergeSync', () => {
         expect(persistCrdtProject).not.toHaveBeenCalled();
     });
 
-    it('§fix-1 drops a sync from a peer without edit capability (canApplySync=false)', () => {
+    it('drops a sync the canApplySync hook rejects', () => {
         vi.mocked(getCrdtDoc).mockReturnValue(createAmDoc());
         const canApplySync = vi.fn().mockReturnValue(false);
         const sync = new AutomergeSync(makePeerManager(), { canApplySync });
 
-        sync.receiveSync({ peerId: 'viewer', docId: 'root', syncMessageBase64: makeRealSyncMessage() });
+        sync.receiveSync({ peerId: 'peer-1', docId: 'root', syncMessageBase64: makeRealSyncMessage() });
 
-        expect(canApplySync).toHaveBeenCalledWith('viewer', 'root');
+        expect(canApplySync).toHaveBeenCalledWith('peer-1', 'root');
         expect(replaceCrdtDoc).not.toHaveBeenCalled();
     });
 
-    it('§fix-1 applies a sync from a peer with edit capability (canApplySync=true)', () => {
+    it('applies a sync the canApplySync hook accepts', () => {
         vi.mocked(getCrdtDoc).mockReturnValue(createAmDoc());
         const canApplySync = vi.fn().mockReturnValue(true);
         const sync = new AutomergeSync(makePeerManager(), { canApplySync });
 
-        sync.receiveSync({ peerId: 'editor', docId: 'root', syncMessageBase64: makeRealSyncMessage() });
+        sync.receiveSync({ peerId: 'peer-1', docId: 'root', syncMessageBase64: makeRealSyncMessage() });
 
         expect(replaceCrdtDoc).toHaveBeenCalled();
     });
