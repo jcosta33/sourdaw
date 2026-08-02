@@ -98,7 +98,9 @@ impl ToasterInstance {
 
         let mut scrubbed = sanitize_block(&mut left_buf[..size]);
         scrubbed += sanitize_block(&mut right_buf[..size]);
-        scrubbed += sanitize_block(&mut pad_outputs[..pad_output_len]);
+        for channel in pad_outputs[..pad_output_len].chunks_exact_mut(MAX_BLOCK_SIZE) {
+            scrubbed += sanitize_block(&mut channel[..size]);
+        }
         self.nan_flush_count += scrubbed as u64;
 
         self.output_buf.as_ptr()
@@ -122,7 +124,7 @@ mod tests {
     use assert_no_alloc::assert_no_alloc;
 
     use super::engine::{PlateReverb, StereoDelay};
-    use super::ToasterInstance;
+    use super::{ToasterInstance, MAX_BLOCK_SIZE};
 
     #[test]
     fn numeric_mix_setter_does_not_allocate() {
@@ -133,6 +135,17 @@ mod tests {
             }
             instance.set_param_by_id(u32::MAX, 0.5);
         });
+    }
+
+    #[test]
+    fn inactive_pad_capacity_is_not_scanned_as_rendered_output() {
+        let mut instance = ToasterInstance::new(48_000.0, 16);
+        let first_pad_output = 2 * MAX_BLOCK_SIZE;
+        instance.output_buf[first_pad_output + 1] = f32::NAN;
+
+        instance.process(1);
+
+        assert_eq!(instance.get_nan_flush_count(), 0.0);
     }
 
     #[test]
