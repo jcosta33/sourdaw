@@ -233,16 +233,18 @@ describe('wasmDeviceRegistry descriptors', () => {
             expect(emitDeviceRemoved).toHaveBeenCalledWith({ deviceId: 'toast-2', deviceType: 'toaster' });
         });
 
-        it('demotes and destroys a loaded Toaster after a terminal worklet failure', async () => {
+        it('demotes and retires a loaded Toaster before requesting one fresh generation', async () => {
             const result = makeToasterResult();
             factoryMocks.createToasterNode.mockResolvedValue(result);
             const emitDeviceRemoved = vi.fn();
             setAudioDeviceRuntimeSink({ emitDeviceRemoved });
             const replaceRuntimeFailure = vi.fn(() => true);
+            const requestRuntimeRecovery = vi.fn();
             const deps = createDeps({
                 deviceType: 'toaster',
                 deviceId: 'toast-failed',
                 onRuntimeFailure: replaceRuntimeFailure,
+                onRuntimeRecovery: requestRuntimeRecovery,
             });
 
             const { placeholder, loadPromise } = requireDescriptor('toaster').create(deps);
@@ -262,8 +264,9 @@ describe('wasmDeviceRegistry descriptors', () => {
             expect(replaceRuntimeFailure).toHaveBeenCalledOnce();
             expect(replaceRuntimeFailure).toHaveBeenCalledWith(loaded, placeholder);
             expect(result.destroy).toHaveBeenCalledOnce();
-            expect(emitDeviceRemoved).toHaveBeenCalledOnce();
-            expect(emitDeviceRemoved).toHaveBeenCalledWith({ deviceId: 'toast-failed', deviceType: 'toaster' });
+            expect(requestRuntimeRecovery).toHaveBeenCalledOnce();
+            expect(requestRuntimeRecovery).toHaveBeenCalledWith(placeholder);
+            expect(emitDeviceRemoved).not.toHaveBeenCalled();
         });
 
         it('does not remove newer runtime state when a stale failed Toaster is rejected', async () => {
@@ -272,10 +275,12 @@ describe('wasmDeviceRegistry descriptors', () => {
             const emitDeviceRemoved = vi.fn();
             setAudioDeviceRuntimeSink({ emitDeviceRemoved });
             const replaceRuntimeFailure = vi.fn(() => false);
+            const requestRuntimeRecovery = vi.fn();
             const deps = createDeps({
                 deviceType: 'toaster',
                 deviceId: 'toast-stale',
                 onRuntimeFailure: replaceRuntimeFailure,
+                onRuntimeRecovery: requestRuntimeRecovery,
             });
 
             const { loadPromise } = requireDescriptor('toaster').create(deps);
@@ -290,6 +295,7 @@ describe('wasmDeviceRegistry descriptors', () => {
 
             expect(replaceRuntimeFailure).toHaveBeenCalledOnce();
             expect(result.destroy).toHaveBeenCalledOnce();
+            expect(requestRuntimeRecovery).not.toHaveBeenCalled();
             expect(emitDeviceRemoved).not.toHaveBeenCalled();
         });
 

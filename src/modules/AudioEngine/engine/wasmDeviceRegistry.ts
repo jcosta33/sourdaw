@@ -42,6 +42,8 @@ export type WasmDeviceCreateDeps = {
     onLoaded: (finalDn: BuiltinDeviceNode) => boolean | void;
     /** Replace a terminally failed loaded node in the owning graph slot. */
     onRuntimeFailure?: (failedDn: BuiltinDeviceNode, replacementDn: BuiltinDeviceNode) => boolean;
+    /** Request one fresh generation after the failed runtime has been retired. */
+    onRuntimeRecovery?: (replacementDn: BuiltinDeviceNode) => void;
 };
 
 export type WasmDeviceDescriptor = {
@@ -187,7 +189,15 @@ const fermenterDescriptor: WasmDeviceDescriptor = {
 
 const toasterDescriptor: WasmDeviceDescriptor = {
     matches: isToasterDevice,
-    create({ context, deviceId, deviceType, signal, onLoaded, onRuntimeFailure: replaceRuntimeFailure }) {
+    create({
+        context,
+        deviceId,
+        deviceType,
+        signal,
+        onLoaded,
+        onRuntimeFailure: replaceRuntimeFailure,
+        onRuntimeRecovery: requestRuntimeRecovery,
+    }) {
         const pendingParams: Array<[string, number]> = [];
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         let runtimeFailureMessage: string | null = null;
@@ -215,9 +225,13 @@ const toasterDescriptor: WasmDeviceDescriptor = {
                 placeholder.toasterControls.setParam = () => {};
             }
             const replaced = replaceRuntimeFailure?.(publishedNode, placeholder) === true;
-            publishedResult.destroy();
+            try {
+                publishedResult.destroy();
+            } catch (error) {
+                logger.warn(`[WebAudioEngine] ${deviceType} runtime cleanup failed: ${String(error)}`);
+            }
             if (replaced) {
-                getAudioDeviceRuntimeSink().emitDeviceRemoved({ deviceId, deviceType });
+                requestRuntimeRecovery?.(placeholder);
             }
         };
         const onRuntimeFailure = (message: string): void => {
