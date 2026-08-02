@@ -63,6 +63,7 @@ export type SchedulerCancellation = {
     /** Semantic timeline identity; unlike generation, loop wraps and jumps advance it without cancellation. */
     discontinuityEpoch: number;
     isCurrent: () => boolean;
+    yeastRouteLineage: Map<string, LiveYeastIteration>;
 };
 
 /** Toaster parent-device note controls shape (local — cross-module model isolation). */
@@ -460,12 +461,17 @@ export async function scheduleMidiNotes(
                     if (!isActiveIteration && candidateNotes.length === 0) {
                         continue;
                     }
-                    liveYeastIterations.push({
+                    const iterationDescriptor = {
                         routeId,
                         clipId: clip.id,
                         iterationStartBeat,
                         iterationEndBeat,
                         midiOffsetBeats: clip.midiOffsetBeats ?? 0,
+                        sourceNotes,
+                    } satisfies LiveYeastIteration;
+                    cancellation?.yeastRouteLineage.set(routeId, iterationDescriptor);
+                    liveYeastIterations.push({
+                        ...iterationDescriptor,
                         sourceNotes: candidateNotes.filter((note) =>
                             shouldPlayMidiEvent({
                                 projectProbabilitySeed: midiState.probabilitySeed,
@@ -498,6 +504,7 @@ export async function scheduleMidiNotes(
                 transport,
                 discontinuityEpoch: cancellation?.discontinuityEpoch,
                 isCurrent,
+                routeLineage: cancellation?.yeastRouteLineage,
             });
             if (!yeastResult) {
                 return;

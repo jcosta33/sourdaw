@@ -122,6 +122,7 @@ export function startPlayheadScheduler(): void {
         },
         isCurrent: () =>
             schedulerSession.generation === schedulerGeneration && transportStore.value?.isPlaying === true,
+        yeastRouteLineage: new Map(),
     };
 
     startAutomationRecording();

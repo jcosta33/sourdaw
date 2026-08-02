@@ -804,6 +804,7 @@ describe('scheduleMidiNotes', () => {
             generation: 1,
             discontinuityEpoch: 1,
             isCurrent: () => current,
+            yeastRouteLineage: new Map(),
         };
 
         const scheduling = scheduleMidiNotes(
@@ -906,6 +907,44 @@ describe('scheduleMidiNotes', () => {
         expect(scheduled[2]).toBe(64);
         expect(scheduled[3]).toBe(0);
         expect(scheduled[4]).toBe(0.5);
+    });
+
+    it('does not recarry delayed route-owned Yeast output onto a later occurrence', async () => {
+        const routeId = 'live-yeast:track-1:clip-1:0';
+        const track = midiTrack({
+            clips: [midiClip({ endBeat: 8, gain: 0.25, loopEnabled: true, loopLength: 2 })],
+            devices: [{ id: 'y', type: 'yeast' }],
+        });
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = {
+            notesByClipId: {
+                'clip-1': [{ id: 'n0', pitch: 60, startBeat: 0.25, duration: 0.25, velocity: 100 }],
+            },
+        };
+        const cancellation = {
+            generation: 1,
+            discontinuityEpoch: 1,
+            isCurrent: () => true,
+            yeastRouteLineage: new Map(),
+        };
+        vi.mocked(processYeastMidi)
+            .mockImplementationOnce(({ events }) => Promise.resolve([...events]))
+            .mockResolvedValueOnce([
+                {
+                    timeSamples: 108_000,
+                    timePpq: 4.5,
+                    durationSamples: 12_000,
+                    trackId: routeId,
+                    noteInstanceId: `${routeId}:n0`,
+                    kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+                },
+            ]);
+
+        await scheduleMidiNotes(0, 1, 0, -1, new Set<string>(), [], defaultTransportState, 120, cancellation);
+        vi.mocked(scheduleNote).mockClear();
+        await scheduleMidiNotes(4, 5, 4, 4, new Set<string>(), [], defaultTransportState, 120, cancellation);
+
+        expect(scheduleNote).not.toHaveBeenCalled();
     });
 
     // §3 — The Yeast block's beats↔samples conversion must use the tempo map's
@@ -1654,6 +1693,7 @@ describe('scheduleMidiNotes', () => {
                 generation: 0,
                 discontinuityEpoch: 0,
                 isCurrent: () => ++calls <= 4,
+                yeastRouteLineage: new Map(),
             };
 
             await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120, cancellation);
@@ -1680,6 +1720,7 @@ describe('scheduleMidiNotes', () => {
                 generation: 0,
                 discontinuityEpoch: 0,
                 isCurrent: () => ++calls <= 2,
+                yeastRouteLineage: new Map(),
             };
 
             await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120, cancellation);
@@ -1708,6 +1749,7 @@ describe('scheduleMidiNotes', () => {
                 generation: 0,
                 discontinuityEpoch: 0,
                 isCurrent: () => ++calls <= 2,
+                yeastRouteLineage: new Map(),
             };
 
             await scheduleMidiNotes(64, 65, 64, 64, new Set<string>(), [], defaultTransportState, 120, cancellation);
