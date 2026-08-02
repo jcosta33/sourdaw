@@ -1053,5 +1053,51 @@ describe('wasmDeviceRegistry descriptors', () => {
             expect(() => loaded.controller?.destroy?.()).not.toThrow();
             expect(mockNode.port.close).toHaveBeenCalledTimes(1);
         });
+
+        // Knead buffers a whole 2048-sample analysis frame before emitting, so it
+        // delays its track by 2047 samples even at zero shift. It reported nothing
+        // to PDC, so the vocal on three shipped templates sat ~43 ms behind the mix
+        // with every other device compensated. ADR 0016 ruling 3: report it.
+        it('reports the ready-handshake latency to PDC in milliseconds and retracts it on destroy', async () => {
+            const result: KneadNodeResult = {
+                workletNode: makeWorkletNode(),
+                setParam: vi.fn(),
+                setBypass: vi.fn(),
+                updateState: vi.fn(),
+                destroy: vi.fn(),
+                ready: Promise.resolve({ latency: 2047 }),
+            };
+            factoryMocks.createKneadNode.mockResolvedValue(result);
+            const deps = createDeps({ deviceType: 'knead', deviceId: 'knead-pdc' });
+
+            const { loadPromise } = requireDescriptor('knead').create(deps);
+            await loadPromise;
+
+            // 2047 samples at the 48 kHz mock context = 42.6458… ms.
+            expect(externalLatencyRegistry.get('knead-pdc')).toBeCloseTo((2047 / 48000) * 1000, 6);
+
+            const loaded = lastLoadedNode(deps.onLoaded);
+            loaded.controller?.destroy?.();
+            expect(result.destroy).toHaveBeenCalledTimes(1);
+            // A retained entry would keep compensating a delay no longer in the graph.
+            expect(externalLatencyRegistry.has('knead-pdc')).toBe(false);
+        });
+
+        it('reports zero rather than NaN when the ready handshake carries no latency', async () => {
+            const result: KneadNodeResult = {
+                workletNode: makeWorkletNode(),
+                setParam: vi.fn(),
+                setBypass: vi.fn(),
+                updateState: vi.fn(),
+                destroy: vi.fn(),
+                ready: Promise.resolve({}),
+            };
+            factoryMocks.createKneadNode.mockResolvedValue(result);
+            const deps = createDeps({ deviceType: 'knead', deviceId: 'knead-nolat' });
+
+            await requireDescriptor('knead').create(deps).loadPromise;
+
+            expect(externalLatencyRegistry.get('knead-nolat')).toBe(0);
+        });
     });
 });
