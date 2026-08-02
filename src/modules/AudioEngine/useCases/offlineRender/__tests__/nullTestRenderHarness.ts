@@ -41,6 +41,18 @@
  * repeating. Adding a fixture device that needs a compressor or a delay line
  * means implementing it here first.
  *
+ * **The throw alone does not reach the caller on the offline leg, and must not
+ * be relied on there.** `buildDeviceChain` catches every construction failure,
+ * routes it to `onWarning` and `continue`s (`buildDeviceChain.ts:254-296`), so
+ * the device is dropped and the render *succeeds* — `builtin-delay`,
+ * `builtin-compressor`, `builtin-reverb` and `builtin-tremolo` all null to
+ * `-Infinity` against a bare strip that way, because neither leg has the device.
+ * That is correct production behaviour, not a harness bug: an export degrades
+ * rather than refusing. It means the *fixture* has to be what refuses.
+ * `liveOfflineNullTest.spec.ts` does that in `renderOffline` — an `onWarning`
+ * that throws, plus a post-build check that every fixtured device id is present
+ * in `deviceEntries`. Any new caller of this harness owes the same two guards.
+ *
  * ── What it is not ────────────────────────────────────────────────────────
  *
  * It is a model, not Chromium. `oversample` is ignored, block-rate is used where
@@ -146,11 +158,33 @@ class HarnessAudioNode {
     };
     private renderedQuantum = -1;
 
-    connect(destination: unknown): unknown {
-        if (destination instanceof HarnessAudioNode) {
-            destination.inputs.push(this);
-            this.outputs.push(destination);
+    /**
+     * One argument, one kind of destination — anything else throws.
+     *
+     * Web Audio's `connect` also takes output/input indices and accepts an
+     * `AudioParam` as a destination. Production uses both:
+     * `connectOfflineSidechainRoutes.ts:70` connects to input 1 of a two-input
+     * node. Modelling those as "push an edge and ignore the index" would make an
+     * indexed connect silently collapse onto input 0, and a source→param connect
+     * silently become no edge at all — a fixture using either would render
+     * confidently wrong audio. Refusing is the same discipline the unmodelled
+     * node constructors follow.
+     */
+    connect(destination: unknown, ...indices: unknown[]): unknown {
+        if (indices.length > 0) {
+            throw new Error(
+                'nullTestRenderHarness models no indexed connect(); it would collapse onto input 0. ' +
+                    'Model multi-input routing before fixturing a device that needs it.'
+            );
         }
+        if (!(destination instanceof HarnessAudioNode)) {
+            throw new Error(
+                'nullTestRenderHarness models no connect() to an AudioParam or foreign node; the edge ' +
+                    'would silently not exist. Model param-rate modulation before fixturing a device that needs it.'
+            );
+        }
+        destination.inputs.push(this);
+        this.outputs.push(destination);
         return destination;
     }
 
@@ -172,8 +206,16 @@ class HarnessAudioNode {
         if (this.renderedQuantum === quantum) {
             return this.out;
         }
-        // Marked before recursing so a fan-out is summed once per quantum and a
-        // feedback edge yields last quantum's block instead of spinning the stack.
+        // Marked before recursing so a fan-out is summed once per quantum rather
+        // than once per edge.
+        //
+        // It also stops a cycle spinning the stack, but note what it renders
+        // instead: `out` is zeroed on the next two lines *before* the recursion,
+        // so a node re-entered through a feedback edge hands back silence — not
+        // the previous quantum's block, which is what a real delay-line feedback
+        // path would carry. No fixtured device has a cycle, and none can be
+        // added until this models a one-quantum delay, or the loop will render
+        // quiet and look correct.
         this.renderedQuantum = quantum;
         this.out.left.fill(0);
         this.out.right.fill(0);
