@@ -35,8 +35,8 @@
  * as an unscheduled one does.
  *
  * Port protocol (self.onmessage):
- *   ← { type: 'init', wasmBytes: ArrayBuffer, sab: SharedArrayBuffer, sampleRate: number,
- *       syncSab?: SharedArrayBuffer, contextFrame?: number }
+ *   ← { type: 'init', initId: number, wasmModule: WebAssembly.Module, sab: SharedArrayBuffer,
+ *       sampleRate: number, syncSab?: SharedArrayBuffer, contextFrame?: number }
  *   → { type: 'ready' }
  *   ← { type: 'noteOn', midiNote, velocity, sampleFrame?, channel? }
  *   ← { type: 'noteExpression', midiNote, channel, bendSemitones, pressure, slide, sampleFrame? }
@@ -72,12 +72,14 @@ const TARGET_AHEAD = BLOCK_SIZE * 6; // ~16 ms at 48 kHz
  *  fires as a macrotask — after any pending onmessage handlers (MIDI events)
  *  but without the artificial 1–4 ms floor that setTimeout imposes. */
 const yieldChannel = new MessageChannel();
-const scheduleRender = (): void => yieldChannel.port2.postMessage(null);
-yieldChannel.port1.onmessage = () => renderLoop();
+const scheduleRender = (generation: number): void => yieldChannel.port2.postMessage(generation);
+yieldChannel.port1.onmessage = (event: MessageEvent<number>) => renderLoop(event.data);
 
 let instance: GrandBouleInstance | null = null;
 let memory: WebAssembly.Memory | null = null;
 let running = false;
+let activeInitId: number | null = null;
+let renderGeneration = 0;
 
 // SAB layout: [writeHead: Int32, readHead: Int32, leftRing: Float32[], rightRing: Float32[]]
 let controlInts: Int32Array | null = null;
@@ -172,14 +174,45 @@ export function writeBlockRelease(
 }
 
 type InitEngineInput = {
-    wasmBytes: ArrayBuffer;
+    initId: number;
+    wasmModule: WebAssembly.Module;
     sab: SharedArrayBuffer;
     workerSampleRate: number;
     syncSab?: SharedArrayBuffer;
     contextFrame?: number;
 };
 
-function initEngine({ wasmBytes, sab, workerSampleRate, syncSab, contextFrame }: InitEngineInput): void {
+function initEngine({ initId, wasmModule, sab, workerSampleRate, syncSab, contextFrame }: InitEngineInput): void {
+    if (!Number.isSafeInteger(initId)) {
+        throw new TypeError('Grand Boule worker initId must be a safe integer');
+    }
+    if (!Number.isFinite(workerSampleRate) || workerSampleRate <= 0) {
+        throw new Error('Grand Boule worker sampleRate must be positive and finite');
+    }
+
+    const nextSyncInts = syncSab ? new Int32Array(syncSab) : null;
+    const nextAnchorContextFrame = contextFrame !== undefined && Number.isFinite(contextFrame) ? contextFrame : 0;
+
+    const headerBytes = 2 * Int32Array.BYTES_PER_ELEMENT;
+    const floatBytes = sab.byteLength - headerBytes;
+    const bytesPerStereoFrame = 2 * Float32Array.BYTES_PER_ELEMENT;
+    if (floatBytes % bytesPerStereoFrame !== 0 || floatBytes / bytesPerStereoFrame < BLOCK_SIZE) {
+        throw new Error('Grand Boule worker received an invalid ring buffer');
+    }
+    const nextRingFrames = floatBytes / bytesPerStereoFrame;
+    const nextControlInts = new Int32Array(sab, 0, 2);
+    const nextLeftRing = new Float32Array(sab, headerBytes, nextRingFrames);
+    const nextRightRing = new Float32Array(
+        sab,
+        headerBytes + nextRingFrames * Float32Array.BYTES_PER_ELEMENT,
+        nextRingFrames
+    );
+
+    // Build the engine before publishing any new global state or resetting the
+    // shared ring. If construction fails, the worker can report the real error
+    // without leaving a half-initialized renderer behind.
+    const engine = createGrandBouleInstance({ wasmModule, sampleRate: workerSampleRate });
+
     // Consumer sync plane. Reset so an offset left by a previous engine instance
     // sharing this slot can never be read as this one's.
     //
@@ -188,39 +221,45 @@ function initEngine({ wasmBytes, sab, workerSampleRate, syncSab, contextFrame }:
     // it is this ring's own consumer reporting a `readHead` still at 0, which is
     // a sharper estimate than `contextFrame` — taken earlier — and it is
     // republished on the consumer's next quantum regardless.
-    if (syncSab) {
-        syncInts = new Int32Array(syncSab);
+    syncInts = nextSyncInts;
+    if (syncInts) {
         Atomics.store(syncInts, CONSUMER_OFFSET_IDX, CONSUMER_OFFSET_UNSET);
-    } else {
-        syncInts = null;
     }
-    if (contextFrame !== undefined && Number.isFinite(contextFrame)) {
-        anchorContextFrame = contextFrame;
-    } else {
-        anchorContextFrame = 0;
-    }
+    anchorContextFrame = nextAnchorContextFrame;
     noteQueue.clear();
 
     // Parse SAB layout.
-    controlInts = new Int32Array(sab, 0, 2);
-    const headerBytes = 2 * Int32Array.BYTES_PER_ELEMENT; // 8 bytes
-    const floatBytes = sab.byteLength - headerBytes;
-    ringFrames = floatBytes / (2 * Float32Array.BYTES_PER_ELEMENT);
-    leftRing = new Float32Array(sab, headerBytes, ringFrames);
-    rightRing = new Float32Array(sab, headerBytes + ringFrames * Float32Array.BYTES_PER_ELEMENT, ringFrames);
+    controlInts = nextControlInts;
+    ringFrames = nextRingFrames;
+    leftRing = nextLeftRing;
+    rightRing = nextRightRing;
 
     // Reset heads.
     Atomics.store(controlInts, WRITE_HEAD_IDX, 0);
     Atomics.store(controlInts, READ_HEAD_IDX, 0);
 
-    // Init WASM. Constructed through the shared core so the live engine and the
-    // offline one are the same instance at the same voice count.
-    const engine = createGrandBouleInstance({ wasmBytes, sampleRate: workerSampleRate });
     memory = engine.memory;
     instance = engine.instance;
+    activeInitId = initId;
     running = true;
+    renderGeneration++;
     self.postMessage({ type: 'ready' });
-    scheduleRender();
+    scheduleRender(renderGeneration);
+}
+
+function stopEngine(): void {
+    running = false;
+    activeInitId = null;
+    renderGeneration++;
+    instance = null;
+    memory = null;
+    controlInts = null;
+    leftRing = null;
+    rightRing = null;
+    ringFrames = 0;
+    syncInts = null;
+    anchorContextFrame = 0;
+    noteQueue.clear();
 }
 
 /**
@@ -248,8 +287,16 @@ function blockEndContextFrame(writeHead: number): number {
     return writeHead + BLOCK_SIZE + consumerOffset();
 }
 
-function renderLoop(): void {
-    if (!running || !instance || !controlInts || !leftRing || !rightRing || !memory) {
+function renderLoop(generation: number): void {
+    if (
+        generation !== renderGeneration ||
+        !running ||
+        !instance ||
+        !controlInts ||
+        !leftRing ||
+        !rightRing ||
+        !memory
+    ) {
         return;
     }
 
@@ -300,16 +347,17 @@ function renderLoop(): void {
     // Yield to the event loop so pending MIDI messages can be dispatched.
     // If the buffer is full, sleep for 2ms instead of spinning immediately.
     if (buffered >= TARGET_AHEAD) {
-        setTimeout(scheduleRender, 2);
+        setTimeout(scheduleRender, 2, generation);
     } else {
-        scheduleRender();
+        scheduleRender(generation);
     }
 }
 
 type GrandBouleWorkerMsg =
     | {
           type: 'init';
-          wasmBytes: ArrayBuffer;
+          initId: number;
+          wasmModule: WebAssembly.Module;
           sab: SharedArrayBuffer;
           sampleRate: number;
           syncSab?: SharedArrayBuffer;
@@ -345,16 +393,37 @@ function receive(msg: GrandBouleDispatchMsg): void {
 
 self.onmessage = ({ data }: MessageEvent<GrandBouleWorkerMsg>): void => {
     if (data.type === 'init') {
-        initEngine({
-            wasmBytes: data.wasmBytes,
-            sab: data.sab,
-            workerSampleRate: data.sampleRate,
-            syncSab: data.syncSab,
-            contextFrame: data.contextFrame,
-        });
+        if (activeInitId !== null) {
+            if (data.initId === activeInitId) {
+                // Delivery retries are idempotent: acknowledge the engine that
+                // is already running without resetting its ring or scheduling a
+                // second permanent render-loop chain.
+                self.postMessage({ type: 'ready' });
+            } else {
+                self.postMessage({
+                    type: 'error',
+                    message: 'Grand Boule worker is already initialized; create a new Worker for another engine',
+                });
+            }
+            return;
+        }
+
+        try {
+            initEngine({
+                initId: data.initId,
+                wasmModule: data.wasmModule,
+                sab: data.sab,
+                workerSampleRate: data.sampleRate,
+                syncSab: data.syncSab,
+                contextFrame: data.contextFrame,
+            });
+        } catch (error) {
+            stopEngine();
+            const message = error instanceof Error ? error.message : 'Grand Boule worker initialization failed';
+            self.postMessage({ type: 'error', message });
+        }
     } else if (data.type === 'stop') {
-        running = false;
-        noteQueue.clear();
+        stopEngine();
     } else {
         receive(data);
     }

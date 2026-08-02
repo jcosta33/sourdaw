@@ -71,7 +71,7 @@ vi.mock('../../wasm/daw_dsp.js', () => ({
     FermenterInstance: FermenterInstanceMock,
 }));
 
-const MINIMAL_WASM = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
+const MINIMAL_WASM_MODULE = new WebAssembly.Module(new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]));
 
 async function loadProcessor(): Promise<FermenterProcessorLike> {
     await import('../fermenterProcessor');
@@ -79,7 +79,7 @@ async function loadProcessor(): Promise<FermenterProcessorLike> {
     if (!Ctor) {
         throw new Error('fermenter-processor was not registered');
     }
-    return new Ctor();
+    return new Ctor({ processorOptions: { wasmModule: MINIMAL_WASM_MODULE } });
 }
 
 function send(proc: FermenterProcessorLike, data: unknown): void {
@@ -98,7 +98,7 @@ async function bootWithSlot(): Promise<{
 }> {
     const proc = await loadProcessor();
     const sab = new ArrayBuffer(SLOT_FLOATS * 4);
-    send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+    send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
     send(proc, { type: 'init-sab', sab, byteOffset: 0 });
     return { proc, view: new RealFloat32Array(sab, 0, SLOT_FLOATS), seqView: new Int32Array(sab, 0, SLOT_FLOATS) };
 }
@@ -208,7 +208,7 @@ describe('FermenterProcessor telemetry publish (audit RT-3)', () => {
 
     it('renders audio and stays unfaulted when no telemetry slot was supplied', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         seedOutputs(
             (index) => index / FRAMES,
             (index) => index / FRAMES

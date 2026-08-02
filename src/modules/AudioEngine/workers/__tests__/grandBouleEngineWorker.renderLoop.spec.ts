@@ -55,7 +55,7 @@ vi.mock('../../wasm/daw_dsp.js', () => ({
     GrandBouleInstance: GrandBouleInstanceMock,
 }));
 
-const MINIMAL_WASM = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
+const MINIMAL_WASM_MODULE = new WebAssembly.Module(new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]));
 
 let onmessage: (ev: MessageEvent) => void;
 
@@ -69,8 +69,12 @@ function makeSab(ringFrames: number): SharedArrayBuffer {
     return new SharedArrayBuffer(HEADER + ringFrames * 2 * Float32Array.BYTES_PER_ELEMENT);
 }
 
+let nextInitId = 0;
+
 function sendInit(sab: SharedArrayBuffer, sampleRate = 48_000): void {
-    onmessage({ data: { type: 'init', wasmBytes: MINIMAL_WASM, sab, sampleRate } } as MessageEvent);
+    onmessage({
+        data: { type: 'init', initId: ++nextInitId, wasmModule: MINIMAL_WASM_MODULE, sab, sampleRate },
+    } as MessageEvent);
 }
 
 function sendStop(): void {

@@ -5,6 +5,7 @@
  * the current playback position and the active clip's NoteBlobs.
  */
 
+import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
 import { initSync, KneadInstance } from '../wasm/daw_dsp.js';
 
 /**
@@ -34,7 +35,7 @@ type KneadClip = {
 };
 
 type KneadMsg =
-    | { type: 'init'; wasmBytes: BufferSource; transportSAB?: SharedArrayBuffer }
+    | { type: 'init'; transportSAB?: SharedArrayBuffer }
     | { type: 'update-state'; clips: Record<string, KneadClip> }
     | { type: 'param'; name: string; value: number }
     | { type: 'bypass'; bypassed: boolean };
@@ -82,13 +83,21 @@ class KneadProcessor extends AudioWorkletProcessor {
     _viewResultRightPtr = -1;
     _viewFrames = -1;
 
-    constructor() {
+    constructor(...args: unknown[]) {
         super();
+        let wasmModule = resolveProcessorWasmModule(args[0]);
         this.port.onmessage = (event: MessageEvent<KneadMsg>) => {
             const msg = event.data;
             try {
                 if (msg.type === 'init') {
-                    this._initWasm(msg.wasmBytes, msg.transportSAB ?? null);
+                    if (this._ready) {
+                        return;
+                    }
+                    if (!wasmModule) {
+                        throw new TypeError('KneadProcessor requires a compiled WASM module');
+                    }
+                    this._initWasm(wasmModule, msg.transportSAB ?? null);
+                    wasmModule = null;
                 } else if (msg.type === 'update-state') {
                     this._clips = msg.clips;
                 } else if (msg.type === 'param' && this._instance !== null && this._ready && !this._faulted) {
@@ -111,8 +120,8 @@ class KneadProcessor extends AudioWorkletProcessor {
         };
     }
 
-    _initWasm(wasmBytes: BufferSource, transportSAB: SharedArrayBuffer | null): void {
-        const wasmExports = initSync({ module: new WebAssembly.Module(wasmBytes) });
+    _initWasm(wasmModule: WebAssembly.Module, transportSAB: SharedArrayBuffer | null): void {
+        const wasmExports = initSync({ module: wasmModule });
         this._memory = wasmExports.memory;
         this._instance = new KneadInstance(sampleRate);
         this._transportSAB = transportSAB;

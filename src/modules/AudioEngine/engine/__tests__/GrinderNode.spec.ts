@@ -9,7 +9,11 @@ import { createGrinderNode, isGrinderDevice } from '../GrinderNode';
 // immediately so the factory's `await` chain completes.
 vi.mock('#/infra/audioWorklet/workletInitShared', () => ({
     ensureWorkletRegistered: vi.fn().mockResolvedValue(undefined),
-    fetchWasmBinary: vi.fn().mockResolvedValue(new ArrayBuffer(8)),
+    fetchWasmModule: vi.fn().mockResolvedValue({
+        module: new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0])),
+        commit: vi.fn(),
+        release: vi.fn(),
+    }),
     createReadyHandshake: vi.fn(() => ({
         promise: Promise.resolve({}),
         onMessage: () => 'other' as const,
@@ -93,10 +97,11 @@ describe('createGrinderNode', () => {
         expect(resume).not.toHaveBeenCalled();
     });
 
-    it('should reject when the Grinder WASM fetch response is not ok', async () => {
-        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500 }));
+    it('should propagate a shared WASM module load failure', async () => {
+        const { fetchWasmModule } = await import('#/infra/audioWorklet/workletInitShared');
+        vi.mocked(fetchWasmModule).mockRejectedValueOnce(new Error('Failed to fetch WASM: 500'));
 
-        await expect(createGrinderNode(makeCtx())).rejects.toThrow('Failed to fetch Grinder WASM: 500');
+        await expect(createGrinderNode(makeCtx())).rejects.toThrow('Failed to fetch WASM: 500');
     });
 
     it('should guard on SharedArrayBuffer availability and post init-sab only when a slot was allocated', async () => {
@@ -181,6 +186,7 @@ describe('createGrinderNode', () => {
         vi.mocked(createReadyHandshake).mockReturnValueOnce({
             promise: Promise.resolve({}),
             onMessage: () => 'late' as const,
+            reject: () => 'late' as const,
             isSettled: () => true,
         });
 

@@ -14,7 +14,11 @@ describe('isFermenterDevice', () => {
 // immediately so the factory completes.
 vi.mock('#/infra/audioWorklet/workletInitShared', () => ({
     ensureWorkletRegistered: vi.fn().mockResolvedValue(undefined),
-    fetchWasmBinary: vi.fn().mockResolvedValue(new ArrayBuffer(8)),
+    fetchWasmModule: vi.fn().mockResolvedValue({
+        module: new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0])),
+        commit: vi.fn(),
+        release: vi.fn(),
+    }),
     createReadyHandshake: vi.fn(() => ({
         promise: Promise.resolve({}),
         // vi.fn so callers can assert the port onmessage delegates here.
@@ -256,7 +260,9 @@ describe('createFermenterNode message surface & lifecycle', () => {
 
     it('aborts WASM fetching before allocating an AudioWorkletNode', async () => {
         const workletInit = await import('#/infra/audioWorklet/workletInitShared');
-        vi.mocked(workletInit.fetchWasmBinary).mockImplementationOnce(() => new Promise<ArrayBuffer>(() => {}));
+        vi.mocked(workletInit.fetchWasmModule).mockImplementationOnce(
+            () => new Promise<Awaited<ReturnType<typeof workletInit.fetchWasmModule>>>(() => {})
+        );
         const allocation = vi.fn();
         class CountingWorkletNode {
             constructor() {
@@ -272,6 +278,72 @@ describe('createFermenterNode message surface & lifecycle', () => {
 
         await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
         expect(allocation).not.toHaveBeenCalled();
+    });
+
+    it('observes a WASM rejection when cancellation lands after worklet registration', async () => {
+        const workletInit = await import('#/infra/audioWorklet/workletInitShared');
+        const abortController = new AbortController();
+        const abortReason = new DOMException('Cancelled after registration', 'AbortError');
+        const fetchFailure = new Error('late fetch failure');
+        const rejectedFetch = Promise.reject<Awaited<ReturnType<typeof workletInit.fetchWasmModule>>>(fetchFailure);
+        const observeFetchRejection = vi.spyOn(rejectedFetch, 'catch');
+        vi.mocked(workletInit.fetchWasmModule).mockImplementationOnce(() => {
+            abortController.abort(abortReason);
+            return rejectedFetch;
+        });
+        const allocation = vi.fn();
+        class CountingWorkletNode {
+            constructor() {
+                allocation();
+            }
+        }
+        vi.stubGlobal('AudioWorkletNode', CountingWorkletNode);
+        const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
+
+        const pending = createFermenterNode(ctx, undefined, abortController.signal);
+        await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+
+        expect(observeFetchRejection).toHaveBeenCalledOnce();
+        expect(allocation).not.toHaveBeenCalled();
+    });
+
+    it('releases an uncommitted module lease when AudioWorkletNode construction fails', async () => {
+        const workletInit = await import('#/infra/audioWorklet/workletInitShared');
+        const commit = vi.fn();
+        const release = vi.fn();
+        vi.mocked(workletInit.fetchWasmModule).mockResolvedValueOnce({
+            module: new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0])),
+            commit,
+            release,
+        });
+        class ThrowingWorkletNode {
+            constructor() {
+                throw new Error('processor construction failed');
+            }
+        }
+        vi.stubGlobal('AudioWorkletNode', ThrowingWorkletNode);
+        const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
+
+        await expect(createFermenterNode(ctx)).rejects.toThrow('processor construction failed');
+        expect(release).toHaveBeenCalledOnce();
+        expect(commit).not.toHaveBeenCalled();
+    });
+
+    it('commits the module lease after AudioWorkletNode construction succeeds', async () => {
+        const workletInit = await import('#/infra/audioWorklet/workletInitShared');
+        const commit = vi.fn();
+        const release = vi.fn();
+        vi.mocked(workletInit.fetchWasmModule).mockResolvedValueOnce({
+            module: new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0])),
+            commit,
+            release,
+        });
+        const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
+
+        await createFermenterNode(ctx);
+
+        expect(commit).toHaveBeenCalledOnce();
+        expect(release).not.toHaveBeenCalled();
     });
 
     it('rechecks cancellation at the resource-allocation boundary', async () => {

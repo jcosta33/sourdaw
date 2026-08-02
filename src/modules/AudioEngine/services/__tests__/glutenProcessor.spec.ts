@@ -100,7 +100,7 @@ vi.mock('../../wasm/daw_dsp.js', () => ({
     GlutenInstance: GlutenInstanceMock,
 }));
 
-const MINIMAL_WASM = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
+const MINIMAL_WASM_MODULE = new WebAssembly.Module(new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]));
 
 async function loadProcessor(): Promise<GlutenProcessorLike> {
     await import('../glutenProcessor');
@@ -108,7 +108,7 @@ async function loadProcessor(): Promise<GlutenProcessorLike> {
     if (!Ctor) {
         throw new Error('gluten-processor was not registered');
     }
-    return new Ctor();
+    return new Ctor({ processorOptions: { wasmModule: MINIMAL_WASM_MODULE } });
 }
 
 function send(proc: GlutenProcessorLike, data: unknown): void {
@@ -136,24 +136,25 @@ describe('GlutenProcessor message handling', () => {
     it('posts ready with latency and ignores a second init', async () => {
         const proc = await loadProcessor();
         nextLatency = 64;
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
 
         const ready = proc.port.postMessage.mock.calls.filter((c) => (c[0] as { type: string }).type === 'ready');
         expect(ready).toHaveLength(1);
         expect((ready[0]![0] as { latency: number }).latency).toBe(64);
     });
 
-    it('reports an init error when wasm compilation throws', async () => {
+    it('reports an init error when WASM instantiation throws', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: new Uint8Array(0) });
+        initShouldThrow = new Error('WASM instantiation failed');
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         const errors = proc.port.postMessage.mock.calls.filter((c) => (c[0] as { type?: string }).type === 'error');
         expect(errors).toHaveLength(1);
     });
 
     it('maps known params and reports a latency-changed event when latency shifts', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         resetRecording();
 
         // First get_latency_samples() returns 0; bump to 32 before the second call
@@ -182,7 +183,7 @@ describe('GlutenProcessor message handling', () => {
 
     it('does not report latency-changed when the param leaves latency unchanged', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         resetRecording();
         // nextLatency stays 0 for both calls ⇒ no change.
         send(proc, { type: 'param', name: 'ratio', value: 4 });
@@ -194,7 +195,7 @@ describe('GlutenProcessor message handling', () => {
 
     it('falls back to the raw name for unmapped params', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         resetRecording();
         send(proc, { type: 'param', name: 'futureKnob', value: 9 });
         expect(paramCalls).toContainEqual({ name: 'futureKnob', value: 9 });
@@ -211,7 +212,7 @@ describe('GlutenProcessor message handling', () => {
     it('reports String(error) when init throws a non-Error value', async () => {
         initShouldThrow = 'gluten-boom';
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
 
         const errorMsg = proc.port.postMessage.mock.calls.find((c) => (c[0] as { type?: string }).type === 'error');
         expect(errorMsg).toBeDefined();
@@ -220,7 +221,7 @@ describe('GlutenProcessor message handling', () => {
 
     it('posts an error and stops taking work when set_param throws while already ready', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         resetRecording();
         proc.port.postMessage.mockClear();
 
@@ -254,7 +255,7 @@ describe('GlutenProcessor process paths', () => {
 
     it('returns early when main input or output has fewer than 2 channels', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         resetRecording();
 
         // mono main input
@@ -268,7 +269,7 @@ describe('GlutenProcessor process paths', () => {
 
     it('copies main input to output and processes a sidechain input when present', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         resetRecording();
 
         const main = stereo(FRAMES, 0.4);
@@ -285,7 +286,7 @@ describe('GlutenProcessor process paths', () => {
 
     it('processes without a sidechain input (sc branch skipped)', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         resetRecording();
 
         const output = stereo(FRAMES, 0);
@@ -298,7 +299,7 @@ describe('GlutenProcessor process paths', () => {
 
     it('writes meter telemetry into the SAB every 8 rendered blocks', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         const sab = new SharedArrayBuffer(Float32Array.BYTES_PER_ELEMENT * 32);
         const view = new Float32Array(sab);
         send(proc, { type: 'init-sab', sab, byteOffset: 0 });
@@ -320,7 +321,7 @@ describe('GlutenProcessor process paths', () => {
 
     it('does not throw when no SAB was initialised', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         resetRecording();
         for (let i = 0; i < 9; i++) {
             proc.process([stereo(FRAMES, 0.5)], [stereo(FRAMES, 0)]);
@@ -330,7 +331,7 @@ describe('GlutenProcessor process paths', () => {
 
     it('faults and passthrough-copies when instance.process throws, then stops processing', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         resetRecording();
         processShouldThrow = true;
 
@@ -354,7 +355,7 @@ describe('GlutenProcessor process paths', () => {
 
     it('returns early when the first main input channel is missing', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         resetRecording();
 
         const out = stereo(FRAMES, 0);
@@ -367,7 +368,7 @@ describe('GlutenProcessor process paths', () => {
 
     it('feeds the left channel into the right input slot when the right is absent (main path)', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         resetRecording();
 
         // 2-channel input with a hole at index 1 ⇒ `input[1] ?? in0` (line 166).
@@ -382,7 +383,7 @@ describe('GlutenProcessor process paths', () => {
 
     it('skips the sidechain copy when the sidechain first channel is empty, and falls back for a mono sidechain', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         resetRecording();
 
         // Sidechain present but first channel zero-length ⇒ sc0.length > 0 false.
@@ -399,7 +400,7 @@ describe('GlutenProcessor process paths', () => {
 
     it('passthrough falls back to the left channel for the right output when the right input is absent (fault path)', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         resetRecording();
         processShouldThrow = true;
 

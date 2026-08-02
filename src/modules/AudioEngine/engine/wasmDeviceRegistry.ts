@@ -377,7 +377,7 @@ const levainDescriptor: WasmDeviceDescriptor = {
 
 const crumbsDescriptor: WasmDeviceDescriptor = {
     matches: isCrumbsDevice,
-    create({ context, deviceId, deviceType, onLoaded }) {
+    create({ context, deviceId, deviceType, signal, onLoaded }) {
         const pendingParams: Array<[string, number]> = [];
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.crumbsControls = {
@@ -392,9 +392,11 @@ const crumbsDescriptor: WasmDeviceDescriptor = {
             setBypass: () => {},
             destroy: () => {},
         };
-        const loadPromise = createCrumbsNode(context)
+        const loadPromise = createCrumbsNode(context, undefined, undefined, signal)
             .then(async (result: CrumbsNodeResult) => {
-                await result.ready;
+                if ((await waitForDeviceReady({ deviceType, result, signal })) === null) {
+                    return;
+                }
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }

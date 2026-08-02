@@ -68,11 +68,13 @@ vi.stubGlobal(
     'MessageChannel',
     class {
         port1 = {
-            set onmessage(handler: (event: MessageEvent) => void) {
-                yieldHolder.run = () => handler({ data: null } as MessageEvent);
+            onmessage: null as ((event: MessageEvent) => void) | null,
+        };
+        port2 = {
+            postMessage: (generation: number) => {
+                yieldHolder.run = () => this.port1.onmessage?.({ data: generation } as MessageEvent);
             },
         };
-        port2 = { postMessage: () => undefined };
     }
 );
 
@@ -88,7 +90,7 @@ type GrandBouleProcessorLike = {
 };
 const { registry } = installWorkletGlobals<GrandBouleProcessorLike>();
 
-const MINIMAL_WASM = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
+const MINIMAL_WASM_MODULE = new WebAssembly.Module(new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]));
 
 function send(data: unknown): void {
     workerSelf.onmessage?.({ data } as MessageEvent);
@@ -133,7 +135,8 @@ describe('Grand Boule engine worker note placement', () => {
         // test that cares about a live offset has the consumer publish one.
         send({
             type: 'init',
-            wasmBytes: MINIMAL_WASM,
+            initId: 1,
+            wasmModule: MINIMAL_WASM_MODULE,
             sab: ringSab,
             sampleRate: 48_000,
             syncSab,

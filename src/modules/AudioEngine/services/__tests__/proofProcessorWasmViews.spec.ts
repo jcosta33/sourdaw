@@ -11,7 +11,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // same way the sibling processor specs do it, except the fake memory here holds a
 // *mutable* buffer so growth can be simulated.
 
-const registry = new Map<string, new () => ProofProcessorLike>();
+const registry = new Map<string, new (...args: unknown[]) => ProofProcessorLike>();
 
 class AudioWorkletProcessorShim {
     port = {
@@ -29,7 +29,7 @@ type ProofProcessorLike = {
 };
 
 vi.stubGlobal('AudioWorkletProcessor', AudioWorkletProcessorShim);
-vi.stubGlobal('registerProcessor', (name: string, proc: new () => ProofProcessorLike) => {
+vi.stubGlobal('registerProcessor', (name: string, proc: new (...args: unknown[]) => ProofProcessorLike) => {
     registry.set(name, proc);
 });
 vi.stubGlobal('sampleRate', 48000);
@@ -128,7 +128,7 @@ vi.mock('../../wasm/daw_dsp.js', () => ({
     ProofInstance: ProofInstanceMock,
 }));
 
-const MINIMAL_WASM = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
+const MINIMAL_WASM_MODULE = new WebAssembly.Module(new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]));
 const FRAMES = 128;
 const GROWN_OUT_LEFT_BASE = 900;
 
@@ -152,7 +152,7 @@ async function loadProcessor(): Promise<ProofProcessorLike> {
     if (!Ctor) {
         throw new Error('proof-processor was not registered');
     }
-    return new Ctor();
+    return new Ctor({ processorOptions: { wasmModule: MINIMAL_WASM_MODULE } });
 }
 
 function send(proc: ProofProcessorLike, data: unknown): void {
@@ -181,7 +181,7 @@ describe('ProofProcessor WASM-view lifecycle (audit RT-1 / RT-7)', () => {
 
     it('allocates no WASM-memory view across steady-state process() blocks once warmed up', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
 
         // Warm-up block builds the four cached views (allowed to allocate once).
         const warmup = makeBlock((_channel, frame) => frame / FRAMES);
@@ -206,7 +206,7 @@ describe('ProofProcessor WASM-view lifecycle (audit RT-1 / RT-7)', () => {
 
     it('reuses the same backing buffer and produces correct output while the buffer is stable', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
 
         for (let block = 0; block < 4; block++) {
             const { input, output } = makeBlock((channel, frame) => channel * 1000 + frame + block);
@@ -221,7 +221,7 @@ describe('ProofProcessor WASM-view lifecycle (audit RT-1 / RT-7)', () => {
 
     it('rebuilds views over the new buffer after memory.grow() and reads correct bytes without faulting', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
 
         // Build the cached views over the original buffer.
         const first = makeBlock((_channel, frame) => frame);
@@ -255,7 +255,7 @@ describe('ProofProcessor WASM-view lifecycle (audit RT-1 / RT-7)', () => {
 
     it('rebuilds output views when memory.grow() happens inside process() (mid-block) and emits the new buffer samples', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
 
         // Warm up so the output views are cached over the pre-grow buffer.
         const warmup = makeBlock((_channel, frame) => frame);

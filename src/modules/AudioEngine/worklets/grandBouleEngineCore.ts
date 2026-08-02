@@ -114,8 +114,8 @@ export type GrandBouleDispatchMsg =
     | { type: 'allNotesOff' };
 
 export type CreateGrandBouleInstanceInput = {
-    /** The compiled `daw-dsp` module bytes, as fetched by the node factory. */
-    wasmBytes: BufferSource;
+    /** The compiled `daw-dsp` module, shared by the node factory across hosts. */
+    wasmModule: WebAssembly.Module;
     /** The host clock's rate: the worker is told it, a worklet reads `sampleRate`. */
     sampleRate: number;
 };
@@ -135,10 +135,10 @@ export type CreateGrandBouleInstanceOutput = {
  * voice count, so a change here cannot reach one transport and miss the other.
  */
 export function createGrandBouleInstance({
-    wasmBytes,
+    wasmModule,
     sampleRate,
 }: CreateGrandBouleInstanceInput): CreateGrandBouleInstanceOutput {
-    const exports = initSync({ module: new WebAssembly.Module(wasmBytes) });
+    const exports = initSync({ module: wasmModule });
     return {
         instance: new GrandBouleInstance(sampleRate, GRAND_BOULE_VOICE_COUNT),
         memory: exports.memory,
