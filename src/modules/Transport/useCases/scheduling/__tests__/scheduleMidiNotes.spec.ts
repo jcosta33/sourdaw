@@ -1396,6 +1396,26 @@ describe('scheduleMidiNotes', () => {
             expect(scheduleNote).toHaveBeenCalledTimes(10);
         });
 
+        it('preserves persisted note order inside a bounded non-looping window', async () => {
+            const track = midiTrack({ clips: [midiClip()] });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: {
+                    'clip-1': [
+                        { id: 'late', pitch: 62, startBeat: 2, duration: 0.25, velocity: 100 },
+                        { id: 'early', pitch: 60, startBeat: 0, duration: 0.25, velocity: 100 },
+                        { id: 'middle', pitch: 61, startBeat: 1, duration: 0.25, velocity: 100 },
+                    ],
+                },
+            };
+
+            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+
+            const projectedIds = vi.mocked(projectClipMidiEvents).mock.calls.map(([input]) => input.events[0]!.id);
+            expect(projectedIds).toEqual(['late', 'early', 'middle']);
+            expect(vi.mocked(scheduleNote).mock.calls.map((call) => call[2])).toEqual([62, 60, 61]);
+        });
+
         it('projects only loop occurrences that intersect the scheduler window', async () => {
             const track = midiTrack({
                 clips: [midiClip({ endBeat: 128, loopEnabled: true, loopLength: 4 })],

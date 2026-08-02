@@ -94,11 +94,6 @@ type ScheduledMidiNoteIndex = {
     sortedNoteEnds: readonly ScheduledMidiNote[];
     sortedNotes: readonly ScheduledMidiNote[];
 };
-type ScheduledMidiNoteWindow = {
-    endIndex: number;
-    sortedNotes: readonly ScheduledMidiNote[];
-    startIndex: number;
-};
 type SelectMidiNotesForSchedulerWindowInput = {
     notes: readonly ScheduledMidiNote[];
     iterationStartBeat: number;
@@ -200,8 +195,8 @@ function selectMidiNotesForSchedulerWindow({
     fromBeat,
     toBeat,
     lastScheduledBeat,
-}: SelectMidiNotesForSchedulerWindowInput): ScheduledMidiNoteWindow {
-    const { maxDurationBeats, sortedNotes } = getScheduledMidiNoteIndex(notes);
+}: SelectMidiNotesForSchedulerWindowInput): readonly ScheduledMidiNote[] {
+    const { maxDurationBeats, orderByNote, sortedNotes } = getScheduledMidiNoteIndex(notes);
     const schedulerStartBeat = Math.max(fromBeat, lastScheduledBeat);
     const schedulesClipBoundary =
         iterationStartBeat >= fromBeat && iterationStartBeat < toBeat && iterationStartBeat >= lastScheduledBeat;
@@ -215,7 +210,9 @@ function selectMidiNotesForSchedulerWindow({
     const sourceEndBeat = toBeat - iterationStartBeat + midiOffsetBeats + MIDI_NOTE_GROOVE_LOOKAROUND_BEATS;
     const startIndex = lowerBoundMidiNoteStart(sortedNotes, sourceStartBeat);
     const endIndex = lowerBoundMidiNoteStart(sortedNotes, sourceEndBeat);
-    return { endIndex, sortedNotes, startIndex };
+    const candidates = sortedNotes.slice(startIndex, endIndex);
+    candidates.sort((left, right) => orderByNote.get(left)! - orderByNote.get(right)!);
+    return candidates;
 }
 
 function selectYeastNotesForSchedulerWindow({
@@ -672,13 +669,13 @@ export async function scheduleMidiNotes(
                 const iterOffset = iter * loopLen;
                 const yeastRouteId = `live-yeast:${track.id}:${clip.id}:${absoluteOccurrenceIndex}`;
                 let iterNotes: readonly LiveYeastNote[] = notes;
-                let iterNoteStartIndex = 0;
+                const iterNoteStartIndex = 0;
                 let iterNoteEndIndex = iterNotes.length;
                 if (yeastDevice) {
                     iterNotes = liveYeastNotesByRoute.get(yeastRouteId) ?? [];
                     iterNoteEndIndex = iterNotes.length;
                 } else if (!clip.loopEnabled) {
-                    const noteWindow = selectMidiNotesForSchedulerWindow({
+                    iterNotes = selectMidiNotesForSchedulerWindow({
                         notes,
                         iterationStartBeat: clip.startBeat + iterOffset,
                         midiOffsetBeats: clipMidiOffset,
@@ -686,9 +683,7 @@ export async function scheduleMidiNotes(
                         toBeat,
                         lastScheduledBeat,
                     });
-                    iterNotes = noteWindow.sortedNotes;
-                    iterNoteStartIndex = noteWindow.startIndex;
-                    iterNoteEndIndex = noteWindow.endIndex;
+                    iterNoteEndIndex = iterNotes.length;
                 }
                 const notesAreAbsolute = yeastDevice !== undefined;
 
