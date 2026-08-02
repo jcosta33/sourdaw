@@ -1,0 +1,34 @@
+src/modules/AudioEngine/services/__tests__/crumbsProcessor.spec.ts
+  s_ac9b259eab20ba::t_520899a7fc62d5 1,107-110,129,149
+  s_ac9b259eab20ba::t_0e74978c7aae6c 30,46-49,52-54,103,111-128,130-148,150
+  s_ac9b259eab20ba::t_6846d90904255a 151
+src/modules/Crumbs/useCases/__tests__/prepareCrumbsEngine.spec.ts
+  s_ac9b259eab20ba::t_4b6c594f055016 133,135-149,151-172,174-179
+  s_ac9b259eab20ba::t_0e74978c7aae6c 42,45,50-59,61-69,89,94,96-101,104,106-108,110-112,120,122-123,127-128,130-132,209
+  s_ac9b259eab20ba::t_69e2058fa215da 109,129,150,173
+  s_ac9b259eab20ba::t_ee3f39b91e1edb 134
+src/modules/AudioEngine/services/crumbsProcessor.ts
+  s_ac9b259eab20ba::t_18bd3d1be6f0db 24,39,145-162
+src/modules/AudioEngine/engine/__tests__/TrackNodeDevices.spec.ts
+  s_ac9b259eab20ba::t_0e74978c7aae6c 693-696,698-710
+  s_ac9b259eab20ba::t_656c70c6e7f358 697
+src/modules/Crumbs/useCases/prepareCrumbsEngine.ts
+  s_ac9b259eab20ba::t_69e2058fa215da 32,35-36,43-44,61-64
+  s_ac9b259eab20ba::t_18bd3d1be6f0db 6-31,33-34,37-42,45-60,65-74,119,146-151,153-170
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "42c661feb527885d4e0b5b77c1fee5d673b0e0fb",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
