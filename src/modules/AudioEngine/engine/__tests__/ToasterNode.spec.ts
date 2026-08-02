@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { createMockAudioNode } from '#/helpers/__tests__/audioContext.mock';
 
+import { telemetryAllocator, TELEMETRY_SEQ_IDX, TOASTER_IDX } from '../telemetryAllocator';
 import { createToasterNode, isToasterDevice } from '../ToasterNode';
 
 // Mock the worklet-init helpers so createToasterNode resolves without a real
@@ -16,7 +17,8 @@ vi.mock('#/infra/audioWorklet/workletInitShared', () => ({
     }),
     createReadyHandshake: vi.fn(() => ({
         promise: Promise.resolve({}),
-        onMessage: () => 'other' as const,
+        onMessage: () => 'late' as const,
+        reject: () => 'late' as const,
         isSettled: () => true,
     })),
 }));
@@ -38,6 +40,9 @@ describe('createToasterNode', () => {
     let resume: ReturnType<typeof vi.fn>;
     let padGainNodes: Array<ReturnType<typeof createMockAudioNode<'gain'>>>;
     let workletOptions: AudioWorkletNodeOptions | undefined;
+    let onmessage: ((event: MessageEvent<unknown>) => void) | null;
+    let stateChangeListener: EventListener | null;
+    let contextState: AudioContextState;
 
     beforeEach(() => {
         postMessage = vi.fn();
@@ -47,12 +52,25 @@ describe('createToasterNode', () => {
         resume = vi.fn().mockResolvedValue(undefined);
         padGainNodes = [];
         workletOptions = undefined;
+        onmessage = null;
+        stateChangeListener = null;
+        contextState = 'running';
 
         class FakeWorkletNode {
             constructor(_context: BaseAudioContext, _name: string, options?: AudioWorkletNodeOptions) {
                 workletOptions = options;
             }
-            port = { postMessage, onmessage: null as ((e: MessageEvent) => void) | null, close };
+            port = {
+                postMessage,
+                close,
+                get onmessage() {
+                    return onmessage;
+                },
+                set onmessage(handler: ((event: MessageEvent<unknown>) => void) | null) {
+                    onmessage = handler;
+                },
+            };
+            onprocessorerror: ((event: Event) => unknown) | null = null;
             connect = connect;
             disconnect = disconnect;
         }
@@ -62,13 +80,27 @@ describe('createToasterNode', () => {
     afterEach(() => {
         vi.unstubAllGlobals();
         vi.clearAllMocks();
+        vi.restoreAllMocks();
     });
 
     function makeCtx(state: 'running' | 'suspended' = 'running') {
+        contextState = state;
         class FakeAudioContext {
-            state = state;
+            get state() {
+                return contextState;
+            }
             sampleRate = 48_000;
             resume = resume;
+            addEventListener(type: string, listener: EventListener) {
+                if (type === 'statechange') {
+                    stateChangeListener = listener;
+                }
+            }
+            removeEventListener(type: string, listener: EventListener) {
+                if (type === 'statechange' && stateChangeListener === listener) {
+                    stateChangeListener = null;
+                }
+            }
             createGain() {
                 const gainNode = createMockAudioNode('gain');
                 padGainNodes.push(gainNode);
@@ -315,16 +347,96 @@ describe('createToasterNode', () => {
         expect(padGainNodes.every((gainNode) => gainNode.disconnect.mock.calls.length === 1)).toBe(true);
     });
 
-    it('should disconnect and close the port on destroy, swallowing a disconnect error', async () => {
+    it('disconnects immediately but closes the port only after acknowledged disposal', async () => {
         disconnect.mockImplementation(() => {
             throw new Error('already disconnected');
         });
         const node = await createToasterNode(makeCtx());
+        postMessage.mockClear();
 
         expect(() => node.destroy()).not.toThrow();
-        expect(postMessage).toHaveBeenCalledWith({ type: 'resetPadDryRouting' });
+        expect(postMessage).toHaveBeenNthCalledWith(1, { type: 'resetPadDryRouting' });
+        expect(postMessage).toHaveBeenNthCalledWith(2, { type: 'dispose' });
         expect(disconnect).toHaveBeenCalled();
-        expect(close).toHaveBeenCalled();
+        expect(close).not.toHaveBeenCalled();
+
+        onmessage?.({ data: { type: 'disposed' } } as MessageEvent<unknown>);
+
+        expect(close).toHaveBeenCalledTimes(1);
+    });
+
+    it('projects stable lifecycle telemetry and invalidates it after a runtime fault', async () => {
+        const node = await createToasterNode(makeCtx());
+        const initMessage = postMessage.mock.calls
+            .map(([message]) => message as { type?: string; sab?: SharedArrayBuffer; byteOffset?: number })
+            .find((message) => message.type === 'init-sab');
+
+        expect(initMessage?.sab).toBeInstanceOf(SharedArrayBuffer);
+        expect(node.processorLifecycle()).toBeNull();
+
+        const byteOffset = initMessage?.byteOffset ?? 0;
+        const values = new Float32Array(initMessage!.sab!, byteOffset);
+        const sequence = new Int32Array(initMessage!.sab!, byteOffset);
+        values[TOASTER_IDX.lifecycle] = 3;
+        Atomics.store(sequence, TELEMETRY_SEQ_IDX, 2);
+
+        expect(node.processorLifecycle()).toBe('sleep');
+
+        onmessage?.({ data: { type: 'error', message: 'wasm trap' } } as MessageEvent<unknown>);
+
+        expect(node.processorLifecycle()).toBeNull();
+    });
+
+    it('reclaims telemetry and closes the port when Chrome terminates the processor without a dispose ack', async () => {
+        const releaseSlot = vi.spyOn(telemetryAllocator, 'releaseSlot');
+        const onFault = vi.fn();
+        const node = await createToasterNode(makeCtx(), undefined, onFault);
+
+        node.workletNode.onprocessorerror?.(new ErrorEvent('processorerror'));
+
+        expect(node.processorLifecycle()).toBeNull();
+        expect(onFault).toHaveBeenCalledWith('ToasterNode worklet processor failed');
+        expect(onFault).toHaveBeenCalledTimes(1);
+        expect(releaseSlot).toHaveBeenCalledTimes(1);
+        expect(close).toHaveBeenCalledTimes(1);
+
+        node.destroy();
+        expect(releaseSlot).toHaveBeenCalledTimes(1);
+    });
+
+    it('reclaims telemetry when the owning context closes before disposal can be acknowledged', async () => {
+        const releaseSlot = vi.spyOn(telemetryAllocator, 'releaseSlot');
+        const node = await createToasterNode(makeCtx());
+
+        contextState = 'closed';
+        stateChangeListener?.(new Event('statechange'));
+
+        expect(node.processorLifecycle()).toBeNull();
+        expect(releaseSlot).toHaveBeenCalledTimes(1);
+        expect(close).toHaveBeenCalledTimes(1);
+    });
+
+    it('initializes telemetry before WASM and releases its slot exactly once after disposal', async () => {
+        const releaseSlot = vi.spyOn(telemetryAllocator, 'releaseSlot');
+        const node = await createToasterNode(makeCtx());
+        const messageTypes = postMessage.mock.calls.map(([message]) => (message as { type?: string }).type);
+
+        expect(messageTypes.slice(0, 2)).toEqual(['init-sab', 'init']);
+
+        postMessage.mockClear();
+        node.destroy();
+        node.destroy();
+
+        expect(postMessage).toHaveBeenCalledTimes(2);
+        expect(postMessage).toHaveBeenNthCalledWith(1, { type: 'resetPadDryRouting' });
+        expect(postMessage).toHaveBeenNthCalledWith(2, { type: 'dispose' });
+        expect(releaseSlot).not.toHaveBeenCalled();
+        expect(node.processorLifecycle()).toBeNull();
+
+        onmessage?.({ data: { type: 'disposed' } } as MessageEvent<unknown>);
+
+        expect(releaseSlot).toHaveBeenCalledTimes(1);
+        expect(close).toHaveBeenCalledTimes(1);
     });
 
     it('should expose the underlying worklet node and a ready promise', async () => {

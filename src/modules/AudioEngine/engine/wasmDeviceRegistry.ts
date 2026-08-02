@@ -206,7 +206,7 @@ const toasterDescriptor: WasmDeviceDescriptor = {
             setBypass: () => {},
             destroy: () => {},
         };
-        const loadPromise = createToasterNode(context, undefined, signal)
+        const loadPromise = createToasterNode(context, undefined, undefined, signal)
             .then(async (result: ToasterNodeResult) => {
                 if ((await waitForDeviceReady({ deviceType, result, signal })) === null) {
                     return;
@@ -224,6 +224,7 @@ const toasterDescriptor: WasmDeviceDescriptor = {
                     inputNode: result.outputNode,
                     outputNode: result.outputNode,
                     isGenerator: true,
+                    processorLifecycle: result.processorLifecycle,
                     dispose: result.destroy,
                     controller: {
                         ready: true,
