@@ -81,7 +81,7 @@ export type OfflineWorkletRenderHarness = {
 };
 
 export function createOfflineWorkletRenderHarness(): OfflineWorkletRenderHarness {
-    const processorRegistry = new Map<string, new () => HarnessProcessorLike>();
+    const processorRegistry = new Map<string, new (...args: unknown[]) => HarnessProcessorLike>();
     let pendingProcessorPort: HarnessPort | null = null;
     let harnessFrame = 0;
 
@@ -220,7 +220,7 @@ export function createOfflineWorkletRenderHarness(): OfflineWorkletRenderHarness
             this.port = outer;
             pendingProcessorPort = inner;
             try {
-                this.processor = new Processor();
+                this.processor = new Processor(options);
             } finally {
                 pendingProcessorPort = null;
             }
@@ -330,9 +330,12 @@ export function createOfflineWorkletRenderHarness(): OfflineWorkletRenderHarness
             Object.defineProperty(globalThis, 'currentFrame', { configurable: true, get: () => harnessFrame });
             Object.defineProperty(globalThis, 'sampleRate', { configurable: true, get: () => sampleRate });
             vi.stubGlobal('AudioWorkletProcessor', AudioWorkletProcessorShim);
-            vi.stubGlobal('registerProcessor', (name: string, processor: new () => HarnessProcessorLike) => {
-                processorRegistry.set(name, processor);
-            });
+            vi.stubGlobal(
+                'registerProcessor',
+                (name: string, processor: new (...args: unknown[]) => HarnessProcessorLike) => {
+                    processorRegistry.set(name, processor);
+                }
+            );
         },
         OfflineAudioContext: HarnessOfflineAudioContext,
         AudioWorkletNode: HarnessAudioWorkletNode,

@@ -6,6 +6,7 @@ import { type BuiltinDeviceNode } from '../../models/AudioEngineState';
 import { externalLatencyRegistry } from '../../useCases/latencyCompensation/compensation/externalLatencyRegistry';
 import { setAudioDeviceRuntimeSink } from '../audioDeviceRuntimeSink';
 import { type BacteriaNodeResult } from '../BacteriaNode';
+import { type CrumbsNodeResult } from '../CrumbsNode';
 import { type GlutenNodeResult } from '../GlutenNode';
 import { type GrandBouleNodeResult } from '../GrandBouleNode';
 import { type GrinderNodeResult } from '../GrinderNode';
@@ -22,6 +23,7 @@ const factoryMocks = vi.hoisted(() => ({
     createProofChamberNode: vi.fn(),
     createGlutenNode: vi.fn(),
     createBacteriaNode: vi.fn(),
+    createCrumbsNode: vi.fn(),
     createGrinderNode: vi.fn(),
     createScoringNode: vi.fn(),
     createGrandBouleNode: vi.fn(),
@@ -50,6 +52,10 @@ vi.mock('../GlutenNode', async (importOriginal) => ({
 vi.mock('../BacteriaNode', async (importOriginal) => ({
     ...(await importOriginal<typeof import('../BacteriaNode')>()),
     createBacteriaNode: factoryMocks.createBacteriaNode,
+}));
+vi.mock('../CrumbsNode', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../CrumbsNode')>()),
+    createCrumbsNode: factoryMocks.createCrumbsNode,
 }));
 vi.mock('../GrinderNode', async (importOriginal) => ({
     ...(await importOriginal<typeof import('../GrinderNode')>()),
@@ -501,6 +507,52 @@ describe('wasmDeviceRegistry descriptors', () => {
         });
     });
 
+    describe('crumbs', () => {
+        function makeCrumbsResult(ready: Promise<Record<string, unknown>>): CrumbsNodeResult {
+            return {
+                workletNode: makeWorkletNode(),
+                noteOn: vi.fn(),
+                noteOff: vi.fn(),
+                allNotesOff: vi.fn(),
+                allSoundOff: vi.fn(),
+                setParam: vi.fn(),
+                setMode: vi.fn(),
+                setBypass: vi.fn(),
+                connect: vi.fn(),
+                disconnect: vi.fn(),
+                destroy: vi.fn(),
+                ready,
+            };
+        }
+
+        it('threads cancellation into construction and destroys a node invalidated before readiness', async () => {
+            const readiness = Promise.withResolvers<Record<string, unknown>>();
+            const result = makeCrumbsResult(readiness.promise);
+            factoryMocks.createCrumbsNode.mockResolvedValue(result);
+            const abortController = new AbortController();
+            const deps = createDeps({
+                deviceType: 'builtin-crumbs',
+                deviceId: 'crumbs-late',
+                signal: abortController.signal,
+            });
+
+            const { loadPromise } = requireDescriptor('builtin-crumbs').create(deps);
+            await Promise.resolve();
+            abortController.abort();
+            readiness.resolve({});
+            await loadPromise;
+
+            expect(factoryMocks.createCrumbsNode).toHaveBeenCalledExactlyOnceWith(
+                deps.context,
+                undefined,
+                undefined,
+                abortController.signal
+            );
+            expect(result.destroy).toHaveBeenCalledTimes(1);
+            expect(deps.onLoaded).not.toHaveBeenCalled();
+        });
+    });
+
     describe('grinder', () => {
         it('replays queued params, the pending patch, and the pending bypass on load', async () => {
             const result: GrinderNodeResult = {
@@ -704,6 +756,7 @@ describe('wasmDeviceRegistry descriptors', () => {
             expect(emitDeviceLoaded).toHaveBeenCalledWith({ deviceId: 'gb-1', deviceType: 'grand-boule' });
             const loaded = lastLoadedNode(deps.onLoaded);
             expect(loaded.grandBouleControls?.ready).toBe(true);
+            expect(loaded.workerInstances).toBe(1);
         });
     });
 

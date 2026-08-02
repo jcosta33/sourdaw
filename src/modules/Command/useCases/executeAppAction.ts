@@ -48,7 +48,11 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
 
             // Capture undo info BEFORE executing — this lets describe() snapshot current
             // state for destructive actions like removeTrack / removeClip.
-            let undoResult: { label: string; inverseAction?: AppAction | null } | null = null;
+            let undoResult: {
+                label: string;
+                inverseAction?: AppAction | null;
+                redoAction?: AppAction;
+            } | null = null;
             if (handler.undoable) {
                 undoResult = handler.describe(action);
             }
@@ -186,7 +190,8 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                             undoResult.label,
                             action,
                             undoResult.inverseAction ?? null,
-                            options?.source ?? 'manual'
+                            options?.source ?? 'manual',
+                            undoResult.redoAction
                         );
                         if (options?.groupId) {
                             entry.groupId = options.groupId;

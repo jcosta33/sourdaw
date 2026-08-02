@@ -29,7 +29,7 @@ const BLOCK_FRAMES = 128;
 const HOST_SAMPLE_RATE = 48_000;
 
 /** `\0asm` + version 1 — the shortest byte string `new WebAssembly.Module` accepts. */
-const EMPTY_WASM_MODULE = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]).buffer;
+const EMPTY_WASM_MODULE = new WebAssembly.Module(new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]));
 
 type EngineCall = { method: string; args: readonly unknown[] };
 
@@ -123,7 +123,7 @@ type HarnessPort = {
     postMessage: (message: unknown) => void;
 };
 
-const processorRegistry = new Map<string, new () => ProcessorLike>();
+const processorRegistry = new Map<string, new (...args: unknown[]) => ProcessorLike>();
 let pendingProcessorPort: HarnessPort | null = null;
 
 class AudioWorkletProcessorShim {
@@ -196,7 +196,7 @@ describe('the worker and the offline processor dispatch identically', () => {
         Object.defineProperty(globalThis, 'currentFrame', { configurable: true, get: () => 0 });
         Object.defineProperty(globalThis, 'sampleRate', { configurable: true, get: () => HOST_SAMPLE_RATE });
         vi.stubGlobal('AudioWorkletProcessor', AudioWorkletProcessorShim);
-        vi.stubGlobal('registerProcessor', (name: string, processor: new () => ProcessorLike) => {
+        vi.stubGlobal('registerProcessor', (name: string, processor: new (...args: unknown[]) => ProcessorLike) => {
             processorRegistry.set(name, processor);
         });
         vi.stubGlobal(
@@ -222,7 +222,8 @@ describe('the worker and the offline processor dispatch identically', () => {
         workerSelf.onmessage?.({
             data: {
                 type: 'init',
-                wasmBytes: EMPTY_WASM_MODULE.slice(0),
+                initId: 1,
+                wasmModule: EMPTY_WASM_MODULE,
                 sab: ringSab,
                 sampleRate: HOST_SAMPLE_RATE,
                 syncSab: new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT),
@@ -240,12 +241,12 @@ describe('the worker and the offline processor dispatch identically', () => {
         const inner: HarnessPort = { onmessage: null, postMessage: vi.fn() };
         pendingProcessorPort = inner;
         try {
-            new Processor();
+            new Processor({ processorOptions: { wasmModule: EMPTY_WASM_MODULE } });
         } finally {
             pendingProcessorPort = null;
         }
         processorPort = inner;
-        processorPort.onmessage?.({ data: { type: 'init', wasmBytes: EMPTY_WASM_MODULE.slice(0) } } as MessageEvent);
+        processorPort.onmessage?.({ data: { type: 'init' } } as MessageEvent);
         processorCalls = callsByInstance[callsByInstance.length - 1] ?? [];
 
         for (const msg of PARITY_MESSAGES) {

@@ -84,7 +84,7 @@ vi.mock('../../wasm/daw_dsp.js', () => ({
     BacteriaInstance: BacteriaInstanceMock,
 }));
 
-const MINIMAL_WASM = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
+const MINIMAL_WASM_MODULE = new WebAssembly.Module(new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]));
 
 async function loadProcessor(): Promise<BacteriaProcessorLike> {
     await import('../bacteriaProcessor');
@@ -92,7 +92,7 @@ async function loadProcessor(): Promise<BacteriaProcessorLike> {
     if (!Ctor) {
         throw new Error('bacteria-processor was not registered');
     }
-    return new Ctor();
+    return new Ctor({ processorOptions: { wasmModule: MINIMAL_WASM_MODULE } });
 }
 
 function send(proc: BacteriaProcessorLike, data: unknown): void {
@@ -119,7 +119,7 @@ describe('BacteriaProcessor WASM-view lifecycle (audit RT-1 / RT-7)', () => {
 
     it('allocates no WASM-memory view (inputs, outputs, band-levels) across steady-state blocks once warmed up', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         const { sab } = makeSab();
         send(proc, { type: 'init-sab', sab, byteOffset: 0 });
 
@@ -143,7 +143,7 @@ describe('BacteriaProcessor WASM-view lifecycle (audit RT-1 / RT-7)', () => {
 
     it('remaps output AND band-levels views over the new buffer when memory.grow() happens inside a metering block', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         const { sab, view } = makeSab();
         send(proc, { type: 'init-sab', sab, byteOffset: 0 });
 

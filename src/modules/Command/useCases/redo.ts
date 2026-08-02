@@ -3,6 +3,7 @@ import { type UndoEntry } from '../models/UndoEntry';
 import { undoStore } from '../stores/undoStore';
 
 import { executeAppAction } from './executeAppAction';
+import { recordAction } from './macro/recording/recordAction';
 import { REDO_NOT_APPLIED } from './redoResult';
 import { runUndoRedoExclusive } from './undoRedo';
 import { undoTreeMoveTo } from './undoTree/undoTreeMoveTo';
@@ -32,7 +33,16 @@ async function executeRedo(entry: UndoEntry): Promise<RedoOutcome> {
     }
 
     try {
-        await executeAppAction(entry.action);
+        if (entry.redoAction) {
+            await executeAppAction(entry.redoAction, {
+                skipUndo: true,
+                skipMacroRecording: true,
+                source: entry.source,
+            });
+            recordAction(entry.action);
+        } else {
+            await executeAppAction(entry.action);
+        }
         return { status: 'applied' };
     } catch (error) {
         if (error instanceof AppActionConflictError) {

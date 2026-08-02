@@ -1,13 +1,10 @@
-import { getAudioContext, serializeAudioBuffersForProject } from '#/modules/AudioEngine/useCases';
-
-type DecodedProjectAudioBuffer = {
-    sampleRate: number;
-    numberOfChannels: number;
-    channelData: string[];
-};
+import { getAudioContext } from '#/modules/AudioEngine/useCases';
 
 export type DecodedDawProjectAssets = {
-    audioBuffers: Record<string, DecodedProjectAudioBuffer>;
+    /** The decoded AudioBuffers themselves. These used to be base64-encoded
+     * here and decoded again inside the project transition a few frames later,
+     * an encode/decode round trip that never crossed JSON (ADR 0013). */
+    audioBuffers: Record<string, AudioBuffer>;
     bufferIdsByPath: Map<string, string>;
     failedPaths: string[];
 };
@@ -57,16 +54,9 @@ export async function decodeDawProjectAssets({
         return { audioBuffers: {}, bufferIdsByPath, failedPaths };
     }
 
-    const audioBuffers =
-        decodedAssets.length > 0
-            ? await serializeAudioBuffersForProject({
-                  buffers: decodedAssets.map(({ bufferId, buffer }) => ({ id: bufferId, buffer })),
-              })
-            : {};
-    if (shouldContinue?.() === false) {
-        return { audioBuffers: {}, bufferIdsByPath, failedPaths };
-    }
-    for (const { path, bufferId } of decodedAssets) {
+    const audioBuffers: Record<string, AudioBuffer> = {};
+    for (const { path, bufferId, buffer } of decodedAssets) {
+        audioBuffers[bufferId] = buffer;
         bufferIdsByPath.set(path, bufferId);
     }
 

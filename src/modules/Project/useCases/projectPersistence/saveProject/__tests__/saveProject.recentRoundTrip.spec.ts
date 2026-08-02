@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { installFakeIndexedDb } from '../../../../__tests__/fakeIndexedDb';
 import { CURRENT_PROJECT_VERSION, type ProjectData } from '../../../../models/ProjectData';
 import { getRecentProjects } from '../../../recentProjects/helpers';
 import { loadRecentProject } from '../../../recentProjects/loadRecentProject';
@@ -10,10 +11,11 @@ import type { ProjectStoreState } from '../../../../stores/projectStore';
 
 // save -> list -> load round-trip. saveProject is the producer the recent list
 // depends on: it must write a flat-JSON ProjectData snapshot under the recent
-// entry's key so loadRecentProject can reopen it. Real project storage
-// (localStorage in jsdom), real addToRecentProjects/getRecentProjects, real
-// loadRecentProject read path — only CRDT persist, the serializer, the audio
-// side effects, and store hydration are stubbed.
+// entry's key so loadRecentProject can reopen it. Real project storage (the
+// IndexedDB double — since ADR 0013 the snapshot lives only there), real
+// addToRecentProjects/getRecentProjects, real loadRecentProject read path —
+// only CRDT persist, the serializer, the audio side effects, and store
+// hydration are stubbed.
 
 const CREATED_AT = 1700000000000;
 const PROJECT_NAME = 'Round Trip Song';
@@ -146,11 +148,16 @@ function makeProjectData(): ProjectData {
 describe('saveProject -> recent list -> loadRecentProject round-trip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        installFakeIndexedDb();
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
         window.localStorage.clear();
         mocks.projectStoreValue.value = makeProjectState();
         mocks.persistCrdtProject.mockResolvedValue(undefined);
         mocks.buildProjectData.mockResolvedValue({ data: makeProjectData(), missingBufferCount: 0 });
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
     });
 
     it('a saved project appears in the recent list and reopens with its name', async () => {

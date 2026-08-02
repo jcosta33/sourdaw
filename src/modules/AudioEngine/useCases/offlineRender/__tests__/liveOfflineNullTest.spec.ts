@@ -1,0 +1,790 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  Live / offline null test — SPEC-render-parity-instrumentation AC-1
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ *  BUDGET: residual peak ≤ −90 dBFS.
+ *  Anything above −60 dBFS is a defect, not tolerance.
+ *
+ * ── Why those two numbers ─────────────────────────────────────────────────
+ *
+ * −90 dBFS is round-off. Both legs run the same arithmetic on `Float32Array`
+ * storage, so a residual can only come from operations being *ordered*
+ * differently — a gain folded before a clamp instead of after, a summing node
+ * inserted on one side. f32 carries ~24 significant bits, so accumulated
+ * round-off over a chain of this depth stays comfortably under −120 dBFS; −90
+ * is 30 dB of headroom over that and still 3 dB below the noise floor of a
+ * 16-bit master. A residual above it is a level, a law or a topology that
+ * differs, not arithmetic.
+ *
+ * −60 dBFS is audible. It is roughly the noise floor of a cassette, and a
+ * residual at that level in a bounce is a difference a listener can hear on a
+ * quiet passage. There is no device for which "the export differs from playback
+ * by an audible amount" is acceptable, so the budget is never widened to admit
+ * one. **If a device cannot meet this, that is the finding.** Report it; do not
+ * raise the number, do not add a per-device tolerance table, and do not narrow
+ * the measured region to exclude where it fails. Every one of those turns an
+ * instrument into decoration, which is what ADR 0015 exists to stop.
+ *
+ * ── What is measured ──────────────────────────────────────────────────────
+ *
+ * One fixture signal, two production graph builders, subtracted:
+ *
+ *   live     `new TrackNode(...)` — the class `createWebAudioEngine` builds a
+ *            channel strip with — plus the real live writers a user's mixer
+ *            moves reach: `addDevice`, `updateParam`, `updateBypass`,
+ *            `setGain`, `setPan`, `setMute`.
+ *   offline  `createOfflineTrackStrip(...)` — what an export builds, through
+ *            the real `buildDeviceChain` and the real device registry.
+ *
+ * Neither is stubbed. That is the whole point of the file: the existing
+ * live/offline parity specs stub one side and compare call shapes, so
+ * `toasterLiveOfflineParity.spec.ts` never constructs a live strip at all and a
+ * projection that is wrong but self-consistent passes it. This subtracts audio.
+ *
+ * It does **not** replace that spec, and AC-1's word "replaces" should be read
+ * as an ambition rather than a description. `toasterLiveOfflineParity.spec.ts`
+ * still exists and still stubs `getTrackStrip`, and deleting it now would remove
+ * the only coverage Toaster's projection has — for the reason in the scope note
+ * below, this file cannot yet take it over.
+ *
+ * Web Audio itself is modelled — see `nullTestRenderHarness.ts` for exactly
+ * what that model does and does not cover, and why the model cancels out of a
+ * subtraction where both legs run through it.
+ *
+ * ── How much of "two independent implementations" this really is ──────────
+ *
+ * Two different answers, and conflating them overstates the result:
+ *
+ * **The strip is two implementations.** `TrackNode`'s constructor and
+ * `createOfflineTrackStrip` are separately-written node graphs with different
+ * node counts, a different output stage and independently-written level, pan,
+ * mute and clamp laws. A null there is a real cross-check.
+ *
+ * **The device chain is largely one implementation.** For every device fixtured
+ * here, `createBuiltinDeviceNode` is a one-line delegate to
+ * `createOfflineDeviceNode` — the same function `createWebAudioDevice` calls —
+ * and `createFilter`, `createGainDevice`, `createEq` and `createDistortion` all
+ * ignore the `device` argument that distinguishes the two call sites. What
+ * genuinely differs is (a) chain topology, which `rebuildChain` and
+ * `buildDeviceChain` build independently, and (b) whether `applyParams` is
+ * called on the offline side at all. The batch-versus-per-parameter difference
+ * noted at `renderLive` can only produce a divergence for an applier with
+ * cross-parameter coupling, and none of the four has any. Do not cite a green
+ * device-chain null as evidence that two device builders agree; cite it as
+ * evidence that the topology agrees and the parameters arrive.
+ *
+ * ── What this instrument does not cover ───────────────────────────────────
+ *
+ * Written down because a green file this size invites over-trust. None of the
+ * following is measured here, and a claim about any of it needs another
+ * instrument:
+ *
+ *   - **Four of the nineteen builtin device types** are fixtured — gain, filter,
+ *     EQ and distortion, the ones whose nodes this harness models. The other
+ *     fifteen need a compressor, delay line, convolver or oscillator first, and
+ *     **no wasm device is fixtured at all** (Fermenter, Toaster, Levain, Grand
+ *     Boule, Grinder, Gluten, Proof, Bacteria, Knead, Crumbs). The devices whose
+ *     live/offline divergence motivated this phase are all in that second group.
+ *   - **All `AudioParam` automation.** Params are settled before frame 0; a
+ *     lane that moves during the render is out of scope by construction.
+ *   - **Mute, VCA multipliers, `honorMuted` and `contributesAudio`.** A muted
+ *     fixture renders digital silence on both legs, which the presence pin
+ *     correctly refuses — so mute parity is not asserted here at all.
+ *   - **Sends, buses, the master chain and adjustment layers.** The fixture is
+ *     one strip into one gain.
+ *   - **Clip scheduling, note timing and render tails.** The signal is injected
+ *     directly at the strip input, so nothing upstream of the strip is exercised.
+ *     `offlineNoteScheduleTiming.spec.ts` covers the note path.
+ *
+ * ── Fixture constraints ───────────────────────────────────────────────────
+ *
+ * **No Yeast.** Its generators phase-lock to the first block they see, so two
+ * renders of one project differ for reasons unrelated to anything under test.
+ * A null test that is nondeterministic for a known unrelated reason is worse
+ * than no null test. The one-clock work that fixes it is a later phase; until
+ * it lands, Yeast stays out of every fixture here.
+ *
+ * **Deterministic devices only.** The fixture chain is builtin Web Audio
+ * devices whose output is a pure function of their parameters. Devices with an
+ * internal LFO, a delay line or a WASM engine are not fixtured here — not
+ * because they are exempt, but because the harness models no node for them and
+ * refuses to build one rather than silently rendering them as pass-throughs.
+ * Extending this to them means extending the harness first.
+ */
+
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { type Device } from '../../../models/TrackViewTypes';
+
+import {
+    createFixtureSignal,
+    createNullTestRenderHarness,
+    nullTest,
+    type HarnessRenderContext,
+    type NullTestResult,
+    type RenderedBuffer,
+} from './nullTestRenderHarness';
+
+const SAMPLE_RATE = 48_000;
+const RENDER_FRAMES = 24_000;
+
+/** SPEC-render-parity-instrumentation AC-1. Do not raise. */
+const RESIDUAL_BUDGET_DBFS = -90;
+/** Above this a residual is audible. AC-1 calls it a defect, not tolerance. */
+const RESIDUAL_DEFECT_DBFS = -60;
+
+const harness = createNullTestRenderHarness();
+harness.installWorkletGlobals({ sampleRate: SAMPLE_RATE });
+vi.stubGlobal('AudioWorkletNode', harness.AudioWorkletNode);
+vi.stubGlobal('OfflineAudioContext', harness.OfflineAudioContext);
+
+// The live strip puts a real metering worklet in the signal path when
+// SharedArrayBuffer is available, which it is under Node. Registering the real
+// processor keeps the live topology faithful instead of testing a shape the
+// product never builds.
+await import('../../../services/meteringProcessor');
+
+const { TrackNode } = await import('../../../engine/TrackNode');
+const { createOfflineTrackStrip } = await import('../createOfflineTrackStrip');
+
+type TrackFixture = {
+    name: string;
+    gain: number;
+    pan: number;
+    muted: boolean;
+    devices: Device[];
+};
+
+function device(input: {
+    id: string;
+    type: string;
+    parameterValues: Record<string, number>;
+    bypassed?: boolean;
+}): Device {
+    return {
+        id: input.id,
+        name: input.id,
+        type: input.type,
+        bypassed: input.bypassed ?? false,
+        parameterValues: input.parameterValues,
+    };
+}
+
+function newContext(): HarnessRenderContext {
+    return new harness.OfflineAudioContext(2, RENDER_FRAMES, SAMPLE_RATE);
+}
+
+type RenderOptions = {
+    /** Multiplies the fixture signal. Used only by the homogeneity guard. */
+    signalScale?: number;
+};
+
+/** One leg's output, plus what it actually built. */
+type LegRender = {
+    buffer: RenderedBuffer;
+    /** Device ids present in the rendered graph, in graph order. */
+    builtDeviceIds: string[];
+};
+
+function fixtureSignal(scale: number): { left: Float32Array; right: Float32Array } {
+    const signal = createFixtureSignal({ frames: RENDER_FRAMES, sampleRate: SAMPLE_RATE });
+    if (scale === 1) {
+        return signal;
+    }
+    return {
+        left: signal.left.map((sample) => sample * scale),
+        right: signal.right.map((sample) => sample * scale),
+    };
+}
+
+/**
+ * Multiply a render by a constant, for the homogeneity guard.
+ *
+ * The scale is always a power of two, so the multiply is exact in binary
+ * floating point and introduces no rounding of its own. A linear chain then has
+ * to null to `-Infinity` rather than merely to somewhere under the budget,
+ * which is what makes the linear control worth having.
+ */
+function scaleBuffer(buffer: RenderedBuffer, scale: number): RenderedBuffer {
+    const channels: Float32Array[] = [];
+    for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
+        channels.push(buffer.getChannelData(channel).map((sample) => sample * scale));
+    }
+    return {
+        sampleRate: buffer.sampleRate,
+        length: buffer.length,
+        numberOfChannels: buffer.numberOfChannels,
+        getChannelData: (channel: number) => channels[channel] ?? channels[0]!,
+    };
+}
+
+/**
+ * Refuse a leg that quietly rendered without a device the fixture named.
+ *
+ * This is the presence pin that matters, and it is not the same as pinning the
+ * signal. A strip always carries the fixture at roughly −11 dBFS whether or not
+ * any device built, so a signal-level pin passes happily on a fixture whose
+ * `type` is a typo: the device is absent from *both* graphs, the two silences
+ * of it agree, and the null comes back `-Infinity`. Live drops an unrecognised
+ * type by returning bare from `addDevice` (`TrackNode.ts:663-665`) and offline
+ * drops it through `buildDeviceChain`'s catch-and-`continue`, so nothing else
+ * in either runtime will complain.
+ */
+function assertDevicesBuilt(input: { leg: string; expected: string[]; built: string[] }): void {
+    const missing = input.expected.filter((id) => !input.built.includes(id));
+    if (missing.length > 0) {
+        throw new Error(
+            `${input.leg} leg rendered without fixtured device(s) [${missing.join(', ')}]; ` +
+                `built [${input.built.join(', ') || 'none'}]. A null taken against this proves nothing.`
+        );
+    }
+}
+
+/**
+ * The live leg: a real `TrackNode`, driven by the real live writers.
+ *
+ * The device parameters go in one at a time through `updateParam`, because that
+ * is how they arrive live — `WebAudioEngine.updateDeviceParam` forwards a single
+ * `(deviceId, paramId, value)` per store change. The offline leg hands
+ * `applyParams` the whole `parameterValues` record at construction. Those are
+ * two different call patterns into the same appliers; see the scope note in the
+ * file header for how little that can diverge by for the fixtured devices.
+ */
+async function renderLive(fixture: TrackFixture, options: RenderOptions = {}): Promise<LegRender> {
+    const context = newContext();
+    const master = context.createGain() as { gain: { value: number }; connect: (to: unknown) => unknown };
+    master.gain.value = 1;
+    master.connect(context.destination);
+
+    const trackNode = new TrackNode('track-1', {
+        context: context as unknown as AudioContext,
+        masterGainNode: master as unknown as GainNode,
+        getBusGainNode: () => undefined,
+        getTrackGainNode: () => undefined,
+        getSendsForTrack: () => [],
+        pendingDevicePromises: new Set<Promise<unknown>>(),
+    });
+
+    for (const entry of fixture.devices) {
+        trackNode.addDevice(entry.id, entry.type);
+        for (const [parameterId, value] of Object.entries(entry.parameterValues)) {
+            trackNode.updateParam(entry.id, parameterId, value);
+        }
+        if (entry.bypassed) {
+            trackNode.updateBypass(entry.id, true);
+        }
+    }
+    trackNode.setGain(fixture.gain);
+    trackNode.setPan(fixture.pan);
+    trackNode.setMute(fixture.muted);
+
+    // `updateBypass` coalesces its rebuild into a microtask (TrackNode §88.3);
+    // rendering before it runs would measure the pre-bypass graph.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const source = context.createSignalSource(fixtureSignal(options.signalScale ?? 1));
+    source.connect(trackNode.strip.gainNode);
+    const buffer = await context.startRendering();
+    const builtDeviceIds = trackNode.strip.deviceNodes.map((node) => node.deviceId);
+    assertDevicesBuilt({ leg: 'live', expected: fixture.devices.map((entry) => entry.id), built: builtDeviceIds });
+    return { buffer, builtDeviceIds };
+}
+
+/**
+ * The offline leg: what an export builds, through the production strip builder.
+ *
+ * The throwing `onWarning` is load-bearing. `buildDeviceChain` treats a device
+ * it cannot construct as a degrade — it warns and `continue`s, dropping the
+ * device and letting the render succeed. That is the right behaviour for an
+ * export and the wrong behaviour for a fixture, because the resulting null is
+ * taken between two graphs that both lack the device under test. The harness's
+ * refusal to model a node reaches the caller on the live leg by throwing; on
+ * this leg it arrives here instead, and has to be turned back into a failure.
+ */
+async function renderOffline(fixture: TrackFixture, options: RenderOptions = {}): Promise<LegRender> {
+    const context = newContext();
+    const master = context.createGain() as { gain: { value: number }; connect: (to: unknown) => unknown };
+    master.gain.value = 1;
+    master.connect(context.destination);
+
+    const strip = await createOfflineTrackStrip(
+        context as unknown as OfflineAudioContext,
+        {
+            name: fixture.name,
+            gain: fixture.gain,
+            muted: fixture.muted,
+            pan: fixture.pan,
+            devices: fixture.devices,
+        },
+        {
+            // Third argument, not the track — `onWarning` lives in the options.
+            // Passing it on the track object type-checks (excess properties on a
+            // fresh object literal are only checked against the declared type,
+            // and `name`/`gain`/… match) and is silently ignored.
+            onWarning: (message: string) => {
+                throw new Error(`offline chain degraded a fixtured device instead of building it: ${message}`);
+            },
+        }
+    );
+    (strip.outputNode as unknown as { connect: (to: unknown) => unknown }).connect(master);
+
+    const source = context.createSignalSource(fixtureSignal(options.signalScale ?? 1));
+    source.connect(strip.inputNode);
+    const buffer = await context.startRendering();
+    const builtDeviceIds = strip.deviceEntries.map((entry) => entry.deviceId);
+    // Bypassed devices are filtered out by `buildDeviceChain` before construction,
+    // which is correct and is asserted by the bypass fixture rather than here.
+    assertDevicesBuilt({
+        leg: 'offline',
+        expected: fixture.devices.filter((entry) => !entry.bypassed).map((entry) => entry.id),
+        built: builtDeviceIds,
+    });
+    return { buffer, builtDeviceIds };
+}
+
+async function nullTestFixture(fixture: TrackFixture): Promise<NullTestResult> {
+    const live = await renderLive(fixture);
+    const offline = await renderOffline(fixture);
+    return nullTest({ a: live.buffer, b: offline.buffer });
+}
+
+/**
+ * Every assertion in this file goes through here so no fixture can pass by
+ * being silent on both sides, and so a failure reports the number rather than
+ * just the verdict.
+ */
+function expectNull(result: NullTestResult): void {
+    expect(result.signalPeakDbfs).toBeGreaterThan(-40);
+    expect(
+        result.residualPeakDbfs,
+        `residual ${result.residualPeakDbfs.toFixed(2)} dBFS at frame ${result.worstFrame}, ` +
+            `signal ${result.signalPeakDbfs.toFixed(2)} dBFS`
+    ).toBeLessThanOrEqual(RESIDUAL_BUDGET_DBFS);
+}
+
+const BASE_TRACK: TrackFixture = { name: 'Fixture', gain: 0.8, pan: 0, muted: false, devices: [] };
+
+/**
+ * The fixture device population, in one place.
+ *
+ * Every device any test in this file renders comes from here, and the coverage
+ * guards below enumerate *this table* rather than a list written beside them.
+ * That is ADR 0015 rule 2 turned on the harness's own coverage check: a census
+ * whose population and whose expectation come from two different places tests
+ * nothing, and a list of four device names sitting next to six `it`s that build
+ * their own fixtures inline is exactly that. Adding an entry here forces it
+ * through the audibility and homogeneity guards; adding a device anywhere else
+ * is what the guards are meant to make impossible.
+ *
+ * Parameter values are deliberately away from every factory default, so a chain
+ * built from a constructor's own state instead of the project's cannot null.
+ */
+const FIXTURE_DEVICES = {
+    gain: device({ id: 'fx-gain', type: 'builtin-gain', parameterValues: { 'gain-level': -4.5 } }),
+    gainTrim: device({ id: 'fx-gain-trim', type: 'builtin-gain', parameterValues: { 'gain-level': -2 } }),
+    filter: device({
+        id: 'fx-filter',
+        type: 'builtin-filter',
+        // Not the factory's lowpass / 1000 Hz / Q 1.
+        parameterValues: { 'filter-cutoff': 2400, 'filter-resonance': 6.5, 'filter-type': 1 },
+    }),
+    eq: device({
+        id: 'fx-eq',
+        type: 'builtin-eq',
+        parameterValues: {
+            'eq-low-gain': 4.5,
+            'eq-low-freq': 120,
+            'eq-low-q': 0.8,
+            'eq-mid-gain': -3,
+            'eq-mid-freq': 900,
+            'eq-mid-q': 2.2,
+            'eq-high-gain': 2,
+            'eq-high-freq': 7200,
+            'eq-high-q': 0.7,
+        },
+    }),
+    distortion: device({
+        id: 'fx-distortion',
+        type: 'builtin-distortion',
+        parameterValues: { 'dist-drive': 55, 'dist-tone': 2600, 'dist-output': -2.5, 'dist-mix': 0.65 },
+    }),
+} satisfies Record<string, Device>;
+
+const FIXTURE_DEVICE_ENTRIES = Object.entries(FIXTURE_DEVICES);
+
+describe('live/offline null test — the strip itself', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    it('nulls a bare strip at unity', async () => {
+        expectNull(await nullTestFixture({ ...BASE_TRACK, gain: 1 }));
+    });
+
+    it('nulls a strip whose fader is not at unity', async () => {
+        expectNull(await nullTestFixture({ ...BASE_TRACK, gain: 0.37 }));
+    });
+
+    it('nulls a strip whose stored gain sits above the fader ceiling', async () => {
+        // FX-7: live clamps in `TrackNode.setGain`, offline in
+        // `createOfflineTrackStrip`. A project carrying gain > 1 — importers and
+        // older files do — is where the two laws can part.
+        expectNull(await nullTestFixture({ ...BASE_TRACK, gain: 1.8 }));
+    });
+
+    it('nulls a panned strip', async () => {
+        expectNull(await nullTestFixture({ ...BASE_TRACK, pan: -31 }));
+    });
+});
+
+describe('live/offline null test — deterministic device chains', () => {
+    it.each(FIXTURE_DEVICE_ENTRIES)('nulls the %s device on its own', async (_name, entry) => {
+        expectNull(await nullTestFixture({ ...BASE_TRACK, devices: [entry] }));
+    });
+
+    it('nulls a multi-device chain in project order', async () => {
+        // Ordering is the part of the device chain that really is two
+        // implementations: `rebuildChain` walks `prevs` and `buildDeviceChain`
+        // walks `prev`, and they were written separately.
+        expectNull(
+            await nullTestFixture({
+                ...BASE_TRACK,
+                gain: 0.62,
+                pan: 18,
+                devices: [FIXTURE_DEVICES.gain, FIXTURE_DEVICES.filter, FIXTURE_DEVICES.distortion, FIXTURE_DEVICES.eq],
+            })
+        );
+    });
+
+    it('nulls a chain with a bypassed device in the middle', async () => {
+        // The two runtimes disagree about *representation* here and must still
+        // agree about audio: live keeps the bypassed device in `deviceNodes` and
+        // skips it while rewiring, offline filters it out before construction.
+        expectNull(
+            await nullTestFixture({
+                ...BASE_TRACK,
+                devices: [
+                    FIXTURE_DEVICES.gain,
+                    { ...FIXTURE_DEVICES.filter, bypassed: true },
+                    FIXTURE_DEVICES.gainTrim,
+                ],
+            })
+        );
+    });
+});
+
+describe('live/offline null test — the instrument can fail', () => {
+    /**
+     * ADR 0015 rule 1: a guard ships with the mutation that reds it, and rule 2
+     * wants that mutation committed rather than run once.
+     *
+     * The break is chosen to be *representative*, not convenient. A hand-injected
+     * DC offset would prove only that subtraction works. What is injected here is
+     * the symptom this whole phase exists to find: **the offline path rendering a
+     * device from its constructor's own defaults instead of from the project's
+     * stored configuration** — the symptom the Toaster export had when it
+     * rendered `ToasterEngine::new`'s kit rather than the user's pads, and the
+     * Levain export had when it built an engine with no sample zones.
+     *
+     * **The seam is not the same seam, and the difference matters.** The
+     * Toaster/Levain defects live at the wasm registry split — live through
+     * `engine/wasmDeviceRegistry.ts`, offline through
+     * `nativeDspDeviceFactories.ts`, the "two registries, not one builder with a
+     * flag" `buildDeviceChain.ts:227` names. On the builtin path there is no
+     * second registry, so that bug class structurally cannot occur where this
+     * break is injected. What is demonstrated is that the instrument detects the
+     * symptom at realistic magnitude, not that it is watching the seam the
+     * original defects came through. Watching that seam needs wasm devices in the
+     * fixture set, which needs a harness that can run them.
+     *
+     * The mutation: `WebAudioDeviceStrategy.createWebAudioDevice` — reached only
+     * by the offline registry — stops applying `device.parameterValues`. The
+     * assertion that reds is `toBeLessThanOrEqual(RESIDUAL_BUDGET_DBFS)`.
+     */
+    it('reds when the offline registry builds a device from its defaults instead of the project', async () => {
+        vi.resetModules();
+        vi.doMock('../../../repositories/deviceStrategy/WebAudioDeviceStrategy', async (importOriginal) => {
+            const original =
+                await importOriginal<typeof import('../../../repositories/deviceStrategy/WebAudioDeviceStrategy')>();
+            const { createOfflineDeviceNode } = await import('../../../repositories/deviceNodeFactory');
+            return {
+                ...original,
+                createWebAudioDevice: (ctx: BaseAudioContext, entry: Device) => {
+                    const node = createOfflineDeviceNode({ context: ctx, device: entry, deviceType: entry.type });
+                    if (!node) {
+                        throw new Error(`broken fixture built no node for ${entry.type}`);
+                    }
+                    // The whole break: `applyParams(node, entry.type, entry.parameterValues)`
+                    // is what production does here, and it is gone.
+                    return new original.WebAudioDeviceStrategy(node, entry.type);
+                },
+            };
+        });
+
+        const { createOfflineTrackStrip: brokenOfflineStrip } = await import('../createOfflineTrackStrip');
+        const fixture: TrackFixture = {
+            ...BASE_TRACK,
+            devices: [
+                device({
+                    id: 'd-filter',
+                    type: 'builtin-filter',
+                    // 300 Hz against the factory's 1000 Hz default: a whole
+                    // octave and a half of the fixture signal's content moves.
+                    parameterValues: { 'filter-cutoff': 300, 'filter-resonance': 1 },
+                }),
+            ],
+        };
+
+        const context = newContext();
+        const master = context.createGain() as { gain: { value: number }; connect: (to: unknown) => unknown };
+        master.gain.value = 1;
+        master.connect(context.destination);
+        const strip = await brokenOfflineStrip(context as unknown as OfflineAudioContext, {
+            name: fixture.name,
+            gain: fixture.gain,
+            muted: fixture.muted,
+            pan: fixture.pan,
+            devices: fixture.devices,
+        });
+        (strip.outputNode as unknown as { connect: (to: unknown) => unknown }).connect(master);
+        const source = context.createSignalSource(
+            createFixtureSignal({ frames: RENDER_FRAMES, sampleRate: SAMPLE_RATE })
+        );
+        source.connect(strip.inputNode);
+        const broken = await context.startRendering();
+
+        vi.doUnmock('../../../repositories/deviceStrategy/WebAudioDeviceStrategy');
+        vi.resetModules();
+
+        const live = await renderLive(fixture);
+        const result = nullTest({ a: live.buffer, b: broken });
+
+        // Both legs carry real signal, so the residual is a divergence and not
+        // one side having gone silent.
+        expect(result.signalPeakDbfs).toBeGreaterThan(-40);
+        // The two claims AC-1 separates: it breaks the budget, and it breaks it
+        // by an amount a listener would hear. Measured at −9.97 dBFS against a
+        // −11.40 dBFS signal — the difference is louder than the programme.
+        expect(result.residualPeakDbfs).toBeGreaterThan(RESIDUAL_BUDGET_DBFS);
+        expect(result.residualPeakDbfs).toBeGreaterThan(RESIDUAL_DEFECT_DBFS);
+
+        // The controlled half of the experiment: the same fixture and the same
+        // live render, against the *unbroken* offline path. Without this the
+        // test above proves only that something differed, not that the missing
+        // `applyParams` is what differed.
+        const correct = nullTest({ a: live.buffer, b: (await renderOffline(fixture)).buffer });
+        expect(correct.residualPeakDbfs).toBeLessThanOrEqual(RESIDUAL_BUDGET_DBFS);
+    });
+
+    /**
+     * The harness refuses to model a node it does not have, and on the live leg
+     * that refusal reaches the caller. On the offline leg it does not:
+     * `buildDeviceChain` catches every construction failure, warns, and
+     * `continue`s, so the device is dropped and the render succeeds. Both legs
+     * then lack the device and null against each other perfectly —
+     * `builtin-delay`, `builtin-compressor`, `builtin-reverb` and
+     * `builtin-tremolo` all measured `-Infinity` that way.
+     *
+     * The throwing `onWarning` in `renderOffline` is what closes that. Removing
+     * it turns this test green-by-silence, which is the whole failure mode.
+     */
+    it('refuses a fixture whose device the offline chain dropped instead of building', async () => {
+        const undeliverable = device({ id: 'fx-delay', type: 'builtin-delay', parameterValues: {} });
+
+        await expect(renderOffline({ ...BASE_TRACK, devices: [undeliverable] })).rejects.toThrow(
+            /degraded a fixtured device/
+        );
+    });
+
+    /**
+     * The presence pin proper (F3): a device type *neither* runtime recognises.
+     * Live returns bare from `addDevice` when no factory and no wasm descriptor
+     * claims the type (`TrackNode.ts:663-665`); offline degrades it away. A
+     * signal-level pin cannot see this, because the strip still carries the
+     * fixture at roughly −11 dBFS either way — measured `residual -Infinity,
+     * signal -11.06 dBFS`, fully green. Only asserting the device is *present*
+     * catches it, which is what a typo in a fixture's `type` would produce.
+     */
+    it('refuses a fixture whose device type neither runtime recognises', async () => {
+        const misspelled = device({ id: 'fx-typo', type: 'levian', parameterValues: {} });
+
+        await expect(renderLive({ ...BASE_TRACK, devices: [misspelled] })).rejects.toThrow(
+            /rendered without fixtured device/
+        );
+    });
+
+    /**
+     * `connect()` models one argument and one kind of destination. Both refusals
+     * matter because the silent alternatives are indistinguishable from correct
+     * audio: an indexed connect would collapse onto input 0, and a connect to an
+     * `AudioParam` would create no edge. Production does both —
+     * `connectOfflineSidechainRoutes.ts:70` connects to input 1.
+     */
+    it('refuses the connect forms it does not model', () => {
+        const context = newContext();
+        const source = context.createGain() as { connect: (to: unknown, ...rest: unknown[]) => unknown };
+        const target = context.createGain();
+
+        expect(() => source.connect(target, 0, 1)).toThrow(/indexed connect/);
+        expect(() => source.connect({ value: 0 })).toThrow(/AudioParam or foreign node/);
+    });
+
+    /**
+     * The harness's other failure mode is the one ADR 0015 rule 4 warns about:
+     * a null against two silent buffers. `expectNull` pins the signal for
+     * exactly that reason, and this proves the pin is load-bearing rather than
+     * ornamental.
+     */
+    it('refuses a null taken against silence', async () => {
+        const silence: RenderedBuffer = {
+            sampleRate: SAMPLE_RATE,
+            length: RENDER_FRAMES,
+            numberOfChannels: 2,
+            getChannelData: () => new Float32Array(RENDER_FRAMES),
+        };
+        const result = nullTest({ a: silence, b: silence });
+
+        expect(result.residualPeakDbfs).toBe(-Infinity);
+        expect(() => expectNull(result)).toThrow();
+    });
+});
+
+describe('live/offline null test — the instrument is sharp enough to matter', () => {
+    /**
+     * A null test is only as good as the resolution of the thing measuring it,
+     * and every clean assertion in this file would stay green if the harness
+     * quietly went blind — a `BiquadFilterNode` degraded to a pass-through
+     * nulls perfectly against another pass-through. These probes are the
+     * presence pin for the instrument itself (ADR 0015 rule 4): they inject a
+     * divergence of known, deliberately tiny size and require the budget to
+     * catch it. They red if the harness stops modelling the node, if a
+     * parameter stops reaching it, or if someone widens the budget.
+     *
+     * The numbers are measurements, not guesses, taken on this fixture signal.
+     */
+    it('sees a fader divergence of one part in five hundred', async () => {
+        const live = await renderLive({ ...BASE_TRACK, gain: 0.5 });
+        const offline = await renderOffline({ ...BASE_TRACK, gain: 0.501 });
+        const result = nullTest({ a: live.buffer, b: offline.buffer });
+
+        // Measured −69.1 dBFS: over the budget, and still 9 dB below the point
+        // AC-1 calls audible. The budget catches divergences nobody could hear.
+        expect(result.residualPeakDbfs).toBeGreaterThan(RESIDUAL_BUDGET_DBFS);
+        expect(result.residualPeakDbfs).toBeLessThan(RESIDUAL_DEFECT_DBFS);
+    });
+
+    it('sees a filter cutoff divergence of 1 Hz in 2400', async () => {
+        // Perturbed from the fixture-table entry, so the probe stays tied to the
+        // filter the clean tests actually render.
+        const detuned: Device = {
+            ...FIXTURE_DEVICES.filter,
+            parameterValues: { ...FIXTURE_DEVICES.filter.parameterValues, 'filter-cutoff': 2401 },
+        };
+        const live = await renderLive({ ...BASE_TRACK, devices: [FIXTURE_DEVICES.filter] });
+        const offline = await renderOffline({ ...BASE_TRACK, devices: [detuned] });
+        const result = nullTest({ a: live.buffer, b: offline.buffer });
+
+        // Measured −84.7 dBFS. Four hundredths of a percent of the cutoff is
+        // over budget, which is what makes the clean nulls above worth having.
+        expect(result.residualPeakDbfs).toBeGreaterThan(RESIDUAL_BUDGET_DBFS);
+    });
+
+    it('sees a pan divergence of one fifty-thousandth of full scale', async () => {
+        const live = await renderLive({ ...BASE_TRACK, pan: 20 });
+        const offline = await renderOffline({ ...BASE_TRACK, pan: 20.01 });
+        const result = nullTest({ a: live.buffer, b: offline.buffer });
+
+        // Measured −83.0 dBFS.
+        expect(result.residualPeakDbfs).toBeGreaterThan(RESIDUAL_BUDGET_DBFS);
+    });
+
+    /**
+     * The other way a clean null goes hollow: a fixture whose devices do not
+     * actually shape the signal. Both legs would agree about nothing. Each
+     * fixture device must move the render measurably away from a bare strip.
+     */
+    it.each(FIXTURE_DEVICE_ENTRIES)(
+        'renders the %s device to something audibly unlike a bare strip',
+        async (_name, entry) => {
+            const bare = await renderOffline({ ...BASE_TRACK, gain: 1 });
+            const rendered = await renderOffline({ ...BASE_TRACK, gain: 1, devices: [entry] });
+            const difference = nullTest({ a: rendered.buffer, b: bare.buffer });
+
+            expect(difference.residualPeakDbfs).toBeGreaterThan(-25);
+        }
+    );
+
+    /**
+     * The audibility guard above cannot see the one nonlinearity in the fixture
+     * set, and that is worth stating plainly because it looked like it could.
+     *
+     * `createDistortion` is seven nodes: a dry/wet fork, a 4 kHz tone lowpass
+     * and an output trim around the shaper. Blinding `HarnessWaveShaperNode`
+     * into a pass-through still leaves those, and the distortion fixture's
+     * distance from a bare strip only falls from −0.94 dBFS to −16.37 dBFS —
+     * comfortably past the −25 threshold. So the guard stays green while the
+     * only non-linear node in the harness does nothing, and every device the
+     * file covers collapses to filters and multiplies.
+     *
+     * Homogeneity is the property that separates them. A chain of gains,
+     * biquads and panners is linear, so scaling the input scales the output
+     * exactly: `f(k·x) === k·f(x)`, to the bit. A waveshaper is the only
+     * fixtured node for which that is false. Asserting the distortion fixture
+     * *violates* homogeneity therefore reds the moment the shaper stops
+     * shaping, and the linear control below proves the assertion is measuring
+     * the nonlinearity rather than arithmetic noise.
+     */
+    it('renders its one nonlinearity as a nonlinearity', async () => {
+        const fixture: TrackFixture = { ...BASE_TRACK, gain: 1, devices: [FIXTURE_DEVICES.distortion] };
+        const full = await renderOffline(fixture);
+        const halved = await renderOffline(fixture, { signalScale: 0.5 });
+        const scaledFull = scaleBuffer(full.buffer, 0.5);
+        const departure = nullTest({ a: halved.buffer, b: scaledFull });
+
+        // Measured −22.9 dBFS of departure from linearity. Gutting
+        // `HarnessWaveShaperNode.transform` takes this to −Infinity.
+        expect(departure.residualPeakDbfs).toBeGreaterThan(-40);
+    });
+
+    it('renders a chain with no waveshaper in it as exactly linear', async () => {
+        // The control. Same measurement, same signal, a fixture whose every node
+        // is linear — so a non-zero result here would mean the homogeneity test
+        // above detects something other than the shaper.
+        const fixture: TrackFixture = {
+            ...BASE_TRACK,
+            gain: 1,
+            devices: [FIXTURE_DEVICES.filter, FIXTURE_DEVICES.eq, FIXTURE_DEVICES.gain],
+        };
+        const full = await renderOffline(fixture);
+        const halved = await renderOffline(fixture, { signalScale: 0.5 });
+        const departure = nullTest({ a: halved.buffer, b: scaleBuffer(full.buffer, 0.5) });
+
+        expect(departure.residualPeakDbfs).toBe(-Infinity);
+    });
+});
+
+describe('live/offline null test — determinism', () => {
+    /**
+     * Survey stop condition 1: if a fixture is not reproducible run to run, the
+     * "prove parity by null test" premise of this phase fails and needs
+     * replacing. This is the check that would catch it, and it is why Yeast is
+     * excluded from the fixture set rather than merely untested.
+     */
+    it('renders the same samples twice from the same fixture', async () => {
+        const fixture: TrackFixture = {
+            ...BASE_TRACK,
+            gain: 0.62,
+            pan: 18,
+            devices: [FIXTURE_DEVICES.filter, FIXTURE_DEVICES.distortion],
+        };
+
+        const first = await renderLive(fixture);
+        const second = await renderLive(fixture);
+        const repeat = nullTest({ a: first.buffer, b: second.buffer });
+
+        expect(repeat.signalPeakDbfs).toBeGreaterThan(-40);
+        expect(repeat.residualPeakDbfs).toBe(-Infinity);
+    });
+});

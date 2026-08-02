@@ -7,7 +7,12 @@ import { FORMAT_VERSION, SDAW_MAGIC } from './helpers';
  * Decode an .sdaw binary into a document bundle.
  */
 export function decodeSdawFile(bytes: Uint8Array): DocumentBundle {
-    const decoder = new TextDecoder();
+    // `fatal` is required for parity with the Rust decoder, which rejects a DocId
+    // that is not valid UTF-8 (`String::from_utf8` in `daw-collab`'s `decode_sdaw`).
+    // A default `TextDecoder` is non-fatal: it substitutes U+FFFD and the decode
+    // *succeeds*, so a corrupted file would load its document under a mangled key
+    // and silently orphan it on this side while erroring on the other.
+    const decoder = new TextDecoder('utf-8', { fatal: true });
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     let offset = 0;
 
@@ -47,7 +52,13 @@ export function decodeSdawFile(bytes: Uint8Array): DocumentBundle {
         if (offset + idLen > bytes.length) {
             throw createSdawFormatError(`Truncated at document ${index} DocId`);
         }
-        const docId = decoder.decode(bytes.subarray(offset, offset + idLen));
+        let docId: string;
+        try {
+            docId = decoder.decode(bytes.subarray(offset, offset + idLen));
+        } catch {
+            // Matches the Rust decoder's message for the same input.
+            throw createSdawFormatError(`Invalid UTF-8 in document ${index} DocId`);
+        }
         offset += idLen;
 
         // Read data

@@ -40,6 +40,7 @@ describe('getMidiNoteTransformHandlers', () => {
             'invertNotes',
             'quantizeNoteLengths',
             'quantizeNotes',
+            'restoreMidiClipNotes',
             'retrogradeNotes',
             'scaleAllVelocities',
             'scaleVelocities',
@@ -51,31 +52,31 @@ describe('getMidiNoteTransformHandlers', () => {
     it('should delegate note transform actions to MIDI use cases', () => {
         const handlers = getMidiNoteTransformHandlers();
 
-        handlers.addNotes.execute({
+        void handlers.addNotes.execute({
             type: 'addNotes',
             payload: { clipId: 'clip1', notes: [{ pitch: 60, startBeat: 0, duration: 1, velocity: 100 }] },
         });
-        handlers.transposeNotes.execute({ type: 'transposeNotes', payload: { clipId: 'clip1', semitones: 2 } });
-        handlers.humanizeNotes.execute({ type: 'humanizeNotes', payload: { clipId: 'clip1', amount: 0.25 } });
-        handlers.invertNotes.execute({ type: 'invertNotes', payload: { clipId: 'clip1' } });
-        handlers.retrogradeNotes.execute({ type: 'retrogradeNotes', payload: { clipId: 'clip1' } });
-        handlers.quantizeNoteLengths.execute({
+        void handlers.transposeNotes.execute({ type: 'transposeNotes', payload: { clipId: 'clip1', semitones: 2 } });
+        void handlers.humanizeNotes.execute({ type: 'humanizeNotes', payload: { clipId: 'clip1', amount: 0.25 } });
+        void handlers.invertNotes.execute({ type: 'invertNotes', payload: { clipId: 'clip1' } });
+        void handlers.retrogradeNotes.execute({ type: 'retrogradeNotes', payload: { clipId: 'clip1' } });
+        void handlers.quantizeNoteLengths.execute({
             type: 'quantizeNoteLengths',
             payload: { clipId: 'clip1', gridSize: 0.25 },
         });
-        handlers.quantizeNotes.execute({
+        void handlers.quantizeNotes.execute({
             type: 'quantizeNotes',
             payload: { clipId: 'clip1', gridSize: 0.25, strength: 0.5, swing: 0.1 },
         });
-        handlers.scaleVelocities.execute({
+        void handlers.scaleVelocities.execute({
             type: 'scaleVelocities',
             payload: { clipId: 'clip1', curve: 'linear', minVelocity: 10, maxVelocity: 100 },
         });
-        handlers.scaleAllVelocities.execute({
+        void handlers.scaleAllVelocities.execute({
             type: 'scaleAllVelocities',
             payload: { clipId: 'clip1', factor: 0.8 },
         });
-        handlers.setAllVelocities.execute({
+        void handlers.setAllVelocities.execute({
             type: 'setAllVelocities',
             payload: { clipId: 'clip1', velocity: 90 },
         });

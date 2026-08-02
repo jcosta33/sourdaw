@@ -16,8 +16,6 @@ import {
     moveMidiNote,
     setNoteVelocity,
     humanizeNotes,
-    quantizeNotes,
-    transposeNotes,
     getNotesForClip,
     strumNotes,
     restoreStrumOriginals,
@@ -161,22 +159,10 @@ export const PianoRollContextMenu = ({
                         key={g}
                         className={pillBtnClass}
                         onClick={act(() => {
-                            const before = getNotesForClip(clipId).map((node) => ({ ...node }));
-                            quantizeNotes(clipId, g);
-                            const after = getNotesForClip(clipId).map((node) => ({ ...node }));
-                            pushUndoEntry(
-                                `Quantize notes (${{ 1: '1/1', 0.5: '1/2', 0.25: '1/4', 0.125: '1/8' }[g]})`,
-                                () => {
-                                    for (const node of before) {
-                                        moveMidiNote(clipId, node.id, node.pitch, node.startBeat);
-                                    }
-                                },
-                                () => {
-                                    for (const node of after) {
-                                        moveMidiNote(clipId, node.id, node.pitch, node.startBeat);
-                                    }
-                                }
-                            );
+                            void executeAppAction({
+                                type: 'quantizeNotes',
+                                payload: { clipId, gridSize: g },
+                            }).catch(() => logger.warn('Could not quantize notes'));
                         })}
                     >
                         {{ 1: '1/1', 0.5: '1/2', 0.25: '1/4', 0.125: '1/8' }[g]}
@@ -195,12 +181,10 @@ export const PianoRollContextMenu = ({
                         key={semi}
                         className={pillBtnClass}
                         onClick={act(() => {
-                            transposeNotes(clipId, semi);
-                            pushUndoEntry(
-                                `Transpose ${semi > 0 ? '+' : ''}${semi} semitone${Math.abs(semi) !== 1 ? 's' : ''}`,
-                                () => transposeNotes(clipId, -semi),
-                                () => transposeNotes(clipId, semi)
-                            );
+                            void executeAppAction({
+                                type: 'transposeNotes',
+                                payload: { clipId, semitones: semi },
+                            }).catch(() => logger.warn('Could not transpose notes'));
                         })}
                     >
                         {{ '-12': '-Oct', '-1': '-1', '1': '+1', '12': '+Oct' }[semi]}

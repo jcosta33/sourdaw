@@ -62,7 +62,7 @@ vi.mock('../../wasm/daw_dsp.js', () => ({
     LevainInstance: LevainInstanceMock,
 }));
 
-const MINIMAL_WASM = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
+const MINIMAL_WASM_MODULE = new WebAssembly.Module(new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]));
 
 async function loadProcessor(): Promise<LevainProcessorLike> {
     await import('../levainProcessor');
@@ -70,7 +70,7 @@ async function loadProcessor(): Promise<LevainProcessorLike> {
     if (!Ctor) {
         throw new Error('levain-processor was not registered');
     }
-    return new Ctor();
+    return new Ctor({ processorOptions: { wasmModule: MINIMAL_WASM_MODULE } });
 }
 
 function send(proc: LevainProcessorLike, data: unknown): void {
@@ -90,7 +90,7 @@ describe('LevainProcessor WASM-view lifecycle (audit RT-1 / RT-7)', () => {
 
     it('allocates no WASM-memory view across steady-state process() blocks once warmed up', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
 
         const warmup = makeBlock();
         proc.process(warmup.inputs, warmup.outputs);
@@ -108,7 +108,7 @@ describe('LevainProcessor WASM-view lifecycle (audit RT-1 / RT-7)', () => {
 
     it('maps output views over the new buffer when memory.grow() happens inside process()', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
 
         const warmup = makeBlock();
         proc.process(warmup.inputs, warmup.outputs);

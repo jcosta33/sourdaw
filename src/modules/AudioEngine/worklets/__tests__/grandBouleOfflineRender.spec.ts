@@ -36,7 +36,7 @@ const SAMPLE_RATE = 44_100;
 const TEMPO = 120;
 const SECONDS_PER_BEAT = 60 / TEMPO;
 
-/** `\0asm` + version 1 — the shortest byte string `new WebAssembly.Module` accepts. */
+/** `\0asm` + version 1 — the shortest byte string `WebAssembly.compile` accepts. */
 const EMPTY_WASM_MODULE = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]).buffer;
 
 // ---------------------------------------------------------------------------
@@ -202,9 +202,8 @@ describe('Grand Boule renders audible audio offline', () => {
             'fetch',
             vi.fn().mockResolvedValue({
                 ok: true,
-                // Structurally valid but empty: the processor hands these bytes
-                // to `new WebAssembly.Module` before the mocked wasm-bindgen glue
-                // ever sees them.
+                // Structurally valid but empty: the node factory compiles these
+                // before the mocked wasm-bindgen glue sees the shared module.
                 arrayBuffer: () => Promise.resolve(EMPTY_WASM_MODULE.slice(0)),
             })
         );

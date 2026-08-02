@@ -145,7 +145,7 @@ export function ramp(length: number, base: number): number[] {
 }
 
 export type WorkletGlobals<TProcessor> = {
-    registry: Map<string, new () => TProcessor>;
+    registry: Map<string, new (...args: unknown[]) => TProcessor>;
 };
 
 /**
@@ -154,7 +154,7 @@ export type WorkletGlobals<TProcessor> = {
  * and return the registry that `registerProcessor` populates.
  */
 export function installWorkletGlobals<TProcessor>(): WorkletGlobals<TProcessor> {
-    const registry = new Map<string, new () => TProcessor>();
+    const registry = new Map<string, new (...args: unknown[]) => TProcessor>();
     class AudioWorkletProcessorShim {
         port = {
             onmessage: null as ((event: { data: unknown }) => void) | null,
@@ -162,7 +162,7 @@ export function installWorkletGlobals<TProcessor>(): WorkletGlobals<TProcessor> 
         };
     }
     vi.stubGlobal('AudioWorkletProcessor', AudioWorkletProcessorShim);
-    vi.stubGlobal('registerProcessor', (name: string, proc: new () => TProcessor) => {
+    vi.stubGlobal('registerProcessor', (name: string, proc: new (...args: unknown[]) => TProcessor) => {
         registry.set(name, proc);
     });
     vi.stubGlobal('sampleRate', 48000);

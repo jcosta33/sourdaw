@@ -934,3 +934,89 @@ finding as absence of a problem.
   as owed by the combined review.
 - **Backlog module reads**: Knead, Fermenter, LocalStorage, Scoring were not
   opened in the overview pass — unverified rather than confirmed.
+
+
+## Project persistence (ADR 0014, proposed)
+
+Decisions the architecture cannot be chosen without. Evidence:
+`.agents/artifacts/sourdaw/RESEARCH-project-persistence.md`. Each changes what a project file *is*
+or how a user moves work between machines, which is why none of them is engineering's to make.
+
+- **Is a project one file, or a folder?** Logic ships both shapes for one logical project. Option C's
+  live form is a folder and its portable form is a ZIP. Changes the UI, the mental model and the
+  support burden, not just the code.
+- **Does a project file contain its audio, or reference it?** All four shipping DAWs default to
+  *reference* and make consolidation an explicit action; DAWproject makes it a per-file attribute.
+  **Reference-by-path is desktop-only** — the web cannot re-open a user's file across sessions
+  without a prompt. So this is two answers, and whether the format expresses both.
+- **May browser-resident storage ever be described as "safe"?** Per the Storage Standard it may not:
+  even persistent buckets may be offered for clearing under continued pressure. The honest copy is
+  "stored on this device; the browser will ask before removing it". Also: whether the product may
+  ship without an export path (it should not).
+- **Is "install the app" a stated durability requirement?** Chrome and WebKit reach the same gate by
+  unrelated machinery — persistence is granted to installed apps, not to plain tabs. If gate M1
+  confirms it, a plain-tab visitor cannot get durable storage however the app asks. Either the
+  product says so and offers install, or it accepts silent loss for uninstalled users.
+- **Does a project's audio belong to the project, or to a shared library?** A global pool dedups
+  across projects but forces an all-projects scan to answer "is this sample safe to delete".
+  Per-project ownership avoids the scan and duplicates shared samples on disk.
+- **Version policy, and the web escape hatch.** Industry convention is forward-only. A browser DAW's
+  version of this is harder: a web user cannot pin an old build, so a bad migration is unrecoverable
+  in a way it is not on desktop.
+- **How much budget the desktop store gets.** ADR 0012 is accepted and Option C is what compliance
+  costs. Option B is materially cheaper and violates it. If the budget is not there, the honest move
+  is to amend ADR 0012 explicitly and choose B — not to adopt C and under-build it.
+
+## Whole-application remediation (SURVEY-ultracode-scope)
+
+From `.agents/artifacts/sourdaw/SURVEY-ultracode-scope.md` §3 — 134 verified findings, and these are
+the calls an agent may not make alone. Several overlap the finish-or-remove table above; where they
+do, that table is the record and this list is the pointer.
+
+- **Gluten's +6.31 dB round-trip gain** (`crates/daw-dsp/src/gluten/oversample.rs:27`). Fixing it
+  makes every existing mix using FET or Diode topology — including the shipped "Punch" preset —
+  about 6 dB quieter and differently coloured. Fix / fix-plus-version-gated-legacy-gain / leave.
+- **Knead's 2048-sample latency** (`crates/daw-dsp/src/knead/engine.rs:139`), reported to PDC as
+  zero. Reporting it shifts every other track by up to ~43 ms; three shipped templates put Knead on
+  vocals, and users may have hand-nudged to compensate.
+- **Turning on offline automation for the five effects.** Every export made to date silently omitted
+  it. Correct, but a user who mixed into a frozen-parameter bounce hears something different.
+  Decide whether the first export of a pre-existing project warns.
+- **Restoring device state that was previously lost** — Levain's instrument, Fermenter's layers,
+  Crumbs' sample and pads, Toaster's `engineParams`. A reopened project currently plays defaults;
+  after the fix it plays what was saved, which for a project developed *since* the loss is something
+  the user has never heard.
+- **Native plugin hosting: ship or gate.** Unreachable today via two independent mechanisms (the ACL
+  grants 3 of ~78 commands; `start_native_engine` has no caller). Shipping is an XL transport
+  rework; gating removes VST/AU/CLAP as an advertised capability.
+- **Capabilities to remove or build.** Crust, CvGate, RAVE, the DDSP/TF.js instruments, Bacteria's
+  three dead distortion modes, Levain's macros and mic strips, Proof's linear-phase EQ, Crumbs' pads
+  and slices, Toaster's internal sequencer. Each removal deletes something a user may have
+  configured and persisted. Several are cheaper to *build* than the survey assumed — the DSP already
+  exists and is simply never instantiated.
+- **Collaboration posture.** Build host-side admission and roles, or delete the role model and
+  document that an invite string is unconditional write access. Leaving it guarantees the next
+  feature built on it believes it enforces something.
+- **Model integrity policy.** Failing closed on a missing digest breaks every catalog entry today,
+  because none carries one. Security-posture call.
+
+## RESOLVED 2026-08-01 by ADR 0016
+
+Four rulings that close a large part of the docket above. Recorded here so the entries are not
+re-litigated; ADR 0016 is the record.
+
+- **Native plugin hosting: ship or gate** — neither. **Desktop is out of scope** for this work
+  entirely, and the plugin host is a desktop concern. Survey Phase 4 is dropped. The findings stay;
+  the work is deferred.
+- **Unbuilt feature subsystems (finish-or-remove)** — **finish, wherever it can run in the browser.**
+  That is the scope rule now, and it replaces the per-row finish-or-remove call for every
+  browser-capable entry in the table above. Two rows (RAVE, DDSP/TF.js) carry an unproven premise:
+  establish that the models run in-browser at acceptable cost before committing to a shape. Rows
+  whose home is native — the Tauri CRDT backend, Push hardware, MIDI hardware controllers — follow
+  the desktop deferral.
+- **Correctness versus existing mixes** — **there are no users; correctness wins outright.** No
+  compatibility shims, no version-gated legacy behaviour. This answers Gluten's +6.31 dB, Knead's
+  latency, turning on offline automation, and restoring lost device state, and it collapses the
+  ADR 0014 owner decisions that assumed existing projects had to be preserved.
+- **Collaboration transport-permission** — **delete the scaffold.** Remove the unreachable role
+  machinery and document that an invite string is unconditional write access.

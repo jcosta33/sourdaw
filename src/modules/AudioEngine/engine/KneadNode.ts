@@ -5,7 +5,7 @@
  */
 
 import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
-import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from '#/infra/audioWorklet/workletInitShared';
+import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
 
 import kneadProcessorUrl from '../services/kneadProcessor.ts?worker&url';
 
@@ -34,17 +34,28 @@ export async function createKneadNode(
     }
 
     await raceAbortSignal(ensureWorkletRegistered(ctx, kneadProcessorUrl), signal);
-    const wasmBytes = await raceAbortSignal(fetchWasmBinary(DEFAULT_WASM_URL), signal);
+    const wasmLease = await raceAbortSignal(
+        fetchWasmModule({ ctx, bundleId: 'daw-dsp', url: DEFAULT_WASM_URL, signal }),
+        signal
+    );
 
     signal?.throwIfAborted();
 
-    const node = new AudioWorkletNode(ctx, 'knead-processor', {
-        numberOfInputs: 1,
-        numberOfOutputs: 1,
-        outputChannelCount: [2],
-        channelCount: 2,
-        channelCountMode: 'explicit',
-    });
+    let node: AudioWorkletNode;
+    try {
+        node = new AudioWorkletNode(ctx, 'knead-processor', {
+            numberOfInputs: 1,
+            numberOfOutputs: 1,
+            outputChannelCount: [2],
+            channelCount: 2,
+            channelCountMode: 'explicit',
+            processorOptions: { wasmModule: wasmLease.module },
+        });
+        wasmLease.commit();
+    } catch (error) {
+        wasmLease.release();
+        throw error;
+    }
 
     const handshake = createReadyHandshake({ pluginName: 'KneadNode' });
     node.port.onmessage = (event: MessageEvent) => {
@@ -52,15 +63,10 @@ export async function createKneadNode(
     };
     const readyPromise = handshake.promise;
 
-    const copy = wasmBytes.slice(0);
-    node.port.postMessage(
-        {
-            type: 'init',
-            wasmBytes: copy,
-            transportSAB,
-        },
-        [copy]
-    );
+    node.port.postMessage({
+        type: 'init',
+        transportSAB,
+    });
 
     return {
         workletNode: node,

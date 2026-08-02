@@ -616,6 +616,14 @@ function getValueMismatchReason(argument: string): string {
     return `Provider value ${argument} does not match the user request`;
 }
 
+function hasSelectedNoteScope(text: string): boolean {
+    return (
+        /\b(?:selected|current|these)(?: midi)? notes?\b/iu.test(text) ||
+        /\b(?:midi )?notes? (?:that are |currently )?selected\b/iu.test(text) ||
+        /\b(?:note selection|selection of (?:midi )?notes?)\b/iu.test(text)
+    );
+}
+
 function validateBooleanIntentValue(
     valueRule: Extract<GroundingValueRule, { kind: 'boolean-intent' }>,
     assertedValue: unknown,
@@ -753,7 +761,12 @@ function validateNumberValue(
     if (valueRule.requiredInPrompt === true && expectedNumbers.length === 0) {
         return getValueMismatchReason(valueRule.argument);
     }
-    const matchesExpectedValue = expectedNumbers.some((expected) => Math.abs(expected - assertedValue) < 0.000_001);
+    const matchesExpectedValue = expectedNumbers.some((expected) => {
+        if (valueRule.match === 'exact') {
+            return Object.is(expected, assertedValue);
+        }
+        return Math.abs(expected - assertedValue) < 0.000_001;
+    });
     if (expectedNumbers.length > 0 && !matchesExpectedValue) {
         return getValueMismatchReason(valueRule.argument);
     }
@@ -1076,6 +1089,12 @@ function groundToolCall({
         })
     ) {
         return rejection(index, call.name, 'Provider clip deletion is not explicit in the user request');
+    }
+    if (
+        (call.name === 'quantizeNotes' || call.name === 'transposeNotes') &&
+        (hasSelectedNoteScope(actionScope.text) || (plannedActionNames.length === 1 && hasSelectedNoteScope(prompt)))
+    ) {
+        return rejection(index, call.name, 'Selected-note edits are not supported; target the whole MIDI clip');
     }
     const valueRejection = validateGroundedValues(groundingRules, groundedArguments, actionScope, context);
     if (valueRejection) {

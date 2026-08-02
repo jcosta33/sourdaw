@@ -1,21 +1,37 @@
+import { compareProjectSnapshots } from './compareProjectSnapshots';
+import { readNamedProjectJsonFromIndexedDb } from './readNamedProjectJsonFromIndexedDb';
 import { readNamedProjectJsonFromLocalStorage } from './readNamedProjectJsonFromLocalStorage';
-import { storageSupport } from './storageSupport';
 
 /**
- * Read a named project, falling back to IndexedDB.
+ * Read a named project, resolving by recency rather than by which store happens
+ * to hold a copy.
  *
- * Named project writes target IndexedDB and localStorage, but the
- * localStorage write fails silently when the project exceeds the ~5–10 MB
- * localStorage quota — leaving such projects reachable only from IndexedDB.
- * This read returns the localStorage copy when present and otherwise falls back
- * to IndexedDB, so large/quota-exceeded named projects remain loadable.
+ * The retired behaviour returned the localStorage copy whenever it was
+ * *present*. Its author anticipated quota and built the fallback for the copy
+ * being *absent*; the real failure mode was *staleness*. A project that was
+ * small when first saved got a mirror, and once it grew past the 5 MiB
+ * localStorage quota the mirror froze while IndexedDB kept receiving every
+ * later save — and this read handed the frozen copy back, which then reseeded
+ * CRDT authority over the good state (ADR 0013).
+ *
+ * IndexedDB is now the only store project content is written to. A localStorage
+ * mirror can only be a pre-migration leftover, so it wins only when it can
+ * prove it is newer — see {@link compareProjectSnapshots}. When neither copy
+ * can be shown to supersede the other, the store of record wins; a read has to
+ * return something, and returning the primary keeps one rule rather than two.
  */
 export async function readNamedProjectJson(key: string): Promise<string | null> {
-    const local = readNamedProjectJsonFromLocalStorage(key);
-    if (local !== null) {
-        return local;
-    }
+    const mirror = readNamedProjectJsonFromLocalStorage(key);
+    const primary = await readNamedProjectJsonFromIndexedDb(key);
 
-    await storageSupport.initializeIndexedDb();
-    return storageSupport.getIndexedDb(key);
+    if (primary === null) {
+        return mirror;
+    }
+    if (mirror === null) {
+        return primary;
+    }
+    if (compareProjectSnapshots({ primary, mirror }).verdict === 'mirror-newer') {
+        return mirror;
+    }
+    return primary;
 }
