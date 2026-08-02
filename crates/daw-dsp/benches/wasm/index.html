@@ -59,7 +59,7 @@
                 return ((endTick - startTick) | 0) / (nowMs - startMs);
             }
 
-            async function measure({ deviceId, clockBuffer, dspBytes, chamberBytes, scoringBytes, warmupQuanta, measureQuanta }) {
+            async function measure({ deviceId, clockBuffer, dspBytes, chamberBytes, scoringBytes, warmupQuanta, measureQuanta, segmentTargetMs }) {
                 // Length covers warm-up plus the timed run plus slack; the
                 // processor posts its result and returns false well before the
                 // context reaches the end, and the render promise is never awaited.
@@ -79,6 +79,7 @@
                         scoringBytes,
                         warmupQuanta,
                         measureQuanta,
+                        segmentTargetMs,
                     },
                 });
                 node.connect(context.destination);
@@ -101,7 +102,7 @@
                 return result;
             }
 
-            window.runQuantumCostTable = async ({ warmupQuanta, measureQuanta }) => {
+            window.runQuantumCostTable = async ({ warmupQuanta, measureQuanta, segmentTargetMs }) => {
                 const [dspBytes, chamberBytes, scoringBytes] = await Promise.all([
                     fetchWasm('/public/wasm/daw-dsp/daw_dsp_bg.wasm'),
                     fetchWasm('/public/wasm/proof-chamber/proof_chamber_bg.wasm'),
@@ -126,14 +127,21 @@
                         scoringBytes: scoringBytes.slice(0),
                         warmupQuanta,
                         measureQuanta,
+                        segmentTargetMs,
                     });
                     results.push({
                         ...result,
                         samplesTicks: Array.from(result.samplesTicks),
                         harnessFloorTicks: Array.from(result.harnessFloorTicks),
+                        segmentIndex: Array.from(result.segmentIndex),
+                        segmentRates: Array.from(result.segmentRates),
                     });
                 }
 
+                // Kept only as a page-side sanity reading. The published rate
+                // is measured inside each row's own timed window; a
+                // before/after pair on the page says nothing about the error
+                // inside a window that ran between them.
                 const ticksPerMsAfter = calibrate(clock.ticks, 400);
                 clock.worker.terminate();
 

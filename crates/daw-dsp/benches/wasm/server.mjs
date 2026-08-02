@@ -1,24 +1,39 @@
 /**
  * Static file server for the wasm leg of `benches/quantum.rs`.
  *
- * Two things it must do that a generic static server does not:
+ * Three things it must do that a generic static server does not:
  *
  * 1. **Cross-origin isolation.** `COOP: same-origin` + `COEP: require-corp`
- *    make `self.crossOriginIsolated === true`, which is what un-clamps
- *    `performance.now()` in Chrome from 100 us to 5 us. A 100 us tick cannot
- *    resolve a device that costs 20 us per quantum, so without these headers
- *    every cheap device in the table would read as either 0 or 100 us. The
- *    harness asserts `crossOriginIsolated` before it measures and refuses to
- *    report numbers taken on a clamped timer.
+ *    make `self.crossOriginIsolated === true`, which is what makes
+ *    `SharedArrayBuffer` constructible. That is not a nicety here, it is the
+ *    whole clock: Chrome exposes no `performance` inside an
+ *    `AudioWorkletGlobalScope`, so the worklet's only sub-millisecond time
+ *    source is a counter a spinning worker writes into shared memory. Without
+ *    these headers there is no `SharedArrayBuffer`, and therefore no way to
+ *    time a quantum from inside a worklet at all. The harness asserts
+ *    `crossOriginIsolated` before it measures.
+ *
+ *    Cross-origin isolation also un-clamps `performance.now()` from 100 us to
+ *    5 us, which matters for the *page*-side calibration and cross-checks — but
+ *    not for the per-quantum figures, which never touch `performance`.
  * 2. **Serve the repo root**, because the worklet imports the *generated*
  *    wasm-bindgen glue from `src/modules/AudioEngine/wasm/` — the copy that
  *    carries the `AudioWorkletGlobalScope` TextDecoder/TextEncoder polyfills —
  *    while the `_bg.wasm` binaries live under `public/wasm/`. Both are the
  *    committed artifacts production ships; nothing here is rebuilt.
+ * 3. **Strip types from `.ts` on the way out**, so the harness can import the
+ *    *real shipped* `grandBouleProcessor.ts` and time the actual
+ *    `readBlockAcquire` that runs on the audio thread in production, rather
+ *    than a reproduction of it. `node:module`'s `stripTypeScriptTypes` is a
+ *    type eraser, not a compiler: it rewrites nothing and emits no helpers, so
+ *    what the browser runs is the shipped source minus its annotations.
+ *    Extensionless relative specifiers are resolved to `.ts` the way the
+ *    bundler resolves them.
  */
 
-import { createReadStream, statSync } from 'node:fs';
+import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
+import { stripTypeScriptTypes } from 'node:module';
 import { extname, join, normalize, resolve } from 'node:path';
 
 const CONTENT_TYPES = {
@@ -46,12 +61,22 @@ export function startServer(repoRoot) {
         response.setHeader('Cache-Control', 'no-store');
 
         const url = new URL(request.url ?? '/', 'http://localhost');
+        if (url.pathname === '/favicon.ico') {
+            response.writeHead(204).end();
+            return;
+        }
         const requested = url.pathname === '/' ? '/crates/daw-dsp/benches/wasm/index.html' : url.pathname;
-        const filePath = join(root, normalize(requested).replace(/^(\.\.[/\\])+/, ''));
+        let filePath = join(root, normalize(requested).replace(/^(\.\.[/\\])+/, ''));
 
         if (!filePath.startsWith(root)) {
             response.writeHead(403).end('outside the served root');
             return;
+        }
+
+        // Extensionless relative specifier — the form the app's TypeScript uses
+        // for its own modules. Resolve it the way the bundler does.
+        if (extname(filePath) === '' && existsSync(`${filePath}.ts`)) {
+            filePath = `${filePath}.ts`;
         }
 
         let stats;
@@ -63,6 +88,17 @@ export function startServer(repoRoot) {
         }
         if (!stats.isFile()) {
             response.writeHead(404).end(`not a file: ${requested}`);
+            return;
+        }
+
+        if (extname(filePath) === '.ts') {
+            const stripped = stripTypeScriptTypes(readFileSync(filePath, 'utf8'), { mode: 'strip' });
+            const body = Buffer.from(stripped, 'utf8');
+            response.writeHead(200, {
+                'Content-Type': 'text/javascript; charset=utf-8',
+                'Content-Length': String(body.byteLength),
+            });
+            response.end(body);
             return;
         }
 

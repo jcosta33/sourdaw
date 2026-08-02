@@ -42,6 +42,7 @@ export const DEVICE_IDS = [
     'grinder',
     'fermenter',
     'grand_boule',
+    'grand_boule_ring_consumer',
     'toaster',
     'levain',
     'crumbs',
@@ -49,6 +50,67 @@ export const DEVICE_IDS = [
     'proof_chamber_fdn16',
     'scoring',
 ];
+
+/**
+ * Where a row's cost is actually charged.
+ *
+ * This is the distinction the first version of this table got wrong, and it
+ * changed the headline. `GrandBouleNode.ts:480-518` branches on
+ * `ctx instanceof OfflineAudioContext`: the **live** path builds
+ * `createWorkerRingTransport` — engine in a `Worker`, samples across a
+ * `SharedArrayBuffer` ring — and the only thing it registers on the audio
+ * thread is a consumer worklet that copies from that ring. The inline-DSP
+ * worklet is the **offline** path. There is no fallback: without
+ * `SharedArrayBuffer` the live path calls `requireSharedArrayBuffer('Grand
+ * Boule')` and *throws* before any module registration.
+ *
+ * So Grand Boule's DSP cost cannot land on the audio thread during playback,
+ * and summing it into an audio-thread budget overstates that budget by more
+ * than everything else combined. It is charged to `worker` and reported as its
+ * own line; what the audio thread actually pays for Grand Boule is the
+ * `grand_boule_ring_consumer` row.
+ *
+ * `offline` marks a figure that exists only in an `OfflineAudioContext` render
+ * — bounce and export, where there is no deadline at all.
+ */
+export const COST_SITE = {
+    bacteria: 'audio-thread',
+    gluten: 'audio-thread',
+    proof: 'audio-thread',
+    knead: 'audio-thread',
+    grinder: 'audio-thread',
+    fermenter: 'audio-thread',
+    grand_boule: 'worker',
+    grand_boule_ring_consumer: 'audio-thread',
+    toaster: 'audio-thread',
+    levain: 'audio-thread',
+    crumbs: 'audio-thread',
+    proof_chamber_plate: 'audio-thread',
+    proof_chamber_fdn16: 'audio-thread',
+    scoring: 'audio-thread',
+};
+
+/**
+ * Devices whose expensive work fires on a fixed period rather than every
+ * quantum, with the period in quanta and where it comes from.
+ *
+ * These are **duty cycles, not tails**, and reading their p95/p99 as a tail is
+ * a category error. Knead buffers to `yin_cfg.frame_size` = 2048 frames before
+ * running an analysis, which at 128 frames per quantum is one expensive quantum
+ * in 16 — 6.25%, forced unconditionally whenever `shift_semitones != 0`.
+ * Scoring analyses every `hop = sample_rate / 30` = 1600 frames, which is 12.5
+ * quanta, so two expensive quanta in every 25 — 8.0%.
+ *
+ * Both straddle the 5% line, which is why p95 and p99 land in the expensive
+ * mode *by construction*. Had `frame_size` been 4096, Knead's p95 would read
+ * ~0.5 us instead of ~1000 us with no change whatever to the device. The
+ * meaningful figures are the period, the tick cost and the amortised mean, and
+ * the runner reports those three instead of pretending the p95 is a tail.
+ */
+export const DUTY_CYCLE = {
+    knead: { periodQuanta: 16, source: 'yin_cfg.frame_size = 2048 frames / 128 = 16 quanta' },
+    scoring: { periodQuanta: 12.5, source: 'hop = sample_rate / 30 = 1600 frames / 128 = 12.5 quanta' },
+};
 
 /**
  * The deterministic excitation `tests/engine_output_level.rs` uses, so an
@@ -117,7 +179,7 @@ export function loopSample(frames) {
  *   timed run, so a device that fell silent halfway through cannot be reported.
  * - `note` — what the load parameter is and where production sets it.
  */
-export function buildDevices({ dsp, chamber, scoring, only }) {
+export function buildDevices({ dsp, chamber, scoring, ring, readBlockAcquire, only }) {
     const devices = [];
     /**
      * Constructing a device allocates: Levain and Crumbs each load a one-second
@@ -182,7 +244,18 @@ export function buildDevices({ dsp, chamber, scoring, only }) {
      * `verify` is run twice, after warm-up and after the timed run, so a pool
      * that drains mid-run cannot be reported as a steady-state cost.
      */
-    const heldInstrument = ({ id, label, note, instance, module, struck, expectSounding, activeVoices, restrike }) => {
+    const heldInstrument = ({
+        id,
+        label,
+        note,
+        instance,
+        module,
+        struck,
+        expectSounding,
+        activeVoices,
+        restrike,
+        soloReference,
+    }) => {
         let lastLeftPtr = 0;
         return {
             id,
@@ -195,6 +268,7 @@ export function buildDevices({ dsp, chamber, scoring, only }) {
                           if (frame % RESTRIKE_INTERVAL_QUANTA === 0) {
                               restrike();
                           }
+                          soloReference?.feed(frame);
                       },
             render() {
                 lastLeftPtr = instance.process(QUANTUM);
@@ -202,17 +276,66 @@ export function buildDevices({ dsp, chamber, scoring, only }) {
             },
             verify() {
                 const level = pointerRms(module, lastLeftPtr, instance.get_right_ptr());
-                if (activeVoices === undefined) {
+                if (activeVoices !== undefined) {
+                    const active = activeVoices();
                     return {
-                        ok: level > 1e-5,
-                        detail: `${struck} notes (no active-voice export), output RMS ${level.toExponential(3)}`,
+                        ok: active === expectSounding && level > 1e-5,
+                        detail: `active_voices() = ${active}, expected ${expectSounding} from ${struck} note-ons, output RMS ${level.toExponential(3)}`,
                     };
                 }
-                const active = activeVoices();
+
+                // No `active_voices()` export on this engine, so occupancy is
+                // established by **level scaling against a solo reference**
+                // rather than by a bare non-silence threshold.
+                //
+                // The bare threshold was the hole: `level > 1e-5` is cleared by
+                // *one* sounding voice out of 64, so the guard the table
+                // advertised could not tell a full pool from a single note.
+                // Independent voices at different pitches sum incoherently, so
+                // total RMS grows as sqrt(N). This renders one identically
+                // driven voice alongside and asserts the N-voice output sits in
+                // a two-sided band around sqrt(N) x the solo level: the lower
+                // bound reds when voices are missing, the upper bound reds when
+                // something is summing coherently or running away.
+                //
+                // The band is wide (0.45x to 2.2x) because voices differ in
+                // pitch and therefore in energy. It is still ~4x tighter than
+                // the gap between 64 voices and 1, which is the failure it
+                // exists to catch.
+                const solo = soloReference.rms();
+                const expectedRatio = Math.sqrt(struck);
+                const ratio = solo > 0 ? level / solo : 0;
+                const low = 0.45 * expectedRatio;
+                const high = 2.2 * expectedRatio;
                 return {
-                    ok: active === expectSounding && level > 1e-5,
-                    detail: `active_voices() = ${active}, expected ${expectSounding} from ${struck} note-ons, output RMS ${level.toExponential(3)}`,
+                    ok: level > 1e-5 && ratio >= low && ratio <= high,
+                    detail:
+                        `${struck} notes, no active-voice export: output RMS ${level.toExponential(3)} is ` +
+                        `${ratio.toFixed(1)}x one identically-driven voice (${solo.toExponential(3)}), ` +
+                        `band ${low.toFixed(1)}-${high.toFixed(1)}x around sqrt(${struck}) = ${expectedRatio.toFixed(1)}x`,
                 };
+            },
+        };
+    };
+
+    /**
+     * One voice of the same device, driven identically, rendered alongside the
+     * measured instance so occupancy can be checked as a *ratio*. Outside every
+     * timed region — `feed` and `rms` are only ever called from the untimed
+     * paths.
+     */
+    const makeSoloReference = ({ instance, module, strike }) => {
+        strike();
+        return {
+            feed(frame) {
+                if (frame % RESTRIKE_INTERVAL_QUANTA === 0) {
+                    strike();
+                }
+                instance.process(QUANTUM);
+            },
+            rms() {
+                const ptr = instance.process(QUANTUM);
+                return pointerRms(module, ptr, instance.get_right_ptr());
             },
         };
     };
@@ -288,10 +411,15 @@ export function buildDevices({ dsp, chamber, scoring, only }) {
     // -- Grinder — guitar amp/pedal sim ------------------------------------
     // `GrinderPatch.ts:299` ships `ampModel: 'crunch-jcm'`, so that is the row.
     if (wanted('grinder')) {
+        // The shipped patch, all three values from GrinderPatch.ts:299-301:
+        // ampModel 'crunch-jcm', channel 1, gain 5. The earlier version of this
+        // row used channel 2 / gain 8.2, which is the lead channel at high gain
+        // — three triode stages instead of two, so it measured a heavier
+        // circuit than the reference project ever instantiates.
         const instance = new dsp.GrinderInstance(SAMPLE_RATE);
-        instance.set_param('ampModel', 1); // crunch-jcm — the shipped default patch
-        instance.set_param('channel', 2);
-        instance.set_param('gain', 8.2);
+        instance.set_param('ampModel', 1); // crunch-jcm
+        instance.set_param('channel', 1); // shipped default, 2 triode stages
+        instance.set_param('gain', 5); // shipped default
         instance.set_param('master', 8);
         instance.set_param('bass', 5);
         instance.set_param('mid', 5);
@@ -299,8 +427,8 @@ export function buildDevices({ dsp, chamber, scoring, only }) {
         instance.set_param('fat', 0);
         const device = pointerEffect({
             id: 'grinder',
-            label: 'Grinder (Crunch JCM, lead ch, gain 8.2)',
-            note: "effect; ampModel from GrinderPatch.ts:299 default 'crunch-jcm'",
+            label: 'Grinder (Crunch JCM, ch 1, gain 5 — shipped patch)',
+            note: "effect; the shipped patch, GrinderPatch.ts:299-301 (ampModel 'crunch-jcm', channel 1, gain 5)",
             instance,
             module: dsp,
         });
@@ -312,7 +440,7 @@ export function buildDevices({ dsp, chamber, scoring, only }) {
     }
 
     // -- Fermenter — flagship hybrid synth ---------------------------------
-    // `fermenterProcessor.ts:164` asks for 32 voices and does not get them:
+    // `fermenterProcessor.ts:170` asks for 32 voices and does not get them:
     // `MasterSynth::new` discards the argument and a layer's pool is a fixed
     // 16, so one layer — the shipped patch — tops out at 16 sounding voices.
     if (wanted('fermenter')) {
@@ -327,7 +455,7 @@ export function buildDevices({ dsp, chamber, scoring, only }) {
             heldInstrument({
                 id: 'fermenter',
                 label: 'Fermenter (16 sounding voices, 1 layer)',
-                note: 'fermenterProcessor.ts:164 constructs 32; one layer can hold 16, which is production',
+                note: 'fermenterProcessor.ts:170 constructs 32; one layer can hold 16, which is production',
                 instance,
                 module: dsp,
                 struck,
@@ -349,21 +477,99 @@ export function buildDevices({ dsp, chamber, scoring, only }) {
             }
         };
         strike();
+        // One voice, same pool size, same velocity, same re-strike cadence.
+        const soloInstance = new dsp.GrandBouleInstance(SAMPLE_RATE, 64);
+        const soloReference = makeSoloReference({
+            instance: soloInstance,
+            module: dsp,
+            strike: () => soloInstance.note_on(notes[Math.floor(notes.length / 2)], 0.8),
+        });
         devices.push(
             heldInstrument({
                 id: 'grand_boule',
-                label: 'Grand Boule (64 voices, re-struck 1/s)',
-                note: 'grandBouleEngineCore.ts:143 constructs 64; pedalled playing fills the pool and holds it',
+                label: 'Grand Boule (64 voices, re-struck 1/s) — WORKER, not audio thread',
+                note: 'grandBouleEngineCore.ts:143 constructs 64; live path is Worker + SAB ring (GrandBouleNode.ts:480-518), so this cost is not charged to the audio thread',
                 instance,
                 module: dsp,
                 struck,
                 restrike: strike,
+                soloReference,
             })
         );
     }
 
+    // -- Grand Boule's ring consumer — what the audio thread ACTUALLY pays ----
+    //
+    // The live transport registers exactly one thing on the audio thread: a
+    // worklet that copies rendered frames out of the SAB ring. This row times
+    // the **real shipped** `readBlockAcquire` from
+    // `worklets/grandBouleProcessor.ts` — the server strips its types on the
+    // way out, so this is the function production runs, not a reproduction —
+    // plus the surrounding `Atomics.load`s that `process()` performs per
+    // quantum on the consuming path.
+    //
+    // The ring is kept ahead of the read head from here rather than by a
+    // Worker, so the timed path is the steady *consuming* branch. The underrun
+    // branch is cheaper (it fills silence and returns), so driving it would
+    // understate the row.
+    if (wanted('grand_boule_ring_consumer')) {
+        const ringFrames = 8192;
+        const controlInts = new Int32Array(new SharedArrayBuffer(ring.GRAND_BOULE_CONTROL_HEADER_BYTES));
+        const leftRing = new Float32Array(ringFrames);
+        const rightRing = new Float32Array(ringFrames);
+        for (let i = 0; i < ringFrames; i += 1) {
+            const value = Math.sin((i / SAMPLE_RATE) * 220 * Math.PI * 2) * 0.5;
+            leftRing[i] = value;
+            rightRing[i] = value;
+        }
+        const out0 = new Float32Array(QUANTUM);
+        const out1 = new Float32Array(QUANTUM);
+        let consumedCount = 0;
+        let underruns = 0;
+
+        devices.push({
+            id: 'grand_boule_ring_consumer',
+            label: 'Grand Boule ring consumer (the live audio-thread cost)',
+            note: 'the only Grand Boule code on the audio thread in the live transport; real readBlockAcquire from grandBouleProcessor.ts',
+            feed() {
+                // Keep the producer ahead of the consumer, the way the engine
+                // Worker does. Untimed: production pays this on the Worker.
+                const readHead = Atomics.load(controlInts, ring.GRAND_BOULE_READ_HEAD_IDX);
+                Atomics.store(controlInts, ring.GRAND_BOULE_WRITE_HEAD_IDX, (readHead + 4 * QUANTUM) | 0);
+            },
+            render() {
+                // The per-quantum work `GrandBouleProcessor.process` does on the
+                // consuming path: the flush-generation check, the read-head
+                // load, and the ring copy itself.
+                const flushGeneration = Atomics.load(controlInts, ring.GRAND_BOULE_FLUSH_GENERATION_IDX);
+                const readHead = Atomics.load(controlInts, ring.GRAND_BOULE_READ_HEAD_IDX);
+                const consumed = readBlockAcquire(controlInts, leftRing, rightRing, ringFrames, out0, out1, QUANTUM);
+                if (consumed) {
+                    Atomics.store(controlInts, ring.GRAND_BOULE_READ_HEAD_IDX, (readHead + QUANTUM) | 0);
+                    consumedCount += 1;
+                } else {
+                    underruns += 1;
+                }
+                return flushGeneration + (consumed ? 1 : 0);
+            },
+            verify() {
+                let sum = 0;
+                for (let i = 0; i < QUANTUM; i += 1) {
+                    sum += out0[i] * out0[i] + out1[i] * out1[i];
+                }
+                const level = Math.sqrt(sum / (2 * QUANTUM));
+                return {
+                    ok: level > 1e-5 && underruns === 0 && consumedCount > 0,
+                    detail:
+                        `${consumedCount} quanta consumed, ${underruns} underruns (must be 0 — an underrun ` +
+                        `takes the cheap silence branch), output RMS ${level.toExponential(3)}`,
+                };
+            },
+        });
+    }
+
     // -- Toaster — drum machine --------------------------------------------
-    // `toasterProcessor.ts:191` constructs `TOASTER_PAD_COUNT` = 16 pads.
+    // `toasterProcessor.ts:215` constructs `TOASTER_PAD_COUNT` = 16 pads.
     if (wanted('toaster')) {
         const struck = 16;
         const instance = new dsp.ToasterInstance(SAMPLE_RATE, 16);
@@ -377,22 +583,31 @@ export function buildDevices({ dsp, chamber, scoring, only }) {
             }
         };
         strike();
+        // One pad, same gain, same cadence — the occupancy denominator.
+        const soloInstance = new dsp.ToasterInstance(SAMPLE_RATE, 16);
+        soloInstance.set_param('master_gain', 0.63);
+        const soloReference = makeSoloReference({
+            instance: soloInstance,
+            module: dsp,
+            strike: () => soloInstance.note_on(0, 127, 36),
+        });
         devices.push(
             heldInstrument({
                 id: 'toaster',
                 label: 'Toaster (16 pads, re-struck 1/s)',
-                note: 'toasterProcessor.ts:191 constructs TOASTER_PAD_COUNT = 16',
+                note: 'toasterProcessor.ts:215 constructs TOASTER_PAD_COUNT = 16',
                 instance,
                 module: dsp,
                 struck,
                 restrike: strike,
+                soloReference,
             })
         );
     }
 
     // -- Levain — orchestral sample instrument ------------------------------
     //
-    // `levainProcessor.ts:149` constructs 64 voices, which is also
+    // `levainProcessor.ts:155` constructs 64 voices, which is also
     // `MAX_VOICES_WASM`. **64 note-ons do not produce 64 voices.** Legato is on
     // by default (`DEFAULT_LEGATO_CONFIG.enabled = true`,
     // `LevainPatch.ts:225`), and `LegatoEngine::note_on` returns
@@ -422,7 +637,7 @@ export function buildDevices({ dsp, chamber, scoring, only }) {
             heldInstrument({
                 id: 'levain',
                 label: 'Levain (32 sounding voices, looped zone)',
-                note: 'levainProcessor.ts:149 constructs 64 = MAX_VOICES_WASM; shipped legato collapses 64 note-ons to 32 voices',
+                note: 'levainProcessor.ts:155 constructs 64 = MAX_VOICES_WASM; shipped legato collapses 64 note-ons to 32 voices',
                 instance,
                 module: dsp,
                 struck,
@@ -434,7 +649,7 @@ export function buildDevices({ dsp, chamber, scoring, only }) {
 
     // -- Crumbs — sampler/slicer -------------------------------------------
     //
-    // `crumbsProcessor.ts:100` takes no voice argument; the pool is the crate's
+    // `crumbsProcessor.ts:106` takes no voice argument; the pool is the crate's
     // `MAX_VOICES` = 128. 32 held notes is a heavy but reachable slice load.
     // The wasm build renders from the in-memory pool `add_sample` fills, since
     // an `AudioWorkletGlobalScope` has no file API for the streaming path.
@@ -462,7 +677,7 @@ export function buildDevices({ dsp, chamber, scoring, only }) {
             heldInstrument({
                 id: 'crumbs',
                 label: 'Crumbs (32 sounding voices, in-memory pool)',
-                note: 'crumbsProcessor.ts:100 takes no voice count; crate MAX_VOICES = 128',
+                note: 'crumbsProcessor.ts:106 takes no voice count; crate MAX_VOICES = 128',
                 instance,
                 module: dsp,
                 struck,

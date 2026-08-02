@@ -29,6 +29,10 @@ import { initSync as initChamber, ProofChamberInstance } from '/src/modules/Audi
 import { initSync as initScoring, ScoringInstance } from '/src/modules/AudioEngine/wasm/scoring.js';
 
 import { buildDevices, QUANTUM } from './deviceRecipes.js';
+// The real shipped audio-thread code, type-stripped by the harness server, so
+// the ring-consumer row times the function production runs.
+import * as ring from '/src/modules/AudioEngine/models/GrandBouleRingProtocol.ts';
+import { readBlockAcquire } from '/src/modules/AudioEngine/worklets/grandBouleProcessor.ts';
 
 /**
  * The distribution of "read the clock twice with nothing in between", in ticks.
@@ -94,6 +98,8 @@ class QuantumCostProcessor extends AudioWorkletProcessor {
             },
             chamber: { memory: chamberExports.memory, ProofChamberInstance },
             scoring: { memory: scoringExports.memory, ScoringInstance },
+            ring,
+            readBlockAcquire,
         });
         this._device = device;
 
@@ -102,11 +108,37 @@ class QuantumCostProcessor extends AudioWorkletProcessor {
         this._frame = 0;
         this._samples = new Float64Array(this._measureQuanta);
         this._startedAtMs = Date.now();
+
+        // In-window calibration.
+        //
+        // The previous version calibrated the tick rate **once before and once
+        // after the whole run** and published the difference as a drift figure.
+        // That figure carries no information about the error it was offered as
+        // a proxy for: a reproduction of this mechanism in Node — same V8, same
+        // scheduler, where `performance.now()` exists to check against —
+        // reported +0.59% drift on a run whose median was off by +8.6% and
+        // whose p95 was off by +12.4%, and +14.10% drift on a run at a load
+        // *below* the ceiling. Drift and accuracy are uncorrelated.
+        //
+        // So the rate is now measured **inside** the timed window, in segments,
+        // against the worklet's own `Date.now()`. Each sample is converted with
+        // the rate of the segment it was taken in, and the spread of those
+        // per-segment rates is published per row — a real dispersion figure
+        // instead of one before/after pair. A segment is long enough that
+        // `Date.now()`'s 1 ms granularity contributes well under a percent.
+        this._segmentTargetMs = config.segmentTargetMs;
+        this._segmentRates = [];
+        this._segmentIndex = new Int32Array(this._measureQuanta);
+        this._segmentStartMs = 0;
+        this._segmentStartTick = 0;
         this._warmVerify = null;
         /** Kept and posted so nothing in the render chain is dead code. */
         this._sink = 0;
         /** Last discarded warm-up sample, posted for the same reason. */
         this._discarded = 0;
+        /** Summed warm-up ticks, so the wall-clock cross-check can account for them. */
+        this._warmupTicks = 0;
+        this._warmupTotalTicks = 0;
     }
 
     process() {
@@ -137,19 +169,39 @@ class QuantumCostProcessor extends AudioWorkletProcessor {
 
         if (this._phase === 'warmup') {
             this._discarded = elapsedTicks;
+            this._warmupTicks += elapsedTicks;
             this._counter += 1;
             if (this._counter >= this._warmupQuanta) {
                 this._warmVerify = device.verify();
                 this._phase = 'measure';
                 this._counter = 0;
+                this._warmupTotalTicks = this._warmupTicks;
+                this._segmentStartMs = Date.now();
+                this._segmentStartTick = Atomics.load(ticks, 0);
             }
             return true;
         }
 
         this._samples[this._counter] = elapsedTicks;
+        this._segmentIndex[this._counter] = this._segmentRates.length;
         this._counter += 1;
 
+        // Close the segment once it has covered enough wall clock for
+        // `Date.now()`'s 1 ms granularity to be negligible against it.
+        const nowMs = Date.now();
+        const segmentMs = nowMs - this._segmentStartMs;
+        if (segmentMs >= this._segmentTargetMs) {
+            const segmentTicks = (after - this._segmentStartTick) | 0;
+            this._segmentRates.push(segmentTicks / segmentMs);
+            this._segmentStartMs = nowMs;
+            this._segmentStartTick = after;
+        }
+
         if (this._counter >= this._measureQuanta) {
+            const tailMs = Date.now() - this._segmentStartMs;
+            if (tailMs > 0) {
+                this._segmentRates.push((((after - this._segmentStartTick) | 0)) / tailMs);
+            }
             this.port.postMessage({
                 type: 'result',
                 id: device.id,
@@ -163,6 +215,10 @@ class QuantumCostProcessor extends AudioWorkletProcessor {
                 lateVerify: device.verify(),
                 sink: this._sink,
                 lastDiscardedWarmupTicks: this._discarded,
+                warmupTotalTicks: this._warmupTotalTicks,
+                segmentRates: this._segmentRates,
+                segmentIndex: this._segmentIndex,
+                segmentTargetMs: this._segmentTargetMs,
                 // Wall clock across warm-up + the timed run, from the worklet's
                 // own `Date.now()`. An independent upper bound on the sum of
                 // the tick-derived samples: if the calibrated total exceeds

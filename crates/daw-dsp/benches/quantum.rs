@@ -159,7 +159,7 @@ const BUDGET_NS: f64 = 2_666_667.0;
 /// `DEFAULT_VOICE_COUNT` of 32.
 const GRAND_BOULE_POOL: usize = 64;
 
-/// What `fermenterProcessor.ts:164` asks for: `new FermenterInstance(sampleRate, 32)`.
+/// What `fermenterProcessor.ts:170` asks for: `new FermenterInstance(sampleRate, 32)`.
 ///
 /// It does not get it. `MasterSynth::new(sample_rate, _max_voices)` discards the
 /// argument, and each `Layer` owns a fixed `MAX_VOICES_PER_LAYER = 16` pool, so
@@ -847,10 +847,15 @@ fn row_knead() -> Row {
 /// Grinder at the model `GrinderPatch.ts:299` actually ships, `crunch-jcm`,
 /// rather than at the `lead_jcm` the model sweep above happens to start from.
 fn row_grinder() -> Row {
+    // The shipped patch, all three values from `GrinderPatch.ts:299-301`:
+    // `ampModel: 'crunch-jcm'`, `channel: 1`, `gain: 5`. An earlier version of
+    // this row used channel 2 at gain 8.2 — the lead channel, three triode
+    // stages instead of two — which measured a heavier circuit than the
+    // reference project ever instantiates.
     let mut instance = GrinderInstance::new(SAMPLE_RATE);
-    instance.set_param("ampModel", 1.0); // crunch-jcm — the shipped default patch
-    instance.set_param("channel", 2.0);
-    instance.set_param("gain", 8.2);
+    instance.set_param("ampModel", 1.0); // crunch-jcm
+    instance.set_param("channel", 1.0); // shipped default, 2 triode stages
+    instance.set_param("gain", 5.0); // shipped default
     instance.set_param("master", 8.0);
     instance.set_param("bass", 5.0);
     instance.set_param("mid", 5.0);
@@ -866,8 +871,8 @@ fn row_grinder() -> Row {
     let output_db = instance.get_output_db();
     Row {
         id: "grinder",
-        label: "Grinder (Crunch JCM, lead ch, gain 8.2)",
-        load: "effect; ampModel from GrinderPatch.ts:299 default 'crunch-jcm'",
+        label: "Grinder (Crunch JCM, ch 1, gain 5 — shipped patch)",
+        load: "effect; the shipped patch, GrinderPatch.ts:299-301",
         distribution: summarise(samples),
         occupancy: format!("engine output {output_db:.2} dBFS"),
         occupancy_ok: output_db > -60.0,
@@ -886,7 +891,7 @@ fn row_fermenter() -> Row {
     Row {
         id: "fermenter",
         label: "Fermenter (16 sounding voices, 1 layer)",
-        load: "fermenterProcessor.ts:164 constructs 32; one layer holds 16, which is production",
+        load: "fermenterProcessor.ts:170 constructs 32; one layer holds 16, which is production",
         distribution: summarise(samples),
         occupancy: format!("active_voices() = {active}, expected {struck}"),
         occupancy_ok: active as usize == struck,
@@ -954,7 +959,7 @@ fn row_toaster() -> Row {
     Row {
         id: "toaster",
         label: "Toaster (16 pads, re-struck 1/s)",
-        load: "toasterProcessor.ts:191 constructs TOASTER_PAD_COUNT = 16",
+        load: "toasterProcessor.ts:215 constructs TOASTER_PAD_COUNT = 16",
         distribution: summarise(samples),
         occupancy: format!("16 pads (no active-voice export), output RMS {level:.3e}"),
         occupancy_ok: level > 1.0e-5,
@@ -969,7 +974,7 @@ fn loop_sample(frames: u32) -> Vec<f32> {
 }
 
 /// Levain at the polyphony it actually reaches, which is **not** the 64 voices
-/// `levainProcessor.ts:149` constructs.
+/// `levainProcessor.ts:155` constructs.
 ///
 /// Legato ships enabled (`DEFAULT_LEGATO_CONFIG.enabled = true`,
 /// `LevainPatch.ts:225`) and `LegatoEngine::note_on` returns `SyntheticGlide`
@@ -1003,7 +1008,7 @@ fn row_levain() -> Row {
     Row {
         id: "levain",
         label: "Levain (32 sounding voices, looped zone)",
-        load: "levainProcessor.ts:149 constructs 64 = MAX_VOICES_WASM; shipped legato collapses 64 note-ons to 32",
+        load: "levainProcessor.ts:155 constructs 64 = MAX_VOICES_WASM; shipped legato collapses 64 note-ons to 32",
         distribution: summarise(samples),
         occupancy: format!("active_voices() = {active}, expected 32 from 64 note-ons"),
         occupancy_ok: active == 32,
@@ -1037,7 +1042,7 @@ fn row_crumbs() -> Row {
     Row {
         id: "crumbs",
         label: "Crumbs (32 sounding voices, in-memory pool)",
-        load: "crumbsProcessor.ts:100 takes no voice count; crate MAX_VOICES = 128",
+        load: "crumbsProcessor.ts:106 takes no voice count; crate MAX_VOICES = 128",
         distribution: summarise(samples),
         occupancy: format!("active_voices() = {active}, expected 32"),
         occupancy_ok: active == 32,
@@ -1056,9 +1061,8 @@ fn row_crumbs() -> Row {
 /// Scoring is excluded — the tuner renders only while its surface is open.
 /// ProofChamber's contribution is not in this native total, because it is not
 /// in this crate; the wasm total in `quantum-cost-table.md` includes it.
-const REFERENCE_PROJECT: [(&str, usize); 9] = [
-    // Five instrument tracks.
-    ("grand_boule", 1),
+const REFERENCE_PROJECT_AUDIO_THREAD: [(&str, usize); 8] = [
+    // Four instrument tracks that render in a worklet.
     ("fermenter", 1),
     ("levain", 1),
     ("toaster", 1),
@@ -1070,6 +1074,24 @@ const REFERENCE_PROJECT: [(&str, usize); 9] = [
     // The master bus.
     ("proof", 1),
 ];
+
+/// Grand Boule is **not** in the audio-thread total, and that is the single
+/// most important line in this file.
+///
+/// `GrandBouleNode.ts:480-518` branches on `ctx instanceof OfflineAudioContext`.
+/// The live path builds `createWorkerRingTransport` — the engine runs in a
+/// `Worker` and reaches the audio thread only as a consumer worklet copying out
+/// of a `SharedArrayBuffer` ring. The inline-DSP worklet is the *offline* path,
+/// and there is no fallback: without `SharedArrayBuffer` the live path calls
+/// `requireSharedArrayBuffer('Grand Boule')` and throws before registering
+/// anything.
+///
+/// So this figure is real and it is large, but it is not charged against the
+/// 2.667 ms worklet deadline. An earlier version of this table summed it into
+/// that budget and reported a headline that was wrong by more than every other
+/// device combined. What the audio thread actually pays is measured by the
+/// `grand_boule_ring_consumer` row in the wasm leg.
+const REFERENCE_PROJECT_WORKER: [(&str, usize); 1] = [("grand_boule", 1)];
 
 /// Instances of a device in the reference project that are *not* in the table
 /// under their own id, kept separate so the table stays one row per device.
@@ -1103,6 +1125,30 @@ fn cost_table(_criterion: &mut Criterion) {
         Some(value) => format!("{value:.2}"),
         None => "unavailable".to_string(),
     };
+
+    // Gate BEFORE printing. An earlier version asserted this at the end so the
+    // table "still printed" on a contended run, which is exactly backwards: a
+    // number that is printed gets quoted. The load reading and the occupancy
+    // checks are both preconditions for the table existing at all, so both are
+    // evaluated here, and a failure means no table.
+    let ceiling = load_ceiling();
+    let busiest = [load_before, load_after].into_iter().flatten().fold(0.0_f64, f64::max);
+    assert!(
+        busiest <= ceiling,
+        "the machine was not idle: 1-minute load average reached {busiest:.2} against a ceiling \
+         of {ceiling:.1}. Any table printed from this run would measure this DSP *and* whatever \
+         else was running, so none is printed. Wait for the machine to go quiet and re-run."
+    );
+    let unverified: Vec<&str> = rows
+        .iter()
+        .filter(|row| !row.occupancy_ok)
+        .map(|row| row.id)
+        .collect();
+    assert!(
+        unverified.is_empty(),
+        "these rows were not in the state they claim to measure, so their cost figures are \
+         meaningless and no table is printed: {unverified:?}"
+    );
 
     eprintln!("\n=== Per-quantum device cost — NATIVE ===\n");
     eprintln!(
@@ -1188,62 +1234,54 @@ fn cost_table(_criterion: &mut Criterion) {
             .unwrap_or_else(|| panic!("the reference project names {id}, which is not a table row"))
             .distribution
     };
-    let mut median_total = 0.0;
-    let mut p99_total = 0.0;
-    for (id, count) in REFERENCE_PROJECT {
-        let distribution = lookup(id);
-        median_total += distribution.median * count as f64;
-        p99_total += distribution.p99 * count as f64;
+    let mut audio_median = 0.0;
+    for (id, count) in REFERENCE_PROJECT_AUDIO_THREAD {
+        audio_median += lookup(id).median * count as f64;
     }
-    let gluten = lookup("gluten");
-    median_total += gluten.median * REFERENCE_PROJECT_GLUTEN_INSTANCES as f64;
-    p99_total += gluten.p99 * REFERENCE_PROJECT_GLUTEN_INSTANCES as f64;
+    audio_median += lookup("gluten").median * REFERENCE_PROJECT_GLUTEN_INSTANCES as f64;
+
+    let mut worker_median = 0.0;
+    for (id, count) in REFERENCE_PROJECT_WORKER {
+        worker_median += lookup(id).median * count as f64;
+    }
 
     eprintln!("\n=== Reference project (defined in this file — nothing in the repo defines it) ===");
-    for (id, count) in REFERENCE_PROJECT {
-        eprintln!("  {count} x {id}");
+    eprintln!("  audio thread:");
+    for (id, count) in REFERENCE_PROJECT_AUDIO_THREAD {
+        eprintln!("    {count} x {id}");
     }
-    eprintln!("  {REFERENCE_PROJECT_GLUTEN_INSTANCES} x gluten");
+    eprintln!("    {REFERENCE_PROJECT_GLUTEN_INSTANCES} x gluten");
+    eprintln!("  worker (not the audio thread):");
+    for (id, count) in REFERENCE_PROJECT_WORKER {
+        eprintln!("    {count} x {id}");
+    }
     eprintln!("  (Scoring excluded: the tuner renders only while its surface is open.)");
-    eprintln!("  (ProofChamber excluded from this native total: sibling crate, see the header.)");
+    eprintln!("  (ProofChamber and the Grand Boule ring consumer are wasm-leg rows; see the header.)");
     eprintln!(
-        "\n  summed median {:.3} ms = {:.1}% of the {:.4} ms budget",
-        median_total / 1.0e6,
-        percent_of_budget(median_total),
+        "\n  AUDIO THREAD, summed median {:.3} ms = {:.1}% of the {:.4} ms budget",
+        audio_median / 1.0e6,
+        percent_of_budget(audio_median),
         BUDGET_NS / 1.0e6
     );
     eprintln!(
-        "  summed p99    {:.3} ms = {:.1}% of budget  (a pessimistic sum: it assumes every device \
-         hits its own p99 in the same quantum)",
-        p99_total / 1.0e6,
-        percent_of_budget(p99_total)
+        "  WORKER line item, Grand Boule {:.3} ms per quantum of audio ({:.1}% of a quantum's wall \
+         clock, on its own thread)",
+        worker_median / 1.0e6,
+        percent_of_budget(worker_median)
+    );
+    eprintln!(
+        "\n  No summed p99 is reported. Knead's expensive mode is a duty cycle, not a tail — \
+         \n  frame_size 2048 / 128 = one expensive quantum in 16 — so its p99 is a fact about where \
+         \n  6.25% sits relative to 99%, not about the device. Summing every row's p99 would also \
+         \n  assume every device spikes in the same quantum, which nothing makes true. The wasm leg \
+         \n  reports period, tick cost and amortised mean instead."
     );
     eprintln!(
         "\n  Read against the wasm column, not this one. Native is a lower bound; production runs \
          wasm in a worklet."
     );
 
-    let failed: Vec<&str> = rows
-        .iter()
-        .filter(|row| !row.occupancy_ok)
-        .map(|row| row.id)
-        .collect();
-    assert!(
-        failed.is_empty(),
-        "these rows were not in the state they claim to measure, so their cost figures are \
-         meaningless: {failed:?}"
-    );
 
-    // Asserted last so the table still prints — a contended run is useful to
-    // look at, it is just not publishable.
-    let ceiling = load_ceiling();
-    let busiest = [load_before, load_after].into_iter().flatten().fold(0.0_f64, f64::max);
-    assert!(
-        busiest <= ceiling,
-        "the machine was not idle: 1-minute load average reached {busiest:.2} against a ceiling \
-         of {ceiling:.1}. The table above is a measurement of this DSP *and* whatever else was \
-         running, and must not be published. Wait for the machine to go quiet and re-run."
-    );
 }
 
 // ---------------------------------------------------------------------------
