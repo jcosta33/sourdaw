@@ -140,6 +140,11 @@ impl PedalState {
         self.sostenuto = engaged;
     }
 
+    pub fn clear_playing_keys(&mut self) {
+        self.sostenuto_captured.clear_all();
+        self.keys_held.clear_all();
+    }
+
     /// Record that a key has been pressed.
     pub fn press_key(&mut self, key: u32) {
         self.keys_held.set(key);

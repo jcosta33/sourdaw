@@ -34,7 +34,16 @@ type RenderInSegmentsInput = {
     onRenderProgress?: (fraction: number) => void;
     /** Defaults to the global export cancel flag. */
     cancelSource?: RenderCancelSource;
+    /** Initialized device processors whose terminal failure must stop this render. */
+    runtimeFailures?: readonly Promise<never>[];
+    /** Processor round-trips that must succeed before the rendered buffer is accepted. */
+    runtimeHealthChecks?: ReadonlyArray<() => Promise<void>>;
 };
+
+function createOfflineRuntimeFailureError(error: unknown): Error {
+    const detail = error instanceof Error ? error.message : String(error);
+    return createExportError(`Offline device processor failed: ${detail}`, error);
+}
 
 /**
  * Places checkpoints on the render-quantum grid, strictly inside the render.
@@ -131,6 +140,8 @@ export function renderInSegments({
     segmentSeconds = RENDER_SEGMENT_SECONDS,
     onRenderProgress,
     cancelSource = EXPORT_CANCEL_SOURCE,
+    runtimeFailures = [],
+    runtimeHealthChecks = [],
 }: RenderInSegmentsInput): Promise<AudioBuffer> {
     const canSuspend = typeof offlineCtx.suspend === 'function' && typeof offlineCtx.resume === 'function';
     const checkpoints = canSuspend
@@ -138,7 +149,32 @@ export function renderInSegments({
         : [];
 
     if (checkpoints.length === 0) {
-        return renderWithTimeout(offlineCtx, timeoutMs);
+        let settled = false;
+        const rendering = renderWithTimeout(offlineCtx, timeoutMs)
+            .then(async (buffer) => {
+                try {
+                    await Promise.all(runtimeHealthChecks.map((check) => check()));
+                } catch (error) {
+                    throw createOfflineRuntimeFailureError(error);
+                }
+                settled = true;
+                return buffer;
+            })
+            .catch((error: unknown) => {
+                settled = true;
+                closeAbandonedContext(offlineCtx);
+                throw error;
+            });
+        const failures = runtimeFailures.map((failure) =>
+            failure.catch((error: unknown) => {
+                if (!settled) {
+                    settled = true;
+                    closeAbandonedContext(offlineCtx);
+                }
+                throw createOfflineRuntimeFailureError(error);
+            })
+        );
+        return Promise.race([rendering, ...failures]);
     }
 
     const startedAt = Date.now();
@@ -201,12 +237,17 @@ export function renderInSegments({
         );
     }
 
-    const rendering = renderWithTimeout(offlineCtx, timeoutMs).then(
-        (buffer) => {
+    const rendering = renderWithTimeout(offlineCtx, timeoutMs)
+        .then(async (buffer) => {
+            try {
+                await Promise.all(runtimeHealthChecks.map((check) => check()));
+            } catch (error) {
+                throw createOfflineRuntimeFailureError(error);
+            }
             stopped = true;
             return buffer;
-        },
-        (error: unknown) => {
+        })
+        .catch((error: unknown) => {
             stopped = true;
             // The wall-clock guard inside `renderWithTimeout` fires here when the
             // budget runs out between two checkpoints, and that abandons the
@@ -214,10 +255,19 @@ export function renderInSegments({
             // branch above leaves the context alone — it produced a buffer.
             abandonContext();
             throw error instanceof Error ? error : new Error(String(error));
-        }
+        });
+
+    const failures = runtimeFailures.map((failure) =>
+        failure.catch((error: unknown) => {
+            if (!stopped) {
+                stopped = true;
+                abandonContext();
+            }
+            throw createOfflineRuntimeFailureError(error);
+        })
     );
 
     // `aborted` never resolves, so the race settles on whichever of the two
     // real outcomes happens first.
-    return Promise.race([rendering, aborted]);
+    return Promise.race([rendering, aborted, ...failures]);
 }

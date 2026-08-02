@@ -51,7 +51,7 @@ import type { AudioEngineDropoutStats } from '../models/AudioEngineState';
 
 /**
  * Int32 slot layout of the dropout SAB. Mirrored by literal in
- * `services/grandBouleProcessor.ts` — worklet code stays isolated from app
+ * `worklets/grandBouleProcessor.ts` — worklet code stays isolated from app
  * modules, so both sides pin the same indices.
  */
 export const DROPOUT_IDX = Object.freeze({

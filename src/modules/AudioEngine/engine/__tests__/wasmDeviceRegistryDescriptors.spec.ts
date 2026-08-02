@@ -120,6 +120,10 @@ function lastLoadedNode(onLoaded: WasmDeviceCreateDeps['onLoaded']): BuiltinDevi
     return call[0];
 }
 
+function isRuntimeFailureReporter(value: unknown): value is (message: string) => void {
+    return typeof value === 'function';
+}
+
 function requireDescriptor(deviceType: string) {
     const descriptor = findWasmDescriptor(deviceType);
     if (!descriptor) {
@@ -722,8 +726,8 @@ describe('wasmDeviceRegistry descriptors', () => {
     });
 
     describe('grand-boule', () => {
-        it('replays queued params and announces the loaded device', async () => {
-            const result: GrandBouleNodeResult = {
+        function makeGrandBouleResult(): GrandBouleNodeResult {
+            return {
                 workletNode: makeWorkletNode(),
                 noteOn: vi.fn(),
                 noteOff: vi.fn(),
@@ -742,6 +746,10 @@ describe('wasmDeviceRegistry descriptors', () => {
                 destroy: vi.fn(),
                 ready: Promise.resolve({}),
             };
+        }
+
+        it('replays queued params and announces the loaded device', async () => {
+            const result = makeGrandBouleResult();
             factoryMocks.createGrandBouleNode.mockResolvedValue(result);
             const emitDeviceLoaded = vi.fn();
             setAudioDeviceRuntimeSink({ emitDeviceLoaded });
@@ -757,6 +765,58 @@ describe('wasmDeviceRegistry descriptors', () => {
             const loaded = lastLoadedNode(deps.onLoaded);
             expect(loaded.grandBouleControls?.ready).toBe(true);
             expect(loaded.workerInstances).toBe(1);
+        });
+
+        it('demotes a loaded device when its engine worker fails', async () => {
+            const result = makeGrandBouleResult();
+            factoryMocks.createGrandBouleNode.mockResolvedValue(result);
+            const emitDeviceRemoved = vi.fn();
+            setAudioDeviceRuntimeSink({ emitDeviceRemoved });
+            const deps = createDeps({ deviceType: 'grand-boule', deviceId: 'gb-failed' });
+
+            const { loadPromise } = requireDescriptor('grand-boule').create(deps);
+            await loadPromise;
+            const loaded = lastLoadedNode(deps.onLoaded);
+            const factoryCall = factoryMocks.createGrandBouleNode.mock.calls.at(-1);
+            const reportRuntimeFailure: unknown = factoryCall?.[2];
+            if (!isRuntimeFailureReporter(reportRuntimeFailure)) {
+                throw new TypeError('expected GrandBouleNode to report post-ready runtime failures');
+            }
+
+            reportRuntimeFailure('render failed');
+            reportRuntimeFailure('duplicate failure');
+
+            expect({
+                controllerReady: loaded.controller?.ready,
+                deviceReady: loaded.grandBouleControls?.ready,
+                workerInstances: loaded.workerInstances,
+            }).toEqual({ controllerReady: false, deviceReady: false, workerInstances: 0 });
+            expect(result.destroy).toHaveBeenCalledOnce();
+            expect(emitDeviceRemoved).toHaveBeenCalledWith({ deviceId: 'gb-failed', deviceType: 'grand-boule' });
+            expect(emitDeviceRemoved).toHaveBeenCalledOnce();
+        });
+
+        it('does not publish a device that faults before ownership promotion', async () => {
+            const result = makeGrandBouleResult();
+            factoryMocks.createGrandBouleNode.mockResolvedValue(result);
+            const emitDeviceLoaded = vi.fn();
+            const emitDeviceRemoved = vi.fn();
+            setAudioDeviceRuntimeSink({ emitDeviceLoaded, emitDeviceRemoved });
+            const deps = createDeps({ deviceType: 'grand-boule', deviceId: 'gb-raced' });
+
+            const { loadPromise } = requireDescriptor('grand-boule').create(deps);
+            const factoryCall = factoryMocks.createGrandBouleNode.mock.calls.at(-1);
+            const reportRuntimeFailure: unknown = factoryCall?.[2];
+            if (!isRuntimeFailureReporter(reportRuntimeFailure)) {
+                throw new TypeError('expected GrandBouleNode to report post-ready runtime failures');
+            }
+            reportRuntimeFailure('failed during promotion');
+            await loadPromise;
+
+            expect(deps.onLoaded).not.toHaveBeenCalled();
+            expect(result.destroy).toHaveBeenCalledOnce();
+            expect(emitDeviceLoaded).not.toHaveBeenCalled();
+            expect(emitDeviceRemoved).not.toHaveBeenCalled();
         });
     });
 

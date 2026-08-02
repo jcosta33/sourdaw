@@ -24,10 +24,11 @@
  * frames the engine has produced, so the two are related by a constant the
  * worker cannot see on its own:
  *
- *     contextFrame = engineFrame + consumerOffset
+ *     producerContextFrame = consumerContextFrame + (writeHead - readHead)
  *
- * The consumer publishes `consumerOffset` (`currentFrame - readHead`) into
- * `syncSab` once per render quantum, and `init` carries a `contextFrame` anchor
+ * The consumer publishes its absolute context frame beside the matching modular
+ * ring read head into `syncSab` once per render quantum. The worker unwraps its
+ * write head relative to that snapshot, and `init` carries a `contextFrame` anchor
  * for the window before the consumer has run a single block — a few milliseconds
  * at node construction, long before the transport can schedule into it. A note
  * whose frame is not yet reached is queued and drained against the block the
@@ -52,7 +53,21 @@
  *   ← { type: 'stop' }
  */
 
+import {
+    GRAND_BOULE_CONTROL_HEADER_BYTES,
+    GRAND_BOULE_CONTROL_INT_COUNT,
+    GRAND_BOULE_FLUSH_GENERATION_IDX,
+    GRAND_BOULE_FLUSH_HEAD_IDX,
+    GRAND_BOULE_LIFECYCLE_CONTINUE,
+    GRAND_BOULE_LIFECYCLE_IDX,
+    GRAND_BOULE_LIFECYCLE_SLEEP,
+    GRAND_BOULE_READ_HEAD_IDX,
+    GRAND_BOULE_RENDER_REQUEST_IDX,
+    GRAND_BOULE_SLEEP_HEAD_IDX,
+    GRAND_BOULE_WRITE_HEAD_IDX,
+} from '../models/GrandBouleRingProtocol';
 import { type GrandBouleInstance } from '../wasm/daw_dsp.js';
+import { type GrandBouleConsumerClock, readGrandBouleConsumerClock } from '../worklets/grandBouleConsumerClock';
 import {
     createGrandBouleBlockViews,
     createGrandBouleInstance,
@@ -67,19 +82,35 @@ const BLOCK_SIZE = 128;
 /** Minimum frames of headroom to maintain in the ring buffer. The worker
  *  tries to stay this far ahead of the worklet's read position. */
 const TARGET_AHEAD = BLOCK_SIZE * 6; // ~16 ms at 48 kHz
+const MAX_BLOCKS_PER_RENDER = Math.ceil(TARGET_AHEAD / BLOCK_SIZE) + 1;
 
 /** Zero-delay yield via MessageChannel. Posts a message to ourselves that
  *  fires as a macrotask — after any pending onmessage handlers (MIDI events)
  *  but without the artificial 1–4 ms floor that setTimeout imposes. */
 const yieldChannel = new MessageChannel();
-const scheduleRender = (generation: number): void => yieldChannel.port2.postMessage(generation);
-yieldChannel.port1.onmessage = (event: MessageEvent<number>) => renderLoop(event.data);
+let renderScheduled = false;
+const scheduleRender = (): void => {
+    if (!running || renderScheduled) {
+        return;
+    }
+    renderScheduled = true;
+    yieldChannel.port2.postMessage(renderGeneration);
+};
+yieldChannel.port1.onmessage = (event: MessageEvent<number>) => {
+    if (event.data !== renderGeneration) {
+        return;
+    }
+    renderScheduled = false;
+    renderLoop(event.data);
+};
 
 let instance: GrandBouleInstance | null = null;
 let memory: WebAssembly.Memory | null = null;
 let running = false;
 let activeInitId: number | null = null;
 let renderGeneration = 0;
+let waitingForDemand = false;
+let demandWaitGeneration = 0;
 
 // SAB layout: [writeHead: Int32, readHead: Int32, leftRing: Float32[], rightRing: Float32[]]
 let controlInts: Int32Array | null = null;
@@ -87,20 +118,13 @@ let leftRing: Float32Array | null = null;
 let rightRing: Float32Array | null = null;
 let ringFrames = 0;
 
-const WRITE_HEAD_IDX = 0;
-const READ_HEAD_IDX = 1;
-
 /**
- * Consumer sync: a one-slot SAB the AudioWorklet publishes `currentFrame -
- * readHead` into every render quantum. Kept out of the ring SAB so the ring
- * layout — and every acquire/release proof written against it — is untouched.
- *
- * `CONSUMER_OFFSET_UNSET` is distinguishable from a real offset because a real
- * one is never negative: `readHead` only advances on a quantum in which
- * `currentFrame` also advanced, so the consumer can never be behind itself.
+ * Consumer sync: a seqlocked SAB carrying the AudioWorklet's absolute context
+ * frame and the modular read head observed at that frame. The split low/high
+ * context value preserves the AudioContext epoch when the ring's Int32 cursors
+ * wrap. Kept out of the ring SAB so the ring layout — and every acquire/release
+ * proof written against it — is untouched.
  */
-const CONSUMER_OFFSET_IDX = 0;
-const CONSUMER_OFFSET_UNSET = -1;
 let syncInts: Int32Array | null = null;
 
 /**
@@ -108,12 +132,14 @@ let syncInts: Int32Array | null = null;
  * host context's clock at node-construction time.
  *
  * An estimate, and only ever a short-lived one: the consumer's first published
- * offset replaces it within a few milliseconds of the node existing, long before
+ * clock snapshot replaces it within a few milliseconds of the node existing, long before
  * the transport can schedule anything into it. It used to be exact for the one
  * case that no longer arrives here — an offline render, whose clock sits at 0
  * through its whole scheduling phase.
  */
 let anchorContextFrame = 0;
+const consumerClock: GrandBouleConsumerClock = { contextFrame: 0, readHead: 0 };
+let hasConsumerClock = false;
 
 /**
  * Notes waiting for the block that contains their frame.
@@ -159,17 +185,20 @@ export function writeBlockRelease(
     const firstChunk = Math.min(blockSize, ringFrames - offset);
     const secondChunk = blockSize - firstChunk;
 
-    // Data writes — must be sequenced-before the release store below.
-    leftRing.set(leftSrc.subarray(0, firstChunk), offset);
-    rightRing.set(rightSrc.subarray(0, firstChunk), offset);
-    if (secondChunk > 0) {
-        leftRing.set(leftSrc.subarray(firstChunk), 0);
-        rightRing.set(rightSrc.subarray(firstChunk), 0);
+    // Copy directly instead of allocating short-lived subarray views on every
+    // rendered block.
+    for (let index = 0; index < firstChunk; index++) {
+        leftRing[offset + index] = leftSrc[index] ?? 0;
+        rightRing[offset + index] = rightSrc[index] ?? 0;
+    }
+    for (let index = 0; index < secondChunk; index++) {
+        leftRing[index] = leftSrc[firstChunk + index] ?? 0;
+        rightRing[index] = rightSrc[firstChunk + index] ?? 0;
     }
 
     const nextWriteHead = (writeHead + blockSize) | 0;
     // Release fence: publish the frames atomically after they are all written.
-    Atomics.store(controlInts, WRITE_HEAD_IDX, nextWriteHead);
+    Atomics.store(controlInts, GRAND_BOULE_WRITE_HEAD_IDX, nextWriteHead);
     return nextWriteHead;
 }
 
@@ -193,18 +222,17 @@ function initEngine({ initId, wasmModule, sab, workerSampleRate, syncSab, contex
     const nextSyncInts = syncSab ? new Int32Array(syncSab) : null;
     const nextAnchorContextFrame = contextFrame !== undefined && Number.isFinite(contextFrame) ? contextFrame : 0;
 
-    const headerBytes = 2 * Int32Array.BYTES_PER_ELEMENT;
-    const floatBytes = sab.byteLength - headerBytes;
+    const floatBytes = sab.byteLength - GRAND_BOULE_CONTROL_HEADER_BYTES;
     const bytesPerStereoFrame = 2 * Float32Array.BYTES_PER_ELEMENT;
     if (floatBytes % bytesPerStereoFrame !== 0 || floatBytes / bytesPerStereoFrame < BLOCK_SIZE) {
         throw new Error('Grand Boule worker received an invalid ring buffer');
     }
     const nextRingFrames = floatBytes / bytesPerStereoFrame;
-    const nextControlInts = new Int32Array(sab, 0, 2);
-    const nextLeftRing = new Float32Array(sab, headerBytes, nextRingFrames);
+    const nextControlInts = new Int32Array(sab, 0, GRAND_BOULE_CONTROL_INT_COUNT);
+    const nextLeftRing = new Float32Array(sab, GRAND_BOULE_CONTROL_HEADER_BYTES, nextRingFrames);
     const nextRightRing = new Float32Array(
         sab,
-        headerBytes + nextRingFrames * Float32Array.BYTES_PER_ELEMENT,
+        GRAND_BOULE_CONTROL_HEADER_BYTES + nextRingFrames * Float32Array.BYTES_PER_ELEMENT,
         nextRingFrames
     );
 
@@ -213,8 +241,8 @@ function initEngine({ initId, wasmModule, sab, workerSampleRate, syncSab, contex
     // without leaving a half-initialized renderer behind.
     const engine = createGrandBouleInstance({ wasmModule, sampleRate: workerSampleRate });
 
-    // Consumer sync plane. Reset so an offset left by a previous engine instance
-    // sharing this slot can never be read as this one's.
+    // Consumer sync plane. Reset the worker-local cache so an offset read by a
+    // previous engine instance can never be reused as this one's.
     //
     // The consumer is initialised at node construction and so may already have
     // published into this slot by the time we get here. That value is not stale:
@@ -222,10 +250,8 @@ function initEngine({ initId, wasmModule, sab, workerSampleRate, syncSab, contex
     // a sharper estimate than `contextFrame` — taken earlier — and it is
     // republished on the consumer's next quantum regardless.
     syncInts = nextSyncInts;
-    if (syncInts) {
-        Atomics.store(syncInts, CONSUMER_OFFSET_IDX, CONSUMER_OFFSET_UNSET);
-    }
     anchorContextFrame = nextAnchorContextFrame;
+    hasConsumerClock = false;
     noteQueue.clear();
 
     // Parse SAB layout.
@@ -235,22 +261,72 @@ function initEngine({ initId, wasmModule, sab, workerSampleRate, syncSab, contex
     rightRing = nextRightRing;
 
     // Reset heads.
-    Atomics.store(controlInts, WRITE_HEAD_IDX, 0);
-    Atomics.store(controlInts, READ_HEAD_IDX, 0);
+    Atomics.store(controlInts, GRAND_BOULE_WRITE_HEAD_IDX, 0);
+    Atomics.store(controlInts, GRAND_BOULE_READ_HEAD_IDX, 0);
+    Atomics.store(controlInts, GRAND_BOULE_RENDER_REQUEST_IDX, 0);
+    Atomics.store(controlInts, GRAND_BOULE_FLUSH_GENERATION_IDX, 0);
+    Atomics.store(controlInts, GRAND_BOULE_FLUSH_HEAD_IDX, 0);
 
     memory = engine.memory;
     instance = engine.instance;
     activeInitId = initId;
     running = true;
     renderGeneration++;
+    renderScheduled = false;
+    waitingForDemand = false;
+    demandWaitGeneration++;
+    const lifecycleState = instance.lifecycle_state();
+    Atomics.store(controlInts, GRAND_BOULE_SLEEP_HEAD_IDX, lifecycleState === GRAND_BOULE_LIFECYCLE_SLEEP ? 0 : -1);
+    Atomics.store(controlInts, GRAND_BOULE_LIFECYCLE_IDX, lifecycleState);
     self.postMessage({ type: 'ready' });
-    scheduleRender(renderGeneration);
+    if (lifecycleState !== GRAND_BOULE_LIFECYCLE_SLEEP) {
+        scheduleRender();
+    }
+}
+
+function waitForRenderDemand(): void {
+    if (!running || waitingForDemand || !controlInts) {
+        return;
+    }
+
+    const expectedRequest = Atomics.load(controlInts, GRAND_BOULE_RENDER_REQUEST_IDX);
+    const writeHead = Atomics.load(controlInts, GRAND_BOULE_WRITE_HEAD_IDX);
+    const readHead = Atomics.load(controlInts, GRAND_BOULE_READ_HEAD_IDX);
+    const buffered = (writeHead - readHead) | 0;
+    if (buffered < TARGET_AHEAD && ringFrames - buffered >= BLOCK_SIZE) {
+        scheduleRender();
+        return;
+    }
+
+    const generation = demandWaitGeneration;
+    const waitResult = Atomics.waitAsync(controlInts, GRAND_BOULE_RENDER_REQUEST_IDX, expectedRequest);
+    if (!waitResult.async) {
+        scheduleRender();
+        return;
+    }
+
+    waitingForDemand = true;
+    void waitResult.value.then(() => {
+        if (generation !== demandWaitGeneration) {
+            return false;
+        }
+        waitingForDemand = false;
+        scheduleRender();
+        return true;
+    });
 }
 
 function stopEngine(): void {
     running = false;
     activeInitId = null;
     renderGeneration++;
+    renderScheduled = false;
+    waitingForDemand = false;
+    demandWaitGeneration++;
+    if (controlInts) {
+        Atomics.add(controlInts, GRAND_BOULE_RENDER_REQUEST_IDX, 1);
+        Atomics.notify(controlInts, GRAND_BOULE_RENDER_REQUEST_IDX);
+    }
     instance = null;
     memory = null;
     controlInts = null;
@@ -259,32 +335,29 @@ function stopEngine(): void {
     ringFrames = 0;
     syncInts = null;
     anchorContextFrame = 0;
+    hasConsumerClock = false;
     noteQueue.clear();
-}
-
-/**
- * Frames the engine has produced, translated into the consumer's clock.
- *
- * The published offset wins whenever the consumer has run a block; before that
- * the `init` anchor stands in. Both express the same thing — the context frame
- * engine frame 0 lands on.
- */
-function consumerOffset(): number {
-    if (syncInts) {
-        const published = Atomics.load(syncInts, CONSUMER_OFFSET_IDX);
-        if (published !== CONSUMER_OFFSET_UNSET) {
-            return published;
-        }
-    }
-    return anchorContextFrame;
 }
 
 /**
  * First context frame *after* the block starting at `writeHead`. Exclusive: a
  * note landing exactly on it belongs to the next block, not this one.
+ *
+ * Once the consumer has published, the modular difference between this write
+ * head and the matching read head unwraps the producer position across signed
+ * Int32 rollover. Before that first snapshot, the short-lived construction-time
+ * anchor maps producer frame zero onto the host clock.
  */
 function blockEndContextFrame(writeHead: number): number {
-    return writeHead + BLOCK_SIZE + consumerOffset();
+    if (syncInts && readGrandBouleConsumerClock(syncInts, consumerClock)) {
+        hasConsumerClock = true;
+    }
+    if (!hasConsumerClock) {
+        return writeHead + BLOCK_SIZE + anchorContextFrame;
+    }
+
+    const framesAhead = (writeHead - consumerClock.readHead) | 0;
+    return consumerClock.contextFrame + framesAhead + BLOCK_SIZE;
 }
 
 function renderLoop(generation: number): void {
@@ -302,13 +375,10 @@ function renderLoop(generation: number): void {
 
     // Render as many blocks as needed to stay TARGET_AHEAD of the consumer,
     // using a bounded loop instead of recursion to avoid stack overflow.
-    const maxBlocksPerTick = Math.ceil(TARGET_AHEAD / BLOCK_SIZE) + 1;
-    let buffered = 0;
-
-    for (let index = 0; index < maxBlocksPerTick; index++) {
-        const writeHead = Atomics.load(controlInts, WRITE_HEAD_IDX);
-        const readHead = Atomics.load(controlInts, READ_HEAD_IDX);
-        buffered = (writeHead - readHead) | 0;
+    for (let index = 0; index < MAX_BLOCKS_PER_RENDER; index++) {
+        const writeHead = Atomics.load(controlInts, GRAND_BOULE_WRITE_HEAD_IDX);
+        const readHead = Atomics.load(controlInts, GRAND_BOULE_READ_HEAD_IDX);
+        const buffered = (writeHead - readHead) | 0;
 
         if (buffered >= TARGET_AHEAD || ringFrames - buffered < BLOCK_SIZE) {
             break; // Enough headroom or ring is full.
@@ -328,7 +398,7 @@ function renderLoop(generation: number): void {
         blockViews.update(memory.buffer, leftPtr, rightPtr, BLOCK_SIZE);
 
         // Write into the ring (wrapping) and release-publish the new write head.
-        writeBlockRelease(
+        const nextWriteHead = writeBlockRelease(
             controlInts,
             leftRing,
             rightRing,
@@ -339,18 +409,26 @@ function renderLoop(generation: number): void {
             BLOCK_SIZE
         );
 
+        const lifecycleState = instance.lifecycle_state();
+        const hasScheduledNotes = noteQueue.size() > 0;
+        if (lifecycleState === GRAND_BOULE_LIFECYCLE_SLEEP && !hasScheduledNotes) {
+            Atomics.store(controlInts, GRAND_BOULE_SLEEP_HEAD_IDX, nextWriteHead);
+            Atomics.store(controlInts, GRAND_BOULE_LIFECYCLE_IDX, lifecycleState);
+            return;
+        }
+        Atomics.store(controlInts, GRAND_BOULE_SLEEP_HEAD_IDX, -1);
+        const effectiveLifecycle =
+            lifecycleState === GRAND_BOULE_LIFECYCLE_SLEEP ? GRAND_BOULE_LIFECYCLE_CONTINUE : lifecycleState;
+        Atomics.store(controlInts, GRAND_BOULE_LIFECYCLE_IDX, effectiveLifecycle);
+
         // Atomics.pause is a Stage 3 proposal — cast to an extended type that includes it
         type AtomicsWithPause = typeof Atomics & { pause?: () => void };
         (Atomics as AtomicsWithPause).pause?.();
     }
 
-    // Yield to the event loop so pending MIDI messages can be dispatched.
-    // If the buffer is full, sleep for 2ms instead of spinning immediately.
-    if (buffered >= TARGET_AHEAD) {
-        setTimeout(scheduleRender, 2, generation);
-    } else {
-        scheduleRender(generation);
-    }
+    // Block without polling until the worklet consumes frames. `waitAsync`
+    // leaves this Worker's event queue responsive to MIDI and controls.
+    waitForRenderDemand();
 }
 
 type GrandBouleWorkerMsg =
@@ -385,10 +463,33 @@ function receive(msg: GrandBouleDispatchMsg): void {
 
     let blockEndFrame: number | null = null;
     if (controlInts) {
-        blockEndFrame = blockEndContextFrame(Atomics.load(controlInts, WRITE_HEAD_IDX));
+        blockEndFrame = blockEndContextFrame(Atomics.load(controlInts, GRAND_BOULE_WRITE_HEAD_IDX));
     }
 
     receiveGrandBouleMessage({ instance, queue: noteQueue, msg, blockEndFrame });
+
+    if (!controlInts) {
+        return;
+    }
+    if (msg.type === 'allNotesOff') {
+        const writeHead = Atomics.load(controlInts, GRAND_BOULE_WRITE_HEAD_IDX);
+        Atomics.store(controlInts, GRAND_BOULE_FLUSH_HEAD_IDX, writeHead);
+        Atomics.add(controlInts, GRAND_BOULE_FLUSH_GENERATION_IDX, 1);
+    }
+
+    const lifecycleState = instance.lifecycle_state();
+    const hasScheduledNotes = noteQueue.size() > 0;
+    if (lifecycleState === GRAND_BOULE_LIFECYCLE_SLEEP && !hasScheduledNotes) {
+        Atomics.store(controlInts, GRAND_BOULE_SLEEP_HEAD_IDX, Atomics.load(controlInts, GRAND_BOULE_WRITE_HEAD_IDX));
+        Atomics.store(controlInts, GRAND_BOULE_LIFECYCLE_IDX, lifecycleState);
+        return;
+    }
+
+    Atomics.store(controlInts, GRAND_BOULE_SLEEP_HEAD_IDX, -1);
+    const effectiveLifecycle =
+        lifecycleState === GRAND_BOULE_LIFECYCLE_SLEEP ? GRAND_BOULE_LIFECYCLE_CONTINUE : lifecycleState;
+    Atomics.store(controlInts, GRAND_BOULE_LIFECYCLE_IDX, effectiveLifecycle);
+    scheduleRender();
 }
 
 self.onmessage = ({ data }: MessageEvent<GrandBouleWorkerMsg>): void => {

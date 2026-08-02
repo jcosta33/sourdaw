@@ -59,11 +59,14 @@ const RENDER_QUANTUM_FRAMES = 128;
 /** `GrandBouleInstance::process` pre-allocates this much; asking for more truncates. */
 const MAX_BLOCK_FRAMES = 4096;
 
+type RuntimeHealthCheckMessage = { type: 'runtimeHealthCheck'; requestId: number };
+
 class GrandBouleOfflineProcessor extends AudioWorkletProcessor {
     _instance: GrandBouleInstance | null = null;
     _memory: WebAssembly.Memory | null = null;
     _ready = false;
     _faulted = false;
+    _faultMessage: string | null = null;
     _pendingMessages: GrandBouleDispatchMsg[] = [];
     _queue = createGrandBouleNoteQueue();
     // Cached WASM linear-memory views, revalidated on a memory.grow() buffer
@@ -74,8 +77,18 @@ class GrandBouleOfflineProcessor extends AudioWorkletProcessor {
     constructor(...args: unknown[]) {
         super();
         let wasmModule = resolveProcessorWasmModule(args[0]);
-        this.port.onmessage = (event: MessageEvent<{ type: 'init' } | GrandBouleDispatchMsg>) => {
+        this.port.onmessage = (
+            event: MessageEvent<{ type: 'init' } | RuntimeHealthCheckMessage | GrandBouleDispatchMsg>
+        ) => {
             const msg = event.data;
+            if (msg.type === 'runtimeHealthCheck') {
+                this.port.postMessage({
+                    type: 'runtimeHealth',
+                    requestId: msg.requestId,
+                    error: this._faultMessage,
+                });
+                return;
+            }
             try {
                 if (msg.type === 'init') {
                     if (this._ready) {
@@ -98,14 +111,17 @@ class GrandBouleOfflineProcessor extends AudioWorkletProcessor {
                 // instance as unrecoverable and say so, so `createGrandBouleNode`
                 // rejects and `buildDeviceChain` reports a degraded device
                 // rather than shipping an unannounced silent track.
-                console.error('GrandBouleOfflineProcessor error:', error);
-                this._faulted = true;
-                this.port.postMessage({
-                    type: 'error',
-                    message: error instanceof Error ? error.message : String(error),
-                });
+                this._reportFault(error);
             }
         };
+    }
+
+    _reportFault(error: unknown): void {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error('GrandBouleOfflineProcessor error:', error);
+        this._faulted = true;
+        this._faultMessage = message;
+        this.port.postMessage({ type: 'error', message });
     }
 
     _initWasm(wasmModule: WebAssembly.Module): void {
@@ -183,8 +199,7 @@ class GrandBouleOfflineProcessor extends AudioWorkletProcessor {
                 out1.set(this._blockViews.right);
             }
         } catch (error) {
-            this._faulted = true;
-            this.port.postMessage({ type: 'error', message: String(error) });
+            this._reportFault(error);
         }
 
         return true;

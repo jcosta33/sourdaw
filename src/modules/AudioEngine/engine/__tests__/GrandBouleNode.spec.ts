@@ -76,7 +76,7 @@ vi.mock('#/infra/audioWorklet/workletInitShared', () => ({
 
 vi.mock('../pluginHostingErrors', () => ({ requireSharedArrayBuffer: vi.fn() }));
 
-vi.mock('../../services/grandBouleProcessor.ts?worker&url', () => ({ default: 'grand-boule-processor-url' }));
+vi.mock('../../worklets/grandBouleProcessor.ts?worker&url', () => ({ default: 'grand-boule-processor-url' }));
 
 // Grand Boule routes MIDI/control to its engine Worker, not the worklet.
 // Bypass-entry voice release is owned by TrackNode.updateBypass, which calls
@@ -92,7 +92,9 @@ type PostMessageSpy = ReturnType<typeof vi.fn<(message: unknown, transfer?: read
 /** The `init` payload out of a `postMessage` spy's recorded calls, if it sent one. */
 type PostedInit = {
     type: 'init';
-    syncSab?: unknown;
+    sab?: SharedArrayBuffer;
+    dropoutSab?: SharedArrayBuffer;
+    syncSab?: SharedArrayBuffer;
     contextFrame?: number;
     countPreRollStarvation?: boolean;
 };
@@ -100,8 +102,8 @@ type PostedInit = {
 function findInitMessage(spy: PostMessageSpy): PostedInit | undefined {
     for (const [message] of spy.mock.calls) {
         if (message !== null && typeof message === 'object' && 'type' in message && message.type === 'init') {
-            const { syncSab, contextFrame, countPreRollStarvation } = message as PostedInit;
-            return { type: 'init', syncSab, contextFrame, countPreRollStarvation };
+            const { sab, dropoutSab, syncSab, contextFrame, countPreRollStarvation } = message as PostedInit;
+            return { type: 'init', sab, dropoutSab, syncSab, contextFrame, countPreRollStarvation };
         }
     }
     return undefined;
@@ -123,7 +125,11 @@ describe('createGrandBouleNode', () => {
           }
         | undefined;
     let lastNodePort: { onmessage: ((e: MessageEvent) => void) | null } | undefined;
-    let lastWorkletNode: object | undefined;
+    let lastWorkletNode:
+        | {
+              onprocessorerror: ((event: Event) => unknown) | null;
+          }
+        | undefined;
     let lastProcessorName: string | undefined;
     let lastProcessorOptions: AudioWorkletNodeOptions | undefined;
     let workerConstructed = 0;
@@ -179,15 +185,16 @@ describe('createGrandBouleNode', () => {
                 },
                 connect: nodeConnect,
                 disconnect: nodeDisconnect,
+                onprocessorerror: null as ((event: Event) => unknown) | null,
             };
             lastNodePort = instance.port;
             lastWorkletNode = instance;
             return instance;
         }
-        class FakeSharedArrayBuffer {
-            constructor(_byteLength: number) {
-                sharedArrayBuffersAllocated++;
-            }
+        const NativeSharedArrayBuffer = globalThis.SharedArrayBuffer;
+        function FakeSharedArrayBuffer(byteLength: number) {
+            sharedArrayBuffersAllocated++;
+            return new NativeSharedArrayBuffer(byteLength);
         }
         vi.stubGlobal('Worker', FakeWorker);
         vi.stubGlobal('AudioWorkletNode', FakeWorkletNode);
@@ -267,13 +274,20 @@ describe('createGrandBouleNode', () => {
         // ring starvation is tallied instead of silently emitting silence (RT-10),
         // plus the sync slot it publishes its render-cursor offset into — the only
         // thing that tells the engine worker where the context clock stands.
-        expect(nodePostMessage).toHaveBeenCalledWith({
+        const workletInit = findInitMessage(nodePostMessage);
+        const workerInit = findInitMessage(workerPostMessage);
+        if (!workerInit?.syncSab) {
+            throw new Error('worker init did not receive its consumer-offset slot');
+        }
+        expect(workletInit).toEqual({
             type: 'init',
-            sab: expect.anything(),
+            sab: workerInit.sab,
             dropoutSab: dropoutCounters.getSab(),
-            syncSab: expect.anything(),
+            syncSab: workerInit.syncSab,
+            contextFrame: undefined,
             countPreRollStarvation: false,
         });
+        expect(Array.from(new Int32Array(workerInit.syncSab))).toEqual([0, 0, 0, 0, 0]);
     });
 
     it('does not report ready until the worklet confirms it holds the ring', async () => {
@@ -300,11 +314,13 @@ describe('createGrandBouleNode', () => {
 
     it('rejects ready when either side reports an init error', async () => {
         const workerFailed = createGrandBouleNode(ctx).then((node) => {
-            lastWorker?.onmessage?.({ data: { type: 'error', message: 'wasm compile failed' } } as MessageEvent);
+            lastWorker?.onerror?.({ message: 'wasm compile failed' } as ErrorEvent);
             lastNodePort?.onmessage?.({ data: { type: 'ready' } } as MessageEvent);
             return node.ready;
         });
         await expect(workerFailed).rejects.toThrow('wasm compile failed');
+        expect(nodePostMessage).toHaveBeenCalledWith({ type: 'engineError' });
+        expect(workerTerminate).toHaveBeenCalledOnce();
 
         const workletFailed = createGrandBouleNode(ctx).then((node) => {
             lastWorker?.onmessage?.({ data: { type: 'ready' } } as MessageEvent);
@@ -315,6 +331,24 @@ describe('createGrandBouleNode', () => {
         // warns the export and drops it. Resolving `ready` on a half-built device
         // is what put an unannounced silent track in the file.
         await expect(workletFailed).rejects.toThrow('ring map failed');
+    });
+
+    it('stops the live consumer after a post-ready engine Worker crash', async () => {
+        const onFault = vi.fn();
+        const node = await createGrandBouleNode(ctx, undefined, onFault);
+        lastWorker?.onmessage?.({ data: { type: 'ready' } } as MessageEvent);
+        lastNodePort?.onmessage?.({ data: { type: 'ready' } } as MessageEvent);
+        await node.ready;
+        nodePostMessage.mockClear();
+        workerTerminate.mockClear();
+
+        lastWorker?.onerror?.({ message: 'render failed' } as ErrorEvent);
+        lastWorker?.onmessageerror?.({ data: null } as MessageEvent);
+
+        expect(nodePostMessage).toHaveBeenCalledWith({ type: 'engineError' });
+        expect(workerTerminate).toHaveBeenCalledOnce();
+        expect(onFault).toHaveBeenCalledOnce();
+        expect(onFault).toHaveBeenCalledWith('render failed');
     });
 
     it('rejects ready immediately when the engine Worker transport fails', async () => {
@@ -331,6 +365,229 @@ describe('createGrandBouleNode', () => {
             return node.ready;
         });
         await expect(unreadableMessage).rejects.toThrow('sent an unreadable initialization message');
+    });
+
+    it('rejects ready when the ready Worker crashes while the worklet is still pending', async () => {
+        const node = await createGrandBouleNode(ctx);
+
+        lastWorker?.onmessage?.({ data: { type: 'ready' } } as MessageEvent);
+        lastWorker?.onerror?.({ message: 'worker failed after its handshake' } as ErrorEvent);
+
+        await expect(node.ready).rejects.toThrow('worker failed after its handshake');
+        expect(nodeClose).toHaveBeenCalledOnce();
+        expect(workerTerminate).toHaveBeenCalledOnce();
+    });
+
+    it('rejects startup and tears down when the live worklet processor fails', async () => {
+        const node = await createGrandBouleNode(ctx);
+        lastWorker?.onmessage?.({ data: { type: 'ready' } } as MessageEvent);
+
+        lastWorkletNode?.onprocessorerror?.(new Event('processorerror'));
+
+        await expect(node.ready).rejects.toThrow('GrandBouleNode worklet processor failed');
+        expect(nodeClose).toHaveBeenCalledOnce();
+        expect(workerTerminate).toHaveBeenCalledOnce();
+    });
+
+    it('reports one runtime fault and tears down when the live worklet processor fails after readiness', async () => {
+        const onFault = vi.fn();
+        const node = await createGrandBouleNode(ctx, undefined, onFault);
+        lastWorker?.onmessage?.({ data: { type: 'ready' } } as MessageEvent);
+        lastNodePort?.onmessage?.({ data: { type: 'ready' } } as MessageEvent);
+        await node.ready;
+
+        lastWorkletNode?.onprocessorerror?.(new Event('processorerror'));
+        lastWorkletNode?.onprocessorerror?.(new Event('processorerror'));
+
+        expect(onFault).toHaveBeenCalledOnce();
+        expect(onFault).toHaveBeenCalledWith('GrandBouleNode worklet processor failed');
+        expect(nodeClose).toHaveBeenCalledOnce();
+        expect(workerTerminate).toHaveBeenCalledOnce();
+    });
+
+    it('reports an explicit live worklet error received after readiness', async () => {
+        const onFault = vi.fn();
+        const node = await createGrandBouleNode(ctx, undefined, onFault);
+        lastWorker?.onmessage?.({ data: { type: 'ready' } } as MessageEvent);
+        lastNodePort?.onmessage?.({ data: { type: 'ready' } } as MessageEvent);
+        await node.ready;
+
+        lastNodePort?.onmessage?.({ data: { type: 'error', message: 'live render trap' } } as MessageEvent);
+
+        expect(onFault).toHaveBeenCalledOnce();
+        expect(onFault).toHaveBeenCalledWith('live render trap');
+        expect(nodeClose).toHaveBeenCalledOnce();
+        expect(workerTerminate).toHaveBeenCalledOnce();
+    });
+
+    it('rejects startup when the offline worklet processor fails', async () => {
+        class FakeOfflineAudioContext {
+            state = 'suspended';
+            currentTime = 0;
+            sampleRate = 48000;
+        }
+        vi.stubGlobal('OfflineAudioContext', FakeOfflineAudioContext);
+        const node = await createGrandBouleNode(new FakeOfflineAudioContext() as unknown as BaseAudioContext);
+
+        lastWorkletNode?.onprocessorerror?.(new Event('processorerror'));
+
+        await expect(node.ready).rejects.toThrow('GrandBouleNode offline worklet processor failed');
+        expect(nodeClose).toHaveBeenCalledOnce();
+    });
+
+    it('reports one runtime fault when the offline worklet processor fails after readiness', async () => {
+        class FakeOfflineAudioContext {
+            state = 'suspended';
+            currentTime = 0;
+            sampleRate = 48000;
+        }
+        vi.stubGlobal('OfflineAudioContext', FakeOfflineAudioContext);
+        const onFault = vi.fn();
+        const node = await createGrandBouleNode(
+            new FakeOfflineAudioContext() as unknown as BaseAudioContext,
+            undefined,
+            onFault
+        );
+        lastNodePort?.onmessage?.({ data: { type: 'ready' } } as MessageEvent);
+        await node.ready;
+
+        lastWorkletNode?.onprocessorerror?.(new Event('processorerror'));
+        lastWorkletNode?.onprocessorerror?.(new Event('processorerror'));
+
+        expect(onFault).toHaveBeenCalledOnce();
+        expect(onFault).toHaveBeenCalledWith('GrandBouleNode offline worklet processor failed');
+        expect(nodeClose).toHaveBeenCalledOnce();
+    });
+
+    it('reports an explicit offline worklet error received after readiness', async () => {
+        class FakeOfflineAudioContext {
+            state = 'suspended';
+            currentTime = 0;
+            sampleRate = 48000;
+        }
+        vi.stubGlobal('OfflineAudioContext', FakeOfflineAudioContext);
+        const onFault = vi.fn();
+        const node = await createGrandBouleNode(
+            new FakeOfflineAudioContext() as unknown as BaseAudioContext,
+            undefined,
+            onFault
+        );
+        lastNodePort?.onmessage?.({ data: { type: 'ready' } } as MessageEvent);
+        await node.ready;
+
+        lastNodePort?.onmessage?.({ data: { type: 'error', message: 'offline render trap' } } as MessageEvent);
+
+        expect(onFault).toHaveBeenCalledOnce();
+        expect(onFault).toHaveBeenCalledWith('offline render trap');
+        expect(nodeClose).toHaveBeenCalledOnce();
+    });
+
+    it('rejects a terminal offline health check when the final quantum faulted', async () => {
+        class FakeOfflineAudioContext {
+            state = 'suspended';
+            currentTime = 0;
+            sampleRate = 48000;
+        }
+        vi.stubGlobal('OfflineAudioContext', FakeOfflineAudioContext);
+        const onFault = vi.fn();
+        const node = await createGrandBouleNode(
+            new FakeOfflineAudioContext() as unknown as BaseAudioContext,
+            undefined,
+            onFault
+        );
+        lastNodePort?.onmessage?.({ data: { type: 'ready' } } as MessageEvent);
+        await node.ready;
+        nodePostMessage.mockClear();
+
+        const checking = node.runtimeHealthCheck?.();
+        expect(nodePostMessage).toHaveBeenCalledWith({ type: 'runtimeHealthCheck', requestId: 1 });
+        lastNodePort?.onmessage?.({
+            data: { type: 'runtimeHealth', requestId: 1, error: 'last quantum trapped' },
+        } as MessageEvent);
+
+        await expect(checking).rejects.toThrow('last quantum trapped');
+        expect(onFault).toHaveBeenCalledWith('last quantum trapped');
+        expect(nodeClose).toHaveBeenCalledOnce();
+    });
+
+    it('accepts a terminal offline health acknowledgement with no retained fault', async () => {
+        class FakeOfflineAudioContext {
+            state = 'suspended';
+            currentTime = 0;
+            sampleRate = 48000;
+        }
+        vi.stubGlobal('OfflineAudioContext', FakeOfflineAudioContext);
+        const node = await createGrandBouleNode(new FakeOfflineAudioContext() as unknown as BaseAudioContext);
+        lastNodePort?.onmessage?.({ data: { type: 'ready' } } as MessageEvent);
+        await node.ready;
+        nodePostMessage.mockClear();
+
+        const checking = node.runtimeHealthCheck?.();
+        lastNodePort?.onmessage?.({
+            data: { type: 'runtimeHealth', requestId: 1, error: null },
+        } as MessageEvent);
+
+        await expect(checking).resolves.toBeUndefined();
+        expect(nodePostMessage).toHaveBeenCalledWith({ type: 'runtimeHealthCheck', requestId: 1 });
+        expect(nodeClose).not.toHaveBeenCalled();
+    });
+
+    it('terminalizes an offline transport whose health acknowledgement times out', async () => {
+        vi.useFakeTimers();
+        try {
+            class FakeOfflineAudioContext {
+                state = 'suspended';
+                currentTime = 0;
+                sampleRate = 48000;
+            }
+            vi.stubGlobal('OfflineAudioContext', FakeOfflineAudioContext);
+            const onFault = vi.fn();
+            const node = await createGrandBouleNode(
+                new FakeOfflineAudioContext() as unknown as BaseAudioContext,
+                undefined,
+                onFault
+            );
+            lastNodePort?.onmessage?.({ data: { type: 'ready' } } as MessageEvent);
+            await node.ready;
+
+            const checking = node.runtimeHealthCheck?.();
+            const rejected = expect(checking).rejects.toThrow('health check timed out');
+            await vi.advanceTimersByTimeAsync(2000);
+
+            await rejected;
+            expect(onFault).toHaveBeenCalledOnce();
+            expect(onFault).toHaveBeenCalledWith('GrandBouleNode offline worklet health check timed out');
+            expect(nodeClose).toHaveBeenCalledOnce();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('terminalizes an offline transport that cannot send its health check', async () => {
+        class FakeOfflineAudioContext {
+            state = 'suspended';
+            currentTime = 0;
+            sampleRate = 48000;
+        }
+        vi.stubGlobal('OfflineAudioContext', FakeOfflineAudioContext);
+        const onFault = vi.fn();
+        const node = await createGrandBouleNode(
+            new FakeOfflineAudioContext() as unknown as BaseAudioContext,
+            undefined,
+            onFault
+        );
+        lastNodePort?.onmessage?.({ data: { type: 'ready' } } as MessageEvent);
+        await node.ready;
+        nodePostMessage.mockImplementationOnce(() => {
+            throw new Error('message port detached');
+        });
+
+        const checking = node.runtimeHealthCheck?.();
+
+        await expect(checking).rejects.toThrow('message port detached');
+        expect(onFault).toHaveBeenCalledOnce();
+        expect(onFault).toHaveBeenCalledWith('message port detached');
+        expect(nodeClose).toHaveBeenCalledOnce();
     });
 
     it('builds the inline engine worklet offline and the worker ring live', async () => {

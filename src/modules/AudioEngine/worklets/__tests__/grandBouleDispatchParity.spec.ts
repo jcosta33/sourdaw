@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest';
 
+import { GRAND_BOULE_CONTROL_HEADER_BYTES, GRAND_BOULE_SYNC_INT_COUNT } from '../../models/GrandBouleRingProtocol';
 import { type GrandBouleDispatchMsg } from '../../worklets/grandBouleEngineCore';
 
 /**
@@ -101,6 +102,9 @@ class GrandBouleInstanceMock {
     get_right_ptr(): number {
         return wasmStub.RIGHT_PTR;
     }
+    lifecycle_state(): number {
+        return 0;
+    }
 }
 
 vi.mock('../../wasm/daw_dsp.js', () => ({
@@ -121,6 +125,7 @@ type HarnessPort = {
 
 const processorRegistry = new Map<string, new (...args: unknown[]) => ProcessorLike>();
 let pendingProcessorPort: HarnessPort | null = null;
+let OfflineProcessor: (new (...args: unknown[]) => ProcessorLike) | undefined;
 
 class AudioWorkletProcessorShim {
     readonly port: HarnessPort;
@@ -213,7 +218,7 @@ describe('the worker and the offline processor dispatch identically', () => {
         // --- Host A: the engine Worker, ring mapped, anchored at context frame 0.
         await import('../../workers/grandBouleEngineWorker');
         const ringSab = new SharedArrayBuffer(
-            2 * Int32Array.BYTES_PER_ELEMENT + BLOCK_FRAMES * 32 * 2 * Float32Array.BYTES_PER_ELEMENT
+            GRAND_BOULE_CONTROL_HEADER_BYTES + BLOCK_FRAMES * 32 * 2 * Float32Array.BYTES_PER_ELEMENT
         );
         workerSelf.onmessage?.({
             data: {
@@ -222,7 +227,7 @@ describe('the worker and the offline processor dispatch identically', () => {
                 wasmModule: EMPTY_WASM_MODULE,
                 sab: ringSab,
                 sampleRate: HOST_SAMPLE_RATE,
-                syncSab: new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT),
+                syncSab: new SharedArrayBuffer(GRAND_BOULE_SYNC_INT_COUNT * Int32Array.BYTES_PER_ELEMENT),
                 contextFrame: 0,
             },
         } as MessageEvent);
@@ -230,14 +235,14 @@ describe('the worker and the offline processor dispatch identically', () => {
 
         // --- Host B: the offline processor, at currentFrame 0.
         await import('../grandBouleOfflineProcessor');
-        const Processor = processorRegistry.get('grand-boule-offline-processor');
-        if (!Processor) {
+        OfflineProcessor = processorRegistry.get('grand-boule-offline-processor');
+        if (!OfflineProcessor) {
             throw new Error('grand-boule-offline-processor was not registered');
         }
         const inner: HarnessPort = { onmessage: null, postMessage: vi.fn() };
         pendingProcessorPort = inner;
         try {
-            new Processor({ processorOptions: { wasmModule: EMPTY_WASM_MODULE } });
+            new OfflineProcessor({ processorOptions: { wasmModule: EMPTY_WASM_MODULE } });
         } finally {
             pendingProcessorPort = null;
         }
@@ -253,6 +258,29 @@ describe('the worker and the offline processor dispatch identically', () => {
 
     it('produces the same engine call sequence from the same messages', () => {
         expect(processorCalls).toEqual(workerCalls);
+    });
+
+    it('reports retained fault state to a terminal health check', () => {
+        if (!OfflineProcessor) {
+            throw new Error('grand-boule-offline-processor was not registered');
+        }
+        const postMessage = vi.fn();
+        const faultPort: HarnessPort = { onmessage: null, postMessage };
+        pendingProcessorPort = faultPort;
+        try {
+            new OfflineProcessor({ processorOptions: {} });
+        } finally {
+            pendingProcessorPort = null;
+        }
+
+        faultPort.onmessage?.({ data: { type: 'init' } } as MessageEvent);
+        faultPort.onmessage?.({ data: { type: 'runtimeHealthCheck', requestId: 9 } } as MessageEvent);
+
+        expect(postMessage).toHaveBeenLastCalledWith({
+            type: 'runtimeHealth',
+            requestId: 9,
+            error: 'GrandBouleOfflineProcessor requires a compiled WASM module',
+        });
     });
 
     it('voices the messages it should and queues the ones it should', () => {
