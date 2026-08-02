@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:2454741cdc71849b0ee51208886427e3da96f8ca27eb9e91280ff5e4d9a35528
+// @wasm-bindgen-dts crate-source: sha256:9d485cd48cbfe1167cac53601339ec630acd7631c50f2ca30b69a0adcc797bd2
 /* tslint:disable */
 /* eslint-disable */
 
@@ -416,6 +416,12 @@ export class KneadInstance {
     get_input_left_ptr(): number;
     get_input_right_ptr(): number;
     /**
+     * Samples of group delay this instance imposes, for plugin delay
+     * compensation. Mirrors `GlutenInstance::get_latency_samples`; the worklet
+     * forwards it on the ready handshake so PDC can offset the track.
+     */
+    get_latency_samples(): number;
+    /**
      * Number of non-finite output samples scrubbed to silence since
      * construction (DSP-8). Non-zero means a poisoned block was caught at the
      * wasm output boundary and surfaced for health telemetry.
@@ -689,6 +695,7 @@ export interface InitOutput {
     readonly kneadinstance_get_f0: (a: number) => number;
     readonly kneadinstance_get_input_left_ptr: (a: number) => number;
     readonly kneadinstance_get_input_right_ptr: (a: number) => number;
+    readonly kneadinstance_get_latency_samples: (a: number) => number;
     readonly kneadinstance_get_nan_flush_count: (a: number) => number;
     readonly kneadinstance_get_periodicity: (a: number) => number;
     readonly kneadinstance_get_right_ptr: (a: number) => number;
@@ -732,6 +739,26 @@ export interface InitOutput {
     readonly toasterinstance_set_param: (a: number, b: number, c: number, d: number) => void;
     readonly toasterinstance_set_param_by_id: (a: number, b: number, c: number) => void;
     readonly toasterinstance_get_nan_flush_count: (a: number) => number;
+    readonly __wbg_grandbouleinstance_free: (a: number, b: number) => void;
+    readonly grandbouleinstance_all_notes_off: (a: number) => void;
+    readonly grandbouleinstance_get_nan_flush_count: (a: number) => number;
+    readonly grandbouleinstance_get_right_ptr: (a: number) => number;
+    readonly grandbouleinstance_lifecycle_state: (a: number) => number;
+    readonly grandbouleinstance_load_attack_clip: (a: number, b: number, c: number, d: number) => void;
+    readonly grandbouleinstance_new: (a: number, b: number) => number;
+    readonly grandbouleinstance_note_expression: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly grandbouleinstance_note_off: (a: number, b: number) => void;
+    readonly grandbouleinstance_note_off_on_channel: (a: number, b: number, c: number) => void;
+    readonly grandbouleinstance_note_on: (a: number, b: number, c: number) => void;
+    readonly grandbouleinstance_note_on_midi2: (a: number, b: number, c: number, d: number) => void;
+    readonly grandbouleinstance_note_on_with_channel: (a: number, b: number, c: number, d: number) => void;
+    readonly grandbouleinstance_process: (a: number, b: number) => number;
+    readonly grandbouleinstance_set_param: (a: number, b: number, c: number, d: number) => void;
+    readonly grandbouleinstance_set_sostenuto: (a: number, b: number) => void;
+    readonly grandbouleinstance_set_sustain: (a: number, b: number) => void;
+    readonly grandbouleinstance_set_temperament: (a: number, b: number) => void;
+    readonly grandbouleinstance_set_una_corda: (a: number, b: number) => void;
+    readonly init_panic_hook: () => void;
     readonly __wbg_bacteriainstance_free: (a: number, b: number) => void;
     readonly analyze_pitch_wasm: (a: number, b: number, c: number) => [number, number];
     readonly bacteriainstance_add_macro_mapping: (a: number, b: number, c: number, d: number, e: number) => void;
@@ -748,7 +775,6 @@ export interface InitOutput {
     readonly bacteriainstance_process: (a: number, b: number) => number;
     readonly bacteriainstance_set_param: (a: number, b: number, c: number, d: number) => void;
     readonly commit_pitch_edit_wasm: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number];
-    readonly init_panic_hook: () => void;
     readonly __wbg_gluteninstance_free: (a: number, b: number) => void;
     readonly __wbg_grinderinstance_free: (a: number, b: number) => void;
     readonly __wbg_levaininstance_free: (a: number, b: number) => void;
@@ -805,25 +831,6 @@ export interface InitOutput {
     readonly levaininstance_process: (a: number, b: number) => number;
     readonly levaininstance_set_instrument: (a: number, b: number, c: number) => void;
     readonly levaininstance_set_param: (a: number, b: number, c: number, d: number) => void;
-    readonly __wbg_grandbouleinstance_free: (a: number, b: number) => void;
-    readonly grandbouleinstance_all_notes_off: (a: number) => void;
-    readonly grandbouleinstance_get_nan_flush_count: (a: number) => number;
-    readonly grandbouleinstance_get_right_ptr: (a: number) => number;
-    readonly grandbouleinstance_lifecycle_state: (a: number) => number;
-    readonly grandbouleinstance_load_attack_clip: (a: number, b: number, c: number, d: number) => void;
-    readonly grandbouleinstance_new: (a: number, b: number) => number;
-    readonly grandbouleinstance_note_expression: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
-    readonly grandbouleinstance_note_off: (a: number, b: number) => void;
-    readonly grandbouleinstance_note_off_on_channel: (a: number, b: number, c: number) => void;
-    readonly grandbouleinstance_note_on: (a: number, b: number, c: number) => void;
-    readonly grandbouleinstance_note_on_midi2: (a: number, b: number, c: number, d: number) => void;
-    readonly grandbouleinstance_note_on_with_channel: (a: number, b: number, c: number, d: number) => void;
-    readonly grandbouleinstance_process: (a: number, b: number) => number;
-    readonly grandbouleinstance_set_param: (a: number, b: number, c: number, d: number) => void;
-    readonly grandbouleinstance_set_sostenuto: (a: number, b: number) => void;
-    readonly grandbouleinstance_set_sustain: (a: number, b: number) => void;
-    readonly grandbouleinstance_set_temperament: (a: number, b: number) => void;
-    readonly grandbouleinstance_set_una_corda: (a: number, b: number) => void;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
