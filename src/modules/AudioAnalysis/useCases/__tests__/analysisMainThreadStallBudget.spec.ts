@@ -47,12 +47,16 @@ import { beforeAll, describe, it, expect, vi } from 'vitest';
 const SAMPLE_RATE = 48_000;
 
 /**
- * 30 seconds. Long enough to be a real take rather than a test tone, short
- * enough that the whole harness stays inside a normal suite run. Every figure
- * is also reported per second of audio so it can be scaled to any clip length
- * without re-running.
+ * Ten seconds — a real take rather than a test tone, and no longer than it has
+ * to be. This matters beyond runtime: at 30 s the harness burned ~10 s of CPU,
+ * and running inside a parallel test pool that slowed a neighbouring spec enough
+ * to trip its (implicit, 5000 ms) timeout. An instrument that reds unrelated
+ * tests by existing is a bad instrument.
+ *
+ * Every figure is also reported per second of audio, so a longer clip needs
+ * arithmetic rather than a re-run: the work here is linear in clip length.
  */
-const FIXTURE_SECONDS = 30;
+const FIXTURE_SECONDS = 10;
 
 /**
  * Far above any plausible measurement, so the assertions below are what decide
@@ -104,15 +108,15 @@ const RECORDED_BREACHES = {
      * inner recurrence, with no yield, invoked synchronously from
      * `handleDetectKey.execute`.
      */
-    detectKey: { ceilingMs: 30_000, reason: 'Goertzel chroma: 12 x 6 bins x 4096-tap recurrence per 2048-sample hop' },
+    detectKey: { ceilingMs: 10_000, reason: 'Goertzel chroma: 12 x 6 bins x 4096-tap recurrence per 2048-sample hop' },
     /**
      * `summarizeFeatures` — the meyda hop loop in `audioFeatures.ts`, ~94 FFT +
      * MFCC + chroma extractions per second of audio at the default
      * bufferSize 2048 / hopSize 512.
      */
-    summarizeFeatures: { ceilingMs: 40_000, reason: 'meyda: 9 features per hop, ~94 hops per second of audio' },
+    summarizeFeatures: { ceilingMs: 15_000, reason: 'meyda: 9 features per hop, ~94 hops per second of audio' },
     /** `detectDominantPitch` — pitchy MPM per hop, via `trackPitch`. */
-    detectDominantPitch: { ceilingMs: 30_000, reason: 'pitchy MPM autocorrelation per hop' },
+    detectDominantPitch: { ceilingMs: 10_000, reason: 'pitchy MPM autocorrelation per hop' },
 } as const;
 
 type FixtureBuffer = Pick<AudioBuffer, 'sampleRate' | 'getChannelData'>;
@@ -301,18 +305,18 @@ describe('AudioAnalysis main-thread stall budget', () => {
 
             // Fixture pin. Every timing above is meaningless if the DSP found
             // nothing to do: a detector that early-outs on silence is fast, and
-            // a harness that only times early-outs measures itself. These assert
-            // the fixture drove each path to a real result.
-            // The fixture carries one transient every 500 ms over 30 s, so a
-            // working onset detector finds tens of them; the meyda hop loop at
-            // bufferSize 2048 / hopSize 512 yields ~2800 frames over the same
+            // a harness that only times early-outs measures itself.
+            //
+            // The fixture carries one transient every 500 ms, so over 10 s a
+            // working onset detector finds roughly twenty; the meyda hop loop at
+            // bufferSize 2048 / hopSize 512 yields ~930 frames over the same
             // span. Both are asserted as counts rather than as "not empty", so a
             // detector that degraded to a handful of results would still red.
             expect({
                 key: typeof key.result?.key,
                 tempoIsPositive: (tempo.result ?? 0) > 0,
-                onsetCount: onsets.result.length > 30,
-                frameCount: (features.result?.frameCount ?? 0) > 2000,
+                onsetCount: onsets.result.length > 10,
+                frameCount: (features.result?.frameCount ?? 0) > 800,
                 pitchIsMidi: typeof pitch.result?.midiPitch === 'number',
             }).toEqual({
                 key: 'string',
