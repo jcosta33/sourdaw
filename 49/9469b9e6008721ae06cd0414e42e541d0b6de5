@@ -1,0 +1,82 @@
+src/modules/Project/useCases/projectPersistence/fileIO/buildProjectData.ts
+  s_66d4924c65dcd2::t_df5eee440b3110 137-142
+  s_66d4924c65dcd2::t_661fa6917b8d76 3,7,11-12
+  s_66d4924c65dcd2::t_a3b3df76232c58 179-182
+  s_66d4924c65dcd2::t_dc991edc664699 187-191
+  s_66d4924c65dcd2::t_44626c72f37a35 192-197
+src/modules/Arrangement/useCases/resetArrangementStoresForProject.ts
+  s_66d4924c65dcd2::t_f96a6bc6118692 1,12-14
+  s_66d4924c65dcd2::t_8b44bd1d60253a 15
+src/modules/Project/models/ProjectData.ts
+  s_66d4924c65dcd2::t_c679877b643fe7 51-66
+  s_66d4924c65dcd2::t_2f28e9a7e258fb 68-71
+  s_66d4924c65dcd2::t_46cc468832d065 324-425
+src/modules/Arrangement/stores/vcaGroupStore.ts
+  s_66d4924c65dcd2::t_821946235b09ab 38-41,43-44,46-47,49-50,52-53,58-77,79-92
+  s_66d4924c65dcd2::t_2d0452f8d7a59a 42,45,48,51,54-57
+  s_66d4924c65dcd2::t_c9c46bbc2a83da 78
+src/modules/CvGate/useCases/hydrateCvGateState.ts
+  s_66d4924c65dcd2::t_6eb9b1d6e23293 1-14
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/mixStatePersistence.roundTrip.spec.ts
+  s_66d4924c65dcd2::t_a89a620eac5463 1-10,12-190
+  s_66d4924c65dcd2::t_85fdfcd8bd3d32 11
+src/modules/Arrangement/stores/gainEnvelopeStore.ts
+  s_66d4924c65dcd2::t_91c84a92976282 59-60,62-120
+  s_66d4924c65dcd2::t_7ce453d3375a83 61
+src/modules/Arrangement/useCases/index.ts
+  s_66d4924c65dcd2::t_31fe8a7d3657f1 212
+  s_66d4924c65dcd2::t_6ca01c3bf00668 79
+src/modules/Arrangement/useCases/vca/hydrateVcaGroups.ts
+  s_66d4924c65dcd2::t_83e01e301b8cfc 1-13
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/buildProjectData.spec.ts
+  s_66d4924c65dcd2::t_d2663fff34f5cc 15-16,18-22
+src/modules/CvGate/useCases/index.ts
+  s_66d4924c65dcd2::t_f29c71cda7623c 6
+src/modules/Project/useCases/projectPersistence/helpers/isHydratableProjectData.ts
+  s_66d4924c65dcd2::t_ab47d1c66702cd 63-73
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/hydrateModuleStoresFromProjectData.spec.ts
+  s_66d4924c65dcd2::t_4d230c2f78e055 13-16,29-38
+  s_66d4924c65dcd2::t_62af0b2d7a4e02 165-212
+  s_66d4924c65dcd2::t_e90bb09d866c43 64-75
+src/modules/Automation/useCases/modulation/hydrateModulationState.ts
+  s_66d4924c65dcd2::t_4ba996aff85e33 1-15
+src/modules/Arrangement/useCases/__tests__/resetArrangementStoresForProject.spec.ts
+  s_66d4924c65dcd2::t_56143aab1295a8 26-30
+  s_66d4924c65dcd2::t_f0e7d0266db2ea 47-49
+  s_66d4924c65dcd2::t_95b130ab1406e8 3
+  s_66d4924c65dcd2::t_ae884dfdb315ab 37
+src/modules/Project/useCases/projectPersistence/helpers/hydrateModuleStoresFromProjectData.ts
+  s_66d4924c65dcd2::t_1c0d013420f667 1-5
+  s_66d4924c65dcd2::t_05b768557b9be6 6-7
+  s_66d4924c65dcd2::t_b04d9daf4fbdfd 30-34
+  s_66d4924c65dcd2::t_a8051f8b53a482 27-29
+src/modules/Arrangement/stores/__tests__/vcaGroupStoreDeep.spec.ts
+  s_66d4924c65dcd2::t_c6cb7820ae0a95 3-9
+  s_66d4924c65dcd2::t_afff0a8a810063 74-101
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportProjectFile.spec.ts
+  s_66d4924c65dcd2::t_f62358366d7219 26-27,29-33
+src/modules/Arrangement/stores/__tests__/gainEnvelopeStoreDeep.spec.ts
+  s_66d4924c65dcd2::t_7cb63b438bc464 111
+  s_66d4924c65dcd2::t_8cb05664169a94 9-10
+  s_66d4924c65dcd2::t_ba86418217ff2b 99-110,112-135
+src/modules/Automation/useCases/index.ts
+  s_66d4924c65dcd2::t_a6d0f1f0fcb954 45
+src/modules/Arrangement/useCases/clipGainEnvelope/hydrateClipGainEnvelopes.ts
+  s_66d4924c65dcd2::t_639668ab24884b 1-13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "499469b9e6008721ae06cd0414e42e541d0b6de5",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
