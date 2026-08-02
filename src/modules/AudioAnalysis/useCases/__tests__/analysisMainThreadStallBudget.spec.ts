@@ -1,123 +1,84 @@
 /**
- * AC-4 — main-thread stall budget, analysis leg.
+ * AC-4 — main-thread stall budget, analysis leg: the parts that are not timing.
  *
- * ## The budget: 10 ms
+ * ## Where the figures are
  *
- * One `SCHEDULE_AHEAD_SECONDS` grain. The transport scheduler runs on a worker
- * with a look-ahead window (`src/modules/Transport/workers/schedulerWorker.ts`);
- * the main thread is what turns each scheduler tick into `AudioParam` and
- * `start()` calls. A main-thread task longer than one grain means the tick that
- * should have scheduled the next window queues behind it, and notes land late.
- * 10 ms is therefore not a comfort target — it is the point past which a user
- * hears the stall.
+ * **Not here.** Every AC-4 magnitude — per-span minima, both budgets, the
+ * convergence gate, the regression ceilings — lives in
+ * `scripts/measureStallBudget.ts`, run as `pnpm audio:stall-budget`. No figure
+ * exists in both places.
  *
- * Do not widen it. If an operation exceeds it, that is a finding about the
- * operation, and the fix is to yield, chunk, or move it off-thread — not to
- * raise the number here.
+ * The split is not tidiness. **An assertion whose truth depends on wall-clock
+ * time does not belong in the shared suite.** A vitest failure is a claim about
+ * the product, and "the machine was too busy to measure" is not one; vitest has
+ * pass, fail, and a skip that vanishes into an 18,000-test run, and none of them
+ * says that. Run under 24 spinners at 1-minute load 21.74, the previous revision
+ * of this file refused correctly — `summarizeFeatures ... drift 51.40% (NOT
+ * CONVERGED)` — and reported the refusal as a test failure. The script has a
+ * third exit code for exactly that case (2 = NOT MEASURED), the way
+ * `pnpm audio:deadline` does for AC-3.
  *
- * ## What this measures, and where
+ * What stays here is everything that reds on a code change and cannot red
+ * because a box is busy.
  *
- * Every analysis entry point below is pure JavaScript over a `Float32Array`,
- * invoked synchronously from a command handler or a React click handler with no
- * yield between entry and return. That is exactly the shape the budget is about,
- * and it is fully faithful under Node + jsdom: the DSP here is the shipping code
- * running on real PCM. Nothing is stubbed except the audio-cache read boundary,
- * which hands back the fixture buffer.
+ * ## The two budgets the script measures against
  *
- * ## What this does NOT measure — see the `unmeasured` annotation below
+ * Restated so a reader landing here is not sent away for the definitions.
  *
- * `polyphonicAudioToMidi` (basic-pitch / TensorFlow.js) and
- * `separateStemsBrowser` (Demucs / onnxruntime-web) are the two heaviest
- * main-thread claims in this area and neither can be measured here. Their cost
- * lives in WebGPU/WASM backends, `decodeAudioData` and
- * `OfflineAudioContext.startRendering` — all of which jsdom either lacks or
- * stubs (`src/setupTests.ts` supplies an `OfflineAudioContext` with no
- * `createBuffer` and no `startRendering`). A number produced here would describe
- * the harness, not the product. They are reported as unmeasured, with the
- * source-level facts that *can* be established by reading, kept separate from
- * the timings.
+ * - **10 ms — `scheduleGrainMs`** (`Transport/models/TransportState.ts:38`).
+ *   The scheduler tick period: a responsiveness and automation-resolution
+ *   threshold. Overrunning it loses no scheduled audio — each tick schedules a
+ *   contiguous range and carries `lastScheduledBeat` forward
+ *   (`startPlayheadScheduler.ts:358-359`, `:411`), and `tickInFlight`
+ *   (`:159-162`) drops overrunning ticks deliberately. What it costs is the work
+ *   applied at `newPosition` (`:395-407`), which lands late rather than early.
+ * - **100 ms — `SCHEDULE_AHEAD_SECONDS = 0.1`** (`startPlayheadScheduler.ts:40`).
+ *   The look-ahead horizon: the audio-correctness threshold. Exhaust it and
+ *   `Transport/useCases/scheduling/scheduleAudioClips.ts:203-217` starts the
+ *   clip mid-buffer.
+ *
+ * An earlier revision called 10 ms "one `SCHEDULE_AHEAD_SECONDS` grain" and "the
+ * point past which a user hears the stall" — wrong constant by 10x, wrong
+ * mechanism. Fixed here, in the script, and at its origin in
+ * `.agents/specs/render-parity-instrumentation/spec.md` AC-4.
+ *
+ * ## The finding this leg exists for
+ *
+ * That `ClipAudioAiSection`'s Analyze handler runs both analyses synchronously
+ * and cannot paint its spinner is asserted behaviourally, with no clock, in
+ * `TimelineEditor/presentations/views/Inspector/__tests__/ClipAudioAiSection.analyzeStall.spec.tsx`.
+ * A timing assertion never had to carry that claim.
  */
 
 import { readFileSync } from 'node:fs';
-import os from 'node:os';
 import { resolve } from 'node:path';
 
-import { beforeAll, describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
 const SAMPLE_RATE = 48_000;
 
 /**
- * Ten seconds — a real take rather than a test tone, and no longer than it has
- * to be. This matters beyond runtime: at 30 s the harness burned ~10 s of CPU,
- * and running inside a parallel test pool that slowed a neighbouring spec enough
- * to trip its (implicit, 5000 ms) timeout. An instrument that reds unrelated
- * tests by existing is a bad instrument.
+ * Ten seconds, the same take the script measures.
  *
- * Every figure is also reported per second of audio, so a longer clip needs
- * arithmetic rather than a re-run: the work here is linear in clip length.
+ * Shortening it was the obvious saving once the timing left this file, and it
+ * does not work: `detectTempo` returns null at two seconds and at six. Its
+ * inter-onset autocorrelation needs more of the grid than that, and a fixture
+ * that starves a detector turns its pin into a test of the fixture. One pass of
+ * all five detectors over 10 s costs about half a second, which is the price of
+ * these pins meaning anything.
  */
 const FIXTURE_SECONDS = 10;
 
 /**
- * Far above any plausible measurement, so the assertions below are what decide
- * the verdict. Without it these cases inherit vitest's 5000 ms default, and a
- * harness that intends to report "1200 ms, four times over budget" would instead
- * fail as `Test timed out in 5000ms` — a threshold nobody wrote, firing as a
- * flake rather than as the property.
- */
-const MEASUREMENT_TIMEOUT_MS = 600_000;
-
-/** AC-4's budget, in milliseconds. One `SCHEDULE_AHEAD_SECONDS` grain. */
-const STALL_BUDGET_MS = 10;
-
-/**
  * `audioToMidi`'s shipping defaults (`sensitivity = 0.5`, `minInterval = 0.25`
- * beats, resolved against the 120 BPM default transport). Measuring the
- * configuration the product actually runs, rather than one invented here.
+ * beats against the 120 BPM default transport).
  *
  * Note the scope: this is `mode: 'rhythm'`. `mode: 'pitched'` additionally runs
  * a per-onset O(searchEnd^2) autocorrelation inside `audioToMidi`, which is not
- * separately callable and is therefore **not** covered by the figure below.
+ * separately callable and is listed in the `unmeasured` annotation below.
  */
 const ONSET_SENSITIVITY = 0.5;
 const ONSET_MIN_INTERVAL_SEC = 0.25 / (120 / 60);
-
-/**
- * Recorded breaches.
- *
- * These are measurements, not targets. Each entry pins an operation that is
- * already over `STALL_BUDGET_MS` on the reference machine, so the harness can
- * assert something that fails in both directions: it reds if the operation gets
- * an order of magnitude worse, and it reds when the operation is *fixed* — which
- * is the point at which the entry must be deleted and the real budget asserted
- * instead. The second direction is the one that matters; the ceiling is a
- * backstop.
- *
- * **The ceilings are deliberately an order of magnitude above the observed
- * figure, and that is not laziness.** This harness runs inside a parallel test
- * runner and cannot control machine load: the same span measured 781 ms alone
- * and 1913 ms with one other spec file running beside it. A tight ceiling on a
- * wall clock in that environment is a flake, not a guard. These catch a
- * catastrophic regression; the precise numbers live in the annotations, which is
- * where a reader should look.
- */
-const RECORDED_BREACHES = {
-    /**
-     * `detectKey` — the Goertzel chroma loop in `keyDetection.ts`. Four nested
-     * loops: frames (hop 2048) x 12 pitch classes x 6 octaves x a 4096-sample
-     * inner recurrence, with no yield, invoked synchronously from
-     * `handleDetectKey.execute`.
-     */
-    detectKey: { ceilingMs: 10_000, reason: 'Goertzel chroma: 12 x 6 bins x 4096-tap recurrence per 2048-sample hop' },
-    /**
-     * `summarizeFeatures` — the meyda hop loop in `audioFeatures.ts`, ~94 FFT +
-     * MFCC + chroma extractions per second of audio at the default
-     * bufferSize 2048 / hopSize 512.
-     */
-    summarizeFeatures: { ceilingMs: 15_000, reason: 'meyda: 9 features per hop, ~94 hops per second of audio' },
-    /** `detectDominantPitch` — pitchy MPM per hop, via `trackPitch`. */
-    detectDominantPitch: { ceilingMs: 10_000, reason: 'pitchy MPM autocorrelation per hop' },
-} as const;
 
 type FixtureBuffer = Pick<AudioBuffer, 'sampleRate' | 'getChannelData'>;
 
@@ -133,13 +94,10 @@ function asAudioBuffer(fixture: FixtureBuffer): AudioBuffer {
 
 /**
  * A take, not a test tone. A pure sine makes onset detection return nothing and
- * gives the key detector a single unambiguous bin, so the measurement would be
- * of the early-out rather than of the work. This is a sustained triad plus
- * periodic percussive transients plus broadband noise: every stage below has
- * real content to chew on.
- *
- * Deterministic by construction (a fixed LCG, no `Math.random`), so two runs
- * measure the same signal.
+ * gives the key detector a single unambiguous bin, so the assertions below would
+ * be satisfied by an early-out rather than by the work. This is a sustained
+ * triad plus periodic percussive transients plus broadband noise, deterministic
+ * by construction (a fixed LCG, no `Math.random`).
  */
 function createTakeFixture(seconds: number): FixtureBuffer {
     const length = Math.floor(seconds * SAMPLE_RATE);
@@ -165,22 +123,14 @@ function createTakeFixture(seconds: number): FixtureBuffer {
 }
 
 const take = createTakeFixture(FIXTURE_SECONDS);
-/** Short buffer used only to tier up the JIT before anything is timed. */
-const warmUp = createTakeFixture(0.5);
 
 // The audio-cache read is AudioEngine's boundary, not analysis DSP. Everything
 // downstream of it — meyda, pitchy, the Goertzel loop, the onset detector — is
-// the real shipping implementation running on the real fixture PCM.
+// the real shipping implementation running on the real fixture PCM. The script
+// does not mock this at all: it loads the real barrel, so `audioBufferCache`'s
+// IndexedDB access-time refresh is inside its figures rather than absent.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
-    getCachedAudioBuffer: ({ bufferId }: { bufferId: string }) => {
-        if (bufferId === 'take') {
-            return take;
-        }
-        if (bufferId === 'warm-up') {
-            return warmUp;
-        }
-        return null;
-    },
+    getCachedAudioBuffer: ({ bufferId }: { bufferId: string }) => (bufferId === 'take' ? take : null),
 }));
 
 const { detectOnsets } = await import('../detectOnsets');
@@ -189,165 +139,41 @@ const { detectTempo } = await import('../tempoDetection');
 const { summarizeFeatures } = await import('../summarizeFeatures');
 const { detectDominantPitch } = await import('../pitchDetection');
 
-/**
- * Repeats and reports the **minimum**.
- *
- * Wall clock noise is one-sided — a background task can only make a span look
- * slower — so the minimum of several samples is the least contaminated estimate
- * of what the code costs, and it is stable where a single cold sample is not.
- * Everything asserted below reads `minMs`; median and max are reported so the
- * spread is visible.
- *
- * Sample counts differ by operation, deliberately. The two cheap detectors are
- * the ones asserted to fit *inside* the budget, and that verdict is only safe
- * when the minimum is close to the true cost — so they get many samples, which
- * costs milliseconds. The three expensive ones are tens of times over the
- * budget, where a factor-of-two error changes nothing, so they get few samples,
- * because each pass is most of a second.
- */
-const SAMPLES_CHEAP = 15;
-const SAMPLES_EXPENSIVE = 3;
+describe('AudioAnalysis main-thread stall budget — non-timing pins', () => {
+    it('each detector returns real results on a real take, so the script is not timing an early-out', () => {
+        const key = detectKey('take');
+        const tempo = detectTempo('take');
+        const onsets = detectOnsets(asAudioBuffer(take), ONSET_SENSITIVITY, ONSET_MIN_INTERVAL_SEC);
+        const features = summarizeFeatures('take');
+        const pitch = detectDominantPitch('take');
 
-type Measurement<Result = unknown> = {
-    result: Result;
-    minMs: number;
-    medianMs: number;
-    maxMs: number;
-    samples: number;
-};
-
-function measure<Result>(operation: () => Result, repeats: number): Measurement<Result> {
-    const firstStartedAt = performance.now();
-    let result = operation();
-    const samples: number[] = [performance.now() - firstStartedAt];
-    for (let index = 1; index < repeats; index++) {
-        const startedAt = performance.now();
-        result = operation();
-        samples.push(performance.now() - startedAt);
-    }
-    samples.sort((left, right) => left - right);
-    return {
-        result,
-        minMs: samples[0]!,
-        medianMs: samples[Math.floor(samples.length / 2)]!,
-        maxMs: samples.at(-1)!,
-        samples: samples.length,
-    };
-}
-
-function describeMachine(): string {
-    const cpu = os.cpus()[0]?.model ?? 'unknown CPU';
-    const memoryGiB = Math.round(os.totalmem() / 1024 ** 3);
-    return (
-        `${cpu}, ${os.cpus().length} logical cores, ${memoryGiB} GiB, ` +
-        `${os.platform()} ${os.release()} ${os.arch()}, Node ${process.version}, jsdom (vitest)`
-    );
-}
-
-function report(name: string, measurement: Measurement): string {
-    const overBudget = measurement.minMs / STALL_BUDGET_MS;
-    return (
-        `${name}: min ${measurement.minMs.toFixed(2)} ms = ${overBudget.toFixed(1)}x the ${STALL_BUDGET_MS} ms budget ` +
-        `for ${FIXTURE_SECONDS}s of ${SAMPLE_RATE} Hz mono ` +
-        `(${(measurement.minMs / FIXTURE_SECONDS).toFixed(2)} ms per audio second; ` +
-        `median ${measurement.medianMs.toFixed(2)}, max ${measurement.maxMs.toFixed(2)}, ` +
-        `${measurement.samples} samples)`
-    );
-}
-
-describe('AudioAnalysis main-thread stall budget', () => {
-    // One warm-up pass per code path, untimed, so the figures below exclude
-    // first-call JIT tier-up rather than attributing it to the operation.
-    beforeAll(() => {
-        detectKey('warm-up');
-        detectTempo('warm-up');
-        detectOnsets(asAudioBuffer(warmUp), ONSET_SENSITIVITY, ONSET_MIN_INTERVAL_SEC);
-        summarizeFeatures('warm-up');
-        detectDominantPitch('warm-up');
+        // Counts and shapes, not "not empty". A detector that degraded to a
+        // handful of results would still red. The fixture carries one transient
+        // every 500 ms, so over 10 s a working onset detector finds around twenty;
+        // the meyda hop loop at bufferSize 2048 / hopSize 512 yields ~930 frames
+        // over the same span.
+        //
+        // This is the guard behind every figure the script publishes: if the DSP
+        // finds nothing to do, the script is timing an early-out and its
+        // magnitudes are fiction. `scripts/measureStallBudget.ts` re-checks the
+        // same facts at its own fixture length before it reports anything, so
+        // the property is pinned on both sides of the split.
+        expect({
+            key: typeof key?.key,
+            tempoIsPositive: (tempo ?? 0) > 0,
+            onsetCount: onsets.length > 10,
+            frameCount: (features?.frameCount ?? 0) > 800,
+            pitchIsMidi: typeof pitch?.midiPitch === 'number',
+            pitchInAudibleRange: (pitch?.frequency ?? 0) > 20 && (pitch?.frequency ?? 0) < 5000,
+        }).toEqual({
+            key: 'string',
+            tempoIsPositive: true,
+            onsetCount: true,
+            frameCount: true,
+            pitchIsMidi: true,
+            pitchInAudibleRange: true,
+        });
     });
-
-    it(
-        'reports every synchronous analysis entry point against the 10 ms grain',
-        async ({ annotate }) => {
-            await annotate(`machine: ${describeMachine()}`, 'notice');
-
-            const key = measure(() => detectKey('take'), SAMPLES_EXPENSIVE);
-            const tempo = measure(() => detectTempo('take'), SAMPLES_CHEAP);
-            const onsets = measure(
-                () => detectOnsets(asAudioBuffer(take), ONSET_SENSITIVITY, ONSET_MIN_INTERVAL_SEC),
-                SAMPLES_CHEAP
-            );
-            const features = measure(() => summarizeFeatures('take'), SAMPLES_EXPENSIVE);
-            const pitch = measure(() => detectDominantPitch('take'), SAMPLES_EXPENSIVE);
-
-            for (const [name, measurement] of [
-                ['detectKey', key],
-                ['detectTempo', tempo],
-                ['detectOnsets', onsets],
-                ['summarizeFeatures', features],
-                ['detectDominantPitch', pitch],
-            ] as const) {
-                await annotate(report(name, measurement), 'notice');
-            }
-
-            // The Analyze button in `ClipAudioAiSection` runs these two
-            // back-to-back inside one synchronous click handler, with
-            // `setIsAnalyzing(true)` before and `false` after — neither of which
-            // can paint, because nothing yields in between. The pair is the
-            // stall the user actually experiences, so it is reported as one.
-            const analyzeButtonMs = features.minMs + pitch.minMs;
-            await annotate(
-                `ClipAudioAiSection Analyze click handler (summarizeFeatures + detectDominantPitch): ` +
-                    `${analyzeButtonMs.toFixed(2)} ms = ${(analyzeButtonMs / STALL_BUDGET_MS).toFixed(1)}x ` +
-                    `the ${STALL_BUDGET_MS} ms budget, one uninterrupted task`,
-                'notice'
-            );
-
-            // Fixture pin. Every timing above is meaningless if the DSP found
-            // nothing to do: a detector that early-outs on silence is fast, and
-            // a harness that only times early-outs measures itself.
-            //
-            // The fixture carries one transient every 500 ms, so over 10 s a
-            // working onset detector finds roughly twenty; the meyda hop loop at
-            // bufferSize 2048 / hopSize 512 yields ~930 frames over the same
-            // span. Both are asserted as counts rather than as "not empty", so a
-            // detector that degraded to a handful of results would still red.
-            expect({
-                key: typeof key.result?.key,
-                tempoIsPositive: (tempo.result ?? 0) > 0,
-                onsetCount: onsets.result.length > 10,
-                frameCount: (features.result?.frameCount ?? 0) > 800,
-                pitchIsMidi: typeof pitch.result?.midiPitch === 'number',
-            }).toEqual({
-                key: 'string',
-                tempoIsPositive: true,
-                onsetCount: true,
-                frameCount: true,
-                pitchIsMidi: true,
-            });
-
-            // Within budget today. These are the real AC-4 assertions: they red
-            // if either operation grows past one scheduler grain.
-            expect({
-                detectTempoWithinBudget: tempo.minMs < STALL_BUDGET_MS,
-                detectOnsetsWithinBudget: onsets.minMs < STALL_BUDGET_MS,
-            }).toEqual({ detectTempoWithinBudget: true, detectOnsetsWithinBudget: true });
-
-            // Over budget today. Asserted as breaches so the harness reds both
-            // when they regress and when they are fixed — a fix must delete the
-            // entry from RECORDED_BREACHES and move the operation above. All
-            // three are tens of times over the grain, so the verdict is not
-            // sensitive to wall-clock noise the way a near-budget span would be.
-            expect({
-                detectKey: key.minMs > STALL_BUDGET_MS && key.minMs < RECORDED_BREACHES.detectKey.ceilingMs,
-                summarizeFeatures:
-                    features.minMs > STALL_BUDGET_MS && features.minMs < RECORDED_BREACHES.summarizeFeatures.ceilingMs,
-                detectDominantPitch:
-                    pitch.minMs > STALL_BUDGET_MS && pitch.minMs < RECORDED_BREACHES.detectDominantPitch.ceilingMs,
-            }).toEqual({ detectKey: true, summarizeFeatures: true, detectDominantPitch: true });
-        },
-        MEASUREMENT_TIMEOUT_MS
-    );
 
     it('records what cannot be measured in jsdom, and why', async ({ annotate }) => {
         const unmeasured = [
@@ -360,18 +186,36 @@ describe('AudioAnalysis main-thread stall budget', () => {
                 '~235 MB ONNX model over the network, a WebGPU or WASM execution ' +
                 'provider, decodeAudioData and OfflineAudioContext.startRendering. ' +
                 'It has no direct spec at all; separateStems.spec.ts mocks the module away.',
-            'Both need the Playwright rig (tests/e2e) or a manual browser session, not jsdom. ' +
-                'Reporting a jsdom number for either would describe the harness, not the product.',
+            "audioToMidi mode 'pitched': unmeasured. The figure the script reports for detectOnsets " +
+                "covers mode 'rhythm' only. The pitched mode adds a per-onset O(searchEnd^2) " +
+                'autocorrelation inside audioToMidi that is not separately callable, so timing it ' +
+                'would require timing audioToMidi end to end against a fixture whose onset count ' +
+                'drives the cost — a different instrument, not a wider one.',
+            'handleStemSeparationPreview (AiGeneration/useCases/actions): unmeasured. It sits ' +
+                'on the same Inspector panel as the Analyze handler and calls audioBufferToWav ' +
+                'then separateStems, i.e. the Demucs path above, so it inherits that exclusion. ' +
+                'Its own synchronous share is the WAV encode, which needs a real AudioBuffer.',
+            'handleAiDenoiseClip (AiGeneration/useCases/actions): unmeasured. Same panel. ' +
+                'Under Tauri the work crosses to the native bridge; in the browser branch it ' +
+                'runs a spectral-subtraction loop on the main thread and then materialises the ' +
+                "result through OfflineAudioContext.createBuffer, which jsdom's stub lacks.",
+            'All of these need the Playwright rig (tests/e2e) or a manual browser session. ' +
+                'Reporting a jsdom number for any of them would describe the harness, not the product.',
         ];
         for (const line of unmeasured) {
             await annotate(line, 'notice');
         }
 
-        // Not a timing claim — a source-level one, and the only part of the two
-        // survey allegations that can be settled without a browser. Both call
-        // sites resolve their heavy dependency into the page realm; neither
-        // constructs a Worker. `BrowserAi/repositories/inferenceWorkerBridge.ts`
-        // is the in-repo counter-example that does.
+        // Not a timing claim — a source-level one, and the narrowest piece of
+        // the two survey allegations that can be settled without a browser.
+        //
+        // Be precise about what the scan establishes: neither call site's own
+        // source text constructs a `Worker`. That is all. It says nothing about
+        // onnxruntime-web or TensorFlow.js, both of which spawn their own
+        // WASM-thread worker pools internally — so this is NOT evidence that the
+        // work lands on the page's main thread, only that the call site does
+        // nothing to move it off. `BrowserAi/repositories/inferenceWorkerBridge.ts`
+        // is the in-repo counter-example of a call site that does.
         //
         // Read off disk rather than imported: these are source-text assertions,
         // and importing them would create module edges this spec has no business

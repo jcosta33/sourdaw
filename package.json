@@ -16,6 +16,7 @@
         "test:e2e": "playwright test",
         "audio:deadline": "node --experimental-strip-types scripts/measureRenderDeadline.ts",
         "test:coverage": "vitest run --coverage",
+        "audio:stall-budget": "node --experimental-strip-types scripts/measureStallBudget.ts",
         "typecheck": "tsc --noEmit -p tsconfig.app.json",
         "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
         "typecheck:scripts": "tsc --noEmit -p tsconfig.scripts.json",
