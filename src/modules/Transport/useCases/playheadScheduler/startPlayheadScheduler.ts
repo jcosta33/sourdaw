@@ -31,12 +31,45 @@ import { panicYeastRuntime } from '../transportControls/panicYeastRuntime';
 import { advanceSchedulerDiscontinuityEpoch } from './advanceSchedulerDiscontinuityEpoch';
 import { disposePlayheadScheduler } from './disposePlayheadScheduler';
 import { schedulerSession, stopActiveSources } from './schedulerSession';
+import { schedulerTimingDiagnostics } from './schedulerTimingDiagnostics';
 
 function loopSignatureOf(state: { isLooping: boolean; loopStart: number; loopEnd: number }): string {
     return `${state.isLooping ? 1 : 0}:${state.loopStart}:${state.loopEnd}`;
 }
 
 const SCHEDULE_AHEAD_SECONDS = 0.1;
+
+type SchedulerWorkerTick = {
+    type: 'tick';
+    sequence: number;
+    scheduledAtMs: number;
+    sentAtMs: number;
+};
+
+function highResolutionEpochMs(): number {
+    return performance.timeOrigin + performance.now();
+}
+
+function isSchedulerWorkerTick(value: unknown): value is SchedulerWorkerTick {
+    if (typeof value !== 'object' || value === null) {
+        return false;
+    }
+    return (
+        'type' in value &&
+        value.type === 'tick' &&
+        'sequence' in value &&
+        typeof value.sequence === 'number' &&
+        Number.isInteger(value.sequence) &&
+        value.sequence > 0 &&
+        'scheduledAtMs' in value &&
+        typeof value.scheduledAtMs === 'number' &&
+        Number.isFinite(value.scheduledAtMs) &&
+        'sentAtMs' in value &&
+        typeof value.sentAtMs === 'number' &&
+        Number.isFinite(value.sentAtMs) &&
+        value.sentAtMs >= value.scheduledAtMs
+    );
+}
 
 /**
  * How far behind the live position the MIDI high-water mark is rewound when a
@@ -102,6 +135,7 @@ export function startPlayheadScheduler(): void {
     resetMetronomeBeat(state.playheadPosition);
 
     const grainMs = state.scheduleGrainMs;
+    schedulerTimingDiagnostics.reset(grainMs);
 
     async function tick(): Promise<void> {
         // A prior tick is still awaiting its scheduling work (the Yeast Worker
@@ -110,13 +144,16 @@ export function startPlayheadScheduler(): void {
         // tick; the in-flight tick already advances the playhead and the next
         // worker message resumes steady scheduling once it resolves.
         if (schedulerSession.tickInFlight) {
+            schedulerTimingDiagnostics.recordTickSkipped();
             return;
         }
         schedulerSession.tickInFlight = true;
+        const tickStartedAtMs = highResolutionEpochMs();
         try {
             await runTick();
         } finally {
             if (schedulerSession.generation === schedulerGeneration) {
+                schedulerTimingDiagnostics.recordTickSettled(highResolutionEpochMs() - tickStartedAtMs);
                 schedulerSession.tickInFlight = false;
             }
         }
@@ -364,11 +401,18 @@ export function startPlayheadScheduler(): void {
             type: 'module',
         });
         schedulerSession.worker.onmessage = (event: MessageEvent<unknown>) => {
-            if (event.data && typeof event.data === 'object' && 'type' in event.data && event.data.type === 'tick') {
-                tick().catch((error: unknown) => {
-                    logger.error(new Error('Transport scheduler tick failed', { cause: error }));
-                });
+            if (!isSchedulerWorkerTick(event.data) || schedulerSession.generation !== schedulerGeneration) {
+                return;
             }
+            schedulerTimingDiagnostics.recordTickMessage({
+                sequence: event.data.sequence,
+                scheduledAtMs: event.data.scheduledAtMs,
+                sentAtMs: event.data.sentAtMs,
+                receivedAtMs: highResolutionEpochMs(),
+            });
+            tick().catch((error: unknown) => {
+                logger.error(new Error('Transport scheduler tick failed', { cause: error }));
+            });
         };
     }
     schedulerSession.worker.postMessage({ type: 'start', interval: grainMs });
