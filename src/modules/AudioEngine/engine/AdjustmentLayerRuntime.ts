@@ -29,12 +29,20 @@ type ApplyInput = {
     blend: number;
 };
 
+export type AdjustmentLayerRuntimeDiagnostics = {
+    buses: number;
+    busesByEffectType: Record<string, number>;
+    audioNodes: number;
+    audioWorkletProcessors: number;
+};
+
 export type AdjustmentLayerRuntime = {
     applyTick: (records: ApplyInput[]) => void;
     getBusInputForTrack: (trackId: string) => AudioNode | null;
     getBusChainInputForTrack: (trackId: string) => AudioNode | null;
     reset: () => void;
     listLiveBusKeys: () => string[];
+    getDiagnostics: () => AdjustmentLayerRuntimeDiagnostics;
 };
 
 const FADE_OUT_GRACE_MS = 300;
@@ -225,6 +233,25 @@ export function createAdjustmentLayerRuntime(deps: TrackRerouteDeps): Adjustment
         },
         listLiveBusKeys: (): string[] => {
             return Array.from(liveBuses.keys()).sort();
+        },
+        getDiagnostics: (): AdjustmentLayerRuntimeDiagnostics => {
+            const busesByEffectType = new Map<string, number>();
+            let audioNodes = 0;
+            let audioWorkletProcessors = 0;
+            for (const live of liveBuses.values()) {
+                const resources = live.bus.getRuntimeResources();
+                audioNodes += resources.audioNodes;
+                audioWorkletProcessors += resources.audioWorkletProcessors;
+                busesByEffectType.set(resources.effectType, (busesByEffectType.get(resources.effectType) ?? 0) + 1);
+            }
+            return {
+                buses: liveBuses.size,
+                busesByEffectType: Object.fromEntries(
+                    [...busesByEffectType].sort(([left], [right]) => left.localeCompare(right))
+                ),
+                audioNodes,
+                audioWorkletProcessors,
+            };
         },
     };
 }
