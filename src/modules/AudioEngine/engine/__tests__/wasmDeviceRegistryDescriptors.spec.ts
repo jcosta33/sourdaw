@@ -7,6 +7,7 @@ import { externalLatencyRegistry } from '../../useCases/latencyCompensation/comp
 import { setAudioDeviceRuntimeSink } from '../audioDeviceRuntimeSink';
 import { type BacteriaNodeResult } from '../BacteriaNode';
 import { type CrumbsNodeResult } from '../CrumbsNode';
+import { type DeviceContentLoadOutcome } from '../deviceReadinessDiagnostics';
 import { type GlutenNodeResult } from '../GlutenNode';
 import { type GrandBouleNodeResult } from '../GrandBouleNode';
 import { type GrinderNodeResult } from '../GrinderNode';
@@ -354,7 +355,7 @@ describe('wasmDeviceRegistry descriptors', () => {
         }
 
         it('settles content readiness only after project sample preparation completes', async () => {
-            const preparation = Promise.withResolvers<void>();
+            const preparation = Promise.withResolvers<DeviceContentLoadOutcome>();
             const prepareCrumbsDevice = vi.fn(() => preparation.promise);
             const onContentLoadSettled = vi.fn();
             const result = createResult();
@@ -373,7 +374,7 @@ describe('wasmDeviceRegistry descriptors', () => {
             });
             expect(onContentLoadSettled).not.toHaveBeenCalled();
 
-            preparation.resolve();
+            preparation.resolve('ready');
             await loadPromise;
             expect(onContentLoadSettled).toHaveBeenCalledWith('ready');
         });
@@ -382,6 +383,21 @@ describe('wasmDeviceRegistry descriptors', () => {
             const onContentLoadSettled = vi.fn();
             setAudioDeviceRuntimeSink({
                 prepareCrumbsDevice: vi.fn().mockRejectedValue(new Error('sample preparation failed')),
+            });
+            factoryMocks.createCrumbsNode.mockResolvedValue(createResult());
+
+            const { loadPromise } = requireDescriptor('builtin-crumbs').create(
+                createDeps({ deviceType: 'builtin-crumbs', onContentLoadSettled })
+            );
+            await loadPromise;
+
+            expect(onContentLoadSettled).toHaveBeenCalledWith('failed');
+        });
+
+        it('reports a non-throwing project sample preparation failure as content failure', async () => {
+            const onContentLoadSettled = vi.fn();
+            setAudioDeviceRuntimeSink({
+                prepareCrumbsDevice: vi.fn().mockResolvedValue('failed'),
             });
             factoryMocks.createCrumbsNode.mockResolvedValue(createResult());
 

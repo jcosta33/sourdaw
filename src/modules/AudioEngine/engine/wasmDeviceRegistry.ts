@@ -441,11 +441,11 @@ const crumbsDescriptor: WasmDeviceDescriptor = {
                 // same use case the offline chain awaits, so the two registries
                 // cannot configure two different engines.
                 try {
-                    await getAudioDeviceRuntimeSink().prepareCrumbsDevice({
+                    const outcome = await getAudioDeviceRuntimeSink().prepareCrumbsDevice({
                         deviceId,
                         port: result.workletNode.port,
                     });
-                    onContentLoadSettled?.('ready');
+                    onContentLoadSettled?.(outcome);
                 } catch (error) {
                     onContentLoadSettled?.('failed');
                     throw error;

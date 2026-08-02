@@ -1,4 +1,5 @@
 import { type BacteriaMeterData } from './BacteriaNode';
+import { type DeviceContentLoadOutcome } from './deviceReadinessDiagnostics';
 import { type FermenterNodeResult } from './FermenterNode';
 import { type GlutenMeterData } from './GlutenNode';
 import { type GrinderMeterData } from './GrinderNode';
@@ -85,7 +86,7 @@ export type AudioDeviceRuntimeSink = {
      * runs in real time and can start silent, then sound once the load lands.
      * The offline path must await; see `prepareOfflineInstrument`.
      */
-    prepareCrumbsDevice: (input: { deviceId: string; port: MessagePort }) => Promise<void>;
+    prepareCrumbsDevice: (input: { deviceId: string; port: MessagePort }) => Promise<DeviceContentLoadOutcome>;
 };
 
 const defaultSink: AudioDeviceRuntimeSink = {
@@ -105,7 +106,7 @@ const defaultSink: AudioDeviceRuntimeSink = {
     updateProofMeters: () => {},
     updateTunerTelemetry: () => {},
     prepareOfflineInstrument: async () => {},
-    prepareCrumbsDevice: async () => {},
+    prepareCrumbsDevice: () => Promise.resolve('failed'),
 };
 
 let runtimeSink = defaultSink;

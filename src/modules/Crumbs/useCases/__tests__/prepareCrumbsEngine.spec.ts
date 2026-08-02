@@ -73,9 +73,10 @@ describe('prepareCrumbsEngine', () => {
         decodeMock.mockResolvedValue({ data, frameCount: 2, channels: 2, sampleRate: 44_100 });
         const { port, posts } = recordingPort();
 
-        await prepareCrumbsEngine({ deviceId: DEVICE, port });
+        const outcome = await prepareCrumbsEngine({ deviceId: DEVICE, port });
 
         expect(decodeMock).toHaveBeenCalledWith({ filePath: '/samples/break.wav' });
+        expect(outcome).toBe('ready');
         const [load] = messagesOfType(posts, 'loadSample');
         expect(load).toEqual({ type: 'loadSample', data, channels: 2, sampleRate: 44_100 });
     });
@@ -107,18 +108,20 @@ describe('prepareCrumbsEngine', () => {
         ensureInstance(DEVICE);
         const { port, posts } = recordingPort();
 
-        await prepareCrumbsEngine({ deviceId: DEVICE, port });
+        const outcome = await prepareCrumbsEngine({ deviceId: DEVICE, port });
 
         expect(decodeMock).not.toHaveBeenCalled();
+        expect(outcome).toBe('ready');
         expect(messagesOfType(posts, 'loadSample')).toEqual([]);
     });
 
     it('posts nothing at all for a device the store does not know', async () => {
         const { port, posts } = recordingPort();
 
-        await prepareCrumbsEngine({ deviceId: 'never-created', port });
+        const outcome = await prepareCrumbsEngine({ deviceId: 'never-created', port });
 
         expect(posts).toEqual([]);
+        expect(outcome).toBe('cancelled');
     });
 
     // Throwing here would abort the caller's device setup, and `buildDeviceChain`
@@ -130,7 +133,7 @@ describe('prepareCrumbsEngine', () => {
         decodeMock.mockRejectedValue(new Error('ENOENT'));
         const { port, posts } = recordingPort();
 
-        await expect(prepareCrumbsEngine({ deviceId: DEVICE, port })).resolves.toBeUndefined();
+        await expect(prepareCrumbsEngine({ deviceId: DEVICE, port })).resolves.toBe('failed');
 
         expect(messagesOfType(posts, 'loadSample')).toEqual([]);
         expect(String(warnMock.mock.calls[0]?.[0])).toContain('/samples/missing.wav');
@@ -151,8 +154,9 @@ describe('prepareCrumbsEngine', () => {
         });
         const { port, posts } = recordingPort();
 
-        await prepareCrumbsEngine({ deviceId: DEVICE, port, signal: controller.signal });
+        const outcome = await prepareCrumbsEngine({ deviceId: DEVICE, port, signal: controller.signal });
 
         expect(messagesOfType(posts, 'loadSample')).toEqual([]);
+        expect(outcome).toBe('cancelled');
     });
 });

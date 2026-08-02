@@ -40,10 +40,14 @@ export type PrepareCrumbsEngineInput = {
  * quietly renders that same silence rather than failing an export over a device
  * that was never going to make a sound.
  */
-export async function prepareCrumbsEngine({ deviceId, port, signal }: PrepareCrumbsEngineInput): Promise<void> {
+export async function prepareCrumbsEngine({
+    deviceId,
+    port,
+    signal,
+}: PrepareCrumbsEngineInput): Promise<'ready' | 'failed' | 'cancelled'> {
     const state = crumbsStore.value?.[deviceId];
     if (!state) {
-        return;
+        return 'cancelled';
     }
 
     // Mode first: it is cheap, needs no I/O, and the engine reads it when a
@@ -52,7 +56,7 @@ export async function prepareCrumbsEngine({ deviceId, port, signal }: PrepareCru
 
     const filePath = state.activeSample?.filePath;
     if (!filePath) {
-        return;
+        return 'ready';
     }
 
     let decoded;
@@ -63,11 +67,11 @@ export async function prepareCrumbsEngine({ deviceId, port, signal }: PrepareCru
         // caller degrades to a silent-but-present device either way, so report
         // and let it.
         logger.warn(`[Crumbs] Could not load "${filePath}" for ${deviceId}: ${String(error)}`);
-        return;
+        return 'failed';
     }
 
     if (signal?.aborted) {
-        return;
+        return 'cancelled';
     }
 
     // Transfer rather than copy: a decoded sample is megabytes, and the sender
@@ -81,4 +85,5 @@ export async function prepareCrumbsEngine({ deviceId, port, signal }: PrepareCru
         },
         [decoded.data.buffer]
     );
+    return 'ready';
 }
