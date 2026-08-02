@@ -5,7 +5,12 @@ import { DROPOUT_IDX, dropoutCounters } from '../../engine/dropoutCounter';
 import { createAudioEngine } from '../createWebAudioEngine';
 import { createPhaser } from '../devices/modulation/createPhaser';
 
-import type { AdjustmentLayerTickInput, AudioEngine, BuiltinDeviceNode } from '../../models/AudioEngineState';
+import type {
+    AdjustmentLayerTickInput,
+    AudioEngine,
+    AudioProcessorLifecycleState,
+    BuiltinDeviceNode,
+} from '../../models/AudioEngineState';
 
 const runtimeMocks = vi.hoisted(() => ({
     applyTick: vi.fn(),
@@ -188,6 +193,7 @@ type DiagnosticDeviceInput = {
     workletNodeCount?: number;
     workerInstances?: number;
     loadState?: DiagnosticTestDevice['diagnosticLoadState'];
+    processorLifecycle?: AudioProcessorLifecycleState | null;
 };
 
 function createDiagnosticDevice(input: DiagnosticDeviceInput): DiagnosticTestDevice {
@@ -210,6 +216,9 @@ function createDiagnosticDevice(input: DiagnosticDeviceInput): DiagnosticTestDev
         outputNode: nodes.at(-1)!,
         workerInstances: input.workerInstances,
     };
+    if (input.processorLifecycle !== undefined) {
+        device.processorLifecycle = () => input.processorLifecycle ?? null;
+    }
     if (input.loadState && input.loadState !== 'ready') {
         device.controller = {
             ready: false,
@@ -358,10 +367,11 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
         function createDevice(input: Omit<DiagnosticDeviceInput, 'context'>): DiagnosticTestDevice {
             return createDiagnosticDevice({ context: mockCtx, ...input });
         }
-        const fermenter = createDevice({
-            deviceId: 'fermenter-1',
-            deviceType: 'fermenter',
+        const toaster = createDevice({
+            deviceId: 'toaster-1',
+            deviceType: 'toaster',
             workletNodeCount: 1,
+            processorLifecycle: 'sleep',
         });
         const bacteria = createDevice({
             deviceId: 'bacteria-1',
@@ -381,7 +391,7 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
         });
         const pending = createDevice({ deviceId: 'pending-1', deviceType: 'levain', loadState: 'pending' });
         const failed = createDevice({ deviceId: 'failed-1', deviceType: 'proof', loadState: 'failed' });
-        track.deviceNodes.push(fermenter, bacteria, grandBoule, pending, failed);
+        track.deviceNodes.push(toaster, bacteria, grandBoule, pending, failed);
         busTrack.deviceNodes.push(sidechain);
         engine.wireSidechainRoute('t1', 'bus-1', 'sidechain-1');
         engine.registerScheduledSource(mockCtx.createOscillator());
@@ -400,8 +410,8 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
                 deviceInstancesByType: {
                     bacteria: 1,
                     'builtin-sidechain-compressor': 1,
-                    fermenter: 1,
                     'grand-boule': 1,
+                    toaster: 1,
                 },
                 deviceAudioNodes: 7,
                 graphSlotResourcesByLoadState: {
@@ -410,7 +420,7 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
                     failed: { audioNodes: 1, audioWorkletProcessors: 0, workers: 0 },
                 },
                 deviceAudioWorkletProcessors: 3,
-                deviceAudioWorkletProcessorsByType: { bacteria: 1, fermenter: 1, 'grand-boule': 1 },
+                deviceAudioWorkletProcessorsByType: { bacteria: 1, 'grand-boule': 1, toaster: 1 },
                 stripMeterWorklets: 1,
                 masterMeterWorklets: 1,
                 graphAudioWorkletProcessors: 5,
@@ -423,7 +433,7 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
             },
             runtime: {
                 trackedAudioScheduledSources: 1,
-                processorLifecycle: { unmanaged: 3, continue: 0, continueIfNotQuiet: 0, tail: 0, sleep: 0 },
+                processorLifecycle: { unmanaged: 2, continue: 0, continueIfNotQuiet: 0, tail: 0, sleep: 1 },
             },
         });
 
