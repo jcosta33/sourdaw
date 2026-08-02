@@ -1,0 +1,40 @@
+crates/daw-dsp/benches/quantum.rs
+  s_66d4924c65dcd2::t_efaaa8119353b5 162,850-854,856-858,874-875,894,962,977,1011,1045,1064-1065,1078-1095,1129-1152,1237-1245,1249-1256,1259,1261-1263,1267-1277
+crates/daw-dsp/benches/wasm/index.html
+  s_66d4924c65dcd2::t_43b0b5d5b73b0c 62,82,105,130,136-137,141-144
+crates/daw-dsp/benches/wasm/renderTable.mjs
+  s_66d4924c65dcd2::t_36ab5ca4eab7fe 1-155
+crates/daw-dsp/benches/quantum-cost-table.md
+  s_66d4924c65dcd2::t_44aafdd7d28fa3 7-12,20-42,44,46-48,50-52,54-76,80-104,135-166,171-172,174-177,180-182,185-194,199-202,220-221
+  s_66d4924c65dcd2::t_9fb1641e7d0256 108-134
+crates/daw-dsp/benches/wasm/server.mjs
+  s_66d4924c65dcd2::t_b48c14008c405f 4,7-18,24-31,34,36
+  s_66d4924c65dcd2::t_faf1452bb765d2 64-67,102-104
+  s_66d4924c65dcd2::t_baa7e1caf06999 69,76-81,94-101
+crates/daw-dsp/benches/wasm/deviceRecipes.js
+  s_66d4924c65dcd2::t_697ccd335c14ca 114,182,340-342,414-418,420-422,430-431,443,458,569-570,572,586-588,590-591,593,598,603,610,640,652,680
+  s_66d4924c65dcd2::t_8f2954ab20e849 247-258,271,279-280,282-283,286-309,311-315,321-338
+  s_66d4924c65dcd2::t_c75d40221eb43b 45,54-113
+  s_66d4924c65dcd2::t_904e934f3d0407 339,480-486,490-491,496,501-568,589,592
+crates/daw-dsp/benches/wasm/run.mjs
+  s_66d4924c65dcd2::t_0f071eca2311c8 14-27,35-44,46-52,63,77-79,84-85,89-117,122,132-133,153-154,159,166-167,172,174-178,180-191,213-215,219-257,281,294-298,307-308,310,312-341,346,349,351-363,365-368,372-415,418-419,424-426,430-445,448-457,459,461-484,486-499,501-507,509-523,525-543,545-548,551-561,566-583
+  s_66d4924c65dcd2::t_6719775bc4d1e1 584-592,594
+crates/daw-dsp/benches/wasm/quantumCostProcessor.js
+  s_66d4924c65dcd2::t_dee149f867cd8a 32-35,101-102,111-133,139-141,172,178-180,186,189-199,201-204,218-221
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "407a0204996a9ec0f3586622131f64aa6ccd1d10",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": null
+    }
+  }
+}
