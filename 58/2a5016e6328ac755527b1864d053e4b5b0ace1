@@ -1,0 +1,45 @@
+src/modules/AudioEngine/engine/telemetryAllocator.ts
+  s_ac9b259eab20ba::t_ebc8c22d66caf7 113-116
+src/modules/AudioEngine/services/__tests__/toasterProcessor.spec.ts
+  s_ac9b259eab20ba::t_0982120c128dd3 353
+  s_ac9b259eab20ba::t_c811b2e2105a24 38,40,55,78-83,136-137,319-347,361-391,448-449
+  s_ac9b259eab20ba::t_ac10d13c59ee7b 41,51-53,138,348-352,354-360,450
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistryDescriptors.spec.ts
+  s_ac9b259eab20ba::t_072e28f6104679 165,210-211
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_ac9b259eab20ba::t_072e28f6104679 209,227
+src/modules/AudioEngine/engine/__tests__/ToasterNode.spec.ts
+  s_ac9b259eab20ba::t_643eeb8848c275 21,392-393,398-399
+  s_ac9b259eab20ba::t_ac10d13c59ee7b 44-45,56-57,73,87,89-91,94-103,386-391,394,400-416
+  s_ac9b259eab20ba::t_60a93883dcfcd4 5,20,43,55,63-72,83,350,355,358-359,361-385,396-397,417-439
+  s_ac9b259eab20ba::t_f482de6081408e 395
+src/modules/AudioEngine/services/toasterProcessor.ts
+  s_ac9b259eab20ba::t_66833b7493ff54 23-24,30-31,117-118,165-168,176-184,218,287-288,355,401-412,414-416,452-454,462-466,498
+  s_ac9b259eab20ba::t_74354f3f075f88 443-444
+  s_ac9b259eab20ba::t_84d167d9b8580a 455-461
+src/modules/AudioEngine/engine/ToasterNode.ts
+  s_ac9b259eab20ba::t_2ecab5e80fde4b 21-22
+  s_ac9b259eab20ba::t_ecfac22fa5e565 32,98,161
+  s_ac9b259eab20ba::t_74354f3f075f88 10,114,164-203,205-208,213-220,223-228,351-353,371-377
+  s_ac9b259eab20ba::t_9eadf51bb8682d 204
+  s_ac9b259eab20ba::t_d48e8f2f0f15bb 14-20,23,33-47,155-160,162-163,211-212,221,305-320,347-350
+  s_ac9b259eab20ba::t_54dafa3093454f 48
+src/modules/AudioEngine/services/__tests__/toasterProcessorWasmViews.spec.ts
+  s_ac9b259eab20ba::t_60a93883dcfcd4 79-82
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "582a5016e6328ac755527b1864d053e4b5b0ace1",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
