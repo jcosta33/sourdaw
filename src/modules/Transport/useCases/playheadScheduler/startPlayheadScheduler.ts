@@ -88,7 +88,12 @@ function isSchedulerWorkerTick(value: unknown, receivedAtMs: number): value is S
  * window has to be re-emitted. The normal gate is the half-open interval
  * `[lastScheduledBeat, scheduleUpTo)`. Rewinding by this amount also re-opens
  * notes infinitesimally before the live position after their scheduled voices
- * have been stopped. Matches the nudge the loop-wrap path already uses.
+ * have been stopped.
+ *
+ * Only the tempo/loop-edit re-emit uses it. The loop-wrap and follow-action
+ * paths are relocations, not re-emissions: they anchor on the destination beat
+ * itself (`loopStart`, `jumpToPosition`) because the gate is already inclusive
+ * there, and an extra nudge below would emit the destination twice.
  */
 const REEMIT_EPSILON_BEATS = 0.0001;
 
@@ -256,7 +261,20 @@ export function startPlayheadScheduler(): void {
             newPosition = current.loopStart + ((newPosition - current.loopStart) % loopLength);
             advanceSchedulerDiscontinuityEpoch();
             rackDiscontinuity = true;
-            schedulerSession.lastScheduledBeat = newPosition - 0.0001;
+            // Anchor the next window at the seam itself, not at the wrapped
+            // playhead. The wrap only fires once `newPosition >= loopEnd`, so
+            // after the modulo `newPosition` is `loopStart + overshoot` — up to
+            // one whole clamped tick past the seam. Anchoring there left
+            // `[loopStart, loopStart + overshoot)` outside the half-open gate
+            // `[lastScheduledBeat, scheduleUpTo)`, and the pre-wrap look-ahead
+            // could not have covered it either: that window ran past `loopEnd`
+            // into post-loop material, which `stopAllScheduled()` below then
+            // cancels. So the note on the loop start was never emitted on any
+            // pass whose overshoot exceeded the old epsilon — at 120 BPM and a
+            // 10 ms grain, essentially all of them. `loopStart` exactly, with
+            // no epsilon: the gate is already inclusive at its lower bound, and
+            // nudging below it would re-open the seam a second time.
+            schedulerSession.lastScheduledBeat = current.loopStart;
             resetMetronomeBeat(newPosition);
             stopAllScheduled();
             stopActiveSources(schedulerSession.activeAudioSources, ctx);
