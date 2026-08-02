@@ -1,0 +1,35 @@
+src/modules/AudioEngine/repositories/devices/__tests__/reverbDelayFactories.spec.ts
+  s_ac9b259eab20ba::t_f1c2c926ad3e64 48
+  s_ac9b259eab20ba::t_0f03a8fec1c189 49-50
+  s_ac9b259eab20ba::t_ee07ca3b08d840 9-17,44-46
+  s_ac9b259eab20ba::t_94fd1716db503c 1
+  s_ac9b259eab20ba::t_1b70382d50aea0 40-43,47
+  s_ac9b259eab20ba::t_66879a31646ff7 51
+src/modules/AudioEngine/repositories/devices/reverbDelay/__tests__/helpers.spec.ts
+  s_ac9b259eab20ba::t_f1a4150133e258 9-29
+src/modules/AudioEngine/repositories/devices/reverbDelay/createDeterministicNoise.ts
+  s_ac9b259eab20ba::t_b530b287fb31ec 1-12
+src/modules/AudioEngine/repositories/devices/reverbDelay/helpers.ts
+  s_ac9b259eab20ba::t_b530b287fb31ec 1-2,18-34,41,45,52
+src/modules/AudioEngine/repositories/devices/reverbDelay/createReverb.ts
+  s_ac9b259eab20ba::t_b530b287fb31ec 3-4,19,21
+  s_ac9b259eab20ba::t_064c0a817a8efc 7-18,20,22-26,40
+  s_ac9b259eab20ba::t_0811a860a9201c 5
+  s_ac9b259eab20ba::t_961528f3246594 6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "3f0fb7b6c4e1bef3ffd54de5853084522ee4fe21",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
