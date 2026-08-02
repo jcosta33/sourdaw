@@ -1,0 +1,22 @@
+src/modules/AudioEngine/engine/__tests__/TrackNodeDevices.spec.ts
+  s_ac9b259eab20ba::t_173914ed954634 526-528,549-551,596-598,770-771,773-774,777-781,784-786,789-803
+src/modules/AudioEngine/engine/TrackNode.ts
+  s_ac9b259eab20ba::t_6a09ecf0886b3d 838-843,946-949
+  s_ac9b259eab20ba::t_2397ebdcf38456 646,674,727,735,785
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "ce6ee40febc7221185856625261451ab91bc49bb",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
