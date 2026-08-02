@@ -69,15 +69,46 @@
  * ratio collapses towards the reciprocal of the overload factor, which is what
  * a render thread falling behind wall clock looks like.
  *
+ * Three exit codes, because there are three outcomes
+ * --------------------------------------------------
+ * "I cannot measure this right now" and "I measured it and the product misses
+ * its deadline" are different claims and must not share an exit code. A busy
+ * CI box would otherwise report what looks like a product defect.
+ *
+ *   0  MEASURED, GREEN   — conditions were fit and every verdict passed.
+ *   1  MEASURED, RED     — conditions were fit and a verdict failed. This is
+ *                          the only code that says anything about the product
+ *                          or the instrument.
+ *   2  NOT MEASURED      — the machine was too busy to measure. Says nothing
+ *                          about the product. Re-run on a quiet machine.
+ *
+ * Exit 2 wins over exit 1: a contaminated run cannot support a failure claim
+ * any more than it can support a pass.
+ *
+ * Two things gate on conditions. Before the browser launches, the 1-minute load
+ * average must be at or under half the logical cores (`MAX_LOAD_PER_CORE`) —
+ * this is the cheap pre-flight, and it fails before printing any measurement.
+ * The control leg is the in-band detector for a machine that got busy mid-run,
+ * which the pre-flight cannot see.
+ *
  * Verdicts, and the mutation that reds each one
  * ---------------------------------------------
  * CONTROL leg — `CONTROL_ITERATIONS` of spin per quantum, far inside budget:
  *   expects `underrunEvents === 0` and `realtimeRatio >= 0.9`.
  *   Reds if you set `CONTROL_ITERATIONS = OVERLOAD_ITERATIONS`.
+ *   Classified NOT MEASURED (exit 2): microseconds of work per quantum cannot
+ *   miss a 2.667 ms deadline on an idle machine, so a control-leg miss means
+ *   the machine, not the code. **Do not widen 0.9 to make a loaded machine
+ *   pass.** The control leg is the overload leg's mutation — a harness that
+ *   cannot fail control is one that certifies anything. Refuse earlier and more
+ *   clearly; do not assert less.
  *
  * OVERLOAD leg — `OVERLOAD_ITERATIONS` of spin per quantum, far over budget:
  *   expects `underrunEvents > 0`, `underrunDuration > 0`, `realtimeRatio < 0.5`.
  *   Reds if you set `OVERLOAD_ITERATIONS = CONTROL_ITERATIONS`.
+ *   Classified MEASURED, RED (exit 1): extra machine load only makes a dropout
+ *   *more* likely, so failing to see one under deliberate overload is a real
+ *   finding about the instrument, not an artefact of a busy box.
  *
  * The two legs are each other's mutation: same code, opposite expected outcome.
  * A harness gone blind fails the overload leg; one that cries dropout
@@ -89,12 +120,12 @@
  *   Chrome ever ships `renderCapacity` it also reds — the signal to throw this
  *   harness away and use the better instrument.
  *
- * Usage: `pnpm audio:deadline` (add `--headed` to watch it). The exit code is
- * the verdict. A number without its machine is not a measurement, so the report
- * prints the host CPU, the browser build, and the sample rate it actually got.
+ * Usage: `pnpm audio:deadline` (add `--headed` to watch it). A number without
+ * its machine is not a measurement, so the report prints the host CPU, the load
+ * average it ran under, the browser build, and the sample rate it actually got.
  */
 
-import { arch, cpus, platform, release } from 'node:os';
+import { arch, cpus, loadavg, platform, release } from 'node:os';
 
 import { chromium, type Browser, type Page } from 'playwright';
 
@@ -116,6 +147,28 @@ const WARMUP_MS = 1_000;
 const CONTROL_MAX_UNDERRUN_EVENTS = 0;
 const CONTROL_MIN_REALTIME_RATIO = 0.9;
 const OVERLOAD_MAX_REALTIME_RATIO = 0.5;
+
+/**
+ * Pre-flight ceiling on the 1-minute load average, as a fraction of logical
+ * cores. Half the box is a generous allowance for a measurement that needs one
+ * core to spin freely for ten seconds, and failing here is cheaper than burning
+ * twelve seconds to fail in the control leg.
+ *
+ * It is deliberately the more conservative of the two gates, and it is a proxy
+ * where the control leg is a measurement. On an Apple M4 Pro a run at 1-minute
+ * load 22.10 — well over this ceiling of 6.00 — still produced a control leg at
+ * 1.0001 of real time with zero underruns and an overload leg of 929 events, so
+ * this gate does refuse runs that would have measured cleanly. That is the safe
+ * direction (a re-run costs less than a wrong claim), but it means a busy shared
+ * CI box may never get past the pre-flight. **The control leg, not this number,
+ * is the authority on whether a run was actually contaminated.** Raise this
+ * ceiling if CI never measures; do not lower `CONTROL_MIN_REALTIME_RATIO`.
+ */
+const MAX_LOAD_PER_CORE = 0.5;
+
+/** Exit codes. Refusing to measure is not the same outcome as measuring a failure. */
+const EXIT_MEASURED_RED = 1;
+const EXIT_NOT_MEASURED = 2;
 
 /**
  * The origin the probe page is served from. It must be a secure context:
@@ -343,6 +396,24 @@ function describeMachine(): string {
     return `${model} · ${String(cores.length)} logical cores · ${platform()} ${release()} ${arch()}`;
 }
 
+type LoadGate = {
+    oneMinuteLoad: number;
+    ceiling: number;
+    tooBusy: boolean;
+};
+
+/**
+ * Pre-flight: is this machine quiet enough for the measurement to mean
+ * anything? Cheap, and it refuses before printing any figure that a reader
+ * might mistake for a product result.
+ */
+function readLoadGate(): LoadGate {
+    const cores = cpus().length;
+    const ceiling = cores * MAX_LOAD_PER_CORE;
+    const oneMinuteLoad = loadavg()[0] ?? 0;
+    return { oneMinuteLoad, ceiling, tooBusy: oneMinuteLoad > ceiling };
+}
+
 function reportLeg(label: string, measurement: LegMeasurement): void {
     console.log(`  ${label}`);
     console.log(`    spin iterations/quantum : ${String(measurement.iterations)}`);
@@ -363,70 +434,137 @@ type CollectFailuresInput = {
     overload: LegMeasurement;
 };
 
-function collectFailures({ support, control, overload }: CollectFailuresInput): string[] {
-    const failures: string[] = [];
+/**
+ * `notMeasured` means the run was contaminated and certifies nothing either
+ * way; `failed` means the run was sound and a verdict is red. Keeping them in
+ * separate lists is what keeps a busy CI box from reporting a product defect.
+ */
+type Verdicts = {
+    notMeasured: string[];
+    failed: string[];
+};
+
+function collectVerdicts({ support, control, overload }: CollectFailuresInput): Verdicts {
+    const notMeasured: string[] = [];
+    const failed: string[] = [];
 
     if (!support.hasPlaybackStats) {
-        failures.push(
+        failed.push(
             'PLATFORM: AudioContext.playbackStats is gone. The dropout instrument this harness ' +
                 'depends on no longer exists — find its replacement before trusting any leg below.'
         );
     }
     if (support.hasRenderCapacityOnInstance || support.hasRenderCapacityGlobal) {
-        failures.push(
+        failed.push(
             'PLATFORM: AudioContext.renderCapacity now EXISTS on this target. Good news: replace ' +
                 'this harness with AudioRenderCapacity, which reports peakLoad and underrunRatio ' +
                 'directly, and rewrite the header above.'
         );
     }
     if (control.processorErrors > 0) {
-        failures.push(
+        failed.push(
             `CONTROL: ${String(control.processorErrors)} processor error(s) — the load generator was ` +
                 'replaced by silent passthrough, so its zero-dropout result means nothing.'
         );
     }
+    // The control leg's two conditions say "this machine was not quiet enough
+    // to measure on", not "the audio thread is broken": microseconds of work
+    // per quantum cannot miss a 2.667 ms deadline unless something else is
+    // eating the box.
     if (control.underrunEvents > CONTROL_MAX_UNDERRUN_EVENTS) {
-        failures.push(
-            `CONTROL: expected no underruns well inside the ${RENDER_BUDGET_MS.toFixed(3)} ms budget, ` +
-                `got ${String(control.underrunEvents)}. Either this machine is loaded, or the harness ` +
-                'reports dropouts unconditionally and its overload verdict proves nothing.'
+        notMeasured.push(
+            `CONTROL: ${String(control.underrunEvents)} underrun(s) from a leg doing microseconds of ` +
+                `work against a ${RENDER_BUDGET_MS.toFixed(3)} ms budget. The machine was busy — this ` +
+                'run measures the machine, not the product.'
         );
     }
     if (control.realtimeRatio < CONTROL_MIN_REALTIME_RATIO) {
-        failures.push(
-            `CONTROL: currentTime tracked wall clock at ${control.realtimeRatio.toFixed(4)}, below ` +
-                `${String(CONTROL_MIN_REALTIME_RATIO)}. The in-budget leg did not run in real time.`
+        notMeasured.push(
+            `CONTROL: the in-budget leg rendered at ${control.realtimeRatio.toFixed(4)} of real time ` +
+                `(needs ${String(CONTROL_MIN_REALTIME_RATIO)}). Something else was using the CPU, so ` +
+                'the overload leg below certifies nothing either way.'
         );
     }
     if (overload.processorErrors > 0) {
-        failures.push(
+        failed.push(
             `OVERLOAD: ${String(overload.processorErrors)} processor error(s) — the load generator ` +
                 'faulted rather than overran, so no deadline was missed by DSP work.'
         );
     }
+    // Extra machine load only makes a dropout more likely, so these three stay
+    // real findings even on a slightly loaded box.
     if (overload.underrunEvents <= 0) {
-        failures.push(
+        failed.push(
             'OVERLOAD: no underrun observed under a deliberately over-budget processor. The ' +
                 'instrument is blind — do not report a dropout inferred from cost figures.'
         );
     }
     if (overload.underrunEvents > 0 && overload.underrunDuration <= 0) {
-        failures.push(
+        failed.push(
             'OVERLOAD: underrunEvents fired but underrunDuration stayed at zero. The counters ' +
                 'disagree — one of them is no longer measuring what its name says.'
         );
     }
     if (overload.realtimeRatio >= OVERLOAD_MAX_REALTIME_RATIO) {
-        failures.push(
+        failed.push(
             `OVERLOAD: currentTime tracked wall clock at ${overload.realtimeRatio.toFixed(4)}, at or ` +
                 `above ${String(OVERLOAD_MAX_REALTIME_RATIO)}. The render thread kept up, so the ` +
                 'overload leg did not overload anything.'
         );
     }
-    return failures;
+    return { notMeasured, failed };
+}
+
+/**
+ * Prints the outcome and returns the exit code for it. Refusal outranks
+ * failure: a contaminated run cannot support a red verdict any more than it can
+ * support a green one, so a control-leg miss withholds the overload verdict
+ * rather than reporting it as a product defect.
+ */
+function reportVerdicts({ notMeasured, failed }: Verdicts): number {
+    if (notMeasured.length > 0) {
+        console.error('NOT MEASURED — conditions unfit, no verdict on the product');
+        for (const reason of notMeasured) {
+            console.error(`  - ${reason}`);
+        }
+        if (failed.length > 0) {
+            console.error('  (verdicts below are withheld because the run cannot be trusted:)');
+            for (const failure of failed) {
+                console.error(`    · ${failure}`);
+            }
+        }
+        return EXIT_NOT_MEASURED;
+    }
+
+    if (failed.length > 0) {
+        console.error('FAILED — measured on a quiet machine, and a verdict is red');
+        for (const failure of failed) {
+            console.error(`  - ${failure}`);
+        }
+        return EXIT_MEASURED_RED;
+    }
+
+    return 0;
 }
 
 async function main(): Promise<void> {
+    const loadGate = readLoadGate();
+    if (loadGate.tooBusy) {
+        console.error('NOT MEASURED — machine too busy');
+        console.error(`  machine  : ${describeMachine()}`);
+        console.error(
+            `  1-min load average ${loadGate.oneMinuteLoad.toFixed(2)} exceeds the ceiling of ` +
+                `${loadGate.ceiling.toFixed(2)} (${String(MAX_LOAD_PER_CORE)} × logical cores).`
+        );
+        console.error(
+            '  This says nothing about the product: the harness needs a core free to spin for ' +
+                'ten seconds, and it will not certify a pass or a failure it cannot trust. ' +
+                'Re-run on a quiet machine.'
+        );
+        process.exitCode = EXIT_NOT_MEASURED;
+        return;
+    }
+
     const headed = process.argv.includes('--headed');
     const browser = await chromium.launch({
         headless: !headed,
@@ -439,6 +577,7 @@ async function main(): Promise<void> {
 
         console.log('Render deadline observation');
         console.log(`  machine        : ${describeMachine()}`);
+        console.log(`  1-min load     : ${loadGate.oneMinuteLoad.toFixed(2)} (ceiling ${loadGate.ceiling.toFixed(2)})`);
         console.log(`  browser        : ${support.userAgent}`);
         console.log(`  secure context : ${String(support.isSecureContext)}`);
         console.log(`  quantum budget : ${RENDER_BUDGET_MS.toFixed(3)} ms (128 frames @ 48 kHz)`);
@@ -460,13 +599,10 @@ async function main(): Promise<void> {
         console.log(`  performance in AudioWorkletGlobalScope : ${String(overload.hasPerformanceClock)}`);
         console.log('');
 
-        const failures = collectFailures({ support, control, overload });
-        if (failures.length > 0) {
-            console.error('FAILED');
-            for (const failure of failures) {
-                console.error(`  - ${failure}`);
-            }
-            process.exitCode = 1;
+        const verdicts = collectVerdicts({ support, control, overload });
+        const exitCode = reportVerdicts(verdicts);
+        if (exitCode !== 0) {
+            process.exitCode = exitCode;
             return;
         }
 
