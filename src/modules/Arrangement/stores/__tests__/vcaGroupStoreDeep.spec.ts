@@ -1,6 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
-import { vcaGroupStore, getVcaGroupsState, setVcaGroupsState, type VcaGroup } from '../vcaGroupStore';
+import {
+    vcaGroupStore,
+    getVcaGroupsState,
+    sanitizeVcaGroups,
+    setVcaGroupsState,
+    type VcaGroup,
+} from '../vcaGroupStore';
 
 const make_group = (id: string): VcaGroup => ({
     id,
@@ -64,5 +70,33 @@ describe('vcaGroupStore', () => {
         vcaGroupStore.set(null);
 
         expect(getVcaGroupsState()).toEqual([]);
+    });
+
+    describe('sanitizeVcaGroups', () => {
+        it('keeps a well-formed persisted group and copies its trackIds', () => {
+            const persisted = [{ id: 'g1', name: 'Drums', gain: 0.5, muted: true, trackIds: ['t1'] }];
+
+            const decoded = sanitizeVcaGroups(persisted);
+
+            expect(decoded).toEqual([{ id: 'g1', name: 'Drums', gain: 0.5, muted: true, trackIds: ['t1'] }]);
+            expect(decoded[0]?.trackIds).not.toBe(persisted[0]?.trackIds);
+        });
+
+        it('drops rows that could not drive a gain and keeps the ones that can', () => {
+            const decoded = sanitizeVcaGroups([
+                { id: 'g-nan', name: 'Bad', gain: Number.NaN, muted: false, trackIds: [] },
+                { id: '', name: 'No id', gain: 1, muted: false, trackIds: [] },
+                { id: 'g-ok', name: 'Good', gain: 0.25, muted: false, trackIds: ['t1'] },
+                { id: 'g-ok', name: 'Duplicate', gain: 2, muted: true, trackIds: ['t2'] },
+            ]);
+
+            expect(decoded.map((group) => group.id)).toEqual(['g-ok']);
+            expect(decoded[0]?.gain).toBe(0.25);
+        });
+
+        it('decodes a non-array to no groups', () => {
+            expect(sanitizeVcaGroups(undefined)).toEqual([]);
+            expect(sanitizeVcaGroups({ groups: [] })).toEqual([]);
+        });
     });
 });

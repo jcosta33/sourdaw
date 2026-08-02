@@ -76,6 +76,7 @@ export { setClipLoop } from './clipLoop/setClipLoop';
 export { addGainEnvelopePoint } from './clipGainEnvelope/addGainEnvelopePoint';
 export { getClipGainEnvelope } from './clipGainEnvelope/getClipGainEnvelope';
 export { getGainAtBeat } from './clipGainEnvelope/getGainAtBeat';
+export { hydrateClipGainEnvelopes } from './clipGainEnvelope/hydrateClipGainEnvelopes';
 export { removeGainEnvelopePoint } from './clipGainEnvelope/removeGainEnvelopePoint';
 export { resetClipGainEnvelope } from './clipGainEnvelope/resetClipGainEnvelope';
 export { toggleClipGainEnvelope } from './clipGainEnvelope/toggleClipGainEnvelope';
@@ -208,6 +209,7 @@ export { createVcaGroup } from './vca/createVcaGroup';
 export { commitLegacyVcaTemplateState } from './vca/commitLegacyVcaTemplateState';
 export { getEffectiveGain } from './vca/getEffectiveGain';
 export { getVcaGroups } from './vca/getVcaGroups';
+export { hydrateVcaGroups } from './vca/hydrateVcaGroups';
 export { removeFromVca } from './vca/removeFromVca';
 export { toggleVcaMembership } from './vca/toggleVcaMembership';
 

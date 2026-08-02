@@ -35,6 +35,61 @@ export function setVcaGroupsState(groups: VcaGroup[]): void {
     vcaGroupStore.set({ groups });
 }
 
+function isVcaGroup(value: unknown): value is VcaGroup {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+        return false;
+    }
+    if (!('id' in value) || typeof value.id !== 'string' || value.id.length === 0) {
+        return false;
+    }
+    if (!('name' in value) || typeof value.name !== 'string') {
+        return false;
+    }
+    if (!('muted' in value) || typeof value.muted !== 'boolean') {
+        return false;
+    }
+    if (!('gain' in value) || typeof value.gain !== 'number' || !Number.isFinite(value.gain)) {
+        return false;
+    }
+    if (!('trackIds' in value) || !Array.isArray(value.trackIds)) {
+        return false;
+    }
+    return value.trackIds.every((trackId) => typeof trackId === 'string');
+}
+
+/**
+ * Decode persisted VCA groups from a project file.
+ *
+ * A group that does not decode is dropped rather than repaired: a member track
+ * whose group vanished falls back to a multiplier of `1` in
+ * {@link deriveVcaMultiplier}, which is the same unity fallback the loader
+ * would otherwise reach by a slower route. Duplicated ids keep the first
+ * occurrence, because `deriveVcaMultiplier` resolves by `find` and would
+ * silently ignore the rest anyway.
+ */
+export function sanitizeVcaGroups(value: unknown): VcaGroup[] {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+
+    const groups: VcaGroup[] = [];
+    const seenIds = new Set<string>();
+    for (const candidate of value) {
+        if (!isVcaGroup(candidate) || seenIds.has(candidate.id)) {
+            continue;
+        }
+        seenIds.add(candidate.id);
+        groups.push({
+            id: candidate.id,
+            name: candidate.name,
+            gain: candidate.gain,
+            muted: candidate.muted,
+            trackIds: [...candidate.trackIds],
+        });
+    }
+    return groups;
+}
+
 export type DeriveVcaMultiplierInput = {
     /** The track's `vcaGroupId`; `null`/`undefined` means it belongs to no group. */
     vcaGroupId: string | null | undefined;

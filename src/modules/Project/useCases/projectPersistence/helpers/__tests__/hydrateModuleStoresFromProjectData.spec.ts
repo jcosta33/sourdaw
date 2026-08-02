@@ -10,6 +10,10 @@ const mocks = vi.hoisted(() => ({
     replaceChordTrackState: vi.fn(),
     hydrateGrooveTemplates: vi.fn(),
     hydrateYeastState: vi.fn(),
+    hydrateVcaGroups: vi.fn(),
+    hydrateClipGainEnvelopes: vi.fn(),
+    hydrateModulationState: vi.fn(),
+    hydrateCvGateState: vi.fn(),
     setSidechainRoutes: vi.fn(),
     trackStoreSet: vi.fn(),
     restoreTransportSnapshot: vi.fn(),
@@ -22,6 +26,16 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
     restoreAdjustmentLayerSnapshot: mocks.restoreAdjustmentLayerSnapshot,
+    hydrateVcaGroups: mocks.hydrateVcaGroups,
+    hydrateClipGainEnvelopes: mocks.hydrateClipGainEnvelopes,
+}));
+
+vi.mock('#/modules/Automation/useCases', () => ({
+    hydrateModulationState: mocks.hydrateModulationState,
+}));
+
+vi.mock('#/modules/CvGate/useCases', () => ({
+    hydrateCvGateState: mocks.hydrateCvGateState,
 }));
 
 vi.mock('#/modules/Automation/stores', () => ({
@@ -47,7 +61,18 @@ vi.mock('#/modules/Yeast/useCases', () => ({
 
 type HydratableProjectDataOverrides = Pick<
     HydratableProjectData,
-    'adjustmentLayers' | 'automation' | 'chordTrack' | 'grooves' | 'markers' | 'sidechainRoutes' | 'transport' | 'yeast'
+    | 'adjustmentLayers'
+    | 'automation'
+    | 'chordTrack'
+    | 'cvGate'
+    | 'gainEnvelopes'
+    | 'grooves'
+    | 'markers'
+    | 'modulation'
+    | 'sidechainRoutes'
+    | 'transport'
+    | 'vcaGroups'
+    | 'yeast'
 >;
 
 function createHydratableProjectData(overrides: HydratableProjectDataOverrides = {}): HydratableProjectData {
@@ -135,6 +160,54 @@ describe('hydrateModuleStoresFromProjectData', () => {
         expect(mocks.hydrateGrooveTemplates).toHaveBeenCalledWith({ templates: [], assignments: [] });
         expect(mocks.hydrateYeastState).toHaveBeenCalledWith(undefined);
         expect(mocks.setSidechainRoutes).toHaveBeenCalledWith([]);
+    });
+
+    it('routes every persisted mix-state field to the module that owns it', () => {
+        const vcaGroups = [{ id: 'vca-drums', name: 'Drums', gain: 0.5, muted: false, trackIds: ['track-kick'] }];
+        const gainEnvelopes = [
+            { clipId: 'clip-vox', enabled: true, points: [{ id: 'point-a', beatOffset: 2, gainDb: -4 }] },
+        ];
+        const modulation = {
+            modulators: [
+                {
+                    id: 'mod-1',
+                    name: 'Filter LFO',
+                    trackId: 'track-bass',
+                    kind: 'lfo',
+                    config: { kind: 'lfo', waveform: 'sine', rate: 1, sync: false, phase: 0, depth: 1 },
+                    mappings: [],
+                    enabled: true,
+                },
+            ],
+        };
+        const cvGate = {
+            outputs: [],
+            voltageStandard: 'hz-per-volt',
+            clockDivision: 2,
+            triggerPulseMs: 5,
+            gateThreshold: 1,
+        };
+
+        hydrateModuleStoresFromProjectData(
+            createHydratableProjectData({ vcaGroups, gainEnvelopes, modulation, cvGate })
+        );
+
+        expect(mocks.hydrateVcaGroups).toHaveBeenCalledWith(vcaGroups);
+        expect(mocks.hydrateClipGainEnvelopes).toHaveBeenCalledWith(gainEnvelopes);
+        expect(mocks.hydrateModulationState).toHaveBeenCalledWith(modulation);
+        expect(mocks.hydrateCvGateState).toHaveBeenCalledWith(cvGate);
+    });
+
+    // Presence pin for the delegation above: a file with no mix state must still
+    // reach every owner, because each owner's clear-on-absent is what stops the
+    // previous project's VCA masters from attenuating this one's tracks.
+    it('still reaches every mix-state owner when the file carries none', () => {
+        hydrateModuleStoresFromProjectData(createHydratableProjectData());
+
+        expect(mocks.hydrateVcaGroups).toHaveBeenCalledWith(undefined);
+        expect(mocks.hydrateClipGainEnvelopes).toHaveBeenCalledWith(undefined);
+        expect(mocks.hydrateModulationState).toHaveBeenCalledWith(undefined);
+        expect(mocks.hydrateCvGateState).toHaveBeenCalledWith(undefined);
     });
 
     it('hydrates persisted chord-track state through the owning MIDI use case', () => {

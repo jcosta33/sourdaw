@@ -6,6 +6,8 @@ import {
     setEnvelope,
     getAllEnvelopes,
     removeEnvelope,
+    sanitizeClipGainEnvelopes,
+    setAllEnvelopes,
     __resetGainEnvelopesForTest,
     type ClipGainEnvelope,
 } from '../gainEnvelopeStore';
@@ -93,5 +95,42 @@ describe('gainEnvelopeStore', () => {
         setEnvelope('c1', make_env('c1'));
         expect(called).toBe(true);
         unsub();
+    });
+
+    it('setAllEnvelopes replaces the whole map rather than merging into it', () => {
+        setEnvelope('c1', make_env('c1'));
+
+        setAllEnvelopes({ c2: make_env('c2') });
+
+        expect(getEnvelope('c1')).toBeUndefined();
+        expect(getEnvelope('c2')?.clipId).toBe('c2');
+    });
+
+    describe('sanitizeClipGainEnvelopes', () => {
+        it('rekeys a persisted list by clipId and copies each point', () => {
+            const persisted = [{ clipId: 'c1', enabled: true, points: [{ id: 'p1', beatOffset: 2, gainDb: -6 }] }];
+
+            const decoded = sanitizeClipGainEnvelopes(persisted);
+
+            expect(decoded).toEqual({
+                c1: { clipId: 'c1', enabled: true, points: [{ id: 'p1', beatOffset: 2, gainDb: -6 }] },
+            });
+            expect(decoded.c1?.points[0]).not.toBe(persisted[0]?.points[0]);
+        });
+
+        it('drops envelopes whose points could not be read', () => {
+            const decoded = sanitizeClipGainEnvelopes([
+                { clipId: 'c-bad', enabled: true, points: [{ id: 'p1', beatOffset: 0, gainDb: 'loud' }] },
+                { clipId: 'c-good', enabled: false, points: [] },
+            ]);
+
+            expect(Object.keys(decoded)).toEqual(['c-good']);
+            expect(decoded['c-good']?.enabled).toBe(false);
+        });
+
+        it('decodes a non-array to no envelopes', () => {
+            expect(sanitizeClipGainEnvelopes(undefined)).toEqual({});
+            expect(sanitizeClipGainEnvelopes({ envelopes: {} })).toEqual({});
+        });
     });
 });

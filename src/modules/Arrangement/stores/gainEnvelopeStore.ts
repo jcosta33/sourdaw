@@ -56,6 +56,68 @@ export function getAllEnvelopes(): ClipGainEnvelope[] {
     return Object.values(current.envelopes);
 }
 
+/** Replace every envelope at once — the project-load entry point. */
+export function setAllEnvelopes(envelopes: Record<string, ClipGainEnvelope>): void {
+    gainEnvelopeStore.set({ envelopes });
+}
+
+function isGainEnvelopePoint(value: unknown): value is GainEnvelopePoint {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+        return false;
+    }
+    if (!('id' in value) || typeof value.id !== 'string') {
+        return false;
+    }
+    if (!('beatOffset' in value) || typeof value.beatOffset !== 'number' || !Number.isFinite(value.beatOffset)) {
+        return false;
+    }
+    return 'gainDb' in value && typeof value.gainDb === 'number' && Number.isFinite(value.gainDb);
+}
+
+function isClipGainEnvelope(value: unknown): value is ClipGainEnvelope {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+        return false;
+    }
+    if (!('clipId' in value) || typeof value.clipId !== 'string' || value.clipId.length === 0) {
+        return false;
+    }
+    if (!('enabled' in value) || typeof value.enabled !== 'boolean') {
+        return false;
+    }
+    if (!('points' in value) || !Array.isArray(value.points)) {
+        return false;
+    }
+    return value.points.every(isGainEnvelopePoint);
+}
+
+/**
+ * Decode persisted clip gain envelopes from a project file into the store's
+ * `clipId`-keyed shape. An envelope that does not decode is dropped: the clip
+ * then plays at its own clip gain, which is what a clip with no envelope does.
+ */
+export function sanitizeClipGainEnvelopes(value: unknown): Record<string, ClipGainEnvelope> {
+    if (!Array.isArray(value)) {
+        return {};
+    }
+
+    const envelopes: Record<string, ClipGainEnvelope> = {};
+    for (const candidate of value) {
+        if (!isClipGainEnvelope(candidate)) {
+            continue;
+        }
+        envelopes[candidate.clipId] = {
+            clipId: candidate.clipId,
+            enabled: candidate.enabled,
+            points: candidate.points.map((point) => ({
+                id: point.id,
+                beatOffset: point.beatOffset,
+                gainDb: point.gainDb,
+            })),
+        };
+    }
+    return envelopes;
+}
+
 /** Drop the gain envelope keyed by a clip id (e.g. on clip removal). */
 export function removeEnvelope(clipId: string): void {
     const current = gainEnvelopeStore.value ?? defaultGainEnvelopeStoreState;
