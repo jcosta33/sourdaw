@@ -42,6 +42,8 @@ export type WasmDeviceCreateDeps = {
     onLoaded: (finalDn: BuiltinDeviceNode) => boolean | void;
     /** Replace a terminally failed loaded node in the owning graph slot. */
     onRuntimeFailure?: (failedDn: BuiltinDeviceNode, replacementDn: BuiltinDeviceNode) => boolean;
+    /** Request one fresh generation after the failed runtime has been retired. */
+    onRuntimeRecovery?: (replacementDn: BuiltinDeviceNode) => void;
 };
 
 export type WasmDeviceDescriptor = {
@@ -187,9 +189,59 @@ const fermenterDescriptor: WasmDeviceDescriptor = {
 
 const toasterDescriptor: WasmDeviceDescriptor = {
     matches: isToasterDevice,
-    create({ context, deviceId, deviceType, signal, onLoaded }) {
+    create({
+        context,
+        deviceId,
+        deviceType,
+        signal,
+        onLoaded,
+        onRuntimeFailure: replaceRuntimeFailure,
+        onRuntimeRecovery: requestRuntimeRecovery,
+    }) {
         const pendingParams: Array<[string, number]> = [];
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
+        let runtimeFailureMessage: string | null = null;
+        let publishedNode: BuiltinDeviceNode | null = null;
+        let publishedResult: ToasterNodeResult | null = null;
+        let runtimeFailureHandled = false;
+        const applyRuntimeFailure = (): void => {
+            if (
+                runtimeFailureHandled ||
+                runtimeFailureMessage === null ||
+                publishedNode === null ||
+                publishedResult === null
+            ) {
+                return;
+            }
+            runtimeFailureHandled = true;
+            if (publishedNode.controller) {
+                publishedNode.controller.ready = false;
+            }
+            if (publishedNode.toasterControls) {
+                publishedNode.toasterControls.ready = false;
+            }
+            pendingParams.length = 0;
+            if (placeholder.toasterControls) {
+                placeholder.toasterControls.setParam = () => {};
+            }
+            const replaced = replaceRuntimeFailure?.(publishedNode, placeholder) === true;
+            try {
+                publishedResult.destroy();
+            } catch (error) {
+                logger.warn(`[WebAudioEngine] ${deviceType} runtime cleanup failed: ${String(error)}`);
+            }
+            if (replaced) {
+                requestRuntimeRecovery?.(placeholder);
+            }
+        };
+        const onRuntimeFailure = (message: string): void => {
+            if (runtimeFailureMessage !== null) {
+                return;
+            }
+            runtimeFailureMessage = message;
+            logger.warn(`[WebAudioEngine] ${deviceType} runtime failure: ${message}`);
+            applyRuntimeFailure();
+        };
         placeholder.toasterControls = {
             ready: false,
             noteOn: () => {},
@@ -206,15 +258,19 @@ const toasterDescriptor: WasmDeviceDescriptor = {
             setBypass: () => {},
             destroy: () => {},
         };
-        const loadPromise = createToasterNode(context, undefined, undefined, signal)
+        const loadPromise = createToasterNode(context, undefined, onRuntimeFailure, signal)
             .then(async (result: ToasterNodeResult) => {
                 if ((await waitForDeviceReady({ deviceType, result, signal })) === null) {
+                    return;
+                }
+                if (runtimeFailureMessage !== null) {
+                    result.destroy();
                     return;
                 }
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
-                const accepted = onLoaded({
+                const loadedNode: BuiltinDeviceNode = {
                     deviceId,
                     type: deviceType,
                     // Keep the stable output proxy at the graph boundary, while
@@ -266,8 +322,15 @@ const toasterDescriptor: WasmDeviceDescriptor = {
                         disconnectPadOutput: result.disconnectPadOutput,
                         destroy: result.destroy,
                     },
-                });
+                };
+                const accepted = onLoaded(loadedNode);
                 if (accepted === false) {
+                    return;
+                }
+                publishedNode = loadedNode;
+                publishedResult = result;
+                applyRuntimeFailure();
+                if (runtimeFailureHandled) {
                     return;
                 }
                 getAudioDeviceRuntimeSink().emitDeviceLoaded({ deviceId, deviceType });

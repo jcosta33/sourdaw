@@ -233,6 +233,72 @@ describe('wasmDeviceRegistry descriptors', () => {
             expect(emitDeviceRemoved).toHaveBeenCalledWith({ deviceId: 'toast-2', deviceType: 'toaster' });
         });
 
+        it('demotes and retires a loaded Toaster before requesting one fresh generation', async () => {
+            const result = makeToasterResult();
+            factoryMocks.createToasterNode.mockResolvedValue(result);
+            const emitDeviceRemoved = vi.fn();
+            setAudioDeviceRuntimeSink({ emitDeviceRemoved });
+            const replaceRuntimeFailure = vi.fn(() => true);
+            const requestRuntimeRecovery = vi.fn();
+            const deps = createDeps({
+                deviceType: 'toaster',
+                deviceId: 'toast-failed',
+                onRuntimeFailure: replaceRuntimeFailure,
+                onRuntimeRecovery: requestRuntimeRecovery,
+            });
+
+            const { placeholder, loadPromise } = requireDescriptor('toaster').create(deps);
+            await loadPromise;
+            const loaded = lastLoadedNode(deps.onLoaded);
+            const factoryCall = factoryMocks.createToasterNode.mock.calls.at(-1);
+            const reportRuntimeFailure: unknown = factoryCall?.[2];
+            if (!isRuntimeFailureReporter(reportRuntimeFailure)) {
+                throw new TypeError('expected ToasterNode to report post-ready runtime failures');
+            }
+
+            reportRuntimeFailure('processor failed');
+            reportRuntimeFailure('duplicate failure');
+
+            expect(loaded.controller?.ready).toBe(false);
+            expect(loaded.toasterControls?.ready).toBe(false);
+            expect(replaceRuntimeFailure).toHaveBeenCalledOnce();
+            expect(replaceRuntimeFailure).toHaveBeenCalledWith(loaded, placeholder);
+            expect(result.destroy).toHaveBeenCalledOnce();
+            expect(requestRuntimeRecovery).toHaveBeenCalledOnce();
+            expect(requestRuntimeRecovery).toHaveBeenCalledWith(placeholder);
+            expect(emitDeviceRemoved).not.toHaveBeenCalled();
+        });
+
+        it('does not remove newer runtime state when a stale failed Toaster is rejected', async () => {
+            const result = makeToasterResult();
+            factoryMocks.createToasterNode.mockResolvedValue(result);
+            const emitDeviceRemoved = vi.fn();
+            setAudioDeviceRuntimeSink({ emitDeviceRemoved });
+            const replaceRuntimeFailure = vi.fn(() => false);
+            const requestRuntimeRecovery = vi.fn();
+            const deps = createDeps({
+                deviceType: 'toaster',
+                deviceId: 'toast-stale',
+                onRuntimeFailure: replaceRuntimeFailure,
+                onRuntimeRecovery: requestRuntimeRecovery,
+            });
+
+            const { loadPromise } = requireDescriptor('toaster').create(deps);
+            await loadPromise;
+            const factoryCall = factoryMocks.createToasterNode.mock.calls.at(-1);
+            const reportRuntimeFailure: unknown = factoryCall?.[2];
+            if (!isRuntimeFailureReporter(reportRuntimeFailure)) {
+                throw new TypeError('expected ToasterNode to report post-ready runtime failures');
+            }
+
+            reportRuntimeFailure('stale processor failed');
+
+            expect(replaceRuntimeFailure).toHaveBeenCalledOnce();
+            expect(result.destroy).toHaveBeenCalledOnce();
+            expect(requestRuntimeRecovery).not.toHaveBeenCalled();
+            expect(emitDeviceRemoved).not.toHaveBeenCalled();
+        });
+
         it('resolves the load promise and skips onLoaded when the factory rejects', async () => {
             factoryMocks.createToasterNode.mockRejectedValue(new Error('wasm fetch failed'));
             const deps = createDeps({ deviceType: 'toaster' });
