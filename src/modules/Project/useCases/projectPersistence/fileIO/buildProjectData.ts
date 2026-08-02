@@ -64,10 +64,19 @@ export type BuiltProjectData = {
 };
 
 type BuildProjectDataInput = {
-    /** Embed base64 PCM for every referenced buffer (default). Interchange
-     * exporters that package audio themselves pass `false` to skip the
-     * redundant encode; the snapshot shape is unchanged (`audioBuffers`
-     * simply stays unset). */
+    /**
+     * Embed base64 PCM for every referenced buffer. **Opt-in**, because it is
+     * ruinous by default: measured at 420 ms per minute of stereo on the main
+     * thread, and `JSON.stringify` throws outright past roughly 17.5 minutes of
+     * it (V8's 536,870,888-character ceiling, which is the string type rather
+     * than any quota).
+     *
+     * Only the explicit user-initiated `.sourdaw` export passes `true`. Every
+     * live path leaves it off and relies on the raw `Float32Array` copy the
+     * audio cache already holds in IndexedDB — the base64 layer existed solely
+     * to survive JSON. The snapshot shape is unchanged either way;
+     * `audioBuffers` simply stays unset.
+     */
     includeAudioBuffers?: boolean;
 };
 
@@ -82,7 +91,7 @@ type BuildProjectDataInput = {
  * project), so callers can no-op rather than write a malformed blob.
  */
 export async function buildProjectData({
-    includeAudioBuffers = true,
+    includeAudioBuffers = false,
 }: BuildProjectDataInput = {}): Promise<BuiltProjectData | null> {
     syncCurrentArrangementToStore();
 

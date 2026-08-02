@@ -75,7 +75,7 @@ vi.mock('../../wasm/proof_chamber.js', () => ({
     ProofChamberInstance: ProofChamberInstanceMock,
 }));
 
-const MINIMAL_WASM = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
+const MINIMAL_WASM_MODULE = new WebAssembly.Module(new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]));
 
 async function loadProcessor(): Promise<ProofChamberProcessorLike> {
     await import('../proofChamberProcessor');
@@ -83,7 +83,7 @@ async function loadProcessor(): Promise<ProofChamberProcessorLike> {
     if (!Ctor) {
         throw new Error('proof-chamber-processor was not registered');
     }
-    return new Ctor();
+    return new Ctor({ processorOptions: { wasmModule: MINIMAL_WASM_MODULE } });
 }
 
 function send(proc: ProofChamberProcessorLike, data: unknown): void {
@@ -110,24 +110,25 @@ describe('ProofChamberProcessor message handling', () => {
 
     it('posts ready with the instance latency on init, and ignores a second init', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
 
         const ready = proc.port.postMessage.mock.calls.filter((c) => (c[0] as { type: string }).type === 'ready');
         expect(ready).toHaveLength(1);
         expect((ready[0]![0] as { latency: number }).latency).toBe(128);
     });
 
-    it('reports an init error when wasm compilation throws', async () => {
+    it('reports an init error when WASM instantiation throws', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: new Uint8Array(0) });
+        initShouldThrow = new Error('WASM instantiation failed');
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         const errors = proc.port.postMessage.mock.calls.filter((c) => (c[0] as { type?: string }).type === 'error');
         expect(errors).toHaveLength(1);
     });
 
     it('forwards param name/value to the instance', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         resetRecording();
         send(proc, { type: 'param', name: 'decay', value: 3.5 });
         expect(paramCalls).toContainEqual({ name: 'decay', value: 3.5 });
@@ -135,7 +136,7 @@ describe('ProofChamberProcessor message handling', () => {
 
     it('toggles bypass and passthrough-copies input while bypassed', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         resetRecording();
         send(proc, { type: 'bypass', bypassed: true });
 
@@ -165,7 +166,7 @@ describe('ProofChamberProcessor message handling', () => {
     it('reports String(error) when init throws a non-Error value', async () => {
         initShouldThrow = 'chamber-boom';
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
 
         const errorMsg = proc.port.postMessage.mock.calls.find((c) => (c[0] as { type?: string }).type === 'error');
         expect(errorMsg).toBeDefined();
@@ -174,7 +175,7 @@ describe('ProofChamberProcessor message handling', () => {
 
     it('posts an error and stops taking work when set_param throws while already ready', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         resetRecording();
         proc.port.postMessage.mockClear();
 
@@ -202,7 +203,7 @@ describe('ProofChamberProcessor param automation', () => {
 
     it('rejects automation for an out-of-range, non-integer, or empty-segment paramId', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         resetRecording();
 
         // Only paramId 0 and 1 are valid.
@@ -229,7 +230,7 @@ describe('ProofChamberProcessor param automation', () => {
 
     it('writes the interpolated value once per change and dedupes unchanged values', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         resetRecording();
 
         // Segment 0..256, 0→10. currentFrame is stubbed at 0.
@@ -251,7 +252,7 @@ describe('ProofChamberProcessor param automation', () => {
 
     it('replaces an existing schedule for the same paramId', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         resetRecording();
 
         send(proc, {
@@ -274,7 +275,7 @@ describe('ProofChamberProcessor param automation', () => {
 
     it('interpolates mid-segment, snaps to endValue at/after endFrame, and advances segments', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         resetRecording();
 
         // Two contiguous segments: 0..128 (0→10), 128..256 (10→0).
@@ -322,7 +323,7 @@ describe('ProofChamberProcessor process paths', () => {
 
     it('returns early when the left input is absent', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         resetRecording();
         // input present but left channel missing
         const ok = proc.process([[]], [makeChannels(2, FRAMES, () => 0)]);
@@ -332,7 +333,7 @@ describe('ProofChamberProcessor process paths', () => {
 
     it('returns early when output has fewer than 2 channels', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         resetRecording();
         const ok = proc.process([stereo(FRAMES, 0.1)], [makeChannels(1, FRAMES, () => 0)]);
         expect(ok).toBe(true);
@@ -341,7 +342,7 @@ describe('ProofChamberProcessor process paths', () => {
 
     it('upmixes mono input to stereo and renders through the instance', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         resetRecording();
 
         const mono = new Float32Array(FRAMES).fill(0.7);
@@ -360,7 +361,7 @@ describe('ProofChamberProcessor process paths', () => {
 
     it('faults and passthrough-copies when instance.process throws, then stops processing', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         resetRecording();
         processShouldThrow = true;
 
@@ -383,7 +384,7 @@ describe('ProofChamberProcessor process paths', () => {
 
     it('skips passthrough when bypassed with no input and no output', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         resetRecording();
         send(proc, { type: 'bypass', bypassed: true });
 

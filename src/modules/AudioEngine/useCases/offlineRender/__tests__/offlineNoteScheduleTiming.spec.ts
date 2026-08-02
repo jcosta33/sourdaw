@@ -134,8 +134,11 @@ async function startProcessor(): Promise<LevainProcessorLike> {
     if (!Ctor) {
         throw new Error('levain-processor was not registered');
     }
-    const processor = new Ctor();
-    processor.port.onmessage?.({ data: { type: 'init', wasmBytes: MINIMAL_WASM } });
+    const processor = new Ctor({
+        processorOptions: { wasmModule: new WebAssembly.Module(MINIMAL_WASM) },
+    });
+    processor.port.onmessage?.({ data: { type: 'init' } });
+    expect(processor.port.postMessage).toHaveBeenCalledWith({ type: 'ready' });
     portHolder.post = (data) => processor.port.onmessage?.({ data });
     return processor;
 }

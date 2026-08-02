@@ -16,7 +16,10 @@ const { creators } = vi.hoisted(() => {
         createProofNode: vi.fn(() => Promise.resolve(nodeMock)),
         createProofChamberNode: vi.fn(() => Promise.resolve(nodeMock)),
         createScoringNode: vi.fn(() => Promise.resolve(nodeMock)),
-        createGrandBouleNode: vi.fn(() => Promise.resolve(nodeMock)),
+        createGrandBouleNode: vi.fn(
+            (_ctx?: BaseAudioContext, _wasmUrl?: string, _onFault?: (message: string) => void) =>
+                Promise.resolve(nodeMock)
+        ),
         createKneadNode: vi.fn(() => Promise.resolve(nodeMock)),
     };
     return { creators };
@@ -85,6 +88,15 @@ describe('NativeDspDeviceStrategy', () => {
         expect(strategy.node.inputNode).toBe(worklet);
         expect(strategy.node.outputNode).toBe(worklet);
         expect(strategy.node.nodes).toEqual([worklet]);
+    });
+
+    it('exposes the underlying processor runtime-failure signals', () => {
+        const runtimeFailure = new Promise<never>(() => undefined);
+        const runtimeHealthCheck = vi.fn(() => Promise.resolve());
+        const strategy = new NativeDspDeviceStrategy(make_dsp_node({ runtimeFailure, runtimeHealthCheck }));
+
+        expect(strategy.runtimeFailure).toBe(runtimeFailure);
+        expect(strategy.runtimeHealthCheck).toBe(runtimeHealthCheck);
     });
 
     it('should forward setParam when the underlying node implements it', () => {
@@ -274,5 +286,22 @@ describe('createNativeDspStrategy factory dispatch', () => {
         } as never);
         expect(setParam).toHaveBeenCalledWith('gain', 0.3);
         expect(setParam).toHaveBeenCalledWith('mix', 0.7);
+    });
+
+    it('turns an offline GrandBoule processor fault into a rejected strategy signal', async () => {
+        creators.createGrandBouleNode.mockClear();
+        const strategy = await createNativeDspStrategy(ctx, {
+            type: 'grandBoule',
+            parameterValues: {},
+        } as never);
+        const onFault = creators.createGrandBouleNode.mock.calls[0]?.[2];
+        if (!onFault) {
+            throw new Error('GrandBoule factory did not register a runtime-failure callback');
+        }
+
+        const rejected = expect(strategy.runtimeFailure).rejects.toThrow('offline processor crashed');
+        onFault('offline processor crashed');
+
+        await rejected;
     });
 });

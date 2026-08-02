@@ -165,9 +165,11 @@ vi.mock('../scheduling/scheduleMidiNotes', () => ({
 // Stub the Worker the scheduler creates so we can capture its message handler
 // and drive ticks synchronously instead of relying on a real worker thread.
 const OriginalWorker = globalThis.Worker;
+let schedulerTickSequence = 0;
 beforeEach(() => {
     harness.clock = 0;
     harness.workers = [];
+    schedulerTickSequence = 0;
     class WorkerStub {
         onmessage: ((e: MessageEvent<unknown>) => void) | null = null;
         postMessage = vi.fn();
@@ -181,6 +183,20 @@ beforeEach(() => {
 afterEach(() => {
     globalThis.Worker = OriginalWorker;
 });
+
+function emitSchedulerTick(worker: FakeWorker): void {
+    schedulerTickSequence++;
+    const receivedAtMs = performance.timeOrigin + performance.now();
+    worker.onmessage?.({
+        data: {
+            type: 'tick',
+            generation: schedulerSession.generation,
+            sequence: schedulerTickSequence,
+            scheduledAtMs: receivedAtMs - 2,
+            sentAtMs: receivedAtMs - 1,
+        },
+    } as MessageEvent<unknown>);
+}
 
 const playingTransport = {
     isPlaying: true,
@@ -209,7 +225,7 @@ const playingTransport = {
 /** Fire one scheduler tick through the captured worker handler. */
 async function fireTick(): Promise<void> {
     const worker = harness.workers[harness.workers.length - 1]!;
-    worker.onmessage?.({ data: { type: 'tick' } } as MessageEvent<unknown>);
+    emitSchedulerTick(worker);
     // tick() is async; flush the microtask queue.
     await Promise.resolve();
     await Promise.resolve();
@@ -619,7 +635,7 @@ describe('playhead scheduler tick', () => {
 
         // Fire tick #1. It advances to the `await scheduleMidiNotes` and suspends.
         harness.clock = 0.05;
-        worker.onmessage?.({ data: { type: 'tick' } } as MessageEvent<unknown>);
+        emitSchedulerTick(worker);
         await Promise.resolve();
         await Promise.resolve();
 
@@ -632,7 +648,7 @@ describe('playhead scheduler tick', () => {
         // it a no-op: no second scheduleMidiNotes call, no extra playhead advance,
         // no extra transport sync.
         harness.clock = 0.1;
-        worker.onmessage?.({ data: { type: 'tick' } } as MessageEvent<unknown>);
+        emitSchedulerTick(worker);
         await Promise.resolve();
         await Promise.resolve();
 
@@ -752,7 +768,7 @@ describe('playhead scheduler tick', () => {
             startPlayheadScheduler();
             const worker = harness.workers[harness.workers.length - 1]!;
             harness.clock = 0.05;
-            worker.onmessage?.({ data: { type: 'tick' } } as MessageEvent<unknown>);
+            emitSchedulerTick(worker);
             await Promise.resolve();
             await Promise.resolve();
 

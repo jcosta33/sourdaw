@@ -31,6 +31,7 @@ import { panicYeastRuntime } from '../transportControls/panicYeastRuntime';
 import { advanceSchedulerDiscontinuityEpoch } from './advanceSchedulerDiscontinuityEpoch';
 import { disposePlayheadScheduler } from './disposePlayheadScheduler';
 import { schedulerSession, stopActiveSources } from './schedulerSession';
+import { schedulerTimingDiagnostics } from './schedulerTimingDiagnostics';
 
 function loopSignatureOf(state: { isLooping: boolean; loopStart: number; loopEnd: number }): string {
     return `${state.isLooping ? 1 : 0}:${state.loopStart}:${state.loopEnd}`;
@@ -38,11 +39,56 @@ function loopSignatureOf(state: { isLooping: boolean; loopStart: number; loopEnd
 
 const SCHEDULE_AHEAD_SECONDS = 0.1;
 
+type SchedulerWorkerTick = {
+    type: 'tick';
+    generation: number;
+    sequence: number;
+    scheduledAtMs: number;
+    sentAtMs: number;
+};
+
+// Window and Worker timestamps share the High Resolution Time monotonic clock,
+// but browser privacy quantization can round two adjacent reads differently.
+// One millisecond is well below the scheduler grain while still rejecting
+// genuinely future-dated messages.
+const CLOCK_PRECISION_TOLERANCE_MS = 1;
+
+function highResolutionEpochMs(): number {
+    return performance.timeOrigin + performance.now();
+}
+
+function isSchedulerWorkerTick(value: unknown, receivedAtMs: number): value is SchedulerWorkerTick {
+    if (typeof value !== 'object' || value === null) {
+        return false;
+    }
+    return (
+        'type' in value &&
+        value.type === 'tick' &&
+        'generation' in value &&
+        typeof value.generation === 'number' &&
+        Number.isSafeInteger(value.generation) &&
+        value.generation > 0 &&
+        'sequence' in value &&
+        typeof value.sequence === 'number' &&
+        Number.isSafeInteger(value.sequence) &&
+        value.sequence > 0 &&
+        'scheduledAtMs' in value &&
+        typeof value.scheduledAtMs === 'number' &&
+        Number.isFinite(value.scheduledAtMs) &&
+        'sentAtMs' in value &&
+        typeof value.sentAtMs === 'number' &&
+        Number.isFinite(value.sentAtMs) &&
+        value.sentAtMs >= value.scheduledAtMs &&
+        value.sentAtMs <= receivedAtMs + CLOCK_PRECISION_TOLERANCE_MS
+    );
+}
+
 /**
  * How far behind the live position the MIDI high-water mark is rewound when a
- * window has to be re-emitted. The gate is `startBeat <= lastScheduledBeat`, so
- * a note sitting exactly on the current beat needs the mark strictly below it.
- * Matches the nudge the loop-wrap path already uses.
+ * window has to be re-emitted. The normal gate is the half-open interval
+ * `[lastScheduledBeat, scheduleUpTo)`. Rewinding by this amount also re-opens
+ * notes infinitesimally before the live position after their scheduled voices
+ * have been stopped. Matches the nudge the loop-wrap path already uses.
  */
 const REEMIT_EPSILON_BEATS = 0.0001;
 
@@ -68,6 +114,7 @@ export function startPlayheadScheduler(): void {
     schedulerSession.generation += 1;
     advanceSchedulerDiscontinuityEpoch();
     const schedulerGeneration = schedulerSession.generation;
+    schedulerSession.tickInFlight = false;
     const cancellation: SchedulerCancellation = {
         generation: schedulerGeneration,
         get discontinuityEpoch() {
@@ -75,6 +122,7 @@ export function startPlayheadScheduler(): void {
         },
         isCurrent: () =>
             schedulerSession.generation === schedulerGeneration && transportStore.value?.isPlaying === true,
+        yeastRouteLineage: new Map(),
     };
 
     startAutomationRecording();
@@ -102,6 +150,7 @@ export function startPlayheadScheduler(): void {
     resetMetronomeBeat(state.playheadPosition);
 
     const grainMs = state.scheduleGrainMs;
+    schedulerTimingDiagnostics.reset(grainMs);
 
     async function tick(): Promise<void> {
         // A prior tick is still awaiting its scheduling work (the Yeast Worker
@@ -110,13 +159,16 @@ export function startPlayheadScheduler(): void {
         // tick; the in-flight tick already advances the playhead and the next
         // worker message resumes steady scheduling once it resolves.
         if (schedulerSession.tickInFlight) {
+            schedulerTimingDiagnostics.recordTickSkipped();
             return;
         }
         schedulerSession.tickInFlight = true;
+        const tickStartedAtMs = highResolutionEpochMs();
         try {
             await runTick();
         } finally {
             if (schedulerSession.generation === schedulerGeneration) {
+                schedulerTimingDiagnostics.recordTickSettled(highResolutionEpochMs() - tickStartedAtMs);
                 schedulerSession.tickInFlight = false;
             }
         }
@@ -164,7 +216,7 @@ export function startPlayheadScheduler(): void {
             // high-water mark, which `stopAllScheduled`'s allNotesOff does not
             // move. Without rewinding it, every note already emitted into the
             // current look-ahead is silenced here and then blocked from
-            // re-emission (`unswungStartBeat <= lastScheduledBeat`), so a
+            // re-emission (`unswungStartBeat < lastScheduledBeat`), so a
             // tempo or loop edit drops a window of notes outright while audio
             // clips re-align (audit MD-5). Rewinding to the live position
             // re-opens exactly the window that was just cut, at the new rate.
@@ -359,19 +411,33 @@ export function startPlayheadScheduler(): void {
         schedulerSession.lastScheduledBeat = scheduleUpTo;
     }
 
-    if (!schedulerSession.worker) {
-        schedulerSession.worker = new Worker(new URL('../../workers/schedulerWorker.ts', import.meta.url), {
+    let worker = schedulerSession.worker;
+    if (!worker) {
+        worker = new Worker(new URL('../../workers/schedulerWorker.ts', import.meta.url), {
             type: 'module',
         });
-        schedulerSession.worker.onmessage = (event: MessageEvent<unknown>) => {
-            if (event.data && typeof event.data === 'object' && 'type' in event.data && event.data.type === 'tick') {
-                tick().catch((error: unknown) => {
-                    logger.error(new Error('Transport scheduler tick failed', { cause: error }));
-                });
-            }
-        };
+        schedulerSession.worker = worker;
     }
-    schedulerSession.worker.postMessage({ type: 'start', interval: grainMs });
+    worker.onmessage = (event: MessageEvent<unknown>) => {
+        const receivedAtMs = highResolutionEpochMs();
+        if (
+            !isSchedulerWorkerTick(event.data, receivedAtMs) ||
+            event.data.generation !== schedulerGeneration ||
+            schedulerSession.generation !== schedulerGeneration
+        ) {
+            return;
+        }
+        schedulerTimingDiagnostics.recordTickMessage(
+            event.data.sequence,
+            event.data.scheduledAtMs,
+            event.data.sentAtMs,
+            receivedAtMs
+        );
+        tick().catch((error: unknown) => {
+            logger.error(new Error('Transport scheduler tick failed', { cause: error }));
+        });
+    };
+    worker.postMessage({ type: 'start', interval: grainMs, generation: schedulerGeneration });
 }
 
 // Vite HMR: dispose all scheduler holders before this module is replaced so a

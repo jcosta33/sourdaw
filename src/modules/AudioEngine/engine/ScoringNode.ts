@@ -5,7 +5,7 @@
  */
 
 import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
-import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from '#/infra/audioWorklet/workletInitShared';
+import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
 import { NOTE_NAMES } from '#/utils/noteNames';
 
 import scoringProcessorUrl from '../services/scoringProcessor.ts?worker&url';
@@ -79,17 +79,28 @@ export async function createScoringNode(ctx: BaseAudioContext, signal?: AbortSig
     }
 
     await raceAbortSignal(ensureWorkletRegistered(ctx, scoringProcessorUrl), signal);
-    const wasmBytes = await raceAbortSignal(fetchWasmBinary(DEFAULT_WASM_URL), signal);
+    const wasmLease = await raceAbortSignal(
+        fetchWasmModule({ ctx, bundleId: 'scoring', url: DEFAULT_WASM_URL, signal }),
+        signal
+    );
 
     signal?.throwIfAborted();
 
-    const node = new AudioWorkletNode(ctx, 'scoring-processor', {
-        numberOfInputs: 1,
-        numberOfOutputs: 1,
-        outputChannelCount: [2],
-        channelCount: 2,
-        channelCountMode: 'explicit',
-    });
+    let node: AudioWorkletNode;
+    try {
+        node = new AudioWorkletNode(ctx, 'scoring-processor', {
+            numberOfInputs: 1,
+            numberOfOutputs: 1,
+            outputChannelCount: [2],
+            channelCount: 2,
+            channelCountMode: 'explicit',
+            processorOptions: { wasmModule: wasmLease.module },
+        });
+        wasmLease.commit();
+    } catch (error) {
+        wasmLease.release();
+        throw error;
+    }
 
     let slot: TelemetrySlot | null = telemetryAllocator.allocateSlot();
     let telemetryRafId: number | null = null;
@@ -104,8 +115,7 @@ export async function createScoringNode(ctx: BaseAudioContext, signal?: AbortSig
     };
     const readyPromise = handshake.promise;
 
-    const copy = wasmBytes.slice(0);
-    node.port.postMessage({ type: 'init', wasmBytes: copy }, [copy]);
+    node.port.postMessage({ type: 'init' });
 
     return {
         workletNode: node,

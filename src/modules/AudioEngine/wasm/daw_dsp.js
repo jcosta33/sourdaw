@@ -784,6 +784,14 @@ export class GrandBouleInstance {
         return ret >>> 0;
     }
     /**
+     * Current DSP-owned render lifecycle for the worker host.
+     * @returns {number}
+     */
+    lifecycle_state() {
+        const ret = wasm.grandbouleinstance_lifecycle_state(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
      * Load an attack-sample clip into the hybrid sampled-attack set.
      * @param {number} key
      * @param {Float32Array} samples
@@ -1592,6 +1600,13 @@ export class ToasterInstance {
         wasm.__wbg_toasterinstance_free(ptr, 0);
     }
     /**
+     * Advance control-rate state while the processor is intentionally asleep.
+     * @param {number} block_size
+     */
+    advance_silence(block_size) {
+        wasm.toasterinstance_advance_silence(this.__wbg_ptr, block_size);
+    }
+    /**
      * Number of non-finite output samples scrubbed to silence since
      * construction (DSP-8). Covers the main stereo pair and every pad output;
      * non-zero means a poisoned block was caught at the wasm output boundary.
@@ -1607,6 +1622,14 @@ export class ToasterInstance {
      */
     get_right_ptr() {
         const ret = wasm.toasterinstance_get_right_ptr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Stable processor lifecycle code shared with the AudioWorklet host.
+     * @returns {number}
+     */
+    lifecycle_state() {
+        const ret = wasm.toasterinstance_lifecycle_state(this.__wbg_ptr);
         return ret >>> 0;
     }
     /**

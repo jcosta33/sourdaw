@@ -12,7 +12,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // processor specs do, except the fake memory holds a *mutable* buffer so growth
 // can be simulated mid-call.
 
-const registry = new Map<string, new () => ToasterProcessorLike>();
+const registry = new Map<string, new (...args: unknown[]) => ToasterProcessorLike>();
 
 class AudioWorkletProcessorShim {
     port = {
@@ -30,7 +30,7 @@ type ToasterProcessorLike = {
 };
 
 vi.stubGlobal('AudioWorkletProcessor', AudioWorkletProcessorShim);
-vi.stubGlobal('registerProcessor', (name: string, proc: new () => ToasterProcessorLike) => {
+vi.stubGlobal('registerProcessor', (name: string, proc: new (...args: unknown[]) => ToasterProcessorLike) => {
     registry.set(name, proc);
 });
 vi.stubGlobal('sampleRate', 48000);
@@ -76,6 +76,10 @@ class ToasterInstanceMock {
     set_pad_param(): void {}
     set_pad_dry_routed(): void {}
     reset_pad_dry_routing(): void {}
+    advance_silence(): void {}
+    lifecycle_state(): number {
+        return 0;
+    }
     process(_frames: number): number {
         if (growOnNextProcess) {
             growOnNextProcess = false;
@@ -93,7 +97,7 @@ vi.mock('../../wasm/daw_dsp.js', () => ({
     ToasterInstance: ToasterInstanceMock,
 }));
 
-const MINIMAL_WASM = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
+const MINIMAL_WASM_MODULE = new WebAssembly.Module(new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]));
 
 async function loadProcessor(): Promise<ToasterProcessorLike> {
     await import('../toasterProcessor');
@@ -101,7 +105,7 @@ async function loadProcessor(): Promise<ToasterProcessorLike> {
     if (!Ctor) {
         throw new Error('toaster-processor was not registered');
     }
-    return new Ctor();
+    return new Ctor({ processorOptions: { wasmModule: MINIMAL_WASM_MODULE } });
 }
 
 function send(proc: ToasterProcessorLike, data: unknown): void {
@@ -121,7 +125,7 @@ describe('ToasterProcessor WASM-view lifecycle (audit RT-7)', () => {
 
     it('rebuilds output views when memory.grow() happens inside process() (mid-block) and emits the new buffer samples', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
 
         // Warm up so the output views are cached over the pre-grow buffer.
         proc.process([[]], makeOutputs());

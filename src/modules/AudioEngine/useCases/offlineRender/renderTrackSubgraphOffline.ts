@@ -6,6 +6,7 @@ import { type DeviceNodeEntry } from '../buildDeviceChain';
 import { getAudioContext } from '../engineAccess/getAudioContext';
 import { getSidechainKeyDelay } from '../latencyCompensation/compensation/getSidechainKeyDelay';
 
+import { collectDeviceRuntimeFailures } from './collectDeviceRuntimeFailures';
 import { connectOfflineToasterPadRoutes } from './connectOfflineToasterPadRoutes';
 import { MAX_OFFLINE_FRAMES, MIN_RENDER_TIMEOUT_MS, RENDER_TIMEOUT_MULTIPLIER } from './constants';
 import { createOfflineTrackStrip } from './createOfflineTrackStrip';
@@ -303,6 +304,7 @@ export async function renderTrackSubgraphOffline({
         offlineCtx,
         durationSeconds,
         timeoutMs: renderTimeoutMs,
+        ...collectDeviceRuntimeFailures(deviceEntriesByTrack),
         onRenderProgress: onProgress,
         cancelSource: {
             isCancelled: () => abortSignal?.aborted ?? false,

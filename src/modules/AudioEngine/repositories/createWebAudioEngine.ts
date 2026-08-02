@@ -4,6 +4,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { createAdjustmentLayerRuntime, type AdjustmentLayerRuntime } from '../engine/AdjustmentLayerRuntime';
 import { BusNode } from '../engine/BusNode';
+import { createDeviceReadinessDiagnostics } from '../engine/deviceReadinessDiagnostics';
 import { dropoutCounters } from '../engine/dropoutCounter';
 import { TrackNode } from '../engine/TrackNode';
 import bitcrusherRateProcessorUrl from '../services/bitcrusherRateProcessor.ts?worker&url';
@@ -15,6 +16,8 @@ import type {
     AudioEngine,
     AudioEngineDiagnostics,
     AudioEngineHealth,
+    AudioEnginePlaybackStats,
+    AudioProcessorLifecycleState,
     AudioEngineState,
     BusStrip,
     BuiltinDeviceNode,
@@ -57,6 +60,97 @@ type ToasterPadRoute = {
     destinationNode: GainNode | null;
     controls: ToasterDeviceControls | null;
 };
+
+type ChromeAudioPlaybackStats = AudioEnginePlaybackStats & {
+    resetLatency(): void;
+    toJSON(): object;
+};
+
+function isChromeAudioPlaybackStats(value: unknown): value is ChromeAudioPlaybackStats {
+    if (typeof value !== 'object' || value === null) {
+        return false;
+    }
+    return (
+        'underrunDuration' in value &&
+        typeof value.underrunDuration === 'number' &&
+        'underrunEvents' in value &&
+        typeof value.underrunEvents === 'number' &&
+        'totalDuration' in value &&
+        typeof value.totalDuration === 'number' &&
+        'averageLatency' in value &&
+        typeof value.averageLatency === 'number' &&
+        'minimumLatency' in value &&
+        typeof value.minimumLatency === 'number' &&
+        'maximumLatency' in value &&
+        typeof value.maximumLatency === 'number' &&
+        'resetLatency' in value &&
+        typeof value.resetLatency === 'function' &&
+        'toJSON' in value &&
+        typeof value.toJSON === 'function'
+    );
+}
+
+function getChromePlaybackStats(context: AudioContext): ChromeAudioPlaybackStats {
+    const stats = 'playbackStats' in context ? context.playbackStats : undefined;
+    if (!isChromeAudioPlaybackStats(stats)) {
+        throw new Error('Audio diagnostics require AudioContext.playbackStats from current stable Chrome.');
+    }
+    return stats;
+}
+
+function readPlaybackStats(context: AudioContext): AudioEnginePlaybackStats {
+    const stats = getChromePlaybackStats(context);
+    return {
+        underrunDuration: stats.underrunDuration,
+        underrunEvents: stats.underrunEvents,
+        totalDuration: stats.totalDuration,
+        averageLatency: stats.averageLatency,
+        minimumLatency: stats.minimumLatency,
+        maximumLatency: stats.maximumLatency,
+    };
+}
+
+type DeviceRuntimeResources = {
+    audioNodes: number;
+    audioWorkletProcessors: number;
+    workers: number;
+};
+
+function countDeviceRuntimeResources(device: BuiltinDeviceNode): DeviceRuntimeResources {
+    const ownedAudioNodes = new Set([device.inputNode, device.outputNode, ...device.nodes]);
+    let audioWorkletProcessors = 0;
+    for (const node of ownedAudioNodes) {
+        if (node instanceof AudioWorkletNode) {
+            audioWorkletProcessors++;
+        }
+    }
+    return { audioNodes: ownedAudioNodes.size, audioWorkletProcessors, workers: device.workerInstances ?? 0 };
+}
+
+function createEmptyGraphSlotResourcesByLoadState(): AudioEngineDiagnostics['graph']['graphSlotResourcesByLoadState'] {
+    return {
+        ready: { audioNodes: 0, audioWorkletProcessors: 0, workers: 0 },
+        pending: { audioNodes: 0, audioWorkletProcessors: 0, workers: 0 },
+        failed: { audioNodes: 0, audioWorkletProcessors: 0, workers: 0 },
+    };
+}
+
+function addDeviceResources(target: DeviceRuntimeResources, resources: DeviceRuntimeResources): void {
+    target.audioNodes += resources.audioNodes;
+    target.audioWorkletProcessors += resources.audioWorkletProcessors;
+    target.workers += resources.workers;
+}
+
+function addCountByType(counts: Map<string, number>, type: string, count: number): void {
+    if (count === 0) {
+        return;
+    }
+    counts.set(type, (counts.get(type) ?? 0) + count);
+}
+
+function toSortedCountRecord(counts: Map<string, number>): Record<string, number> {
+    return Object.fromEntries([...counts].sort(([left], [right]) => left.localeCompare(right)));
+}
 
 /**
  * Transport SharedArrayBuffer layout (one 64-byte buffer shared with worklet
@@ -190,6 +284,7 @@ class AudioEngineImpl implements AudioEngine {
     private lastInitError: Error | null = null;
     private lastResumeError: Error | null = null;
     private adjustmentRuntime: AdjustmentLayerRuntime;
+    private readonly deviceReadinessDiagnostics = createDeviceReadinessDiagnostics();
 
     constructor(providedContext?: AudioContext) {
         // Transport SAB layout: see TRANSPORT_F64 / TRANSPORT_SEQ_I32 above. The
@@ -370,6 +465,10 @@ class AudioEngineImpl implements AudioEngine {
         };
     }
 
+    public getDeviceReadinessDiagnostics() {
+        return this.deviceReadinessDiagnostics.snapshot();
+    }
+
     public getDiagnostics(): AudioEngineDiagnostics {
         const engineState = this.getState();
         const context = {
@@ -381,6 +480,7 @@ class AudioEngineImpl implements AudioEngine {
         if (this.fallbackMode) {
             return {
                 context,
+                playback: null,
                 graph: {
                     trackStrips: 0,
                     busStrips: 0,
@@ -391,27 +491,64 @@ class AudioEngineImpl implements AudioEngine {
                     failedDeviceInstances: 0,
                     deviceInstancesByType: {},
                     deviceAudioNodes: 0,
+                    graphSlotResourcesByLoadState: createEmptyGraphSlotResourcesByLoadState(),
+                    deviceAudioWorkletProcessors: 0,
+                    deviceAudioWorkletProcessorsByType: {},
                     stripMeterWorklets: 0,
                     masterMeterWorklets: 0,
+                    graphAudioWorkletProcessors: 0,
+                    workerInstances: 0,
+                    workerInstancesByType: {},
                     adjustmentLayerBuses: 0,
+                    adjustmentLayerBusesByEffectType: {},
+                    adjustmentLayerAudioNodes: 0,
+                    adjustmentLayerAudioWorkletProcessors: 0,
                 },
-                runtime: { trackedAudioScheduledSources: 0 },
+                runtime: {
+                    trackedAudioScheduledSources: 0,
+                    processorLifecycle: { unmanaged: 0, continue: 0, continueIfNotQuiet: 0, tail: 0, sleep: 0 },
+                },
             };
         }
         const deviceInstancesByType = new Map<string, number>();
+        const deviceAudioWorkletProcessorsByType = new Map<string, number>();
+        const workerInstancesByType = new Map<string, number>();
+        const graphSlotResourcesByLoadState = createEmptyGraphSlotResourcesByLoadState();
         let deviceInstances = 0;
         let pendingDeviceInstances = 0;
         let failedDeviceInstances = 0;
         let deviceAudioNodes = 0;
+        let deviceAudioWorkletProcessors = 0;
+        let workerInstances = 0;
         let stripMeterWorklets = 0;
+        const processorLifecycle: { unmanaged: number } & Record<AudioProcessorLifecycleState, number> = {
+            unmanaged: 0,
+            continue: 0,
+            continueIfNotQuiet: 0,
+            tail: 0,
+            sleep: 0,
+        };
 
         for (const trackNode of this.trackNodes.values()) {
             if (trackNode.strip.meterNode) {
                 stripMeterWorklets++;
             }
             for (const device of trackNode.strip.deviceNodes) {
-                deviceAudioNodes += device.nodes.length;
+                const resources = countDeviceRuntimeResources(device);
+                deviceAudioNodes += resources.audioNodes;
+                deviceAudioWorkletProcessors += resources.audioWorkletProcessors;
+                const lifecycleState = device.processorLifecycle?.() ?? null;
+                if (lifecycleState && resources.audioWorkletProcessors > 0) {
+                    processorLifecycle[lifecycleState]++;
+                    processorLifecycle.unmanaged += resources.audioWorkletProcessors - 1;
+                } else {
+                    processorLifecycle.unmanaged += resources.audioWorkletProcessors;
+                }
+                addCountByType(deviceAudioWorkletProcessorsByType, device.type, resources.audioWorkletProcessors);
+                workerInstances += resources.workers;
+                addCountByType(workerInstancesByType, device.type, resources.workers);
                 const loadState = trackNode.getDeviceLoadState(device.deviceId);
+                addDeviceResources(graphSlotResourcesByLoadState[loadState], resources);
                 if (loadState === 'pending') {
                     pendingDeviceInstances++;
                     continue;
@@ -421,16 +558,23 @@ class AudioEngineImpl implements AudioEngine {
                     continue;
                 }
                 deviceInstances++;
-                deviceInstancesByType.set(device.type, (deviceInstancesByType.get(device.type) ?? 0) + 1);
+                addCountByType(deviceInstancesByType, device.type, 1);
             }
         }
 
-        const sortedDeviceInstances = [...deviceInstancesByType].sort(([left], [right]) => left.localeCompare(right));
-        const masterMeterWorklets =
-            typeof AudioWorkletNode !== 'undefined' && this.masterMeterNode instanceof AudioWorkletNode ? 1 : 0;
+        const masterMeterWorklets = this.masterMeterNode instanceof AudioWorkletNode ? 1 : 0;
+        const adjustmentDiagnostics = this.adjustmentRuntime.getDiagnostics();
+        processorLifecycle.unmanaged += adjustmentDiagnostics.audioWorkletProcessors;
+        const graphAudioWorkletProcessors =
+            deviceAudioWorkletProcessors +
+            adjustmentDiagnostics.audioWorkletProcessors +
+            stripMeterWorklets +
+            masterMeterWorklets;
+        const playback = readPlaybackStats(this.context);
 
         return {
             context,
+            playback,
             graph: {
                 // A bus owns a backing TrackNode; keep the public counters disjoint.
                 trackStrips: this.trackNodes.size - this.busNodes.size,
@@ -440,14 +584,33 @@ class AudioEngineImpl implements AudioEngine {
                 deviceInstances,
                 pendingDeviceInstances,
                 failedDeviceInstances,
-                deviceInstancesByType: Object.fromEntries(sortedDeviceInstances),
+                deviceInstancesByType: toSortedCountRecord(deviceInstancesByType),
                 deviceAudioNodes,
+                graphSlotResourcesByLoadState,
+                deviceAudioWorkletProcessors,
+                deviceAudioWorkletProcessorsByType: toSortedCountRecord(deviceAudioWorkletProcessorsByType),
                 stripMeterWorklets,
                 masterMeterWorklets,
-                adjustmentLayerBuses: this.adjustmentRuntime.listLiveBusKeys().length,
+                graphAudioWorkletProcessors,
+                workerInstances,
+                workerInstancesByType: toSortedCountRecord(workerInstancesByType),
+                adjustmentLayerBuses: adjustmentDiagnostics.buses,
+                adjustmentLayerBusesByEffectType: adjustmentDiagnostics.busesByEffectType,
+                adjustmentLayerAudioNodes: adjustmentDiagnostics.audioNodes,
+                adjustmentLayerAudioWorkletProcessors: adjustmentDiagnostics.audioWorkletProcessors,
             },
-            runtime: { trackedAudioScheduledSources: this.scheduledNodes.length },
+            runtime: {
+                trackedAudioScheduledSources: this.scheduledNodes.length,
+                processorLifecycle,
+            },
         };
+    }
+
+    public resetPlaybackLatencyStats(): void {
+        if (this.fallbackMode) {
+            return;
+        }
+        getChromePlaybackStats(this.context).resetLatency();
     }
 
     public async resume(): Promise<void> {
@@ -1372,6 +1535,7 @@ class AudioEngineImpl implements AudioEngine {
         }
         this.toasterPadRoutes.clear();
         this.pendingDevicePromises.clear();
+        this.deviceReadinessDiagnostics.reset();
     }
 
     public applyAdjustmentLayerTick(records: AdjustmentLayerTickInput[]): void {

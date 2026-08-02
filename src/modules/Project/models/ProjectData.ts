@@ -600,3 +600,19 @@ export type ProjectArrangementSnapshot = {
 };
 
 export const RECENT_PROJECTS_KEY = 'sourdaw-recent-projects';
+
+/**
+ * Prefix of the per-project storage key, completed with the project's stable
+ * `createdAt` id. Shared by the writer, the reader, and the localStorage
+ * migration so a change here cannot orphan snapshots in one of them.
+ */
+export const NAMED_PROJECT_KEY_PREFIX = 'sourdaw:project:';
+
+/** IndexedDB key of the active project document. */
+export const ACTIVE_PROJECT_KEY = 'current';
+
+/**
+ * localStorage key that pre-ADR-0013 builds mirrored the active project
+ * document to. Nothing writes it any more; the migration drains it.
+ */
+export const LEGACY_PROJECT_STORAGE_KEY = 'sourdaw-project';

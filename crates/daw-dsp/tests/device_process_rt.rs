@@ -348,6 +348,55 @@ fn grand_boule_process_does_not_allocate_with_notes_held() {
 }
 
 #[test]
+fn grand_boule_voice_steal_crossfade_does_not_allocate() {
+    use daw_dsp::grand_boule::GrandBouleInstance;
+
+    let mut instance = GrandBouleInstance::new(SAMPLE_RATE, 3);
+    for note in [60, 64, 67] {
+        instance.note_on(note, 0.8);
+    }
+    instance.process(BLOCK as u32);
+
+    assert_no_alloc(|| {
+        instance.note_on(65, 0.8);
+        instance.process(BLOCK as u32);
+    });
+
+    let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
+    assert_all_finite(&out, "grand_boule voice steal");
+    assert!(
+        peak(&out) > 1e-6,
+        "grand_boule fell silent after the guarded voice-steal crossfade"
+    );
+}
+
+#[test]
+fn grand_boule_saturated_steal_tail_pool_does_not_allocate() {
+    use daw_dsp::grand_boule::GrandBouleInstance;
+
+    const VOICES: u8 = 64;
+    let mut instance = GrandBouleInstance::new(SAMPLE_RATE, VOICES as u32);
+    for channel in 0..VOICES {
+        instance.note_on_with_channel(60, 0.8, channel);
+    }
+
+    let mut output = std::ptr::null();
+    assert_no_alloc(|| {
+        for channel in VOICES..(VOICES * 2) {
+            instance.note_on_with_channel(60, 0.8, channel);
+        }
+        output = instance.process(BLOCK as u32);
+    });
+
+    let out = unsafe { read_output(output, BLOCK) };
+    assert_all_finite(&out, "grand_boule saturated steal-tail pool");
+    assert!(
+        peak(&out) > 1e-6,
+        "grand_boule fell silent while rendering the saturated steal-tail pool"
+    );
+}
+
+#[test]
 fn grinder_process_and_automated_process_do_not_allocate() {
     use daw_dsp::grinder::GrinderInstance;
 

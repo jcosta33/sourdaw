@@ -54,6 +54,14 @@ function makeElements(refs: StatusBarMetricRefs): void {
 function makeEngineDiagnostics(deviceInstances = 24): ReturnType<typeof getEngineDiagnostics> {
     return {
         context: { state: 'running', sampleRate: 48_000, baseLatency: 0.005, outputLatency: 0.005 },
+        playback: {
+            underrunDuration: 0,
+            underrunEvents: 0,
+            totalDuration: 30,
+            averageLatency: 0.01,
+            minimumLatency: 0.008,
+            maximumLatency: 0.012,
+        },
         graph: {
             trackStrips: 43,
             busStrips: 8,
@@ -64,11 +72,27 @@ function makeEngineDiagnostics(deviceInstances = 24): ReturnType<typeof getEngin
             failedDeviceInstances: 2,
             deviceInstancesByType: { fermenter: 14 },
             deviceAudioNodes: 31,
+            graphSlotResourcesByLoadState: {
+                ready: { audioNodes: 29, audioWorkletProcessors: 24, workers: 1 },
+                pending: { audioNodes: 1, audioWorkletProcessors: 0, workers: 0 },
+                failed: { audioNodes: 1, audioWorkletProcessors: 0, workers: 0 },
+            },
+            deviceAudioWorkletProcessors: 24,
+            deviceAudioWorkletProcessorsByType: { fermenter: 14 },
             stripMeterWorklets: 39,
             masterMeterWorklets: 1,
+            graphAudioWorkletProcessors: 64,
+            workerInstances: 1,
+            workerInstancesByType: { 'grand-boule': 1 },
             adjustmentLayerBuses: 0,
+            adjustmentLayerBusesByEffectType: {},
+            adjustmentLayerAudioNodes: 0,
+            adjustmentLayerAudioWorkletProcessors: 0,
         },
-        runtime: { trackedAudioScheduledSources: 0 },
+        runtime: {
+            trackedAudioScheduledSources: 0,
+            processorLifecycle: { unmanaged: 24, continue: 0, continueIfNotQuiet: 0, tail: 0, sleep: 0 },
+        },
     };
 }
 

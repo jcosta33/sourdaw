@@ -8,7 +8,32 @@ use super::lofi::LofiProcessor;
 use super::pad::Pad;
 use super::transient::TransientShaper;
 use super::voice::DrumVoice;
-use crate::primitives::flush_denormal;
+use crate::primitives::{flush_denormal, ProcessLifecycle};
+
+const EFFECT_STATE_QUIET_THRESHOLD: f32 = 3.162_277_6e-8;
+
+#[inline]
+fn settle_effect_state(value: f32) -> f32 {
+    if value.is_finite() && value.abs() <= EFFECT_STATE_QUIET_THRESHOLD {
+        0.0
+    } else {
+        value
+    }
+}
+
+#[inline]
+fn replace_active_sample(active_samples: &mut usize, previous: f32, next: f32) {
+    let was_active = previous != 0.0;
+    let is_active = next != 0.0;
+    if was_active == is_active {
+        return;
+    }
+    if is_active {
+        *active_samples += 1;
+    } else {
+        *active_samples = active_samples.saturating_sub(1);
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Global effects (simple implementations to keep toaster self-contained)
@@ -23,6 +48,7 @@ pub struct PlateReverb {
     decay: f32,
     damping: f32,
     mix: f32,
+    active_samples: usize,
 }
 
 // Prime delay lengths for dense, non-metallic reverb (at 44100Hz)
@@ -44,6 +70,7 @@ impl PlateReverb {
             decay: 0.75,
             damping: 0.4,
             mix: 0.15,
+            active_samples: 0,
         }
     }
 
@@ -68,12 +95,15 @@ impl PlateReverb {
         let input_per_line = input * 0.25;
         for i in 0..4 {
             // DSP-2: the tank feedback state decays toward zero once input stops.
-            let damped = flush_denormal(
+            let damped = settle_effect_state(flush_denormal(
                 self.feedback[i] + (1.0 - self.damping) * (mixed[i] - self.feedback[i]),
-            );
+            ));
             self.feedback[i] = damped;
             let len = self.buffers[i].len();
-            self.buffers[i][self.write_pos[i]] = input_per_line + damped * self.decay;
+            let previous = self.buffers[i][self.write_pos[i]];
+            let next = settle_effect_state(input_per_line + damped * self.decay);
+            replace_active_sample(&mut self.active_samples, previous, next);
+            self.buffers[i][self.write_pos[i]] = next;
             self.write_pos[i] = (self.write_pos[i] + 1) % len;
         }
 
@@ -81,6 +111,10 @@ impl PlateReverb {
         let wet_l = (taps[0] + taps[2]) * 0.5 * self.mix;
         let wet_r = (taps[1] + taps[3]) * 0.5 * self.mix;
         (wet_l, wet_r)
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.active_samples > 0 || self.feedback.iter().any(|value| *value != 0.0)
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {
@@ -102,6 +136,7 @@ pub struct StereoDelay {
     delay_samples: usize,
     feedback: f32,
     mix: f32,
+    active_samples: usize,
 }
 
 impl StereoDelay {
@@ -117,6 +152,7 @@ impl StereoDelay {
             delay_samples: delay_samples.min(size.saturating_sub(1)),
             feedback: 0.4,
             mix: 0.0,
+            active_samples: 0,
         }
     }
 
@@ -132,12 +168,28 @@ impl StereoDelay {
         let tap_r = self.buf_r[read_pos];
 
         // Ping-pong: left feedback from right, right from left
-        self.buf_l[self.write_pos] = input + tap_r * self.feedback;
-        self.buf_r[self.write_pos] = input + tap_l * self.feedback;
+        let next_l = settle_effect_state(input + tap_r * self.feedback);
+        let next_r = settle_effect_state(input + tap_l * self.feedback);
+        replace_active_sample(
+            &mut self.active_samples,
+            self.buf_l[self.write_pos],
+            next_l,
+        );
+        replace_active_sample(
+            &mut self.active_samples,
+            self.buf_r[self.write_pos],
+            next_r,
+        );
+        self.buf_l[self.write_pos] = next_l;
+        self.buf_r[self.write_pos] = next_r;
 
         self.write_pos = (self.write_pos + 1) % self.size;
 
         (tap_l * self.mix, tap_r * self.mix)
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.active_samples > 0
     }
 
     pub fn set_param(&mut self, name: &str, value: f32, sample_rate: f32) {
@@ -201,6 +253,10 @@ impl BusEffects {
             1.0
         };
         sample * gain
+    }
+
+    fn is_active(&self) -> bool {
+        self.comp_env != 0.0
     }
 }
 
@@ -451,6 +507,24 @@ impl ToasterEngine {
 
     pub fn reset_pad_dry_routing(&mut self) {
         self.pad_dry_routed_mask = 0;
+    }
+
+    pub fn lifecycle(&self) -> ProcessLifecycle {
+        if self.voices.iter().any(|voice| voice.active) {
+            return ProcessLifecycle::Continue;
+        }
+        if self.global_reverb.is_active()
+            || self.global_delay.is_active()
+            || self.bus_effects.iter().any(BusEffects::is_active)
+            || self.global_lofi.is_active()
+        {
+            return ProcessLifecycle::ContinueIfNotQuiet;
+        }
+        ProcessLifecycle::Sleep
+    }
+
+    pub fn advance_silence(&mut self, frames: usize) {
+        self.global_lofi.advance_silence(frames, self.sample_rate);
     }
 
     pub fn process_block(&mut self, left: &mut [f32], right: &mut [f32]) {

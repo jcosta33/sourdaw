@@ -1,5 +1,12 @@
+import { logger } from '#/infra/logger/appLogger';
+
 /** Serialized form of an AudioBuffer embedded inside a .sourdaw project file.
- * Each channel's Float32 PCM data is base64-encoded to survive JSON round-trips. */
+ * Each channel's Float32 PCM data is base64-encoded to survive JSON round-trips.
+ *
+ * This shape exists for the explicit, user-initiated `.sourdaw` export and the
+ * import that reads one back. No live persistence path produces it: the save
+ * snapshot references buffers by id and the PCM itself lives in this module's
+ * IndexedDB store as raw `Float32Array` (ADR 0013 decision 2). */
 export type ExportedAudioBuffer = {
     sampleRate: number;
     numberOfChannels: number;
@@ -7,6 +14,8 @@ export type ExportedAudioBuffer = {
     channelData: string[];
 };
 
+/** Base64-encode one channel of PCM for the `.sourdaw` export. The only caller
+ * is `exportBuffers`; nothing on a live persistence path may reach this. */
 async function float32ToBase64(arr: Float32Array): Promise<string> {
     const bytes = new Uint8Array(arr.buffer, arr.byteOffset, arr.byteLength);
     const CHUNK = 8192;
@@ -154,6 +163,27 @@ function openDb(): Promise<IDBDatabase> {
     });
 }
 
+/** Resolve with a request's result. An IndexedDB request's `success` fires
+ * before the transaction commits (IDB 3.0 §5.6), so this is only ever used to
+ * *read* — never to report a write as durable. */
+function awaitRequest<Result>(request: IDBRequest<Result>): Promise<Result> {
+    return new Promise<Result>((resolve, reject) => {
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error ?? new Error('IDB request failed'));
+    });
+}
+
+/** Resolve when the transaction has actually committed. Rejects on `error` and
+ * on `abort` — a bare abort fires neither `error` nor `complete`, so an
+ * `onabort`-less promise here would stay pending forever. */
+function awaitTransaction(transaction: IDBTransaction): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+        transaction.oncomplete = () => resolve();
+        transaction.onabort = () => reject(transaction.error ?? new Error('IDB transaction aborted'));
+        transaction.onerror = () => reject(transaction.error ?? new Error('IDB transaction failed'));
+    });
+}
+
 type SerializedBuffer = {
     sampleRate: number;
     numberOfChannels: number;
@@ -215,22 +245,25 @@ function serializeBuffer(buffer: AudioBuffer): SerializedBuffer {
     };
 }
 
+/** Refresh a buffer's last-access stamp. The age-based collector deletes on
+ * this field, so a silently failed refresh eventually deletes audio a project
+ * still references — the reason it is observed rather than fire-and-forget. */
 async function updateAccessTimeInIdb(id: string): Promise<void> {
-    try {
-        const db = await openDb();
-        const tx = db.transaction(STORE_NAME, 'readwrite');
-        const store = tx.objectStore(STORE_NAME);
-        const req = store.get(id);
-        req.onsuccess = () => {
-            const data = req.result as SerializedBuffer | undefined;
-            if (data) {
-                data.lastAccessed = Date.now();
-                store.put(data, id);
-            }
-        };
-    } catch {
-        // ignore
+    const db = await openDb();
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    const data = await awaitRequest(store.get(id) as IDBRequest<SerializedBuffer | undefined>);
+    if (data) {
+        data.lastAccessed = Date.now();
+        store.put(data, id);
     }
+    await awaitTransaction(tx);
+}
+
+function refreshAccessTime(id: string): void {
+    updateAccessTimeInIdb(id).catch((error: unknown) => {
+        logger.warn('[audioBufferCache] Audio buffer access-time refresh failed', { id, error });
+    });
 }
 
 async function persistSerializedToIdb(id: string, data: SerializedBuffer): Promise<boolean> {
@@ -242,12 +275,10 @@ async function persistSerializedToIdb(id: string, data: SerializedBuffer): Promi
         }
         const tx = db.transaction(STORE_NAME, 'readwrite');
         tx.objectStore(STORE_NAME).put(data, id);
-        await new Promise<void>((resolve, reject) => {
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error ?? new Error('IDB transaction failed'));
-        });
+        await awaitTransaction(tx);
         return true;
-    } catch {
+    } catch (error) {
+        logger.warn('[audioBufferCache] Audio buffer persistence failed', { id, error });
         return false;
     } finally {
         if (persistenceGenerationById.get(id) === generation) {
@@ -269,13 +300,9 @@ async function removeFromIdb(id: string): Promise<void> {
         }
         const tx = db.transaction(STORE_NAME, 'readwrite');
         tx.objectStore(STORE_NAME).delete(id);
-        await new Promise<void>((resolve, reject) => {
-            tx.oncomplete = () => resolve();
-            tx.onabort = () => reject(tx.error ?? new Error('IDB transaction aborted'));
-            tx.onerror = () => reject(tx.error ?? new Error('IDB transaction failed'));
-        });
-    } catch {
-        // ignore
+        await awaitTransaction(tx);
+    } catch (error) {
+        logger.warn('[audioBufferCache] Audio buffer removal failed', { id, error });
     } finally {
         if (persistenceGenerationById.get(id) === generation) {
             persistenceGenerationById.delete(id);
@@ -400,7 +427,7 @@ export const audioBufferCache = {
     get(id: string): AudioBuffer | undefined {
         const buf = audioCacheGet(id);
         if (buf) {
-            void updateAccessTimeInIdb(id);
+            refreshAccessTime(id);
         }
         return buf;
     },
@@ -436,7 +463,7 @@ export const audioBufferCache = {
             return new Float32Array(numBins);
         }
 
-        void updateAccessTimeInIdb(id);
+        refreshAccessTime(id);
         const totalSamples = buffer.length;
         const rawStart = windowOpts?.startSample ?? 0;
         const rawEnd = windowOpts?.endSample ?? totalSamples;
@@ -563,37 +590,20 @@ export const audioBufferCache = {
         waveformCache.clear();
         persistenceGenerationById.clear();
         openDb()
-            .then((db) => {
+            .then(async (db) => {
                 const tx = db.transaction(STORE_NAME, 'readwrite');
                 tx.objectStore(STORE_NAME).clear();
+                await awaitTransaction(tx);
                 return null;
             })
-            .catch(() => {
-                /* ignore */
+            .catch((error: unknown) => {
+                logger.warn('[audioBufferCache] Audio buffer store clear failed', { error });
                 return null;
             });
     },
 
     cancelPendingImport(): void {
         cancelPendingImportCandidate();
-    },
-
-    async serializeBuffers(
-        buffers: Array<{ id: string; buffer: AudioBuffer }>
-    ): Promise<Record<string, ExportedAudioBuffer>> {
-        const result: Record<string, ExportedAudioBuffer> = {};
-        for (const { id, buffer } of buffers) {
-            result[id] = {
-                sampleRate: buffer.sampleRate,
-                numberOfChannels: buffer.numberOfChannels,
-                channelData: await Promise.all(
-                    Array.from({ length: buffer.numberOfChannels }, (_, channel) =>
-                        float32ToBase64(new Float32Array(buffer.getChannelData(channel)))
-                    )
-                ),
-            };
-        }
-        return result;
     },
 
     /** Serialize the given buffer IDs to base64-encoded PCM for embedding in a
@@ -609,7 +619,7 @@ export const audioBufferCache = {
             if (!buf) {
                 continue;
             }
-            void updateAccessTimeInIdb(id);
+            refreshAccessTime(id);
             result[id] = {
                 sampleRate: buf.sampleRate,
                 numberOfChannels: buf.numberOfChannels,
@@ -639,7 +649,7 @@ export const audioBufferCache = {
                     if (!data || (data.channelData[0]?.length ?? 0) === 0) {
                         continue;
                     }
-                    void updateAccessTimeInIdb(id);
+                    refreshAccessTime(id);
                     result[id] = {
                         sampleRate: data.sampleRate,
                         numberOfChannels: data.numberOfChannels,
@@ -654,15 +664,23 @@ export const audioBufferCache = {
         return result;
     },
 
-    /** Decode authoritative embedded buffers without publishing them. The
-     * caller owns the final synchronous project-transition commit. */
+    /** Take authoritative incoming buffers without publishing them. The caller
+     * owns the final synchronous project-transition commit.
+     *
+     * `buffers` carries base64 PCM read back out of a `.sourdaw` file — the one
+     * place that shape still exists. `decodedBuffers` carries AudioBuffers a
+     * caller already decoded (the DAWproject importer decodes its assets with
+     * `decodeAudioData`), so nothing on that path is encoded just to be decoded
+     * again a few frames later. */
     importBuffers({
         buffers,
+        decodedBuffers,
         cacheIds,
         context,
         shouldContinue,
     }: {
         buffers: Record<string, ExportedAudioBuffer>;
+        decodedBuffers?: Record<string, AudioBuffer>;
         cacheIds?: string[];
         context: BaseAudioContext;
         shouldContinue?: () => boolean;
@@ -671,30 +689,73 @@ export const audioBufferCache = {
         activeImportCandidateId = candidateId;
         const staged: Array<{ id: string; buffer: AudioBuffer }> = [];
         const cacheIdSet = cacheIds ? new Set(cacheIds) : undefined;
-        const entries = Object.entries(buffers);
 
-        for (const [, data] of entries) {
+        // One entry list over both sources. `readChannels` stays lazy so a
+        // buffer the active arrangement does not reference is never decoded
+        // before the persistence transaction needs it.
+        type ImportEntry = {
+            id: string;
+            sampleRate: number;
+            numberOfChannels: number;
+            resident: AudioBuffer | null;
+            readChannels: () => Float32Array[];
+        };
+        const entries: ImportEntry[] = [];
+
+        for (const [id, data] of Object.entries(buffers)) {
             if (shouldContinue?.() === false) {
                 return null;
             }
             if (!isValidExportedAudioBuffer(data)) {
                 return null;
             }
+            entries.push({
+                id,
+                sampleRate: data.sampleRate,
+                numberOfChannels: data.numberOfChannels,
+                resident: null,
+                readChannels: () => data.channelData.map(base64ToFloat32),
+            });
+        }
+
+        for (const [id, buffer] of Object.entries(decodedBuffers ?? {})) {
+            if (shouldContinue?.() === false) {
+                return null;
+            }
+            if (buffer.numberOfChannels <= 0 || buffer.length <= 0) {
+                return null;
+            }
+            entries.push({
+                id,
+                sampleRate: buffer.sampleRate,
+                numberOfChannels: buffer.numberOfChannels,
+                resident: buffer,
+                readChannels: () =>
+                    Array.from(
+                        { length: buffer.numberOfChannels },
+                        (_, channel) => new Float32Array(buffer.getChannelData(channel))
+                    ),
+            });
         }
 
         if (shouldContinue?.() === false) {
             return null;
         }
 
-        for (const [id, data] of entries) {
-            if (!cacheIdSet || cacheIdSet.has(id)) {
-                const channels = data.channelData.map(base64ToFloat32);
-                const buffer = context.createBuffer(data.numberOfChannels, channels[0]!.length, data.sampleRate);
-                for (let channel = 0; channel < data.numberOfChannels; channel++) {
-                    buffer.getChannelData(channel).set(channels[channel]!);
-                }
-                staged.push({ id, buffer });
+        for (const entry of entries) {
+            if (cacheIdSet && !cacheIdSet.has(entry.id)) {
+                continue;
             }
+            if (entry.resident) {
+                staged.push({ id: entry.id, buffer: entry.resident });
+                continue;
+            }
+            const channels = entry.readChannels();
+            const buffer = context.createBuffer(entry.numberOfChannels, channels[0]!.length, entry.sampleRate);
+            for (let channel = 0; channel < entry.numberOfChannels; channel++) {
+                buffer.getChannelData(channel).set(channels[channel]!);
+            }
+            staged.push({ id: entry.id, buffer });
         }
 
         let persisted = false;
@@ -716,7 +777,7 @@ export const audioBufferCache = {
                     return true;
                 }
                 const generations = new Map<string, number>();
-                for (const [id] of entries) {
+                for (const { id } of entries) {
                     generations.set(id, claimPersistenceGeneration(id));
                 }
                 let transaction: IDBTransaction | null = null;
@@ -726,7 +787,7 @@ export const audioBufferCache = {
                         database = await openDb();
                     } catch {
                         const allBuffersAreResident = entries.every(
-                            ([id]) => cacheIdSet === undefined || cacheIdSet.has(id)
+                            ({ id }) => cacheIdSet === undefined || cacheIdSet.has(id)
                         );
                         persisted = allBuffersAreResident;
                         return allBuffersAreResident;
@@ -743,26 +804,20 @@ export const audioBufferCache = {
                     transaction = activeTransaction;
                     importPersistenceTransactions.set(candidateId, activeTransaction);
                     const objectStore = activeTransaction.objectStore(STORE_NAME);
-                    for (const [id, data] of entries) {
-                        const channels = data.channelData.map(base64ToFloat32);
+                    for (const entry of entries) {
+                        const channels = entry.readChannels();
                         objectStore.put(
                             {
-                                sampleRate: data.sampleRate,
-                                numberOfChannels: data.numberOfChannels,
+                                sampleRate: entry.sampleRate,
+                                numberOfChannels: entry.numberOfChannels,
                                 channelData: channels,
                                 lastAccessed: Date.now(),
                                 sizeInBytes: channels.reduce((total, channel) => total + channel.byteLength, 0),
                             } satisfies SerializedBuffer,
-                            id
+                            entry.id
                         );
                     }
-                    await new Promise<void>((resolve, reject) => {
-                        activeTransaction.oncomplete = () => resolve();
-                        activeTransaction.onabort = () =>
-                            reject(activeTransaction.error ?? new Error('IDB transaction aborted'));
-                        activeTransaction.onerror = () =>
-                            reject(activeTransaction.error ?? new Error('IDB transaction failed'));
-                    });
+                    await awaitTransaction(activeTransaction);
                     if (candidateId !== activeImportCandidateId || candidateId !== committedImportCandidateId) {
                         return false;
                     }
@@ -809,22 +864,21 @@ export const audioBufferCache = {
             }
         }
 
-        // Remove from IndexedDB
+        // Remove from IndexedDB. The deletes are issued and the transaction is
+        // awaited, so this resolves only once they have actually committed.
         try {
             const db = await openDb();
             const tx = db.transaction(STORE_NAME, 'readwrite');
             const store = tx.objectStore(STORE_NAME);
-            const req = store.getAllKeys();
-            req.onsuccess = () => {
-                const keys = req.result as string[];
-                for (const key of keys) {
-                    if (key.startsWith('freeze-') && !activeIds.has(key)) {
-                        store.delete(key);
-                    }
+            const keys = await awaitRequest(store.getAllKeys());
+            for (const key of keys) {
+                if (typeof key === 'string' && key.startsWith('freeze-') && !activeIds.has(key)) {
+                    store.delete(key);
                 }
-            };
-        } catch {
-            // Ignore IDB errors
+            }
+            await awaitTransaction(tx);
+        } catch (error) {
+            logger.warn('[audioBufferCache] Freeze-file collection failed', { error });
         }
     },
 
@@ -835,12 +889,9 @@ export const audioBufferCache = {
             const db = await openDb();
             const tx = db.transaction(STORE_NAME, 'readwrite');
             const store = tx.objectStore(STORE_NAME);
-            const req = store.getAll();
-            const keysReq = store.getAllKeys();
-
             const [data, keys] = await Promise.all([
-                new Promise<SerializedBuffer[]>((resolve) => (req.onsuccess = () => resolve(req.result))),
-                new Promise<IDBValidKey[]>((resolve) => (keysReq.onsuccess = () => resolve(keysReq.result))),
+                awaitRequest(store.getAll() as IDBRequest<SerializedBuffer[]>),
+                awaitRequest(store.getAllKeys()),
             ]);
 
             for (let index = 0; index < data.length; index++) {
@@ -856,8 +907,11 @@ export const audioBufferCache = {
                     deletedCount++;
                 }
             }
-        } catch {
-            /* ignore */
+            // The count is reported only for deletes that committed.
+            await awaitTransaction(tx);
+        } catch (error) {
+            logger.warn('[audioBufferCache] Age-based collection failed', { error });
+            return 0;
         }
         return deletedCount;
     },
@@ -868,12 +922,9 @@ export const audioBufferCache = {
             const db = await openDb();
             const tx = db.transaction(STORE_NAME, 'readwrite');
             const store = tx.objectStore(STORE_NAME);
-            const req = store.getAll();
-            const keysReq = store.getAllKeys();
-
             const [data, keys] = await Promise.all([
-                new Promise<SerializedBuffer[]>((resolve) => (req.onsuccess = () => resolve(req.result))),
-                new Promise<IDBValidKey[]>((resolve) => (keysReq.onsuccess = () => resolve(keysReq.result))),
+                awaitRequest(store.getAll() as IDBRequest<SerializedBuffer[]>),
+                awaitRequest(store.getAllKeys()),
             ]);
 
             // Sort by access time ascending (oldest first)
@@ -900,8 +951,11 @@ export const audioBufferCache = {
                 currentTotal -= entry.size;
                 deletedCount++;
             }
-        } catch {
-            /* ignore */
+            // The count is reported only for deletes that committed.
+            await awaitTransaction(tx);
+        } catch (error) {
+            logger.warn('[audioBufferCache] Size-based collection failed', { error });
+            return 0;
         }
         return deletedCount;
     },

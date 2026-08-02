@@ -12,6 +12,7 @@ import { getSidechainKeyDelay } from './latencyCompensation/compensation/getSide
 import { acquireRenderLock } from './offlineRender/acquireRenderLock';
 import { checkCancel } from './offlineRender/checkCancel';
 import { clampRenderFrameCount } from './offlineRender/clampRenderFrameCount';
+import { collectDeviceRuntimeFailures } from './offlineRender/collectDeviceRuntimeFailures';
 import { connectOfflineToasterPadRoutes } from './offlineRender/connectOfflineToasterPadRoutes';
 import { MIN_RENDER_TIMEOUT_MS, RENDER_TIMEOUT_MULTIPLIER } from './offlineRender/constants';
 import { createOfflineBusStrip } from './offlineRender/createOfflineBusStrip';
@@ -333,6 +334,7 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
             offlineCtx,
             durationSeconds,
             timeoutMs: renderTimeoutMs,
+            ...collectDeviceRuntimeFailures(deviceEntriesByTrack),
             onRenderProgress: onProgress
                 ? (fraction) => onProgress(schedulingFrac + fraction * (1 - schedulingFrac))
                 : undefined,

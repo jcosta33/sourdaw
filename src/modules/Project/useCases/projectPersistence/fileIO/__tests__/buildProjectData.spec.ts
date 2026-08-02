@@ -1,9 +1,10 @@
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 
 vi.mock('../../../arrangement/syncCurrentArrangementToStore', () => ({ syncCurrentArrangementToStore: vi.fn() }));
 vi.mock('#/modules/Routing/useCases', () => ({ getAllSidechainRoutes: () => [] }));
+const exportCachedAudioBuffersMock = vi.hoisted(() => vi.fn());
 vi.mock('#/modules/AudioEngine/useCases', () => ({
-    exportCachedAudioBuffers: vi.fn().mockResolvedValue({}),
+    exportCachedAudioBuffers: exportCachedAudioBuffersMock,
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
@@ -60,6 +61,51 @@ import { sanitize_arrangement_store_state } from '../../../../stores/arrangement
 import { buildProjectData } from '../buildProjectData';
 
 describe('buildProjectData', () => {
+    beforeEach(() => {
+        exportCachedAudioBuffersMock.mockReset();
+        exportCachedAudioBuffersMock.mockResolvedValue({});
+    });
+
+    // AC-5. `includeAudioBuffers: false` is the shape the live save uses: the
+    // encoder is never entered and the snapshot carries no audio payload.
+    // Mutation: making `includeAudioBuffers` unconditional (or defaulting the
+    // audioBuffers assignment to the exporter regardless of the flag) reds
+    // `expect(exportCachedAudioBuffersMock).not.toHaveBeenCalled()`.
+    it('never reaches the audio exporter when audio embedding is off', async () => {
+        arrangementStoreMock.value = sanitize_arrangement_store_state({
+            arrangements: [],
+            activeArrangementId: null,
+        });
+
+        const built = await buildProjectData({ includeAudioBuffers: false });
+
+        expect(exportCachedAudioBuffersMock).not.toHaveBeenCalled();
+        expect(built?.data.audioBuffers).toBeUndefined();
+        expect(built?.missingBufferCount).toBe(0);
+    });
+
+    // Presence pin for the assertion above (ADR 0015 rule 4): the opt-in shape
+    // — the explicit `.sourdaw` export, now the only caller that asks for it —
+    // really does reach the exporter and really does embed what it returns.
+    // Without this, "no live path embeds audio" would be satisfiable by an
+    // exporter that never runs at all.
+    it('embeds the exporter output when audio embedding is on', async () => {
+        arrangementStoreMock.value = sanitize_arrangement_store_state({
+            arrangements: [],
+            activeArrangementId: null,
+        });
+        exportCachedAudioBuffersMock.mockResolvedValue({
+            'buffer-1': { sampleRate: 48_000, numberOfChannels: 1, channelData: ['QUJD'] },
+        });
+
+        const built = await buildProjectData({ includeAudioBuffers: true });
+
+        expect(exportCachedAudioBuffersMock).toHaveBeenCalledWith({ bufferIds: [] });
+        expect(built?.data.audioBuffers).toEqual({
+            'buffer-1': { sampleRate: 48_000, numberOfChannels: 1, channelData: ['QUJD'] },
+        });
+    });
+
     it('serializes the current chord-track read contract into project truth', async () => {
         arrangementStoreMock.value = sanitize_arrangement_store_state({
             arrangements: [],

@@ -241,4 +241,24 @@ describe('AdjustmentLayerRuntime — chain wiring & disposal-timer branches', ()
         expect(runtime.listLiveBusKeys()).toEqual([]);
         expect(rerouteTrack).not.toHaveBeenCalled();
     });
+
+    it('reports every live adjustment bus and the AudioNodes its effect graph owns', () => {
+        const runtime = createAdjustmentLayerRuntime(deps);
+        runtime.applyTick([
+            { layerId: 'L1', trackId: 't1', effectType: 'eq', parameters: {}, blend: 1 },
+            { layerId: 'L2', trackId: 't2', effectType: 'compressor', parameters: {}, blend: 0.5 },
+        ]);
+
+        const getDiagnostics = Reflect.get(runtime, 'getDiagnostics');
+        if (typeof getDiagnostics !== 'function') {
+            throw new TypeError('AdjustmentLayerRuntime must expose resource diagnostics');
+        }
+
+        expect(getDiagnostics.call(runtime)).toEqual({
+            buses: 2,
+            busesByEffectType: { compressor: 1, eq: 1 },
+            audioNodes: 13,
+            audioWorkletProcessors: 0,
+        });
+    });
 });

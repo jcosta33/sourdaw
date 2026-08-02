@@ -4,7 +4,6 @@ import { openDatabase } from '../helpers';
 import { loadDocFromIdb } from '../loadDocFromIdb';
 import { loadIncrementalsFromIdb } from '../loadIncrementalsFromIdb';
 import { replaceAllInIdb } from '../replaceAllInIdb';
-import { saveDocToIdb } from '../saveDocToIdb';
 
 vi.mock('../helpers', () => ({
     STORE_NAME: 'documents',
@@ -261,48 +260,6 @@ describe('crdtPersistence primitive repositories', () => {
             tx.onabort?.();
 
             await expect(promise).rejects.toThrow('IDB transaction aborted');
-        });
-    });
-
-    describe('saveDocToIdb', () => {
-        it('resolves without opening a transaction when IndexedDB is unavailable', async () => {
-            vi.mocked(openDatabase).mockResolvedValue(null);
-
-            await expect(saveDocToIdb('doc1', new Uint8Array([1]))).resolves.toBeUndefined();
-        });
-
-        it('puts the bytes under the given id and resolves on success', async () => {
-            const store = createMockStore();
-            const request = createMockRequest();
-            store.put.mockReturnValue(request);
-            const tx = createMockTransaction(store);
-            vi.mocked(openDatabase).mockResolvedValue(createMockDb(tx) as unknown as IDBDatabase);
-            const bytes = new Uint8Array([4, 5]);
-
-            const promise = saveDocToIdb('doc1', bytes);
-            await Promise.resolve();
-            await Promise.resolve();
-            request.onsuccess?.();
-
-            await expect(promise).resolves.toBeUndefined();
-            expect(store.put).toHaveBeenCalledWith(bytes, 'doc1');
-        });
-
-        it('rejects with the underlying request error on failure', async () => {
-            const store = createMockStore();
-            const failure = new Error('put failed');
-            const request = createMockRequest();
-            request.error = failure;
-            store.put.mockReturnValue(request);
-            const tx = createMockTransaction(store);
-            vi.mocked(openDatabase).mockResolvedValue(createMockDb(tx) as unknown as IDBDatabase);
-
-            const promise = saveDocToIdb('doc1', new Uint8Array([1]));
-            await Promise.resolve();
-            await Promise.resolve();
-            request.onerror?.();
-
-            await expect(promise).rejects.toBe(failure);
         });
     });
 });
