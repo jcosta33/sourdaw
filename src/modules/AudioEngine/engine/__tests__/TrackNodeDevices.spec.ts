@@ -690,6 +690,24 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             });
         });
 
+        it('keeps a live device with failed content observable until removal', () => {
+            const deferred = installDeferredWasmDevice();
+            const readinessDiagnostics = createDeviceReadinessDiagnostics();
+            const track = new TrackNode('t1', makeDeps(ctx, { readinessDiagnostics }));
+            track.addDevice('wasm-1', 'builtin-crumbs');
+            deferred.resolve(createLoadedDevice().device);
+
+            deferred.settleContent('failed');
+
+            expect(readinessDiagnostics.snapshot()).toMatchObject({
+                counts: { requested: 1, failed: 1 },
+                devices: [{ deviceId: 'wasm-1', status: 'failed', failureStage: 'content' }],
+            });
+
+            track.removeDevice('wasm-1');
+            expect(readinessDiagnostics.snapshot().devices).toEqual([]);
+        });
+
         it('marks a timed-out descriptor load failed and rejects its late result', () => {
             const deferred = installDeferredWasmDevice({ controller: { setParam: vi.fn() } });
             const pendingDevicePromises = new Set<Promise<unknown>>();

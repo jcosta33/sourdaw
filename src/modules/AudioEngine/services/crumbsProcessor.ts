@@ -21,7 +21,7 @@
  *
  * Messages from main thread:
  *   { type: 'init', wasmBytes: ArrayBuffer }
- *   { type: 'loadSample', data: Float32Array, channels, sampleRate }
+ *   { type: 'loadSample', loadToken, data: Float32Array, channels, sampleRate }
  *   { type: 'noteOn', note, velocity, sampleFrame? }
  *   { type: 'noteOff', note, sampleFrame? }
  *   { type: 'allNotesOff' } | { type: 'allSoundOff' }
@@ -36,7 +36,7 @@ import { WasmView } from './wasmView';
 
 type CrumbsMsg =
     | { type: 'init'; wasmBytes: BufferSource }
-    | { type: 'loadSample'; data: Float32Array; channels: number; sampleRate: number }
+    | { type: 'loadSample'; loadToken: number; data: Float32Array; channels: number; sampleRate: number }
     | { type: 'noteOn'; note: number; velocity: number; sampleFrame?: number }
     | { type: 'noteOff'; note: number; sampleFrame?: number }
     | { type: 'allNotesOff' }
@@ -142,11 +142,24 @@ class CrumbsProcessor extends AudioWorkletProcessor {
             case 'init':
                 break;
             case 'loadSample': {
-                // Pool and select in one step. The pool assigns the id, so
-                // splitting these across two messages would force the sender
-                // to await a reply for an id it has no other use for.
-                const sampleId = inst.add_sample(msg.data, msg.channels, msg.sampleRate);
-                inst.set_active_sample(sampleId);
+                try {
+                    if (!Number.isSafeInteger(msg.loadToken) || msg.loadToken <= 0) {
+                        throw new Error('Crumbs sample load token must be a positive safe integer');
+                    }
+                    // Pool and select in one step. The pool assigns the id, so
+                    // splitting these across two messages would force the sender
+                    // to await a reply for an id it has no other use for.
+                    const sampleId = inst.add_sample(msg.data, msg.channels, msg.sampleRate);
+                    inst.set_active_sample(sampleId);
+                    this.port.postMessage({ type: 'sampleLoaded', loadToken: msg.loadToken });
+                } catch (error) {
+                    this.port.postMessage({
+                        type: 'sampleLoadError',
+                        loadToken: msg.loadToken,
+                        message: error instanceof Error ? error.message : String(error),
+                    });
+                    throw error;
+                }
                 break;
             }
             case 'noteOn':

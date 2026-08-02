@@ -3,6 +3,75 @@ import { logger } from '#/infra/logger/appLogger';
 import { decodeCrumbsSampleFile } from '../repositories/sampleTransfer/decodeCrumbsSampleFile';
 import { crumbsStore } from '../stores/crumbsStore';
 
+type PrepareCrumbsEngineOutcome = 'ready' | 'failed' | 'cancelled';
+
+type SampleLoadHandshake = {
+    completion: Promise<PrepareCrumbsEngineOutcome>;
+    isSettled: () => boolean;
+    settle: (outcome: PrepareCrumbsEngineOutcome) => void;
+};
+
+let sampleLoadSequence = 0;
+
+function allocateSampleLoadToken(): number {
+    if (sampleLoadSequence >= Number.MAX_SAFE_INTEGER) {
+        throw new Error('Crumbs sample-load token capacity exhausted');
+    }
+    sampleLoadSequence += 1;
+    return sampleLoadSequence;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
+}
+
+function createSampleLoadHandshake(port: MessagePort, loadToken: number, signal?: AbortSignal): SampleLoadHandshake {
+    const { promise: completion, resolve } = Promise.withResolvers<PrepareCrumbsEngineOutcome>();
+    let settled = false;
+
+    function cleanup(): void {
+        port.removeEventListener('message', onMessage);
+        signal?.removeEventListener('abort', onAbort);
+    }
+    function settle(outcome: PrepareCrumbsEngineOutcome): void {
+        if (settled) {
+            return;
+        }
+        settled = true;
+        cleanup();
+        resolve(outcome);
+    }
+    function onMessage(event: MessageEvent<unknown>): void {
+        const message = event.data;
+        if (!isRecord(message)) {
+            return;
+        }
+        if (message.type === 'error' || message.type === 'disposed') {
+            settle('failed');
+            return;
+        }
+        if (message.loadToken !== loadToken) {
+            return;
+        }
+        if (message.type === 'sampleLoaded') {
+            settle('ready');
+        } else if (message.type === 'sampleLoadError') {
+            settle('failed');
+        }
+    }
+    function onAbort(): void {
+        settle('cancelled');
+    }
+
+    port.addEventListener('message', onMessage);
+    signal?.addEventListener('abort', onAbort, { once: true });
+    if (signal?.aborted) {
+        onAbort();
+    }
+
+    return { completion, isSettled: () => settled, settle };
+}
+
 export type PrepareCrumbsEngineInput = {
     /** Device id; also the Crumbs instance key on `crumbsStore`. */
     deviceId: string;
@@ -47,7 +116,7 @@ export async function prepareCrumbsEngine({
 }: PrepareCrumbsEngineInput): Promise<'ready' | 'failed' | 'cancelled'> {
     const state = crumbsStore.value?.[deviceId];
     if (!state) {
-        return 'cancelled';
+        return 'failed';
     }
 
     // Mode first: it is cheap, needs no I/O, and the engine reads it when a
@@ -74,16 +143,29 @@ export async function prepareCrumbsEngine({
         return 'cancelled';
     }
 
+    const loadToken = allocateSampleLoadToken();
+    const handshake = createSampleLoadHandshake(port, loadToken, signal);
+    if (handshake.isSettled()) {
+        return handshake.completion;
+    }
+
     // Transfer rather than copy: a decoded sample is megabytes, and the sender
-    // has no further use for it.
-    port.postMessage(
-        {
-            type: 'loadSample',
-            data: decoded.data,
-            channels: decoded.channels,
-            sampleRate: decoded.sampleRate,
-        },
-        [decoded.data.buffer]
-    );
-    return 'ready';
+    // has no further use for it. Readiness settles only after the worklet has
+    // copied the PCM into WASM and selected the resulting sample id.
+    try {
+        port.postMessage(
+            {
+                type: 'loadSample',
+                loadToken,
+                data: decoded.data,
+                channels: decoded.channels,
+                sampleRate: decoded.sampleRate,
+            },
+            [decoded.data.buffer]
+        );
+    } catch (error) {
+        logger.warn(`[Crumbs] Could not transfer "${filePath}" for ${deviceId}: ${String(error)}`);
+        handshake.settle('failed');
+    }
+    return handshake.completion;
 }
