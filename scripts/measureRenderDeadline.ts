@@ -79,17 +79,35 @@
  *   1  MEASURED, RED     — conditions were fit and a verdict failed. This is
  *                          the only code that says anything about the product
  *                          or the instrument.
- *   2  NOT MEASURED      — the machine was too busy to measure. Says nothing
- *                          about the product. Re-run on a quiet machine.
+ *   2  NOT MEASURED      — the control leg found the machine too busy to
+ *                          measure on. Says nothing about the product. Re-run
+ *                          on a quiet machine.
  *
  * Exit 2 wins over exit 1: a contaminated run cannot support a failure claim
  * any more than it can support a pass.
  *
- * Two things gate on conditions. Before the browser launches, the 1-minute load
- * average must be at or under half the logical cores (`MAX_LOAD_PER_CORE`) —
- * this is the cheap pre-flight, and it fails before printing any measurement.
- * The control leg is the in-band detector for a machine that got busy mid-run,
- * which the pre-flight cannot see.
+ * **The control leg is the sole authority on whether a run is trustworthy.**
+ * The load average is reported alongside the result and warned about when it is
+ * high (`ADVISORY_LOAD_PER_CORE`), but it does not gate anything, because it is
+ * the wrong proxy for this instrument — see the next section.
+ *
+ * Why a loaded machine does not invalidate this harness
+ * -----------------------------------------------------
+ * This measurement is load-robust in a way its sibling is not, and the
+ * difference is structural rather than a difference in care.
+ *
+ * `crates/daw-dsp/benches/quantum.rs` and the cost table time a spinning worker
+ * at normal thread priority, so contention lands directly in the number: that
+ * harness published a 17.9 ms p99 against a 1.1 ms median at 1-minute load 25.
+ * This harness instead reads the sink's own frame accounting, driven by the
+ * render thread, which the OS schedules at real-time priority — a run here at
+ * load 22.10 produced a control leg at 1.0001 of real time, zero underruns, and
+ * 929 overload events, indistinguishable from an idle-machine run.
+ *
+ * Same machine, opposite load-sensitivity, for a structural reason. Do not
+ * conclude from the cost table's load guard that this one is missing a guard,
+ * or vice versa; the control leg below is this harness's equivalent, and it
+ * measures contamination directly instead of predicting it from a proxy.
  *
  * Verdicts, and the mutation that reds each one
  * ---------------------------------------------
@@ -149,22 +167,22 @@ const CONTROL_MIN_REALTIME_RATIO = 0.9;
 const OVERLOAD_MAX_REALTIME_RATIO = 0.5;
 
 /**
- * Pre-flight ceiling on the 1-minute load average, as a fraction of logical
- * cores. Half the box is a generous allowance for a measurement that needs one
- * core to spin freely for ten seconds, and failing here is cheaper than burning
- * twelve seconds to fail in the control leg.
+ * Load average per logical core above which the report carries a warning.
  *
- * It is deliberately the more conservative of the two gates, and it is a proxy
- * where the control leg is a measurement. On an Apple M4 Pro a run at 1-minute
- * load 22.10 — well over this ceiling of 6.00 — still produced a control leg at
- * 1.0001 of real time with zero underruns and an overload leg of 929 events, so
- * this gate does refuse runs that would have measured cleanly. That is the safe
- * direction (a re-run costs less than a wrong claim), but it means a busy shared
- * CI box may never get past the pre-flight. **The control leg, not this number,
- * is the authority on whether a run was actually contaminated.** Raise this
- * ceiling if CI never measures; do not lower `CONTROL_MIN_REALTIME_RATIO`.
+ * **Advisory only — it does not gate the run.** It was a refusing pre-flight
+ * for one revision, at half a core, by analogy with the cost-table harness.
+ * That was the wrong proxy: at this ceiling of 6.00 it rejected a run at load
+ * 22.10 that went on to produce a control leg at 1.0001 of real time with zero
+ * underruns and 929 overload events. The render thread is scheduled at
+ * real-time priority, so this instrument does not degrade with load the way a
+ * spinning-worker clock does — see the header.
+ *
+ * So the number is worth printing (a reader deserves to know what the box was
+ * doing) and worth flagging, but `CONTROL_MIN_REALTIME_RATIO` is what decides
+ * whether a run counts. Do not turn this back into a gate, and do not widen the
+ * control threshold to compensate for anything.
  */
-const MAX_LOAD_PER_CORE = 0.5;
+const ADVISORY_LOAD_PER_CORE = 0.5;
 
 /** Exit codes. Refusing to measure is not the same outcome as measuring a failure. */
 const EXIT_MEASURED_RED = 1;
@@ -396,22 +414,21 @@ function describeMachine(): string {
     return `${model} · ${String(cores.length)} logical cores · ${platform()} ${release()} ${arch()}`;
 }
 
-type LoadGate = {
+type LoadReading = {
     oneMinuteLoad: number;
-    ceiling: number;
-    tooBusy: boolean;
+    advisoryCeiling: number;
+    isHigh: boolean;
 };
 
 /**
- * Pre-flight: is this machine quiet enough for the measurement to mean
- * anything? Cheap, and it refuses before printing any figure that a reader
- * might mistake for a product result.
+ * What the box was doing, for the record. Advisory: `isHigh` drives a warning,
+ * never a refusal. The control leg decides whether the run counts.
  */
-function readLoadGate(): LoadGate {
+function readLoad(): LoadReading {
     const cores = cpus().length;
-    const ceiling = cores * MAX_LOAD_PER_CORE;
+    const advisoryCeiling = cores * ADVISORY_LOAD_PER_CORE;
     const oneMinuteLoad = loadavg()[0] ?? 0;
-    return { oneMinuteLoad, ceiling, tooBusy: oneMinuteLoad > ceiling };
+    return { oneMinuteLoad, advisoryCeiling, isHigh: oneMinuteLoad > advisoryCeiling };
 }
 
 function reportLeg(label: string, measurement: LegMeasurement): void {
@@ -548,23 +565,7 @@ function reportVerdicts({ notMeasured, failed }: Verdicts): number {
 }
 
 async function main(): Promise<void> {
-    const loadGate = readLoadGate();
-    if (loadGate.tooBusy) {
-        console.error('NOT MEASURED — machine too busy');
-        console.error(`  machine  : ${describeMachine()}`);
-        console.error(
-            `  1-min load average ${loadGate.oneMinuteLoad.toFixed(2)} exceeds the ceiling of ` +
-                `${loadGate.ceiling.toFixed(2)} (${String(MAX_LOAD_PER_CORE)} × logical cores).`
-        );
-        console.error(
-            '  This says nothing about the product: the harness needs a core free to spin for ' +
-                'ten seconds, and it will not certify a pass or a failure it cannot trust. ' +
-                'Re-run on a quiet machine.'
-        );
-        process.exitCode = EXIT_NOT_MEASURED;
-        return;
-    }
-
+    const load = readLoad();
     const headed = process.argv.includes('--headed');
     const browser = await chromium.launch({
         headless: !headed,
@@ -577,7 +578,15 @@ async function main(): Promise<void> {
 
         console.log('Render deadline observation');
         console.log(`  machine        : ${describeMachine()}`);
-        console.log(`  1-min load     : ${loadGate.oneMinuteLoad.toFixed(2)} (ceiling ${loadGate.ceiling.toFixed(2)})`);
+        console.log(`  1-min load     : ${load.oneMinuteLoad.toFixed(2)}`);
+        if (load.isHigh) {
+            console.log(
+                `  NOTE           : load is above ${load.advisoryCeiling.toFixed(2)} (${String(ADVISORY_LOAD_PER_CORE)} × cores).` +
+                    ' Advisory only — the render thread runs at real-time priority, so this' +
+                    ' instrument tolerates load. The CONTROL leg below is what decides whether' +
+                    ' this run is trustworthy.'
+            );
+        }
         console.log(`  browser        : ${support.userAgent}`);
         console.log(`  secure context : ${String(support.isSecureContext)}`);
         console.log(`  quantum budget : ${RENDER_BUDGET_MS.toFixed(3)} ms (128 frames @ 48 kHz)`);
