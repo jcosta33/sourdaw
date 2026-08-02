@@ -152,7 +152,7 @@ function selectMidiNotesForSchedulerWindow({
     const { maxDurationBeats, sortedNotes } = getScheduledMidiNoteIndex(notes);
     const schedulerStartBeat = Math.max(fromBeat, lastScheduledBeat);
     const schedulesClipBoundary =
-        iterationStartBeat >= fromBeat && iterationStartBeat < toBeat && iterationStartBeat > lastScheduledBeat;
+        iterationStartBeat >= fromBeat && iterationStartBeat < toBeat && iterationStartBeat >= lastScheduledBeat;
     const leadingIntervalLookbehindBeats = schedulesClipBoundary ? maxDurationBeats : 0;
     const sourceStartBeat =
         schedulerStartBeat -
@@ -555,7 +555,7 @@ export async function scheduleMidiNotes(
                         if (
                             unswungStartBeat < fromBeat ||
                             unswungStartBeat >= toBeat ||
-                            unswungStartBeat <= lastScheduledBeat
+                            unswungStartBeat < lastScheduledBeat
                         ) {
                             continue;
                         }

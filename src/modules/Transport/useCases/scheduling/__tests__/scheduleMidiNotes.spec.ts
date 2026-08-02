@@ -1396,7 +1396,7 @@ describe('scheduleMidiNotes', () => {
             expect(scheduleNote).toHaveBeenCalledTimes(10);
         });
 
-        it('retains a leading interval that projection clips to the clip boundary', async () => {
+        it('retains a leading interval when the clip starts at the scheduler high-water mark', async () => {
             const track = midiTrack({ clips: [midiClip({ startBeat: 4, endBeat: 8 })] });
             (trackStore as { value: unknown }).value = { tracks: [track] };
             (midiStore as { value: unknown }).value = {
@@ -1408,7 +1408,7 @@ describe('scheduleMidiNotes', () => {
                 input.events.map((event) => ({ ...event, startBeat: 4, duration: 1 }))
             );
 
-            await scheduleMidiNotes(4, 5, 4, -1, new Set<string>(), [], defaultTransportState, 120);
+            await scheduleMidiNotes(4, 5, 4, 4, new Set<string>(), [], defaultTransportState, 120);
 
             expect(projectClipMidiEvents).toHaveBeenCalledTimes(1);
             expect(scheduleNote).toHaveBeenCalledTimes(1);
