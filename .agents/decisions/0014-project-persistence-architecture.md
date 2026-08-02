@@ -128,9 +128,9 @@ lane's report.
 
 | Gate | Result | What it forced |
 | --- | --- | --- |
-| **M1** | `persist()` **false** — plain tab, installed PWA, standalone window, max engagement. A force-granted control returns `true`, so the API works and Chromium is declining. | Install is **not** a remedy. There is no measured way for a web user to obtain durable storage. |
+| **M1** | **WITHDRAWN — the probe measured its own fixture.** See below. | Nothing. The question is answered from documentation instead. |
 | **M2** | Deferred — Tauri webview, out of scope per ADR 0016. | Recorded unmeasured, not deleted. |
-| **M3** (web) | `estimate().quota` is **`usage + 10 GiB` to the byte** — a rolling headroom, not a ceiling. The origin wrote **2.6× its reported quota** with no error. | `quota - usage > size` is wrong in both directions as a precondition. Refutes research claim CR-27. |
+| **M3** (web) | Observed `estimate().quota` = `usage + 10 GiB`, and the origin wrote **2.6× its reported quota** with no error. **Treat as an observation, not a refutation** — see below. | Nothing new. `quota - usage > size` was already established as never-a-precondition by STOR-17, from the specification. |
 | **M4** | 100 MB-audio document: **2431–3677 ms** load floor (ceiling ~2 s), **8.68–9.58×** audio in peak RSS (ceiling ~2×). Both breach. | **Option A is dead on measurement.** The ADR's "do not close Option A on inference" is discharged. |
 | **M5** | Automation drags grow **sublinearly**; a blob does **not** duplicate on sibling edits (1.84 B/edit). | Trigger **not** met. M5 does not confirm the split. Whole-value *replacement* is still 4× with no compaction — that is BA-11, and M5 as written does not reach it. |
 | **M6** | **FAILED, then fixed.** See below. | Layout amended. |
@@ -138,6 +138,31 @@ lane's report.
 | **M8** | Not run — `durability: "strict"` is an IndexedDB option and Option A is dead. | Moot. |
 | **M9** | Closed in Phase 0 (#963). | The two `.sdaw` codecs agree; one real UTF-8 divergence was found and fixed. |
 | **M10** | Blob records land as separate files — **and so do ArrayBuffers**, 4 of 4 each, established by walking the profile directory. `onsuccess` fired **281 ms before commit** on a 500 MB put. | Refines BA-18: at project scale the Blob-vs-ArrayBuffer distinction does not exist. |
+
+### M1 and M3 — withdrawn as measurements, answered from documentation
+
+**These two never needed a harness, and the one built for them measured its own fixture.**
+
+M1 probed `navigator.storage.persist()` in a throwaway Chromium profile created per run. Chrome
+grants persistent-storage silently, on documented heuristics — *"How high is the level of site
+engagement? Has the site been installed or bookmarked? Has the site been granted permission to show
+notifications?"* ([web.dev](https://web.dev/articles/persistent-storage)). A profile with no history
+cannot satisfy any of them, so `false` was determined by the fixture. The run also reported `false`
+for an *installed* PWA, contradicting the documented criteria — but the install was driven through
+CDP (`latest_install_source: devtools`) on that same empty profile, which is the likelier
+explanation. **The documentation wins; the earlier conclusion that "install is not a remedy" is
+withdrawn as unsupported.**
+
+M3's `usage + 10 GiB` is consistent with Chromium's move to reporting a predictable value rather
+than a disk fraction, done to stop `estimate()` being used for fingerprinting and Incognito
+detection. Note the public sources disagree on the current mechanism — MDN still documents *"up to
+60% of total disk size"* — so **this is recorded as an observation on one build, not as a refutation
+of anything.** The operative rule was never in doubt and does not come from measurement: STOR-17,
+from the Storage Standard, already says `quota - usage > size` is a heuristic and never a
+precondition, and that the write path needs a real failure branch.
+
+**The correct source for browser behaviour is the specification and the browser's own
+documentation.** A local probe on a synthetic profile describes the probe.
 
 ### M6 — the stop condition, and why it did not end in Option B
 
@@ -173,13 +198,23 @@ whether bytes reached the device — a renderer crash does not test `flush()` du
 
 ## Owner decisions taken — 2026-08-02
 
-- **Browser storage is a cache, never the authority.** Given M1, the authoritative copy is a file the
-  user controls, written through the File System Access API and kept in sync; browser-resident
-  storage is a fast local cache that may be evicted. This is what ADR 0012 requires: a desktop app
-  does not lose a project to disk pressure, so the web target must not either. It also settles the
-  docket's *"whether browser-resident storage may ever be described as safe"* — no — and *"whether
-  'install the app' becomes a stated durability requirement"* — no, because M1 measured that it
-  would not work.
+- **Browser storage is a cache, never the authority.** The authoritative copy is a file the user
+  controls, written through the File System Access API and kept in sync; browser-resident storage is
+  a fast local cache.
+
+  **This rests on the Storage Standard, not on any measurement of ours.** §7.1: if a user agent
+  *"continues to be under storage pressure, then the user agent should inform the user and offer a
+  way to clear the remaining local storage buckets, i.e., those whose mode is 'persistent'."* §5:
+  the user agent *"cannot clear storage marked as persistent without involvement from the origin or
+  user."* Persistent buckets are therefore **not immune** — they are protected only by a requirement
+  that the user be involved. A desktop project file has no equivalent failure mode, and ADR 0012
+  says neither target may be degraded relative to the other.
+
+  This settles the docket's *"may browser-resident storage ever be described as safe"* — no. And
+  *"is 'install the app' a stated durability requirement"* — no, but **for the spec reason above,
+  not because installing fails.** Chrome's documented heuristics include installation, and our
+  earlier claim to the contrary is withdrawn (see M1). Even a granted persistent bucket cannot be
+  called safe, so the answer does not depend on whether the grant is obtainable.
 - **The project is a directory with a content-addressed document.** Settled by the standard the
   campaign is held to rather than by preference: Git's object store, SQLite's WAL and
   atomic-rename-and-fsync all make a new version unable to destroy the old one and then flip a small

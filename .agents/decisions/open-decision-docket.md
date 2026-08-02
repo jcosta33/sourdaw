@@ -956,15 +956,18 @@ or how a user moves work between machines, which is why none of them is engineer
 - ~~**May browser-resident storage ever be described as "safe"?**~~ **DECIDED 2026-08-02 — no.
   Browser storage is a cache, never the authority.** The authoritative copy is a file the user
   controls, written through the File System Access API and kept in sync. Recorded in ADR 0014
-  §Owner decisions taken. ADR 0012 requires it: a desktop app does not lose a project to disk
-  pressure, so the web target must not either.
-- ~~**Is "install the app" a stated durability requirement?**~~ **DECIDED 2026-08-02 — no, because
-  gate M1 measured that it would not work.** `persist()` resolves **false** in an installed PWA and
-  in a standalone app window, not only in a plain tab, with the permission stuck at `prompt`; a
-  force-granted control returns `true`, so this is Chromium's heuristic declining rather than a dead
-  API. The premise this question rested on — "persistence is granted to installed apps, not to plain
-  tabs" — is refuted on this target. There is no measured way for a web user to obtain durable
-  storage, which is why the previous item is decided the way it is.
+  §Owner decisions taken. The grounds are the Storage Standard, exactly as this entry originally
+  stated them: §7.1 has the user agent offer to clear even `persistent` buckets under continued
+  pressure, and §5 protects them only by requiring user involvement. ADR 0012 then settles it — a
+  desktop project file has no equivalent failure mode.
+- ~~**Is "install the app" a stated durability requirement?**~~ **DECIDED 2026-08-02 — no, for the
+  spec reason above rather than anything about installing.** Chrome's documented grant heuristics
+  *do* include installation, alongside site engagement and notification permission
+  ([web.dev](https://web.dev/articles/persistent-storage)). A gate-M1 probe reported `persist()`
+  false even for an installed PWA, but it ran on a throwaway profile with no history and installed
+  via CDP, so it measured its own fixture; **that result is withdrawn.** The answer does not depend
+  on it: even a granted persistent bucket cannot be described as safe, so install cannot be the
+  durability story whether or not it is obtainable.
 - **Does a project's audio belong to the project, or to a shared library?** A global pool dedups
   across projects but forces an all-projects scan to answer "is this sample safe to delete".
   Per-project ownership avoids the scan and duplicates shared samples on disk.
