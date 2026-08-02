@@ -146,6 +146,7 @@ vi.stubGlobal('OfflineAudioContext', harness.OfflineAudioContext);
 await import('../../../services/meteringProcessor');
 
 const { TrackNode } = await import('../../../engine/TrackNode');
+const { createDeviceReadinessDiagnostics } = await import('../../../engine/deviceReadinessDiagnostics');
 const { createOfflineTrackStrip } = await import('../createOfflineTrackStrip');
 
 type TrackFixture = {
@@ -264,6 +265,7 @@ async function renderLive(fixture: TrackFixture, options: RenderOptions = {}): P
         getTrackGainNode: () => undefined,
         getSendsForTrack: () => [],
         pendingDevicePromises: new Set<Promise<unknown>>(),
+        readinessDiagnostics: createDeviceReadinessDiagnostics(),
     });
 
     for (const entry of fixture.devices) {
