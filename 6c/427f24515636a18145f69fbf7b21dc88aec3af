@@ -1,0 +1,24 @@
+.agents/decisions/open-decision-docket.md
+  s_66d4924c65dcd2::t_3ffb551a964c1c 959-970
+.agents/decisions/0014-project-persistence-architecture.md
+  s_66d4924c65dcd2::t_5e76978c4fc7db 201-217
+  s_66d4924c65dcd2::t_04f1aab2983029 142-166
+  s_66d4924c65dcd2::t_a53410b56b33f2 133
+  s_66d4924c65dcd2::t_6f077aaff92a30 131
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "6c427f24515636a18145f69fbf7b21dc88aec3af",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
