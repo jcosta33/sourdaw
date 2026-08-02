@@ -1,0 +1,22 @@
+src/modules/Project/useCases/projectTemplates/templateDefinitions/__tests__/createFromTemplate.spec.ts
+  s_ac9b259eab20ba::t_7fff0b394414fc 142-158
+  s_ac9b259eab20ba::t_f51324e4836894 14,53-56,174-201,235,237-265
+src/modules/Project/useCases/projectTemplates/templateDefinitions/createFromTemplate.ts
+  s_ac9b259eab20ba::t_0cca4af43c808b 12,22-23,27,33,36,47-76,142,145-153
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "049e168189466c8797c69e029b8deb3a71f13f71",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
