@@ -1,0 +1,48 @@
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamNotes.spec.ts
+  s_66d4924c65dcd2::t_21cdefd39ad765 146-148
+  s_66d4924c65dcd2::t_76ac4de2f59ea7 252-259
+  s_66d4924c65dcd2::t_9e340c0172f06a 100-104,108
+  s_66d4924c65dcd2::t_f6aa2e5375e02b 143-145
+  s_66d4924c65dcd2::t_121701dba3faed 124-130,135
+  s_66d4924c65dcd2::t_f53499301a5d8f 319-323
+  s_66d4924c65dcd2::t_78962f02d7d7bc 4
+  s_66d4924c65dcd2::t_ea1cfa9bbd188a 334-372
+  s_66d4924c65dcd2::t_34f10aedb9f0a6 264-266
+  s_66d4924c65dcd2::t_565e4bb3cdd8d6 1-3,5-99,105-107,109-123,131-134,136-142,149-251,260-263,267-318,324-333,373-418
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_66d4924c65dcd2::t_2b2cf5300923a4 277
+  s_66d4924c65dcd2::t_4a2e78bbb94bf1 274-276
+  s_d269d79dce6c84::t_7921f1408c0603 91-96,264-273
+src/modules/Transport/useCases/scheduling/metronomeSchedulingState.ts
+  s_66d4924c65dcd2::t_c91a0bb27525e7 8-20
+src/modules/Transport/useCases/scheduling/scheduleMetronome.ts
+  s_66d4924c65dcd2::t_372c287b4ac87e 42-44
+  s_66d4924c65dcd2::t_7f094f986adcf5 46
+  s_66d4924c65dcd2::t_95132529b43f8a 9-13
+src/modules/Transport/useCases/scheduling/resetMetronomeBeat.ts
+  s_66d4924c65dcd2::t_424c7203cfda58 9-12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "6816dda226afc90e5776152be921223efd9122d8",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_d269d79dce6c84": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a8ca70c0b45852962",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
