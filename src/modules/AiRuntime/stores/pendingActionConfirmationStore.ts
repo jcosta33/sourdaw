@@ -2,7 +2,7 @@ import { createStore } from '#/infra/store/createStore';
 
 import { type ChatActionConfirmationStatus } from '../models/Chat';
 import { type DsoConfirmationTarget, type EditPlan } from '../models/DsoTypes';
-import { type RuntimeAction } from '../models/RuntimeAction';
+import { type ExecutableRuntimeAction } from '../models/ExecutableRuntimeAction';
 
 export type PendingActionExecution = {
     actionType: string;
@@ -24,7 +24,7 @@ type PendingActionConfirmationBase = {
 export type PendingAppActionConfirmation = PendingActionConfirmationBase & {
     kind: 'app_actions';
     projectRevision: string;
-    actions: RuntimeAction[];
+    actions: ExecutableRuntimeAction[];
     executionMode: 'atomic' | undefined;
 };
 
@@ -51,7 +51,7 @@ type ProposePendingActionConfirmationInput = {
     id: string;
     prompt: string;
     assistantMessageId: string;
-    actions: RuntimeAction[];
+    actions: ExecutableRuntimeAction[];
     actionLabels: string[];
     executionMode?: 'atomic';
     projectRevision: string;

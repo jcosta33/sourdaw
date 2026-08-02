@@ -15,6 +15,7 @@ import {
 } from '../transformers/promptParser/parsing';
 
 import { bridgeGroundedLlmToolCalls } from './agentReference/bridgeGroundedLlmToolCalls';
+import { materializeBatchLocalActionIdentities } from './agentReference/materializeBatchLocalActionIdentities';
 import { type ProjectContext } from './getProjectContext';
 import { generateToolPlanningOutcome } from './llmOrchestration/inference';
 import { validateActions } from './validateActions';
@@ -154,10 +155,24 @@ export const parsePromptToActions = inject({ logger })(
                         };
                     }
 
+                    const materialized = materializeBatchLocalActionIdentities(
+                        validated,
+                        bridged.batchLocalActionIdentities ?? []
+                    );
+                    if (materialized.status === 'rejected') {
+                        logger.warn(`[AI] Rejected LLM action batch because ${materialized.reason}`);
+                        return {
+                            actions: [],
+                            rawText: prompt,
+                            requiresConfirmation: false,
+                            rejectionReason: `Provider action identity rejected: ${materialized.reason}`,
+                        };
+                    }
+
                     return {
-                        actions: validated,
+                        actions: materialized.actions,
                         rawText: prompt,
-                        requiresConfirmation: requiresAppActionConfirmation(validated),
+                        requiresConfirmation: requiresAppActionConfirmation(materialized.actions),
                         executionMode: 'atomic',
                     };
                 }

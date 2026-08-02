@@ -1,7 +1,7 @@
-import { type RuntimeAction } from './RuntimeAction';
+import { type ExecutableRuntimeAction } from './ExecutableRuntimeAction';
 
 export type IntentResult = {
-    actions: RuntimeAction[];
+    actions: ExecutableRuntimeAction[];
     rawText: string;
     requiresConfirmation: boolean;
     /** Present when a recognized command was rejected before execution. */

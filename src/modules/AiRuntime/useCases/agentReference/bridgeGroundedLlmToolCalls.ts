@@ -4,9 +4,14 @@ import {
 } from '#/modules/Command/useCases';
 
 import { type ProjectContext } from '../../models/ProjectContext';
-import { bridgeLlmToolCalls, type LlmActionRejection } from '../../transformers/llmActionBridge';
+import {
+    bridgeLlmToolCalls,
+    type LlmActionBridgeResult,
+    type LlmActionRejection,
+} from '../../transformers/llmActionBridge';
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../../transformers/llmActionLimits';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
+import { normalizeSafeProjectName } from '../../validators/normalizeSafeProjectName';
 
 import { resolveAgentReference } from './resolveAgentReference';
 
@@ -18,9 +23,11 @@ type BridgeGroundedLlmToolCallsInput = {
 
 type GroundToolCallInput = {
     actionOrdinal: number;
+    batchLocalBusBindings: ReadonlyMap<string, BatchLocalBusBinding>;
     call: ToolCallResult;
     catalog: GroundingCatalog;
     context: ProjectContext;
+    declaredBatchLocalBusBindings: ReadonlyMap<string, BatchLocalBusBinding>;
     index: number;
     prompt: string;
     plannedActionNames: readonly string[];
@@ -34,6 +41,33 @@ type PromptClause = {
 
 type GroundingCatalog = ReturnType<typeof getExecutableAppActionGroundingCatalog>;
 type GroundingRules = NonNullable<ReturnType<typeof getExecutableAppActionGroundingRules>>;
+
+export type BatchLocalActionIdentity = {
+    actionOrdinal: number;
+    actionType: 'createBus';
+    busId: string;
+};
+
+type BridgeGroundedLlmToolCallsResult = LlmActionBridgeResult & {
+    batchLocalActionIdentities?: BatchLocalActionIdentity[];
+};
+
+type BatchLocalBusBinding = BatchLocalActionIdentity & {
+    binding: string;
+    callIndex: number;
+    name: string;
+};
+
+type CollectBatchLocalBusBindingsResult =
+    | {
+          status: 'accepted';
+          bindingsByCallIndex: ReadonlyMap<number, BatchLocalBusBinding>;
+          bindingsByName: ReadonlyMap<string, BatchLocalBusBinding>;
+      }
+    | { status: 'rejected'; rejection: LlmActionRejection };
+
+type ResolveBatchLocalBusReferenceResult =
+    { status: 'none' } | { status: 'resolved'; binding: BatchLocalBusBinding } | { status: 'rejected'; reason: string };
 
 type ActionPromptScope = PromptClause & {
     matchedIntentPhrase: string;
@@ -51,6 +85,159 @@ type ResolveActionPromptScopeInput = {
 
 function rejection(index: number, name: string, reason: string): LlmActionRejection {
     return { index, name, reason };
+}
+
+const BATCH_LOCAL_BINDING_PATTERN = /^[a-z][a-z0-9-]{0,63}$/u;
+const batchLocalBusCapabilities: ReadonlySet<string> = new Set([
+    'track',
+    'armable-track',
+    'duplicable-track',
+    'removable-track',
+    'routable-source',
+    'bus',
+    'output',
+    'device-host-track',
+]);
+
+function collectBatchLocalBusBindings(
+    calls: readonly ToolCallResult[],
+    context: ProjectContext
+): CollectBatchLocalBusBindingsResult {
+    const bindingsByCallIndex = new Map<number, BatchLocalBusBinding>();
+    const bindingsByName = new Map<string, BatchLocalBusBinding>();
+    const reservedBusNames = new Set(context.tracks.map((track) => normalizePromptText(track.name)));
+    let createBusOrdinal = 0;
+
+    for (const [callIndex, call] of calls.entries()) {
+        if (call.name !== 'createBus') {
+            continue;
+        }
+        const actionOrdinal = createBusOrdinal;
+        createBusOrdinal += 1;
+        if (call.arguments.binding === undefined) {
+            continue;
+        }
+        if (typeof call.arguments.binding !== 'string' || !BATCH_LOCAL_BINDING_PATTERN.test(call.arguments.binding)) {
+            return {
+                status: 'rejected',
+                rejection: rejection(
+                    callIndex,
+                    call.name,
+                    'Batch-local bus binding must start with a lowercase letter and contain at most 64 lowercase letters, digits, or hyphens'
+                ),
+            };
+        }
+        if (bindingsByName.has(call.arguments.binding)) {
+            return {
+                status: 'rejected',
+                rejection: rejection(
+                    callIndex,
+                    call.name,
+                    `Duplicate batch-local bus binding: ${call.arguments.binding}`
+                ),
+            };
+        }
+        const name = normalizeSafeProjectName(call.arguments.name);
+        if (!name) {
+            return {
+                status: 'rejected',
+                rejection: rejection(callIndex, call.name, 'A bound bus requires one safe bus name'),
+            };
+        }
+        const normalizedName = normalizePromptText(name);
+        if (reservedBusNames.has(normalizedName)) {
+            return {
+                status: 'rejected',
+                rejection: rejection(
+                    callIndex,
+                    call.name,
+                    `Bound bus name collides with an existing or earlier planned track: ${name}`
+                ),
+            };
+        }
+        reservedBusNames.add(normalizedName);
+        const binding: BatchLocalBusBinding = {
+            actionOrdinal,
+            actionType: 'createBus',
+            binding: call.arguments.binding,
+            busId: `bus-ai-${crypto.randomUUID()}`,
+            callIndex,
+            name,
+        };
+        bindingsByCallIndex.set(callIndex, binding);
+        bindingsByName.set(binding.binding, binding);
+    }
+
+    return { status: 'accepted', bindingsByCallIndex, bindingsByName };
+}
+
+function resolveBatchLocalBusReference(
+    assertedValue: unknown,
+    callIndex: number,
+    visibleBindings: ReadonlyMap<string, BatchLocalBusBinding>,
+    declaredBindings: ReadonlyMap<string, BatchLocalBusBinding>
+): ResolveBatchLocalBusReferenceResult {
+    if (typeof assertedValue !== 'string' || !assertedValue.startsWith('$')) {
+        return { status: 'none' };
+    }
+    const bindingName = assertedValue.slice(1);
+    if (!BATCH_LOCAL_BINDING_PATTERN.test(bindingName)) {
+        return { status: 'rejected', reason: `Malformed batch-local bus reference: ${assertedValue}` };
+    }
+    const visible = visibleBindings.get(bindingName);
+    if (visible) {
+        return { status: 'resolved', binding: visible };
+    }
+    const declared = declaredBindings.get(bindingName);
+    if (declared && declared.callIndex > callIndex) {
+        return { status: 'rejected', reason: `Forward batch-local bus reference is not allowed: ${assertedValue}` };
+    }
+    return { status: 'rejected', reason: `Unknown batch-local bus reference: ${assertedValue}` };
+}
+
+function containsBatchLocalBusEvidence(
+    targetPrompt: string,
+    binding: BatchLocalBusBinding,
+    compatibleBindingCount: number
+): boolean {
+    const normalizedPrompt = normalizePromptText(targetPrompt);
+    const normalizedName = normalizePromptText(binding.name);
+    if (` ${normalizedPrompt} `.includes(` ${normalizedName} `)) {
+        return true;
+    }
+    if (compatibleBindingCount !== 1) {
+        return false;
+    }
+    return /\b(?:it|that bus|this bus|the new bus|new bus|newly created bus|created bus)\b/u.test(normalizedPrompt);
+}
+
+function createProjectedBus(context: ProjectContext, binding: BatchLocalBusBinding): ProjectContext['tracks'][number] {
+    return {
+        id: binding.busId,
+        name: binding.name,
+        kind: 'bus',
+        muted: false,
+        soloed: false,
+        armed: false,
+        gain: 1,
+        pan: 0,
+        automationMode: 'read',
+        outputId: context.tracks.find((track) => track.kind === 'master')?.id,
+        clipCount: 0,
+        deviceCount: 0,
+        clips: [],
+        devices: [],
+        sends: [],
+    };
+}
+
+function stripBatchLocalBinding(call: ToolCallResult): ToolCallResult {
+    if (call.name !== 'createBus' || call.arguments.binding === undefined) {
+        return call;
+    }
+    const args = { ...call.arguments };
+    delete args.binding;
+    return { ...call, arguments: args };
 }
 
 function normalizePromptText(value: string): string {
@@ -1009,9 +1196,11 @@ function validateGroundedValues(
 
 function groundToolCall({
     actionOrdinal,
+    batchLocalBusBindings,
     call,
     catalog,
     context,
+    declaredBatchLocalBusBindings,
     index,
     prompt,
     plannedActionNames,
@@ -1046,6 +1235,33 @@ function groundToolCall({
             );
         }
         const targetPrompt = getTargetPromptScope(actionScope, targetRule.promptRole);
+        const batchLocalReference = resolveBatchLocalBusReference(
+            assertedValue,
+            index,
+            batchLocalBusBindings,
+            declaredBatchLocalBusBindings
+        );
+        if (batchLocalReference.status === 'rejected') {
+            return rejection(index, call.name, batchLocalReference.reason);
+        }
+        if (batchLocalReference.status === 'resolved') {
+            if (!batchLocalBusCapabilities.has(targetRule.capability)) {
+                return rejection(
+                    index,
+                    call.name,
+                    `Batch-local bus cannot satisfy target capability ${targetRule.capability}`
+                );
+            }
+            if (!containsBatchLocalBusEvidence(targetPrompt, batchLocalReference.binding, batchLocalBusBindings.size)) {
+                return rejection(
+                    index,
+                    call.name,
+                    `Batch-local target ${targetRule.argument} is not unambiguously grounded in the user request`
+                );
+            }
+            groundedArguments[targetRule.argument] = batchLocalReference.binding.busId;
+            continue;
+        }
         const result = resolveAgentReference({
             prompt: targetPrompt,
             assertedId: assertedValue,
@@ -1110,7 +1326,11 @@ function hasExplicitPromptIntent(prompt: string, catalog: GroundingCatalog, acti
     );
 }
 
-export function bridgeGroundedLlmToolCalls({ calls, context, prompt }: BridgeGroundedLlmToolCallsInput) {
+export function bridgeGroundedLlmToolCalls({
+    calls,
+    context,
+    prompt,
+}: BridgeGroundedLlmToolCallsInput): BridgeGroundedLlmToolCallsResult {
     if (calls.length > MAX_LLM_ACTIONS_PER_BATCH) {
         return bridgeLlmToolCalls({ calls, context });
     }
@@ -1130,15 +1350,28 @@ export function bridgeGroundedLlmToolCalls({ calls, context, prompt }: BridgeGro
             };
         }
     }
+    const collectedBindings = collectBatchLocalBusBindings(calls, context);
+    if (collectedBindings.status === 'rejected') {
+        return {
+            actions: [],
+            rejections: [collectedBindings.rejection],
+        };
+    }
     const groundingRejections = new Map<number, LlmActionRejection>();
-    const groundedCalls = calls.map((call, index) => {
+    const groundedCalls: ToolCallResult[] = [];
+    const visibleBindings = new Map<string, BatchLocalBusBinding>();
+    let prospectiveContext = context;
+    for (const [index, providerCall] of calls.entries()) {
+        const call = stripBatchLocalBinding(providerCall);
         const actionOrdinal = calls.slice(0, index).filter((candidate) => candidate.name === call.name).length;
         const sameActionCallCount = calls.filter((candidate) => candidate.name === call.name).length;
         const grounded = groundToolCall({
             actionOrdinal,
+            batchLocalBusBindings: visibleBindings,
             call,
             catalog,
-            context,
+            context: prospectiveContext,
+            declaredBatchLocalBusBindings: collectedBindings.bindingsByName,
             index,
             prompt,
             plannedActionNames: calls.map((candidate) => candidate.name),
@@ -1146,17 +1379,32 @@ export function bridgeGroundedLlmToolCalls({ calls, context, prompt }: BridgeGro
         });
         if ('reason' in grounded) {
             groundingRejections.set(index, grounded);
-            return { name: '<rejected-target-reference>', arguments: {} };
+            groundedCalls.push({ name: '<rejected-target-reference>', arguments: {} });
+            continue;
         }
-        return grounded;
-    });
-    const bridged = bridgeLlmToolCalls({ calls: groundedCalls, context });
+        groundedCalls.push(grounded);
+        const binding = collectedBindings.bindingsByCallIndex.get(index);
+        if (binding) {
+            visibleBindings.set(binding.binding, binding);
+            prospectiveContext = {
+                ...prospectiveContext,
+                tracks: [...prospectiveContext.tracks, createProjectedBus(prospectiveContext, binding)],
+            };
+        }
+    }
+    const bridged = bridgeLlmToolCalls({ calls: groundedCalls, context: prospectiveContext });
     const rejections = bridged.rejections.map((bridgeRejection) => {
         if (bridgeRejection.name === '<batch>') {
             return bridgeRejection;
         }
         return groundingRejections.get(bridgeRejection.index) ?? bridgeRejection;
     });
+    const usesBatchLocalReferences = calls.some((call) =>
+        Object.values(call.arguments).some((value) => typeof value === 'string' && value.startsWith('$'))
+    );
+    if (rejections.length > 0 && (usesBatchLocalReferences || collectedBindings.bindingsByName.size > 0)) {
+        return { actions: [], rejections };
+    }
     const hasGroundedLoopRegion = bridged.actions.some((action) => action.type === 'setLoopRegion');
     const hasGroundedLoopEnabled = bridged.actions.some((action) => action.type === 'setLoopEnabled');
     if (requiresCompoundLoop && (!hasGroundedLoopRegion || !hasGroundedLoopEnabled)) {
@@ -1165,5 +1413,11 @@ export function bridgeGroundedLlmToolCalls({ calls, context, prompt }: BridgeGro
         }
         return { actions: [], rejections };
     }
-    return { actions: bridged.actions, rejections };
+    if (rejections.length > 0 || collectedBindings.bindingsByName.size === 0) {
+        return { actions: bridged.actions, rejections };
+    }
+    const batchLocalActionIdentities = [...collectedBindings.bindingsByName.values()].map(
+        ({ actionOrdinal, actionType, busId }) => ({ actionOrdinal, actionType, busId })
+    );
+    return { actions: bridged.actions, batchLocalActionIdentities, rejections };
 }
