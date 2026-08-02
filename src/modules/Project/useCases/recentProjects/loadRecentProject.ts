@@ -20,8 +20,11 @@ export async function loadRecentProject(key: string): Promise<LoadRecentProjectO
     const transaction = runProjectLoadTransaction();
     let raw: string | null;
     try {
-        // Reads localStorage first, then falls back to IndexedDB so projects
-        // whose localStorage dual-write was dropped on quota stay loadable.
+        // Reads IndexedDB, the only store project content is written to. A
+        // pre-ADR-0013 localStorage mirror wins only when it proves it is newer
+        // by `meta.updatedAt` — never merely by being present, which is what
+        // used to hand back a snapshot frozen at the moment the project first
+        // exceeded quota.
         raw = await readNamedProjectJson(key);
     } catch (error) {
         logger.error(new Error('Failed to read recent project', { cause: error }));

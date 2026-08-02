@@ -77,6 +77,33 @@ describe('describePlannedAction', () => {
         ).toBe('Remove clip');
     });
 
+    it('names the exact MIDI clip, stable ID, and transform value for confirmation', () => {
+        const midiContext: ProjectContext = {
+            ...context,
+            tracks: context.tracks.map((track) => ({
+                ...track,
+                clips: track.clips.map((clip) => ({
+                    ...clip,
+                    type: 'midi' as const,
+                    noteCount: 4,
+                })),
+            })),
+        };
+
+        expect(
+            describePlannedAction({
+                action: { type: 'quantizeNotes', payload: { clipId: 'clip-verse', gridSize: 0.25 } },
+                context: midiContext,
+            })
+        ).toBe('Quantize notes in "Verse Lead" (clip-verse) to a 0.25-beat grid');
+        expect(
+            describePlannedAction({
+                action: { type: 'transposeNotes', payload: { clipId: 'clip-verse', semitones: 7 } },
+                context: midiContext,
+            })
+        ).toBe('Transpose notes in "Verse Lead" (clip-verse) by +7 semitones');
+    });
+
     it('names both sidechain endpoints with IDs and direction for confirmation', () => {
         const bassTrack = {
             ...context.tracks[0]!,

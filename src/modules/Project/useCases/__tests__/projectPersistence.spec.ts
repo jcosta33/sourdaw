@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 
+import { installFakeIndexedDb } from '../../__tests__/fakeIndexedDb';
 import { runProjectLoadTransaction } from '../projectPersistence/helpers/runProjectLoadTransaction';
 import { loadProject } from '../projectPersistence/loadProject';
 import { setProjectIdentityTransitionDependencies } from '../projectPersistence/projectIdentityTransitionDependencies';
@@ -23,6 +24,7 @@ const mocks = vi.hoisted(() => ({
     prepareCachedAudioBuffersFromIdb: vi.fn(),
     publishPreparedBuffers: vi.fn(() => 1),
     captureExternalPluginStates: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    buildProjectData: vi.fn<() => Promise<{ data: unknown } | null>>(),
 }));
 
 // Mock the dependencies of the use cases we are testing
@@ -75,9 +77,18 @@ vi.mock('../projectPersistence/saveProject/captureExternalPluginStates', () => (
     captureExternalPluginStates: mocks.captureExternalPluginStates,
 }));
 
+// The snapshot serializer needs a hydrated arrangement to produce anything, and
+// since ADR 0013 saveProject reports failure when it produces nothing. Stub it
+// so this suite exercises the persistence sequencing rather than serialization.
+vi.mock('../projectPersistence/fileIO/buildProjectData', () => ({
+    buildProjectData: mocks.buildProjectData,
+}));
+
 describe('Project Persistence Use Cases', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        installFakeIndexedDb();
+        mocks.buildProjectData.mockResolvedValue({ data: { version: 1, meta: { name: 'My Song' } } });
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
         mocks.projectStoreValue.value = {
             loading: false,
@@ -96,6 +107,10 @@ describe('Project Persistence Use Cases', () => {
             },
         });
         mocks.prepareCachedAudioBuffersFromIdb.mockResolvedValue({ publish: mocks.publishPreparedBuffers });
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
     });
 
     describe('loadProject', () => {

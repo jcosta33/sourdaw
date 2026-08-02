@@ -3,102 +3,152 @@
  *
  * Public repository operations live in separate files; this module keeps
  * their cache, connection, constants, and low-level storage helpers shared.
+ *
+ * Durability contract (ADR 0013): every write resolves on
+ * `transaction.oncomplete` and rejects on `onerror`/`onabort`. An IndexedDB
+ * request's `success` event fires before the transaction commits and is not a
+ * durability signal (IDB 3.0 §5.6, §2.7.1), so no write path may resolve on it.
+ * Writes await the database handle rather than null-checking it — a write
+ * issued during the page-load window is queued behind the open, never dropped —
+ * and reject outright when the database cannot be opened at all.
  */
+
+import { ACTIVE_PROJECT_KEY, LEGACY_PROJECT_STORAGE_KEY } from '../../models/ProjectData';
 
 const DB_NAME = 'sourdaw-projects';
 const STORE_NAME = 'projects';
 const DB_VERSION = 1;
-const PRIMARY_KEY = 'current';
-const LEGACY_PROJECT_STORAGE_KEY = 'sourdaw-project';
 
 // In-memory cache for synchronous reads. Populated from IndexedDB on
-// init, from localStorage during legacy migration, or from in-process
-// writes. Independent of the IDB connection — the cache may be set
-// before or after the DB is open and can serve reads even if IDB is
-// unavailable on this platform.
+// init or from in-process writes. Independent of the IDB connection — the
+// cache may be set before or after the DB is open and can serve reads even if
+// IDB is unavailable on this platform.
 let cachedJson: string | null = null;
 
-// IndexedDB connection. `null` means the connection has not been
-// opened yet OR the open attempt failed (e.g. private browsing); the
-// idbGet/idbPut/idbDelete helpers all guard on this and become no-ops
-// when it's null. There is no separate "ready" flag — `db !== null`
-// already carries that information, and a separate flag was a
-// footgun waiting to drift out of sync with the actual handle.
-let db: IDBDatabase | null = null;
+// The single in-flight-or-settled open. A rejected open is discarded so a later
+// attempt can retry rather than inheriting a permanent failure.
+let databasePromise: Promise<IDBDatabase> | null = null;
 
-function openDB(): Promise<IDBDatabase> {
-    return new Promise((resolve, reject) => {
-        const request = indexedDB.open(DB_NAME, DB_VERSION);
+// The single in-flight-or-settled cache warm.
+let initPromise: Promise<void> | null = null;
+
+function createUnavailableError(cause: unknown): Error {
+    const normalizedCause = cause ?? new Error('IndexedDB open request failed without an error cause');
+    return new Error('Project storage is unavailable: IndexedDB could not be opened', { cause: normalizedCause });
+}
+
+function openDatabase(): Promise<IDBDatabase> {
+    if (databasePromise) {
+        return databasePromise;
+    }
+
+    const promise = new Promise<IDBDatabase>((resolve, reject) => {
+        if (typeof globalThis.indexedDB === 'undefined') {
+            reject(createUnavailableError(new Error('This environment has no IndexedDB')));
+            return;
+        }
+
+        let request: IDBOpenDBRequest;
+        try {
+            request = indexedDB.open(DB_NAME, DB_VERSION);
+        } catch (error) {
+            reject(createUnavailableError(error));
+            return;
+        }
+
         request.onupgradeneeded = () => {
             const database = request.result;
             if (!database.objectStoreNames.contains(STORE_NAME)) {
                 database.createObjectStore(STORE_NAME);
             }
         };
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error ?? new Error('IDB request failed'));
+        request.onsuccess = () => {
+            const database = request.result;
+            // A connection can die after a successful open — another tab
+            // upgrading the schema, a UA-forced close, storage eviction. The
+            // handle then throws InvalidStateError on every `transaction()`.
+            // Caching it forever would turn a transient event into permanent
+            // save failure until reload, so drop it and let the next call
+            // reopen. Matches CrdtDocument's crdtPersistence helpers.
+            database.onversionchange = () => {
+                database.close();
+                invalidate(promise);
+            };
+            database.onclose = () => invalidate(promise);
+            resolve(database);
+        };
+        request.onerror = () => reject(createUnavailableError(request.error));
+    });
+
+    databasePromise = promise;
+    promise.catch(() => invalidate(promise));
+
+    return promise;
+}
+
+function invalidate(promise: Promise<IDBDatabase>): void {
+    if (databasePromise === promise) {
+        databasePromise = null;
+    }
+}
+
+async function runTransaction<Result>(
+    mode: IDBTransactionMode,
+    run: (store: IDBObjectStore) => () => Result
+): Promise<Result> {
+    const database = await openDatabase();
+
+    return new Promise<Result>((resolve, reject) => {
+        const tx = database.transaction(STORE_NAME, mode);
+        const readResult = run(tx.objectStore(STORE_NAME));
+
+        // Resolve on commit, never on request success — see the module docstring.
+        tx.oncomplete = () => resolve(readResult());
+        tx.onerror = () => reject(tx.error ?? new Error('IDB transaction failed'));
+        tx.onabort = () => reject(tx.error ?? new Error('IDB transaction aborted'));
     });
 }
 
-async function initDB(): Promise<void> {
-    if (db !== null) {
-        return;
-    }
+async function idbGet(key: string): Promise<string | null> {
     try {
-        db = await openDB();
-
-        // Load current project into cache
-        const stored = await idbGet(PRIMARY_KEY);
-        if (stored && !cachedJson) {
-            cachedJson = stored;
-        }
+        return await runTransaction<string | null>('readonly', (store) => {
+            const request = store.get(key);
+            return () => (request.result as string | undefined) ?? null;
+        });
     } catch {
-        // IndexedDB not available — fall back to localStorage only
+        // A read cannot distinguish "absent" from "unreadable" for its callers,
+        // and every caller already treats null as absent. Writes do not get this
+        // treatment: they reject.
+        return null;
     }
 }
 
-function idbGet(key: string): Promise<string | null> {
-    return new Promise((resolve) => {
-        if (!db) {
-            resolve(null);
-            return;
-        }
-        try {
-            const tx = db.transaction(STORE_NAME, 'readonly');
-            const store = tx.objectStore(STORE_NAME);
-            const req = store.get(key);
-            req.onsuccess = () => resolve((req.result as string) ?? null);
-            req.onerror = () => resolve(null);
-        } catch {
-            resolve(null);
-        }
-    });
-}
-
-function idbPut(key: string, value: string): void {
-    if (!db) {
-        return;
-    }
-    try {
-        const tx = db.transaction(STORE_NAME, 'readwrite');
-        const store = tx.objectStore(STORE_NAME);
+function idbPut(key: string, value: string): Promise<void> {
+    return runTransaction<void>('readwrite', (store) => {
         store.put(value, key);
-    } catch {
-        // IndexedDB write failed silently
+        return () => undefined;
+    });
+}
+
+function idbDelete(key: string): Promise<void> {
+    return runTransaction<void>('readwrite', (store) => {
+        store.delete(key);
+        return () => undefined;
+    });
+}
+
+async function warmCache(): Promise<void> {
+    const stored = await idbGet(ACTIVE_PROJECT_KEY);
+    if (stored && !cachedJson) {
+        cachedJson = stored;
     }
 }
 
-function idbDelete(key: string): void {
-    if (!db) {
-        return;
+function initDB(): Promise<void> {
+    if (!initPromise) {
+        initPromise = warmCache();
     }
-    try {
-        const tx = db.transaction(STORE_NAME, 'readwrite');
-        const store = tx.objectStore(STORE_NAME);
-        store.delete(key);
-    } catch {
-        // IndexedDB delete failed silently
-    }
+    return initPromise;
 }
 
 function getCachedJson(): string | null {
@@ -115,12 +165,14 @@ const storageSupport = {
     getIndexedDb: idbGet,
     initializeIndexedDb: initDB,
     legacyProjectStorageKey: LEGACY_PROJECT_STORAGE_KEY,
-    primaryKey: PRIMARY_KEY,
+    primaryKey: ACTIVE_PROJECT_KEY,
     putIndexedDb: idbPut,
     setCachedJson,
 };
 
-// Bootstrap — start loading IndexedDB immediately
+// Bootstrap — start loading IndexedDB immediately. initDB swallows an
+// unavailable database because warming a read cache is best-effort; writes
+// issued later still reject rather than no-op.
 void initDB();
 
 export { storageSupport };
