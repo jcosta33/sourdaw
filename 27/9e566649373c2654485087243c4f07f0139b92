@@ -1,0 +1,133 @@
+src/modules/AudioEngine/useCases/offlineRender/collectDeviceRuntimeFailures.ts
+  s_ac9b259eab20ba::t_60a47d1ededb92 5,7,13-15,18
+  s_ac9b259eab20ba::t_0373b539121a2d 1-4,6,8-12,16-17,19
+  s_ac9b259eab20ba::t_6a87368d215b3b 20
+src/modules/AudioEngine/worklets/__tests__/grandBouleDispatchParity.spec.ts
+  s_ac9b259eab20ba::t_d69637377ba78a 3,230
+  s_ac9b259eab20ba::t_f952b76985e787 128,238-239,245,263-283
+  s_ac9b259eab20ba::t_a9bacbcfebebb5 284-285
+src/modules/AudioEngine/repositories/deviceStrategy/__tests__/NativeDspDeviceStrategy.spec.ts
+  s_ac9b259eab20ba::t_3b259ab94f90a2 19-22,94,97-98,100-101,290-306
+  s_ac9b259eab20ba::t_e29c7355b2e136 93,95-96,99
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_ac9b259eab20ba::t_25ae5effc1d731 857-878,884-894,914,919-922,926,964-965,969-972
+  s_ac9b259eab20ba::t_fae81fb820428d 43-44,879-882
+  s_ac9b259eab20ba::t_13405fcf945d7c 855,883
+  s_ac9b259eab20ba::t_2164800884abd8 973-974
+src/modules/AudioEngine/worklets/__tests__/grandBouleOfflineRender.spec.ts
+  s_ac9b259eab20ba::t_f6e8c9c844b219 129
+src/modules/AudioEngine/worklets/grandBouleProcessor.ts
+  s_ac9b259eab20ba::t_5a7eac6edf22e4 31-32,34-35,191-192,194,199,252
+  s_ac9b259eab20ba::t_1b6d57ccbee6e7 275-277,294
+src/modules/AudioEngine/workers/__tests__/grandBouleEngineWorker.spec.ts
+  s_ac9b259eab20ba::t_f6e8c9c844b219 21,30
+src/modules/AudioEngine/worklets/__tests__/grandBouleOfflineNoteTiming.spec.ts
+  s_ac9b259eab20ba::t_f6e8c9c844b219 82
+src/modules/AudioEngine/engine/__tests__/GrandBouleNode.spec.ts
+  s_ac9b259eab20ba::t_f952b76985e787 485-512
+  s_ac9b259eab20ba::t_66c75e95b5e212 513-534
+  s_ac9b259eab20ba::t_6a737ff3079d99 128-132,188,290,370-375,377-407,423-458,482
+  s_ac9b259eab20ba::t_7f3ba5774e9962 346,350
+  s_ac9b259eab20ba::t_97e4ef7b0ebaf1 337-338,351
+  s_ac9b259eab20ba::t_5a7eac6edf22e4 79
+  s_ac9b259eab20ba::t_d916df4669927a 376
+  s_ac9b259eab20ba::t_8c3850095267cf 483,535-553,555-556,558-592
+  s_ac9b259eab20ba::t_ee8423caf91c07 408-422,459-481
+  s_ac9b259eab20ba::t_744bb3eb9f8ae9 554,557
+  s_ac9b259eab20ba::t_8767c7f6633677 484
+src/modules/AudioEngine/worklets/__tests__/grandBouleFreezeAudio.spec.ts
+  s_ac9b259eab20ba::t_f6e8c9c844b219 112
+src/modules/AudioEngine/workers/grandBouleEngineWorker.ts
+  s_ac9b259eab20ba::t_809462ab04b505 141-142,254,338,352-360
+  s_ac9b259eab20ba::t_9e3be82633d3c4 122-126,135,345-349
+  s_ac9b259eab20ba::t_878ae45ac1b1f9 27,29-31,70
+  s_ac9b259eab20ba::t_043d610cd1b55b 244-245
+src/modules/AudioEngine/repositories/deviceStrategy/AudioDeviceStrategy.ts
+  s_ac9b259eab20ba::t_0373b539121a2d 75-76
+  s_ac9b259eab20ba::t_60a47d1ededb92 77-78
+src/modules/AudioEngine/worklets/__tests__/grandBouleConsumerClock.spec.ts
+  s_ac9b259eab20ba::t_878ae45ac1b1f9 1-54
+src/modules/AudioEngine/engine/TrackNode.ts
+  s_ac9b259eab20ba::t_fae81fb820428d 458-464,507,522-534
+  s_ac9b259eab20ba::t_2b4495954bdf47 700-701
+src/modules/AudioEngine/engine/GrandBouleNode.ts
+  s_ac9b259eab20ba::t_744bb3eb9f8ae9 442-444,452-454
+  s_ac9b259eab20ba::t_60a47d1ededb92 52,86-87,108-109,136-154,351-356,362-367,375,389-405,429-441,445-451,455-457,465,632
+  s_ac9b259eab20ba::t_1b6d57ccbee6e7 131-135,243,256,407
+  s_ac9b259eab20ba::t_487b1c96251aea 120-130,205,211-213,218,222-227,233,239-242,244,249,252,255,257-261,349-350,357-361,368-374,376-387,406,411-414,464,466,513
+  s_ac9b259eab20ba::t_5a7eac6edf22e4 41,334-338,408-410
+  s_ac9b259eab20ba::t_f4ce74347345e5 180-183,291-301,418-428
+  s_ac9b259eab20ba::t_97e4ef7b0ebaf1 38,117,159,185,204,206-208,210,214-216,219-221,231-232,234-238,245,322,473,515,525,620-623
+  s_ac9b259eab20ba::t_621d704d386d48 458
+src/modules/AudioEngine/useCases/offlineRender/renderInSegments.ts
+  s_ac9b259eab20ba::t_0373b539121a2d 37-38,43-47,143,152,160-161,164,166,168-177,259-267,272
+  s_ac9b259eab20ba::t_60a47d1ededb92 39-40,144,153-159,162-163,165,167,240-246,249-250,258
+src/modules/AudioEngine/engine/__tests__/TrackNodeDevices.spec.ts
+  s_ac9b259eab20ba::t_a93adad33b24a7 110,115-119,121,138-143,551-565
+  s_ac9b259eab20ba::t_30f634411e5a64 566-568
+src/modules/AudioEngine/worklets/grandBouleConsumerClock.ts
+  s_ac9b259eab20ba::t_878ae45ac1b1f9 1-57
+src/modules/AudioEngine/useCases/exportStems.ts
+  s_ac9b259eab20ba::t_fcac98d6b0fe15 19
+  s_ac9b259eab20ba::t_60a47d1ededb92 422
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistryDescriptors.spec.ts
+  s_ac9b259eab20ba::t_2edbaf416dd78d 123-126,782-783
+  s_ac9b259eab20ba::t_25ae5effc1d731 781
+  s_ac9b259eab20ba::t_7f3ba5774e9962 787,796-820
+  s_ac9b259eab20ba::t_30f20aa6fa3baa 729-730,749-752,769-780,784-786,788-795
+src/modules/AudioEngine/workers/__tests__/grandBouleEngineWorker.noteTiming.spec.ts
+  s_ac9b259eab20ba::t_d0e0d3ab622d40 8,241-242,261-277
+  s_ac9b259eab20ba::t_dc45351a38f19a 6
+  s_ac9b259eab20ba::t_30f20aa6fa3baa 223-240,278-279
+  s_ac9b259eab20ba::t_f6e8c9c844b219 144
+  s_ac9b259eab20ba::t_97e4ef7b0ebaf1 7,34,142
+  s_ac9b259eab20ba::t_ee8423caf91c07 197-222
+  s_ac9b259eab20ba::t_7915c568cffd28 243-260
+  s_ac9b259eab20ba::t_9e3be82633d3c4 130
+src/modules/AudioEngine/worklets/__tests__/grandBouleProcessor.spec.ts
+  s_ac9b259eab20ba::t_5a7eac6edf22e4 3-8,271,280,295-296,298,301-302
+src/modules/AudioEngine/repositories/deviceStrategy/nativeDspDeviceFactories.ts
+  s_ac9b259eab20ba::t_60a47d1ededb92 36,98
+  s_ac9b259eab20ba::t_fcac98d6b0fe15 86,96
+  s_ac9b259eab20ba::t_0373b539121a2d 35,85,87-95,97,99-100,157
+src/modules/AudioEngine/engine/dropoutCounter.ts
+  s_ac9b259eab20ba::t_f6e8c9c844b219 54
+src/modules/AudioEngine/worklets/grandBouleOfflineProcessor.ts
+  s_ac9b259eab20ba::t_60a47d1ededb92 62-63,69,80-82,84-91,114,119-126,202
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderInSegments.spec.ts
+  s_ac9b259eab20ba::t_8a0ee3a625a1af 352-379
+  s_ac9b259eab20ba::t_3b259ab94f90a2 329-330,332-343,345-351
+  s_ac9b259eab20ba::t_fcac98d6b0fe15 331,344
+src/modules/AudioEngine/useCases/renderOffline.ts
+  s_ac9b259eab20ba::t_60a47d1ededb92 337
+  s_ac9b259eab20ba::t_0373b539121a2d 15
+src/modules/AudioEngine/useCases/offlineRender/renderTrackSubgraphOffline.ts
+  s_ac9b259eab20ba::t_60a47d1ededb92 307
+  s_ac9b259eab20ba::t_0373b539121a2d 9
+src/modules/AudioEngine/repositories/deviceStrategy/NativeDspDeviceStrategy.ts
+  s_ac9b259eab20ba::t_60a47d1ededb92 16,30
+  s_ac9b259eab20ba::t_0373b539121a2d 15,29
+src/modules/AudioEngine/workers/__tests__/grandBouleEngineWorker.renderLoop.spec.ts
+  s_ac9b259eab20ba::t_4b09a16221b9ac 5,161
+  s_ac9b259eab20ba::t_809462ab04b505 3,162
+  s_ac9b259eab20ba::t_878ae45ac1b1f9 4
+src/modules/AudioEngine/models/GrandBouleRingProtocol.ts
+  s_ac9b259eab20ba::t_97e4ef7b0ebaf1 22,25,27
+  s_ac9b259eab20ba::t_809462ab04b505 23-24,26,28-31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "279e566649373c2654485087243c4f07f0139b92",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
