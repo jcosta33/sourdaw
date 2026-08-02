@@ -109,14 +109,22 @@
 //! # What these numbers do and do not establish
 //!
 //! They establish *compute cost per quantum*. They do not observe a dropout.
-//! No underrun and no over-budget render was ever caught in the act:
-//! `AudioContext.renderCapacity` is not exposed in the Chromium the harness
+//! No underrun and no over-budget render is caught in the act here:
+//! `AudioContext.renderCapacity` is not exposed in the Chromium this harness
 //! drives, and the leg that runs inside a real `AudioWorkletGlobalScope` runs
-//! on an `OfflineAudioContext`, which has no deadline. So the correct claim is
-//! that the compute exceeds the budget, and that a dropout follows from that —
-//! inferred from the cost, not measured. **"Its compute exceeds the budget" and
-//! "it misses the deadline" are different claims;** the second one belongs to
-//! AC-3 of `SPEC-render-parity-instrumentation` and is not made here.
+//! on an `OfflineAudioContext`, which has no deadline. So the correct claim
+//! from *this file* is that the compute exceeds the budget, and that a dropout
+//! follows from that — inferred from the cost, not measured. **"Its compute
+//! exceeds the budget" and "it misses the deadline" are different claims.**
+//!
+//! The measured half now exists elsewhere. `scripts/measureRenderDeadline.ts`
+//! observes real deadline misses on a live `AudioContext` via
+//! `AudioContext.playbackStats` (`underrunEvents` / `underrunDuration`), with
+//! an in-budget control leg that records none. `renderCapacity` is still
+//! absent — on stable Chrome as well as on the bundled Chromium, under every
+//! relevant blink feature flag — so that harness, not this one, is where the
+//! deadline claim comes from. Keep the two claims apart: cost lives here,
+//! deadline misses live there.
 //!
 //! # 64 voices is the common case, not the worst case
 //!
