@@ -248,7 +248,7 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
             buses: 1,
             busesByEffectType: { delay: 1 },
             audioNodes: 8,
-            audioWorkletProcessors: 0,
+            audioWorkletProcessors: 1,
         });
         runtimeMocks.reset.mockImplementation(() => {
             runtimeMocks.listLiveBusKeys.mockReturnValue([]);
@@ -338,13 +338,13 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
             deviceAudioWorkletProcessorsByType: {},
             stripMeterWorklets: 0,
             masterMeterWorklets: 0,
-            graphAudioWorkletProcessors: 0,
+            graphAudioWorkletProcessors: 1,
             workerInstances: 0,
             workerInstancesByType: {},
             adjustmentLayerBuses: 1,
             adjustmentLayerBusesByEffectType: { delay: 1 },
             adjustmentLayerAudioNodes: 8,
-            adjustmentLayerAudioWorkletProcessors: 0,
+            adjustmentLayerAudioWorkletProcessors: 1,
         };
         expect(engine.getDiagnostics()).toEqual({
             context: expectedCtx,
@@ -352,7 +352,7 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
             graph: emptyGraph,
             runtime: {
                 trackedAudioScheduledSources: 0,
-                processorLifecycle: { unmanaged: 0, continue: 0, continueIfNotQuiet: 0, tail: 0, sleep: 0 },
+                processorLifecycle: { unmanaged: 1, continue: 0, continueIfNotQuiet: 0, tail: 0, sleep: 0 },
             },
         });
 
@@ -370,7 +370,8 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
         const toaster = createDevice({
             deviceId: 'toaster-1',
             deviceType: 'toaster',
-            workletNodeCount: 1,
+            nodeCount: 2,
+            workletNodeCount: 2,
             processorLifecycle: 'sleep',
         });
         const bacteria = createDevice({
@@ -378,6 +379,7 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
             deviceType: 'bacteria',
             nodeCount: 2,
             workletNodeCount: 1,
+            processorLifecycle: null,
         });
         const grandBoule = createDevice({
             deviceId: 'grand-boule-1',
@@ -413,27 +415,27 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
                     'grand-boule': 1,
                     toaster: 1,
                 },
-                deviceAudioNodes: 7,
+                deviceAudioNodes: 8,
                 graphSlotResourcesByLoadState: {
-                    ready: { audioNodes: 5, audioWorkletProcessors: 3, workers: 1 },
+                    ready: { audioNodes: 6, audioWorkletProcessors: 4, workers: 1 },
                     pending: { audioNodes: 1, audioWorkletProcessors: 0, workers: 0 },
                     failed: { audioNodes: 1, audioWorkletProcessors: 0, workers: 0 },
                 },
-                deviceAudioWorkletProcessors: 3,
-                deviceAudioWorkletProcessorsByType: { bacteria: 1, 'grand-boule': 1, toaster: 1 },
+                deviceAudioWorkletProcessors: 4,
+                deviceAudioWorkletProcessorsByType: { bacteria: 1, 'grand-boule': 1, toaster: 2 },
                 stripMeterWorklets: 1,
                 masterMeterWorklets: 1,
-                graphAudioWorkletProcessors: 5,
+                graphAudioWorkletProcessors: 7,
                 workerInstances: 1,
                 workerInstancesByType: { 'grand-boule': 1 },
                 adjustmentLayerBuses: 1,
                 adjustmentLayerBusesByEffectType: { delay: 1 },
                 adjustmentLayerAudioNodes: 8,
-                adjustmentLayerAudioWorkletProcessors: 0,
+                adjustmentLayerAudioWorkletProcessors: 1,
             },
             runtime: {
                 trackedAudioScheduledSources: 1,
-                processorLifecycle: { unmanaged: 2, continue: 0, continueIfNotQuiet: 0, tail: 0, sleep: 1 },
+                processorLifecycle: { unmanaged: 4, continue: 0, continueIfNotQuiet: 0, tail: 0, sleep: 1 },
             },
         });
 
