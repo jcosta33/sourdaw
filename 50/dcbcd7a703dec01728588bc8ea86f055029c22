@@ -1,0 +1,60 @@
+src/modules/Project/useCases/projectPersistence/__tests__/persistenceMainThreadStallBudget.spec.ts
+  s_66d4924c65dcd2::t_a85467efee614d 341-347
+  s_66d4924c65dcd2::t_5053afdb3cbc70 401-406
+  s_66d4924c65dcd2::t_af19f185bf9220 363-365,368-370,375,381-384,387,390-391
+  s_66d4924c65dcd2::t_a5763bb58b8b02 46,254-258,309-312,320,340,351,354,362,374,385,388-389,392-393,407-411,428
+  s_66d4924c65dcd2::t_dad6eb1facad1b 2,4,6-10,12-18,20-22,24,26-35,37-40,65-68,76-81,260-264,273,282-293,298-308,313-315,318-319,330-339,348-350,352-353,355-361,366-367,371-373,376-380,412-415,424-427
+  s_66d4924c65dcd2::t_aeab307389b9be 278-281,294-295
+  s_66d4924c65dcd2::t_9e50d1b2830a08 63,82,131,259,274,321,394,396,429
+scripts/measureStallBudget.ts
+  s_66d4924c65dcd2::t_b8c29c42b5e1c3 488,490-491,500-524,528-538,540-551,553-589,591,594-597,601-602
+  s_66d4924c65dcd2::t_bec0ca6790ccdf 238
+  s_66d4924c65dcd2::t_37a8233559da27 454-459
+  s_66d4924c65dcd2::t_af580a7c69b9ea 1437-1446
+  s_66d4924c65dcd2::t_56bf19da0541f5 152-157
+  s_66d4924c65dcd2::t_4df61d7b5a4d3e 169-180
+  s_66d4924c65dcd2::t_5ab49e561fa138 247-278
+  s_66d4924c65dcd2::t_81684d2266354c 605-608
+  s_66d4924c65dcd2::t_6962358fe180bc 1189
+  s_66d4924c65dcd2::t_5cfbb0fa014fdb 1510-1514
+  s_66d4924c65dcd2::t_0c0bce5bec5725 1528
+  s_66d4924c65dcd2::t_d2d702a6fe72bb 492-499,525-527
+  s_66d4924c65dcd2::t_f8220ff5e9abf5 338,344,346-348
+  s_66d4924c65dcd2::t_56bd9939e3354b 590,592-593
+  s_66d4924c65dcd2::t_4cc09c3337a5c8 980-1004
+  s_66d4924c65dcd2::t_c7240a8c7d890b 1213-1225
+  s_66d4924c65dcd2::t_b4f559baf45bff 1-151,158-168,181-237,239-246,279-337,339-343,345,349-453,460-487,489,539,552,598-600,603-604,609-629,640-811,823-844,871-979,1005-1158,1169-1188,1190-1212,1226-1282,1287-1436,1447-1509,1515-1527,1529-1550
+  s_66d4924c65dcd2::t_f24b28268e9620 630-639
+  s_66d4924c65dcd2::t_51b99533e2d978 1283-1286
+  s_66d4924c65dcd2::t_f03dc0db7673d9 1159-1168
+  s_66d4924c65dcd2::t_5192bb5401f9f5 812-822,845-870
+src/modules/AudioAnalysis/useCases/__tests__/analysisMainThreadStallBudget.spec.ts
+  s_66d4924c65dcd2::t_cdc639b4f3d4f0 2,4,6-9,11-19,21-22,24,26,28-50,56,74,78,97-100,129-131,133,142-151,154-163,166-175,189-193,195-197,202
+  s_66d4924c65dcd2::t_c27f61390b7a3e 61,63-68
+  s_66d4924c65dcd2::t_bd0e3eeb10bead 152-153
+  s_66d4924c65dcd2::t_1e71d507ae8a7e 164-165
+  s_66d4924c65dcd2::t_f7b892411954bb 194,198-201,203,209-218
+.agents/specs/render-parity-instrumentation/spec.md
+  s_66d4924c65dcd2::t_1a582368607262 75-96
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipAudioAiSection.analyzeStall.spec.tsx
+  s_66d4924c65dcd2::t_6f91581d8c4d94 1-138,148-179
+  s_66d4924c65dcd2::t_c35b078785fd8c 139-147
+package.json
+  s_66d4924c65dcd2::t_7b592485d63fd5 19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "50dcbcd7a703dec01728588bc8ea86f055029c22",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
