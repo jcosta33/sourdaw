@@ -1,0 +1,22 @@
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_ac9b259eab20ba::t_ce18950e58635a 91,93-97,99,113,115,121,124,151,166,507-508,511,513,521-523,527-528
+  s_ac9b259eab20ba::t_c0f72c0c1177f3 15,88-90,92,98,100-112,114,116-120,122-123,125-150,152-165,167-168,260-274,282,386,506,509-510,512,514-520,524
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_ac9b259eab20ba::t_05feb25a525cca 1381-1416,1441-1444
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "0112200f42c5a55535a204c322b766d55b1976a3",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
