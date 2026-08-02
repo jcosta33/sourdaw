@@ -3,7 +3,7 @@
  */
 
 import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
-import { createReadyHandshake, ensureWorkletRegistered } from '#/infra/audioWorklet/workletInitShared';
+import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
 import { logger } from '#/infra/logger/appLogger';
 
 import grinderProcessorUrl from '../services/grinderProcessor.ts?worker&url';
@@ -12,20 +12,6 @@ import { requireSharedArrayBuffer } from './pluginHostingErrors';
 import { telemetryAllocator, createTelemetryReader, GRINDER_IDX, type TelemetrySlot } from './telemetryAllocator';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
-
-/**
- * Grinder intentionally bypasses the shared WASM binary cache: we always
- * fetch fresh bytes (`cache: 'no-store'`) so rebuilt local WASM is picked up
- * after a plugin reload or app restart instead of getting stuck on stale
- * cached worklet data.
- */
-async function fetchGrinderWasm(url: string): Promise<ArrayBuffer> {
-    const response = await fetch(url, { cache: 'no-store' });
-    if (!response.ok) {
-        throw new Error(`Failed to fetch Grinder WASM: ${response.status}`);
-    }
-    return await response.arrayBuffer();
-}
 
 export type GrinderMeterData = {
     inputDb: number;
@@ -87,17 +73,28 @@ export async function createGrinderNode(
     }
 
     await raceAbortSignal(ensureWorkletRegistered(ctx, grinderProcessorUrl), signal);
-    const wasmBytes = await raceAbortSignal(fetchGrinderWasm(wasmUrl ?? DEFAULT_WASM_URL), signal);
+    const wasmLease = await raceAbortSignal(
+        fetchWasmModule({ ctx, bundleId: 'daw-dsp', url: wasmUrl ?? DEFAULT_WASM_URL, signal }),
+        signal
+    );
 
     signal?.throwIfAborted();
 
-    const node = new AudioWorkletNode(ctx, 'grinder-processor', {
-        numberOfInputs: 1,
-        numberOfOutputs: 1,
-        outputChannelCount: [2],
-        channelCount: 2,
-        channelCountMode: 'explicit',
-    });
+    let node: AudioWorkletNode;
+    try {
+        node = new AudioWorkletNode(ctx, 'grinder-processor', {
+            numberOfInputs: 1,
+            numberOfOutputs: 1,
+            outputChannelCount: [2],
+            channelCount: 2,
+            channelCountMode: 'explicit',
+            processorOptions: { wasmModule: wasmLease.module },
+        });
+        wasmLease.commit();
+    } catch (error) {
+        wasmLease.release();
+        throw error;
+    }
 
     let slot: TelemetrySlot | null = telemetryAllocator.allocateSlot();
     let meterRafId: number | null = null;
@@ -158,8 +155,7 @@ export async function createGrinderNode(
     };
     const readyPromise = handshake.promise;
 
-    const copy = wasmBytes.slice(0);
-    node.port.postMessage({ type: 'init', wasmBytes: copy }, [copy]);
+    node.port.postMessage({ type: 'init' });
 
     return {
         workletNode: node,

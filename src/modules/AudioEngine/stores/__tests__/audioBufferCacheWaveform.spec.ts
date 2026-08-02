@@ -108,7 +108,10 @@ function installFakeIndexedDb(): Map<string, StoredAudioBuffer> {
                 abort: vi.fn(),
                 objectStore: () => objectStore,
             };
-            queueMicrotask(() => transaction.oncomplete?.());
+            // `complete` fires only after every queued request has been
+            // delivered (IDB 3.0 §5.6). Requests here resolve on microtasks, so
+            // the commit has to be a task or it would outrun them.
+            setTimeout(() => transaction.oncomplete?.(), 0);
             return transaction;
         },
     };
@@ -406,25 +409,35 @@ describe('audioBufferCache garbage collection', () => {
     });
 });
 
-describe('audioBufferCache serializeBuffers', () => {
+describe('audioBufferCache exportBuffers encoding', () => {
     afterEach(() => {
         audioBufferCache.clear();
         vi.unstubAllGlobals();
     });
 
-    it('serializes resident buffers to base64 PCM per channel', async () => {
-        const exported = await audioBufferCache.serializeBuffers([
-            { id: 's', buffer: createAudioBuffer({ length: 2, channels: 1, fill: (i) => 0.25 * (i + 1) }) },
-        ]);
-        expect(exported.s).toBeDefined();
-        expect(exported.s?.numberOfChannels).toBe(1);
-        expect(exported.s?.channelData).toHaveLength(1);
-    });
+    function decodeChannel(b64: string): Float32Array {
+        const binary = atob(b64);
+        const bytes = new Uint8Array(binary.length);
+        for (let index = 0; index < binary.length; index++) {
+            bytes[index] = binary.charCodeAt(index);
+        }
+        return new Float32Array(bytes.buffer);
+    }
 
     it('chunks large buffers and yields to the main thread mid-encode', async () => {
         // >256KB (32 chunks of 8KB) exercises the YIELD_EVERY await branch.
-        const big = createAudioBuffer({ length: 70000, fill: (i) => Math.sin(i) });
-        const exported = await audioBufferCache.serializeBuffers([{ id: 'big', buffer: big }]);
-        expect(exported.big?.channelData[0]!.length).toBeGreaterThan(0);
+        installFakeIndexedDb();
+        const big = createAudioBuffer({ length: 70000, fill: (index) => Math.sin(index) });
+        audioBufferCache.set('big', big);
+
+        const exported = await audioBufferCache.exportBuffers(['big']);
+
+        const decoded = decodeChannel(exported.big!.channelData[0]!);
+        expect(decoded.length).toBe(70000);
+        // Samples on both sides of every yield boundary survive the chunking.
+        expect(decoded[0]).toBeCloseTo(Math.sin(0), 6);
+        expect(decoded[2047]).toBeCloseTo(Math.sin(2047), 6);
+        expect(decoded[2048]).toBeCloseTo(Math.sin(2048), 6);
+        expect(decoded[69_999]).toBeCloseTo(Math.sin(69_999), 6);
     });
 });

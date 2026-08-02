@@ -82,6 +82,21 @@ describe('redo', () => {
         expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('e1');
     });
 
+    it('uses a guarded redo action when recomputing the original action would be unsafe', async () => {
+        const guardedRedo = { type: 'stopPlayback' as const };
+        const entry = actionEntry({ redoAction: guardedRedo, source: 'ai' });
+        mocks.undoStoreValue.value = { past: [], future: [entry] };
+
+        await redo();
+
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(guardedRedo, {
+            skipUndo: true,
+            skipMacroRecording: true,
+            source: 'ai',
+        });
+        expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [entry], future: [] });
+    });
+
     it('should run callback redo entries without action replay', async () => {
         const redoFn = vi.fn();
         const entry = callbackEntry({ redo: redoFn });

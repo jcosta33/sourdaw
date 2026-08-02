@@ -202,7 +202,13 @@ function recordCommittedBatch(
             });
         }
 
-        const undoEntry = createUndoEntry(description.label, action, inverseAction, options?.source ?? 'manual');
+        const undoEntry = createUndoEntry(
+            description.label,
+            action,
+            inverseAction,
+            options?.source ?? 'manual',
+            description.redoAction
+        );
         if (options?.groupId) {
             undoEntry.groupId = options.groupId;
             undoEntry.groupLabel = options.groupLabel;

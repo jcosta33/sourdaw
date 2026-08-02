@@ -11,6 +11,7 @@ import { scheduleMidiNotes } from '../../scheduling/scheduleMidiNotes';
 import { panicYeastRuntime } from '../../transportControls/panicYeastRuntime';
 import { disposePlayheadScheduler } from '../disposePlayheadScheduler';
 import { schedulerSession } from '../schedulerSession';
+import { schedulerTimingDiagnostics } from '../schedulerTimingDiagnostics';
 import { startPlayheadScheduler } from '../startPlayheadScheduler';
 
 // Mutable store holders so each test can seed the transport + tempo-map
@@ -139,12 +140,32 @@ vi.mock('../../scheduling/applyAutomation/applyVcaGains', () => ({ applyVcaGains
 vi.mock('../../scheduling/resetMetronomeBeat', () => ({ resetMetronomeBeat: vi.fn() }));
 vi.mock('../../scheduling/scheduleAudioClips', () => ({ scheduleAudioClips: vi.fn() }));
 vi.mock('../../scheduling/scheduleMetronome', () => ({ scheduleMetronome: vi.fn() }));
-vi.mock('../../scheduling/scheduleMidiNotes', () => ({ scheduleMidiNotes: vi.fn(async () => undefined) }));
-vi.mock('../../transportControls/panicYeastRuntime', () => ({ panicYeastRuntime: vi.fn(async () => undefined) }));
+vi.mock('../../scheduling/scheduleMidiNotes', () => ({ scheduleMidiNotes: vi.fn(() => Promise.resolve()) }));
+vi.mock('../../transportControls/panicYeastRuntime', () => ({ panicYeastRuntime: vi.fn(() => Promise.resolve()) }));
 vi.mock('../../../repositories/transport/updateTransportState', () => ({ updateTransportState: vi.fn() }));
 
 function playingState(overrides: Partial<typeof defaultTransportState> = {}): typeof defaultTransportState {
     return { ...defaultTransportState, isPlaying: true, playheadPosition: 0, ...overrides };
+}
+
+type SchedulerWorkerHarness = {
+    onmessage: ((event: { data: unknown }) => void) | null;
+};
+
+let schedulerTickSequence = 0;
+
+function emitSchedulerTick(worker: SchedulerWorkerHarness, generation = schedulerSession.generation): void {
+    schedulerTickSequence++;
+    const receivedAtMs = performance.timeOrigin + performance.now();
+    worker.onmessage?.({
+        data: {
+            type: 'tick',
+            generation,
+            sequence: schedulerTickSequence,
+            scheduledAtMs: receivedAtMs - 2,
+            sentAtMs: receivedAtMs - 1,
+        },
+    });
 }
 
 describe('startPlayheadScheduler', () => {
@@ -182,6 +203,7 @@ describe('startPlayheadScheduler', () => {
         trackStoreState.value = { tracks: [] };
         takeLaneStoreState.value = { lanes: [] };
         ctxTime.now = 0;
+        schedulerTickSequence = 0;
         disposePlayheadScheduler();
         // disposePlayheadScheduler nulls the worker; startPlayheadScheduler will
         // recreate one. Stub the global Worker to a plain object with postMessage
@@ -224,7 +246,11 @@ describe('startPlayheadScheduler', () => {
         expect(schedulerSession.lastScheduledBeat).toBeCloseTo(8 - 0.0001, 6);
         expect(vi.mocked(resetMetronomeBeat)).toHaveBeenCalledWith(8);
         const worker = schedulerSession.worker as unknown as { postMessage: ReturnType<typeof vi.fn> };
-        expect(worker.postMessage).toHaveBeenCalledWith({ type: 'start', interval: 25 });
+        expect(worker.postMessage).toHaveBeenCalledWith({
+            type: 'start',
+            interval: 25,
+            generation: schedulerSession.generation,
+        });
     });
 
     it('runs a tick that schedules metronome, midi, audio, and automation in order', async () => {
@@ -235,7 +261,7 @@ describe('startPlayheadScheduler', () => {
         const worker = schedulerSession.worker as unknown as {
             onmessage: ((event: { data: unknown }) => void) | null;
         };
-        worker.onmessage?.({ data: { type: 'tick' } });
+        emitSchedulerTick(worker);
         await new Promise((resolve) => setTimeout(resolve, 0));
         await new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -246,17 +272,19 @@ describe('startPlayheadScheduler', () => {
         expect(vi.mocked(applyVcaGains)).toHaveBeenCalledTimes(1);
         expect(audioEngineMocks.refreshSidechainAlignment).toHaveBeenCalledTimes(1);
         expect(audioEngineMocks.scheduleAdjustmentLayers).toHaveBeenCalledTimes(1);
+        expect(schedulerTimingDiagnostics.snapshot().messagesReceived).toBe(1);
+        expect(schedulerTimingDiagnostics.snapshot().ticksSettled).toBe(1);
     });
 
     it('skips a tick when a prior tick is still in flight', async () => {
         transportStoreState.value = playingState();
         // scheduleMidiNotes resolves on the next microtask; the second tick
         // message arriving before it resolves must no-op via tickInFlight.
-        let resolveMidi: () => void = () => {};
+        const midiScheduling: { resolve(): void } = { resolve() {} };
         vi.mocked(scheduleMidiNotes).mockImplementationOnce(
             () =>
                 new Promise((resolve) => {
-                    resolveMidi = resolve;
+                    midiScheduling.resolve = resolve;
                 })
         );
         ctxTime.now = 0.1;
@@ -265,14 +293,17 @@ describe('startPlayheadScheduler', () => {
         const worker = schedulerSession.worker as unknown as {
             onmessage: ((event: { data: unknown }) => void) | null;
         };
-        worker.onmessage?.({ data: { type: 'tick' } });
+        emitSchedulerTick(worker);
         // Second tick before the first resolves: tickInFlight guard skips it.
-        worker.onmessage?.({ data: { type: 'tick' } });
+        emitSchedulerTick(worker);
         await new Promise((resolve) => setTimeout(resolve, 0));
 
         expect(vi.mocked(scheduleMidiNotes)).toHaveBeenCalledTimes(1);
-        resolveMidi();
+        expect(schedulerTimingDiagnostics.snapshot().messagesReceived).toBe(2);
+        expect(schedulerTimingDiagnostics.snapshot().ticksSkippedInFlight).toBe(1);
+        midiScheduling.resolve();
         await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(schedulerTimingDiagnostics.snapshot().ticksSettled).toBe(1);
     });
 
     it('halts the tick when transport is no longer current (not playing)', async () => {
@@ -284,7 +315,7 @@ describe('startPlayheadScheduler', () => {
         const worker = schedulerSession.worker as unknown as {
             onmessage: ((event: { data: unknown }) => void) | null;
         };
-        worker.onmessage?.({ data: { type: 'tick' } });
+        emitSchedulerTick(worker);
         await new Promise((resolve) => setTimeout(resolve, 0));
 
         expect(vi.mocked(scheduleMetronome)).not.toHaveBeenCalled();
@@ -300,7 +331,7 @@ describe('startPlayheadScheduler', () => {
         const worker = schedulerSession.worker as unknown as {
             onmessage: ((event: { data: unknown }) => void) | null;
         };
-        worker.onmessage?.({ data: { type: 'tick' } });
+        emitSchedulerTick(worker);
         await new Promise((resolve) => setTimeout(resolve, 0));
         await new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -320,7 +351,7 @@ describe('startPlayheadScheduler', () => {
         const worker = schedulerSession.worker as unknown as {
             onmessage: ((event: { data: unknown }) => void) | null;
         };
-        worker.onmessage?.({ data: { type: 'tick' } });
+        emitSchedulerTick(worker);
         await new Promise((resolve) => setTimeout(resolve, 0));
         await new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -345,7 +376,7 @@ describe('startPlayheadScheduler', () => {
         const worker = schedulerSession.worker as unknown as {
             onmessage: ((event: { data: unknown }) => void) | null;
         };
-        worker.onmessage?.({ data: { type: 'tick' } });
+        emitSchedulerTick(worker);
         await new Promise((resolve) => setTimeout(resolve, 0));
         await new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -371,7 +402,7 @@ describe('startPlayheadScheduler', () => {
         const worker = schedulerSession.worker as unknown as {
             onmessage: ((event: { data: unknown }) => void) | null;
         };
-        worker.onmessage?.({ data: { type: 'tick' } });
+        emitSchedulerTick(worker);
         await new Promise((resolve) => setTimeout(resolve, 0));
         await new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -401,7 +432,7 @@ describe('startPlayheadScheduler', () => {
         const worker = schedulerSession.worker as unknown as {
             onmessage: ((event: { data: unknown }) => void) | null;
         };
-        worker.onmessage?.({ data: { type: 'tick' } });
+        emitSchedulerTick(worker);
         await new Promise((resolve) => setTimeout(resolve, 0));
         await new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -420,7 +451,7 @@ describe('startPlayheadScheduler', () => {
         const worker = schedulerSession.worker as unknown as {
             onmessage: ((event: { data: unknown }) => void) | null;
         };
-        worker.onmessage?.({ data: { type: 'tick' } });
+        emitSchedulerTick(worker);
         await new Promise((resolve) => setTimeout(resolve, 0));
         await new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -438,7 +469,7 @@ describe('startPlayheadScheduler', () => {
         const worker = schedulerSession.worker as unknown as {
             onmessage: ((event: { data: unknown }) => void) | null;
         };
-        worker.onmessage?.({ data: { type: 'tick' } });
+        emitSchedulerTick(worker);
         await new Promise((resolve) => setTimeout(resolve, 0));
         await new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -461,7 +492,7 @@ describe('startPlayheadScheduler', () => {
         const worker = schedulerSession.worker as unknown as {
             onmessage: ((event: { data: unknown }) => void) | null;
         };
-        worker.onmessage?.({ data: { type: 'tick' } });
+        emitSchedulerTick(worker);
         await new Promise((resolve) => setTimeout(resolve, 0));
         await new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -482,7 +513,7 @@ describe('startPlayheadScheduler', () => {
         const worker = schedulerSession.worker as unknown as {
             onmessage: ((event: { data: unknown }) => void) | null;
         };
-        worker.onmessage?.({ data: { type: 'tick' } });
+        emitSchedulerTick(worker);
         await new Promise((resolve) => setTimeout(resolve, 0));
         await new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -513,7 +544,7 @@ describe('startPlayheadScheduler', () => {
         const worker = schedulerSession.worker as unknown as {
             onmessage: ((event: { data: unknown }) => void) | null;
         };
-        worker.onmessage?.({ data: { type: 'tick' } });
+        emitSchedulerTick(worker);
         await new Promise((resolve) => setTimeout(resolve, 0));
         await new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -542,7 +573,7 @@ describe('startPlayheadScheduler', () => {
         const worker = schedulerSession.worker as unknown as {
             onmessage: ((event: { data: unknown }) => void) | null;
         };
-        worker.onmessage?.({ data: { type: 'tick' } });
+        emitSchedulerTick(worker);
         await new Promise((resolve) => setTimeout(resolve, 0));
         await new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -551,17 +582,81 @@ describe('startPlayheadScheduler', () => {
         expect(schedulerSession.punchRecordingActive).toBe(false);
     });
 
-    it('ignores non-tick worker messages', async () => {
+    it('ignores non-tick and malformed tick worker messages', async () => {
         transportStoreState.value = playingState();
         startPlayheadScheduler();
-        const worker = schedulerSession.worker as unknown as {
-            onmessage: ((event: { data: unknown }) => void) | null;
-        };
-        // A non-tick message must not drive a tick.
+        const worker = schedulerSession.worker as unknown as SchedulerWorkerHarness;
+        const receivedAtMs = performance.timeOrigin + performance.now();
         worker.onmessage?.({ data: { type: 'other' } });
+        worker.onmessage?.({
+            data: { type: 'tick', generation: schedulerSession.generation, scheduledAtMs: 1, sentAtMs: 2 },
+        });
+        worker.onmessage?.({
+            data: { type: 'tick', generation: schedulerSession.generation, sequence: 1, scheduledAtMs: 2, sentAtMs: 1 },
+        });
+        worker.onmessage?.({
+            data: {
+                type: 'tick',
+                generation: schedulerSession.generation,
+                sequence: Number.MAX_SAFE_INTEGER + 1,
+                scheduledAtMs: receivedAtMs - 2,
+                sentAtMs: receivedAtMs - 1,
+            },
+        });
+        worker.onmessage?.({
+            data: {
+                type: 'tick',
+                generation: schedulerSession.generation,
+                sequence: 1,
+                scheduledAtMs: receivedAtMs + 4,
+                sentAtMs: receivedAtMs + 5,
+            },
+        });
         await new Promise((resolve) => setTimeout(resolve, 0));
 
+        expect(schedulerTimingDiagnostics.snapshot().messagesReceived).toBe(0);
         expect(vi.mocked(scheduleMetronome)).not.toHaveBeenCalled();
+    });
+
+    it('ignores a queued tick from a retired scheduler generation', async () => {
+        transportStoreState.value = playingState();
+        startPlayheadScheduler();
+        const retiredWorker = schedulerSession.worker as unknown as SchedulerWorkerHarness;
+
+        disposePlayheadScheduler();
+        startPlayheadScheduler();
+        const activeWorker = schedulerSession.worker as unknown as SchedulerWorkerHarness;
+
+        emitSchedulerTick(retiredWorker);
+        expect(schedulerTimingDiagnostics.snapshot().messagesReceived).toBe(0);
+
+        emitSchedulerTick(activeWorker);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(schedulerTimingDiagnostics.snapshot().messagesReceived).toBe(1);
+        expect(vi.mocked(scheduleMetronome)).toHaveBeenCalledTimes(1);
+    });
+
+    it('rebinds a reused worker and clears a retired in-flight tick on restart', async () => {
+        transportStoreState.value = playingState();
+        startPlayheadScheduler();
+        const worker = schedulerSession.worker as unknown as SchedulerWorkerHarness;
+        const retiredHandler = worker.onmessage;
+        const retiredGeneration = schedulerSession.generation;
+        schedulerSession.tickInFlight = true;
+
+        startPlayheadScheduler();
+
+        expect(schedulerSession.worker).toBe(worker);
+        expect(worker.onmessage).not.toBe(retiredHandler);
+        expect(schedulerSession.tickInFlight).toBe(false);
+        emitSchedulerTick(worker, retiredGeneration);
+        expect(schedulerTimingDiagnostics.snapshot().messagesReceived).toBe(0);
+        emitSchedulerTick(worker);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(schedulerTimingDiagnostics.snapshot().messagesReceived).toBe(1);
+        expect(vi.mocked(scheduleMetronome)).toHaveBeenCalledTimes(1);
     });
 
     it('aborts after scheduleMidiNotes when the scheduler generation goes stale', async () => {
@@ -577,7 +672,7 @@ describe('startPlayheadScheduler', () => {
         const worker = schedulerSession.worker as unknown as {
             onmessage: ((event: { data: unknown }) => void) | null;
         };
-        worker.onmessage?.({ data: { type: 'tick' } });
+        emitSchedulerTick(worker);
         await new Promise((resolve) => setTimeout(resolve, 0));
         await new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -604,7 +699,7 @@ describe('startPlayheadScheduler', () => {
         const worker = schedulerSession.worker as unknown as {
             onmessage: ((event: { data: unknown }) => void) | null;
         };
-        worker.onmessage?.({ data: { type: 'tick' } });
+        emitSchedulerTick(worker);
         await new Promise((resolve) => setTimeout(resolve, 0));
         await new Promise((resolve) => setTimeout(resolve, 0));
 

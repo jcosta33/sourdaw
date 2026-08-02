@@ -286,7 +286,9 @@ async function loadProcessor(testCase: DeviceCase): Promise<ProcessorLike> {
     if (!Ctor) {
         throw new Error(`${testCase.processorName} was not registered`);
     }
-    return new Ctor();
+    return new Ctor({
+        processorOptions: { wasmModule: new WebAssembly.Module(MINIMAL_WASM) },
+    });
 }
 
 function runBlocks(proc: ProcessorLike, blocks: number): void {
@@ -331,7 +333,9 @@ describe.each(DEVICE_CASES)('$device telemetry seqlock writer (audit RT-2)', (te
 
     async function readyProcessor(): Promise<ProcessorLike> {
         const proc = await loadProcessor(testCase);
-        proc.port.onmessage?.({ data: { type: 'init', wasmBytes: MINIMAL_WASM } });
+        proc.port.onmessage?.({
+            data: { type: 'init', wasmModule: new WebAssembly.Module(MINIMAL_WASM) },
+        });
         proc.port.onmessage?.({ data: { type: 'init-sab', sab, byteOffset: 0 } });
         return proc;
     }

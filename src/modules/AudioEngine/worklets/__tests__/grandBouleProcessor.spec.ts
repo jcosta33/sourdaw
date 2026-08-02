@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest';
 
+import {
+    GRAND_BOULE_CONSUMER_CLOCK_PUBLISHED_IDX,
+    GRAND_BOULE_SYNC_INT_COUNT,
+} from '../../models/GrandBouleRingProtocol';
+import { readGrandBouleConsumerClock } from '../grandBouleConsumerClock';
+
 /**
  * Tests for the Grand Boule consumer's SPSC acquire read.
  *
@@ -262,7 +268,7 @@ describe('GrandBouleProcessor (real instance)', () => {
     it('publishes the clock offset before releasing an advanced read head on consume and hard flush', () => {
         const proc = newProc();
         const { controlInts, leftRing, rightRing, sab } = makeSab(8);
-        const syncSab = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT);
+        const syncSab = new SharedArrayBuffer(GRAND_BOULE_SYNC_INT_COUNT * Int32Array.BYTES_PER_ELEMENT);
         leftRing.fill(1);
         rightRing.fill(-1);
         Atomics.store(controlInts, WRITE_HEAD_IDX, 8);
@@ -271,7 +277,7 @@ describe('GrandBouleProcessor (real instance)', () => {
         const originalStore = Atomics.store;
         const publications: string[] = [];
         const storeSpy = vi.spyOn(Atomics, 'store').mockImplementation((typedArray, index, value) => {
-            if (typedArray.buffer === syncSab && index === 0) {
+            if (typedArray.buffer === syncSab && index === GRAND_BOULE_CONSUMER_CLOCK_PUBLISHED_IDX) {
                 publications.push('sync');
             } else if (typedArray.buffer === sab && index === READ_HEAD_IDX) {
                 publications.push('read');
@@ -286,12 +292,14 @@ describe('GrandBouleProcessor (real instance)', () => {
             Atomics.store(controlInts, 6, 8);
             Atomics.add(controlInts, 5, 1);
             proc.process([], [[new Float32Array(4), new Float32Array(4)]]);
-            const flushOffset = Atomics.load(new Int32Array(syncSab), 0);
+            const flushClock = { contextFrame: 0, readHead: 0 };
+            const flushPublished = readGrandBouleConsumerClock(new Int32Array(syncSab), flushClock);
 
-            expect({ consumeOrder, flushOrder: publications, flushOffset }).toEqual({
+            expect({ consumeOrder, flushOrder: publications, flushPublished, flushClock }).toEqual({
                 consumeOrder: ['sync', 'read'],
                 flushOrder: ['sync', 'read'],
-                flushOffset: 12_796,
+                flushPublished: true,
+                flushClock: { contextFrame: 12_804, readHead: 8 },
             });
         } finally {
             storeSpy.mockRestore();

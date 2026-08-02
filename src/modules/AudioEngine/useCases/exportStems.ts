@@ -16,6 +16,7 @@ import { getSidechainKeyDelay } from './latencyCompensation/compensation/getSide
 import { acquireRenderLock } from './offlineRender/acquireRenderLock';
 import { checkCancel } from './offlineRender/checkCancel';
 import { clampRenderFrameCount } from './offlineRender/clampRenderFrameCount';
+import { collectDeviceRuntimeFailures } from './offlineRender/collectDeviceRuntimeFailures';
 import { connectOfflineToasterPadRoutes } from './offlineRender/connectOfflineToasterPadRoutes';
 import { MIN_RENDER_TIMEOUT_MS, RENDER_TIMEOUT_MULTIPLIER } from './offlineRender/constants';
 import { createOfflineTrackStrip } from './offlineRender/createOfflineTrackStrip';
@@ -418,6 +419,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                 offlineCtx,
                 durationSeconds,
                 timeoutMs: stemTimeoutMs,
+                ...collectDeviceRuntimeFailures(deviceEntriesByTrack),
                 onRenderProgress: onProgress
                     ? (fraction) => onProgress(fractAfterSchedule + fraction * (stemSpan * 0.6))
                     : undefined,

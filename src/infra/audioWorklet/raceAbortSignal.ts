@@ -12,6 +12,11 @@ export async function raceAbortSignal<Value>(promise: Promise<Value>, signal?: A
     };
 
     if (signal.aborted) {
+        // The operation promise is created before this helper is called. It can
+        // therefore reject even though cancellation wins synchronously here.
+        // Observe that losing rejection so it cannot escape as an unhandled
+        // promise while the caller receives the signal's abort reason.
+        void promise.catch(() => {});
         throw abortReason();
     }
 

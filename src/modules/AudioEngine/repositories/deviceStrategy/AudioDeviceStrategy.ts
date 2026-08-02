@@ -72,6 +72,10 @@ export type DeviceNoteOffRequest = {
 
 export type AudioDeviceStrategy = {
     readonly node: OfflineDeviceNode;
+    /** Rejects if an initialized processor dies while an offline render is active. */
+    readonly runtimeFailure?: Promise<never>;
+    /** Round-trips terminal processor state before an offline buffer is accepted. */
+    readonly runtimeHealthCheck?: () => Promise<void>;
     /**
      * Whether this device voices notes. `scheduleTrackClips` reads the first
      * chain entry that carries a note surface as the track's instrument, so

@@ -12,6 +12,8 @@ import { NATIVE_DSP_DEVICE_FACTORIES, type NativeDspNode } from './nativeDspDevi
 
 export class NativeDspDeviceStrategy implements AudioDeviceStrategy {
     public readonly node: OfflineDeviceNode;
+    public readonly runtimeFailure?: Promise<never>;
+    public readonly runtimeHealthCheck?: () => Promise<void>;
     public readonly acceptsScheduledParam?: (name: string) => boolean;
     public readonly scheduleParam?: (name: string, segments: readonly OfflineAutomationSegment[]) => void;
     /**
@@ -24,6 +26,8 @@ export class NativeDspDeviceStrategy implements AudioDeviceStrategy {
     public readonly acceptsNotes: boolean;
 
     constructor(private readonly dspNode: NativeDspNode) {
+        this.runtimeFailure = dspNode.runtimeFailure;
+        this.runtimeHealthCheck = dspNode.runtimeHealthCheck;
         this.acceptsNotes = dspNode.noteOn !== undefined;
         this.node = {
             inputNode: dspNode.workletNode,

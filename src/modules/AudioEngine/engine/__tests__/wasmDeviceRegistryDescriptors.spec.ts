@@ -6,6 +6,7 @@ import { type BuiltinDeviceNode } from '../../models/AudioEngineState';
 import { externalLatencyRegistry } from '../../useCases/latencyCompensation/compensation/externalLatencyRegistry';
 import { setAudioDeviceRuntimeSink } from '../audioDeviceRuntimeSink';
 import { type BacteriaNodeResult } from '../BacteriaNode';
+import { type CrumbsNodeResult } from '../CrumbsNode';
 import { type GlutenNodeResult } from '../GlutenNode';
 import { type GrandBouleNodeResult } from '../GrandBouleNode';
 import { type GrinderNodeResult } from '../GrinderNode';
@@ -22,6 +23,7 @@ const factoryMocks = vi.hoisted(() => ({
     createProofChamberNode: vi.fn(),
     createGlutenNode: vi.fn(),
     createBacteriaNode: vi.fn(),
+    createCrumbsNode: vi.fn(),
     createGrinderNode: vi.fn(),
     createScoringNode: vi.fn(),
     createGrandBouleNode: vi.fn(),
@@ -50,6 +52,10 @@ vi.mock('../GlutenNode', async (importOriginal) => ({
 vi.mock('../BacteriaNode', async (importOriginal) => ({
     ...(await importOriginal<typeof import('../BacteriaNode')>()),
     createBacteriaNode: factoryMocks.createBacteriaNode,
+}));
+vi.mock('../CrumbsNode', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../CrumbsNode')>()),
+    createCrumbsNode: factoryMocks.createCrumbsNode,
 }));
 vi.mock('../GrinderNode', async (importOriginal) => ({
     ...(await importOriginal<typeof import('../GrinderNode')>()),
@@ -112,6 +118,10 @@ function lastLoadedNode(onLoaded: WasmDeviceCreateDeps['onLoaded']): BuiltinDevi
         throw new Error('expected onLoaded to have been called');
     }
     return call[0];
+}
+
+function isRuntimeFailureReporter(value: unknown): value is (message: string) => void {
+    return typeof value === 'function';
 }
 
 function requireDescriptor(deviceType: string) {
@@ -501,6 +511,52 @@ describe('wasmDeviceRegistry descriptors', () => {
         });
     });
 
+    describe('crumbs', () => {
+        function makeCrumbsResult(ready: Promise<Record<string, unknown>>): CrumbsNodeResult {
+            return {
+                workletNode: makeWorkletNode(),
+                noteOn: vi.fn(),
+                noteOff: vi.fn(),
+                allNotesOff: vi.fn(),
+                allSoundOff: vi.fn(),
+                setParam: vi.fn(),
+                setMode: vi.fn(),
+                setBypass: vi.fn(),
+                connect: vi.fn(),
+                disconnect: vi.fn(),
+                destroy: vi.fn(),
+                ready,
+            };
+        }
+
+        it('threads cancellation into construction and destroys a node invalidated before readiness', async () => {
+            const readiness = Promise.withResolvers<Record<string, unknown>>();
+            const result = makeCrumbsResult(readiness.promise);
+            factoryMocks.createCrumbsNode.mockResolvedValue(result);
+            const abortController = new AbortController();
+            const deps = createDeps({
+                deviceType: 'builtin-crumbs',
+                deviceId: 'crumbs-late',
+                signal: abortController.signal,
+            });
+
+            const { loadPromise } = requireDescriptor('builtin-crumbs').create(deps);
+            await Promise.resolve();
+            abortController.abort();
+            readiness.resolve({});
+            await loadPromise;
+
+            expect(factoryMocks.createCrumbsNode).toHaveBeenCalledExactlyOnceWith(
+                deps.context,
+                undefined,
+                undefined,
+                abortController.signal
+            );
+            expect(result.destroy).toHaveBeenCalledTimes(1);
+            expect(deps.onLoaded).not.toHaveBeenCalled();
+        });
+    });
+
     describe('grinder', () => {
         it('replays queued params, the pending patch, and the pending bypass on load', async () => {
             const result: GrinderNodeResult = {
@@ -670,8 +726,8 @@ describe('wasmDeviceRegistry descriptors', () => {
     });
 
     describe('grand-boule', () => {
-        it('replays queued params and announces the loaded device', async () => {
-            const result: GrandBouleNodeResult = {
+        function makeGrandBouleResult(): GrandBouleNodeResult {
+            return {
                 workletNode: makeWorkletNode(),
                 noteOn: vi.fn(),
                 noteOff: vi.fn(),
@@ -690,6 +746,10 @@ describe('wasmDeviceRegistry descriptors', () => {
                 destroy: vi.fn(),
                 ready: Promise.resolve({}),
             };
+        }
+
+        it('replays queued params and announces the loaded device', async () => {
+            const result = makeGrandBouleResult();
             factoryMocks.createGrandBouleNode.mockResolvedValue(result);
             const emitDeviceLoaded = vi.fn();
             setAudioDeviceRuntimeSink({ emitDeviceLoaded });
@@ -704,6 +764,59 @@ describe('wasmDeviceRegistry descriptors', () => {
             expect(emitDeviceLoaded).toHaveBeenCalledWith({ deviceId: 'gb-1', deviceType: 'grand-boule' });
             const loaded = lastLoadedNode(deps.onLoaded);
             expect(loaded.grandBouleControls?.ready).toBe(true);
+            expect(loaded.workerInstances).toBe(1);
+        });
+
+        it('demotes a loaded device when its engine worker fails', async () => {
+            const result = makeGrandBouleResult();
+            factoryMocks.createGrandBouleNode.mockResolvedValue(result);
+            const emitDeviceRemoved = vi.fn();
+            setAudioDeviceRuntimeSink({ emitDeviceRemoved });
+            const deps = createDeps({ deviceType: 'grand-boule', deviceId: 'gb-failed' });
+
+            const { loadPromise } = requireDescriptor('grand-boule').create(deps);
+            await loadPromise;
+            const loaded = lastLoadedNode(deps.onLoaded);
+            const factoryCall = factoryMocks.createGrandBouleNode.mock.calls.at(-1);
+            const reportRuntimeFailure: unknown = factoryCall?.[2];
+            if (!isRuntimeFailureReporter(reportRuntimeFailure)) {
+                throw new TypeError('expected GrandBouleNode to report post-ready runtime failures');
+            }
+
+            reportRuntimeFailure('render failed');
+            reportRuntimeFailure('duplicate failure');
+
+            expect({
+                controllerReady: loaded.controller?.ready,
+                deviceReady: loaded.grandBouleControls?.ready,
+                workerInstances: loaded.workerInstances,
+            }).toEqual({ controllerReady: false, deviceReady: false, workerInstances: 0 });
+            expect(result.destroy).toHaveBeenCalledOnce();
+            expect(emitDeviceRemoved).toHaveBeenCalledWith({ deviceId: 'gb-failed', deviceType: 'grand-boule' });
+            expect(emitDeviceRemoved).toHaveBeenCalledOnce();
+        });
+
+        it('does not publish a device that faults before ownership promotion', async () => {
+            const result = makeGrandBouleResult();
+            factoryMocks.createGrandBouleNode.mockResolvedValue(result);
+            const emitDeviceLoaded = vi.fn();
+            const emitDeviceRemoved = vi.fn();
+            setAudioDeviceRuntimeSink({ emitDeviceLoaded, emitDeviceRemoved });
+            const deps = createDeps({ deviceType: 'grand-boule', deviceId: 'gb-raced' });
+
+            const { loadPromise } = requireDescriptor('grand-boule').create(deps);
+            const factoryCall = factoryMocks.createGrandBouleNode.mock.calls.at(-1);
+            const reportRuntimeFailure: unknown = factoryCall?.[2];
+            if (!isRuntimeFailureReporter(reportRuntimeFailure)) {
+                throw new TypeError('expected GrandBouleNode to report post-ready runtime failures');
+            }
+            reportRuntimeFailure('failed during promotion');
+            await loadPromise;
+
+            expect(deps.onLoaded).not.toHaveBeenCalled();
+            expect(result.destroy).toHaveBeenCalledOnce();
+            expect(emitDeviceLoaded).not.toHaveBeenCalled();
+            expect(emitDeviceRemoved).not.toHaveBeenCalled();
         });
     });
 

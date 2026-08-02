@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // The processor module runs in AudioWorklet global scope, which provides
 // AudioWorkletProcessor, registerProcessor and `sampleRate`. Provide them so
 // the real module can be imported and self-register.
-const registry = new Map<string, new () => AudioWorkletProcessorLike>();
+const registry = new Map<string, new (...args: unknown[]) => AudioWorkletProcessorLike>();
 const postedMessages: unknown[] = [];
 
 class AudioWorkletProcessorShim {
@@ -31,7 +31,7 @@ type AudioWorkletProcessorLike = {
 };
 
 vi.stubGlobal('AudioWorkletProcessor', AudioWorkletProcessorShim);
-vi.stubGlobal('registerProcessor', (name: string, proc: new () => AudioWorkletProcessorLike) => {
+vi.stubGlobal('registerProcessor', (name: string, proc: new (...args: unknown[]) => AudioWorkletProcessorLike) => {
     registry.set(name, proc);
 });
 vi.stubGlobal('sampleRate', 48000);
@@ -84,10 +84,7 @@ vi.mock('../../wasm/daw_dsp.js', () => ({
     } as unknown as typeof KneadInstanceMock,
 }));
 
-// The processor compiles `new WebAssembly.Module(wasmBytes)` before handing the
-// module to the (mocked) initSync, so the bytes must be a structurally valid
-// module — the 8-byte magic + version header is the minimal one that compiles.
-const MINIMAL_WASM = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
+const MINIMAL_WASM_MODULE = new WebAssembly.Module(new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]));
 
 // Transport SAB layout mirrored from kneadProcessor.ts.
 const TRANSPORT_BEAT_F64 = 0;
@@ -112,7 +109,7 @@ async function loadProcessor(): Promise<AudioWorkletProcessorLike> {
     if (!Ctor) {
         throw new Error('knead-processor was not registered');
     }
-    return new Ctor();
+    return new Ctor({ processorOptions: { wasmModule: MINIMAL_WASM_MODULE } });
 }
 
 function sendMessage(proc: AudioWorkletProcessorLike, data: unknown): void {
@@ -126,10 +123,21 @@ describe('KneadProcessor pitch-shift computation', () => {
         legacyBinary = false;
     });
 
+    it('ignores a duplicate init after becoming ready', async () => {
+        const proc = await loadProcessor();
+        sendMessage(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        postedMessages.length = 0;
+
+        sendMessage(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+
+        expect(postedMessages).toEqual([]);
+        expect(proc._faulted).toBe(false);
+    });
+
     it('feeds a finite shift to the WASM instance when both pitch centers are present', async () => {
         const proc = await loadProcessor();
         const transportSAB = makePlayingTransport(2, 120);
-        sendMessage(proc, { type: 'init', wasmBytes: MINIMAL_WASM, transportSAB });
+        sendMessage(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE, transportSAB });
 
         sendMessage(proc, {
             type: 'update-state',
@@ -161,7 +169,7 @@ describe('KneadProcessor pitch-shift computation', () => {
         const proc = await loadProcessor();
 
         const transportSAB = makePlayingTransport(2, 120);
-        sendMessage(proc, { type: 'init', wasmBytes: MINIMAL_WASM, transportSAB });
+        sendMessage(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE, transportSAB });
 
         // A blob rehydrated from the persisted (narrow) schema has no
         // originalPitchCenterCents — exactly the post-CRDT-round-trip shape.
@@ -196,7 +204,7 @@ describe('KneadProcessor pitch-shift computation', () => {
     it('reuses the WASM-memory typed-array views across render quanta (no per-block allocation)', async () => {
         const proc = await loadProcessor();
         const transportSAB = makePlayingTransport(2, 120);
-        sendMessage(proc, { type: 'init', wasmBytes: MINIMAL_WASM, transportSAB });
+        sendMessage(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE, transportSAB });
         sendMessage(proc, {
             type: 'update-state',
             clips: {
@@ -231,7 +239,7 @@ describe('KneadProcessor pitch-shift computation', () => {
 
     it('routes the right output channel from get_right_ptr when the binary exposes it', async () => {
         const proc = await loadProcessor();
-        sendMessage(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        sendMessage(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
 
         const input = [new Float32Array(128), new Float32Array(128)];
         const leftOut = new Float32Array(128);
@@ -249,7 +257,7 @@ describe('KneadProcessor pitch-shift computation', () => {
         legacyBinary = true;
         const proc = await loadProcessor();
         const transportSAB = makePlayingTransport(2, 120);
-        sendMessage(proc, { type: 'init', wasmBytes: MINIMAL_WASM, transportSAB });
+        sendMessage(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE, transportSAB });
         sendMessage(proc, {
             type: 'update-state',
             clips: {
@@ -295,7 +303,7 @@ describe('KneadProcessor message handling & process guards', () => {
         sendMessage(proc, { type: 'param', name: 'shift_semitones', value: 7 });
         expect(shiftCalls).toEqual([]);
 
-        sendMessage(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        sendMessage(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         // After init: shift_semitones is forwarded.
         sendMessage(proc, { type: 'param', name: 'shift_semitones', value: 3 });
         expect(shiftCalls).toEqual([3]);
@@ -307,7 +315,7 @@ describe('KneadProcessor message handling & process guards', () => {
 
     it('toggles bypass without affecting the instance', async () => {
         const proc = await loadProcessor();
-        sendMessage(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        sendMessage(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         sendMessage(proc, { type: 'bypass', bypassed: true });
         sendMessage(proc, { type: 'bypass', bypassed: false });
         // bypass stores a flag; no error posted.
@@ -332,7 +340,7 @@ describe('KneadProcessor message handling & process guards', () => {
 
     it('returns early when the left input channel is absent (ready instance)', async () => {
         const proc = await loadProcessor();
-        sendMessage(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        sendMessage(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         const output = [new Float32Array(4).fill(0), new Float32Array(4).fill(0)];
         // input[0] absent → !in0 guard → early return, no shift applied.
         proc.process([[]], [output]);
@@ -347,7 +355,7 @@ describe('KneadProcessor message handling & process guards', () => {
         f64[TRANSPORT_BEAT_F64] = 2;
         f64[TRANSPORT_TEMPO_F64] = 120;
         f64[TRANSPORT_IS_PLAYING_F64] = 0; // stopped
-        sendMessage(proc, { type: 'init', wasmBytes: MINIMAL_WASM, transportSAB: sab });
+        sendMessage(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE, transportSAB: sab });
         sendMessage(proc, {
             type: 'update-state',
             clips: {
@@ -369,7 +377,7 @@ describe('KneadProcessor message handling & process guards', () => {
     it('computes zero shift when the playhead is outside every clip range', async () => {
         const proc = await loadProcessor();
         const transportSAB = makePlayingTransport(99, 120); // beat 9, outside clip [0,4]
-        sendMessage(proc, { type: 'init', wasmBytes: MINIMAL_WASM, transportSAB });
+        sendMessage(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE, transportSAB });
         sendMessage(proc, {
             type: 'update-state',
             clips: {
@@ -390,7 +398,7 @@ describe('KneadProcessor message handling & process guards', () => {
     it('computes zero shift when the active clip has no blob at the playhead', async () => {
         const proc = await loadProcessor();
         const transportSAB = makePlayingTransport(2, 120); // inside clip range
-        sendMessage(proc, { type: 'init', wasmBytes: MINIMAL_WASM, transportSAB });
+        sendMessage(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE, transportSAB });
         // Blob window [1000, 2000]s — playhead (beat 2 @120bpm = 1s) is before it.
         sendMessage(proc, {
             type: 'update-state',
@@ -411,7 +419,7 @@ describe('KneadProcessor message handling & process guards', () => {
 
     it('faults and passthrough-copies when the WASM instance throws mid-process', async () => {
         const proc = await loadProcessor();
-        sendMessage(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        sendMessage(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         // Sabotage the instance by replacing process() to throw.
         const inst = (proc as unknown as { _instance: { process(): number } })._instance;
         inst.process = () => {

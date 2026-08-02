@@ -19,5 +19,13 @@ export const GRAND_BOULE_FLUSH_HEAD_IDX = 6;
 export const GRAND_BOULE_LIFECYCLE_CONTINUE = 0;
 export const GRAND_BOULE_LIFECYCLE_SLEEP = 3;
 
-export const GRAND_BOULE_CONSUMER_OFFSET_IDX = 0;
-export const GRAND_BOULE_CONSUMER_OFFSET_UNSET = -1;
+/**
+ * Consumer-clock synchronization layout. Runtime publication and read behavior
+ * lives in services; models owns only the shared numeric protocol.
+ */
+export const GRAND_BOULE_SYNC_INT_COUNT = 5;
+export const GRAND_BOULE_SYNC_SEQUENCE_IDX = 0;
+export const GRAND_BOULE_CONSUMER_CONTEXT_LOW_IDX = 1;
+export const GRAND_BOULE_CONSUMER_CONTEXT_HIGH_IDX = 2;
+export const GRAND_BOULE_SYNC_READ_HEAD_IDX = 3;
+export const GRAND_BOULE_CONSUMER_CLOCK_PUBLISHED_IDX = 4;

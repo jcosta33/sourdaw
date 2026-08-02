@@ -10,7 +10,9 @@ export async function exportProjectFile(): Promise<void> {
     // happens without a prior save still ships the current host chunk rather than a
     // stale or empty one (PH-3; matches saveProject).
     await captureExternalPluginStates();
-    const built = await buildProjectData();
+    // The one sanctioned base64 producer: an explicit, user-initiated export.
+    // Every other caller leaves it off — see `BuildProjectDataInput`.
+    const built = await buildProjectData({ includeAudioBuffers: true });
     if (!built) {
         return;
     }

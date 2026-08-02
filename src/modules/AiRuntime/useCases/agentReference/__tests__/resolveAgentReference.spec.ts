@@ -66,10 +66,13 @@ function createClipProjectState(): ProjectContext {
     const vocalsVerse = { ...intro, id: 'clip-vocals-verse', name: 'Verse', startBeat: 8, endBeat: 16 };
     const bassVerse = { ...intro, id: 'clip-bass-verse', name: 'Verse', startBeat: 16, endBeat: 24 };
     const locked = { ...intro, id: 'clip-locked', name: 'Locked', locked: true };
+    const midi = { ...intro, id: 'clip-midi', name: 'Piano MIDI', type: 'midi' as const, noteCount: 4 };
+    const emptyMidi = { ...midi, id: 'clip-empty-midi', name: 'Empty MIDI', noteCount: 0 };
+    const lockedMidi = { ...midi, id: 'clip-locked-midi', name: 'Locked MIDI', locked: true };
     return {
         ...project,
         tracks: [
-            { ...vocals, clipCount: 3, clips: [intro, vocalsVerse, locked] },
+            { ...vocals, clipCount: 6, clips: [intro, vocalsVerse, locked, midi, emptyMidi, lockedMidi] },
             { ...bass, clipCount: 1, clips: [bassVerse] },
         ],
         selectedClipId: intro.id,
@@ -79,6 +82,10 @@ function createClipProjectState(): ProjectContext {
 
 function resolveClip(prompt: string, assertedId: string, project = createClipProjectState()) {
     return resolveAgentReference({ prompt, assertedId, capability: 'editable-clip', context: project });
+}
+
+function resolveMidiClip(prompt: string, assertedId: string, project = createClipProjectState()) {
+    return resolveAgentReference({ prompt, assertedId, capability: 'editable-midi-clip', context: project });
 }
 
 function createAutomationProjectState(): ProjectContext {
@@ -231,6 +238,54 @@ describe('resolveAgentReference', () => {
         expect(resolveClip('rename Locked to Open', 'clip-locked', project)).toMatchObject({
             status: 'rejected',
             reason: 'ungrounded-target',
+        });
+    });
+
+    it('resolves only unlocked non-empty MIDI clips for note transforms', () => {
+        const project = createClipProjectState();
+        const bass = project.tracks[1];
+        if (!bass) {
+            throw new Error('Expected bass fixture');
+        }
+        const ambiguousContext = {
+            ...project,
+            tracks: project.tracks.map((track) =>
+                track.id === bass.id
+                    ? {
+                          ...track,
+                          clips: [
+                              ...track.clips,
+                              {
+                                  ...project.tracks[0]!.clips[0]!,
+                                  id: 'clip-audio-piano',
+                                  name: 'Piano MIDI',
+                              },
+                          ],
+                      }
+                    : track
+            ),
+        };
+
+        expect(resolveMidiClip('quantize notes in Piano MIDI', 'clip-midi')).toEqual({
+            status: 'resolved',
+            id: 'clip-midi',
+            evidence: 'exact-name',
+        });
+        expect(resolveMidiClip('quantize notes in Intro', 'clip-intro')).toMatchObject({
+            status: 'rejected',
+            reason: 'ungrounded-target',
+        });
+        expect(resolveMidiClip('quantize notes in Empty MIDI', 'clip-empty-midi')).toMatchObject({
+            status: 'rejected',
+            reason: 'ungrounded-target',
+        });
+        expect(resolveMidiClip('transpose notes in Locked MIDI', 'clip-locked-midi')).toMatchObject({
+            status: 'rejected',
+            reason: 'ungrounded-target',
+        });
+        expect(resolveMidiClip('quantize notes in Piano MIDI', 'clip-midi', ambiguousContext)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
         });
     });
 

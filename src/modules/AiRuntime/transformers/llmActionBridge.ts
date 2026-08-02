@@ -89,6 +89,14 @@ function findClip(context: ProjectContext, clipId: unknown) {
     return undefined;
 }
 
+function findEditableMidiClip(context: ProjectContext, clipId: unknown) {
+    const target = findClip(context, clipId);
+    if (!target || target.clip.type !== 'midi' || target.clip.locked === true || target.clip.noteCount < 1) {
+        return undefined;
+    }
+    return target;
+}
+
 function isProviderRoutableSource(
     track: ProjectContext['tracks'][number] | undefined
 ): track is ProjectContext['tracks'][number] {
@@ -519,6 +527,44 @@ function bridgeToolCall({
             return rejection(index, call.name, 'Expected only an available clipId');
         }
         return { type: call.name, payload: { clipId: source.clip.id } };
+    }
+
+    if (call.name === 'quantizeNotes') {
+        const target = findEditableMidiClip(context, args.clipId);
+        if (
+            !hasExactKeys(args, ['clipId', 'gridSize']) ||
+            !target ||
+            !isFiniteNumber(args.gridSize) ||
+            args.gridSize <= 0 ||
+            args.gridSize > 64
+        ) {
+            return rejection(
+                index,
+                call.name,
+                'Expected an unlocked non-empty MIDI clip and a finite gridSize greater than 0 and at most 64'
+            );
+        }
+        return { type: 'quantizeNotes', payload: { clipId: target.clip.id, gridSize: args.gridSize } };
+    }
+
+    if (call.name === 'transposeNotes') {
+        const target = findEditableMidiClip(context, args.clipId);
+        if (
+            !hasExactKeys(args, ['clipId', 'semitones']) ||
+            !target ||
+            !isFiniteNumber(args.semitones) ||
+            !Number.isInteger(args.semitones) ||
+            args.semitones < -127 ||
+            args.semitones > 127 ||
+            args.semitones === 0
+        ) {
+            return rejection(
+                index,
+                call.name,
+                'Expected an unlocked non-empty MIDI clip and a non-zero integer semitone delta from -127 through 127'
+            );
+        }
+        return { type: 'transposeNotes', payload: { clipId: target.clip.id, semitones: args.semitones } };
     }
 
     if (call.name === 'removeClip') {
@@ -961,7 +1007,9 @@ function getClipTargetId(action: RuntimeAction): string | null {
         action.type === 'trimClipStart' ||
         action.type === 'trimClipEnd' ||
         action.type === 'nudgeClip' ||
-        action.type === 'setClipGain'
+        action.type === 'setClipGain' ||
+        action.type === 'quantizeNotes' ||
+        action.type === 'transposeNotes'
     ) {
         return action.payload.clipId;
     }
@@ -1070,6 +1118,7 @@ function getMutationKeys(action: RuntimeAction): string[] {
             `clip:${action.payload.clipId}:name`,
             `clip:${action.payload.clipId}:geometry`,
             `clip:${action.payload.clipId}:gain`,
+            `clip:${action.payload.clipId}:notes`,
         ];
     }
     if (action.type === 'renameClip') {
@@ -1080,6 +1129,9 @@ function getMutationKeys(action: RuntimeAction): string[] {
     }
     if (action.type === 'setClipGain') {
         return [`clip:${action.payload.clipId}:gain`];
+    }
+    if (action.type === 'quantizeNotes' || action.type === 'transposeNotes') {
+        return [`clip:${action.payload.clipId}:notes`];
     }
     return [];
 }

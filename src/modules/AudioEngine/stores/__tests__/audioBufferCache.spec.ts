@@ -126,7 +126,10 @@ function installFakeIndexedDb(): Map<string, StoredAudioBuffer> {
                 abort: vi.fn(),
                 objectStore: () => objectStore,
             };
-            queueMicrotask(() => transaction.oncomplete?.());
+            // `complete` fires only after every queued request has been
+            // delivered (IDB 3.0 §5.6). Requests here resolve on microtasks, so
+            // the commit has to be a task or it would outrun them.
+            setTimeout(() => transaction.oncomplete?.(), 0);
             return transaction;
         },
     };

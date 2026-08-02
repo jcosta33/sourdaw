@@ -851,6 +851,7 @@ describe('AudioEngine', () => {
             expect(fbEngine.getState().state).toBe('closed');
             const actual = fbEngine.getDiagnostics();
             expect(actual.context).toEqual({ state: 'closed', sampleRate: 44_100, baseLatency: 0, outputLatency: 0 });
+            expect(actual.playback).toBeNull();
         });
 
         it('does not report fallback shim strips as a live graph', () => {
@@ -867,9 +868,22 @@ describe('AudioEngine', () => {
                 failedDeviceInstances: 0,
                 deviceInstancesByType: {},
                 deviceAudioNodes: 0,
+                graphSlotResourcesByLoadState: {
+                    ready: { audioNodes: 0, audioWorkletProcessors: 0, workers: 0 },
+                    pending: { audioNodes: 0, audioWorkletProcessors: 0, workers: 0 },
+                    failed: { audioNodes: 0, audioWorkletProcessors: 0, workers: 0 },
+                },
+                deviceAudioWorkletProcessors: 0,
+                deviceAudioWorkletProcessorsByType: {},
                 stripMeterWorklets: 0,
                 masterMeterWorklets: 0,
+                graphAudioWorkletProcessors: 0,
+                workerInstances: 0,
+                workerInstancesByType: {},
                 adjustmentLayerBuses: 0,
+                adjustmentLayerBusesByEffectType: {},
+                adjustmentLayerAudioNodes: 0,
+                adjustmentLayerAudioWorkletProcessors: 0,
             });
         });
 

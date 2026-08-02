@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import {
-    GRAND_BOULE_CONSUMER_OFFSET_IDX,
-    GRAND_BOULE_CONSUMER_OFFSET_UNSET,
     GRAND_BOULE_CONTROL_HEADER_BYTES,
     GRAND_BOULE_CONTROL_INT_COUNT,
+    GRAND_BOULE_READ_HEAD_IDX,
+    GRAND_BOULE_SYNC_INT_COUNT,
+    GRAND_BOULE_SYNC_SEQUENCE_IDX,
 } from '../../models/GrandBouleRingProtocol';
 import { installWorkletGlobals, makeChannels } from '../../services/__tests__/wasmViewGrowthHarness';
 
@@ -30,7 +31,7 @@ const ringSab = new SharedArrayBuffer(
     GRAND_BOULE_CONTROL_HEADER_BYTES + RING_FRAMES * 2 * Float32Array.BYTES_PER_ELEMENT
 );
 const ringControlInts = new Int32Array(ringSab, 0, GRAND_BOULE_CONTROL_INT_COUNT);
-const syncSab = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT);
+const syncSab = new SharedArrayBuffer(GRAND_BOULE_SYNC_INT_COUNT * Int32Array.BYTES_PER_ELEMENT);
 
 const wasmMemory = new WebAssembly.Memory({ initial: 1 });
 const LEFT_PTR = 0;
@@ -78,11 +79,13 @@ vi.stubGlobal(
     'MessageChannel',
     class {
         port1 = {
-            set onmessage(handler: (event: MessageEvent) => void) {
-                yieldHolder.run = () => handler({ data: null } as MessageEvent);
+            onmessage: null as ((event: MessageEvent) => void) | null,
+        };
+        port2 = {
+            postMessage: (generation: number) => {
+                yieldHolder.run = () => this.port1.onmessage?.({ data: generation } as MessageEvent);
             },
         };
-        port2 = { postMessage: () => undefined };
     }
 );
 
@@ -98,7 +101,7 @@ type GrandBouleProcessorLike = {
 };
 const { registry } = installWorkletGlobals<GrandBouleProcessorLike>();
 
-const MINIMAL_WASM = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
+const MINIMAL_WASM_MODULE = new WebAssembly.Module(new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]));
 
 function send(data: unknown): void {
     workerSelf.onmessage?.({ data } as MessageEvent);
@@ -124,7 +127,7 @@ function consumeBlock(contextFrame: number): void {
 /**
  * Run `blocks` context quanta with the consumer keeping pace, so the engine is
  * free to render past its headroom. Context frame and read head stay equal, so
- * the published offset is 0 and engine frames are context frames here.
+ * the published consumer clock starts at frame 0 and engine frames are context frames here.
  */
 function runEngineTo(blocks: number): void {
     for (let block = 0; block < blocks; block++) {
@@ -136,15 +139,16 @@ function runEngineTo(blocks: number): void {
 describe('Grand Boule engine worker note placement', () => {
     beforeEach(async () => {
         voiced.length = 0;
-        Atomics.store(new Int32Array(syncSab), GRAND_BOULE_CONSUMER_OFFSET_IDX, GRAND_BOULE_CONSUMER_OFFSET_UNSET);
+        new Int32Array(syncSab).fill(0);
         await import('../grandBouleEngineWorker');
-        await import('../../services/grandBouleProcessor');
+        await import('../../worklets/grandBouleProcessor');
 
         // Anchor 0: what an OfflineAudioContext reports before it renders. Every
         // test that cares about a live offset has the consumer publish one.
         send({
             type: 'init',
-            wasmBytes: MINIMAL_WASM,
+            initId: 1,
+            wasmModule: MINIMAL_WASM_MODULE,
             sab: ringSab,
             sampleRate: 48_000,
             syncSab,
@@ -188,6 +192,89 @@ describe('Grand Boule engine worker note placement', () => {
         }
 
         expect(voiced).toEqual([{ note: 60, block: 7 }]);
+    });
+
+    it('voices the first recovered block against the next audible frame after an underrun', () => {
+        renderTick();
+        expect(writeHead()).toBe(PRE_ROLL_FRAMES);
+
+        const contextStart = 5000 * BLOCK_FRAMES;
+        for (let block = 0; block < PRE_ROLL_FRAMES / BLOCK_FRAMES; block++) {
+            consumeBlock(contextStart + block * BLOCK_FRAMES);
+        }
+
+        // The ring is now empty. This quantum is real silence, so the unchanged
+        // read head cannot become audible until the following context quantum.
+        const underrunFrame = contextStart + PRE_ROLL_FRAMES;
+        consumeBlock(underrunFrame);
+        send({
+            type: 'noteOn',
+            midiNote: 68,
+            velocity: 90,
+            sampleFrame: underrunFrame + BLOCK_FRAMES,
+            channel: 0,
+        });
+
+        renderTick();
+
+        expect(voiced).toEqual([{ note: 68, block: PRE_ROLL_FRAMES / BLOCK_FRAMES }]);
+    });
+
+    it('keeps consumer-clock note placement past the signed 32-bit frame boundary', () => {
+        renderTick();
+
+        // currentFrame crosses 2^31 after roughly 12h26m at 48 kHz. The ring
+        // cursors remain modular Int32 values, but the AudioContext clock does
+        // not wrap; translating between them must preserve that absolute epoch.
+        const contextStart = 2 ** 31 + 5000 * BLOCK_FRAMES;
+        consumeBlock(contextStart);
+
+        send({ type: 'noteOn', midiNote: 61, velocity: 90, sampleFrame: contextStart + 900, channel: 0 });
+        expect(voiced).toEqual([]);
+
+        for (let block = 1; block <= 8; block++) {
+            renderTick();
+            consumeBlock(contextStart + block * BLOCK_FRAMES);
+        }
+
+        expect(voiced).toEqual([{ note: 61, block: 7 }]);
+    });
+
+    it('unwraps a producer head that crosses Int32 before the buffered consumer', () => {
+        const contextStart = 2 ** 31 - PRE_ROLL_FRAMES;
+        const producerStart = 2 ** 31 - BLOCK_FRAMES;
+        Atomics.store(ringControlInts, GRAND_BOULE_READ_HEAD_IDX, contextStart);
+        Atomics.store(ringControlInts, WRITE_HEAD_IDX, producerStart);
+        consumeBlock(contextStart);
+
+        send({ type: 'noteOn', midiNote: 65, velocity: 90, sampleFrame: contextStart + 900, channel: 0 });
+        for (let block = 1; block <= 8; block++) {
+            renderTick();
+            consumeBlock(contextStart + block * BLOCK_FRAMES);
+        }
+
+        // The target is in the third produced block. Its modular write head has
+        // wrapped negative even though the consumer is still in the prior epoch.
+        expect(voiced).toEqual([{ note: 65, block: -16_777_215 }]);
+    });
+
+    it('retains the last coherent consumer offset while a publication is in progress', () => {
+        renderTick();
+        const contextStart = 5000 * BLOCK_FRAMES;
+        consumeBlock(contextStart);
+
+        // Force one worker read while the publication is coherent, then leave
+        // the sequence odd as if the worklet were between its two seqlock bumps.
+        send({ type: 'param', name: 'hammer-hardness', value: 0.5 });
+        Atomics.add(new Int32Array(syncSab), GRAND_BOULE_SYNC_SEQUENCE_IDX, 1);
+
+        send({ type: 'noteOn', midiNote: 63, velocity: 90, sampleFrame: contextStart + 900, channel: 0 });
+        for (let block = 1; block <= 8; block++) {
+            renderTick();
+            consumeBlock(contextStart + block * BLOCK_FRAMES);
+        }
+
+        expect(voiced).toEqual([{ note: 63, block: 7 }]);
     });
 
     it('places a frame sitting exactly on a block boundary in that block, not the one before', () => {

@@ -33,7 +33,14 @@ export const defaultMidiStoreState: MidiStoreState = {
 const MIDI_STORE_STATE_KEYS = ['probabilitySeed', 'notesByClipId', 'ccByClipId', 'pitchBendByClipId'] as const;
 const MIDI_STORE_STATE_OPTIONAL_KEYS = ['migratedAbsoluteNoteClipIds'] as const;
 const MIDI_NOTE_REQUIRED_KEYS = ['id', 'pitch', 'startBeat', 'duration', 'velocity'] as const;
-const MIDI_NOTE_OPTIONAL_KEYS = ['probability', 'pressure', 'slide', 'pitchBend', 'channel'] as const;
+const MIDI_NOTE_OPTIONAL_KEYS = [
+    'probability',
+    'pressure',
+    'slide',
+    'pitchBend',
+    'pitchBendRangeSemitones',
+    'channel',
+] as const;
 const MIDI_CC_KEYS = ['id', 'controller', 'value', 'beat', 'channel'] as const;
 const MIDI_PITCH_BEND_KEYS = ['id', 'value', 'beat', 'channel'] as const;
 
@@ -84,6 +91,9 @@ function has_valid_midi_note_optionals(value: MidiNote): boolean {
         (!('pressure' in value) || value.pressure === undefined || is_finite_number(value.pressure)) &&
         (!('slide' in value) || value.slide === undefined || is_finite_number(value.slide)) &&
         (!('pitchBend' in value) || value.pitchBend === undefined || is_finite_number(value.pitchBend)) &&
+        (!('pitchBendRangeSemitones' in value) ||
+            value.pitchBendRangeSemitones === undefined ||
+            is_finite_number(value.pitchBendRangeSemitones)) &&
         (!('channel' in value) || value.channel === undefined || is_finite_number(value.channel))
     );
 }
@@ -120,6 +130,9 @@ function normalize_midi_note(note: MidiNote): MidiNote {
     }
     if (is_finite_number(note.pitchBend)) {
         normalized_note.pitchBend = note.pitchBend;
+    }
+    if (is_finite_number(note.pitchBendRangeSemitones)) {
+        normalized_note.pitchBendRangeSemitones = note.pitchBendRangeSemitones;
     }
     if (is_finite_number(note.channel)) {
         normalized_note.channel = note.channel;

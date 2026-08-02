@@ -6,9 +6,10 @@ export function createUndoEntry(
     label: string,
     action: AppAction,
     inverseAction: AppAction | null,
-    source: UndoSource = 'manual'
+    source: UndoSource = 'manual',
+    redoAction?: AppAction
 ): ActionUndoEntry {
-    return {
+    const entry: ActionUndoEntry = {
         id: `undo-${crypto.randomUUID().slice(0, 8)}`,
         kind: 'action',
         label,
@@ -17,4 +18,8 @@ export function createUndoEntry(
         timestamp: Date.now(),
         source,
     };
+    if (redoAction) {
+        entry.redoAction = redoAction;
+    }
+    return entry;
 }
