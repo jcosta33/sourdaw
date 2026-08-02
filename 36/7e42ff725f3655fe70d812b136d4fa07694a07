@@ -1,0 +1,63 @@
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_ac9b259eab20ba::t_3c30e1f641afef 257
+src/modules/AudioEngine/useCases/renderOffline.ts
+  s_ac9b259eab20ba::t_6519f970fdb6f5 233
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/externalLatencyRegistry.ts
+  s_ac9b259eab20ba::t_dd6e5bc4bf9061 1-33
+src/modules/AudioEngine/useCases/engineAccess/refreshSidechainAlignment.ts
+  s_ac9b259eab20ba::t_7d5d49a55799d4 9-10
+  s_ac9b259eab20ba::t_e570517214066b 8,11-12
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/getCompensationDelay.ts
+  s_ac9b259eab20ba::t_3c30e1f641afef 4-6
+src/modules/AudioEngine/useCases/__tests__/exportStems.spec.ts
+  s_ac9b259eab20ba::t_fd1c6cba1847be 560,631
+  s_ac9b259eab20ba::t_3ef7ea8082d608 618-627,629-630
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/getTrackLatency.ts
+  s_ac9b259eab20ba::t_dd6e5bc4bf9061 3
+  s_ac9b259eab20ba::t_3c30e1f641afef 5-10
+  s_ac9b259eab20ba::t_0a19d90338e898 12
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/getTrackLatencyBeforeDevice.ts
+  s_ac9b259eab20ba::t_dd6e5bc4bf9061 1-4,6-8,11-23
+  s_ac9b259eab20ba::t_3c30e1f641afef 5,9-10
+  s_ac9b259eab20ba::t_7b96bbae2f3baa 24-26
+  s_ac9b259eab20ba::t_9ef0a4cb9fa9ec 27
+src/modules/AudioEngine/useCases/offlineRender/renderTrackSubgraphOffline.ts
+  s_ac9b259eab20ba::t_6519f970fdb6f5 194
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/getSidechainKeyDelay.ts
+  s_ac9b259eab20ba::t_3c30e1f641afef 35-39,41-43
+  s_ac9b259eab20ba::t_e570517214066b 23-26
+  s_ac9b259eab20ba::t_dd6e5bc4bf9061 3
+  s_ac9b259eab20ba::t_f408e321d6f20a 32-34
+  s_ac9b259eab20ba::t_db053323312120 31
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/getMaxTrackLatency.ts
+  s_ac9b259eab20ba::t_3c30e1f641afef 3-4
+  s_ac9b259eab20ba::t_dd6e5bc4bf9061 1
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/__tests__/helpers.spec.ts
+  s_ac9b259eab20ba::t_55257f13128f91 80-83,89,262-279
+  s_ac9b259eab20ba::t_9d0c3dc829126c 21,224-230,236,238-261
+  s_ac9b259eab20ba::t_56c1b320f20fed 231-235,237
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/getLatencySnapshot.ts
+  s_ac9b259eab20ba::t_dd6e5bc4bf9061 1-4,6-30,32-33,35-52,54-68,70-87,89-100,102-107,110-116,119-120
+  s_ac9b259eab20ba::t_56c1b320f20fed 69,88
+  s_ac9b259eab20ba::t_3c30e1f641afef 5,31,34,53,101,108-109,117-118
+src/modules/AudioEngine/useCases/exportStems.ts
+  s_ac9b259eab20ba::t_6519f970fdb6f5 334
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/getDeviceLatencyMs.ts
+  s_ac9b259eab20ba::t_3c30e1f641afef 4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "367e42ff725f3655fe70d812b136d4fa07694a07",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
