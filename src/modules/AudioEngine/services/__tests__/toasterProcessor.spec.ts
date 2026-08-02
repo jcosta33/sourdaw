@@ -355,9 +355,10 @@ describe('ToasterProcessor allNotesOff', () => {
         noteOnShouldThrow = true;
         const postMessage = vi.mocked(proc.port.postMessage);
 
-        expect(proc.process([[]], [[new Float32Array(128), new Float32Array(128)]])).toBe(true);
+        expect(proc.process([[]], [[new Float32Array(128), new Float32Array(128)]])).toBe(false);
         expect(postMessage).toHaveBeenCalledWith({ type: 'error', message: 'Error: scheduled note trap' });
         expect(processCalls).toEqual([]);
+        expect(proc.process([[]], [[new Float32Array(128), new Float32Array(128)]])).toBe(false);
     });
 
     it('publishes lifecycle transitions through the shared telemetry slot', async () => {
@@ -702,6 +703,7 @@ describe('ToasterProcessor dispatch paths & process guards', () => {
         // A throw here may mean the instance is trapped, so it stops being fed.
         send(proc, { type: 'param', name: 'swing', value: 0.25 });
         expect(kitParamCalls).toEqual([]);
+        expect(proc.process([[]], [[new Float32Array(8), new Float32Array(8)]])).toBe(false);
     });
 
     // ── scheduledHit fill-condition suppression (line 266) ───────────────────

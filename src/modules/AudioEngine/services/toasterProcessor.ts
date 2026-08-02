@@ -414,7 +414,10 @@ class ToasterProcessor extends AudioWorkletProcessor {
         if (this._disposed) {
             return false;
         }
-        if (!this._ready || this._faulted) {
+        if (this._faulted) {
+            return false;
+        }
+        if (!this._ready) {
             return true;
         }
 
@@ -499,6 +502,7 @@ class ToasterProcessor extends AudioWorkletProcessor {
         } catch (error) {
             this._faulted = true;
             this.port.postMessage({ type: 'error', message: String(error) });
+            return false;
         }
 
         return true;
