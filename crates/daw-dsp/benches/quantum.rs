@@ -60,7 +60,7 @@
 use std::hint::black_box;
 use std::time::Duration;
 
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion};
 
 use daw_dsp::fermenter::FermenterInstance;
 use daw_dsp::grand_boule::engine::GrandBouleEngine;
@@ -188,10 +188,10 @@ fn grand_boule_instance(sounding: usize) -> GrandBouleInstance {
 ///
 /// `GrandBouleEngine` exposes no active-voice count, so occupancy is
 /// established two ways. Structurally: every note struck here is distinct, so
-/// the retrigger branch never fires; `PianoVoice::steal_score` returns 1000.0
-/// for `Idle` against at most 200.0 for `Active`, so with 64 slots and at most
-/// 64 notes the allocator always lands on an empty slot and never steals a
-/// sounding one. Empirically: the RMS printed at the warm-up point and again
+/// the retrigger branch never fires; `PianoVoice::steal_priority` ranks `Idle`
+/// above every sounding lifecycle/key-ownership class, so with 64 slots and at
+/// most 64 notes the allocator always lands on an empty slot and never steals
+/// a sounding one. Empirically: the RMS printed at the warm-up point and again
 /// after ~10 s of rendered audio — longer than any criterion sample — shows the
 /// strings still moving, and shows it growing with voice count.
 ///
@@ -279,6 +279,37 @@ fn bench_grand_boule_instance(criterion: &mut Criterion) {
             },
         );
     }
+    group.finish();
+}
+
+/// Build the maximum transient workload: 64 sounding production voices plus
+/// 64 preallocated one-millisecond steal tails. Distinct channels preserve the
+/// same-pitch identities while forcing every tail slot active.
+fn saturated_grand_boule_engine() -> (GrandBouleEngine, [f32; QUANTUM], [f32; QUANTUM]) {
+    let mut engine = GrandBouleEngine::new(SAMPLE_RATE, GRAND_BOULE_POOL);
+    for channel in 0..GRAND_BOULE_POOL as u8 {
+        engine.note_on_with_channel(60, 0.8, channel);
+    }
+    for channel in GRAND_BOULE_POOL as u8..(GRAND_BOULE_POOL * 2) as u8 {
+        engine.note_on_with_channel(60, 0.8, channel);
+    }
+    (engine, [0.0; QUANTUM], [0.0; QUANTUM])
+}
+
+fn bench_grand_boule_saturated_steal(criterion: &mut Criterion) {
+    let mut group = criterion.benchmark_group("grand_boule/saturated_steal_process_128");
+    group.measurement_time(Duration::from_secs(8));
+    group.sample_size(10);
+    group.bench_function("64_voices_plus_64_tails", |bencher| {
+        bencher.iter_batched(
+            saturated_grand_boule_engine,
+            |(mut engine, mut left, mut right)| {
+                engine.process_block(black_box(&mut left), black_box(&mut right));
+                black_box((left, right));
+            },
+            BatchSize::SmallInput,
+        );
+    });
     group.finish();
 }
 
@@ -450,6 +481,7 @@ criterion_group!(
     benches,
     bench_grand_boule_process_block,
     bench_grand_boule_instance,
+    bench_grand_boule_saturated_steal,
     bench_fermenter_instance,
     bench_grinder_instance,
 );

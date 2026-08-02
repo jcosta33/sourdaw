@@ -38,6 +38,8 @@ const FEEDBACK_SCALE: f32 = 5.0e-5;
 /// Piano strings never exceed ~3 mm at the strike point. Clamping here
 /// prevents numerical runaway even if the modal bank briefly overshoots.
 const MAX_STRING_DISPLACEMENT: f32 = 0.003;
+const STEAL_FADE_SECONDS: f32 = 0.001;
+const STEAL_SILENCE_GAIN: f32 = 1.0e-5;
 
 /// Coarse voice lifecycle state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,6 +62,18 @@ pub enum VoiceQuality {
     Simplified,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct PianoVoiceStart {
+    pub midi_note: u8,
+    pub channel: u8,
+    pub velocity: f32,
+    pub key: u32,
+    pub pitch_ratio: f32,
+    pub stiffness_scale: f32,
+    pub mass_scale: f32,
+    pub attack_length: usize,
+}
+
 #[derive(Debug, Clone)]
 pub struct PianoVoice {
     stage: VoiceStage,
@@ -69,10 +83,13 @@ pub struct PianoVoice {
     /// under MPE each note owns its own member channel, so two voices
     /// at one pitch are told apart by it.
     channel: u8,
-    /// True from note-on until note-off. A voice whose release tail is
-    /// still ringing stays non-idle but is no longer held, so a
-    /// same-pitch retrigger cannot bend the note already let go.
+    /// True only while the physical key remains down. Sustain and sostenuto
+    /// may keep a key-up voice sounding without retaining per-note expression
+    /// ownership.
     held: bool,
+    /// Latched only for this exact voice when sostenuto engages. A later voice
+    /// at the same pitch must not inherit the capture.
+    sostenuto_captured: bool,
     /// Per-note pitch bend as a frequency ratio; 1.0 is neutral.
     expr_bend_ratio: f32,
     /// Ratio the resonator coefficients were last tuned to, so the
@@ -105,6 +122,7 @@ pub struct PianoVoice {
     /// Per-sample multiplier applied during the release phase.
     release_coefficient: f32,
     sample_rate: f32,
+    configured_quality: VoiceQuality,
     quality: VoiceQuality,
 }
 
@@ -114,6 +132,7 @@ impl PianoVoice {
             stage: VoiceStage::Idle,
             channel: 0,
             held: false,
+            sostenuto_captured: false,
             expr_bend_ratio: 1.0,
             expr_bend_tuned: 1.0,
             midi_note: 0,
@@ -143,6 +162,7 @@ impl PianoVoice {
             amplitude: 1.0,
             release_coefficient: 1.0,
             sample_rate,
+            configured_quality: VoiceQuality::Standard,
             quality: VoiceQuality::Standard,
         }
     }
@@ -155,6 +175,7 @@ impl PianoVoice {
     /// Override the quality tier. May be called at any time; takes effect on
     /// the next `tick`.
     pub fn set_quality(&mut self, quality: VoiceQuality) {
+        self.configured_quality = quality;
         self.quality = quality;
     }
 
@@ -204,36 +225,35 @@ impl PianoVoice {
         }
     }
 
-    /// Fade this voice out over ~1 ms. Used by the voice-stealing path so
-    /// the incoming note can claim the slot once the tail finishes (§4.2).
+    /// Fade this displaced voice to silence over one millisecond.
+    ///
+    /// The engine moves the voice into a preallocated tail slot before calling
+    /// this method, so the replacement can start immediately without resetting
+    /// the outgoing resonators or doing note initialization in the sample loop.
     pub fn begin_steal(&mut self) {
-        if self.stage == VoiceStage::Idle || self.stage == VoiceStage::Stealing {
+        if self.stage == VoiceStage::Idle {
             return;
         }
+        self.held = false;
+        self.sostenuto_captured = false;
         self.stage = VoiceStage::Stealing;
-        let steal_seconds = 0.001_f32;
-        self.release_coefficient = (-1.0 / (steal_seconds * self.sample_rate)).exp();
+        let fade_samples = (STEAL_FADE_SECONDS * self.sample_rate).round().max(1.0);
+        self.release_coefficient = STEAL_SILENCE_GAIN.powf(1.0 / fade_samples);
     }
 
-    /// Voice-stealing score per spec §4.2. Higher score = better victim.
-    /// Caller is responsible for protecting the very top and very bottom
-    /// notes before comparing scores.
-    pub fn steal_score(&self) -> f32 {
-        match self.stage {
-            VoiceStage::Idle => 1000.0,
-            VoiceStage::Stealing => 500.0,
-            VoiceStage::Releasing => {
-                // Older released voices are more eligible. `age_samples` is
-                // capped at ~24 hours' worth of samples at 96kHz inside f32
-                // representation — divide by sample_rate for seconds.
-                let age_seconds = self.age_samples as f32 / self.sample_rate.max(1.0);
-                400.0 + age_seconds.min(200.0)
-            }
-            VoiceStage::Active => {
-                // Loud active voices are hardest to steal; quiet ones go first.
-                200.0 - 200.0 * self.amplitude.clamp(0.0, 1.0)
-            }
-        }
+    /// Voice-stealing priority per spec §4.2. Higher tuples are better
+    /// victims. The first field ranks lifecycle and key ownership; the second
+    /// chooses the oldest voice within that class without converting the
+    /// sample clock to an imprecise loudness proxy.
+    pub fn steal_priority(&self) -> (u8, u64) {
+        let class = match self.stage {
+            VoiceStage::Idle => 4,
+            VoiceStage::Releasing => 3,
+            VoiceStage::Active if !self.held => 2,
+            VoiceStage::Active => 1,
+            VoiceStage::Stealing => 0,
+        };
+        (class, self.age_samples)
     }
 
     /// Assign this voice to a new note.
@@ -242,19 +262,21 @@ impl PianoVoice {
     /// tuning, `2^(cents/1200)` for microtuning offsets).
     /// `stiffness_scale` multiplies the hammer stiffness (pedal + preset + model).
     /// `mass_scale` multiplies the hammer mass (piano model).
-    pub fn note_on(
-        &mut self,
-        midi_note: u8,
-        channel: u8,
-        velocity: f32,
-        key: u32,
-        pitch_ratio: f32,
-        stiffness_scale: f32,
-        mass_scale: f32,
-    ) {
+    pub fn note_on(&mut self, start: PianoVoiceStart) {
+        let PianoVoiceStart {
+            midi_note,
+            channel,
+            velocity,
+            key,
+            pitch_ratio,
+            stiffness_scale,
+            mass_scale,
+            attack_length,
+        } = start;
         self.midi_note = midi_note;
         self.channel = channel;
         self.held = true;
+        self.sostenuto_captured = false;
         // A fresh strike starts from neutral bend; the controller's
         // opening bend arrives as its own expression message.
         self.expr_bend_ratio = 1.0;
@@ -263,6 +285,7 @@ impl PianoVoice {
         self.age_samples = 0;
         self.amplitude = 1.0;
         self.release_coefficient = 1.0;
+        self.quality = self.configured_quality;
         self.last_string_displacement = 0.0;
         self.stage = VoiceStage::Active;
 
@@ -352,6 +375,7 @@ impl PianoVoice {
         // Strike velocity scales with MIDI velocity. A velocity of 1.0 maps to
         // ~4 m/s, matching measurements from Askenfelt/Jansson.
         self.hammer.strike(0.8 + 4.0 * self.velocity);
+        self.arm_attack(key, attack_length);
     }
 
     /// Begin the release phase. The voice keeps ringing but its amplitude
@@ -360,9 +384,7 @@ impl PianoVoice {
         if self.stage == VoiceStage::Idle {
             return;
         }
-        // The string keeps ringing, but it is no longer the note being
-        // held, so per-note expression stops addressing it (audit MD-2).
-        self.held = false;
+        self.release_key();
         self.stage = VoiceStage::Releasing;
         // ~300 ms release tail — realistic felt-damper mute time for a grand
         // piano (150 ms was too fast, giving a harpsichord-like cut-off).
@@ -370,14 +392,46 @@ impl PianoVoice {
         self.release_coefficient = (-1.0 / (release_seconds * self.sample_rate)).exp();
     }
 
+    /// End physical-key and per-note-expression ownership without damping the
+    /// sounding voice. Pedal-held notes use this transition until the owning
+    /// pedal later starts their acoustic release.
+    pub fn release_key(&mut self) {
+        if self.stage == VoiceStage::Idle {
+            return;
+        }
+        self.held = false;
+    }
+
+    /// Latch this exact sounding voice on the sostenuto rising edge.
+    pub fn capture_sostenuto(&mut self) {
+        if self.stage != VoiceStage::Idle && self.held {
+            self.sostenuto_captured = true;
+        }
+    }
+
+    /// Clear this voice's sostenuto ownership and report whether it had been
+    /// captured, so the engine can start the release when no other pedal owns it.
+    pub fn release_sostenuto_capture(&mut self) -> bool {
+        let was_captured = self.sostenuto_captured;
+        self.sostenuto_captured = false;
+        was_captured
+    }
+
+    pub fn is_sostenuto_captured(&self) -> bool {
+        self.sostenuto_captured
+    }
+
     /// Force the voice back to idle immediately.
     pub fn kill(&mut self) {
         self.stage = VoiceStage::Idle;
         self.held = false;
+        self.sostenuto_captured = false;
         self.expr_bend_ratio = 1.0;
         self.expr_bend_tuned = 1.0;
         self.amplitude = 0.0;
         self.age_samples = 0;
+        self.attack_position = 0;
+        self.attack_length = 0;
         self.last_string_displacement = 0.0;
         self.hammer = HammerState::idle();
         self.strings.reset();
@@ -523,7 +577,7 @@ impl PianoVoice {
 
         if self.stage == VoiceStage::Releasing || self.stage == VoiceStage::Stealing {
             self.amplitude *= self.release_coefficient;
-            if self.amplitude < 1.0e-5 {
+            if self.amplitude < STEAL_SILENCE_GAIN {
                 self.kill();
                 return 0.0;
             }
@@ -541,5 +595,30 @@ impl PianoVoice {
 
         self.age_samples = self.age_samples.saturating_add(1);
         output
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_new_note_restores_the_configured_quality_after_adaptive_demotion() {
+        let mut voice = PianoVoice::new(48_000.0);
+        voice.set_quality(VoiceQuality::High);
+        voice.quality = VoiceQuality::Simplified;
+
+        voice.note_on(PianoVoiceStart {
+            midi_note: 60,
+            channel: 0,
+            velocity: 0.8,
+            key: 40,
+            pitch_ratio: 1.0,
+            stiffness_scale: 1.0,
+            mass_scale: 1.0,
+            attack_length: 0,
+        });
+
+        assert_eq!(voice.quality(), VoiceQuality::High);
     }
 }
