@@ -4,6 +4,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { createAdjustmentLayerRuntime, type AdjustmentLayerRuntime } from '../engine/AdjustmentLayerRuntime';
 import { BusNode } from '../engine/BusNode';
+import { createDeviceReadinessDiagnostics } from '../engine/deviceReadinessDiagnostics';
 import { dropoutCounters } from '../engine/dropoutCounter';
 import { TrackNode } from '../engine/TrackNode';
 import bitcrusherRateProcessorUrl from '../services/bitcrusherRateProcessor.ts?worker&url';
@@ -282,6 +283,7 @@ class AudioEngineImpl implements AudioEngine {
     private lastInitError: Error | null = null;
     private lastResumeError: Error | null = null;
     private adjustmentRuntime: AdjustmentLayerRuntime;
+    private readonly deviceReadinessDiagnostics = createDeviceReadinessDiagnostics();
 
     constructor(providedContext?: AudioContext) {
         // Transport SAB layout: see TRANSPORT_F64 / TRANSPORT_SEQ_I32 above. The
@@ -460,6 +462,10 @@ class AudioEngineImpl implements AudioEngine {
             // for exactly which dropouts this does and does not capture.
             dropouts: dropoutCounters.read(),
         };
+    }
+
+    public getDeviceReadinessDiagnostics() {
+        return this.deviceReadinessDiagnostics.snapshot();
     }
 
     public getDiagnostics(): AudioEngineDiagnostics {
@@ -1519,6 +1525,7 @@ class AudioEngineImpl implements AudioEngine {
         }
         this.toasterPadRoutes.clear();
         this.pendingDevicePromises.clear();
+        this.deviceReadinessDiagnostics.reset();
     }
 
     public applyAdjustmentLayerTick(records: AdjustmentLayerTickInput[]): void {

@@ -1,3 +1,5 @@
+import type { AudioEngineDeviceReadinessDiagnostics } from '../models/AudioEngineState';
+
 export type DeviceReadinessToken = {
     readonly deviceId: string;
     readonly tokenId: number;
@@ -77,82 +79,37 @@ function isPending(status: DeviceReadinessStatus): boolean {
     return status === 'node-pending' || status === 'graph-pending' || status === 'content-pending';
 }
 
-function trimTerminalRecords(): void {
-    let terminalRecords = 0;
-    for (const record of records.values()) {
-        if (!isPending(record.status)) {
-            terminalRecords++;
-        }
-    }
-    if (terminalRecords <= MAX_RETAINED_TERMINAL_RECORDS) {
-        return;
-    }
-    for (const [deviceId, record] of records) {
-        if (isPending(record.status)) {
-            continue;
-        }
-        records.delete(deviceId);
-        terminalRecords--;
-        if (terminalRecords === MAX_RETAINED_TERMINAL_RECORDS) {
-            return;
-        }
-    }
-}
+class DeviceReadinessDiagnosticsCollector {
+    private nextTokenId = 0;
+    private requested = 0;
+    private nodeReady = 0;
+    private graphReady = 0;
+    private contentReady = 0;
+    private playableReady = 0;
+    private failed = 0;
+    private cancelled = 0;
+    private requestToNodeReadyMs = createTimingAccumulator();
+    private requestToGraphReadyMs = createTimingAccumulator();
+    private graphToContentReadyMs = createTimingAccumulator();
+    private requestToPlayableReadyMs = createTimingAccumulator();
+    private readonly records = new Map<string, DeviceReadinessRecord>();
+    private readonly terminalOrder = new Set<string>();
 
-function moveTerminalRecordToNewest(record: DeviceReadinessRecord): void {
-    records.delete(record.token.deviceId);
-    records.set(record.token.deviceId, record);
-}
-
-let nextTokenId = 0;
-let requested = 0;
-let nodeReady = 0;
-let graphReady = 0;
-let contentReady = 0;
-let playableReady = 0;
-let failed = 0;
-let cancelled = 0;
-let requestToNodeReadyMs = createTimingAccumulator();
-let requestToGraphReadyMs = createTimingAccumulator();
-let graphToContentReadyMs = createTimingAccumulator();
-let requestToPlayableReadyMs = createTimingAccumulator();
-const records = new Map<string, DeviceReadinessRecord>();
-
-function currentRecord(token: DeviceReadinessToken): DeviceReadinessRecord | null {
-    const record = records.get(token.deviceId);
-    if (!record || record.token !== token) {
-        return null;
-    }
-    return record;
-}
-
-function markPlayable(record: DeviceReadinessRecord, atMs: number): void {
-    if (record.playableReadyAtMs !== null || record.status === 'failed') {
-        return;
-    }
-    record.playableReadyAtMs = atMs;
-    record.status = 'ready';
-    playableReady++;
-    recordTiming(requestToPlayableReadyMs, atMs - record.requestedAtMs);
-    moveTerminalRecordToNewest(record);
-    trimTerminalRecords();
-}
-
-export const deviceReadinessDiagnostics = {
     reset(): void {
-        requested = 0;
-        nodeReady = 0;
-        graphReady = 0;
-        contentReady = 0;
-        playableReady = 0;
-        failed = 0;
-        cancelled = 0;
-        requestToNodeReadyMs = createTimingAccumulator();
-        requestToGraphReadyMs = createTimingAccumulator();
-        graphToContentReadyMs = createTimingAccumulator();
-        requestToPlayableReadyMs = createTimingAccumulator();
-        records.clear();
-    },
+        this.requested = 0;
+        this.nodeReady = 0;
+        this.graphReady = 0;
+        this.contentReady = 0;
+        this.playableReady = 0;
+        this.failed = 0;
+        this.cancelled = 0;
+        this.requestToNodeReadyMs = createTimingAccumulator();
+        this.requestToGraphReadyMs = createTimingAccumulator();
+        this.graphToContentReadyMs = createTimingAccumulator();
+        this.requestToPlayableReadyMs = createTimingAccumulator();
+        this.records.clear();
+        this.terminalOrder.clear();
+    }
 
     begin(input: {
         deviceId: string;
@@ -160,14 +117,14 @@ export const deviceReadinessDiagnostics = {
         requiresContent: boolean;
         atMs?: number;
     }): DeviceReadinessToken {
-        const previous = records.get(input.deviceId);
+        const previous = this.records.get(input.deviceId);
         if (previous && isPending(previous.status)) {
-            cancelled++;
+            this.cancelled++;
         }
-        records.delete(input.deviceId);
-        nextTokenId++;
-        const token: DeviceReadinessToken = Object.freeze({ deviceId: input.deviceId, tokenId: nextTokenId });
-        records.set(input.deviceId, {
+        this.deleteRecord(input.deviceId);
+        this.nextTokenId++;
+        const token: DeviceReadinessToken = Object.freeze({ deviceId: input.deviceId, tokenId: this.nextTokenId });
+        this.records.set(input.deviceId, {
             token,
             deviceType: input.deviceType,
             requiresContent: input.requiresContent,
@@ -180,75 +137,72 @@ export const deviceReadinessDiagnostics = {
             status: 'node-pending',
             failureStage: null,
         });
-        requested++;
+        this.requested++;
         return token;
-    },
+    }
 
     markNodeReady(input: { token: DeviceReadinessToken; atMs?: number }): void {
-        const record = currentRecord(input.token);
+        const record = this.currentRecord(input.token);
         if (!record || record.nodeReadyAtMs !== null || !isPending(record.status)) {
             return;
         }
         const atMs = timestampAtOrAfter(input.atMs, record.requestedAtMs);
         record.nodeReadyAtMs = atMs;
         record.status = 'graph-pending';
-        nodeReady++;
-        recordTiming(requestToNodeReadyMs, atMs - record.requestedAtMs);
-    },
+        this.nodeReady++;
+        recordTiming(this.requestToNodeReadyMs, atMs - record.requestedAtMs);
+    }
 
     markGraphReady(input: { token: DeviceReadinessToken; atMs?: number }): void {
-        const record = currentRecord(input.token);
+        const record = this.currentRecord(input.token);
         if (!record || record.graphReadyAtMs !== null || !isPending(record.status)) {
             return;
         }
         const candidateAtMs = timestamp(input.atMs);
         if (record.nodeReadyAtMs === null) {
-            deviceReadinessDiagnostics.markNodeReady({ token: input.token, atMs: candidateAtMs });
+            this.markNodeReady({ token: input.token, atMs: candidateAtMs });
         }
         const atMs = Math.max(record.requestedAtMs, record.nodeReadyAtMs ?? record.requestedAtMs, candidateAtMs);
         record.graphReadyAtMs = atMs;
-        graphReady++;
-        recordTiming(requestToGraphReadyMs, atMs - record.requestedAtMs);
+        this.graphReady++;
+        recordTiming(this.requestToGraphReadyMs, atMs - record.requestedAtMs);
         if (!record.requiresContent) {
-            markPlayable(record, atMs);
+            this.markPlayable(record, atMs);
             return;
         }
         record.status = 'content-pending';
         if (record.contentReadyAtMs !== null) {
-            recordTiming(graphToContentReadyMs, record.contentReadyAtMs - atMs);
-            markPlayable(record, Math.max(atMs, record.contentReadyAtMs));
+            recordTiming(this.graphToContentReadyMs, record.contentReadyAtMs - atMs);
+            this.markPlayable(record, Math.max(atMs, record.contentReadyAtMs));
         }
-    },
+    }
 
     markContentSettled(input: { token: DeviceReadinessToken; outcome: DeviceContentLoadOutcome; atMs?: number }): void {
-        const record = currentRecord(input.token);
-        if (!record || !record.requiresContent || !isPending(record.status)) {
-            return;
-        }
-        if (record.contentReadyAtMs !== null) {
+        const record = this.currentRecord(input.token);
+        if (!record || !record.requiresContent || !isPending(record.status) || record.contentReadyAtMs !== null) {
             return;
         }
         if (input.outcome === 'cancelled') {
-            cancelled++;
-            records.delete(input.token.deviceId);
+            this.cancelled++;
+            this.deleteRecord(input.token.deviceId);
             return;
         }
         if (input.outcome === 'failed') {
-            deviceReadinessDiagnostics.markFailed({ token: input.token, stage: 'content', atMs: input.atMs });
+            this.markFailed({ token: input.token, stage: 'content', atMs: input.atMs });
             return;
         }
         const minimumAtMs = record.graphReadyAtMs ?? record.requestedAtMs;
         const atMs = timestampAtOrAfter(input.atMs, minimumAtMs);
         record.contentReadyAtMs = atMs;
-        contentReady++;
+        this.contentReady++;
         if (record.graphReadyAtMs !== null) {
-            recordTiming(graphToContentReadyMs, atMs - record.graphReadyAtMs);
-            markPlayable(record, Math.max(atMs, record.graphReadyAtMs));
+            recordTiming(this.graphToContentReadyMs, atMs - record.graphReadyAtMs);
+            this.markPlayable(record, Math.max(atMs, record.graphReadyAtMs));
         }
-    },
+    }
 
     markFailed(input: { token: DeviceReadinessToken; stage: DeviceReadinessFailureStage; atMs?: number }): void {
-        const record = currentRecord(input.token);
+        const record = this.currentRecord(input.token);
         if (!record || !isPending(record.status)) {
             return;
         }
@@ -261,43 +215,43 @@ export const deviceReadinessDiagnostics = {
         record.failedAtMs = timestampAtOrAfter(input.atMs, minimumAtMs);
         record.status = 'failed';
         record.failureStage = input.stage;
-        failed++;
-        moveTerminalRecordToNewest(record);
-        trimTerminalRecords();
-    },
+        this.failed++;
+        this.retainTerminal(record);
+    }
 
     cancel(token: DeviceReadinessToken): void {
-        const record = currentRecord(token);
+        const record = this.currentRecord(token);
         if (!record) {
             return;
         }
         if (isPending(record.status)) {
-            cancelled++;
+            this.cancelled++;
         }
-        records.delete(token.deviceId);
-    },
+        this.deleteRecord(token.deviceId);
+    }
 
     removeDevice(token: DeviceReadinessToken): void {
-        const record = currentRecord(token);
-        if (!record) {
-            return;
-        }
-        if (isPending(record.status)) {
-            cancelled++;
-        }
-        records.delete(token.deviceId);
-    },
+        this.cancel(token);
+    }
 
-    snapshot() {
+    snapshot(): AudioEngineDeviceReadinessDiagnostics {
         return {
-            counts: { requested, nodeReady, graphReady, contentReady, playableReady, failed, cancelled },
-            timing: {
-                requestToNodeReadyMs: snapshotTiming(requestToNodeReadyMs),
-                requestToGraphReadyMs: snapshotTiming(requestToGraphReadyMs),
-                graphToContentReadyMs: snapshotTiming(graphToContentReadyMs),
-                requestToPlayableReadyMs: snapshotTiming(requestToPlayableReadyMs),
+            counts: {
+                requested: this.requested,
+                nodeReady: this.nodeReady,
+                graphReady: this.graphReady,
+                contentReady: this.contentReady,
+                playableReady: this.playableReady,
+                failed: this.failed,
+                cancelled: this.cancelled,
             },
-            devices: [...records.values()].map((record) => ({
+            timing: {
+                requestToNodeReadyMs: snapshotTiming(this.requestToNodeReadyMs),
+                requestToGraphReadyMs: snapshotTiming(this.requestToGraphReadyMs),
+                graphToContentReadyMs: snapshotTiming(this.graphToContentReadyMs),
+                requestToPlayableReadyMs: snapshotTiming(this.requestToPlayableReadyMs),
+            },
+            devices: [...this.records.values()].map((record) => ({
                 deviceId: record.token.deviceId,
                 deviceType: record.deviceType,
                 status: record.status,
@@ -312,5 +266,48 @@ export const deviceReadinessDiagnostics = {
                 requestToFailureMs: durationBetween(record.requestedAtMs, record.failedAtMs),
             })),
         };
-    },
-};
+    }
+
+    private currentRecord(token: DeviceReadinessToken): DeviceReadinessRecord | null {
+        const record = this.records.get(token.deviceId);
+        if (!record || record.token !== token) {
+            return null;
+        }
+        return record;
+    }
+
+    private markPlayable(record: DeviceReadinessRecord, atMs: number): void {
+        if (record.playableReadyAtMs !== null || record.status === 'failed') {
+            return;
+        }
+        record.playableReadyAtMs = atMs;
+        record.status = 'ready';
+        this.playableReady++;
+        recordTiming(this.requestToPlayableReadyMs, atMs - record.requestedAtMs);
+        this.retainTerminal(record);
+    }
+
+    private retainTerminal(record: DeviceReadinessRecord): void {
+        const deviceId = record.token.deviceId;
+        this.records.delete(deviceId);
+        this.records.set(deviceId, record);
+        this.terminalOrder.delete(deviceId);
+        this.terminalOrder.add(deviceId);
+        if (this.terminalOrder.size <= MAX_RETAINED_TERMINAL_RECORDS) {
+            return;
+        }
+        const oldestDeviceId = this.terminalOrder.values().next().value;
+        if (oldestDeviceId !== undefined) {
+            this.deleteRecord(oldestDeviceId);
+        }
+    }
+
+    private deleteRecord(deviceId: string): void {
+        this.records.delete(deviceId);
+        this.terminalOrder.delete(deviceId);
+    }
+}
+
+export function createDeviceReadinessDiagnostics(): DeviceReadinessDiagnosticsCollector {
+    return new DeviceReadinessDiagnosticsCollector();
+}

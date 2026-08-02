@@ -1,5 +1,5 @@
-import { deviceReadinessDiagnostics } from '../../services/deviceReadinessDiagnostics';
+import { audioEngine } from '../../repositories/createWebAudioEngine';
 
 export function getDeviceReadinessDiagnostics() {
-    return deviceReadinessDiagnostics.snapshot();
+    return audioEngine.getDeviceReadinessDiagnostics();
 }

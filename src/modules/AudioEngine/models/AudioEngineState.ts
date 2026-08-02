@@ -62,6 +62,33 @@ export type AudioEnginePlaybackStats = {
     maximumLatency: number;
 };
 
+export type AudioEngineDeviceReadinessDiagnostics = {
+    counts: {
+        requested: number;
+        nodeReady: number;
+        graphReady: number;
+        contentReady: number;
+        playableReady: number;
+        failed: number;
+        cancelled: number;
+    };
+    timing: Record<
+        'requestToNodeReadyMs' | 'requestToGraphReadyMs' | 'graphToContentReadyMs' | 'requestToPlayableReadyMs',
+        { samples: number; totalMs: number; lastMs: number; maxMs: number; averageMs: number }
+    >;
+    devices: Array<{
+        deviceId: string;
+        deviceType: string;
+        status: 'node-pending' | 'graph-pending' | 'content-pending' | 'ready' | 'failed';
+        failureStage: 'node' | 'graph' | 'content' | null;
+        requestToNodeReadyMs: number | null;
+        requestToGraphReadyMs: number | null;
+        graphToContentReadyMs: number | null;
+        requestToPlayableReadyMs: number | null;
+        requestToFailureMs: number | null;
+    }>;
+};
+
 export type AudioEngineDiagnostics = {
     context: {
         state: AudioContextState;
@@ -383,6 +410,7 @@ export type AudioEngine = {
     getState(): AudioEngineState;
     getHealth(): AudioEngineHealth;
     getDiagnostics(): AudioEngineDiagnostics;
+    getDeviceReadinessDiagnostics(): AudioEngineDeviceReadinessDiagnostics;
     /** Start a new Chrome latency min/average/max measurement window. */
     resetPlaybackLatencyStats(): void;
     dispose(): Promise<void>;
