@@ -1,0 +1,43 @@
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_ac9b259eab20ba::t_da3e2e6e5a53d8 1478-1497,1576-1609
+  s_ac9b259eab20ba::t_49f4f27e12e6e0 1610
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_ac9b259eab20ba::t_5bf5e149e5b7e7 678
+  s_ac9b259eab20ba::t_bf1c74926929bb 38-39,386,681-692,704
+src/modules/Transport/useCases/scheduling/__tests__/selectMidiNotesForLoopWindow.spec.ts
+  s_ac9b259eab20ba::t_ddfd8f44333ff7 1-10,15-87
+  s_ac9b259eab20ba::t_5bf5e149e5b7e7 11-14
+src/modules/Transport/useCases/scheduling/selectMidiNotesForLoopWindow.ts
+  s_ac9b259eab20ba::t_bf1c74926929bb 1-5,7-15,17-54,56,58,60-70,72-90,105-114,116-122,124-125,127,131-136,140-141,154-155
+  s_ac9b259eab20ba::t_dd290cbe5cb3b4 6,16,55,57,59,71,91-104,115,123,126,128-130,137-139,142-153,156
+src/modules/Transport/useCases/scheduling/__tests__/selectMidiClipsForSchedulerWindow.spec.ts
+  s_ac9b259eab20ba::t_ddfd8f44333ff7 1-93
+src/modules/Transport/useCases/scheduling/selectMidiClipsForSchedulerWindow.ts
+  s_ac9b259eab20ba::t_bf1c74926929bb 1-91
+  s_ac9b259eab20ba::t_b27b41adbf88f9 92-94
+  s_bc88af7d3b054c::t_a8d67b081b74be 95
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "21a0b249807516cd1c3f6f4e01d638f11663edd7",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
