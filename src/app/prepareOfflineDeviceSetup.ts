@@ -72,7 +72,12 @@ const OFFLINE_DEVICE_HYDRATION: Record<NativeDspDeviceType, HydrateOfflineDevice
     // here would make the export differ from live — the same trap as Toaster's
     // kit above. They belong here once the engine consumes them, not before.
     'builtin-crumbs': async ({ deviceId, port, signal }) => {
-        await prepareCrumbsEngine({ deviceId, port, signal });
+        const outcome = await prepareCrumbsEngine({ deviceId, port, signal });
+        if (outcome === 'ready') {
+            return;
+        }
+        signal?.throwIfAborted();
+        throw new Error(`Crumbs content preparation ${outcome} for ${deviceId}`);
     },
     // **Deferred, not "nothing to do".** This row is a known-wrong answer kept as
     // `null` on purpose, pending a decision about state ownership rather than

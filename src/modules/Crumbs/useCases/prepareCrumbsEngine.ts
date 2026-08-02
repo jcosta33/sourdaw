@@ -1,7 +1,8 @@
+import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 import { logger } from '#/infra/logger/appLogger';
 
 import { decodeCrumbsSampleFile } from '../repositories/sampleTransfer/decodeCrumbsSampleFile';
-import { crumbsStore } from '../stores/crumbsStore';
+import { crumbsStore, ensureInstance } from '../stores/crumbsStore';
 
 type PrepareCrumbsEngineOutcome = 'ready' | 'failed' | 'cancelled';
 
@@ -114,6 +115,7 @@ export async function prepareCrumbsEngine({
     port,
     signal,
 }: PrepareCrumbsEngineInput): Promise<'ready' | 'failed' | 'cancelled'> {
+    ensureInstance(deviceId);
     const state = crumbsStore.value?.[deviceId];
     if (!state) {
         return 'failed';
@@ -130,8 +132,11 @@ export async function prepareCrumbsEngine({
 
     let decoded;
     try {
-        decoded = await decodeCrumbsSampleFile({ filePath });
+        decoded = await raceAbortSignal(decodeCrumbsSampleFile({ filePath }), signal);
     } catch (error) {
+        if (signal?.aborted) {
+            return 'cancelled';
+        }
         // Surfacing this as a throw would abort the caller's device setup; the
         // caller degrades to a silent-but-present device either way, so report
         // and let it.

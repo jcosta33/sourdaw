@@ -230,13 +230,14 @@ describe('prepareCrumbsEngine', () => {
         expect(messagesOfType(posts, 'loadSample')).toEqual([]);
     });
 
-    it('posts nothing at all for a device the store does not know', async () => {
+    it('seeds an unopened project device and prepares its silent default state', async () => {
         const { port, posts } = recordingPort();
 
         const outcome = await prepareCrumbsEngine({ deviceId: 'never-created', port });
 
-        expect(posts).toEqual([]);
-        expect(outcome).toBe('failed');
+        expect(crumbsStore.value?.['never-created']).toBeDefined();
+        expect(messagesOfType(posts, 'mode')).toEqual([{ type: 'mode', mode: 'quick' }]);
+        expect(outcome).toBe('ready');
     });
 
     // Throwing here would abort the caller's device setup, and `buildDeviceChain`
@@ -254,24 +255,23 @@ describe('prepareCrumbsEngine', () => {
         expect(String(warnMock.mock.calls[0]?.[0])).toContain('/samples/missing.wav');
     });
 
-    it('drops a sample that finished decoding after the export was cancelled', async () => {
+    it('settles cancellation without waiting for a stalled decoder', async () => {
         ensureInstance(DEVICE);
         setActiveSample(DEVICE, sampleMeta('/samples/break.wav'));
         const controller = new AbortController();
-        decodeMock.mockImplementation(() => {
-            controller.abort();
-            return Promise.resolve({
-                data: new Float32Array([1]),
-                frameCount: 1,
-                channels: 1,
-                sampleRate: 48_000,
-            });
-        });
+        const decoding = Promise.withResolvers<never>();
+        decodeMock.mockReturnValue(decoding.promise);
         const { port, posts } = recordingPort();
 
-        const outcome = await prepareCrumbsEngine({ deviceId: DEVICE, port, signal: controller.signal });
+        let outcome: string | undefined;
+        const preparation = prepareCrumbsEngine({ deviceId: DEVICE, port, signal: controller.signal }).then((value) => {
+            outcome = value;
+            return value;
+        });
+        controller.abort();
+        await vi.waitFor(() => expect(outcome).toBe('cancelled'));
 
         expect(messagesOfType(posts, 'loadSample')).toEqual([]);
-        expect(outcome).toBe('cancelled');
+        await preparation;
     });
 });

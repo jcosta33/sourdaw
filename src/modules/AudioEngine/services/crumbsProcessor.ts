@@ -20,7 +20,7 @@
  * would be. The cost is a ceiling on total sample bytes, not on correctness.
  *
  * Messages from main thread:
- *   { type: 'init', wasmBytes: ArrayBuffer }
+ *   { type: 'init' } with `processorOptions.wasmModule`
  *   { type: 'loadSample', loadToken, data: Float32Array, channels, sampleRate }
  *   { type: 'noteOn', note, velocity, sampleFrame? }
  *   { type: 'noteOff', note, sampleFrame? }
@@ -28,14 +28,16 @@
  *   { type: 'param', name, value }
  *   { type: 'mode', mode }
  *   { type: 'bypass', bypassed }
+ *   { type: 'dispose' }
  */
 
+import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
 import { CrumbsInstance, initSync } from '../wasm/daw_dsp.js';
 
 import { WasmView } from './wasmView';
 
 type CrumbsMsg =
-    | { type: 'init'; wasmBytes: BufferSource }
+    | { type: 'init' }
     | { type: 'loadSample'; loadToken: number; data: Float32Array; channels: number; sampleRate: number }
     | { type: 'noteOn'; note: number; velocity: number; sampleFrame?: number }
     | { type: 'noteOff'; note: number; sampleFrame?: number }
@@ -43,7 +45,8 @@ type CrumbsMsg =
     | { type: 'allSoundOff' }
     | { type: 'param'; name: string; value: number }
     | { type: 'mode'; mode: string }
-    | { type: 'bypass'; bypassed: boolean };
+    | { type: 'bypass'; bypassed: boolean }
+    | { type: 'dispose' };
 
 type CrumbsQueued =
     | { type: 'noteOn'; note: number; velocity: number; sampleFrame: number }
@@ -54,6 +57,7 @@ class CrumbsProcessor extends AudioWorkletProcessor {
     _memory: WebAssembly.Memory | null = null;
     _ready = false;
     _faulted = false;
+    _disposed = false;
     _bypassed = false;
     _pendingMessages: CrumbsMsg[] = [];
     _queue: CrumbsQueued[] = [];
@@ -63,16 +67,26 @@ class CrumbsProcessor extends AudioWorkletProcessor {
     _outLeftView = new WasmView();
     _outRightView = new WasmView();
 
-    constructor() {
+    constructor(...args: unknown[]) {
         super();
+        let wasmModule = resolveProcessorWasmModule(args[0]);
         this.port.onmessage = (event: MessageEvent<CrumbsMsg>) => {
             const msg = event.data;
             try {
-                if (msg.type === 'init') {
+                if (msg.type === 'dispose') {
+                    wasmModule = null;
+                    this._dispose();
+                } else if (this._disposed) {
+                    return;
+                } else if (msg.type === 'init') {
                     if (this._ready) {
                         return;
                     }
-                    this._initWasm(msg.wasmBytes);
+                    if (!wasmModule) {
+                        throw new TypeError('CrumbsProcessor requires a compiled WASM module');
+                    }
+                    this._initWasm(wasmModule);
+                    wasmModule = null;
                 } else if (!this._ready) {
                     this._pendingMessages.push(msg);
                 } else if (!this._faulted) {
@@ -94,8 +108,24 @@ class CrumbsProcessor extends AudioWorkletProcessor {
         };
     }
 
-    _initWasm(wasmBytes: BufferSource): void {
-        const wasmExports = initSync({ module: new WebAssembly.Module(wasmBytes) });
+    _dispose(): void {
+        if (this._disposed) {
+            return;
+        }
+        this._disposed = true;
+        this._ready = false;
+        this._pendingMessages.length = 0;
+        this._queue.length = 0;
+        this._queueHead = 0;
+        this._instance?.free();
+        this._instance = null;
+        this._memory = null;
+        this.port.onmessage = null;
+        this.port.postMessage({ type: 'disposed' });
+    }
+
+    _initWasm(wasmModule: WebAssembly.Module): void {
+        const wasmExports = initSync({ module: wasmModule });
         this._memory = wasmExports.memory;
         this._instance = new CrumbsInstance(sampleRate);
         this._ready = true;
@@ -183,6 +213,8 @@ class CrumbsProcessor extends AudioWorkletProcessor {
             case 'bypass':
                 this._bypassed = msg.bypassed;
                 break;
+            case 'dispose':
+                break;
         }
     }
 
@@ -202,6 +234,9 @@ class CrumbsProcessor extends AudioWorkletProcessor {
     }
 
     process(_inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
+        if (this._disposed) {
+            return false;
+        }
         if (!this._ready || !this._instance || this._faulted || this._bypassed) {
             return true;
         }

@@ -39,13 +39,16 @@ const LAST_FRAME_IDX = 2;
 
 const WRITE_HEAD_IDX = 0;
 const READ_HEAD_IDX = 1;
+const SLEEP_HEAD_IDX = 3;
+const LIFECYCLE_IDX = 4;
 const RING_FRAMES = 1_024;
 const FRAMES = 128;
-const HEADER_BYTES = 2 * Int32Array.BYTES_PER_ELEMENT;
+const HEADER_BYTES = 7 * Int32Array.BYTES_PER_ELEMENT;
 
 function makeRingSab(): { sab: SharedArrayBuffer; controlInts: Int32Array; leftRing: Float32Array } {
     const sab = new SharedArrayBuffer(HEADER_BYTES + RING_FRAMES * 2 * Float32Array.BYTES_PER_ELEMENT);
-    const controlInts = new Int32Array(sab, 0, 2);
+    const controlInts = new Int32Array(sab, 0, 7);
+    Atomics.store(controlInts, SLEEP_HEAD_IDX, -1);
     const leftRing = new Float32Array(sab, HEADER_BYTES, RING_FRAMES);
     return { sab, controlInts, leftRing };
 }
@@ -117,6 +120,19 @@ describe('GrandBouleProcessor dropout counting (audit RT-10)', () => {
         expect(Atomics.load(dropoutInts, BLOCKS_IDX)).toBe(1);
         expect(Atomics.load(dropoutInts, SILENT_FRAMES_IDX)).toBe(FRAMES);
         expect(Atomics.load(dropoutInts, LAST_FRAME_IDX)).toBe(12_800);
+    });
+
+    it('does not count intentional sleep when lifecycle and drain-boundary reads straddle publication', async () => {
+        const proc = await readyProcessor();
+        publish(FRAMES);
+        renderBlock(proc);
+
+        Atomics.store(ring.controlInts, SLEEP_HEAD_IDX, -1);
+        Atomics.store(ring.controlInts, LIFECYCLE_IDX, 3);
+        const sleeping = renderBlock(proc);
+
+        expect(Array.from(sleeping[0]!).every((sample) => sample === 0)).toBe(true);
+        expect(Atomics.load(dropoutInts, BLOCKS_IDX)).toBe(0);
     });
 
     it('accumulates across consecutive starved blocks and stops when the worker catches up', async () => {

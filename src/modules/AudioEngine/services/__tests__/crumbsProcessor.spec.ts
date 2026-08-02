@@ -30,6 +30,9 @@ const calls: Array<{ method: string; args: unknown[] }> = [];
 let sampleLoadFailure: Error | null = null;
 
 class CrumbsInstanceMock {
+    free(): void {
+        calls.push({ method: 'free', args: [] });
+    }
     note_on(note: number, velocity: number): void {
         calls.push({ method: 'note_on', args: [note, velocity] });
     }
@@ -77,7 +80,7 @@ vi.mock('../../wasm/daw_dsp.js', () => ({
     CrumbsInstance: CrumbsInstanceMock,
 }));
 
-const MINIMAL_WASM = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
+const MINIMAL_WASM_MODULE = new WebAssembly.Module(new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]));
 
 async function loadProcessor(): Promise<CrumbsProcessorLike> {
     await import('../crumbsProcessor');
@@ -85,7 +88,7 @@ async function loadProcessor(): Promise<CrumbsProcessorLike> {
     if (!Ctor) {
         throw new Error('crumbs-processor was not registered');
     }
-    return new Ctor();
+    return new Ctor({ processorOptions: { wasmModule: MINIMAL_WASM_MODULE } });
 }
 
 function send(proc: CrumbsProcessorLike, data: unknown): void {
@@ -110,7 +113,7 @@ describe('CrumbsProcessor scheduled note queue', () => {
 
     it('acknowledges a sample only after adding and selecting it in the DSP', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init' });
         proc.port.postMessage.mockClear();
 
         send(proc, {
@@ -128,7 +131,7 @@ describe('CrumbsProcessor scheduled note queue', () => {
     it('correlates a DSP sample-commit failure with the requested load', async () => {
         const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init' });
         proc.port.postMessage.mockClear();
         sampleLoadFailure = new Error('sample pool exhausted');
 
@@ -149,9 +152,27 @@ describe('CrumbsProcessor scheduled note queue', () => {
         expect(errorSpy).toHaveBeenCalledWith('CrumbsProcessor error:', sampleLoadFailure);
     });
 
+    it('frees its sample pool, ignores later messages, and terminates after disposal', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init' });
+        calls.length = 0;
+
+        send(proc, { type: 'dispose' });
+        send(proc, {
+            type: 'loadSample',
+            loadToken: 17,
+            data: new Float32Array([0.25]),
+            channels: 1,
+            sampleRate: 48_000,
+        });
+
+        expect(calls.map((call) => call.method)).toEqual(['free']);
+        expect(proc.process([], [makeChannels(2, FRAMES)])).toBe(false);
+    });
+
     it('voices a note landing on a block boundary in that block, not the one before it', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init' });
         calls.length = 0;
 
         // Block 1 renders frames [0, 127]; block 2 renders [128, 255].
@@ -173,7 +194,7 @@ describe('CrumbsProcessor scheduled note queue', () => {
 
     it('sounds a note at exactly currentFrame even while bypassed, where a queued one is withheld', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init' });
         send(proc, { type: 'bypass', bypassed: true });
         calls.length = 0;
 

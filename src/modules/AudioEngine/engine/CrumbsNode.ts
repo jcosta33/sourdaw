@@ -11,7 +11,8 @@
  * than a degraded one.
  */
 
-import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from '#/infra/audioWorklet/workletInitShared';
+import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
+import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
 import { logger } from '#/infra/logger/appLogger';
 
 import crumbsProcessorUrl from '../services/crumbsProcessor.ts?worker&url';
@@ -53,7 +54,7 @@ export function isCrumbsDevice(deviceType: string): boolean {
 /**
  * Create a Crumbs AudioWorkletNode.
  *
- * Resumes the AudioContext if suspended. Caches the WASM binary across calls.
+ * Resumes the AudioContext if suspended. Caches the compiled WASM module across calls.
  * Await `result.ready` before sending notes.
  *
  * `onFault` is invoked if the worklet posts a runtime-fault `error` message
@@ -64,23 +65,39 @@ export function isCrumbsDevice(deviceType: string): boolean {
 export async function createCrumbsNode(
     ctx: BaseAudioContext,
     wasmUrl?: string,
-    onFault?: (message: string) => void
+    onFault?: (message: string) => void,
+    signal?: AbortSignal
 ): Promise<CrumbsNodeResult> {
     if (ctx instanceof AudioContext && ctx.state === 'suspended') {
-        await ctx.resume();
+        await raceAbortSignal(ctx.resume(), signal);
     }
 
-    await ensureWorkletRegistered(ctx, crumbsProcessorUrl);
+    await raceAbortSignal(ensureWorkletRegistered(ctx, crumbsProcessorUrl), signal);
+    const wasmLease = await raceAbortSignal(
+        fetchWasmModule({ ctx, bundleId: 'daw-dsp', url: wasmUrl ?? DEFAULT_WASM_URL, signal }),
+        signal
+    );
 
-    const node = new AudioWorkletNode(ctx, 'crumbs-processor', {
-        numberOfInputs: 0,
-        numberOfOutputs: 1,
-        outputChannelCount: [2],
-        channelCount: 2,
-        channelCountMode: 'explicit',
-    });
+    signal?.throwIfAborted();
+
+    let node: AudioWorkletNode;
+    try {
+        node = new AudioWorkletNode(ctx, 'crumbs-processor', {
+            numberOfInputs: 0,
+            numberOfOutputs: 1,
+            outputChannelCount: [2],
+            channelCount: 2,
+            channelCountMode: 'explicit',
+            processorOptions: { wasmModule: wasmLease.module },
+        });
+        wasmLease.commit();
+    } catch (error) {
+        wasmLease.release();
+        throw error;
+    }
 
     let bypassed = false;
+    let destroyed = false;
 
     const handshake = createReadyHandshake({ pluginName: 'CrumbsNode' });
     node.port.onmessage = (event: MessageEvent<unknown>) => {
@@ -99,9 +116,7 @@ export async function createCrumbsNode(
     };
     const readyPromise = handshake.promise;
 
-    const wasmBytes = await fetchWasmBinary(wasmUrl ?? DEFAULT_WASM_URL);
-    const copy = wasmBytes.slice(0);
-    node.port.postMessage({ type: 'init', wasmBytes: copy }, [copy]);
+    node.port.postMessage({ type: 'init' });
 
     // Sample loading is driven by the Crumbs module (live registration, or
     // `prepareOfflineCrumbs` for a render). Nothing is loaded eagerly here:
@@ -158,6 +173,11 @@ export async function createCrumbsNode(
     };
 
     const destroy = (): void => {
+        if (destroyed) {
+            return;
+        }
+        destroyed = true;
+        node.port.postMessage({ type: 'dispose' });
         disconnect();
         node.port.close();
     };

@@ -9,14 +9,22 @@ const { creators } = vi.hoisted(() => {
     const creators = {
         createFermenterNode: vi.fn(() => Promise.resolve(nodeMock)),
         createToasterNode: vi.fn(() => Promise.resolve(nodeMock)),
-        createLevainNode: vi.fn(() => Promise.resolve(nodeMock)),
+        createLevainNode: vi.fn((_ctx?: BaseAudioContext, _wasmUrl?: string, _onFault?: (message: string) => void) =>
+            Promise.resolve(nodeMock)
+        ),
+        createCrumbsNode: vi.fn((_ctx?: BaseAudioContext, _wasmUrl?: string, _onFault?: (message: string) => void) =>
+            Promise.resolve(nodeMock)
+        ),
         createGlutenNode: vi.fn(() => Promise.resolve(nodeMock)),
         createBacteriaNode: vi.fn(() => Promise.resolve(nodeMock)),
         createGrinderNode: vi.fn(() => Promise.resolve(nodeMock)),
         createProofNode: vi.fn(() => Promise.resolve(nodeMock)),
         createProofChamberNode: vi.fn(() => Promise.resolve(nodeMock)),
         createScoringNode: vi.fn(() => Promise.resolve(nodeMock)),
-        createGrandBouleNode: vi.fn(() => Promise.resolve(nodeMock)),
+        createGrandBouleNode: vi.fn(
+            (_ctx?: BaseAudioContext, _wasmUrl?: string, _onFault?: (message: string) => void) =>
+                Promise.resolve(nodeMock)
+        ),
         createKneadNode: vi.fn(() => Promise.resolve(nodeMock)),
     };
     return { creators };
@@ -33,6 +41,10 @@ vi.mock('../../../engine/ToasterNode', () => ({
 vi.mock('../../../engine/LevainNode', () => ({
     isLevainDevice: (t: string) => t === 'levain',
     createLevainNode: creators.createLevainNode,
+}));
+vi.mock('../../../engine/CrumbsNode', () => ({
+    isCrumbsDevice: (t: string) => t === 'builtin-crumbs',
+    createCrumbsNode: creators.createCrumbsNode,
 }));
 vi.mock('../../../engine/GlutenNode', () => ({
     isGlutenDevice: (t: string) => t === 'gluten',
@@ -85,6 +97,15 @@ describe('NativeDspDeviceStrategy', () => {
         expect(strategy.node.inputNode).toBe(worklet);
         expect(strategy.node.outputNode).toBe(worklet);
         expect(strategy.node.nodes).toEqual([worklet]);
+    });
+
+    it('exposes the underlying processor runtime-failure signals', () => {
+        const runtimeFailure = new Promise<never>(() => undefined);
+        const runtimeHealthCheck = vi.fn(() => Promise.resolve());
+        const strategy = new NativeDspDeviceStrategy(make_dsp_node({ runtimeFailure, runtimeHealthCheck }));
+
+        expect(strategy.runtimeFailure).toBe(runtimeFailure);
+        expect(strategy.runtimeHealthCheck).toBe(runtimeHealthCheck);
     });
 
     it('should forward setParam when the underlying node implements it', () => {
@@ -210,6 +231,7 @@ describe('createNativeDspStrategy factory dispatch', () => {
         ['fermenter', 'createFermenterNode'],
         ['toaster', 'createToasterNode'],
         ['levain', 'createLevainNode'],
+        ['builtin-crumbs', 'createCrumbsNode'],
         ['gluten', 'createGlutenNode'],
         ['bacteria', 'createBacteriaNode'],
         ['grinder', 'createGrinderNode'],
@@ -274,5 +296,42 @@ describe('createNativeDspStrategy factory dispatch', () => {
         } as never);
         expect(setParam).toHaveBeenCalledWith('gain', 0.3);
         expect(setParam).toHaveBeenCalledWith('mix', 0.7);
+    });
+
+    it('turns an offline GrandBoule processor fault into a rejected strategy signal', async () => {
+        creators.createGrandBouleNode.mockClear();
+        const strategy = await createNativeDspStrategy(ctx, {
+            type: 'grandBoule',
+            parameterValues: {},
+        } as never);
+        const onFault = creators.createGrandBouleNode.mock.calls[0]?.[2];
+        if (!onFault) {
+            throw new Error('GrandBoule factory did not register a runtime-failure callback');
+        }
+
+        const rejected = expect(strategy.runtimeFailure).rejects.toThrow('offline processor crashed');
+        onFault('offline processor crashed');
+
+        await rejected;
+    });
+
+    it.each([
+        ['levain', 'createLevainNode'],
+        ['builtin-crumbs', 'createCrumbsNode'],
+    ] as const)('turns an offline %s processor fault into a rejected strategy signal', async (type, creatorName) => {
+        creators[creatorName].mockClear();
+        const strategy = await createNativeDspStrategy(ctx, {
+            type,
+            parameterValues: {},
+        } as never);
+        const onFault = creators[creatorName].mock.calls[0]?.[2];
+        if (!onFault) {
+            throw new Error(`${type} factory did not register a runtime-failure callback`);
+        }
+
+        const rejected = expect(strategy.runtimeFailure).rejects.toThrow(`${type} processor crashed`);
+        onFault(`${type} processor crashed`);
+
+        await rejected;
     });
 });

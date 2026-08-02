@@ -9,7 +9,11 @@ import { createToasterNode, isToasterDevice } from '../ToasterNode';
 // immediately so the factory's `await` chain completes.
 vi.mock('#/infra/audioWorklet/workletInitShared', () => ({
     ensureWorkletRegistered: vi.fn().mockResolvedValue(undefined),
-    fetchWasmBinary: vi.fn().mockResolvedValue(new ArrayBuffer(8)),
+    fetchWasmModule: vi.fn().mockResolvedValue({
+        module: new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0])),
+        commit: vi.fn(),
+        release: vi.fn(),
+    }),
     createReadyHandshake: vi.fn(() => ({
         promise: Promise.resolve({}),
         onMessage: () => 'other' as const,

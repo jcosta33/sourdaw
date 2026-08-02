@@ -6,7 +6,7 @@ export type DeviceReadinessToken = {
 };
 
 export type DeviceContentLoadOutcome = 'ready' | 'failed' | 'cancelled';
-export type DeviceReadinessFailureStage = 'node' | 'graph' | 'content';
+export type DeviceReadinessFailureStage = 'node' | 'graph' | 'content' | 'runtime';
 
 type DeviceReadinessStatus = 'node-pending' | 'graph-pending' | 'content-pending' | 'ready' | 'failed';
 
@@ -203,7 +203,7 @@ class DeviceReadinessDiagnosticsCollector {
 
     markFailed(input: { token: DeviceReadinessToken; stage: DeviceReadinessFailureStage; atMs?: number }): void {
         const record = this.currentRecord(input.token);
-        if (!record || !isPending(record.status)) {
+        if (!record || record.status === 'failed') {
             return;
         }
         const minimumAtMs = Math.max(
@@ -232,6 +232,17 @@ class DeviceReadinessDiagnosticsCollector {
 
     removeDevice(token: DeviceReadinessToken): void {
         this.cancel(token);
+    }
+
+    getLoadState(token: DeviceReadinessToken): 'ready' | 'pending' | 'failed' | null {
+        const record = this.currentRecord(token);
+        if (!record) {
+            return null;
+        }
+        if (record.status === 'ready' || record.status === 'failed') {
+            return record.status;
+        }
+        return 'pending';
     }
 
     snapshot(): AudioEngineDeviceReadinessDiagnostics {

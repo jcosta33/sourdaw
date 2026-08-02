@@ -25,7 +25,7 @@ vi.mock('#/modules/Levain/useCases', () => ({
 // Crumbs' offline setup reads a sample off disk over the native bridge and
 // decodes it; likewise never exercised here.
 vi.mock('#/modules/Crumbs/useCases', () => ({
-    prepareCrumbsEngine: vi.fn(() => Promise.resolve()),
+    prepareCrumbsEngine: vi.fn(() => Promise.resolve('ready')),
 }));
 // Toaster's kit push is asserted against real project state in
 // `toasterLiveOfflineParity.spec.ts`. What this spec owns is the table wiring:
@@ -131,7 +131,7 @@ describe('prepareOfflineDeviceSetup — hydration table routing', () => {
         vi.mocked(getTrackStoreState).mockReset();
         vi.mocked(getTrackStoreState).mockReturnValue({ tracks: [], selectedTrackId: null });
         vi.mocked(prepareOfflineLevain).mockClear();
-        vi.mocked(prepareCrumbsEngine).mockClear();
+        vi.mocked(prepareCrumbsEngine).mockReset().mockResolvedValue('ready');
         vi.mocked(prepareOfflineToaster).mockClear();
     });
 
@@ -174,6 +174,15 @@ describe('prepareOfflineDeviceSetup — hydration table routing', () => {
             port,
             signal: controller.signal,
         });
+    });
+
+    it('rejects an offline graph whose Crumbs sample cannot commit', async () => {
+        const { port } = makePort();
+        vi.mocked(prepareCrumbsEngine).mockResolvedValueOnce('failed');
+
+        await expect(
+            prepareOfflineDeviceSetup({ deviceId: 'crumbs-1', deviceType: 'builtin-crumbs', port })
+        ).rejects.toThrow('Crumbs content preparation failed for crumbs-1');
     });
 
     // Nine of the twelve native types are an explicit `null` in the table. That is

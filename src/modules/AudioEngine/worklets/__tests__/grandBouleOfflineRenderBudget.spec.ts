@@ -61,7 +61,7 @@ type HarnessPort = {
     postMessage: (message: unknown) => void;
 };
 
-const processorRegistry = new Map<string, new () => ProcessorLike>();
+const processorRegistry = new Map<string, new (...args: unknown[]) => ProcessorLike>();
 let pendingProcessorPort: HarnessPort | null = null;
 let harnessFrame = 0;
 
@@ -83,7 +83,7 @@ describe('a 64-voice Grand Boule offline render fits the export budget', () => {
         Object.defineProperty(globalThis, 'currentFrame', { configurable: true, get: () => harnessFrame });
         Object.defineProperty(globalThis, 'sampleRate', { configurable: true, get: () => HOST_SAMPLE_RATE });
         vi.stubGlobal('AudioWorkletProcessor', AudioWorkletProcessorShim);
-        vi.stubGlobal('registerProcessor', (name: string, ctor: new () => ProcessorLike) => {
+        vi.stubGlobal('registerProcessor', (name: string, ctor: new (...args: unknown[]) => ProcessorLike) => {
             processorRegistry.set(name, ctor);
         });
 
@@ -93,26 +93,22 @@ describe('a 64-voice Grand Boule offline render fits the export budget', () => {
             throw new Error('grand-boule-offline-processor was not registered');
         }
 
+        // Compile where the real node factory does: outside the processor and
+        // once, before constructing the worklet instance.
+        const wasmBytes = readFileSync(WASM_PATH);
+        const wasmModule = new WebAssembly.Module(
+            wasmBytes.buffer.slice(wasmBytes.byteOffset, wasmBytes.byteOffset + wasmBytes.byteLength)
+        );
         const inner: HarnessPort = { onmessage: null, postMessage: vi.fn() };
         pendingProcessorPort = inner;
         try {
-            processor = new Processor();
+            processor = new Processor({ processorOptions: { wasmModule } });
         } finally {
             pendingProcessorPort = null;
         }
         port = inner;
 
-        // The genuine article: the same bytes the app fetches at runtime.
-        const wasmBytes = readFileSync(WASM_PATH);
-        port.onmessage?.({
-            data: {
-                type: 'init',
-                // Sliced out of the pooled Node buffer: `readFileSync` can hand
-                // back a view into a shared allocation, and the whole pool is not
-                // a wasm module.
-                wasmBytes: wasmBytes.buffer.slice(wasmBytes.byteOffset, wasmBytes.byteOffset + wasmBytes.byteLength),
-            },
-        } as MessageEvent);
+        port.onmessage?.({ data: { type: 'init' } } as MessageEvent);
     });
 
     it(

@@ -56,6 +56,7 @@ type InvalidatePendingDeviceLoadInput = {
     deviceId: string;
     failureStage?: DeviceReadinessFailureStage;
     abortPublished?: boolean;
+    clearFailure?: boolean;
 };
 
 type DeviceLoadState = 'ready' | 'pending' | 'failed';
@@ -370,6 +371,38 @@ export class TrackNode {
         }
     }
 
+    private rollbackPromotedDevice(readinessToken: DeviceReadinessToken): boolean {
+        const pendingLoad = this._pendingDeviceLoads.get(readinessToken.deviceId);
+        if (
+            !pendingLoad ||
+            pendingLoad.readinessToken !== readinessToken ||
+            !pendingLoad.resolved ||
+            !pendingLoad.placeholder
+        ) {
+            return false;
+        }
+        const index = this.strip.deviceNodes.findIndex(
+            (device) => device.deviceId === readinessToken.deviceId && device !== pendingLoad.placeholder
+        );
+        if (index === -1) {
+            return false;
+        }
+
+        const failedDevice = this.strip.deviceNodes[index];
+        if (!failedDevice) {
+            return false;
+        }
+        this.strip.deviceNodes[index] = pendingLoad.placeholder;
+        pendingLoad.abortController.abort();
+        try {
+            this.deps.onDeviceRemoved?.(this.trackId, failedDevice);
+        } catch (error) {
+            logger.warn(`[WebAudioEngine] Device graph rollback notification failed: ${String(error)}`);
+        }
+        this.destroyPublishedDeviceNode(failedDevice);
+        return true;
+    }
+
     /** Coalesce concurrent rebuild requests into a single microtask (§88.3). */
     public scheduleRebuildChain(): void {
         if (this._disposed || this._rebuildScheduled) {
@@ -390,8 +423,14 @@ export class TrackNode {
                 for (const token of this._pendingGraphReadinessTokens) {
                     this._failedDeviceLoads.add(token.deviceId);
                     this.deps.readinessDiagnostics.markFailed({ token, stage: 'graph' });
+                    this.rollbackPromotedDevice(token);
                 }
-                throw error;
+                try {
+                    this.rebuildChain();
+                } catch (rollbackError) {
+                    logger.warn(`[WebAudioEngine] Device graph rollback failed: ${String(rollbackError)}`);
+                }
+                logger.warn(`[WebAudioEngine] Device graph rebuild failed: ${String(error)}`);
             } finally {
                 this._pendingGraphReadinessTokens.clear();
             }
@@ -498,10 +537,11 @@ export class TrackNode {
         deviceId,
         failureStage,
         abortPublished = false,
+        clearFailure = false,
     }: InvalidatePendingDeviceLoadInput): void {
         if (failureStage) {
             this._failedDeviceLoads.add(deviceId);
-        } else {
+        } else if (clearFailure) {
             this._failedDeviceLoads.delete(deviceId);
         }
         const pendingLoad = this._pendingDeviceLoads.get(deviceId);
@@ -570,6 +610,7 @@ export class TrackNode {
         }
 
         pendingLoad.resolved = true;
+        this._failedDeviceLoads.delete(deviceId);
         pendingLoad.parameterWrites.length = 0;
         this.deps.readinessDiagnostics.markNodeReady({ token: pendingLoad.readinessToken });
         this._pendingGraphReadinessTokens.add(pendingLoad.readinessToken);
@@ -577,25 +618,65 @@ export class TrackNode {
         return true;
     }
 
+    private failLoadedDevice(deviceId: string, failedDn: BuiltinDeviceNode, replacementDn: BuiltinDeviceNode): boolean {
+        const index = this.strip.deviceNodes.findIndex((device) => device === failedDn && device.deviceId === deviceId);
+        if (this._disposed || index === -1) {
+            return false;
+        }
+
+        this._failedDeviceLoads.add(deviceId);
+        const readinessToken = this._deviceReadinessTokens.get(deviceId);
+        if (readinessToken) {
+            this.deps.readinessDiagnostics.markFailed({ token: readinessToken, stage: 'runtime' });
+        }
+        replacementDn.bypassed = failedDn.bypassed;
+        this.strip.deviceNodes[index] = replacementDn;
+        this._pendingDeviceLoads.get(deviceId)?.abortController.abort();
+        this.scheduleRebuildChain();
+        return true;
+    }
+
     public timeoutPendingDeviceLoads(): void {
+        let graphChanged = false;
         for (const [deviceId, pendingLoad] of this._pendingDeviceLoads) {
             let failureStage: DeviceReadinessFailureStage = 'node';
             if (pendingLoad.resolved) {
                 failureStage = this._pendingGraphReadinessTokens.has(pendingLoad.readinessToken) ? 'graph' : 'content';
+                graphChanged = this.rollbackPromotedDevice(pendingLoad.readinessToken) || graphChanged;
             }
             this.invalidatePendingDeviceLoad({ deviceId, failureStage, abortPublished: true });
+        }
+        if (graphChanged) {
+            this.scheduleRebuildChain();
         }
     }
 
     public getDeviceLoadState(deviceId: string): DeviceLoadState {
-        const pendingLoad = this._pendingDeviceLoads.get(deviceId);
-        if (pendingLoad) {
-            return pendingLoad.resolved ? 'ready' : 'pending';
+        const readinessToken = this._deviceReadinessTokens.get(deviceId);
+        if (readinessToken) {
+            const readinessState = this.deps.readinessDiagnostics.getLoadState(readinessToken);
+            if (readinessState) {
+                return readinessState;
+            }
         }
         if (this._failedDeviceLoads.has(deviceId)) {
             return 'failed';
         }
+        const pendingLoad = this._pendingDeviceLoads.get(deviceId);
+        if (pendingLoad) {
+            return pendingLoad.resolved ? 'ready' : 'pending';
+        }
         return 'ready';
+    }
+
+    private disconnectDeviceNode(device: BuiltinDeviceNode): void {
+        for (const node of device.nodes) {
+            try {
+                node.disconnect();
+            } catch {
+                // A node may already be detached when a pending load resolves late.
+            }
+        }
     }
 
     private destroyRejectedDeviceNode(device: BuiltinDeviceNode): void {
@@ -604,13 +685,16 @@ export class TrackNode {
         } else if (device.controller) {
             device.controller.destroy?.();
         }
-        for (const node of device.nodes) {
-            try {
-                node.disconnect();
-            } catch {
-                // A node may already be detached when a pending load resolves late.
-            }
+        this.disconnectDeviceNode(device);
+    }
+
+    private destroyPublishedDeviceNode(device: BuiltinDeviceNode): void {
+        if (device.controller?.destroy) {
+            device.controller.destroy();
+        } else if (device.dispose) {
+            device.dispose();
         }
+        this.disconnectDeviceNode(device);
     }
 
     private failDeviceConstruction(
@@ -794,8 +878,13 @@ export class TrackNode {
                         signal: pendingLoad.abortController.signal,
                         onLoaded: (finalDn) => this.completePendingDeviceLoad(deviceId, pendingLoad, finalDn),
                         onContentLoadSettled: (outcome) => {
+                            if (outcome === 'failed') {
+                                this._failedDeviceLoads.add(deviceId);
+                            }
                             this.deps.readinessDiagnostics.markContentSettled({ token: readinessToken, outcome });
                         },
+                        onRuntimeFailure: (failedDn, replacementDn) =>
+                            this.failLoadedDevice(deviceId, failedDn, replacementDn),
                     });
                 } catch (error) {
                     this.failDeviceConstruction(readinessToken, error);
@@ -839,12 +928,19 @@ export class TrackNode {
         } catch (error) {
             this._failedDeviceLoads.add(deviceId);
             this.deps.readinessDiagnostics.markFailed({ token: readinessToken, stage: 'graph' });
+            this.strip.deviceNodes.splice(targetIndex, 1);
+            this.destroyRejectedDeviceNode(dn);
+            try {
+                this.rebuildChain();
+            } catch (rollbackError) {
+                logger.warn(`[WebAudioEngine] Synchronous device graph rollback failed: ${String(rollbackError)}`);
+            }
             throw error;
         }
     }
 
     public removeDevice(deviceId: string): void {
-        this.invalidatePendingDeviceLoad({ deviceId, abortPublished: true });
+        this.invalidatePendingDeviceLoad({ deviceId, abortPublished: true, clearFailure: true });
         const readinessToken = this._deviceReadinessTokens.get(deviceId);
         if (readinessToken) {
             this._pendingGraphReadinessTokens.delete(readinessToken);
@@ -859,20 +955,7 @@ export class TrackNode {
 
         this.strip.deviceNodes = this.strip.deviceNodes.filter((d) => d.deviceId !== deviceId);
         this.deps.onDeviceRemoved?.(this.trackId, dn);
-        if (dn.controller) {
-            dn.controller.destroy?.();
-        } else if (dn.dispose) {
-            dn.dispose();
-        }
-
-        for (const n of dn.nodes) {
-            try {
-                n.disconnect();
-            } catch {
-                // Intentionally empty: a node already detached from the graph
-                // throws on disconnect(); nothing to clean up in that case.
-            }
-        }
+        this.destroyPublishedDeviceNode(dn);
         this.rebuildChain();
     }
 
@@ -957,7 +1040,7 @@ export class TrackNode {
         this._rebuildScheduled = false;
         this._pendingGraphReadinessTokens.clear();
         for (const deviceId of this._pendingDeviceLoads.keys()) {
-            this.invalidatePendingDeviceLoad({ deviceId, abortPublished: true });
+            this.invalidatePendingDeviceLoad({ deviceId, abortPublished: true, clearFailure: true });
         }
         for (const readinessToken of this._deviceReadinessTokens.values()) {
             this.deps.readinessDiagnostics.removeDevice(readinessToken);

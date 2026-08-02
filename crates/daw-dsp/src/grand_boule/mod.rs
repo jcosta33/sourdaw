@@ -22,10 +22,10 @@ pub mod string;
 pub mod sympathetic;
 pub mod voice;
 
+use crate::primitives::sanitize_block;
 use engine::{GrandBouleEngine, DEFAULT_VOICE_COUNT};
 use parameters::Temperament;
 use wasm_bindgen::prelude::*;
-use crate::primitives::sanitize_block;
 
 /// Pre-allocated maximum block size exposed to the AudioWorklet side.
 const MAX_BLOCK_SIZE: usize = 4096;
@@ -69,7 +69,8 @@ impl GrandBouleInstance {
 
     /// Trigger a note carrying its MPE member channel.
     pub fn note_on_with_channel(&mut self, midi_note: u8, velocity: f32, channel: u8) {
-        self.engine.note_on_with_channel(midi_note, velocity, channel);
+        self.engine
+            .note_on_with_channel(midi_note, velocity, channel);
     }
 
     /// Note-off narrowed to one MPE member channel (audit MD-2).
@@ -142,6 +143,11 @@ impl GrandBouleInstance {
         self.engine.all_notes_off();
     }
 
+    /// Current DSP-owned render lifecycle for the worker host.
+    pub fn lifecycle_state(&self) -> u32 {
+        self.engine.lifecycle().code()
+    }
+
     /// Render a block of audio and return a pointer to the left channel.
     /// The caller reads both channels from WASM memory.
     pub fn process(&mut self, block_size: u32) -> *const f32 {
@@ -168,5 +174,28 @@ impl GrandBouleInstance {
     /// Pointer to the right channel buffer (call after `process`).
     pub fn get_right_ptr(&self) -> *const f32 {
         self.right_buf.as_ptr()
+    }
+}
+
+#[cfg(test)]
+mod lifecycle_tests {
+    use super::GrandBouleInstance;
+    use crate::primitives::ProcessLifecycle;
+
+    #[test]
+    fn lifecycle_sleeps_cold_wakes_for_note_and_hard_stops() {
+        let mut instance = GrandBouleInstance::new(48_000.0, 4);
+        assert_eq!(instance.lifecycle_state(), ProcessLifecycle::SLEEP_CODE);
+
+        instance.note_on(60, 1.0);
+        assert_eq!(instance.lifecycle_state(), ProcessLifecycle::CONTINUE_CODE);
+
+        instance.process(128);
+        instance.note_off(60);
+        instance.process(128);
+        assert_ne!(instance.lifecycle_state(), ProcessLifecycle::SLEEP_CODE);
+
+        instance.all_notes_off();
+        assert_eq!(instance.lifecycle_state(), ProcessLifecycle::SLEEP_CODE);
     }
 }
