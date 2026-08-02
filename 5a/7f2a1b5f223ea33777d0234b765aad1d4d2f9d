@@ -1,0 +1,40 @@
+src/modules/AudioEngine/engine/__tests__/TrackNodeDevices.spec.ts
+  s_ac9b259eab20ba::t_383a4c11688403 734,740
+  s_ac9b259eab20ba::t_3d0c9b95f24756 751-766
+  s_ac9b259eab20ba::t_8407b356b15d50 706,709
+  s_ac9b259eab20ba::t_505d71ec26e139 735-739,741-750
+src/modules/Crumbs/useCases/__tests__/prepareCrumbsEngine.spec.ts
+  s_ac9b259eab20ba::t_8407b356b15d50 39,43,49-51,73,116-120,123,166,179,189,195-209
+  s_ac9b259eab20ba::t_f09cf406538fa3 99
+  s_ac9b259eab20ba::t_505d71ec26e139 155
+  s_ac9b259eab20ba::t_44033396813c44 210-211
+src/modules/AudioEngine/engine/TrackNode.ts
+  s_ac9b259eab20ba::t_f3d8b7a3b02ca1 55-60,487-490,497-501,519,536,567,586,828,847,960
+  s_ac9b259eab20ba::t_3d0c9b95f24756 513,582-585
+  s_ac9b259eab20ba::t_505d71ec26e139 512,514-516,581
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistryDescriptors.spec.ts
+  s_ac9b259eab20ba::t_8407b356b15d50 362,367,375
+src/modules/AudioEngine/engine/audioDeviceRuntimeSink.ts
+  s_ac9b259eab20ba::t_be4f95745a4bb0 85-88
+  s_ac9b259eab20ba::t_505d71ec26e139 90-94
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_ac9b259eab20ba::t_505d71ec26e139 388,447
+src/app/bootstrap.ts
+  s_ac9b259eab20ba::t_505d71ec26e139 310
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "5a7f2a1b5f223ea33777d0234b765aad1d4d2f9d",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
