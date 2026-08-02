@@ -1378,6 +1378,42 @@ describe('scheduleMidiNotes', () => {
     });
 
     describe('note-window filtering', () => {
+        it('bounds projection work for a dense non-looping clip', async () => {
+            const track = midiTrack({ clips: [midiClip({ endBeat: 128 })] });
+            const notes = Array.from({ length: 1_280 }, (_, index) => ({
+                id: `n${index}`,
+                pitch: 60,
+                startBeat: index / 10,
+                duration: index === 0 ? 128 : 0.05,
+                velocity: 100,
+            })).reverse();
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = { notesByClipId: { 'clip-1': notes } };
+
+            await scheduleMidiNotes(64, 65, 64, -1, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(projectClipMidiEvents).toHaveBeenCalledTimes(30);
+            expect(scheduleNote).toHaveBeenCalledTimes(10);
+        });
+
+        it('retains a leading interval that projection clips to the clip boundary', async () => {
+            const track = midiTrack({ clips: [midiClip({ startBeat: 4, endBeat: 8 })] });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: {
+                    'clip-1': [{ id: 'leading', pitch: 60, startBeat: -2, duration: 7, velocity: 100 }],
+                },
+            };
+            vi.mocked(projectClipMidiEvents).mockImplementationOnce((input) =>
+                input.events.map((event) => ({ ...event, startBeat: 4, duration: 1 }))
+            );
+
+            await scheduleMidiNotes(4, 5, 4, -1, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(projectClipMidiEvents).toHaveBeenCalledTimes(1);
+            expect(scheduleNote).toHaveBeenCalledTimes(1);
+        });
+
         it('skips a note whose start beat is before lastScheduledBeat', async () => {
             const track = midiTrack({ clips: [midiClip()] });
             (trackStore as { value: unknown }).value = { tracks: [track] };
@@ -1402,6 +1438,10 @@ describe('scheduleMidiNotes', () => {
             await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
 
             expect(scheduleNote).not.toHaveBeenCalled();
+            expect(projectClipMidiEvents).not.toHaveBeenCalled();
+            expect(getSynthParamsForTrack).not.toHaveBeenCalled();
+            expect(ensureTrackStrip).not.toHaveBeenCalled();
+            expect(resolveClipsWithComping).not.toHaveBeenCalled();
         });
 
         it('skips a clip whose loopLen collapses to <= 0 (startBeat === endBeat)', async () => {
