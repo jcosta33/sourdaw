@@ -1,0 +1,83 @@
+src/modules/Transport/useCases/scheduling/applyAutomation/resetAutomationPlaybackCache.ts
+  s_ac9b259eab20ba::t_f9cd5dbbb32444 1-10
+src/modules/Project/useCases/recentProjects/__tests__/loadRecentProject.spec.ts
+  s_ac9b259eab20ba::t_35ad414c7a9340 10,35-39,101,124
+src/modules/Transport/useCases/scheduling/applyAutomation/restoreDrivenAutomationBases.ts
+  s_ac9b259eab20ba::t_f9cd5dbbb32444 1-25
+src/modules/Project/useCases/projectPersistence/helpers/replaceProjectData.ts
+  s_ac9b259eab20ba::t_953db8289f1ca8 17,125
+src/modules/Fermenter/useCases/index.ts
+  s_ac9b259eab20ba::t_ab24462d134488 3
+  s_ac9b259eab20ba::t_a3bb036057cb19 2
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/restoreAutomationBaseValue.spec.ts
+  s_ac9b259eab20ba::t_a2a4fc2f104bee 32
+src/modules/Fermenter/useCases/applyFermenterAutomationParam.ts
+  s_ac9b259eab20ba::t_a3bb036057cb19 1,18
+  s_ac9b259eab20ba::t_86289995bd3d37 17
+  s_ac9b259eab20ba::t_ab24462d134488 2-16,19
+src/modules/Transport/useCases/scheduling/applyAutomation/restoreAutomationBaseValue.ts
+  s_ac9b259eab20ba::t_ab24462d134488 9,100
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomationDiscontinuity.spec.ts
+  s_ac9b259eab20ba::t_f9cd5dbbb32444 10
+  s_ac9b259eab20ba::t_d8103ad02ba58f 56
+  s_ac9b259eab20ba::t_fd1c6cba1847be 92
+src/modules/Fermenter/useCases/__tests__/applyFermenterAutomationParam.spec.ts
+  s_ac9b259eab20ba::t_ab24462d134488 1-5,7-14,16-29,31-33,35-36,38-43,45,61-62
+  s_ac9b259eab20ba::t_27c4a012ca9ea6 15,30,34,37,44,46-60
+  s_ac9b259eab20ba::t_3f30d8b181f55a 6
+src/modules/Transport/useCases/transportControls/__tests__/stopPlayback.spec.ts
+  s_ac9b259eab20ba::t_d99eedc43ee42b 68,92,114,140,175,193
+  s_ac9b259eab20ba::t_399ac83fafad75 20-21,48,71
+  s_ac9b259eab20ba::t_f9cd5dbbb32444 12,19
+src/modules/Transport/useCases/index.ts
+  s_ac9b259eab20ba::t_f9cd5dbbb32444 7
+src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts
+  s_ac9b259eab20ba::t_a3bb036057cb19 17,72,268-273,275-278,334-335
+  s_ac9b259eab20ba::t_d8103ad02ba58f 188
+  s_ac9b259eab20ba::t_c1c69cb3854d6e 73,208-210,212-213,216-218,220-221,260-262,264-265,320-322,324-325,336-337,339-340,342-344,348-358
+  s_ac9b259eab20ba::t_dbe7af85325809 76,211,219,263,323,341,345-347
+  s_ac9b259eab20ba::t_69a7207c59cf9f 123-129
+  s_ac9b259eab20ba::t_86289995bd3d37 95,103
+  s_ac9b259eab20ba::t_ab9a335a7bab0a 87
+  s_ac9b259eab20ba::t_3f30d8b181f55a 31,338
+  s_ac9b259eab20ba::t_f9cd5dbbb32444 29,84
+  s_ac9b259eab20ba::t_6b4f606eeaa0de 359
+src/modules/Transport/useCases/scheduling/applyAutomation/automationPlaybackState.ts
+  s_ac9b259eab20ba::t_d99eedc43ee42b 1
+  s_ac9b259eab20ba::t_f9cd5dbbb32444 2-20
+src/modules/Fermenter/useCases/applyFermenterAutomationPatch.ts
+  s_ac9b259eab20ba::t_a3bb036057cb19 1-41
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomation.spec.ts
+  s_ac9b259eab20ba::t_ab9a335a7bab0a 384-388
+  s_ac9b259eab20ba::t_7754f399f9c4e1 202,205,367-368,377-378
+  s_ac9b259eab20ba::t_d8103ad02ba58f 92,188,406,451
+  s_ac9b259eab20ba::t_69a7207c59cf9f 15,91,145,225-243,280-303,348-366,369,371,373-376,379,381-383
+  s_ac9b259eab20ba::t_3f78a917a79c99 304,309-347
+  s_ac9b259eab20ba::t_234609216dd9f3 173,185-187
+  s_ac9b259eab20ba::t_dc8fddcd228313 404-405,740,774-775,911
+  s_ac9b259eab20ba::t_3f30d8b181f55a 214,221-224,305-308
+  s_ac9b259eab20ba::t_d592ecfc408497 244-279
+  s_ac9b259eab20ba::t_a58c4cb12dfa0c 196-201,203-204,206-213,215-216,218-220,389-390
+  s_ac9b259eab20ba::t_fd1c6cba1847be 217,370,372,380
+  s_ac9b259eab20ba::t_a8142dbd10ef21 189-191
+  s_ac9b259eab20ba::t_f9cd5dbbb32444 19-20
+src/modules/Transport/useCases/transportControls/stopPlayback.ts
+  s_ac9b259eab20ba::t_c1c69cb3854d6e 30
+  s_ac9b259eab20ba::t_f9cd5dbbb32444 8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "c4dec52e3afa730caf12c43e6fb7ba59903101ec",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
