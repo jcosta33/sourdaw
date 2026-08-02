@@ -1475,6 +1475,26 @@ describe('scheduleMidiNotes', () => {
             );
         });
 
+        it('bounds projection work for a dense looping clip', async () => {
+            const track = midiTrack({
+                clips: [midiClip({ endBeat: 256, loopEnabled: true, loopLength: 128 })],
+            });
+            const notes = Array.from({ length: 1_280 }, (_, index) => ({
+                id: `n${index}`,
+                pitch: 60,
+                startBeat: index / 10,
+                duration: index === 0 ? 128 : 0.05,
+                velocity: 100,
+            })).reverse();
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = { notesByClipId: { 'clip-1': notes } };
+
+            await scheduleMidiNotes(64, 65, 64, 64, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(projectClipMidiEvents).toHaveBeenCalledTimes(30);
+            expect(scheduleNote).toHaveBeenCalledTimes(10);
+        });
+
         it('bounds Yeast loop work while retaining a prior occurrence release in the window', async () => {
             const track = midiTrack({
                 clips: [midiClip({ endBeat: 128, loopEnabled: true, loopLength: 4 })],
@@ -1551,6 +1571,41 @@ describe('scheduleMidiNotes', () => {
             expect(getSynthParamsForTrack).not.toHaveBeenCalled();
             expect(ensureTrackStrip).not.toHaveBeenCalled();
             expect(resolveClipsWithComping).not.toHaveBeenCalled();
+        });
+
+        it('reuses an active-clip index instead of rescanning project-wide geometry', async () => {
+            let geometryReads = 0;
+            const clips = Array.from({ length: 2_048 }, (_, index) => {
+                const startBeat = index * 2;
+                const clip = midiClip({ id: `clip-${index}` });
+                Object.defineProperties(clip, {
+                    startBeat: {
+                        enumerable: true,
+                        get: () => {
+                            geometryReads++;
+                            return startBeat;
+                        },
+                    },
+                    endBeat: {
+                        enumerable: true,
+                        get: () => {
+                            geometryReads++;
+                            return startBeat + 1;
+                        },
+                    },
+                });
+                return clip;
+            });
+            const track = midiTrack({ clips });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = { notesByClipId: {} };
+
+            await scheduleMidiNotes(2_048, 2_049, 2_048, 2_048, new Set<string>(), [], defaultTransportState, 120);
+            geometryReads = 0;
+            await scheduleMidiNotes(2_048, 2_049, 2_048, 2_048, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(geometryReads).toBeLessThan(100);
+            expect(resolveClipsWithComping).toHaveBeenLastCalledWith('track-1', [clips[1_024]]);
         });
 
         it('skips a clip whose loopLen collapses to <= 0 (startBeat === endBeat)', async () => {
