@@ -1,0 +1,29 @@
+scripts/measureRenderDeadline.ts
+  s_c21d0340fd08fb::t_4f2724b3d2c35b 72-93,99-104,109-111,123-125,128,151-172,399-416,437-449,452,458,465,470-473,475-478,482-485,489,494-495,497,503,509,515-547,551-567,580,602-605
+src/modules/WorkspaceShell/presentations/views/StatusBar.tsx
+  s_ac9b259eab20ba::t_80822dc71b8036 93-104,106-107
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "4a66629514ace7f029a90c47cd400ff137fd4f68",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c21d0340fd08fb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a40accc8c937eb0cb",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
