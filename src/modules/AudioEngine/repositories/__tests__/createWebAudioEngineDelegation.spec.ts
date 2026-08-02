@@ -5,7 +5,12 @@ import { DROPOUT_IDX, dropoutCounters } from '../../engine/dropoutCounter';
 import { createAudioEngine } from '../createWebAudioEngine';
 import { createPhaser } from '../devices/modulation/createPhaser';
 
-import type { AdjustmentLayerTickInput, AudioEngine, BuiltinDeviceNode } from '../../models/AudioEngineState';
+import type {
+    AdjustmentLayerTickInput,
+    AudioEngine,
+    AudioProcessorLifecycleState,
+    BuiltinDeviceNode,
+} from '../../models/AudioEngineState';
 
 const runtimeMocks = vi.hoisted(() => ({
     applyTick: vi.fn(),
@@ -188,6 +193,7 @@ type DiagnosticDeviceInput = {
     workletNodeCount?: number;
     workerInstances?: number;
     loadState?: DiagnosticTestDevice['diagnosticLoadState'];
+    processorLifecycle?: AudioProcessorLifecycleState | null;
 };
 
 function createDiagnosticDevice(input: DiagnosticDeviceInput): DiagnosticTestDevice {
@@ -210,6 +216,9 @@ function createDiagnosticDevice(input: DiagnosticDeviceInput): DiagnosticTestDev
         outputNode: nodes.at(-1)!,
         workerInstances: input.workerInstances,
     };
+    if (input.processorLifecycle !== undefined) {
+        device.processorLifecycle = () => input.processorLifecycle ?? null;
+    }
     if (input.loadState && input.loadState !== 'ready') {
         device.controller = {
             ready: false,
@@ -239,7 +248,7 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
             buses: 1,
             busesByEffectType: { delay: 1 },
             audioNodes: 8,
-            audioWorkletProcessors: 0,
+            audioWorkletProcessors: 1,
         });
         runtimeMocks.reset.mockImplementation(() => {
             runtimeMocks.listLiveBusKeys.mockReturnValue([]);
@@ -329,13 +338,13 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
             deviceAudioWorkletProcessorsByType: {},
             stripMeterWorklets: 0,
             masterMeterWorklets: 0,
-            graphAudioWorkletProcessors: 0,
+            graphAudioWorkletProcessors: 1,
             workerInstances: 0,
             workerInstancesByType: {},
             adjustmentLayerBuses: 1,
             adjustmentLayerBusesByEffectType: { delay: 1 },
             adjustmentLayerAudioNodes: 8,
-            adjustmentLayerAudioWorkletProcessors: 0,
+            adjustmentLayerAudioWorkletProcessors: 1,
         };
         expect(engine.getDiagnostics()).toEqual({
             context: expectedCtx,
@@ -343,7 +352,7 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
             graph: emptyGraph,
             runtime: {
                 trackedAudioScheduledSources: 0,
-                processorLifecycle: { unmanaged: 0, continue: 0, continueIfNotQuiet: 0, tail: 0, sleep: 0 },
+                processorLifecycle: { unmanaged: 1, continue: 0, continueIfNotQuiet: 0, tail: 0, sleep: 0 },
             },
         });
 
@@ -358,16 +367,19 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
         function createDevice(input: Omit<DiagnosticDeviceInput, 'context'>): DiagnosticTestDevice {
             return createDiagnosticDevice({ context: mockCtx, ...input });
         }
-        const fermenter = createDevice({
-            deviceId: 'fermenter-1',
-            deviceType: 'fermenter',
-            workletNodeCount: 1,
+        const toaster = createDevice({
+            deviceId: 'toaster-1',
+            deviceType: 'toaster',
+            nodeCount: 2,
+            workletNodeCount: 2,
+            processorLifecycle: 'sleep',
         });
         const bacteria = createDevice({
             deviceId: 'bacteria-1',
             deviceType: 'bacteria',
             nodeCount: 2,
             workletNodeCount: 1,
+            processorLifecycle: null,
         });
         const grandBoule = createDevice({
             deviceId: 'grand-boule-1',
@@ -381,7 +393,7 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
         });
         const pending = createDevice({ deviceId: 'pending-1', deviceType: 'levain', loadState: 'pending' });
         const failed = createDevice({ deviceId: 'failed-1', deviceType: 'proof', loadState: 'failed' });
-        track.deviceNodes.push(fermenter, bacteria, grandBoule, pending, failed);
+        track.deviceNodes.push(toaster, bacteria, grandBoule, pending, failed);
         busTrack.deviceNodes.push(sidechain);
         engine.wireSidechainRoute('t1', 'bus-1', 'sidechain-1');
         engine.registerScheduledSource(mockCtx.createOscillator());
@@ -400,30 +412,30 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
                 deviceInstancesByType: {
                     bacteria: 1,
                     'builtin-sidechain-compressor': 1,
-                    fermenter: 1,
                     'grand-boule': 1,
+                    toaster: 1,
                 },
-                deviceAudioNodes: 7,
+                deviceAudioNodes: 8,
                 graphSlotResourcesByLoadState: {
-                    ready: { audioNodes: 5, audioWorkletProcessors: 3, workers: 1 },
+                    ready: { audioNodes: 6, audioWorkletProcessors: 4, workers: 1 },
                     pending: { audioNodes: 1, audioWorkletProcessors: 0, workers: 0 },
                     failed: { audioNodes: 1, audioWorkletProcessors: 0, workers: 0 },
                 },
-                deviceAudioWorkletProcessors: 3,
-                deviceAudioWorkletProcessorsByType: { bacteria: 1, fermenter: 1, 'grand-boule': 1 },
+                deviceAudioWorkletProcessors: 4,
+                deviceAudioWorkletProcessorsByType: { bacteria: 1, 'grand-boule': 1, toaster: 2 },
                 stripMeterWorklets: 1,
                 masterMeterWorklets: 1,
-                graphAudioWorkletProcessors: 5,
+                graphAudioWorkletProcessors: 7,
                 workerInstances: 1,
                 workerInstancesByType: { 'grand-boule': 1 },
                 adjustmentLayerBuses: 1,
                 adjustmentLayerBusesByEffectType: { delay: 1 },
                 adjustmentLayerAudioNodes: 8,
-                adjustmentLayerAudioWorkletProcessors: 0,
+                adjustmentLayerAudioWorkletProcessors: 1,
             },
             runtime: {
                 trackedAudioScheduledSources: 1,
-                processorLifecycle: { unmanaged: 3, continue: 0, continueIfNotQuiet: 0, tail: 0, sleep: 0 },
+                processorLifecycle: { unmanaged: 4, continue: 0, continueIfNotQuiet: 0, tail: 0, sleep: 1 },
             },
         });
 
