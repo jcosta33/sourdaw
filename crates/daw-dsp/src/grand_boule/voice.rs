@@ -87,6 +87,9 @@ pub struct PianoVoice {
     /// may keep a key-up voice sounding without retaining per-note expression
     /// ownership.
     held: bool,
+    /// Latched only for this exact voice when sostenuto engages. A later voice
+    /// at the same pitch must not inherit the capture.
+    sostenuto_captured: bool,
     /// Per-note pitch bend as a frequency ratio; 1.0 is neutral.
     expr_bend_ratio: f32,
     /// Ratio the resonator coefficients were last tuned to, so the
@@ -129,6 +132,7 @@ impl PianoVoice {
             stage: VoiceStage::Idle,
             channel: 0,
             held: false,
+            sostenuto_captured: false,
             expr_bend_ratio: 1.0,
             expr_bend_tuned: 1.0,
             midi_note: 0,
@@ -231,6 +235,7 @@ impl PianoVoice {
             return;
         }
         self.held = false;
+        self.sostenuto_captured = false;
         self.stage = VoiceStage::Stealing;
         let fade_samples = (STEAL_FADE_SECONDS * self.sample_rate).round().max(1.0);
         self.release_coefficient = STEAL_SILENCE_GAIN.powf(1.0 / fade_samples);
@@ -271,6 +276,7 @@ impl PianoVoice {
         self.midi_note = midi_note;
         self.channel = channel;
         self.held = true;
+        self.sostenuto_captured = false;
         // A fresh strike starts from neutral bend; the controller's
         // opening bend arrives as its own expression message.
         self.expr_bend_ratio = 1.0;
@@ -396,10 +402,30 @@ impl PianoVoice {
         self.held = false;
     }
 
+    /// Latch this exact sounding voice on the sostenuto rising edge.
+    pub fn capture_sostenuto(&mut self) {
+        if self.stage != VoiceStage::Idle && self.held {
+            self.sostenuto_captured = true;
+        }
+    }
+
+    /// Clear this voice's sostenuto ownership and report whether it had been
+    /// captured, so the engine can start the release when no other pedal owns it.
+    pub fn release_sostenuto_capture(&mut self) -> bool {
+        let was_captured = self.sostenuto_captured;
+        self.sostenuto_captured = false;
+        was_captured
+    }
+
+    pub fn is_sostenuto_captured(&self) -> bool {
+        self.sostenuto_captured
+    }
+
     /// Force the voice back to idle immediately.
     pub fn kill(&mut self) {
         self.stage = VoiceStage::Idle;
         self.held = false;
+        self.sostenuto_captured = false;
         self.expr_bend_ratio = 1.0;
         self.expr_bend_tuned = 1.0;
         self.amplitude = 0.0;

@@ -237,9 +237,14 @@ impl GrandBouleEngine {
             attack_length: self.attack_samples.length_for_key(key),
         };
 
-        // Retrigger the same voice if this note is already held.
+        // Retrigger only the same MIDI identity. Distinct MPE member channels
+        // may concurrently own the same pitch and must remain independently
+        // addressable for expression and release.
         for voice in self.voices.iter_mut() {
-            if !voice.is_idle() && voice.midi_note() == midi_note {
+            if !voice.is_idle()
+                && voice.midi_note() == midi_note
+                && voice.channel() == self.pending_channel
+            {
                 voice.note_on(start);
                 return;
             }
@@ -248,19 +253,14 @@ impl GrandBouleEngine {
         // Voice stealing per §4.2.
         let (highest_midi, lowest_midi) = self.extreme_notes();
         let mut victim_index: Option<usize> = None;
-        let mut best_priority: Option<(u8, u8, u8, u64)> = None;
+        let mut best_priority: Option<(u8, u8, u64)> = None;
         for (index, voice) in self.voices.iter().enumerate() {
             let note = voice.midi_note();
             if !voice.is_idle() && (note == highest_midi || note == lowest_midi) {
                 continue;
             }
             let (class, age) = voice.steal_priority();
-            let priority = (
-                u8::from(voice.is_idle()),
-                u8::from(self.steal_tails[index].is_idle()),
-                class,
-                age,
-            );
+            let priority = (u8::from(voice.is_idle()), class, age);
             if best_priority.is_none() || Some(priority) > best_priority {
                 best_priority = Some(priority);
                 victim_index = Some(index);
@@ -269,12 +269,7 @@ impl GrandBouleEngine {
         if victim_index.is_none() {
             for (index, voice) in self.voices.iter().enumerate() {
                 let (class, age) = voice.steal_priority();
-                let priority = (
-                    u8::from(voice.is_idle()),
-                    u8::from(self.steal_tails[index].is_idle()),
-                    class,
-                    age,
-                );
+                let priority = (u8::from(voice.is_idle()), class, age);
                 if best_priority.is_none() || Some(priority) > best_priority {
                     best_priority = Some(priority);
                     victim_index = Some(index);
@@ -292,16 +287,40 @@ impl GrandBouleEngine {
         // The incoming note starts at the event boundary. The displaced model
         // is moved into a fixed tail slot and remains audible during its short
         // fade, avoiding both a discontinuity and note setup in the inner loop.
-        let tail_was_idle = self.steal_tails[index].is_idle();
+        // Tail storage is a pool, not a per-voice pairing. Reusing the
+        // victim's numeric slot can truncate an unrelated fade when that slot
+        // is occupied even though another preallocated tail is idle.
+        let (tail_index, tail_was_idle) = self.select_steal_tail_slot();
         if !tail_was_idle {
-            self.steal_tails[index].kill();
+            // Every slot is active only during sustained overload. Replacing
+            // the quietest fade makes the least audible bounded degradation.
+            self.steal_tails[tail_index].kill();
         }
-        std::mem::swap(&mut self.voices[index], &mut self.steal_tails[index]);
-        self.steal_tails[index].begin_steal();
+        std::mem::swap(&mut self.voices[index], &mut self.steal_tails[tail_index]);
+        self.steal_tails[tail_index].begin_steal();
         if tail_was_idle {
-            self.active_steal_tails.push(index);
+            self.active_steal_tails.push(tail_index);
         }
         self.voices[index].note_on(start);
+    }
+
+    /// Select a preallocated crossfade slot without coupling it to the musical
+    /// victim. The linear scan is bounded by the configured voice cap and does
+    /// not allocate. When every slot is busy, retire the quietest existing fade.
+    fn select_steal_tail_slot(&self) -> (usize, bool) {
+        let mut quietest_index = 0;
+        let mut quietest_amplitude = f32::INFINITY;
+        for (index, tail) in self.steal_tails.iter().enumerate() {
+            if tail.is_idle() {
+                return (index, true);
+            }
+            let amplitude = tail.amplitude();
+            if amplitude.total_cmp(&quietest_amplitude).is_lt() {
+                quietest_index = index;
+                quietest_amplitude = amplitude;
+            }
+        }
+        (quietest_index, false)
     }
 
     fn extreme_notes(&self) -> (u8, u8) {
@@ -330,19 +349,12 @@ impl GrandBouleEngine {
             // Apply damping immediately — `apply_damper_state` will pick up
             // the pedal state on the next process iteration.
         }
-        let sustain_engaged = self.pedals.sustain_position() > 0.5
-            || (self.pedals.sostenuto()
-                && midi_to_key(midi_note)
-                    .map(|k| {
-                        self.pedals.sostenuto()
-                            && self.pedals.damper_bandwidth_for_key(k, false) == 0.0
-                    })
-                    .unwrap_or(false));
+        let sustain_engaged = self.pedals.sustain_position() > 0.5;
         for voice in self.voices.iter_mut() {
             if voice.is_idle() || voice.midi_note() != midi_note {
                 continue;
             }
-            if sustain_engaged {
+            if sustain_engaged || voice.is_sostenuto_captured() {
                 voice.release_key();
             } else {
                 voice.note_off();
@@ -362,7 +374,9 @@ impl GrandBouleEngine {
                 continue;
             };
             let held = self.pedals.key_is_held(key);
-            let damping = self.pedals.damper_bandwidth_for_key(key, held);
+            let damping =
+                self.pedals
+                    .damper_bandwidth_for_key(key, held, voice.is_sostenuto_captured());
             voice.set_extra_damping(damping);
         }
         self.sympathetic
@@ -389,15 +403,10 @@ impl GrandBouleEngine {
             if voice.stage() != super::voice::VoiceStage::Active {
                 continue;
             }
-            let Some(key) = midi_to_key(voice.midi_note()) else {
-                continue;
-            };
-            if self.pedals.key_is_held(key) {
+            if voice.is_held() {
                 continue;
             }
-            let sostenuto_held =
-                self.pedals.sostenuto() && self.pedals.damper_bandwidth_for_key(key, false) == 0.0;
-            if sostenuto_held {
+            if voice.is_sostenuto_captured() {
                 continue;
             }
             voice.note_off();
@@ -410,6 +419,11 @@ impl GrandBouleEngine {
 
     pub fn set_sostenuto(&mut self, engaged: bool) {
         let was_engaged = self.pedals.sostenuto();
+        if engaged && !was_engaged {
+            for voice in self.voices.iter_mut() {
+                voice.capture_sostenuto();
+            }
+        }
         self.pedals.set_sostenuto(engaged);
         if was_engaged && !engaged {
             self.release_sostenuto_sustained_voices();
@@ -422,13 +436,11 @@ impl GrandBouleEngine {
     /// threshold) stay sustained; physically held keys stay active.
     fn release_sostenuto_sustained_voices(&mut self) {
         for voice in self.voices.iter_mut() {
-            if voice.stage() != super::voice::VoiceStage::Active {
+            let was_captured = voice.release_sostenuto_capture();
+            if !was_captured || voice.stage() != super::voice::VoiceStage::Active {
                 continue;
             }
-            let Some(key) = midi_to_key(voice.midi_note()) else {
-                continue;
-            };
-            if self.pedals.key_is_held(key) {
+            if voice.is_held() {
                 continue;
             }
             if self.pedals.sustain_position() > 0.5 {
@@ -495,9 +507,11 @@ impl GrandBouleEngine {
 
     /// Note-off narrowed to one MPE member channel, so releasing a note on one
     /// member channel cannot silence a different note sounding the same pitch
-    /// on another (audit MD-2). Pedal, damper and release-noise handling is
-    /// shared with `note_off`; only the voice release is narrowed.
+    /// on another (audit MD-2). The last owner delegates to `note_off`; while a
+    /// sibling still holds the pitch, only this voice's key and pedal ownership
+    /// transition is applied and aggregate damper state remains held.
     pub fn note_off_on_channel(&mut self, midi_note: u8, channel: u8) {
+        let sustain_engaged = self.pedals.sustain_position() > 0.5;
         let mut sounding_on_other_channel = false;
         for voice in self.voices.iter() {
             let current_on_other_channel = !voice.is_idle()
@@ -520,7 +534,11 @@ impl GrandBouleEngine {
                 && voice.midi_note() == midi_note
                 && voice.channel() == channel
             {
-                voice.note_off();
+                if sustain_engaged || voice.is_sostenuto_captured() {
+                    voice.release_key();
+                } else {
+                    voice.note_off();
+                }
             }
         }
     }
@@ -558,13 +576,14 @@ impl GrandBouleEngine {
             while tail_position < self.active_steal_tails.len() {
                 let tail_index = self.active_steal_tails[tail_position];
                 let tail = &mut self.steal_tails[tail_index];
+                let fade_gain = tail.amplitude();
                 let modelled = tail.tick();
                 let mixed = if let Some((key, pos, length)) = tail.attack_playhead() {
                     let sample = self.attack_samples.sample(key, pos as usize);
                     let s_gain = AttackSampleSet::sample_gain(pos as usize, length as usize);
                     let m_gain = AttackSampleSet::model_gain(pos as usize, length as usize);
                     tail.advance_attack();
-                    modelled * m_gain + sample * s_gain * tail.amplitude()
+                    modelled * m_gain + sample * s_gain * fade_gain
                 } else {
                     modelled
                 };
@@ -625,9 +644,7 @@ impl GrandBouleEngine {
     }
 
     pub fn lifecycle(&self) -> ProcessLifecycle {
-        if !self.active_steal_tails.is_empty()
-            || self.voices.iter().any(|voice| !voice.is_idle())
-        {
+        if !self.active_steal_tails.is_empty() || self.voices.iter().any(|voice| !voice.is_idle()) {
             return ProcessLifecycle::Continue;
         }
         if self.quiet_block_count < QUIET_BLOCKS_BEFORE_SLEEP {
@@ -775,6 +792,97 @@ mod tests {
     }
 
     #[test]
+    fn released_voice_is_stolen_before_a_held_voice_even_when_its_tail_slot_is_occupied() {
+        let mut engine = GrandBouleEngine::new(48_000.0, 4);
+        for midi_note in [60, 62, 64, 66] {
+            engine.note_on(midi_note, 0.8);
+        }
+        let mut left = [0.0; 128];
+        let mut right = [0.0; 128];
+        engine.process_block(&mut left, &mut right);
+
+        engine.note_on(65, 0.8);
+        engine.note_off(65);
+        engine.note_on(63, 0.8);
+
+        let sounding: Vec<u8> = engine.voices.iter().map(PianoVoice::midi_note).collect();
+        assert!(
+            sounding.contains(&64),
+            "a held voice must survive a released candidate"
+        );
+        assert!(
+            sounding.contains(&63),
+            "the incoming note must start immediately"
+        );
+        assert!(
+            !sounding.contains(&65),
+            "the released voice must be the victim"
+        );
+        let fading: Vec<u8> = engine
+            .steal_tails
+            .iter()
+            .filter(|tail| !tail.is_idle())
+            .map(PianoVoice::midi_note)
+            .collect();
+        assert!(
+            fading.contains(&62),
+            "the first outgoing tail must keep fading"
+        );
+        assert!(
+            fading.contains(&65),
+            "the second victim must get another idle tail slot"
+        );
+    }
+
+    #[test]
+    fn saturated_tail_pool_replaces_only_the_quietest_fade_without_duplicate_membership() {
+        let mut engine = GrandBouleEngine::new(48_000.0, 3);
+        for midi_note in [50, 60, 70] {
+            engine.note_on(midi_note, 0.8);
+        }
+        let mut left = [0.0; 8];
+        let mut right = [0.0; 8];
+
+        engine.note_on(65, 0.8);
+        engine.process_block(&mut left, &mut right);
+        left.fill(0.0);
+        right.fill(0.0);
+        engine.note_on(55, 0.8);
+        engine.process_block(&mut left, &mut right);
+        engine.note_on(68, 0.8);
+
+        let mut active_before = engine.active_steal_tails.clone();
+        active_before.sort_unstable();
+        active_before.dedup();
+        assert_eq!(active_before, vec![0, 1, 2]);
+        assert_eq!(
+            engine
+                .steal_tails
+                .iter()
+                .map(PianoVoice::midi_note)
+                .collect::<Vec<_>>(),
+            vec![60, 65, 55]
+        );
+
+        engine.note_on(52, 0.8);
+
+        let mut active_after = engine.active_steal_tails.clone();
+        active_after.sort_unstable();
+        active_after.dedup();
+        assert_eq!(active_after, vec![0, 1, 2]);
+        assert_eq!(engine.active_steal_tails.len(), engine.steal_tails.len());
+        assert_eq!(
+            engine
+                .steal_tails
+                .iter()
+                .map(PianoVoice::midi_note)
+                .collect::<Vec<_>>(),
+            vec![68, 65, 55],
+            "the oldest, quietest fade is the only tail replaced"
+        );
+    }
+
+    #[test]
     fn voice_steal_starts_replacement_immediately_and_fades_outgoing_tail() {
         let mut engine = GrandBouleEngine::new(48_000.0, 3);
         let victim_key = midi_to_key(62).expect("D4 is in the piano range");
@@ -848,6 +956,55 @@ mod tests {
     }
 
     #[test]
+    fn sampled_and_modelled_steal_tail_use_the_same_pre_tick_fade_gain() {
+        let mut engine = GrandBouleEngine::new(48_000.0, 3);
+        let victim_key = midi_to_key(62).expect("D4 is in the piano range");
+        engine
+            .attack_samples_mut()
+            .set_clip(victim_key, &vec![1.0; 2_400]);
+        for midi_note in [60, 62, 64] {
+            engine.note_on(midi_note, 0.8);
+        }
+        engine.note_on(63, 0.8);
+
+        for voice in engine.voices.iter_mut() {
+            voice.kill();
+        }
+        engine.soundboard.reset();
+        engine.sympathetic.reset();
+        engine.noise.reset();
+        engine.soundboard_send = 0.0;
+        engine.sympathetic_send = 0.0;
+        engine.master_gain = 1.0;
+
+        let tail = engine
+            .steal_tails
+            .iter()
+            .find(|voice| voice.midi_note() == 62 && !voice.is_idle())
+            .expect("the outgoing voice moves to a preallocated tail");
+        let mut expected_tail = tail.clone();
+        let fade_gain = expected_tail.amplitude();
+        let modelled = expected_tail.tick();
+        let (key, position, length) = expected_tail
+            .attack_playhead()
+            .expect("the stolen sampled attack remains armed");
+        let sample = engine.attack_samples.sample(key, position as usize);
+        let sample_gain = AttackSampleSet::sample_gain(position as usize, length as usize);
+        let model_gain = AttackSampleSet::model_gain(position as usize, length as usize);
+        let expected = modelled * model_gain + sample * sample_gain * fade_gain;
+
+        let mut left = [0.0; 1];
+        let mut right = [0.0; 1];
+        engine.process_block(&mut left, &mut right);
+
+        assert!(
+            (left[0] - expected).abs() < 1.0e-6,
+            "sampled and modelled components used different fade gains: expected {expected}, got {}",
+            left[0]
+        );
+    }
+
+    #[test]
     fn stolen_replacement_accepts_expression_and_note_off_immediately() {
         let mut engine = GrandBouleEngine::new(48_000.0, 3);
         for midi_note in [60, 62, 64] {
@@ -870,7 +1027,10 @@ mod tests {
             .iter()
             .find(|voice| voice.midi_note() == 63)
             .expect("the short replacement note starts immediately");
-        assert_eq!(replacement.stage(), super::super::voice::VoiceStage::Releasing);
+        assert_eq!(
+            replacement.stage(),
+            super::super::voice::VoiceStage::Releasing
+        );
         assert!(!replacement.is_held());
         assert!((replacement.bend_ratio() - 2.0).abs() < 1.0e-5);
     }
@@ -961,7 +1121,10 @@ mod tests {
             .iter()
             .find(|voice| voice.midi_note() == 63)
             .expect("the replacement note starts immediately");
-        assert_eq!(replacement.stage(), super::super::voice::VoiceStage::Releasing);
+        assert_eq!(
+            replacement.stage(),
+            super::super::voice::VoiceStage::Releasing
+        );
         assert!(!replacement.is_held());
     }
 
@@ -1069,6 +1232,22 @@ mod tests {
             .iter()
             .find(|voice| !voice.is_idle())
             .map(|voice| voice.stage());
+        assert_eq!(stage, Some(super::super::voice::VoiceStage::Releasing));
+    }
+
+    #[test]
+    fn undamped_top_key_struck_after_sostenuto_engages_is_not_captured() {
+        let mut engine = GrandBouleEngine::new(48_000.0, 4);
+        engine.set_sostenuto(true);
+        engine.note_on(108, 0.8);
+
+        engine.note_off(108);
+
+        let stage = engine
+            .voices
+            .iter()
+            .find(|voice| voice.midi_note() == 108)
+            .map(PianoVoice::stage);
         assert_eq!(stage, Some(super::super::voice::VoiceStage::Releasing));
     }
 
@@ -1521,27 +1700,137 @@ mod tests {
         );
     }
 
-    /// A grand piano has one string group per key, and the engine models that:
-    /// a second note-on at a sounding pitch retriggers the same voice rather
-    /// than allocating a second one. Two member channels therefore cannot hold
-    /// one pitch here — recorded because it is the reason the cross-channel
-    /// coexistence case is untestable on this engine, and because the surviving
-    /// voice must take the newer channel or its expression would be orphaned.
     #[test]
-    fn a_same_pitch_note_on_retriggers_the_key_voice_and_takes_the_new_channel() {
+    fn same_pitch_mpe_channels_keep_independent_ownership_until_each_releases() {
         let mut engine = GrandBouleEngine::new(48_000.0, 8);
         engine.note_on_with_channel(69, 0.8, 2);
         engine.note_on_with_channel(69, 0.8, 3);
 
-        assert_eq!(
-            voices_at(&engine, 69),
-            vec![(3, true, 1.0)],
-            "one key, one string group — the newer member channel owns it"
-        );
+        let mut owners = voices_at(&engine, 69);
+        owners.sort_by_key(|owner| owner.0);
+        assert_eq!(owners, vec![(2, true, 1.0), (3, true, 1.0)]);
 
         engine.note_expression(69, 3, 12.0, 0.0, 0.0);
-        let bent = voices_at(&engine, 69);
-        assert!((bent[0].2 - 2.0).abs() < 1.0e-4);
+        engine.note_off_on_channel(69, 3);
+        engine.note_expression(69, 2, 7.0, 0.0, 0.0);
+
+        let channel_two = voices_at(&engine, 69)
+            .into_iter()
+            .find(|owner| owner.0 == 2)
+            .expect("the first member channel remains physically held");
+        assert!(channel_two.1);
+        assert!((channel_two.2 - (2.0_f32).powf(7.0 / 12.0)).abs() < 1.0e-4);
+    }
+
+    #[test]
+    fn same_pitch_mpe_release_is_retained_by_sustain() {
+        let mut engine = GrandBouleEngine::new(48_000.0, 8);
+        engine.set_sustain(1.0);
+        engine.note_on_with_channel(69, 0.8, 2);
+        engine.note_on_with_channel(69, 0.8, 3);
+
+        engine.note_off_on_channel(69, 3);
+
+        let released = engine
+            .voices
+            .iter()
+            .find(|voice| voice.midi_note() == 69 && voice.channel() == 3)
+            .expect("the released member channel remains sounding under sustain");
+        assert_eq!(released.stage(), super::super::voice::VoiceStage::Active);
+        assert!(!released.is_held());
+
+        engine.set_sustain(0.0);
+        let released = engine
+            .voices
+            .iter()
+            .find(|voice| voice.midi_note() == 69 && voice.channel() == 3)
+            .expect("the released member channel remains present during its release");
+        assert_eq!(released.stage(), super::super::voice::VoiceStage::Releasing);
+        let held = engine
+            .voices
+            .iter()
+            .find(|voice| voice.midi_note() == 69 && voice.channel() == 2)
+            .expect("the sibling member channel remains held");
+        assert_eq!(held.stage(), super::super::voice::VoiceStage::Active);
+        assert!(held.is_held());
+    }
+
+    #[test]
+    fn same_pitch_mpe_release_is_retained_by_sostenuto_capture() {
+        let mut engine = GrandBouleEngine::new(48_000.0, 8);
+        engine.note_on_with_channel(69, 0.8, 2);
+        engine.note_on_with_channel(69, 0.8, 3);
+        engine.set_sostenuto(true);
+
+        engine.note_off_on_channel(69, 3);
+
+        let released = engine
+            .voices
+            .iter()
+            .find(|voice| voice.midi_note() == 69 && voice.channel() == 3)
+            .expect("the captured member channel remains sounding under sostenuto");
+        assert_eq!(released.stage(), super::super::voice::VoiceStage::Active);
+        assert!(!released.is_held());
+
+        engine.set_sostenuto(false);
+        let released = engine
+            .voices
+            .iter()
+            .find(|voice| voice.midi_note() == 69 && voice.channel() == 3)
+            .expect("the released member channel remains present during its release");
+        assert_eq!(released.stage(), super::super::voice::VoiceStage::Releasing);
+        let held = engine
+            .voices
+            .iter()
+            .find(|voice| voice.midi_note() == 69 && voice.channel() == 2)
+            .expect("the sibling member channel remains held");
+        assert_eq!(held.stage(), super::super::voice::VoiceStage::Active);
+        assert!(held.is_held());
+    }
+
+    #[test]
+    fn same_pitch_voice_struck_after_sostenuto_edge_is_not_captured() {
+        let mut engine = GrandBouleEngine::new(48_000.0, 8);
+        engine.note_on_with_channel(69, 0.8, 2);
+        engine.set_sostenuto(true);
+        engine.note_on_with_channel(69, 0.8, 3);
+
+        engine.note_off_on_channel(69, 3);
+
+        let later_voice = engine
+            .voices
+            .iter()
+            .find(|voice| voice.midi_note() == 69 && voice.channel() == 3)
+            .expect("the later voice remains present during its normal release");
+        assert_eq!(
+            later_voice.stage(),
+            super::super::voice::VoiceStage::Releasing,
+            "sostenuto must capture voice ownership at the pedal edge, not the pitch"
+        );
+        assert!(!later_voice.is_held());
+
+        engine.note_off_on_channel(69, 2);
+        let captured_voice = engine
+            .voices
+            .iter()
+            .find(|voice| voice.midi_note() == 69 && voice.channel() == 2)
+            .expect("the captured voice remains sounding under sostenuto");
+        assert_eq!(
+            captured_voice.stage(),
+            super::super::voice::VoiceStage::Active
+        );
+        assert!(!captured_voice.is_held());
+
+        engine.set_sostenuto(false);
+        let captured_voice = engine
+            .voices
+            .iter()
+            .find(|voice| voice.midi_note() == 69 && voice.channel() == 2)
+            .expect("the captured voice remains present during its release");
+        assert_eq!(
+            captured_voice.stage(),
+            super::super::voice::VoiceStage::Releasing
+        );
     }
 
     #[test]

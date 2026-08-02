@@ -80,8 +80,8 @@ impl KeyBitset {
     }
 }
 
-/// All three pedal states + the held-key bookkeeping needed to drive the
-/// per-voice damper bandwidth and hammer modifiers.
+/// All three pedal states plus aggregate held-key bookkeeping used by the
+/// physical damper model. Exact sostenuto ownership lives on each voice.
 #[derive(Clone, Debug)]
 pub struct PedalState {
     /// Continuous sustain pedal position 0.0 (up) .. 1.0 (down).
@@ -90,8 +90,6 @@ pub struct PedalState {
     una_corda: bool,
     /// Sostenuto pedal on/off.
     sostenuto: bool,
-    /// Keys captured by the sostenuto pedal when it engaged.
-    sostenuto_captured: KeyBitset,
     /// Keys currently held by the performer.
     keys_held: KeyBitset,
 }
@@ -102,7 +100,6 @@ impl PedalState {
             sustain_position: 0.0,
             una_corda: false,
             sostenuto: false,
-            sostenuto_captured: KeyBitset::EMPTY,
             keys_held: KeyBitset::EMPTY,
         }
     }
@@ -129,19 +126,13 @@ impl PedalState {
         self.una_corda = engaged;
     }
 
-    /// Update the sostenuto (CC66) pedal state. On rising edge, captures
-    /// the currently-held keys; on falling edge, releases them.
+    /// Update the sostenuto (CC66) controller state. The engine latches exact
+    /// voice identities on the rising edge.
     pub fn set_sostenuto(&mut self, engaged: bool) {
-        if engaged && !self.sostenuto {
-            self.sostenuto_captured = self.keys_held;
-        } else if !engaged && self.sostenuto {
-            self.sostenuto_captured.clear_all();
-        }
         self.sostenuto = engaged;
     }
 
     pub fn clear_playing_keys(&mut self) {
-        self.sostenuto_captured.clear_all();
         self.keys_held.clear_all();
     }
 
@@ -150,8 +141,7 @@ impl PedalState {
         self.keys_held.set(key);
     }
 
-    /// Record that a key has been released. Does not affect sostenuto
-    /// captures.
+    /// Record that a key has been released.
     pub fn release_key(&mut self, key: u32) {
         self.keys_held.clear(key);
     }
@@ -162,21 +152,26 @@ impl PedalState {
     }
 
     /// Damper bandwidth (Hz) applied to `key` given the current pedal state
-    /// and whether the key itself is still held down by the player.
+    /// and the exact voice's key and sostenuto ownership.
     ///
     /// * Notes above C7 have no damper at any pedal position.
     /// * If the key is held OR the sustain pedal is fully engaged OR the
     ///   sostenuto has captured this key, the damper is fully off (0 Hz).
     /// * Intermediate sustain positions apply a smoothstep between max
     ///   damping and no damping.
-    pub fn damper_bandwidth_for_key(&self, key: u32, key_is_held: bool) -> f32 {
+    pub fn damper_bandwidth_for_key(
+        &self,
+        key: u32,
+        key_is_held: bool,
+        sostenuto_captured: bool,
+    ) -> f32 {
         if !has_damper(key) {
             return 0.0;
         }
         if key_is_held {
             return 0.0;
         }
-        if self.sostenuto && self.sostenuto_captured.contains(key) {
+        if self.sostenuto && sostenuto_captured {
             return 0.0;
         }
         let lifted = smoothstep(HALF_PEDAL_LOW, HALF_PEDAL_HIGH, self.sustain_position);
@@ -219,7 +214,7 @@ mod tests {
     fn sustain_up_applies_full_damper() {
         let mut pedals = PedalState::new();
         pedals.set_sustain(0.0);
-        let bw = pedals.damper_bandwidth_for_key(40, false);
+        let bw = pedals.damper_bandwidth_for_key(40, false, false);
         assert!(bw > 0.0);
     }
 
@@ -227,40 +222,34 @@ mod tests {
     fn sustain_down_removes_damper() {
         let mut pedals = PedalState::new();
         pedals.set_sustain(1.0);
-        assert_eq!(pedals.damper_bandwidth_for_key(40, false), 0.0);
+        assert_eq!(pedals.damper_bandwidth_for_key(40, false, false), 0.0);
     }
 
     #[test]
     fn keys_above_c7_have_no_damper_ever() {
         let mut pedals = PedalState::new();
         pedals.set_sustain(0.0);
-        assert_eq!(pedals.damper_bandwidth_for_key(80, false), 0.0);
+        assert_eq!(pedals.damper_bandwidth_for_key(80, false, false), 0.0);
     }
 
     #[test]
     fn held_key_is_undamped() {
         let pedals = PedalState::new();
-        assert_eq!(pedals.damper_bandwidth_for_key(40, true), 0.0);
+        assert_eq!(pedals.damper_bandwidth_for_key(40, true, false), 0.0);
     }
 
     #[test]
-    fn sostenuto_captures_held_keys_on_engage() {
+    fn captured_voice_is_undamped_while_sostenuto_is_engaged() {
         let mut pedals = PedalState::new();
-        pedals.press_key(40);
         pedals.set_sostenuto(true);
-        pedals.release_key(40);
-        // Key not held by performer, but sostenuto kept it un-damped.
-        assert_eq!(pedals.damper_bandwidth_for_key(40, false), 0.0);
+        assert_eq!(pedals.damper_bandwidth_for_key(40, false, true), 0.0);
     }
 
     #[test]
-    fn sostenuto_release_drops_captures() {
+    fn uncaptured_voice_is_damped_while_sostenuto_is_engaged() {
         let mut pedals = PedalState::new();
-        pedals.press_key(40);
         pedals.set_sostenuto(true);
-        pedals.release_key(40);
-        pedals.set_sostenuto(false);
-        assert!(pedals.damper_bandwidth_for_key(40, false) > 0.0);
+        assert!(pedals.damper_bandwidth_for_key(40, false, false) > 0.0);
     }
 
     #[test]
@@ -275,11 +264,11 @@ mod tests {
     fn half_pedal_is_monotonic() {
         let mut pedals = PedalState::new();
         pedals.set_sustain(0.0);
-        let bw_up = pedals.damper_bandwidth_for_key(40, false);
+        let bw_up = pedals.damper_bandwidth_for_key(40, false, false);
         pedals.set_sustain(0.5);
-        let bw_half = pedals.damper_bandwidth_for_key(40, false);
+        let bw_half = pedals.damper_bandwidth_for_key(40, false, false);
         pedals.set_sustain(1.0);
-        let bw_down = pedals.damper_bandwidth_for_key(40, false);
+        let bw_down = pedals.damper_bandwidth_for_key(40, false, false);
         assert!(bw_up > bw_half);
         assert!(bw_half > bw_down);
     }
