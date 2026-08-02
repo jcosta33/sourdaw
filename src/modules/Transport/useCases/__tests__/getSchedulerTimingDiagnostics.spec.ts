@@ -9,12 +9,7 @@ describe('getSchedulerTimingDiagnostics', () => {
     });
 
     it('returns the latest scheduler-run timing snapshot', () => {
-        schedulerTimingDiagnostics.recordTickMessage({
-            sequence: 1,
-            scheduledAtMs: 1_000,
-            sentAtMs: 1_003,
-            receivedAtMs: 1_005,
-        });
+        schedulerTimingDiagnostics.recordTickMessage(1, 1_000, 1_003, 1_005);
         schedulerTimingDiagnostics.recordTickSettled(7);
 
         const snapshot = getSchedulerTimingDiagnostics();

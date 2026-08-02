@@ -154,12 +154,13 @@ type SchedulerWorkerHarness = {
 
 let schedulerTickSequence = 0;
 
-function emitSchedulerTick(worker: SchedulerWorkerHarness): void {
+function emitSchedulerTick(worker: SchedulerWorkerHarness, generation = schedulerSession.generation): void {
     schedulerTickSequence++;
     const receivedAtMs = performance.timeOrigin + performance.now();
     worker.onmessage?.({
         data: {
             type: 'tick',
+            generation,
             sequence: schedulerTickSequence,
             scheduledAtMs: receivedAtMs - 2,
             sentAtMs: receivedAtMs - 1,
@@ -245,7 +246,11 @@ describe('startPlayheadScheduler', () => {
         expect(schedulerSession.lastScheduledBeat).toBeCloseTo(8 - 0.0001, 6);
         expect(vi.mocked(resetMetronomeBeat)).toHaveBeenCalledWith(8);
         const worker = schedulerSession.worker as unknown as { postMessage: ReturnType<typeof vi.fn> };
-        expect(worker.postMessage).toHaveBeenCalledWith({ type: 'start', interval: 25 });
+        expect(worker.postMessage).toHaveBeenCalledWith({
+            type: 'start',
+            interval: 25,
+            generation: schedulerSession.generation,
+        });
     });
 
     it('runs a tick that schedules metronome, midi, audio, and automation in order', async () => {
@@ -581,10 +586,31 @@ describe('startPlayheadScheduler', () => {
         transportStoreState.value = playingState();
         startPlayheadScheduler();
         const worker = schedulerSession.worker as unknown as SchedulerWorkerHarness;
+        const receivedAtMs = performance.timeOrigin + performance.now();
         worker.onmessage?.({ data: { type: 'other' } });
-        worker.onmessage?.({ data: { type: 'tick', scheduledAtMs: 1, sentAtMs: 2 } });
         worker.onmessage?.({
-            data: { type: 'tick', sequence: 1, scheduledAtMs: 2, sentAtMs: 1 },
+            data: { type: 'tick', generation: schedulerSession.generation, scheduledAtMs: 1, sentAtMs: 2 },
+        });
+        worker.onmessage?.({
+            data: { type: 'tick', generation: schedulerSession.generation, sequence: 1, scheduledAtMs: 2, sentAtMs: 1 },
+        });
+        worker.onmessage?.({
+            data: {
+                type: 'tick',
+                generation: schedulerSession.generation,
+                sequence: Number.MAX_SAFE_INTEGER + 1,
+                scheduledAtMs: receivedAtMs - 2,
+                sentAtMs: receivedAtMs - 1,
+            },
+        });
+        worker.onmessage?.({
+            data: {
+                type: 'tick',
+                generation: schedulerSession.generation,
+                sequence: 1,
+                scheduledAtMs: receivedAtMs + 4,
+                sentAtMs: receivedAtMs + 5,
+            },
         });
         await new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -605,6 +631,28 @@ describe('startPlayheadScheduler', () => {
         expect(schedulerTimingDiagnostics.snapshot().messagesReceived).toBe(0);
 
         emitSchedulerTick(activeWorker);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(schedulerTimingDiagnostics.snapshot().messagesReceived).toBe(1);
+        expect(vi.mocked(scheduleMetronome)).toHaveBeenCalledTimes(1);
+    });
+
+    it('rebinds a reused worker and clears a retired in-flight tick on restart', async () => {
+        transportStoreState.value = playingState();
+        startPlayheadScheduler();
+        const worker = schedulerSession.worker as unknown as SchedulerWorkerHarness;
+        const retiredHandler = worker.onmessage;
+        const retiredGeneration = schedulerSession.generation;
+        schedulerSession.tickInFlight = true;
+
+        startPlayheadScheduler();
+
+        expect(schedulerSession.worker).toBe(worker);
+        expect(worker.onmessage).not.toBe(retiredHandler);
+        expect(schedulerSession.tickInFlight).toBe(false);
+        emitSchedulerTick(worker, retiredGeneration);
+        expect(schedulerTimingDiagnostics.snapshot().messagesReceived).toBe(0);
+        emitSchedulerTick(worker);
         await new Promise((resolve) => setTimeout(resolve, 0));
 
         expect(schedulerTimingDiagnostics.snapshot().messagesReceived).toBe(1);

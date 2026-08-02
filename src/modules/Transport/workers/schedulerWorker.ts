@@ -7,14 +7,34 @@
  * DAW is running in an inactive tab.
  */
 
-type SchedulerMessage = { type: 'start'; interval: number } | { type: 'stop' };
+type SchedulerMessage = { type: 'start'; interval: number; generation: number } | { type: 'stop' };
 
 type SchedulerTick = {
     type: 'tick';
+    generation: number;
     sequence: number;
     scheduledAtMs: number;
     sentAtMs: number;
 };
+
+function isSchedulerMessage(value: unknown): value is SchedulerMessage {
+    if (typeof value !== 'object' || value === null || !('type' in value)) {
+        return false;
+    }
+    if (value.type === 'stop') {
+        return true;
+    }
+    return (
+        value.type === 'start' &&
+        'interval' in value &&
+        typeof value.interval === 'number' &&
+        Number.isFinite(value.interval) &&
+        'generation' in value &&
+        typeof value.generation === 'number' &&
+        Number.isSafeInteger(value.generation) &&
+        value.generation > 0
+    );
+}
 
 function highResolutionEpochMs(): number {
     return performance.timeOrigin + performance.now();
@@ -23,15 +43,21 @@ function highResolutionEpochMs(): number {
 let timerId: ReturnType<typeof setInterval> | null = null;
 let nextScheduledAtMs = 0;
 let tickSequence = 0;
+let schedulerGeneration = 0;
 
-self.onmessage = (event: MessageEvent<SchedulerMessage>) => {
+self.onmessage = (event: MessageEvent<unknown>) => {
     const msg = event.data;
+
+    if (!isSchedulerMessage(msg)) {
+        return;
+    }
 
     if (msg.type === 'start') {
         const intervalMs = msg.interval > 0 ? msg.interval : 10;
         if (timerId !== null) {
             clearInterval(timerId);
         }
+        schedulerGeneration = msg.generation;
         tickSequence = 0;
         nextScheduledAtMs = highResolutionEpochMs() + intervalMs;
         timerId = setInterval(() => {
@@ -42,6 +68,7 @@ self.onmessage = (event: MessageEvent<SchedulerMessage>) => {
             nextScheduledAtMs += elapsedIntervals * intervalMs;
             const tick: SchedulerTick = {
                 type: 'tick',
+                generation: schedulerGeneration,
                 sequence: tickSequence,
                 scheduledAtMs,
                 sentAtMs,
@@ -54,6 +81,7 @@ self.onmessage = (event: MessageEvent<SchedulerMessage>) => {
             timerId = null;
             nextScheduledAtMs = 0;
             tickSequence = 0;
+            schedulerGeneration = 0;
         }
     }
 };
