@@ -1,0 +1,41 @@
+.agents/decisions/open-decision-docket.md
+  s_66d4924c65dcd2::t_3ce13859d487d7 54
+  s_66d4924c65dcd2::t_54bed741098ee8 397-403
+src/modules/Collaboration/useCases/collaboration/sessionManagement.ts
+  s_66d4924c65dcd2::t_486ea3dbfcc532 525-529
+  s_66d4924c65dcd2::t_edd4c266ad0cfa 253-265,270,277-279,283
+  s_66d4924c65dcd2::t_5cd5f1e2eda813 466-468
+src/modules/Collaboration/useCases/collaboration/generateInvite.ts
+  s_66d4924c65dcd2::t_024404ee09e0a7 7-24
+src/modules/Collaboration/useCases/automergeSync.ts
+  s_66d4924c65dcd2::t_28d3c629c30934 231
+  s_66d4924c65dcd2::t_e96a4d523669bb 108-113
+src/modules/Collaboration/AGENTS.md
+  s_66d4924c65dcd2::t_d872413c4ffdb1 9-31
+src/modules/Collaboration/useCases/collaboration/__tests__/sessionManagement.spec.ts
+  s_66d4924c65dcd2::t_07ff4cdb5231af 418,424
+  s_66d4924c65dcd2::t_2f915eb7440853 15-23
+  s_66d4924c65dcd2::t_7cc9836d56f771 533
+  s_66d4924c65dcd2::t_b42dcba5b1cc37 373,381,386-394
+.agents/specs/collaboration-roles-trust/spec.md
+  s_66d4924c65dcd2::t_19a30a3cb2a83e 5-6,14-25
+  s_66d4924c65dcd2::t_5d980cf678b0e1 26
+src/modules/Collaboration/useCases/__tests__/automergeSync.spec.ts
+  s_66d4924c65dcd2::t_ea2ec7f300551e 223,228,230,234,239
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "e87e3789b4ebff7266adccae3910f861fcc5eded",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
