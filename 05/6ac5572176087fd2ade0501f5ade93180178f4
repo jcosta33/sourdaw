@@ -1,0 +1,37 @@
+src/modules/Arrangement/stores/vcaGroupStore.ts
+  s_66d4924c65dcd2::t_57a23b00d2df71 95-128,130-144,146-150
+  s_66d4924c65dcd2::t_7e3e5e40c7c15b 12,15-16
+  s_66d4924c65dcd2::t_49c78f875cc341 129
+  s_66d4924c65dcd2::t_9f34b72a30e376 59-60,62-63
+  s_66d4924c65dcd2::t_6ff6bcb3f546f9 145
+src/modules/Arrangement/useCases/vca/restoreLegacyVcaState.ts
+  s_66d4924c65dcd2::t_f4d672f21d0395 1-17
+src/modules/CrdtDocument/useCases/projection/projectSlotProjections.ts
+  s_66d4924c65dcd2::t_77c7e14ff2def5 82
+  s_66d4924c65dcd2::t_87aebe48a7b3b5 1
+  s_66d4924c65dcd2::t_79025350eded85 81
+src/modules/Arrangement/stores/gainEnvelopeStore.ts
+  s_66d4924c65dcd2::t_03722896d65481 161
+  s_66d4924c65dcd2::t_5d363472000182 176
+  s_66d4924c65dcd2::t_d8872c7eb624c9 123-160,162-175,177-186
+  s_66d4924c65dcd2::t_41e5399d645b7c 92-94
+  s_66d4924c65dcd2::t_e5f916fc0118f1 12-14
+src/modules/CrdtDocument/useCases/projection/__tests__/projectMixStateSlots.spec.ts
+  s_66d4924c65dcd2::t_a15024c6a1e508 1-250
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "056ac5572176087fd2ade0501f5ade93180178f4",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
