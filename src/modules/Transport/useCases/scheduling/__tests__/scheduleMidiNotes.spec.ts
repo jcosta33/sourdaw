@@ -1628,12 +1628,12 @@ describe('scheduleMidiNotes', () => {
                 },
             };
             // isCurrent returns true for track A's guard, bounded iteration,
-            // and note dispatch, then false at track B's guard.
+            // note-loop guard, and note dispatch, then false at track B's guard.
             let calls = 0;
             const cancellation: SchedulerCancellation = {
                 generation: 0,
                 discontinuityEpoch: 0,
-                isCurrent: () => ++calls <= 3,
+                isCurrent: () => ++calls <= 4,
             };
 
             await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120, cancellation);
@@ -1654,7 +1654,7 @@ describe('scheduleMidiNotes', () => {
                 },
             };
             // isCurrent is true for the track and bounded-iteration guards, then
-            // false at the first note's pre-dispatch check.
+            // false at the first note-loop check.
             let calls = 0;
             const cancellation: SchedulerCancellation = {
                 generation: 0,
@@ -1665,6 +1665,34 @@ describe('scheduleMidiNotes', () => {
             await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120, cancellation);
 
             expect(vi.mocked(scheduleNote)).not.toHaveBeenCalled();
+        });
+
+        it('does not project loop notes after cancellation turns stale at the occurrence boundary', async () => {
+            const track = midiTrack({
+                clips: [midiClip({ endBeat: 128, loopEnabled: true, loopLength: 4 })],
+            });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: {
+                    'clip-1': Array.from({ length: 100 }, (_, index) => ({
+                        id: `off-window-${index}`,
+                        pitch: 60,
+                        startBeat: 2,
+                        duration: 0.25,
+                        velocity: 100,
+                    })),
+                },
+            };
+            let calls = 0;
+            const cancellation: SchedulerCancellation = {
+                generation: 0,
+                discontinuityEpoch: 0,
+                isCurrent: () => ++calls <= 2,
+            };
+
+            await scheduleMidiNotes(64, 65, 64, 64, new Set<string>(), [], defaultTransportState, 120, cancellation);
+
+            expect(projectClipMidiEvents).not.toHaveBeenCalled();
         });
 
         it('skips a yeast track clip whose visual length collapses to zero (loopLength <= 0)', async () => {

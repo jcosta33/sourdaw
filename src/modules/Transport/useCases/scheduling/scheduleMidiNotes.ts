@@ -693,6 +693,9 @@ export async function scheduleMidiNotes(
                 const notesAreAbsolute = yeastDevice !== undefined;
 
                 for (let noteIndex = iterNoteStartIndex; noteIndex < iterNoteEndIndex; noteIndex++) {
+                    if (!isCurrent()) {
+                        return;
+                    }
                     const note = iterNotes[noteIndex]!;
                     const isTrackScopedYeastNote = trackScopedYeastNoteIds.has(note.id);
                     if (!notesAreAbsolute && note.startBeat - clipMidiOffset >= loopLen) {
