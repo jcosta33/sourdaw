@@ -52,6 +52,12 @@ type PendingDeviceLoad = {
     resolved: boolean;
 };
 
+type InvalidatePendingDeviceLoadInput = {
+    deviceId: string;
+    failureStage?: DeviceReadinessFailureStage;
+    abortPublished?: boolean;
+};
+
 type DeviceLoadState = 'ready' | 'pending' | 'failed';
 
 export class TrackNode {
@@ -478,14 +484,21 @@ export class TrackNode {
         this.deps.pendingDevicePromises.add(loadPromise);
         void loadPromise.finally(() => {
             if (this._pendingDeviceLoads.get(deviceId) === pendingLoad) {
-                this.invalidatePendingDeviceLoad(deviceId, pendingLoad.resolved ? undefined : 'node');
+                this.invalidatePendingDeviceLoad({
+                    deviceId,
+                    failureStage: pendingLoad.resolved ? undefined : 'node',
+                });
             } else {
                 this.deps.pendingDevicePromises.delete(loadPromise);
             }
         });
     }
 
-    private invalidatePendingDeviceLoad(deviceId: string, failureStage?: DeviceReadinessFailureStage): void {
+    private invalidatePendingDeviceLoad({
+        deviceId,
+        failureStage,
+        abortPublished = false,
+    }: InvalidatePendingDeviceLoadInput): void {
         if (failureStage) {
             this._failedDeviceLoads.add(deviceId);
         } else {
@@ -496,15 +509,14 @@ export class TrackNode {
             return;
         }
         this._pendingDeviceLoads.delete(deviceId);
-        if (!pendingLoad.resolved) {
-            if (failureStage) {
-                this.deps.readinessDiagnostics.markFailed({ token: pendingLoad.readinessToken, stage: failureStage });
-            } else {
-                this.deps.readinessDiagnostics.cancel(pendingLoad.readinessToken);
-            }
+        if (failureStage) {
+            this._pendingGraphReadinessTokens.delete(pendingLoad.readinessToken);
+            this.deps.readinessDiagnostics.markFailed({ token: pendingLoad.readinessToken, stage: failureStage });
+        } else if (!pendingLoad.resolved) {
+            this.deps.readinessDiagnostics.cancel(pendingLoad.readinessToken);
         }
         pendingLoad.parameterWrites.length = 0;
-        if (!pendingLoad.resolved) {
+        if (!pendingLoad.resolved || abortPublished) {
             pendingLoad.abortController.abort();
         }
         if (pendingLoad.loadPromise) {
@@ -521,7 +533,7 @@ export class TrackNode {
         const index = this.strip.deviceNodes.findIndex((device) => device.deviceId === deviceId);
         if (this._disposed || !isCurrentLoad || pendingLoad.resolved || index === -1) {
             if (isCurrentLoad && !pendingLoad.resolved) {
-                this.invalidatePendingDeviceLoad(deviceId);
+                this.invalidatePendingDeviceLoad({ deviceId });
             }
             this.destroyRejectedDeviceNode(finalDn);
             return false;
@@ -552,7 +564,7 @@ export class TrackNode {
                     logger.warn(`[WebAudioEngine] Device promotion rollback failed: ${String(rollbackError)}`);
                 }
             }
-            this.invalidatePendingDeviceLoad(deviceId, 'node');
+            this.invalidatePendingDeviceLoad({ deviceId, failureStage: 'node' });
             this.destroyRejectedDeviceNode(finalDn);
             throw error;
         }
@@ -566,8 +578,12 @@ export class TrackNode {
     }
 
     public timeoutPendingDeviceLoads(): void {
-        for (const deviceId of this._pendingDeviceLoads.keys()) {
-            this.invalidatePendingDeviceLoad(deviceId, 'node');
+        for (const [deviceId, pendingLoad] of this._pendingDeviceLoads) {
+            let failureStage: DeviceReadinessFailureStage = 'node';
+            if (pendingLoad.resolved) {
+                failureStage = this._pendingGraphReadinessTokens.has(pendingLoad.readinessToken) ? 'graph' : 'content';
+            }
+            this.invalidatePendingDeviceLoad({ deviceId, failureStage, abortPublished: true });
         }
     }
 
@@ -809,7 +825,7 @@ export class TrackNode {
             try {
                 this.rebuildChain();
             } catch (error) {
-                this.invalidatePendingDeviceLoad(deviceId, 'graph');
+                this.invalidatePendingDeviceLoad({ deviceId, failureStage: 'graph' });
                 this.strip.deviceNodes = this.strip.deviceNodes.filter((device) => device.deviceId !== deviceId);
                 this.destroyRejectedDeviceNode(dn);
                 throw error;
@@ -828,7 +844,7 @@ export class TrackNode {
     }
 
     public removeDevice(deviceId: string): void {
-        this.invalidatePendingDeviceLoad(deviceId);
+        this.invalidatePendingDeviceLoad({ deviceId, abortPublished: true });
         const readinessToken = this._deviceReadinessTokens.get(deviceId);
         if (readinessToken) {
             this._pendingGraphReadinessTokens.delete(readinessToken);
@@ -941,7 +957,7 @@ export class TrackNode {
         this._rebuildScheduled = false;
         this._pendingGraphReadinessTokens.clear();
         for (const deviceId of this._pendingDeviceLoads.keys()) {
-            this.invalidatePendingDeviceLoad(deviceId);
+            this.invalidatePendingDeviceLoad({ deviceId, abortPublished: true });
         }
         for (const readinessToken of this._deviceReadinessTokens.values()) {
             this.deps.readinessDiagnostics.removeDevice(readinessToken);

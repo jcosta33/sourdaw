@@ -703,8 +703,10 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
                 counts: { requested: 1, failed: 1 },
                 devices: [{ deviceId: 'wasm-1', status: 'failed', failureStage: 'content' }],
             });
+            expect(deferred.signal?.aborted).toBe(false);
 
             track.removeDevice('wasm-1');
+            expect(deferred.signal?.aborted).toBe(true);
             expect(readinessDiagnostics.snapshot().devices).toEqual([]);
         });
 
@@ -727,6 +729,39 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             const loaded = createLoadedDevice();
             deferred.resolve(loaded.device);
             expect(loaded.dispose).toHaveBeenCalledTimes(1);
+        });
+
+        it('aborts a timed-out content load after publishing its node', async () => {
+            const deferred = installDeferredWasmDevice();
+            const readinessDiagnostics = createDeviceReadinessDiagnostics();
+            const track = new TrackNode('t1', makeDeps(ctx, { readinessDiagnostics }));
+            track.addDevice('wasm-1', 'builtin-crumbs');
+            deferred.resolve(createLoadedDevice().device);
+            await Promise.resolve();
+
+            track.timeoutPendingDeviceLoads();
+
+            expect(deferred.signal?.aborted).toBe(true);
+            expect(readinessDiagnostics.snapshot()).toMatchObject({
+                counts: { requested: 1, failed: 1 },
+                devices: [{ deviceId: 'wasm-1', status: 'failed', failureStage: 'content' }],
+            });
+        });
+
+        it('classifies a timeout before the published node joins the graph', () => {
+            const deferred = installDeferredWasmDevice();
+            const readinessDiagnostics = createDeviceReadinessDiagnostics();
+            const track = new TrackNode('t1', makeDeps(ctx, { readinessDiagnostics }));
+            track.addDevice('wasm-1', 'builtin-crumbs');
+            deferred.resolve(createLoadedDevice().device);
+
+            track.timeoutPendingDeviceLoads();
+
+            expect(deferred.signal?.aborted).toBe(true);
+            expect(readinessDiagnostics.snapshot()).toMatchObject({
+                counts: { requested: 1, failed: 1 },
+                devices: [{ deviceId: 'wasm-1', status: 'failed', failureStage: 'graph' }],
+            });
         });
 
         it('preserves the descriptor-owned Proof parameter barrier', () => {

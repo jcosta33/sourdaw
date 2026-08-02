@@ -82,11 +82,16 @@ export type AudioDeviceRuntimeSink = {
      * two differently-configured engines is the failure this device is being
      * dug out of, and one shared call is what stops it recurring.
      *
-     * Fire-and-forget here, matching live Levain registration — live playback
-     * runs in real time and can start silent, then sound once the load lands.
-     * The offline path must await; see `prepareOfflineInstrument`.
+     * The node may join the graph before its sample commits, but the descriptor
+     * awaits this outcome so readiness never claims the device is playable
+     * early. The ownership signal cancels that wait on removal, timeout, or
+     * teardown. The offline path also awaits; see `prepareOfflineInstrument`.
      */
-    prepareCrumbsDevice: (input: { deviceId: string; port: MessagePort }) => Promise<DeviceContentLoadOutcome>;
+    prepareCrumbsDevice: (input: {
+        deviceId: string;
+        port: MessagePort;
+        signal?: AbortSignal;
+    }) => Promise<DeviceContentLoadOutcome>;
 };
 
 const defaultSink: AudioDeviceRuntimeSink = {

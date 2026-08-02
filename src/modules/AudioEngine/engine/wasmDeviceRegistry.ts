@@ -385,7 +385,7 @@ const levainDescriptor: WasmDeviceDescriptor = {
 const crumbsDescriptor: WasmDeviceDescriptor = {
     requiresContent: true,
     matches: isCrumbsDevice,
-    create({ context, deviceId, deviceType, onLoaded, onContentLoadSettled }) {
+    create({ context, deviceId, deviceType, signal, onLoaded, onContentLoadSettled }) {
         const pendingParams: Array<[string, number]> = [];
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.crumbsControls = {
@@ -444,6 +444,7 @@ const crumbsDescriptor: WasmDeviceDescriptor = {
                     const outcome = await getAudioDeviceRuntimeSink().prepareCrumbsDevice({
                         deviceId,
                         port: result.workletNode.port,
+                        signal,
                     });
                     onContentLoadSettled?.(outcome);
                 } catch (error) {

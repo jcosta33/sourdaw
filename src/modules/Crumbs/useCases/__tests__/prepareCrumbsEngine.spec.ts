@@ -36,15 +36,19 @@ function sampleMeta(filePath: string): SampleMeta {
 }
 
 /** A port that records what was posted, standing in for the worklet's. */
-function recordingPort(): {
+function recordingPort(options?: { loadPostError?: Error }): {
     port: MessagePort;
     posts: Array<{ message: Record<string, unknown>; transfer?: unknown }>;
     emit: (message: Record<string, unknown>) => void;
+    listenerCount: () => number;
 } {
     const posts: Array<{ message: Record<string, unknown>; transfer?: unknown }> = [];
     const listeners = new Set<(event: MessageEvent<unknown>) => void>();
     const port = {
         postMessage: (message: Record<string, unknown>, transfer?: unknown) => {
+            if (message.type === 'loadSample' && options?.loadPostError) {
+                throw options.loadPostError;
+            }
             posts.push({ message, transfer });
         },
         addEventListener: (type: string, listener: (event: MessageEvent<unknown>) => void) => {
@@ -66,6 +70,7 @@ function recordingPort(): {
                 listener({ data: message } as MessageEvent<unknown>);
             }
         },
+        listenerCount: () => listeners.size,
     };
 }
 
@@ -91,7 +96,7 @@ describe('prepareCrumbsEngine', () => {
         setActiveSample(DEVICE, sampleMeta('/samples/break.wav'));
         const data = new Float32Array([0.1, -0.1, 0.2, -0.2]);
         decodeMock.mockResolvedValue({ data, frameCount: 2, channels: 2, sampleRate: 44_100 });
-        const { port, posts, emit } = recordingPort();
+        const { port, posts, emit, listenerCount } = recordingPort();
 
         let settled = false;
         const preparation = prepareCrumbsEngine({ deviceId: DEVICE, port }).then((outcome) => {
@@ -108,8 +113,14 @@ describe('prepareCrumbsEngine', () => {
         if (typeof loadToken !== 'number') {
             throw new TypeError('sample load did not include a numeric token');
         }
+        emit({ type: 'sampleLoaded', loadToken: loadToken + 1 });
+        await Promise.resolve();
+        expect(settled).toBe(false);
+        expect(listenerCount()).toBe(1);
+
         emit({ type: 'sampleLoaded', loadToken });
         await expect(preparation).resolves.toBe('ready');
+        expect(listenerCount()).toBe(0);
     });
 
     it('transfers the PCM buffer rather than copying it', async () => {
@@ -141,7 +152,7 @@ describe('prepareCrumbsEngine', () => {
             channels: 1,
             sampleRate: 48_000,
         });
-        const { port, posts, emit } = recordingPort();
+        const { port, posts, emit, listenerCount } = recordingPort();
 
         const preparation = prepareCrumbsEngine({ deviceId: DEVICE, port });
         await vi.waitFor(() => expect(messagesOfType(posts, 'loadSample')).toHaveLength(1));
@@ -152,6 +163,7 @@ describe('prepareCrumbsEngine', () => {
         emit({ type: 'sampleLoadError', loadToken, message: 'sample pool exhausted' });
 
         await expect(preparation).resolves.toBe('failed');
+        expect(listenerCount()).toBe(0);
     });
 
     it('cancels a committed-sample wait when the owning device is removed', async () => {
@@ -164,7 +176,7 @@ describe('prepareCrumbsEngine', () => {
             sampleRate: 48_000,
         });
         const controller = new AbortController();
-        const { port, posts, emit } = recordingPort();
+        const { port, posts, emit, listenerCount } = recordingPort();
 
         const preparation = prepareCrumbsEngine({ deviceId: DEVICE, port, signal: controller.signal });
         await vi.waitFor(() => expect(messagesOfType(posts, 'loadSample')).toHaveLength(1));
@@ -174,9 +186,27 @@ describe('prepareCrumbsEngine', () => {
         }
         controller.abort();
         await expect(preparation).resolves.toBe('cancelled');
+        expect(listenerCount()).toBe(0);
 
         emit({ type: 'sampleLoaded', loadToken });
         expect(messagesOfType(posts, 'loadSample')).toHaveLength(1);
+    });
+
+    it('removes its listener when transferring the sample fails', async () => {
+        ensureInstance(DEVICE);
+        setActiveSample(DEVICE, sampleMeta('/samples/break.wav'));
+        decodeMock.mockResolvedValue({
+            data: new Float32Array([0.5]),
+            frameCount: 1,
+            channels: 1,
+            sampleRate: 48_000,
+        });
+        const { port, listenerCount } = recordingPort({ loadPostError: new Error('port closed') });
+
+        await expect(prepareCrumbsEngine({ deviceId: DEVICE, port })).resolves.toBe('failed');
+
+        expect(listenerCount()).toBe(0);
+        expect(String(warnMock.mock.calls[0]?.[0])).toContain('port closed');
     });
 
     it('sends the device mode the project holds, not the engine default', async () => {

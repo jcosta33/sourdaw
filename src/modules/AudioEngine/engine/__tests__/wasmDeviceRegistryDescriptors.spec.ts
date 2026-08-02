@@ -359,11 +359,12 @@ describe('wasmDeviceRegistry descriptors', () => {
             const prepareCrumbsDevice = vi.fn(() => preparation.promise);
             const onContentLoadSettled = vi.fn();
             const result = createResult();
+            const controller = new AbortController();
             setAudioDeviceRuntimeSink({ prepareCrumbsDevice });
             factoryMocks.createCrumbsNode.mockResolvedValue(result);
 
             const { loadPromise } = requireDescriptor('builtin-crumbs').create(
-                createDeps({ deviceType: 'builtin-crumbs', onContentLoadSettled })
+                createDeps({ deviceType: 'builtin-crumbs', onContentLoadSettled, signal: controller.signal })
             );
             await Promise.resolve();
             await Promise.resolve();
@@ -371,6 +372,7 @@ describe('wasmDeviceRegistry descriptors', () => {
             expect(prepareCrumbsDevice).toHaveBeenCalledWith({
                 deviceId: 'dev-1',
                 port: result.workletNode.port,
+                signal: controller.signal,
             });
             expect(onContentLoadSettled).not.toHaveBeenCalled();
 
