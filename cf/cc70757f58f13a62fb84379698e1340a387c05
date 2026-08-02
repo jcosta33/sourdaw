@@ -1,0 +1,27 @@
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_ac9b259eab20ba::t_0c0fa756741672 125
+src/modules/Transport/useCases/scheduling/processLiveYeastTrackBlock.ts
+  s_ac9b259eab20ba::t_0c0fa756741672 52,85,212-214
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_ac9b259eab20ba::t_0c0fa756741672 66,464,470-474,507
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_ac9b259eab20ba::t_0edb31023dedbf 912-949
+  s_ac9b259eab20ba::t_0c0fa756741672 807
+  s_ac9b259eab20ba::t_290dfa40b9b941 1696,1723,1752
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "cfcc70757f58f13a62fb84379698e1340a387c05",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
