@@ -598,7 +598,6 @@ export class TrackNode {
     }
 
     private failDeviceConstruction(
-        deviceId: string,
         readinessToken: DeviceReadinessToken,
         error: unknown,
         partialDevice?: BuiltinDeviceNode
@@ -606,7 +605,6 @@ export class TrackNode {
         if (partialDevice) {
             this.destroyRejectedDeviceNode(partialDevice);
         }
-        this._deviceReadinessTokens.delete(deviceId);
         this.deps.readinessDiagnostics.markFailed({ token: readinessToken, stage: 'node' });
         throw error;
     }
@@ -645,7 +643,7 @@ export class TrackNode {
                     outputChannelCount: [2],
                 });
             } catch (error) {
-                this.failDeviceConstruction(deviceId, readinessToken, error);
+                this.failDeviceConstruction(readinessToken, error);
             }
             dn = { deviceId, type: deviceType, nodes: [workletNode], inputNode: workletNode, outputNode: workletNode };
             dn.controller = {
@@ -673,7 +671,7 @@ export class TrackNode {
             try {
                 loadingBypass = context.createGain();
             } catch (error) {
-                this.failDeviceConstruction(deviceId, readinessToken, error);
+                this.failDeviceConstruction(readinessToken, error);
             }
             const pendingLoad: PendingDeviceLoad = {
                 abortController: new AbortController(),
@@ -726,7 +724,7 @@ export class TrackNode {
                     })
                     .catch((error) => logger.warn(`[WebAudioEngine] Native plugin bridge failed: ${String(error)}`));
             } catch (error) {
-                this.failDeviceConstruction(deviceId, readinessToken, error, dn);
+                this.failDeviceConstruction(readinessToken, error, dn);
             }
             this.registerPendingDeviceLoad(deviceId, pendingLoad, loadPromise);
         } else {
@@ -734,7 +732,7 @@ export class TrackNode {
             try {
                 factoryNode = createBuiltinDeviceNode({ context, deviceType });
             } catch (error) {
-                this.failDeviceConstruction(deviceId, readinessToken, error);
+                this.failDeviceConstruction(readinessToken, error);
             }
             if (factoryNode) {
                 dn = {
@@ -759,7 +757,6 @@ export class TrackNode {
                 };
             } else {
                 if (!descriptor) {
-                    this._deviceReadinessTokens.delete(deviceId);
                     this.deps.readinessDiagnostics.markFailed({ token: readinessToken, stage: 'node' });
                     return;
                 }
@@ -785,7 +782,7 @@ export class TrackNode {
                         },
                     });
                 } catch (error) {
-                    this.failDeviceConstruction(deviceId, readinessToken, error);
+                    this.failDeviceConstruction(readinessToken, error);
                 }
                 const { placeholder, loadPromise } = created;
                 if (!placeholder.controller) {
@@ -813,7 +810,6 @@ export class TrackNode {
                 this.rebuildChain();
             } catch (error) {
                 this.invalidatePendingDeviceLoad(deviceId, 'graph');
-                this._deviceReadinessTokens.delete(deviceId);
                 this.strip.deviceNodes = this.strip.deviceNodes.filter((device) => device.deviceId !== deviceId);
                 this.destroyRejectedDeviceNode(dn);
                 throw error;
@@ -832,11 +828,6 @@ export class TrackNode {
     }
 
     public removeDevice(deviceId: string): void {
-        const dn = this.strip.deviceNodes.find((d) => d.deviceId === deviceId);
-        if (!dn) {
-            return;
-        }
-
         this.invalidatePendingDeviceLoad(deviceId);
         const readinessToken = this._deviceReadinessTokens.get(deviceId);
         if (readinessToken) {
@@ -844,6 +835,12 @@ export class TrackNode {
             this.deps.readinessDiagnostics.removeDevice(readinessToken);
             this._deviceReadinessTokens.delete(deviceId);
         }
+
+        const dn = this.strip.deviceNodes.find((d) => d.deviceId === deviceId);
+        if (!dn) {
+            return;
+        }
+
         this.strip.deviceNodes = this.strip.deviceNodes.filter((d) => d.deviceId !== deviceId);
         this.deps.onDeviceRemoved?.(this.trackId, dn);
         if (dn.controller) {
@@ -946,6 +943,10 @@ export class TrackNode {
         for (const deviceId of this._pendingDeviceLoads.keys()) {
             this.invalidatePendingDeviceLoad(deviceId);
         }
+        for (const readinessToken of this._deviceReadinessTokens.values()) {
+            this.deps.readinessDiagnostics.removeDevice(readinessToken);
+        }
+        this._deviceReadinessTokens.clear();
         this._failedDeviceLoads.clear();
         this.strip.preFaderTap.disconnect();
         this.strip.gainNode.disconnect();
@@ -960,10 +961,6 @@ export class TrackNode {
             this.strip.meterNode.disconnect();
         }
         for (const dn of this.strip.deviceNodes) {
-            const readinessToken = this._deviceReadinessTokens.get(dn.deviceId);
-            if (readinessToken) {
-                this.deps.readinessDiagnostics.removeDevice(readinessToken);
-            }
             if (dn.controller) {
                 dn.controller.destroy?.();
             } else if (dn.dispose) {
@@ -978,7 +975,6 @@ export class TrackNode {
                 }
             }
         }
-        this._deviceReadinessTokens.clear();
         this.strip.deviceNodes = [];
     }
 }

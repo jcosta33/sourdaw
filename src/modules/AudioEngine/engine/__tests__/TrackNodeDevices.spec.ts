@@ -523,6 +523,9 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
                 counts: { requested: 1, failed: 1 },
                 devices: [{ deviceId: 'mystery-1', status: 'failed', failureStage: 'node' }],
             });
+
+            track.removeDevice('mystery-1');
+            expect(readinessDiagnostics.snapshot().devices).toEqual([]);
         });
 
         it('records a synchronous descriptor construction failure without retaining a pending token', () => {
@@ -543,6 +546,9 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
                 devices: [{ deviceId: 'wasm-1', status: 'failed', failureStage: 'node' }],
             });
             expect(track.strip.deviceNodes).toHaveLength(0);
+
+            track.dispose();
+            expect(readinessDiagnostics.snapshot().devices).toEqual([]);
         });
 
         it('records a loaded-node promotion failure instead of leaving the device node-pending', () => {
@@ -587,6 +593,9 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
                 counts: { requested: 1, failed: 1 },
                 devices: [{ deviceId: 'wasm-1', status: 'failed', failureStage: 'graph' }],
             });
+
+            track.dispose();
+            expect(readinessDiagnostics.snapshot().devices).toEqual([]);
         });
 
         it('refuses to add the same device id twice', () => {
@@ -758,37 +767,40 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             await Promise.resolve();
         });
 
-        it('keeps same-id replacement state when reset rejects an old generation', async () => {
-            const deferred = installDeferredWasmDevice();
+        it('keeps same-id replacement readiness when a removed generation resolves late', async () => {
+            const oldGeneration = installDeferredWasmDevice();
             const pendingDevicePromises = new Set<Promise<unknown>>();
-            const track = new TrackNode('t1', makeDeps(ctx, { pendingDevicePromises }));
+            const readinessDiagnostics = createDeviceReadinessDiagnostics();
+            const track = new TrackNode('t1', makeDeps(ctx, { pendingDevicePromises, readinessDiagnostics }));
             track.addDevice('wasm-1', 'levain');
-            const rebuildChain = vi.spyOn(track, 'rebuildChain');
-            const meterNode = workletInstances[0]!;
-            track.scheduleRebuildChain();
 
-            track.dispose();
-            track.dispose();
+            track.removeDevice('wasm-1');
+            const newGeneration = installDeferredWasmDevice();
+            track.addDevice('wasm-1', 'levain');
+            const newDevice = createLoadedDevice();
+            newGeneration.resolve(newDevice.device);
             await Promise.resolve();
 
-            expect(track.strip.deviceNodes).toHaveLength(0);
-            expect(pendingDevicePromises.size).toBe(0);
-            expect(meterNode.port.close).toHaveBeenCalledTimes(1);
-            expect(rebuildChain).not.toHaveBeenCalled();
-
-            const loaded = createLoadedDevice();
-            let activeGeneration = 'new';
-            loaded.controller.destroy.mockImplementation(() => {
-                activeGeneration = 'removed';
+            expect(readinessDiagnostics.snapshot()).toMatchObject({
+                counts: { requested: 2 },
+                devices: [{ deviceId: 'wasm-1', status: 'content-pending' }],
             });
-            deferred.resolve(loaded.device);
-            expect(loaded.dispose).toHaveBeenCalledTimes(1);
-            expect(loaded.controller.destroy).not.toHaveBeenCalled();
-            expect(activeGeneration).toBe('new');
-            expect(loaded.node.disconnect).toHaveBeenCalled();
-            expect(rebuildChain).not.toHaveBeenCalled();
 
-            deferred.settle();
+            const oldDevice = createLoadedDevice();
+            oldGeneration.resolve(oldDevice.device);
+
+            expect(oldDevice.dispose).toHaveBeenCalledTimes(1);
+            expect(oldDevice.node.disconnect).toHaveBeenCalled();
+            expect(track.strip.deviceNodes).toEqual([newDevice.device]);
+            expect(readinessDiagnostics.snapshot().devices).toMatchObject([
+                { deviceId: 'wasm-1', status: 'content-pending' },
+            ]);
+
+            newGeneration.settleContent('ready');
+            expect(readinessDiagnostics.snapshot().devices).toMatchObject([{ deviceId: 'wasm-1', status: 'ready' }]);
+
+            oldGeneration.settle();
+            newGeneration.settle();
             await Promise.resolve();
         });
     });
