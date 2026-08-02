@@ -1,0 +1,81 @@
+docs/architecture/decisions/0030-llm-batch-local-bus-bindings.md
+  s_bc88af7d3b054c::t_000ea95c166c01 1-32
+src/modules/AiRuntime/models/IntentResult.ts
+  s_bc88af7d3b054c::t_8c20b81f2cb784 1,4
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_bc88af7d3b054c::t_d864c679c07058 7-11,51-54,171,195,211,231,240,1329-1332
+  s_bc88af7d3b054c::t_cc7ecfc4f8bce5 1238-1263
+  s_bc88af7d3b054c::t_07975ee2f36680 1353-1359,1361-1365,1370,1373-1374,1382-1383,1385-1394,1421
+  s_bc88af7d3b054c::t_7b0d079c7fa206 1402-1403,1405-1406
+  s_bc88af7d3b054c::t_e7a3cf130b2eb3 181,185,189,193,206,209,236,1416-1420
+  s_bc88af7d3b054c::t_d62576a40cd29e 14,26,30,45-50,55-69,71,90-170
+  s_bc88af7d3b054c::t_4558cc6452b89e 70,1404
+  s_bc88af7d3b054c::t_eefaa30f132d99 172-174,178-180
+  s_bc88af7d3b054c::t_43ab01e319faf1 182-184
+  s_bc88af7d3b054c::t_08be36e8e1c326 186-188
+  s_bc88af7d3b054c::t_e1c937b9a621ee 190-192
+  s_bc88af7d3b054c::t_17aae0d02dffd7 194
+  s_bc88af7d3b054c::t_c4a9379a9bf099 196-198,203-205
+  s_bc88af7d3b054c::t_b5f8640a514a1c 207-208
+  s_bc88af7d3b054c::t_d41bf689d56f5e 210
+  s_bc88af7d3b054c::t_74de53ab27d2a2 212-214,228-230
+  s_bc88af7d3b054c::t_b681a6b7f5e955 232-235
+  s_bc88af7d3b054c::t_d4b851f394174b 237-239
+  s_bc88af7d3b054c::t_e811935fd72c4e 241-242
+  s_bc88af7d3b054c::t_a2baab4949d1e6 1264
+  s_bc88af7d3b054c::t_279f3caf5331b8 1333
+  s_bc88af7d3b054c::t_810531b2bf9aa3 1395
+  s_bc88af7d3b054c::t_8170b4acedd29e 1407
+  s_bc88af7d3b054c::t_67c17b42e4308c 1422
+  s_bc88af7d3b054c::t_052245879ebd08 175-177,199-202,215-227,1199,1203
+src/modules/AiRuntime/models/ExecutableRuntimeAction.ts
+  s_bc88af7d3b054c::t_8c20b81f2cb784 1-10
+src/modules/Arrangement/handlers/__tests__/compoundBusActionBatch.spec.ts
+  s_bc88af7d3b054c::t_4558cc6452b89e 11
+  s_bc88af7d3b054c::t_c7a520712636aa 106-108
+  s_bc88af7d3b054c::t_9b52f2c71f7cc0 1-10,12-105,109-112
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_bc88af7d3b054c::t_5654a0940d0807 1380-1381
+  s_bc88af7d3b054c::t_b329a2dc59be16 556,561
+src/modules/AiRuntime/stores/pendingActionConfirmationStore.ts
+  s_bc88af7d3b054c::t_8c20b81f2cb784 5,27,54
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_bc88af7d3b054c::t_5654a0940d0807 38-45
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_bc88af7d3b054c::t_5654a0940d0807 274-330,336-355
+  s_bc88af7d3b054c::t_4558cc6452b89e 331-335
+  s_bc88af7d3b054c::t_386d9ed3838636 230-247,255-258,260-264,266-273
+  s_bc88af7d3b054c::t_c7a520712636aa 248-254,259,265
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_bc88af7d3b054c::t_d864c679c07058 18,158-171,173,175
+src/modules/AiRuntime/stores/__tests__/pendingActionConfirmationStore.spec.ts
+  s_bc88af7d3b054c::t_4558cc6452b89e 3
+  s_bc88af7d3b054c::t_32745325d63de3 1-2,4-41
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_bc88af7d3b054c::t_d864c679c07058 1519
+src/modules/AiRuntime/useCases/agentReference/materializeBatchLocalActionIdentities.ts
+  s_bc88af7d3b054c::t_8c20b81f2cb784 1-6,8,10-54
+  s_bc88af7d3b054c::t_4558cc6452b89e 7,9
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_bc88af7d3b054c::t_d864c679c07058 156-164
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_bc88af7d3b054c::t_52cd0834aaaf84 269-325
+src/modules/AiRuntime/useCases/agentReference/__tests__/materializeBatchLocalActionIdentities.spec.ts
+  s_bc88af7d3b054c::t_32745325d63de3 1-43
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "ba5d7e58c241837521862d34c6d7dfd27f49be5a",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
