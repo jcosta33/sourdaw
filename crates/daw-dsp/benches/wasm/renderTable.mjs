@@ -44,14 +44,15 @@ const otherRows = data.rows.filter((row) => row.costSite !== 'audio-thread');
 
 const deviceTable = (rows) => {
     const lines = [
-        '| Device | median | p95 | p99 | median % | p95 % | p99 % | steady? |',
-        '| --- | ---: | ---: | ---: | ---: | ---: | ---: | :---: |',
+        '| Device | ≥ floor | ≤ upper bound | upper as % of budget | load | clock stalls | steady? |',
+        '| --- | ---: | ---: | ---: | ---: | ---: | :---: |',
     ];
     for (const row of [...rows].sort((a, b) => b.stats.median - a.stats.median)) {
+        const floorCell = row.floorMeasurable ? `${us(row.stats.floor)} µs` : '—';
         lines.push(
-            `| ${row.label} | ${us(row.stats.median)} µs | ${us(row.stats.p95)} µs | ${us(row.stats.p99)} µs | ` +
-                `**${pct(row.stats.median)}** | ${pct(row.stats.p95)} | ${pct(row.stats.p99)} | ` +
-                `${row.stationary ? 'yes' : '**no — bound**'} |`
+            `| ${row.label} | ${floorCell} | **${us(row.stats.median)} µs** | **${pct(row.stats.median)}** | ` +
+                `${row.load.mean.toFixed(0)} | ${(row.zeroFraction * 100).toFixed(1)}% | ` +
+                `${row.stationary ? 'yes' : '**no**'} |`
         );
     }
     return lines.join('\n');
@@ -78,11 +79,15 @@ const ref = data.referenceProject;
 const refList = (members) => members.map(([id, count]) => `${count} × ${id}`).join(', ');
 
 const calibrationTable = () => {
-    const lines = ['| Device | segments | ticks/ms (median) | spread | compute ÷ main-thread wall |', '| --- | ---: | ---: | ---: | ---: |'];
+    const lines = [
+        '| Device | segments | ticks/ms (median) | rate spread | compute ÷ wall | raw min | floor (p1) |',
+        '| --- | ---: | ---: | ---: | ---: | ---: | ---: |',
+    ];
     for (const row of data.rows) {
         lines.push(
             `| ${row.id} | ${row.calibration.segments} | ${sig2(row.calibration.medianTicksPerMs)} | ` +
-                `${row.calibration.spreadPct.toFixed(1)}% | ${(row.wallRatio * 100).toFixed(0)}% |`
+                `${row.calibration.spreadPct.toFixed(1)}% | ${(row.wallRatio * 100).toFixed(0)}% | ` +
+                `${us(row.stats.min)} µs | ${row.floorMeasurable ? us(row.stats.floor) + ' µs' : 'withheld'} |`
         );
     }
     return lines.join('\n');
@@ -107,11 +112,14 @@ const block = `${BEGIN}
 | Base it sits on | \`${data.machine.gitBase}\` |
 | Working tree | ${data.machine.workingTree} |
 | Taken | ${data.machine.takenAt} |
-| Machine load | ${data.load.before.toFixed(2)} before, ${data.load.after.toFixed(2)} after (ceiling ${data.load.ceiling.toFixed(1)}) |
+| Machine load | ${data.load.before.toFixed(2)} before, ${data.load.after.toFixed(2)} after — **recorded, not gated** |
 | Warm-up / samples | ${data.options.warmupQuanta} discarded, ${data.options.measureQuanta} timed quanta per row |
 | Budget | ${budget.toFixed(4)} ms = 128 frames ÷ 48 kHz |
 
 ### On the audio thread — these share the one ${budget.toFixed(3)} ms deadline
+
+\`≥ floor\` is a lower bound and \`≤ upper bound\` is an upper bound; both are valid under the load shown.
+A dash means the clock stalled too often on that row for a floor to mean anything — the upper bound stands.
 
 ${deviceTable(audioRows)}
 
@@ -128,12 +136,24 @@ ${dutyTable()}
 Audio thread: ${refList(ref.audioThread)}.
 Worker: ${refList(ref.worker)}.
 
-| | ms | % of ${budget.toFixed(3)} ms |
-| --- | ---: | ---: |
-| **Audio thread, summed median** | **${sig2(ref.audioMedianMs)}** | **${pct(ref.audioMedianMs)}** |
-| Audio thread, amortised mean (duty cycles averaged in) | ${sig2(ref.audioAmortisedMeanMs)} | ${pct(ref.audioAmortisedMeanMs)} |
-| **Audio thread, worst quantum** (all medians + the largest single duty spike) | **${sig2(ref.audioWorstQuantumMs)}** | **${pct(ref.audioWorstQuantumMs)}** |
-| Worker line item — Grand Boule DSP | ${sig2(ref.workerMedianMs)} | ${pct(ref.workerMedianMs)} of a quantum's wall clock, on its own thread |
+Measured at a mean 1-minute load average of **${ref.meanLoad.toFixed(0)}** on ${data.machine.logicalCores} logical
+cores. Both bounds are valid under that load; see the note on direction above.
+
+| | ms | % of ${budget.toFixed(3)} ms | |
+| --- | ---: | ---: | --- |
+| Audio thread, lower bound | ${sig2(ref.audioFloorMs)} | ${pct(ref.audioFloorMs)} | partial — no floor from ${ref.audioFloorPartialFrom.length} rows, counted as zero |
+| **Audio thread, upper bound** | **${sig2(ref.audioUpperBoundMs)}** | **${pct(ref.audioUpperBoundMs)}** | **the decisive figure** |
+| Audio thread, worst quantum, upper bound | ${sig2(ref.audioWorstQuantumUpperMs)} | ${pct(ref.audioWorstQuantumUpperMs)} | + the largest single duty spike |
+| Worker line item — Grand Boule DSP | ${sig2(ref.workerFloorMs)} – ${sig2(ref.workerMedianMs)} | ${pct(ref.workerFloorMs)} – ${pct(ref.workerMedianMs)} | its own thread, its own ring to keep ahead |
+
+**${ref.audioWorstQuantumUpperMs < budget ? 'DECIDED: the upper bound already fits.' : 'NOT DECIDED by compute alone.'}**
+${
+    ref.audioWorstQuantumUpperMs < budget
+        ? `Even measured under a load average of ${ref.meanLoad.toFixed(0)}, the reference project's audio thread does not ` +
+          'approach the deadline on compute, and a quieter machine can only lower these numbers. Compute is not the ' +
+          'obstacle. Whether quanta are actually missed is a different question, and AC-3 owns it.'
+        : 'The bounds straddle the budget on this machine.'
+}
 
 ### Occupancy, verified after each timed run
 

@@ -77,7 +77,9 @@ class QuantumCostProcessor extends AudioWorkletProcessor {
         const chamberExports = initChamber({ module: new WebAssembly.Module(config.chamberBytes) });
         const scoringExports = initScoring({ module: new WebAssembly.Module(config.scoringBytes) });
 
-        this._harnessFloorTicks = measureHarnessFloor(this._ticks, 20_000);
+        // 2000 is plenty to characterise two clock reads, and keeps thirteen
+        // rows' worth of retained samples off the renderer's heap.
+        this._harnessFloorTicks = measureHarnessFloor(this._ticks, 2_000);
         this._warmupQuanta = config.warmupQuanta;
         this._measureQuanta = config.measureQuanta;
 
@@ -139,6 +141,21 @@ class QuantumCostProcessor extends AudioWorkletProcessor {
         /** Summed warm-up ticks, so the wall-clock cross-check can account for them. */
         this._warmupTicks = 0;
         this._warmupTotalTicks = 0;
+        /**
+         * Samples whose tick delta came back zero.
+         *
+         * This is the one way contention can make a sample read *shorter* than
+         * the truth, and it has to be counted rather than assumed away. The
+         * clock is a counter another thread increments; if that thread is
+         * descheduled for the whole of a render, the counter does not move and
+         * the render reads as zero. Everything else contention does adds time.
+         * A non-trivial count here means the floor below is being dragged down
+         * by clock stalls rather than by the device being fast, which is why
+         * the published floor is a low percentile and not the raw minimum.
+         */
+        this._zeroTickSamples = 0;
+        /** Wall clock of the timed pass only, for the load attribution window. */
+        this._timedStartedAtMs = 0;
     }
 
     process() {
@@ -176,12 +193,16 @@ class QuantumCostProcessor extends AudioWorkletProcessor {
                 this._phase = 'measure';
                 this._counter = 0;
                 this._warmupTotalTicks = this._warmupTicks;
+                this._timedStartedAtMs = Date.now();
                 this._segmentStartMs = Date.now();
                 this._segmentStartTick = Atomics.load(ticks, 0);
             }
             return true;
         }
 
+        if (elapsedTicks === 0) {
+            this._zeroTickSamples += 1;
+        }
         this._samples[this._counter] = elapsedTicks;
         this._segmentIndex[this._counter] = this._segmentRates.length;
         this._counter += 1;
@@ -216,6 +237,9 @@ class QuantumCostProcessor extends AudioWorkletProcessor {
                 sink: this._sink,
                 lastDiscardedWarmupTicks: this._discarded,
                 warmupTotalTicks: this._warmupTotalTicks,
+                zeroTickSamples: this._zeroTickSamples,
+                timedStartedAtMs: this._timedStartedAtMs,
+                timedFinishedAtMs: Date.now(),
                 segmentRates: this._segmentRates,
                 segmentIndex: this._segmentIndex,
                 segmentTargetMs: this._segmentTargetMs,

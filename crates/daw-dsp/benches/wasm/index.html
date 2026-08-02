@@ -96,9 +96,22 @@
                 });
 
                 const startedMs = performance.now();
-                context.startRendering();
+                // Hold the render promise and await it before returning.
+                //
+                // Not awaiting it leaks the whole context: the processor stops
+                // at the end of its timed run, but the OfflineAudioContext goes
+                // on rendering its remaining timeline and keeps its output
+                // buffer — 12 MB here — plus a worklet scope with three
+                // instantiated wasm modules alive. Thirteen of those overlapped
+                // and crashed the renderer outright ("Target crashed") partway
+                // through a full run. Awaiting lets each context be collected
+                // before the next is built.
+                const rendering = context.startRendering();
                 const result = await settled;
                 result.mainThreadWallMs = performance.now() - startedMs;
+                await rendering;
+                node.disconnect();
+                node.port.onmessage = null;
                 return result;
             }
 

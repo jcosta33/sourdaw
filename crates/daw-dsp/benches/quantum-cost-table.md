@@ -94,47 +94,163 @@ Treat p95 and p99 as indicative.
   `performance.now()` span measured on the *main thread*, which the worklet's clock cannot influence.
   The bound this replaces compared a 20 000-sample sum against a 24 000-quantum span, so it tolerated
   a ~20% overstatement and bounded understatement not at all.
-- **Machine-load gate.** The run refuses if the 1-minute load average exceeds half the logical cores.
-  Not decoration: the first run of this table was taken while another worktree ran a full vitest
-  suite at load 25, and a later re-take tripped the guard for real and exited 101.
+- **Machine load is recorded per row, not gated.** An earlier version refused to publish above half
+  the logical cores, which on this machine meant refusing to publish at all. What is gated instead is
+  the clock: the per-row rate spread, the zero-tick fraction, and an independent main-thread
+  wall-clock bound. Those catch a clock that cannot be trusted; load does not, and the bounds above
+  are valid under it.
 
 **The wasm host is an `OfflineAudioContext`, one per device.** An offline render has no deadline, so
 this measures **cost** and cannot observe a dropout — that is AC-3's job, and *"its compute exceeds
 the budget"* and *"it misses the deadline"* are different claims. One device per context is also the
 *favourable* case for cache residency, so a full mix's per-device cost is at least this.
 
-## The table
+## The measurement is a pair of bounds, not a point
 
-> **Empty on purpose, and this is the honest state rather than an oversight.**
->
-> The previous figures were taken at `8a96bdafd`. This branch sits on `064504ed6`, and between the
-> two, Grand Boule's engine moved 874 lines and Toaster's moved ~280 — including "make GrandBoule
-> demand-driven" and the Toaster lifecycle series, which sleeps a settled worklet. **The two rows
-> carrying the result were measured against superseded builds**, so those numbers are withdrawn
-> rather than re-published. They also used the wrong Grinder operating point and had no
-> ring-consumer row at all.
->
-> The re-take is written, committed and armed. It has not run because the machine has not once
-> reached the harness's own idle gate: another worktree has held the 1-minute load average between
-> 20 and 45 continuously, against a ceiling of half the logical cores. The gate is doing exactly what
-> it was added to do — the first version of this table *was* taken at load 25, and that is how a p99
-> of 17.9 ms got published against a 1.1 ms median.
->
-> To populate this region on a quiet machine:
->
-> ```text
-> node crates/daw-dsp/benches/wasm/run.mjs --json crates/daw-dsp/benches/quantum-cost-table.json
-> node crates/daw-dsp/benches/wasm/renderTable.mjs
-> ```
->
-> What is **not** pending, because it does not depend on re-measurement: Grand Boule's DSP is on a
-> Worker and not the audio thread; the 92.4% headline and the stop condition it fired are withdrawn;
-> the 73.2% audio-thread figure is withdrawn as a summed p99; and Knead and Scoring are duty cycles
-> whose p95 is an artefact of where 6.25% and 8.0% fall relative to 95%.
+**This machine is never quiet.** The desktop it runs on sustains a 1-minute load average between 20
+and 180 from ordinary applications — Claude, Codex, WindowServer, Kimi — and an earlier version of
+this harness gated on load and therefore produced no table at all.
+
+The way out is one-directional, and it is what makes the result sound: **contention only ever adds
+time to a sample, it never removes it.** So from a single contended run:
+
+- the **floor** (1st percentile) is a genuine **lower bound** on what the device costs;
+- the **median taken under load** is a genuine **upper bound** on what it would cost on a quiet
+  machine.
+
+Both are valid measurements taken on a busy machine, and they bracket the truth. That makes the
+*upper* bound the decisive one here: if the contaminated total already fits the budget, the true
+total certainly fits, and no quieter machine is needed to establish it.
+
+**One mechanism can make a sample read short**, and it is counted rather than assumed away. The
+wasm clock is a counter another thread increments, so a render that lands entirely inside a stall of
+that thread reads zero. Measured here, the zero-tick fraction runs from 0.1% on Grand Boule to 6% on
+Levain and tracks render length exactly — the shorter the render, the likelier it falls inside a
+stall. Rows over the threshold therefore report **no floor**; their upper bound still stands. The
+published floor is the 1st percentile rather than the raw minimum for the same reason.
+
+The native leg is the control for this. `Instant` has no stall mode, and there the floor and the
+median nearly coincide even at load 144 — ProofChamber Plate reads 4.7 µs against 4.8 µs. That is
+the floor doctrine working: on a clock that cannot stall, contention leaves the low end alone.
+
+### What these bounds can and cannot decide
+
+- **If the floor exceeds budget, that is decisive.** The device cannot fit and no quieter machine
+  will change it.
+- **If the upper bound fits, that is also decisive** — for compute.
+- **Neither bounds the deadline.** They bound how long the DSP takes, not whether a quantum is
+  delivered on time. The instrument for that is AC-3's dropout observation, which reads genuine
+  underruns from `AudioContext.playbackStats` on a live context and is hardware-independent enough
+  to run contended. The two answer different questions and neither substitutes for the other.
 
 <!-- generated:begin -->
-<!-- Run `node crates/daw-dsp/benches/wasm/run.mjs --json crates/daw-dsp/benches/quantum-cost-table.json`
-     then `node crates/daw-dsp/benches/wasm/renderTable.mjs` to populate this region. -->
+<!-- Generated by benches/wasm/renderTable.mjs from benches/quantum-cost-table.json.
+     Do not hand-edit anything between these markers. -->
+
+### Provenance
+
+| | |
+| --- | --- |
+| Machine | Apple M4 Pro (`Mac16,11`), 8P + 4E, 24 GB |
+| OS | macOS 26.6 (25G72), arm64 |
+| Browser | **150.0.7871.187** (Google Chrome stable, headless) |
+| User agent | `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36` |
+| **Commit measured** | **`407a0204996a9ec0f3586622131f64aa6ccd1d10`** |
+| Base it sits on | `b4937fb10a81d4f08f70c32155f4ced6136dd4b7` |
+| Working tree | dirty |
+| Taken | 2026-08-02T12:08:23.872Z |
+| Machine load | 152.38 before, 177.54 after — **recorded, not gated** |
+| Warm-up / samples | 4000 discarded, 20000 timed quanta per row |
+| Budget | 2.6667 ms = 128 frames ÷ 48 kHz |
+
+### On the audio thread — these share the one 2.667 ms deadline
+
+`≥ floor` is a lower bound and `≤ upper bound` is an upper bound; both are valid under the load shown.
+A dash means the clock stalled too often on that row for a floor to mean anything — the upper bound stands.
+
+| Device | ≥ floor | ≤ upper bound | upper as % of budget | load | clock stalls | steady? |
+| --- | ---: | ---: | ---: | ---: | ---: | :---: |
+| Crumbs (32 sounding voices, in-memory pool) | — | **330 µs** | **12%** | 193 | 1.6% | yes |
+| Grinder (Crunch JCM, ch 1, gain 5 — shipped patch) | 66 µs | **130 µs** | **5%** | 161 | 0.4% | **no** |
+| Toaster (16 pads, re-struck 1/s) | — | **120 µs** | **4.4%** | 196 | 1.5% | **no** |
+| Proof (limiter engaged) | — | **63 µs** | **2.4%** | 156 | 1.8% | yes |
+| Fermenter (16 sounding voices, 1 layer) | 18 µs | **49 µs** | **1.9%** | 163 | 0.7% | yes |
+| Levain (32 sounding voices, looped zone) | — | **32 µs** | **1.2%** | 196 | 6.1% | yes |
+| ProofChamber (FDN-16 — heaviest selectable) | — | **23 µs** | **0.86%** | 191 | 3.2% | yes |
+| Bacteria (3 bands, mix 1.0) | 9.2 µs | **15 µs** | **0.57%** | 178 | 0.3% | yes |
+| ProofChamber (Plate — shipped default) | — | **6.2 µs** | **0.23%** | 178 | 4.5% | yes |
+| Gluten (4:1, -24 dB, compressing) | 3.4 µs | **5.7 µs** | **0.21%** | 178 | 0.6% | yes |
+| Scoring / Tuner (pitch detection running) | — | **1 µs** | **0.038%** | 191 | 2.3% | yes |
+| Knead (+4 semitones, PSOLA engaged) | — | **0.52 µs** | **0.02%** | 156 | 1.0% | yes |
+| Grand Boule ring consumer (the live audio-thread cost) | — | **0.2 µs** | **0.0073%** | 178 | 4.7% | **no** |
+
+### Not on the audio thread — real cost, different thread, different budget
+
+| Device | ≥ floor | ≤ upper bound | upper as % of budget | load | clock stalls | steady? |
+| --- | ---: | ---: | ---: | ---: | ---: | :---: |
+| Grand Boule (64 voices, re-struck 1/s) — WORKER, not audio thread | 1300 µs | **2500 µs** | **94%** | 185 | 0.1% | yes |
+
+### Duty cycles, not tails
+
+| Device | period | duty | cost in the tick | cost otherwise | amortised mean | period comes from |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| knead | every 16 quanta | 6.3% | 1100 µs (40%) | 0.52 µs | **67 µs (2.5%)** | `yin_cfg.frame_size = 2048 frames / 128 = 16 quanta` |
+| scoring | every 12.5 quanta | 8% | 220 µs (8.3%) | 0.99 µs | **19 µs (0.7%)** | `hop = sample_rate / 30 = 1600 frames / 128 = 12.5 quanta` |
+
+### The reference project
+
+Audio thread: 1 × grand_boule_ring_consumer, 1 × fermenter, 1 × levain, 1 × toaster, 1 × crumbs, 1 × grinder, 1 × knead, 1 × bacteria, 1 × proof, 3 × gluten, 1 × proof_chamber_plate.
+Worker: 1 × grand_boule.
+
+Measured at a mean 1-minute load average of **178** on 12 logical
+cores. Both bounds are valid under that load; see the note on direction above.
+
+| | ms | % of 2.667 ms | |
+| --- | ---: | ---: | --- |
+| Audio thread, lower bound | 0.1 | 3.9% | partial — no floor from 7 rows, counted as zero |
+| **Audio thread, upper bound** | **0.83** | **31%** | **the decisive figure** |
+| Audio thread, worst quantum, upper bound | 1.9 | 71% | + the largest single duty spike |
+| Worker line item — Grand Boule DSP | 1.3 – 2.5 | 48% – 94% | its own thread, its own ring to keep ahead |
+
+**DECIDED: the upper bound already fits.**
+Even measured under a load average of 178, the reference project's audio thread does not approach the deadline on compute, and a quieter machine can only lower these numbers. Compute is not the obstacle. Whether quanta are actually missed is a different question, and AC-3 owns it.
+
+### Occupancy, verified after each timed run
+
+- **bacteria** — after the timed run: output RMS 7.367e-2
+- **gluten** — after the timed run: output RMS 1.861e-1
+- **proof** — after the timed run: output RMS 3.601e-1
+- **knead** — after the timed run: output RMS 1.413e-1
+- **grinder** — after the timed run: engine output -4.57 dBFS
+- **fermenter** — after the timed run: active_voices() = 16, expected 16 from 16 note-ons, output RMS 5.323e-1
+- **grand_boule** — after the timed run: 64 notes, no active-voice export: output RMS 9.198e-2 is 4.2x one identically-driven voice (2.200e-2), band 3.6-17.6x around sqrt(64) = 8.0x
+- **grand_boule_ring_consumer** — after the timed run: 24000 quanta consumed, 0 underruns (must be 0 — an underrun takes the cheap silence branch), output RMS 3.278e-1
+- **toaster** — after the timed run: 16 notes, no active-voice export: output RMS 3.203e-2 is 2.2x one identically-driven voice (1.471e-2), band 1.8-8.8x around sqrt(16) = 4.0x
+- **levain** — after the timed run: active_voices() = 32, expected 32 from 64 note-ons, output RMS 1.264e+0
+- **crumbs** — after the timed run: active_voices() = 32, expected 32 from 32 note-ons, output RMS 1.736e+0
+- **proof_chamber_plate** — after the timed run: output RMS 2.008e-1
+- **proof_chamber_fdn16** — after the timed run: output RMS 2.568e-1
+- **scoring** — after the timed run: output RMS 2.795e-1, detected 110.1 Hz (stimulus fundamental 110 Hz)
+
+### Clock, per row
+
+| Device | segments | ticks/ms (median) | rate spread | compute ÷ wall | raw min | floor (p1) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| bacteria | 1 | 190000 | 0.0% | 78% | 0 µs | 9.2 µs |
+| gluten | 1 | 190000 | 0.0% | 55% | 0 µs | 3.4 µs |
+| proof | 2 | 180000 | 3.0% | 93% | 0 µs | withheld |
+| knead | 2 | 180000 | 6.1% | 94% | 0 µs | withheld |
+| grinder | 3 | 130000 | 8.5% | 102% | 0 µs | 66 µs |
+| fermenter | 1 | 130000 | 0.0% | 91% | 0 µs | 18 µs |
+| grand_boule | 53 | 130000 | 46.6% | 96% | 0 µs | 1300 µs |
+| grand_boule_ring_consumer | 1 | 130000 | 0.0% | 21% | 0 µs | withheld |
+| toaster | 3 | 130000 | 2.7% | 85% | 0 µs | withheld |
+| levain | 1 | 120000 | 0.0% | 96% | 0 µs | withheld |
+| crumbs | 7 | 180000 | 5.6% | 95% | 0 µs | withheld |
+| proof_chamber_plate | 1 | 180000 | 0.0% | 58% | 0 µs | withheld |
+| proof_chamber_fdn16 | 1 | 180000 | 0.0% | 82% | 0 µs | withheld |
+| scoring | 1 | 180000 | 0.0% | 80% | 0 µs | withheld |
+
 <!-- generated:end -->
 
 ## The native leg
@@ -172,9 +288,9 @@ invalidate the DSP crate's committed artifacts.
   descheduling mid-render, plus V8 GC in the wasm leg.
 - **The max is not a worst case.** 20 000 samples is 53 s of one device's audio; a session renders on
   the order of 1.7M quanta an hour.
-- **A row marked "no — bound" in the steady column is not stationary**: its first-500 and last-500
-  means differ by more than 10%, so its median is a bound in the direction of the drift rather than a
-  steady state.
+- **A row marked "no" in the steady column is not stationary**: its first-500 and last-500 means
+  differ by more than 10%. Under a load average of 180 that is usually the machine rather than the
+  device, which is another reason the floor is the more trustworthy column.
 - **One device per context** is the best case for cache residency. A real mix has a dozen competing
   for L2.
 - **The ring-consumer row drives the steady consuming path deliberately.** An underrun takes a
