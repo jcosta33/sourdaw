@@ -11,6 +11,7 @@
  * than a degraded one.
  */
 
+import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
 import { logger } from '#/infra/logger/appLogger';
 
@@ -64,14 +65,20 @@ export function isCrumbsDevice(deviceType: string): boolean {
 export async function createCrumbsNode(
     ctx: BaseAudioContext,
     wasmUrl?: string,
-    onFault?: (message: string) => void
+    onFault?: (message: string) => void,
+    signal?: AbortSignal
 ): Promise<CrumbsNodeResult> {
     if (ctx instanceof AudioContext && ctx.state === 'suspended') {
-        await ctx.resume();
+        await raceAbortSignal(ctx.resume(), signal);
     }
 
-    await ensureWorkletRegistered(ctx, crumbsProcessorUrl);
-    const wasmLease = await fetchWasmModule({ ctx, bundleId: 'daw-dsp', url: wasmUrl ?? DEFAULT_WASM_URL });
+    await raceAbortSignal(ensureWorkletRegistered(ctx, crumbsProcessorUrl), signal);
+    const wasmLease = await raceAbortSignal(
+        fetchWasmModule({ ctx, bundleId: 'daw-dsp', url: wasmUrl ?? DEFAULT_WASM_URL, signal }),
+        signal
+    );
+
+    signal?.throwIfAborted();
 
     let node: AudioWorkletNode;
     try {

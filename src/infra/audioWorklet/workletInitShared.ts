@@ -46,6 +46,11 @@ export async function ensureWorkletRegistered(ctx: BaseAudioContext, moduleUrl: 
     if (!promise) {
         promise = ctx.audioWorklet.addModule(moduleUrl);
         contextMap.set(moduleUrl, promise);
+        promise.catch(() => {
+            if (contextMap.get(moduleUrl) === promise) {
+                contextMap.delete(moduleUrl);
+            }
+        });
     }
     return promise;
 }

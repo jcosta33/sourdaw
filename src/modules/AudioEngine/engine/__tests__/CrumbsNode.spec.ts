@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
+
 import { createCrumbsNode, isCrumbsDevice } from '../CrumbsNode';
 
 // Mock the worklet-init helpers so createCrumbsNode resolves without a real
@@ -140,5 +142,22 @@ describe('createCrumbsNode', () => {
 
         expect(workletOptions?.processorOptions?.wasmModule).toBeInstanceOf(WebAssembly.Module);
         expect(messagesOfType('init')).toEqual([{ type: 'init' }]);
+    });
+
+    it('abandons registration without fetching or constructing after cancellation', async () => {
+        let resolveRegistration: () => void = () => {};
+        const registration = new Promise<void>((resolve) => {
+            resolveRegistration = resolve;
+        });
+        vi.mocked(ensureWorkletRegistered).mockReturnValueOnce(registration);
+        const controller = new AbortController();
+
+        const creating = createCrumbsNode(makeCtx(), undefined, undefined, controller.signal);
+        controller.abort();
+        resolveRegistration();
+
+        await expect(creating).rejects.toMatchObject({ name: 'AbortError' });
+        expect(fetchWasmModule).not.toHaveBeenCalled();
+        expect(workletOptions).toBeUndefined();
     });
 });

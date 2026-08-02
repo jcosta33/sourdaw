@@ -42,6 +42,21 @@ describe('ensureWorkletRegistered', () => {
         expect(addModule).toHaveBeenCalledOnce();
     });
 
+    it('drops a failed registration so a later call can retry the same context and url', async () => {
+        const addModule = vi
+            .fn()
+            .mockRejectedValueOnce(new Error('transient load failure'))
+            .mockResolvedValueOnce(undefined);
+        const ctx = createFakeContext(addModule);
+
+        await expect(ensureWorkletRegistered(ctx as unknown as BaseAudioContext, 'retry.js')).rejects.toThrow(
+            'transient load failure'
+        );
+        await expect(ensureWorkletRegistered(ctx as unknown as BaseAudioContext, 'retry.js')).resolves.toBeUndefined();
+
+        expect(addModule).toHaveBeenCalledTimes(2);
+    });
+
     it('registers separately per url on the same context', async () => {
         const addModule = vi.fn().mockResolvedValue(undefined);
         const ctx = createFakeContext(addModule);
