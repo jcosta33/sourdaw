@@ -1396,6 +1396,56 @@ describe('scheduleMidiNotes', () => {
             expect(scheduleNote).toHaveBeenCalledTimes(10);
         });
 
+        it('projects only loop occurrences that intersect the scheduler window', async () => {
+            const track = midiTrack({
+                clips: [midiClip({ endBeat: 128, loopEnabled: true, loopLength: 4 })],
+            });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: {
+                    'clip-1': [{ id: 'loop-note', pitch: 60, startBeat: 0.25, duration: 0.25, velocity: 100 }],
+                },
+            };
+
+            await scheduleMidiNotes(64, 65, 64, 64, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(projectClipMidiEvents).toHaveBeenCalledTimes(1);
+            expect(scheduleNote).toHaveBeenCalledTimes(1);
+            expect(shouldPlayMidiEvent).toHaveBeenCalledWith(
+                expect.objectContaining({ eventId: 'loop-note', absoluteOccurrenceIndex: 16 })
+            );
+        });
+
+        it('bounds Yeast loop work while retaining a prior occurrence release in the window', async () => {
+            const track = midiTrack({
+                clips: [midiClip({ endBeat: 128, loopEnabled: true, loopLength: 4 })],
+                devices: [{ id: 'yeast-1', type: 'yeast' }],
+            });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: {
+                    'clip-1': [{ id: 'long-note', pitch: 60, startBeat: 0, duration: 5, velocity: 100 }],
+                },
+            };
+
+            await scheduleMidiNotes(4.5, 5.5, 4.5, 4.5, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(shouldPlayMidiEvent).toHaveBeenCalledTimes(1);
+            expect(shouldPlayMidiEvent).toHaveBeenCalledWith(
+                expect.objectContaining({ eventId: 'long-note', absoluteOccurrenceIndex: 0 })
+            );
+            expect(processYeastMidi).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    events: [
+                        expect.objectContaining({
+                            noteInstanceId: 'live-yeast:track-1:clip-1:0:long-note',
+                            kind: { type: 'noteOff', channel: 0, note: 60 },
+                        }),
+                    ],
+                })
+            );
+        });
+
         it('retains a leading interval when the clip starts at the scheduler high-water mark', async () => {
             const track = midiTrack({ clips: [midiClip({ startBeat: 4, endBeat: 8 })] });
             (trackStore as { value: unknown }).value = { tracks: [track] };
@@ -1577,13 +1627,13 @@ describe('scheduleMidiNotes', () => {
                     'clip-b': [{ id: 'n2', pitch: 62, startBeat: 0.5, duration: 0.25, velocity: 100 }],
                 },
             };
-            // isCurrent returns true for track A's guard (call 1) and its single
-            // note's pre-dispatch guard (call 2), then false at track B's guard.
+            // isCurrent returns true for track A's guard, bounded iteration,
+            // and note dispatch, then false at track B's guard.
             let calls = 0;
             const cancellation: SchedulerCancellation = {
                 generation: 0,
                 discontinuityEpoch: 0,
-                isCurrent: () => ++calls <= 2,
+                isCurrent: () => ++calls <= 3,
             };
 
             await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120, cancellation);
@@ -1603,13 +1653,13 @@ describe('scheduleMidiNotes', () => {
                     ],
                 },
             };
-            // isCurrent is true for the track guard, then false at the first note's
-            // pre-dispatch check, aborting before either note is scheduled.
+            // isCurrent is true for the track and bounded-iteration guards, then
+            // false at the first note's pre-dispatch check.
             let calls = 0;
             const cancellation: SchedulerCancellation = {
                 generation: 0,
                 discontinuityEpoch: 0,
-                isCurrent: () => ++calls <= 1,
+                isCurrent: () => ++calls <= 2,
             };
 
             await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120, cancellation);

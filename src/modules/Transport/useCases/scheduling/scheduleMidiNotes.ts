@@ -88,6 +88,10 @@ type ScheduledMpeParams = {
 type ScheduledMidiNote = MidiStoreState['notesByClipId'][string][number];
 type ScheduledMidiNoteIndex = {
     maxDurationBeats: number;
+    maxEndpointBeat: number;
+    minEndpointBeat: number;
+    orderByNote: ReadonlyMap<ScheduledMidiNote, number>;
+    sortedNoteEnds: readonly ScheduledMidiNote[];
     sortedNotes: readonly ScheduledMidiNote[];
 };
 type ScheduledMidiNoteWindow = {
@@ -103,7 +107,26 @@ type SelectMidiNotesForSchedulerWindowInput = {
     toBeat: number;
     lastScheduledBeat: number;
 };
+type SelectYeastNotesForSchedulerWindowInput = {
+    notes: readonly ScheduledMidiNote[];
+    iterationStartBeat: number;
+    fromBeat: number;
+    toBeat: number;
+};
+type ScheduledIterationRange = {
+    endIndex: number;
+    startIndex: number;
+};
+type GetScheduledIterationRangeInput = {
+    clipStartBeat: number;
+    fromBeat: number;
+    iterationCount: number;
+    loopEnabled: boolean;
+    loopLengthBeats: number;
+    toBeat: number;
+};
 
+const MAX_GROOVE_STAGE_DISPLACEMENT_BEATS = 0.25;
 // Clip and sequencer groove each move a note by at most 0.25 beats, so one beat
 // is twice their combined legal displacement and cannot discard a note that
 // either groove stage could move into the current scheduler grain.
@@ -118,9 +141,23 @@ function getScheduledMidiNoteIndex(notes: readonly ScheduledMidiNote[]): Schedul
         return cached;
     }
 
+    const orderByNote = new Map(notes.map((note, index) => [note, index]));
     const sortedNotes = [...notes].sort((left, right) => left.startBeat - right.startBeat);
+    const sortedNoteEnds = [...notes].sort(
+        (left, right) => left.startBeat + left.duration - right.startBeat - right.duration
+    );
     const created = {
         maxDurationBeats: notes.reduce((maximum, note) => Math.max(maximum, note.duration), 0),
+        maxEndpointBeat: notes.reduce(
+            (maximum, note) => Math.max(maximum, note.startBeat, note.startBeat + note.duration),
+            Number.NEGATIVE_INFINITY
+        ),
+        minEndpointBeat: notes.reduce(
+            (minimum, note) => Math.min(minimum, note.startBeat, note.startBeat + note.duration),
+            Number.POSITIVE_INFINITY
+        ),
+        orderByNote,
+        sortedNoteEnds,
         sortedNotes,
     };
     scheduledMidiNoteIndexes.set(notes, created);
@@ -133,6 +170,21 @@ function lowerBoundMidiNoteStart(notes: readonly ScheduledMidiNote[], startBeat:
     while (low < high) {
         const middle = low + Math.floor((high - low) / 2);
         if (notes[middle]!.startBeat < startBeat) {
+            low = middle + 1;
+        } else {
+            high = middle;
+        }
+    }
+    return low;
+}
+
+function lowerBoundMidiNoteEnd(notes: readonly ScheduledMidiNote[], endBeat: number): number {
+    let low = 0;
+    let high = notes.length;
+    while (low < high) {
+        const middle = low + Math.floor((high - low) / 2);
+        const note = notes[middle]!;
+        if (note.startBeat + note.duration < endBeat) {
             low = middle + 1;
         } else {
             high = middle;
@@ -164,6 +216,80 @@ function selectMidiNotesForSchedulerWindow({
     const startIndex = lowerBoundMidiNoteStart(sortedNotes, sourceStartBeat);
     const endIndex = lowerBoundMidiNoteStart(sortedNotes, sourceEndBeat);
     return { endIndex, sortedNotes, startIndex };
+}
+
+function selectYeastNotesForSchedulerWindow({
+    notes,
+    iterationStartBeat,
+    fromBeat,
+    toBeat,
+}: SelectYeastNotesForSchedulerWindowInput): readonly ScheduledMidiNote[] {
+    const { orderByNote, sortedNoteEnds, sortedNotes } = getScheduledMidiNoteIndex(notes);
+    const sourceStartBeat = fromBeat - iterationStartBeat - MAX_GROOVE_STAGE_DISPLACEMENT_BEATS;
+    const sourceEndBeat = toBeat - iterationStartBeat + MAX_GROOVE_STAGE_DISPLACEMENT_BEATS;
+    const startIndex = lowerBoundMidiNoteStart(sortedNotes, sourceStartBeat);
+    const endIndex = lowerBoundMidiNoteStart(sortedNotes, sourceEndBeat);
+    const noteEndStartIndex = lowerBoundMidiNoteEnd(sortedNoteEnds, sourceStartBeat);
+    const noteEndEndIndex = lowerBoundMidiNoteEnd(sortedNoteEnds, sourceEndBeat);
+    const candidates = new Set<ScheduledMidiNote>();
+    for (let index = startIndex; index < endIndex; index++) {
+        candidates.add(sortedNotes[index]!);
+    }
+    for (let index = noteEndStartIndex; index < noteEndEndIndex; index++) {
+        candidates.add(sortedNoteEnds[index]!);
+    }
+    return [...candidates].sort((left, right) => orderByNote.get(left)! - orderByNote.get(right)!);
+}
+
+function getScheduledIterationRange({
+    clipStartBeat,
+    fromBeat,
+    iterationCount,
+    loopEnabled,
+    loopLengthBeats,
+    toBeat,
+}: GetScheduledIterationRangeInput): ScheduledIterationRange {
+    if (!loopEnabled) {
+        return { startIndex: 0, endIndex: Math.min(1, iterationCount) };
+    }
+    const startIndex = Math.max(0, Math.floor((fromBeat - clipStartBeat) / loopLengthBeats));
+    const endIndex = Math.min(iterationCount, Math.ceil((toBeat - clipStartBeat) / loopLengthBeats));
+    return { startIndex: Math.min(startIndex, endIndex), endIndex };
+}
+
+function getYeastCandidateIterationRange({
+    clipStartBeat,
+    fromBeat,
+    iterationCount,
+    loopEnabled,
+    loopLengthBeats,
+    toBeat,
+    notes,
+}: GetScheduledIterationRangeInput & { notes: readonly ScheduledMidiNote[] }): ScheduledIterationRange {
+    const activeRange = getScheduledIterationRange({
+        clipStartBeat,
+        fromBeat,
+        iterationCount,
+        loopEnabled,
+        loopLengthBeats,
+        toBeat,
+    });
+    if (!loopEnabled || notes.length === 0) {
+        return activeRange;
+    }
+    const { maxEndpointBeat, minEndpointBeat } = getScheduledMidiNoteIndex(notes);
+    const firstEndpointIndex = Math.max(
+        0,
+        Math.ceil((fromBeat - MAX_GROOVE_STAGE_DISPLACEMENT_BEATS - clipStartBeat - maxEndpointBeat) / loopLengthBeats)
+    );
+    const endpointEndIndex = Math.min(
+        iterationCount,
+        Math.ceil((toBeat + MAX_GROOVE_STAGE_DISPLACEMENT_BEATS - clipStartBeat - minEndpointBeat) / loopLengthBeats)
+    );
+    return {
+        startIndex: Math.min(activeRange.startIndex, firstEndpointIndex),
+        endIndex: Math.max(activeRange.endIndex, endpointEndIndex),
+    };
 }
 
 /**
@@ -297,18 +423,53 @@ export async function scheduleMidiNotes(
                     loopEnabled: clip.loopEnabled ?? false,
                 });
                 const iterationCount = clip.loopEnabled ? Math.ceil(clipVisualLength / loopLength) : 1;
-                for (let iteration = 0; iteration < iterationCount; iteration++) {
+                const activeIterationRange = getScheduledIterationRange({
+                    clipStartBeat: clip.startBeat,
+                    fromBeat,
+                    iterationCount,
+                    loopEnabled: clip.loopEnabled ?? false,
+                    loopLengthBeats: loopLength,
+                    toBeat,
+                });
+                const candidateIterationRange = getYeastCandidateIterationRange({
+                    clipStartBeat: clip.startBeat,
+                    fromBeat,
+                    iterationCount,
+                    loopEnabled: clip.loopEnabled ?? false,
+                    loopLengthBeats: loopLength,
+                    notes: sourceNotes,
+                    toBeat,
+                });
+                for (
+                    let iteration = candidateIterationRange.startIndex;
+                    iteration < candidateIterationRange.endIndex;
+                    iteration++
+                ) {
+                    if (!isCurrent()) {
+                        return;
+                    }
                     const absoluteOccurrenceIndex = sourceOccurrenceOffset + iteration;
                     const iterationStartBeat = clip.startBeat + iteration * loopLength;
                     const iterationEndBeat = Math.min(iterationStartBeat + loopLength, clip.endBeat);
                     const routeId = `live-yeast:${track.id}:${clip.id}:${absoluteOccurrenceIndex}`;
+                    const candidateNotes = selectYeastNotesForSchedulerWindow({
+                        notes: sourceNotes,
+                        iterationStartBeat,
+                        fromBeat,
+                        toBeat,
+                    });
+                    const isActiveIteration =
+                        iteration >= activeIterationRange.startIndex && iteration < activeIterationRange.endIndex;
+                    if (!isActiveIteration && candidateNotes.length === 0) {
+                        continue;
+                    }
                     liveYeastIterations.push({
                         routeId,
                         clipId: clip.id,
                         iterationStartBeat,
                         iterationEndBeat,
                         midiOffsetBeats: clip.midiOffsetBeats ?? 0,
-                        sourceNotes: sourceNotes.filter((note) =>
+                        sourceNotes: candidateNotes.filter((note) =>
                             shouldPlayMidiEvent({
                                 projectProbabilitySeed: midiState.probabilitySeed,
                                 clipId: clip.id,
@@ -318,11 +479,7 @@ export async function scheduleMidiNotes(
                             })
                         ),
                     });
-                    if (
-                        activeYeastCarrierRouteId === undefined &&
-                        iterationEndBeat > fromBeat &&
-                        iterationStartBeat < toBeat
-                    ) {
+                    if (activeYeastCarrierRouteId === undefined && isActiveIteration) {
                         activeYeastCarrierRouteId = routeId;
                     }
                 }
@@ -398,6 +555,14 @@ export async function scheduleMidiNotes(
                 continue;
             }
             const maxIterations = clip.loopEnabled ? Math.ceil(clipVisualLength / loopLen) : 1;
+            const scheduledIterationRange = getScheduledIterationRange({
+                clipStartBeat: clip.startBeat,
+                fromBeat,
+                iterationCount: maxIterations,
+                loopEnabled: clip.loopEnabled ?? false,
+                loopLengthBeats: loopLen,
+                toBeat,
+            });
             const sourceOccurrenceOffset = getSourceOccurrenceOffset({
                 sourceStartBeat: clip.sourceStartBeat,
                 segmentStartBeat: clip.startBeat,
@@ -499,7 +664,10 @@ export async function scheduleMidiNotes(
                     ? null
                     : track.devices.find((data) => isFaustInstrumentModule(data.type));
 
-            for (let iter = 0; iter < maxIterations; iter++) {
+            for (let iter = scheduledIterationRange.startIndex; iter < scheduledIterationRange.endIndex; iter++) {
+                if (!isCurrent()) {
+                    return;
+                }
                 const absoluteOccurrenceIndex = sourceOccurrenceOffset + iter;
                 const iterOffset = iter * loopLen;
                 const yeastRouteId = `live-yeast:${track.id}:${clip.id}:${absoluteOccurrenceIndex}`;
