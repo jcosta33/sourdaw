@@ -1,49 +1,8 @@
 import { logger } from '#/infra/logger/appLogger';
 
-import { type ArticulationType } from '../../models/LevainPatch';
-
 import { fetchAndDecode } from './fetchAndDecode';
 import { type SampleLodConfig } from './helpers';
-
-export type ManifestZone = {
-    file: string;
-    rootNote: number;
-    loKey: number;
-    hiKey: number;
-    loVel: number;
-    hiVel: number;
-    rrPos: number;
-    rrLen: number;
-    micId: number;
-    isRelease: boolean;
-    loopMode: 'none' | 'forward' | 'pingpong';
-    loopStart: number;
-    loopEnd: number;
-    loopCrossfade: number;
-    gainDb: number;
-    attack: number;
-    decay: number;
-    sustain: number;
-    release: number;
-};
-
-export type ManifestArticulation = {
-    type: ArticulationType;
-    id: number;
-    zones: ManifestZone[];
-};
-
-// ---------------------------------------------------------------------------
-// Manifest types (SFZ-style zone descriptions in JSON)
-// ---------------------------------------------------------------------------
-
-export type SampleManifest = {
-    version: number;
-    instrumentId: string;
-    sampleRate: number;
-    articulations: ManifestArticulation[];
-    micPositions: string[];
-};
+import { parseSampleManifest, type ManifestZone } from './sampleManifest';
 
 export const DEFAULT_LOD: SampleLodConfig = {
     maxMics: 0,
@@ -81,14 +40,15 @@ export async function loadInstrumentFromManifest(
         throw new Error(`Failed to fetch manifest: ${manifestUrl} (${response.status})`);
     }
 
-    const manifest = (await response.json()) as SampleManifest;
+    const manifest = parseSampleManifest(await response.json());
 
     // Collect all unique sample file URLs.
     const allZones: { zone: ManifestZone; artId: number }[] = [];
     let numMics = manifest.micPositions.length;
-    const numArticulations = manifest.articulations.length;
+    let numArticulations = 0;
 
     for (const art of manifest.articulations) {
+        numArticulations = Math.max(numArticulations, art.id + 1);
         for (const zone of art.zones) {
             // Apply LOD filtering.
             if (lod.maxMics > 0 && zone.micId >= lod.maxMics) {

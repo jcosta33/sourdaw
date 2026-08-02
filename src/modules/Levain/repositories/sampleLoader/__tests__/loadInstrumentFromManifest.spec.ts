@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 
-import { loadInstrumentFromManifest, type SampleManifest } from '../loadInstrumentFromManifest';
+import { loadInstrumentFromManifest } from '../loadInstrumentFromManifest';
+import { type SampleManifest } from '../sampleManifest';
 
 vi.mock('#/infra/logger/appLogger', () => ({
     logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn() },
@@ -53,13 +54,13 @@ const MANIFEST: SampleManifest = {
     ],
 };
 
-function mockFetchOk(): void {
+function mockFetchOk(manifest: unknown = MANIFEST): void {
     vi.stubGlobal(
         'fetch',
         vi.fn().mockResolvedValue({
             ok: true,
             status: 200,
-            json: () => Promise.resolve(MANIFEST),
+            json: () => Promise.resolve(manifest),
         })
     );
 }
@@ -91,6 +92,33 @@ describe('loadInstrumentFromManifest', () => {
         expect(types).toContain('clearZones');
         expect(types).toContain('addSample');
         expect(types).toContain('buildZoneMap');
+    });
+
+    it('rejects an invalid manifest before writing to the worklet', async () => {
+        vi.stubGlobal(
+            'fetch',
+            vi.fn().mockResolvedValue({
+                ok: true,
+                status: 200,
+                json: () => Promise.resolve({ ...MANIFEST, version: '1' }),
+            })
+        );
+        const port = makePort();
+
+        await expect(loadInstrumentFromManifest('/m.json', '/base', port)).rejects.toThrow(
+            'Levain sample manifest version must be a positive integer'
+        );
+        expect(port.postMessage).not.toHaveBeenCalled();
+    });
+
+    it('sizes the DSP lookup table for the highest canonical articulation id', async () => {
+        const articulation = MANIFEST.articulations[0];
+        mockFetchOk({ ...MANIFEST, articulations: [{ ...articulation, type: 'tremolo', id: 13 }] });
+        const port = makePort();
+
+        await loadInstrumentFromManifest('/m.json', '/base', port);
+
+        expect(port.postMessage).toHaveBeenLastCalledWith({ type: 'buildZoneMap', numArticulations: 14, numMics: 1 });
     });
 
     describe('fix 2 — an aborted (superseded) load never writes the worklet zone map', () => {

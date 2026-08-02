@@ -93,6 +93,37 @@ export type ArticulationType =
     | 'decrescendo'
     | 'runs';
 
+export const ARTICULATION_ID_BY_TYPE = {
+    sustain: 0,
+    'sustain-non-vib': 1,
+    'con-sordino': 2,
+    flautando: 3,
+    'sul-tasto': 4,
+    'sul-ponticello': 5,
+    harmonics: 6,
+    spiccato: 7,
+    staccato: 8,
+    staccatissimo: 9,
+    pizzicato: 10,
+    'bartok-pizz': 11,
+    'col-legno': 12,
+    tremolo: 13,
+    'trill-half': 14,
+    'trill-whole': 15,
+    legato: 16,
+    'legato-portamento': 17,
+    marcato: 18,
+    sforzando: 19,
+    'flutter-tongue': 20,
+    'muted-straight': 21,
+    'muted-cup': 22,
+    'muted-harmon': 23,
+    'muted-plunger': 24,
+    crescendo: 25,
+    decrescendo: 26,
+    runs: 27,
+} as const satisfies Record<ArticulationType, number>;
+
 export type ArticulationEntry = {
     type: ArticulationType;
     keyswitch: number | null;
