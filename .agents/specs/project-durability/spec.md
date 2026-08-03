@@ -2,9 +2,10 @@
 type: spec
 id: SPEC-project-durability
 subject: stop the silent project-loss path; make every persistence write observed
-status: ready
+status: landed
 repo: sourdaw
 date: 2026-08-01
+landed: 2026-08-02
 governs: ADR 0013
 blocked_by: nothing
 blocks: ADR 0014 phases 1-3, and every measurement the ultracode programme depends on
@@ -131,3 +132,36 @@ Do not widen this spec to reach them. Its value is that it is safe under every c
 - `scripts/health-gates-web.sh` and `health-gates-server.sh` from a clean checkout installed off the
   lockfile.
 - Every guard mutation-checked with the reding assertion named.
+
+## Outcome — landed 2026-08-02
+
+| AC | Where |
+| --- | --- |
+| AC-1, AC-2, AC-3, AC-4, AC-6 | #962 |
+| AC-7 (also ADR 0014 gate **M9**) | #963 |
+| AC-5 | #964 |
+| AC-8 | checked, did not fire — see below |
+
+**AC-8's stop condition did not fire, for two independent reasons, each recorded in the PR that
+found it.** ADR 0016 settles the first: there are no users, so a frequently-unwritten IndexedDB
+cannot become user-data recovery. The second is structural and survives that ruling — the audio
+store's `persistToIdb` awaits `openDb()` rather than carrying an `if (!db) return`, so for the PCM
+that AC-5 makes authoritative the failure mode cannot arise at all (#964).
+
+Three results worth carrying forward, because later phases inherit them:
+
+- **The bug was not the one the spec described.** `readNamedProjectJson` preferred localStorage
+  whenever a value was *present*, and its own docstring shows the author built the fallback for
+  *absence*. The real failure was **staleness**, not absence: a frozen snapshot overwrote good CRDT
+  state. AC-4's "resolve by provenance" is what closes it.
+- **One AC-1 guard cannot be redded and says so in place** rather than being kept as decoration. The
+  60-second-stereo case does not fail under a restored dual-write, because 30 MB blows jsdom's quota,
+  `setItem` throws, and the restored `catch` swallows it — which is the defect, not a test gap. The
+  mutation-reddable claim moved to a small save where the write succeeds and is observable; the large
+  case carries a presence pin and stands as scale evidence only.
+- **Removing base64 unmasked a garbage-collection gap.** `collectProjectAudioBufferIds` pins only the
+  active arrangement while `buildProjectData` collects ids from every arrangement, so a buffer
+  referenced only by a non-active arrangement is never pinned and can age out under
+  `cleanupUnusedFreezeFiles`. Every save used to re-embed a base64 copy, which was accidentally
+  serving as a backup. Not introduced by this phase and not AC-5's business, but load-bearing now
+  (#964).
