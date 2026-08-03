@@ -1,0 +1,60 @@
+src/modules/Arrangement/presentations/renderers/__tests__/createWebGpuRenderer.spec.ts
+  s_66d4924c65dcd2::t_8f0d6638513006 4
+  s_66d4924c65dcd2::t_2408f6192ac5d7 331-335,338-339
+  s_66d4924c65dcd2::t_ffb765350168fa 206-211,213
+  s_66d4924c65dcd2::t_a95fb5f41eccd8 98-102,105-138,142-144,148
+  s_66d4924c65dcd2::t_819beb5698d032 160-162,167-169,173
+  s_66d4924c65dcd2::t_5bdd18923edce1 317-330,336-337,340-391
+src/modules/TimelineEditor/presentations/views/AutomationView/AutomationLaneRow.tsx
+  s_66d4924c65dcd2::t_3d704080881e0d 58
+  s_66d4924c65dcd2::t_1dbd4de059e737 243-250,252-264
+  s_66d4924c65dcd2::t_d4fe703ebfd2a1 1
+  s_66d4924c65dcd2::t_650c0f8b7f73e8 291
+src/modules/Arrangement/presentations/renderers/clipLabel.ts
+  s_66d4924c65dcd2::t_88fba4592de11e 1-79
+src/modules/TimelineEditor/presentations/hooks/usePianoRollInteractions.ts
+  s_66d4924c65dcd2::t_deff6e0c1dbdce 236-267
+src/modules/Arrangement/presentations/renderers/__tests__/clipLabel.spec.ts
+  s_66d4924c65dcd2::t_f00fada97cc353 1-57
+src/modules/TimelineEditor/presentations/views/AutomationView/__tests__/AutomationLaneRow.spec.tsx
+  s_66d4924c65dcd2::t_f1e0dcf235b6cb 388-405
+src/modules/Arrangement/presentations/renderers/clipDrawing.ts
+  s_66d4924c65dcd2::t_690d9a99523644 157-164
+  s_66d4924c65dcd2::t_ec8418dce9db01 11-12
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRoll.spec.tsx
+  s_66d4924c65dcd2::t_955e76b8d2c9cf 292
+src/modules/TimelineEditor/presentations/hooks/__tests__/usePianoRollInteractions.spec.tsx
+  s_66d4924c65dcd2::t_8cb0d80323ac99 480-526
+src/modules/Arrangement/presentations/renderers/__tests__/clipDrawing.spec.ts
+  s_66d4924c65dcd2::t_9d855ea461fcfa 4
+  s_66d4924c65dcd2::t_98f306b69f33fa 160-218
+src/modules/Arrangement/presentations/renderers/createWebGpuRenderer.ts
+  s_66d4924c65dcd2::t_49c515ef4b966d 401-440
+  s_66d4924c65dcd2::t_fb622175d9e376 728-729
+  s_66d4924c65dcd2::t_3fa21dd4075b21 624-627
+  s_66d4924c65dcd2::t_cabbb0e960ccf7 319-362,372-374,376
+  s_66d4924c65dcd2::t_199cfbf5f2a1ff 7-9
+  s_66d4924c65dcd2::t_6f3a6a0edb2970 35-61
+  s_66d4924c65dcd2::t_3de687f6b0936d 377
+  s_66d4924c65dcd2::t_4c779e20f188db 224-255
+  s_66d4924c65dcd2::t_8fe248df435e7c 70-75
+  s_66d4924c65dcd2::t_d37589e0ec7139 665-667
+  s_66d4924c65dcd2::t_e0dd24dfcf0afe 686-696
+  s_66d4924c65dcd2::t_d51a85c71b03ee 375
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "f28f691df161f4718c61aa2ef5d60882cca86006",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
