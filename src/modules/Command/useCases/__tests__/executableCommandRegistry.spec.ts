@@ -793,13 +793,18 @@ const EXPECTED_GROUNDING = [
     {
         actionType: 'bypassDevice',
         intentPhrases: ['bypass', 'enable', 'disable', 're-enable'],
+        directionalIntent: {
+            carrierPhrases: ['turn', 'switch'],
+            truePhrases: ['off'],
+            falsePhrases: ['on'],
+        },
         targetRules: [{ argument: 'deviceId', capability: 'device' }],
         valueRules: [
             {
                 argument: 'bypassed',
                 kind: 'boolean-intent',
-                truePhrases: ['bypass', 'disable'],
-                falsePhrases: ['enable', 're-enable'],
+                truePhrases: ['bypass', 'disable', 'turn off', 'switch off'],
+                falsePhrases: ['enable', 're-enable', 'turn on', 'switch on'],
             },
         ],
     },

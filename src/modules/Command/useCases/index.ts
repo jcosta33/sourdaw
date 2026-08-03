@@ -10,6 +10,7 @@ export { getExecutableAppActionToolSchemas } from './getExecutableAppActionToolS
 export { getExecutableAppActionGroundingCatalog } from './getExecutableAppActionGroundingCatalog';
 export { getExecutableAppActionGroundingRules } from './getExecutableAppActionGroundingRules';
 export { requiresAppActionConfirmation } from './requiresAppActionConfirmation';
+export { selectExecutableAppActionToolSchemasForPrompt } from './selectExecutableAppActionToolSchemasForPrompt';
 export { createUndoEntry } from './createUndoEntry';
 
 export { generateGroupId } from './generateGroupId';

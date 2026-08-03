@@ -51,11 +51,19 @@ export type ExecutableAppActionValueRule =
     | { argument: string; kind: 'text-after-keyword-if-present'; keywords: readonly string[] }
     | { argument: string; denominatorArgument: string; kind: 'time-signature' };
 
+export type ExecutableAppActionDirectionalIntent = {
+    carrierPhrases: readonly string[];
+    truePhrases: readonly string[];
+    falsePhrases: readonly string[];
+};
+
 type ExecutableAppActionDescriptor = {
     actionType: AppActionType;
     risk: ExecutableAppActionRisk;
     description: string;
     intentPhrases: readonly string[];
+    selectionPhrases?: readonly string[];
+    directionalIntent?: ExecutableAppActionDirectionalIntent;
     targetRules: readonly ExecutableAppActionTargetRule[];
     valueRules?: readonly ExecutableAppActionValueRule[];
     parameters: {
@@ -624,13 +632,30 @@ export const executableAppActionDescriptors = [
         risk: 'bounded-reversible',
         description: 'Bypass or re-enable an effect (keeps settings, just disables processing).',
         intentPhrases: ['bypass', 'enable', 'disable', 're-enable'],
+        selectionPhrases: [
+            'turn',
+            'switch',
+            'effect',
+            'plugin',
+            'reverb',
+            'delay',
+            'compressor',
+            'equalizer',
+            'distortion',
+            'chorus',
+        ],
+        directionalIntent: {
+            carrierPhrases: ['turn', 'switch'],
+            truePhrases: ['off'],
+            falsePhrases: ['on'],
+        },
         targetRules: [{ argument: 'deviceId', capability: 'device' }],
         valueRules: [
             {
                 argument: 'bypassed',
                 kind: 'boolean-intent',
-                truePhrases: ['bypass', 'disable'],
-                falsePhrases: ['enable', 're-enable'],
+                truePhrases: ['bypass', 'disable', 'turn off', 'switch off'],
+                falsePhrases: ['enable', 're-enable', 'turn on', 'switch on'],
             },
         ],
         parameters: {

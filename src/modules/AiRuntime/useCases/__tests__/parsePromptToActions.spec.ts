@@ -173,7 +173,8 @@ describe('parsePromptToActions', () => {
             'command system prompt',
             'command user message',
             getExecutableAppActionToolSchemas(),
-            undefined
+            undefined,
+            'make the project faster'
         );
         expect(mockBuildLlmActionUserMessage).toHaveBeenCalledWith({
             prompt: 'make the project faster',

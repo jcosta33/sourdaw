@@ -1,5 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
+import { selectExecutableAppActionToolSchemasForPrompt } from '#/modules/Command/useCases';
 
 import { isAiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
 import { createAiRuntimeError } from '../../errors/AiRuntimeError';
@@ -23,7 +24,6 @@ import {
     type ToolCallResult,
     type ToolPlanningOutcome,
 } from '../../transformers/toolCallParser';
-import { selectToolsForPrompt } from '../../transformers/toolSelector';
 
 import { getBackendChain } from './backendResolution/getBackendChain';
 
@@ -166,7 +166,8 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
         systemPrompt: string,
         userMessage: string,
         toolSchemas?: readonly ToolSchema[],
-        signal?: AbortSignal
+        signal?: AbortSignal,
+        toolSelectionPrompt: string = userMessage
     ): Promise<ToolPlanningOutcome> {
         const chain = getBackendChain();
         const availableTools = toolSchemas ?? DAW_TOOL_SCHEMAS;
@@ -207,10 +208,10 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     if (!isWebLlmLoaded()) {
                         await waitForInference(initWebLlmEngine(undefined, { signal }), signal);
                     }
-                    const relevantTools =
-                        toolSchemas === undefined
-                            ? selectToolsForPrompt(availableTools, userMessage)
-                            : [...availableTools];
+                    const relevantTools = selectExecutableAppActionToolSchemasForPrompt({
+                        toolSchemas: availableTools,
+                        prompt: toolSelectionPrompt,
+                    });
                     logger.info(
                         `[AI Engine] (webllm) Using ${String(relevantTools.length)}/${String(availableTools.length)} tools`
                     );

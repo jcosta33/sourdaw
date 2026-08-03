@@ -104,7 +104,8 @@ export const parsePromptToActions = inject({ logger })(
                     buildLlmActionSystemPrompt(),
                     buildLlmActionUserMessage({ prompt, context }),
                     getExecutableAppActionToolSchemas(),
-                    signal
+                    signal,
+                    prompt
                 );
 
                 if (signal?.aborted) {

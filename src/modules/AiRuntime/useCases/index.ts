@@ -36,6 +36,7 @@ export { isLlmAvailable } from './llmOrchestration/backendResolution/isLlmAvaila
 export { setAiBackendPreference } from './llmOrchestration/backendResolution/setAiBackendPreference';
 
 export { generateToolCalls } from './llmOrchestration/generateToolCalls';
+export { getMidiNoteGenerationToolSchemas } from './getMidiNoteGenerationToolSchemas';
 
 export { initEngine } from './llmOrchestration/lifecycle/initEngine';
 export { unloadEngine } from './llmOrchestration/lifecycle/unloadEngine';

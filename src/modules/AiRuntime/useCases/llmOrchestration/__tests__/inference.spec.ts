@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { getExecutableAppActionToolSchemas } from '#/modules/Command/useCases';
+
 import { AiRuntimeConfigurationChangedError } from '../../../errors/AiRuntimeConfigurationChangedError';
 import { HostedToolCallingProtocolError } from '../../../errors/HostedToolCallingProtocolError';
 import { NativeToolCallingProtocolError } from '../../../errors/NativeToolCallingProtocolError';
@@ -292,6 +294,50 @@ describe('generateToolPlanningOutcome', () => {
         await generateToolCalls('sys', 'mute drums', tools);
 
         expect(mocks.generateCloudToolCalls).toHaveBeenCalledWith('sys', 'mute drums', tools);
+    });
+
+    it('bounds default WebLLM tools while retaining registry-relevant compound commands', async () => {
+        mocks.backendChain.value = ['webllm'];
+        mocks.isWebLlmLoaded.mockReturnValue(true);
+        mocks.generateWebLlmToolCalls.mockResolvedValue(completePlan([]));
+
+        await generateToolCalls('sys', 'create a vocal bus and route the vocal tracks with sends');
+
+        const tools = mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] as ToolSchema[] | undefined;
+        const toolNames = tools?.map((tool) => tool.function.name);
+        expect(tools?.length).toBeLessThanOrEqual(30);
+        expect(toolNames).toEqual(expect.arrayContaining(['createBus', 'addSend', 'setTrackOutput']));
+    });
+
+    it('retains a specialized legacy tool selected by its schema metadata', async () => {
+        mocks.backendChain.value = ['webllm'];
+        mocks.isWebLlmLoaded.mockReturnValue(true);
+        mocks.generateWebLlmToolCalls.mockResolvedValue(completePlan([]));
+
+        await generateToolCalls('sys', 'Generate MIDI notes for this clip');
+
+        const tools = mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] as ToolSchema[] | undefined;
+        expect(tools?.map((tool) => tool.function.name)).toContain('addNotes');
+    });
+
+    it('selects WebLLM tools from raw intent instead of untrusted context text', async () => {
+        const requestedToolNames = new Set(['createBus', 'addSend', 'setTrackOutput']);
+        const executableTools = getExecutableAppActionToolSchemas();
+        const noisyContext = executableTools
+            .filter((tool) => !requestedToolNames.has(tool.function.name))
+            .map((tool) => tool.function.name)
+            .join(' ');
+        const rawPrompt = 'create a vocal bus and route the vocal tracks with sends';
+        mocks.backendChain.value = ['webllm'];
+        mocks.isWebLlmLoaded.mockReturnValue(true);
+        mocks.generateWebLlmToolCalls.mockResolvedValue(completePlan([]));
+
+        await generateToolCalls('sys', noisyContext, executableTools, undefined, rawPrompt);
+
+        const selectedTools = mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] as ToolSchema[] | undefined;
+        expect(selectedTools?.map((tool) => tool.function.name)).toEqual(
+            expect.arrayContaining([...requestedToolNames])
+        );
     });
 
     it('stops provider fallback when tool planning is aborted mid-flight', async () => {
