@@ -1,0 +1,42 @@
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationSlewGrainParity.spec.ts
+  s_66d4924c65dcd2::t_7281bfcfa93317 242-254,256-260
+  s_66d4924c65dcd2::t_ae7d82a0b21b19 200-202,207,215,229,240-241
+  s_66d4924c65dcd2::t_ac66d14db8cbb7 130
+  s_66d4924c65dcd2::t_ab267b05409a93 4
+  s_66d4924c65dcd2::t_381002c4417d41 40-46
+  s_66d4924c65dcd2::t_dc655584fd5972 216-218,226,228
+  s_66d4924c65dcd2::t_eca8355a6e6e61 112-121
+  s_66d4924c65dcd2::t_e55adbc309a350 236-237
+  s_66d4924c65dcd2::t_4c6b62bfaf5d91 203-206,208-214,227,230-235,238-239
+  s_66d4924c65dcd2::t_295cd212cc2b5b 3
+  s_66d4924c65dcd2::t_5cf80b6ee1e70b 219-225
+  s_66d4924c65dcd2::t_c0d206a3ede118 39,47-57
+src/utils/automationSlew.ts
+  s_66d4924c65dcd2::t_18e1c2bed193e9 94-101
+  s_66d4924c65dcd2::t_5e93ca9ddbc592 37-40
+  s_66d4924c65dcd2::t_149be57644643a 35-36,41-56
+  s_66d4924c65dcd2::t_3f083e49608428 69-77
+  s_66d4924c65dcd2::t_da4d3ffe1b8b7c 102
+  s_66d4924c65dcd2::t_abbb7c4f0d21e5 68
+src/utils/__tests__/automationSlew.spec.ts
+  s_66d4924c65dcd2::t_5cdc03a5a7d871 20-29
+src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationEvents.ts
+  s_66d4924c65dcd2::t_d3ed9bb64e23f8 303
+  s_66d4924c65dcd2::t_c4981224010688 295-302,307
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "ee84f7f640d8f3bbae01e658190ac85319567ad2",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
