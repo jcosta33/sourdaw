@@ -1,0 +1,36 @@
+crates/daw-dsp/src/knead/mod.rs
+  s_66d4924c65dcd2::t_613b04773ac68c 74-80
+  s_66d4924c65dcd2::t_a1d437a90bb6a5 120-129
+crates/daw-dsp/src/knead/engine.rs
+  s_66d4924c65dcd2::t_30dd86600e9935 415-427,429
+  s_66d4924c65dcd2::t_8adc072535d5c0 413-414,428,430-431
+  s_66d4924c65dcd2::t_c32739db59261c 992-1081
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_66d4924c65dcd2::t_82c0c34c084215 1,418-423,698
+public/wasm/daw-dsp/daw_dsp.js
+  s_66d4924c65dcd2::t_371144018566e1 947-956
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_66d4924c65dcd2::t_5a367e9f898466 1,38
+public/wasm/manifest.json
+  s_66d4924c65dcd2::t_063d2f6da91129 12,15-18,20-21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_66d4924c65dcd2::t_f6c0fca6c8972a 1,418-423,698
+src/modules/AudioEngine/wasm/daw_dsp.js
+  s_66d4924c65dcd2::t_ef4d5c1f2705c0 1124-1133
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "30944f59e8eea0c8fc643adfcca30102e45ef11c",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
