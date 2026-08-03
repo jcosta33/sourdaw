@@ -40,6 +40,7 @@ const MAX_F32 = 3.402_823_466_385_288_6e38;
 const MAX_U32 = 4_294_967_295;
 const MAX_MICS = 8;
 const MAX_RR = 12;
+const MAX_ARTICULATIONS = Object.keys(ARTICULATION_ID_BY_TYPE).length;
 const MAX_ZONE_ARENA = 65_536;
 const MAX_ZONE_LIST_COUNT = 65_535;
 const VELOCITY_BUCKET_SIZE = 8;
@@ -118,6 +119,10 @@ function parseZone(value: unknown, path: string): ManifestZone {
     if (!isIntegerInRange(value.loopEnd, 0, MAX_U32)) {
         throw new TypeError(`${path}.loopEnd must be an integer from 0 through ${MAX_U32}`);
     }
+    const hasExplicitLoopRange = value.loopStart !== 0 || value.loopEnd !== 0;
+    if (value.loopMode !== 'none' && hasExplicitLoopRange && value.loopEnd <= value.loopStart) {
+        throw new TypeError(`${path}.loopEnd must be greater than loopStart for an explicit loop`);
+    }
     if (!isIntegerInRange(value.loopCrossfade, 0, MAX_U32)) {
         throw new TypeError(`${path}.loopCrossfade must be an integer from 0 through ${MAX_U32}`);
     }
@@ -174,6 +179,9 @@ function parseArticulation(value: unknown, path: string): ManifestArticulation {
     if (!Array.isArray(value.zones)) {
         throw new TypeError(`${path}.zones must be an array`);
     }
+    if (value.zones.length > MAX_ZONE_LIST_COUNT) {
+        throw new TypeError(`${path}.zones must contain at most ${MAX_ZONE_LIST_COUNT} entries`);
+    }
 
     return Object.freeze({
         type: value.type,
@@ -205,6 +213,9 @@ export function parseSampleManifest(value: unknown): SampleManifest {
     if (!Array.isArray(value.articulations)) {
         throw new TypeError('Levain sample manifest articulations must be an array');
     }
+    if (value.articulations.length > MAX_ARTICULATIONS) {
+        throw new TypeError(`Levain sample manifest articulations must contain at most ${MAX_ARTICULATIONS} entries`);
+    }
 
     const micPositions = Object.freeze([...value.micPositions]);
     const articulations = Object.freeze(
@@ -217,9 +228,6 @@ export function parseSampleManifest(value: unknown): SampleManifest {
             throw new TypeError('Levain sample manifest articulation ids must be unique');
         }
         articulationIds.add(articulation.id);
-        if (articulation.zones.length > MAX_ZONE_LIST_COUNT) {
-            throw new TypeError(`Levain sample manifest articulation ${articulation.type} has too many zones`);
-        }
         for (const zone of articulation.zones) {
             if (zone.micId >= micPositions.length) {
                 throw new TypeError(`Levain sample manifest zone micId ${zone.micId} has no mic position`);

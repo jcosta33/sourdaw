@@ -113,6 +113,15 @@ describe('parseSampleManifest', () => {
         );
     });
 
+    it('rejects a reversed explicit loop before it reaches unsigned Rust arithmetic', () => {
+        const manifest = createValidManifest();
+        manifest.articulations[0]?.zones.push({ ...VALID_ZONE, loopMode: 'forward', loopStart: 20, loopEnd: 10 });
+
+        expect(() => parseSampleManifest(manifest)).toThrow(
+            'articulations[0].zones[1].loopEnd must be greater than loopStart for an explicit loop'
+        );
+    });
+
     it('rejects finite JavaScript numbers that overflow a Rust f32', () => {
         const manifest = createValidManifest();
         manifest.articulations[0]?.zones.push({ ...VALID_ZONE, gainDb: Number.MAX_VALUE });
@@ -133,5 +142,22 @@ describe('parseSampleManifest', () => {
         expect(() => parseSampleManifest(manifest)).toThrow(
             'Levain sample manifest zones exceed the 65536-entry DSP lookup arena'
         );
+    });
+
+    it('rejects oversized collections before parsing their entries', () => {
+        const manifest = createValidManifest();
+        manifest.articulations = Array.from({ length: 29 }, () => manifest.articulations[0]!);
+
+        expect(() => parseSampleManifest(manifest)).toThrow(
+            'Levain sample manifest articulations must contain at most 28 entries'
+        );
+
+        const oversizedZones: unknown[] = Array.from({ length: 65_536 });
+        expect(() =>
+            parseSampleManifest({
+                ...manifest,
+                articulations: [{ ...manifest.articulations[0]!, zones: oversizedZones }],
+            })
+        ).toThrow('articulations[0].zones must contain at most 65535 entries');
     });
 });
