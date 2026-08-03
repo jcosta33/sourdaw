@@ -1,0 +1,14 @@
+src/modules/Grinder/services/__tests__/parseGrinderNamFileBranches.spec.ts
+  h_1228e573df1f42 1-355
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "36315618025614001708e7c908c41171f96a9c5f",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
