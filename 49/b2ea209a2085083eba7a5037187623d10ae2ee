@@ -1,0 +1,53 @@
+src/utils/automationSlew.ts
+  s_66d4924c65dcd2::t_5391e702c0f0d7 53-64,66-71
+  s_66d4924c65dcd2::t_2910ae0a235f23 18,20-33
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_66d4924c65dcd2::t_b1f808ed28c7e3 12
+  s_66d4924c65dcd2::t_b74e6344297313 326-334,341-358,360-361,363-364
+  s_66d4924c65dcd2::t_39e00189a8207c 2
+  s_66d4924c65dcd2::t_1e554762fc7be6 13
+src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationEvents.ts
+  s_66d4924c65dcd2::t_274211c8b56a1d 15-27
+  s_66d4924c65dcd2::t_40824b322ef72b 158-160,168,173-174
+  s_66d4924c65dcd2::t_d7bf6614f19709 137,139-141
+  s_66d4924c65dcd2::t_66f895a1e4879a 116
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/scheduleTrackAutomationFixture.ts
+  s_66d4924c65dcd2::t_bf376769638b2c 22-25
+  s_66d4924c65dcd2::t_8d9c99f1936e30 31-44,56
+  s_66d4924c65dcd2::t_3acb86f572f393 1-21,26-30,45-55,57-59
+src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts
+  s_66d4924c65dcd2::t_e818ffad7b7392 200-210,219-220,230,240-250,260-265
+  s_66d4924c65dcd2::t_c537e77a0c9682 4
+  s_66d4924c65dcd2::t_8131126a7af446 24-46,48-69,75-95
+  s_66d4924c65dcd2::t_3accf67d0a0257 102-104
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationScheduling.spec.ts
+  s_66d4924c65dcd2::t_fcb006e51a5502 416-417,424-431
+  s_66d4924c65dcd2::t_8c29634a957109 661-662,668-675
+  s_66d4924c65dcd2::t_46ef7742144c03 798-807
+  s_66d4924c65dcd2::t_260564f8e41523 547-548,557-560,579-584
+  s_66d4924c65dcd2::t_96097542b66443 444-445,456-466
+  s_66d4924c65dcd2::t_87789e42fdac81 372-382
+  s_66d4924c65dcd2::t_4e461d8fb7777c 326-327,338-346
+  s_66d4924c65dcd2::t_0cce8edeb6585c 394-404
+  s_66d4924c65dcd2::t_541ec6ece21fc2 523-524,530-537
+  s_66d4924c65dcd2::t_de1fff3f1359d7 479-480,491-501
+  s_66d4924c65dcd2::t_75d703b0736c42 607-614,629-632
+  s_66d4924c65dcd2::t_f7806f9fa045ba 751-761
+  s_66d4924c65dcd2::t_b49721984900c0 693-694,703-711
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "49b2ea209a2085083eba7a5037187623d10ae2ee",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
