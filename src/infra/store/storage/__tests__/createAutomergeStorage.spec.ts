@@ -573,7 +573,7 @@ describe('createAutomergeStorage', () => {
         expect(doc).toEqual({});
     });
 
-    it('restores the adapter cache when mutateDoc fails with ambiguous durability', () => {
+    it('restores the adapter cache and rethrows when mutateDoc fails before it applies the change', () => {
         const doc: TestDoc = { state: { count: 0 } };
         const commitFailure = new Error('CRDT commit failed');
         const port: TestPort = {
@@ -592,7 +592,45 @@ describe('createAutomergeStorage', () => {
             storage.set({ count: 1 });
         });
 
-        expect(() => transaction.commit()).toThrow(AutomergeStorageTransactionCommittedError);
+        expect(() => transaction.commit()).toThrow(commitFailure);
+        transaction.abort();
+        flushAutomergeStorageWrites();
+
+        expect(storage.get()).toEqual({ count: 0 });
+        expect(doc.state).toEqual({ count: 0 });
+    });
+
+    it('rethrows a slot mutation that refuses, without reporting the transaction as committed', () => {
+        const doc: TestDoc = { state: { count: 0 } };
+        const refusal = new Error('Unsupported slot schema version: 2');
+        const port: TestPort = {
+            getDoc: () => doc,
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            // Models Automerge's `change()`: the callback runs against the
+            // document and the transaction is rolled back if it throws.
+            mutateDoc: ({ changeFn }) => {
+                const candidate: TestDoc = structuredClone(doc);
+                changeFn(candidate);
+                for (const key of Object.keys(doc)) {
+                    delete doc[key];
+                }
+                Object.assign(doc, candidate);
+            },
+        };
+        configureAutomergeStoragePort(port);
+        const storage = createAutomergeStorage<{ count: number }>('root', 'state', {
+            mutateCrdt: () => {
+                throw refusal;
+            },
+        });
+        expect(storage.hydrate?.()).toBe(true);
+
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+            storage.set({ count: 1 });
+        });
+
+        expect(() => transaction.commit()).toThrow(refusal);
         transaction.abort();
         flushAutomergeStorageWrites();
 
