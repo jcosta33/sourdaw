@@ -40,7 +40,7 @@ export type ManifestArticulation = {
 };
 
 export type SampleManifest = {
-    version: number;
+    version: 1;
     instrumentId: InstrumentId;
     sampleRate: number;
     articulations: readonly ManifestArticulation[];
@@ -217,8 +217,8 @@ export function parseSampleManifest(value: unknown): SampleManifest {
     if (!isRecord(value)) {
         throw new TypeError('Levain sample manifest must be an object');
     }
-    if (!isIntegerInRange(value.version, 1, Number.MAX_SAFE_INTEGER)) {
-        throw new TypeError('Levain sample manifest version must be a positive integer');
+    if (value.version !== 1) {
+        throw new TypeError('Levain sample manifest version must be 1');
     }
     if (!isInstrumentId(value.instrumentId)) {
         throw new TypeError('Levain sample manifest instrumentId must be a supported instrument id');
@@ -239,6 +239,16 @@ export function parseSampleManifest(value: unknown): SampleManifest {
     }
     if (value.articulations.length > MAX_ARTICULATIONS) {
         throw new TypeError(`Levain sample manifest articulations must contain at most ${MAX_ARTICULATIONS} entries`);
+    }
+
+    let rawZoneCount = 0;
+    for (const articulation of value.articulations) {
+        if (isRecord(articulation) && Array.isArray(articulation.zones)) {
+            rawZoneCount += articulation.zones.length;
+        }
+    }
+    if (rawZoneCount > MAX_ZONE_ARENA) {
+        throw new TypeError(`Levain sample manifest contains more than ${MAX_ZONE_ARENA} zones`);
     }
 
     const micPositions = Object.freeze([...value.micPositions]);

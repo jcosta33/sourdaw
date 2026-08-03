@@ -67,7 +67,11 @@ describe('parseSampleManifest', () => {
                 micPositions: ['close'],
                 articulations: [],
             })
-        ).toThrow('Levain sample manifest version must be a positive integer');
+        ).toThrow('Levain sample manifest version must be 1');
+
+        expect(() => parseSampleManifest({ ...createValidManifest(), version: 2 })).toThrow(
+            'Levain sample manifest version must be 1'
+        );
     });
 
     it('rejects instrument ids outside the canonical Levain bank contract', () => {
@@ -189,5 +193,16 @@ describe('parseSampleManifest', () => {
                 articulations: [{ ...manifest.articulations[0]!, zones: oversizedZones }],
             })
         ).toThrow('articulations[0].zones must contain at most 65535 entries');
+
+        const aggregateZones: unknown[] = Array.from({ length: 32_769 });
+        expect(() =>
+            parseSampleManifest({
+                ...createValidManifest(),
+                articulations: [
+                    { type: 'sustain', id: 0, zones: aggregateZones },
+                    { type: 'tremolo', id: 13, zones: aggregateZones },
+                ],
+            })
+        ).toThrow('Levain sample manifest contains more than 65536 zones');
     });
 });
