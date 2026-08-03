@@ -33,6 +33,7 @@ export const NATIVE_DSP_DEVICE_TYPES = [
     'builtin-crumbs',
     'grand-boule',
     'gluten',
+    'crust',
     'bacteria',
     'grinder',
     'proof',

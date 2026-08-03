@@ -291,6 +291,166 @@ export class CrumbsInstance {
 if (Symbol.dispose) CrumbsInstance.prototype[Symbol.dispose] = CrumbsInstance.prototype.free;
 
 /**
+ * WASM-exported Crust instance for AudioWorklet. An *effect*: it processes
+ * input audio rather than generating it.
+ */
+export class CrustInstance {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        CrustInstanceFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_crustinstance_free(ptr, 0);
+    }
+    /**
+     * @returns {number}
+     */
+    get_gr_db() {
+        const ret = wasm.crustinstance_get_gr_db(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get_input_db() {
+        const ret = wasm.crustinstance_get_input_db(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Pointer to the input left buffer — the caller writes input audio here.
+     * @returns {number}
+     */
+    get_input_left_ptr() {
+        const ret = wasm.crustinstance_get_input_left_ptr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Pointer to the input right buffer.
+     * @returns {number}
+     */
+    get_input_right_ptr() {
+        const ret = wasm.crustinstance_get_input_right_ptr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Delay imposed on the audio path, in samples, for host compensation.
+     * @returns {number}
+     */
+    get_latency_samples() {
+        const ret = wasm.crustinstance_get_latency_samples(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    get_lra() {
+        const ret = wasm.crustinstance_get_lra(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get_lufs_integrated() {
+        const ret = wasm.crustinstance_get_lufs_integrated(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get_lufs_momentary() {
+        const ret = wasm.crustinstance_get_lufs_momentary(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get_lufs_short_term() {
+        const ret = wasm.crustinstance_get_lufs_short_term(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Number of non-finite output samples scrubbed to silence since
+     * construction. Non-zero means a poisoned block was caught at the wasm
+     * output boundary and surfaced for health telemetry.
+     * @returns {number}
+     */
+    get_nan_flush_count() {
+        const ret = wasm.crustinstance_get_nan_flush_count(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get_output_db() {
+        const ret = wasm.crustinstance_get_output_db(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Pointer to the output right buffer (call after `process`).
+     * @returns {number}
+     */
+    get_right_ptr() {
+        const ret = wasm.crustinstance_get_right_ptr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * 1.0 when the held true-peak maximum is above the configured ceiling.
+     * @returns {number}
+     */
+    get_true_peak_exceeded() {
+        const ret = wasm.crustinstance_get_true_peak_exceeded(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Held true-peak maximum in dBTP.
+     * @returns {number}
+     */
+    get_true_peak_max() {
+        const ret = wasm.crustinstance_get_true_peak_max(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @param {number} sample_rate
+     */
+    constructor(sample_rate) {
+        const ret = wasm.crustinstance_new(sample_rate);
+        this.__wbg_ptr = ret;
+        CrustInstanceFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * Process a block. Input must already be written to the input buffers.
+     * Returns a pointer to the output left buffer.
+     * @param {number} block_size
+     * @returns {number}
+     */
+    process(block_size) {
+        const ret = wasm.crustinstance_process(this.__wbg_ptr, block_size);
+        return ret >>> 0;
+    }
+    /**
+     * Clear the held true-peak maximum behind the panel's TP reset.
+     */
+    reset_true_peak() {
+        wasm.crustinstance_reset_true_peak(this.__wbg_ptr);
+    }
+    /**
+     * Set a parameter by its snake_case engine name.
+     * @param {string} name
+     * @param {number} value
+     */
+    set_param(name, value) {
+        const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.crustinstance_set_param(this.__wbg_ptr, ptr0, len0, value);
+    }
+}
+if (Symbol.dispose) CrustInstance.prototype[Symbol.dispose] = CrustInstance.prototype.free;
+
+/**
  * WASM-exported Fermenter instance for AudioWorklet.
  */
 export class FermenterInstance {
@@ -1646,6 +1806,9 @@ const BacteriaInstanceFinalization = (typeof FinalizationRegistry === 'undefined
 const CrumbsInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_crumbsinstance_free(ptr, 1));
+const CrustInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_crustinstance_free(ptr, 1));
 const FermenterInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_fermenterinstance_free(ptr, 1));

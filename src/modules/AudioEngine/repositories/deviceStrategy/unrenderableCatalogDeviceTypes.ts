@@ -56,11 +56,16 @@
  * failures (missing WASM asset, unavailable worklet, Faust compile error) are a
  * different class and stay degradable everywhere.
  */
-export const UNRENDERABLE_CATALOG_DEVICE_TYPES: Readonly<Record<string, string>> = {
-    crust:
-        'Crust is catalog-only: `addDevice` refuses to place it ("Crust is not fully implemented"), so it can ' +
-        'never reach a track or a device chain.',
-};
+/**
+ * Empty today, and that is the honest state rather than an oversight.
+ *
+ * Its one entry was `crust`, which was catalog-only because `addDevice` refused
+ * to place it. Crust now has a Rust engine, a worklet and an offline factory,
+ * so it renders like every other native DSP device and the row would be a lie —
+ * `offlineDeviceCoverage.spec.ts` asserts in both directions, so a device that
+ * gains an implementation reds the guard until its row goes.
+ */
+export const UNRENDERABLE_CATALOG_DEVICE_TYPES: Readonly<Record<string, string>> = {};
 
 /**
  * True when the product claims this device type and the offline renderer has no
