@@ -288,13 +288,62 @@ class FermenterProcessor extends AudioWorkletProcessor {
         }
     }
 
-    _drainQueue(blockEndFrame: number): void {
+    /**
+     * Hand one scheduled event to the engine's per-block event list at its
+     * offset within the block. Returns false when the list is full — the
+     * engine's own answer, so no capacity constant is mirrored here.
+     */
+    _pushEvent(queued: FermenterQueued, offset: number): boolean {
+        const inst = this._instance;
+        if (!inst) {
+            return false;
+        }
+        if (queued.type === 'noteOn') {
+            return inst.push_note_on(queued.note, queued.velocity, queued.channel ?? 0, offset);
+        }
+        if (queued.type === 'noteOff') {
+            // Without a channel every voice at the pitch is released —
+            // the historical behaviour channel-unaware callers rely on.
+            if (queued.channel === undefined) {
+                return inst.push_note_off(queued.note, offset);
+            }
+            return inst.push_note_off_on_channel(queued.note, queued.channel, offset);
+        }
+        return inst.push_note_expression(
+            queued.note,
+            queued.channel,
+            queued.bendSemitones,
+            queued.pressure,
+            queued.slide,
+            offset
+        );
+    }
+
+    /**
+     * Move every event belonging to this block onto the engine's event list,
+     * each carrying its sample offset within the block.
+     *
+     * This used to fire the events through the immediate setters *before*
+     * `process()`, which applied all of them at frame 0 — so a scheduled note
+     * was pulled back to the block boundary, up to 127 frames (2.6 ms at
+     * 48 kHz) early, by a sawtooth error that wrecks programmed groove and
+     * silently discards any humanise edit finer than a block.
+     */
+    _drainQueue(blockStartFrame: number, blockEndFrame: number): void {
         while (this._queueHead < this._queue.length) {
             const queued = this._queue[this._queueHead];
             if (!queued || queued.sampleFrame >= blockEndFrame) {
                 break;
             }
-            this._dispatch(queued);
+            // An event delivered after its own frame passed is placed as early
+            // as this block can place it rather than being pushed negative.
+            const offset = Math.max(0, queued.sampleFrame - blockStartFrame);
+            if (!this._pushEvent(queued, offset)) {
+                // The engine's list is full. Leave the remainder queued — they
+                // render at the start of the next block, one block late rather
+                // than lost. `_queueHead` deliberately does not advance.
+                break;
+            }
             this._queueHead++;
         }
         if (this._queueHead >= this._queue.length) {
@@ -347,8 +396,10 @@ class FermenterProcessor extends AudioWorkletProcessor {
         }
         const frames = out0.length;
 
-        const blockEndFrame = currentFrame + frames;
-        this._drainQueue(blockEndFrame);
+        // Drained after the output-shape guards above, so a block this
+        // processor declines to render leaves its events queued rather than
+        // consuming them against a block that never happened.
+        this._drainQueue(currentFrame, currentFrame + frames);
 
         try {
             const inst = this._instance;

@@ -45,6 +45,22 @@ class FermenterInstanceMock {
     note_off(note: number): void {
         noteEvents.push({ kind: 'off', note });
     }
+    // Scheduled events reach the engine through the offset-carrying per-block
+    // list instead of the immediate setters. This spec asserts *which block* an
+    // event lands in, so the offset is dropped here; the offset within the
+    // block is asserted in fermenterProcessorEventOffsets.spec.ts.
+    push_note_on(note: number, velocity: number, _channel: number, _offset: number): boolean {
+        noteEvents.push({ kind: 'on', note, velocity });
+        return true;
+    }
+    push_note_off(note: number, _offset: number): boolean {
+        noteEvents.push({ kind: 'off', note });
+        return true;
+    }
+    push_note_off_on_channel(note: number, _channel: number, _offset: number): boolean {
+        noteEvents.push({ kind: 'off', note });
+        return true;
+    }
     set_param(name: string, value: number): void {
         paramCalls.push({ name, value });
     }

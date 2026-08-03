@@ -732,12 +732,69 @@ export class FermenterInstance {
     /**
      * Process a block of 128 samples. Returns pointer to left channel.
      * Caller reads left + right from WASM memory.
+     *
+     * Consumes every event queued since the last call, splitting the render at
+     * each event's sample offset, and empties the list.
      * @param {number} block_size
      * @returns {number}
      */
     process(block_size) {
         const ret = wasm.fermenterinstance_process(this.__wbg_ptr, block_size);
         return ret >>> 0;
+    }
+    /**
+     * Queue MPE per-note expression at `offset` samples into the next block.
+     * @param {number} note
+     * @param {number} channel
+     * @param {number} bend_semitones
+     * @param {number} pressure
+     * @param {number} slide
+     * @param {number} offset
+     * @returns {boolean}
+     */
+    push_note_expression(note, channel, bend_semitones, pressure, slide, offset) {
+        const ret = wasm.fermenterinstance_push_note_expression(this.__wbg_ptr, note, channel, bend_semitones, pressure, slide, offset);
+        return ret !== 0;
+    }
+    /**
+     * Queue a note-off releasing every voice at `note`, at `offset` samples
+     * into the next rendered block.
+     * @param {number} note
+     * @param {number} offset
+     * @returns {boolean}
+     */
+    push_note_off(note, offset) {
+        const ret = wasm.fermenterinstance_push_note_off(this.__wbg_ptr, note, offset);
+        return ret !== 0;
+    }
+    /**
+     * Queue a note-off narrowed to one MPE member channel (audit MD-2).
+     * @param {number} note
+     * @param {number} channel
+     * @param {number} offset
+     * @returns {boolean}
+     */
+    push_note_off_on_channel(note, channel, offset) {
+        const ret = wasm.fermenterinstance_push_note_off_on_channel(this.__wbg_ptr, note, channel, offset);
+        return ret !== 0;
+    }
+    /**
+     * Queue a note-on at `offset` samples into the next rendered block.
+     *
+     * Returns `false` when the block's event list is full, so the caller can
+     * hold the event back for the next block instead of losing it. Events must
+     * be pushed in non-decreasing `offset` order — the engine applies them in
+     * the order given and never sorts, so a note-off and a re-trigger of one
+     * pitch on the same sample keep the sequence the caller intended.
+     * @param {number} note
+     * @param {number} velocity
+     * @param {number} channel
+     * @param {number} offset
+     * @returns {boolean}
+     */
+    push_note_on(note, velocity, channel, offset) {
+        const ret = wasm.fermenterinstance_push_note_on(this.__wbg_ptr, note, velocity, channel, offset);
+        return ret !== 0;
     }
     /**
      * Set a named parameter value.
