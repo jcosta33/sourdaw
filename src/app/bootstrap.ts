@@ -74,7 +74,7 @@ import {
     clearActionHistory as clearCrdtActionHistory,
     registerCrdtStorageRuntime,
 } from '#/modules/CrdtDocument/useCases';
-import { prepareCrumbsEngine } from '#/modules/Crumbs/useCases';
+import { initCrumbsDeviceStatePersistence, prepareCrumbsEngine } from '#/modules/Crumbs/useCases';
 import { getDawProjectHandlers } from '#/modules/DawInterchange/useCases';
 import { setFermenterTelemetry } from '#/modules/Fermenter/stores';
 import { setFermenterMappedParam, setFermenterDependencies } from '#/modules/Fermenter/useCases';
@@ -83,7 +83,11 @@ import { setGrandBouleEventBus } from '#/modules/GrandBoule/useCases';
 import { updateGrinderTelemetry } from '#/modules/Grinder/stores';
 import { getPitchHandlers, setPitchEditDependencies } from '#/modules/Knead/useCases';
 import { setEngineReady } from '#/modules/Levain/stores';
-import { registerLevainDevice, unregisterLevainDevice } from '#/modules/Levain/useCases';
+import {
+    initLevainDeviceStatePersistence,
+    registerLevainDevice,
+    unregisterLevainDevice,
+} from '#/modules/Levain/useCases';
 import {
     getChordTrackHandlers,
     getMidiGrooveHandlers,
@@ -362,6 +366,12 @@ initToasterSubscribers({ eventBus, logger });
 // Registered after the lifecycle subscriber so a device's first appearance is
 // already carrying the kit read back from the document by the time this observes it.
 initToasterKitPersistence();
+// Same shape and the same reason: `Device.parameterValues` holds numbers, and
+// neither Levain's instrument id nor Crumbs' sample reference is one. Registered
+// here so a device's first appearance is already carrying whatever the document
+// held for it, and only a genuine edit afterwards writes back.
+initLevainDeviceStatePersistence();
+initCrumbsDeviceStatePersistence();
 initStalenessDetection();
 
 trackStore.subscribe(() => markDirty());

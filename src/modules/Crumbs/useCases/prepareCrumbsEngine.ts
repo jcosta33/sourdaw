@@ -3,6 +3,8 @@ import { logger } from '#/infra/logger/appLogger';
 import { decodeCrumbsSampleFile } from '../repositories/sampleTransfer/decodeCrumbsSampleFile';
 import { crumbsStore } from '../stores/crumbsStore';
 
+import { hydrateCrumbsStateFromProject } from './hydrateCrumbsStateFromProject';
+
 export type PrepareCrumbsEngineInput = {
     /** Device id; also the Crumbs instance key on `crumbsStore`. */
     deviceId: string;
@@ -39,9 +41,18 @@ export type PrepareCrumbsEngineInput = {
  * `CrumbsEngine::note_on` returns immediately with no active sample. Resolving
  * quietly renders that same silence rather than failing an export over a device
  * that was never going to make a sound.
+ *
+ * ## Where the sample comes from
+ *
+ * The session store when it holds an entry, then project truth. This runs at device
+ * build time, which on a fresh reload is *before* anything has opened the panel and
+ * seeded the session store — so reading the store alone is what made every reopened
+ * project's Crumbs tracks silent, live and in the bounce. A pure read either way:
+ * seeding the session store is `ensureCrumbsInstanceFromProject`'s job, and doing it
+ * here as well would look like a user edit to the persistence subscriber.
  */
 export async function prepareCrumbsEngine({ deviceId, port, signal }: PrepareCrumbsEngineInput): Promise<void> {
-    const state = crumbsStore.value?.[deviceId];
+    const state = crumbsStore.value?.[deviceId] ?? hydrateCrumbsStateFromProject(deviceId);
     if (!state) {
         return;
     }
