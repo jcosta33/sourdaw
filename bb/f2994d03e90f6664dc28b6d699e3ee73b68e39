@@ -1,0 +1,83 @@
+src/modules/Crumbs/useCases/prepareCrumbsEngine.ts
+  s_66d4924c65dcd2::t_1cc59a1e0f2561 44-52,55
+  s_66d4924c65dcd2::t_44c978458c5565 6-7
+src/modules/Levain/models/__tests__/LevainDeviceState.spec.ts
+  s_66d4924c65dcd2::t_5aa421e1794170 1-2,4-42,44-64
+  s_66d4924c65dcd2::t_350c43cc85f518 3
+  s_66d4924c65dcd2::t_d820665ce5e98c 43
+src/app/bootstrap.ts
+  s_66d4924c65dcd2::t_adb42befe8f7b9 77
+  s_66d4924c65dcd2::t_1619a7c95fb46c 86-90
+  s_66d4924c65dcd2::t_107dcae83ea386 369-374
+src/modules/Crumbs/useCases/hydrateCrumbsStateFromProject.ts
+  s_66d4924c65dcd2::t_6ec65441f16b28 1-47
+src/modules/Crumbs/useCases/initCrumbsDeviceStatePersistence.ts
+  s_66d4924c65dcd2::t_661e7a0da39998 1-57
+src/modules/Crumbs/useCases/__tests__/crumbsStatePersistenceRoundTrip.spec.ts
+  s_66d4924c65dcd2::t_314e000e267cf7 1,4-5,7-9,12-13,27-41,76-85,87-88,91-92,95-135,139,144,162,170-177
+  s_66d4924c65dcd2::t_6b115e1d45dab0 2-3,6,10-11,14-26,42-75,86,89-90,93-94,136-138,140-143,145-161,163-169,178-179
+src/modules/Levain/useCases/index.ts
+  s_66d4924c65dcd2::t_19300e030b437b 1-3
+src/modules/Levain/useCases/hydrateLevainStateFromProject.ts
+  s_66d4924c65dcd2::t_7d5bf8f75f1efd 44-46
+  s_66d4924c65dcd2::t_d823839f856631 1-43,47-55
+src/modules/Levain/useCases/levainParamBridge/helpers.ts
+  s_66d4924c65dcd2::t_d55263d4c77832 120-128,130
+  s_66d4924c65dcd2::t_5f65cae712fc21 12
+src/modules/Crumbs/useCases/crumbsLifecycle/ensureCrumbsInstanceFromProject.ts
+  s_66d4924c65dcd2::t_0618b45281b501 1-26
+src/modules/Levain/useCases/prepareOfflineLevain.ts
+  s_66d4924c65dcd2::t_056dead33f16d2 4
+  s_66d4924c65dcd2::t_262092ee2f2fea 44-50,54
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/deviceStateFileRoundTrip.spec.ts
+  s_66d4924c65dcd2::t_e1511adb15c27a 55-62
+  s_66d4924c65dcd2::t_a8a8d4e2fe1e0e 1-54,63-115
+src/modules/Crumbs/useCases/crumbsLifecycle/initCrumbsEngine.ts
+  s_66d4924c65dcd2::t_10b293725610e7 2,6
+  s_66d4924c65dcd2::t_09c2a45e6a0319 17
+  s_66d4924c65dcd2::t_e35111610e9df3 7
+src/modules/Crumbs/useCases/commitCrumbsDeviceState.ts
+  s_66d4924c65dcd2::t_0874a336f9d35c 1-37
+src/modules/Crumbs/presentations/views/CrumbsPanel.tsx
+  s_66d4924c65dcd2::t_0684dee5b73479 29
+  s_66d4924c65dcd2::t_b5dc5cca96c852 98-101
+src/modules/Crumbs/models/__tests__/CrumbsDeviceState.spec.ts
+  s_66d4924c65dcd2::t_e2d97cbb34a185 3
+  s_66d4924c65dcd2::t_70816ceda1c825 1-2,4-90
+src/modules/Levain/useCases/__tests__/levainInstrumentPersistenceRoundTrip.spec.ts
+  s_66d4924c65dcd2::t_a979f13ce1a3fd 3-4,12-13
+  s_66d4924c65dcd2::t_d64d01fce93d55 2,5,8-9,15-24,35-76,89,92-94,97-98,127-129,133-146,150-154,194-195
+  s_66d4924c65dcd2::t_f869c5fb26e968 1,6-7,10-11,14,25-34,77-88,90-91,95-96,99-126,130-132,147-149,155-156,186-193
+  s_66d4924c65dcd2::t_a3371e211909ca 157-185
+src/modules/Crumbs/useCases/index.ts
+  s_66d4924c65dcd2::t_5ea2212701410b 4-7
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_66d4924c65dcd2::t_b42f70dd06b07b 129-136
+src/modules/Crumbs/models/CrumbsDeviceState.ts
+  s_66d4924c65dcd2::t_7177d64d1198b3 133-135
+  s_66d4924c65dcd2::t_bacf70605a9e9a 1-132,136-146
+src/modules/Levain/models/LevainPatch.ts
+  s_66d4924c65dcd2::t_38fbe4aecb3ed4 16-26,28-35,37-42,44-51,53-65,67-77
+src/modules/Levain/models/LevainDeviceState.ts
+  s_66d4924c65dcd2::t_98c70aa22113c8 1-95
+src/modules/Levain/useCases/commitLevainDeviceState.ts
+  s_66d4924c65dcd2::t_1d53bbbcf24996 1-32
+src/app/__tests__/bootstrap.spec.ts
+  s_66d4924c65dcd2::t_32c65b48afa0b6 217
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "bbf2994d03e90f6664dc28b6d699e3ee73b68e39",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
