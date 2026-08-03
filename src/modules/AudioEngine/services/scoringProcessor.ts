@@ -31,6 +31,15 @@ class ScoringProcessor extends AudioWorkletProcessor {
     _ready = false;
     _faulted = false;
     _bypassed = false;
+    /**
+     * Whether the telemetry slot still holds a reading taken while running.
+     *
+     * Set on every analysed block and consumed once when the processor stops
+     * analysing, so the clearing publish happens on the transition rather than
+     * on every bypassed block — a write per block would churn the seqlock for
+     * no reader benefit.
+     */
+    _telemetryStale = false;
     _frameCount = 0;
     _telemetryInterval = 4; // send telemetry every N process calls (~21ms at 128 samples/48kHz)
     _sabView: Float32Array | null = null;
@@ -112,8 +121,24 @@ class ScoringProcessor extends AudioWorkletProcessor {
             if (input && output) {
                 this._passthrough(input, output);
             }
+            // Clear the readout once on the way in. Skipping the publish
+            // entirely leaves the last real detection sitting in the slot, and
+            // the poll keeps reading it every frame — so a bypassed tuner goes
+            // on reporting "in tune at A4" indefinitely, with nothing in the
+            // panel able to tell a live reading from a frozen one.
+            //
+            // Published under the same seqlock bracket as a real frame so a
+            // concurrent poll cannot read the cleared flag beside a stale
+            // frequency.
+            if (this._telemetryStale && this._sabView && this._sabSeqView) {
+                beginTelemetryPublish(this._sabSeqView);
+                this._sabView[0] = 0;
+                endTelemetryPublish(this._sabSeqView);
+                this._telemetryStale = false;
+            }
             return true;
         }
+        this._telemetryStale = true;
 
         const in0 = input?.[0];
         if (!in0 || !output || output.length === 0) {

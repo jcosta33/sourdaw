@@ -522,6 +522,11 @@ describe('KneadProcessor bypass', () => {
         const { leftIn, rightIn } = distinctStereoInput();
         const leftOut = new Float32Array(FRAMES);
         const rightOut = new Float32Array(FRAMES);
+        // The first block after the toggle carries the crossfade; the dry path
+        // is bit-exact only once the ramp has arrived. Render twice so this
+        // asserts the settled state, and let the transition test below own the
+        // ramp itself.
+        proc.process([[leftIn, rightIn]], [[leftOut, rightOut]]);
         proc.process([[leftIn, rightIn]], [[leftOut, rightOut]]);
 
         expect(Array.from(leftOut)).toEqual(Array.from(leftIn));
@@ -544,6 +549,9 @@ describe('KneadProcessor bypass', () => {
 
         seedHeapRamp();
         sendMessage(proc, { type: 'bypass', bypassed: false });
+        // Twice, for the same reason as above: the first block back carries the
+        // crossfade, and the wet path is exact only once the ramp has arrived.
+        proc.process([[leftIn, rightIn]], [[leftOut, rightOut]]);
         proc.process([[leftIn, rightIn]], [[leftOut, rightOut]]);
 
         // Read the wasm windows back as they stand after the call — the mock
@@ -551,6 +559,46 @@ describe('KneadProcessor bypass', () => {
         expect(Array.from(leftOut)).toEqual(heapWindow(OUT_LEFT_PTR));
         expect(Array.from(rightOut)).toEqual(heapWindow(OUT_RIGHT_PTR));
         expect(Array.from(leftOut)).not.toEqual(Array.from(leftIn));
+    });
+
+    /**
+     * The swap itself must be a crossfade, not a splice.
+     *
+     * The wet path lags the dry by 2047 samples, so the two are ~43 ms apart in
+     * the source and decorrelated. Switching between them in one sample is a
+     * discontinuity on both edges — engaging bypass and leaving it — and reads
+     * as a click on any non-silent programme.
+     *
+     * Asserted as a bound on the sample-to-sample step rather than on the
+     * values, because the claim is about continuity, not about which path is
+     * showing.
+     */
+    it('crossfades into bypass rather than splicing the dry signal in', async () => {
+        const proc = await loadProcessor();
+        sendMessage(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        seedHeapRamp();
+
+        // A steady level on both paths, differing between them: any splice
+        // shows up as a single step of the full difference, while a crossfade
+        // spreads it over BYPASS_FADE_SAMPLES.
+        const leftIn = new Float32Array(FRAMES).fill(0.8);
+        const rightIn = new Float32Array(FRAMES).fill(0.8);
+        const leftOut = new Float32Array(FRAMES);
+        const rightOut = new Float32Array(FRAMES);
+
+        proc.process([[leftIn, rightIn]], [[leftOut, rightOut]]);
+        const wetLevel = leftOut[FRAMES - 1] ?? 0;
+
+        sendMessage(proc, { type: 'bypass', bypassed: true });
+        proc.process([[leftIn, rightIn]], [[leftOut, rightOut]]);
+
+        const biggestStep = Array.from(leftOut)
+            .slice(1)
+            .reduce((worst, sample, index) => Math.max(worst, Math.abs(sample - (leftOut[index] ?? 0))), 0);
+        const spliceSize = Math.abs(0.8 - wetLevel);
+
+        expect(spliceSize).toBeGreaterThan(0.1);
+        expect(biggestStep).toBeLessThan(spliceSize / 4);
     });
 
     it('keeps feeding the engine while bypassed so resuming has no stale analysis frame', async () => {
