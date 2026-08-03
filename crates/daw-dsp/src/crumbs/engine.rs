@@ -456,6 +456,19 @@ impl CrumbsEngine {
             if !voice.active {
                 continue;
             }
+            // Skip voices already fading out. This has to be here rather than in
+            // `steal_priority`, because the oldest and quietest fallbacks below
+            // run outside the priority comparison — a fading voice with
+            // `StealPriority::None` would still win them, which is exactly how a
+            // just-choked voice was getting its slot handed straight back.
+            //
+            // Its slot returns from `process_block` within the 3 ms fade, so
+            // passing over it costs at most one block. If every voice is fading,
+            // the note is dropped rather than clicked, which is the right trade
+            // in a pool that is by then 128 voices deep.
+            if voice.is_stealing() {
+                continue;
+            }
 
             let priority = voice.steal_priority(target_note, target_choke);
 
@@ -768,6 +781,16 @@ impl CrumbsEngine {
     /// Read the number of currently active voices.
     pub fn read_active_voice_count(&self) -> u8 {
         self.metering.active_voice_count.load(Ordering::Relaxed)
+    }
+
+    /// Whether any live voice is playing `note`.
+    ///
+    /// Exists so allocation behaviour can be asserted by note identity rather
+    /// than by level: a summed pool cannot show whether one particular voice
+    /// was overwritten, and a test that measured the sum passed with the bug
+    /// reverted. Read-only, and not on any audio-thread path.
+    pub fn any_active_voice_has_note(&self, note: u8) -> bool {
+        self.voices.iter().any(|voice| voice.active && voice.note == note)
     }
 
     /// Feed input audio for recording (called from audio thread).

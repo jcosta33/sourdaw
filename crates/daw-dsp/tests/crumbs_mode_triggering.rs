@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 use daw_dsp::crumbs::engine::CrumbsEngine;
 use daw_dsp::crumbs::sample::SampleData;
-use daw_dsp::crumbs::types::{CrumbsCommand, CrumbsMode};
+use daw_dsp::crumbs::types::{CrumbsCommand, CrumbsMode, MAX_VOICES};
 
 const SAMPLE_RATE: f32 = 48_000.0;
 const BLOCK: usize = 128;
@@ -465,6 +465,48 @@ fn choke_pair_engine(closed_level: f32, open_level: f32) -> CrumbsEngine {
             .attack = 0.0;
     }
     engine
+}
+
+/// A voice already fading must not be stolen again.
+///
+/// `choke_voices_in_group` deliberately leaves the allocator slot alone and
+/// starts only the 3 ms de-click fade, because releasing it would let the very
+/// next `allocate` hand the same slot back and jump-cut the waveform. That
+/// protection held only while the pool had a free slot elsewhere: once
+/// saturated, `find_steal_target` scored a just-choked voice as `ChokeGroup` —
+/// its second-highest priority — and took it, so the two passes undid each
+/// other and the choke became the click it was written to avoid.
+///
+/// Reachable in ordinary dense playing: `MAX_STACK_VOICES` is 8 against a
+/// 128-voice pool, so sixteen overlapping stacked hits saturate it.
+#[test]
+fn a_choked_voice_is_not_stolen_again_while_its_fade_is_running() {
+    let mut engine = choke_pair_engine(1.0, 0.4);
+
+    // Fill the pool. Every pad in the fixture shares choke group 1, so each of
+    // these is also a choke candidate for the note that follows.
+    for _ in 0..MAX_VOICES {
+        note_on(&mut engine, 36, 127);
+    }
+
+    // This note chokes group 1 and then, finding no free slot, goes stealing.
+    note_on(&mut engine, 37, 127);
+
+    // Every voice in the pool is now fading, so there is nothing left to steal
+    // that is not already on its way out. The note is dropped rather than
+    // clicked, and no voice carries note 37.
+    //
+    // Asserting the note *identity* rather than a level: summing 128 voices
+    // cannot isolate one being overwritten, and an earlier version of this test
+    // measured exactly that and passed with the fix reverted.
+    render(&mut engine, BLOCK);
+
+    assert!(
+        !engine.any_active_voice_has_note(37),
+        "note 37 took a slot inside the de-click fade, so the steal pass \
+         overwrote a voice the choke pass had just started fading — the click \
+         the choke path leaves its allocator slot alone to avoid"
+    );
 }
 
 #[test]
