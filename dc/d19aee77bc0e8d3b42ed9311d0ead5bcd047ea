@@ -1,0 +1,16 @@
+src/modules/FactorySynthesis/services/__tests__/oscillatorsBranches.spec.ts
+  h_1228e573df1f42 1-188
+src/modules/Synth/engine/__tests__/drumSynthVoicesBranches.spec.ts
+  h_1228e573df1f42 1-361
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "dcd19aee77bc0e8d3b42ed9311d0ead5bcd047ea",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
