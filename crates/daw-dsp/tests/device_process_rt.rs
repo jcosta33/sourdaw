@@ -553,6 +553,56 @@ fn fermenter_process_does_not_allocate_with_voices_sounding() {
     );
 }
 
+/// The scheduled-note path: events are drained into a per-block list and the
+/// render splits at each offset. Draining into a list is exactly where a `Vec`
+/// creeps back in, so the guard covers the pushes *and* the split render — the
+/// block above only covers `process` with an empty list.
+#[test]
+fn fermenter_scheduled_note_offsets_do_not_allocate() {
+    use daw_dsp::fermenter::FermenterInstance;
+
+    let mut instance = FermenterInstance::new(SAMPLE_RATE, 8);
+    instance.set_param("cutoff", 4_000.0);
+    instance.set_param("resonance", 0.4);
+    instance.set_param("noise_level", 0.1);
+
+    // Warm up outside the guard so wavetable/voice-pool lazy work, if any,
+    // happens before the interceptor is armed.
+    instance.push_note_on(60, 100, 0, 37);
+    let warmup = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
+    assert_all_finite(&warmup, "fermenter scheduled");
+
+    assert_no_alloc(|| {
+        for block in 0..GUARDED_BLOCKS {
+            // Offsets that are not block multiples, several events per block,
+            // including offset 0 and the last frame.
+            let note = 48 + (block % 12) as u8;
+            instance.push_note_off(note, 0);
+            instance.push_note_on(note, 100, 0, (block * 7 % BLOCK) as u32);
+            instance.push_note_expression(note, 0, 1.5, 0.5, 0.25, (BLOCK - 1) as u32);
+
+            // Drive one block past the list's capacity so the refusal branch
+            // runs under the interceptor too — a bounds-driven fallback is a
+            // plausible place to reach for a heap-backed overflow buffer.
+            if block == 0 {
+                for index in 0..512 {
+                    instance.push_note_on(60, 1, 0, (index % BLOCK) as u32);
+                }
+            }
+
+            instance.process(BLOCK as u32);
+        }
+    });
+
+    let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
+    assert_all_finite(&out, "fermenter scheduled");
+    assert!(
+        peak(&out) > 1e-4,
+        "fermenter produced silence under scheduled notes, so the guarded \
+         region did not exercise the split render"
+    );
+}
+
 #[test]
 fn gluten_process_does_not_allocate_while_compressing() {
     use daw_dsp::gluten::GlutenInstance;
