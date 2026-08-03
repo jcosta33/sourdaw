@@ -27,13 +27,17 @@ const DEFAULT_BASE_NOTE: u8 = 36;
 pub struct DrumMode {
     pads: Vec<PadConfig>,
     base_note: u8,
-    /// Sample every unassigned pad falls back to — the loaded sample.
+    /// The loaded sample, which sits on the base-note pad until assigned.
     ///
-    /// A drum rack with nothing mapped is a *default kit*, not silence: load a
-    /// sample into a hardware or software drum sampler and the pads play it
-    /// immediately. Only an explicit `set_pad_sample` overrides this, so the
-    /// user's mapping always wins, and an empty pool still yields None rather
-    /// than a voice pointed at a sample that does not exist.
+    /// Loading a sample has to leave something playable, but it must land on
+    /// *one* pad: drop a sample on an Ableton Drum Rack, Battery, Maschine or
+    /// an MPC and it takes a single pad while the rest stay empty. Spreading it
+    /// across the grid is a state none of them can be put into, and eight pads
+    /// playing one identical hit reads as broken rather than as a default.
+    ///
+    /// So this is the fallback for pad 0 only. An explicit `set_pad_sample`
+    /// overrides it, every other pad stays silent until assigned, and an empty
+    /// pool yields None rather than a voice pointed at a missing sample.
     default_sample: Option<SampleId>,
 }
 
@@ -53,7 +57,7 @@ impl DrumMode {
         }
     }
 
-    /// Point every unassigned pad at the loaded sample.
+    /// Land the loaded sample on the base-note pad.
     ///
     /// Called when the engine's sample selection changes. Writes one `Option`,
     /// so it is safe on the audio thread.
@@ -106,9 +110,11 @@ impl DrumMode {
         let pad_idx = self.note_to_pad(note)?;
         let pad = &self.pads[pad_idx];
 
-        // An explicit assignment wins; otherwise the pad plays the loaded
-        // sample. Only an empty pool leaves nothing to trigger.
-        let sample_id = pad.sample_id.or(self.default_sample)?;
+        // An explicit assignment wins. Failing that, only the base-note pad
+        // falls back to the loaded sample — see `default_sample`. Every other
+        // unassigned pad is silent, which is what an empty pad is.
+        let unassigned_fallback = if pad_idx == 0 { self.default_sample } else { None };
+        let sample_id = pad.sample_id.or(unassigned_fallback)?;
 
         Some(VoiceTriggerParams {
             note,

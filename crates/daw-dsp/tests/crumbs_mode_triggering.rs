@@ -113,67 +113,69 @@ fn note_on(engine: &mut CrumbsEngine, note: u8, velocity: u8) {
 // ── Defaults: both modes sound before anyone configures them ───────────
 
 #[test]
-fn a_freshly_loaded_sample_sounds_in_drum_mode_with_no_pad_assignment() {
-    // Loading a sample and switching to Drum is the whole interaction. A drum
-    // rack with nothing mapped is a default kit, never silence.
+fn a_freshly_loaded_sample_sounds_on_the_base_note_pad() {
+    // Loading a sample and switching to Drum is the whole interaction, and it
+    // has to leave something playable: the sample lands on the base-note pad,
+    // the way a sample dropped on a drum rack takes one pad.
     let pcm = fixture_pcm(8 * BLOCK);
     let mut engine = engine_with(pcm.clone(), CrumbsMode::Drum);
 
     note_on(&mut engine, 36, 100);
     let out = render_second_block(&mut engine);
 
-    // Pad 0's root note is its own note, so the default kit plays at unity.
-    assert_proportional_to(&out, &pcm[BLOCK..2 * BLOCK], "default kit pad at the base note");
+    // Pad 0's root note is its own note, so it plays at unity.
+    assert_proportional_to(&out, &pcm[BLOCK..2 * BLOCK], "the base-note pad");
 }
 
 #[test]
-fn the_default_kit_covers_the_grid_upward_from_the_base_note() {
+fn an_unassigned_pad_above_the_base_note_stays_silent() {
+    // The other half of the convention, and the one that keeps `None` doing
+    // real work: only pad 0 gets the loaded sample. A blanket fallback would
+    // make every pad play the same hit, which is a state no sampler has.
     let pcm = fixture_pcm(8 * BLOCK);
 
-    let mut inside = engine_with(pcm.clone(), CrumbsMode::Drum);
-    note_on(&mut inside, 40, 100);
-    let fifth_pad = render_second_block(&mut inside);
+    for note in [37_u8, 40, 51] {
+        let mut engine = engine_with(pcm.clone(), CrumbsMode::Drum);
+        note_on(&mut engine, note, 100);
+        let out = render(&mut engine, BLOCK);
 
-    let mut below = engine_with(pcm.clone(), CrumbsMode::Drum);
-    note_on(&mut below, 35, 100);
-    let under_the_grid = render(&mut below, BLOCK);
-
-    assert_proportional_to(
-        &fifth_pad,
-        &pcm[BLOCK..2 * BLOCK],
-        "default kit pad four notes up",
-    );
-    // The default must be a *grid*, not "every note sounds". Below the base
-    // note there is no pad, and `note_to_pad` still has to say so.
-    assert_eq!(
-        peak(&under_the_grid),
-        0.0,
-        "a note below the pad grid sounded, so the default map has no lower edge"
-    );
+        assert_eq!(
+            peak(&out),
+            0.0,
+            "note {note} sounded on an unassigned pad, so the loaded sample was \
+             spread across the grid instead of landing on one pad"
+        );
+        assert_eq!(
+            engine.read_active_voice_count(),
+            0,
+            "a voice was allocated for unassigned pad at note {note}"
+        );
+    }
 }
 
 #[test]
-fn an_explicit_pad_assignment_wins_over_the_default_kit() {
-    let kit_pcm = fixture_pcm(8 * BLOCK);
-    let mut engine = engine_with(kit_pcm.clone(), CrumbsMode::Drum);
+fn an_explicit_pad_assignment_wins_over_the_loaded_sample() {
+    // Precedence on the one pad where both could apply: the base-note pad
+    // holds the loaded sample by default, and an assignment must displace it.
+    let loaded_pcm = fixture_pcm(8 * BLOCK);
+    let mut engine = engine_with(loaded_pcm.clone(), CrumbsMode::Drum);
     // A second sample, flat rather than irregular, so which one played is
     // unambiguous.
     let assigned = load(&mut engine, flat_pcm(8 * BLOCK, 0.5));
-    engine.drum_mode_mut().set_pad_sample(1, assigned);
-    engine.drum_mode_mut().get_pad_mut(1).expect("pad 1 exists").attack = 0.0;
+    engine.drum_mode_mut().set_pad_sample(0, assigned);
 
-    note_on(&mut engine, 37, 100);
+    note_on(&mut engine, 36, 100);
     let assigned_pad = render_second_block(&mut engine);
 
-    let mut untouched = engine_with(kit_pcm.clone(), CrumbsMode::Drum);
-    note_on(&mut untouched, 37, 100);
+    let mut untouched = engine_with(loaded_pcm.clone(), CrumbsMode::Drum);
+    note_on(&mut untouched, 36, 100);
     let default_pad = render_second_block(&mut untouched);
 
-    assert_proportional_to(&assigned_pad, &flat_pcm(BLOCK, 0.5), "explicitly assigned pad");
+    assert_proportional_to(&assigned_pad, &flat_pcm(BLOCK, 0.5), "explicitly assigned pad 0");
     assert_proportional_to(
         &default_pad,
-        &kit_pcm[BLOCK..2 * BLOCK],
-        "same pad left at the default",
+        &loaded_pcm[BLOCK..2 * BLOCK],
+        "pad 0 left holding the loaded sample",
     );
 }
 
