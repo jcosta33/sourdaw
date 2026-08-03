@@ -74,6 +74,10 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         paramBatcher.schedule(compositeKey, value, flushParam);
     }
 
+    function sendRuntimeParam(deviceId: string, rustKey: string, value: number): void {
+        activeDevices.get(deviceId)?.setParam(rustKey, value);
+    }
+
     function getDevice(deviceId: string): LevainDevice | undefined {
         return activeDevices.get(deviceId);
     }
@@ -134,7 +138,7 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
 
             loadSamplesForInstrument(deviceId, state.patch.instrumentId);
             queueParam(deviceId, 'master_gain', state.patch.masterGain);
-            queueParam(deviceId, 'current_articulation', getArticulationId(state.patch.currentArticulation));
+            sendRuntimeParam(deviceId, 'current_articulation', getArticulationId(state.patch.currentArticulation));
             queueParam(deviceId, 'legato_enabled', state.patch.legato.enabled ? 1 : 0);
             queueParam(deviceId, 'humanize_amount', state.patch.humanize.amount);
             // vibratoDepthMax is in cents (default 40, range 0-50). Send it to the
@@ -194,7 +198,7 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         setLevainParam(deviceId, key, value);
 
         if (key === 'currentArticulation' && isArticulationType(value)) {
-            queueParam(deviceId, 'current_articulation', getArticulationId(value));
+            sendRuntimeParam(deviceId, 'current_articulation', getArticulationId(value));
         } else if (typeof value === 'number') {
             const rustKey = camelToSnake(String(key));
             queueParam(deviceId, rustKey, value);

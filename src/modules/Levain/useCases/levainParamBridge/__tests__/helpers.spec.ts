@@ -261,7 +261,7 @@ describe('createLevainBridge', () => {
         flushRaf();
 
         expect(device.setParam).toHaveBeenCalledWith('current_articulation', 13);
-        expect(deps.persistDeviceParam).toHaveBeenCalledWith('d1', 'current_articulation', 13);
+        expect(deps.persistDeviceParam).not.toHaveBeenCalledWith('d1', 'current_articulation', expect.any(Number));
         device.setParam.mockClear();
         deps.persistDeviceParam.mockClear();
 
@@ -269,7 +269,7 @@ describe('createLevainBridge', () => {
         flushRaf();
 
         expect(device.setParam).toHaveBeenCalledWith('current_articulation', 10);
-        expect(deps.persistDeviceParam).toHaveBeenCalledWith('d1', 'current_articulation', 10);
+        expect(deps.persistDeviceParam).not.toHaveBeenCalledWith('d1', 'current_articulation', expect.any(Number));
     });
 
     describe('setLevainParamWithAudio — nested patch forwarding', () => {
