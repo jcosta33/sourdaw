@@ -1,0 +1,54 @@
+crates/daw-dsp/src/crumbs/engine.rs
+  s_66d4924c65dcd2::t_2880ffab06ce20 220-227,231-237
+crates/daw-dsp/src/crumbs/modes/drum.rs
+  s_66d4924c65dcd2::t_9768164e09b0af 16-21,30-37
+  s_66d4924c65dcd2::t_c82c0b415a6169 52,56-61
+  s_66d4924c65dcd2::t_eb78d8ae79eb3e 103-104,109-111
+  s_66d4924c65dcd2::t_9505f79473ccb7 62-63
+crates/daw-dsp/tests/device_process_rt.rs
+  s_66d4924c65dcd2::t_cd9958685c34a2 226-231,265-266,268
+crates/daw-dsp/src/crumbs/modes/slice.rs
+  s_66d4924c65dcd2::t_46343ada4dd013 22-30,37-39
+  s_66d4924c65dcd2::t_c394f31860c6af 65
+  s_66d4924c65dcd2::t_2ca74e9ca24391 201-209,211-254
+crates/daw-dsp/tests/crumbs_mode_triggering.rs
+  s_66d4924c65dcd2::t_ef42cc10ea378f 135,141-145
+  s_66d4924c65dcd2::t_9989fc0912b28f 123,126
+  s_66d4924c65dcd2::t_8f09b77485079e 113,116-120,124-125,127-134,137-140,146-147,149,151-165,167-169,171-172,181-185,190-242,253-295
+  s_66d4924c65dcd2::t_d58a4ef288b734 59-67
+  s_66d4924c65dcd2::t_3a1435cc6118e6 166,170,173-176
+  s_66d4924c65dcd2::t_5cceaf6e368f8a 243-245,247-249
+  s_ac9b259eab20ba::t_44c9a94232b670 296
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_66d4924c65dcd2::t_15f9f8acb7de7b 1,799-813
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_66d4924c65dcd2::t_2cd3eb8c55bc1e 1,139-153
+public/wasm/manifest.json
+  s_66d4924c65dcd2::t_f8d088df725584 12,16-18,21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_66d4924c65dcd2::t_a2bbdbed85baa2 1,799-813
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "099569f04c5f5edab27a0dd8136f3bedd6fb478a",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
