@@ -43,6 +43,11 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
     // can cancel exactly this device's batches. The batcher does not expose its
     // key set, so we mirror it here; entries are dropped on flush and on cancel.
     const pendingKeysByDevice = new Map<string, Set<string>>();
+
+    function setRuntimeParam(deviceId: string, rustKey: string, value: number): void {
+        activeDevices.get(deviceId)?.setParam(rustKey, value);
+    }
+
     function flushParam(compositeKey: string, value: number): void {
         const parts = compositeKey.split(':');
         const deviceId = parts[0];
@@ -56,10 +61,7 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         }
 
         const rustKey = parts.slice(1).join(':');
-        const device = activeDevices.get(deviceId);
-        if (device) {
-            device.setParam(rustKey, value);
-        }
+        setRuntimeParam(deviceId, rustKey, value);
         deps.persistDeviceParam(deviceId, rustKey, value);
     }
 
@@ -72,10 +74,6 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         }
         keys.add(compositeKey);
         paramBatcher.schedule(compositeKey, value, flushParam);
-    }
-
-    function sendRuntimeParam(deviceId: string, rustKey: string, value: number): void {
-        activeDevices.get(deviceId)?.setParam(rustKey, value);
     }
 
     function getDevice(deviceId: string): LevainDevice | undefined {
@@ -138,7 +136,7 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
 
             loadSamplesForInstrument(deviceId, state.patch.instrumentId);
             queueParam(deviceId, 'master_gain', state.patch.masterGain);
-            sendRuntimeParam(deviceId, 'current_articulation', getArticulationId(state.patch.currentArticulation));
+            setRuntimeParam(deviceId, 'current_articulation', getArticulationId(state.patch.currentArticulation));
             queueParam(deviceId, 'legato_enabled', state.patch.legato.enabled ? 1 : 0);
             queueParam(deviceId, 'humanize_amount', state.patch.humanize.amount);
             // vibratoDepthMax is in cents (default 40, range 0-50). Send it to the
@@ -198,7 +196,7 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         setLevainParam(deviceId, key, value);
 
         if (key === 'currentArticulation' && isArticulationType(value)) {
-            sendRuntimeParam(deviceId, 'current_articulation', getArticulationId(value));
+            setRuntimeParam(deviceId, 'current_articulation', getArticulationId(value));
         } else if (typeof value === 'number') {
             const rustKey = camelToSnake(String(key));
             queueParam(deviceId, rustKey, value);
