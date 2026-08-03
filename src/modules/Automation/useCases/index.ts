@@ -42,6 +42,7 @@ export { addModulator } from './modulation/addModulator';
 export { removeModulator } from './modulation/removeModulator';
 export { updateModulator } from './modulation/updateModulator';
 export { addMapping } from './modulation/addMapping';
+export { hydrateModulationState } from './modulation/hydrateModulationState';
 export { removeMapping } from './modulation/removeMapping';
 export { restoreTrackModulationReferences } from './modulation/restoreTrackModulationReferences';
 export { updateMapping } from './modulation/updateMapping';

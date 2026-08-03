@@ -60,6 +60,17 @@ export type HydratableProjectData = {
     audioBuffers?: Record<string, ProjectExportedAudioBuffer>;
     adjustmentLayers?: ProjectAdjustmentLayers;
     mixer?: unknown;
+    /**
+     * Mix state whose decoding belongs to the module that owns it. Left as
+     * `unknown` deliberately: each owner's hydrator runs the same sanitizer its
+     * CRDT slot uses and degrades a bad row to that module's default, whereas
+     * validating here would make one unreadable modulator reject the entire
+     * project file (`isHydratableProjectData` is all-or-nothing).
+     */
+    vcaGroups?: unknown;
+    gainEnvelopes?: unknown;
+    modulation?: unknown;
+    cvGate?: unknown;
     history?: unknown;
 };
 

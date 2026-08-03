@@ -1,12 +1,15 @@
 import {
     adjustmentLayerStore,
+    gainEnvelopeStore,
     markerStore,
     takeLaneStore,
     trackStore,
+    vcaGroupStore,
     type TrackStoreState,
 } from '#/modules/Arrangement/stores';
 import { exportCachedAudioBuffers } from '#/modules/AudioEngine/useCases';
-import { automationStore } from '#/modules/Automation/stores';
+import { automationStore, modulationStore } from '#/modules/Automation/stores';
+import { cvGateStore } from '#/modules/CvGate/stores';
 import {
     chordTrackStore,
     defaultChordTrackState,
@@ -131,6 +134,12 @@ export async function buildProjectData({
         };
     }
 
+    let cvGateState: ProjectData['cvGate'];
+    const liveCvGate = cvGateStore.value;
+    if (liveCvGate) {
+        cvGateState = structuredClone(liveCvGate);
+    }
+
     const data: ProjectData = {
         version: CURRENT_PROJECT_VERSION,
         meta: {
@@ -167,10 +176,25 @@ export async function buildProjectData({
             tracks: serializeArrangementTracks(tracks.tracks, midi.notesByClipId),
         },
         automation,
+        // Dead field, kept only because `ProjectData.mixer` still requires it.
+        // Nothing reads it back — see the field's own note in `ProjectData` for
+        // what blocks the deletion. The real master gain is `transport.masterGain`
+        // above, and buses are `kind: 'bus'` rows in `arrangement.tracks`.
         mixer: {
             master: { gain: 0.8, pan: 0 },
             buses: [],
         },
+        // A VCA master is a gain the mixer applies but no track carries: tracks
+        // persist only their `vcaGroupId`, so without the group rows themselves
+        // every member comes back at `deriveVcaMultiplier`'s unity fallback and
+        // the submix reopens louder than it was saved — in playback and in the
+        // bounce alike.
+        vcaGroups: structuredClone(vcaGroupStore.value?.groups ?? []),
+        gainEnvelopes: Object.values(gainEnvelopeStore.value?.envelopes ?? {}).map((envelope) =>
+            structuredClone(envelope)
+        ),
+        modulation: { modulators: structuredClone(modulationStore.value?.modulators ?? []) },
+        cvGate: cvGateState,
         midi: serializeProjectMidi(midi),
         chordTrack: structuredClone(chordTrackStore.value ?? defaultChordTrackState),
         grooves: serializeProjectGrooves(grooveTemplateStore.value ?? defaultGrooveTemplateState),
