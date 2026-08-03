@@ -1,0 +1,28 @@
+src/modules/Levain/useCases/levainParamBridge/__tests__/helpers.spec.ts
+  s_ac9b259eab20ba::t_328c12ba864968 264,272
+src/modules/Levain/useCases/prepareOfflineLevain.ts
+  s_ac9b259eab20ba::t_cf2859e1c8377f 1,56,59
+src/modules/Levain/useCases/__tests__/prepareOfflineLevain.spec.ts
+  s_ac9b259eab20ba::t_328c12ba864968 14,41-44,49-52,71,92-95
+src/modules/Levain/useCases/levainParamBridge/helpers.ts
+  s_ac9b259eab20ba::t_cf2859e1c8377f 77-80,141,201
+src/modules/Levain/useCases/__tests__/levainInstrumentPersistenceRoundTrip.spec.ts
+  s_ac9b259eab20ba::t_328c12ba864968 37,139-140,142,159-162,174-177
+  s_ac9b259eab20ba::t_47b02604ad666b 67,115-127,134,141
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "99666831a55824b1259a88cd05ffe40b87f5dc86",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
