@@ -47,7 +47,7 @@
  *   - Alias rename: `.../loopStation/createSlot.ts`
  *   - Block + return: `.../setlist/renameSetlist.ts`
  *   - Two exports: `.../folder.ts`
- *   - Must not change: `.../addTrack.ts` (eventBus), `executeDsoEdit.ts` (logger)
+ *   - Must not change: `.../addTrack.ts` (eventBus)
  *   - Identifier deps: `importMidiFile.ts` (same-file deps + ObjectPattern), `trackShortcuts.ts` (`(d) =>` member inlining)
  *
  * Human-approved apply: same command without `-d -p`.

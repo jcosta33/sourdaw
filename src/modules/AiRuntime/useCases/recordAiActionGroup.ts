@@ -1,15 +1,10 @@
 import { type AiActionGroup, pushAiActionGroup } from '../stores/aiActionHistoryStore';
 
-type RecordAiActionEntryInput =
-    | {
-          kind: 'appAction';
-          actionType: string;
-          label: string;
-      }
-    | {
-          kind: 'jsonEdit';
-          label: string;
-      };
+type RecordAiActionEntryInput = {
+    kind: 'appAction';
+    actionType: string;
+    label: string;
+};
 
 type RecordAiActionGroupInput = {
     prompt: string;
