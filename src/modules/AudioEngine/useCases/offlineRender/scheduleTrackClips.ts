@@ -1,4 +1,5 @@
 import { takeLaneStore, type Track } from '#/modules/Arrangement/stores';
+import { clampDeviceParameterValue, isDeviceParameterAutomatable } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { type MidiStoreState } from '#/modules/MIDI/stores';
 import {
@@ -8,7 +9,8 @@ import {
     scheduleKitNote,
     scheduleNoteOffline,
 } from '#/modules/Synth/useCases';
-import { type TempoMapStoreState } from '#/modules/Transport/stores';
+import { defaultTransportState, type TempoMapStoreState, transportStore } from '#/modules/Transport/stores';
+import { automationSlewTickSecondsForGrain } from '#/utils/automationSlew';
 import { resolveToasterPadIndex, TOASTER_NEUTRAL_MIDI_NOTE } from '#/utils/toasterNoteProjection';
 import { getToasterSwingOffsetBeats } from '#/utils/toasterSwingProjection';
 
@@ -321,23 +323,45 @@ export async function scheduleTrackClips({
     for (const clip of track.clips) {
         clipBoundsById.set(clip.id, { startBeat: clip.startBeat, endBeat: clip.endBeat });
     }
-    if (includeAutomation) {
-        scheduleTrackAutomation(
-            automationLanes,
-            track.id,
+    // `automationMode: 'off'` stops every lane on the track driving live
+    // (`applyAutomation` gates on it before gain, pan and device params alike).
+    // Offline read no mode at all, so a track the monitor plays flat bounced
+    // fully automated. The bounce follows the monitor.
+    const trackReadsAutomation = track.automationMode !== 'off';
+    if (includeAutomation && trackReadsAutomation) {
+        scheduleTrackAutomation({
+            lanes: automationLanes,
+            trackId: track.id,
             trackGainNode,
             trackPanNode,
             deviceEntries,
             durationSeconds,
             defaultTempo,
             changes,
-            regionStartSec,
+            // The live slew runs one step per scheduler tick, and the scheduler
+            // ticks every `scheduleGrainMs`. Reading the same state is what keeps
+            // the bounce's slew filter identical to the monitor's at every grain,
+            // not only at the shipping default.
+            slewTickSeconds: automationSlewTickSecondsForGrain(
+                transportStore.value?.scheduleGrainMs ?? defaultTransportState.scheduleGrainMs
+            ),
+            deviceParameterLaw: {
+                acceptsAutomation: ({ deviceId, deviceType, parameterId }) => {
+                    const device = track.devices.find((candidate) => candidate.id === deviceId);
+                    if (!device || device.parameterValues[parameterId] === undefined) {
+                        return false;
+                    }
+                    return isDeviceParameterAutomatable({ deviceType, paramId: parameterId });
+                },
+                clampValue: clampDeviceParameterValue,
+            },
+            regionStartSeconds: regionStartSec,
             projectBeatToSeconds,
-            offlineCtx.sampleRate,
-            compensationDelay,
+            sampleRate: offlineCtx.sampleRate,
+            compensationDelaySec: compensationDelay,
             clipBoundsById,
-            vcaMultiplier
-        );
+            vcaMultiplier,
+        });
     }
 
     if (track.freezeState.status === 'frozen' && track.freezeState.frozenBufferId) {

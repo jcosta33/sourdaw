@@ -15,14 +15,22 @@
  *
  * seeded `y[0] = x[0]` (the first tick reads `prev ?? value`, so `smoothed =
  * value`). `x[n]` is the true curve value sampled at the tick grid; `y[n]` is
- * the value actually written to the parameter. The tick grid is the transport
- * scheduler grain — the shipping default `scheduleGrainMs = 10ms`
- * ({@link AUTOMATION_SLEW_TICK_SECONDS}), i.e. 100 Hz.
+ * the value actually written to the parameter.
  *
- * Pole `(1 − α) = 0.6`; per-tick time constant `τ = −Δt / ln(1 − α) =
- * −0.01 / ln 0.6 ≈ 19.6 ms`; −3 dB corner `≈ 1 / (2π τ) ≈ 8.1 Hz`. This is a
- * genuine low-pass: fast automation moves are rounded off and lag the target by
- * ~τ, exactly the "monitor low-passes, bounce does not" divergence AU-2 names.
+ * **The tick grid is the transport scheduler grain, and that grain is settable.**
+ * `applyAutomation` runs exactly one {@link slewStep} per scheduler tick, and
+ * `startPlayheadScheduler` ticks every `transportStore.value.scheduleGrainMs`
+ * (default 10 ms, i.e. 100 Hz). `Δt` is therefore *state*, not a constant, and
+ * the offline replica has to read the same state — see
+ * {@link automationSlewTickSecondsForGrain}. The offline path used to hardcode
+ * 10 ms, so at any other grain the bounce's slew filter stopped matching the
+ * monitor's and automation ramps rendered differently from what was heard.
+ *
+ * At the shipping default: pole `(1 − α) = 0.6`; per-tick time constant
+ * `τ = −Δt / ln(1 − α) = −0.01 / ln 0.6 ≈ 19.6 ms`; −3 dB corner
+ * `≈ 1 / (2π τ) ≈ 8.1 Hz`. This is a genuine low-pass: fast automation moves are
+ * rounded off and lag the target by ~τ, exactly the "monitor low-passes, bounce
+ * does not" divergence AU-2 names.
  *
  * The offline path replicates it **sample-accurately, not approximately**: it
  * samples the compiled curve `x(t)` at the same `Δt` grid and runs the identical
@@ -42,11 +50,25 @@
 export const AUTOMATION_SLEW_ALPHA = 0.4;
 
 /**
- * The tick cadence the slew runs at, in seconds — the shipping default
- * transport scheduler grain (`scheduleGrainMs = 10ms`, 100 Hz). The offline
- * replica samples the curve at this grid so its discrete filter matches live.
+ * The tick cadence the slew runs at, in seconds, for a given transport scheduler
+ * grain in milliseconds.
+ *
+ * There is deliberately no constant here. The live cadence is one
+ * {@link slewStep} per scheduler tick and the scheduler ticks every
+ * `transportStore.value.scheduleGrainMs`, so the only correct offline value is
+ * whatever the live path is currently reading. A constant would be a second
+ * source of truth that silently agrees only at the shipping default.
+ *
+ * A non-finite or non-positive grain cannot describe a tick cadence; the slew
+ * treats a non-positive `tickSeconds` as "do not slew", which is the honest
+ * answer for a grain that could not have driven a live tick either.
  */
-export const AUTOMATION_SLEW_TICK_SECONDS = 0.01;
+export function automationSlewTickSecondsForGrain(scheduleGrainMs: number): number {
+    if (!Number.isFinite(scheduleGrainMs) || scheduleGrainMs <= 0) {
+        return 0;
+    }
+    return scheduleGrainMs / 1000;
+}
 
 /**
  * One step of the first-order slew: advance the smoothed value one tick toward

@@ -323,8 +323,8 @@ describe('scheduleTrackAutomation', () => {
             expect(resolveDeviceParam(deviceType, parameterId, device)).toBe(params[0]);
             expect(resolveDeviceParamScale(deviceType, parameterId)).toBe(targetSpecs[0][2]);
 
-            scheduleTrackAutomation(
-                [
+            scheduleTrackAutomationFixture({
+                lanes: [
                     makeLane({
                         parameterId: `device-1:${parameterId}`,
                         minValue: min,
@@ -335,15 +335,15 @@ describe('scheduleTrackAutomation', () => {
                         ],
                     }),
                 ],
-                'track-1',
-                { gain: makeParam() } as unknown as GainNode,
-                { pan: makeParam() } as unknown as StereoPannerNode,
-                [webAudioEntry('device-1', deviceType, device)],
-                10,
-                120,
-                [],
-                64
-            );
+                trackId: 'track-1',
+                trackGainNode: { gain: makeParam() } as unknown as GainNode,
+                trackPanNode: { pan: makeParam() } as unknown as StereoPannerNode,
+                deviceEntries: [webAudioEntry('device-1', deviceType, device)],
+                durationSeconds: 10,
+                defaultTempo: 120,
+                changes: [],
+                regionStartSeconds: 64,
+            });
 
             for (const [index, [, , scale, offset]] of targetSpecs.entries()) {
                 // AU-2: device params carry the control slew offline. The seed
@@ -369,17 +369,17 @@ describe('scheduleTrackAutomation', () => {
         const gainNode = { gain } as unknown as GainNode;
         const panNode = { pan } as unknown as StereoPannerNode;
 
-        scheduleTrackAutomation(
-            [makeLane({ parameterId: 'gain', points: [{ beat: 128, value: 0.8, curve: 'linear', tension: 0 }] })],
-            'track-1',
-            gainNode,
-            panNode,
-            [],
-            10,
-            120,
-            [],
-            64
-        );
+        scheduleTrackAutomationFixture({
+            lanes: [makeLane({ parameterId: 'gain', points: [{ beat: 128, value: 0.8, curve: 'linear', tension: 0 }] })],
+            trackId: 'track-1',
+            trackGainNode: gainNode,
+            trackPanNode: panNode,
+            deviceEntries: [],
+            durationSeconds: 10,
+            defaultTempo: 120,
+            changes: [],
+            regionStartSeconds: 64,
+        });
 
         expect(gain.setValueAtTime).toHaveBeenCalledWith(0.8, 0);
         expect(pan.setValueAtTime).not.toHaveBeenCalled();
@@ -391,17 +391,17 @@ describe('scheduleTrackAutomation', () => {
         const gainNode = { gain } as unknown as GainNode;
         const panNode = { pan } as unknown as StereoPannerNode;
 
-        scheduleTrackAutomation(
-            [makeLane({ parameterId: 'pan', points: [{ beat: 128, value: -0.5, curve: 'linear', tension: 0 }] })],
-            'track-1',
-            gainNode,
-            panNode,
-            [],
-            10,
-            120,
-            [],
-            64
-        );
+        scheduleTrackAutomationFixture({
+            lanes: [makeLane({ parameterId: 'pan', points: [{ beat: 128, value: -0.5, curve: 'linear', tension: 0 }] })],
+            trackId: 'track-1',
+            trackGainNode: gainNode,
+            trackPanNode: panNode,
+            deviceEntries: [],
+            durationSeconds: 10,
+            defaultTempo: 120,
+            changes: [],
+            regionStartSeconds: 64,
+        });
 
         expect(pan.setValueAtTime).toHaveBeenCalledWith(-0.5, 0);
         expect(gain.setValueAtTime).not.toHaveBeenCalled();
@@ -413,22 +413,22 @@ describe('scheduleTrackAutomation', () => {
         const gainNode = { gain } as unknown as GainNode;
         const panNode = { pan } as unknown as StereoPannerNode;
 
-        scheduleTrackAutomation(
-            [
+        scheduleTrackAutomationFixture({
+            lanes: [
                 makeLane({
                     trackId: 'other-track',
                     parameterId: 'gain',
                     points: [{ beat: 0, value: 0.9, curve: 'linear', tension: 0 }],
                 }),
             ],
-            'track-1',
-            gainNode,
-            panNode,
-            [],
-            10,
-            120,
-            []
-        );
+            trackId: 'track-1',
+            trackGainNode: gainNode,
+            trackPanNode: panNode,
+            deviceEntries: [],
+            durationSeconds: 10,
+            defaultTempo: 120,
+            changes: [],
+        });
 
         expect(gain.setValueAtTime).not.toHaveBeenCalled();
     });
@@ -441,8 +441,8 @@ describe('scheduleTrackAutomation', () => {
         // Clip spans beats 128..132 → 64..66s at 120bpm; region starts at 64s.
         const clipBounds = new Map([['clip-1', { startBeat: 128, endBeat: 132 }]]);
 
-        scheduleTrackAutomation(
-            [
+        scheduleTrackAutomationFixture({
+            lanes: [
                 makeLane({
                     trackId: 'track-1',
                     clipId: 'clip-1',
@@ -453,19 +453,17 @@ describe('scheduleTrackAutomation', () => {
                     ],
                 }),
             ],
-            'track-1',
-            gainNode,
-            panNode,
-            [],
-            10,
-            120,
-            [],
-            64,
-            undefined,
-            44_100,
-            0,
-            clipBounds
-        );
+            trackId: 'track-1',
+            trackGainNode: gainNode,
+            trackPanNode: panNode,
+            deviceEntries: [],
+            durationSeconds: 10,
+            defaultTempo: 120,
+            changes: [],
+            regionStartSeconds: 64,
+            sampleRate: 44_100,
+            clipBoundsById: clipBounds,
+        });
 
         // Before AU-12 clip automation was dropped from the bounce; now it seeds
         // at the clip-start value and ramps to the clip-end value.
@@ -478,8 +476,8 @@ describe('scheduleTrackAutomation', () => {
         const gainNode = { gain } as unknown as GainNode;
         const panNode = { pan: makeParam() } as unknown as StereoPannerNode;
 
-        scheduleTrackAutomation(
-            [
+        scheduleTrackAutomationFixture({
+            lanes: [
                 makeLane({
                     trackId: 'track-1',
                     clipId: 'missing-clip',
@@ -490,19 +488,17 @@ describe('scheduleTrackAutomation', () => {
                     ],
                 }),
             ],
-            'track-1',
-            gainNode,
-            panNode,
-            [],
-            10,
-            120,
-            [],
-            64,
-            undefined,
-            44_100,
-            0,
-            new Map()
-        );
+            trackId: 'track-1',
+            trackGainNode: gainNode,
+            trackPanNode: panNode,
+            deviceEntries: [],
+            durationSeconds: 10,
+            defaultTempo: 120,
+            changes: [],
+            regionStartSeconds: 64,
+            sampleRate: 44_100,
+            clipBoundsById: new Map(),
+        });
 
         expect(gain.setValueAtTime).not.toHaveBeenCalled();
     });
@@ -524,21 +520,21 @@ describe('scheduleTrackAutomation', () => {
             ],
         };
 
-        scheduleTrackAutomation(
-            [
+        scheduleTrackAutomationFixture({
+            lanes: [
                 makeLane({
                     parameterId: 'device-1:delay-time',
                     points: [{ beat: 0, value: 500, curve: 'linear', tension: 0 }],
                 }),
             ],
-            'track-1',
-            gainNode,
-            panNode,
-            [webAudioEntry('device-1', 'builtin-delay', deviceNode)],
-            10,
-            120,
-            []
-        );
+            trackId: 'track-1',
+            trackGainNode: gainNode,
+            trackPanNode: panNode,
+            deviceEntries: [webAudioEntry('device-1', 'builtin-delay', deviceNode)],
+            durationSeconds: 10,
+            defaultTempo: 120,
+            changes: [],
+        });
 
         expect(deviceParam.setValueAtTime).toHaveBeenCalledWith(0.5, 0);
         expect(gain.setValueAtTime).not.toHaveBeenCalled();
@@ -548,8 +544,8 @@ describe('scheduleTrackAutomation', () => {
     it('compiles a canonical native-device lane into frame-addressed automation segments', () => {
         const scheduleParam = vi.fn();
 
-        scheduleTrackAutomation(
-            [
+        scheduleTrackAutomationFixture({
+            lanes: [
                 makeLane({
                     parameterId: 'fermenter-1:filterCutoff',
                     points: [
@@ -558,10 +554,10 @@ describe('scheduleTrackAutomation', () => {
                     ],
                 }),
             ],
-            'track-1',
-            { gain: makeParam() } as unknown as GainNode,
-            { pan: makeParam() } as unknown as StereoPannerNode,
-            [
+            trackId: 'track-1',
+            trackGainNode: { gain: makeParam() } as unknown as GainNode,
+            trackPanNode: { pan: makeParam() } as unknown as StereoPannerNode,
+            deviceEntries: [
                 {
                     deviceId: 'fermenter-1',
                     deviceType: 'fermenter',
@@ -580,13 +576,12 @@ describe('scheduleTrackAutomation', () => {
                     },
                 },
             ],
-            2,
-            120,
-            [],
-            64,
-            undefined,
-            1_000
-        );
+            durationSeconds: 2,
+            defaultTempo: 120,
+            changes: [],
+            regionStartSeconds: 64,
+            sampleRate: 1_000,
+        });
 
         // AU-2: the native worklet lane is slewed offline too. The first segment
         // starts at the seed value, intermediate segments glide, and the last
@@ -609,12 +604,14 @@ describe('scheduleTrackAutomation', () => {
             nodes: [{} as AudioNode, {} as AudioNode, { gain: delayMix } as unknown as AudioNode],
         };
 
-        scheduleTrackAutomation(
-            [makeLane({ parameterId: 'delay-mix', points: [{ beat: 0, value: 0.7, curve: 'linear', tension: 0 }] })],
-            'track-1',
-            { gain: makeParam() } as unknown as GainNode,
-            { pan: makeParam() } as unknown as StereoPannerNode,
-            [
+        scheduleTrackAutomationFixture({
+            lanes: [
+                makeLane({ parameterId: 'delay-mix', points: [{ beat: 0, value: 0.7, curve: 'linear', tension: 0 }] }),
+            ],
+            trackId: 'track-1',
+            trackGainNode: { gain: makeParam() } as unknown as GainNode,
+            trackPanNode: { pan: makeParam() } as unknown as StereoPannerNode,
+            deviceEntries: [
                 {
                     deviceId: 'fermenter-1',
                     deviceType: 'fermenter',
@@ -629,10 +626,10 @@ describe('scheduleTrackAutomation', () => {
                 },
                 webAudioEntry('delay-1', 'builtin-delay', delayNode),
             ],
-            2,
-            120,
-            []
-        );
+            durationSeconds: 2,
+            defaultTempo: 120,
+            changes: [],
+        });
 
         expect(delayMix.setValueAtTime).toHaveBeenCalledWith(0.7, 0);
     });
@@ -661,21 +658,21 @@ describe('scheduleTrackAutomation', () => {
             entries.push(webAudioEntry('device-2', 'builtin-gain', secondNode));
         }
 
-        scheduleTrackAutomation(
-            [
+        scheduleTrackAutomationFixture({
+            lanes: [
                 makeLane({
                     parameterId,
                     points: [{ beat: 0, value: 0.5, curve: 'linear', tension: 0 }],
                 }),
             ],
-            'track-1',
-            gainNode,
-            panNode,
-            entries,
-            10,
-            120,
-            []
-        );
+            trackId: 'track-1',
+            trackGainNode: gainNode,
+            trackPanNode: panNode,
+            deviceEntries: entries,
+            durationSeconds: 10,
+            defaultTempo: 120,
+            changes: [],
+        });
 
         expect(deviceParam.setValueAtTime.mock.calls.length > 0).toBe(expectedId === 'device-1');
         expect(secondParam.setValueAtTime.mock.calls.length > 0).toBe(expectedId === 'device-2');
@@ -693,8 +690,8 @@ describe('scheduleTrackAutomation', () => {
         // A stepped 0 -> 1 device lane. Live low-passes the step through its
         // exponential slew (alpha 0.4 at 100Hz); offline must reproduce the glide
         // rather than the instantaneous step it emitted before AU-2.
-        scheduleTrackAutomation(
-            [
+        scheduleTrackAutomationFixture({
+            lanes: [
                 makeLane({
                     parameterId: 'device-1:gain-level',
                     points: [
@@ -703,15 +700,15 @@ describe('scheduleTrackAutomation', () => {
                     ],
                 }),
             ],
-            'track-1',
-            { gain: makeParam() } as unknown as GainNode,
-            { pan: makeParam() } as unknown as StereoPannerNode,
-            [webAudioEntry('device-1', 'builtin-gain', deviceNode)],
-            10,
-            120,
-            [],
-            64
-        );
+            trackId: 'track-1',
+            trackGainNode: { gain: makeParam() } as unknown as GainNode,
+            trackPanNode: { pan: makeParam() } as unknown as StereoPannerNode,
+            deviceEntries: [webAudioEntry('device-1', 'builtin-gain', deviceNode)],
+            durationSeconds: 10,
+            defaultTempo: 120,
+            changes: [],
+            regionStartSeconds: 64,
+        });
 
         const ramps = deviceParam.linearRampToValueAtTime.mock.calls.map((call) => call[0] as number);
         const postStep = ramps.filter((value) => value > 0);
@@ -751,7 +748,17 @@ describe('scheduleTrackAutomation', () => {
             linkScale: -1,
         };
 
-        scheduleTrackAutomation([source, follower], 'track-1', gainNode, panNode, [], 10, 120, [], 64);
+        scheduleTrackAutomationFixture({
+            lanes: [source, follower],
+            trackId: 'track-1',
+            trackGainNode: gainNode,
+            trackPanNode: panNode,
+            deviceEntries: [],
+            durationSeconds: 10,
+            defaultTempo: 120,
+            changes: [],
+            regionStartSeconds: 64,
+        });
 
         // Before AU-3 offline read the follower's empty points and rendered
         // silent; now it renders the source curve inverted (linkScale -1).
@@ -788,7 +795,16 @@ describe('scheduleTrackAutomation', () => {
             linkScale: 2,
         };
 
-        scheduleTrackAutomation([source, follower], 'track-1', gainNode, panNode, [], 10, 120, []);
+        scheduleTrackAutomationFixture({
+            lanes: [source, follower],
+            trackId: 'track-1',
+            trackGainNode: gainNode,
+            trackPanNode: panNode,
+            deviceEntries: [],
+            durationSeconds: 10,
+            defaultTempo: 120,
+            changes: [],
+        });
 
         // Altitude parity at the segment midpoint (beat 2 → 1s at 120bpm): offline
         // must equal the live-scaled kernel output, not the point-pre-scaled
