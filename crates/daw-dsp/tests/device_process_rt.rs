@@ -158,6 +158,20 @@ fn bacteria_process_does_not_allocate_with_codec_and_distortion_engaged() {
 
     // 32 blocks x 128 frames = 4096 samples, so the 256-sample codec frame
     // boundary was crossed 16 times per channel inside the guard above.
+    //
+    // The measured block is refilled, and the reference below runs to the same
+    // block index. Without that the two render *different* blocks of
+    // excitation and diverge whatever the codec setting is, which left the
+    // engagement assertion at the bottom of this test unable to fail.
+    const MEASURE_BLOCK: usize = GUARDED_BLOCKS;
+    unsafe {
+        fill_input(
+            instance.get_input_left_ptr(),
+            instance.get_input_right_ptr(),
+            BLOCK,
+            MEASURE_BLOCK * BLOCK,
+        );
+    }
     let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&out, "bacteria");
     assert!(
@@ -179,7 +193,7 @@ fn bacteria_process_does_not_allocate_with_codec_and_distortion_engaged() {
     without_codec.set_param("codecArtifact", 0.0);
     without_codec.set_param("mix", 1.0);
     let mut reference = Vec::new();
-    for block in 0..=(GUARDED_BLOCKS + 1) {
+    for block in 0..=MEASURE_BLOCK {
         unsafe {
             fill_input(
                 without_codec.get_input_left_ptr(),
@@ -199,6 +213,204 @@ fn bacteria_process_does_not_allocate_with_codec_and_distortion_engaged() {
         "bacteria output is identical with codecArtifact at 0.65 and at 0.0 \
          (max divergence {divergence:.3e}), so the codec stage never ran and \
          the allocation guard above covered nothing"
+    );
+}
+
+/// The Smudge distortion mode is the second transform in this engine that runs
+/// over a scratch frame — a 2048-point overlap-add STFT per channel, firing
+/// every 512 samples — and it is not reached by the test above, which leaves
+/// `distortionMode` on its `soft-clip` default. Its buffers are sized in
+/// `SmudgeProcessor::new`; anything that made the render path resize one would
+/// call `memory.grow()` on the audio thread.
+#[test]
+fn bacteria_smudge_mode_does_not_allocate() {
+    use daw_dsp::bacteria::BacteriaInstance;
+
+    /// Enough guarded blocks to cross the 512-sample hop several times per
+    /// channel: 48 x 128 = 6144 samples, so 12 frames.
+    const SMUDGE_BLOCKS: usize = 48;
+
+    let mut instance = BacteriaInstance::new(SAMPLE_RATE);
+    instance.set_param("bandCount", 1.0);
+    instance.set_param("band0_distortionEnabled", 1.0);
+    instance.set_param("band0_distortionMode", 7.0); // smudge
+    instance.set_param("band0_drive", 40.0);
+    instance.set_param("mix", 1.0);
+
+    // Warm the overlap-add path past its `ready` gate before the guard, so the
+    // guarded region runs the transform rather than the dry passthrough.
+    for block in 0..8 {
+        unsafe {
+            fill_input(
+                instance.get_input_left_ptr(),
+                instance.get_input_right_ptr(),
+                BLOCK,
+                block * BLOCK,
+            );
+        }
+        instance.process(BLOCK as u32);
+    }
+
+    assert_no_alloc(|| {
+        for block in 8..(8 + SMUDGE_BLOCKS) {
+            unsafe {
+                fill_input(
+                    instance.get_input_left_ptr(),
+                    instance.get_input_right_ptr(),
+                    BLOCK,
+                    block * BLOCK,
+                );
+            }
+            instance.process(BLOCK as u32);
+        }
+    });
+
+    // The measured block is refilled like every other one. Leaving the stale
+    // input in place would compare this block against a *different* block of
+    // the reference below, and the two would then diverge whatever mode ran —
+    // which is how the first draft of this test passed with smudge removed.
+    const MEASURE_BLOCK: usize = 8 + SMUDGE_BLOCKS;
+    unsafe {
+        fill_input(
+            instance.get_input_left_ptr(),
+            instance.get_input_right_ptr(),
+            BLOCK,
+            MEASURE_BLOCK * BLOCK,
+        );
+    }
+    let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
+    assert_all_finite(&out, "bacteria smudge");
+    assert!(
+        peak(&out) > 1e-4,
+        "bacteria fell silent under smudge, so the guarded region did not \
+         exercise its DSP"
+    );
+
+    // Prove the guarded region ran *smudge* and not the soft-clip fallback the
+    // mode used to land on. An identically-driven instance left on soft-clip
+    // must produce a different signal.
+    let mut soft_clip = BacteriaInstance::new(SAMPLE_RATE);
+    soft_clip.set_param("bandCount", 1.0);
+    soft_clip.set_param("band0_distortionEnabled", 1.0);
+    soft_clip.set_param("band0_distortionMode", 0.0);
+    soft_clip.set_param("band0_drive", 40.0);
+    soft_clip.set_param("mix", 1.0);
+    let mut reference = Vec::new();
+    for block in 0..=MEASURE_BLOCK {
+        unsafe {
+            fill_input(
+                soft_clip.get_input_left_ptr(),
+                soft_clip.get_input_right_ptr(),
+                BLOCK,
+                block * BLOCK,
+            );
+        }
+        reference = unsafe { read_output(soft_clip.process(BLOCK as u32), BLOCK) };
+    }
+    let divergence = out
+        .iter()
+        .zip(reference.iter())
+        .fold(0.0_f32, |acc, (a, b)| acc.max((a - b).abs()));
+    assert!(
+        divergence > 1e-5,
+        "bacteria renders identically on distortionMode 7 and 0 (max \
+         divergence {divergence:.3e}), so the smudge transform never ran and \
+         the allocation guard above covered nothing"
+    );
+}
+
+/// `note_on` is not a render export, but it runs on the audio thread: the
+/// native host drains its command ring inside the process callback, and the
+/// worklet dispatches port messages on the render thread. Since a note now
+/// routes through `crumbs::modes` to build its trigger params, an allocation
+/// added to any of the three mapping functions would land there — a `Vec` for
+/// a marker search, a clone of a `PadConfig` — and `process` guards would not
+/// see it.
+#[test]
+fn crumbs_note_on_does_not_allocate_in_any_mode() {
+    use std::sync::Arc;
+
+    use daw_dsp::crumbs::engine::CrumbsEngine;
+    use daw_dsp::crumbs::sample::SampleData;
+    use daw_dsp::crumbs::types::{CrumbsCommand, CrumbsMode};
+
+    let frames = 4_800_usize;
+    let pcm: Vec<f32> = (0..frames)
+        .map(|i| (i as f32 / SAMPLE_RATE * 220.0 * std::f32::consts::TAU).sin() * 0.8)
+        .collect();
+
+    let mut engine = CrumbsEngine::new(SAMPLE_RATE);
+    // Pooling is the only setup: pads are left unassigned and no markers are
+    // set, so the guard covers the *default* kit and the computed default chop
+    // — the paths a freshly loaded sample actually takes. A choke group on pad
+    // 0 puts the choke pass inside the guard too; it is a field write, unlike
+    // `set_pad_sample`/`set_markers_from_onsets`, which allocate and belong to
+    // setup.
+    let sample_id = engine.add_sample(Arc::new(SampleData::from_mono(pcm, SAMPLE_RATE as u32)));
+    engine.set_active_sample(sample_id);
+    engine.drum_mode_mut().set_pad_choke_group(0, 1);
+
+    // Each mode must actually reach a voice, or the guard covers three
+    // early returns. Checked before the guarded region so the assertions
+    // themselves cannot allocate inside it.
+    for (mode, note) in [
+        (CrumbsMode::Quick, 60_u8),
+        (CrumbsMode::Drum, 36),
+        (CrumbsMode::Slice, 37),
+    ] {
+        let mut probe = CrumbsEngine::new(SAMPLE_RATE);
+        let probe_id = probe.add_sample(Arc::new(SampleData::from_mono(
+            vec![0.5_f32; frames],
+            SAMPLE_RATE as u32,
+        )));
+        probe.set_active_sample(probe_id);
+        probe.handle_command(CrumbsCommand::SetMode(mode));
+        probe.handle_command(CrumbsCommand::NoteOn { note, velocity: 100 });
+        let mut left = vec![0.0_f32; BLOCK];
+        let mut right = vec![0.0_f32; BLOCK];
+        probe.process_block(&mut left, &mut right);
+        assert!(
+            peak(&left) > 1e-6,
+            "{mode:?} produced silence for note {note}, so the guarded region \
+             below would cover a note that never triggered a voice"
+        );
+    }
+
+    assert_no_alloc(|| {
+        // More notes than the 128-voice pool holds, so voice stealing and the
+        // choke pass are inside the guard as well as the mapping.
+        // `SetActiveSample` is in the loop because selecting a sample now
+        // looks the frame count up in the pool and feeds both mode defaults.
+        for round in 0..200_u8 {
+            engine.handle_command(CrumbsCommand::SetActiveSample(sample_id));
+            engine.handle_command(CrumbsCommand::SetMode(CrumbsMode::Quick));
+            engine.handle_command(CrumbsCommand::NoteOn {
+                note: 48 + (round % 24),
+                velocity: 100,
+            });
+            engine.handle_command(CrumbsCommand::SetMode(CrumbsMode::Drum));
+            engine.handle_command(CrumbsCommand::NoteOn {
+                note: 36,
+                velocity: 100,
+            });
+            engine.handle_command(CrumbsCommand::SetMode(CrumbsMode::Slice));
+            engine.handle_command(CrumbsCommand::NoteOn {
+                note: 37,
+                velocity: 100,
+            });
+        }
+    });
+
+    // The guarded loop must have left voices sounding. Without this, a
+    // `note_on` that returned early in every mode would be trivially
+    // allocation-free and the guard would cover nothing.
+    let mut left = vec![0.0_f32; BLOCK];
+    let mut right = vec![0.0_f32; BLOCK];
+    engine.process_block(&mut left, &mut right);
+    assert!(
+        peak(&left) > 1e-6,
+        "the guarded note_on loop left no voice sounding, so it never reached \
+         the voice path it claims to guard"
     );
 }
 

@@ -79,14 +79,15 @@
  *   1  MEASURED, RED     — conditions were fit and a verdict failed. This is
  *                          the only code that says anything about the product
  *                          or the instrument.
- *   2  NOT MEASURED      — the control leg found the machine too busy to
- *                          measure on. Says nothing about the product. Re-run
- *                          on a quiet machine.
+ *   2  NOT MEASURED      — installed stable Chrome was unavailable, or the
+ *                          control leg found the machine too busy to measure
+ *                          on. Says nothing about the product. Correct the
+ *                          environment and re-run.
  *
  * Exit 2 wins over exit 1: a contaminated run cannot support a failure claim
  * any more than it can support a pass.
  *
- * **The control leg is the sole authority on whether a run is trustworthy.**
+ * **Once stable Chrome launches, the control leg is the sole authority on whether a run is trustworthy.**
  * The load average is reported alongside the result and warned about when it is
  * high (`ADVISORY_LOAD_PER_CORE`), but it does not gate anything, because it is
  * the wrong proxy for this instrument — see the next section.
@@ -146,6 +147,8 @@
 import { arch, cpus, loadavg, platform, release } from 'node:os';
 
 import { chromium, type Browser, type Page } from 'playwright';
+
+import { launchRenderDeadlineBrowser } from './renderDeadlineBrowser.ts';
 
 const QUANTUM_FRAMES = 128;
 const REFERENCE_SAMPLE_RATE = 48_000;
@@ -567,10 +570,17 @@ function reportVerdicts({ notMeasured, failed }: Verdicts): number {
 async function main(): Promise<void> {
     const load = readLoad();
     const headed = process.argv.includes('--headed');
-    const browser = await chromium.launch({
-        headless: !headed,
-        args: ['--autoplay-policy=no-user-gesture-required'],
+    const launchResult = await launchRenderDeadlineBrowser({
+        headed,
+        launchBrowser: (options) => chromium.launch(options),
     });
+    if (launchResult.status === 'not-measured') {
+        console.error('NOT MEASURED — required installed stable Chrome is unavailable');
+        console.error(`  - ${String(launchResult.error)}`);
+        process.exitCode = EXIT_NOT_MEASURED;
+        return;
+    }
+    const { browser } = launchResult;
 
     try {
         const page = await openProbePage(browser);

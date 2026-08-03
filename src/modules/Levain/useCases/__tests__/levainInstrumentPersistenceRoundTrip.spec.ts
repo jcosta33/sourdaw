@@ -34,7 +34,7 @@ vi.mock('../levainParamBridge/setLevainParamWithAudio', () => ({
 
 const DEVICE_ID = 'levain-1';
 
-type PostedMessage = { type: string; instrumentId?: string };
+type PostedMessage = { type: string; instrumentId?: string; name?: string; value?: number };
 
 function fakePort(): { port: MessagePort; posted: PostedMessage[] } {
     const posted: PostedMessage[] = [];
@@ -64,7 +64,7 @@ function makeLevainTracks(deviceState?: Track['devices'][number]['deviceState'])
                         name: 'Levain',
                         type: 'levain',
                         bypassed: false,
-                        parameterValues: { masterGain: 0.8 },
+                        parameterValues: { masterGain: 0.8, current_articulation: 2 },
                         deviceState,
                     },
                 ],
@@ -112,17 +112,34 @@ describe('Levain instrument persistence round trip', () => {
         await Promise.resolve();
         await Promise.resolve();
 
+        const loadedState = levainStore.value?.[DEVICE_ID];
+        if (!loadedState) {
+            throw new Error('Levain state did not load');
+        }
+        levainStore.set({
+            [DEVICE_ID]: {
+                ...loadedState,
+                patch: { ...loadedState.patch, currentArticulation: 'tremolo' },
+            },
+        });
+        await Promise.resolve();
+        await Promise.resolve();
+
         // Reload: project the document, then rebuild the session from it alone.
         const projected = sanitizeTrackSnapshot(trackStore.value);
         trackStore.set({ ...defaultTrackState, tracks: projected.tracks });
         levainStore.set({});
 
         expect(hydrateLevainStateFromProject(DEVICE_ID)?.patch.instrumentId).toBe('cello');
+        expect(hydrateLevainStateFromProject(DEVICE_ID)?.patch.currentArticulation).toBe('tremolo');
 
         const { port, posted } = fakePort();
         await prepareOfflineLevain({ deviceId: DEVICE_ID, port });
 
-        expect(posted).toEqual([{ type: 'setInstrument', instrumentId: 'cello' }]);
+        expect(posted).toEqual([
+            { type: 'setInstrument', instrumentId: 'cello' },
+            { type: 'param', name: 'current_articulation', value: 13 },
+        ]);
         expect(mocks.autoLoadLevainSamples).toHaveBeenCalledWith(DEVICE_ID, port, 'cello', undefined);
     });
 
@@ -139,7 +156,10 @@ describe('Levain instrument persistence round trip', () => {
 
         await prepareOfflineLevain({ deviceId: DEVICE_ID, port });
 
-        expect(posted).toEqual([{ type: 'setInstrument', instrumentId: 'cello' }]);
+        expect(posted).toEqual([
+            { type: 'setInstrument', instrumentId: 'cello' },
+            { type: 'param', name: 'current_articulation', value: 0 },
+        ]);
         expect(mocks.autoLoadLevainSamples).toHaveBeenCalledWith(DEVICE_ID, port, 'cello', undefined);
     });
 
@@ -151,7 +171,10 @@ describe('Levain instrument persistence round trip', () => {
 
         await prepareOfflineLevain({ deviceId: DEVICE_ID, port });
 
-        expect(posted).toEqual([{ type: 'setInstrument', instrumentId: defaultLevainState.patch.instrumentId }]);
+        expect(posted).toEqual([
+            { type: 'setInstrument', instrumentId: defaultLevainState.patch.instrumentId },
+            { type: 'param', name: 'current_articulation', value: 0 },
+        ]);
     });
 
     it('registers a reloaded device onto the saved instrument, not onto the default', () => {

@@ -5,7 +5,7 @@ import { getEffectiveGain, normalizeTrack } from '#/modules/Arrangement/useCases
 import { clampFaderGain, dbToGain, gainToDb } from '#/utils/audioLevelLaw';
 
 import { type AutomationLane } from '../../../models/AutomationViewTypes';
-import { scheduleTrackAutomation } from '../../../repositories/offlineScheduler/automationScheduling';
+import { scheduleTrackAutomationFixture } from '../../../repositories/offlineScheduler/__tests__/scheduleTrackAutomationFixture';
 import { createOfflineTrackStrip } from '../createOfflineTrackStrip';
 
 const mocks = vi.hoisted(() => ({
@@ -119,28 +119,26 @@ describe('offline render composes the VCA multiplier the way live does', () => {
         const live = liveFaderGain('track-1', dbToGain(-6));
 
         const gain = makeParam();
-        scheduleTrackAutomation(
-            [
+        scheduleTrackAutomationFixture({
+            lanes: [
                 makeGainLane({
                     minValue: -60,
                     maxValue: 6,
                     points: [{ beat: 0, value: -6, curve: 'linear', tension: 0 }],
                 }),
             ],
-            'track-1',
-            { gain } as unknown as GainNode,
-            { pan: makeParam() } as unknown as StereoPannerNode,
-            [],
-            10,
-            120,
-            [],
-            0,
-            undefined,
-            44_100,
-            0,
-            undefined,
-            offlineVcaMultiplier('track-1')
-        );
+            trackId: 'track-1',
+            trackGainNode: { gain } as unknown as GainNode,
+            trackPanNode: { pan: makeParam() } as unknown as StereoPannerNode,
+            deviceEntries: [],
+            durationSeconds: 10,
+            defaultTempo: 120,
+            changes: [],
+            regionStartSeconds: 0,
+            sampleRate: 44_100,
+            compensationDelaySec: 0,
+            vcaMultiplier: offlineVcaMultiplier('track-1'),
+        });
 
         expect(live).toBeCloseTo(0.250_593_6, 7);
         expect(gain.setValueAtTime).toHaveBeenCalledWith(live, 0);

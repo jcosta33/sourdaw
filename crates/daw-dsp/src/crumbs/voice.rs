@@ -389,6 +389,21 @@ impl CrumbsVoice {
         self.energy
     }
 
+    /// Whether this voice is already running its de-click fade, from a choke or
+    /// an earlier steal.
+    ///
+    /// Steal selection has to skip these. `choke_voices_in_group` deliberately
+    /// leaves the allocator slot alone and starts only the fade, because
+    /// releasing it would let the next `allocate` hand the same slot back and
+    /// jump-cut the waveform. That protection held only while the pool had a
+    /// free slot elsewhere: once saturated, `find_steal_target`'s oldest and
+    /// quietest fallbacks — which run outside the priority check and skip only
+    /// *inactive* voices — picked a just-choked voice anyway, so the choke pass
+    /// and the steal pass undid each other.
+    pub fn is_stealing(&self) -> bool {
+        self.stealing
+    }
+
     /// Get the voice age in samples (for oldest-voice stealing).
     pub fn age(&self) -> u32 {
         self.age

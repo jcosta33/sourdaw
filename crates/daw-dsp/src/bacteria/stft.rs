@@ -10,6 +10,17 @@ use std::f32::consts::PI;
 const MAX_FFT_SIZE: usize = 4096;
 const HOP_DIVISOR: usize = 4; // 75% overlap
 const DEFAULT_FFT_SIZE: usize = 2048;
+
+/// Coherent gain of the Hann analysis + Hann synthesis pair at this
+/// processor's 75 % overlap.
+///
+/// Every frame is windowed on the way in and again on the way out, so the
+/// overlap-add sum carries `Σ_k w²(n − kN/4)`, which for a Hann window at a
+/// hop of `N/4` is exactly `3/2` and independent of `n`. A stage that means to
+/// be unity through the transform has to divide it back out; the freeze/blur
+/// path predates this constant and does not, which is why it is opt-in through
+/// [`StftProcessor::output_scale`] rather than folded into `process_sample`.
+pub const OLA_GAIN: f32 = 1.5;
 const DEFAULT_BIT_REVERSE: [usize; DEFAULT_FFT_SIZE] =
     build_bit_reverse_indices::<DEFAULT_FFT_SIZE>();
 
@@ -139,6 +150,10 @@ pub struct StftProcessor {
     blur_alpha: f32,
     freeze: bool,
     mix: f32,
+    /// Gain applied to the wet path only. Defaults to 1.0 so the freeze/blur
+    /// stage renders exactly as it did before this field existed; stages that
+    /// want unity through the transform set it to `1.0 / OLA_GAIN`.
+    output_scale: f32,
 
     ready: bool,
 }
@@ -179,8 +194,24 @@ impl StftProcessor {
             blur_alpha: 0.5,
             freeze: false,
             mix: 0.5,
+            output_scale: 1.0,
             ready: false,
         }
+    }
+
+    /// Group delay of the overlap-add path, in samples at whatever rate this
+    /// processor is being fed.
+    ///
+    /// A frame analysed after the write of sample `t` covers inputs
+    /// `t+1-N ..= t` (see `process_frame`'s read cursor) and is overlap-added
+    /// starting at output position `t+1`. Frame tap `i` therefore carries
+    /// input `t+1-N+i` and lands at output `t+1+i`: a flat `N`-sample delay,
+    /// the same for every tap and so for the window's centroid too.
+    ///
+    /// Exact, not an estimate — this is the number the host needs for delay
+    /// compensation when a stage built on this processor is in the path.
+    pub fn latency_samples(&self) -> usize {
+        self.fft_size
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {
@@ -224,7 +255,7 @@ impl StftProcessor {
             return dry;
         }
 
-        dry * (1.0 - self.mix) + wet * self.mix
+        dry * (1.0 - self.mix) + wet * self.output_scale * self.mix
     }
 
     fn process_frame(&mut self) {
@@ -314,6 +345,13 @@ impl StftProcessor {
 
 /// Smudge processor — temporal/spectral hybrid that blurs transients before distortion.
 /// Operates in STFT domain, smooths FFT magnitudes across successive frames.
+///
+/// Fully wet and gain-corrected: the wrapper divides the Hann-pair overlap-add
+/// gain back out (see [`OLA_GAIN`]) so selecting Smudge changes the character
+/// of a band without changing its level by +3.5 dB.
+///
+/// Costs [`Self::latency_samples`] of group delay, which the band chain folds
+/// into the engine's reported latency.
 pub struct SmudgeProcessor {
     stft: StftProcessor,
 }
@@ -323,11 +361,17 @@ impl SmudgeProcessor {
         let mut stft = StftProcessor::new(2048);
         stft.blur_alpha = 0.85; // Heavy smoothing for smudge
         stft.mix = 1.0;
+        stft.output_scale = 1.0 / OLA_GAIN;
         Self { stft }
     }
 
     pub fn set_amount(&mut self, amount: f32) {
-        self.stft.blur_alpha = 0.5 + amount * 0.49; // 0.5 to 0.99
+        self.stft.blur_alpha = (0.5 + amount * 0.49).clamp(0.0, 0.999); // 0.5 to 0.99
+    }
+
+    /// Group delay in samples at the rate this processor is fed.
+    pub fn latency_samples(&self) -> usize {
+        self.stft.latency_samples()
     }
 
     pub fn process_sample(&mut self, input: f32) -> f32 {
@@ -339,8 +383,33 @@ impl SmudgeProcessor {
     }
 }
 
-/// Breakdown processor — pitch-down via phase vocoder bin remapping + foldback clipping.
-/// f_new = f_original × 2^(-n) where n = octaver depth.
+impl Default for SmudgeProcessor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Breakdown processor — **not implemented**. Do not wire this into a band.
+///
+/// The intent is pitch-down by `f_new = f_original × 2^(-n)` via phase-vocoder
+/// bin remapping, followed by foldback clipping. None of that is here:
+///
+/// - `process_sample` does no pitch shift. It maps `depth` onto
+///   [`StftProcessor::blur_alpha`] and delegates, so the octave control moves
+///   a *spectral blur* coefficient. Its own comment says so.
+/// - `remap_mags` / `remap_phases` are allocated and zeroed by `reset` and are
+///   never read or written anywhere else. They are the shape of the missing
+///   algorithm, not the algorithm.
+/// - [`StftProcessor`] has no hook to remap bins through (`process_frame`
+///   hard-codes freeze-or-blur) and carries neither the previous-frame
+///   analysis phases nor the synthesis phase accumulator a phase vocoder needs.
+/// - There is no foldback clipping.
+///
+/// What it *does* is `SmudgeProcessor` with a different blur coefficient.
+/// Routing `DistortionMode::Breakdown` here would put a control labelled
+/// "Breakdown, 0–4 oct" in front of a blur knob — the same defect class as
+/// leaving the mode inert, with the added cost of looking finished. Completing
+/// it means writing a phase vocoder, which is DSP this type does not contain.
 pub struct BreakdownProcessor {
     stft: StftProcessor,
     depth: f32, // octaves to shift down
@@ -378,5 +447,122 @@ impl BreakdownProcessor {
         self.stft.reset();
         self.remap_mags.fill(0.0);
         self.remap_phases.fill(0.0);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const FFT_SIZE: usize = 2048;
+
+    /// `latency_samples` is the number the host is given for delay
+    /// compensation, so it has to be the delay the transform actually
+    /// delivers — not a plausible one.
+    ///
+    /// Measured against the one configuration where the transform is an
+    /// identity: `spectralBlur` 0 makes the recursive smoother's coefficient
+    /// 1, so magnitudes pass through untouched alongside their original
+    /// phases and the overlap-add reconstructs the input exactly, scaled by
+    /// [`OLA_GAIN`]. An impulse in therefore comes out as an impulse, and its
+    /// position is the group delay by direct reading.
+    #[test]
+    fn latency_samples_is_the_delay_the_transform_delivers() {
+        let mut stft = StftProcessor::new(FFT_SIZE);
+        stft.set_param("spectralBlur", 0.0);
+        stft.set_param("spectralMix", 1.0);
+
+        // Past the first hop, so the `!ready` dry passthrough is behind us.
+        const IMPULSE_AT: usize = 4096;
+        const TOTAL: usize = IMPULSE_AT + 3 * FFT_SIZE;
+
+        let rendered: Vec<f32> = (0..TOTAL)
+            .map(|index| {
+                let input = if index == IMPULSE_AT { 1.0 } else { 0.0 };
+                stft.process_sample(input)
+            })
+            .collect();
+
+        let (arrival, amplitude) = rendered
+            .iter()
+            .enumerate()
+            .skip(IMPULSE_AT)
+            .max_by(|(_, a), (_, b)| a.abs().total_cmp(&b.abs()))
+            .map(|(index, value)| (index, *value))
+            .expect("render produced no samples");
+
+        assert_eq!(
+            arrival - IMPULSE_AT,
+            stft.latency_samples(),
+            "the impulse arrived {} samples late against a reported {}",
+            arrival - IMPULSE_AT,
+            stft.latency_samples()
+        );
+        // The same reading pins the overlap-add gain: a Hann pair at a hop of
+        // N/4 sums to exactly 3/2, which is what `SmudgeProcessor` divides out.
+        assert!(
+            (amplitude - OLA_GAIN).abs() < 0.01,
+            "overlap-add gain measured {amplitude:.4}, expected {OLA_GAIN}"
+        );
+    }
+
+    /// Nothing before the delay elapses, because a transform that leaked the
+    /// input early would satisfy the arrival assertion above by accident.
+    #[test]
+    fn nothing_arrives_before_the_reported_delay() {
+        let mut stft = StftProcessor::new(FFT_SIZE);
+        stft.set_param("spectralBlur", 0.0);
+        stft.set_param("spectralMix", 1.0);
+
+        const IMPULSE_AT: usize = 4096;
+        let latency = stft.latency_samples();
+        let rendered: Vec<f32> = (0..IMPULSE_AT + latency)
+            .map(|index| {
+                let input = if index == IMPULSE_AT { 1.0 } else { 0.0 };
+                stft.process_sample(input)
+            })
+            .collect();
+
+        let leak = rendered[IMPULSE_AT..]
+            .iter()
+            .fold(0.0_f32, |acc, s| acc.max(s.abs()));
+        assert!(
+            leak < 1e-5,
+            "{leak:.3e} of the impulse appeared inside the {latency}-sample \
+             delay it is supposed to sit behind"
+        );
+    }
+
+    /// `SmudgeProcessor` divides [`OLA_GAIN`] back out, so a steady tone —
+    /// whose magnitudes the recursive smoother converges onto exactly — comes
+    /// through at unity rather than +3.5 dB.
+    #[test]
+    fn smudge_is_unity_gain_on_steady_material() {
+        let mut smudge = SmudgeProcessor::new();
+        let tone = |index: usize| {
+            (2.0 * PI * 440.0 * index as f32 / 48_000.0).sin() * 0.5
+        };
+
+        let total = 48_000;
+        let rendered: Vec<f32> = (0..total).map(|index| smudge.process_sample(tone(index))).collect();
+
+        // Settled tail only: the smoother needs several frames to converge.
+        let tail = total / 2;
+        let output_peak = rendered[tail..].iter().fold(0.0_f32, |acc, s| acc.max(s.abs()));
+        let gain_db = 20.0 * (output_peak / 0.5).log10();
+        assert!(
+            gain_db.abs() < 0.5,
+            "smudge delivers {gain_db:+.2} dB on a steady tone; the \
+             overlap-add gain is not being divided back out"
+        );
+    }
+
+    /// The window is what sets the delay, so the accessor has to follow it
+    /// rather than return a constant that happens to match at 2048.
+    #[test]
+    fn latency_follows_the_configured_window() {
+        assert_eq!(StftProcessor::new(1024).latency_samples(), 1024);
+        assert_eq!(StftProcessor::new(2048).latency_samples(), 2048);
+        assert_eq!(StftProcessor::new(4096).latency_samples(), 4096);
     }
 }

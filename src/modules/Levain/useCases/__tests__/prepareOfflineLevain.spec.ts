@@ -11,7 +11,7 @@ vi.mock('../autoLoadSamples', () => ({
     autoLoadLevainSamples: mocks.autoLoadLevainSamples,
 }));
 
-type PostedMessage = { type: string; instrumentId?: string };
+type PostedMessage = { type: string; instrumentId?: string; name?: string; value?: number };
 
 function fakePort(): { port: MessagePort; posted: PostedMessage[] } {
     const posted: PostedMessage[] = [];
@@ -38,12 +38,18 @@ describe('prepareOfflineLevain', () => {
         // instrument, on every exported orchestral track.
         const { port, posted } = fakePort();
         levainStore.set({
-            'device-a': { ...defaultLevainState, patch: { ...defaultLevainState.patch, instrumentId: 'cello' } },
+            'device-a': {
+                ...defaultLevainState,
+                patch: { ...defaultLevainState.patch, instrumentId: 'cello', currentArticulation: 'tremolo' },
+            },
         });
 
         await prepareOfflineLevain({ deviceId: 'device-a', port });
 
-        expect(posted).toEqual([{ type: 'setInstrument', instrumentId: 'cello' }]);
+        expect(posted).toEqual([
+            { type: 'setInstrument', instrumentId: 'cello' },
+            { type: 'param', name: 'current_articulation', value: 13 },
+        ]);
     });
 
     it('posts the instrument identity before starting the load that clears zones', async () => {
@@ -62,6 +68,7 @@ describe('prepareOfflineLevain', () => {
 
         expect(postedWhenLoadStarted).toEqual([
             { type: 'setInstrument', instrumentId: defaultLevainState.patch.instrumentId },
+            { type: 'param', name: 'current_articulation', value: 0 },
         ]);
     });
 
@@ -82,7 +89,10 @@ describe('prepareOfflineLevain', () => {
 
         await prepareOfflineLevain({ deviceId: 'never-opened', port });
 
-        expect(posted).toEqual([{ type: 'setInstrument', instrumentId: defaultLevainState.patch.instrumentId }]);
+        expect(posted).toEqual([
+            { type: 'setInstrument', instrumentId: defaultLevainState.patch.instrumentId },
+            { type: 'param', name: 'current_articulation', value: 0 },
+        ]);
         expect(mocks.autoLoadLevainSamples).toHaveBeenCalledWith(
             'never-opened',
             port,

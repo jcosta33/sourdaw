@@ -1,3 +1,4 @@
+import { getArticulationId } from '../models/LevainPatch';
 import { defaultLevainState, levainStore } from '../stores/levainStore';
 
 import { autoLoadLevainSamples } from './autoLoadSamples';
@@ -52,8 +53,9 @@ export type PrepareOfflineLevainInput = {
 export async function prepareOfflineLevain({ deviceId, port, signal }: PrepareOfflineLevainInput): Promise<void> {
     const instances = levainStore.value ?? {};
     const state = instances[deviceId] ?? hydrateLevainStateFromProject(deviceId) ?? defaultLevainState;
-    const { instrumentId } = state.patch;
+    const { currentArticulation, instrumentId } = state.patch;
 
     port.postMessage({ type: 'setInstrument', instrumentId });
+    port.postMessage({ type: 'param', name: 'current_articulation', value: getArticulationId(currentArticulation) });
     await autoLoadLevainSamples(deviceId, port, instrumentId, signal);
 }

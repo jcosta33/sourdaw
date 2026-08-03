@@ -3,9 +3,11 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { type TakeLaneStoreState, type Track } from '#/modules/Arrangement/stores';
 import { type MidiStoreState } from '#/modules/MIDI/stores';
 
+import { offlineDeviceParameterLawState } from '../../../repositories/offlineScheduler/offlineDeviceParameterLawState';
 import { type OfflineMidiProbabilitySelector } from '../../../repositories/offlineScheduler/offlineMidiEventProjectorState';
 import { type OfflineYeastMidiProcessor } from '../../../repositories/offlineScheduler/offlineYeastMidiProcessorState';
 import { type DeviceNodeEntry } from '../../buildDeviceChain';
+import { configureOfflineDeviceParameterLaw } from '../../configureOfflineDeviceParameterLaw';
 import { scheduleTrackClips } from '../scheduleTrackClips';
 import { type PendingWorkletEvent } from '../types';
 
@@ -58,6 +60,7 @@ const mocks = vi.hoisted(() => {
     return {
         getCompensationDelay: vi.fn<(trackId: string) => number>(() => 0),
         scheduleTrackAutomation: vi.fn(),
+        transportValue: { value: null as { scheduleGrainMs: number } | null },
         takeLaneValue: { value: null as TakeLaneStoreState | null },
         automationValue: {
             value: null as {
@@ -195,6 +198,16 @@ vi.mock('#/modules/Automation/stores', async (importOriginal) => {
     };
 });
 
+// The scheduler grain the offline slew has to read is transport state, so the
+// spec has to be able to move it off the shipping default.
+vi.mock('#/modules/Transport/stores', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Transport/stores')>();
+    return {
+        ...actual,
+        transportStore: mocks.transportValue,
+    };
+});
+
 vi.mock('../../../stores/audioBufferCache', () => ({
     audioBufferCache: mocks.audioBufferCache,
 }));
@@ -202,13 +215,20 @@ vi.mock('../../../stores/audioBufferCache', () => ({
 // Synth note-scheduling helpers are unused on the worklet-instrument path
 // (instrumentControls present → events go to pendingWorkletEvents), but the
 // module is imported so we stub it to keep it inert.
-vi.mock('#/modules/Synth/useCases', () => ({
-    getDrumKitDefByIndex: vi.fn(() => null),
-    getSynthParamsFromDevices: vi.fn(() => null),
-    scheduleDrumKitNote: vi.fn(),
-    scheduleKitNote: vi.fn(),
-    scheduleNoteOffline: vi.fn(),
-}));
+// Partial: the offline path only calls these five, but the Arrangement barrel
+// scheduleTrackClips reads the device-parameter law from also reaches MIDI's
+// live-input wiring, which imports other members of this barrel at module load.
+vi.mock('#/modules/Synth/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Synth/useCases')>();
+    return {
+        ...actual,
+        getDrumKitDefByIndex: vi.fn(() => null),
+        getSynthParamsFromDevices: vi.fn(() => null),
+        scheduleDrumKitNote: vi.fn(),
+        scheduleKitNote: vi.fn(),
+        scheduleNoteOffline: vi.fn(),
+    };
+});
 
 vi.mock('#/modules/AudioEngine/services/deviceResolution', () => ({
     resolveDrumKit: vi.fn(() => null),
@@ -279,6 +299,8 @@ type RunScheduleInput = {
     probability?: number;
     probabilityCorpus?: boolean;
     regionStartBeat?: number;
+    automationMode?: Track['automationMode'];
+    instrumentParameterValues?: Record<string, number>;
 };
 
 async function runSchedule({
@@ -292,10 +314,18 @@ async function runSchedule({
     probability,
     probabilityCorpus = false,
     regionStartBeat = 0,
+    automationMode,
+    instrumentParameterValues,
 }: RunScheduleInput = {}): Promise<PendingWorkletEvent[]> {
     const offlineCtx = makeOfflineCtx();
     const track = makeMidiTrack();
     track.followChordTrack = followChordTrack;
+    if (automationMode !== undefined) {
+        track.automationMode = automationMode;
+    }
+    if (instrumentParameterValues) {
+        track.devices[0]!.parameterValues = instrumentParameterValues;
+    }
     const midi = makeMidi();
     if (probability !== undefined) {
         midi.notesByClipId['clip-1']![0]!.probability = probability;
@@ -389,16 +419,22 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
 
         await runSchedule({ regionStartBeat: 128 });
 
-        const call = mocks.scheduleTrackAutomation.mock.calls.at(-1);
-        // Positional args (clipBoundsById is the trailing AU-12 arg).
-        expect(call?.[8]).toBe(64);
-        const projectBeat = call?.[9] as ((beat: number) => number) | undefined;
-        expect(projectBeat?.(130)).toBe(65);
-        expect(call?.[10]).toBe(48_000);
+        const input = mocks.scheduleTrackAutomation.mock.calls.at(-1)?.[0] as
+            | {
+                  regionStartSeconds: number;
+                  projectBeatToSeconds: (beat: number) => number;
+                  sampleRate: number;
+                  compensationDelaySec: number;
+                  clipBoundsById: unknown;
+              }
+            | undefined;
+        expect(input?.regionStartSeconds).toBe(64);
+        expect(input?.projectBeatToSeconds(130)).toBe(65);
+        expect(input?.sampleRate).toBe(48_000);
         // Automation gets the same latency compensation clip scheduling applies (M-038).
-        expect(call?.[11]).toBe(0.05);
+        expect(input?.compensationDelaySec).toBe(0.05);
         // AU-12: clip-scoped automation lanes are gated by clip bounds offline.
-        expect(call?.[12]).toBeInstanceOf(Map);
+        expect(input?.clipBoundsById).toBeInstanceOf(Map);
     });
 
     it('drops a MIDI note that ends before the render-region start', async () => {
@@ -813,5 +849,143 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
 
         await runSchedule({ withYeast: true, emptyNotes: true });
         expect(mocks.processYeastMidi).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('scheduleTrackClips — offline slew grain follows live transport state', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.takeLaneValue.value = null;
+        mocks.automationValue.value = null;
+        mocks.transportValue.value = null;
+        mocks.getCompensationDelay.mockReturnValue(0);
+    });
+
+    async function slewTickSecondsFor(scheduleGrainMs: number | null): Promise<number> {
+        mocks.transportValue.value = scheduleGrainMs === null ? null : { scheduleGrainMs };
+        await runSchedule();
+        const input = mocks.scheduleTrackAutomation.mock.calls.at(-1)?.[0] as { slewTickSeconds: number } | undefined;
+        expect(input, 'scheduleTrackAutomation was never called').toBeDefined();
+        return input!.slewTickSeconds;
+    }
+
+    // The live slew runs one step per scheduler tick and the scheduler ticks
+    // every `scheduleGrainMs`, so the bounce has to read that state — not the
+    // shipping default, which is the single grain where a constant agrees.
+    it.each([
+        [2.5, 0.0025],
+        [10, 0.01],
+        [25, 0.025],
+        [50, 0.05],
+    ])('passes the %sms scheduler grain through as %ss of slew tick', async (scheduleGrainMs, expected) => {
+        expect(await slewTickSecondsFor(scheduleGrainMs)).toBeCloseTo(expected, 12);
+    });
+
+    it('falls back to the default transport grain when no transport state exists yet', async () => {
+        expect(await slewTickSecondsFor(null)).toBeCloseTo(0.01, 12);
+    });
+});
+
+describe('scheduleTrackClips — offline automation reads the same laws live does', () => {
+    /** Stands in for the composition root's wiring of Arrangement's real law. */
+    const injectedLaw = {
+        isAutomatable: ({ paramId }: { deviceType: string; paramId: string }) => paramId === 'filterCutoff',
+        clampValue: ({ value }: { deviceType: string; paramId: string; value: number }) =>
+            Math.min(20_000, Math.max(20, value)),
+    };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.takeLaneValue.value = null;
+        mocks.automationValue.value = null;
+        mocks.transportValue.value = null;
+        mocks.getCompensationDelay.mockReturnValue(0);
+        offlineDeviceParameterLawState.isAutomatable = null;
+        offlineDeviceParameterLawState.clampValue = null;
+    });
+
+    /**
+     * The instrument carries both parameters in `parameterValues`, so the
+     * presence half of the live gate passes for each and whatever the law
+     * refuses is refused by the predicate alone.
+     */
+    async function lastAutomationLaw() {
+        await runSchedule({ instrumentParameterValues: { filterCutoff: 0.5, oscShape: 0.2 } });
+        const input = mocks.scheduleTrackAutomation.mock.calls.at(-1)?.[0] as
+            | {
+                  deviceParameterLaw: {
+                      acceptsAutomation: (input: {
+                          deviceId: string;
+                          deviceType: string;
+                          parameterId: string;
+                      }) => boolean;
+                      clampValue: (input: { deviceType: string; paramId: string; value: number }) => number;
+                  };
+              }
+            | undefined;
+        expect(input, 'scheduleTrackAutomation was never called').toBeDefined();
+        return input!.deviceParameterLaw;
+    }
+
+    it("schedules no automation at all for a track whose automationMode is 'off'", async () => {
+        // Live `applyAutomation` drops every lane on the track before gain, pan
+        // or device params when the mode is 'off'. Offline read no mode at all,
+        // so a track the monitor plays flat bounced fully automated.
+        await runSchedule({ automationMode: 'off' });
+        expect(mocks.scheduleTrackAutomation).not.toHaveBeenCalled();
+
+        await runSchedule({ automationMode: 'read' });
+        expect(mocks.scheduleTrackAutomation).toHaveBeenCalledTimes(1);
+    });
+
+    it('applies the injected automatable predicate on top of the live parameterValues gate', async () => {
+        configureOfflineDeviceParameterLaw(injectedLaw);
+        const law = await lastAutomationLaw();
+
+        // Both halves of the live gate have to hold: the device carries the key
+        // AND the law declares it automatable. `oscShape` is present but not
+        // declared automatable, so only the predicate can refuse it — offline
+        // used to accept anything present, which is how a lane the monitor
+        // refuses to run still drove the bounce.
+        expect(
+            law.acceptsAutomation({ deviceId: 'inst-1', deviceType: 'fermenter', parameterId: 'filterCutoff' })
+        ).toBe(true);
+        expect(law.acceptsAutomation({ deviceId: 'inst-1', deviceType: 'fermenter', parameterId: 'oscShape' })).toBe(
+            false
+        );
+        // Present in the law but absent from the device: the presence half fails.
+        expect(
+            law.acceptsAutomation({
+                deviceId: 'not-on-this-track',
+                deviceType: 'fermenter',
+                parameterId: 'filterCutoff',
+            })
+        ).toBe(false);
+        expect(law.acceptsAutomation({ deviceId: 'inst-1', deviceType: 'fermenter', parameterId: 'unwritten' })).toBe(
+            false
+        );
+    });
+
+    it('routes device writes through the injected declared-range clamp', async () => {
+        configureOfflineDeviceParameterLaw(injectedLaw);
+        const law = await lastAutomationLaw();
+
+        expect(law.clampValue({ deviceType: 'fermenter', paramId: 'filterCutoff', value: 1e9 })).toBe(20_000);
+        expect(law.clampValue({ deviceType: 'fermenter', paramId: 'filterCutoff', value: -1e9 })).toBe(20);
+    });
+
+    it('refuses device automation outright when no law has been injected', async () => {
+        // Unset is not "anything goes": with no law the render cannot tell an
+        // automatable parameter from one live would refuse, and substituting a
+        // looser rule is how the bounce diverged from the monitor in the first
+        // place. With nothing resolving, the clamp has nothing to narrow.
+        const law = await lastAutomationLaw();
+
+        // Same parameter the injected law accepts above — with nothing injected
+        // it is refused rather than waved through.
+        expect(
+            law.acceptsAutomation({ deviceId: 'inst-1', deviceType: 'fermenter', parameterId: 'filterCutoff' })
+        ).toBe(false);
+        expect(law.clampValue({ deviceType: 'fermenter', paramId: 'filterCutoff', value: 1e9 })).toBe(1e9);
     });
 });
