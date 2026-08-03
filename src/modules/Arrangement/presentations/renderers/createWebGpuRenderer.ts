@@ -430,7 +430,10 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                     textOffset,
                     x1,
                     y1,
-                    x1 + layout.maxWidthCssPx * dpr,
+                    // The raster is sized to the glyph run, not to the clip, so
+                    // the quad has to be too — using the clip's width here would
+                    // stretch a short name across the whole clip.
+                    x1 + label.widthCssPx * dpr,
                     y1 + CLIP_LABEL_BLOCK_HEIGHT_CSS_PX * dpr,
                     w,
                     h
@@ -688,9 +691,11 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
             if (labelBindGroups.length > 0) {
                 renderPass.setPipeline(textPipeline);
                 renderPass.setVertexBuffer(0, textGpuBuf);
-                for (let index = 0; index < labelBindGroups.length; index++) {
-                    renderPass.setBindGroup(0, labelBindGroups[index]!);
-                    renderPass.draw(VERTICES_PER_RECT, 1, index * VERTICES_PER_RECT);
+                let labelIndex = 0;
+                for (const bindGroup of labelBindGroups) {
+                    renderPass.setBindGroup(0, bindGroup);
+                    renderPass.draw(VERTICES_PER_RECT, 1, labelIndex * VERTICES_PER_RECT);
+                    labelIndex++;
                 }
             }
 

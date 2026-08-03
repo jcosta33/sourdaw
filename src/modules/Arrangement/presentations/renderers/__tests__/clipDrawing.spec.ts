@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { type ClipRenderModel, type TimelineRenderModel } from '../../../models/TimelineRenderModel';
-import { computeClipLabelLayout } from '../clipLabel';
 import { drawClip } from '../clipDrawing';
+import { computeClipLabelLayout } from '../clipLabel';
 
 type GetCachedAudioBufferMock = (input: { bufferId: string }) => AudioBuffer | null;
 

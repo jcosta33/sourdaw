@@ -165,6 +165,10 @@ function install_webgpu_mocks(canvas: HTMLCanvasElement): WebGpuMockHandles {
             destroy: vi.fn(),
         })),
         createSampler: vi.fn(() => ({})),
+        // Every real `GPUDevice` exposes `limits`, and the label cache reads
+        // `maxTextureDimension2D` from it to bound the raster it asks for. 8192
+        // is the WebGPU default a device must support.
+        limits: { maxTextureDimension2D: 8192 },
         createTexture,
         createBindGroup: vi.fn(() => ({})),
         queue: {
@@ -328,17 +332,20 @@ describe('createWebGpuRenderer clip name labels', () => {
 
         renderer.render(create_test_model());
 
-        // The clip spans beats 2..6 at 25 px/beat → 100 CSS px wide. Inside its
-        // own texture the glyph run starts at the origin and sits on the shared
-        // ascent; the timeline placement is carried by the quad, not by
-        // `fillText`. The squeeze budget is the same `width - 2 * inset` the
-        // Canvas2D renderer passes as `maxWidth`.
-        expect(handles.labelFillText).toHaveBeenCalledWith(
-            'Audio Clip',
-            0,
-            CLIP_LABEL_ASCENT_CSS_PX,
-            100 - CLIP_LABEL_INSET_CSS_PX * 2
-        );
+        // The clip spans beats 2..6 at 25 px/beat → 100 CSS px wide, so the
+        // squeeze budget is `100 - 2 * inset` = 88. Inside its own texture the
+        // glyph run starts at the origin and sits on the shared ascent; the
+        // timeline placement is carried by the quad, not by `fillText`.
+        //
+        // The `maxWidth` argument is the *raster* width, which is the narrower
+        // of the run and that budget — here the stubbed run, 10 px. `maxWidth`
+        // only ever condenses, so passing the run's own width when it already
+        // fits is a no-op, and passing the budget when it does not is the
+        // condense. Sizing the raster from the budget instead would ask for a
+        // texture as wide as the clip is drawn, which past
+        // `maxTextureDimension2D` is a validation error and a missing label.
+        expect(handles.labelFillText).toHaveBeenCalledWith('Audio Clip', 0, CLIP_LABEL_ASCENT_CSS_PX, 10);
+        expect(10).toBeLessThan(100 - CLIP_LABEL_INSET_CSS_PX * 2);
         expect(handles.setBindGroup).toHaveBeenCalled();
     });
 
@@ -386,6 +393,38 @@ describe('createWebGpuRenderer clip name labels', () => {
 
         expect(afterTwoIdenticalFrames).toBe(1);
         expect(handles.createTexture.mock.calls.length).toBe(2);
+    });
+
+    it('sizes a label raster to the glyph run, not to the clip it sits on', async () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 400;
+        canvas.height = 80;
+        const handles = install_webgpu_mocks(canvas);
+        const { createWebGpuRenderer } = await import('../createWebGpuRenderer');
+        const renderer = await createWebGpuRenderer(canvas);
+        if (!renderer) {
+            throw new Error('expected WebGPU renderer');
+        }
+
+        // A long clip at editing zoom. 400 beats × 25 px/beat is 10 000 CSS px
+        // of drawn clip — well past `maxTextureDimension2D` once dpr is applied,
+        // and the whole point is that the label does not care how wide the clip
+        // is. The stubbed `measureText` reports a 10 px glyph run.
+        const base = create_test_model();
+        const wide: TimelineRenderModel = {
+            ...base,
+            tracks: [{ ...base.tracks[0]!, clips: [{ ...base.tracks[0]!.clips[0]!, startBeat: 0, endBeat: 400 }] }],
+        };
+
+        renderer.render(wide);
+
+        const lastCall = handles.createTexture.mock.calls.at(-1) as [GPUTextureDescriptor] | undefined;
+        const width = lastCall?.[0].size as { width: number } | undefined;
+        expect(width?.width).toBeLessThanOrEqual(8192);
+        // The run is 10 CSS px, so the raster is that wide (times dpr), not the
+        // clip's 10 000. Asserting the actual value rather than just the ceiling
+        // keeps this from passing on a texture that is merely clamped.
+        expect(width?.width).toBe(10);
     });
 });
 
