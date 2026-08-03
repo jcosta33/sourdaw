@@ -213,7 +213,6 @@ export const RUNTIME_ACTION_TYPES = [
     'removeFromVca',
     'restoreAutomationLanePoints',
     'restoreClip',
-    'restoreDsoSnapshot',
     'restoreProjectVersion',
     'restoreTrack',
     'saveTrackTemplate',

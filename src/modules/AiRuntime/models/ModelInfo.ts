@@ -53,8 +53,7 @@ export const NATIVE_MODEL_INFO: NativeModelInfo = {
     id: 'qwen3-8b-native',
     displayName: 'Qwen3 8B',
     parameterCount: '8B',
-    description:
-        'In-process inference via Metal/CUDA GPU. Schema-constrained DSO generation via Constraint::JsonSchema.',
+    description: 'In-process inference via Metal/CUDA GPU with schema-constrained command planning.',
     downloadSize: '~5.0 GB (first run only)',
     ramUsage: '~6.0 GB',
     huggingFaceId: 'Qwen/Qwen3-8B',

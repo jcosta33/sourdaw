@@ -1,8 +1,7 @@
 import { createStore } from '#/infra/store/createStore';
 import { createLocalStorage } from '#/infra/store/storage/createLocalStorage';
 
-export type AiActionEntry =
-    { kind: 'appAction'; actionType: string; label: string } | { kind: 'jsonEdit'; label: string };
+export type AiActionEntry = { kind: 'appAction'; actionType: string; label: string };
 
 export type AiActionGroup = {
     id: string;
@@ -43,17 +42,6 @@ function validateStoredActionEntry(value: unknown): AiActionEntry | null {
         return {
             kind: 'appAction',
             actionType: value.actionType,
-            label: value.label,
-        };
-    }
-
-    if (value.kind === 'jsonEdit') {
-        if (typeof value.label !== 'string') {
-            return null;
-        }
-
-        return {
-            kind: 'jsonEdit',
             label: value.label,
         };
     }

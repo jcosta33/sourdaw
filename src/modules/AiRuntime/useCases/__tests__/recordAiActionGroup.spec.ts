@@ -5,17 +5,11 @@ import { recordAiActionGroup } from '../recordAiActionGroup';
 type WrittenHistoryGroup = {
     id: string;
     prompt: string;
-    actions: Array<
-        | {
-              kind: 'appAction';
-              actionType: string;
-              label: string;
-          }
-        | {
-              kind: 'jsonEdit';
-              label: string;
-          }
-    >;
+    actions: Array<{
+        kind: 'appAction';
+        actionType: string;
+        label: string;
+    }>;
     groupId: string;
     timestamp: number;
     reverted: boolean;
