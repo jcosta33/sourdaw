@@ -300,6 +300,37 @@ fn reported_latency_follows_the_smudge_window() {
     );
 }
 
+/// The oversampling parameter accepts any integer 1..=8, but the chain is a
+/// cascade of 2x stages and snaps to a power of two — 3 runs at 2x, and 5, 6
+/// and 7 all run at 4x.
+///
+/// So the reported latency has to be computed from the rate the chain is
+/// *actually* running at. Dividing the window by the requested value instead
+/// reports a delay the band does not deliver, and because the internal
+/// cross-band alignment reads the same figure, the bands comb against each
+/// other rather than merely arriving late.
+///
+/// Every other latency case here uses a power of two, which is exactly why this
+/// went unnoticed: at 1, 2, 4 and 8 the requested and effective factors agree.
+#[test]
+fn reported_latency_uses_the_effective_oversampling_factor_not_the_requested_one() {
+    // (requested, effective) — the chain rounds down to the nearest power of two.
+    for (requested, effective) in [(3.0_f32, 2.0_f32), (5.0, 4.0), (6.0, 4.0), (7.0, 4.0)] {
+        let mut requested_chain = configure(SMUDGE, HARD_DRIVE, 2.0);
+        requested_chain.set_param("band0_oversampling", requested);
+
+        let mut effective_chain = configure(SMUDGE, HARD_DRIVE, 2.0);
+        effective_chain.set_param("band0_oversampling", effective);
+
+        assert_eq!(
+            requested_chain.get_latency_samples(),
+            effective_chain.get_latency_samples(),
+            "oversampling {requested} runs at {effective}x, so it must report {effective}x's latency \
+             — reporting the requested factor's is a delay the band never delivers"
+        );
+    }
+}
+
 /// The reported number has to be the delay the device actually delivers, or
 /// plugin delay compensation slides the track against everything else.
 ///

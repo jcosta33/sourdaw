@@ -85,8 +85,21 @@ impl AlignmentDelay {
     /// across the whole ramp.
     ///
     /// The one seam that is new here is a *sibling* band's factor moving this
-    /// band's target. Bounded at 11 samples — 0.24 ms, once, on a deliberate
-    /// parameter change — against a comb that would otherwise never go away.
+    /// band's target.
+    ///
+    /// **That seam used to be bounded at 11 samples — 0.24 ms — and is not any
+    /// more.** Smudge contributes up to 2048 samples of window latency, so
+    /// toggling it on one band can move a sibling's target by that much in a
+    /// single step, and this splices rather than crossfades: ~43 ms of replayed
+    /// or skipped audio, on a deliberate parameter change, once. Audible.
+    ///
+    /// Kept as a splice rather than fixed here because a crossfade is the wrong
+    /// shape for it — ramping the delay spreads the very misalignment this
+    /// exists to remove across the whole ramp, as the paragraph above says. What
+    /// it actually wants is a short equal-power crossfade between two reads of
+    /// the same ring at the old and new offsets, which is real work and is not
+    /// this branch's subject. Recorded honestly rather than left reading as
+    /// sub-millisecond.
     fn set_delay(&mut self, delay: usize) {
         self.delay = delay.min(ALIGNMENT_RING_LEN - 1);
     }
@@ -291,7 +304,22 @@ impl BandChain {
     /// 2048 samples are 2048 samples of the oversampled stream — 256 base-rate
     /// samples at 8x. Every other mode contributes zero.
     fn distortion_latency_samples(&self) -> f32 {
-        self.distortion.latency_samples() / self.oversampling_factor as f32
+        // Ask the chain what rate it is *actually* running at, not what was
+        // requested. `oversampling_factor` is the raw parameter, clamped to
+        // 1..=8 and nothing else, while `OversamplingChain` snaps it to a power
+        // of two — 3 becomes 2, and 5/6/7 become 4 — because it is a cascade of
+        // 2x stages and an odd factor would emit a slice no stage can decimate.
+        //
+        // Dividing by the requested value therefore reports a delay the band
+        // does not deliver: at a requested 3 the window is 2048/3 ≈ 683 samples
+        // on paper and 1024 in fact. A host trusting that number shifts the band
+        // by the difference permanently, and the internal cross-band alignment
+        // reads the same wrong figure, so the bands comb against each other
+        // rather than merely arriving late.
+        //
+        // Harmless before this branch only because `oversampling_factor` was a
+        // `> 1` boolean gate and never a divisor.
+        self.distortion.latency_samples() / self.oversampler_l.factor() as f32
     }
 
     /// Group delay the band's own processing imposes *right now*.
