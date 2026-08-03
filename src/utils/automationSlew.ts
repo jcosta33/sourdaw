@@ -32,12 +32,28 @@
  * rounded off and lag the target by ~τ, exactly the "monitor low-passes, bounce
  * does not" divergence AU-2 names.
  *
- * The offline path replicates it **sample-accurately, not approximately**: it
- * samples the compiled curve `x(t)` at the same `Δt` grid and runs the identical
- * recurrence via {@link slewStep}. Because the offline compiled events already
- * carry the true curve at ≤`Δt` resolution, resampling them on the `Δt` grid
- * recovers the same `x[n]` the live path sees, so `y[n]` is identical
- * sample-for-sample.
+ * The offline path replicates it by sampling the compiled curve `x(t)` on the
+ * same `Δt` grid and running the identical recurrence via {@link slewStep}. The
+ * compiled events carry the true curve at ≤`Δt` resolution — the offline event
+ * compiler (`AudioEngine/repositories/offlineScheduler/`) tightens its curve
+ * pre-sampling interval to the slew tick for exactly this reason — so resampling
+ * them on the `Δt` grid recovers the same `x[n]` the live path sees.
+ *
+ * **The remaining gap is the tick grid itself, and it is not closable here.**
+ * Offline assumes a rigid `n·Δt` grid. Live is not rigid: `startPlayheadScheduler`
+ * drops a tick outright when async work — the Yeast Worker round-trip in
+ * particular — outruns one grain, and the following tick advances by the real,
+ * larger delta while still applying exactly **one** `slewStep`. Under that load
+ * the monitor therefore applies *fewer* filter steps per unit real time than the
+ * bounce does, and its ramp settles slower. The divergence is load-dependent,
+ * grows as the grain gets finer, and cannot be fixed by threading a scalar tick
+ * period through — closing it needs the render to replay the tick schedule the
+ * live pass actually produced, which nothing records today.
+ *
+ * So: identical for a session that never drops a tick, which is the common case,
+ * and a bounded approximation otherwise. Do not restate this as "sample-for-sample
+ * identical" — an earlier revision of this comment did, and it is not true under
+ * load.
  *
  * Gain/pan are deliberately **not** slewed here (nor live): they are backed by
  * real `AudioParam`s smoothed in-engine (`setTargetAtTime`) / scheduled a-rate,
@@ -48,6 +64,16 @@
 
 /** IIR smoothing coefficient of the live device-param slew (#746 / AU-2). */
 export const AUTOMATION_SLEW_ALPHA = 0.4;
+
+/**
+ * The grain the live scheduler falls back to when handed a non-positive one.
+ *
+ * Kept in step with `schedulerWorker.ts`'s `msg.interval > 0 ? msg.interval : 10`
+ * by `automationSlewGrainParity.spec.ts`, which drives the worker's own guard
+ * rather than restating the number — so a change there fails here instead of
+ * silently re-opening the divergence.
+ */
+const SCHEDULER_FALLBACK_GRAIN_MS = 10;
 
 /**
  * The tick cadence the slew runs at, in seconds, for a given transport scheduler
@@ -65,7 +91,15 @@ export const AUTOMATION_SLEW_ALPHA = 0.4;
  */
 export function automationSlewTickSecondsForGrain(scheduleGrainMs: number): number {
     if (!Number.isFinite(scheduleGrainMs) || scheduleGrainMs <= 0) {
-        return 0;
+        // Mirror the live worker rather than refusing. `schedulerWorker.ts`
+        // does `msg.interval > 0 ? msg.interval : 10`, so a non-positive grain
+        // still ticks live — at 10 ms — and still slews. An earlier revision
+        // returned 0 here on the reasoning that such a grain "could not have
+        // driven a live tick", which is simply false: it drives one at the
+        // fallback. Returning 0 would have made the bounce hold a value the
+        // monitor glided, which is the same class of divergence this function
+        // exists to close.
+        return SCHEDULER_FALLBACK_GRAIN_MS / 1000;
     }
     return scheduleGrainMs / 1000;
 }

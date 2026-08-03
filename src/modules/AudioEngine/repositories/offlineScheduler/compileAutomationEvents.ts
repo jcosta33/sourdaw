@@ -292,10 +292,19 @@ export function compileAutomationEvents(
             !hasTempoBoundary &&
             Math.abs(projectBeat(visibleStartBeat + beatSpan / 4) - (visibleStart + timeSpan / 4)) < 1e-4 &&
             Math.abs(projectBeat(visibleStartBeat + beatSpan / 2) - (visibleStart + timeSpan / 2)) < 1e-4;
+        // A non-linear curve (bezier, smooth, exponential, s-curve — or a
+        // linear one crossing a tempo change) is pre-sampled into linear
+        // segments. That grid has to be at least as fine as the slew tick, or
+        // the slew resamples an already-coarser approximation: live evaluates
+        // the true curve at every tick, so at a grain under this interval the
+        // bounce would low-pass a stair-stepped input the monitor never saw.
+        // Only tightened when a slew is actually configured — gain and pan are
+        // a-rate and unslewed on both sides, and pay nothing for this.
+        const sampleIntervalSec = Math.min(AUTOMATION_SAMPLE_INTERVAL_SEC, options?.slew?.tickSeconds ?? Infinity);
         const steps =
             current.point.curve === 'linear' && hasLinearTimeProjection
                 ? 1
-                : Math.max(1, Math.ceil(timeSpan / AUTOMATION_SAMPLE_INTERVAL_SEC));
+                : Math.max(1, Math.ceil(timeSpan / sampleIntervalSec));
         for (let step = 1; step <= steps; step++) {
             const time = visibleStart + ((visibleEnd - visibleStart) * step) / steps;
             const beat = beatAtTime(visibleStartBeat, visibleEndBeat, time, projectBeat);

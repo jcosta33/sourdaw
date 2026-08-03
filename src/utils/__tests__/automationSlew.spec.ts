@@ -17,11 +17,16 @@ describe('automationSlew', () => {
         expect(automationSlewTickSecondsForGrain(100)).toBe(0.1);
     });
 
-    it('reports "do not slew" for a grain that could not have driven a live tick', () => {
-        expect(automationSlewTickSecondsForGrain(0)).toBe(0);
-        expect(automationSlewTickSecondsForGrain(-5)).toBe(0);
-        expect(automationSlewTickSecondsForGrain(Number.NaN)).toBe(0);
-        expect(automationSlewTickSecondsForGrain(Number.POSITIVE_INFINITY)).toBe(0);
+    it('falls back to the live scheduler grain for an unusable one, rather than refusing to slew', () => {
+        // An earlier revision returned 0 here — "do not slew" — reasoning that
+        // such a grain could not have driven a live tick. It can: the scheduler
+        // worker clamps a non-positive interval to 10 ms and keeps ticking, so
+        // live still slews. Returning 0 would have held a value offline that the
+        // monitor glided, which is the divergence this module exists to close.
+        expect(automationSlewTickSecondsForGrain(0)).toBe(0.01);
+        expect(automationSlewTickSecondsForGrain(-5)).toBe(0.01);
+        expect(automationSlewTickSecondsForGrain(Number.NaN)).toBe(0.01);
+        expect(automationSlewTickSecondsForGrain(Number.POSITIVE_INFINITY)).toBe(0.01);
     });
 
     it('advances one IIR tick toward the target: y = y + alpha*(target - y)', () => {

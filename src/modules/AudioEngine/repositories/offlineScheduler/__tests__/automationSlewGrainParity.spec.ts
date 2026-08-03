@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { automationStore } from '#/modules/Automation/stores';
+import { getAutomationValueAtBeat } from '#/modules/Automation/useCases';
 import { AUTOMATION_SLEW_ALPHA, automationSlewTickSecondsForGrain, slewStep } from '#/utils/automationSlew';
 
 import { type AutomationLane } from '../../../models/AutomationViewTypes';
@@ -33,6 +35,25 @@ const DURATION_SECONDS = 4;
  * session would set, the shipping default, and two coarse grains.
  */
 const GRAINS_MS = [2.5, 10, 25, 50] as const;
+
+/**
+ * A grain finer than the compiler's own curve pre-sampling interval (10 ms), so
+ * a non-linear curve has to be sampled more finely than that default to keep up
+ * with the slew.
+ */
+const FINE_GRAIN_MS = 2.5;
+
+/**
+ * What `schedulerWorker.ts` ticks at when handed a non-positive interval:
+ * `const intervalMs = msg.interval > 0 ? msg.interval : 10`.
+ *
+ * Restated here rather than imported because the worker is a module worker and
+ * pulling it in drags its whole runtime into this spec. The coupling is the
+ * point of the test below — if the worker's fallback changes and this does not,
+ * the offline path is silently rendering a different glide from the monitor
+ * again, so this constant is the thing to check first when that test fails.
+ */
+const LIVE_WORKER_FALLBACK_GRAIN_MS = 10;
 
 function makeParam() {
     return {
@@ -88,7 +109,16 @@ function liveSlewSeries(tickSeconds: number, tickCount: number): { timeSeconds: 
     return series;
 }
 
-function renderDeviceLaneAtGrain(scheduleGrainMs: number) {
+/**
+ * The same ramp on a curve that is not `linear`, so the compiler pre-samples it
+ * into segments instead of taking the exact one-segment fast path.
+ */
+function makeBezierLane(): AutomationLane {
+    const lane = makeRampLane();
+    return { ...lane, points: lane.points.map((point) => ({ ...point, curve: 'bezier' as const, tension: 0.5 })) };
+}
+
+function renderDeviceLaneAtGrain(scheduleGrainMs: number, lane: AutomationLane = makeRampLane()) {
     const deviceParam = makeParam();
     const deviceNode: OfflineDeviceNode = {
         inputNode: {} as AudioNode,
@@ -97,7 +127,7 @@ function renderDeviceLaneAtGrain(scheduleGrainMs: number) {
     };
 
     scheduleTrackAutomationFixture({
-        lanes: [makeRampLane()],
+        lanes: [lane],
         trackId: 'track-1',
         trackGainNode: { gain: makeParam() } as unknown as GainNode,
         trackPanNode: { pan: makeParam() } as unknown as StereoPannerNode,
@@ -167,15 +197,66 @@ describe('offline automation slew follows the live scheduler grain', () => {
         }
     });
 
-    it('emits no slewed glide at all when the grain could not have driven a live tick', () => {
-        // `automationSlewTickSecondsForGrain` reports 0 for a non-positive or
-        // non-finite grain, and the compiler reads 0 as "do not slew" — the
-        // honest answer, rather than silently substituting the default.
-        const emitted = renderDeviceLaneAtGrain(0);
+    it('samples a non-linear curve at least as finely as the slew tick', () => {
+        // A bezier curve is pre-sampled into linear segments before the slew
+        // runs. That grid used to be pinned at 10 ms whatever the grain, so at a
+        // finer grain the slew low-passed a piecewise-linear approximation of
+        // the curve while live evaluated the true curve at every tick — the
+        // bounce and the monitor diverging again, on exactly the curve types a
+        // user reaches for when they want a shaped fade.
+        //
+        // The symptom is NOT repeated values: `slewEvents` interpolates the
+        // coarse table, so consecutive samples still move. They move to the
+        // wrong places. So the reference here is the true curve, evaluated the
+        // way live evaluates it, run through the same recurrence.
+        const lane = makeBezierLane();
+        const tickSeconds = automationSlewTickSecondsForGrain(FINE_GRAIN_MS);
+        const emitted = renderDeviceLaneAtGrain(FINE_GRAIN_MS, lane);
 
-        expect(automationSlewTickSecondsForGrain(0)).toBe(0);
-        // The raw compiled curve is a single linear segment: one ramp to the end
-        // value, with none of the intermediate IIR samples a slew would insert.
-        expect(emitted).toEqual([{ value: 1, timeSeconds: RAMP_END_SECONDS }]);
+        // The reference is the evaluator the live path actually calls, seeded
+        // with this lane — not a re-implementation of the curve, which would
+        // only prove the spec and the compiler share a bug.
+        // The store's lane carries three view fields the engine's model does
+        // not; they play no part in curve evaluation, so they take their
+        // defaults rather than being asserted on.
+        automationStore.set({
+            ...(automationStore.value ?? { lanes: [] }),
+            lanes: [{ ...lane, objects: [], visible: true, collapsed: false }],
+        });
+        const rampStartBeat = lane.points[0]?.beat ?? 0;
+        const trueCurveAt = (timeSeconds: number): number =>
+            getAutomationValueAtBeat(lane.id, rampStartBeat + (timeSeconds * DEFAULT_TEMPO) / 60) ?? 0;
+
+        let smoothed = trueCurveAt(0);
+        const tickCount = Math.floor(RAMP_END_SECONDS / tickSeconds) - 1;
+        for (let tick = 1; tick <= tickCount; tick++) {
+            const timeSeconds = tick * tickSeconds;
+            smoothed = slewStep(smoothed, trueCurveAt(timeSeconds), AUTOMATION_SLEW_ALPHA);
+            const rendered = emitted[tick - 1];
+            expect(rendered?.timeSeconds, `tick ${tick} time`).toBeCloseTo(timeSeconds, 10);
+            expect(rendered?.value, `tick ${tick} value`).toBeCloseTo(smoothed, 6);
+        }
+        expect(tickCount).toBeGreaterThan(10);
+    });
+
+    it('falls back to the same grain the live worker does, rather than refusing to slew', () => {
+        // A non-positive grain does NOT stop the live path. `schedulerWorker.ts`
+        // does `msg.interval > 0 ? msg.interval : 10`, so it ticks at 10 ms and
+        // slews normally. An earlier revision returned 0 here — "do not slew" —
+        // on the reasoning that such a grain could not have driven a live tick.
+        // It can, and does. Returning 0 would have made the bounce hold a value
+        // the monitor glided: the same class of divergence this file exists to
+        // close, reintroduced at the invalid-input branch.
+        for (const invalidGrain of [0, -5, Number.NaN, Number.POSITIVE_INFINITY]) {
+            expect(automationSlewTickSecondsForGrain(invalidGrain)).toBe(
+                automationSlewTickSecondsForGrain(LIVE_WORKER_FALLBACK_GRAIN_MS)
+            );
+        }
+
+        // And the rendered result matches the fallback grain's, not an unslewed
+        // ramp — asserting the emitted events, not just the scalar, so the
+        // fallback has to actually reach the compiler.
+        expect(renderDeviceLaneAtGrain(0)).toEqual(renderDeviceLaneAtGrain(LIVE_WORKER_FALLBACK_GRAIN_MS));
+        expect(renderDeviceLaneAtGrain(0)).not.toEqual([{ value: 1, timeSeconds: RAMP_END_SECONDS }]);
     });
 });
