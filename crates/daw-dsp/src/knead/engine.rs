@@ -410,6 +410,25 @@ impl KneadEngine {
         }
     }
 
+    /// Group delay of `process_block`, in samples, for plugin delay compensation.
+    ///
+    /// `process_block` emits nothing until it has accumulated a full analysis
+    /// frame. Walking the loop: samples 0..frame_size-2 push and read an empty
+    /// ring (silence out); on sample `frame_size - 1` the push completes the frame,
+    /// the whole frame is written to the ring, and the *same* iteration reads back
+    /// ring slot 0 — which holds input sample 0. So output index `frame_size - 1`
+    /// carries input index 0, and the delay is `frame_size - 1`, one sample short
+    /// of a full frame. Steady state holds the same figure: every subsequent frame
+    /// fill tops the ring back up before it drains.
+    ///
+    /// This is the delay at *zero shift* too — the non-analysing branch buffers
+    /// identically — so it is unconditional and is exactly what PDC must offset.
+    /// Measured, not assumed: `reported_latency_matches_measured_group_delay`
+    /// recovers it bit-exactly from the engine's own output.
+    pub fn latency_samples(&self) -> u32 {
+        (self.yin_cfg.frame_size - 1) as u32
+    }
+
     pub fn get_f0(&self) -> Option<f32> {
         self.current_f0
     }
@@ -967,6 +986,96 @@ mod tests {
         assert!(
             longest <= 100,
             "skip run of {longest} samples in the unshiftable section"
+        );
+    }
+
+    /// Measure the engine's group delay directly, in samples.
+    ///
+    /// At zero shift `process_block` takes the `!needs_analysis` branch, which
+    /// copies the accumulated input frame into the output ring verbatim — so the
+    /// output is a *bit-exact* delayed copy of the input and the delay can be
+    /// recovered exactly rather than estimated. Returns the unique `d` for which
+    /// `out[n] == in[n - d]` holds bit-for-bit across a long window.
+    fn measure_group_delay(sample_rate: f32) -> usize {
+        // Non-repeating input: a periodic signal would match at many lags.
+        let total = 16384usize;
+        let mut state = 0x2545_F491_4F6C_DD1Du64;
+        let input: Vec<f32> = (0..total)
+            .map(|_| {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                ((state >> 40) as f32 / 8388608.0) - 1.0
+            })
+            .collect();
+
+        let mut engine = KneadEngine::new(sample_rate);
+        engine.set_shift_semitones(0.0);
+        let mut out = Vec::with_capacity(total);
+        let mut n = 0usize;
+        while n < total {
+            let block = (total - n).min(128);
+            let mut left: Vec<f32> = input[n..n + block].to_vec();
+            let mut right = left.clone();
+            engine.process_block(&mut left, &mut right);
+            out.extend_from_slice(&left);
+            n += block;
+        }
+
+        // Compare over a window well past any warm-up. Bit-exact, so a wrong lag
+        // cannot accidentally satisfy it.
+        let probe_start = 8192usize;
+        let probe_len = 4096usize;
+        let mut matches: Vec<usize> = Vec::new();
+        for d in 0..4096usize {
+            let ok = (0..probe_len).all(|i| {
+                let src = probe_start + i - d;
+                out[probe_start + i].to_bits() == input[src].to_bits()
+            });
+            if ok {
+                matches.push(d);
+            }
+        }
+        assert_eq!(
+            matches.len(),
+            1,
+            "group delay must be unambiguous; bit-exact matches at lags {matches:?}"
+        );
+        matches[0]
+    }
+
+    /// The latency the engine reports to plugin delay compensation must equal the
+    /// delay it actually imposes.
+    ///
+    /// `process_block` accumulates a full `yin_cfg.frame_size` analysis frame
+    /// before it emits anything, so every Knead track is pushed late by most of a
+    /// frame — ~43 ms at 48 kHz. Reporting zero (the pre-fix state) leaves three
+    /// shipped vocal templates sitting audibly behind the mix with nothing
+    /// compensating them. ADR 0016 ruling 3 settles this as "report it".
+    #[test]
+    fn reported_latency_matches_measured_group_delay() {
+        for sr in [44100.0_f32, 48000.0] {
+            let measured = measure_group_delay(sr);
+            let engine = KneadEngine::new(sr);
+            let reported = engine.latency_samples() as usize;
+            assert_eq!(
+                reported, measured,
+                "at {sr} Hz Knead reports {reported} samples of latency but imposes {measured}"
+            );
+        }
+    }
+
+    /// The reported latency must be the frame the engine actually buffers, not a
+    /// constant that happens to match the default configuration. Anchoring it to
+    /// `yin_cfg.frame_size` is what keeps the report honest if the frame changes.
+    #[test]
+    fn reported_latency_tracks_the_configured_analysis_frame() {
+        let engine = KneadEngine::new(48000.0);
+        let frame_size = engine.yin_cfg.frame_size;
+        let reported = engine.latency_samples() as usize;
+        assert!(
+            reported < frame_size && reported + 16 > frame_size,
+            "reported latency {reported} is not derived from the {frame_size}-sample analysis frame"
         );
     }
 
