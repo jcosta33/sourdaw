@@ -1,0 +1,41 @@
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistryDescriptors.spec.ts
+  s_66d4924c65dcd2::t_bb988902ae2047 1056-1101
+src/modules/AudioEngine/services/__tests__/kneadProcessor.spec.ts
+  s_66d4924c65dcd2::t_dabce757fce12b 166-174
+  s_66d4924c65dcd2::t_d34f5055871940 293-296,299-308
+  s_66d4924c65dcd2::t_84470af9eea72e 28-31
+  s_66d4924c65dcd2::t_99652f597fc9ec 64-67,84-86,89-91,102-104
+  s_66d4924c65dcd2::t_5fc580cfca94a0 327-330,339-343
+  s_66d4924c65dcd2::t_239c3e18a3a40a 259-260,262,264-286
+  s_66d4924c65dcd2::t_2aa3716b30728c 32-35
+  s_66d4924c65dcd2::t_c3c284ab19bf30 51-63
+  s_66d4924c65dcd2::t_ce89f567ff414e 175-176
+src/modules/AudioEngine/services/__tests__/kneadProcessorWasmViews.spec.ts
+  s_66d4924c65dcd2::t_0e435dba4162dc 90-92
+  s_66d4924c65dcd2::t_288249469ae5f3 161-208
+  s_66d4924c65dcd2::t_b6798bb7d97817 209
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_66d4924c65dcd2::t_28c362bcfe4da3 1160-1167,1180,1187
+  s_66d4924c65dcd2::t_e7a3c1e613335c 1147-1148,1151-1156
+src/modules/AudioEngine/services/kneadProcessor.ts
+  s_66d4924c65dcd2::t_fb9060ecdc7daf 243-244,250-253,259,264-265
+  s_66d4924c65dcd2::t_ff05e58e27a97d 72-86
+  s_66d4924c65dcd2::t_59cf66a42c31ab 11-12
+  s_66d4924c65dcd2::t_1f708ac7d7c43c 135-140
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "739ee662e19333079465c15a2cf313829e5b213a",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
