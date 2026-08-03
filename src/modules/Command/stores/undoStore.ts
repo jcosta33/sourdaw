@@ -5,6 +5,7 @@ import { type ActionUndoEntry, isActionEntry, type UndoEntry, type UndoSource } 
 
 const UNDO_SESSION_KEY = 'sourdaw-undo-session';
 const MAX_UNDO_PERSIST = 100;
+const RETIRED_SESSION_ACTION_TYPES = new Set(['restoreDsoSnapshot']);
 
 export type UndoStoreState = {
     past: UndoEntry[];
@@ -23,10 +24,7 @@ function isSessionPersistableAppAction(value: unknown): value is AppAction {
     if (!isRecord(value)) {
         return false;
     }
-    if (value.type === 'restoreDsoSnapshot') {
-        return false;
-    }
-    return typeof value.type === 'string' && value.type.length > 0;
+    return typeof value.type === 'string' && value.type.length > 0 && !RETIRED_SESSION_ACTION_TYPES.has(value.type);
 }
 
 function isSessionPersistableActionEntry(entry: UndoEntry): entry is ActionUndoEntry {

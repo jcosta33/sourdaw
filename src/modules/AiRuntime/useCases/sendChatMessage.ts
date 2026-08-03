@@ -32,7 +32,6 @@ import { describePlannedAction } from './describePlannedAction';
 import { executePlannedActions } from './executePlannedActions';
 import { getProjectContext } from './getProjectContext';
 import { resolveBackend } from './llmOrchestration/backendResolution/helpers';
-import { notifyAiChange } from './notifyAiChange';
 import { planPromptActions } from './planPromptActions';
 
 function getBackendModelId(backend: RunnableAiBackend): string {
@@ -93,7 +92,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
                     role: 'user',
                     content: userText,
                     timestamp: Date.now(),
-                    isDsoAction: true,
+                    isCommandAction: true,
                 });
 
                 const assistantMsgId = `msg-${crypto.randomUUID()}`;
@@ -103,7 +102,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
                     role: 'assistant',
                     content: 'Executing...',
                     timestamp: Date.now(),
-                    isDsoAction: true,
+                    isCommandAction: true,
                 });
 
                 if (result.requiresConfirmation) {
@@ -215,18 +214,13 @@ export async function sendChatMessage(userText: string): Promise<void> {
                     timestamp: Date.now(),
                     error: result.rejectionReason,
                 });
-            } else if (result._jsonEditApplied) {
-                // executeDsoEdit already injected the user message and the assistant streaming message.
-                // We just need to trigger the toast notification.
-                const summary = result._jsonEditSummaries?.join('. ') ?? `Executed: ${userText}`;
-                notifyAiChange(summary, []);
-            } else if (!result._jsonEditAttempted) {
+            } else {
                 appendChatMessage({
                     id: `msg-${crypto.randomUUID()}`,
                     role: 'user',
                     content: userText,
                     timestamp: Date.now(),
-                    isDsoAction: true,
+                    isCommandAction: true,
                 });
                 appendChatMessage({
                     id: `msg-${crypto.randomUUID()}`,

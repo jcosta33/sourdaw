@@ -126,32 +126,6 @@ function isAddNotesNote(param: unknown): param is PayloadOf<'addNotes'>['notes']
     );
 }
 
-// Snapshot entries carry exact membership as well as present Automerge bytes.
-// The LLM never produces this inverse-only action; reject JSON-like lookalikes
-// and malformed runtime Maps at the action boundary.
-function isDocumentSnapshot(
-    value: unknown
-): value is Map<string, { readonly state: 'present'; readonly bytes: Uint8Array } | { readonly state: 'absent' }> {
-    if (!(value instanceof Map)) {
-        return false;
-    }
-    for (const [key, entry] of value) {
-        if (!isString(key) || !isObj(entry)) {
-            return false;
-        }
-        if (entry.state === 'absent') {
-            if ('bytes' in entry) {
-                return false;
-            }
-            continue;
-        }
-        if (entry.state !== 'present' || !(entry.bytes instanceof Uint8Array)) {
-            return false;
-        }
-    }
-    return true;
-}
-
 const validators = {
     // Track lifecycle
     addTrack: (param): param is PayloadOf<'addTrack'> => isObj(param) && isString(param.name) && isString(param.kind),
@@ -578,11 +552,6 @@ const validators = {
     createVersionBranch: 'unchecked',
     restoreTrack: 'unchecked',
     restoreClip: 'unchecked',
-    // Inverse-only action emitted by the AI undo pipeline (executeDsoEdit.ts) with
-    // binary Automerge snapshots — the LLM is never meant to produce it. Guard the
-    // bundle shape so an arbitrary/hand-crafted payload can't be restored unchecked.
-    restoreDsoSnapshot: (param): param is PayloadOf<'restoreDsoSnapshot'> =>
-        isObj(param) && isDocumentSnapshot(param.bundle),
 
     // Warp + pitch
     enableWarping: 'unchecked',

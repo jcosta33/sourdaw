@@ -5,7 +5,6 @@ import { getExecutableAppActionToolSchemas } from '#/modules/Command/useCases';
 import { AiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { tryPresetMatch, tryParameterizedPath, tryCompoundFastPath } from '../../transformers/promptParser/parsing';
-import { executeDsoEdit } from '../dsoEditor/executeDsoEdit';
 import { getProjectContext } from '../getProjectContext';
 import { generateToolPlanningOutcome as generateToolCalls } from '../llmOrchestration/inference';
 import { parsePromptToActions } from '../parsePromptToActions';
@@ -40,10 +39,6 @@ vi.mock('../getProjectContext', () => ({
 
 vi.mock('../llmOrchestration/inference', () => ({
     generateToolPlanningOutcome: vi.fn(),
-}));
-
-vi.mock('../dsoEditor/executeDsoEdit', () => ({
-    executeDsoEdit: vi.fn(),
 }));
 
 vi.mock('../agentReference/bridgeGroundedLlmToolCalls', () => ({
@@ -89,7 +84,6 @@ describe('parsePromptToActions', () => {
         vi.mocked(tryCompoundFastPath).mockReturnValue(null);
         vi.mocked(getProjectContext).mockReturnValue(baseContext);
         vi.mocked(generateToolCalls).mockReset();
-        vi.mocked(executeDsoEdit).mockReset();
         mockBridgeGroundedLlmToolCalls.mockReset();
         mockBuildLlmActionSystemPrompt.mockClear();
         mockBuildLlmActionUserMessage.mockClear();
@@ -152,7 +146,7 @@ describe('parsePromptToActions', () => {
         { prompt: 'import audio', actionType: 'importAudioFile' },
         { prompt: 'import midi', actionType: 'importMidiFile' },
         { prompt: 'leave session', actionType: 'leaveCollabSession' },
-    ] as const)('recognizes denied intent $prompt without provider or DSO planning', async ({ prompt, actionType }) => {
+    ] as const)('recognizes denied intent $prompt without provider planning', async ({ prompt, actionType }) => {
         const result = await parsePromptToActions(prompt, baseContext);
 
         expect(result).toEqual({
@@ -162,7 +156,6 @@ describe('parsePromptToActions', () => {
             rejectionReason: `Action ${actionType} cannot be executed by AI because it does not report completion.`,
         });
         expect(generateToolCalls).not.toHaveBeenCalled();
-        expect(executeDsoEdit).not.toHaveBeenCalled();
     });
 
     it('turns provider tool calls into validated proposals against the frozen planning context', async () => {
@@ -442,7 +435,7 @@ describe('parsePromptToActions', () => {
         );
     });
 
-    it('returns the provider bridge rejection reason without falling through to DSO', async () => {
+    it('returns the provider bridge rejection reason without producing actions', async () => {
         vi.mocked(generateToolCalls).mockResolvedValue(completePlan([{ name: 'saveProject', arguments: {} }]));
         mockBridgeGroundedLlmToolCalls.mockReturnValue({
             actions: [],
@@ -476,7 +469,7 @@ describe('parsePromptToActions', () => {
         });
     });
 
-    it('returns a rejected provider planning outcome without bridging or falling through to DSO', async () => {
+    it('returns a rejected provider planning outcome without bridging it', async () => {
         vi.mocked(generateToolCalls).mockResolvedValue({
             status: 'rejected',
             reason: 'Native text tool planning did not complete (finish_reason: length)',
@@ -492,14 +485,13 @@ describe('parsePromptToActions', () => {
                 'Provider planning rejected: Native text tool planning did not complete (finish_reason: length)',
         });
         expect(mockBridgeGroundedLlmToolCalls).not.toHaveBeenCalled();
-        expect(executeDsoEdit).not.toHaveBeenCalled();
     });
 
     it.each([
         'Provider refused tool planning',
         'Provider returned an invalid tool plan',
         'Provider returned an incomplete tool plan',
-    ])('returns provider planning failure %s without falling through to DSO', async (reason) => {
+    ])('returns provider planning failure %s without producing actions', async (reason) => {
         vi.mocked(generateToolCalls).mockRejectedValue(new Error(reason));
 
         const result = await parsePromptToActions('mute the vocals', baseContext);
@@ -510,18 +502,16 @@ describe('parsePromptToActions', () => {
             requiresConfirmation: false,
             rejectionReason: `Provider planning failed: ${reason}`,
         });
-        expect(executeDsoEdit).not.toHaveBeenCalled();
     });
 
     it.each(['set tempo to 128', 'create a send from vocals to reverb'])(
-        'does not route %s through the retired legacy DSO mutation path after an empty provider plan',
+        'returns no actions for %s after an empty provider plan',
         async (prompt) => {
             vi.mocked(generateToolCalls).mockResolvedValue(completePlan([]));
             mockBridgeGroundedLlmToolCalls.mockReturnValue({ actions: [], rejections: [] });
 
             const result = await parsePromptToActions(prompt, baseContext);
 
-            expect(executeDsoEdit).not.toHaveBeenCalled();
             expect(result).toEqual({
                 actions: [],
                 rawText: prompt,

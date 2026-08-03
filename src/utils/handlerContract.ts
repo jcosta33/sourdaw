@@ -169,9 +169,6 @@ export type AdjustmentLayerSnapshot = {
     readonly mix: number;
     readonly color: string;
 };
-type CommandDocumentSnapshotEntry =
-    { readonly state: 'present'; readonly bytes: Uint8Array } | { readonly state: 'absent' };
-type CommandDocumentSnapshot = Map<string, CommandDocumentSnapshotEntry>;
 /** A pitch-shift segment carried by `commitPitchEdit`. Command cannot import Knead's
  *  segment model (model isolation), so this specifies only the structural fields the
  *  pitch render consumes. Kept assignable to Knead's mutable shape (plain arrays). */
@@ -909,8 +906,7 @@ export type AppAction =
     | { type: 'setRaveBlend'; payload: { blend: number } }
     | { type: 'enableWarping'; payload: { clipId: string } }
     | { type: 'setWarpAlgorithm'; payload: { clipId: string; algorithm: string } }
-    | { type: 'setWarpPitchShift'; payload: { clipId: string; semitones: number } }
-    | { type: 'restoreDsoSnapshot'; payload: { bundle: CommandDocumentSnapshot } };
+    | { type: 'setWarpPitchShift'; payload: { clipId: string; semitones: number } };
 
 export type TrackKind = 'audio' | 'midi' | 'bus' | 'master' | 'folder';
 
@@ -960,8 +956,7 @@ export type ExecuteOptions = {
     /** Recheck transient authority after queued CRDT work completes and before dispatch begins. */
     shouldExecute?: () => boolean;
     source?: 'manual' | 'prompt' | 'voice' | 'ai';
-    /** When true, skip pushing an undo entry and action history entry.
-     *  Use this when the caller manages batch undo externally (e.g. executeDsoEdit). */
+    /** When true, skip pushing an undo entry and action history entry during replay or migration. */
     skipUndo?: boolean;
     /** Opaque owner for CRDT writes made synchronously by this action. */
     snapshotTransaction?: object;

@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:2454741cdc71849b0ee51208886427e3da96f8ca27eb9e91280ff5e4d9a35528
+// @wasm-bindgen-dts crate-source: sha256:5e2a3fe304974f2bea7aa862020456ec294b54d37c3ea3e27e3cc9ec4a09f18b
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
@@ -35,6 +35,7 @@ export const fermenterinstance_set_param_by_id: (a: number, b: number, c: number
 export const kneadinstance_get_f0: (a: number) => number;
 export const kneadinstance_get_input_left_ptr: (a: number) => number;
 export const kneadinstance_get_input_right_ptr: (a: number) => number;
+export const kneadinstance_get_latency_samples: (a: number) => number;
 export const kneadinstance_get_nan_flush_count: (a: number) => number;
 export const kneadinstance_get_periodicity: (a: number) => number;
 export const kneadinstance_get_right_ptr: (a: number) => number;

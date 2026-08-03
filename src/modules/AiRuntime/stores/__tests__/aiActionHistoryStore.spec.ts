@@ -69,10 +69,7 @@ describe('aiActionHistoryStore', () => {
                         groupId: 'group-1',
                         timestamp: 123,
                         reverted: false,
-                        actions: [
-                            { kind: 'appAction', actionType: 'track.create', label: 'Create track' },
-                            { kind: 'jsonEdit', label: 'Edit project JSON' },
-                        ],
+                        actions: [{ kind: 'appAction', actionType: 'track.create', label: 'Create track' }],
                     },
                 ],
                 panelOpen: true,
@@ -81,6 +78,34 @@ describe('aiActionHistoryStore', () => {
             const state = await loadHistoryStateFromStoredValue(validState);
 
             expect(state).toEqual(validState);
+        });
+
+        it('should discard legacy JSON-edit groups while preserving AppAction groups', async () => {
+            const validGroup = {
+                id: 'history-1',
+                prompt: 'Keep this one',
+                groupId: 'group-1',
+                timestamp: 123,
+                reverted: false,
+                actions: [{ kind: 'appAction', actionType: 'track.create', label: 'Create track' }],
+            };
+
+            const state = await loadHistoryStateFromStoredValue({
+                groups: [
+                    {
+                        id: 'legacy-history',
+                        prompt: 'Retired JSON edit',
+                        groupId: 'legacy-group',
+                        timestamp: 122,
+                        reverted: false,
+                        actions: [{ kind: 'jsonEdit', label: 'Edit project JSON' }],
+                    },
+                    validGroup,
+                ],
+                panelOpen: true,
+            });
+
+            expect(state).toEqual({ groups: [validGroup], panelOpen: true });
         });
 
         it('should default invalid top-level fields independently', async () => {
@@ -99,7 +124,7 @@ describe('aiActionHistoryStore', () => {
                 groupId: 'group-1',
                 timestamp: 123,
                 reverted: false,
-                actions: [{ kind: 'jsonEdit', label: 'JSON edit' }],
+                actions: [{ kind: 'appAction', actionType: 'track.create', label: 'Create track' }],
             };
 
             const state = await loadHistoryStateFromStoredValue({
@@ -111,7 +136,7 @@ describe('aiActionHistoryStore', () => {
                         groupId: 'group-2',
                         timestamp: Number.NaN,
                         reverted: false,
-                        actions: [{ kind: 'jsonEdit', label: 'JSON edit' }],
+                        actions: [{ kind: 'appAction', actionType: 'track.create', label: 'Create track' }],
                     },
                     {
                         id: 'history-3',

@@ -141,6 +141,14 @@ export const ARTICULATION_ID_BY_TYPE = {
     runs: 27,
 } as const satisfies Record<ArticulationType, number>;
 
+export function isArticulationType(value: unknown): value is ArticulationType {
+    return typeof value === 'string' && Object.hasOwn(ARTICULATION_ID_BY_TYPE, value);
+}
+
+export function getArticulationId(type: ArticulationType): number {
+    return ARTICULATION_ID_BY_TYPE[type];
+}
+
 export type ArticulationEntry = {
     type: ArticulationType;
     keyswitch: number | null;

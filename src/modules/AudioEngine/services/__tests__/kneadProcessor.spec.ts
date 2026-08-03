@@ -22,13 +22,16 @@ type AudioWorkletProcessorLike = {
         postMessage: (msg: unknown) => void;
     };
     process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean;
-    // RT-safe cached WASM-memory views, asserted for reuse across render quanta.
-    _wasmInL: Float32Array | null;
-    _wasmInR: Float32Array | null;
-    _wasmOutL: Float32Array | null;
-    _wasmOutR: Float32Array | null;
     _faulted: boolean;
 };
+
+// Mock WASM heap layout, in bytes (inputs at 0 / 256). 128 frames = 512 bytes per
+// window, so the windows deliberately overlap — the assertions below read
+// expectations back out of the heap after the call rather than assuming what
+// landed where.
+const OUT_LEFT_PTR = 512;
+const OUT_RIGHT_PTR = 768;
+const FRAMES = 128;
 
 vi.stubGlobal('AudioWorkletProcessor', AudioWorkletProcessorShim);
 vi.stubGlobal('registerProcessor', (name: string, proc: new (...args: unknown[]) => AudioWorkletProcessorLike) => {
@@ -44,6 +47,23 @@ vi.stubGlobal('sampleRate', 48000);
 const shiftCalls: number[] = [];
 let legacyBinary = false;
 const WASM_HEAP = new ArrayBuffer(8192);
+
+/** Fill the mock heap with a per-index ramp so every window has distinct content. */
+function seedHeapRamp(): void {
+    const floats = new Float32Array(WASM_HEAP);
+    for (let index = 0; index < floats.length; index++) {
+        floats[index] = index * 1.5 + 1;
+    }
+}
+
+/** Read a wasm output window straight out of the heap, as the processor sees it. */
+function heapWindow(byteOffset: number): number[] {
+    return Array.from(new Float32Array(WASM_HEAP, byteOffset, FRAMES));
+}
+
+// The engine's real group delay: yin_cfg.frame_size (2048) minus one, measured
+// bit-exactly by knead/engine.rs::reported_latency_matches_measured_group_delay.
+const KNEAD_LATENCY_SAMPLES = 2047;
 
 class KneadInstanceMock {
     set_shift_semitones(value: number): void {
@@ -61,8 +81,14 @@ class KneadInstanceMock {
     get_right_ptr(): number {
         return 768;
     }
+    get_latency_samples(): number {
+        return KNEAD_LATENCY_SAMPLES;
+    }
 }
 
+// Models a binary predating only the two *feature-detected* exports
+// (set_shift_semitones / get_right_ptr). get_latency_samples is declared
+// non-optionally by the committed glue, like gluten's, so it is present here.
 class KneadInstanceLegacyMock {
     get_input_left_ptr(): number {
         return 0;
@@ -72,6 +98,9 @@ class KneadInstanceLegacyMock {
     }
     process(): number {
         return 512;
+    }
+    get_latency_samples(): number {
+        return KNEAD_LATENCY_SAMPLES;
     }
 }
 
@@ -132,6 +161,17 @@ describe('KneadProcessor pitch-shift computation', () => {
 
         expect(postedMessages).toEqual([]);
         expect(proc._faulted).toBe(false);
+    });
+
+    // The ready handshake is the only channel by which Knead's delay reaches PDC:
+    // wasmDeviceRegistry reads `latency` off it and calls reportLatency. Posting a
+    // bare `{ type: 'ready' }` (the pre-fix message) leaves the registry defaulting
+    // to zero, which is how the delay stayed invisible to compensation.
+    it('carries the instance group delay on the ready handshake so PDC can compensate it', async () => {
+        const proc = await loadProcessor();
+        sendMessage(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+
+        expect(postedMessages).toEqual([{ type: 'ready', latency: KNEAD_LATENCY_SAMPLES }]);
     });
 
     it('feeds a finite shift to the WASM instance when both pitch centers are present', async () => {
@@ -216,41 +256,56 @@ describe('KneadProcessor pitch-shift computation', () => {
             },
         });
 
-        const input = [new Float32Array(128), new Float32Array(128)];
-        const output = [new Float32Array(128), new Float32Array(128)];
+        const input = [new Float32Array(FRAMES), new Float32Array(FRAMES)];
+        const output = [new Float32Array(FRAMES), new Float32Array(FRAMES)];
 
-        // First render quantum builds the views.
+        // First render quantum builds the four views (in L/R, out L/R).
         proc.process([input], [output]);
-        const firstInL = proc._wasmInL;
-        const firstInR = proc._wasmInR;
-        const firstOutL = proc._wasmOutL;
-        expect(firstInL).toBeInstanceOf(Float32Array);
-        expect(firstInR).toBeInstanceOf(Float32Array);
-        expect(firstOutL).toBeInstanceOf(Float32Array);
 
-        // Subsequent quanta with the same buffer/ptrs/frames must reuse the very
-        // same view objects — a fresh Float32Array here would be a per-block alloc.
-        proc.process([input], [output]);
-        proc.process([input], [output]);
-        expect(proc._wasmInL).toBe(firstInL);
-        expect(proc._wasmInR).toBe(firstInR);
-        expect(proc._wasmOutL).toBe(firstOutL);
+        // Steady state: same buffer, same pointers, same frame count. Every view
+        // must be served from cache — a fresh `new Float32Array(memory, ...)` here
+        // is a heap allocation on the audio thread, ~344 times a second per device.
+        // Counting constructions asserts the property directly rather than through
+        // the identity of a private field.
+        const RealFloat32Array = globalThis.Float32Array;
+        let constructions = 0;
+        const CountingFloat32Array = new Proxy(RealFloat32Array, {
+            construct(target, args: ConstructorParameters<typeof Float32Array>) {
+                constructions++;
+                return new target(...args);
+            },
+        });
+        vi.stubGlobal('Float32Array', CountingFloat32Array);
+        try {
+            proc.process([input], [output]);
+            proc.process([input], [output]);
+        } finally {
+            vi.stubGlobal('Float32Array', RealFloat32Array);
+        }
+
+        expect(constructions).toBe(0);
     });
 
     it('routes the right output channel from get_right_ptr when the binary exposes it', async () => {
         const proc = await loadProcessor();
         sendMessage(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
 
-        const input = [new Float32Array(128), new Float32Array(128)];
-        const leftOut = new Float32Array(128);
-        const rightOut = new Float32Array(128);
+        seedHeapRamp();
+        const input = [new Float32Array(FRAMES), new Float32Array(FRAMES)];
+        const leftOut = new Float32Array(FRAMES);
+        const rightOut = new Float32Array(FRAMES);
         proc.process([input], [[leftOut, rightOut]]);
 
-        // Mock layout: process() -> 512 (left), get_right_ptr() -> 768.
-        expect(proc._wasmOutL).toBeInstanceOf(Float32Array);
-        expect(proc._wasmOutR).toBeInstanceOf(Float32Array);
-        expect(proc._wasmOutL?.byteOffset).toBe(512);
-        expect(proc._wasmOutR?.byteOffset).toBe(768);
+        // Mock layout: process() -> 512 (left), get_right_ptr() -> 768. Each output
+        // channel must carry its own wasm window, read back out of the heap as it
+        // stands after the call.
+        const expectedLeft = heapWindow(OUT_LEFT_PTR);
+        const expectedRight = heapWindow(OUT_RIGHT_PTR);
+        // Guard the guard: if the two windows held the same samples, a right
+        // channel sourced from the left pointer would pass this test.
+        expect(expectedLeft).not.toEqual(expectedRight);
+        expect(Array.from(leftOut)).toEqual(expectedLeft);
+        expect(Array.from(rightOut)).toEqual(expectedRight);
     });
 
     it('keeps processing without faulting on a legacy binary that lacks the shift/right exports', async () => {
@@ -269,9 +324,10 @@ describe('KneadProcessor pitch-shift computation', () => {
             },
         });
 
-        const input = [new Float32Array(128), new Float32Array(128)];
-        const leftOut = new Float32Array(128);
-        const rightOut = new Float32Array(128);
+        seedHeapRamp();
+        const input = [new Float32Array(FRAMES), new Float32Array(FRAMES)];
+        const leftOut = new Float32Array(FRAMES);
+        const rightOut = new Float32Array(FRAMES);
 
         // The pre-fix processor threw TypeError here and faulted into
         // permanent passthrough; now it must keep processing every quantum.
@@ -280,9 +336,11 @@ describe('KneadProcessor pitch-shift computation', () => {
 
         expect(proc._faulted).toBe(false);
         expect(shiftCalls).toHaveLength(0);
-        // Right output falls back to the left result buffer on legacy binaries.
-        expect(proc._wasmOutL).toBeInstanceOf(Float32Array);
-        expect(proc._wasmOutR).toBeNull();
+        // No get_right_ptr on a legacy binary: the right output mirrors the left
+        // result window rather than reading an undefined pointer.
+        const expectedLeft = heapWindow(OUT_LEFT_PTR);
+        expect(Array.from(leftOut)).toEqual(expectedLeft);
+        expect(Array.from(rightOut)).toEqual(expectedLeft);
         const errorMessages = postedMessages.filter(
             (msg) => typeof msg === 'object' && msg !== null && 'type' in msg && msg.type === 'error'
         );

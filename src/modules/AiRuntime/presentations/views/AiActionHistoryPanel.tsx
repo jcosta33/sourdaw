@@ -16,7 +16,7 @@ import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 import { aiActionHistoryStore, toggleAiHistoryPanel, clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { revertAiActionGroup } from '../../useCases/aiHistoryActions';
 
-type AiActionEntryView = { kind: 'appAction'; actionType: string; label: string } | { kind: 'jsonEdit'; label: string };
+type AiActionEntryView = { kind: 'appAction'; actionType: string; label: string };
 
 type AiActionGroupView = {
     id: string;
