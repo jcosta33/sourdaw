@@ -1,4 +1,9 @@
-import { ARTICULATION_ID_BY_TYPE, type ArticulationType } from '../../models/LevainPatch';
+import {
+    ARTICULATION_ID_BY_TYPE,
+    isInstrumentId,
+    type ArticulationType,
+    type InstrumentId,
+} from '../../models/LevainPatch';
 
 export type ManifestZone = {
     file: string;
@@ -30,7 +35,7 @@ export type ManifestArticulation = {
 
 export type SampleManifest = {
     version: number;
-    instrumentId: string;
+    instrumentId: InstrumentId;
     sampleRate: number;
     articulations: readonly ManifestArticulation[];
     micPositions: readonly string[];
@@ -197,8 +202,8 @@ export function parseSampleManifest(value: unknown): SampleManifest {
     if (!isIntegerInRange(value.version, 1, Number.MAX_SAFE_INTEGER)) {
         throw new TypeError('Levain sample manifest version must be a positive integer');
     }
-    if (typeof value.instrumentId !== 'string' || value.instrumentId.length === 0) {
-        throw new TypeError('Levain sample manifest instrumentId must be a non-empty string');
+    if (!isInstrumentId(value.instrumentId)) {
+        throw new TypeError('Levain sample manifest instrumentId must be a supported instrument id');
     }
     if (!isNonNegativeF32(value.sampleRate) || value.sampleRate === 0) {
         throw new TypeError('Levain sample manifest sampleRate must be a finite 32-bit float greater than zero');

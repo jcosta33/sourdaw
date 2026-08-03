@@ -70,6 +70,15 @@ describe('parseSampleManifest', () => {
         ).toThrow('Levain sample manifest version must be a positive integer');
     });
 
+    it('rejects instrument ids outside the canonical Levain bank contract', () => {
+        const manifest = createValidManifest();
+        manifest.instrumentId = 'unknown-bank';
+
+        expect(() => parseSampleManifest(manifest)).toThrow(
+            'Levain sample manifest instrumentId must be a supported instrument id'
+        );
+    });
+
     it('rejects sample paths that can escape the selected bank directory', () => {
         const manifest = createValidManifest();
         manifest.articulations[0]?.zones.push({ ...VALID_ZONE, file: '../outside.wav' });
