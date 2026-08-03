@@ -97,10 +97,12 @@ describe('parseSampleManifest', () => {
     });
 
     it('rejects sample paths that can escape the selected bank directory', () => {
-        const manifest = createValidManifest();
-        manifest.articulations[0]?.zones.push({ ...VALID_ZONE, file: '../outside.wav' });
+        for (const file of ['../outside.wav', '%2e%2e/outside.wav', 'https://example.com/outside.wav']) {
+            const manifest = createValidManifest();
+            manifest.articulations[0]!.zones[0] = { ...VALID_ZONE, file };
 
-        expect(() => parseSampleManifest(manifest)).toThrow('must be a safe relative sample path');
+            expect(() => parseSampleManifest(manifest)).toThrow('must be a safe relative sample path');
+        }
     });
 
     it('rejects articulation ids that do not match the canonical DSP id', () => {
@@ -108,6 +110,15 @@ describe('parseSampleManifest', () => {
         manifest.articulations[0] = { type: 'tremolo', id: 2, zones: [{ ...VALID_ZONE }] };
 
         expect(() => parseSampleManifest(manifest)).toThrow('articulations[0].id must be 13 for tremolo');
+    });
+
+    it('rejects articulation names outside the model-owned contract', () => {
+        const manifest = createValidManifest();
+        manifest.articulations[0] = { type: 'unknown', id: 0, zones: [{ ...VALID_ZONE }] };
+
+        expect(() => parseSampleManifest(manifest)).toThrow(
+            'articulations[0].type is not a supported Levain articulation'
+        );
     });
 
     it('rejects round-robin dimensions beyond the DSP limit', () => {
@@ -165,6 +176,12 @@ describe('parseSampleManifest', () => {
         manifest.articulations[0]?.zones.push({ ...VALID_ZONE, gainDb: Number.MAX_VALUE });
 
         expect(() => parseSampleManifest(manifest)).toThrow('must fit a finite 32-bit float');
+    });
+
+    it('rejects a positive sample rate that underflows to zero at the Rust f32 boundary', () => {
+        expect(() => parseSampleManifest({ ...createValidManifest(), sampleRate: 1e-50 })).toThrow(
+            'sampleRate must be a finite 32-bit float greater than zero'
+        );
     });
 
     it('rejects zone maps whose flattened lookup arena exceeds the DSP limit', () => {

@@ -1,5 +1,6 @@
 import {
     ARTICULATION_ID_BY_TYPE,
+    isArticulationType,
     isInstrumentId,
     type ArticulationType,
     type InstrumentId,
@@ -55,6 +56,7 @@ const MAX_ARTICULATIONS = Object.keys(ARTICULATION_ID_BY_TYPE).length;
 const MAX_ZONE_ARENA = 65_536;
 const MAX_ZONE_LIST_COUNT = 65_535;
 const VELOCITY_BUCKET_SIZE = 8;
+const SAMPLE_BANK_BASE_URL = new URL('https://sourdaw.invalid/bank/');
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null;
@@ -76,15 +78,37 @@ function isNonNegativeF32(value: unknown): value is number {
     return fitsF32(value) && value >= 0;
 }
 
-function isSafeRelativeSamplePath(value: unknown): value is string {
-    if (typeof value !== 'string' || value.length === 0 || value.startsWith('/') || value.includes('\\')) {
-        return false;
+function toPositiveF32(value: unknown): number | undefined {
+    if (!isFiniteNumber(value)) {
+        return undefined;
     }
-    return value.split('/').every((segment) => segment.length > 0 && segment !== '.' && segment !== '..');
+
+    const rounded = Math.fround(value);
+    if (!Number.isFinite(rounded) || rounded <= 0) {
+        return undefined;
+    }
+    return rounded;
 }
 
-function isArticulationType(value: unknown): value is ArticulationType {
-    return typeof value === 'string' && Object.hasOwn(ARTICULATION_ID_BY_TYPE, value);
+function isSafeRelativeSamplePath(value: unknown): value is string {
+    if (
+        typeof value !== 'string' ||
+        value.length === 0 ||
+        value.startsWith('/') ||
+        value.includes('\\') ||
+        /^[A-Za-z][A-Za-z\d+.-]*:/.test(value) ||
+        /%(?:2f|5c)/i.test(value)
+    ) {
+        return false;
+    }
+    if (!value.split('/').every((segment) => segment.length > 0 && segment !== '.' && segment !== '..')) {
+        return false;
+    }
+
+    const resolved = new URL(value, SAMPLE_BANK_BASE_URL);
+    return (
+        resolved.origin === SAMPLE_BANK_BASE_URL.origin && resolved.pathname.startsWith(SAMPLE_BANK_BASE_URL.pathname)
+    );
 }
 
 function parseZone(value: unknown, path: string): ManifestZone {
@@ -223,7 +247,8 @@ export function parseSampleManifest(value: unknown): SampleManifest {
     if (!isInstrumentId(value.instrumentId)) {
         throw new TypeError('Levain sample manifest instrumentId must be a supported instrument id');
     }
-    if (!isNonNegativeF32(value.sampleRate) || value.sampleRate === 0) {
+    const sampleRate = toPositiveF32(value.sampleRate);
+    if (sampleRate === undefined) {
         throw new TypeError('Levain sample manifest sampleRate must be a finite 32-bit float greater than zero');
     }
     if (
@@ -279,7 +304,7 @@ export function parseSampleManifest(value: unknown): SampleManifest {
     return Object.freeze({
         version: value.version,
         instrumentId: value.instrumentId,
-        sampleRate: value.sampleRate,
+        sampleRate,
         micPositions,
         articulations,
     });
