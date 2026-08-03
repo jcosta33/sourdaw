@@ -72,8 +72,28 @@ observation.
 
 ### AC-4 — A main-thread stall budget
 
-**10 ms**, one `SCHEDULE_AHEAD_SECONDS` grain. Measured with `performance.now()` around save, project
-load, and analysis.
+**Two budgets, an order of magnitude apart.** An earlier revision of this criterion said "**10 ms**,
+one `SCHEDULE_AHEAD_SECONDS` grain", which named the wrong constant and the wrong mechanism, and
+both instruments inherited the error from here. The two real thresholds are:
+
+- **10 ms — `scheduleGrainMs`** (`Transport/models/TransportState.ts:38`; also `SCHEDULER_GRAIN_MS`
+  in `Yeast/engine/YeastWorkerClient.ts:42`). The scheduler tick period: a **responsiveness and
+  automation-resolution** threshold. Overrunning it loses no scheduled audio — each tick schedules
+  the contiguous range `lastScheduledBeat -> scheduleUpTo` and carries `lastScheduledBeat` forward
+  (`startPlayheadScheduler.ts:358-359`, `:411`), and `tickInFlight` (`:159-162`) drops overrunning
+  ticks on purpose and counts them. What it does cost is the work each tick applies at
+  `newPosition` — `applyAutomation`, `applyVcaGains`, `refreshSidechainAlignment`,
+  `applyModulation`, `scheduleAdjustmentLayers` (`:395-407`) — which lands late rather than early.
+- **100 ms — `SCHEDULE_AHEAD_SECONDS = 0.1`** (`startPlayheadScheduler.ts:40`). The look-ahead
+  horizon: the **audio-correctness** threshold. `MAX_DELTA_SECONDS = SCHEDULE_AHEAD_SECONDS`
+  (`:105`) absorbs a stall up to that point; exhaust it and
+  `Transport/useCases/scheduling/scheduleAudioClips.ts:203-217` takes the `iterStartTime < now`
+  branch and starts the clip mid-buffer. That is the audible failure.
+
+Measured with `performance.now()` around save, project load, and analysis. Every verdict must name
+which threshold it asserts. Breach claims read the minimum (a cost floor); pass claims read the
+maximum or a high percentile (the conservative side). A claim that will not hold on its conservative
+statistic is reported as inconclusive, not restated on the other one.
 
 **Evidence:** the measurement for each, and a failing case if one exists. Several survey findings
 allege main-thread blocking; this is what decides them.
