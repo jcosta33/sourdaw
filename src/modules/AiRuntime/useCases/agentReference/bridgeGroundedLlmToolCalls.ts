@@ -31,6 +31,7 @@ type GroundToolCallInput = {
     index: number;
     prompt: string;
     plannedActionNames: readonly string[];
+    sameActionAssertedArguments: readonly Readonly<Record<string, unknown>>[];
     sameActionCallCount: number;
     visibleGroundedCalls: readonly ToolCallResult[];
     visiblePlannedTrackCreations: readonly ToolCallResult[];
@@ -78,17 +79,25 @@ type ResolveBatchLocalBusReferenceResult =
     { status: 'none' } | { status: 'resolved'; binding: BatchLocalBusBinding } | { status: 'rejected'; reason: string };
 
 type ActionPromptScope = PromptClause & {
+    directional: boolean;
     matchedIntentPhrase: string;
 };
 
 type ResolveActionPromptScopeInput = {
     actionName: string;
     actionOrdinal: number;
+    assertedArguments: Readonly<Record<string, unknown>>;
     catalog: GroundingCatalog;
     context: ProjectContext;
     prompt: string;
     plannedActionNames: readonly string[];
+    sameActionAssertedArguments: readonly Readonly<Record<string, unknown>>[];
     sameActionCallCount: number;
+};
+
+type DirectionalTargetReferences = {
+    direct: readonly string[];
+    owners: readonly string[];
 };
 
 function rejection(index: number, name: string, reason: string): LlmActionRejection {
@@ -575,15 +584,13 @@ function isExplicitClipDeletionScope({ context, text, clipId }: ExplicitClipDele
 }
 
 function isExplicitCommandClause(maskedText: string, catalog: GroundingCatalog): boolean {
-    if (/["“”]/u.test(maskedText)) {
+    let commandSource = maskedText.trim();
+    commandSource = commandSource.replace(/^(?:please\s+)?(?:can|could|would)\s+you(?:\s+please)?\s+/iu, '');
+    commandSource = commandSource.replace(/^please\s+/iu, '');
+    if (/^["'“”‘’]/u.test(commandSource)) {
         return false;
     }
-    let commandText = normalizePromptText(maskedText);
-    if (/\b(?:if|unless|maybe|perhaps)\b/u.test(commandText)) {
-        return false;
-    }
-    commandText = commandText.replace(/^(?:please\s+)?(?:can|could|would)\s+you(?:\s+please)?\s+/u, '');
-    commandText = commandText.replace(/^please\s+/u, '');
+    const commandText = normalizePromptText(commandSource);
     if (commandText.startsWith('make ')) {
         return true;
     }
@@ -745,13 +752,302 @@ function getPromptClauses(prompt: string, maskedPrompt: string): PromptClause[] 
     return clauses;
 }
 
+function resolveDirectionalIntentPhrase(
+    maskedText: string,
+    directionalIntent: NonNullable<GroundingRules['directionalIntent']>
+): string | null {
+    const normalizedText = normalizePromptText(maskedText);
+    const paddedText = ` ${normalizedText} `;
+    const polarityPhrases = [...directionalIntent.truePhrases, ...directionalIntent.falsePhrases];
+
+    for (const carrierPhrase of directionalIntent.carrierPhrases) {
+        const normalizedCarrier = normalizePromptText(carrierPhrase);
+        const carrierNeedle = ` ${normalizedCarrier} `;
+        const carrierIndex = paddedText.indexOf(carrierNeedle);
+        if (carrierIndex < 0) {
+            continue;
+        }
+
+        const afterCarrier = paddedText.slice(carrierIndex + carrierNeedle.length).trim();
+        if (hasMaskedLocativeOwner(maskedText)) {
+            const trailingTruePolarity = directionalIntent.truePhrases.find((truePhrase) => {
+                const normalizedTruePhrase = normalizePromptText(truePhrase);
+                return afterCarrier === normalizedTruePhrase || afterCarrier.endsWith(` ${normalizedTruePhrase}`);
+            });
+            if (trailingTruePolarity) {
+                return `${normalizedCarrier} ${normalizePromptText(trailingTruePolarity)}`;
+            }
+        }
+        for (const polarityPhrase of polarityPhrases) {
+            const normalizedPolarity = normalizePromptText(polarityPhrase);
+            if (afterCarrier === normalizedPolarity || afterCarrier.startsWith(`${normalizedPolarity} `)) {
+                return `${normalizedCarrier} ${normalizedPolarity}`;
+            }
+        }
+        for (const polarityPhrase of polarityPhrases) {
+            const normalizedPolarity = normalizePromptText(polarityPhrase);
+            if (afterCarrier === normalizedPolarity || afterCarrier.endsWith(` ${normalizedPolarity}`)) {
+                if (normalizedPolarity === 'on' && hasMaskedLocativeOwner(maskedText)) {
+                    const earlierTruePolarity = directionalIntent.truePhrases.find(
+                        (truePhrase) => getIntentPhraseIndex(afterCarrier, truePhrase) >= 0
+                    );
+                    if (earlierTruePolarity) {
+                        return `${normalizedCarrier} ${normalizePromptText(earlierTruePolarity)}`;
+                    }
+                }
+                return `${normalizedCarrier} ${normalizedPolarity}`;
+            }
+        }
+    }
+
+    return null;
+}
+
+function hasMaskedLocativeOwner(maskedText: string): boolean {
+    return (
+        /\bon\s+(?:(?:the|my|our|this|that)\s+)?["'“”‘’]?□/iu.test(maskedText) ||
+        /\bon\s+(?:the\s+)?(?:selected|current)\s+(?:track|device)\b/iu.test(maskedText)
+    );
+}
+
+function isExplicitDirectionalCommandClause(
+    text: string,
+    directionalIntent: NonNullable<GroundingRules['directionalIntent']>,
+    targetReferences: DirectionalTargetReferences
+): boolean {
+    let commandSource = text.trim();
+    commandSource = commandSource.replace(/^(?:please\s+)?(?:can|could|would)\s+you(?:\s+please)?\s+/iu, '');
+    commandSource = commandSource.replace(/^please\s+/iu, '');
+    if (/^["'“”‘’]/u.test(commandSource)) {
+        return false;
+    }
+    const commandText = normalizePromptText(commandSource);
+    if (hasUnsafeControlCue(commandSource, directionalIntent.carrierPhrases, targetReferences)) {
+        return false;
+    }
+    if (/\b(?:without|not)\b.*\b(?:off|on)\b/u.test(commandText)) {
+        return false;
+    }
+
+    return directionalIntent.carrierPhrases.some((carrierPhrase) => {
+        const normalizedCarrier = normalizePromptText(carrierPhrase);
+        return commandText === normalizedCarrier || commandText.startsWith(`${normalizedCarrier} `);
+    });
+}
+
+type ReferenceRange = {
+    end: number;
+    start: number;
+};
+
+function getReferenceRanges(commandSource: string, reference: string): ReferenceRange[] {
+    const referenceTokens = normalizePromptText(reference).split(' ').filter(Boolean);
+    if (referenceTokens.length === 0) {
+        return [];
+    }
+    const normalizedReferencePattern = referenceTokens.map(escapeRegExp).join('[^\\p{L}\\p{N}]+');
+    const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${normalizedReferencePattern}(?![\\p{L}\\p{N}])`, 'giu');
+    return [...commandSource.matchAll(pattern)].map((match) => ({
+        start: match.index,
+        end: match.index + match[0].length,
+    }));
+}
+
+function getControlCarrierEnd(commandSource: string, carrierPhrases: readonly string[]): number | null {
+    let carrierEnd: number | null = null;
+    for (const carrierPhrase of carrierPhrases) {
+        const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(carrierPhrase)}(?![\\p{L}\\p{N}])`, 'iu');
+        const match = pattern.exec(commandSource);
+        if (match && (carrierEnd === null || match.index < carrierEnd)) {
+            carrierEnd = match.index + match[0].length;
+        }
+    }
+    return carrierEnd;
+}
+
+function isCueWithinDirectionalTargetReference(
+    commandSource: string,
+    cueIndex: number,
+    carrierEnd: number,
+    targetReferences: DirectionalTargetReferences
+): boolean {
+    for (const reference of targetReferences.direct) {
+        const containsCue = getReferenceRanges(commandSource, reference).some(
+            (range) => range.start >= carrierEnd && cueIndex >= range.start && cueIndex < range.end
+        );
+        if (containsCue) {
+            return true;
+        }
+    }
+    for (const reference of targetReferences.owners) {
+        const containsCue = getReferenceRanges(commandSource, reference).some((range) => {
+            if (range.start < carrierEnd || cueIndex < range.start || cueIndex >= range.end) {
+                return false;
+            }
+            const hasOwnerPrefix = /\bon\s+(?:(?:the|my|our|this|that)\s+)?["'“‘]?\s*$/iu.test(
+                commandSource.slice(carrierEnd, range.start)
+            );
+            const normalizedOwnerSuffix = normalizePromptText(commandSource.slice(range.end));
+            const hasOwnerSuffix = /^(?:(?:track|device)(?: (?:off|on))?|(?:off|on))?$/u.test(normalizedOwnerSuffix);
+            return hasOwnerPrefix && hasOwnerSuffix;
+        });
+        if (containsCue) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function hasUnsafeControlCue(
+    commandSource: string,
+    carrierPhrases: readonly string[],
+    targetReferences: DirectionalTargetReferences
+): boolean {
+    const carrierEnd = getControlCarrierEnd(commandSource, carrierPhrases);
+    for (const match of commandSource.matchAll(
+        /\b(?:do\s+not|don(?:['’]t|t)|don\s+t|if|unless|maybe|never|not|perhaps)\b/giu
+    )) {
+        if (
+            carrierEnd === null ||
+            !isCueWithinDirectionalTargetReference(commandSource, match.index, carrierEnd, targetReferences)
+        ) {
+            return true;
+        }
+    }
+    for (const match of commandSource.matchAll(/\bwithout\b/giu)) {
+        if (
+            carrierEnd !== null &&
+            isCueWithinDirectionalTargetReference(commandSource, match.index, carrierEnd, targetReferences)
+        ) {
+            continue;
+        }
+        const followingWords = normalizePromptText(commandSource.slice(match.index + match[0].length))
+            .split(' ')
+            .slice(0, 4);
+        const repeatsCarrierVerb = carrierPhrases.some((carrierPhrase) => {
+            const carrierVerb = normalizePromptText(carrierPhrase).split(' ')[0];
+            if (!carrierVerb) {
+                return false;
+            }
+            const carrierStem = carrierVerb.endsWith('e') ? carrierVerb.slice(0, -1) : carrierVerb;
+            return followingWords.some((word) => word.startsWith(carrierVerb) || word.startsWith(carrierStem));
+        });
+        if (repeatsCarrierVerb) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function hasGroundedControlValueEvidence(
+    valueRule: GroundingRules['valueRules'][number],
+    assertedValue: string,
+    promptText: string
+): boolean {
+    const referenceRanges = getReferenceRanges(promptText, assertedValue);
+    if (referenceRanges.length === 0) {
+        return false;
+    }
+    if (valueRule.kind === 'string-literal' || valueRule.kind === 'enum-if-present') {
+        return true;
+    }
+    if (valueRule.kind === 'text-after-keyword-if-present') {
+        return referenceRanges.some((range) => {
+            const prefix = normalizePromptText(promptText.slice(0, range.start));
+            return valueRule.keywords.some((keyword) => prefix.endsWith(normalizePromptText(keyword)));
+        });
+    }
+    if (valueRule.kind === 'text-after-connector') {
+        return referenceRanges.some((range) => {
+            const prefix = normalizePromptText(promptText.slice(0, range.start));
+            return prefix.endsWith(normalizePromptText(valueRule.connector));
+        });
+    }
+    return false;
+}
+
+function getAssertedControlTargetReferences(
+    groundingRules: GroundingRules,
+    assertedArgumentSets: readonly Readonly<Record<string, unknown>>[],
+    context: ProjectContext,
+    promptText: string
+): DirectionalTargetReferences {
+    const direct = new Set<string>();
+    const owners = new Set<string>();
+    for (const assertedArguments of assertedArgumentSets) {
+        for (const targetRule of groundingRules.targetRules) {
+            const value = assertedArguments[targetRule.argument];
+            if (typeof value === 'string') {
+                direct.add(value);
+            }
+        }
+        for (const valueRule of groundingRules.valueRules) {
+            const value = assertedArguments[valueRule.argument];
+            if (typeof value === 'string' && hasGroundedControlValueEvidence(valueRule, value, promptText)) {
+                direct.add(value);
+            }
+        }
+    }
+    for (const targetRule of groundingRules.targetRules) {
+        for (const assertedArguments of assertedArgumentSets) {
+            const assertedId = assertedArguments[targetRule.argument];
+            if (typeof assertedId !== 'string') {
+                continue;
+            }
+            for (const track of context.tracks) {
+                if (track.id === assertedId) {
+                    direct.add(track.id);
+                    direct.add(track.name);
+                }
+                const device = track.devices.find((candidate) => candidate.id === assertedId);
+                if (device) {
+                    direct.add(device.id);
+                    direct.add(device.type);
+                    owners.add(track.id);
+                    owners.add(track.name);
+                }
+                const clip = track.clips.find((candidate) => candidate.id === assertedId);
+                if (clip) {
+                    direct.add(clip.id);
+                    direct.add(clip.name);
+                    owners.add(track.id);
+                    owners.add(track.name);
+                }
+                for (const owningDevice of track.devices) {
+                    const parameter = owningDevice.parameters?.find((candidate) => candidate.id === assertedId);
+                    if (!parameter) {
+                        continue;
+                    }
+                    direct.add(parameter.id);
+                    direct.add(parameter.name);
+                    owners.add(track.id);
+                    owners.add(track.name);
+                }
+            }
+            const automationLane = context.automationLanes?.find((candidate) => candidate.id === assertedId);
+            if (automationLane) {
+                direct.add(automationLane.id);
+                direct.add(automationLane.name);
+                const owner = context.tracks.find((track) => track.id === automationLane.trackId);
+                if (owner) {
+                    owners.add(owner.id);
+                    owners.add(owner.name);
+                }
+            }
+        }
+    }
+    return { direct: [...direct], owners: [...owners] };
+}
+
 function resolveActionPromptScope({
     actionName,
     actionOrdinal,
+    assertedArguments,
     catalog,
     context,
     prompt,
     plannedActionNames,
+    sameActionAssertedArguments,
     sameActionCallCount,
 }: ResolveActionPromptScopeInput): ActionPromptScope | null {
     const groundingRules = getExecutableAppActionGroundingRules(actionName);
@@ -761,15 +1057,58 @@ function resolveActionPromptScope({
     const maskedPrompt = groundingRules.targetRules.length === 0 ? prompt : maskProjectReferences(prompt, context);
     const matchingScopes: ActionPromptScope[] = [];
     for (const clause of getPromptClauses(prompt, maskedPrompt)) {
+        const controlTargetReferences = getAssertedControlTargetReferences(
+            groundingRules,
+            sameActionAssertedArguments,
+            context,
+            clause.text
+        );
         const intent = resolveClauseActionIntent(clause.masked, catalog, actionName);
-        if (intent?.actionType === actionName) {
-            matchingScopes.push({ ...clause, matchedIntentPhrase: intent.phrase });
+        if (intent) {
+            if (intent.actionType === actionName) {
+                if (hasUnsafeControlCue(clause.text, groundingRules.intentPhrases, controlTargetReferences)) {
+                    continue;
+                }
+                matchingScopes.push({ ...clause, directional: false, matchedIntentPhrase: intent.phrase });
+            }
+            continue;
+        }
+        const directionalIntentPhrase =
+            groundingRules.directionalIntent &&
+            isExplicitDirectionalCommandClause(clause.text, groundingRules.directionalIntent, controlTargetReferences)
+                ? resolveDirectionalIntentPhrase(clause.masked, groundingRules.directionalIntent)
+                : null;
+        if (directionalIntentPhrase) {
+            matchingScopes.push({ ...clause, directional: true, matchedIntentPhrase: directionalIntentPhrase });
         }
     }
     if (matchingScopes.length !== sameActionCallCount) {
         return null;
     }
-    return matchingScopes[actionOrdinal] ?? null;
+    const selectedScope = matchingScopes[actionOrdinal];
+    if (!selectedScope) {
+        return null;
+    }
+    const selectedTargetReferences = getAssertedControlTargetReferences(
+        groundingRules,
+        [assertedArguments],
+        context,
+        selectedScope.text
+    );
+    if (selectedScope.directional && groundingRules.directionalIntent) {
+        if (
+            !isExplicitDirectionalCommandClause(
+                selectedScope.text,
+                groundingRules.directionalIntent,
+                selectedTargetReferences
+            )
+        ) {
+            return null;
+        }
+    } else if (hasUnsafeControlCue(selectedScope.text, groundingRules.intentPhrases, selectedTargetReferences)) {
+        return null;
+    }
+    return selectedScope;
 }
 
 function getTargetPromptScope(actionScope: ActionPromptScope, promptRole?: 'source' | 'destination'): string {
@@ -1341,6 +1680,7 @@ function groundToolCall({
     index,
     prompt,
     plannedActionNames,
+    sameActionAssertedArguments,
     sameActionCallCount,
     visibleGroundedCalls,
     visiblePlannedTrackCreations,
@@ -1352,10 +1692,12 @@ function groundToolCall({
     const actionScope = resolveActionPromptScope({
         actionName: call.name,
         actionOrdinal,
+        assertedArguments: call.arguments,
         catalog,
         context,
         prompt,
         plannedActionNames,
+        sameActionAssertedArguments,
         sameActionCallCount,
     });
     if (!actionScope) {
@@ -1515,7 +1857,8 @@ export function bridgeGroundedLlmToolCalls({
     for (const [index, providerCall] of calls.entries()) {
         const call = stripBatchLocalBinding(providerCall);
         const actionOrdinal = calls.slice(0, index).filter((candidate) => candidate.name === call.name).length;
-        const sameActionCallCount = calls.filter((candidate) => candidate.name === call.name).length;
+        const sameActionCalls = calls.filter((candidate) => candidate.name === call.name);
+        const sameActionCallCount = sameActionCalls.length;
         const grounded = groundToolCall({
             actionOrdinal,
             batchLocalBusBindings: visibleBindings,
@@ -1526,6 +1869,7 @@ export function bridgeGroundedLlmToolCalls({
             index,
             prompt,
             plannedActionNames: calls.map((candidate) => candidate.name),
+            sameActionAssertedArguments: sameActionCalls.map((candidate) => candidate.arguments),
             sameActionCallCount,
             visibleGroundedCalls: acceptedGroundedCalls,
             visiblePlannedTrackCreations,

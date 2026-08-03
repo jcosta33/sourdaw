@@ -1,9 +1,13 @@
-import { type generateToolCalls } from '#/modules/AiRuntime/useCases';
+import { getMidiNoteGenerationToolSchemas, type generateToolCalls } from '#/modules/AiRuntime/useCases';
 
 export function notePitchToName(pitch: number): string {
     const names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
     const octave = Math.floor(pitch / 12) - 1;
-    return `${names[pitch % 12]}${String(octave)}`;
+    const noteName = names[pitch % 12];
+    if (!noteName) {
+        throw new Error(`Invalid MIDI pitch: ${String(pitch)}`);
+    }
+    return `${noteName}${String(octave)}`;
 }
 
 export function formatNotesForLlm(
@@ -49,7 +53,7 @@ ${noteContext}
 
 Generate the MIDI notes now. Output ONLY the tool call.`;
 
-    const results = await runToolCalls(systemPrompt, userMessage);
+    const results = await runToolCalls(systemPrompt, userMessage, getMidiNoteGenerationToolSchemas());
     const addNotesCall = results.find((r) => r.name === 'addNotes');
     if (addNotesCall && Array.isArray(addNotesCall.arguments.notes)) {
         const candidates = addNotesCall.arguments.notes as Array<{
