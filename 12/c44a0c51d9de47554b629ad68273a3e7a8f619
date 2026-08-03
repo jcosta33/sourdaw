@@ -1,0 +1,190 @@
+crates/daw-dsp/tests/engine_output_level.rs
+  s_66d4924c65dcd2::t_c343fb18710e63 344-356
+  s_66d4924c65dcd2::t_ac2f1e27abd2a3 437
+  s_66d4924c65dcd2::t_77170c161abdca 440
+src/modules/AudioEngine/repositories/deviceStrategy/nativeDspDeviceFactories.ts
+  s_66d4924c65dcd2::t_76065c44d45afb 161
+  s_66d4924c65dcd2::t_232ea5b5d8b936 5
+src/modules/AudioEngine/engine/audioDeviceRuntimeSink.ts
+  s_66d4924c65dcd2::t_1a51f1cfae4dcb 103-104
+  s_66d4924c65dcd2::t_2c0764cc6b179b 44-45
+  s_66d4924c65dcd2::t_453a2dd8f718c7 2
+src/app/__tests__/prepareOfflineDeviceSetup.spec.ts
+  s_66d4924c65dcd2::t_37cb74c46e0e85 202-207
+src/modules/AudioEngine/repositories/deviceStrategy/unrenderableCatalogDeviceTypes.ts
+  s_66d4924c65dcd2::t_ac0db8f15ab103 68
+  s_66d4924c65dcd2::t_37490579cc1dae 59-67
+src/modules/Arrangement/useCases/device/__tests__/addDevice.spec.ts
+  s_66d4924c65dcd2::t_3c6269ea91cc11 82-99,102-105
+crates/daw-dsp/src/crust/oversample.rs
+  s_66d4924c65dcd2::t_95ab75e843a48f 1-195
+crates/daw-dsp/src/crust/engine.rs
+  s_66d4924c65dcd2::t_ee351b47af5612 662-685,935
+  s_66d4924c65dcd2::t_c5f8bf1fd631b7 809-815
+  s_66d4924c65dcd2::t_3ac4f6f37e8e8a 958
+  s_66d4924c65dcd2::t_8549c8e25d6701 1-19,22-23,25-36,38-40,71-85,87-100,106-111,113-134,137-181,184-210,213-224,226-237,240-262,265-286,288-305,309-323,327-334,338,340-344,351-417,425-430,432-446,448-462,470-477,481-489,491,493-497,505-513,516,519-536,542,544-556,559-562,566-582,592-596,598,601-602,607-631,654,656,660,692,694,702,704,731-732,748-749,778-779,800-801,828,847,851-852,901-902,936,938,953,962-963,990,996-997,1028,1035,1056-1057,1083-1085
+  s_66d4924c65dcd2::t_e9ade7b8eae07e 339
+  s_66d4924c65dcd2::t_1e71d5a8dffa4d 739,787,816-821,915,969,1003-1026,1041-1042,1044,1046,1064,1066,1068
+  s_66d4924c65dcd2::t_cda3d3335dbc4f 51-70
+  s_66d4924c65dcd2::t_269410279db9a3 463-469
+  s_66d4924c65dcd2::t_c0bd7132edd3ed 324
+  s_66d4924c65dcd2::t_41275c5d094d37 517-518
+  s_66d4924c65dcd2::t_1ee5c0f6039571 350
+  s_66d4924c65dcd2::t_b1e0d8515ef931 20-21,24,37,41-50,86,101-105,112,135-136,182-183,211-212,225,238-239,263-264,287,306-308,325-326,335-337,418-424,431,447,478-480,490,492,498-504,514-515,537-541,543,557-558,563-565,583-591,597,599-600,603-606
+  s_66d4924c65dcd2::t_8a1ed1041f538e 345-349
+  s_66d4924c65dcd2::t_5ec4227efc460b 632-634,651-653
+  s_66d4924c65dcd2::t_dac6051719105b 655
+  s_66d4924c65dcd2::t_342a847d3c8447 657-659
+  s_66d4924c65dcd2::t_723566db8d7fd9 661
+  s_66d4924c65dcd2::t_b92237d06fa881 686-691
+  s_66d4924c65dcd2::t_ebf89236174ca9 693
+  s_66d4924c65dcd2::t_7df699b5796103 695-697,699-701
+  s_66d4924c65dcd2::t_8c89631fc113a0 703
+  s_66d4924c65dcd2::t_980e8222f553f7 705-707,728-730
+  s_66d4924c65dcd2::t_2d87ee3a387a15 733-738
+  s_66d4924c65dcd2::t_91f356d01e1616 740-742,745-747
+  s_66d4924c65dcd2::t_ba6d775b743bc4 750-752,775-777
+  s_66d4924c65dcd2::t_c58c503f748637 780-782,784-786
+  s_66d4924c65dcd2::t_6ec1c44cb41687 788-790,797-799
+  s_66d4924c65dcd2::t_717cf2a878112d 802-804,806-808
+  s_66d4924c65dcd2::t_d6a8d22073f5da 822-827
+  s_66d4924c65dcd2::t_bbd73012527434 829-831,844-846
+  s_66d4924c65dcd2::t_01d1d83fb8df8a 848-850
+  s_66d4924c65dcd2::t_26319b766540bf 853-855,898-900
+  s_66d4924c65dcd2::t_9c11446db44db5 903-905,912-914
+  s_66d4924c65dcd2::t_a547a13fff35a2 916-918,932-934
+  s_66d4924c65dcd2::t_f6a2de9c03a9ac 937
+  s_66d4924c65dcd2::t_12dfe1e117b312 939-941,950-952
+  s_66d4924c65dcd2::t_1e4d529d690fd4 954-957
+  s_66d4924c65dcd2::t_9be8738e6d64f3 959-961
+  s_66d4924c65dcd2::t_b38a5211c24a4e 964-968
+  s_66d4924c65dcd2::t_f89d03a68e4012 970-972,987-989
+  s_66d4924c65dcd2::t_4419843ec0ea86 991-995
+  s_66d4924c65dcd2::t_031f304262e982 998-1002
+  s_66d4924c65dcd2::t_4a1f50cbfbdbb6 1027
+  s_66d4924c65dcd2::t_fc3196be363fff 1029-1034
+  s_66d4924c65dcd2::t_caf591bdd8ffa7 1036-1040
+  s_66d4924c65dcd2::t_54d2115fe1f0d1 1043
+  s_66d4924c65dcd2::t_ddfd632a7010b2 1045
+  s_66d4924c65dcd2::t_8c6c74b3a5366f 1047-1049,1053-1055
+  s_66d4924c65dcd2::t_d725c77faaf542 1058-1063
+  s_66d4924c65dcd2::t_2303f293db1031 1065
+  s_66d4924c65dcd2::t_a88e040b3af476 1067
+  s_66d4924c65dcd2::t_bf5b0fa952e570 1069-1071,1080-1082
+  s_aa0f71371df4b1::t_e1797841d9ed52 635-650,698,708-727,743-744,753-774,783,791-796,805,832-843,856-897,906-911,919-931,942-949,973-986,1050-1052,1072-1079
+src/modules/Arrangement/useCases/device/addDevice.ts
+  s_66d4924c65dcd2::t_d69a8aca3069dc 45-46
+crates/daw-dsp/src/lib.rs
+  s_66d4924c65dcd2::t_699d47853d0082 2
+crates/daw-dsp/src/crust/saturator.rs
+  s_66d4924c65dcd2::t_539d408f8b408e 1-50,63,66-72,77-300
+  s_66d4924c65dcd2::t_ba6af461555d56 73-76
+  s_66d4924c65dcd2::t_fddfeb629e2f17 51-62,64-65
+src/modules/Crust/presentations/views/CrustPanel.tsx
+  s_66d4924c65dcd2::t_fb2d9ddbe80541 354
+crates/daw-dsp/src/crust/mod.rs
+  s_66d4924c65dcd2::t_d5576e2d5b8368 1-144
+crates/daw-dsp/src/crust/limiter.rs
+  s_66d4924c65dcd2::t_c8b20e8e6d9adc 249-252
+  s_66d4924c65dcd2::t_3bdcb53d2574ad 1-168,170-180,237-248,253-284,286-313,315-330,332-361,377-400,405-411,413-444,451-455,457-462,470-475,493-500,515-537,541-559,606-649
+  s_66d4924c65dcd2::t_f0a54b21066d02 362-376
+  s_66d4924c65dcd2::t_2adebd3f091fb8 463-469
+  s_66d4924c65dcd2::t_9cb1d4acfdf5c6 331
+  s_66d4924c65dcd2::t_f841a441aa219c 314
+  s_66d4924c65dcd2::t_e1adff6868a8dc 412
+  s_66d4924c65dcd2::t_e5ff3f407a68c4 476-492
+  s_66d4924c65dcd2::t_c4464cc58c8278 538-540
+  s_66d4924c65dcd2::t_bc7a80f379bd0a 560-579,586-599,603-605
+  s_66d4924c65dcd2::t_c66558a16eb4a8 600-602
+  s_66d4924c65dcd2::t_a3040a17cc3af1 285
+  s_66d4924c65dcd2::t_924f8a7edbd4d7 580-585
+  s_66d4924c65dcd2::t_01dc0fc551106b 501-513
+  s_66d4924c65dcd2::t_a4d98679ac166d 445-450
+  s_66d4924c65dcd2::t_45ad19ad542a93 169,181-236
+  s_66d4924c65dcd2::t_21cc053932fb91 456
+  s_66d4924c65dcd2::t_5da043db03d3f1 514
+  s_66d4924c65dcd2::t_516e91f1f25b26 401-404
+src/modules/AudioEngine/services/crustProcessor.ts
+  s_66d4924c65dcd2::t_ffc0a3ca475e62 1-48,50-147,149-217
+  s_66d4924c65dcd2::t_94b81684f15f2f 148
+  s_66d4924c65dcd2::t_64a4a4de113195 49
+src/modules/Crust/stores/index.ts
+  s_66d4924c65dcd2::t_cf9c6f264e7c77 1
+src/utils/nativeDspDeviceTypes.ts
+  s_66d4924c65dcd2::t_360cbd956caddf 36
+src/app/bootstrap.ts
+  s_66d4924c65dcd2::t_7f85bb23c65b52 328-347
+  s_66d4924c65dcd2::t_49c0e5baa0dc41 79
+src/modules/AudioEngine/useCases/__tests__/buildDeviceChain.spec.ts
+  s_66d4924c65dcd2::t_d79a9929a8faf2 53
+  s_66d4924c65dcd2::t_ce739c73ef81af 169
+  s_66d4924c65dcd2::t_51604a50abde22 135
+  s_66d4924c65dcd2::t_b5b31fbcb5bb7b 14,18-26
+  s_66d4924c65dcd2::t_15a5ac495f2571 121,124-125,150,153-154,175,178-179,231,234-235
+  s_66d4924c65dcd2::t_21f958e64d984b 188-189
+  s_66d4924c65dcd2::t_f02f0e1019b620 247
+  s_66d4924c65dcd2::t_fe92c8ef2df51d 27-28
+crates/daw-dsp/tests/device_process_rt.rs
+  s_66d4924c65dcd2::t_9be63d62c2882b 460-524
+crates/daw-dsp/src/crust/params.rs
+  s_66d4924c65dcd2::t_e4fb3eae6e06a9 129
+  s_66d4924c65dcd2::t_b133a11a8c0644 143
+  s_66d4924c65dcd2::t_359258f535f465 1-128,130-142,144-245
+src/app/prepareOfflineDeviceSetup.ts
+  s_66d4924c65dcd2::t_50fcf2059d4a85 97-102
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_66d4924c65dcd2::t_c3444cfd5b1219 21
+  s_66d4924c65dcd2::t_d3ed99ee890e4c 626-690
+  s_66d4924c65dcd2::t_87fb75c14514bd 1276
+crates/daw-dsp/src/crust/bands.rs
+  s_66d4924c65dcd2::t_4bd2e1be15b29b 1-123,125-194
+  s_66d4924c65dcd2::t_4fd067fef524c3 124
+src/modules/Crust/useCases/__tests__/resetCrustTruePeakIndicator.spec.ts
+  s_66d4924c65dcd2::t_04d1116e068954 1,6-20,23-28
+  s_66d4924c65dcd2::t_e7014120be7885 67-84
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_66d4924c65dcd2::t_ade87dbd131eb9 104-109
+src/modules/Crust/useCases/resetCrustTruePeakIndicator.ts
+  s_66d4924c65dcd2::t_0a6638a928123c 1-3,6-15,17-26
+  s_66d4924c65dcd2::t_170f237038b7a8 27
+src/modules/AudioEngine/engine/CrustNode.ts
+  s_66d4924c65dcd2::t_ea3cce86019e14 1-192
+src/modules/AudioEngine/engine/telemetryAllocator.ts
+  s_66d4924c65dcd2::t_937a997c57a694 74-90
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_66d4924c65dcd2::t_6740dd666eab4b 1,156-215,725-764,767,796-806,842,857-878,880-894
+public/wasm/daw-dsp/daw_dsp.js
+  s_66d4924c65dcd2::t_0aed8ffd4ded9f 293-452,1809-1811
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_66d4924c65dcd2::t_6687292fb8df38 1,5-44,47,76-86,122,137-158,160-174
+public/wasm/manifest.json
+  s_66d4924c65dcd2::t_7ec8e553833a29 12,15-18,20-21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_66d4924c65dcd2::t_320a3abf953d82 1,156-215,725-764,767,796-806,842,857-878,880-894
+src/modules/AudioEngine/wasm/daw_dsp.js
+  s_66d4924c65dcd2::t_fdc89a4946b53b 470-629,1986-1988
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "12c44a0c51d9de47554b629ad68273a3e7a8f619",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_aa0f71371df4b1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a1686712dba6bf063",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
