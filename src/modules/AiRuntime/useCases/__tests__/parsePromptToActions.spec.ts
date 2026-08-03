@@ -266,6 +266,63 @@ describe('parsePromptToActions', () => {
         expect(result.executionMode).toBe('atomic');
     });
 
+    it('materializes one stable bus identity across a dependent provider action batch', async () => {
+        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
+            '../agentReference/bridgeGroundedLlmToolCalls'
+        );
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        const vocals = {
+            id: 'track-vocals',
+            name: 'Vocals',
+            kind: 'audio',
+            muted: false,
+            soloed: false,
+            armed: false,
+            gain: 0.8,
+            pan: 0,
+            automationMode: 'read' as const,
+            outputId: 'master',
+            clipCount: 0,
+            deviceCount: 0,
+            clips: [],
+            devices: [],
+            sends: [],
+        };
+        const providerContext: ProjectContext = {
+            ...baseContext,
+            availableDeviceTypes: [{ id: 'builtin-reverb', name: 'Reverb' }],
+            tracks: [vocals],
+            selectedTrackId: vocals.id,
+        };
+        vi.mocked(generateToolCalls).mockResolvedValue(
+            completePlan([
+                { name: 'createBus', arguments: { name: 'Vocal Plate', binding: 'vocal-plate' } },
+                { name: 'addDevice', arguments: { trackId: '$vocal-plate', deviceType: 'Reverb' } },
+                {
+                    name: 'addSend',
+                    arguments: { trackId: vocals.id, busId: '$vocal-plate', level: 0.25 },
+                },
+            ])
+        );
+
+        const result = await parsePromptToActions(
+            'create a bus called Vocal Plate, add Reverb to it, and send Vocals to it at 25%',
+            providerContext
+        );
+
+        const createBus = result.actions[0];
+        const addDevice = result.actions[1];
+        const addSend = result.actions[2];
+        if (createBus?.type !== 'createBus' || addDevice?.type !== 'addDevice' || addSend?.type !== 'addSend') {
+            throw new Error('Expected one materialized compound bus batch');
+        }
+        expect(createBus.payload.busId).toMatch(/^bus-ai-/u);
+        expect(addDevice.payload.trackId).toBe(createBus.payload.busId);
+        expect(addSend.payload.busId).toBe(createBus.payload.busId);
+        expect(result.requiresConfirmation).toBe(true);
+        expect(result.executionMode).toBe('atomic');
+    });
+
     it('proposes grounded provider track deletion as one confirmable atomic action', async () => {
         const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
             '../agentReference/bridgeGroundedLlmToolCalls'

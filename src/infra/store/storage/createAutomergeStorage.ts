@@ -454,6 +454,10 @@ function flushMatchingAutomergeStorageWrites(matches: (pending: PendingAutomerge
                     write.didCommit();
                 }
             } catch (error) {
+                // The storage port does not promise that a thrown mutation was
+                // atomic. It may have applied `changeFn` before failing, so the
+                // durable terminal is ambiguous even for the first document.
+                committedDocumentCount += 1;
                 firstError ??= error;
             }
         }
