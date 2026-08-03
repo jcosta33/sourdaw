@@ -9,7 +9,10 @@
  */
 
 import { createStore } from '#/infra/store/createStore';
+import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
 import { type Store } from '#/infra/store/types';
+
+const DOC_PREFIX_ROOT = 'root';
 
 export type VcaGroup = {
     id: string;
@@ -23,10 +26,6 @@ export type VcaGroupState = { groups: VcaGroup[] };
 
 export const defaultVcaGroupState: VcaGroupState = { groups: [] };
 
-export const vcaGroupStore: Store<VcaGroupState> = createStore<VcaGroupState>({
-    initialData: defaultVcaGroupState,
-});
-
 export function getVcaGroupsState(): VcaGroup[] {
     return vcaGroupStore.value?.groups ?? [];
 }
@@ -34,6 +33,120 @@ export function getVcaGroupsState(): VcaGroup[] {
 export function setVcaGroupsState(groups: VcaGroup[]): void {
     vcaGroupStore.set({ groups });
 }
+
+function isVcaGroup(value: unknown): value is VcaGroup {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+        return false;
+    }
+    if (!('id' in value) || typeof value.id !== 'string' || value.id.length === 0) {
+        return false;
+    }
+    if (!('name' in value) || typeof value.name !== 'string') {
+        return false;
+    }
+    if (!('muted' in value) || typeof value.muted !== 'boolean') {
+        return false;
+    }
+    if (!('gain' in value) || typeof value.gain !== 'number' || !Number.isFinite(value.gain)) {
+        return false;
+    }
+    if (!('trackIds' in value) || !Array.isArray(value.trackIds)) {
+        return false;
+    }
+    return value.trackIds.every((trackId) => typeof trackId === 'string');
+}
+
+const VCA_GROUP_KEYS = ['id', 'name', 'gain', 'muted', 'trackIds'] as const;
+
+/**
+ * Decode persisted VCA groups from a project file or from the `vcaGroups`
+ * document slot — one decoder, so the two load paths cannot drift.
+ *
+ * A group that does not decode is dropped rather than repaired: a member track
+ * whose group vanished falls back to a multiplier of `1` in
+ * {@link deriveVcaMultiplier}, which is the same unity fallback the loader
+ * would otherwise reach by a slower route. Duplicated ids keep the first
+ * occurrence, because `deriveVcaMultiplier` resolves by `find` and would
+ * silently ignore the rest anyway.
+ */
+export function sanitizeVcaGroups(value: unknown): VcaGroup[] {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+
+    const groups: VcaGroup[] = [];
+    const seenIds = new Set<string>();
+    for (const candidate of value) {
+        if (!isVcaGroup(candidate) || seenIds.has(candidate.id)) {
+            continue;
+        }
+        seenIds.add(candidate.id);
+        groups.push({
+            id: candidate.id,
+            name: candidate.name,
+            gain: candidate.gain,
+            muted: candidate.muted,
+            trackIds: [...candidate.trackIds],
+        });
+    }
+    return groups;
+}
+
+function isExactVcaGroupState(value: unknown): value is VcaGroupState {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+        return false;
+    }
+    const keys = Object.keys(value);
+    if (keys.length !== 1 || keys[0] !== 'groups') {
+        return false;
+    }
+    if (!('groups' in value) || !Array.isArray(value.groups)) {
+        return false;
+    }
+
+    const seenIds = new Set<string>();
+    for (const candidate of value.groups) {
+        if (!isVcaGroup(candidate) || seenIds.has(candidate.id)) {
+            return false;
+        }
+        if (Object.keys(candidate).length !== VCA_GROUP_KEYS.length) {
+            return false;
+        }
+        seenIds.add(candidate.id);
+    }
+    return true;
+}
+
+/**
+ * Store-shaped decoder for the `vcaGroups` document slot.
+ *
+ * Returns the argument itself when it already decodes exactly, so `createStore`
+ * sees an identical value and does not write a sanitized copy back over a
+ * shared document. Anything else is rebuilt through {@link sanitizeVcaGroups},
+ * which yields fresh arrays and therefore never aliases {@link
+ * defaultVcaGroupState}.
+ */
+function sanitizeVcaGroupState(value: unknown): VcaGroupState {
+    if (isExactVcaGroupState(value)) {
+        return value;
+    }
+    if (value === null || typeof value !== 'object' || Array.isArray(value) || !('groups' in value)) {
+        return { groups: [] };
+    }
+    return { groups: sanitizeVcaGroups(value.groups) };
+}
+
+export const vcaGroupStore: Store<VcaGroupState> = createStore<VcaGroupState>({
+    storage: createAutomergeStorage<VcaGroupState>(DOC_PREFIX_ROOT, 'vcaGroups', {
+        // A document without the `vcaGroups` slot resets the store to empty
+        // rather than back-writing this replica's cache into the new document:
+        // projection stays a pure reader (audit CC-2). Without it the outgoing
+        // project's masters keep attenuating the incoming project's tracks.
+        hydrateMissing: () => ({ groups: [] }),
+    }),
+    initialData: defaultVcaGroupState,
+    sanitize: sanitizeVcaGroupState,
+});
 
 export type DeriveVcaMultiplierInput = {
     /** The track's `vcaGroupId`; `null`/`undefined` means it belongs to no group. */

@@ -35,7 +35,14 @@ const EXPECTED_COMMANDS = [
     expectedCommand(
         'createBus',
         'Create a new bus track in the session.',
-        { name: { type: 'string', description: 'Display name for the new bus track' } },
+        {
+            name: { type: 'string', description: 'Display name for the new bus track' },
+            binding: {
+                type: 'string',
+                pattern: '^[a-z][a-z0-9-]{0,63}$',
+                description: 'Optional plan-local name. Later calls may target this newly created bus as $<binding>.',
+            },
+        },
         ['name'],
         'bounded-reversible',
         false

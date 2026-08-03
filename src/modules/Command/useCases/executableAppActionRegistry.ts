@@ -153,7 +153,15 @@ export const executableAppActionDescriptors = [
         targetRules: [],
         valueRules: [{ argument: 'name', kind: 'text-after-keyword-if-present', keywords: ['named', 'called'] }],
         parameters: {
-            properties: { name: { type: 'string', description: 'Display name for the new bus track' } },
+            properties: {
+                name: { type: 'string', description: 'Display name for the new bus track' },
+                binding: {
+                    type: 'string',
+                    pattern: '^[a-z][a-z0-9-]{0,63}$',
+                    description:
+                        'Optional plan-local name. Later calls may target this newly created bus as $<binding>.',
+                },
+            },
             required: ['name'],
         },
     },

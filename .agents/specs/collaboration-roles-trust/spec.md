@@ -2,13 +2,27 @@
 type: spec
 id: SPEC-collaboration-roles-trust
 title: Collaboration roles and signed trust tokens
-status: draft
+status: superseded
+superseded_by: .agents/decisions/0016-ultracode-session-scope-and-standard.md
 owner: The Sourdaw team
 sources:
   - intake/implementation-gaps.md
 ---
 
 # Collaboration roles and signed trust tokens
+
+> **Superseded — not the current behaviour.** ADR 0016 ruling 4 deleted the
+> collaboration role scaffold this spec would have hardened. Today **an invite
+> grants unconditional write access**: there are no roles, no capability checks
+> and no host approval step. `PermissionManager`, `PeerRole`, the
+> `__permissions__` sync document and the `viewer` / `transport-controller`
+> tiers no longer exist in the codebase, so the present-state observations
+> below (including the `epoch` note) describe deleted code.
+>
+> This document is retained as the design record for what a real permission
+> model would need — host approval, an append-only audit log, signed and
+> revocable tokens — if the project ever decides to restrict a collaborator.
+> Nothing here is implemented or scheduled.
 
 ## Intent
 

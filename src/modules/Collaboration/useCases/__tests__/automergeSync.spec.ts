@@ -220,23 +220,23 @@ describe('AutomergeSync', () => {
         expect(persistCrdtProject).not.toHaveBeenCalled();
     });
 
-    it('§fix-1 drops a sync from a peer without edit capability (canApplySync=false)', () => {
+    it('drops a sync the canApplySync hook rejects', () => {
         vi.mocked(getCrdtDoc).mockReturnValue(createAmDoc());
         const canApplySync = vi.fn().mockReturnValue(false);
         const sync = new AutomergeSync(makePeerManager(), { canApplySync });
 
-        sync.receiveSync({ peerId: 'viewer', docId: 'root', syncMessageBase64: makeRealSyncMessage() });
+        sync.receiveSync({ peerId: 'peer-1', docId: 'root', syncMessageBase64: makeRealSyncMessage() });
 
-        expect(canApplySync).toHaveBeenCalledWith('viewer', 'root');
+        expect(canApplySync).toHaveBeenCalledWith('peer-1', 'root');
         expect(replaceCrdtDoc).not.toHaveBeenCalled();
     });
 
-    it('§fix-1 applies a sync from a peer with edit capability (canApplySync=true)', () => {
+    it('applies a sync the canApplySync hook accepts', () => {
         vi.mocked(getCrdtDoc).mockReturnValue(createAmDoc());
         const canApplySync = vi.fn().mockReturnValue(true);
         const sync = new AutomergeSync(makePeerManager(), { canApplySync });
 
-        sync.receiveSync({ peerId: 'editor', docId: 'root', syncMessageBase64: makeRealSyncMessage() });
+        sync.receiveSync({ peerId: 'peer-1', docId: 'root', syncMessageBase64: makeRealSyncMessage() });
 
         expect(replaceCrdtDoc).toHaveBeenCalled();
     });
@@ -338,20 +338,24 @@ describe('AutomergeSync', () => {
         expect(replaceCrdtDoc).not.toHaveBeenCalled();
     });
 
-    it('addPeer sends the initial sync for the root doc to the new peer', () => {
+    it('addPeer sends the initial sync for the root doc to the new peer', async () => {
         vi.mocked(getCrdtDoc).mockReturnValue(createAmDoc());
         const peerManager = makePeerManager();
         const sync = new AutomergeSync(peerManager);
 
         sync.addPeer('p1');
 
-        expect(peerManager.sendCrdtSync).toHaveBeenCalledWith({
-            peerId: 'p1',
-            message: { type: 'crdt-sync', docId: 'root', data: expect.any(String) },
+        // Sends are ordered against actual delivery, so they settle on the
+        // microtask queue rather than inside addPeer.
+        await vi.waitFor(() => {
+            expect(peerManager.sendCrdtSync).toHaveBeenCalledWith({
+                peerId: 'p1',
+                message: { type: 'crdt-sync', docId: 'root', data: expect.any(String) },
+            });
         });
     });
 
-    it('addPeer also syncs the branch metadata doc when it exists', () => {
+    it('addPeer also syncs the branch metadata doc when it exists', async () => {
         vi.mocked(getCrdtDoc).mockReturnValue(createAmDoc());
         vi.mocked(hasCrdtDoc).mockReturnValue(true);
         const peerManager = makePeerManager();
@@ -359,14 +363,16 @@ describe('AutomergeSync', () => {
 
         sync.addPeer('p1');
 
-        const syncedDocIds = peerManager.sendCrdtSync.mock.calls.map((call: unknown[]) => {
-            const [{ message }] = call as [{ message: { docId: string } }];
-            return message.docId;
+        await vi.waitFor(() => {
+            const syncedDocIds = peerManager.sendCrdtSync.mock.calls.map((call: unknown[]) => {
+                const [{ message }] = call as [{ message: { docId: string } }];
+                return message.docId;
+            });
+            expect(syncedDocIds).toContain('__branches__');
         });
-        expect(syncedDocIds).toContain('__branches__');
     });
 
-    it('addPeer syncs branch content docs, skipping ids that are not branch-prefixed', () => {
+    it('addPeer syncs branch content docs, skipping ids that are not branch-prefixed', async () => {
         vi.mocked(getCrdtDoc).mockReturnValue(createAmDoc());
         vi.mocked(getCrdtDocIds).mockReturnValue(['branch_a', 'other_doc']);
         const peerManager = makePeerManager();
@@ -374,11 +380,17 @@ describe('AutomergeSync', () => {
 
         sync.addPeer('p1');
 
+        await vi.waitFor(() => {
+            const syncedDocIds = peerManager.sendCrdtSync.mock.calls.map((call: unknown[]) => {
+                const [{ message }] = call as [{ message: { docId: string } }];
+                return message.docId;
+            });
+            expect(syncedDocIds).toContain('branch_a');
+        });
         const syncedDocIds = peerManager.sendCrdtSync.mock.calls.map((call: unknown[]) => {
             const [{ message }] = call as [{ message: { docId: string } }];
             return message.docId;
         });
-        expect(syncedDocIds).toContain('branch_a');
         expect(syncedDocIds).not.toContain('other_doc');
     });
 
@@ -401,7 +413,7 @@ describe('AutomergeSync', () => {
         expect(() => sync.removePeer('ghost')).not.toThrow();
     });
 
-    it('a bulk change with no docId hint syncs every connected peer via the full sweep', () => {
+    it('a bulk change with no docId hint syncs every connected peer via the full sweep', async () => {
         let changeCb: ((docId?: string) => void) | undefined;
         vi.mocked(subscribeToCrdtChanges).mockImplementation((cb) => {
             changeCb = cb;
@@ -414,9 +426,11 @@ describe('AutomergeSync', () => {
 
         changeCb?.(undefined);
 
-        expect(peerManager.sendCrdtSync).toHaveBeenCalledWith({
-            peerId: 'p2',
-            message: expect.objectContaining({ docId: 'root' }),
+        await vi.waitFor(() => {
+            expect(peerManager.sendCrdtSync).toHaveBeenCalledWith({
+                peerId: 'p2',
+                message: expect.objectContaining({ docId: 'root' }),
+            });
         });
     });
 });

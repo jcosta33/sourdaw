@@ -17,16 +17,35 @@ class FakeDataChannel {
     onmessage: ((event: { data: string }) => void) | null = null;
     onopen: (() => void) | null = null;
     onclose: (() => void) | null = null;
-    onbufferedamountlow: (() => void) | null = null;
+
+    private readonly listeners = new Map<string, Set<() => void>>();
 
     readonly send = vi.fn((_data: string) => {});
     readonly close = vi.fn(() => {
         this.readyState = 'closed';
         this.onclose?.();
+        this.dispatch('close');
     });
 
     constructor(label: string) {
         this.label = label;
+    }
+
+    addEventListener(type: string, listener: () => void): void {
+        const existing = this.listeners.get(type) ?? new Set<() => void>();
+        existing.add(listener);
+        this.listeners.set(type, existing);
+    }
+
+    removeEventListener(type: string, listener: () => void): void {
+        this.listeners.get(type)?.delete(listener);
+    }
+
+    /** Test helper: fire every listener registered for `type`. */
+    dispatch(type: string): void {
+        for (const listener of [...(this.listeners.get(type) ?? [])]) {
+            listener();
+        }
     }
 
     /** Test helper: transition to open and fire the open handler. */
@@ -38,6 +57,12 @@ class FakeDataChannel {
 
 class FakeRTCPeerConnection {
     connectionState: RTCPeerConnectionState = 'new';
+    /**
+     * The negotiated SCTP association. `RTCSctpTransport.maxMessageSize` (W3C
+     * WebRTC §6.1.1) is the only source for the send ceiling; `null` stands for
+     * a runtime that exposes no transport yet.
+     */
+    sctp: { maxMessageSize: number } | null = null;
     iceGatheringState: RTCIceGatheringState = 'complete';
     localDescription: RTCSessionDescription | null = null;
     onconnectionstatechange: (() => void) | null = null;
@@ -133,14 +158,14 @@ describe('PeerConnectionManager', () => {
         const alice = await addReadyPeer(manager, 'alice');
         const bob = await addReadyPeer(manager, 'bob');
 
-        manager.sendCrdtSync({ peerId: 'alice', message: sampleMessage });
+        await manager.sendCrdtSync({ peerId: 'alice', message: sampleMessage });
 
         expect(alice.crdtChannel().send).toHaveBeenCalledWith(JSON.stringify(sampleMessage));
         expect(bob.crdtChannel().send).not.toHaveBeenCalled();
     });
 
-    it('sendCrdtSync to an unknown peer is a no-op (does not throw)', () => {
-        expect(() => manager.sendCrdtSync({ peerId: 'ghost', message: sampleMessage })).not.toThrow();
+    it('sendCrdtSync to an unknown peer is a no-op (does not reject)', async () => {
+        await expect(manager.sendCrdtSync({ peerId: 'ghost', message: sampleMessage })).resolves.toBeUndefined();
     });
 
     it('broadcastCrdtSync reaches only ready peers', async () => {
@@ -152,7 +177,9 @@ describe('PeerConnectionManager', () => {
 
         manager.broadcastCrdtSync(sampleMessage);
 
-        expect(ready.crdtChannel().send).toHaveBeenCalledWith(JSON.stringify(sampleMessage));
+        await vi.waitFor(() => {
+            expect(ready.crdtChannel().send).toHaveBeenCalledWith(JSON.stringify(sampleMessage));
+        });
         expect(pending.crdtChannel().send).not.toHaveBeenCalled();
     });
 
@@ -176,7 +203,7 @@ describe('PeerConnectionManager', () => {
         expect(manager.getConnectedPeerIds()).toEqual([]);
 
         // A subsequent send to the removed peer goes nowhere.
-        manager.sendCrdtSync({ peerId: 'alice', message: sampleMessage });
+        await manager.sendCrdtSync({ peerId: 'alice', message: sampleMessage });
         expect(channel.send).not.toHaveBeenCalled();
     });
 
@@ -290,19 +317,23 @@ describe('PeerConnectionManager', () => {
         }
     });
 
-    it('sendCrdtSyncBuffered sends immediately under the high-water mark and is a no-op on a closed channel', async () => {
+    it('sendCrdtSyncBuffered sends under the high-water mark and reports a closed channel', async () => {
         const alice = await addReadyPeer(manager, 'alice');
         const channel = alice.crdtChannel();
 
         await manager.sendCrdtSyncBuffered({ peerId: 'alice', message: sampleMessage });
         expect(channel.send).toHaveBeenCalledWith(JSON.stringify(sampleMessage));
 
+        // A closed channel took nothing: the caller must learn that rather than
+        // treat the message as delivered.
         channel.send.mockClear();
         channel.readyState = 'closed';
-        await manager.sendCrdtSyncBuffered({ peerId: 'alice', message: sampleMessage });
+        await expect(manager.sendCrdtSyncBuffered({ peerId: 'alice', message: sampleMessage })).rejects.toThrow(
+            /not open/
+        );
         expect(channel.send).not.toHaveBeenCalled();
 
-        // Unknown peer is a no-op too.
+        // Unknown peer is a no-op.
         await expect(
             manager.sendCrdtSyncBuffered({ peerId: 'ghost', message: sampleMessage })
         ).resolves.toBeUndefined();
@@ -318,15 +349,119 @@ describe('PeerConnectionManager', () => {
             settled = true;
         });
 
-        await Promise.resolve();
+        // Drain the microtask queue entirely: without backpressure the send
+        // would already have gone out by now.
+        await new Promise((resolve) => setTimeout(resolve, 0));
         expect(settled).toBe(false);
         expect(channel.send).not.toHaveBeenCalled();
 
-        channel.onbufferedamountlow?.();
+        channel.dispatch('bufferedamountlow');
         await sendPromise;
 
         expect(settled).toBe(true);
         expect(channel.send).toHaveBeenCalledWith(JSON.stringify(sampleMessage));
+    });
+
+    it('rejects a send whose channel closes while it is waiting for the buffer to drain', async () => {
+        const alice = await addReadyPeer(manager, 'alice');
+        const channel = alice.crdtChannel();
+        channel.bufferedAmount = 300 * 1024;
+
+        const sendPromise = manager.sendCrdtSyncBuffered({ peerId: 'alice', message: sampleMessage });
+        await Promise.resolve();
+
+        channel.close();
+
+        await expect(sendPromise).rejects.toThrow(/closed while waiting/);
+        expect(channel.send).not.toHaveBeenCalled();
+    });
+
+    it('splits a message past the negotiated SCTP size and the receiver rebuilds it exactly', async () => {
+        const alice = await addReadyPeer(manager, 'alice');
+        alice.sctp = { maxMessageSize: 4096 };
+        const channel = alice.crdtChannel();
+        // Non-ASCII payload: a cut inside a multi-byte code point would corrupt
+        // the rebuilt message rather than merely resize it.
+        const big: PeerMessage = { type: 'crdt-sync', docId: 'root', data: 'é🥖x'.repeat(4000) };
+
+        await manager.sendCrdtSync({ peerId: 'alice', message: big });
+
+        const frames = channel.send.mock.calls.map(([data]) => data);
+        expect(frames.length).toBeGreaterThan(1);
+        for (const frame of frames) {
+            expect(new TextEncoder().encode(frame).length).toBeLessThanOrEqual(4096);
+        }
+
+        // Feed the frames to a second connection's inbound channel.
+        const receiverCallbacks = {
+            onMessage: vi.fn(),
+            onConnected: vi.fn(),
+            onDisconnected: vi.fn(),
+        };
+        const receiver = new PeerConnectionManager(receiverCallbacks);
+        const receiverPeer = receiver.createPeer('alice');
+        const inbound = new FakeDataChannel('crdt-sync');
+        (receiverPeer.rtc as unknown as FakeRTCPeerConnection).ondatachannel?.({ channel: inbound });
+        inbound.open();
+
+        for (const frame of frames) {
+            inbound.onmessage?.({ data: frame });
+        }
+
+        expect(receiverCallbacks.onMessage).toHaveBeenCalledTimes(1);
+        expect(receiverCallbacks.onMessage).toHaveBeenCalledWith({ peerId: 'alice', message: big });
+    });
+
+    it('sizes frames from the negotiated limit, falling back when no SCTP transport exists', async () => {
+        const alice = await addReadyPeer(manager, 'alice');
+        alice.sctp = { maxMessageSize: 2048 };
+        const message: PeerMessage = { type: 'crdt-sync', docId: 'root', data: 'a'.repeat(20_000) };
+
+        await manager.sendCrdtSync({ peerId: 'alice', message });
+        const tightFrames = alice.crdtChannel().send.mock.calls.length;
+
+        // With no transport to read, the fallback is the RFC 8831 §6.6 ceiling
+        // of 16 KB — larger frames, so strictly fewer of them.
+        const bob = await addReadyPeer(manager, 'bob');
+        bob.sctp = null;
+        await manager.sendCrdtSync({ peerId: 'bob', message });
+        const fallbackFrames = bob.crdtChannel().send.mock.calls.length;
+
+        expect(tightFrames).toBeGreaterThan(10);
+        expect(fallbackFrames).toBeLessThan(tightFrames);
+        for (const [frame] of bob.crdtChannel().send.mock.calls) {
+            expect(new TextEncoder().encode(frame).length).toBeLessThanOrEqual(16 * 1024);
+        }
+    });
+
+    it('refuses an oversized presence message rather than sending into a TypeError', async () => {
+        const alice = await addReadyPeer(manager, 'alice');
+        alice.sctp = { maxMessageSize: 1024 };
+        const presenceChannel = alice.channels.find((channel) => channel.label === 'presence')!;
+        presenceChannel.open();
+
+        manager.broadcastPresence({
+            type: 'presence',
+            data: { peerId: 'alice', name: 'x'.repeat(5000), color: '#fff' },
+        });
+
+        expect(presenceChannel.send).not.toHaveBeenCalled();
+    });
+
+    it('broadcastCrdtSync reports a failed delivery instead of dropping it', async () => {
+        const onSendError = vi.fn();
+        const reporting = new PeerConnectionManager({ ...noopCallbacks, onSendError });
+        const alice = await addReadyPeer(reporting, 'alice');
+        const channel = alice.crdtChannel();
+        channel.send.mockImplementation(() => {
+            throw new TypeError('Failure to send data');
+        });
+
+        reporting.broadcastCrdtSync(sampleMessage);
+
+        await vi.waitFor(() => {
+            expect(onSendError).toHaveBeenCalledWith({ peerId: 'alice', error: expect.any(TypeError) });
+        });
     });
 
     it('broadcastPresence reaches only ready peers', async () => {

@@ -1,4 +1,13 @@
+import { logger } from '#/infra/logger/appLogger';
+
 import { type PeerId, type PeerMessage } from '../models/CollaborationTypes';
+import {
+    ChunkAssembler,
+    parseChunkFrame,
+    resolveMaxFrameBytes,
+    splitMessageIntoFrames,
+    utf8ByteLength,
+} from '../models/SyncChannelFraming';
 
 /**
  * Default ICE servers for NAT traversal.
@@ -21,7 +30,72 @@ type PeerConnectionCallbacks = {
     onMessage: ({ peerId, message }: { peerId: PeerId; message: PeerMessage }) => void;
     onConnected: (peerId: PeerId) => void;
     onDisconnected: (peerId: PeerId) => void;
+    /**
+     * A message could not be handed to the transport. Reported for the
+     * fire-and-forget paths (broadcasts) whose caller has no promise to await,
+     * so a failed delivery is never merely dropped.
+     */
+    onSendError?: ({ peerId, error }: { peerId: PeerId; error: unknown }) => void;
 };
+
+/**
+ * Send-buffer high-water mark. W3C WebRTC §6.2's `send()` algorithm throws an
+ * `OperationError` when "queuing data is not possible because not enough buffer
+ * space is available", so a multi-frame transfer must wait for the buffer to
+ * drain rather than race it. `bufferedAmount` /
+ * `bufferedAmountLowThreshold` are the standard signal for that.
+ */
+const SEND_BUFFER_HIGH_WATER_MARK = 256 * 1024;
+
+let messageSequence = 0;
+
+/** A per-message id for chunk framing. Contains no `:`, and stays short. */
+function nextMessageId(): string {
+    messageSequence += 1;
+    return `${Date.now().toString(36)}-${messageSequence.toString(36)}`;
+}
+
+/**
+ * Resolve once the channel's send buffer has drained below the high-water mark.
+ * Rejects if the channel closes while waiting, so a stalled peer surfaces as a
+ * failed send instead of a promise that never settles.
+ */
+function waitForSendBuffer(channel: RTCDataChannel): Promise<void> {
+    if (channel.bufferedAmount <= SEND_BUFFER_HIGH_WATER_MARK) {
+        return Promise.resolve();
+    }
+
+    return new Promise<void>((resolve, reject) => {
+        channel.bufferedAmountLowThreshold = SEND_BUFFER_HIGH_WATER_MARK / 2;
+
+        function cleanup(): void {
+            channel.removeEventListener('bufferedamountlow', onDrained);
+            channel.removeEventListener('close', onClosed);
+        }
+        function onDrained(): void {
+            cleanup();
+            resolve();
+        }
+        function onClosed(): void {
+            cleanup();
+            reject(new Error('Data channel closed while waiting for its send buffer to drain'));
+        }
+
+        channel.addEventListener('bufferedamountlow', onDrained);
+        channel.addEventListener('close', onClosed);
+    });
+}
+
+/**
+ * Whether the channel can currently take data.
+ *
+ * Read through a call rather than inline so a check after an `await` is not
+ * folded away by narrowing from an earlier one — the state genuinely changes
+ * while a multi-frame transfer is suspended on backpressure.
+ */
+function isChannelOpen(channel: RTCDataChannel): boolean {
+    return channel.readyState === 'open';
+}
 
 /**
  * Manages a single WebRTC peer connection with two data channels:
@@ -35,6 +109,10 @@ class PeerConnection {
     private presenceChannel: RTCDataChannel | null = null;
     private callbacks: PeerConnectionCallbacks;
     private connected = false;
+    /** Rebuilds messages the sender had to split across several SCTP messages. */
+    private readonly crdtAssembler = new ChunkAssembler();
+    /** Tail of the CRDT channel's send chain — see {@link sendCrdtSync}. */
+    private crdtSendQueue: Promise<void> = Promise.resolve();
 
     constructor(peerId: PeerId, callbacks: PeerConnectionCallbacks) {
         this.peerId = peerId;
@@ -91,45 +169,80 @@ class PeerConnection {
         await this.rtc.setRemoteDescription(answer);
     }
 
-    /** Send a message over the CRDT sync channel. */
-    sendCrdtSync(message: PeerMessage): void {
-        if (this.crdtChannel?.readyState === 'open') {
-            this.crdtChannel.send(JSON.stringify(message));
-        }
+    /**
+     * Send a message over the CRDT sync channel.
+     *
+     * Resolves only once every byte has been handed to the transport, and
+     * rejects when it could not be — the caller must not treat the message as
+     * delivered until this settles. Messages larger than the negotiated SCTP
+     * limit are split into frames and reassembled by the receiver.
+     *
+     * Sends are serialized per channel: the Automerge sync protocol depends on
+     * message order, which interleaved frames from concurrent sends would break.
+     */
+    sendCrdtSync(message: PeerMessage): Promise<void> {
+        const send = this.crdtSendQueue.then(
+            () => this.deliverOnCrdtChannel(message),
+            () => this.deliverOnCrdtChannel(message)
+        );
+        // The queue tracks completion only; a failed send must not poison the
+        // sends that follow it.
+        this.crdtSendQueue = send.then(
+            () => undefined,
+            () => undefined
+        );
+        return send;
     }
 
     /**
-     * Send a message over the CRDT sync channel, waiting for the send buffer
-     * to drain if it exceeds the high-water mark. Use this for bulk transfers
-     * (asset chunks) to avoid overflowing the channel buffer.
+     * Alias retained for bulk transfers (asset chunks). Every CRDT-channel send
+     * now applies the same backpressure, so this is {@link sendCrdtSync}.
      */
-    async sendCrdtSyncBuffered(message: PeerMessage): Promise<void> {
-        const channel = this.crdtChannel;
-        if (!channel || channel.readyState !== 'open') {
+    sendCrdtSyncBuffered(message: PeerMessage): Promise<void> {
+        return this.sendCrdtSync(message);
+    }
+
+    /**
+     * Send presence data over the unreliable, unordered channel.
+     *
+     * Presence is never framed: reassembly needs reliable, ordered delivery,
+     * which this channel deliberately does not provide (`maxRetransmits: 0`).
+     * An oversized presence delta is refused rather than sent into a `TypeError`.
+     */
+    sendPresence(message: PeerMessage): void {
+        const channel = this.presenceChannel;
+        if (channel?.readyState !== 'open') {
             return;
         }
 
-        const HIGH_WATER_MARK = 256 * 1024;
-        if (channel.bufferedAmount > HIGH_WATER_MARK) {
-            await new Promise<void>((resolve) => {
-                channel.bufferedAmountLowThreshold = HIGH_WATER_MARK / 2;
-                const prev = channel.onbufferedamountlow;
-                channel.onbufferedamountlow = () => {
-                    channel.onbufferedamountlow = prev;
-                    resolve();
-                };
-            });
+        const text = JSON.stringify(message);
+        if (utf8ByteLength(text) > resolveMaxFrameBytes(this.rtc.sctp?.maxMessageSize)) {
+            logger.warn('[PeerConnection] Dropping an oversized presence message for peer', this.peerId);
+            return;
         }
 
-        if (channel.readyState === 'open') {
-            channel.send(JSON.stringify(message));
-        }
+        channel.send(text);
     }
 
-    /** Send presence data over the unreliable channel. */
-    sendPresence(message: PeerMessage): void {
-        if (this.presenceChannel?.readyState === 'open') {
-            this.presenceChannel.send(JSON.stringify(message));
+    /** Hand one message to the CRDT channel, frame by frame, with backpressure. */
+    private async deliverOnCrdtChannel(message: PeerMessage): Promise<void> {
+        const channel = this.crdtChannel;
+        if (!channel || !isChannelOpen(channel)) {
+            throw new Error(`CRDT channel for peer ${this.peerId} is not open`);
+        }
+
+        const frames = splitMessageIntoFrames({
+            text: JSON.stringify(message),
+            maxFrameBytes: resolveMaxFrameBytes(this.rtc.sctp?.maxMessageSize),
+            messageId: nextMessageId(),
+        });
+
+        for (const frame of frames) {
+            await waitForSendBuffer(channel);
+            if (!isChannelOpen(channel)) {
+                throw new Error(`CRDT channel for peer ${this.peerId} closed mid-transfer`);
+            }
+            channel.send(frame);
         }
     }
 
@@ -144,6 +257,7 @@ class PeerConnection {
         this.presenceChannel?.close();
         this.rtc.close();
         this.connected = false;
+        this.crdtAssembler.clear();
     }
 
     /**
@@ -175,6 +289,22 @@ class PeerConnection {
         });
     }
 
+    /**
+     * Resolve one inbound wire string to a complete message, or `null` when it
+     * is a chunk that does not complete one yet.
+     */
+    private readWholeMessage({ channelLabel, data }: { channelLabel: string; data: string }): string | null {
+        const frame = parseChunkFrame(data);
+        if (!frame) {
+            return data;
+        }
+        if (channelLabel !== 'crdt-sync') {
+            // Only the reliable, ordered channel can carry framed messages.
+            return null;
+        }
+        return this.crdtAssembler.accept(frame);
+    }
+
     private setupChannel(channel: RTCDataChannel): void {
         if (channel.label === 'crdt-sync') {
             this.crdtChannel = channel;
@@ -183,8 +313,18 @@ class PeerConnection {
         }
 
         channel.onmessage = (event) => {
+            const data: unknown = event.data;
+            if (typeof data !== 'string') {
+                return;
+            }
+
+            const text = this.readWholeMessage({ channelLabel: channel.label, data });
+            if (text === null) {
+                return;
+            }
+
             try {
-                const message = JSON.parse(event.data as string) as PeerMessage;
+                const message = JSON.parse(text) as PeerMessage;
                 this.callbacks.onMessage({ peerId: this.peerId, message });
             } catch {
                 // Ignore malformed messages
@@ -200,9 +340,13 @@ class PeerConnection {
         };
 
         channel.onclose = () => {
-            if (channel.label === 'crdt-sync' && this.connected) {
-                this.connected = false;
-                this.callbacks.onDisconnected(this.peerId);
+            if (channel.label === 'crdt-sync') {
+                // Half-delivered messages can never complete on a closed channel.
+                this.crdtAssembler.clear();
+                if (this.connected) {
+                    this.connected = false;
+                    this.callbacks.onDisconnected(this.peerId);
+                }
             }
         };
     }
@@ -243,9 +387,14 @@ export class PeerConnectionManager {
         }
     }
 
-    /** Send a CRDT sync message to a specific peer. */
-    sendCrdtSync({ peerId, message }: { peerId: PeerId; message: PeerMessage }): void {
-        this.peers.get(peerId)?.sendCrdtSync(message);
+    /**
+     * Send a CRDT sync message to a specific peer.
+     *
+     * Resolves once the transport has taken every byte; rejects if it could
+     * not. An unknown peer is a no-op, as before.
+     */
+    async sendCrdtSync({ peerId, message }: { peerId: PeerId; message: PeerMessage }): Promise<void> {
+        await this.peers.get(peerId)?.sendCrdtSync(message);
     }
 
     /** Send a CRDT sync message with backpressure (for bulk transfers). */
@@ -253,11 +402,18 @@ export class PeerConnectionManager {
         await this.peers.get(peerId)?.sendCrdtSyncBuffered(message);
     }
 
-    /** Send a CRDT sync message to all connected peers. */
+    /**
+     * Send a CRDT sync message to all connected peers.
+     *
+     * Fire-and-forget by contract, so a failure is reported through
+     * `onSendError` rather than returned — the caller has no promise to await.
+     */
     broadcastCrdtSync(message: PeerMessage): void {
-        for (const peer of this.peers.values()) {
+        for (const [peerId, peer] of this.peers) {
             if (peer.isReady()) {
-                peer.sendCrdtSync(message);
+                peer.sendCrdtSync(message).catch((error: unknown) => {
+                    this.callbacks.onSendError?.({ peerId, error });
+                });
             }
         }
     }

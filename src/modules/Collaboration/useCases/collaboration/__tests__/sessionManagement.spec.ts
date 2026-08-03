@@ -12,12 +12,15 @@ import { collaborationStore } from '../../../stores/collaborationStore';
 import { sessionRuntimePrimitives } from '../sessionManagement';
 
 /**
- * `sessionRuntimePrimitives` orchestrates four real subsystems (WebRTC peer
- * connections, Automerge sync, asset transfer, permissions) plus the CRDT
- * document boundary. Mock all of them at the module boundary so these specs
- * exercise sessionManagement's own wiring and decision logic — message
- * routing, presence sanitization, peer bookkeeping, sync permission gating —
- * without opening a real peer connection or CRDT document.
+ * `sessionRuntimePrimitives` orchestrates three real subsystems (WebRTC peer
+ * connections, Automerge sync, asset transfer) plus the CRDT document
+ * boundary. Mock all of them at the module boundary so these specs exercise
+ * sessionManagement's own wiring and decision logic — message routing,
+ * presence sanitization, peer bookkeeping, and the host-authoritative branch
+ * gate — without opening a real peer connection or CRDT document.
+ *
+ * There is no permission subsystem: an invite grants unconditional write
+ * access (ADR 0016 ruling 4).
  */
 type CapturedCallbacks = {
     onMessage: (input: { peerId: PeerId; message: PeerMessage }) => void;
@@ -58,15 +61,6 @@ const assetTransferMock = vi.hoisted(() => ({
             onAssetAvailable: (hash: string) => void;
             onProgress: (hash: string, received: number, total: number) => void;
         };
-    }[],
-}));
-
-const permissionManagerMock = vi.hoisted(() => ({
-    instances: [] as {
-        handleMessage: ReturnType<typeof vi.fn>;
-        grantRole: ReturnType<typeof vi.fn>;
-        canEdit: ReturnType<typeof vi.fn>;
-        clear: ReturnType<typeof vi.fn>;
     }[],
 }));
 
@@ -120,7 +114,9 @@ vi.mock('../../../repositories/peerConnection', () => ({
             closeAll: vi.fn(),
             getConnectedPeerIds: vi.fn().mockReturnValue([]),
             broadcastPresence: vi.fn(),
-            sendCrdtSync: vi.fn(),
+            // Matches the real contract: the send resolves only once the
+            // transport has taken the message.
+            sendCrdtSync: vi.fn().mockResolvedValue(undefined),
             removePeer: vi.fn(),
         };
         peerConnectionMock.instances.push(instance);
@@ -159,19 +155,6 @@ vi.mock('../../assetTransfer', () => ({
     ) {
         const instance = { handleMessage: vi.fn(), getAsset: vi.fn(), options };
         assetTransferMock.instances.push(instance);
-        return instance;
-    }),
-}));
-
-vi.mock('../../permissions', () => ({
-    PermissionManager: vi.fn().mockImplementation(function () {
-        const instance = {
-            handleMessage: vi.fn(),
-            grantRole: vi.fn(),
-            canEdit: vi.fn().mockReturnValue(true),
-            clear: vi.fn(),
-        };
-        permissionManagerMock.instances.push(instance);
         return instance;
     }),
 }));
@@ -217,10 +200,6 @@ function latestAutomergeSync() {
 function latestAssetTransfer() {
     return assetTransferMock.instances.at(-1)!;
 }
-function latestPermissionManager() {
-    return permissionManagerMock.instances.at(-1)!;
-}
-
 function makePeer(overrides: Partial<PeerInfo> = {}): PeerInfo {
     return {
         id: 'peer-x',
@@ -330,7 +309,6 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         peerConnectionMock.instances.length = 0;
         automergeSyncMock.instances.length = 0;
         assetTransferMock.instances.length = 0;
-        permissionManagerMock.instances.length = 0;
         collaborationStore.set(null);
         branchStoreMock.value = null;
         trackStoreMock.value = null;
@@ -351,10 +329,8 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(peerManager).toBe(latestPeerManager());
             expect(latestAutomergeSync().start).toHaveBeenCalledTimes(1);
             expect(assetTransferMock.instances).toHaveLength(1);
-            expect(permissionManagerMock.instances).toHaveLength(1);
 
             expect(sessionRuntimePrimitives.state.peerManager).toBe(peerManager);
-            expect(sessionRuntimePrimitives.state.permissionManager).toBe(latestPermissionManager());
         });
     });
 
@@ -362,19 +338,16 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         it('tears down every subsystem and clears session state', () => {
             const peerManager = sessionRuntimePrimitives.initialize();
             const automergeSync = latestAutomergeSync();
-            const permissionManager = latestPermissionManager();
 
             sessionRuntimePrimitives.cleanup();
 
             expect(automergeSync.stop).toHaveBeenCalledTimes(1);
             expect(crdtMock.cleanupProjectionBridge).toHaveBeenCalledTimes(1);
-            expect(permissionManager.clear).toHaveBeenCalledTimes(1);
             expect(peerManager.closeAll).toHaveBeenCalledTimes(1);
 
             expect(sessionRuntimePrimitives.state.peerManager).toBeNull();
             expect(sessionRuntimePrimitives.state.automergeSync).toBeNull();
             expect(sessionRuntimePrimitives.state.assetTransfer).toBeNull();
-            expect(sessionRuntimePrimitives.state.permissionManager).toBeNull();
         });
 
         it('is safe to call when no session is active', () => {
@@ -399,23 +372,28 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(canApplySync?.('peer-2', '__branches__')).toBe(false);
         });
 
-        it('fails open when the permission manager is not yet constructed', () => {
+        it('applies a non-host peer sync to the root doc — an invite is unconditional write access', () => {
             sessionRuntimePrimitives.initialize();
             collaborationStore.set(makeState({ peers: [makePeer({ id: 'peer-2' })] }));
-            sessionRuntimePrimitives.state.permissionManager = null;
 
             const { canApplySync } = latestAutomergeSync().hooks;
             expect(canApplySync?.('peer-2', 'root')).toBe(true);
         });
 
-        it('delegates non-host, non-branch syncs to the permission manager', () => {
+        it('applies a non-host peer sync to a branch content doc (only __branches__ is host-only)', () => {
             sessionRuntimePrimitives.initialize();
             collaborationStore.set(makeState({ peers: [makePeer({ id: 'peer-2' })] }));
-            latestPermissionManager().canEdit.mockReturnValue(false);
 
             const { canApplySync } = latestAutomergeSync().hooks;
-            expect(canApplySync?.('peer-2', 'root')).toBe(false);
-            expect(latestPermissionManager().canEdit).toHaveBeenCalledWith('peer-2');
+            expect(canApplySync?.('peer-2', 'branch_abc')).toBe(true);
+        });
+
+        it('applies a sync from a peer the store has never seen (no join-time gate)', () => {
+            sessionRuntimePrimitives.initialize();
+            collaborationStore.set(makeState({ peers: [] }));
+
+            const { canApplySync } = latestAutomergeSync().hooks;
+            expect(canApplySync?.('unknown-peer', 'root')).toBe(true);
         });
 
         it('surfaces a store error when a received sync fails to persist', () => {
@@ -436,17 +414,16 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             latestPeerManager().callbacks.onMessage({ peerId: 'peer-1', message });
 
             expect(latestAssetTransfer().handleMessage).toHaveBeenCalledWith('peer-1', message);
-            expect(latestPermissionManager().handleMessage).not.toHaveBeenCalled();
             expect(latestAutomergeSync().handlePeerMessage).not.toHaveBeenCalled();
         });
 
-        it('routes a permissions crdt-sync message to the permission manager', () => {
+        it('no longer special-cases __permissions__ — it falls through to automerge sync, which drops it as an unknown doc', () => {
             sessionRuntimePrimitives.initialize();
             const message: PeerMessage = { type: 'crdt-sync', docId: '__permissions__', data: 'payload' };
 
             latestPeerManager().callbacks.onMessage({ peerId: 'peer-1', message });
 
-            expect(latestPermissionManager().handleMessage).toHaveBeenCalledWith('peer-1', message);
+            expect(latestAutomergeSync().handlePeerMessage).toHaveBeenCalledWith({ peerId: 'peer-1', message });
         });
 
         it('routes every other crdt-sync message to automerge sync', () => {
@@ -555,7 +532,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
     });
 
     describe('handlePeerConnected (routed through the captured onConnected callback)', () => {
-        it('registers the peer with automerge sync, grants editor role, and marks it connected', () => {
+        it('registers the peer with automerge sync and marks it connected (no role is granted)', () => {
             sessionRuntimePrimitives.initialize();
             collaborationStore.set(
                 makeState({
@@ -568,7 +545,6 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             latestPeerManager().callbacks.onConnected('peer-1');
 
             expect(latestAutomergeSync().addPeer).toHaveBeenCalledWith('peer-1');
-            expect(latestPermissionManager().grantRole).toHaveBeenCalledWith('peer-1', 'editor');
             expect(collaborationStore.value?.peers[0]?.isConnected).toBe(true);
             expect(collaborationStore.value?.connectionStatus).toBe('connected');
             expect(latestPeerManager().sendCrdtSync).toHaveBeenCalledWith({
