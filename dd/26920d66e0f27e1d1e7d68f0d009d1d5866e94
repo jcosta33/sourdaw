@@ -1,0 +1,33 @@
+src/modules/AiRuntime/stores/aiActionHistoryStore.ts
+  s_bc88af7d3b054c::t_85d0c5b175cc67 4
+src/modules/AiRuntime/presentations/views/AiActionHistoryPanel.tsx
+  s_bc88af7d3b054c::t_85d0c5b175cc67 19
+docs/architecture/decisions/0031-retire-legacy-dso-command-execution.md
+  s_bc88af7d3b054c::t_85d0c5b175cc67 18,26
+src/modules/AiRuntime/stores/__tests__/aiActionHistoryStore.spec.ts
+  s_bc88af7d3b054c::t_85d0c5b175cc67 72,83-110,127,139
+src-tauri/src/commands/native_llm.rs
+  s_bc88af7d3b054c::t_85d0c5b175cc67 676
+src/modules/AiRuntime/useCases/recordAiActionGroup.ts
+  s_bc88af7d3b054c::t_85d0c5b175cc67 3-7
+codemods/remove-inject-non-container.ts
+  s_bc88af7d3b054c::t_85d0c5b175cc67 50
+src/modules/AiRuntime/useCases/__tests__/recordAiActionGroup.spec.ts
+  s_bc88af7d3b054c::t_85d0c5b175cc67 8-12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "dd26920d66e0f27e1d1e7d68f0d009d1d5866e94",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
