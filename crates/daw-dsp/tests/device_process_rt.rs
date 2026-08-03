@@ -202,6 +202,96 @@ fn bacteria_process_does_not_allocate_with_codec_and_distortion_engaged() {
     );
 }
 
+/// The Smudge distortion mode is the second transform in this engine that runs
+/// over a scratch frame — a 2048-point overlap-add STFT per channel, firing
+/// every 512 samples — and it is not reached by the test above, which leaves
+/// `distortionMode` on its `soft-clip` default. Its buffers are sized in
+/// `SmudgeProcessor::new`; anything that made the render path resize one would
+/// call `memory.grow()` on the audio thread.
+#[test]
+fn bacteria_smudge_mode_does_not_allocate() {
+    use daw_dsp::bacteria::BacteriaInstance;
+
+    /// Enough guarded blocks to cross the 512-sample hop several times per
+    /// channel: 48 x 128 = 6144 samples, so 12 frames.
+    const SMUDGE_BLOCKS: usize = 48;
+
+    let mut instance = BacteriaInstance::new(SAMPLE_RATE);
+    instance.set_param("bandCount", 1.0);
+    instance.set_param("band0_distortionEnabled", 1.0);
+    instance.set_param("band0_distortionMode", 7.0); // smudge
+    instance.set_param("band0_drive", 40.0);
+    instance.set_param("mix", 1.0);
+
+    // Warm the overlap-add path past its `ready` gate before the guard, so the
+    // guarded region runs the transform rather than the dry passthrough.
+    for block in 0..8 {
+        unsafe {
+            fill_input(
+                instance.get_input_left_ptr(),
+                instance.get_input_right_ptr(),
+                BLOCK,
+                block * BLOCK,
+            );
+        }
+        instance.process(BLOCK as u32);
+    }
+
+    assert_no_alloc(|| {
+        for block in 8..(8 + SMUDGE_BLOCKS) {
+            unsafe {
+                fill_input(
+                    instance.get_input_left_ptr(),
+                    instance.get_input_right_ptr(),
+                    BLOCK,
+                    block * BLOCK,
+                );
+            }
+            instance.process(BLOCK as u32);
+        }
+    });
+
+    let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
+    assert_all_finite(&out, "bacteria smudge");
+    assert!(
+        peak(&out) > 1e-4,
+        "bacteria fell silent under smudge, so the guarded region did not \
+         exercise its DSP"
+    );
+
+    // Prove the guarded region ran *smudge* and not the soft-clip fallback the
+    // mode used to land on. An identically-driven instance left on soft-clip
+    // must produce a different signal.
+    let mut soft_clip = BacteriaInstance::new(SAMPLE_RATE);
+    soft_clip.set_param("bandCount", 1.0);
+    soft_clip.set_param("band0_distortionEnabled", 1.0);
+    soft_clip.set_param("band0_distortionMode", 0.0);
+    soft_clip.set_param("band0_drive", 40.0);
+    soft_clip.set_param("mix", 1.0);
+    let mut reference = Vec::new();
+    for block in 0..=(8 + SMUDGE_BLOCKS) {
+        unsafe {
+            fill_input(
+                soft_clip.get_input_left_ptr(),
+                soft_clip.get_input_right_ptr(),
+                BLOCK,
+                block * BLOCK,
+            );
+        }
+        reference = unsafe { read_output(soft_clip.process(BLOCK as u32), BLOCK) };
+    }
+    let divergence = out
+        .iter()
+        .zip(reference.iter())
+        .fold(0.0_f32, |acc, (a, b)| acc.max((a - b).abs()));
+    assert!(
+        divergence > 1e-5,
+        "bacteria renders identically on distortionMode 7 and 0 (max \
+         divergence {divergence:.3e}), so the smudge transform never ran and \
+         the allocation guard above covered nothing"
+    );
+}
+
 #[test]
 fn crumbs_process_does_not_allocate_with_a_sample_playing() {
     use daw_dsp::crumbs::CrumbsInstance;

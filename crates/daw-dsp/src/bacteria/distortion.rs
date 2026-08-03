@@ -1,7 +1,18 @@
 //! Distortion algorithms for Bacteria.
 //!
 //! Supports: soft clip, hard clip, foldback, wavefold, bitcrush,
-//! tube emulation, breakdown (pitch-down + clipping).
+//! tube emulation, smudge (spectral transient blur into the base shaper).
+//!
+//! `Breakdown` is selectable in the panel but has no distinct algorithm: the
+//! `BreakdownProcessor` it would route to is a stub with no pitch shift. See
+//! that type's documentation. It renders as `SoftClip`, and
+//! `tests/bacteria_distortion_modes.rs` pins that as a stated fact rather than
+//! leaving it to be rediscovered.
+
+use super::stft::SmudgeProcessor;
+
+/// Channels the band chain runs through one `DistortionProcessor`.
+const CHANNELS: usize = 2;
 
 /// Distortion mode selector.
 #[derive(Clone, Copy, PartialEq)]
@@ -45,6 +56,18 @@ pub struct DistortionProcessor {
     breakdown_depth: f32, // 0–4 octaves
     sr_counter: u32,      // sample-rate reduction counter
     sr_hold: f32,         // held sample for SR reduction
+
+    /// Per-channel Smudge state.
+    ///
+    /// The band chain runs **one** `DistortionProcessor` for both channels —
+    /// `engine.rs` calls `process_sample` for left and then right off the same
+    /// instance. Every other mode here is memoryless or carries only a
+    /// scalar hold, so sharing costs them nothing worse than the sample-rate
+    /// counter they already share. An overlap-add transform is different: a
+    /// single STFT would receive `L₀, R₀, L₁, R₁, …` and analyse a 2048-point
+    /// window of interleaved stereo, whose spectrum belongs to neither
+    /// channel. Hence one processor per channel.
+    smudge: [SmudgeProcessor; CHANNELS],
 }
 
 impl DistortionProcessor {
@@ -60,12 +83,38 @@ impl DistortionProcessor {
             breakdown_depth: 1.0,
             sr_counter: 0,
             sr_hold: 0.0,
+            smudge: [SmudgeProcessor::new(), SmudgeProcessor::new()],
         }
+    }
+
+    /// Group delay this stage imposes, in samples at the rate it is fed.
+    ///
+    /// Only Smudge has any: its overlap-add window is a flat 2048-sample
+    /// delay. Derived from the configured mode rather than from the band's
+    /// `distortionEnabled` flag, matching how `BandChain` treats the
+    /// oversampler — a number the host can rely on across a performance toggle
+    /// beats a number that is momentarily tighter.
+    pub fn latency_samples(&self) -> f32 {
+        if self.mode == DistortionMode::Smudge {
+            return self.smudge[0].latency_samples() as f32;
+        }
+        0.0
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
-            "distortionMode" => self.mode = DistortionMode::from_index(value as u32),
+            "distortionMode" => {
+                let next = DistortionMode::from_index(value as u32);
+                // Leaving Smudge strands up to a full window of analysed audio
+                // in the overlap-add buffer, which would flush out the moment
+                // the mode came back — over whatever the band is playing then.
+                if next != self.mode && self.mode == DistortionMode::Smudge {
+                    for channel in &mut self.smudge {
+                        channel.reset();
+                    }
+                }
+                self.mode = next;
+            }
             "drive" => self.drive = value,
             "asymmetry" => self.asymmetry = value,
             "foldbackThreshold" => self.fold_threshold = value.max(0.01),
@@ -78,7 +127,11 @@ impl DistortionProcessor {
     }
 
     /// Process a single sample through the selected distortion algorithm.
-    pub fn process_sample(&mut self, input: f32) -> f32 {
+    ///
+    /// `channel` selects the per-channel state Smudge needs; every other mode
+    /// ignores it. Out-of-range indices clamp to the right channel rather than
+    /// panicking on the audio thread.
+    pub fn process_sample(&mut self, input: f32, channel: usize) -> f32 {
         let drive_linear = 1.0 + self.drive * 0.2; // scale drive to useful range
         let driven = input * drive_linear;
 
@@ -89,8 +142,18 @@ impl DistortionProcessor {
             DistortionMode::Wavefold => self.wavefold(driven),
             DistortionMode::Bitcrush => self.bitcrush(driven),
             DistortionMode::Tube => self.tube(driven),
-            DistortionMode::Breakdown | DistortionMode::Smudge | DistortionMode::Custom => {
-                // These require FFT/phase vocoder — pass through for now
+            DistortionMode::Smudge => {
+                // "Blurs transients before distortion": the spectral blur is a
+                // pre-stage, and the shaper it feeds is this mode's base soft
+                // clip. Drive has already been applied, so the blur sees the
+                // driven signal exactly as the other modes do.
+                let blurred = self.smudge[channel.min(CHANNELS - 1)].process_sample(driven);
+                self.soft_clip(blurred)
+            }
+            DistortionMode::Breakdown | DistortionMode::Custom => {
+                // Breakdown has no implementation to route to — see the module
+                // header and `BreakdownProcessor`. Custom is the waveshaper's
+                // mode, handled outside this type.
                 self.soft_clip(driven)
             }
         };

@@ -24,11 +24,18 @@ const MAX_MOD_ASSIGNMENTS: usize = 64;
 
 /// Ring size for the per-band alignment delay.
 ///
-/// The longest oversampler round trip is 11.375 base-rate samples (8x), so a
-/// band running at 1x never has to wait more than 12 whole samples to meet
-/// it. Power of two so the wrap compiles to a mask, and a fixed-size array so
-/// changing the compensation never allocates.
-const ALIGNMENT_RING_LEN: usize = 16;
+/// It has to cover the largest deficit any band can be asked to make up, which
+/// is the whole latency of the slowest band measured against a band with none.
+/// The oversampler contributes at most 11.375 base-rate samples (8x); Smudge's
+/// overlap-add window contributes 2048 more at 1x, and less as the factor
+/// divides it. 2060 is the worst case; 4096 is the next power of two, so the
+/// wrap still compiles to a mask.
+///
+/// Heap-backed rather than a `[f32; ALIGNMENT_RING_LEN]` inside `BandChain`:
+/// at this length the inline arrays would put ~200 kB of `BacteriaEngine`
+/// through a by-value return on the worklet thread's stack. Sized once in
+/// `new`, never resized, so changing the compensation still never allocates.
+const ALIGNMENT_RING_LEN: usize = 4096;
 
 /// Whole-sample delay used to line one band's output up with the slowest one.
 ///
@@ -50,8 +57,8 @@ const ALIGNMENT_RING_LEN: usize = 16;
 /// removes, 0.75 moves the first cancellation notch from ~2.1 kHz — squarely
 /// audible — to ~32 kHz.
 struct AlignmentDelay {
-    left: [f32; ALIGNMENT_RING_LEN],
-    right: [f32; ALIGNMENT_RING_LEN],
+    left: Vec<f32>,
+    right: Vec<f32>,
     write: usize,
     delay: usize,
 }
@@ -59,8 +66,8 @@ struct AlignmentDelay {
 impl AlignmentDelay {
     fn new() -> Self {
         Self {
-            left: [0.0; ALIGNMENT_RING_LEN],
-            right: [0.0; ALIGNMENT_RING_LEN],
+            left: vec![0.0; ALIGNMENT_RING_LEN],
+            right: vec![0.0; ALIGNMENT_RING_LEN],
             write: 0,
             delay: 0,
         }
@@ -90,8 +97,8 @@ impl AlignmentDelay {
     /// this its ring keeps whatever was in it and replays that audio if the
     /// band ever comes back.
     fn reset(&mut self) {
-        self.left = [0.0; ALIGNMENT_RING_LEN];
-        self.right = [0.0; ALIGNMENT_RING_LEN];
+        self.left.fill(0.0);
+        self.right.fill(0.0);
         self.write = 0;
     }
 
@@ -270,8 +277,21 @@ impl BandChain {
     ///
     /// Both channel chains always share a factor (`set_param` sets them
     /// together), so the left one speaks for the band.
+    ///
+    /// The distortion stage's own delay rides on the same reasoning: it comes
+    /// from the configured *mode*, which is a setup choice like the factor, not
+    /// a performance toggle like `distortionEnabled`.
     fn latency_samples(&self) -> f32 {
-        self.oversampler_l.latency_samples()
+        self.oversampler_l.latency_samples() + self.distortion_latency_samples()
+    }
+
+    /// The distortion stage's group delay, converted to base-rate samples.
+    ///
+    /// Smudge's overlap-add window sits *inside* the oversampled loop, so its
+    /// 2048 samples are 2048 samples of the oversampled stream — 256 base-rate
+    /// samples at 8x. Every other mode contributes zero.
+    fn distortion_latency_samples(&self) -> f32 {
+        self.distortion.latency_samples() / self.oversampling_factor as f32
     }
 
     /// Group delay the band's own processing imposes *right now*.
@@ -283,11 +303,19 @@ impl BandChain {
     /// one — and because it makes up the difference either way, the band's
     /// total delay stays put across a distortion toggle, which is what lets
     /// `latency_samples` keep reporting a flag-independent number honestly.
+    ///
+    /// Smudge's window is in the path on exactly the same condition — it is a
+    /// distortion mode — so it is gated the same way.
     fn engaged_latency_samples(&self) -> f32 {
-        if self.distortion_enabled && self.oversampling_factor > 1 {
-            return self.oversampler_l.latency_samples();
+        if !self.distortion_enabled {
+            return 0.0;
         }
-        0.0
+
+        let mut engaged = self.distortion_latency_samples();
+        if self.oversampling_factor > 1 {
+            engaged += self.oversampler_l.latency_samples();
+        }
+        engaged
     }
 
     /// Delay this band's output until it presents `target` base-rate samples.
@@ -345,7 +373,7 @@ impl BandChain {
                 let up_l_len = {
                     let up_l = self.oversampler_l.upsample(l);
                     for (i, &s) in up_l.iter().enumerate() {
-                        processed_l[i] = self.distortion.process_sample(s);
+                        processed_l[i] = self.distortion.process_sample(s, 0);
                     }
                     up_l.len()
                 };
@@ -355,14 +383,14 @@ impl BandChain {
                 let up_r_len = {
                     let up_r = self.oversampler_r.upsample(r);
                     for (i, &s) in up_r.iter().enumerate() {
-                        processed_r[i] = self.distortion.process_sample(s);
+                        processed_r[i] = self.distortion.process_sample(s, 1);
                     }
                     up_r.len()
                 };
                 r = self.oversampler_r.downsample(&processed_r[..up_r_len]);
             } else {
-                l = self.distortion.process_sample(l);
-                r = self.distortion.process_sample(r);
+                l = self.distortion.process_sample(l, 0);
+                r = self.distortion.process_sample(r, 1);
             }
         }
 
@@ -1014,10 +1042,17 @@ impl BacteriaEngine {
     /// changing the reported number, which `reported_latency_tracks_the_
     /// oversampling_factor` pins deliberately; it wants its own change.
     ///
-    /// **Deliberately not included:** `StftProcessor`'s windowing latency on
-    /// the spectral path. That omission predates the oversampler rewrite and
-    /// the type exposes no accessor to report it; folding in a guessed number
-    /// would be worse than a known, stated omission. It needs its own finding.
+    /// The distortion stage now contributes too: Smudge is an overlap-add
+    /// transform, a flat 2048 samples at 1x, divided by the factor when it runs
+    /// inside the oversampled loop. `StftProcessor::latency_samples` is exact
+    /// rather than estimated, so this is not the guessed number the omission
+    /// note below used to be about.
+    ///
+    /// **Still deliberately not included:** the same `StftProcessor` windowing
+    /// latency on the separate `spectralEnabled` blur/freeze path. That stage
+    /// is untouched here and its omission is unchanged; the accessor it needs
+    /// now exists, but folding it in moves audio this change did not otherwise
+    /// touch. It keeps its own finding.
     pub fn latency_samples(&self) -> u32 {
         let longest = self
             .bands
