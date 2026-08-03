@@ -1,0 +1,16 @@
+src/modules/Gluten/useCases/__tests__/glutenPresetsStyle.spec.ts
+  h_1228e573df1f42 1-77
+src/modules/Synth/useCases/__tests__/getSynthParamsFromDevicesMatrix.spec.ts
+  h_1228e573df1f42 1-206
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "b0699be64e0afcc5702f49b7ce0690c80f7cb3d5",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
