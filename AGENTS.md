@@ -29,7 +29,7 @@ After cross-module moves or bulk import changes, re-run `pnpm deps:validate` bef
 
 ## Device naming key (bakery metaphor)
 
-Bread-named modules under `src/modules/` are the built-in devices. Most have a matching DSP engine in `crates/daw-dsp/src/` (compiled to native + WASM; Crumbs' *disk-streaming* mode is native-only, but its engine renders under WASM from an in-memory sample pool) and a node in `AudioEngine/engine/`; exceptions: ProofChamber is the sibling `proof-chamber` crate, the Tuner is the `scoring` crate (`ScoringNode`), and Crust, Yeast, and CvGate have no Rust engine. "Dutch Oven" in engine/device ids is the ProofChamber reverb, not a separate module.
+Bread-named modules under `src/modules/` are the built-in devices. Most have a matching DSP engine in `crates/daw-dsp/src/` (compiled to native + WASM; Crumbs' *disk-streaming* mode is native-only, but its engine renders under WASM from an in-memory sample pool) and a node in `AudioEngine/engine/`; exceptions: ProofChamber is the sibling `proof-chamber` crate, the Tuner is the `scoring` crate (`ScoringNode`), and Yeast and CvGate have no Rust engine (Crust gained one — `crates/daw-dsp/src/crust/`). "Dutch Oven" in engine/device ids is the ProofChamber reverb, not a separate module.
 
 | Module     | Device                                 | Module       | Device                            |
 | ---------- | -------------------------------------- | ------------ | --------------------------------- |

@@ -127,7 +127,22 @@ type ParamExemption = {
  * answer to. An exempt id that gains an arm reds until the row is deleted, so
  * this table cannot quietly become the place orphans go to be forgotten.
  */
-const PARAM_EXEMPTIONS: readonly ParamExemption[] = [];
+const PARAM_EXEMPTIONS: readonly ParamExemption[] = [
+    {
+        deviceId: 'toaster',
+        paramId: 'swing',
+        reason:
+            'Host-side by design, and it works. Swing shifts the *schedule*, not the audio, so there is nothing for a ' +
+            'Rust engine arm to do: `toasterSwingProjection` takes the automation lanes and the evaluator directly ' +
+            '(`toasterSwingProjection.ts:24-28`, iterating them at `:59`), and `scheduleMidiNotes.ts:632-636` feeds it ' +
+            'both. Automation reaches it — `toasterSwingProjection.spec.ts` covers "delays odd sixteenths from ' +
+            'canonical parent automation" — the path simply is not the engine one.\n\n' +
+            'Recorded as an exemption rather than as debt because it is not broken. An earlier revision of this census ' +
+            'filed it as a known orphan on the reasoning that "automation only reaches `updateDeviceParam`, which ends ' +
+            'at the engine". That is true of the engine route and irrelevant here, and leaving it in the debt table ' +
+            'would have sent someone to fix a working feature.',
+    },
+];
 
 /**
  * Orphans this census found that are **not** fixed, and are **not** legitimate.
@@ -139,19 +154,7 @@ const PARAM_EXEMPTIONS: readonly ParamExemption[] = [];
  * that fixing it is more than a name change. It is asserted in both directions,
  * so the row cannot outlive the defect.
  */
-const KNOWN_ORPHANS: readonly ParamExemption[] = [
-    {
-        deviceId: 'toaster',
-        paramId: 'swing',
-        reason:
-            'Swing is real, but it lives host-side: `projectToasterStepEvents` shifts step start beats by `kit.swing`, ' +
-            'and the Rust engine has no sequencer to put it in. The panel writes it through `setToasterKitParam` into ' +
-            'the kit store, so the knob works — but automation and modulation only reach `updateDeviceParam`, which ' +
-            'ends at the engine, and the engine drops it. Fixing it means giving the host-side sequencer a way to read ' +
-            'the automated value at schedule time, which is a write-path change, not a rename. Do not "fix" it by ' +
-            'clearing `automatable`: ADR 0016 ruling 2 says build the inert capability, not delete it.',
-    },
-];
+const KNOWN_ORPHANS: readonly ParamExemption[] = [];
 
 // ── Source reading ─────────────────────────────────────────────────────────
 
