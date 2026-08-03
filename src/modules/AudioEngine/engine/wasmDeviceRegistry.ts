@@ -1144,12 +1144,27 @@ const kneadDescriptor: WasmDeviceDescriptor = {
         };
         const loadPromise = createKneadNode(context, transportSAB, signal)
             .then(async (result: KneadNodeResult) => {
-                if ((await waitForDeviceReady({ deviceType, result, signal })) === null) {
+                const readyData = await waitForDeviceReady({ deviceType, result, signal });
+                if (readyData === null) {
                     return;
                 }
+                // Knead delays its track by a whole analysis frame even at zero
+                // shift. Report it so PDC offsets the track; without this the vocal
+                // sat ~43 ms behind the mix on three shipped templates.
+                const initialLatency = typeof readyData.latency === 'number' ? readyData.latency : 0;
+                reportLatency(deviceId, (initialLatency / context.sampleRate) * 1000);
+
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
+                // Removing the device must retract its PDC entry; a stale entry
+                // keeps compensating a delay that is no longer in the graph.
+                // TrackNode.removeDevice prefers controller.destroy over dispose,
+                // so this is the reachable teardown path.
+                const destroy = (): void => {
+                    result.destroy();
+                    clearReportedLatency(deviceId);
+                };
                 onLoaded({
                     deviceId,
                     type: deviceType,
@@ -1162,14 +1177,14 @@ const kneadDescriptor: WasmDeviceDescriptor = {
                         updateState: result.updateState,
                         setParam: result.setParam,
                         setBypass: result.setBypass,
-                        destroy: result.destroy,
+                        destroy,
                     },
                     kneadControls: {
                         ready: true,
                         updateState: result.updateState,
                         setParam: result.setParam,
                         setBypass: result.setBypass,
-                        destroy: result.destroy,
+                        destroy,
                     },
                 });
                 return;

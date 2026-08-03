@@ -71,6 +71,13 @@ impl KneadInstance {
         self.engine.set_shift_semitones(semitones);
     }
 
+    /// Samples of group delay this instance imposes, for plugin delay
+    /// compensation. Mirrors `GlutenInstance::get_latency_samples`; the worklet
+    /// forwards it on the ready handshake so PDC can offset the track.
+    pub fn get_latency_samples(&self) -> u32 {
+        self.engine.latency_samples()
+    }
+
     pub fn get_f0(&self) -> f32 {
         self.engine.get_f0().unwrap_or(0.0)
     }
@@ -108,6 +115,16 @@ mod tests {
         let out_l = inst.process(frames as u32);
         let out_r = inst.get_right_ptr();
         assert_ne!(out_l, out_r, "right output must be a distinct buffer");
+    }
+
+    /// The wasm boundary must surface the engine's real group delay, not zero —
+    /// the worklet reads exactly this export to populate the ready handshake that
+    /// drives PDC.
+    #[test]
+    fn instance_reports_the_engine_group_delay_to_pdc() {
+        let inst = KneadInstance::new(48000.0);
+        assert_eq!(inst.get_latency_samples(), inst.engine.latency_samples());
+        assert_eq!(inst.get_latency_samples(), 2047);
     }
 
     /// DSP-8 red→green: a non-finite sample injected into the signal reaches
