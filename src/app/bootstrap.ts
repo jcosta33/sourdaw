@@ -68,7 +68,6 @@ import { getControlRoomHandlers } from '#/modules/ControlRoom/useCases';
 import { getControlSurfaceHandlers, setMidiLearnDependencies } from '#/modules/ControlSurface/useCases';
 import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 import {
-    getDsoSnapshotHandlers,
     markActionHistoryEntryReverted,
     recordActionHistoryEntry,
     clearActionHistory as clearCrdtActionHistory,
@@ -360,7 +359,6 @@ registerHandlerMap(getNodeViewHandlers());
 registerHandlerMap(getWebMidiInputHandlers());
 registerHandlerMap(getRaveHandlers());
 registerHandlerMap(getControlRoomHandlers());
-registerHandlerMap(getDsoSnapshotHandlers());
 
 initToasterSubscribers({ eventBus, logger });
 // Registered after the lifecycle subscriber so a device's first appearance is
