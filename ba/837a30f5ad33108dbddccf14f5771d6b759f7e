@@ -1,0 +1,40 @@
+tests/e2e/__tests__/myceliumPlaybackEvidence.spec.ts
+  s_ac9b259eab20ba::t_13ce45f1a4642e 15,32-34,174,283-291,300-332
+  s_ac9b259eab20ba::t_74a1c545dc9165 4,7,242-249,260-282
+  s_ac9b259eab20ba::t_08433ef797f225 18,20
+  s_ac9b259eab20ba::t_723c66bdd49dfd 17,46,132-173
+  s_ac9b259eab20ba::t_8e11153ef01ee2 292-299
+  s_ac9b259eab20ba::t_6f169057263a2b 175
+  s_ac9b259eab20ba::t_e77b0fd73326d1 397
+tests/e2e/myceliumPerformance.spec.ts
+  s_ac9b259eab20ba::t_0df1c33b288a16 15-20,192,200,214-219,249,253-256
+  s_ac9b259eab20ba::t_13ce45f1a4642e 203-213,245
+tests/e2e/myceliumPlaybackEvidence.ts
+  s_ac9b259eab20ba::t_f6b1d65f231b88 497-499,501-508,533-537
+  s_ac9b259eab20ba::t_a7b5dcc7c6a165 668-674,677,700,706,709
+  s_ac9b259eab20ba::t_13ce45f1a4642e 141-157,159,165-166,170-183,191-193
+  s_ac9b259eab20ba::t_6308e2e20faa4a 27,45,50-70,72-78,130-140,161-164,167-168,184-190,194-206,220
+  s_ac9b259eab20ba::t_c751fb61ac4d60 158,160,169
+  s_ac9b259eab20ba::t_8415333d93e6d7 413-415,417-419,421,432-437,441,443-450,461-473,475-496,500,509,513-524,526-532,538-541,544-551,573,576-577,580-582
+  s_ac9b259eab20ba::t_b8c105038676a1 381,390-393,400-404,408
+  s_ac9b259eab20ba::t_8db69e59f0a3fa 28,442,543
+  s_ac9b259eab20ba::t_8e11153ef01ee2 71,416,420,422-428,438-440,451-460,474,510-512,525,542,552-572,574-575,578-579
+  s_ac9b259eab20ba::t_2476a3e1fac98b 621-632,635,657,659,661,663-665,667,675-676,678-683,685,699,701,703-705,707-708,710
+  s_ac9b259eab20ba::t_8a875bc54fec8f 429-431
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "ba837a30f5ad33108dbddccf14f5771d6b759f7e",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
