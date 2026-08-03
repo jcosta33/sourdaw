@@ -201,10 +201,15 @@ function parseArticulation(value: unknown, path: string): ManifestArticulation {
         throw new TypeError(`${path}.zones must contain at most ${MAX_ZONE_LIST_COUNT} entries`);
     }
 
+    const zones = Object.freeze(value.zones.map((zone, index) => parseZone(zone, `${path}.zones[${index}]`)));
+    if (!zones.some((zone) => !zone.isRelease)) {
+        throw new TypeError(`${path} must contain a playable note-on zone`);
+    }
+
     return Object.freeze({
         type: value.type,
         id: canonicalId,
-        zones: Object.freeze(value.zones.map((zone, index) => parseZone(zone, `${path}.zones[${index}]`))),
+        zones,
     });
 }
 
@@ -223,13 +228,14 @@ export function parseSampleManifest(value: unknown): SampleManifest {
     }
     if (
         !Array.isArray(value.micPositions) ||
+        value.micPositions.length === 0 ||
         value.micPositions.length > MAX_MICS ||
         !value.micPositions.every((position) => typeof position === 'string')
     ) {
-        throw new TypeError(`Levain sample manifest micPositions must contain at most ${MAX_MICS} strings`);
+        throw new TypeError(`Levain sample manifest micPositions must contain 1 through ${MAX_MICS} microphone names`);
     }
-    if (!Array.isArray(value.articulations)) {
-        throw new TypeError('Levain sample manifest articulations must be an array');
+    if (!Array.isArray(value.articulations) || value.articulations.length === 0) {
+        throw new TypeError('Levain sample manifest articulations must contain at least one articulation');
     }
     if (value.articulations.length > MAX_ARTICULATIONS) {
         throw new TypeError(`Levain sample manifest articulations must contain at most ${MAX_ARTICULATIONS} entries`);

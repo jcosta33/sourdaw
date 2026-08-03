@@ -79,13 +79,24 @@ describe('parseSampleManifest', () => {
         );
     });
 
+    it('rejects banks without a playable note path', () => {
+        const manifest = createValidManifest();
+        manifest.micPositions = [];
+        expect(() => parseSampleManifest(manifest)).toThrow('must contain 1 through 8 microphone names');
+
+        manifest.micPositions = ['close'];
+        manifest.articulations = [];
+        expect(() => parseSampleManifest(manifest)).toThrow('must contain at least one articulation');
+
+        manifest.articulations = [{ type: 'sustain', id: 0, zones: [] }];
+        expect(() => parseSampleManifest(manifest)).toThrow('articulations[0] must contain a playable note-on zone');
+    });
+
     it('rejects sample paths that can escape the selected bank directory', () => {
         const manifest = createValidManifest();
         manifest.articulations[0]?.zones.push({ ...VALID_ZONE, file: '../outside.wav' });
 
-        expect(() => parseSampleManifest(manifest)).toThrow(
-            'articulations[0].zones[1].file must be a safe relative sample path'
-        );
+        expect(() => parseSampleManifest(manifest)).toThrow('must be a safe relative sample path');
     });
 
     it('rejects articulation ids that do not match the canonical DSP id', () => {
@@ -109,7 +120,7 @@ describe('parseSampleManifest', () => {
         manifest.micPositions = Array.from({ length: 9 }, (_, index) => `mic-${index}`);
 
         expect(() => parseSampleManifest(manifest)).toThrow(
-            'Levain sample manifest micPositions must contain at most 8 strings'
+            'Levain sample manifest micPositions must contain 1 through 8 microphone names'
         );
     });
 
@@ -137,25 +148,19 @@ describe('parseSampleManifest', () => {
 
         const parsed = parseSampleManifest(manifest);
 
-        expect(parsed.articulations[0]?.zones[0]).toEqual(
-            expect.objectContaining({
-                loop: {
-                    mode: 'forward',
-                    startFrame: 0,
-                    endFrame: 'sample-end',
-                    crossfadeFrames: 0,
-                },
-            })
-        );
+        expect(parsed.articulations[0]?.zones[0]?.loop).toEqual({
+            mode: 'forward',
+            startFrame: 0,
+            endFrame: 'sample-end',
+            crossfadeFrames: 0,
+        });
     });
 
     it('rejects finite JavaScript numbers that overflow a Rust f32', () => {
         const manifest = createValidManifest();
         manifest.articulations[0]?.zones.push({ ...VALID_ZONE, gainDb: Number.MAX_VALUE });
 
-        expect(() => parseSampleManifest(manifest)).toThrow(
-            'articulations[0].zones[1].gainDb must fit a finite 32-bit float'
-        );
+        expect(() => parseSampleManifest(manifest)).toThrow('must fit a finite 32-bit float');
     });
 
     it('rejects zone maps whose flattened lookup arena exceeds the DSP limit', () => {
@@ -175,9 +180,7 @@ describe('parseSampleManifest', () => {
         const manifest = createValidManifest();
         manifest.articulations = Array.from({ length: 29 }, () => manifest.articulations[0]!);
 
-        expect(() => parseSampleManifest(manifest)).toThrow(
-            'Levain sample manifest articulations must contain at most 28 entries'
-        );
+        expect(() => parseSampleManifest(manifest)).toThrow('must contain at most 28 entries');
 
         const oversizedZones: unknown[] = Array.from({ length: 65_536 });
         expect(() =>
