@@ -1,0 +1,82 @@
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationScheduling.spec.ts
+  s_66d4924c65dcd2::t_c3aca6926ba598 12
+  s_66d4924c65dcd2::t_5bdac1fe4ab2d8 928-938
+  s_66d4924c65dcd2::t_2438abafbe58bc 729-775
+  s_66d4924c65dcd2::t_e6ac686627080e 398-400
+  s_66d4924c65dcd2::t_fd09e4a07416df 899-909
+  s_66d4924c65dcd2::t_565bdb323db803 374-376
+  s_66d4924c65dcd2::t_d1660b0244c50d 13
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_66d4924c65dcd2::t_41b21dd7ffc39f 360
+  s_66d4924c65dcd2::t_8eb75196440eff 17
+  s_66d4924c65dcd2::t_bff9296bc2dedf 348-349,352-355,362-363
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationLaneGating.spec.ts
+  s_66d4924c65dcd2::t_138e20cf2819dd 6-7
+  s_66d4924c65dcd2::t_c605fa9bdd907d 131-140
+  s_66d4924c65dcd2::t_9380a2a84c389c 36-45
+src/modules/AudioEngine/repositories/offlineScheduler/setOfflineDeviceParameterLaw.ts
+  s_66d4924c65dcd2::t_be79364abb5f71 1-15
+src/modules/AudioEngine/useCases/offlineRender/__tests__/faustInstrumentOfflineRender.spec.ts
+  s_66d4924c65dcd2::t_9e21f3d6d1f66c 51-64
+src/modules/AudioEngine/useCases/index.ts
+  s_66d4924c65dcd2::t_0293f55b45ae64 110
+src/modules/AudioEngine/useCases/configureOfflineDeviceParameterLaw.ts
+  s_66d4924c65dcd2::t_55f8456802b08a 1-15
+src/modules/AudioEngine/repositories/offlineScheduler/offlineDeviceParameterLawState.ts
+  s_66d4924c65dcd2::t_f72e86afdd8b76 20
+  s_66d4924c65dcd2::t_c4af61f72ab5e1 1-19,21-37
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts
+  s_66d4924c65dcd2::t_195ca204aefe5e 854-866,868-887
+  s_66d4924c65dcd2::t_182bb3535b1427 10
+  s_66d4924c65dcd2::t_e69a0fd3c2b5f4 907-911,913
+  s_66d4924c65dcd2::t_8b1ac130caf3c5 984-985
+  s_66d4924c65dcd2::t_a462b11a735389 867
+  s_66d4924c65dcd2::t_d64f5092a0fb5b 201-210
+  s_66d4924c65dcd2::t_973dd89098b87d 63
+  s_66d4924c65dcd2::t_d486b238d4af8d 945-949,952-956,964-966
+  s_66d4924c65dcd2::t_fba696d209f1bd 890-896,903-904,912,914-927,940-943,951,958,969-983,986-989
+  s_66d4924c65dcd2::t_b781cc47f83019 888-889,897-902,905-906,928-939,944,950,957,959-963,967-968,990-991
+  s_66d4924c65dcd2::t_30abc7b69ec08c 318,325-327
+  s_66d4924c65dcd2::t_a8402867ba3a26 218-231
+  s_66d4924c65dcd2::t_d544766f7e1ab5 303
+  s_66d4924c65dcd2::t_2deafb1ca8c1d8 302,317,323-324,328
+  s_66d4924c65dcd2::t_e0aefbb1003cbd 422-433,435,437
+  s_66d4924c65dcd2::t_f878ca44d4159e 6
+src/app/bootstrap.ts
+  s_66d4924c65dcd2::t_adcf003f058b95 17
+  s_66d4924c65dcd2::t_e01fc802a092e0 41
+  s_66d4924c65dcd2::t_ec26718fe7fa63 179-184
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/scheduleTrackAutomationFixture.ts
+  s_66d4924c65dcd2::t_f9f64a5985295d 27-29
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationSlewGrainParity.spec.ts
+  s_66d4924c65dcd2::t_cc3d6bc0e825a2 105-109
+  s_66d4924c65dcd2::t_cdd32d04d24c76 1-104,110-160,165,167-181
+  s_66d4924c65dcd2::t_5f13925be66008 161-164,166
+src/utils/__tests__/automationSlew.spec.ts
+  s_66d4924c65dcd2::t_46e9d603e337e3 3,6,8-24
+src/modules/AudioEngine/repositories/deviceStrategy/__tests__/FaustDeviceStrategy.spec.ts
+  s_66d4924c65dcd2::t_efd8dceb00e5d5 7
+  s_66d4924c65dcd2::t_e419820155d759 245-246,255-262
+src/modules/AudioEngine/useCases/offlineRender/__tests__/offlineVcaGainParity.spec.ts
+  s_66d4924c65dcd2::t_b61660aea30cb0 122-123,130-141
+  s_66d4924c65dcd2::t_25b40c5abdb2e8 8
+src/app/__tests__/bootstrap.spec.ts
+  s_66d4924c65dcd2::t_0b43680a412ccf 131
+  s_66d4924c65dcd2::t_13e65c9eb4b0ce 100
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "7d32eea84fbc5eea96d8c1939c84a8c3a7cf4ff6",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
