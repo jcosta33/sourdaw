@@ -1,0 +1,19 @@
+src/modules/MIDI/models/__tests__/MidiControllerState.spec.ts
+  s_66d4924c65dcd2::t_7f52152c49ab43 1-262
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "5e7496a8e99b4fe37bccaa2da69d414e2ef99c0c",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
