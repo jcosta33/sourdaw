@@ -250,6 +250,20 @@ describe('createLevainBridge', () => {
         });
     });
 
+    it('queues the canonical DSP id for a selected articulation', () => {
+        const deps = makeDeps();
+        const bridge = createLevainBridge(deps);
+        const device = makeDevice();
+        seedDevice('d1');
+        bridge.registerLevainDevice('d1', device);
+
+        bridge.setLevainParamWithAudio('d1', 'currentArticulation', 'tremolo');
+        flushRaf();
+
+        expect(device.setParam).toHaveBeenCalledWith('current_articulation', 13);
+        expect(deps.persistDeviceParam).toHaveBeenCalledWith('d1', 'current_articulation', 13);
+    });
+
     describe('setLevainParamWithAudio — nested patch forwarding', () => {
         it('should forward nested number and boolean fields to engine params', () => {
             const deps = makeDeps();

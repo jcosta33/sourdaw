@@ -6,7 +6,7 @@ import {
 } from '#/modules/Arrangement/stores';
 import { createRafBatcher } from '#/utils/DOM/createRafBatcher';
 
-import { type LevainPatch } from '../../models/LevainPatch';
+import { getArticulationId, isArticulationType, type LevainPatch } from '../../models/LevainPatch';
 import { defaultLevainState, levainStore, setLevainParam, setMacro } from '../../stores/levainStore';
 import { type autoLoadLevainSamples } from '../autoLoadSamples';
 import { hydrateLevainStateFromProject } from '../hydrateLevainStateFromProject';
@@ -192,14 +192,8 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
 
         setLevainParam(deviceId, key, value);
 
-        if (key === 'currentArticulation' && typeof value === 'string') {
-            const patch = levainStore.value?.[deviceId]?.patch;
-            if (patch) {
-                const artIndex = patch.articulations.findIndex((a) => a.type === value);
-                if (artIndex !== -1) {
-                    queueParam(deviceId, 'current_articulation', artIndex);
-                }
-            }
+        if (key === 'currentArticulation' && isArticulationType(value)) {
+            queueParam(deviceId, 'current_articulation', getArticulationId(value));
         } else if (typeof value === 'number') {
             const rustKey = camelToSnake(String(key));
             queueParam(deviceId, rustKey, value);
