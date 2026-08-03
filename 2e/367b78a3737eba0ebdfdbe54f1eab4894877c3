@@ -1,0 +1,47 @@
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_bc88af7d3b054c::t_28cf87958fa239 113-115,261,264,293,301,309
+  s_bc88af7d3b054c::t_e22d3a3c18da64 292
+  s_bc88af7d3b054c::t_269b454b4e0809 35,255-256,294-300,302-308,310-321,1345,1400-1401,1511,1530,1539
+  s_bc88af7d3b054c::t_986c4054bbba15 36,63-68,110-112,116-136,143,184-199,253-254,257,262-263,265-287,289,322-348,1346,1394-1399,1402-1404,1513,1531,1540-1542
+src/modules/Command/useCases/__tests__/executeAppActionBatch.spec.ts
+  s_bc88af7d3b054c::t_448ed1a2731a86 461-511
+src/infra/store/storage/__tests__/createAutomergeStorage.spec.ts
+  s_bc88af7d3b054c::t_c021ce9b05005c 5,545,572,576,595,706,736
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_bc88af7d3b054c::t_b5b4352b89f1aa 129,136,297,323
+  s_66d4924c65dcd2::t_7c2ce4ab336981 354-355
+src/modules/AiRuntime/useCases/__tests__/confirmedCompoundBusActions.spec.ts
+  s_bc88af7d3b054c::t_c4271808c972a0 158,199-200
+  s_bc88af7d3b054c::t_f135f36bbded88 1-157,159-198,201-224
+src/infra/store/storage/createAutomergeStorage.ts
+  s_bc88af7d3b054c::t_6b7e14854d066e 457-460
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_bc88af7d3b054c::t_e59682c1684a98 451-468
+  s_bc88af7d3b054c::t_2db61eb7213d2c 428-450
+  s_bc88af7d3b054c::t_9daf9d011af83f 410-427
+  s_bc88af7d3b054c::t_c487e769a9768d 356-409
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "2e367b78a3737eba0ebdfdbe54f1eab4894877c3",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
