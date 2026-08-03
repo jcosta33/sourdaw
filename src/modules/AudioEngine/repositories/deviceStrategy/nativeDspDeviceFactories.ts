@@ -2,6 +2,7 @@ import { type NativeDspDeviceType } from '#/utils/nativeDspDeviceTypes';
 
 import { isBacteriaDevice, createBacteriaNode } from '../../engine/BacteriaNode';
 import { isCrumbsDevice, createCrumbsNode } from '../../engine/CrumbsNode';
+import { isCrustDevice, createCrustNode } from '../../engine/CrustNode';
 import { isFermenterDevice, createFermenterNode } from '../../engine/FermenterNode';
 import { isGlutenDevice, createGlutenNode } from '../../engine/GlutenNode';
 import { isGrandBouleDevice, createGrandBouleNode } from '../../engine/GrandBouleNode';
@@ -157,6 +158,7 @@ export const NATIVE_DSP_DEVICE_FACTORIES: readonly NativeDspDeviceFactory[] = [
         create: createGrandBouleOfflineNode,
     },
     { type: 'gluten', matches: isGlutenDevice, create: createGlutenNode },
+    { type: 'crust', matches: isCrustDevice, create: createCrustNode },
     { type: 'bacteria', matches: isBacteriaDevice, create: createBacteriaNode },
     { type: 'grinder', matches: isGrinderDevice, create: createGrinderNode },
     { type: 'proof', matches: isProofDevice, create: createProofNode },

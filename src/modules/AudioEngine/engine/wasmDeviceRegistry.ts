@@ -18,6 +18,7 @@ import { reportLatency } from '../useCases/latencyCompensation/compensation/repo
 import { getAudioDeviceRuntimeSink } from './audioDeviceRuntimeSink';
 import { isBacteriaDevice, createBacteriaNode, type BacteriaNodeResult } from './BacteriaNode';
 import { isCrumbsDevice, createCrumbsNode, type CrumbsNodeResult } from './CrumbsNode';
+import { isCrustDevice, createCrustNode, type CrustNodeResult } from './CrustNode';
 import { isFermenterDevice, createFermenterNode, type FermenterNodeResult } from './FermenterNode';
 import { isGlutenDevice, createGlutenNode, type GlutenNodeResult } from './GlutenNode';
 import { isGrandBouleDevice, createGrandBouleNode, type GrandBouleNodeResult } from './GrandBouleNode';
@@ -623,6 +624,71 @@ const glutenDescriptor: WasmDeviceDescriptor = {
     },
 };
 
+const crustDescriptor: WasmDeviceDescriptor = {
+    matches: isCrustDevice,
+    create({ context, deviceId, deviceType, isCurrent, signal, onLoaded }) {
+        const pendingParams: Array<[string, number]> = [];
+        const placeholder = loadingBypassNode(context, deviceId, deviceType);
+        placeholder.nativeDspControls = {
+            setParam: (name, value) => {
+                pendingParams.push([name, value]);
+            },
+            setBypass: () => {},
+        };
+        const loadPromise = createCrustNode(context, undefined, signal)
+            .then(async (result: CrustNodeResult) => {
+                const readyData = await waitForDeviceReady({ deviceType, result, signal });
+                if (!readyData) {
+                    return;
+                }
+                if (isCurrent?.() === false) {
+                    result.destroy();
+                    return;
+                }
+                // Crust's look-ahead is latency, and an unreported look-ahead
+                // delay slides this device's track against every other one.
+                // Report the delay the engine starts with before any parameter
+                // lands, then again whenever a parameter moves it.
+                const initialLatency = typeof readyData.latency === 'number' ? readyData.latency : 0;
+                reportLatency(deviceId, (initialLatency / context.sampleRate) * 1000);
+
+                for (const [name, value] of pendingParams) {
+                    result.setParam(name, value);
+                }
+                result.onLatencyChanged((latency) => {
+                    reportLatency(deviceId, (latency / context.sampleRate) * 1000);
+                });
+                result.onMeterData((data) => {
+                    getAudioDeviceRuntimeSink().updateCrustMeters(deviceId, data);
+                });
+                onLoaded({
+                    deviceId,
+                    type: deviceType,
+                    nodes: [result.workletNode],
+                    inputNode: result.workletNode,
+                    outputNode: result.workletNode,
+                    dispose: result.destroy,
+                    controller: {
+                        setParam: result.setParam,
+                        setBypass: result.setBypass,
+                        destroy: () => {
+                            result.destroy();
+                            clearReportedLatency(deviceId);
+                            getAudioDeviceRuntimeSink().deleteCrustMeters(deviceId);
+                        },
+                    },
+                    nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
+                });
+                return;
+            })
+            .catch((error) => {
+                logger.warn(`[WebAudioEngine] ${deviceType} failed: ${error}`);
+                return;
+            });
+        return { placeholder, loadPromise };
+    },
+};
+
 const bacteriaDescriptor: WasmDeviceDescriptor = {
     matches: isBacteriaDevice,
     create({ context, deviceId, deviceType, isCurrent, signal, onLoaded }) {
@@ -1208,6 +1274,7 @@ const WASM_DEVICE_DESCRIPTORS: WasmDeviceDescriptor[] = [
     crumbsDescriptor,
     proofChamberDescriptor,
     glutenDescriptor,
+    crustDescriptor,
     bacteriaDescriptor,
     grinderDescriptor,
     proofDescriptor,

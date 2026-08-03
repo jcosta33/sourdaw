@@ -16,6 +16,7 @@ pub mod mic;
 pub mod performance;
 pub mod realism;
 pub mod release;
+pub mod tone;
 pub mod types;
 pub mod voice;
 pub mod zone;

@@ -13,6 +13,7 @@ use super::mic::MicMixer;
 use super::performance::{AutoArticulation, AutoDivisi, EnsembleTiming};
 use super::realism::RealismEngine;
 use super::release::{PedalDeferredRelease, ReleaseTracker};
+use super::tone::ToneTilt;
 use super::types::*;
 use super::voice::VoicePool;
 use super::zone::{SamplePool, ZoneMap};
@@ -57,6 +58,10 @@ pub struct LevainEngine {
     fallback: FallbackToneEngine,
     /// Orchestral realism augmentation layer.
     realism: RealismEngine,
+    /// Tone macro — a brightness tilt over the whole instrument output.
+    tone: ToneTilt,
+    /// Attack/Release macro scaling applied over each zone's own ADSR.
+    envelope_scaling: EnvelopeScaling,
 
     /// Audio settings.
     sample_rate: f32,
@@ -94,6 +99,8 @@ impl LevainEngine {
             ensemble_timing: EnsembleTiming::new(42),
             fallback: FallbackToneEngine::new(sample_rate),
             realism: RealismEngine::new(sample_rate),
+            tone: ToneTilt::new(sample_rate),
+            envelope_scaling: EnvelopeScaling::IDENTITY,
             sample_rate,
             master_gain: 0.8,
             num_articulations: 1,
@@ -463,11 +470,19 @@ impl LevainEngine {
             "pitch_convergence" => self.ensemble_timing.initial_detune_cents = value,
 
             // ── Tone / Attack / Release (macro-mapped) ───────────────
-            // "tone" maps to a simple brightness tilt — no EQ in the engine yet, no-op.
-            "tone" => {}
-            // "attack" / "release" would override per-zone ADSR but that
-            // requires tracking a global override — stub for now.
-            "attack" | "release" => {}
+            // All three take a 0..1 macro position whose centre, 0.5, is the
+            // patch's own voicing — the panel's macro strip defaults them there
+            // and resets them there, so a patch that never touches these knobs
+            // renders exactly as it did before they existed.
+            "tone" => self.tone.set_position(value),
+            "attack" => {
+                self.envelope_scaling.attack = macro_time_scale(value);
+                self.voice_pool.set_envelope_scaling(self.envelope_scaling);
+            }
+            "release" => {
+                self.envelope_scaling.release = macro_time_scale(value);
+                self.voice_pool.set_envelope_scaling(self.envelope_scaling);
+            }
 
             // ── Mic positions ─────────────────────────────────────────
             n if n.starts_with("mic_") => self.handle_mic_param(n, value),
@@ -573,6 +588,11 @@ impl LevainEngine {
             // strings, bow/breath noise, frequency-dependent damping).
             mono_sum = self.realism.tick(mono_sum, voices_active);
 
+            // Tone macro. Last stage before the mic mix, so it voices the whole
+            // instrument — the sampled body and the realism layer's bow, breath
+            // and air alike — rather than only the sample content.
+            mono_sum = self.tone.tick(mono_sum);
+
             // Mix through mic positions (single mic for now).
             let (l, r) = self.mic_mixer.mix_mono(mono_sum);
 
@@ -629,6 +649,20 @@ mod tests {
     }
 
     fn engine_with_sawtooth_zone_voices(max_voices: usize) -> LevainEngine {
+        engine_with_sawtooth_envelope(
+            max_voices,
+            AdsrParams {
+                attack: 0.001,
+                decay: 0.001,
+                sustain: 1.0,
+                release: 0.2,
+            },
+        )
+    }
+
+    /// The same single-zone sawtooth engine with a caller-chosen amplitude
+    /// envelope, so the Attack/Release macros have a per-zone ADSR to offset.
+    fn engine_with_sawtooth_envelope(max_voices: usize, amp_env: AdsrParams) -> LevainEngine {
         let mut engine = LevainEngine::new(SAMPLE_RATE, max_voices);
         let data: Vec<f32> = (0..SAMPLE_FRAMES)
             .map(|frame| (frame % PERIOD_FRAMES) as f32 / PERIOD_FRAMES as f32 * 2.0 - 1.0)
@@ -654,12 +688,7 @@ mod tests {
                 loop_end: SAMPLE_FRAMES,
                 loop_crossfade: 0,
             },
-            amp_env: AdsrParams {
-                attack: 0.001,
-                decay: 0.001,
-                sustain: 1.0,
-                release: 0.2,
-            },
+            amp_env,
             gain_db: 0.0,
         });
         engine.build_zone_map(1, 1);
@@ -703,6 +732,215 @@ mod tests {
     fn high_band_rms(samples: &[f32]) -> f32 {
         let differences: Vec<f32> = samples.windows(2).map(|pair| pair[1] - pair[0]).collect();
         rms(&differences)
+    }
+
+    // ── Macro-mapped Tone / Attack / Release ───────────────────────────────
+
+    /// The share of the rendered energy sitting in the high band. The
+    /// first-difference RMS is an HF-weighted measure, and dividing by the
+    /// broadband RMS takes the *level* back out of it — so this number moves
+    /// only when the spectral balance moves. A tilt that merely made the
+    /// instrument louder or quieter would leave it exactly where it was, which
+    /// is what makes it a claim about tone rather than about gain.
+    fn brightness(samples: &[f32]) -> f32 {
+        high_band_rms(samples) / rms(samples)
+    }
+
+    fn render_with_tone(tone: Option<f32>) -> Vec<f32> {
+        let mut engine = engine_with_sawtooth_zone();
+        if let Some(value) = tone {
+            engine.set_param("tone", value);
+        }
+        engine.note_on(60, 100);
+        render(&mut engine, 24)
+    }
+
+    /// The envelope tests play two octaves above the zone's root key, so the
+    /// 200 Hz sawtooth runs at 800 Hz and one cycle is exactly 60 frames. That
+    /// is the window the amplitude is measured over: a whole cycle, so each
+    /// window's peak is the true amplitude at that instant rather than wherever
+    /// the waveform happened to be sitting, and short enough (1.25 ms) that a
+    /// 12 ms rise is still resolved to a tenth of itself.
+    const ENVELOPE_NOTE: u8 = 84;
+    const ENVELOPE_WINDOW: usize = 60;
+
+    fn window_peaks(samples: &[f32]) -> Vec<f32> {
+        samples
+            .chunks_exact(ENVELOPE_WINDOW)
+            .map(|window| window.iter().fold(0.0_f32, |acc, value| acc.max(value.abs())))
+            .collect()
+    }
+
+    /// Seconds from note-on until the amplitude first reaches 90% of the level
+    /// the note settles at — the envelope's measured rise time.
+    fn rise_seconds(samples: &[f32]) -> f32 {
+        let peaks = window_peaks(samples);
+        let settled = peaks.iter().copied().fold(0.0_f32, f32::max);
+        let index = peaks
+            .iter()
+            .position(|peak| *peak >= settled * 0.9)
+            .expect("the note never reached its settled level");
+        index as f32 * ENVELOPE_WINDOW as f32 / SAMPLE_RATE
+    }
+
+    /// Seconds from note-off until the amplitude falls to a tenth of the level
+    /// it was holding — the envelope's measured fall time.
+    fn fall_seconds(samples: &[f32]) -> f32 {
+        let peaks = window_peaks(samples);
+        let held = peaks[0];
+        let index = peaks
+            .iter()
+            .position(|peak| *peak <= held * 0.1)
+            .expect("the note never fell to a tenth of its held level");
+        index as f32 * ENVELOPE_WINDOW as f32 / SAMPLE_RATE
+    }
+
+    fn render_attack(attack: Option<f32>) -> Vec<f32> {
+        let mut engine = engine_with_sawtooth_envelope(
+            8,
+            AdsrParams {
+                attack: 0.05,
+                decay: 0.001,
+                sustain: 1.0,
+                release: 0.2,
+            },
+        );
+        if let Some(value) = attack {
+            engine.set_param("attack", value);
+        }
+        engine.note_on(ENVELOPE_NOTE, 100);
+        render(&mut engine, 96)
+    }
+
+    fn render_release(release: Option<f32>) -> Vec<f32> {
+        let mut engine = engine_with_sawtooth_envelope(
+            8,
+            AdsrParams {
+                attack: 0.001,
+                decay: 0.001,
+                sustain: 1.0,
+                release: 0.1,
+            },
+        );
+        if let Some(value) = release {
+            engine.set_param("release", value);
+        }
+        engine.note_on(ENVELOPE_NOTE, 100);
+        render(&mut engine, 8);
+        engine.note_off(ENVELOPE_NOTE);
+        render(&mut engine, 400)
+    }
+
+    #[test]
+    fn the_tone_macro_tilts_the_spectrum_and_is_bit_identical_at_centre() {
+        let baseline = render_with_tone(None);
+        let centre = render_with_tone(Some(0.5));
+        let bright = render_with_tone(Some(1.0));
+        let dark = render_with_tone(Some(0.0));
+
+        assert_eq!(
+            centre, baseline,
+            "a centred Tone macro is the patch's own voicing and must render bit-identically"
+        );
+
+        let flat = brightness(&baseline[1024..]);
+        let raised = brightness(&bright[1024..]);
+        let lowered = brightness(&dark[1024..]);
+
+        assert!(
+            raised > flat * 1.2,
+            "Tone at its bright extreme must shift energy towards the high band: {flat} -> {raised}"
+        );
+        assert!(
+            lowered < flat * 0.8,
+            "Tone at its dark extreme must shift energy away from the high band: {flat} -> {lowered}"
+        );
+    }
+
+    #[test]
+    fn the_attack_macro_scales_the_patch_envelope_rise_time() {
+        let baseline = render_attack(None);
+        let centre = render_attack(Some(0.5));
+        let slow = render_attack(Some(1.0));
+        let fast = render_attack(Some(0.0));
+
+        assert_eq!(
+            centre, baseline,
+            "a centred Attack macro must leave the patch's own envelope untouched"
+        );
+
+        let patch = rise_seconds(&baseline);
+        let slowed = rise_seconds(&slow);
+        let quickened = rise_seconds(&fast);
+
+        assert!(
+            (3.6..=4.4).contains(&(slowed / patch)),
+            "Attack at its slow extreme must stretch the patch's 45 ms rise about fourfold, \
+             got {patch} s -> {slowed} s"
+        );
+        assert!(
+            (0.20..=0.30).contains(&(quickened / patch)),
+            "Attack at its fast extreme must shorten the patch's 45 ms rise to about a quarter, \
+             got {patch} s -> {quickened} s"
+        );
+    }
+
+    #[test]
+    fn the_release_macro_scales_the_patch_envelope_fall_time() {
+        let baseline = render_release(None);
+        let centre = render_release(Some(0.5));
+        let long = render_release(Some(1.0));
+        let short = render_release(Some(0.0));
+
+        assert_eq!(
+            centre, baseline,
+            "a centred Release macro must leave the patch's own envelope untouched"
+        );
+
+        let patch = fall_seconds(&baseline);
+        let lengthened = fall_seconds(&long);
+        let shortened = fall_seconds(&short);
+
+        assert!(
+            (3.6..=4.4).contains(&(lengthened / patch)),
+            "Release at its long extreme must stretch the patch's fall about fourfold, \
+             got {patch} s -> {lengthened} s"
+        );
+        assert!(
+            (0.20..=0.30).contains(&(shortened / patch)),
+            "Release at its short extreme must shorten the patch's fall to about a quarter, \
+             got {patch} s -> {shortened} s"
+        );
+    }
+
+    #[test]
+    fn the_release_macro_reaches_a_note_that_is_already_held() {
+        // Note first, macro second — the order a player produces by holding a
+        // chord and then reaching for the knob. A scaling that only landed at
+        // trigger time would leave this chord on the patch's own release.
+        let mut engine = engine_with_sawtooth_envelope(
+            8,
+            AdsrParams {
+                attack: 0.001,
+                decay: 0.001,
+                sustain: 1.0,
+                release: 0.1,
+            },
+        );
+        engine.note_on(ENVELOPE_NOTE, 100);
+        render(&mut engine, 8);
+        engine.set_param("release", 1.0);
+        engine.note_off(ENVELOPE_NOTE);
+        let held_through = render(&mut engine, 400);
+
+        let patch = fall_seconds(&render_release(None));
+        let lengthened = fall_seconds(&held_through);
+
+        assert!(
+            (3.6..=4.4).contains(&(lengthened / patch)),
+            "a Release macro moved while the note was sounding must stretch that \
+             note's fall, got {patch} s -> {lengthened} s"
+        );
     }
 
     // ── MPE per-note expression (audit MD-2) ───────────────────────────────

@@ -457,6 +457,71 @@ fn crumbs_process_does_not_allocate_with_a_sample_playing() {
     );
 }
 
+/// Crust drives more stages per sample than any other effect here — five band
+/// limiters, an oversampled saturator, the LR-4 splitter, dither and the full
+/// EBU R 128 meter set — and each of them owns a buffer sized at construction.
+/// The band count, the oversampling factor and the look-ahead are all runtime
+/// switches, so this drives the *widest* configuration: anything that sized a
+/// buffer from a parameter rather than from its maximum would grow it here.
+#[test]
+fn crust_process_does_not_allocate_while_limiting() {
+    use daw_dsp::crust::CrustInstance;
+
+    let mut instance = CrustInstance::new(SAMPLE_RATE);
+    instance.set_param("gain", 12.0);
+    instance.set_param("ceiling", -1.0);
+    instance.set_param("lookahead", 5.0);
+    instance.set_param("true_peak", 1.0);
+    instance.set_param("multi_band", 2.0); // 5 bands
+    instance.set_param("stereo_mode", 1.0); // mid/side
+    instance.set_param("sat_enabled", 1.0);
+    instance.set_param("sat_algorithm", 2.0);
+    instance.set_param("sat_drive", 9.0);
+    instance.set_param("sat_mix", 60.0);
+    instance.set_param("oversampling", 32.0);
+    instance.set_param("sc_hpf_enabled", 1.0);
+    instance.set_param("dither", 3.0); // noise-shaped
+    instance.set_param("output_bit_depth", 16.0);
+
+    unsafe {
+        fill_input(
+            instance.get_input_left_ptr(),
+            instance.get_input_right_ptr(),
+            BLOCK,
+            0,
+        );
+    }
+    let warmup = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
+    assert_all_finite(&warmup, "crust");
+
+    assert_no_alloc(|| {
+        for block in 0..GUARDED_BLOCKS {
+            unsafe {
+                fill_input(
+                    instance.get_input_left_ptr(),
+                    instance.get_input_right_ptr(),
+                    BLOCK,
+                    block * BLOCK,
+                );
+            }
+            instance.process(BLOCK as u32);
+        }
+    });
+
+    let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
+    assert_all_finite(&out, "crust");
+    assert!(
+        peak(&out) > 1e-4,
+        "crust fell silent, so the guarded region did not exercise the limiter"
+    );
+    assert!(
+        instance.get_gr_db() < -0.5,
+        "crust applied {:.2} dB of gain reduction, so the guarded region ran a \
+         limiter that was never limiting",
+        instance.get_gr_db()
+    );
+}
+
 #[test]
 fn fermenter_process_does_not_allocate_with_voices_sounding() {
     use daw_dsp::fermenter::FermenterInstance;
@@ -740,6 +805,14 @@ fn levain_process_does_not_allocate_with_notes_held() {
         0.3,        // release
     );
     instance.build_zone_map(1, 1);
+
+    // Drive the macro-mapped Tone / Attack / Release slots off their centre
+    // positions. Each is the identity at 0.5 — Tone takes its tilt section out
+    // of the path entirely — so a guard run at defaults would never execute
+    // them.
+    instance.set_param("tone", 0.85);
+    instance.set_param("attack", 0.2);
+    instance.set_param("release", 0.9);
 
     instance.note_on(60, 100);
     instance.note_on(64, 90);
