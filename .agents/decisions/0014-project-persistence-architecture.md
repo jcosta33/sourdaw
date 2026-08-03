@@ -217,25 +217,28 @@ Ratified by the owner directly.
   not because installing fails.** Chrome's documented heuristics include installation, and our
   earlier claim to the contrary is withdrawn (see M1). Even a granted persistent bucket cannot be
   called safe, so the answer does not depend on whether the grant is obtainable.
-## Adopted on the standard, owner ratification outstanding
+## Ratified 2026-08-03 — the project is a directory
 
-Recorded separately from the above because the provenance is different, and conflating the two
-would misrepresent the record.
+- **A project is a folder, and its media sits beside it as files the user can see.**
 
-- **The project is a directory with a content-addressed document.** Not selected by the owner. It
-  was put to them three times — twice as a choice between shapes and once as a ratification — and
-  declined each time, the second time by pointing back at the campaign's own standard and asking
-  whether any doubt remained. There was none, so it was adopted on that standard rather than left
-  open: Git's object store, SQLite's WAL and atomic-rename-and-fsync all make a new version unable
-  to destroy the old one and then flip a small pointer. Detecting damage without being able to
-  repair it is not a shipped standard anywhere, and a project stored as one opaque database record
-  cannot be inspected, backed up or moved between machines — which no DAW accepts. Gate M6 measured
-  the difference: 6 of 72 injected crashes torn under the original layout, 0 of 72 under this one.
+  This was first argued from Git's object store and SQLite's WAL: a new version must be unable to
+  destroy the old one, after which a small pointer flips. Sound, but the wrong authority to cite.
+  **Every shipping DAW already answers this, and they all answer it the same way** — Ableton `.als`
+  beside a Samples folder, Logic's `.logicx` package, a Pro Tools session folder, Reaper's `.rpp`
+  plus media, Studio One's `.song` package.
 
-  **This is the one item in this ADR carrying an engineering judgement where an owner decision was
-  invited and not given.** It is reversible at no cost until the directory layout is built — nothing
-  depends on it yet. If the owner prefers a single database record, say so and this section is
-  struck; the measurements above stand either way.
+  The owner's ruling, recorded because it generalises well past this decision:
+
+  > This is a DAW, we go with what people already expect, we go with the industry standard approach.
+  > When it comes to regular DAW stuff there is no doubt — there are decades of DAW industry to
+  > answer all these questions. There are aspects of Sourdaw that are truly innovative; this is not
+  > one of them.
+
+  **Convention settles the shape. Measurement settles the commit protocol inside it.** Gate M6 is
+  the reason for the *content-addressed* half specifically: 6 of 72 injected crashes torn under a
+  fixed `document.automerge`, 0 of 72 once the document is named by its own hash. No DAW convention
+  covers "how does an Automerge document commit atomically on OPFS", which is why that half was
+  measured rather than looked up.
 
 **Still open and not decided here:** whether audio belongs to a project or to a shared library;
 version policy and whether web users get a pinned-build escape hatch; how much budget the desktop
