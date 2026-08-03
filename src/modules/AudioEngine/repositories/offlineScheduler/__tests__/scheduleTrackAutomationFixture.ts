@@ -24,8 +24,9 @@ export const SHIPPING_GRAIN_SLEW_TICK_SECONDS = automationSlewTickSecondsForGrai
  * law arrived ("this strategy can be automated offline") and an identity clamp.
  * That preserves exactly what each of them was written to assert.
  *
- * The production law is driven end-to-end by
- * `liveOfflineAutomationLawParity.spec.ts`; do not read a green run here as
+ * The production law is driven from its real caller in
+ * `useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts` ("offline
+ * automation reads the same laws live does"); do not read a green run here as
  * evidence about it.
  */
 function legacyFixtureDeviceLaw(

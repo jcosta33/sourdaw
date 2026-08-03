@@ -3,7 +3,8 @@ import { describe, it, expect, vi } from 'vitest';
 import { dbToGain } from '#/utils/audioLevelLaw';
 
 import { type AutomationLane } from '../../../models/AutomationViewTypes';
-import { scheduleTrackAutomation } from '../automationScheduling';
+
+import { scheduleTrackAutomationFixture } from './scheduleTrackAutomationFixture';
 
 function makeParam() {
     return {
@@ -32,16 +33,16 @@ function makeLane(overrides: Partial<AutomationLane>): AutomationLane {
 function schedule(lane: AutomationLane) {
     const gain = makeParam();
     const pan = makeParam();
-    scheduleTrackAutomation(
-        [lane],
-        'track-1',
-        { gain } as unknown as GainNode,
-        { pan } as unknown as StereoPannerNode,
-        [],
-        10,
-        120,
-        []
-    );
+    scheduleTrackAutomationFixture({
+        lanes: [lane],
+        trackId: 'track-1',
+        trackGainNode: { gain } as unknown as GainNode,
+        trackPanNode: { pan } as unknown as StereoPannerNode,
+        deviceEntries: [],
+        durationSeconds: 10,
+        defaultTempo: 120,
+        changes: [],
+    });
     return { gain, pan };
 }
 
@@ -127,16 +128,16 @@ describe('offline gain automation obeys the fader level law', () => {
             linkScale: -1,
         };
 
-        scheduleTrackAutomation(
-            [follower, source],
-            'track-1',
-            { gain } as unknown as GainNode,
-            { pan: makeParam() } as unknown as StereoPannerNode,
-            [],
-            10,
-            120,
-            []
-        );
+        scheduleTrackAutomationFixture({
+            lanes: [follower, source],
+            trackId: 'track-1',
+            trackGainNode: { gain } as unknown as GainNode,
+            trackPanNode: { pan: makeParam() } as unknown as StereoPannerNode,
+            deviceEntries: [],
+            durationSeconds: 10,
+            defaultTempo: 120,
+            changes: [],
+        });
 
         expect(gain.setValueAtTime).toHaveBeenCalledWith(0, 0);
         expect(rampValues(gain).every((value) => value >= 0)).toBe(true);

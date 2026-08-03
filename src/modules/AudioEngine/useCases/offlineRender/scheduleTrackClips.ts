@@ -1,5 +1,4 @@
 import { takeLaneStore, type Track } from '#/modules/Arrangement/stores';
-import { clampDeviceParameterValue, isDeviceParameterAutomatable } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { type MidiStoreState } from '#/modules/MIDI/stores';
 import {
@@ -15,6 +14,7 @@ import { resolveToasterPadIndex, TOASTER_NEUTRAL_MIDI_NOTE } from '#/utils/toast
 import { getToasterSwingOffsetBeats } from '#/utils/toasterSwingProjection';
 
 import { scheduleTrackAutomation } from '../../repositories/offlineScheduler/automationScheduling';
+import { offlineDeviceParameterLawState } from '../../repositories/offlineScheduler/offlineDeviceParameterLawState';
 import {
     type OfflineMidiEventProjector,
     type OfflineAutomationValueEvaluator,
@@ -345,15 +345,22 @@ export async function scheduleTrackClips({
             slewTickSeconds: automationSlewTickSecondsForGrain(
                 transportStore.value?.scheduleGrainMs ?? defaultTransportState.scheduleGrainMs
             ),
+            // Arrangement's own law, injected at the composition root — the audio
+            // engine may not import it (see `offlineDeviceParameterLawState`).
             deviceParameterLaw: {
                 acceptsAutomation: ({ deviceId, deviceType, parameterId }) => {
+                    const isAutomatable = offlineDeviceParameterLawState.isAutomatable;
+                    if (!isAutomatable) {
+                        return false;
+                    }
                     const device = track.devices.find((candidate) => candidate.id === deviceId);
                     if (!device || device.parameterValues[parameterId] === undefined) {
                         return false;
                     }
-                    return isDeviceParameterAutomatable({ deviceType, paramId: parameterId });
+                    return isAutomatable({ deviceType, paramId: parameterId });
                 },
-                clampValue: clampDeviceParameterValue,
+                clampValue: ({ deviceType, paramId, value }) =>
+                    offlineDeviceParameterLawState.clampValue?.({ deviceType, paramId, value }) ?? value,
             },
             regionStartSeconds: regionStartSec,
             projectBeatToSeconds,

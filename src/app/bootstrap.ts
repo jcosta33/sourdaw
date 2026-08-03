@@ -14,6 +14,7 @@ import {
     clampDeviceParameterValue,
     getAllTracks,
     getPluginById,
+    isDeviceParameterAutomatable,
     persistDevicePatch,
     cleanupUnusedFreezeFiles,
     setTrackGain as setTrackGainArrangement,
@@ -37,6 +38,7 @@ import {
     getFinalFeatureHandlers,
     commitPitchEdit,
     configureAudioDeviceRuntimeSink,
+    configureOfflineDeviceParameterLaw,
     configureOfflineMidiEventProjection,
     configureOfflinePpqEndpointProjection,
     configureOfflineYeastMidiProcessing,
@@ -173,6 +175,12 @@ configureOfflineMidiEventProjection({
     selectProbability: shouldPlayMidiEvent,
     createChordPitchProjector,
     evaluateAutomationValue: getAutomationValueAtBeat,
+});
+// The offline render enforces the same device-parameter law the live apply path
+// does; only the composition root sees both Arrangement and the audio engine.
+configureOfflineDeviceParameterLaw({
+    isAutomatable: isDeviceParameterAutomatable,
+    clampValue: clampDeviceParameterValue,
 });
 configureOfflinePpqEndpointProjection({ project: projectPpqEndpoints });
 configureOfflineYeastMidiProcessing({ createProcessor: createOfflineYeastProcessor });

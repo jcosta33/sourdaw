@@ -7,8 +7,9 @@ import { type AutomationLane } from '../../../models/AutomationViewTypes';
 import { resolveDeviceParam, resolveDeviceParamScale } from '../../../services/deviceResolution';
 import { createOfflineDeviceNode, type OfflineDeviceNode } from '../../deviceNodeFactory';
 import { WebAudioDeviceStrategy } from '../../deviceStrategy/WebAudioDeviceStrategy';
-import { scheduleTrackAutomation } from '../automationScheduling';
 import { scheduleAutomationOnParam } from '../scheduleAutomationOnParam';
+
+import { scheduleTrackAutomationFixture } from './scheduleTrackAutomationFixture';
 
 type ParamProperty = 'frequency' | 'Q' | 'gain';
 type ExpectedParamTarget = readonly [node: string | number, property: ParamProperty, scale: number, offset: number];
@@ -370,7 +371,9 @@ describe('scheduleTrackAutomation', () => {
         const panNode = { pan } as unknown as StereoPannerNode;
 
         scheduleTrackAutomationFixture({
-            lanes: [makeLane({ parameterId: 'gain', points: [{ beat: 128, value: 0.8, curve: 'linear', tension: 0 }] })],
+            lanes: [
+                makeLane({ parameterId: 'gain', points: [{ beat: 128, value: 0.8, curve: 'linear', tension: 0 }] }),
+            ],
             trackId: 'track-1',
             trackGainNode: gainNode,
             trackPanNode: panNode,
@@ -392,7 +395,9 @@ describe('scheduleTrackAutomation', () => {
         const panNode = { pan } as unknown as StereoPannerNode;
 
         scheduleTrackAutomationFixture({
-            lanes: [makeLane({ parameterId: 'pan', points: [{ beat: 128, value: -0.5, curve: 'linear', tension: 0 }] })],
+            lanes: [
+                makeLane({ parameterId: 'pan', points: [{ beat: 128, value: -0.5, curve: 'linear', tension: 0 }] }),
+            ],
             trackId: 'track-1',
             trackGainNode: gainNode,
             trackPanNode: panNode,
@@ -721,6 +726,53 @@ describe('scheduleTrackAutomation', () => {
         expect(postStep.length).toBeGreaterThan(5);
     });
 
+    it('clamps the slewed value, not the target it chases (the position live clamps in)', () => {
+        const deviceParam = makeParam();
+        const deviceNode = {
+            inputNode: {} as AudioNode,
+            outputNode: {} as AudioNode,
+            nodes: [{ gain: deviceParam } as unknown as AudioNode],
+        };
+        // Live order is `slewStep` → `clampDeviceParameterValue` →
+        // `laneSlew.set(clamped)`: the clamp lands on the smoothed value and is
+        // fed back into the recurrence. A clamp is not affine, so it does not
+        // commute with the IIR — clamping the target instead renders a visibly
+        // different, slower glide. This lane steps 0 → 2 against a [0, 1] range.
+        scheduleTrackAutomationFixture({
+            lanes: [
+                makeLane({
+                    parameterId: 'device-1:gain-level',
+                    points: [
+                        { beat: 128, value: 0, curve: 'step', tension: 0 },
+                        { beat: 130, value: 2, curve: 'step', tension: 0 },
+                    ],
+                }),
+            ],
+            trackId: 'track-1',
+            trackGainNode: { gain: makeParam() } as unknown as GainNode,
+            trackPanNode: { pan: makeParam() } as unknown as StereoPannerNode,
+            deviceEntries: [webAudioEntry('device-1', 'builtin-gain', deviceNode)],
+            deviceParameterLaw: {
+                acceptsAutomation: () => true,
+                clampValue: ({ value }) => Math.min(1, Math.max(0, value)),
+            },
+            durationSeconds: 10,
+            defaultTempo: 120,
+            changes: [],
+            regionStartSeconds: 64,
+        });
+
+        const postStep = deviceParam.linearRampToValueAtTime.mock.calls
+            .map((call) => call[0] as number)
+            .filter((value) => value > 0);
+        // Clamped-after-slew: y1 = clamp(0 + 0.4·2) = 0.8, y2 = clamp(0.8 +
+        // 0.4·1.2) = 1, settled. Clamping the target would have produced the
+        // 0.4, 0.64, 0.784, … sequence of a chase toward 1 instead.
+        expect(postStep).toHaveLength(2);
+        expect(postStep[0]).toBeCloseTo(0.8, 10);
+        expect(postStep[1]).toBeCloseTo(1, 10);
+    });
+
     // These link tests carry the lane on `pan`, not `gain`. What they assert is
     // the linkScale algebra on the resolved scalar, and a `gain` lane now runs
     // through the fader level law (dB conversion + the [0,1] ceiling the
@@ -844,7 +896,17 @@ describe('scheduleTrackAutomation', () => {
             linkScale: -1,
         };
 
-        scheduleTrackAutomation([laneA, laneB, laneC], 'track-1', gainNode, panNode, [], 10, 120, [], 64);
+        scheduleTrackAutomationFixture({
+            lanes: [laneA, laneB, laneC],
+            trackId: 'track-1',
+            trackGainNode: gainNode,
+            trackPanNode: panNode,
+            deviceEntries: [],
+            durationSeconds: 10,
+            defaultTempo: 120,
+            changes: [],
+            regionStartSeconds: 64,
+        });
 
         expect(pan.setValueAtTime).toHaveBeenCalledWith(-0.2, 0);
     });
@@ -863,7 +925,17 @@ describe('scheduleTrackAutomation', () => {
             linkedLaneId: 'A',
         };
 
-        scheduleTrackAutomation([laneA, laneB], 'track-1', gainNode, panNode, [], 10, 120, [], 64);
+        scheduleTrackAutomationFixture({
+            lanes: [laneA, laneB],
+            trackId: 'track-1',
+            trackGainNode: gainNode,
+            trackPanNode: panNode,
+            deviceEntries: [],
+            durationSeconds: 10,
+            defaultTempo: 120,
+            changes: [],
+            regionStartSeconds: 64,
+        });
 
         expect(gain.setValueAtTime).not.toHaveBeenCalled();
     });

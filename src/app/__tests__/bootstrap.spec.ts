@@ -97,6 +97,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
     clampDeviceParameterValue: noop,
+    isDeviceParameterAutomatable: noop,
     getAllTracks: noop,
     getPluginById: noop,
     persistDevicePatch: noop,
@@ -127,6 +128,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getFinalFeatureHandlers: sentinelHandlers('FinalFeature'),
     commitPitchEdit: noop,
     configureAudioDeviceRuntimeSink: configureAudioDeviceRuntimeSinkMock,
+    configureOfflineDeviceParameterLaw: noop,
     configureOfflineMidiEventProjection: noop,
     configureOfflinePpqEndpointProjection: noop,
     configureOfflineYeastMidiProcessing: noop,
