@@ -134,6 +134,7 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
 
             loadSamplesForInstrument(deviceId, state.patch.instrumentId);
             queueParam(deviceId, 'master_gain', state.patch.masterGain);
+            queueParam(deviceId, 'current_articulation', getArticulationId(state.patch.currentArticulation));
             queueParam(deviceId, 'legato_enabled', state.patch.legato.enabled ? 1 : 0);
             queueParam(deviceId, 'humanize_amount', state.patch.humanize.amount);
             // vibratoDepthMax is in cents (default 40, range 0-50). Send it to the

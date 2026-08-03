@@ -250,18 +250,26 @@ describe('createLevainBridge', () => {
         });
     });
 
-    it('queues the canonical DSP id for a selected articulation', () => {
+    it('queues the canonical DSP id when registering and selecting an articulation', () => {
         const deps = makeDeps();
         const bridge = createLevainBridge(deps);
         const device = makeDevice();
-        seedDevice('d1');
-        bridge.registerLevainDevice('d1', device);
+        const patch = { ...createDefaultPatch('violin-1'), currentArticulation: 'tremolo' as const };
+        levainStore.set({ d1: { ...defaultLevainState, patch } });
 
-        bridge.setLevainParamWithAudio('d1', 'currentArticulation', 'tremolo');
+        bridge.registerLevainDevice('d1', device, {} as MessagePort);
         flushRaf();
 
         expect(device.setParam).toHaveBeenCalledWith('current_articulation', 13);
         expect(deps.persistDeviceParam).toHaveBeenCalledWith('d1', 'current_articulation', 13);
+        device.setParam.mockClear();
+        deps.persistDeviceParam.mockClear();
+
+        bridge.setLevainParamWithAudio('d1', 'currentArticulation', 'pizzicato');
+        flushRaf();
+
+        expect(device.setParam).toHaveBeenCalledWith('current_articulation', 10);
+        expect(deps.persistDeviceParam).toHaveBeenCalledWith('d1', 'current_articulation', 10);
     });
 
     describe('setLevainParamWithAudio — nested patch forwarding', () => {
