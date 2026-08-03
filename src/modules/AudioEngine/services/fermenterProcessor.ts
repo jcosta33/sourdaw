@@ -34,8 +34,10 @@ const AUTOMATION_PARAM_COUNT = 15;
 const TELEMETRY_SLOT_FLOATS = 160;
 const TELEMETRY_PEAK_L_IDX = 0;
 const TELEMETRY_PEAK_R_IDX = 1;
+const TELEMETRY_LIFECYCLE_IDX = 2;
 const TELEMETRY_SCOPE_BASE = 32;
 const TELEMETRY_SCOPE_SAMPLES = 128;
+const PROCESS_LIFECYCLE_SLEEP = 3;
 
 /** Publish cadence in frames (~46 ms at 44.1 kHz) — unchanged from the port era. */
 const TELEMETRY_PERIOD_FRAMES = 2048;
@@ -121,6 +123,7 @@ class FermenterProcessor extends AudioWorkletProcessor {
     _telemetryView: Float32Array | null = null;
     /** Int32 view over the same slot bytes — carries the seqlock counter (RT-2/RT-3). */
     _telemetrySeqView: Int32Array | null = null;
+    _lastPublishedLifecycleState: number | null = null;
     // Cached WASM linear-memory views — reused across render quanta so process()
     // performs no per-block Float32Array allocation (audit RT-1); each revalidates
     // on a memory.grow() buffer-identity change (audit RT-7). See wasmView.ts.
@@ -145,6 +148,7 @@ class FermenterProcessor extends AudioWorkletProcessor {
                 } else if (msg.type === 'init-sab') {
                     this._telemetryView = new Float32Array(msg.sab, msg.byteOffset, TELEMETRY_SLOT_FLOATS);
                     this._telemetrySeqView = new Int32Array(msg.sab, msg.byteOffset, TELEMETRY_SLOT_FLOATS);
+                    this._lastPublishedLifecycleState = null;
                 } else if (this._ready && !this._faulted) {
                     this._handleMessage(msg);
                 }
@@ -331,8 +335,47 @@ class FermenterProcessor extends AudioWorkletProcessor {
         }
     }
 
+    _publishTelemetry(outL: Float32Array, outR: Float32Array | null, frames: number, lifecycleState: number): void {
+        const telemetryView = this._telemetryView;
+        if (!telemetryView) {
+            return;
+        }
+        const lifecycleChanged = lifecycleState !== this._lastPublishedLifecycleState;
+        const periodicPublishDue = currentFrame % TELEMETRY_PERIOD_FRAMES < frames;
+        if (!lifecycleChanged && (lifecycleState === PROCESS_LIFECYCLE_SLEEP || !periodicPublishDue)) {
+            return;
+        }
+        let peakL = 0;
+        let peakR = 0;
+        for (let index = 0; index < frames; index++) {
+            const absL = Math.abs(outL[index] ?? 0);
+            if (absL > peakL) {
+                peakL = absL;
+            }
+            if (outR) {
+                const absR = Math.abs(outR[index] ?? 0);
+                if (absR > peakR) {
+                    peakR = absR;
+                }
+            }
+        }
+        const step = frames / TELEMETRY_SCOPE_SAMPLES;
+        beginTelemetryPublish(this._telemetrySeqView);
+        telemetryView[TELEMETRY_PEAK_L_IDX] = peakL;
+        telemetryView[TELEMETRY_PEAK_R_IDX] = peakR;
+        telemetryView[TELEMETRY_LIFECYCLE_IDX] = lifecycleState;
+        for (let index = 0; index < TELEMETRY_SCOPE_SAMPLES; index++) {
+            telemetryView[TELEMETRY_SCOPE_BASE + index] = outL[Math.floor(index * step)] ?? 0;
+        }
+        endTelemetryPublish(this._telemetrySeqView);
+        this._lastPublishedLifecycleState = lifecycleState;
+    }
+
     process(_inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
-        if (!this._ready || this._faulted) {
+        if (this._faulted) {
+            return this._ready;
+        }
+        if (!this._ready) {
             return true;
         }
 
@@ -358,6 +401,15 @@ class FermenterProcessor extends AudioWorkletProcessor {
             }
 
             this._applyParamAutomation(currentFrame);
+            const lifecycleState = inst.lifecycle_state();
+            const out1 = output[1] ?? null;
+            if (lifecycleState === PROCESS_LIFECYCLE_SLEEP) {
+                inst.advance_silence();
+                out0.fill(0);
+                out1?.fill(0);
+                this._publishTelemetry(out0, out1, frames, lifecycleState);
+                return true;
+            }
             const leftPtr = inst.process(frames);
             const rightPtr = inst.get_right_ptr();
 
@@ -370,7 +422,6 @@ class FermenterProcessor extends AudioWorkletProcessor {
             const outL = this._outLeftView.get(outMem, leftPtr, frames);
             out0.set(outL);
 
-            const out1 = output[1];
             let outR: Float32Array | null = null;
             if (out1) {
                 outR = this._outRightView.get(outMem, rightPtr, frames);
@@ -384,34 +435,11 @@ class FermenterProcessor extends AudioWorkletProcessor {
             // bracketing it are the shared seqlock, so a main-thread poll landing
             // mid-publish retries instead of pairing a new peak with a half-written
             // waveform. Skipped entirely when no slot was supplied.
-            const telemetryView = this._telemetryView;
-            if (telemetryView && currentFrame % TELEMETRY_PERIOD_FRAMES < frames) {
-                let peakL = 0;
-                let peakR = 0;
-                for (let index = 0; index < frames; index++) {
-                    const absL = Math.abs(outL[index] ?? 0);
-                    if (absL > peakL) {
-                        peakL = absL;
-                    }
-                    if (outR) {
-                        const absR = Math.abs(outR[index] ?? 0);
-                        if (absR > peakR) {
-                            peakR = absR;
-                        }
-                    }
-                }
-                const step = frames / TELEMETRY_SCOPE_SAMPLES;
-                beginTelemetryPublish(this._telemetrySeqView);
-                telemetryView[TELEMETRY_PEAK_L_IDX] = peakL;
-                telemetryView[TELEMETRY_PEAK_R_IDX] = peakR;
-                for (let index = 0; index < TELEMETRY_SCOPE_SAMPLES; index++) {
-                    telemetryView[TELEMETRY_SCOPE_BASE + index] = outL[Math.floor(index * step)] ?? 0;
-                }
-                endTelemetryPublish(this._telemetrySeqView);
-            }
+            this._publishTelemetry(outL, outR, frames, lifecycleState);
         } catch (error) {
             this._faulted = true;
             this.port.postMessage({ type: 'error', message: String(error) });
+            return true;
         }
 
         return true;

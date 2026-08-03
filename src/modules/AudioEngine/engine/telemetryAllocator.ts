@@ -134,6 +134,7 @@ export const FERMENTER_SCOPE_SAMPLES = 128;
 export const FERMENTER_IDX = Object.freeze({
     peakL: 0,
     peakR: 1,
+    lifecycle: 2,
     /** First waveform sample — immediately past the seqlock counter. */
     scopeBase: FLOATS_PER_SLOT,
 });

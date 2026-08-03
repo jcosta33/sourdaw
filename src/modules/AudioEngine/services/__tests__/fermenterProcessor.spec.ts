@@ -32,14 +32,18 @@ const noteEvents: NoteEvent[] = [];
 const paramCalls: Array<{ name: string; value: number }> = [];
 const paramByIdCalls: Array<{ id: number; value: number }> = [];
 const processSizes: number[] = [];
+let advanceSilenceCalls = 0;
+let lifecycleState = 0;
 // Flip to simulate a Rust-side panic propagating through the bindgen glue.
 let processShouldThrow = false;
 
 class FermenterInstanceMock {
     note_on(note: number, velocity: number): void {
+        lifecycleState = 0;
         noteEvents.push({ kind: 'on', note, velocity });
     }
     note_on_with_channel(note: number, velocity: number, _channel: number): void {
+        lifecycleState = 0;
         noteEvents.push({ kind: 'on', note, velocity });
     }
     note_off(note: number): void {
@@ -67,6 +71,12 @@ class FermenterInstanceMock {
     }
     get_right_ptr(): number {
         return OUT_RIGHT_PTR;
+    }
+    lifecycle_state(): number {
+        return lifecycleState;
+    }
+    advance_silence(): void {
+        advanceSilenceCalls++;
     }
 }
 
@@ -99,6 +109,8 @@ function resetRecording(): void {
     paramCalls.length = 0;
     paramByIdCalls.length = 0;
     processSizes.length = 0;
+    advanceSilenceCalls = 0;
+    lifecycleState = 0;
     processShouldThrow = false;
 }
 
@@ -133,6 +145,41 @@ describe('FermenterProcessor message handling', () => {
             const message = (errorCalls[0]![0] as { message: string }).message;
             expect(typeof message).toBe('string');
             expect(message.length).toBeGreaterThan(0);
+            expect(proc.process([], makeStereoBlock())).toBe(false);
+        });
+    });
+
+    describe('DSP lifecycle', () => {
+        it('advances silent state without rendering when the engine owns sleep', async () => {
+            const proc = await loadProcessor();
+            send(proc, { type: 'init' });
+            resetRecording();
+            lifecycleState = 3;
+            const output = makeStereoBlock();
+            output[0]![0]!.fill(1);
+            output[0]![1]!.fill(1);
+
+            proc.process([], output);
+
+            expect(processSizes).toEqual([]);
+            expect(advanceSilenceCalls).toBe(1);
+            expect(Array.from(output[0]![0]!.slice(0, 2))).toEqual([0, 0]);
+            expect(Array.from(output[0]![1]!.slice(0, 2))).toEqual([0, 0]);
+        });
+
+        it('drains a scheduled note before deciding whether the quantum can sleep', async () => {
+            const proc = await loadProcessor();
+            send(proc, { type: 'init' });
+            resetRecording();
+            lifecycleState = 3;
+            vi.stubGlobal('currentFrame', 0);
+            send(proc, { type: 'noteOn', note: 60, velocity: 100, sampleFrame: 64 });
+
+            proc.process([], makeStereoBlock());
+
+            expect(noteEvents).toEqual([{ kind: 'on', note: 60, velocity: 100 }]);
+            expect(processSizes).toEqual([FRAMES]);
+            expect(advanceSilenceCalls).toBe(0);
         });
     });
 
@@ -487,7 +534,7 @@ describe('FermenterProcessor message handling', () => {
         // is covered by fermenterProcessorTelemetry.spec — the steady-state branch
         // sends no port message at all, so asserting one here would be vacuous.
 
-        it('faults and posts an error when instance.process throws, then stops processing', async () => {
+        it('reports a caught process fault without terminating graph ownership', async () => {
             const proc = await loadProcessor();
             send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
             resetRecording();
@@ -505,8 +552,9 @@ describe('FermenterProcessor message handling', () => {
             // After faulting, a subsequent process() short-circuits (no instance calls).
             processSizes.length = 0;
             processShouldThrow = false;
-            proc.process([], makeStereoBlock());
+            const afterFault = proc.process([], makeStereoBlock());
             expect(processSizes).toEqual([]);
+            expect(afterFault).toBe(true);
         });
     });
 });

@@ -20,6 +20,12 @@ impl StereoDelay {
         }
     }
 
+    /// Longest interval before buffered energy can reappear; not the total decay time.
+    pub fn max_tail_gap_samples(&self, time_ms: f32) -> u64 {
+        let delay_samples = time_ms.clamp(10.0, 2000.0) * 0.001 * self.sample_rate;
+        delay_samples.ceil() as u64 + 1
+    }
+
     /// Read from a delay buffer with linear interpolation for fractional delay.
     #[inline]
     fn read_interp(buffer: &[f32], write_pos: usize, delay_samples: f32) -> f32 {
@@ -90,6 +96,23 @@ impl StereoChorus {
             lfo_phase_l: 0.0,
             lfo_phase_r: 0.25, // 90-degree offset for stereo
             sample_rate,
+        }
+    }
+
+    /// Longest interval before buffered energy can reappear; not the total decay time.
+    pub fn max_tail_gap_samples(&self) -> u64 {
+        self.buffer_l.len() as u64
+    }
+
+    /// Advance free-running modulation and the empty delay line without rendering audio.
+    pub fn advance_silence(&mut self, frames: usize, rate: f32) {
+        let phase_inc = rate.clamp(0.1, 5.0) / self.sample_rate;
+        for _ in 0..frames {
+            self.buffer_l[self.write_pos] = 0.0;
+            self.buffer_r[self.write_pos] = 0.0;
+            self.lfo_phase_l = (self.lfo_phase_l + phase_inc) % 1.0;
+            self.lfo_phase_r = (self.lfo_phase_r + phase_inc) % 1.0;
+            self.write_pos = (self.write_pos + 1) % self.buffer_l.len();
         }
     }
 
@@ -231,6 +254,36 @@ impl StereoPhaser {
             right[i] = dry_r * (1.0 - mix) + wet_r * mix;
         }
     }
+
+    /// Apply the same zero-input recurrence as continuous rendering without output buffers.
+    pub fn advance_silence(&mut self, frames: usize, rate: f32, depth: f32) {
+        for _ in 0..frames {
+            self.lfo_phase = (self.lfo_phase + rate / self.sample_rate) % 1.0;
+            let lfo = (self.lfo_phase * core::f32::consts::TAU).sin();
+            let min_freq = 200.0 + (1.0 - depth) * 800.0;
+            let max_freq = 2000.0 + depth * 6000.0;
+            let freq = min_freq + (lfo + 1.0) * 0.5 * (max_freq - min_freq);
+            let coeff = (core::f32::consts::PI * freq / self.sample_rate).tan();
+            let a1 = (coeff - 1.0) / (coeff + 1.0);
+            let mut wet_l = 0.0;
+            for state in &mut self.allpass_l {
+                let output = a1 * wet_l + *state;
+                *state = flush_denormal(wet_l - a1 * output);
+                wet_l = output;
+            }
+
+            let lfo_r = ((self.lfo_phase + 0.25) * core::f32::consts::TAU).sin();
+            let freq_r = min_freq + (lfo_r + 1.0) * 0.5 * (max_freq - min_freq);
+            let coeff_r = (core::f32::consts::PI * freq_r / self.sample_rate).tan();
+            let a1_r = (coeff_r - 1.0) / (coeff_r + 1.0);
+            let mut wet_r = 0.0;
+            for state in &mut self.allpass_r {
+                let output = a1_r * wet_r + *state;
+                *state = flush_denormal(wet_r - a1_r * output);
+                wet_r = output;
+            }
+        }
+    }
 }
 
 /// Distortion with 2x oversampling to reduce aliasing from nonlinear waveshaping.
@@ -369,6 +422,14 @@ impl Compressor {
             right[i] = right[i] * (1.0 - mix) + right[i] * gain * mix;
         }
     }
+
+    /// Follow the zero-input release curve without running the full gain computer.
+    pub fn advance_silence(&mut self, frames: usize, release: f32, sample_rate: f32) {
+        let rel_coeff = (-1.0 / (release * 0.001 * sample_rate)).exp();
+        for _ in 0..frames {
+            self.envelope = flush_denormal(rel_coeff * self.envelope);
+        }
+    }
 }
 
 /// Stereo width processor using Mid/Side encoding.
@@ -423,6 +484,11 @@ impl FdnReverb {
             decay: 0.5,
             mix: 0.0,
         }
+    }
+
+    /// Conservative interval before energy can traverse the complete FDN topology.
+    pub fn max_tail_gap_samples(&self) -> u64 {
+        self.delays.iter().map(|delay| delay.len() as u64).sum()
     }
 
     pub fn set_params(&mut self, decay: f32, mix: f32, damping: f32) {
@@ -711,6 +777,23 @@ impl PlateReverb {
         }
     }
 
+    /// Conservative interval before energy can traverse the complete plate topology.
+    pub fn max_tail_gap_samples(&self) -> u64 {
+        [
+            self.apf1_len,
+            self.apf2_len,
+            self.apf3_len,
+            self.apf4_len,
+            self.del1_len,
+            self.del2_len,
+            self.del3_len,
+            self.del4_len,
+        ]
+        .into_iter()
+        .map(|length| length as u64)
+        .sum()
+    }
+
     pub fn set_params(&mut self, decay: f32, mix: f32, damping: f32) {
         self.decay = decay.clamp(0.0, 0.99);
         self.mix = mix.clamp(0.0, 1.0);
@@ -766,5 +849,166 @@ impl PlateReverb {
             left * dry + wet_l * self.mix,
             right * dry + wet_r * self.mix,
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Compressor, StereoChorus, StereoPhaser};
+
+    const SAMPLE_RATE: f32 = 48_000.0;
+    const FRAMES: usize = 128;
+
+    fn assert_blocks_close(left: &[f32], right: &[f32], label: &str) {
+        let max_error = left
+            .iter()
+            .zip(right)
+            .map(|(left, right)| (left - right).abs())
+            .fold(0.0f32, f32::max);
+        assert!(max_error <= 1.0e-6, "{label} diverged by {max_error}");
+    }
+
+    #[test]
+    fn chorus_silent_advance_matches_continuous_zero_input() {
+        let mut continuous = StereoChorus::new(SAMPLE_RATE);
+        let mut sleeping = StereoChorus::new(SAMPLE_RATE);
+        let mut zero_left = [0.0; FRAMES];
+        let mut zero_right = [0.0; FRAMES];
+
+        continuous.process_block(&mut zero_left, &mut zero_right, 2.75, 0.8, 0.6);
+        sleeping.advance_silence(FRAMES, 2.75);
+
+        let mut continuous_left = [0.0; FRAMES];
+        let mut continuous_right = [0.0; FRAMES];
+        let mut sleeping_left = [0.0; FRAMES];
+        let mut sleeping_right = [0.0; FRAMES];
+        continuous_left[0] = 1.0;
+        continuous_right[0] = 1.0;
+        sleeping_left[0] = 1.0;
+        sleeping_right[0] = 1.0;
+        continuous.process_block(&mut continuous_left, &mut continuous_right, 2.75, 0.8, 0.6);
+        sleeping.process_block(&mut sleeping_left, &mut sleeping_right, 2.75, 0.8, 0.6);
+
+        assert_blocks_close(&continuous_left, &sleeping_left, "chorus left");
+        assert_blocks_close(&continuous_right, &sleeping_right, "chorus right");
+    }
+
+    #[test]
+    fn phaser_silent_advance_matches_continuous_zero_input() {
+        let mut continuous = StereoPhaser::new(SAMPLE_RATE);
+        let mut sleeping = StereoPhaser::new(SAMPLE_RATE);
+        let mut continuous_prime_left = [0.0; FRAMES];
+        let mut continuous_prime_right = [0.0; FRAMES];
+        let mut sleeping_prime_left = [0.0; FRAMES];
+        let mut sleeping_prime_right = [0.0; FRAMES];
+        continuous_prime_left[0] = 1.0;
+        continuous_prime_right[0] = 0.5;
+        sleeping_prime_left[0] = 1.0;
+        sleeping_prime_right[0] = 0.5;
+        continuous.process_block(
+            &mut continuous_prime_left,
+            &mut continuous_prime_right,
+            3.0,
+            0.7,
+            0.5,
+        );
+        sleeping.process_block(
+            &mut sleeping_prime_left,
+            &mut sleeping_prime_right,
+            3.0,
+            0.7,
+            0.5,
+        );
+        let mut zero_left = [0.0; FRAMES];
+        let mut zero_right = [0.0; FRAMES];
+
+        continuous.process_block(&mut zero_left, &mut zero_right, 3.0, 0.7, 0.5);
+        sleeping.advance_silence(FRAMES, 3.0, 0.7);
+
+        let mut continuous_left = [0.0; FRAMES];
+        let mut continuous_right = [0.0; FRAMES];
+        let mut sleeping_left = [0.0; FRAMES];
+        let mut sleeping_right = [0.0; FRAMES];
+        continuous_left[0] = 1.0;
+        continuous_right[0] = 1.0;
+        sleeping_left[0] = 1.0;
+        sleeping_right[0] = 1.0;
+        continuous.process_block(&mut continuous_left, &mut continuous_right, 3.0, 0.7, 0.5);
+        sleeping.process_block(&mut sleeping_left, &mut sleeping_right, 3.0, 0.7, 0.5);
+
+        assert_blocks_close(&continuous_left, &sleeping_left, "phaser left");
+        assert_blocks_close(&continuous_right, &sleeping_right, "phaser right");
+    }
+
+    #[test]
+    fn compressor_silent_advance_matches_continuous_release() {
+        let mut continuous = Compressor::new();
+        let mut sleeping = Compressor::new();
+        let mut prime_left = [0.8; FRAMES];
+        let mut prime_right = [0.8; FRAMES];
+        let mut sleeping_prime_left = prime_left;
+        let mut sleeping_prime_right = prime_right;
+        continuous.process_block(
+            &mut prime_left,
+            &mut prime_right,
+            -24.0,
+            8.0,
+            1.0,
+            250.0,
+            1.0,
+            SAMPLE_RATE,
+        );
+        sleeping.process_block(
+            &mut sleeping_prime_left,
+            &mut sleeping_prime_right,
+            -24.0,
+            8.0,
+            1.0,
+            250.0,
+            1.0,
+            SAMPLE_RATE,
+        );
+
+        let mut zero_left = [0.0; FRAMES];
+        let mut zero_right = [0.0; FRAMES];
+        continuous.process_block(
+            &mut zero_left,
+            &mut zero_right,
+            -24.0,
+            8.0,
+            1.0,
+            250.0,
+            1.0,
+            SAMPLE_RATE,
+        );
+        sleeping.advance_silence(FRAMES, 250.0, SAMPLE_RATE);
+
+        let mut continuous_left = [0.4; FRAMES];
+        let mut continuous_right = [0.4; FRAMES];
+        let mut sleeping_left = continuous_left;
+        let mut sleeping_right = continuous_right;
+        continuous.process_block(
+            &mut continuous_left,
+            &mut continuous_right,
+            -24.0,
+            8.0,
+            1.0,
+            250.0,
+            1.0,
+            SAMPLE_RATE,
+        );
+        sleeping.process_block(
+            &mut sleeping_left,
+            &mut sleeping_right,
+            -24.0,
+            8.0,
+            1.0,
+            250.0,
+            1.0,
+            SAMPLE_RATE,
+        );
+
+        assert_blocks_close(&continuous_left, &sleeping_left, "compressor left");
+        assert_blocks_close(&continuous_right, &sleeping_right, "compressor right");
     }
 }

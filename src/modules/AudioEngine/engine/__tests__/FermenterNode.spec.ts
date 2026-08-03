@@ -1,6 +1,20 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { createFermenterNode, isFermenterDevice } from '../FermenterNode';
+import { FERMENTER_IDX, TELEMETRY_SEQ_IDX } from '../telemetryAllocator';
+
+function isInitSabMessage(value: unknown): value is { type: 'init-sab'; sab: SharedArrayBuffer; byteOffset: number } {
+    return (
+        typeof value === 'object' &&
+        value !== null &&
+        'type' in value &&
+        value.type === 'init-sab' &&
+        'sab' in value &&
+        value.sab instanceof SharedArrayBuffer &&
+        'byteOffset' in value &&
+        typeof value.byteOffset === 'number'
+    );
+}
 
 describe('isFermenterDevice', () => {
     it('should return true only for the fermenter device type string', () => {
@@ -225,6 +239,23 @@ describe('createFermenterNode message surface & lifecycle', () => {
 
         onmessageRef.current!({ data: { type: 'ready' } } as MessageEvent);
         expect(handshakeResult.onMessage).toHaveBeenCalledTimes(1);
+    });
+
+    it('projects the processor lifecycle from the shared telemetry snapshot', async () => {
+        const result = await makeNode();
+        const initMessage = (postMessage.mock.calls as unknown[][]).map(([message]) => message).find(isInitSabMessage);
+        if (initMessage === undefined) {
+            throw new Error('Expected Fermenter telemetry initialization');
+        }
+        const floats = new Float32Array(initMessage.sab, initMessage.byteOffset);
+        const ints = new Int32Array(initMessage.sab, initMessage.byteOffset);
+        floats[FERMENTER_IDX.lifecycle] = 3;
+        Atomics.store(ints, TELEMETRY_SEQ_IDX, 2);
+
+        expect(result.processorLifecycle()).toBe('sleep');
+
+        onmessageRef.current!({ data: { type: 'error', message: 'render trap' } } as MessageEvent);
+        expect(result.processorLifecycle()).toBeNull();
     });
 
     it('connect/disconnect/destroy drive the underlying worklet node', async () => {
