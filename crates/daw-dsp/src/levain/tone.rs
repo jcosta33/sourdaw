@@ -64,8 +64,12 @@ impl ToneTilt {
             self.b0 = 1.0;
             self.b1 = 0.0;
             self.a1 = 0.0;
-            self.x1 = 0.0;
-            self.y1 = 0.0;
+            // Deliberately NOT zeroing x1/y1. `tick` keeps them tracking the
+            // input while bypassed, so re-engaging continues from the real
+            // signal. Zeroing here was a click: the section would resume from a
+            // silent history under live audio and discard the `b1·x1 − a1·y1`
+            // term, which is not small near the flat point — `b1` and `a1`
+            // converge to a shared non-zero value rather than to zero.
             return;
         }
 
@@ -83,6 +87,18 @@ impl ToneTilt {
     #[inline]
     pub fn tick(&mut self, input: f32) -> f32 {
         if !self.engaged {
+            // Bypass is unity, so the section's one-sample history is exactly
+            // the input. Keeping it current means re-engaging picks up the
+            // signal where it actually is; freezing it at zero made the first
+            // engaged sample discard the history term and jump — 0.7 in came
+            // out at 1.0056 for a +1.2 dB nudge, worse at higher rates and
+            // worse still at the ±6 dB extremes.
+            //
+            // This is the ordinary interaction, not an edge case: 0.5 is where
+            // the macro strip both defaults and double-click-resets, so "play a
+            // note, then reach for Tone" hits it first time.
+            self.x1 = input;
+            self.y1 = input;
             return input;
         }
         let output = self.b0 * input + self.b1 * self.x1 - self.a1 * self.y1;
@@ -174,6 +190,59 @@ mod tests {
             "the hinge must separate a cut from a boost, got {below} dB at 250 Hz \
              and {above} dB at 4 kHz"
         );
+    }
+
+    #[test]
+    /// Moving the macro off centre while a note sounds must not click.
+    ///
+    /// The section carries one sample of history. While bypassed it must keep
+    /// that history tracking the input — bypass is unity, so the correct value
+    /// is the input itself. An earlier revision froze it at zero, so the first
+    /// engaged sample computed `b0·input` alone and discarded `b1·x1 − a1·y1`,
+    /// which is not small near the flat point: a steady 0.7 came out at 1.0056
+    /// for a +1.2 dB nudge, overshooting the input's own amplitude.
+    ///
+    /// This is the first thing a player does with the knob — 0.5 is where the
+    /// macro strip defaults and resets — so it is not an edge case.
+    #[test]
+    fn re_engaging_after_bypass_continues_from_the_signal_not_from_silence() {
+        for position in [0.6_f32, 0.8, 1.0, 0.4, 0.0] {
+            let mut tilt = ToneTilt::new(SAMPLE_RATE);
+            tilt.set_position(0.5);
+
+            // A held note passing through the bypassed section.
+            let steady = 0.7_f32;
+            for _ in 0..64 {
+                assert_eq!(tilt.tick(steady), steady, "bypass must be unity");
+            }
+
+            tilt.set_position(position);
+            let first = tilt.tick(steady);
+
+            // Where the section settles on this same steady input. A first-order
+            // section resuming from a matched history moves monotonically from
+            // the signal it was passing towards its own settled value, so the
+            // first engaged sample must lie between the two. Resuming from a
+            // zeroed history throws it outside that span.
+            //
+            // Deriving the bound from the filter's own settled output rather
+            // than from a fixed dB ceiling: an earlier version of this test
+            // bounded at the +6 dB gain and passed with the bug present, because
+            // the erroneous 1.276 sits under that 1.397 ceiling.
+            let mut settled = first;
+            for _ in 0..4_096 {
+                settled = tilt.tick(steady);
+            }
+            let low = steady.min(settled);
+            let high = steady.max(settled);
+
+            assert!(
+                first >= low - 1.0e-4 && first <= high + 1.0e-4,
+                "re-engaging at {position} produced {first} from a steady {steady} \
+                 settling to {settled} — outside [{low}, {high}], so the section \
+                 resumed from a silent history instead of the live signal"
+            );
+        }
     }
 
     #[test]
