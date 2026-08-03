@@ -353,6 +353,119 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(result.rejections[0]?.reason).toContain('not unambiguously grounded');
     });
 
+    it('rejects a batch-local reference when a longer bus name uniquely identifies another created bus', () => {
+        const result = bridge(
+            [
+                { name: 'createBus', arguments: { name: 'Plate', binding: 'plate' } },
+                { name: 'createBus', arguments: { name: 'Vocal Plate', binding: 'vocal-plate' } },
+                { name: 'addDevice', arguments: { trackId: '$plate', deviceType: 'Reverb' } },
+            ],
+            'create a bus called Plate, create a bus called Vocal Plate, and add Reverb to Vocal Plate',
+            {
+                ...projectContext,
+                availableDeviceTypes: [{ id: 'builtin-reverb', name: 'Reverb' }],
+            }
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toContain('not unambiguously grounded');
+    });
+
+    it('rejects a bound bus name that overlaps an unbound track created in the same plan', () => {
+        const result = bridge(
+            [
+                { name: 'addTrack', arguments: { name: 'Plate', kind: 'audio' } },
+                { name: 'createBus', arguments: { name: 'Vocal Plate', binding: 'vocal-plate' } },
+                { name: 'addDevice', arguments: { trackId: '$vocal-plate', deviceType: 'Reverb' } },
+            ],
+            'create an audio track called Plate, create a bus called Vocal Plate, and add Reverb to Vocal Plate',
+            {
+                ...projectContext,
+                availableDeviceTypes: [{ id: 'builtin-reverb', name: 'Reverb' }],
+            }
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toContain('collides with an unbound planned track');
+    });
+
+    it('rejects an anaphoric batch-local target when an earlier unbound track is also compatible', () => {
+        const result = bridge(
+            [
+                { name: 'addTrack', arguments: { name: 'Parallel', kind: 'audio' } },
+                { name: 'createBus', arguments: { name: 'Plate', binding: 'plate' } },
+                { name: 'addDevice', arguments: { trackId: '$plate', deviceType: 'Reverb' } },
+            ],
+            'create an audio track called Parallel, create a bus called Plate, and add Reverb to it',
+            {
+                ...projectContext,
+                availableDeviceTypes: [{ id: 'builtin-reverb', name: 'Reverb' }],
+            }
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toContain('not unambiguously grounded');
+    });
+
+    it('rejects a bare anaphoric bus target after an intervening compatible track target', () => {
+        const result = bridge(
+            [
+                { name: 'createBus', arguments: { name: 'Plate', binding: 'plate' } },
+                { name: 'muteTrack', arguments: { trackId: vocals.id, muted: true } },
+                { name: 'addDevice', arguments: { trackId: '$plate', deviceType: 'Reverb' } },
+            ],
+            'create a bus called Plate, mute Vocals, and add Reverb to it',
+            {
+                ...projectContext,
+                availableDeviceTypes: [{ id: 'builtin-reverb', name: 'Reverb' }],
+            }
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toContain('not unambiguously grounded');
+    });
+
+    it('uses a noun-qualified bus anaphor despite an intervening audio-track target', () => {
+        const result = bridge(
+            [
+                { name: 'createBus', arguments: { name: 'Plate', binding: 'plate' } },
+                { name: 'muteTrack', arguments: { trackId: vocals.id, muted: true } },
+                { name: 'addDevice', arguments: { trackId: '$plate', deviceType: 'Reverb' } },
+            ],
+            'create a bus called Plate, mute Vocals, and add Reverb to that bus',
+            {
+                ...projectContext,
+                availableDeviceTypes: [{ id: 'builtin-reverb', name: 'Reverb' }],
+            }
+        );
+
+        expect(result.rejections).toEqual([]);
+        const addDevice = result.actions[2];
+        expect(addDevice?.type).toBe('addDevice');
+        if (addDevice?.type !== 'addDevice') {
+            throw new Error('Expected a grounded addDevice action');
+        }
+        expect(addDevice.payload.trackId).toMatch(/^bus-ai-/u);
+    });
+
+    it('rejects a noun-qualified bus anaphor after an intervening Master target', () => {
+        const result = bridge(
+            [
+                { name: 'createBus', arguments: { name: 'Plate', binding: 'plate' } },
+                { name: 'setTrackOutput', arguments: { trackId: vocals.id, outputId: 'master' } },
+                { name: 'addDevice', arguments: { trackId: '$plate', deviceType: 'Reverb' } },
+            ],
+            'create a bus called Plate, route Vocals to the Master bus, and add Reverb to that bus',
+            {
+                ...projectContext,
+                availableDeviceTypes: [{ id: 'builtin-reverb', name: 'Reverb' }],
+            }
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toContain('not unambiguously grounded');
+    });
+
     it('rejects ambiguous, mismatched, and ungrounded provider targets', () => {
         const ambiguousContext = {
             ...projectContext,

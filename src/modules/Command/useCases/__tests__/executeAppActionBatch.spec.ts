@@ -458,6 +458,57 @@ describe('executeAppActionBatch', () => {
         expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
     });
 
+    it('treats a first-document failure after mutation as ambiguous and reconciles runtime from durable truth', async () => {
+        const document: Record<string, unknown> = { editingTool: { tool: 'select' } };
+        configureAutomergeStoragePort({
+            getDoc: () => document,
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: ({ changeFn }) => {
+                changeFn(document);
+                throw new Error('adapter failed after mutation');
+            },
+        });
+        const editingToolStorage = createAutomergeStorage<{ tool: string }>('root', 'editingTool');
+        const runtimeEffect = { tool: 'select' };
+        const reconcileRuntime = vi.fn(() => {
+            runtimeEffect.tool = (document.editingTool as { tool: string }).tool;
+        });
+        expect(editingToolStorage.hydrate?.()).toBe(true);
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({
+                execute: (action) => {
+                    runtimeEffect.tool = action.payload.tool;
+                    editingToolStorage.set({ tool: action.payload.tool });
+                    return {
+                        status: 'written',
+                        afterCommit: () => undefined,
+                        afterAmbiguousCommit: reconcileRuntime,
+                    };
+                },
+                describe: () => ({
+                    label: 'Set editing tool',
+                    inverseAction: { type: 'setEditingTool', payload: { tool: 'select' } },
+                }),
+            }),
+        });
+
+        const result = await executeAppActionBatch([
+            { type: 'setEditingTool', payload: { tool: 'marquee' } },
+        ]);
+
+        expect(result).toEqual({
+            status: 'ambiguous',
+            reason: 'Automerge storage transaction committed before a later document failed',
+            actions: [],
+        });
+        expect(document).toEqual({ editingTool: { tool: 'marquee' } });
+        expect(runtimeEffect.tool).toBe('marquee');
+        expect(reconcileRuntime).toHaveBeenCalledOnce();
+        expect(mocks.recordAction).not.toHaveBeenCalled();
+        expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+    });
+
     it('rejects a non-compensable action before dispatch', async () => {
         const execute = vi.fn();
         registerHandlerMap({

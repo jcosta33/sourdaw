@@ -32,6 +32,8 @@ type GroundToolCallInput = {
     prompt: string;
     plannedActionNames: readonly string[];
     sameActionCallCount: number;
+    visibleGroundedCalls: readonly ToolCallResult[];
+    visiblePlannedTrackCreations: readonly ToolCallResult[];
 };
 
 type PromptClause = {
@@ -55,6 +57,12 @@ type BridgeGroundedLlmToolCallsResult = LlmActionBridgeResult & {
 type BatchLocalBusBinding = BatchLocalActionIdentity & {
     binding: string;
     callIndex: number;
+    name: string;
+};
+
+type PlannedTrackName = {
+    callIndex: number;
+    isBoundBus: boolean;
     name: string;
 };
 
@@ -99,12 +107,40 @@ const batchLocalBusCapabilities: ReadonlySet<string> = new Set([
     'device-host-track',
 ]);
 
+function namesOverlap(left: string, right: string): boolean {
+    const normalizedLeft = normalizePromptText(left);
+    const normalizedRight = normalizePromptText(right);
+    return (
+        ` ${normalizedLeft} `.includes(` ${normalizedRight} `) || ` ${normalizedRight} `.includes(` ${normalizedLeft} `)
+    );
+}
+
+function collectPlannedTrackNames(calls: readonly ToolCallResult[]): PlannedTrackName[] {
+    const plannedTrackNames: PlannedTrackName[] = [];
+    for (const [callIndex, call] of calls.entries()) {
+        if (call.name !== 'createBus' && call.name !== 'addTrack') {
+            continue;
+        }
+        const name = normalizeSafeProjectName(call.arguments.name);
+        if (!name) {
+            continue;
+        }
+        plannedTrackNames.push({
+            callIndex,
+            isBoundBus: call.name === 'createBus' && call.arguments.binding !== undefined,
+            name,
+        });
+    }
+    return plannedTrackNames;
+}
+
 function collectBatchLocalBusBindings(
     calls: readonly ToolCallResult[],
     context: ProjectContext
 ): CollectBatchLocalBusBindingsResult {
     const bindingsByCallIndex = new Map<number, BatchLocalBusBinding>();
     const bindingsByName = new Map<string, BatchLocalBusBinding>();
+    const plannedTrackNames = collectPlannedTrackNames(calls);
     const reservedBusNames = new Set(context.tracks.map((track) => normalizePromptText(track.name)));
     let createBusOrdinal = 0;
 
@@ -145,6 +181,22 @@ function collectBatchLocalBusBindings(
             };
         }
         const normalizedName = normalizePromptText(name);
+        const collidingUnboundTrack = plannedTrackNames.find(
+            (plannedTrack) =>
+                plannedTrack.callIndex !== callIndex &&
+                !plannedTrack.isBoundBus &&
+                namesOverlap(name, plannedTrack.name)
+        );
+        if (collidingUnboundTrack) {
+            return {
+                status: 'rejected',
+                rejection: rejection(
+                    callIndex,
+                    call.name,
+                    `Bound bus name collides with an unbound planned track: ${collidingUnboundTrack.name}`
+                ),
+            };
+        }
         if (reservedBusNames.has(normalizedName)) {
             return {
                 status: 'rejected',
@@ -198,17 +250,102 @@ function resolveBatchLocalBusReference(
 function containsBatchLocalBusEvidence(
     targetPrompt: string,
     binding: BatchLocalBusBinding,
-    compatibleBindingCount: number
+    capability: GroundingRules['targetRules'][number]['capability'],
+    context: ProjectContext,
+    visibleBindings: ReadonlyMap<string, BatchLocalBusBinding>,
+    visibleGroundedCalls: readonly ToolCallResult[],
+    visiblePlannedTrackCreations: readonly ToolCallResult[]
 ): boolean {
     const normalizedPrompt = normalizePromptText(targetPrompt);
     const normalizedName = normalizePromptText(binding.name);
-    if (` ${normalizedPrompt} `.includes(` ${normalizedName} `)) {
-        return true;
+    const hasBusAnaphora = /\b(?:that bus|this bus|the new bus|new bus|newly created bus|created bus)\b/u.test(
+        normalizedPrompt
+    );
+    const hasAnaphora = hasBusAnaphora || /\bit\b/u.test(normalizedPrompt);
+    const hasQualifiedName = [
+        ` to ${normalizedName} `,
+        ` into ${normalizedName} `,
+        ` on ${normalizedName} `,
+        ` onto ${normalizedName} `,
+        ` through ${normalizedName} `,
+        ` in ${normalizedName} `,
+        ` ${normalizedName} bus `,
+        ` ${normalizedName} track `,
+    ].some((phrase) => ` ${normalizedPrompt} `.includes(phrase));
+    if (!hasAnaphora || hasQualifiedName) {
+        const explicitReference = resolveAgentReference({
+            prompt: targetPrompt,
+            assertedId: binding.busId,
+            capability,
+            context,
+        });
+        if (explicitReference.status === 'resolved') {
+            return true;
+        }
+        if (explicitReference.reason !== 'ungrounded-target') {
+            return false;
+        }
     }
-    if (compatibleBindingCount !== 1) {
+    if (!hasAnaphora) {
         return false;
     }
-    return /\b(?:it|that bus|this bus|the new bus|new bus|newly created bus|created bus)\b/u.test(normalizedPrompt);
+    const anaphoraCapability = hasBusAnaphora ? 'output' : capability;
+    const candidateIds = new Set([...visibleBindings.values()].map((visibleBinding) => visibleBinding.busId));
+    for (const groundedCall of visibleGroundedCalls) {
+        const rules = getExecutableAppActionGroundingRules(groundedCall.name);
+        if (!rules) {
+            continue;
+        }
+        for (const targetRule of rules.targetRules) {
+            const assertedId = groundedCall.arguments[targetRule.argument];
+            if (typeof assertedId !== 'string' || !isCompatibleTargetId(assertedId, anaphoraCapability, context)) {
+                continue;
+            }
+            candidateIds.add(assertedId);
+        }
+    }
+    const compatibleCreationCount = countCompatiblePlannedTrackCreations(
+        visiblePlannedTrackCreations,
+        anaphoraCapability
+    );
+    const unknownCreationCount = compatibleCreationCount - visibleBindings.size;
+    return unknownCreationCount === 0 && candidateIds.size === 1 && candidateIds.has(binding.busId);
+}
+
+function isCompatibleTargetId(
+    id: string,
+    capability: GroundingRules['targetRules'][number]['capability'],
+    context: ProjectContext
+): boolean {
+    const prompt = capability === 'output' && id === 'master' ? 'to master output' : id;
+    return resolveAgentReference({ prompt, assertedId: id, capability, context }).status === 'resolved';
+}
+
+function countCompatiblePlannedTrackCreations(
+    calls: readonly ToolCallResult[],
+    capability: GroundingRules['targetRules'][number]['capability']
+): number {
+    return calls.filter((call) => {
+        if (call.name === 'createBus') {
+            return batchLocalBusCapabilities.has(capability);
+        }
+        if (call.name !== 'addTrack' || typeof call.arguments.kind !== 'string') {
+            return false;
+        }
+        if (capability === 'track' || capability === 'armable-track' || capability === 'removable-track') {
+            return true;
+        }
+        if (capability === 'duplicable-track' || capability === 'device-host-track') {
+            return call.arguments.kind !== 'vca';
+        }
+        if (capability === 'routable-source') {
+            return call.arguments.kind === 'audio' || call.arguments.kind === 'midi' || call.arguments.kind === 'bus';
+        }
+        if (capability === 'bus' || capability === 'output') {
+            return call.arguments.kind === 'bus';
+        }
+        return false;
+    }).length;
 }
 
 function createProjectedBus(context: ProjectContext, binding: BatchLocalBusBinding): ProjectContext['tracks'][number] {
@@ -1205,6 +1342,8 @@ function groundToolCall({
     prompt,
     plannedActionNames,
     sameActionCallCount,
+    visibleGroundedCalls,
+    visiblePlannedTrackCreations,
 }: GroundToolCallInput): ToolCallResult | LlmActionRejection {
     const groundingRules = getExecutableAppActionGroundingRules(call.name);
     if (!groundingRules) {
@@ -1252,7 +1391,17 @@ function groundToolCall({
                     `Batch-local bus cannot satisfy target capability ${targetRule.capability}`
                 );
             }
-            if (!containsBatchLocalBusEvidence(targetPrompt, batchLocalReference.binding, batchLocalBusBindings.size)) {
+            if (
+                !containsBatchLocalBusEvidence(
+                    targetPrompt,
+                    batchLocalReference.binding,
+                    targetRule.capability,
+                    context,
+                    batchLocalBusBindings,
+                    visibleGroundedCalls,
+                    visiblePlannedTrackCreations
+                )
+            ) {
                 return rejection(
                     index,
                     call.name,
@@ -1359,7 +1508,9 @@ export function bridgeGroundedLlmToolCalls({
     }
     const groundingRejections = new Map<number, LlmActionRejection>();
     const groundedCalls: ToolCallResult[] = [];
+    const acceptedGroundedCalls: ToolCallResult[] = [];
     const visibleBindings = new Map<string, BatchLocalBusBinding>();
+    const visiblePlannedTrackCreations: ToolCallResult[] = [];
     let prospectiveContext = context;
     for (const [index, providerCall] of calls.entries()) {
         const call = stripBatchLocalBinding(providerCall);
@@ -1376,6 +1527,8 @@ export function bridgeGroundedLlmToolCalls({
             prompt,
             plannedActionNames: calls.map((candidate) => candidate.name),
             sameActionCallCount,
+            visibleGroundedCalls: acceptedGroundedCalls,
+            visiblePlannedTrackCreations,
         });
         if ('reason' in grounded) {
             groundingRejections.set(index, grounded);
@@ -1383,6 +1536,10 @@ export function bridgeGroundedLlmToolCalls({
             continue;
         }
         groundedCalls.push(grounded);
+        acceptedGroundedCalls.push(grounded);
+        if (grounded.name === 'createBus' || grounded.name === 'addTrack') {
+            visiblePlannedTrackCreations.push(grounded);
+        }
         const binding = collectedBindings.bindingsByCallIndex.get(index);
         if (binding) {
             visibleBindings.set(binding.binding, binding);

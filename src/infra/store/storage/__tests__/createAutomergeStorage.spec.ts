@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 
 import { createStore } from '../../createStore';
 import {
+    AutomergeStorageTransactionCommittedError,
     configureAutomergeStoragePort,
     createAutomergeStorage,
     flushAutomergeStorageWrites,
@@ -541,7 +542,7 @@ describe('createAutomergeStorage', () => {
         expect(mutations).toHaveLength(2);
     });
 
-    it('does not persist one key when a same-document multi-key commit fails', () => {
+    it('reports ambiguous durability without persisting one key when a same-document commit fails', () => {
         const doc: TestDoc = {};
         const port: TestPort = {
             getDoc: () => doc,
@@ -568,11 +569,11 @@ describe('createAutomergeStorage', () => {
             midiStorage.set({ imported: true });
         });
 
-        expect(() => transaction.commit()).toThrow('MIDI write failed');
+        expect(() => transaction.commit()).toThrow(AutomergeStorageTransactionCommittedError);
         expect(doc).toEqual({});
     });
 
-    it('restores the adapter cache when mutateDoc fails before the transaction commits', () => {
+    it('restores the adapter cache when mutateDoc fails with ambiguous durability', () => {
         const doc: TestDoc = { state: { count: 0 } };
         const commitFailure = new Error('CRDT commit failed');
         const port: TestPort = {
@@ -591,7 +592,7 @@ describe('createAutomergeStorage', () => {
             storage.set({ count: 1 });
         });
 
-        expect(() => transaction.commit()).toThrow(commitFailure);
+        expect(() => transaction.commit()).toThrow(AutomergeStorageTransactionCommittedError);
         transaction.abort();
         flushAutomergeStorageWrites();
 
@@ -702,7 +703,7 @@ describe('createAutomergeStorage', () => {
         expect(doc).toEqual({});
     });
 
-    it('atomically clears same-action keys and surfaces commit failure', () => {
+    it('keeps same-action keys intact while surfacing ambiguous commit durability', () => {
         const doc: TestDoc = {
             tracks: { imported: true },
             midi: { imported: true },
@@ -732,7 +733,7 @@ describe('createAutomergeStorage', () => {
             midiStorage.clear();
         });
 
-        expect(() => transaction.commit()).toThrow('Clear commit failed');
+        expect(() => transaction.commit()).toThrow(AutomergeStorageTransactionCommittedError);
         expect(doc).toEqual({
             tracks: { imported: true },
             midi: { imported: true },
