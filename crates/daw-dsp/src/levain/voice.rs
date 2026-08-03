@@ -411,6 +411,13 @@ pub struct LevainVoice {
 
     /// Amplitude envelope.
     pub amp_env: AdsrEnvelope,
+    /// The zone's own amplitude envelope, held unmodified so the Attack and
+    /// Release macros re-derive from the patch every time rather than
+    /// compounding their scaling onto an already-scaled envelope.
+    amp_env_patch: AdsrParams,
+    /// Current Attack/Release macro scaling. Kept per voice so a macro moved
+    /// mid-note reaches the note that is sounding, not only the next one.
+    envelope_scaling: EnvelopeScaling,
 
     /// Per-voice gain (from velocity, expression, humanization).
     pub gain: OnePoleSmoother,
@@ -472,6 +479,8 @@ impl LevainVoice {
             crossfade_rate: 0.0,
             crossfading: false,
             amp_env: AdsrEnvelope::new(sample_rate),
+            amp_env_patch: AdsrParams::default(),
+            envelope_scaling: EnvelopeScaling::IDENTITY,
             gain: OnePoleSmoother::new(1.0, 0.01, sample_rate),
             articulation: 0,
             zone_id: 0,
@@ -517,7 +526,9 @@ impl LevainVoice {
         self.crossfading = false;
         self.crossfade_amount = 0.0;
 
-        self.amp_env.configure(&zone.amp_env);
+        self.amp_env_patch = zone.amp_env;
+        self.amp_env
+            .configure(&self.envelope_scaling.apply(&zone.amp_env));
         self.amp_env.trigger();
         // A fresh note starts from neutral expression; the controller's opening
         // bend/pressure/timbre arrives as its own expression message.
@@ -527,6 +538,17 @@ impl LevainVoice {
         self.tilt_lp = 0.0;
         self.base_gain = gain;
         self.gain.snap(gain);
+    }
+
+    /// Point this voice at a new Attack/Release macro scaling. A sounding voice
+    /// re-derives its envelope from the zone's own ADSR immediately, so a
+    /// player dragging Release over a held chord hears it on that chord rather
+    /// than on the next one. Stage and level are untouched — only the rates.
+    pub fn set_envelope_scaling(&mut self, scaling: EnvelopeScaling) {
+        self.envelope_scaling = scaling;
+        if self.active {
+            self.amp_env.configure(&scaling.apply(&self.amp_env_patch));
+        }
     }
 
     /// Apply MPE per-note expression to this sounding voice (audit MD-2).
@@ -771,6 +793,15 @@ impl VoicePool {
                 }
             }
             voice.release();
+        }
+    }
+
+    /// Push a new Attack/Release macro scaling to every voice — sounding ones
+    /// so the change is audible now, idle ones so the next note they take is
+    /// triggered with it.
+    pub fn set_envelope_scaling(&mut self, scaling: EnvelopeScaling) {
+        for voice in self.voices.iter_mut() {
+            voice.set_envelope_scaling(scaling);
         }
     }
 

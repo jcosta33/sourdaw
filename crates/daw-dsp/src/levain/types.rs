@@ -240,6 +240,57 @@ impl Default for AdsrParams {
     }
 }
 
+/// What the Attack and Release macros do to a zone's own ADSR.
+///
+/// The offset is **multiplicative on time**, which is the convention shipping
+/// samplers use (Kontakt's envelope modulation and Orchestral Tools' Capsule
+/// both scale the per-articulation envelope rather than replace it). It has to
+/// be: a patch's attack ranges over three orders of magnitude between a 1 ms
+/// staccato and a 400 ms swell, so an additive offset in seconds would erase
+/// the staccato and barely touch the swell. A ratio keeps the patch's own
+/// relative shaping intact and moves the whole instrument in one direction.
+///
+/// `IDENTITY` — both `1.0` — is the centred macro, and it is exact: the
+/// envelope the patch defined, unmultiplied.
+#[derive(Debug, Clone, Copy)]
+pub struct EnvelopeScaling {
+    pub attack: f32,
+    pub release: f32,
+}
+
+impl EnvelopeScaling {
+    pub const IDENTITY: Self = Self {
+        attack: 1.0,
+        release: 1.0,
+    };
+
+    /// Apply the scaling to a zone's envelope. Times only — decay and sustain
+    /// are the patch's shaping and neither macro claims them.
+    pub fn apply(&self, params: &AdsrParams) -> AdsrParams {
+        AdsrParams {
+            attack: params.attack * self.attack,
+            decay: params.decay,
+            sustain: params.sustain,
+            release: params.release * self.release,
+        }
+    }
+}
+
+impl Default for EnvelopeScaling {
+    fn default() -> Self {
+        Self::IDENTITY
+    }
+}
+
+/// Map a 0..1 macro position onto a multiplicative time scaling. `0.5` is
+/// exactly `1.0`, and the extremes are a quarter and four times the patch's own
+/// value — two octaves of envelope time either way, which is the usual travel
+/// for a macro that has to stay musical across a whole library.
+pub fn macro_time_scale(position: f32) -> f32 {
+    let centred = position.clamp(0.0, 1.0) - 0.5;
+    (centred * 4.0).exp2()
+}
+
 // ---------------------------------------------------------------------------
 // Mic position
 // ---------------------------------------------------------------------------
