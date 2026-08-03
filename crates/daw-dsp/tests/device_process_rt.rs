@@ -316,6 +316,9 @@ fn bacteria_smudge_mode_does_not_allocate() {
         "bacteria renders identically on distortionMode 7 and 0 (max \
          divergence {divergence:.3e}), so the smudge transform never ran and \
          the allocation guard above covered nothing"
+    );
+}
+
 /// `note_on` is not a render export, but it runs on the audio thread: the
 /// native host drains its command ring inside the process callback, and the
 /// worklet dispatches port messages on the render thread. Since a note now
