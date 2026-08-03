@@ -214,6 +214,7 @@ vi.mock('#/modules/Knead/useCases', () => ({
 vi.mock('#/modules/Levain/stores', () => ({ setEngineReady: noop }));
 
 vi.mock('#/modules/Levain/useCases', () => ({
+    initLevainDeviceStatePersistence: () => noop,
     registerLevainDevice: noop,
     unregisterLevainDevice: noop,
     prepareOfflineLevain: prepareOfflineLevainMock,

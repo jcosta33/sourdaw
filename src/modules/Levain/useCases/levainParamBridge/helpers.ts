@@ -9,6 +9,7 @@ import { createRafBatcher } from '#/utils/DOM/createRafBatcher';
 import { type LevainPatch } from '../../models/LevainPatch';
 import { defaultLevainState, levainStore, setLevainParam, setMacro } from '../../stores/levainStore';
 import { type autoLoadLevainSamples } from '../autoLoadSamples';
+import { hydrateLevainStateFromProject } from '../hydrateLevainStateFromProject';
 
 import { camelToSnake } from './camelToSnake';
 
@@ -116,12 +117,17 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         activeDevices.set(deviceId, device);
         if (port) {
             activePorts.set(deviceId, port);
-            // Seed a default store entry on first registration so newly-added
-            // devices get their default instrument's samples loaded — without
-            // this the worklet has no zones and produces silence until the
-            // user opens the panel and changes presets.
+            // Seed a store entry on first registration so newly-added devices get
+            // their instrument's samples loaded — without this the worklet has no
+            // zones and produces silence until the user opens the panel and changes
+            // presets.
+            //
+            // Project truth first, module default only for a device that has never
+            // been pointed at an instrument. A reload wipes this store, so reading
+            // the default here unconditionally is what made every saved Levain track
+            // come back as violin-1.
             const instances = levainStore.value ?? {};
-            const state = instances[deviceId] ?? defaultLevainState;
+            const state = instances[deviceId] ?? hydrateLevainStateFromProject(deviceId) ?? defaultLevainState;
             if (!instances[deviceId]) {
                 levainStore.set({ ...instances, [deviceId]: state });
             }

@@ -18,7 +18,6 @@ import { type EnvelopeParams, midiNoteToName } from '../../models/CrumbsTypes';
 import {
     defaultCrumbsState,
     crumbsStore,
-    ensureInstance,
     setFilterParams,
     setMasterGain,
     setPan,
@@ -27,6 +26,7 @@ import {
 } from '../../stores/crumbsStore';
 import { defaultPadState, padStore, ensurePadInstance, reorderPad, selectPad } from '../../stores/padStore';
 import { defaultSliceState, sliceStore, ensureSliceInstance, setActiveSlice } from '../../stores/sliceStore';
+import { ensureCrumbsInstanceFromProject } from '../../useCases/crumbsLifecycle/ensureCrumbsInstanceFromProject';
 import { initCrumbsEngine } from '../../useCases/crumbsLifecycle/initCrumbsEngine';
 import { teardownCrumbsEngine } from '../../useCases/crumbsLifecycle/teardownCrumbsEngine';
 import { setCrumbsParamThrottled } from '../../useCases/crumbsParamBridge/setCrumbsParamThrottled';
@@ -95,7 +95,10 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
     // Create / destroy crumbs engine instance on mount/unmount.
     useEffect(() => {
         let cancelled = false;
-        ensureInstance(deviceId);
+        // Seeded from project truth, not from the module default: on a reload the
+        // panel can mount before the engine chain is built, and a default entry
+        // written first would shadow the saved sample for the rest of the session.
+        ensureCrumbsInstanceFromProject(deviceId);
         ensurePadInstance(deviceId);
         ensureSliceInstance(deviceId);
 
