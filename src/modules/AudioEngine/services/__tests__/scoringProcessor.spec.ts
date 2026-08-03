@@ -129,13 +129,11 @@ describe('ScoringProcessor message handling', () => {
         expect(errors).toHaveLength(1);
     });
 
-    it('forwards param name/value and toggles bypass', async () => {
+    it('forwards param name/value to the instance', async () => {
         const proc = await loadProcessor();
         send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         resetRecording();
         send(proc, { type: 'param', name: 'threshold', value: 0.5 });
-        send(proc, { type: 'bypass', bypassed: true });
-        send(proc, { type: 'bypass', bypassed: false });
         expect(paramCalls).toContainEqual({ name: 'threshold', value: 0.5 });
     });
 
@@ -237,5 +235,83 @@ describe('ScoringProcessor process & telemetry', () => {
         processShouldThrow = false;
         proc.process([stereo(FRAMES, 0.4)], [stereo(FRAMES, 0)]);
         expect(processCalls).toEqual([]);
+    });
+});
+
+/**
+ * Two distinct channels. The mock (like the real ScoringInstance) copies the
+ * LEFT input into both output windows, so a right channel that still carries
+ * its own samples proves the block never went through the wasm result path.
+ */
+function distinctStereoInput(): Float32Array[] {
+    const leftIn = new Float32Array(FRAMES);
+    const rightIn = new Float32Array(FRAMES);
+    for (let index = 0; index < FRAMES; index++) {
+        leftIn[index] = Math.sin(index * 0.11) * 0.5;
+        rightIn[index] = Math.cos(index * 0.07) * 0.25;
+    }
+    return [leftIn, rightIn];
+}
+
+describe('ScoringProcessor bypass', () => {
+    beforeEach(() => {
+        resetGrowableMemory(memory, HEAP_BYTES);
+        resetRecording();
+    });
+
+    it('copies the input to the output and runs no analysis while bypassed', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        const sab = new SharedArrayBuffer(Float32Array.BYTES_PER_ELEMENT * 32);
+        const view = new Float32Array(sab);
+        send(proc, { type: 'init-sab', sab, byteOffset: 0 });
+        resetRecording();
+        isActive = true;
+        send(proc, { type: 'bypass', bypassed: true });
+
+        const input = distinctStereoInput();
+        const output = [new Float32Array(FRAMES), new Float32Array(FRAMES)];
+        // Telemetry interval is 4 process calls — long enough to publish.
+        for (let quantum = 0; quantum < 4; quantum++) {
+            proc.process([input], [output]);
+        }
+
+        expect(Array.from(output[0]!)).toEqual(Array.from(input[0]!));
+        // The wasm path mirrors LEFT into the right window; the dry right
+        // channel surviving is what separates bypass from a passthrough engine.
+        expect(Array.from(output[1]!)).toEqual(Array.from(input[1]!));
+        expect(processCalls).toEqual([]);
+        // The tuner readout is the only thing this device produces. Bypassed, it
+        // must stop producing it rather than keep detecting off a live signal.
+        expect(view[0]).toBe(0);
+        expect(view[1]).toBe(0);
+    });
+
+    it('resumes analysis and telemetry once bypass is turned off', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        const sab = new SharedArrayBuffer(Float32Array.BYTES_PER_ELEMENT * 32);
+        const view = new Float32Array(sab);
+        send(proc, { type: 'init-sab', sab, byteOffset: 0 });
+        resetRecording();
+        isActive = true;
+
+        const input = distinctStereoInput();
+        const output = [new Float32Array(FRAMES), new Float32Array(FRAMES)];
+        send(proc, { type: 'bypass', bypassed: true });
+        for (let quantum = 0; quantum < 4; quantum++) {
+            proc.process([input], [output]);
+        }
+
+        send(proc, { type: 'bypass', bypassed: false });
+        for (let quantum = 0; quantum < 4; quantum++) {
+            proc.process([input], [output]);
+        }
+
+        expect(processCalls).toEqual([FRAMES, FRAMES, FRAMES, FRAMES]);
+        expect(view[0]).toBe(1);
+        expect(view[1]).toBe(440);
+        // Engine output again: the right channel now mirrors the left window.
+        expect(Array.from(output[1]!)).toEqual(Array.from(input[0]!));
     });
 });

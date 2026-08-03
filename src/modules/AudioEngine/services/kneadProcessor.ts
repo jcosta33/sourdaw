@@ -56,12 +56,31 @@ const TRANSPORT_SEQ_I32 = 14;
 // sample rather than spinning forever.
 const TRANSPORT_SEQ_MAX_RETRIES = 8;
 
+/**
+ * Samples the bypass crossfade takes, each way.
+ *
+ * 64 at 48 kHz is 1.33 ms — short enough that the toggle still reads as
+ * instant, long enough to remove the discontinuity between the dry signal and
+ * the wet one 2047 samples behind it. Half a block, so a toggle completes
+ * inside one `process` call and never straddles a quantum boundary.
+ */
+const BYPASS_FADE_SAMPLES = 64;
+
 class KneadProcessor extends AudioWorkletProcessor {
     _instance: KneadRuntimeInstance | null = null;
     _memory: WebAssembly.Memory | null = null;
     _ready = false;
     _faulted = false;
     _bypassed = false;
+    /**
+     * Where the bypass crossfade currently sits: 0 fully wet, 1 fully dry.
+     *
+     * A separate value from {@link _bypassed} because the flag flips on a port
+     * message and the mix has to travel there over {@link BYPASS_FADE_SAMPLES},
+     * on both edges. At rest it equals the flag, and the dry path is then
+     * bit-exact rather than scaled by a gain of 1.
+     */
+    _bypassRamp = 0;
 
     _transportSAB: SharedArrayBuffer | null = null;
     _transportView: Float64Array | null = null;
@@ -244,6 +263,32 @@ class KneadProcessor extends AudioWorkletProcessor {
             this._inRightView.get(mem, inputRightPtr, frames).set(input[1] ?? in0);
 
             const resultPtr = inst.process(frames);
+
+            // Bypass swaps the OUTPUT only — the engine above has already been
+            // handed this quantum's input and has advanced its state.
+            //
+            // Knead buffers a 2048-sample analysis frame (2047 samples of group
+            // delay) and resynthesises across it, and KneadInstance exposes no
+            // reset. Starving the engine for the duration of a bypass would
+            // leave its ring buffer holding pre-bypass audio, so un-bypassing
+            // would splice ~43 ms of stale signal back in; resetting is not
+            // available and would cost a whole detector warm-up anyway. Keeping
+            // it fed makes resuming continuous — the same block it would have
+            // emitted had bypass never been engaged — at the cost of the DSP
+            // running while inaudible.
+            //
+            // Latency is deliberately untouched: the ready handshake reported
+            // the group delay once and PDC still holds that offset, which is
+            // what every sibling with a reported latency does on bypass
+            // (proof-chamber here, gluten/crust in the Rust engines).
+            // Fully bypassed and the ramp has arrived: nothing to blend, and the
+            // dry path stays bit-exact. Any ramp still in flight falls through
+            // to the crossfade below, which needs the wet buffers.
+            if (this._bypassed && this._bypassRamp >= 1) {
+                this._passthrough(input, output);
+                return true;
+            }
+
             // Re-read the live buffer AFTER process(): a Rust-side allocation can
             // grow the linear memory mid-call and detach the pre-call `mem`, so the
             // output views must map the post-grow buffer (audit RT-7). Building them
@@ -257,15 +302,40 @@ class KneadProcessor extends AudioWorkletProcessor {
             const resultRightPtr = inst.get_right_ptr?.();
 
             const wasmOutL = this._outLeftView.get(outMem, resultPtr, frames);
-            const out0 = output[0];
-            if (out0) {
-                out0.set(wasmOutL);
-            }
             const wasmOutR =
                 resultRightPtr === undefined ? wasmOutL : this._outRightView.get(outMem, resultRightPtr, frames);
+
+            // Crossfade the swap rather than splicing it.
+            //
+            // The wet path lags the dry by the 2047-sample group delay, so the
+            // two are ~43 ms apart in the source material and decorrelated. A
+            // hard switch between them is a discontinuity in both directions —
+            // engaging bypass and leaving it — and reads as a click on any
+            // non-silent programme. Keeping the engine fed (above) prevents a
+            // *stale* frame bleeding back on resume; it does nothing for this.
+            //
+            // Equal power, because the two sides are decorrelated: a linear
+            // crossfade would dip ~3 dB through the middle of every toggle.
+            const target = this._bypassed ? 1 : 0;
+            const out0 = output[0];
             const out1 = output[1];
-            if (out1) {
-                out1.set(wasmOutR);
+            for (let frame = 0; frame < frames; frame++) {
+                if (this._bypassRamp !== target) {
+                    const step = 1 / BYPASS_FADE_SAMPLES;
+                    this._bypassRamp =
+                        target > this._bypassRamp
+                            ? Math.min(target, this._bypassRamp + step)
+                            : Math.max(target, this._bypassRamp - step);
+                }
+                const dryGain = Math.sin((this._bypassRamp * Math.PI) / 2);
+                const wetGain = Math.cos((this._bypassRamp * Math.PI) / 2);
+                if (out0) {
+                    out0[frame] = (wasmOutL[frame] ?? 0) * wetGain + (input[0]?.[frame] ?? 0) * dryGain;
+                }
+                if (out1) {
+                    const dryRight = input[1]?.[frame] ?? input[0]?.[frame] ?? 0;
+                    out1[frame] = (wasmOutR[frame] ?? 0) * wetGain + dryRight * dryGain;
+                }
             }
         } catch (error) {
             this._faulted = true;
