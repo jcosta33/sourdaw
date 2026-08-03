@@ -386,21 +386,8 @@ describe('usePromptExecution', () => {
         expect(vi.mocked(executePlannedActions)).toHaveBeenCalledTimes(1);
     });
 
-    it('notifies on an already-applied JSON edit and falls back to a no-match notice otherwise', async () => {
+    it('notifies when no executable action matches', async () => {
         const { result } = renderHook(() => usePromptExecution());
-
-        vi.mocked(parsePromptToActions).mockResolvedValueOnce({
-            actions: [],
-            rawText: 'x',
-            requiresConfirmation: false,
-            _jsonEditApplied: true,
-            _jsonEditSummaries: ['Renamed track'],
-        });
-        act(() => result.current.setValue('rename track to Bass'));
-        await act(async () => {
-            await result.current.handleSubmit(formEvent as never);
-        });
-        expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith('Renamed track', []);
 
         act(() => result.current.setValue('do something unknown'));
         await act(async () => {
@@ -743,21 +730,5 @@ describe('usePromptExecution', () => {
         expect(vi.mocked(logger.error)).toHaveBeenCalled();
         expect(result.current.isProcessing).toBe(false);
         expect(result.current.value).toBe('');
-    });
-
-    it('notifies with an empty summary list when a JSON edit has no summaries', async () => {
-        const { result } = renderHook(() => usePromptExecution());
-        vi.mocked(parsePromptToActions).mockResolvedValueOnce({
-            actions: [],
-            rawText: 'x',
-            requiresConfirmation: false,
-            _jsonEditApplied: true,
-        });
-        act(() => result.current.setValue('edit'));
-        await act(async () => {
-            await result.current.handleSubmit(formEvent as never);
-        });
-        // No summaries → falls back to "Executed: <value>"
-        expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith('Executed: edit', []);
     });
 });

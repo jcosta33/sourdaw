@@ -11,7 +11,7 @@ const STORAGE_KEY = 'sourdaw:macros';
 // Persist at most MAX_MACROS, each truncated to MAX_MACRO_ACTIONS actions.
 const MAX_MACROS = 100;
 const MAX_MACRO_ACTIONS = 500;
-const NON_PERSISTABLE_MACRO_ACTION_TYPES = new Set(['restoreDsoSnapshot']);
+const RETIRED_MACRO_ACTION_TYPES = new Set(['restoreDsoSnapshot']);
 
 /** Trim the macro list for persistence: keep the most recent macros and cap each one's action count. */
 function trimMacrosForPersist(macros: Macro[]): Macro[] {
@@ -48,7 +48,7 @@ function hasPersistedActionShape(value: unknown): boolean {
     if (!isUnknownRecord(value)) {
         return false;
     }
-    return typeof value.type === 'string' && !NON_PERSISTABLE_MACRO_ACTION_TYPES.has(value.type);
+    return typeof value.type === 'string' && !RETIRED_MACRO_ACTION_TYPES.has(value.type);
 }
 
 /** Shape-guard a parsed entry before trusting it as a `Macro` (mirrors undoStore's defensive load). */

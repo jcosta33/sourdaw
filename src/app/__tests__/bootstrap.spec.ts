@@ -179,7 +179,6 @@ vi.mock('#/modules/ControlSurface/useCases', () => ({
 vi.mock('#/modules/CrdtDocument/stores', () => ({ actionHistoryStore: actionHistoryStoreMock }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
-    getDsoSnapshotHandlers: sentinelHandlers('DsoSnapshot'),
     markActionHistoryEntryReverted: noop,
     recordActionHistoryEntry: noop,
     clearActionHistory: noop,
@@ -376,7 +375,6 @@ describe('bootstrap', () => {
         'WebMidiInput',
         'Rave',
         'ControlRoom',
-        'DsoSnapshot',
     ];
 
     it('registers every module handler map exactly once, in bootstrap wiring order', () => {

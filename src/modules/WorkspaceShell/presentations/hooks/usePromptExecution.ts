@@ -69,9 +69,6 @@ type PromptPreview = {
     requiresConfirmation: boolean;
     projectRevision: string;
     executionMode?: 'atomic';
-    _jsonEditApplied?: boolean;
-    _jsonEditSummaries?: string[];
-    _jsonEditAttempted?: boolean;
 };
 
 type ExecutePromptActionGroupInput = {
@@ -354,8 +351,6 @@ export const usePromptExecution = (): PromptExecutionState => {
 
             if (result.rejectionReason) {
                 notifyAiChange(`Command not executed: ${result.rejectionReason}`, []);
-            } else if (result._jsonEditApplied) {
-                notifyAiChange(result._jsonEditSummaries?.join('. ') ?? `Executed: ${value}`, []);
             } else if (result.actions.length > 0) {
                 await executeWithGroup({
                     actions: result.actions,
