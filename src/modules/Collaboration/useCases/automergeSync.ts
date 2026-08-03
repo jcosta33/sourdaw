@@ -31,7 +31,13 @@ import { type PeerId, type PeerMessage } from '../models/CollaborationTypes';
 
 type PeerSyncTransport = {
     getConnectedPeerIds: () => PeerId[];
-    sendCrdtSync: (input: { peerId: PeerId; message: PeerMessage }) => void;
+    /**
+     * Hand a message to the transport. The returned promise settles when the
+     * transport has actually taken every byte — `send()` returning is not the
+     * same as the peer having the changes, so this is the only signal a
+     * SyncState may advance on.
+     */
+    sendCrdtSync: (input: { peerId: PeerId; message: PeerMessage }) => Promise<void> | void;
 };
 
 // Branch-content docs share a `branch_<id>` id scheme minted by CrdtDocument's
@@ -115,6 +121,13 @@ export type AutomergeSyncHooks = {
     canApplySync?: (peerId: PeerId, docId: string) => boolean;
     /** Called when an async persist after a received sync fails. */
     onPersistError?: (error: unknown) => void;
+    /**
+     * Called when a generated sync message could not be delivered. The peer's
+     * SyncState is left untouched so the message will be regenerated, but the
+     * session is out of sync until it is — silence here is the difference
+     * between a retryable fault and "connected but permanently unsynced".
+     */
+    onSendError?: (input: { peerId: PeerId; docId: string; error: unknown }) => void;
 };
 
 /**
@@ -144,6 +157,8 @@ type SyncStateMap = Map<PeerId, PerDocSyncStateMap>;
  */
 export class AutomergeSync {
     private syncStates: SyncStateMap = new Map();
+    /** Tail of the in-flight sync generation per `${peerId} ${docId}`. */
+    private sendQueues = new Map<string, Promise<void>>();
     private peerManager: PeerSyncTransport;
     private unsubscribeFromChanges: (() => void) | null = null;
     private hooks: AutomergeSyncHooks;
@@ -194,6 +209,7 @@ export class AutomergeSync {
             this.unsubscribeFromChanges = null;
         }
         this.syncStates.clear();
+        this.sendQueues.clear();
     }
 
     /** Initialize sync state for a new peer and send initial sync. */
@@ -205,6 +221,11 @@ export class AutomergeSync {
     /** Remove sync state for a disconnected peer. */
     removePeer(peerId: PeerId): void {
         this.syncStates.delete(peerId);
+        for (const key of this.sendQueues.keys()) {
+            if (key.startsWith(`${peerId} `)) {
+                this.sendQueues.delete(key);
+            }
+        }
     }
 
     /** Handle an incoming CRDT sync message from a peer. */
@@ -310,23 +331,47 @@ export class AutomergeSync {
     /** Generate and send sync messages to a specific peer for all known documents. */
     private sendSyncToPeer(peerId: PeerId): void {
         // Always sync the root project doc
-        this.sendDocSyncToPeer({ peerId, docId: DOC_PREFIX_ROOT });
+        this.queueDocSyncToPeer({ peerId, docId: DOC_PREFIX_ROOT });
 
         // Sync branch metadata doc if it exists (session-scoped)
         if (hasCrdtDoc(DOC_BRANCHES)) {
-            this.sendDocSyncToPeer({ peerId, docId: DOC_BRANCHES });
+            this.queueDocSyncToPeer({ peerId, docId: DOC_BRANCHES });
         }
 
         // Sync branch content docs
         for (const docId of getCrdtDocIds()) {
             if (docId.startsWith(DOC_PREFIX_BRANCH)) {
-                this.sendDocSyncToPeer({ peerId, docId });
+                this.queueDocSyncToPeer({ peerId, docId });
             }
         }
     }
 
+    /**
+     * Serialize sync generation per (peer, document).
+     *
+     * A SyncState now advances only after its message is on the wire, so a
+     * second generation started while the first is still sending would run
+     * against a state that is about to move — producing a duplicate message and
+     * committing the two results out of order.
+     */
+    private queueDocSyncToPeer({ peerId, docId }: { peerId: PeerId; docId: string }): void {
+        const key = `${peerId} ${docId}`;
+        const previous = this.sendQueues.get(key) ?? Promise.resolve();
+        const next = previous.then(() => this.sendDocSyncToPeer({ peerId, docId }));
+        const settled = next.catch((error: unknown) => {
+            logger.warn('[AutomergeSync] Sync generation failed', peerId, docId, error);
+        });
+        this.sendQueues.set(key, settled);
+        void settled.then(() => {
+            // Only the tail may be dropped; a newer queue entry must survive.
+            if (this.sendQueues.get(key) === settled) {
+                this.sendQueues.delete(key);
+            }
+        });
+    }
+
     /** Generate and send a sync message for one document to one peer. */
-    private sendDocSyncToPeer({ peerId, docId }: { peerId: PeerId; docId: string }): void {
+    private async sendDocSyncToPeer({ peerId, docId }: { peerId: PeerId; docId: string }): Promise<void> {
         const doc = getCrdtDoc(docId);
         if (!doc) {
             return;
@@ -337,17 +382,33 @@ export class AutomergeSync {
 
         const [newSyncState, syncMessage] = generateSyncMessage(doc, syncState);
 
+        if (!syncMessage) {
+            // Nothing to deliver, so there is no delivery to order against.
+            peerStates.set(docId, newSyncState);
+            this.syncStates.set(peerId, peerStates);
+            return;
+        }
+
+        const message: PeerMessage = {
+            type: 'crdt-sync',
+            docId,
+            data: bytesToBase64(syncMessage),
+        };
+
+        try {
+            await this.peerManager.sendCrdtSync({ peerId, message });
+        } catch (error) {
+            // The peer never received these changes. Leaving its SyncState
+            // where it was is what makes the failure retryable: the next
+            // generation reproduces this exact message instead of skipping it
+            // as already delivered.
+            logger.warn('[AutomergeSync] Failed to send a sync message to peer', peerId, docId, error);
+            this.hooks.onSendError?.({ peerId, docId, error });
+            return;
+        }
+
         peerStates.set(docId, newSyncState);
         this.syncStates.set(peerId, peerStates);
-
-        if (syncMessage) {
-            const message: PeerMessage = {
-                type: 'crdt-sync',
-                docId,
-                data: bytesToBase64(syncMessage),
-            };
-            this.peerManager.sendCrdtSync({ peerId, message });
-        }
     }
 
     /** Generate and send sync messages to all connected peers. */
@@ -365,7 +426,7 @@ export class AutomergeSync {
      */
     private sendDocSyncToAllPeers(docId: string): void {
         for (const peerId of this.peerManager.getConnectedPeerIds()) {
-            this.sendDocSyncToPeer({ peerId, docId });
+            this.queueDocSyncToPeer({ peerId, docId });
         }
     }
 }

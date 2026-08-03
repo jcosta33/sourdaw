@@ -114,7 +114,9 @@ vi.mock('../../../repositories/peerConnection', () => ({
             closeAll: vi.fn(),
             getConnectedPeerIds: vi.fn().mockReturnValue([]),
             broadcastPresence: vi.fn(),
-            sendCrdtSync: vi.fn(),
+            // Matches the real contract: the send resolves only once the
+            // transport has taken the message.
+            sendCrdtSync: vi.fn().mockResolvedValue(undefined),
             removePeer: vi.fn(),
         };
         peerConnectionMock.instances.push(instance);
