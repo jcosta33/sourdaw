@@ -1,0 +1,27 @@
+src/modules/Levain/repositories/sampleLoader/__tests__/sampleManifest.spec.ts
+  s_ac9b259eab20ba::t_57eb512e15e10f 116-124,146-154,162
+  s_ac9b259eab20ba::t_12ac4a1ae89fe2 155-161
+src/modules/Levain/repositories/sampleLoader/__tests__/loadInstrumentFromManifest.spec.ts
+  s_ac9b259eab20ba::t_6d9b94dcb75da6 3,56,62
+src/modules/Levain/repositories/sampleLoader/sampleManifest.ts
+  s_ac9b259eab20ba::t_57eb512e15e10f 43,122-125,182-184,217-218
+  s_ac9b259eab20ba::t_12ac4a1ae89fe2 216
+src/modules/Levain/repositories/sampleLoader/loadInstrumentFromManifest.ts
+  s_ac9b259eab20ba::t_6d9b94dcb75da6 3-4,7-46,84,89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "b757e3c6c40ceeacc83ef43a561c802a48f4e72d",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
