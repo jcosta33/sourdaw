@@ -131,6 +131,24 @@ describe('parseSampleManifest', () => {
         );
     });
 
+    it('marks the bundled zero loop sentinel for resolution against decoded sample length', () => {
+        const manifest = createValidManifest();
+        manifest.articulations[0]!.zones[0] = { ...VALID_ZONE, loopMode: 'forward' };
+
+        const parsed = parseSampleManifest(manifest);
+
+        expect(parsed.articulations[0]?.zones[0]).toEqual(
+            expect.objectContaining({
+                loop: {
+                    mode: 'forward',
+                    startFrame: 0,
+                    endFrame: 'sample-end',
+                    crossfadeFrames: 0,
+                },
+            })
+        );
+    });
+
     it('rejects finite JavaScript numbers that overflow a Rust f32', () => {
         const manifest = createValidManifest();
         manifest.articulations[0]?.zones.push({ ...VALID_ZONE, gainDb: Number.MAX_VALUE });

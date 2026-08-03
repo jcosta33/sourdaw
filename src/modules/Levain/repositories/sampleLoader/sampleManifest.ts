@@ -16,16 +16,22 @@ export type ManifestZone = {
     rrLen: number;
     micId: number;
     isRelease: boolean;
-    loopMode: 'none' | 'forward' | 'pingpong';
-    loopStart: number;
-    loopEnd: number;
-    loopCrossfade: number;
+    loop: ManifestLoop;
     gainDb: number;
     attack: number;
     decay: number;
     sustain: number;
     release: number;
 };
+
+export type ManifestLoop =
+    | { mode: 'none' }
+    | {
+          mode: 'forward' | 'pingpong';
+          startFrame: number;
+          endFrame: number | 'sample-end';
+          crossfadeFrames: number;
+      };
 
 export type ManifestArticulation = {
     type: ArticulationType;
@@ -147,6 +153,16 @@ function parseZone(value: unknown, path: string): ManifestZone {
         throw new TypeError(`${path}.release must be a non-negative finite 32-bit float`);
     }
 
+    let loop: ManifestLoop = Object.freeze({ mode: 'none' });
+    if (value.loopMode !== 'none') {
+        loop = Object.freeze({
+            mode: value.loopMode,
+            startFrame: value.loopStart,
+            endFrame: hasExplicitLoopRange ? value.loopEnd : 'sample-end',
+            crossfadeFrames: value.loopCrossfade,
+        });
+    }
+
     return Object.freeze({
         file: value.file,
         rootNote: value.rootNote,
@@ -158,10 +174,7 @@ function parseZone(value: unknown, path: string): ManifestZone {
         rrLen: value.rrLen,
         micId: value.micId,
         isRelease: value.isRelease,
-        loopMode: value.loopMode,
-        loopStart: value.loopStart,
-        loopEnd: value.loopEnd,
-        loopCrossfade: value.loopCrossfade,
+        loop,
         gainDb: value.gainDb,
         attack: value.attack,
         decay: value.decay,
