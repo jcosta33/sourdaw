@@ -741,6 +741,14 @@ fn levain_process_does_not_allocate_with_notes_held() {
     );
     instance.build_zone_map(1, 1);
 
+    // Drive the macro-mapped Tone / Attack / Release slots off their centre
+    // positions. Each is the identity at 0.5 — Tone takes its tilt section out
+    // of the path entirely — so a guard run at defaults would never execute
+    // them.
+    instance.set_param("tone", 0.85);
+    instance.set_param("attack", 0.2);
+    instance.set_param("release", 0.9);
+
     instance.note_on(60, 100);
     instance.note_on(64, 90);
 
