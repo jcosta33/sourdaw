@@ -103,7 +103,12 @@ class ScoringProcessor extends AudioWorkletProcessor {
         const input = inputs[0];
         const output = outputs[0];
 
-        if (!this._ready || this._faulted) {
+        // Bypassed, the tuner does nothing: no analysis, no telemetry, and the
+        // dry signal reaches the output unchanged (the sibling shape — see
+        // proofChamberProcessor). The detector has no audible state to protect,
+        // so unlike Knead there is nothing to keep warm; the readout re-converges
+        // within one analysis window after un-bypassing.
+        if (!this._ready || this._bypassed || this._faulted) {
             if (input && output) {
                 this._passthrough(input, output);
             }

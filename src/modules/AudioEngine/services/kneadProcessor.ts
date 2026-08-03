@@ -244,6 +244,29 @@ class KneadProcessor extends AudioWorkletProcessor {
             this._inRightView.get(mem, inputRightPtr, frames).set(input[1] ?? in0);
 
             const resultPtr = inst.process(frames);
+
+            // Bypass swaps the OUTPUT only — the engine above has already been
+            // handed this quantum's input and has advanced its state.
+            //
+            // Knead buffers a 2048-sample analysis frame (2047 samples of group
+            // delay) and resynthesises across it, and KneadInstance exposes no
+            // reset. Starving the engine for the duration of a bypass would
+            // leave its ring buffer holding pre-bypass audio, so un-bypassing
+            // would splice ~43 ms of stale signal back in; resetting is not
+            // available and would cost a whole detector warm-up anyway. Keeping
+            // it fed makes resuming continuous — the same block it would have
+            // emitted had bypass never been engaged — at the cost of the DSP
+            // running while inaudible.
+            //
+            // Latency is deliberately untouched: the ready handshake reported
+            // the group delay once and PDC still holds that offset, which is
+            // what every sibling with a reported latency does on bypass
+            // (proof-chamber here, gluten/crust in the Rust engines).
+            if (this._bypassed) {
+                this._passthrough(input, output);
+                return true;
+            }
+
             // Re-read the live buffer AFTER process(): a Rust-side allocation can
             // grow the linear memory mid-call and detach the pre-call `mem`, so the
             // output views must map the post-grow buffer (audit RT-7). Building them
