@@ -385,6 +385,24 @@ describe('AutomationLaneRow', () => {
         expect(adjustYZoom).toHaveBeenCalledWith('lane-1', 1);
     });
 
+    it('cancels the browser default when alt+wheel zooms the lane, and not otherwise', () => {
+        // Same defect as the piano roll's ctrl+wheel: React registers `wheel`
+        // at its root with `{ passive: true }`, so a `preventDefault()` inside
+        // a JSX `onWheel` prop cannot stop the browser acting on the same
+        // gesture. Plain wheel must stay cancellable so the lane still scrolls.
+        const { container } = render(<AutomationLaneRow {...defaultProps} />);
+        const laneDiv = container.firstChild as HTMLElement;
+
+        const altEvent = new WheelEvent('wheel', { deltaY: 10, altKey: true, bubbles: true, cancelable: true });
+        laneDiv.dispatchEvent(altEvent);
+        expect(altEvent.defaultPrevented).toBe(true);
+        expect(adjustYZoom).toHaveBeenCalledWith('lane-1', -1);
+
+        const plainEvent = new WheelEvent('wheel', { deltaY: 10, bubbles: true, cancelable: true });
+        laneDiv.dispatchEvent(plainEvent);
+        expect(plainEvent.defaultPrevented).toBe(false);
+    });
+
     it('renders the curve geometry the virgin-territory branch used to produce', () => {
         // Deleting the virgin-territory drawing branch had to be output-identical,
         // not assumed to be. Before the deletion this exact case was rendered

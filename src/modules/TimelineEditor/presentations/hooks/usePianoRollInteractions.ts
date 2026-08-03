@@ -8,7 +8,6 @@
  */
 import {
     type MouseEvent,
-    type WheelEvent,
     type KeyboardEvent,
     type Dispatch,
     type SetStateAction,
@@ -147,7 +146,6 @@ type InteractionHandlers = {
     handleMouseMove: (e: MouseEvent<HTMLCanvasElement>) => void;
     handleMouseUp: (e: MouseEvent<HTMLCanvasElement>) => void;
     handleDoubleClick: (e: MouseEvent<HTMLCanvasElement>) => void;
-    handleWheel: (e: WheelEvent<HTMLCanvasElement>) => void;
     handleKeyDown: (e: KeyboardEvent<HTMLCanvasElement>) => void;
     handleContextMenu: (e: MouseEvent<HTMLCanvasElement>) => void;
     ctxMenu: PianoRollMenu;
@@ -234,6 +232,38 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
             canvas.removeEventListener('gestureend', onGestureEnd);
         };
     }, [canvasRef, setZoom]);
+
+    // ── Wheel: ctrl/cmd zooms the editor ──────────────────────────────
+    // Registered imperatively and non-passively, mirroring `useTimelineGestures`
+    // on the arrangement canvas. React attaches `wheel` at its root container
+    // with `{ passive: true }`, so a `preventDefault()` inside a JSX `onWheel`
+    // prop is inert and the browser applies its own ctrl+wheel *page* zoom on
+    // top of the editor zoom.
+    //
+    // Only the modifier branch cancels the default. Plain and shift+wheel are
+    // left to the surrounding `overflow-auto` scroll container — the browser
+    // already scrolls it vertically and, with shift, horizontally, and its
+    // `onScroll` is what syncs `scrollX` back into the view.
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) {
+            return undefined;
+        }
+        const onWheel = (event: WheelEvent): void => {
+            if (event.ctrlKey || event.metaKey) {
+                event.preventDefault();
+                const isPinch = Math.abs(event.deltaY) < 10;
+                const sensitivity = isPinch ? 0.008 : 0.002;
+                setZoom((prev) => Math.max(0.25, Math.min(4, prev - event.deltaY * sensitivity)));
+                return;
+            }
+            setScrollX((prev) => Math.max(0, prev + event.deltaX));
+        };
+        canvas.addEventListener('wheel', onWheel, { passive: false });
+        return () => {
+            canvas.removeEventListener('wheel', onWheel);
+        };
+    }, [canvasRef, setZoom, setScrollX]);
 
     // ── Helpers ───────────────────────────────────────────────────────
     const snap = (value: number): number => {
@@ -1038,17 +1068,6 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         }
     };
 
-    const handleWheel = (event: WheelEvent<HTMLCanvasElement>): void => {
-        if (event.ctrlKey || event.metaKey) {
-            event.preventDefault();
-            const isPinch = Math.abs(event.deltaY) < 10;
-            const sensitivity = isPinch ? 0.008 : 0.002;
-            setZoom((prev) => Math.max(0.25, Math.min(4, prev - event.deltaY * sensitivity)));
-        } else {
-            setScrollX((prev) => Math.max(0, prev + event.deltaX));
-        }
-    };
-
     const handleKeyDown = (event: KeyboardEvent<HTMLCanvasElement>): void => {
         if ((event.key === 'Delete' || event.key === 'Backspace') && selectedNoteIds.size > 0) {
             // A9: group selected notes by owning clip for multi-clip delete
@@ -1456,7 +1475,6 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         handleMouseMove,
         handleMouseUp,
         handleDoubleClick,
-        handleWheel,
         handleKeyDown,
         handleContextMenu,
         ctxMenu,

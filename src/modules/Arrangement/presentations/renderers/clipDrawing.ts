@@ -8,6 +8,8 @@ import { getCachedAudioBuffer, getCachedAudioBufferWaveformPeaks } from '#/modul
 
 import { type TimelineRenderModel, type ClipRenderModel } from '../../models/TimelineRenderModel';
 
+import { CLIP_LABEL_FILL_STYLE, CLIP_LABEL_FONT, computeClipLabelLayout } from './clipLabel';
+
 export const drawClip = (
     ctx: CanvasRenderingContext2D,
     clip: ClipRenderModel,
@@ -152,9 +154,14 @@ export const drawClip = (
         ctx.stroke();
     }
 
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
-    ctx.font = '500 10px -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
-    ctx.fillText(clip.name, x + 6, trackY + 14, w - 12);
+    // Clip name. Geometry and typography come from the shared `clipLabel`
+    // module so the WebGPU backend can rasterise the identical label.
+    const labelLayout = computeClipLabelLayout({ clipXCssPx: x, clipWidthCssPx: w, trackYCssPx: trackY });
+    if (labelLayout.visible) {
+        ctx.fillStyle = CLIP_LABEL_FILL_STYLE;
+        ctx.font = CLIP_LABEL_FONT;
+        ctx.fillText(clip.name, labelLayout.xCssPx, labelLayout.baselineYCssPx, labelLayout.maxWidthCssPx);
+    }
 
     const typeLabel = (() => {
         if (clip.isLinkedInstance) {

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { type ClipRenderModel, type TimelineRenderModel } from '../../../models/TimelineRenderModel';
 import { drawClip } from '../clipDrawing';
+import { computeClipLabelLayout } from '../clipLabel';
 
 type GetCachedAudioBufferMock = (input: { bufferId: string }) => AudioBuffer | null;
 
@@ -154,6 +155,65 @@ describe('drawClip (Coordinate Conventions)', () => {
         const noteCall = mockCtx.roundRect.mock.calls.find((args: any[]) => args[0] === 200 && args[2] <= 100);
         expect(noteCall).toBeTruthy();
         expect(noteCall[0]).toBe(200);
+    });
+
+    it('draws the clip name at the shared label geometry, condensed to the clip width', () => {
+        const clip = {
+            id: 'c1',
+            startBeat: 8,
+            endBeat: 12,
+            name: 'Lead Vox',
+            type: 'audio',
+            midiNotes: [],
+            isSelected: false,
+            color: '#000',
+            trackId: 't1',
+            opacity: 1,
+            audioBufferId: null,
+            loopEnabled: false,
+            loopLength: null,
+            midiOffsetBeats: 0,
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+        } as unknown as ClipRenderModel;
+
+        // x = (8 - 0) * 25 = 200, w = (12 - 8) * 25 = 100, trackY = 48.
+        drawClip(mockCtx, clip, create_test_model(), 48, 60);
+
+        const layout = computeClipLabelLayout({ clipXCssPx: 200, clipWidthCssPx: 100, trackYCssPx: 48 });
+        expect(mockCtx.fillText).toHaveBeenCalledWith(
+            'Lead Vox',
+            layout.xCssPx,
+            layout.baselineYCssPx,
+            layout.maxWidthCssPx
+        );
+    });
+
+    it('draws no clip name once the clip is narrower than its own insets', () => {
+        const clip = {
+            id: 'c1',
+            startBeat: 8,
+            // 0.4 beats × 25 px/beat = 10 px wide, below the 12 px of inset.
+            endBeat: 8.4,
+            name: 'Lead Vox',
+            type: 'audio',
+            midiNotes: [],
+            isSelected: false,
+            color: '#000',
+            trackId: 't1',
+            opacity: 1,
+            audioBufferId: null,
+            loopEnabled: false,
+            loopLength: null,
+            midiOffsetBeats: 0,
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+        } as unknown as ClipRenderModel;
+
+        drawClip(mockCtx, clip, create_test_model(), 48, 60);
+
+        const nameCalls = mockCtx.fillText.mock.calls.filter((args: unknown[]) => args[0] === 'Lead Vox');
+        expect(nameCalls).toEqual([]);
     });
 
     it('does not stack-overflow when an inline-editing clip has very many notes', () => {
