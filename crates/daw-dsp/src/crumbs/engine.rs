@@ -217,14 +217,24 @@ impl CrumbsEngine {
 
     /// The one place the active sample is chosen.
     ///
-    /// Quick and Slice each hold the sample id they build trigger params from,
-    /// so a selection that only wrote `active_sample_id` would leave both modes
-    /// pointed at whatever was selected before. Drum is deliberately excluded —
-    /// a pad plays the sample assigned to it, not the selected one.
+    /// Every mode needs telling: Quick and Slice build trigger params from the
+    /// id they hold, Slice additionally needs the length to divide for its
+    /// default chop, and Drum needs the sample its unassigned pads fall back to
+    /// so that loading a sample gives a playable kit. A selection that only
+    /// wrote `active_sample_id` left all three pointed at the previous one.
+    ///
+    /// Runs on the audio thread (`CrumbsCommand::SetActiveSample`): a pool
+    /// lookup is a `Vec` index and the rest are field writes.
     fn select_sample(&mut self, sample_id: SampleId) {
         self.active_sample_id = Some(sample_id);
         self.quick.sample_id = sample_id;
-        self.slice.sample_id = sample_id;
+
+        let frame_count = match self.sample_pool.get(sample_id) {
+            Some(sample) => sample.frame_count() as u32,
+            None => 0,
+        };
+        self.slice.set_sample(sample_id, frame_count);
+        self.drum.set_default_sample(sample_id);
     }
 
     // ── Command Processing ─────────────────────────────────────────────

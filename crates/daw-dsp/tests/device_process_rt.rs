@@ -337,15 +337,15 @@ fn crumbs_note_on_does_not_allocate_in_any_mode() {
         .collect();
 
     let mut engine = CrumbsEngine::new(SAMPLE_RATE);
-    // All setup — pooling, pad assignment, marker detection — allocates by
-    // design and stays outside the guard.
+    // Pooling is the only setup: pads are left unassigned and no markers are
+    // set, so the guard covers the *default* kit and the computed default chop
+    // — the paths a freshly loaded sample actually takes. A choke group on pad
+    // 0 puts the choke pass inside the guard too; it is a field write, unlike
+    // `set_pad_sample`/`set_markers_from_onsets`, which allocate and belong to
+    // setup.
     let sample_id = engine.add_sample(Arc::new(SampleData::from_mono(pcm, SAMPLE_RATE as u32)));
     engine.set_active_sample(sample_id);
-    engine.drum_mode_mut().set_pad_sample(0, sample_id);
     engine.drum_mode_mut().set_pad_choke_group(0, 1);
-    engine
-        .slice_mode_mut()
-        .set_markers_from_onsets(&[0, 1_200, 2_400], frames as u32);
 
     // Each mode must actually reach a voice, or the guard covers three
     // early returns. Checked before the guarded region so the assertions
@@ -361,10 +361,6 @@ fn crumbs_note_on_does_not_allocate_in_any_mode() {
             SAMPLE_RATE as u32,
         )));
         probe.set_active_sample(probe_id);
-        probe.drum_mode_mut().set_pad_sample(0, probe_id);
-        probe
-            .slice_mode_mut()
-            .set_markers_from_onsets(&[0, 1_200, 2_400], frames as u32);
         probe.handle_command(CrumbsCommand::SetMode(mode));
         probe.handle_command(CrumbsCommand::NoteOn { note, velocity: 100 });
         let mut left = vec![0.0_f32; BLOCK];
@@ -380,7 +376,10 @@ fn crumbs_note_on_does_not_allocate_in_any_mode() {
     assert_no_alloc(|| {
         // More notes than the 128-voice pool holds, so voice stealing and the
         // choke pass are inside the guard as well as the mapping.
+        // `SetActiveSample` is in the loop because selecting a sample now
+        // looks the frame count up in the pool and feeds both mode defaults.
         for round in 0..200_u8 {
+            engine.handle_command(CrumbsCommand::SetActiveSample(sample_id));
             engine.handle_command(CrumbsCommand::SetMode(CrumbsMode::Quick));
             engine.handle_command(CrumbsCommand::NoteOn {
                 note: 48 + (round % 24),

@@ -13,7 +13,12 @@ use super::super::voice::VoiceTriggerParams;
 pub const MAX_PADS: usize = 128;
 
 /// Default base note for the first pad.
-const DEFAULT_BASE_NOTE: u8 = 36; // C2 (standard drum mapping)
+///
+/// 36 is where the General MIDI percussion map begins (35/36 are the two bass
+/// drums) and where Ableton's Drum Rack, Battery and the MPC pad banks all put
+/// their first visible pad. Every one of them maps one pad per semitone upward
+/// from there, which is what `note_to_pad` does.
+const DEFAULT_BASE_NOTE: u8 = 36;
 
 // ── Drum Mode ──────────────────────────────────────────────────────────
 
@@ -22,6 +27,14 @@ const DEFAULT_BASE_NOTE: u8 = 36; // C2 (standard drum mapping)
 pub struct DrumMode {
     pads: Vec<PadConfig>,
     base_note: u8,
+    /// Sample every unassigned pad falls back to — the loaded sample.
+    ///
+    /// A drum rack with nothing mapped is a *default kit*, not silence: load a
+    /// sample into a hardware or software drum sampler and the pads play it
+    /// immediately. Only an explicit `set_pad_sample` overrides this, so the
+    /// user's mapping always wins, and an empty pool still yields None rather
+    /// than a voice pointed at a sample that does not exist.
+    default_sample: Option<SampleId>,
 }
 
 impl DrumMode {
@@ -36,7 +49,16 @@ impl DrumMode {
         Self {
             pads,
             base_note: DEFAULT_BASE_NOTE,
+            default_sample: None,
         }
+    }
+
+    /// Point every unassigned pad at the loaded sample.
+    ///
+    /// Called when the engine's sample selection changes. Writes one `Option`,
+    /// so it is safe on the audio thread.
+    pub fn set_default_sample(&mut self, sample_id: SampleId) {
+        self.default_sample = Some(sample_id);
     }
 
     /// Get the pad index for a given MIDI note.
@@ -78,16 +100,15 @@ impl DrumMode {
 
     /// Build voice trigger parameters for a given MIDI note.
     ///
-    /// Returns None if the note doesn't map to a valid, loaded pad.
+    /// Returns None if the note maps to no pad, or if nothing is loaded for the
+    /// pad to play — an explicit assignment first, then the default kit.
     pub fn trigger_params(&self, note: u8, velocity: u8) -> Option<VoiceTriggerParams> {
         let pad_idx = self.note_to_pad(note)?;
         let pad = &self.pads[pad_idx];
 
-        // Don't trigger if no sample is assigned.
-        let sample_id = match pad.sample_id {
-            Some(id) => id,
-            None => return None,
-        };
+        // An explicit assignment wins; otherwise the pad plays the loaded
+        // sample. Only an empty pool leaves nothing to trigger.
+        let sample_id = pad.sample_id.or(self.default_sample)?;
 
         Some(VoiceTriggerParams {
             note,

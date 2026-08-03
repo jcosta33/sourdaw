@@ -56,6 +56,15 @@ fn peak(samples: &[f32]) -> f32 {
     samples.iter().fold(0.0_f32, |acc, s| acc.max(s.abs()))
 }
 
+/// Render the *second* block, so the measurement sits past `PadConfig`'s
+/// shipped 1 ms attack (48 frames at 48 kHz) and the envelope is flat at
+/// sustain. Used where the claim is about which frames a note maps to and
+/// the pad is deliberately left at its defaults.
+fn render_second_block(engine: &mut CrumbsEngine) -> Vec<f32> {
+    render(engine, BLOCK);
+    render(engine, BLOCK)
+}
+
 /// The single scale factor relating rendered output to source frames, taken
 /// from the largest-magnitude frame so the ratio is well conditioned.
 fn scale_factor(rendered: &[f32], expected_source: &[f32]) -> f32 {
@@ -101,39 +110,188 @@ fn note_on(engine: &mut CrumbsEngine, note: u8, velocity: u8) {
     engine.handle_command(CrumbsCommand::NoteOn { note, velocity });
 }
 
-// ── Notes that map to nothing ──────────────────────────────────────────
+// ── Defaults: both modes sound before anyone configures them ───────────
 
 #[test]
-fn a_drum_note_with_no_pad_assigned_does_not_sound() {
-    // No pad in the grid has a sample, so `DrumMode::trigger_params` returns
-    // None for every note. The engine used to ignore that and play the active
-    // sample chromatically, which made Drum mode an alias for Quick mode.
-    let mut engine = engine_with(fixture_pcm(4 * BLOCK), CrumbsMode::Drum);
+fn a_freshly_loaded_sample_sounds_in_drum_mode_with_no_pad_assignment() {
+    // Loading a sample and switching to Drum is the whole interaction. A drum
+    // rack with nothing mapped is a default kit, never silence.
+    let pcm = fixture_pcm(8 * BLOCK);
+    let mut engine = engine_with(pcm.clone(), CrumbsMode::Drum);
 
     note_on(&mut engine, 36, 100);
-    let out = render(&mut engine, BLOCK);
+    let out = render_second_block(&mut engine);
 
-    assert_eq!(
-        peak(&out),
-        0.0,
-        "a note on an unassigned pad produced audio, so the pad map was bypassed"
-    );
-    assert_eq!(engine.read_active_voice_count(), 0, "a voice was allocated for an unassigned pad");
+    // Pad 0's root note is its own note, so the default kit plays at unity.
+    assert_proportional_to(&out, &pcm[BLOCK..2 * BLOCK], "default kit pad at the base note");
 }
 
 #[test]
-fn a_slice_note_outside_the_marker_map_does_not_sound() {
-    // No markers have been set, so no note maps to a slice.
-    let mut engine = engine_with(fixture_pcm(4 * BLOCK), CrumbsMode::Slice);
+fn the_default_kit_covers_the_grid_upward_from_the_base_note() {
+    let pcm = fixture_pcm(8 * BLOCK);
+
+    let mut inside = engine_with(pcm.clone(), CrumbsMode::Drum);
+    note_on(&mut inside, 40, 100);
+    let fifth_pad = render_second_block(&mut inside);
+
+    let mut below = engine_with(pcm.clone(), CrumbsMode::Drum);
+    note_on(&mut below, 35, 100);
+    let under_the_grid = render(&mut below, BLOCK);
+
+    assert_proportional_to(
+        &fifth_pad,
+        &pcm[BLOCK..2 * BLOCK],
+        "default kit pad four notes up",
+    );
+    // The default must be a *grid*, not "every note sounds". Below the base
+    // note there is no pad, and `note_to_pad` still has to say so.
+    assert_eq!(
+        peak(&under_the_grid),
+        0.0,
+        "a note below the pad grid sounded, so the default map has no lower edge"
+    );
+}
+
+#[test]
+fn an_explicit_pad_assignment_wins_over_the_default_kit() {
+    let kit_pcm = fixture_pcm(8 * BLOCK);
+    let mut engine = engine_with(kit_pcm.clone(), CrumbsMode::Drum);
+    // A second sample, flat rather than irregular, so which one played is
+    // unambiguous.
+    let assigned = load(&mut engine, flat_pcm(8 * BLOCK, 0.5));
+    engine.drum_mode_mut().set_pad_sample(1, assigned);
+    engine.drum_mode_mut().get_pad_mut(1).expect("pad 1 exists").attack = 0.0;
+
+    note_on(&mut engine, 37, 100);
+    let assigned_pad = render_second_block(&mut engine);
+
+    let mut untouched = engine_with(kit_pcm.clone(), CrumbsMode::Drum);
+    note_on(&mut untouched, 37, 100);
+    let default_pad = render_second_block(&mut untouched);
+
+    assert_proportional_to(&assigned_pad, &flat_pcm(BLOCK, 0.5), "explicitly assigned pad");
+    assert_proportional_to(
+        &default_pad,
+        &kit_pcm[BLOCK..2 * BLOCK],
+        "same pad left at the default",
+    );
+}
+
+#[test]
+fn a_freshly_loaded_sample_sounds_in_slice_mode_with_no_markers() {
+    // A slicer handed a sample slices it. Waiting to be handed markers has the
+    // dependency backwards.
+    let pcm = fixture_pcm(32 * BLOCK);
+    let mut engine = engine_with(pcm.clone(), CrumbsMode::Slice);
 
     note_on(&mut engine, 36, 100);
     let out = render(&mut engine, BLOCK);
 
-    assert_eq!(
-        peak(&out),
-        0.0,
-        "a note with no slice behind it produced audio, so the marker map was bypassed"
+    assert_proportional_to(&out, &pcm[..BLOCK], "first default slice");
+}
+
+#[test]
+fn the_default_chop_maps_consecutive_notes_to_consecutive_sixteenths() {
+    // Sixteen equal parts, one per note upward from the base note. The count
+    // is written here rather than imported so this pins the convention instead
+    // of restating whatever the constant happens to say.
+    let pcm = fixture_pcm(32 * BLOCK);
+    let slice_len = pcm.len() / 16;
+
+    let mut second = engine_with(pcm.clone(), CrumbsMode::Slice);
+    note_on(&mut second, 37, 100);
+    let second_slice = render(&mut second, BLOCK);
+
+    let mut third = engine_with(pcm.clone(), CrumbsMode::Slice);
+    note_on(&mut third, 38, 100);
+    let third_slice = render(&mut third, BLOCK);
+
+    assert_proportional_to(
+        &second_slice,
+        &pcm[slice_len..slice_len + BLOCK],
+        "second default slice",
     );
+    assert_proportional_to(
+        &third_slice,
+        &pcm[2 * slice_len..2 * slice_len + BLOCK],
+        "third default slice",
+    );
+
+    let divergence = second_slice
+        .iter()
+        .zip(third_slice.iter())
+        .fold(0.0_f32, |acc, (a, b)| acc.max((a - b).abs()));
+    assert!(
+        divergence > 0.05,
+        "two default slices rendered the same audio (max divergence {divergence}), \
+         so the chop is not dividing the sample"
+    );
+}
+
+#[test]
+fn a_note_past_the_last_default_slice_does_not_sound() {
+    // Sixteen slices from note 36 means note 52 is past the end. Without this
+    // edge the "default chop" would be indistinguishable from "any note plays
+    // from somewhere".
+    let pcm = fixture_pcm(32 * BLOCK);
+    let mut engine = engine_with(pcm, CrumbsMode::Slice);
+
+    note_on(&mut engine, 52, 100);
+    let out = render(&mut engine, BLOCK);
+
+    assert_eq!(peak(&out), 0.0, "a note past the sixteenth slice still sounded");
+    // Silence alone is weak here: a slice computed past the end of the sample
+    // reads zeros and sounds identical to no slice at all, while still burning
+    // a voice. The upper bound is what stops the voice being allocated.
+    assert_eq!(
+        engine.read_active_voice_count(),
+        0,
+        "a voice was allocated for a note past the last default slice"
+    );
+}
+
+#[test]
+fn detected_markers_replace_the_default_chop() {
+    let pcm = fixture_pcm(32 * BLOCK);
+    let mut engine = engine_with(pcm.clone(), CrumbsMode::Slice);
+    // Three onsets, so note 37 is the marker at 700 rather than the default
+    // sixteenth boundary at len/16.
+    engine
+        .slice_mode_mut()
+        .set_markers_from_onsets(&[0, 700, 1_400], pcm.len() as u32);
+
+    note_on(&mut engine, 37, 100);
+    let out = render(&mut engine, BLOCK);
+
+    assert_proportional_to(&out, &pcm[700..700 + BLOCK], "slice from a detected onset");
+}
+
+// ── Notes that map to nothing ──────────────────────────────────────────
+
+#[test]
+fn a_drum_note_is_silent_when_nothing_is_loaded() {
+    // The default kit is the loaded sample. With an empty pool there is no
+    // sample to default to, and `DrumMode::trigger_params` must still return
+    // None rather than triggering a voice against a missing sample.
+    let mut engine = CrumbsEngine::new(SAMPLE_RATE);
+    engine.handle_command(CrumbsCommand::SetMode(CrumbsMode::Drum));
+
+    note_on(&mut engine, 36, 100);
+    let out = render(&mut engine, BLOCK);
+
+    assert_eq!(peak(&out), 0.0, "a note produced audio with an empty sample pool");
+    assert_eq!(engine.read_active_voice_count(), 0, "a voice was allocated with nothing to play");
+}
+
+#[test]
+fn a_slice_note_is_silent_when_nothing_is_loaded() {
+    let mut engine = CrumbsEngine::new(SAMPLE_RATE);
+    engine.handle_command(CrumbsCommand::SetMode(CrumbsMode::Slice));
+
+    note_on(&mut engine, 36, 100);
+    let out = render(&mut engine, BLOCK);
+
+    assert_eq!(peak(&out), 0.0, "a slice note produced audio with an empty sample pool");
 }
 
 #[test]
