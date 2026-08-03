@@ -79,15 +79,30 @@ describe('addDevice', () => {
         expect(mocks.updateTrack).not.toHaveBeenCalled();
     });
 
-    it('rejects a crust device with a user notification before any state change', () => {
+    // Crust is a shipped limiter with a real DSP engine, so it places like any
+    // other catalog effect. `addDevice` used to refuse it outright while the
+    // device browser still advertised it, which produced an error toast on add.
+    it('places a crust device and pushes its catalog parameters to the strip', () => {
+        mocks.getTrackState.mockReturnValue({
+            tracks: [{ id: 't1', kind: 'audio', devices: [], isLive: true, hasStrip: true }],
+        });
+        mocks.getPlatformPlugins.mockReturnValue([
+            {
+                id: 'crust',
+                name: 'Crust',
+                parameters: [
+                    { id: 'ceiling', value: -0.3 },
+                    { id: 'lookahead', value: 2 },
+                ],
+            },
+        ]);
+
         const result = addDevice('t1', 'crust');
 
-        expect(result).toBeNull();
-        expect(mocks.notifyUser).toHaveBeenCalledWith(
-            'PluginNotImplementedError: Crust is not fully implemented',
-            'error'
-        );
-        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(result).toMatchObject({ type: 'crust', name: 'Crust', bypassed: false });
+        expect(result?.parameterValues).toMatchObject({ ceiling: -0.3, lookahead: 2 });
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+        expect(mocks.updateTrack).toHaveBeenCalledWith('t1', expect.any(Function));
     });
 
     // `getPlatformPlugins()` is platform-filtered, so in a browser build a

@@ -1,4 +1,5 @@
 pub mod bacteria;
+pub mod crust;
 pub mod fermenter;
 pub mod gluten;
 pub mod grand_boule;

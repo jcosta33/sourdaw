@@ -1,1 +1,1 @@
-export { crustStore, defaultCrustState } from './crustStore';
+export { crustStore, defaultCrustState, updateCrustMeters, resetCrustMeters } from './crustStore';

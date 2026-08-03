@@ -76,6 +76,7 @@ import {
     registerCrdtStorageRuntime,
 } from '#/modules/CrdtDocument/useCases';
 import { initCrumbsDeviceStatePersistence, prepareCrumbsEngine } from '#/modules/Crumbs/useCases';
+import { updateCrustMeters, resetCrustMeters } from '#/modules/Crust/stores';
 import { getDawProjectHandlers } from '#/modules/DawInterchange/useCases';
 import { setFermenterTelemetry } from '#/modules/Fermenter/stores';
 import { setFermenterMappedParam, setFermenterDependencies } from '#/modules/Fermenter/useCases';
@@ -324,6 +325,26 @@ configureAudioDeviceRuntimeSink({
     },
     updateGlutenMeters,
     deleteGlutenMeters,
+    // Crust's meter store is a single slot rather than a per-device map, which
+    // is the shape its panel was built against: one loudness desk on screen at
+    // a time. The device id is therefore dropped here, and a second Crust
+    // instance would tick the same readout.
+    updateCrustMeters: (_deviceId, meters) => {
+        updateCrustMeters({
+            grDb: meters.grDb,
+            inputDb: meters.inputDb,
+            outputDb: meters.outputDb,
+            lufsIntegrated: meters.lufsIntegrated,
+            lufsShortTerm: meters.lufsShortTerm,
+            lufsMomentary: meters.lufsMomentary,
+            lra: meters.lra,
+            truepeakMax: meters.truepeakMax,
+            truepeakExceeded: meters.truepeakExceeded,
+        });
+    },
+    deleteCrustMeters: () => {
+        resetCrustMeters();
+    },
     updateBacteriaMeters: (deviceId, meters) => {
         updateBacteriaMeters(deviceId, meters.inputDb, meters.outputDb, meters.bandLevels, meters.latency);
     },

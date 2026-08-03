@@ -351,7 +351,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                         truepeakMax={truepeakMax}
                         truepeakExceeded={truepeakExceeded}
                         lufsTarget={lufsTarget}
-                        onResetTp={() => resetCrustTruePeakIndicator()}
+                        onResetTp={() => resetCrustTruePeakIndicator(deviceId)}
                     />
                 </div>
             </div>

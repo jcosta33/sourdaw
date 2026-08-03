@@ -11,7 +11,19 @@ const { mocks } = vi.hoisted(() => ({
         isFaustModule: vi.fn(),
         isFaustInstrumentModule: vi.fn(),
         loggerWarn: vi.fn(),
+        isUnrenderableCatalogDeviceType: vi.fn<(deviceType: string) => boolean>(() => false),
     },
+}));
+
+// `UNRENDERABLE_CATALOG_DEVICE_TYPES` is empty today: its one entry was `crust`,
+// and Crust now has an engine. The refusal path it feeds is still live product
+// behaviour — a future catalog device wired to no offline factory lands on it —
+// so these three tests keep exercising it against a stubbed table rather than
+// being deleted along with the entry. `offlineDeviceCoverage.spec.ts` is what
+// pins the real table's contents; this file pins what happens when it hits.
+vi.mock('../../repositories/deviceStrategy/unrenderableCatalogDeviceTypes', () => ({
+    isUnrenderableCatalogDeviceType: mocks.isUnrenderableCatalogDeviceType,
+    UNRENDERABLE_CATALOG_DEVICE_TYPES: {},
 }));
 
 vi.mock('#/infra/logger/appLogger', () => ({
@@ -38,6 +50,7 @@ describe('buildDeviceChain', () => {
         vi.clearAllMocks();
         mocks.isFaustModule.mockReturnValue(false);
         mocks.isFaustInstrumentModule.mockReturnValue(false);
+        mocks.isUnrenderableCatalogDeviceType.mockReturnValue(false);
     });
 
     it('should connect input to output when there are no active devices', async () => {
@@ -105,10 +118,11 @@ describe('buildDeviceChain', () => {
         const input = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
         const output = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
         mocks.isFaustModule.mockReturnValue(false);
+        mocks.isUnrenderableCatalogDeviceType.mockImplementation((type) => type === 'catalog-only');
         const unrenderable: Device = {
             id: 'd1',
-            name: 'Crust',
-            type: 'crust',
+            name: 'Catalog Only',
+            type: 'catalog-only',
             bypassed: false,
             parameterValues: {},
         };
@@ -118,7 +132,7 @@ describe('buildDeviceChain', () => {
         }).catch((error: unknown) => error);
 
         expect(failure).toMatchObject({ _tag: 'Export' });
-        expect((failure as Error).message).toContain('crust');
+        expect((failure as Error).message).toContain('catalog-only');
         expect((failure as Error).message).toContain('Lead');
         // The partially wired chain must not be handed back as a usable render.
         expect(input.connect).not.toHaveBeenCalledWith(output);
@@ -133,10 +147,11 @@ describe('buildDeviceChain', () => {
         const input = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
         const output = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
         mocks.isFaustModule.mockReturnValue(false);
+        mocks.isUnrenderableCatalogDeviceType.mockImplementation((type) => type === 'catalog-only');
         const unrenderable: Device = {
             id: 'd1',
-            name: 'Crust',
-            type: 'crust',
+            name: 'Catalog Only',
+            type: 'catalog-only',
             bypassed: false,
             parameterValues: {},
         };
@@ -151,16 +166,17 @@ describe('buildDeviceChain', () => {
 
     // The user has to find the device in the rack, and the chip there shows the
     // display name, not the raw type. Naming only the type asks them to
-    // translate a raw id like `crust` into the label they can see themselves.
+    // translate a raw id into the label they can see themselves.
     it('names the device the way the rack labels it, as well as by type', async () => {
         vi.stubGlobal('AudioWorkletNode', undefined);
         const input = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
         const output = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
         mocks.isFaustModule.mockReturnValue(false);
+        mocks.isUnrenderableCatalogDeviceType.mockImplementation((type) => type === 'catalog-only');
         const unrenderable: Device = {
             id: 'd1',
-            name: 'Crust',
-            type: 'crust',
+            name: 'Catalog Only',
+            type: 'catalog-only',
             bypassed: false,
             parameterValues: {},
         };
@@ -169,8 +185,8 @@ describe('buildDeviceChain', () => {
             trackName: 'Sampler',
         }).catch((error: unknown) => error);
 
-        expect((failure as Error).message).toContain('"Crust"');
-        expect((failure as Error).message).toContain('crust');
+        expect((failure as Error).message).toContain('"Catalog Only"');
+        expect((failure as Error).message).toContain('catalog-only');
     });
 
     // `addDevice` stores an unmatched string verbatim as the device type, so
@@ -212,10 +228,11 @@ describe('buildDeviceChain', () => {
         const output = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
         const onWarning = vi.fn();
         mocks.isFaustModule.mockReturnValue(false);
+        mocks.isUnrenderableCatalogDeviceType.mockImplementation((type) => type === 'catalog-only');
         const unrenderable: Device = {
             id: 'd1',
-            name: 'Crust',
-            type: 'crust',
+            name: 'Catalog Only',
+            type: 'catalog-only',
             bypassed: false,
             parameterValues: {},
         };
@@ -227,7 +244,7 @@ describe('buildDeviceChain', () => {
         });
 
         expect(entries).toEqual([]);
-        expect(onWarning.mock.calls[0]?.[0]).toContain('crust');
+        expect(onWarning.mock.calls[0]?.[0]).toContain('catalog-only');
         expect(input.connect).toHaveBeenCalledWith(output);
     });
 

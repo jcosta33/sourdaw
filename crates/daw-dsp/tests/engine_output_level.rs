@@ -341,6 +341,19 @@ fn gluten_level() -> Level {
     })
 }
 
+fn crust_level() -> Level {
+    use daw_dsp::crust::CrustInstance;
+    let mut i = CrustInstance::new(SAMPLE_RATE);
+    i.set_param("gain", 6.0);
+    i.set_param("ceiling", -1.0);
+    i.set_param("lookahead", 2.0);
+    i.set_param("true_peak", 1.0);
+    let (lp, rp) = (i.get_input_left_ptr(), i.get_input_right_ptr());
+    effect_level(&mut |o| unsafe { fill_input(lp, rp, BLOCK, o) }, &mut || {
+        i.process(BLOCK as u32)
+    })
+}
+
 fn proof_level() -> Level {
     use daw_dsp::proof::ProofInstance;
     let mut i = ProofInstance::new(SAMPLE_RATE);
@@ -421,9 +434,10 @@ fn levain_level() -> Level {
 
 #[test]
 fn device_engines_hold_their_output_level_at_the_engine_boundary() {
-    let families: [(&str, Level, f32, f32); 8] = [
+    let families: [(&str, Level, f32, f32); 9] = [
         ("bacteria", bacteria_level(), 0.58812, 0.25139),
         ("gluten", gluten_level(), 0.35206, 0.16268),
+        ("crust", crust_level(), 0.88986, 0.43822),
         ("proof", proof_level(), 0.81706, 0.35082),
         ("knead", knead_level(), 0.52538, 0.24745),
         ("fermenter", fermenter_level(), 1.46824, 0.39554),
