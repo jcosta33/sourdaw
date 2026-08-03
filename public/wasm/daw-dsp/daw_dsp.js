@@ -945,6 +945,16 @@ export class KneadInstance {
         return ret >>> 0;
     }
     /**
+     * Samples of group delay this instance imposes, for plugin delay
+     * compensation. Mirrors `GlutenInstance::get_latency_samples`; the worklet
+     * forwards it on the ready handshake so PDC can offset the track.
+     * @returns {number}
+     */
+    get_latency_samples() {
+        const ret = wasm.kneadinstance_get_latency_samples(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
      * Number of non-finite output samples scrubbed to silence since
      * construction (DSP-8). Non-zero means a poisoned block was caught at the
      * wasm output boundary and surfaced for health telemetry.
