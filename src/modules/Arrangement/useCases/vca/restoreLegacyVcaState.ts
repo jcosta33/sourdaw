@@ -1,3 +1,20 @@
+/**
+ * Conditional inverse patch for the four legacy VCA actions.
+ *
+ * **This survives `vcaGroupStore` becoming CRDT-backed, and it is not the
+ * leftover it looks like.** Nothing in this application undoes through
+ * Automerge: `executeAppAction` records the `inverseAction` its handler's
+ * `describe()` returns, and `undo()` replays that action forward. Every
+ * slot-backed store does the same — `handleSetAutomationLaneEnabled` sits on
+ * the `automation` slot and still emits its own explicit inverse. The document
+ * transaction is the atomic commit boundary for a write, not an undo log.
+ *
+ * What the expected/replacement pairs buy is the part a plain inverse cannot
+ * do: `revertAction` can revert a *non-latest* entry, so the inverse has to
+ * check that the fields it is about to overwrite still hold the values it was
+ * captured against, and report `conflict` instead of clobbering a later edit.
+ * See `handlers/vca/__tests__/legacyVcaActionHistory.spec.ts`.
+ */
 import { type AppAction } from '#/utils/handlerContract';
 
 import { getVcaGroupsState, setVcaGroupsState, type VcaGroup } from '../../stores/vcaGroupStore';
