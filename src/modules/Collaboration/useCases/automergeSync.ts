@@ -105,8 +105,12 @@ function touchesActionHistory({ docId, beforeHeads, syncedDoc }: TouchesActionHi
 export type AutomergeSyncHooks = {
     /**
      * Gate applied before a received project sync is written into the
-     * repository. Return `false` to drop the sync (e.g. the sender is a
-     * viewer with no edit capability). When omitted, all syncs are applied.
+     * repository. Return `false` to drop the sync. When omitted, all syncs
+     * are applied.
+     *
+     * This is a per-document routing gate, not a permission system: the only
+     * production caller uses it to keep `__branches__` host-authoritative.
+     * Peers otherwise have unconditional write access — see `generateInvite`.
      */
     canApplySync?: (peerId: PeerId, docId: string) => boolean;
     /** Called when an async persist after a received sync fails. */
@@ -224,7 +228,7 @@ export class AutomergeSync {
         // Edit boundary: a peer without edit capability (e.g. a viewer) must
         // not be able to mutate the project via the sync channel.
         if (this.hooks.canApplySync && !this.hooks.canApplySync(peerId, docId)) {
-            logger.warn('[AutomergeSync] Dropping sync from peer without edit capability', peerId, docId);
+            logger.warn('[AutomergeSync] Dropping sync rejected by canApplySync', peerId, docId);
             return;
         }
 
