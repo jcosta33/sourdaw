@@ -1,0 +1,24 @@
+src/modules/Levain/repositories/sampleLoader/sampleManifest.ts
+  s_ac9b259eab20ba::t_63cfb4cd959087 235
+  s_ac9b259eab20ba::t_f502bd00137df9 204-208,212,231,237-238
+src/modules/Levain/repositories/sampleLoader/__tests__/sampleManifest.spec.ts
+  s_ac9b259eab20ba::t_6dba66f692c61e 82-84,86-94
+  s_ac9b259eab20ba::t_6c42c6b6367abc 99,151-156,163,183
+  s_ac9b259eab20ba::t_63cfb4cd959087 85,123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "ad4bf45ef0466315d79d0e7aff24b39654dc0be1",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
