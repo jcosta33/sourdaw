@@ -14,6 +14,7 @@
         "test:run": "vitest run",
         "test:generate-usecase-specs": "node --experimental-strip-types scripts/generate-missing-use-case-specs.ts",
         "test:e2e": "playwright test",
+        "audio:deadline": "node --experimental-strip-types scripts/measureRenderDeadline.ts",
         "test:coverage": "vitest run --coverage",
         "typecheck": "tsc --noEmit -p tsconfig.app.json",
         "typecheck:test": "tsc --noEmit -p tsconfig.test.json",

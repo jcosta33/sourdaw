@@ -35,6 +35,8 @@ import { processLiveYeastTrackBlock, type LiveYeastIteration, type LiveYeastNote
 import { resolveDrumKit } from './resolveDrumKit';
 import { resolveDrumKitDef } from './resolveDrumKitDef';
 import { scheduleFrozenTrack } from './scheduleFrozenTrack';
+import { selectMidiClipsForSchedulerWindow } from './selectMidiClipsForSchedulerWindow';
+import { selectMidiNotesForLoopWindow } from './selectMidiNotesForLoopWindow';
 
 // Worklet synth device types that share a common noteOn/noteOff controls interface.
 // Each entry maps a device type to the controls property name on the device node
@@ -381,9 +383,7 @@ export async function scheduleMidiNotes(
             continue;
         }
 
-        const windowMidiClips = track.clips.filter(
-            (clip) => !clip.muted && clip.type === 'midi' && clip.endBeat > fromBeat && clip.startBeat < toBeat
-        );
+        const windowMidiClips = selectMidiClipsForSchedulerWindow({ clips: track.clips, fromBeat, toBeat });
         if (windowMidiClips.length === 0) {
             continue;
         }
@@ -675,13 +675,21 @@ export async function scheduleMidiNotes(
                 const absoluteOccurrenceIndex = sourceOccurrenceOffset + iter;
                 const iterOffset = iter * loopLen;
                 const yeastRouteId = `live-yeast:${track.id}:${clip.id}:${absoluteOccurrenceIndex}`;
-                let iterNotes: readonly LiveYeastNote[] = notes;
-                const iterNoteStartIndex = 0;
-                let iterNoteEndIndex = iterNotes.length;
+                let iterNotes: readonly LiveYeastNote[];
                 if (yeastDevice) {
                     iterNotes = liveYeastNotesByRoute.get(yeastRouteId) ?? [];
-                    iterNoteEndIndex = iterNotes.length;
-                } else if (!clip.loopEnabled) {
+                } else if (clip.loopEnabled) {
+                    iterNotes = selectMidiNotesForLoopWindow({
+                        notes,
+                        iterationStartBeat: clip.startBeat + iterOffset,
+                        loopLengthBeats: loopLen,
+                        midiOffsetBeats: clipMidiOffset,
+                        fromBeat,
+                        toBeat,
+                        lastScheduledBeat,
+                        grooveLookaroundBeats: MIDI_NOTE_GROOVE_LOOKAROUND_BEATS,
+                    });
+                } else {
                     iterNotes = selectMidiNotesForSchedulerWindow({
                         notes,
                         iterationStartBeat: clip.startBeat + iterOffset,
@@ -690,15 +698,13 @@ export async function scheduleMidiNotes(
                         toBeat,
                         lastScheduledBeat,
                     });
-                    iterNoteEndIndex = iterNotes.length;
                 }
                 const notesAreAbsolute = yeastDevice !== undefined;
 
-                for (let noteIndex = iterNoteStartIndex; noteIndex < iterNoteEndIndex; noteIndex++) {
+                for (const note of iterNotes) {
                     if (!isCurrent()) {
                         return;
                     }
-                    const note = iterNotes[noteIndex]!;
                     const isTrackScopedYeastNote = trackScopedYeastNoteIds.has(note.id);
                     if (!notesAreAbsolute && note.startBeat - clipMidiOffset >= loopLen) {
                         continue;

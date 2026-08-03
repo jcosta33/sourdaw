@@ -90,8 +90,21 @@ export const StatusBar = (): ReactElement => {
         <footer role="status" aria-label="Application status">
             <DawControlStrip className="h-6 justify-between rounded-none border-t border-black/50 px-3">
                 <div className="flex items-center gap-3">
+                    {/*
+                     * "UI CPU", not bare "CPU": this is a main-thread busyness
+                     * estimate from requestIdleCallback and frame overrun, and
+                     * it says nothing about audio-thread load. It sits beside
+                     * the engine dot, whose tooltip now carries real
+                     * audio-thread health (missed render deadlines), so an
+                     * unqualified "CPU" here invites reading one as the other.
+                     *
+                     * The word "CPU" stays in the label so the existing e2e
+                     * selectors (`getByText('CPU')`, substring by default) keep
+                     * matching; the qualifier is what carries the meaning.
+                     */}
                     <DawMetricCluster
-                        label="CPU"
+                        label="UI CPU"
+                        title="Main-thread load estimate (idle time and frame overrun). Not audio-thread load — see the engine dot for missed render deadlines."
                         meter={<DawMeterBar className="w-10" fillRef={cpuBarRef} />}
                         value={
                             <span
