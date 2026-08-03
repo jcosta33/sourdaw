@@ -316,6 +316,99 @@ fn bacteria_smudge_mode_does_not_allocate() {
         "bacteria renders identically on distortionMode 7 and 0 (max \
          divergence {divergence:.3e}), so the smudge transform never ran and \
          the allocation guard above covered nothing"
+/// `note_on` is not a render export, but it runs on the audio thread: the
+/// native host drains its command ring inside the process callback, and the
+/// worklet dispatches port messages on the render thread. Since a note now
+/// routes through `crumbs::modes` to build its trigger params, an allocation
+/// added to any of the three mapping functions would land there — a `Vec` for
+/// a marker search, a clone of a `PadConfig` — and `process` guards would not
+/// see it.
+#[test]
+fn crumbs_note_on_does_not_allocate_in_any_mode() {
+    use std::sync::Arc;
+
+    use daw_dsp::crumbs::engine::CrumbsEngine;
+    use daw_dsp::crumbs::sample::SampleData;
+    use daw_dsp::crumbs::types::{CrumbsCommand, CrumbsMode};
+
+    let frames = 4_800_usize;
+    let pcm: Vec<f32> = (0..frames)
+        .map(|i| (i as f32 / SAMPLE_RATE * 220.0 * std::f32::consts::TAU).sin() * 0.8)
+        .collect();
+
+    let mut engine = CrumbsEngine::new(SAMPLE_RATE);
+    // All setup — pooling, pad assignment, marker detection — allocates by
+    // design and stays outside the guard.
+    let sample_id = engine.add_sample(Arc::new(SampleData::from_mono(pcm, SAMPLE_RATE as u32)));
+    engine.set_active_sample(sample_id);
+    engine.drum_mode_mut().set_pad_sample(0, sample_id);
+    engine.drum_mode_mut().set_pad_choke_group(0, 1);
+    engine
+        .slice_mode_mut()
+        .set_markers_from_onsets(&[0, 1_200, 2_400], frames as u32);
+
+    // Each mode must actually reach a voice, or the guard covers three
+    // early returns. Checked before the guarded region so the assertions
+    // themselves cannot allocate inside it.
+    for (mode, note) in [
+        (CrumbsMode::Quick, 60_u8),
+        (CrumbsMode::Drum, 36),
+        (CrumbsMode::Slice, 37),
+    ] {
+        let mut probe = CrumbsEngine::new(SAMPLE_RATE);
+        let probe_id = probe.add_sample(Arc::new(SampleData::from_mono(
+            vec![0.5_f32; frames],
+            SAMPLE_RATE as u32,
+        )));
+        probe.set_active_sample(probe_id);
+        probe.drum_mode_mut().set_pad_sample(0, probe_id);
+        probe
+            .slice_mode_mut()
+            .set_markers_from_onsets(&[0, 1_200, 2_400], frames as u32);
+        probe.handle_command(CrumbsCommand::SetMode(mode));
+        probe.handle_command(CrumbsCommand::NoteOn { note, velocity: 100 });
+        let mut left = vec![0.0_f32; BLOCK];
+        let mut right = vec![0.0_f32; BLOCK];
+        probe.process_block(&mut left, &mut right);
+        assert!(
+            peak(&left) > 1e-6,
+            "{mode:?} produced silence for note {note}, so the guarded region \
+             below would cover a note that never triggered a voice"
+        );
+    }
+
+    assert_no_alloc(|| {
+        // More notes than the 128-voice pool holds, so voice stealing and the
+        // choke pass are inside the guard as well as the mapping.
+        for round in 0..200_u8 {
+            engine.handle_command(CrumbsCommand::SetMode(CrumbsMode::Quick));
+            engine.handle_command(CrumbsCommand::NoteOn {
+                note: 48 + (round % 24),
+                velocity: 100,
+            });
+            engine.handle_command(CrumbsCommand::SetMode(CrumbsMode::Drum));
+            engine.handle_command(CrumbsCommand::NoteOn {
+                note: 36,
+                velocity: 100,
+            });
+            engine.handle_command(CrumbsCommand::SetMode(CrumbsMode::Slice));
+            engine.handle_command(CrumbsCommand::NoteOn {
+                note: 37,
+                velocity: 100,
+            });
+        }
+    });
+
+    // The guarded loop must have left voices sounding. Without this, a
+    // `note_on` that returned early in every mode would be trivially
+    // allocation-free and the guard would cover nothing.
+    let mut left = vec![0.0_f32; BLOCK];
+    let mut right = vec![0.0_f32; BLOCK];
+    engine.process_block(&mut left, &mut right);
+    assert!(
+        peak(&left) > 1e-6,
+        "the guarded note_on loop left no voice sounding, so it never reached \
+         the voice path it claims to guard"
     );
 }
 
