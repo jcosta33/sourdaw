@@ -198,6 +198,8 @@ whether bytes reached the device — a renderer crash does not test `flush()` du
 
 ## Owner decisions taken — 2026-08-02
 
+Ratified by the owner directly.
+
 - **Browser storage is a cache, never the authority.** The authoritative copy is a file the user
   controls, written through the File System Access API and kept in sync; browser-resident storage is
   a fast local cache.
@@ -215,12 +217,25 @@ whether bytes reached the device — a renderer crash does not test `flush()` du
   not because installing fails.** Chrome's documented heuristics include installation, and our
   earlier claim to the contrary is withdrawn (see M1). Even a granted persistent bucket cannot be
   called safe, so the answer does not depend on whether the grant is obtainable.
-- **The project is a directory with a content-addressed document.** Settled by the standard the
-  campaign is held to rather than by preference: Git's object store, SQLite's WAL and
-  atomic-rename-and-fsync all make a new version unable to destroy the old one and then flip a small
-  pointer. Detecting damage without being able to repair it is not a shipped standard anywhere, and
-  a project stored as one opaque database record cannot be inspected, backed up or moved between
-  machines — which no DAW accepts.
+## Adopted on the standard, owner ratification outstanding
+
+Recorded separately from the above because the provenance is different, and conflating the two
+would misrepresent the record.
+
+- **The project is a directory with a content-addressed document.** Not selected by the owner. It
+  was put to them three times — twice as a choice between shapes and once as a ratification — and
+  declined each time, the second time by pointing back at the campaign's own standard and asking
+  whether any doubt remained. There was none, so it was adopted on that standard rather than left
+  open: Git's object store, SQLite's WAL and atomic-rename-and-fsync all make a new version unable
+  to destroy the old one and then flip a small pointer. Detecting damage without being able to
+  repair it is not a shipped standard anywhere, and a project stored as one opaque database record
+  cannot be inspected, backed up or moved between machines — which no DAW accepts. Gate M6 measured
+  the difference: 6 of 72 injected crashes torn under the original layout, 0 of 72 under this one.
+
+  **This is the one item in this ADR carrying an engineering judgement where an owner decision was
+  invited and not given.** It is reversible at no cost until the directory layout is built — nothing
+  depends on it yet. If the owner prefers a single database record, say so and this section is
+  struck; the measurements above stand either way.
 
 **Still open and not decided here:** whether audio belongs to a project or to a shared library;
 version policy and whether web users get a pinned-build escape hatch; how much budget the desktop
