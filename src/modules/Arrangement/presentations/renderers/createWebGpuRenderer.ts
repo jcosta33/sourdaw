@@ -4,6 +4,9 @@ import { resolveToken } from '#/utils/UI/resolveToken';
 import { type TimelineRenderer } from '../../models/RendererBackend';
 import { type TimelineRenderModel } from '../../models/TimelineRenderModel';
 
+import { CLIP_LABEL_BLOCK_HEIGHT_CSS_PX, computeClipLabelLayout } from './clipLabel';
+import { createClipLabelTextureCache } from './createClipLabelTextureCache';
+
 // ─── WGSL shaders ────────────────────────────────────────────────────────────
 // Each vertex carries: xy (NDC) + rgba (f32 × 4) = 6 floats = 24 bytes
 const WGSL_SHADER = /* wgsl */ `
@@ -29,6 +32,33 @@ fn fs_main(@location(0) col: vec4f) -> @location(0) vec4f {
 }
 `;
 
+// Textured-quad shader for clip name labels. Each vertex carries xy (NDC) + uv.
+const WGSL_TEXT_SHADER = /* wgsl */ `
+struct TextVertexOut {
+    @builtin(position) pos : vec4f,
+    @location(0)       uv  : vec2f,
+}
+
+@group(0) @binding(0) var label_sampler : sampler;
+@group(0) @binding(1) var label_texture : texture_2d<f32>;
+
+@vertex
+fn vs_text(
+    @location(0) xy : vec2f,
+    @location(1) uv : vec2f,
+) -> TextVertexOut {
+    var out : TextVertexOut;
+    out.pos = vec4f(xy, 0.0, 1.0);
+    out.uv = uv;
+    return out;
+}
+
+@fragment
+fn fs_text(@location(0) uv: vec2f) -> @location(0) vec4f {
+    return textureSample(label_texture, label_sampler, uv);
+}
+`;
+
 // Floats per vertex: xy (2) + rgba (4) = 6
 const FLOATS_PER_VERTEX = 6;
 // 2 triangles per rect = 6 vertices
@@ -36,6 +66,12 @@ const VERTICES_PER_RECT = 6;
 const FLOATS_PER_RECT = VERTICES_PER_RECT * FLOATS_PER_VERTEX;
 // Upper bound: many tracks × many clips + track rows + playhead + bar lines, now + waveform rects
 const MAX_RECTS = 32768;
+
+// Floats per text vertex: xy (2) + uv (2) = 4
+const FLOATS_PER_TEXT_VERTEX = 4;
+const FLOATS_PER_TEXT_QUAD = VERTICES_PER_RECT * FLOATS_PER_TEXT_VERTEX;
+// One quad per visible clip label.
+const MAX_LABELS = 512;
 
 // ─── Colour helpers ───────────────────────────────────────────────────────────
 /** Parse hex (#rrggbb / #rgb) OR oklch(L C H) into [r, g, b, a] with values in 0..1 */
@@ -185,6 +221,38 @@ function pushRect(
     return offset + FLOATS_PER_RECT;
 }
 
+/**
+ * Push a screen-space textured quad (xy + uv per vertex) covering the whole
+ * source texture. Winding matches `pushRect` so both pipelines agree.
+ */
+function pushTexturedQuad(
+    buf: Float32Array,
+    offset: number,
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    w: number,
+    h: number
+): number {
+    const nx1 = (x1 / w) * 2 - 1;
+    const nx2 = (x2 / w) * 2 - 1;
+    const ny1 = 1 - (y1 / h) * 2;
+    const ny2 = 1 - (y2 / h) * 2;
+
+    // prettier-ignore
+    const verts: number[] = [
+        nx1, ny1, 0, 0,
+        nx2, ny1, 1, 0,
+        nx1, ny2, 0, 1,
+        nx2, ny1, 1, 0,
+        nx2, ny2, 1, 1,
+        nx1, ny2, 0, 1,
+    ];
+    buf.set(verts, offset);
+    return offset + FLOATS_PER_TEXT_QUAD;
+}
+
 // ─── Main factory ─────────────────────────────────────────────────────────────
 export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<TimelineRenderer | null> {
     if (!navigator.gpu) {
@@ -248,12 +316,62 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
             primitive: { topology: 'triangle-list' },
         });
 
+        // ─── Clip label (text) pipeline ───────────────────────────────────
+        // WebGPU draws no text of its own; labels are rasterised to an
+        // OffscreenCanvas 2D context, uploaded as textures and composited here
+        // as one quad each. Alpha is premultiplied by the upload, so the source
+        // factor is `one` rather than `src-alpha`.
+        const textShaderModule = device.createShaderModule({ code: WGSL_TEXT_SHADER });
+        const textPipeline = device.createRenderPipeline({
+            layout: 'auto',
+            vertex: {
+                module: textShaderModule,
+                entryPoint: 'vs_text',
+                buffers: [
+                    {
+                        arrayStride: FLOATS_PER_TEXT_VERTEX * 4,
+                        attributes: [
+                            { shaderLocation: 0, offset: 0, format: 'float32x2' }, // xy
+                            { shaderLocation: 1, offset: 2 * 4, format: 'float32x2' }, // uv
+                        ],
+                    },
+                ],
+            },
+            fragment: {
+                module: textShaderModule,
+                entryPoint: 'fs_text',
+                targets: [
+                    {
+                        format,
+                        blend: {
+                            color: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+                            alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+                        },
+                    },
+                ],
+            },
+            primitive: { topology: 'triangle-list' },
+        });
+
+        const labelSampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear' });
+        const labelCache = createClipLabelTextureCache({
+            device,
+            bindGroupLayout: textPipeline.getBindGroupLayout(0),
+            sampler: labelSampler,
+        });
+
         // ─── Vertex buffer (CPU-mapped every frame) ───────────────────────
         const maxBytes = MAX_RECTS * FLOATS_PER_RECT * 4;
         const cpuBuf = new Float32Array(MAX_RECTS * FLOATS_PER_RECT);
 
         let gpuBuf = device.createBuffer({
             size: maxBytes,
+            usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+        });
+
+        const textCpuBuf = new Float32Array(MAX_LABELS * FLOATS_PER_TEXT_QUAD);
+        const textGpuBuf = device.createBuffer({
+            size: MAX_LABELS * FLOATS_PER_TEXT_QUAD * 4,
             usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
         });
 
@@ -279,6 +397,46 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
 
             let offset = 0;
             let rectCount = 0;
+
+            // Clip name labels, collected during the clip pass and composited
+            // after every rect so they sit on top of the clip body.
+            let textOffset = 0;
+            const labelBindGroups: GPUBindGroup[] = [];
+
+            function addClipLabel(text: string, clipX: number, clipRight: number, trackTop: number): void {
+                if (labelBindGroups.length >= MAX_LABELS) {
+                    return;
+                }
+                // The shared layout works in CSS px; the render loop works in
+                // device px, so divide out the dpr on the way in.
+                const layout = computeClipLabelLayout({
+                    clipXCssPx: clipX / dpr,
+                    clipWidthCssPx: (clipRight - clipX) / dpr,
+                    trackYCssPx: trackTop / dpr,
+                });
+                if (!layout.visible) {
+                    return;
+                }
+
+                const label = labelCache.acquire({ text, maxWidthCssPx: layout.maxWidthCssPx, dpr });
+                if (!label) {
+                    return;
+                }
+
+                const x1 = layout.xCssPx * dpr;
+                const y1 = layout.blockTopYCssPx * dpr;
+                textOffset = pushTexturedQuad(
+                    textCpuBuf,
+                    textOffset,
+                    x1,
+                    y1,
+                    x1 + layout.maxWidthCssPx * dpr,
+                    y1 + CLIP_LABEL_BLOCK_HEIGHT_CSS_PX * dpr,
+                    w,
+                    h
+                );
+                labelBindGroups.push(label.bindGroup);
+            }
 
             function addRect(x1: number, y1: number, x2: number, y2: number, color: string, alpha = 1): void {
                 if (rectCount >= MAX_RECTS) {
@@ -463,6 +621,10 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                             }
                         }
                     }
+
+                    // Clip name. Placed from the layout the Canvas2D renderer
+                    // also uses, so switching backends loses no information.
+                    addClipLabel(clip.name, cx1, cx2, trackY);
                 }
                 trackY += track.height * dpr;
             }
@@ -500,6 +662,9 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
 
             // Upload vertex data
             device.queue.writeBuffer(gpuBuf, 0, cpuBuf, 0, rectCount * FLOATS_PER_RECT);
+            if (labelBindGroups.length > 0) {
+                device.queue.writeBuffer(textGpuBuf, 0, textCpuBuf, 0, labelBindGroups.length * FLOATS_PER_TEXT_QUAD);
+            }
 
             // Record + submit
             const encoder = device.createCommandEncoder();
@@ -518,6 +683,17 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
             renderPass.setPipeline(pipeline);
             renderPass.setVertexBuffer(0, gpuBuf);
             renderPass.draw(rectCount * VERTICES_PER_RECT);
+
+            // Clip names last, so they sit above every clip body and overlay.
+            if (labelBindGroups.length > 0) {
+                renderPass.setPipeline(textPipeline);
+                renderPass.setVertexBuffer(0, textGpuBuf);
+                for (let index = 0; index < labelBindGroups.length; index++) {
+                    renderPass.setBindGroup(0, labelBindGroups[index]!);
+                    renderPass.draw(VERTICES_PER_RECT, 1, index * VERTICES_PER_RECT);
+                }
+            }
+
             renderPass.end();
             device.queue.submit([encoder.finish()]);
         }
@@ -549,6 +725,8 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
         }
 
         function dispose(): void {
+            labelCache.dispose();
+            textGpuBuf.destroy();
             gpuBuf.destroy();
             device.destroy();
         }

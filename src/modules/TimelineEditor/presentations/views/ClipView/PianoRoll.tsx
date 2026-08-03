@@ -184,7 +184,6 @@ export const PianoRoll = ({
         handleMouseMove,
         handleMouseUp,
         handleDoubleClick,
-        handleWheel,
         handleKeyDown,
         handleContextMenu,
         ctxMenu,
@@ -314,7 +313,6 @@ export const PianoRoll = ({
                         onMouseUp={handleMouseUp}
                         onMouseLeave={handleMouseUp}
                         onDoubleClick={handleDoubleClick}
-                        onWheel={handleWheel}
                         onKeyDown={handleKeyDown}
                         onContextMenu={handleContextMenu}
                         aria-label="Piano roll editor"

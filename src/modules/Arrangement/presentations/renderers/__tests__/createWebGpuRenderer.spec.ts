@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type TimelineRenderModel } from '../../../models/TimelineRenderModel';
+import { CLIP_LABEL_ASCENT_CSS_PX, CLIP_LABEL_INSET_CSS_PX } from '../clipLabel';
 import { computeMidiNoteBeatSpan } from '../createWebGpuRenderer';
 
 type GetCachedAudioBufferMock = (input: { bufferId: string }) => AudioBuffer | null;
@@ -94,14 +95,57 @@ const create_test_model = (): TimelineRenderModel => ({
 type WebGpuMockHandles = {
     draw: ReturnType<typeof vi.fn>;
     writeBuffer: ReturnType<typeof vi.fn>;
+    /** Every `fillText` call made on a rasterised label's OffscreenCanvas 2D context. */
+    labelFillText: ReturnType<typeof vi.fn>;
+    /** Every `createTexture` descriptor the renderer asked the device for. */
+    createTexture: ReturnType<typeof vi.fn>;
+    setBindGroup: ReturnType<typeof vi.fn>;
 };
+
+/**
+ * jsdom has no `OffscreenCanvas`. The label rasteriser is the conventional
+ * WebGPU text path (2D `fillText` → texture upload), so stubbing it lets the
+ * spec observe exactly which strings the renderer rasterises for which clips.
+ */
+function install_offscreen_canvas_stub(labelFillText: ReturnType<typeof vi.fn>): void {
+    class OffscreenCanvasStub {
+        width: number;
+        height: number;
+
+        constructor(width: number, height: number) {
+            this.width = width;
+            this.height = height;
+        }
+
+        getContext(contextId: string): unknown {
+            if (contextId !== '2d') {
+                return null;
+            }
+            return {
+                canvas: this,
+                font: '',
+                fillStyle: '',
+                textBaseline: '',
+                scale: vi.fn(),
+                clearRect: vi.fn(),
+                fillText: labelFillText,
+                measureText: vi.fn(() => ({ width: 10 })),
+            };
+        }
+    }
+    vi.stubGlobal('OffscreenCanvas', OffscreenCanvasStub);
+}
 
 function install_webgpu_mocks(canvas: HTMLCanvasElement): WebGpuMockHandles {
     const writeBuffer = vi.fn();
     const draw = vi.fn();
+    const setBindGroup = vi.fn();
+    const labelFillText = vi.fn();
+    const createTexture = vi.fn(() => ({ createView: vi.fn(() => ({})), destroy: vi.fn() }));
     const render_pass = {
         setPipeline: vi.fn(),
         setVertexBuffer: vi.fn(),
+        setBindGroup,
         draw,
         end: vi.fn(),
     };
@@ -113,14 +157,20 @@ function install_webgpu_mocks(canvas: HTMLCanvasElement): WebGpuMockHandles {
     };
     const device = {
         createShaderModule: vi.fn(() => ({})),
-        createRenderPipeline: vi.fn(() => ({})),
+        createRenderPipeline: vi.fn(() => ({
+            getBindGroupLayout: vi.fn(() => ({})),
+        })),
         createBuffer: vi.fn(({ size }: { size: number }) => ({
             size,
             destroy: vi.fn(),
         })),
+        createSampler: vi.fn(() => ({})),
+        createTexture,
+        createBindGroup: vi.fn(() => ({})),
         queue: {
             writeBuffer,
             submit: vi.fn(),
+            copyExternalImageToTexture: vi.fn(),
         },
         createCommandEncoder: vi.fn(() => ({
             beginRenderPass: vi.fn(() => render_pass),
@@ -153,8 +203,14 @@ function install_webgpu_mocks(canvas: HTMLCanvasElement): WebGpuMockHandles {
         COPY_DST: 2,
         VERTEX: 1,
     });
+    vi.stubGlobal('GPUTextureUsage', {
+        TEXTURE_BINDING: 4,
+        COPY_DST: 2,
+        RENDER_ATTACHMENT: 16,
+    });
+    install_offscreen_canvas_stub(labelFillText);
 
-    return { draw, writeBuffer };
+    return { draw, writeBuffer, labelFillText, createTexture, setBindGroup };
 }
 
 beforeEach(() => {
@@ -255,6 +311,81 @@ describe('computeMidiNoteBeatSpan (clip-relative MIDI coordinates)', () => {
 
         expect(span.relStartBeat).toBeGreaterThanOrEqual(4);
         expect(span.visible).toBe(false);
+    });
+});
+
+describe('createWebGpuRenderer clip name labels', () => {
+    it('rasterises each visible clip name at the shared Canvas2D label geometry', async () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 400;
+        canvas.height = 80;
+        const handles = install_webgpu_mocks(canvas);
+        const { createWebGpuRenderer } = await import('../createWebGpuRenderer');
+        const renderer = await createWebGpuRenderer(canvas);
+        if (!renderer) {
+            throw new Error('expected WebGPU renderer');
+        }
+
+        renderer.render(create_test_model());
+
+        // The clip spans beats 2..6 at 25 px/beat → 100 CSS px wide. Inside its
+        // own texture the glyph run starts at the origin and sits on the shared
+        // ascent; the timeline placement is carried by the quad, not by
+        // `fillText`. The squeeze budget is the same `width - 2 * inset` the
+        // Canvas2D renderer passes as `maxWidth`.
+        expect(handles.labelFillText).toHaveBeenCalledWith(
+            'Audio Clip',
+            0,
+            CLIP_LABEL_ASCENT_CSS_PX,
+            100 - CLIP_LABEL_INSET_CSS_PX * 2
+        );
+        expect(handles.setBindGroup).toHaveBeenCalled();
+    });
+
+    it('skips the label when the clip is too narrow to hold any text', async () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 400;
+        canvas.height = 80;
+        const handles = install_webgpu_mocks(canvas);
+        const { createWebGpuRenderer } = await import('../createWebGpuRenderer');
+        const renderer = await createWebGpuRenderer(canvas);
+        if (!renderer) {
+            throw new Error('expected WebGPU renderer');
+        }
+
+        const base = create_test_model();
+        // 0.4 beats × 25 px/beat = 10 CSS px < the 12 px of horizontal inset,
+        // so `maxWidth` is non-positive and Canvas2D's `fillText` draws nothing.
+        const narrow: TimelineRenderModel = {
+            ...base,
+            tracks: [{ ...base.tracks[0]!, clips: [{ ...base.tracks[0]!.clips[0]!, endBeat: 2.4 }] }],
+        };
+
+        renderer.render(narrow);
+
+        expect(handles.labelFillText).not.toHaveBeenCalled();
+    });
+
+    it('reuses one cached texture for an unchanged label and re-rasterises when zoom changes', async () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 400;
+        canvas.height = 80;
+        const handles = install_webgpu_mocks(canvas);
+        const { createWebGpuRenderer } = await import('../createWebGpuRenderer');
+        const renderer = await createWebGpuRenderer(canvas);
+        if (!renderer) {
+            throw new Error('expected WebGPU renderer');
+        }
+
+        const model = create_test_model();
+        renderer.render(model);
+        renderer.render(model);
+        const afterTwoIdenticalFrames = handles.createTexture.mock.calls.length;
+
+        renderer.render({ ...model, pixelsPerBeat: 50 });
+
+        expect(afterTwoIdenticalFrames).toBe(1);
+        expect(handles.createTexture.mock.calls.length).toBe(2);
     });
 });
 
