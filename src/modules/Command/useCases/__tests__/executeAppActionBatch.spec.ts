@@ -493,9 +493,7 @@ describe('executeAppActionBatch', () => {
             }),
         });
 
-        const result = await executeAppActionBatch([
-            { type: 'setEditingTool', payload: { tool: 'marquee' } },
-        ]);
+        const result = await executeAppActionBatch([{ type: 'setEditingTool', payload: { tool: 'marquee' } }]);
 
         expect(result).toEqual({
             status: 'ambiguous',
