@@ -1117,6 +1117,53 @@ mod tests {
         (samples.iter().map(|s| s * s).sum::<f32>() / samples.len() as f32).sqrt()
     }
 
+    /// The parameter id `BACTERIA_DESCRIPTOR` advertises for per-band gain.
+    ///
+    /// Mirrored here as a literal because a Rust crate cannot read the
+    /// TypeScript descriptor. `descriptorEngineParamWeld.spec.ts` is what keeps
+    /// the two in step mechanically; this constant is what makes the engine
+    /// side of the contract measurable.
+    const DESCRIPTOR_BAND_GAIN_ID: &str = "gain";
+
+    /// The descriptor declares per-band gain in dB over -24..+24 and marks it
+    /// automatable, so a lane drawn at -12 dB has to arrive as -12 dB of
+    /// attenuation — not merely as "some change".
+    ///
+    /// The descriptor advertised `bandGain`; the engine's arm is `gain`, and
+    /// `BandChain::set_param`'s catch-all hands an unknown name to every
+    /// sub-processor, each of which also ignores it. So the write returned
+    /// successfully, changed nothing, and the drawn curve still persisted into
+    /// the project file.
+    #[test]
+    fn descriptor_band_gain_id_attenuates_by_the_declared_db() {
+        let block = 8192usize;
+        let mut seed = 19u32;
+        let input_l = noise_block(block, &mut seed);
+        let input_r = noise_block(block, &mut seed);
+
+        let mut unity = BacteriaEngine::new(48_000.0);
+        let mut unity_l = input_l.clone();
+        let mut unity_r = input_r.clone();
+        unity.process_block(&mut unity_l, &mut unity_r);
+
+        let mut attenuated = BacteriaEngine::new(48_000.0);
+        attenuated.set_param(DESCRIPTOR_BAND_GAIN_ID, -12.0);
+        let mut att_l = input_l.clone();
+        let mut att_r = input_r.clone();
+        attenuated.process_block(&mut att_l, &mut att_r);
+
+        // Skip the 5 ms gain smoother (240 samples at 48 kHz) and the
+        // crossover warmup; measure where the target has been reached.
+        let tail = 2048..block;
+        let ratio = rms(&att_l[tail.clone()]) / rms(&unity_l[tail]);
+        let expected = 10.0_f32.powf(-12.0 / 20.0);
+
+        assert!(
+            (ratio - expected).abs() < 0.01,
+            "-12 dB on `{DESCRIPTOR_BAND_GAIN_ID}` must scale the band by {expected:.4}x, got {ratio:.4}x"
+        );
+    }
+
     /// bandCount must reach the crossover: with 2 bands engaged, the high band
     /// receives signal (band_levels[1] rises above zero for broadband input).
     #[test]
