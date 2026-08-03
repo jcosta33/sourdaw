@@ -237,23 +237,32 @@ fn smudge_does_not_change_the_bands_level() {
 }
 
 /// One `DistortionProcessor` serves both channels, so Smudge keeps one STFT
-/// per channel. A shared one would receive `L₀, R₀, L₁, R₁, …` and leak each
-/// channel into the other's spectrum.
+/// per channel. A shared one would receive `L₀, R₀, L₁, R₁, …` and analyse a
+/// 2048-point window of interleaved stereo.
+///
+/// Stated as independence rather than as leakage: what the left channel
+/// renders must not depend on what the right channel carries. Measuring a
+/// silent right channel for crosstalk does *not* catch a shared buffer —
+/// interleaving a signal with zeros mostly leaves the zeros alone, and that
+/// version of this test passed with `smudge[0]` hard-coded for both channels.
 #[test]
-fn smudge_keeps_the_channels_apart() {
-    let mut instance = configure(SMUDGE, HARD_DRIVE, 2.0);
-    let (left, right) = render_stereo(&mut instance, 0.0);
+fn smudge_processes_each_channel_independently() {
+    let mut matched = configure(SMUDGE, GENTLE_DRIVE, 2.0);
+    let (left_against_itself, _) = render_stereo(&mut matched, 1.0);
+
+    // Same left input, a right channel carrying something else entirely.
+    let mut differing = configure(SMUDGE, GENTLE_DRIVE, 2.0);
+    let (left_against_other, _) = render_stereo(&mut differing, -0.35);
 
     assert!(
-        peak(&left) > 1e-2,
-        "the driven channel fell silent, so this comparison proves nothing"
+        peak(&left_against_itself) > 1e-2,
+        "the left channel fell silent, so this comparison proves nothing"
     );
-    let leak = peak(&right);
+    let d = divergence(&left_against_itself, &left_against_other);
     assert!(
-        leak < peak(&left) * 0.01,
-        "the silent right channel carries {leak:.3e} against a left peak of \
-         {:.3e} — the two channels are sharing one overlap-add buffer",
-        peak(&left)
+        d < 1e-6,
+        "the left channel moved by {d:.3e} when only the *right* input \
+         changed — the two channels are sharing one overlap-add buffer"
     );
 }
 

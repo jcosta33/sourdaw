@@ -158,6 +158,20 @@ fn bacteria_process_does_not_allocate_with_codec_and_distortion_engaged() {
 
     // 32 blocks x 128 frames = 4096 samples, so the 256-sample codec frame
     // boundary was crossed 16 times per channel inside the guard above.
+    //
+    // The measured block is refilled, and the reference below runs to the same
+    // block index. Without that the two render *different* blocks of
+    // excitation and diverge whatever the codec setting is, which left the
+    // engagement assertion at the bottom of this test unable to fail.
+    const MEASURE_BLOCK: usize = GUARDED_BLOCKS;
+    unsafe {
+        fill_input(
+            instance.get_input_left_ptr(),
+            instance.get_input_right_ptr(),
+            BLOCK,
+            MEASURE_BLOCK * BLOCK,
+        );
+    }
     let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&out, "bacteria");
     assert!(
@@ -179,7 +193,7 @@ fn bacteria_process_does_not_allocate_with_codec_and_distortion_engaged() {
     without_codec.set_param("codecArtifact", 0.0);
     without_codec.set_param("mix", 1.0);
     let mut reference = Vec::new();
-    for block in 0..=(GUARDED_BLOCKS + 1) {
+    for block in 0..=MEASURE_BLOCK {
         unsafe {
             fill_input(
                 without_codec.get_input_left_ptr(),
@@ -251,6 +265,19 @@ fn bacteria_smudge_mode_does_not_allocate() {
         }
     });
 
+    // The measured block is refilled like every other one. Leaving the stale
+    // input in place would compare this block against a *different* block of
+    // the reference below, and the two would then diverge whatever mode ran —
+    // which is how the first draft of this test passed with smudge removed.
+    const MEASURE_BLOCK: usize = 8 + SMUDGE_BLOCKS;
+    unsafe {
+        fill_input(
+            instance.get_input_left_ptr(),
+            instance.get_input_right_ptr(),
+            BLOCK,
+            MEASURE_BLOCK * BLOCK,
+        );
+    }
     let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&out, "bacteria smudge");
     assert!(
@@ -269,7 +296,7 @@ fn bacteria_smudge_mode_does_not_allocate() {
     soft_clip.set_param("band0_drive", 40.0);
     soft_clip.set_param("mix", 1.0);
     let mut reference = Vec::new();
-    for block in 0..=(8 + SMUDGE_BLOCKS) {
+    for block in 0..=MEASURE_BLOCK {
         unsafe {
             fill_input(
                 soft_clip.get_input_left_ptr(),
