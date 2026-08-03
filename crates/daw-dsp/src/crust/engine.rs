@@ -505,8 +505,26 @@ impl CrustEngine {
         let mut output_peak = 0.0_f32;
 
         for frame in 0..frames {
-            let dry_left = left[frame];
-            let dry_right = right[frame];
+            // Trap a non-finite sample at the door.
+            //
+            // This is the last device in a mastering chain, so a NaN reaching it
+            // from anywhere upstream is on the master bus from here to the
+            // speakers. Nothing downstream removes one.
+            //
+            // The ceiling does not catch it on its own, in either direction. A
+            // NaN is invisible to the detector — `f32::max` and `>` both discard
+            // it, so the gain computer sees roughly zero, applies unity, and the
+            // delay line emits the NaN verbatim. An infinity is worse for being
+            // arithmetically reasonable: `required_gain` computes
+            // `ceiling / inf == 0.0`, and IEEE-754 makes `inf * 0.0` a NaN, so
+            // the limiter manufactures one out of a sample it was asked to pull
+            // down.
+            //
+            // Silenced rather than clamped to the ceiling: a non-finite sample
+            // is not signal, and emitting the ceiling would invent full-scale
+            // content where the upstream device produced garbage.
+            let dry_left = if left[frame].is_finite() { left[frame] } else { 0.0 };
+            let dry_right = if right[frame].is_finite() { right[frame] } else { 0.0 };
             input_peak = input_peak.max(dry_left.abs()).max(dry_right.abs());
 
             let (delayed_dry_left, delayed_dry_right) =
@@ -710,6 +728,39 @@ mod tests {
     /// The whole product claim: whatever goes in, nothing comes out above the
     /// ceiling. Asserted as a true-peak measurement, not a sample maximum,
     /// because the ceiling is advertised in dBTP.
+    /// A non-finite sample from upstream must not reach the output.
+    ///
+    /// The ceiling does not catch this by itself. A NaN is invisible to the
+    /// detector — `f32::max` and `>` both discard it — so the gain computer
+    /// applies unity and the delay line emits it verbatim. An infinity is
+    /// converted *into* a NaN by the limiter's own arithmetic:
+    /// `required_gain` is `ceiling / inf == 0.0`, and `inf * 0.0` is NaN.
+    ///
+    /// This is the last device before the master output, so a NaN that survives
+    /// here survives to the speakers.
+    #[test]
+    fn a_non_finite_sample_from_upstream_never_reaches_the_output() {
+        for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            let mut engine = CrustEngine::new(SAMPLE_RATE);
+            let mut left = vec![0.05_f32; 256];
+            let mut right = vec![0.05_f32; 256];
+            left[64] = bad;
+            right[64] = bad;
+
+            // Long enough to push the bad sample out past the look-ahead delay.
+            for _ in 0..8 {
+                engine.process_block(&mut left, &mut right);
+            }
+
+            let escaped = left.iter().chain(right.iter()).filter(|s| !s.is_finite()).count();
+            assert_eq!(
+                escaped, 0,
+                "{bad} reached the output {escaped} times — the master bus carries it \
+                 from here to the speakers, and nothing downstream removes it"
+            );
+        }
+    }
+
     #[test]
     fn output_never_exceeds_the_ceiling_on_material_that_clips_without_it() {
         let (left, right) = overdriven_programme(48_000);
