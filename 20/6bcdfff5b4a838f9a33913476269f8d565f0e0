@@ -1,0 +1,87 @@
+src/modules/Collaboration/useCases/__tests__/automergeSyncMessageSize.spec.ts
+  s_66d4924c65dcd2::t_8f021ebc9f6ac7 306-310,312
+  s_66d4924c65dcd2::t_09c1a5bd5217d2 4-10,14-15
+  s_66d4924c65dcd2::t_a0f58a4d9d361d 1-3,11-12,16-144,154,156-169,180-187,195-202,208-215,223-224,229,249,252,262,264-265,268-269,277,279,284,290,305,311,313-316,319-320,322-324
+  s_66d4924c65dcd2::t_fd39bd15a79d8d 170-179,188-194,203-206,216-222,225-228,231-248,250-251,253-261,263,266-267,270-276,278,280-283,285-286,289,294-304,317-318,321
+  s_66d4924c65dcd2::t_4dfa62daee39cf 13
+  s_66d4924c65dcd2::t_dadeb5a4bf8c64 148,155
+  s_66d4924c65dcd2::t_12c93a833f7712 230
+  s_66d4924c65dcd2::t_084269c6fe2c6e 287-288
+  s_66d4924c65dcd2::t_1be3e1285f5b23 145-147,149-153
+  s_66d4924c65dcd2::t_4aa908cf01d6a0 207
+  s_66d4924c65dcd2::t_7d0f90884497e1 291-293
+src/modules/Collaboration/useCases/automergeSync.ts
+  s_66d4924c65dcd2::t_e979831a6cadd6 34-40
+  s_66d4924c65dcd2::t_e602b11419e016 124-130
+  s_7b36278300a029::t_abab4f00004375 160-161,212,224-228,334,338,344,349-372,374,385-396,398-407,409-411,429
+src/modules/Collaboration/useCases/__tests__/automergeSync.spec.ts
+  s_66d4924c65dcd2::t_bb59501e28ef56 341,348-354,358,366-371,375,383-389
+  s_66d4924c65dcd2::t_5ce4f23162c39a 416
+  s_66d4924c65dcd2::t_98c2527831400e 429-433
+src/modules/Collaboration/repositories/__tests__/peerConnection.spec.ts
+  s_66d4924c65dcd2::t_98df424be531af 377,379-466
+  s_66d4924c65dcd2::t_d3cfc24b0e1d56 60-65
+  s_66d4924c65dcd2::t_ad56da1640306c 206
+  s_66d4924c65dcd2::t_58a0145424d6c8 320,327-328,331-333,336,358,365-376
+  s_66d4924c65dcd2::t_b56ec470fa7603 21,27,34-49
+  s_66d4924c65dcd2::t_baade2992a5fe5 161,167-168,180-182
+  s_66d4924c65dcd2::t_13c0883212ac38 352-354
+  s_66d4924c65dcd2::t_9b105076d4d1bc 20,50,378
+src/modules/Collaboration/useCases/collaboration/__tests__/sessionManagement.spec.ts
+  s_66d4924c65dcd2::t_437226c1631b00 117-119
+src/modules/Collaboration/models/SyncChannelFraming.ts
+  s_66d4924c65dcd2::t_ec54b732843f2e 117-120
+  s_66d4924c65dcd2::t_9f5ad429f9d8aa 1-86,88-116,121-152,154-268,270-271
+  s_66d4924c65dcd2::t_059b01599b542f 87
+  s_66d4924c65dcd2::t_506feab7f57e9f 153
+  s_66d4924c65dcd2::t_93136659e32e64 269
+src/modules/Collaboration/repositories/peerConnection.ts
+  s_66d4924c65dcd2::t_975ed2c8cc2571 1-2
+  s_66d4924c65dcd2::t_28537127dc4bd5 112-115
+  s_66d4924c65dcd2::t_bca8f090cb7a85 71,74-75,78-79,82,87-97
+  s_66d4924c65dcd2::t_4fafdae995e1a4 172-194,198-199,201-214,218-221,224,227-229,231-241,243-245
+  s_66d4924c65dcd2::t_01a73332eb932e 292-307
+  s_66d4924c65dcd2::t_31a2eb029ebdca 230
+  s_66d4924c65dcd2::t_96d5473d15f585 242
+  s_66d4924c65dcd2::t_624ec32383f1c7 260
+  s_66d4924c65dcd2::t_749066f1f18223 33-38,41-63,65-70,72-73,76-77,80-81,83-86,98
+  s_66d4924c65dcd2::t_7cf6de7f25fef3 4-10
+  s_66d4924c65dcd2::t_ccd31855f60b70 343-349
+  s_66d4924c65dcd2::t_734331be2ee795 390-397,405-410,412,414-416
+  s_66d4924c65dcd2::t_1a3bbfe076fdc5 316-325,327
+  s_66d4924c65dcd2::t_df0d0022c0e168 64
+  s_66d4924c65dcd2::t_96cbed57199a97 99
+src/modules/Collaboration/models/__tests__/SyncChannelFraming.spec.ts
+  s_66d4924c65dcd2::t_fe3200bcc3ea1b 1-162
+src/modules/Collaboration/useCases/assetTransfer.ts
+  s_66d4924c65dcd2::t_d74592db658362 145-147
+src/modules/Collaboration/useCases/collaboration/sessionManagement.ts
+  s_66d4924c65dcd2::t_7004d14ad81083 344-347
+  s_66d4924c65dcd2::t_a050f49ce55dab 288-293
+  s_66d4924c65dcd2::t_49655782afca53 532-539
+  s_66d4924c65dcd2::t_834b5a53bd40b8 515-522
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "206bcdfff5b4a838f9a33913476269f8d565f0e0",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_7b36278300a029": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a7bd445010d1c48fc",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
