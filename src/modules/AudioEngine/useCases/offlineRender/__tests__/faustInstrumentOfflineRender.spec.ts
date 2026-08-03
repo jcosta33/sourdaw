@@ -48,13 +48,20 @@ vi.mock('../../../repositories/faustDeviceFactory', () => ({
     createFaustDevice: mocks.createFaustDevice,
 }));
 
-vi.mock('#/modules/Synth/useCases', () => ({
-    getDrumKitDefByIndex: vi.fn(() => null),
-    getSynthParamsFromDevices: mocks.getSynthParamsFromDevices,
-    scheduleDrumKitNote: vi.fn(),
-    scheduleKitNote: vi.fn(),
-    scheduleNoteOffline: mocks.scheduleNoteOffline,
-}));
+// Partial: the offline path only calls these five, but the Arrangement barrel
+// scheduleTrackClips reads the device-parameter law from also reaches MIDI's
+// live-input wiring, which imports other members of this barrel at module load.
+vi.mock('#/modules/Synth/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Synth/useCases')>();
+    return {
+        ...actual,
+        getDrumKitDefByIndex: vi.fn(() => null),
+        getSynthParamsFromDevices: mocks.getSynthParamsFromDevices,
+        scheduleDrumKitNote: vi.fn(),
+        scheduleKitNote: vi.fn(),
+        scheduleNoteOffline: mocks.scheduleNoteOffline,
+    };
+});
 
 vi.mock('../../../services/deviceResolution', () => ({
     resolveDrumKit: vi.fn(() => null),
