@@ -13,9 +13,14 @@ sources:
 
 # 0014 — Project persistence architecture (proposed)
 
-**Status is `proposed`, pending product-owner ratification and the measurements in §Gates.** Nothing
-in this ADR may be built before those gates report. ADR 0013's cleanup is safe to build now and
-prejudges none of this.
+**Status is `proposed`.** The gates in §Gates have all reported or been formally deferred, and the
+two load-bearing decisions are settled — the durability model and the project shape, both recorded
+below with their provenance. What keeps this `proposed` rather than `accepted` is the three items
+still listed under *Still open*: whether audio belongs to a project or a shared library, version
+policy, and the desktop store's budget.
+
+Phases 1–3 are buildable on the settled parts. ADR 0013's cleanup was always safe and prejudges none
+of this.
 
 ## Context
 
