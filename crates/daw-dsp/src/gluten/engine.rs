@@ -524,6 +524,10 @@ impl GlutenEngine {
         };
     }
 
+    // TODO(gap): `sc_l`/`sc_r` are discarded by Vca, Opto, and Fet, so the whole detector
+    // section — SC HPF/LPF/EQ, Thrust, and external sidechain — is inert on three of four
+    // topologies, including the default. `stereo_link` and `detection_mode` are written and
+    // never read. Tracked: ~/.agents/artifacts/sourdaw/gaps campaign/SPEC-gluten-detector-and-linking.md
     #[inline]
     fn process_topology(
         &mut self,
