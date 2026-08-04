@@ -31,4 +31,22 @@ describe('revertAiActionGroup', () => {
         expect(revertActionGroup).toHaveBeenCalledWith('g1');
         expect(markGroupReverted).toHaveBeenCalledWith('g1');
     });
+
+    it('does not ask Command to revert or mark runtime execution receipts as undone', async () => {
+        const { revertActionGroup } = await import('#/modules/Command/useCases');
+        const { markGroupReverted } = await import('#/modules/AiRuntime/stores/aiActionHistoryStore');
+
+        await revertAiActionGroup({
+            id: 'a1',
+            prompt: 'play',
+            actions: [{ kind: 'appAction', actionType: 'setPlayback', label: 'Start playback' }],
+            groupId: 'g1',
+            timestamp: 0,
+            reverted: false,
+            executionKind: 'runtime',
+        });
+
+        expect(revertActionGroup).not.toHaveBeenCalled();
+        expect(markGroupReverted).not.toHaveBeenCalled();
+    });
 });

@@ -153,6 +153,7 @@ describe('sendChatMessage injectables', () => {
         mocks.getProjectContext.mockReturnValue({
             tempo: 120,
             timeSignature: [4, 4],
+            isPlaying: false,
             isLooping: false,
             loopStart: 0,
             loopEnd: 0,
@@ -191,6 +192,7 @@ describe('sendChatMessage injectables', () => {
         mocks.getProjectContext.mockReturnValue({
             tempo: 120,
             timeSignature: [4, 4],
+            isPlaying: false,
             isLooping: false,
             loopStart: 0,
             loopEnd: 0,
@@ -258,6 +260,7 @@ describe('sendChatMessage injectables', () => {
         mocks.getProjectContext.mockReturnValue({
             tempo: 120,
             timeSignature: [4, 4],
+            isPlaying: false,
             isLooping: false,
             loopStart: 0,
             loopEnd: 0,
@@ -810,6 +813,41 @@ describe('sendChatMessage injectables', () => {
         expect(committedUpdate?.[0]).toBe(assistant_message?.id);
         expect(committedUpdate?.[1].isStreaming).toBe(false);
         expect(committedUpdate?.[1].content).toMatch(/post-commit project follow-up warning.*do not retry/is);
+    });
+
+    it('reports a runtime prompt action as executed rather than committed', async () => {
+        const action = { type: 'setPlayback', payload: { playing: true } } as const;
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'prompt',
+        };
+        mocks.parsePromptToActions.mockResolvedValue({
+            actions: [action],
+            rawText: 'start playback',
+            requiresConfirmation: false,
+        });
+        mocks.executeAppActionBatch.mockResolvedValueOnce({
+            status: 'executed-with-warning',
+            actions: [{ action, label: 'Start playback' }],
+            warning: 'transport event unavailable',
+        });
+
+        await sendChatMessage('start playback');
+
+        expect(mocks.notifyAiChange).toHaveBeenCalledWith(
+            'Executed: start playback. Executed with follow-up warning: transport event unavailable',
+            ['setPlayback']
+        );
+        const assistantMessage = mocks.appendChatMessage.mock.calls[1]?.[0];
+        expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+            assistantMessage?.id,
+            expect.objectContaining({
+                error: 'Runtime follow-up warning: transport event unavailable',
+                content: expect.stringMatching(/runtime command executed.*do not retry/is),
+            })
+        );
     });
 
     it('does not report execution failure when AI history reporting throws after commit', async () => {

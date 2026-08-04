@@ -42,6 +42,7 @@ const master = createTrack({ id: 'master', name: 'Master', kind: 'master' });
 const projectContext: ProjectContext = {
     tempo: 120,
     timeSignature: [4, 4],
+    isPlaying: false,
     isLooping: true,
     loopStart: 4,
     loopEnd: 12,
@@ -76,6 +77,35 @@ function bridge(
 ) {
     return bridgeGroundedLlmToolCalls({ calls, prompt, context });
 }
+
+describe('setPlayback grounding', () => {
+    it('grounds explicit play, resume, and pause polarity', () => {
+        const play = bridge([{ name: 'setPlayback', arguments: { playing: true } }], 'play');
+        const resume = bridge([{ name: 'setPlayback', arguments: { playing: true } }], 'please resume playback');
+        const pause = bridge([{ name: 'setPlayback', arguments: { playing: false } }], 'pause playback', {
+            ...projectContext,
+            isPlaying: true,
+        });
+
+        expect(play.actions).toEqual([{ type: 'setPlayback', payload: { playing: true } }]);
+        expect(resume.actions).toEqual([{ type: 'setPlayback', payload: { playing: true } }]);
+        expect(pause.actions).toEqual([{ type: 'setPlayback', payload: { playing: false } }]);
+    });
+
+    it('rejects polarity mismatch, no-op state, toggles, ambiguity, named entities, negation, and cancellation', () => {
+        const rejected = [
+            bridge([{ name: 'setPlayback', arguments: { playing: false } }], 'play'),
+            bridge([{ name: 'setPlayback', arguments: { playing: false } }], 'pause playback'),
+            bridge([{ name: 'setPlayback', arguments: { playing: true } }], 'toggle playback'),
+            bridge([{ name: 'setPlayback', arguments: { playing: true } }], 'play/pause'),
+            bridge([{ name: 'setPlayback', arguments: { playing: true } }], 'play Guitar'),
+            bridge([{ name: 'setPlayback', arguments: { playing: true } }], 'do not play'),
+            bridge([{ name: 'setPlayback', arguments: { playing: true } }], 'play, actually cancel that command'),
+        ];
+
+        expect(rejected.every((result) => result.actions.length === 0)).toBe(true);
+    });
+});
 
 function createClipContext(): ProjectContext {
     const intro = {

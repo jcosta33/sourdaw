@@ -2,9 +2,13 @@ import { tool, type ToolSchema } from './Types';
 
 export const transportTools: readonly ToolSchema[] = [
     tool('setTempo', 'Set the project tempo in BPM. Range: 20–300.', { bpm: { type: 'number' } }, ['bpm']),
-    tool('togglePlayback', 'Start or pause playback.', {}),
+    tool(
+        'setPlayback',
+        'Set playback explicitly to playing or paused.',
+        { playing: { type: 'boolean', description: 'true=start playback, false=pause playback' } },
+        ['playing']
+    ),
     tool('stopPlayback', 'Stop playback and return playhead to start.', {}),
-    tool('toggleRecording', 'Start or stop recording.', {}),
     tool('toggleLoop', 'Toggle loop playback on/off.', {}),
     tool(
         'setLoopRegion',

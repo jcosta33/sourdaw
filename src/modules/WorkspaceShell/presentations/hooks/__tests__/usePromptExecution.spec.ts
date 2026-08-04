@@ -309,6 +309,28 @@ describe('usePromptExecution', () => {
         expect(result.current.isProcessing).toBe(false);
     });
 
+    it.each([undefined, 'transport follow-up unavailable'])(
+        'treats a runtime preset as successful without reporting a false no-op (warning: %s)',
+        async (executionWarning) => {
+            const action: AppAction = { type: 'setPlayback', payload: { playing: true } };
+            vi.mocked(resolvePresetActions).mockReturnValue([action]);
+            vi.mocked(executePlannedActions).mockResolvedValueOnce({
+                status: 'executed',
+                actions: [{ actionType: action.type, label: 'Start playback' }],
+                ...(executionWarning ? { executionWarning } : {}),
+            });
+            const { result } = renderHook(() => usePromptExecution());
+
+            await act(async () => {
+                await result.current.executePreset(fuzzy(preset()));
+            });
+
+            expect(vi.mocked(notifyAiChange)).not.toHaveBeenCalled();
+            expect(vi.mocked(logger.error)).not.toHaveBeenCalled();
+            expect(result.current.isProcessing).toBe(false);
+        }
+    );
+
     it('submits a prompt and executes it directly, or previews it first when confirmation is required', async () => {
         const stopAction: AppAction = { type: 'stopPlayback' };
         vi.mocked(parsePromptToActions).mockResolvedValue({
@@ -336,6 +358,7 @@ describe('usePromptExecution', () => {
         vi.mocked(getProjectContext).mockReturnValue({
             tempo: 120,
             timeSignature: [4, 4],
+            isPlaying: false,
             isLooping: false,
             loopStart: 0,
             loopEnd: 0,

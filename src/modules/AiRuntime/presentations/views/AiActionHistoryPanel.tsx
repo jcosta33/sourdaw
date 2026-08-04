@@ -25,6 +25,7 @@ type AiActionGroupView = {
     groupId: string;
     timestamp: number;
     reverted: boolean;
+    executionKind?: 'project' | 'runtime';
 };
 
 type ActionHistoryEntryView = {
@@ -157,6 +158,25 @@ export const AiActionHistoryPanel = (): ReactElement | null => {
 
 const AiGroupItem = ({ group }: { group: AiActionGroupView }): ReactElement => {
     const [expanded, setExpanded] = useState(false);
+    const isRuntimeExecution = group.executionKind === 'runtime';
+
+    let endSlot: ReactElement | null;
+    if (isRuntimeExecution) {
+        endSlot = <span className="text-[8px] italic text-muted-foreground">runtime</span>;
+    } else if (group.reverted) {
+        endSlot = <span className="text-[8px] italic text-muted-foreground">undone</span>;
+    } else {
+        endSlot = (
+            <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={() => void revertAiActionGroup(group)}
+                title="Undo all changes from this AI action"
+            >
+                <Undo2 className="size-3" />
+            </Button>
+        );
+    }
 
     return (
         <div className={`border-b border-border/50 last:border-0 ${group.reverted ? 'opacity-40' : ''}`}>
@@ -175,21 +195,8 @@ const AiGroupItem = ({ group }: { group: AiActionGroupView }): ReactElement => {
                     </div>
                 }
                 title={group.prompt}
-                subtitle={`${group.actions.length} change${group.actions.length !== 1 ? 's' : ''} · ${formatTimeAgo(group.timestamp)}`}
-                endSlot={
-                    !group.reverted ? (
-                        <Button
-                            variant="ghost"
-                            size="icon-xs"
-                            onClick={() => void revertAiActionGroup(group)}
-                            title="Undo all changes from this AI action"
-                        >
-                            <Undo2 className="size-3" />
-                        </Button>
-                    ) : (
-                        <span className="text-[8px] italic text-muted-foreground">undone</span>
-                    )
-                }
+                subtitle={`${group.actions.length} ${isRuntimeExecution ? 'runtime command' : 'change'}${group.actions.length !== 1 ? 's' : ''} · ${formatTimeAgo(group.timestamp)}`}
+                endSlot={endSlot}
             />
             {expanded ? (
                 <div className="px-3 pb-1.5 pl-8 space-y-0.5">

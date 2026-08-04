@@ -1492,6 +1492,14 @@ function validateBooleanIntentValue(
     return null;
 }
 
+function isExplicitSetPlaybackScope(actionScope: ActionPromptScope): boolean {
+    let commandText = actionScope.text.trim();
+    commandText = commandText.replace(/^(?:please\s+)?(?:can|could|would)\s+you(?:\s+please)?\s+/iu, '');
+    commandText = commandText.replace(/^please\s+/iu, '');
+    const normalized = normalizePromptText(commandText);
+    return ['play', 'start playback', 'resume playback', 'pause', 'pause playback'].includes(normalized);
+}
+
 type NumberValueRule = Extract<GroundingValueRule, { kind: 'number-if-present' }>;
 
 function containsPromptPhrase(actionScope: ActionPromptScope, phrases: readonly string[]): boolean {
@@ -2027,6 +2035,9 @@ function groundToolCall({
     });
     if (!actionScope) {
         return rejection(index, call.name, 'Provider action is not grounded in the user request');
+    }
+    if (call.name === 'setPlayback' && !isExplicitSetPlaybackScope(actionScope)) {
+        return rejection(index, call.name, 'Provider action is not grounded in an explicit playback request');
     }
     const groundedArguments = { ...call.arguments };
     for (const targetRule of groundingRules.targetRules) {

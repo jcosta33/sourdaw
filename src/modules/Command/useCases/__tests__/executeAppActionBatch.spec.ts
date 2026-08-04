@@ -13,6 +13,7 @@ import { executeAppActionBatch } from '../executeAppActionBatch';
 
 type SetEditingToolAction = Extract<AppAction, { type: 'setEditingTool' }>;
 type SetSnapValueAction = Extract<AppAction, { type: 'setSnapValue' }>;
+type SetPlaybackAction = Extract<AppAction, { type: 'setPlayback' }>;
 
 const mocks = vi.hoisted(() => ({
     logger: {
@@ -45,15 +46,18 @@ vi.mock('../macro/recording/recordAction', () => ({ recordAction: mocks.recordAc
 function createHandler<Action extends AppAction>(input: {
     execute: ActionHandler<Action>['execute'];
     describe?: ActionHandler<Action>['describe'];
+    executionKind?: ActionHandler<Action>['executionKind'];
     isNoop?: ActionHandler<Action>['isNoop'];
     requiresAbortCompensation?: boolean;
+    undoable?: boolean;
 }): ActionHandler<Action> {
     return {
         execute: input.execute,
         describe: input.describe ?? ((action) => ({ label: 'Batch action', inverseAction: action })),
+        executionKind: input.executionKind,
         isNoop: input.isNoop,
         requiresAbortCompensation: input.requiresAbortCompensation,
-        undoable: true,
+        undoable: input.undoable ?? true,
     };
 }
 
@@ -526,6 +530,147 @@ describe('executeAppActionBatch', () => {
             actions: [],
         });
         expect(execute).not.toHaveBeenCalled();
+    });
+
+    it('executes a singleton runtime handler outside project history even when atomic compensation is requested', async () => {
+        let authorized = true;
+        const shouldExecute = vi.fn(() => authorized);
+        const execute = vi.fn(() => {
+            authorized = false;
+            return { status: 'written' as const };
+        });
+        registerHandlerMap({
+            setPlayback: createHandler<SetPlaybackAction>({
+                execute,
+                describe: () => ({ label: 'Start playback' }),
+                executionKind: 'runtime',
+                undoable: false,
+            }),
+        });
+
+        const result = await executeAppActionBatch([{ type: 'setPlayback', payload: { playing: true } }], {
+            requireCompensation: true,
+            shouldExecute,
+            source: 'prompt',
+        });
+
+        expect(result).toEqual({
+            status: 'executed',
+            actions: [{ action: { type: 'setPlayback', payload: { playing: true } }, label: 'Start playback' }],
+        });
+        expect(shouldExecute).toHaveBeenCalledTimes(2);
+        expect(execute).toHaveBeenCalledOnce();
+        expect(mocks.setSemanticContext).not.toHaveBeenCalled();
+        expect(mocks.recordAction).not.toHaveBeenCalled();
+        expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
+        expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+    });
+
+    it('rejects a runtime action mixed with another action before either handler executes', async () => {
+        const executeRuntime = vi.fn();
+        const executeProject = vi.fn();
+        registerHandlerMap({
+            setPlayback: createHandler<SetPlaybackAction>({
+                execute: executeRuntime,
+                executionKind: 'runtime',
+                undoable: false,
+            }),
+            setEditingTool: createHandler<SetEditingToolAction>({ execute: executeProject }),
+        });
+
+        const result = await executeAppActionBatch([
+            { type: 'setPlayback', payload: { playing: true } },
+            { type: 'setEditingTool', payload: { tool: 'marquee' } },
+        ]);
+
+        expect(result).toEqual({
+            status: 'rejected',
+            reason: 'Runtime actions must execute as singleton batches',
+            actions: [],
+        });
+        expect(executeRuntime).not.toHaveBeenCalled();
+        expect(executeProject).not.toHaveBeenCalled();
+        expect(mocks.setSemanticContext).not.toHaveBeenCalled();
+    });
+
+    it('cancels a runtime no-op when authority changes after snapshot admission', async () => {
+        const execute = vi.fn();
+        const isNoop = vi.fn(() => true);
+        const shouldExecute = vi.fn().mockReturnValueOnce(true).mockReturnValue(false);
+        registerHandlerMap({
+            setPlayback: createHandler<SetPlaybackAction>({
+                execute,
+                executionKind: 'runtime',
+                isNoop,
+                undoable: false,
+            }),
+        });
+
+        const result = await executeAppActionBatch([{ type: 'setPlayback', payload: { playing: true } }], {
+            shouldExecute,
+        });
+
+        expect(result).toEqual({
+            status: 'cancelled',
+            reason: 'Batch execution authority was revoked',
+            actions: [],
+        });
+        expect(shouldExecute).toHaveBeenCalledTimes(2);
+        expect(isNoop).not.toHaveBeenCalled();
+        expect(execute).not.toHaveBeenCalled();
+    });
+
+    it('reports a runtime follow-up failure as executed truth without post-dispatch cancellation', async () => {
+        const reconcileRuntime = vi.fn().mockRejectedValue(new Error('transport unavailable'));
+        const afterCommit = vi.fn().mockRejectedValue(new Error('event unavailable'));
+        registerHandlerMap({
+            setPlayback: createHandler<SetPlaybackAction>({
+                execute: () => ({ status: 'written', afterCommit, afterAmbiguousCommit: reconcileRuntime }),
+                executionKind: 'runtime',
+                undoable: false,
+            }),
+        });
+
+        const result = await executeAppActionBatch([{ type: 'setPlayback', payload: { playing: true } }]);
+
+        expect(result).toEqual({
+            status: 'executed-with-warning',
+            actions: [{ action: { type: 'setPlayback', payload: { playing: true } }, label: 'Batch action' }],
+            warning:
+                'setPlayback follow-up effect failed: event unavailable; runtime reconciliation failed: transport unavailable',
+        });
+        expect(afterCommit).toHaveBeenCalledOnce();
+        expect(reconcileRuntime).toHaveBeenCalledOnce();
+        expect(mocks.recordAction).not.toHaveBeenCalled();
+        expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+    });
+
+    it('preserves the original runtime follow-up failure when reconciliation is unavailable', async () => {
+        const afterCommit = vi.fn().mockRejectedValue(new Error('event unavailable'));
+        const reconcileRuntime = vi.fn();
+        const executionResult = {
+            status: 'written' as const,
+            afterCommit,
+            afterAmbiguousCommit: reconcileRuntime,
+        };
+        Reflect.deleteProperty(executionResult, 'afterAmbiguousCommit');
+        registerHandlerMap({
+            setPlayback: createHandler<SetPlaybackAction>({
+                execute: () => executionResult,
+                executionKind: 'runtime',
+                undoable: false,
+            }),
+        });
+
+        const result = await executeAppActionBatch([{ type: 'setPlayback', payload: { playing: true } }]);
+
+        expect(result).toEqual({
+            status: 'executed-with-warning',
+            actions: [{ action: { type: 'setPlayback', payload: { playing: true } }, label: 'Batch action' }],
+            warning: 'setPlayback follow-up effect failed: event unavailable',
+        });
+        expect(afterCommit).toHaveBeenCalledOnce();
+        expect(reconcileRuntime).not.toHaveBeenCalled();
     });
 
     it('cancels without dispatch when authority is revoked during a snapshot wait', async () => {

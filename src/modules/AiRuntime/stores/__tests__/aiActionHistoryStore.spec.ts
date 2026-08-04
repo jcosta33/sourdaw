@@ -69,6 +69,7 @@ describe('aiActionHistoryStore', () => {
                         groupId: 'group-1',
                         timestamp: 123,
                         reverted: false,
+                        executionKind: 'runtime',
                         actions: [{ kind: 'appAction', actionType: 'track.create', label: 'Create track' }],
                     },
                 ],
@@ -219,6 +220,22 @@ describe('aiActionHistoryStore', () => {
             });
 
             markGroupReverted('missing');
+
+            expect(aiActionHistoryStore.value!.groups[0]!.reverted).toBe(false);
+        });
+
+        it('does not mark a runtime execution receipt as reverted', () => {
+            pushAiActionGroup({
+                id: 'g1',
+                prompt: 'play',
+                actions: [{ kind: 'appAction', actionType: 'setPlayback', label: 'Start playback' }],
+                groupId: 'g1',
+                timestamp: 1,
+                reverted: false,
+                executionKind: 'runtime',
+            });
+
+            markGroupReverted('g1');
 
             expect(aiActionHistoryStore.value!.groups[0]!.reverted).toBe(false);
         });

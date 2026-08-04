@@ -10,6 +10,7 @@ import { handleSetLoopRegion } from '../handlers/transport/handleSetLoopRegion';
 import { handleSetMasterGain } from '../handlers/transport/handleSetMasterGain';
 import { handleSetMetronomeEnabled } from '../handlers/transport/handleSetMetronomeEnabled';
 import { handleSetMetronomeVolume } from '../handlers/transport/handleSetMetronomeVolume';
+import { handleSetPlayback } from '../handlers/transport/handleSetPlayback';
 import { handleSetPreRollBars } from '../handlers/transport/handleSetPreRollBars';
 import { handleSetPunchIn } from '../handlers/transport/handleSetPunchIn';
 import { handleSetPunchOut } from '../handlers/transport/handleSetPunchOut';
@@ -36,6 +37,7 @@ export type TransportHandlersMap = {
     setLoopRegion: typeof handleSetLoopRegion;
     setMasterGain: typeof handleSetMasterGain;
     setMetronomeVolume: typeof handleSetMetronomeVolume;
+    setPlayback: typeof handleSetPlayback;
     setMetronomeEnabled: typeof handleSetMetronomeEnabled;
     setPreRollBars: typeof handleSetPreRollBars;
     setPunchIn: typeof handleSetPunchIn;
@@ -69,6 +71,7 @@ export function getTransportHandlers(): TransportHandlersMap {
         restoreMasterGain: handleRestoreMasterGain,
         setMasterGain: handleSetMasterGain,
         setMetronomeVolume: handleSetMetronomeVolume,
+        setPlayback: handleSetPlayback,
         setLoopRegion: handleSetLoopRegion,
         seekPlayhead: handleSeekPlayhead,
         setPunchIn: handleSetPunchIn,

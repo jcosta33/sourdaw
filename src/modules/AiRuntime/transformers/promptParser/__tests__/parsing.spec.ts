@@ -37,6 +37,7 @@ describe('promptParser parsing', () => {
             const context: ProjectContext = {
                 tempo: 120,
                 timeSignature: [4, 4],
+                isPlaying: false,
                 isLooping: false,
                 loopStart: 0,
                 loopEnd: 0,
@@ -111,6 +112,7 @@ describe('promptParser parsing', () => {
         const context: ProjectContext = {
             tempo: 120,
             timeSignature: [4, 4],
+            isPlaying: false,
             isLooping: false,
             loopStart: 0,
             loopEnd: 0,
@@ -209,6 +211,7 @@ describe('promptParser parsing', () => {
         const context: ProjectContext = {
             tempo: 120,
             timeSignature: [4, 4],
+            isPlaying: false,
             isLooping: false,
             loopStart: 0,
             loopEnd: 0,

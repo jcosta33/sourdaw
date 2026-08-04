@@ -29,6 +29,12 @@ type ExecutePlannedActionsResult =
           commitWarning?: string;
           reportingWarning?: string;
       }
+    | {
+          status: 'executed';
+          actions: ExecutedAction[];
+          executionWarning?: string;
+          reportingWarning?: string;
+      }
     | { status: 'no-op' }
     | { status: 'cancelled' }
     | { status: 'invalidated'; reason: string }
@@ -73,18 +79,22 @@ export async function executePlannedActions(input: ExecutePlannedActionsInput): 
         return { status: 'ambiguous', reason: batchResult.reason };
     }
 
-    if (batchResult.status !== 'committed' && batchResult.status !== 'committed-with-warning') {
+    const isCommitted = batchResult.status === 'committed' || batchResult.status === 'committed-with-warning';
+    const isExecuted = batchResult.status === 'executed' || batchResult.status === 'executed-with-warning';
+    if (!isCommitted && !isExecuted) {
         return { status: 'failed', reason: batchResult.reason };
     }
 
     const actions = batchResult.actions.map(({ action, label }) => ({ actionType: action.type, label }));
     const commitWarning = batchResult.status === 'committed-with-warning' ? batchResult.warning : undefined;
+    const executionWarning = batchResult.status === 'executed-with-warning' ? batchResult.warning : undefined;
     const reportingFailures: string[] = [];
 
     try {
         recordAiActionGroup({
             prompt: input.prompt,
             groupId: group.groupId,
+            executionKind: isExecuted ? 'runtime' : 'project',
             actions: actions.map((entry) => ({
                 kind: 'appAction',
                 actionType: entry.actionType,
@@ -97,9 +107,13 @@ export async function executePlannedActions(input: ExecutePlannedActionsInput): 
     }
 
     try {
-        const successSummary = commitWarning
-            ? `${input.successVerb ?? 'Executed'}: ${input.prompt}. Committed with follow-up warning: ${commitWarning}`
-            : `${input.successVerb ?? 'Executed'}: ${input.prompt}`;
+        let successSummary = `${input.successVerb ?? 'Executed'}: ${input.prompt}`;
+        if (commitWarning) {
+            successSummary = `${successSummary}. Committed with follow-up warning: ${commitWarning}`;
+        }
+        if (executionWarning) {
+            successSummary = `${successSummary}. Executed with follow-up warning: ${executionWarning}`;
+        }
         notifyAiChange(
             successSummary,
             actions.map((entry) => entry.actionType)
@@ -110,6 +124,14 @@ export async function executePlannedActions(input: ExecutePlannedActionsInput): 
     }
 
     const reportingWarning = reportingFailures.length > 0 ? reportingFailures.join('; ') : undefined;
+    if (isExecuted) {
+        return {
+            status: 'executed',
+            actions,
+            ...(executionWarning ? { executionWarning } : {}),
+            ...(reportingWarning ? { reportingWarning } : {}),
+        };
+    }
     return {
         status: 'committed',
         actions,

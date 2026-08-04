@@ -303,6 +303,16 @@ function bridgeToolCall({
         return { type: 'setTimeSignature', payload: { numerator: args.numerator, denominator: args.denominator } };
     }
 
+    if (call.name === 'setPlayback') {
+        if (!hasExactKeys(args, ['playing']) || typeof args.playing !== 'boolean') {
+            return rejection(index, call.name, 'Expected only a boolean playing value');
+        }
+        if (args.playing === context.isPlaying) {
+            return rejection(index, call.name, 'Requested playback state already matches the current transport state');
+        }
+        return { type: 'setPlayback', payload: { playing: args.playing } };
+    }
+
     if (call.name === 'setLoopEnabled') {
         if (
             !hasExactKeys(args, ['enabled']) ||
@@ -1370,6 +1380,9 @@ function getMutationKeys(action: RuntimeAction, context: ProjectContext): string
     if (action.type === 'setTempo' || action.type === 'setTimeSignature' || action.type === 'reorderTrack') {
         return [action.type];
     }
+    if (action.type === 'setPlayback') {
+        return ['transport:runtime'];
+    }
     if (action.type === 'setLoopEnabled') {
         return ['loop:enabled'];
     }
@@ -1721,6 +1734,15 @@ export function bridgeLlmToolCalls({ calls, context }: BridgeLlmToolCallsInput):
         };
     }
 
+    if (calls.length > 1 && calls.some((call) => call.name === 'setPlayback')) {
+        return {
+            actions: [],
+            rejections: [
+                rejection(0, '<batch>', 'Provider runtime playback command must be the only action in its batch'),
+            ],
+        };
+    }
+
     if (calls.some((call) => call.name === 'clearSolos') && calls.some((call) => call.name === 'soloTrack')) {
         return {
             actions: [],
@@ -1941,6 +1963,7 @@ export function buildLlmActionUserMessage({ prompt, context }: { prompt: string;
     const commandContext = {
         tempo: context.tempo,
         timeSignature: context.timeSignature,
+        isPlaying: context.isPlaying,
         isLooping: context.isLooping,
         loopStart: context.loopStart,
         loopEnd: context.loopEnd,

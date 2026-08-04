@@ -292,6 +292,11 @@ const guardedPayloadContractCases = [
         invalidPayloads: [{}, { enabled: 'yes' }, { enabled: true, extra: true }],
     }),
     guardedPayloadCase({
+        actionType: 'setPlayback',
+        validPayload: { playing: true },
+        invalidPayloads: [{}, { playing: 'yes' }, { playing: true, extra: true }],
+    }),
+    guardedPayloadCase({
         actionType: 'setLoopRegion',
         validPayload: { startBeat: 4, endBeat: 12 },
         invalidPayloads: [

@@ -3,10 +3,17 @@ import { type PresetAction } from './Types';
 export const transportPresets: readonly PresetAction[] = [
     {
         id: 'play',
-        label: 'Play / Pause',
-        keywords: ['play', 'start', 'playback', 'resume', 'pause'],
+        label: 'Play',
+        keywords: ['play', 'start playback', 'resume', 'resume playback'],
         category: 'Transport',
-        buildAction: () => ({ type: 'togglePlayback' }),
+        buildAction: () => ({ type: 'setPlayback', payload: { playing: true } }),
+    },
+    {
+        id: 'pause',
+        label: 'Pause',
+        keywords: ['pause', 'pause playback'],
+        category: 'Transport',
+        buildAction: () => ({ type: 'setPlayback', payload: { playing: false } }),
     },
     {
         id: 'stop',
@@ -14,13 +21,6 @@ export const transportPresets: readonly PresetAction[] = [
         keywords: ['stop', 'halt'],
         category: 'Transport',
         buildAction: () => ({ type: 'stopPlayback' }),
-    },
-    {
-        id: 'record',
-        label: 'Record',
-        keywords: ['record', 'recording', 'arm recording'],
-        category: 'Transport',
-        buildAction: () => ({ type: 'toggleRecording' }),
     },
     {
         id: 'loop',

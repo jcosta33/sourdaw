@@ -29,6 +29,7 @@ function createProjectState(): ProjectContext {
     return {
         tempo: 120,
         timeSignature: [4, 4],
+        isPlaying: false,
         isLooping: false,
         loopStart: 0,
         loopEnd: 0,

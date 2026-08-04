@@ -6,6 +6,7 @@ import { type ExecutableRuntimeAction } from '../models/ExecutableRuntimeAction'
 export type PendingActionExecution = {
     actionType: string;
     label: string;
+    executionKind: 'project' | 'runtime';
 };
 
 type PendingActionConfirmationBase = {

@@ -10,6 +10,7 @@ type RecordAiActionGroupInput = {
     prompt: string;
     groupId: string;
     actions: RecordAiActionEntryInput[];
+    executionKind: 'project' | 'runtime';
 };
 
 export function recordAiActionGroup(input: RecordAiActionGroupInput): void {
@@ -20,6 +21,7 @@ export function recordAiActionGroup(input: RecordAiActionGroupInput): void {
         groupId: input.groupId,
         timestamp: Date.now(),
         reverted: false,
+        executionKind: input.executionKind,
     };
 
     pushAiActionGroup(historyGroup);

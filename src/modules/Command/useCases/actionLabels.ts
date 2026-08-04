@@ -17,6 +17,7 @@ export const ACTION_LABELS: Record<string, string> = {
     reorderTrack: 'Reorder track',
     setTempo: 'Set tempo',
     togglePlayback: 'Play/pause',
+    setPlayback: 'Set playback',
     stopPlayback: 'Stop',
     toggleRecording: 'Record',
     setLoopRegion: 'Set loop',

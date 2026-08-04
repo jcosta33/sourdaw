@@ -426,6 +426,7 @@ export type AppAction =
     | { type: 'reorderTrack'; payload: { trackId: string; newIndex: number } }
     | { type: 'setTempo'; payload: { bpm: number } }
     | { type: 'setTimeSignature'; payload: { numerator: number; denominator: number } }
+    | { type: 'setPlayback'; payload: { playing: boolean } }
     | { type: 'togglePlayback'; payload?: undefined }
     | { type: 'stopPlayback'; payload?: undefined }
     | { type: 'toggleRecording'; payload?: undefined }
@@ -1057,6 +1058,8 @@ export type ActionHandler<Action extends AppAction = AppAction> = {
     isNoop?: (action: Action) => boolean;
     /** False when transaction abort fully rolls back the write and no pre-commit external effect can run. */
     requiresAbortCompensation?: boolean;
+    /** Runtime handlers execute outside Automerge and cannot join project-mutation batches. */
+    executionKind?: 'project' | 'runtime';
     undoable: boolean;
 };
 

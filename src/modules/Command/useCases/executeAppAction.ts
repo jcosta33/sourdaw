@@ -36,6 +36,57 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 throw error;
             }
 
+            if (handler.executionKind === 'runtime') {
+                if (options?.shouldExecute && !options.shouldExecute()) {
+                    return;
+                }
+
+                if (handler.isNoop?.(action)) {
+                    return;
+                }
+
+                let runtime_result: HandlerExecutionResult | void;
+                try {
+                    runtime_result = await handler.execute(action);
+                } catch (error) {
+                    logger.error(new Error(`Action handler rejected for action: ${action.type}`, { cause: error }));
+                    throw error;
+                }
+
+                if (runtime_result?.status === 'no-write') {
+                    return;
+                }
+                if (runtime_result?.status === 'conflict') {
+                    throw new AppActionConflictError(action.type);
+                }
+
+                let runtime_failure: unknown;
+                try {
+                    await runtime_result?.afterCommit?.();
+                } catch (effect_error) {
+                    const reconcile_runtime = runtime_result?.afterAmbiguousCommit;
+                    if (!reconcile_runtime) {
+                        runtime_failure = effect_error;
+                    } else {
+                        try {
+                            await reconcile_runtime();
+                        } catch (reconciliation_error) {
+                            runtime_failure = new AggregateError(
+                                [effect_error, reconciliation_error],
+                                'Runtime effect and reconciliation both failed'
+                            );
+                        }
+                    }
+                }
+
+                if (runtime_failure) {
+                    const committed_error = new AppActionCommittedError(action.type, runtime_failure);
+                    logger.error(committed_error);
+                    throw committed_error;
+                }
+                return;
+            }
+
             await waitForAutomergeSnapshotTransaction(options?.snapshotTransaction);
 
             if (options?.shouldExecute && !options.shouldExecute()) {
