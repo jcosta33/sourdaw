@@ -776,7 +776,8 @@ export const executableAppActionDescriptors = [
     {
         actionType: 'setTempo',
         risk: 'authority-sensitive',
-        description: 'Set the project tempo in BPM. Range: 20–300.',
+        description:
+            'Set the tempo in BPM. Range: 20–300. With a tempo map, edits the tempo event governing the playhead.',
         intentPhrases: ['set tempo', 'change tempo', 'tempo'],
         targetRules: [],
         valueRules: [{ argument: 'bpm', kind: 'number-if-present' }],

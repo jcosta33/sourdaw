@@ -3,11 +3,52 @@ import { describe, it, expect } from 'vitest';
 import {
     beatToSamples,
     createTempoChange,
+    getGoverningTempoChange,
     getTempoAtBeat,
     samplesToBeat,
     splitRangeAtTempoChanges,
     type TempoChange,
 } from '../TempoMap';
+
+describe('getGoverningTempoChange', () => {
+    const beatZeroMap: TempoChange[] = [
+        { id: 'tc-0', beat: 0, tempo: 90, curve: 'instant' },
+        { id: 'tc-4', beat: 4, tempo: 140, curve: 'instant' },
+    ];
+
+    it('returns the change at beat 0 when the playhead is at the project start', () => {
+        expect(getGoverningTempoChange(beatZeroMap, 0)?.id).toBe('tc-0');
+    });
+
+    it('returns the latest change at or before the beat', () => {
+        expect(getGoverningTempoChange(beatZeroMap, 3.99)?.id).toBe('tc-0');
+        expect(getGoverningTempoChange(beatZeroMap, 4)?.id).toBe('tc-4');
+        expect(getGoverningTempoChange(beatZeroMap, 400)?.id).toBe('tc-4');
+    });
+
+    it('returns the first change when the beat precedes every change', () => {
+        const lateMap: TempoChange[] = [{ id: 'tc-16', beat: 16, tempo: 100, curve: 'instant' }];
+
+        expect(getGoverningTempoChange(lateMap, 0)?.id).toBe('tc-16');
+    });
+
+    it('sorts before resolving so an unsorted map still picks the right change', () => {
+        const unsorted: TempoChange[] = [
+            { id: 'tc-8', beat: 8, tempo: 150, curve: 'instant' },
+            { id: 'tc-0', beat: 0, tempo: 90, curve: 'instant' },
+        ];
+
+        expect(getGoverningTempoChange(unsorted, 2)?.id).toBe('tc-0');
+    });
+
+    it('agrees with getTempoAtBeat about which change supplies the tempo', () => {
+        expect(getGoverningTempoChange(beatZeroMap, 2)?.tempo).toBe(getTempoAtBeat(beatZeroMap, 2, 240));
+    });
+
+    it('returns undefined for an empty map, where the default tempo still governs', () => {
+        expect(getGoverningTempoChange([], 0)).toBeUndefined();
+    });
+});
 
 describe('createTempoChange', () => {
     it('should clamp tempo into the supported range', () => {

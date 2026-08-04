@@ -3,7 +3,13 @@ import { type RefObject, useState, useRef, useEffect } from 'react';
 import { useStore } from '#/infra/store/useStore';
 import { executeAppAction } from '#/modules/Command/useCases';
 import { tempoMapStore } from '#/modules/Transport/stores';
-import { setTempo, addTempoChange, removeTempoChange, updateTempoChange } from '#/modules/Transport/useCases';
+import {
+    setTempo,
+    addTempoChange,
+    removeTempoChange,
+    updateTempoChange,
+    resolveTempoAtBeat,
+} from '#/modules/Transport/useCases';
 
 import { useTransportState } from './useTransportState';
 
@@ -29,6 +35,15 @@ const useTempoMapState = (): TempoMapViewState => {
 export type TempoEditorState = {
     transport: ReturnType<typeof useTransportState>;
     tempoMap: TempoMapViewState;
+
+    /**
+     * Tempo actually in force at the playhead — the tempo map's value when a map
+     * exists, the transport base tempo when it does not. This, not
+     * `transport.tempo`, is what the tempo field reads out and writes back to.
+     */
+    effectiveTempo: number;
+    /** True when a tempo-map event, not the base tempo, governs the playhead. */
+    tempoGovernedByMap: boolean;
 
     // Time signature editing
     editingTimeSig: boolean;
@@ -180,9 +195,18 @@ export const useTempoEditorState = (): TempoEditorState => {
         }
     };
 
+    const tempoGovernedByMap = tempoMap.changes.length > 0;
+    const effectiveTempo = resolveTempoAtBeat({
+        changes: tempoMap.changes,
+        beat: transport.playheadPosition,
+        defaultTempo: transport.tempo,
+    });
+
     return {
         transport,
         tempoMap,
+        effectiveTempo,
+        tempoGovernedByMap,
         editingTimeSig,
         numValue,
         denValue,

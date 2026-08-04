@@ -9,6 +9,8 @@ const mockState = {
         timeSignatureNumerator: 4,
         timeSignatureDenominator: 4,
     },
+    effectiveTempo: 120,
+    tempoGovernedByMap: false,
     setTempoValue: vi.fn(),
     mapOpen: false,
     setMapOpen: vi.fn(),
@@ -75,12 +77,43 @@ describe('TempoEditor', () => {
         mockState.newTempo = '';
         mockState.newCurve = 'instant';
         mockState.tempoMap = { changes: [] };
+        mockState.transport.tempo = 120;
+        mockState.effectiveTempo = 120;
+        mockState.tempoGovernedByMap = false;
     });
 
     it('should render current tempo and time signature', () => {
         render(<TempoEditor />);
         expect(screen.getByTestId('tempo-input')).toHaveValue(120);
         expect(screen.getByText('4/4')).toBeInTheDocument();
+        expect(screen.getByLabelText('Tempo BPM')).toBeInTheDocument();
+    });
+
+    it('should read out the map-governed tempo, not the inert base tempo', () => {
+        mockState.tempoMap = { changes: [{ id: 'tc-0', beat: 0, tempo: 90, curve: 'instant' }] };
+        mockState.transport.tempo = 120;
+        mockState.effectiveTempo = 90;
+        mockState.tempoGovernedByMap = true;
+
+        render(<TempoEditor />);
+
+        expect(screen.getByTestId('tempo-input')).toHaveValue(90);
+        expect(screen.getByLabelText('Tempo BPM at playhead (tempo map)')).toBeInTheDocument();
+        expect(screen.queryByLabelText('Tempo BPM')).toBeNull();
+        expect(
+            screen.getByText('Tempo at the playhead. Editing changes the tempo-map event that governs it.')
+        ).toBeInTheDocument();
+    });
+
+    it('should still commit edits through setTempoValue while the map governs', () => {
+        mockState.tempoMap = { changes: [{ id: 'tc-0', beat: 0, tempo: 90, curve: 'instant' }] };
+        mockState.effectiveTempo = 90;
+        mockState.tempoGovernedByMap = true;
+
+        render(<TempoEditor />);
+        fireEvent.change(screen.getByTestId('tempo-input'), { target: { value: '128' } });
+
+        expect(mockState.setTempoValue).toHaveBeenCalledWith(128);
     });
 
     it('should call handleTapTempo when TAP is clicked', () => {

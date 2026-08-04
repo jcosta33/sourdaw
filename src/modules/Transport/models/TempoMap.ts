@@ -64,6 +64,29 @@ export function getTempoAtBeat(changes: readonly TempoChange[], beat: number, de
     return getTempoAtBeatFromSorted(sortTempoChanges(changes), beat, defaultTempo);
 }
 
+/**
+ * The tempo change that supplies the tempo `getTempoAtBeat` reports at `beat` —
+ * i.e. the event a transport-tempo edit at that playhead position must rewrite.
+ *
+ * Mirrors `getTempoAtBeatFromSorted` exactly, including its fallback to the
+ * first change when the playhead sits before every change: `defaultTempo` is
+ * consulted only for an empty map, so with any non-empty map some change always
+ * governs. Returns `undefined` only when there is no map at all, which is the
+ * case where the transport's base tempo is still the governing value.
+ *
+ * For a `linear` change the reported tempo is interpolated toward the next
+ * change, so the governing event's own tempo is what an edit sets — the readout
+ * then re-interpolates from the new value.
+ */
+export function getGoverningTempoChange(changes: readonly TempoChange[], beat: number): TempoChange | undefined {
+    if (changes.length === 0) {
+        return undefined;
+    }
+
+    const sortedChanges = sortTempoChanges(changes);
+    return getActiveTempoChange(sortedChanges, beat) ?? sortedChanges[0];
+}
+
 function secondsAcrossSortedTempoRange(
     sortedChanges: readonly TempoChange[],
     fromBeat: number,

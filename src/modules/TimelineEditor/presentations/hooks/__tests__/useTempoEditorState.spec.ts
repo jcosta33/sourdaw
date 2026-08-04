@@ -65,6 +65,10 @@ const mockExecuteAppAction = vi.fn();
 const mockAddTempoChange = vi.fn();
 const mockRemoveTempoChange = vi.fn();
 const mockUpdateTempoChange = vi.fn();
+// Returns a value that matches neither the base tempo nor any fixture map
+// tempo, so `effectiveTempo` can only be right by routing through the resolver.
+const RESOLVED_TEMPO_SENTINEL = 77;
+const mockResolveTempoAtBeat = vi.fn(() => RESOLVED_TEMPO_SENTINEL);
 vi.mock('#/modules/Transport/useCases', () => ({
     setTempo: (...args: unknown[]): void => {
         mockSetTempo(...args);
@@ -77,6 +81,9 @@ vi.mock('#/modules/Transport/useCases', () => ({
     },
     updateTempoChange: (...args: unknown[]): void => {
         mockUpdateTempoChange(...args);
+    },
+    resolveTempoAtBeat: (...args: unknown[]): number => {
+        return mockResolveTempoAtBeat(...(args as []));
     },
     // useTransportState reads this as the `useStore` default; our `useStore`
     // mock ignores it and always resolves via store identity, but the real
@@ -95,6 +102,33 @@ describe('useTempoEditorState', () => {
         vi.clearAllMocks();
         mockTransportState = baseTransportState;
         mockTempoMapState = { changes: [] };
+    });
+
+    describe('effective tempo', () => {
+        it('resolves the readout from the tempo map at the playhead when a change sits at beat 0', () => {
+            mockTempoMapState = { changes: [{ id: 'tc-0', beat: 0, tempo: 90, curve: 'instant' }] };
+            mockTransportState = { ...baseTransportState, tempo: 120, playheadPosition: 6 };
+
+            const { result } = renderHook(() => useTempoEditorState());
+
+            expect(mockResolveTempoAtBeat).toHaveBeenCalledWith({
+                changes: mockTempoMapState.changes,
+                beat: 6,
+                defaultTempo: 120,
+            });
+            expect(result.current.effectiveTempo).toBe(RESOLVED_TEMPO_SENTINEL);
+            expect(result.current.tempoGovernedByMap).toBe(true);
+        });
+
+        it('reports the tempo as ungoverned when the map is empty', () => {
+            mockTempoMapState = { changes: [] };
+            mockTransportState = { ...baseTransportState, tempo: 120, playheadPosition: 0 };
+
+            const { result } = renderHook(() => useTempoEditorState());
+
+            expect(mockResolveTempoAtBeat).toHaveBeenCalledWith({ changes: [], beat: 0, defaultTempo: 120 });
+            expect(result.current.tempoGovernedByMap).toBe(false);
+        });
     });
 
     describe('time signature editing', () => {

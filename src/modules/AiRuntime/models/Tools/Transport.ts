@@ -1,7 +1,12 @@
 import { tool, type ToolSchema } from './Types';
 
 export const transportTools: readonly ToolSchema[] = [
-    tool('setTempo', 'Set the project tempo in BPM. Range: 20–300.', { bpm: { type: 'number' } }, ['bpm']),
+    tool(
+        'setTempo',
+        'Set the tempo in BPM. Range: 20–300. With a tempo map, edits the tempo event governing the playhead.',
+        { bpm: { type: 'number' } },
+        ['bpm']
+    ),
     tool(
         'setPlayback',
         'Set playback explicitly to playing or paused.',
