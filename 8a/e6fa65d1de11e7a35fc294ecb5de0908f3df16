@@ -1,0 +1,19 @@
+src/modules/TimelineEditor/presentations/components/__tests__/ResizeHandle.spec.tsx
+  s_bc88af7d3b054c::t_066174f4c24701 1-98
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "8ae6fa65d1de11e7a35fc294ecb5de0908f3df16",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
