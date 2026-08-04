@@ -10,8 +10,17 @@ import { FACTORY_MODELS, RAVE_MODEL_FAMILY, raveStore, type RaveModel } from '..
  * This is the only production writer of `raveStore.models`, and every RAVE
  * surface (command palette entries, `loadModel`) gates on that list. No RAVE
  * weights are shipped or hosted today, so the probe finds nothing and the
- * surface stays withheld — and it returns on its own the day the weights land
- * in OPFS, with no code change.
+ * surface stays withheld.
+ *
+ * Re-enabling is *not* purely a matter of dropping files in OPFS, and two
+ * things have to line up first. The probe asks for `rave/<model.id>` (via
+ * `toOpfsPath`, which is `${family}/${modelId}`), while `FACTORY_MODELS`
+ * declares `modelPath: 'models/rave/strings.onnx'` — different strings — and
+ * `downloadModel`, the only writer OPFS has, is never called with
+ * `family: 'rave'` by any caller. So nothing can currently make this probe
+ * return true. That is fail-closed and therefore safe, but it means shipping
+ * RAVE needs a download entry keyed to family `rave` whose stored name matches
+ * the model id, not just weights appearing from somewhere.
  *
  * A probe that fails for a reason other than a genuine miss (permission
  * failure, corrupt OPFS) is treated as absent and warned about: an unreadable

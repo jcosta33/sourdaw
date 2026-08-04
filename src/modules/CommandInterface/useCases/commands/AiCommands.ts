@@ -1,19 +1,9 @@
-import { raveStore } from '#/modules/BrowserAi/stores';
+import { isRaveModelPresent } from '#/modules/BrowserAi/useCases';
 import { executeAppAction } from '#/modules/Command/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type CallableCommandEntry } from '../searchCommandRegistry';
 import { getSelectedClipId } from '../selectionHelpers/getSelectedClipId';
-
-/**
- * RAVE weights are neither shipped nor hosted. `raveStore.models` holds only
- * the models BrowserAi found in OPFS, so gating on it withholds the palette
- * entry while there is nothing to load — and restores it, unchanged, the day
- * the weights are there.
- */
-function isRaveModelPresent(modelId: string): boolean {
-    return raveStore.value?.models.some((model) => model.id === modelId) ?? false;
-}
 
 function requireMidiClip(fn: (clipId: string) => void): () => void {
     return () => {
