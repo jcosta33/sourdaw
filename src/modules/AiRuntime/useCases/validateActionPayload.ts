@@ -353,6 +353,11 @@ const validators = {
     selectTrack: 'unchecked',
     muteTrack: 'unchecked',
     soloTrack: 'unchecked',
+    setSoloSafe: (param): param is PayloadOf<'setSoloSafe'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['trackId', 'soloSafe']) &&
+        isNonEmptyString(param.trackId) &&
+        typeof param.soloSafe === 'boolean',
     toggleSoloSafe: 'unchecked',
     armTrack: (param): param is PayloadOf<'armTrack'> =>
         isObj(param) &&
@@ -372,7 +377,7 @@ const validators = {
     groupTracks: 'unchecked',
     ungroupTracks: 'unchecked',
     removeAllTracks: 'unchecked',
-    clearSolos: 'unchecked',
+    clearSolos: hasNoPayload,
 
     // Clip state
     bypassDevice: 'unchecked',

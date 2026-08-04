@@ -34,6 +34,21 @@ const guardedPayloadContractCases = [
             { trackId: 'track-1', armed: true, expectedMidiInputOwnerId: 'owner-1' },
         ],
     }),
+    guardedPayloadCase({
+        actionType: 'setSoloSafe',
+        validPayload: { trackId: 'track-1', soloSafe: true },
+        invalidPayloads: [
+            { trackId: '', soloSafe: true },
+            { trackId: 'track-1', soloSafe: 'yes' },
+            { trackId: 'track-1' },
+            { trackId: 'track-1', soloSafe: true, expected: false },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'clearSolos',
+        validPayload: undefined,
+        invalidPayloads: [{}, null, { trackId: 'track-1' }],
+    }),
 
     guardedPayloadCase({
         actionType: 'addDevice',

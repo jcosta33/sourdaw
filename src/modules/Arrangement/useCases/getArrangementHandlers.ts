@@ -60,8 +60,11 @@ import { handleHideTrack } from '../handlers/track/hideTrack';
 import { handleMuteTrack } from '../handlers/track/muteTrack';
 import { handleRenameTrack } from '../handlers/track/renameTrack';
 import { handleReorderTrack } from '../handlers/track/reorderTrack';
+import { handleRestoreSoloSafe } from '../handlers/track/restoreSoloSafe';
+import { handleRestoreTrackSoloStates } from '../handlers/track/restoreTrackSoloStates';
 import { handleSelectTrack } from '../handlers/track/selectTrack';
 import { handleSetAutomationMode } from '../handlers/track/setAutomationMode';
+import { handleSetSoloSafe } from '../handlers/track/setSoloSafe';
 import { handleSetTrackHeight } from '../handlers/track/setTrackHeight';
 import { handleSetTrackNotes } from '../handlers/track/setTrackNotes';
 import { handleSetTrackOutput } from '../handlers/track/setTrackOutput';
@@ -95,6 +98,7 @@ export function getArrangementHandlers() {
         selectTrack: handleSelectTrack,
         muteTrack: handleMuteTrack,
         soloTrack: handleSoloTrack,
+        setSoloSafe: handleSetSoloSafe,
         armTrack: handleArmTrack,
         freezeTrack: handleFreezeTrack,
         unfreezeTrack: handleUnfreezeTrack,
@@ -122,6 +126,8 @@ export function getArrangementHandlers() {
         setTrackNotes: handleSetTrackNotes,
         setTrackInput: handleSetTrackInput,
         clearSolos: handleClearSolos,
+        restoreSoloSafe: handleRestoreSoloSafe,
+        restoreTrackSoloStates: handleRestoreTrackSoloStates,
         zoomTracksVertical: handleZoomTracksVertical,
         addMarker: handleAddMarker,
         removeMarker: handleRemoveMarker,

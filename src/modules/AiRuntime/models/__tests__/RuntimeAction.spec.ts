@@ -18,10 +18,10 @@ describe('RuntimeAction', () => {
             }
         }
 
-        expect(RUNTIME_ACTION_TYPES).toHaveLength(237);
+        expect(RUNTIME_ACTION_TYPES).toHaveLength(238);
         expect(new Set(RUNTIME_ACTION_TYPES).size).toBe(RUNTIME_ACTION_TYPES.length);
         expect(RUNTIME_ACTION_TYPES).not.toContain('replayGeneratedMidi');
-        expect(digest >>> 0).toBe(2_617_455_263);
+        expect(digest >>> 0).toBe(3_137_200_599);
     });
 
     it('derives initiating payloads without exposing command-owned replay fields', () => {

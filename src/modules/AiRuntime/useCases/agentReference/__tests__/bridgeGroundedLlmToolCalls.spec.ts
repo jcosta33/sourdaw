@@ -18,6 +18,7 @@ function createTrack({ id, name, kind = 'audio', devices = [] }: CreateTrackInpu
         kind,
         muted: false,
         soloed: false,
+        soloSafe: false,
         armed: false,
         gain: 0.8,
         pan: 0,
@@ -763,6 +764,79 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(wrongCreatedTrack.actions).toEqual([]);
         expect(createdBus.actions).toEqual([{ type: 'createBus', payload: { name: 'Parallel Reverb' } }]);
         expect(wrongCreatedBus.actions).toEqual([]);
+    });
+
+    it('grounds explicit solo-safe polarity and targetless clear-all intent', () => {
+        const soloedContext = {
+            ...projectContext,
+            tracks: projectContext.tracks.map((track) => (track.id === vocals.id ? { ...track, soloed: true } : track)),
+        };
+        const enable = bridge(
+            [{ name: 'setSoloSafe', arguments: { trackId: vocals.id, soloSafe: true } }],
+            'enable solo safe on Vocals'
+        );
+        const wrongPolarity = bridge(
+            [{ name: 'setSoloSafe', arguments: { trackId: vocals.id, soloSafe: false } }],
+            'enable solo safe on Vocals'
+        );
+        const negated = bridge(
+            [{ name: 'setSoloSafe', arguments: { trackId: vocals.id, soloSafe: true } }],
+            'do not enable solo safe on Vocals'
+        );
+        const clear = bridge([{ name: 'clearSolos', arguments: {} }], 'clear all solos', soloedContext);
+        const clearEverything = bridge([{ name: 'clearSolos', arguments: {} }], 'unsolo everything', soloedContext);
+        const vocabularyCollisionContext = {
+            ...soloedContext,
+            tracks: [...soloedContext.tracks, createTrack({ id: 'track-all', name: 'All' })],
+        };
+        const vocabularyCollision = bridge(
+            [{ name: 'clearSolos', arguments: {} }],
+            'clear all solos',
+            vocabularyCollisionContext
+        );
+        const scopedVocabularyCollisions = ['clear all solos on All', 'clear all solos from All'].map((prompt) =>
+            bridge([{ name: 'clearSolos', arguments: {} }], prompt, vocabularyCollisionContext)
+        );
+        const hallucinatedClear = bridge([{ name: 'clearSolos', arguments: {} }], 'mute Vocals', soloedContext);
+        const restrictedClearPrompts = [
+            'clear solos on Vocals',
+            'clear solos from Vocals',
+            'clear all solos except Vocals',
+            'unsolo everything except Drums',
+            'clear solos but keep Vocals soloed',
+            'clear all solos besides the selected track',
+            'unsolo everything save for the selected track',
+            'clear all solos with the exception of the selected track',
+        ];
+
+        expect(enable.actions).toEqual([{ type: 'setSoloSafe', payload: { trackId: vocals.id, soloSafe: true } }]);
+        expect(wrongPolarity.actions).toEqual([]);
+        expect(negated.actions).toEqual([]);
+        expect(clear.actions).toEqual([{ type: 'clearSolos' }]);
+        expect(clearEverything.actions).toEqual([{ type: 'clearSolos' }]);
+        expect(vocabularyCollision.actions).toEqual([{ type: 'clearSolos' }]);
+        expect(scopedVocabularyCollisions.map((result) => result.actions)).toEqual([[], []]);
+        expect(hallucinatedClear.actions).toEqual([]);
+        for (const prompt of restrictedClearPrompts) {
+            expect(bridge([{ name: 'clearSolos', arguments: {} }], prompt, soloedContext).actions).toEqual([]);
+        }
+    });
+
+    it('rejects solo-safe writes to a bus created earlier in the same provider plan', () => {
+        const result = bridge(
+            [
+                { name: 'createBus', arguments: { name: 'Plate', binding: 'plate' } },
+                { name: 'setSoloSafe', arguments: { trackId: '$plate', soloSafe: false } },
+            ],
+            'create a bus called Plate and disable solo safe on that bus'
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toContainEqual({
+            index: 1,
+            name: 'setSoloSafe',
+            reason: 'Target trackId must already exist in project context',
+        });
     });
 
     it('grounds explicit loop and metronome intent, values, and percentage normalization', () => {
