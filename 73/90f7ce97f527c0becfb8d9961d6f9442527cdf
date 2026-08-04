@@ -1,0 +1,113 @@
+crates/daw-dsp/tests/toaster_pad_output.rs
+  s_ac9b259eab20ba::t_4c0d5ea69f3579 28-45,56-66,168-176
+  s_ac9b259eab20ba::t_679c715bd36c33 177-207
+crates/daw-dsp/src/toaster/voice.rs
+  s_ac9b259eab20ba::t_e8f0d45c5741c1 9,11-12,135,137,149-154,163,185-186
+  s_ac9b259eab20ba::t_cdc6785c3b868e 10,103-104,113,122,147-148,156-162,164,166-168,181,194,207-208,228
+  s_ac9b259eab20ba::t_150d4f5757d92b 119-121
+src/modules/AudioEngine/useCases/__tests__/buildDeviceChainOfflineInstrumentSetup.spec.ts
+  s_ac9b259eab20ba::t_679c715bd36c33 94,155-173
+  s_ac9b259eab20ba::t_d8bad384725bfd 174-175
+src/modules/AudioEngine/models/TrackViewTypes.ts
+  s_ac9b259eab20ba::t_a09b55aeefe863 12-13
+src/modules/AudioEngine/engine/audioDeviceRuntimeSink.ts
+  s_ac9b259eab20ba::t_a09b55aeefe863 75-76
+crates/daw-dsp/src/toaster/engine.rs
+  s_ac9b259eab20ba::t_cdc6785c3b868e 6,331,333
+  s_ac9b259eab20ba::t_e8f0d45c5741c1 396,398
+src/modules/Toaster/useCases/__tests__/toasterLiveOfflineParity.spec.ts
+  s_ac9b259eab20ba::t_fc85e1ef0e0a9d 226-229,233-235
+  s_ac9b259eab20ba::t_679c715bd36c33 165,171-174
+  s_ac9b259eab20ba::t_0aeea0f16f3a46 180-181
+src/modules/Toaster/useCases/prepareOfflineToaster.ts
+  s_ac9b259eab20ba::t_f423bb07263151 1,37-41
+  s_ac9b259eab20ba::t_a09b55aeefe863 2,10-11,29-31,36
+  s_ac9b259eab20ba::t_43e846cf003a3f 32-34
+src/app/prepareOfflineDeviceSetup.ts
+  s_ac9b259eab20ba::t_a09b55aeefe863 12-13,54
+src/app/__tests__/prepareOfflineDeviceSetup.spec.ts
+  s_ac9b259eab20ba::t_679c715bd36c33 227,229,233
+src/modules/AudioEngine/useCases/buildDeviceChain.ts
+  s_ac9b259eab20ba::t_ea0efa605c7eac 278-281,285
+  s_ac9b259eab20ba::t_a09b55aeefe863 128
+crates/daw-dsp/src/toaster/engines/mod.rs
+  s_ac9b259eab20ba::t_a09b55aeefe863 294,298-303
+  s_ac9b259eab20ba::t_cdc6785c3b868e 34,48,83-121,163-174,244-257,304-305
+  s_ac9b259eab20ba::t_6963ca586e9a0e 258
+  s_ac9b259eab20ba::t_fba3ae3052d4b3 306
+crates/daw-dsp/src/toaster/engines/perc.rs
+  s_ac9b259eab20ba::t_a09b55aeefe863 9-10,75,209-210
+  s_ac9b259eab20ba::t_62de67c306f4d9 211-212
+crates/daw-dsp/src/toaster/engines/hihat_909.rs
+  s_ac9b259eab20ba::t_cdc6785c3b868e 15-16,23-24,29-30,57-58,60,82-83,101
+  s_ac9b259eab20ba::t_150d4f5757d92b 47-48
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_07ab2d02b5d0f2::t_e43288cf7fdca6 890-929,970-983
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_07ab2d02b5d0f2::t_59f948ae979593 110-149,190-203
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_07ab2d02b5d0f2::t_0db073d0a0943c 890-929,970-983
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/createMyceliumRhythmPerformance.spec.ts
+  s_ac9b259eab20ba::t_f85f5dd26db531 72,116-120,130,134-138,157-173,190,192,219-220
+  s_66d4924c65dcd2::t_41f19077dc40d4 221-224
+src/modules/Project/useCases/demoProjects/myceliumAscendant/createMyceliumAutomation.ts
+  s_ac9b259eab20ba::t_581705c2b158e9 7-18,38-39,95-98,246-264
+  s_66d4924c65dcd2::t_0b619c5fb40d61 265-266
+src/modules/Toaster/repositories/toasterPresets.ts
+  s_ac9b259eab20ba::t_0e85ced99857f3 286-486
+src/modules/Project/useCases/demoProjects/myceliumAscendant/createMyceliumRhythmPerformance.ts
+  s_ac9b259eab20ba::t_6af658c5e079f9 13-18,54-55,58-59,65-69,84,92-103,106-110,138-142,167,181-184
+  s_ac9b259eab20ba::t_f85f5dd26db531 180
+src/modules/Toaster/useCases/index.ts
+  s_ac9b259eab20ba::t_87fd0f398541f1 3
+src/modules/Toaster/useCases/getToasterPresetDeviceState.ts
+  s_ac9b259eab20ba::t_87fd0f398541f1 1-15
+src/modules/Toaster/repositories/__tests__/toasterPresets.spec.ts
+  s_ac9b259eab20ba::t_18e5c366d2edf6 25,106-132
+  s_66d4924c65dcd2::t_91caec3843ac04 133
+src/modules/Project/useCases/demoProjects/myceliumAscendant/createMyceliumTopology.ts
+  s_ac9b259eab20ba::t_d7c2f333010900 1-2,34-44,48-54,174,200-251,270-292,328-338,351-355
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/createMyceliumTopology.spec.ts
+  s_ac9b259eab20ba::t_18e5c366d2edf6 4,88-89,92,96-106,135-182,217-244,276-297,322-361
+  s_66d4924c65dcd2::t_5136831fbe1ca1 362
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/createMyceliumAutomation.spec.ts
+  s_66d4924c65dcd2::t_c8b24d88c18ff2 85-101,181,195-198
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/reloadMyceliumAscendantDemo.spec.ts
+  s_66d4924c65dcd2::t_b3eebbc805a10b 11,90-91,94-103,125,139
+src/modules/Project/useCases/demoProjects/myceliumAscendant/createMyceliumAscendantBlueprint.ts
+  s_66d4924c65dcd2::t_4c5ae7f06ee7ec 121-131
+src/modules/Project/useCases/demoProjects/myceliumAscendant/createMyceliumId.ts
+  s_66d4924c65dcd2::t_fd7d425ea0b59c 13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "7390f7ce97f527c0becfb8d9961d6f9442527cdf",
+  "prompts": {},
+  "sessions": {
+    "s_07ab2d02b5d0f2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fcd57-d027-7e92-9f1d-7060d019b85c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
