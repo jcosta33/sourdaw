@@ -1,0 +1,29 @@
+src/modules/ContentBrowser/presentations/components/__tests__/ChoiceCard.spec.tsx
+  s_bc88af7d3b054c::t_89c22c99b248ee 1-49
+src/modules/TimelineEditor/presentations/components/Inspector/__tests__/InspectorDetailHeaderBranches.spec.tsx
+  s_8e1f1269a320e2::t_eca87cedd17610 1-60
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "6419083e06a312f5b389d192c82983247880527e",
+  "prompts": {},
+  "sessions": {
+    "s_8e1f1269a320e2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fca41-4fa0-7a23-b423-04c4a4c7416f",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
