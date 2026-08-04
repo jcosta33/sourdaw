@@ -11,6 +11,7 @@
 
 import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
+import { logger } from '#/infra/logger/appLogger';
 
 import fermenterProcessorUrl from '../services/fermenterProcessor.ts?worker&url';
 
@@ -112,6 +113,7 @@ export function isFermenterDevice(deviceType: string): boolean {
 export async function createFermenterNode(
     ctx: BaseAudioContext,
     wasmUrl?: string,
+    onFault?: (message: string) => void,
     signal?: AbortSignal
 ): Promise<FermenterNodeResult> {
     if (ctx instanceof AudioContext && ctx.state === 'suspended') {
@@ -157,6 +159,33 @@ export async function createFermenterNode(
         deviceName: 'Fermenter',
     });
     let telemetryRafId: number | null = null;
+    let runtimeFaulted = false;
+    let portClosed = false;
+
+    const closePort = (): void => {
+        if (portClosed) {
+            return;
+        }
+        portClosed = true;
+        node.onprocessorerror = null;
+        node.port.close();
+    };
+
+    const handleTerminalFault = (message: string, reportToOwner: boolean): void => {
+        if (runtimeFaulted) {
+            return;
+        }
+        runtimeFaulted = true;
+        if (reportToOwner) {
+            logger.warn('FermenterNode runtime fault (processor terminated):', message);
+            try {
+                onFault?.(message);
+            } catch (callbackError) {
+                logger.error(new Error('FermenterNode runtime-failure callback failed', { cause: callbackError }));
+            }
+        }
+        closePort();
+    };
 
     if (slot) {
         node.port.postMessage({ type: 'init-sab', sab: slot.sab, byteOffset: slot.byteOffset });
@@ -164,7 +193,17 @@ export async function createFermenterNode(
 
     const handshake = createReadyHandshake({ pluginName: 'FermenterNode' });
     node.port.onmessage = (event: MessageEvent) => {
-        handshake.onMessage(event);
+        const outcome = handshake.onMessage(event);
+        const data: unknown = event.data;
+        if (data && typeof data === 'object' && 'type' in data && data.type === 'error') {
+            const message = 'message' in data ? String(data.message) : 'Unknown error';
+            handleTerminalFault(message, outcome === 'late');
+        }
+    };
+    node.onprocessorerror = () => {
+        const message = 'FermenterNode worklet processor failed';
+        const outcome = handshake.reject(new Error(message));
+        handleTerminalFault(message, outcome === 'late');
     };
     const readyPromise = handshake.promise;
 
@@ -318,7 +357,7 @@ export async function createFermenterNode(
             } catch {
                 // ignore
             }
-            node.port.close();
+            closePort();
         },
         ready: readyPromise,
     };
