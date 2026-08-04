@@ -41,8 +41,8 @@ use super::modes::slice::SliceMode;
 use super::sample::SamplePool;
 use super::smooth::ParamSmoother;
 use super::types::{
-    FilterType, LoopMode, PlaybackMode, RecordState, SampleId, CrumbsCommand, CrumbsMode,
-    CrumbsParam, MAX_STACK_VOICES, MAX_VOICES,
+    CrumbsCommand, CrumbsMode, CrumbsParam, FilterType, LoopMode, PlaybackMode, RecordState,
+    SampleId, MAX_STACK_VOICES, MAX_VOICES,
 };
 use super::voice::{CrumbsVoice, VoiceTriggerParams};
 
@@ -1019,7 +1019,9 @@ impl CrumbsEngine {
     /// was overwritten, and a test that measured the sum passed with the bug
     /// reverted. Read-only, and not on any audio-thread path.
     pub fn any_active_voice_has_note(&self, note: u8) -> bool {
-        self.voices.iter().any(|voice| voice.active && voice.note == note)
+        self.voices
+            .iter()
+            .any(|voice| voice.active && voice.note == note)
     }
 
     /// How many live voices are playing `note`.

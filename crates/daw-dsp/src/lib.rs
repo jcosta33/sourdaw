@@ -1,4 +1,5 @@
 pub mod bacteria;
+pub mod crumbs;
 pub mod crust;
 pub mod fermenter;
 pub mod gluten;
@@ -8,7 +9,6 @@ pub mod knead;
 pub mod levain;
 pub mod primitives;
 pub mod proof;
-pub mod crumbs;
 pub mod toaster;
 
 /// Install `console_error_panic_hook` once at wasm module init so a Rust panic

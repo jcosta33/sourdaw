@@ -171,7 +171,11 @@ fn an_explicit_pad_assignment_wins_over_the_loaded_sample() {
     note_on(&mut untouched, 36, 100);
     let default_pad = render_second_block(&mut untouched);
 
-    assert_proportional_to(&assigned_pad, &flat_pcm(BLOCK, 0.5), "explicitly assigned pad 0");
+    assert_proportional_to(
+        &assigned_pad,
+        &flat_pcm(BLOCK, 0.5),
+        "explicitly assigned pad 0",
+    );
     assert_proportional_to(
         &default_pad,
         &loaded_pcm[BLOCK..2 * BLOCK],
@@ -241,7 +245,11 @@ fn a_note_past_the_last_default_slice_does_not_sound() {
     note_on(&mut engine, 52, 100);
     let out = render(&mut engine, BLOCK);
 
-    assert_eq!(peak(&out), 0.0, "a note past the sixteenth slice still sounded");
+    assert_eq!(
+        peak(&out),
+        0.0,
+        "a note past the sixteenth slice still sounded"
+    );
     // Silence alone is weak here: a slice computed past the end of the sample
     // reads zeros and sounds identical to no slice at all, while still burning
     // a voice. The upper bound is what stops the voice being allocated.
@@ -281,8 +289,16 @@ fn a_drum_note_is_silent_when_nothing_is_loaded() {
     note_on(&mut engine, 36, 100);
     let out = render(&mut engine, BLOCK);
 
-    assert_eq!(peak(&out), 0.0, "a note produced audio with an empty sample pool");
-    assert_eq!(engine.read_active_voice_count(), 0, "a voice was allocated with nothing to play");
+    assert_eq!(
+        peak(&out),
+        0.0,
+        "a note produced audio with an empty sample pool"
+    );
+    assert_eq!(
+        engine.read_active_voice_count(),
+        0,
+        "a voice was allocated with nothing to play"
+    );
 }
 
 #[test]
@@ -293,7 +309,11 @@ fn a_slice_note_is_silent_when_nothing_is_loaded() {
     note_on(&mut engine, 36, 100);
     let out = render(&mut engine, BLOCK);
 
-    assert_eq!(peak(&out), 0.0, "a slice note produced audio with an empty sample pool");
+    assert_eq!(
+        peak(&out),
+        0.0,
+        "a slice note produced audio with an empty sample pool"
+    );
 }
 
 #[test]
@@ -307,7 +327,11 @@ fn a_note_below_the_pad_grid_does_not_sound_even_when_pads_are_loaded() {
     note_on(&mut engine, 24, 100);
     let out = render(&mut engine, BLOCK);
 
-    assert_eq!(peak(&out), 0.0, "a note below the pad grid still triggered a voice");
+    assert_eq!(
+        peak(&out),
+        0.0,
+        "a note below the pad grid still triggered a voice"
+    );
 }
 
 // ── Slice start and end frames ─────────────────────────────────────────
@@ -319,17 +343,29 @@ fn each_slice_starts_at_its_own_marker() {
     // Three slices over the sample: [0,512), [512,1024), [1024,1024+…).
     // `set_markers_from_onsets` maps them to notes 36, 37, 38.
     let mut first = engine_with(pcm.clone(), CrumbsMode::Slice);
-    first.slice_mode_mut().set_markers_from_onsets(&[0, 512, 1024], pcm.len() as u32);
+    first
+        .slice_mode_mut()
+        .set_markers_from_onsets(&[0, 512, 1024], pcm.len() as u32);
     note_on(&mut first, 37, 100);
     let second_slice = render(&mut first, BLOCK);
 
     let mut third = engine_with(pcm.clone(), CrumbsMode::Slice);
-    third.slice_mode_mut().set_markers_from_onsets(&[0, 512, 1024], pcm.len() as u32);
+    third
+        .slice_mode_mut()
+        .set_markers_from_onsets(&[0, 512, 1024], pcm.len() as u32);
     note_on(&mut third, 38, 100);
     let third_slice = render(&mut third, BLOCK);
 
-    assert_proportional_to(&second_slice, &pcm[512..512 + BLOCK], "slice mapped to note 37");
-    assert_proportional_to(&third_slice, &pcm[1024..1024 + BLOCK], "slice mapped to note 38");
+    assert_proportional_to(
+        &second_slice,
+        &pcm[512..512 + BLOCK],
+        "slice mapped to note 37",
+    );
+    assert_proportional_to(
+        &third_slice,
+        &pcm[1024..1024 + BLOCK],
+        "slice mapped to note 38",
+    );
 
     // The symptom in the ledger: two different slices rendering the same audio
     // because both started at frame 0.
@@ -351,7 +387,9 @@ fn a_slice_stops_at_its_end_marker_instead_of_running_on() {
     let mut engine = engine_with(pcm.clone(), CrumbsMode::Slice);
     // First slice spans [0, 64) — half a block, so one render shows both the
     // sounding part and the silence after it.
-    engine.slice_mode_mut().set_markers_from_onsets(&[0, 64, 512], pcm.len() as u32);
+    engine
+        .slice_mode_mut()
+        .set_markers_from_onsets(&[0, 64, 512], pcm.len() as u32);
 
     note_on(&mut engine, 36, 100);
     let out = render(&mut engine, BLOCK);
@@ -383,7 +421,11 @@ fn a_pad_plays_from_its_own_start_offset() {
     note_on(&mut engine, 36, 100);
     let out = render(&mut engine, BLOCK);
 
-    assert_proportional_to(&out, &pcm[512..512 + BLOCK], "pad with a 512-frame start offset");
+    assert_proportional_to(
+        &out,
+        &pcm[512..512 + BLOCK],
+        "pad with a 512-frame start offset",
+    );
 }
 
 #[test]
@@ -419,14 +461,21 @@ fn a_pad_uses_its_own_envelope_rather_than_the_engine_wide_one() {
     let mut slow = engine_with(pcm.clone(), CrumbsMode::Drum);
     let slow_sample = load(&mut slow, pcm.clone());
     slow.drum_mode_mut().set_pad_sample(0, slow_sample);
-    slow.drum_mode_mut().get_pad_mut(0).expect("pad 0 exists").attack = 0.5;
+    slow.drum_mode_mut()
+        .get_pad_mut(0)
+        .expect("pad 0 exists")
+        .attack = 0.5;
     note_on(&mut slow, 36, 127);
     let slow_out = render(&mut slow, BLOCK);
 
     let mut instant = engine_with(pcm.clone(), CrumbsMode::Drum);
     let instant_sample = load(&mut instant, pcm.clone());
     instant.drum_mode_mut().set_pad_sample(0, instant_sample);
-    instant.drum_mode_mut().get_pad_mut(0).expect("pad 0 exists").attack = 0.0;
+    instant
+        .drum_mode_mut()
+        .get_pad_mut(0)
+        .expect("pad 0 exists")
+        .attack = 0.0;
     note_on(&mut instant, 36, 127);
     let instant_out = render(&mut instant, BLOCK);
 
@@ -533,7 +582,10 @@ fn a_pad_in_a_choke_group_cuts_the_voice_already_sounding_in_it() {
     let solo_second = render(&mut solo, BLOCK);
 
     assert!(peak(&first_alone) > 0.1, "the first pad never sounded");
-    assert!(peak(&solo_second) > 0.1, "the second pad never sounded on its own");
+    assert!(
+        peak(&solo_second) > 0.1,
+        "the second pad never sounded on its own"
+    );
 
     let ratio = peak(&after_choke) / peak(&solo_second);
     assert!(
@@ -576,7 +628,11 @@ fn pads_in_different_choke_groups_both_keep_sounding() {
         "two pads in different choke groups summed to {ratio}× the second alone, \
          so the first was cut when it should have kept sounding"
     );
-    assert_eq!(engine.read_active_voice_count(), 2, "a voice outside the choke group was cut");
+    assert_eq!(
+        engine.read_active_voice_count(),
+        2,
+        "a voice outside the choke group was cut"
+    );
 }
 
 #[test]
@@ -595,7 +651,11 @@ fn a_pad_with_no_choke_group_does_not_cut_anything() {
     }
     let both = render(&mut engine, BLOCK);
 
-    assert_eq!(engine.read_active_voice_count(), 2, "an ungrouped pad cut the previous voice");
+    assert_eq!(
+        engine.read_active_voice_count(),
+        2,
+        "an ungrouped pad cut the previous voice"
+    );
     assert!(
         peak(&both) > 0.5,
         "the ungrouped pair rendered {} — the previous voice was cut",

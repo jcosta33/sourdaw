@@ -10,7 +10,11 @@
 /// Magnitude is bits 0..6.
 pub fn mu_law_expand(compressed: u8) -> f32 {
     let mu: f32 = 255.0;
-    let sign = if compressed & 0x80 != 0 { -1.0_f32 } else { 1.0 };
+    let sign = if compressed & 0x80 != 0 {
+        -1.0_f32
+    } else {
+        1.0
+    };
     let magnitude = (compressed & 0x7F) as f32 / 127.0;
     sign * (1.0 / mu) * ((1.0 + mu).powf(magnitude) - 1.0)
 }
@@ -35,10 +39,7 @@ mod tests {
     #[test]
     fn mu_law_zero_maps_to_zero() {
         let v = mu_law_expand(0x00);
-        assert!(
-            v.abs() < 0.01,
-            "mu_law_expand(0x00) = {v}, expected ≈ 0.0"
-        );
+        assert!(v.abs() < 0.01, "mu_law_expand(0x00) = {v}, expected ≈ 0.0");
     }
 
     /// mu_law_expand(0x7F) should be close to +full-scale.

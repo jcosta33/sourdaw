@@ -93,8 +93,7 @@ impl Snare808Engine {
         lower_osc.update_coefficients(r196, r197, c58, c59, sample_rate);
         upper_osc.update_coefficients(r195, r198, c60, c61, sample_rate);
 
-        let (hpf_b0, hpf_b1, hpf_b2, hpf_a1, hpf_a2) =
-            compute_hpf_biquad(SK_HPF_FREQ, sample_rate);
+        let (hpf_b0, hpf_b1, hpf_b2, hpf_a1, hpf_a2) = compute_hpf_biquad(SK_HPF_FREQ, sample_rate);
 
         Self {
             lower_osc,
@@ -144,8 +143,10 @@ impl Snare808Engine {
         self.dc_block.reset();
 
         // Recalculate coefficients with current sample_rate
-        self.lower_osc.update_coefficients(self.r196, self.r197, self.c58, self.c59, sample_rate);
-        self.upper_osc.update_coefficients(self.r195, self.r198, self.c60, self.c61, sample_rate);
+        self.lower_osc
+            .update_coefficients(self.r196, self.r197, self.c58, self.c59, sample_rate);
+        self.upper_osc
+            .update_coefficients(self.r195, self.r198, self.c60, self.c61, sample_rate);
     }
 
     pub fn release(&mut self) {
@@ -261,14 +262,10 @@ mod tests {
     #[test]
     fn snare_808_oscillator_frequencies() {
         // Calculate expected fc for lower oscillator
-        let fc_lower = 1.0
-            / (2.0
-                * core::f32::consts::PI
-                * (R196_NOM * R197_NOM * C58_NOM * C59_NOM).sqrt());
-        let fc_upper = 1.0
-            / (2.0
-                * core::f32::consts::PI
-                * (R195_NOM * R198_NOM * C60_NOM * C61_NOM).sqrt());
+        let fc_lower =
+            1.0 / (2.0 * core::f32::consts::PI * (R196_NOM * R197_NOM * C58_NOM * C59_NOM).sqrt());
+        let fc_upper =
+            1.0 / (2.0 * core::f32::consts::PI * (R195_NOM * R198_NOM * C60_NOM * C61_NOM).sqrt());
 
         assert!(
             (fc_lower - 173.0).abs() < 10.0,

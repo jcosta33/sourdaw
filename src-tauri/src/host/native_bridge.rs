@@ -1,3 +1,5 @@
+use daw_dsp::crumbs::engine::CrumbsEngine;
+use daw_dsp::crumbs::types::CrumbsCommand;
 /// Bridge: implements daw_engine::NativePlugin for ClapWrapper and Vst3Wrapper.
 ///
 /// This allows plugin instances from daw-plugin-host to be sent to the native
@@ -7,9 +9,9 @@
 /// RT-safety: all scratch buffers are preallocated. No heap allocation occurs
 /// in any `NativePlugin` method.
 use daw_engine::plugin_slot::{MidiNoteEvent, NativePlugin, TransportState};
-use daw_dsp::crumbs::engine::CrumbsEngine;
-use daw_dsp::crumbs::types::CrumbsCommand;
-use daw_plugin_host::{AudioPlugin, ClapParameterUpdate, ClapWrapper, PluginParameter, Vst3Wrapper};
+use daw_plugin_host::{
+    AudioPlugin, ClapParameterUpdate, ClapWrapper, PluginParameter, Vst3Wrapper,
+};
 use rtrb::Consumer;
 use std::cell::UnsafeCell;
 use std::sync::atomic::{AtomicU32, AtomicU64, AtomicU8, Ordering};
@@ -95,8 +97,7 @@ impl PendingParameterQueue {
                 slot.param_id.store(param_id, Ordering::Relaxed);
                 slot.value_bits.store(value_bits, Ordering::Relaxed);
                 slot.sequence.store(sequence, Ordering::Relaxed);
-                slot.state
-                    .store(PENDING_PARAMETER_READY, Ordering::Release);
+                slot.state.store(PENDING_PARAMETER_READY, Ordering::Release);
                 return Ok(());
             }
         }
@@ -133,8 +134,7 @@ impl PendingParameterQueue {
 
             slot.value_bits.store(value_bits, Ordering::Relaxed);
             slot.sequence.store(sequence, Ordering::Relaxed);
-            slot.state
-                .store(PENDING_PARAMETER_READY, Ordering::Release);
+            slot.state.store(PENDING_PARAMETER_READY, Ordering::Release);
             return true;
         }
 
@@ -179,8 +179,7 @@ impl PendingParameterQueue {
                 entries[count] = PendingParameterDrainEntry { update, sequence };
                 count += 1;
             }
-            slot.state
-                .store(PENDING_PARAMETER_EMPTY, Ordering::Release);
+            slot.state.store(PENDING_PARAMETER_EMPTY, Ordering::Release);
         }
 
         sort_pending_parameter_entries(&mut entries[..count]);
@@ -199,8 +198,7 @@ impl PendingParameterQueue {
 
     fn clear(&self) {
         for slot in &self.slots {
-            slot.state
-                .store(PENDING_PARAMETER_EMPTY, Ordering::Release);
+            slot.state.store(PENDING_PARAMETER_EMPTY, Ordering::Release);
         }
     }
 }
@@ -318,9 +316,9 @@ impl SharedClapPlugin {
             ));
         }
 
-        self.pending_parameters.enqueue(param_id, value).map_err(|()| {
-            format!("Pending parameter queue full for plugin '{}'", self.name)
-        })
+        self.pending_parameters
+            .enqueue(param_id, value)
+            .map_err(|()| format!("Pending parameter queue full for plugin '{}'", self.name))
     }
 
     pub fn get_state_after_pending_parameters_drain(
@@ -837,7 +835,10 @@ mod tests {
                 value: 0.42,
             }
         );
-        assert_eq!(drain_pending_parameters_for_process(&queue, &mut scratch), 0);
+        assert_eq!(
+            drain_pending_parameters_for_process(&queue, &mut scratch),
+            0
+        );
     }
 
     #[test]
@@ -1120,7 +1121,8 @@ impl CrumbsPluginSlot {
                     velocity: event.velocity,
                 });
             } else {
-                self.engine.handle_command(CrumbsCommand::NoteOff { note: event.note });
+                self.engine
+                    .handle_command(CrumbsCommand::NoteOff { note: event.note });
             }
         }
 

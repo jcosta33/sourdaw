@@ -232,10 +232,10 @@ impl CrossoverEngine {
             for j in 0..i {
                 let (lp_l, hp_l) = self.allpass_points_l[ap_idx].process(bands_l[j]);
                 bands_l[j] = lp_l + hp_l;
-                
+
                 let (lp_r, hp_r) = self.allpass_points_r[ap_idx].process(bands_r[j]);
                 bands_r[j] = lp_r + hp_r;
-                
+
                 ap_idx += 1;
             }
         }
@@ -324,8 +324,14 @@ mod tests {
             let s = (i as f32 * 0.1).sin();
             xover.process_sample(s, s, &mut bands_l, &mut bands_r);
         }
-        let dirty = xover.points_l.iter().any(|p| p.lp1.z1 != 0.0 || p.lp1.z2 != 0.0);
-        assert!(dirty, "expected filter state to accumulate while processing");
+        let dirty = xover
+            .points_l
+            .iter()
+            .any(|p| p.lp1.z1 != 0.0 || p.lp1.z2 != 0.0);
+        assert!(
+            dirty,
+            "expected filter state to accumulate while processing"
+        );
 
         xover.set_bands(2, &freqs);
         let clean = xover

@@ -1,13 +1,13 @@
-pub mod pitch_edit;
 pub mod engine;
+pub mod pitch_edit;
 pub mod psola;
 pub mod utils;
 pub mod voicing;
 pub mod yin;
 
+use crate::primitives::sanitize_block;
 use engine::KneadEngine;
 use wasm_bindgen::prelude::*;
-use crate::primitives::sanitize_block;
 
 #[wasm_bindgen]
 pub struct KneadInstance {
@@ -140,7 +140,13 @@ mod tests {
         let frames = 4096usize;
         let poison_l: Vec<f32> = vec![f32::NAN; frames];
         let poison_r: Vec<f32> = (0..frames)
-            .map(|i| if i % 2 == 0 { f32::INFINITY } else { f32::NEG_INFINITY })
+            .map(|i| {
+                if i % 2 == 0 {
+                    f32::INFINITY
+                } else {
+                    f32::NEG_INFINITY
+                }
+            })
             .collect();
 
         // RED: the raw engine (the layer beneath the wasm boundary) has no
@@ -215,9 +221,21 @@ mod tests {
         let right = unsafe { std::slice::from_raw_parts(out_r, frames) };
 
         for i in 0..frames {
-            assert_eq!(left[i].to_bits(), raw_l[i].to_bits(), "left sample {i} altered by the guard");
-            assert_eq!(right[i].to_bits(), raw_r[i].to_bits(), "right sample {i} altered by the guard");
+            assert_eq!(
+                left[i].to_bits(),
+                raw_l[i].to_bits(),
+                "left sample {i} altered by the guard"
+            );
+            assert_eq!(
+                right[i].to_bits(),
+                raw_r[i].to_bits(),
+                "right sample {i} altered by the guard"
+            );
         }
-        assert_eq!(inst.get_nan_flush_count(), 0.0, "a finite block flushes nothing");
+        assert_eq!(
+            inst.get_nan_flush_count(),
+            0.0,
+            "a finite block flushes nothing"
+        );
     }
 }

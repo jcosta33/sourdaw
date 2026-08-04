@@ -137,7 +137,10 @@ mod tests {
         // GREEN: the output boundary scrubs every non-finite sample to silence
         // and leaves finite samples untouched.
         let out = decoded.take_samples();
-        assert!(out.iter().all(|s| s.is_finite()), "every non-finite sample must be scrubbed");
+        assert!(
+            out.iter().all(|s| s.is_finite()),
+            "every non-finite sample must be scrubbed"
+        );
         assert_eq!(out, vec![0.5, 0.0, 0.0, -0.25, 0.0, 0.75]);
     }
 }

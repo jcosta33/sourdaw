@@ -92,7 +92,13 @@ impl Cr78Engine {
         bridged_t.update_coefficients(r_eff, r_shunt, c1, c2, sample_rate);
 
         Self {
-            mode: Cr78Mode::Drum { r_eff, r_shunt, c1, c2, decay_s },
+            mode: Cr78Mode::Drum {
+                r_eff,
+                r_shunt,
+                c1,
+                c2,
+                decay_s,
+            },
             bridged_t,
             osc1: PolyBlepSquare::new(100.0),
             osc2: PolyBlepSquare::new(200.0),
@@ -119,9 +125,12 @@ impl Cr78Engine {
         // Default metallic beat: three square waves through RLC at ~700 Hz, Q≈12
         Self::new_metallic_with_params(
             sample_rate,
-            300.0, 420.0, 550.0, // three square wave freqs
-            700.0, 12.0,          // RLC center + Q
-            0.3,                  // decay_s
+            300.0,
+            420.0,
+            550.0, // three square wave freqs
+            700.0,
+            12.0, // RLC center + Q
+            0.3,  // decay_s
         )
     }
 
@@ -137,7 +146,14 @@ impl Cr78Engine {
         let (b0, b1, b2, a1, a2) = compute_rlc_biquad(rlc_freq, rlc_q, sample_rate);
 
         Self {
-            mode: Cr78Mode::Metallic { freq1, freq2, freq3, rlc_freq, rlc_q, decay_s },
+            mode: Cr78Mode::Metallic {
+                freq1,
+                freq2,
+                freq3,
+                rlc_freq,
+                rlc_q,
+                decay_s,
+            },
             bridged_t: BridgedTFilter::new(),
             osc1: PolyBlepSquare::new(freq1),
             osc2: PolyBlepSquare::new(freq2),
@@ -172,12 +188,26 @@ impl Cr78Engine {
         self.amp_decay_coeff = (-1.0 / (decay_s * sample_rate)).exp();
 
         match &self.mode {
-            Cr78Mode::Drum { r_eff, r_shunt, c1, c2, .. } => {
+            Cr78Mode::Drum {
+                r_eff,
+                r_shunt,
+                c1,
+                c2,
+                ..
+            } => {
                 let (r_eff, r_shunt, c1, c2) = (*r_eff, *r_shunt, *c1, *c2);
                 self.bridged_t.reset();
-                self.bridged_t.update_coefficients(r_eff, r_shunt, c1, c2, sample_rate);
+                self.bridged_t
+                    .update_coefficients(r_eff, r_shunt, c1, c2, sample_rate);
             }
-            Cr78Mode::Metallic { freq1, freq2, freq3, rlc_freq, rlc_q, .. } => {
+            Cr78Mode::Metallic {
+                freq1,
+                freq2,
+                freq3,
+                rlc_freq,
+                rlc_q,
+                ..
+            } => {
                 let (f1, f2, f3, rf, rq) = (*freq1, *freq2, *freq3, *rlc_freq, *rlc_q);
                 let tune_ratio = (self.tune / 12.0_f32).exp2();
                 self.osc1.set_freq(f1 * tune_ratio);

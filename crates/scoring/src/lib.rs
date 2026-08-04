@@ -562,7 +562,9 @@ mod tests {
         assert!(
             err_cents < 30.0,
             "engine {freq} Hz -> {:.2} Hz ({:.1} cents off, midi {})",
-            engine.frequency, err_cents, engine.midi_note
+            engine.frequency,
+            err_cents,
+            engine.midi_note
         );
         assert_eq!(
             engine.midi_note, expected_midi,
@@ -641,7 +643,8 @@ mod tests {
         assert!(
             err_cents < 30.0,
             "engine noisy {freq} Hz -> {:.2} Hz ({:.1} cents off)",
-            engine.frequency, err_cents
+            engine.frequency,
+            err_cents
         );
     }
 }

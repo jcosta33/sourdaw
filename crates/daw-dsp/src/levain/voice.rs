@@ -493,8 +493,7 @@ impl LevainVoice {
             expr_slide: 0.0,
             base_gain: 1.0,
             tilt_lp: 0.0,
-            tilt_coeff: 1.0
-                - (-std::f32::consts::TAU * 1200.0 / sample_rate.max(1.0)).exp(),
+            tilt_coeff: 1.0 - (-std::f32::consts::TAU * 1200.0 / sample_rate.max(1.0)).exp(),
         }
     }
 
@@ -561,7 +560,8 @@ impl LevainVoice {
         self.expr_bend_semitones = bend_semitones.clamp(-96.0, 96.0);
         self.expr_pressure = pressure.clamp(0.0, 1.0);
         self.expr_slide = slide.clamp(-1.0, 1.0);
-        self.gain.set_target(self.base_gain * (1.0 + self.expr_pressure));
+        self.gain
+            .set_target(self.base_gain * (1.0 + self.expr_pressure));
     }
 
     /// Start releasing this voice. The tail keeps sounding, but the voice is no
@@ -641,8 +641,7 @@ impl LevainVoice {
         }
 
         let lfo = (self.vibrato_phase * std::f32::consts::TAU).sin();
-        let semitones =
-            (depth_cents / 100.0) * onset_gain * lfo + self.expr_bend_semitones;
+        let semitones = (depth_cents / 100.0) * onset_gain * lfo + self.expr_bend_semitones;
 
         self.playback.apply_pitch_mod(semitones);
         // The crossfade-in playback (active during legato transitions)

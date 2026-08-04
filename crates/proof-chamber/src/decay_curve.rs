@@ -87,8 +87,12 @@ mod tests {
         let rt60_ratio = decay_to_rt60_seconds(0.5) / decay_to_rt60_seconds(0.25);
         let stretch_ratio = decay_to_ir_stretch(0.5) / decay_to_ir_stretch(0.25);
 
-        assert!((rt60_ratio - decay_to_rt60_seconds(0.75) / decay_to_rt60_seconds(0.5)).abs() < 1e-4);
-        assert!((stretch_ratio - decay_to_ir_stretch(0.75) / decay_to_ir_stretch(0.5)).abs() < 1e-5);
+        assert!(
+            (rt60_ratio - decay_to_rt60_seconds(0.75) / decay_to_rt60_seconds(0.5)).abs() < 1e-4
+        );
+        assert!(
+            (stretch_ratio - decay_to_ir_stretch(0.75) / decay_to_ir_stretch(0.5)).abs() < 1e-5
+        );
 
         // Self-equality alone is an identity of any exponential and survives a
         // change to either endpoint, so pin each ratio's value: a quarter turn

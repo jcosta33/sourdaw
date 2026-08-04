@@ -74,7 +74,10 @@ fn peak(samples: &[f32]) -> f32 {
 
 fn assert_all_finite(samples: &[f32], what: &str) {
     for (i, s) in samples.iter().enumerate() {
-        assert!(s.is_finite(), "{what} produced a non-finite sample at {i}: {s}");
+        assert!(
+            s.is_finite(),
+            "{what} produced a non-finite sample at {i}: {s}"
+        );
     }
 }
 
@@ -365,7 +368,10 @@ fn crumbs_note_on_does_not_allocate_in_any_mode() {
         )));
         probe.set_active_sample(probe_id);
         probe.handle_command(CrumbsCommand::SetMode(mode));
-        probe.handle_command(CrumbsCommand::NoteOn { note, velocity: 100 });
+        probe.handle_command(CrumbsCommand::NoteOn {
+            note,
+            velocity: 100,
+        });
         let mut left = vec![0.0_f32; BLOCK];
         let mut right = vec![0.0_f32; BLOCK];
         probe.process_block(&mut left, &mut right);

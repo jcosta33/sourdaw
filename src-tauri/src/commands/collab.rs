@@ -24,9 +24,7 @@ impl Default for CollabState {
     }
 }
 
-fn get_or_create_discovery(
-    guard: &mut Option<LanDiscovery>,
-) -> Result<&mut LanDiscovery, String> {
+fn get_or_create_discovery(guard: &mut Option<LanDiscovery>) -> Result<&mut LanDiscovery, String> {
     if guard.is_none() {
         *guard = Some(LanDiscovery::new()?);
     }

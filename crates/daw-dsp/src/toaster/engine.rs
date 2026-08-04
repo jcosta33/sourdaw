@@ -170,16 +170,8 @@ impl StereoDelay {
         // Ping-pong: left feedback from right, right from left
         let next_l = settle_effect_state(input + tap_r * self.feedback);
         let next_r = settle_effect_state(input + tap_l * self.feedback);
-        replace_active_sample(
-            &mut self.active_samples,
-            self.buf_l[self.write_pos],
-            next_l,
-        );
-        replace_active_sample(
-            &mut self.active_samples,
-            self.buf_r[self.write_pos],
-            next_r,
-        );
+        replace_active_sample(&mut self.active_samples, self.buf_l[self.write_pos], next_l);
+        replace_active_sample(&mut self.active_samples, self.buf_r[self.write_pos], next_r);
         self.buf_l[self.write_pos] = next_l;
         self.buf_r[self.write_pos] = next_r;
 

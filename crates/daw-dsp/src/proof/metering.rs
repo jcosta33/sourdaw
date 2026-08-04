@@ -943,13 +943,7 @@ mod denormal_tests {
         -1.690_659_293_182_41,
         0.732_480_774_215_85,
     ];
-    const S2: [f64; 5] = [
-        1.0,
-        -2.0,
-        1.0,
-        -1.990_047_454_833_98,
-        0.990_072_250_366_88,
-    ];
+    const S2: [f64; 5] = [1.0, -2.0, 1.0, -1.990_047_454_833_98, 0.990_072_250_366_88];
 
     impl UnguardedKWeighting {
         fn process(&mut self, x: f64) -> f64 {
@@ -999,7 +993,10 @@ mod denormal_tests {
             "raw unguarded state {value:e} must be below the f64 normal boundary {:e}",
             f64::MIN_POSITIVE
         );
-        assert!(value != 0.0, "raw unguarded state must be a nonzero subnormal");
+        assert!(
+            value != 0.0,
+            "raw unguarded state must be a nonzero subnormal"
+        );
         assert!(
             !unguarded.s2_y1.is_normal() && unguarded.s2_y1 != 0.0,
             "the stored stage-2 state ends subnormal, not just one output sample"
@@ -1242,7 +1239,10 @@ mod loudness_block_store_tests {
             gated_integrated_lufs(&blocks).to_bits(),
             reference_integrated(&blocks).to_bits()
         );
-        assert_eq!(actual_lra(&blocks).to_bits(), reference_lra(&blocks).to_bits());
+        assert_eq!(
+            actual_lra(&blocks).to_bits(),
+            reference_lra(&blocks).to_bits()
+        );
     }
 
     #[test]
@@ -1464,9 +1464,8 @@ mod reduction_aliasing_tests {
                 for &b in &full {
                     store.push(b);
                 }
-                let delta = (gated_integrated_lufs(store.as_slice())
-                    - reference_integrated(&full))
-                .abs();
+                let delta =
+                    (gated_integrated_lufs(store.as_slice()) - reference_integrated(&full)).abs();
                 if delta > worst {
                     worst = delta;
                     worst_case = (period, phase);
@@ -1752,7 +1751,7 @@ mod extreme_loudness_tests {
     //! number instead.
 
     use super::{
-        LoudnessRange, MAX_LOUDNESS_BLOCKS, QUANTILE_BIN_LU, QUANTILE_BINS, QUANTILE_MIN_LUFS,
+        LoudnessRange, MAX_LOUDNESS_BLOCKS, QUANTILE_BINS, QUANTILE_BIN_LU, QUANTILE_MIN_LUFS,
     };
 
     fn reference_lra(blocks: &[f32]) -> f32 {
@@ -1824,8 +1823,8 @@ mod extreme_loudness_tests {
         let max_block_lufs = -0.691 + 10.0 * max_mean_square.log10();
         // K-weighting can add a few dB of gain on top before the mean square is
         // taken, so leave room rather than sitting exactly on the bound.
-        let top_edge = f64::from(QUANTILE_MIN_LUFS)
-            + QUANTILE_BINS as f64 * f64::from(QUANTILE_BIN_LU);
+        let top_edge =
+            f64::from(QUANTILE_MIN_LUFS) + QUANTILE_BINS as f64 * f64::from(QUANTILE_BIN_LU);
         assert!(
             max_block_lufs + 20.0 < top_edge,
             "the loudest reachable block is {max_block_lufs:.1} LUFS but the bins stop at \

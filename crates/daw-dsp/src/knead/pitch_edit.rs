@@ -66,14 +66,19 @@ impl CompiledDeltaMap {
     }
 
     /// Compile a list of NoteSegments into a dense array for a given audio length and sample rate.
-    pub fn compile(segments: &[NoteSegment], sample_rate: f32, total_samples: usize, hop_size: usize) -> Self {
+    pub fn compile(
+        segments: &[NoteSegment],
+        sample_rate: f32,
+        total_samples: usize,
+        hop_size: usize,
+    ) -> Self {
         let num_frames = (total_samples + hop_size - 1) / hop_size;
         let mut deltas = vec![0.0_f32; num_frames];
 
         for segment in segments {
             let start_sample = (segment.start_time_ms / 1000.0 * sample_rate) as usize;
             let end_sample = (segment.end_time_ms / 1000.0 * sample_rate) as usize;
-            
+
             let start_frame = start_sample / hop_size;
             let end_frame = (end_sample / hop_size).min(num_frames);
 
@@ -100,15 +105,15 @@ impl CompiledDeltaMap {
     }
 }
 
-use wasm_bindgen::prelude::*;
-use crate::knead::yin::{yin_frame, YinConfig};
 use crate::knead::psola::{psola_process_offline_inplace, PsolaConfig};
+use crate::knead::yin::{yin_frame, YinConfig};
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 pub fn analyze_pitch_wasm(samples: &[f32], sample_rate: f32) -> String {
     let hop_size = 256;
     let frame_size = 2048;
-    
+
     let yin_config = YinConfig {
         sample_rate,
         frame_size,
@@ -116,28 +121,28 @@ pub fn analyze_pitch_wasm(samples: &[f32], sample_rate: f32) -> String {
         f0_max: 1000.0,
         cmnd_threshold: 0.15,
     };
-    
+
     let max_tau = (sample_rate / 50.0).ceil() as usize + 1;
     let buf_size = max_tau.max(frame_size);
     let mut work_d = vec![0.0f32; buf_size];
     let mut work_cmnd = vec![0.0f32; buf_size];
-    
+
     let num_frames = if samples.len() > frame_size {
         (samples.len() - frame_size) / hop_size
     } else {
         0
     };
-    
+
     let mut points = Vec::with_capacity(num_frames);
-    
+
     for i in 0..num_frames {
         let offset = i * hop_size;
         let frame = &samples[offset..offset + frame_size];
-        
+
         let result = yin_frame(frame, &yin_config, &mut work_d, &mut work_cmnd);
-        
+
         let time_ms = (offset as f32 / sample_rate) * 1000.0;
-        
+
         points.push(PitchPoint {
             time_ms,
             frequency_hz: result.f0_hz.unwrap_or(0.0),
@@ -145,7 +150,7 @@ pub fn analyze_pitch_wasm(samples: &[f32], sample_rate: f32) -> String {
             voiced: result.f0_hz.is_some(),
         });
     }
-    
+
     let contour = PitchContour {
         points,
         sample_rate: sample_rate as u32,
@@ -164,19 +169,15 @@ pub fn commit_pitch_edit_wasm(
     contour_json: &str,
 ) -> Vec<f32> {
     let segments: Vec<NoteSegment> = serde_json::from_str(segments_json).unwrap_or_default();
-    let contour: PitchContour = serde_json::from_str(contour_json).unwrap_or_else(|_| PitchContour {
-        points: vec![],
-        sample_rate: sample_rate as u32,
-        hop_size: 256,
-        algorithm: "pyin".to_string(),
-    });
+    let contour: PitchContour =
+        serde_json::from_str(contour_json).unwrap_or_else(|_| PitchContour {
+            points: vec![],
+            sample_rate: sample_rate as u32,
+            hop_size: 256,
+            algorithm: "pyin".to_string(),
+        });
 
-    let map = CompiledDeltaMap::compile(
-        &segments,
-        sample_rate,
-        samples.len(),
-        256
-    );
+    let map = CompiledDeltaMap::compile(&segments, sample_rate, samples.len(), 256);
 
     let mut target_f0_curve = vec![0.0_f32; samples.len()];
     let mut pitch_marks = Vec::new();
@@ -184,9 +185,10 @@ pub fn commit_pitch_edit_wasm(
     let mut current_sample = 0.0;
     while (current_sample as usize) < samples.len() {
         let idx = current_sample as usize;
-        
-        let point_idx = (idx / contour.hop_size as usize).min(contour.points.len().saturating_sub(1));
-        
+
+        let point_idx =
+            (idx / contour.hop_size as usize).min(contour.points.len().saturating_sub(1));
+
         if let Some(pt) = contour.points.get(point_idx) {
             if pt.voiced && pt.frequency_hz > 20.0 {
                 pitch_marks.push(idx);
@@ -208,7 +210,7 @@ pub fn commit_pitch_edit_wasm(
                 continue;
             }
         }
-        
+
         current_sample += sample_rate / 100.0; // 10ms default skip
     }
 

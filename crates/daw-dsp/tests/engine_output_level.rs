@@ -322,9 +322,10 @@ fn bacteria_level() -> Level {
     i.set_param("bandCount", 3.0);
     i.set_param("mix", 1.0);
     let (lp, rp) = (i.get_input_left_ptr(), i.get_input_right_ptr());
-    effect_level(&mut |o| unsafe { fill_input(lp, rp, BLOCK, o) }, &mut || {
-        i.process(BLOCK as u32)
-    })
+    effect_level(
+        &mut |o| unsafe { fill_input(lp, rp, BLOCK, o) },
+        &mut || i.process(BLOCK as u32),
+    )
 }
 
 fn gluten_level() -> Level {
@@ -336,9 +337,10 @@ fn gluten_level() -> Level {
     i.set_param("release", 100.0);
     i.set_param("makeup", 3.0);
     let (lp, rp) = (i.get_input_left_ptr(), i.get_input_right_ptr());
-    effect_level(&mut |o| unsafe { fill_input(lp, rp, BLOCK, o) }, &mut || {
-        i.process(BLOCK as u32)
-    })
+    effect_level(
+        &mut |o| unsafe { fill_input(lp, rp, BLOCK, o) },
+        &mut || i.process(BLOCK as u32),
+    )
 }
 
 fn crust_level() -> Level {
@@ -349,9 +351,10 @@ fn crust_level() -> Level {
     i.set_param("lookahead", 2.0);
     i.set_param("true_peak", 1.0);
     let (lp, rp) = (i.get_input_left_ptr(), i.get_input_right_ptr());
-    effect_level(&mut |o| unsafe { fill_input(lp, rp, BLOCK, o) }, &mut || {
-        i.process(BLOCK as u32)
-    })
+    effect_level(
+        &mut |o| unsafe { fill_input(lp, rp, BLOCK, o) },
+        &mut || i.process(BLOCK as u32),
+    )
 }
 
 fn proof_level() -> Level {
@@ -360,9 +363,10 @@ fn proof_level() -> Level {
     i.set_param("limiter_ceiling", -1.0);
     i.set_param("limiter_threshold", -12.0);
     let (lp, rp) = (i.get_input_left_ptr(), i.get_input_right_ptr());
-    effect_level(&mut |o| unsafe { fill_input(lp, rp, BLOCK, o) }, &mut || {
-        i.process(BLOCK as u32)
-    })
+    effect_level(
+        &mut |o| unsafe { fill_input(lp, rp, BLOCK, o) },
+        &mut || i.process(BLOCK as u32),
+    )
 }
 
 fn knead_level() -> Level {
@@ -372,9 +376,10 @@ fn knead_level() -> Level {
     // analysis/overlap-add path rather than a copy.
     i.set_shift_semitones(4.0);
     let (lp, rp) = (i.get_input_left_ptr(), i.get_input_right_ptr());
-    effect_level(&mut |o| unsafe { fill_input(lp, rp, BLOCK, o) }, &mut || {
-        i.process(BLOCK as u32)
-    })
+    effect_level(
+        &mut |o| unsafe { fill_input(lp, rp, BLOCK, o) },
+        &mut || i.process(BLOCK as u32),
+    )
 }
 
 fn fermenter_level() -> Level {

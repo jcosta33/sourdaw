@@ -22,9 +22,9 @@ pub mod spectral;
 pub mod stft;
 pub mod waveshaper;
 
+use crate::primitives::sanitize_block;
 use engine::BacteriaEngine;
 use wasm_bindgen::prelude::*;
-use crate::primitives::sanitize_block;
 
 /// WASM-exported Bacteria instance for AudioWorklet.
 #[wasm_bindgen]

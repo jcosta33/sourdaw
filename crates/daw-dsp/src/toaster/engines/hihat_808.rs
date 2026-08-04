@@ -46,9 +46,9 @@ pub struct HiHat808Engine {
     dc_block: DcBlocker,
 
     // Parameters
-    tune: f32,   // semitones
-    decay: f32,  // 0..1 normalized
-    tone: f32,   // 0..1: mix between BPF1 and BPF2
+    tune: f32,  // semitones
+    decay: f32, // 0..1 normalized
+    tone: f32,  // 0..1: mix between BPF1 and BPF2
     is_open: bool,
     sample_rate: f32,
 }

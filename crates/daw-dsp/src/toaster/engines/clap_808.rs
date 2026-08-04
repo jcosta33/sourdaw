@@ -112,7 +112,14 @@ impl Clap808Engine {
         let noise = xorshift_noise(&mut self.noise_state);
 
         // BPF at ~1000 Hz (SVF)
-        let bpf_out = svf_bandpass_clap(noise, 1000.0, 1.5, sample_rate, &mut self.bp_ic1, &mut self.bp_ic2);
+        let bpf_out = svf_bandpass_clap(
+            noise,
+            1000.0,
+            1.5,
+            sample_rate,
+            &mut self.bp_ic1,
+            &mut self.bp_ic2,
+        );
 
         let mut burst_out = 0.0_f32;
         let mut tail_out = 0.0_f32;
@@ -122,7 +129,10 @@ impl Clap808Engine {
                 self.active = false;
                 return 0.0;
             }
-            ClapState::Burst { burst_idx, burst_phase: _ } => {
+            ClapState::Burst {
+                burst_idx,
+                burst_phase: _,
+            } => {
                 let idx = *burst_idx;
 
                 // Diminishing burst amplitudes: 1.0, 0.7, 0.45
@@ -151,7 +161,9 @@ impl Clap808Engine {
                     } else {
                         // Final 20ms discharge + start tail
                         self.tail_env = self.velocity * 0.3;
-                        self.state = ClapState::Tail { env: self.velocity * 0.3 };
+                        self.state = ClapState::Tail {
+                            env: self.velocity * 0.3,
+                        };
                     }
                 }
             }
@@ -255,6 +267,9 @@ mod tests {
             })
             .sum();
 
-        assert!(energy > 0.001, "Clap burst window should have energy > 0.001, got {energy}");
+        assert!(
+            energy > 0.001,
+            "Clap burst window should have energy > 0.001, got {energy}"
+        );
     }
 }

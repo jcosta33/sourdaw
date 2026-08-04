@@ -154,10 +154,17 @@ fn the_output_block_is_replaced_each_call_rather_than_accumulated() {
     }
     let after_silence = unsafe { read_channel(instance.process(BLOCK as u32), BLOCK) };
 
-    assert!(first_peak > 0.05, "the note never sounded, so this proves nothing");
+    assert!(
+        first_peak > 0.05,
+        "the note never sounded, so this proves nothing"
+    );
     // `CrumbsEngine::process_block` adds into its slices. If the binding did not
     // zero its buffer, the last audible block would linger here forever.
-    assert_eq!(peak(&after_silence), 0.0, "stale audio persisted after all voices stopped");
+    assert_eq!(
+        peak(&after_silence),
+        0.0,
+        "stale audio persisted after all voices stopped"
+    );
 }
 
 #[test]

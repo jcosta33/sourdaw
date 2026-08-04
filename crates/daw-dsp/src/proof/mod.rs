@@ -21,9 +21,9 @@ pub mod metering;
 pub mod multiband;
 pub mod true_peak;
 
+use crate::primitives::sanitize_block;
 use chain::ProofChain;
 use wasm_bindgen::prelude::*;
-use crate::primitives::sanitize_block;
 
 const NUM_MODULES: usize = 5;
 const NUM_TAPS: usize = 6;

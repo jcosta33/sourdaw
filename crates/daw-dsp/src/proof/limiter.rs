@@ -270,8 +270,8 @@ impl LookaheadLimiter {
             } else {
                 release * self.current_gain + (1.0 - release) * required_gain
             };
-            self.gain_avg =
-                self.gain_avg_coeff * self.gain_avg + (1.0 - self.gain_avg_coeff) * self.current_gain;
+            self.gain_avg = self.gain_avg_coeff * self.gain_avg
+                + (1.0 - self.gain_avg_coeff) * self.current_gain;
 
             // Apply gain to delayed sample
             let dl = self.delay_l.pop_front().unwrap_or(0.0);
@@ -607,9 +607,6 @@ mod tests {
     }
 }
 
-
-
-
 #[cfg(test)]
 mod program_dependent_release_tests {
     //! A single fixed one-pole release cannot serve both jobs a
@@ -719,7 +716,9 @@ mod program_dependent_release_tests {
                 if a + frame > out.len() {
                     break;
                 }
-                let peak = out[a..a + frame].iter().fold(0.0f32, |m, &s| m.max(s.abs()));
+                let peak = out[a..a + frame]
+                    .iter()
+                    .fold(0.0f32, |m, &s| m.max(s.abs()));
                 if peak > 0.0 {
                     *sum += 20.0 * (peak as f64).log10();
                     *count += 1;
@@ -881,7 +880,9 @@ mod program_dependent_release_tests {
             for period_ms in [150.0f64, 400.0] {
                 let period = (period_ms * 0.001 * SR) as usize;
                 let out = render(&program(48_000 * 3, period), release_ms);
-                let peak = out[out.len() / 3..].iter().fold(0.0f32, |m, &s| m.max(s.abs()));
+                let peak = out[out.len() / 3..]
+                    .iter()
+                    .fold(0.0f32, |m, &s| m.max(s.abs()));
                 assert!(
                     peak <= CEILING,
                     "release {release_ms} ms with transients every {period_ms} ms let the \

@@ -33,12 +33,12 @@ use clap_sys::ext::gui::{
     clap_plugin_gui, clap_window, clap_window_handle, CLAP_EXT_GUI, CLAP_WINDOW_API_COCOA,
     CLAP_WINDOW_API_WIN32, CLAP_WINDOW_API_X11,
 };
+use clap_sys::ext::latency::{clap_plugin_latency, CLAP_EXT_LATENCY};
 use clap_sys::ext::params::{
     clap_param_info, clap_plugin_params, CLAP_EXT_PARAMS, CLAP_PARAM_IS_AUTOMATABLE,
     CLAP_PARAM_IS_HIDDEN, CLAP_PARAM_IS_READONLY,
 };
 use clap_sys::ext::state::{clap_plugin_state, CLAP_EXT_STATE};
-use clap_sys::ext::latency::{clap_plugin_latency, CLAP_EXT_LATENCY};
 use clap_sys::factory::plugin_factory::{clap_plugin_factory, CLAP_PLUGIN_FACTORY_ID};
 use clap_sys::host::clap_host;
 use clap_sys::plugin::clap_plugin;
@@ -354,11 +354,7 @@ impl ClapWrapper {
 
     #[cfg(feature = "engine-owned-command-fixture")]
     #[doc(hidden)]
-    pub fn new_engine_owned_command_fixture(
-        name: &str,
-        state: Vec<u8>,
-        has_gui: bool,
-    ) -> Self {
+    pub fn new_engine_owned_command_fixture(name: &str, state: Vec<u8>, has_gui: bool) -> Self {
         Self {
             _library: None,
             plugin: ptr::null(),
@@ -1250,7 +1246,10 @@ mod tests {
                 (*(target as *const HostCallbackState)).mark_latency_dirty();
             }
         } else if pass == 1 {
-            STUB_LATENCY.store(RACE_PENDING_LATENCY.load(Ordering::Relaxed), Ordering::Relaxed);
+            STUB_LATENCY.store(
+                RACE_PENDING_LATENCY.load(Ordering::Relaxed),
+                Ordering::Relaxed,
+            );
         }
         true
     }
@@ -1274,8 +1273,9 @@ mod tests {
     }
 
     fn stub_wrapper(plugin: *const clap_plugin) -> ClapWrapper {
-        let latency_ext =
-            unsafe { ClapWrapper::query_extension::<clap_plugin_latency>(&*plugin, CLAP_EXT_LATENCY) };
+        let latency_ext = unsafe {
+            ClapWrapper::query_extension::<clap_plugin_latency>(&*plugin, CLAP_EXT_LATENCY)
+        };
         ClapWrapper {
             _library: None,
             plugin,
@@ -1307,8 +1307,9 @@ mod tests {
         assert_eq!(unsafe { read_latency_ext(ptr::null(), plugin) }, 0);
 
         // After wiring: query the extension the stub advertises, then read it.
-        let ext =
-            unsafe { ClapWrapper::query_extension::<clap_plugin_latency>(&*plugin, CLAP_EXT_LATENCY) };
+        let ext = unsafe {
+            ClapWrapper::query_extension::<clap_plugin_latency>(&*plugin, CLAP_EXT_LATENCY)
+        };
         assert!(!ext.is_null(), "stub advertises CLAP_EXT_LATENCY");
 
         STUB_LATENCY.store(0, Ordering::Relaxed);
@@ -1325,7 +1326,11 @@ mod tests {
 
         assert_eq!(wrapper.latency_samples(), 128);
         wrapper.activated = false;
-        assert_eq!(wrapper.latency_samples(), 0, "inactive plugin reports no latency");
+        assert_eq!(
+            wrapper.latency_samples(),
+            0,
+            "inactive plugin reports no latency"
+        );
     }
 
     #[test]

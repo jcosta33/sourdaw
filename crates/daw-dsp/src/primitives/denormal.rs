@@ -195,7 +195,11 @@ mod tests {
         // so it cannot change silently.
         let flushed = flush_denormal(-0.0);
         assert_eq!(flushed, 0.0);
-        assert_eq!(flushed.to_bits(), 0_u32, "sign bit is dropped, not preserved");
+        assert_eq!(
+            flushed.to_bits(),
+            0_u32,
+            "sign bit is dropped, not preserved"
+        );
     }
 
     #[test]
@@ -238,7 +242,10 @@ mod tests {
         // An f32 subnormal is a perfectly normal f64 and must survive.
         let f32_subnormal_as_f64 = f64::from(f32::from_bits(1));
         assert!(f32_subnormal_as_f64.is_normal());
-        assert_eq!(flush_denormal_f64(f32_subnormal_as_f64), f32_subnormal_as_f64);
+        assert_eq!(
+            flush_denormal_f64(f32_subnormal_as_f64),
+            f32_subnormal_as_f64
+        );
 
         assert_eq!(
             flush_denormal_f64(f64::MIN_POSITIVE).to_bits(),

@@ -263,7 +263,11 @@ mod tests {
             }
         }
 
-        (peak, edge_sum / count.max(1) as f32, body_sum / count.max(1) as f32)
+        (
+            peak,
+            edge_sum / count.max(1) as f32,
+            body_sum / count.max(1) as f32,
+        )
     }
 
     #[test]
@@ -323,10 +327,12 @@ mod tests {
         let instrument = conditioned_burst_metrics(0.0);
         let line = conditioned_burst_metrics(1.0);
         let reamp = conditioned_burst_metrics(2.0);
-        let line_diff =
-            (instrument.0 - line.0).abs() + (instrument.1 - line.1).abs() + (instrument.2 - line.2).abs();
-        let reamp_diff =
-            (instrument.0 - reamp.0).abs() + (instrument.1 - reamp.1).abs() + (instrument.2 - reamp.2).abs();
+        let line_diff = (instrument.0 - line.0).abs()
+            + (instrument.1 - line.1).abs()
+            + (instrument.2 - line.2).abs();
+        let reamp_diff = (instrument.0 - reamp.0).abs()
+            + (instrument.1 - reamp.1).abs()
+            + (instrument.2 - reamp.2).abs();
 
         assert!(
             line_diff > 0.035 && reamp_diff > 0.05,

@@ -355,7 +355,11 @@ fn the_device_delivers_the_smudge_latency_it_reports() {
             let left = instance.get_input_left_ptr();
             let right = instance.get_input_right_ptr();
             for i in 0..BLOCK {
-                let value = if block * BLOCK + i == impulse_at { 1.0 } else { 0.0 };
+                let value = if block * BLOCK + i == impulse_at {
+                    1.0
+                } else {
+                    0.0
+                };
                 *left.add(i) = value;
                 *right.add(i) = value;
             }

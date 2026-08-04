@@ -99,7 +99,11 @@ fn devices_in_crate(src: &Path) -> Vec<Device> {
     let entries = std::fs::read_dir(src).expect("crates/daw-dsp/src must be readable");
     for entry in entries {
         let entry = entry.expect("directory entry must be readable");
-        if !entry.file_type().expect("file type must be readable").is_dir() {
+        if !entry
+            .file_type()
+            .expect("file type must be readable")
+            .is_dir()
+        {
             continue;
         }
         let module_path = entry.path().join("mod.rs");

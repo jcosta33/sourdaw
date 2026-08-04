@@ -308,13 +308,13 @@ impl Preamp {
 
     pub fn process_sample(&mut self, input: f32) -> f32 {
         let gain_scale = self.gain / 10.0;
-        let (model_trim, interstage_attenuation, model_brightness, model_low_end, model_compression): (
-            f32,
-            f32,
-            f32,
-            f32,
-            f32,
-        ) = match self.amp_model {
+        let (
+            model_trim,
+            interstage_attenuation,
+            model_brightness,
+            model_low_end,
+            model_compression,
+        ): (f32, f32, f32, f32, f32) = match self.amp_model {
             AmpModel::CleanTwin => (0.75, 0.18, 0.05, -0.04, 0.02),
             AmpModel::CrunchJcm => (1.00, 0.14, 0.00, 0.02, 0.08),
             AmpModel::LeadJcm => (1.14, 0.12, -0.01, 0.05, 0.10),
@@ -373,14 +373,11 @@ impl Preamp {
             self.model_drive_state += env_coeff * (signal.abs() - self.model_drive_state);
             let clamp = 1.0
                 / (1.0
-                    + self.model_drive_state
-                        * model_compression
-                        * (0.7 + gain_scale * 1.5)
-                        * 2.2);
+                    + self.model_drive_state * model_compression * (0.7 + gain_scale * 1.5) * 2.2);
             let compressed = signal * clamp;
             let soft_mix = (model_compression * 0.45).clamp(0.0, 0.22);
-            let softened =
-                (compressed * (1.0 + model_compression * 0.7)).tanh() * (0.98 - model_compression * 0.08);
+            let softened = (compressed * (1.0 + model_compression * 0.7)).tanh()
+                * (0.98 - model_compression * 0.08);
             signal = compressed * (1.0 - soft_mix) + softened * soft_mix;
         }
 
@@ -418,9 +415,10 @@ impl Preamp {
         }
 
         if model_compression > 0.0 {
-            let post_mix = (model_compression * (0.16 + self.model_drive_state * 0.22)).clamp(0.0, 0.30);
-            let post_shaped =
-                (final_out * (1.0 + model_compression * 0.9)).tanh() * (0.96 - model_compression * 0.06);
+            let post_mix =
+                (model_compression * (0.16 + self.model_drive_state * 0.22)).clamp(0.0, 0.30);
+            let post_shaped = (final_out * (1.0 + model_compression * 0.9)).tanh()
+                * (0.96 - model_compression * 0.06);
             final_out = final_out * (1.0 - post_mix) + post_shaped * post_mix;
         }
 
@@ -485,10 +483,7 @@ mod tests {
         sum / total as f32
     }
 
-    fn burst_metrics_for_preamp(
-        grid_conduction: f32,
-        coupling_cap_charge: f32,
-    ) -> (f32, f32) {
+    fn burst_metrics_for_preamp(grid_conduction: f32, coupling_cap_charge: f32) -> (f32, f32) {
         let sample_rate = 48_000.0;
         let mut preamp = Preamp::new(sample_rate);
         preamp.set_param("ampModel", 4.0);
@@ -553,8 +548,7 @@ mod tests {
 
         for n in 0..total {
             let env = if n < burst_len { 1.0 } else { 0.0 };
-            let low =
-                ((n as f32 * 2.0 * std::f32::consts::PI * 130.0) / sample_rate).sin() * 0.22;
+            let low = ((n as f32 * 2.0 * std::f32::consts::PI * 130.0) / sample_rate).sin() * 0.22;
             let pick =
                 ((n as f32 * 2.0 * std::f32::consts::PI * 1_850.0) / sample_rate).sin() * 0.08;
             let input = (low + pick) * env;
@@ -590,8 +584,7 @@ mod tests {
         let mut sustain_count = 0_usize;
         for n in 0..total {
             let env = if n < 384 { 1.0 } else { 0.0 };
-            let low =
-                ((n as f32 * 2.0 * std::f32::consts::PI * 120.0) / sample_rate).sin() * 0.24;
+            let low = ((n as f32 * 2.0 * std::f32::consts::PI * 120.0) / sample_rate).sin() * 0.24;
             let edge =
                 ((n as f32 * 2.0 * std::f32::consts::PI * 1_600.0) / sample_rate).sin() * 0.09;
             let out = preamp.process_sample((low + edge) * env);
@@ -658,8 +651,8 @@ mod tests {
 
         let sustain_ratio = (sustain_edge / sustain_count.max(1) as f32)
             / (sustain_body / sustain_count.max(1) as f32).max(1.0e-6);
-        let tail_ratio =
-            (tail_edge / tail_count.max(1) as f32) / (tail_body / tail_count.max(1) as f32).max(1.0e-6);
+        let tail_ratio = (tail_edge / tail_count.max(1) as f32)
+            / (tail_body / tail_count.max(1) as f32).max(1.0e-6);
         (sustain_ratio, tail_ratio)
     }
 

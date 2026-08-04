@@ -222,7 +222,9 @@ impl GrinderEngine {
 
             // Cabinet
             "cabType" => self.cabinet_mode = CabinetMode::from_index(value.round().max(0.0) as u32),
-            "routingMode" => self.routing_mode = RoutingMode::from_index(value.round().max(0.0) as u32),
+            "routingMode" => {
+                self.routing_mode = RoutingMode::from_index(value.round().max(0.0) as u32)
+            }
             "cabIrSlot" => {
                 self.cab_ir_slot = value.round().max(0.0) as u32;
                 self.cabinet.load_builtin(self.cab_ir_slot);
@@ -259,8 +261,13 @@ impl GrinderEngine {
             name if name.starts_with("neuralCustom") => self.neural.set_param(name, value),
 
             // Supported pedal ordering
-            "preCompressorOrder" | "preOverdriveOrder" | "preDistortionOrder" | "preFuzzOrder"
-            | "postCompressorOrder" | "postOverdriveOrder" | "postDistortionOrder"
+            "preCompressorOrder"
+            | "preOverdriveOrder"
+            | "preDistortionOrder"
+            | "preFuzzOrder"
+            | "postCompressorOrder"
+            | "postOverdriveOrder"
+            | "postDistortionOrder"
             | "postFuzzOrder" => self.set_supported_pedal_order(name, value),
 
             // Output
@@ -473,8 +480,12 @@ impl GrinderEngine {
             if should_run_circuit_rig {
                 let primary_back_emf = self.speaker.back_emf();
                 let dual_back_emf = self.dual_speaker.back_emf();
-                let primary_power = self.power_amp.process_sample(signal + primary_back_emf * 0.1);
-                let dual_power = self.dual_power_amp.process_sample(signal * 0.94 + dual_back_emf * 0.08);
+                let primary_power = self
+                    .power_amp
+                    .process_sample(signal + primary_back_emf * 0.1);
+                let dual_power = self
+                    .dual_power_amp
+                    .process_sample(signal * 0.94 + dual_back_emf * 0.08);
                 let primary_transformer = self.transformer.process_sample(primary_power);
                 let dual_transformer = self.dual_transformer.process_sample(dual_power);
 
@@ -729,10 +740,26 @@ fn map_supported_pedal_order_param(name: &str) -> Option<(bool, SupportedPedalSl
 
 fn rebuild_supported_pedal_order(order_values: [f32; 4]) -> [SupportedPedalSlot; 4] {
     let mut ordered = [
-        (SupportedPedalSlot::Compressor, order_values[SupportedPedalSlot::Compressor.index()], 0_usize),
-        (SupportedPedalSlot::Overdrive, order_values[SupportedPedalSlot::Overdrive.index()], 1_usize),
-        (SupportedPedalSlot::Distortion, order_values[SupportedPedalSlot::Distortion.index()], 2_usize),
-        (SupportedPedalSlot::Fuzz, order_values[SupportedPedalSlot::Fuzz.index()], 3_usize),
+        (
+            SupportedPedalSlot::Compressor,
+            order_values[SupportedPedalSlot::Compressor.index()],
+            0_usize,
+        ),
+        (
+            SupportedPedalSlot::Overdrive,
+            order_values[SupportedPedalSlot::Overdrive.index()],
+            1_usize,
+        ),
+        (
+            SupportedPedalSlot::Distortion,
+            order_values[SupportedPedalSlot::Distortion.index()],
+            2_usize,
+        ),
+        (
+            SupportedPedalSlot::Fuzz,
+            order_values[SupportedPedalSlot::Fuzz.index()],
+            3_usize,
+        ),
     ];
     ordered.sort_by(|left, right| left.1.total_cmp(&right.1).then(left.2.cmp(&right.2)));
     ordered.map(|(slot, _, _)| slot)

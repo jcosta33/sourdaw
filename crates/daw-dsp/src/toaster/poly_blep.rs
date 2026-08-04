@@ -91,10 +91,7 @@ mod tests {
         // Approximate: check that all samples are bounded in [-1.5, 1.5]
         // (PolyBLEP correction can slightly exceed 1 during transitions)
         for (i, &s) in samples.iter().enumerate() {
-            assert!(
-                s.abs() <= 1.5,
-                "Sample {i} out of range: {s}"
-            );
+            assert!(s.abs() <= 1.5, "Sample {i} out of range: {s}");
             assert!(!s.is_nan(), "NaN at sample {i}");
         }
 
@@ -127,6 +124,9 @@ mod tests {
         // Naive square has energy at odd harmonics including those above Nyquist,
         // which alias back. We just verify it has non-zero energy (sanity check).
         let rms = (naive_samples.iter().map(|x| x * x).sum::<f32>() / n_samples as f32).sqrt();
-        assert!(rms > 0.5, "Naive square should have non-zero RMS, got {rms}");
+        assert!(
+            rms > 0.5,
+            "Naive square should have non-zero RMS, got {rms}"
+        );
     }
 }

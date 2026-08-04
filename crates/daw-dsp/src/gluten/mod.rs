@@ -20,9 +20,9 @@ pub mod smoother;
 pub mod stereo;
 pub mod vca;
 
+use crate::primitives::sanitize_block;
 use engine::GlutenEngine;
 use wasm_bindgen::prelude::*;
-use crate::primitives::sanitize_block;
 
 /// WASM-exported Gluten instance for AudioWorklet.
 /// Unlike instruments, this is an *effect* — it processes input audio.

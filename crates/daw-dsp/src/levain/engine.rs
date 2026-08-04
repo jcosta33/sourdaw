@@ -905,7 +905,11 @@ mod tests {
     fn window_peaks(samples: &[f32]) -> Vec<f32> {
         samples
             .chunks_exact(ENVELOPE_WINDOW)
-            .map(|window| window.iter().fold(0.0_f32, |acc, value| acc.max(value.abs())))
+            .map(|window| {
+                window
+                    .iter()
+                    .fold(0.0_f32, |acc, value| acc.max(value.abs()))
+            })
             .collect()
     }
 

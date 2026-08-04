@@ -252,8 +252,6 @@ fn transistor_clip(x: f32, drive: f32, knee: f32) -> f32 {
     }
 }
 
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -283,7 +281,9 @@ mod tests {
     /// Residual high-frequency tilt is the dry interpolator's, not a comb.
     #[test]
     fn blend_response_has_no_comb_notch() {
-        for &f in &[500.0_f32, 1000.0, 2000.0, 3000.0, 3428.0, 4000.0, 6000.0, 8000.0] {
+        for &f in &[
+            500.0_f32, 1000.0, 2000.0, 3000.0, 3428.0, 4000.0, 6000.0, 8000.0,
+        ] {
             let ratio = blend_response_ratio(f);
             assert!(
                 (0.90..=1.05).contains(&ratio),

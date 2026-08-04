@@ -48,8 +48,7 @@ impl SpectralProcessor {
         // DSP-2: the smoothing recursion runs through the ring buffer, so the tail
         // decays into the subnormal range one slot at a time.
         let smoothed = flush_denormal(
-            self.blur_alpha * input
-                + (1.0 - self.blur_alpha) * self.smooth_buffer[self.buffer_pos],
+            self.blur_alpha * input + (1.0 - self.blur_alpha) * self.smooth_buffer[self.buffer_pos],
         );
         self.smooth_buffer[self.buffer_pos] = smoothed;
         self.buffer_pos = (self.buffer_pos + 1) % self.smooth_buffer.len();

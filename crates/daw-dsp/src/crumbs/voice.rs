@@ -506,24 +506,24 @@ impl Default for VoiceTriggerParams {
 /// position `t` between y[0] and y[1] (0.0–1.0), returns the interpolated value.
 fn windowed_sinc(t: f32, samples: &[f32; 8]) -> f32 {
     let mut sum = 0.0;
-    
+
     // For n from -3 to 4
     for i in 0..8 {
         let n = i as f32 - 3.0;
         let x = t - n;
-        
+
         if x == 0.0 {
             sum += samples[i];
         } else {
             let pi_x = std::f32::consts::PI * x;
             let sinc = pi_x.sin() / pi_x;
-            
+
             // Hann window over [-4, 4]
             let window = 0.5 * (1.0 + (std::f32::consts::PI * x / 4.0).cos());
-            
+
             sum += samples[i] * sinc * window;
         }
     }
-    
+
     sum
 }

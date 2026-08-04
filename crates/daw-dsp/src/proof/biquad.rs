@@ -334,7 +334,9 @@ mod coefficient_smoothing_tests {
     /// Largest single-sample jump inside a window — a zipper shows up here as a
     /// spike well above the tone's own natural slew.
     fn largest_step(samples: &[f32], from: usize, to: usize) -> f32 {
-        (from..to).fold(0.0_f32, |worst, i| worst.max((samples[i] - samples[i - 1]).abs()))
+        (from..to).fold(0.0_f32, |worst, i| {
+            worst.max((samples[i] - samples[i - 1]).abs())
+        })
     }
 
     fn render_instant_swap() -> Vec<f32> {
@@ -415,7 +417,10 @@ mod coefficient_smoothing_tests {
     fn smoother_reaches_its_target_and_latches() {
         let mut smoothed = SmoothedBiquadCoeffs::new(flat(), SAMPLE_RATE);
         smoothed.set_target(boosted());
-        assert!(!smoothed.is_settled(), "a fresh target must not read as settled");
+        assert!(
+            !smoothed.is_settled(),
+            "a fresh target must not read as settled"
+        );
 
         for _ in 0..RENDER_LEN {
             smoothed.next();
@@ -553,7 +558,10 @@ mod denormal_tests {
             "raw unguarded state {value:e} must be below the normal boundary {:e}",
             f32::MIN_POSITIVE
         );
-        assert!(value != 0.0, "raw unguarded state must be a nonzero subnormal");
+        assert!(
+            value != 0.0,
+            "raw unguarded state must be a nonzero subnormal"
+        );
         assert!(
             unguarded.y1 != 0.0 && !(unguarded.y1 as f32).is_normal(),
             "the stored state itself narrows to a subnormal f32 ({:e}), not just one \
@@ -614,9 +622,6 @@ mod denormal_tests {
         );
     }
 }
-
-
-
 
 #[cfg(test)]
 mod low_frequency_precision_tests {
@@ -683,7 +688,10 @@ mod low_frequency_precision_tests {
     /// the tone: subtract the best-fit sinusoid and measure what is left.
     fn noise_floor_db(signal: &[f64], hz: f64, sr: f64) -> f64 {
         let (mag, phase) = bin(signal, hz, sr);
-        assert!(mag > 0.0, "probe tone vanished — the filter output is silent");
+        assert!(
+            mag > 0.0,
+            "probe tone vanished — the filter output is silent"
+        );
         let residual: Vec<f64> = signal
             .iter()
             .enumerate()
@@ -790,8 +798,8 @@ mod low_frequency_precision_tests {
         let mut out = Vec::with_capacity(analyse);
         for n in 0..settle + analyse {
             let x = f64::from((0.5 * (2.0 * PI * tone_hz * n as f64 / sr).sin()) as f32);
-            let y = coeffs.b0 * x + coeffs.b1 * x1 + coeffs.b2 * x2 - coeffs.a1 * y1
-                - coeffs.a2 * y2;
+            let y =
+                coeffs.b0 * x + coeffs.b1 * x1 + coeffs.b2 * x2 - coeffs.a1 * y1 - coeffs.a2 * y2;
             x2 = x1;
             x1 = x;
             y2 = y1;
@@ -812,7 +820,8 @@ mod low_frequency_precision_tests {
     fn assert_adds_no_noise(coeffs: &BiquadCoeffs, tone_hz: f64, sr: f64, pre_fix: &str) {
         let (shipped, _) = settled_response(coeffs, tone_hz, sr);
         let shipped_floor = noise_floor_db(&shipped, tone_hz, sr);
-        let ideal_floor = noise_floor_db(&ideal_reference_response(coeffs, tone_hz, sr), tone_hz, sr);
+        let ideal_floor =
+            noise_floor_db(&ideal_reference_response(coeffs, tone_hz, sr), tone_hz, sr);
         let excess = shipped_floor - ideal_floor;
         assert!(
             excess < EXCESS_NOISE_TOLERANCE_DB,
@@ -993,9 +1002,12 @@ mod rejected_topology_measurement {
 
     /// Render a −6 dBFS tone through `step`, discard the transient, and return
     /// (realized gain in dB, noise floor in dB relative to the tone).
-    fn measure(coeffs: &BiquadCoeffs, tone_hz: f64, sr: f64, mut step: impl FnMut(f32) -> f32)
-        -> (f64, f64)
-    {
+    fn measure(
+        coeffs: &BiquadCoeffs,
+        tone_hz: f64,
+        sr: f64,
+        mut step: impl FnMut(f32) -> f32,
+    ) -> (f64, f64) {
         let settle = settle_samples(coeffs);
         let analyse = (200.0 * sr / tone_hz).round() as usize;
         let mut out = Vec::with_capacity(analyse);
@@ -1083,7 +1095,11 @@ mod rejected_topology_measurement {
         // The payoff: production is not a compromise between the two, it
         // dominates both. `BiquadState` is the shipped f64 Direct-Form-I.
         use super::BiquadState;
-        for (sr, gain_db) in [(96_000.0, GAIN_DB), (48_000.0, GAIN_DB), (48_000.0, -GAIN_DB)] {
+        for (sr, gain_db) in [
+            (96_000.0, GAIN_DB),
+            (48_000.0, GAIN_DB),
+            (48_000.0, -GAIN_DB),
+        ] {
             let coeffs = BiquadCoeffs::peak(HZ, gain_db, Q, sr);
             let (df1_gain, df1_floor) = df1(&coeffs, HZ, sr);
             let (tdf2_gain, tdf2_floor) = tdf2(&coeffs, HZ, sr);

@@ -100,9 +100,8 @@ impl Transformer {
         let hysteresis_blend = self.hysteresis * 0.5;
         // DSP-2: the hysteresis memory term keeps decaying after the input stops,
         // so it lands in the subnormal range instead of reaching zero.
-        self.flux_state = flush_denormal(
-            flux * (1.0 - hysteresis_blend) + self.flux_state * hysteresis_blend,
-        );
+        self.flux_state =
+            flush_denormal(flux * (1.0 - hysteresis_blend) + self.flux_state * hysteresis_blend);
 
         // LF saturation emphasis: saturate LF more heavily
         let lf_saturated = self.flux_response(lf_content * (1.0 + self.lf_saturation * 4.0));

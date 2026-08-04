@@ -21,7 +21,9 @@ pub fn parabolic_minimum(x: &[f32], i: usize, max_idx: usize) -> (f32, f32) {
 /// Populates the provided slice with a Hann window.
 pub fn hann_window_inplace(window: &mut [f32]) {
     let n = window.len();
-    if n == 0 {return;}
+    if n == 0 {
+        return;
+    }
     if n == 1 {
         window[0] = 1.0;
         return;

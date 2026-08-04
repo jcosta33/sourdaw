@@ -11,7 +11,7 @@
 
 use super::lfsr::Lfsr31;
 use crate::primitives::flush_denormal_in_place;
-use crate::toaster::adaa::{antiderivative_tanh, adaa_first_order};
+use crate::toaster::adaa::{adaa_first_order, antiderivative_tanh};
 use crate::toaster::dc_block::DcBlocker;
 
 const RESTING_FREQ: f32 = 55.0; // Hz (~55 Hz default resting pitch)
@@ -51,8 +51,8 @@ pub struct Kick909Engine {
 
     // Parameters
     decay: f32,
-    tune: f32,    // semitones
-    attack: f32,  // click attack amount 0..1
+    tune: f32,   // semitones
+    attack: f32, // click attack amount 0..1
 
     active: bool,
     sample_rate: f32,
@@ -263,7 +263,8 @@ mod tests {
             assert!(
                 (first_10[i] - second_10[i]).abs() < 1e-5,
                 "Trigger phase reset mismatch at sample {i}: {} vs {}",
-                first_10[i], second_10[i]
+                first_10[i],
+                second_10[i]
             );
         }
     }
