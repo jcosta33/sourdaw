@@ -1,0 +1,19 @@
+src/modules/Automation/handlers/automation/__tests__/handleRestoreAutomationLanePoints.spec.ts
+  s_f5fe619ac6f277::t_6c22bb1b115b31 1-146
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "6156789f88d2c833bf6a0fbe3cd668dfc5cad07f",
+  "prompts": {},
+  "sessions": {
+    "s_f5fe619ac6f277": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-acbdf765ca08cf4fa",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
