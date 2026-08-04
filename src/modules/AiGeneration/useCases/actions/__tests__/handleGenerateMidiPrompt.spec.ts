@@ -1,291 +1,221 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { buildSeedNotesFromPrompt } from '../buildSeedNotesFromPrompt';
 import { handleGenerateMidiPrompt } from '../handleGenerateMidiPrompt';
 
-type UndoCallback = () => void;
+type TaskPatch = {
+    status: string;
+    error?: string;
+    data?: { noteCount?: number; warning?: string };
+    durationMs?: number;
+};
 
-type PushUndoEntryMock = (
-    label: string,
-    undoFn: UndoCallback,
-    redoFn: UndoCallback,
-    options?: { source?: string; groupId?: string; groupLabel?: string }
-) => void;
-
-const {
-    updateTaskMock,
-    addTrackMock,
-    addClipMock,
-    batchAddMidiNotesMock,
-    getTrackStoreStateMock,
-    getMidiStoreStateMock,
-    setTrackStoreStateMock,
-    setMidiStoreStateMock,
-    pushUndoEntryMock,
-    selectClipMock,
-    trackStateMock,
-    midiStateMock,
-    generateMidiViaLlmMock,
-} = vi.hoisted(() => {
-    const trackStateMock = {
-        value: { tracks: [] as Array<{ id: string; kind: string }>, selectedTrackId: null as string | null },
-    };
-    const midiStateMock: { value: unknown } = { value: {} };
-
-    return {
-        updateTaskMock: vi.fn(),
-        addTrackMock: vi.fn(),
-        addClipMock: vi.fn(),
-        batchAddMidiNotesMock: vi.fn(),
-        getTrackStoreStateMock: vi.fn<() => unknown>(() => trackStateMock.value),
-        getMidiStoreStateMock: vi.fn<() => unknown>(() => midiStateMock.value),
-        setTrackStoreStateMock: vi.fn<(state: unknown) => void>(),
-        setMidiStoreStateMock: vi.fn<(state: unknown) => void>(),
-        pushUndoEntryMock: vi.fn<PushUndoEntryMock>(),
-        selectClipMock: vi.fn(),
-        trackStateMock,
-        midiStateMock,
-        generateMidiViaLlmMock: vi.fn().mockResolvedValue([]),
-    };
-});
-
-vi.mock('../../nativeAiBridge/generateMidiAI', () => ({
-    generateMidiAI: vi.fn(),
+const mocks = vi.hoisted(() => ({
+    captureProjectRevision: vi.fn(() => 'revision-1'),
+    executeAppActionBatch: vi.fn(),
+    generateMidiViaLlm: vi.fn(),
+    getAiSnapshot: vi.fn(),
+    getNotesForClip: vi.fn<
+        () => Array<{ id: string; pitch: number; startBeat: number; duration: number; velocity: number }>
+    >(() => []),
+    getTrackStoreState: vi.fn(),
+    getTransportState: vi.fn(() => ({ playheadPosition: 8 })),
+    notifyUser: vi.fn(),
+    selectClip: vi.fn(),
+    updateTask: vi.fn<(taskId: string, patch: TaskPatch) => void>(),
 }));
 
-vi.mock('#/utils/tauriRuntime', () => ({
-    isTauri: () => false,
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
+    getTrackStoreState: mocks.getTrackStoreState,
+    selectClip: mocks.selectClip,
 }));
 
-vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
-    return {
-        ...actual,
-        addTrack: addTrackMock,
-        addClip: addClipMock,
-        getTrackStoreState: getTrackStoreStateMock,
-        setTrackStoreState: setTrackStoreStateMock,
-        selectClip: selectClipMock,
-    };
-});
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
+    executeAppActionBatch: mocks.executeAppActionBatch,
+}));
 
-vi.mock('#/modules/MIDI/useCases', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/MIDI/useCases')>();
-    return {
-        ...actual,
-        batchAddMidiNotes: batchAddMidiNotesMock,
-        getMidiStoreState: getMidiStoreStateMock,
-        setMidiStoreState: setMidiStoreStateMock,
-    };
-});
+vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
+    captureProjectRevision: mocks.captureProjectRevision,
+}));
 
-vi.mock('#/modules/Command/useCases', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Command/useCases')>();
-    return {
-        ...actual,
-        pushUndoEntry: pushUndoEntryMock,
-    };
-});
+vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),
+    getNotesForClip: mocks.getNotesForClip,
+}));
 
-vi.mock('#/modules/Transport/useCases', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Transport/useCases')>();
-    return {
-        ...actual,
-        getTransportState: vi.fn().mockReturnValue({ playheadPosition: 0 }),
-    };
-});
+vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Transport/useCases')>()),
+    getTransportState: mocks.getTransportState,
+}));
+
+vi.mock('#/utils/Notification/notifyUser', () => ({
+    notifyUser: mocks.notifyUser,
+}));
+
+vi.mock('../../../stores/aiStore', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../../../stores/aiStore')>()),
+    getAiSnapshot: mocks.getAiSnapshot,
+}));
 
 vi.mock('../../llmMidiGeneration', () => ({
-    generateMidiViaLlm: generateMidiViaLlmMock,
+    generateMidiViaLlm: mocks.generateMidiViaLlm,
 }));
 
 vi.mock('../addTask', () => ({
-    addTask: vi.fn().mockReturnValue('task-1'),
+    addTask: vi.fn(() => 'task-1'),
 }));
 
 vi.mock('../updateTask', () => ({
-    updateTask: updateTaskMock,
+    updateTask: mocks.updateTask,
 }));
+
+const generatedNotes = [{ pitch: 60, start_beat: 0, duration_beats: 1, velocity: 100 }];
 
 describe('handleGenerateMidiPrompt', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        trackStateMock.value = { tracks: [], selectedTrackId: null };
-        midiStateMock.value = {};
-        generateMidiViaLlmMock.mockResolvedValue([]);
+        mocks.captureProjectRevision.mockReturnValue('revision-1');
+        mocks.getAiSnapshot.mockReturnValue({
+            tasks: [{ id: 'task-1', type: 'midi-generation', status: 'processing', timestamp: 1 }],
+            isPanelOpen: true,
+        });
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [], selectedTrackId: null });
+        mocks.generateMidiViaLlm.mockResolvedValue(generatedNotes);
+        mocks.executeAppActionBatch.mockResolvedValue({ status: 'committed', actions: [] });
     });
 
-    it('should record an error task when generation yields no notes', async () => {
-        await handleGenerateMidiPrompt('hello');
+    it('writes provider-neutral output as one compensable AppAction batch', async () => {
+        await handleGenerateMidiPrompt('a melody');
 
-        expect(updateTaskMock).toHaveBeenCalledWith(
+        expect(mocks.generateMidiViaLlm).toHaveBeenCalledWith('a melody', 32, 0.65);
+        const [actions, options] = mocks.executeAppActionBatch.mock.calls[0] as [
+            Array<{ type: string; payload: Record<string, unknown> }>,
+            { source: string; requireCompensation: boolean; shouldExecute: () => boolean },
+        ];
+        expect(actions.map((action) => action.type)).toEqual(['addTrack', 'addClip', 'addNotes']);
+        const addTrack = actions[0];
+        const addClip = actions[1];
+        const addNotes = actions[2];
+        expect(addTrack?.payload.id).toBe(addClip?.payload.trackId);
+        expect(addClip?.payload.id).toBe(addNotes?.payload.clipId);
+        expect(addClip?.payload).toMatchObject({ startBeat: 8, endBeat: 9, type: 'midi' });
+        expect(addNotes?.payload.notes).toEqual([{ pitch: 60, startBeat: 0, duration: 1, velocity: 100 }]);
+        expect(options).toMatchObject({ source: 'ai', requireCompensation: true, skipMacroRecording: true });
+        expect(options.shouldExecute()).toBe(true);
+        expect(mocks.selectClip).toHaveBeenCalledWith(addClip?.payload.id);
+        expect(mocks.updateTask).toHaveBeenCalledWith('task-1', expect.objectContaining({ status: 'success' }));
+    });
+
+    it('uses the selected MIDI track without creating another track', async () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 'midi-1', kind: 'midi', clips: [] }],
+            selectedTrackId: 'midi-1',
+        });
+
+        await handleGenerateMidiPrompt('bass');
+
+        const actions = mocks.executeAppActionBatch.mock.calls[0]?.[0] as Array<{
+            type: string;
+            payload: Record<string, unknown>;
+        }>;
+        expect(actions.map((action) => action.type)).toEqual(['addClip', 'addNotes']);
+        expect(actions[0]?.payload.trackId).toBe('midi-1');
+    });
+
+    it('does not write or overwrite the stopped status when cancellation wins inference', async () => {
+        mocks.generateMidiViaLlm.mockImplementation(() => {
+            mocks.getAiSnapshot.mockReturnValue({
+                tasks: [{ id: 'task-1', type: 'midi-generation', status: 'error', timestamp: 1 }],
+                isPanelOpen: true,
+            });
+            return Promise.resolve(generatedNotes);
+        });
+
+        await handleGenerateMidiPrompt('cancel me');
+
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
+        expect(mocks.updateTask).not.toHaveBeenCalled();
+    });
+
+    it('reports a durable commit truthfully when stop arrives while committed effects settle', async () => {
+        mocks.executeAppActionBatch.mockImplementation(() => {
+            mocks.getAiSnapshot.mockReturnValue({
+                tasks: [{ id: 'task-1', type: 'midi-generation', status: 'error', timestamp: 1 }],
+                isPanelOpen: true,
+            });
+            return Promise.resolve({ status: 'committed' as const, actions: [] });
+        });
+
+        await handleGenerateMidiPrompt('late stop');
+
+        expect(mocks.selectClip).toHaveBeenCalledOnce();
+        expect(mocks.updateTask).toHaveBeenCalledWith('task-1', expect.objectContaining({ status: 'success' }));
+    });
+
+    it('surfaces a durable ambiguous commit as success with a runtime warning', async () => {
+        mocks.executeAppActionBatch.mockImplementation((actions: Array<{ payload?: Record<string, unknown> }>) => {
+            const clipId = actions[1]?.payload?.id;
+            if (typeof clipId !== 'string') {
+                throw new TypeError('Expected generated clip identity');
+            }
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [{ id: 'track-ai', clips: [{ id: clipId }] }],
+                selectedTrackId: null,
+            });
+            mocks.getNotesForClip.mockReturnValue([
+                { id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 },
+            ]);
+            return Promise.resolve({
+                status: 'ambiguous' as const,
+                reason: 'runtime reconciliation failed: track.added event unavailable',
+                actions: [],
+            });
+        });
+
+        await handleGenerateMidiPrompt('ambiguous melody');
+
+        expect(mocks.notifyUser).toHaveBeenCalledWith(
+            'MIDI generation committed with a warning: runtime reconciliation failed: track.added event unavailable',
+            'warning'
+        );
+        const taskUpdate = mocks.updateTask.mock.calls.find(([taskId]) => taskId === 'task-1')?.[1];
+        expect(taskUpdate?.status).toBe('success');
+        expect(taskUpdate?.data?.warning).toBe('runtime reconciliation failed: track.added event unavailable');
+    });
+
+    it('reports stale project authority without applying any actions', async () => {
+        mocks.executeAppActionBatch.mockImplementation((_actions, options: { shouldExecute?: () => boolean }) => {
+            mocks.captureProjectRevision.mockReturnValue('revision-2');
+            return Promise.resolve(
+                options.shouldExecute?.()
+                    ? { status: 'committed' as const, actions: [] }
+                    : { status: 'cancelled' as const, reason: 'revoked', actions: [] }
+            );
+        });
+
+        await handleGenerateMidiPrompt('stale melody');
+
+        expect(mocks.selectClip).not.toHaveBeenCalled();
+        expect(mocks.updateTask).toHaveBeenCalledWith(
             'task-1',
             expect.objectContaining({
                 status: 'error',
-                error: 'No notes generated — try rephrasing the prompt',
+                error: 'MIDI generation was cancelled because the project changed while AI was working.',
             })
         );
-        expect(addTrackMock).not.toHaveBeenCalled();
-        expect(addClipMock).not.toHaveBeenCalled();
-        expect(batchAddMidiNotesMock).not.toHaveBeenCalled();
-        expect(pushUndoEntryMock).not.toHaveBeenCalled();
-        expect(selectClipMock).not.toHaveBeenCalled();
     });
 
-    it('should register an undo entry and report error when the clip cannot be created on a freshly added track', async () => {
-        const trackSnapshotBefore = { tracks: [], selectedTrackId: null };
-        const trackSnapshotAfter = {
-            tracks: [{ id: 'new-midi-track', kind: 'midi' }],
-            selectedTrackId: 'new-midi-track',
-        };
-        const midiSnapshotBefore = { notesByClipId: {} };
-        const midiSnapshotAfter = midiSnapshotBefore;
-        trackStateMock.value = trackSnapshotBefore;
-        midiStateMock.value = midiSnapshotBefore;
+    it('records an error without dispatch when generation yields no notes', async () => {
+        mocks.generateMidiViaLlm.mockResolvedValue([]);
 
-        // Notes generated, a new track is created, but addClip fails (returns null).
-        generateMidiViaLlmMock.mockResolvedValue([{ pitch: 60, start_beat: 0, duration_beats: 1, velocity: 100 }]);
-        addTrackMock.mockImplementation(() => {
-            trackStateMock.value = trackSnapshotAfter;
-            return { id: 'new-midi-track' };
-        });
-        addClipMock.mockReturnValue(null);
+        await handleGenerateMidiPrompt('empty');
 
-        await handleGenerateMidiPrompt('a melody');
-
-        // The orphan track is rolled-back-able: an undo entry was registered
-        // even though no clip (and therefore no note batch) was inserted.
-        expect(pushUndoEntryMock).toHaveBeenCalledTimes(1);
-        expect(batchAddMidiNotesMock).not.toHaveBeenCalled();
-        expect(selectClipMock).not.toHaveBeenCalled();
-        // And the task is surfaced as an error, not a false success.
-        expect(updateTaskMock).toHaveBeenCalledWith(
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
+        expect(mocks.updateTask).toHaveBeenCalledWith(
             'task-1',
-            expect.objectContaining({
-                status: 'error',
-                error: 'MIDI generation failed: could not create a clip for the notes',
-            })
+            expect.objectContaining({ status: 'error', error: 'No notes generated — try rephrasing the prompt' })
         );
-
-        const undoEntryCall = pushUndoEntryMock.mock.calls[0];
-        expect(undoEntryCall).toBeDefined();
-        if (!undoEntryCall) {
-            throw new Error('Expected clip-create failure to register an undo entry');
-        }
-        const [, undoCallback, redoCallback] = undoEntryCall;
-
-        undoCallback();
-        expect(setTrackStoreStateMock).toHaveBeenCalledWith(trackSnapshotBefore);
-        expect(setMidiStoreStateMock).toHaveBeenCalledWith(midiSnapshotBefore);
-
-        setTrackStoreStateMock.mockClear();
-        setMidiStoreStateMock.mockClear();
-
-        redoCallback();
-        expect(setTrackStoreStateMock).toHaveBeenCalledWith(trackSnapshotAfter);
-        expect(setMidiStoreStateMock).toHaveBeenCalledWith(midiSnapshotAfter);
-    });
-
-    it('should delegate generated clip selection through the Arrangement use case', async () => {
-        const trackSnapshotBefore = { tracks: [], selectedTrackId: null };
-        const trackOnlySnapshot = {
-            tracks: [{ id: 'new-midi-track', kind: 'midi', clips: [] }],
-            selectedTrackId: 'new-midi-track',
-        };
-        const postClipSnapshot = {
-            tracks: [
-                {
-                    id: 'new-midi-track',
-                    kind: 'midi',
-                    clips: [
-                        {
-                            id: 'generated-clip',
-                            startBeat: 0,
-                            endBeat: 1,
-                            name: 'AI: a melody',
-                            type: 'midi',
-                        },
-                    ],
-                },
-            ],
-            selectedTrackId: 'new-midi-track',
-        };
-        const midiSnapshotBefore = { notesByClipId: {} };
-        const midiSnapshotAfter = {
-            notesByClipId: {
-                'generated-clip': [{ pitch: 60, startBeat: 0, duration: 1, velocity: 100 }],
-            },
-        };
-        trackStateMock.value = trackSnapshotBefore;
-        midiStateMock.value = midiSnapshotBefore;
-
-        generateMidiViaLlmMock.mockResolvedValue([{ pitch: 60, start_beat: 0, duration_beats: 1, velocity: 100 }]);
-        addTrackMock.mockImplementation(() => {
-            trackStateMock.value = trackOnlySnapshot;
-            return { id: 'new-midi-track' };
-        });
-        addClipMock.mockImplementation(() => {
-            trackStateMock.value = postClipSnapshot;
-            return { id: 'generated-clip' };
-        });
-        batchAddMidiNotesMock.mockImplementation(() => {
-            midiStateMock.value = midiSnapshotAfter;
-        });
-
-        await handleGenerateMidiPrompt('a melody');
-
-        expect(batchAddMidiNotesMock).toHaveBeenCalledWith('generated-clip', [
-            { pitch: 60, startBeat: 0, duration: 1, velocity: 100 },
-        ]);
-        expect(pushUndoEntryMock).toHaveBeenCalledTimes(1);
-        expect(updateTaskMock).toHaveBeenCalledWith('task-1', expect.objectContaining({ status: 'success' }));
-        expect(selectClipMock).toHaveBeenCalledWith('generated-clip');
-
-        const undoEntryCall = pushUndoEntryMock.mock.calls[0];
-        expect(undoEntryCall).toBeDefined();
-        if (!undoEntryCall) {
-            throw new Error('Expected successful generation to register an undo entry');
-        }
-        const [, undoCallback, redoCallback] = undoEntryCall;
-
-        undoCallback();
-        expect(setTrackStoreStateMock).toHaveBeenCalledWith(trackSnapshotBefore);
-        expect(setMidiStoreStateMock).toHaveBeenCalledWith(midiSnapshotBefore);
-
-        setTrackStoreStateMock.mockClear();
-        setMidiStoreStateMock.mockClear();
-
-        redoCallback();
-        expect(setTrackStoreStateMock).toHaveBeenCalledWith(postClipSnapshot);
-        expect(setTrackStoreStateMock).not.toHaveBeenCalledWith(trackOnlySnapshot);
-        expect(setMidiStoreStateMock).toHaveBeenCalledWith(midiSnapshotAfter);
-    });
-});
-
-describe('buildSeedNotesFromPrompt', () => {
-    it('falls back to an ascending C-major fragment when no key is named', () => {
-        expect(buildSeedNotesFromPrompt('chill lofi groove')).toEqual([
-            [60, 80, 0, 0.5],
-            [62, 75, 0.5, 0.5],
-            [64, 85, 1.0, 0.5],
-            [65, 80, 1.5, 0.5],
-        ]);
-    });
-
-    it('derives a minor-scale seed rooted on the key named in the prompt', () => {
-        // F# minor: root pitch class 6 → MIDI 66; minor steps [0,2,3,5].
-        const seed = buildSeedNotesFromPrompt('moody bassline in F# minor');
-        expect(seed.map((s) => s[0])).toEqual([66, 68, 69, 71]);
-    });
-
-    it('derives a major-scale seed and is case-insensitive', () => {
-        // D major: root pitch class 2 → MIDI 62; major steps [0,2,4,5].
-        const seed = buildSeedNotesFromPrompt('Bright lead in D Major');
-        expect(seed.map((s) => s[0])).toEqual([62, 64, 66, 67]);
-    });
-
-    it('does not treat an incidental note letter (no mode word) as a key', () => {
-        // "cinematic" begins with c but has no major/minor → default C major.
-        expect(buildSeedNotesFromPrompt('cinematic pad').map((s) => s[0])).toEqual([60, 62, 64, 65]);
     });
 });

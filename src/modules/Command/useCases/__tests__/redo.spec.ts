@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { AppActionCommittedError } from '../../errors/AppActionExecutionError';
 import { redo } from '../redo';
 import { REDO_NOT_APPLIED } from '../redoResult';
 
@@ -14,6 +15,8 @@ const mocks = vi.hoisted(() => ({
     },
     undoStoreSet: vi.fn<(state: import('../../stores/undoStore').UndoStoreState) => void>(),
     executeAppAction: vi.fn<typeof import('../executeAppAction').executeAppAction>(),
+    executeAppActionBatch: vi.fn<typeof import('../executeAppActionBatch').executeAppActionBatch>(),
+    recordAction: vi.fn(),
     undoTreeMoveTo: vi.fn<(currentEntryId: string | null) => void>(),
 }));
 
@@ -28,6 +31,14 @@ vi.mock('../../stores/undoStore', () => ({
 
 vi.mock('../executeAppAction', () => ({
     executeAppAction: mocks.executeAppAction,
+}));
+
+vi.mock('../executeAppActionBatch', () => ({
+    executeAppActionBatch: mocks.executeAppActionBatch,
+}));
+
+vi.mock('../macro/recording/recordAction', () => ({
+    recordAction: mocks.recordAction,
 }));
 
 vi.mock('../undoTree/undoTreeMoveTo', () => ({
@@ -64,6 +75,9 @@ describe('redo', () => {
     beforeEach(() => {
         mocks.undoStoreSet.mockReset();
         mocks.executeAppAction.mockReset();
+        mocks.executeAppActionBatch.mockReset();
+        mocks.executeAppActionBatch.mockResolvedValue({ status: 'committed', actions: [] });
+        mocks.recordAction.mockReset();
         mocks.undoTreeMoveTo.mockReset();
         mocks.undoStoreValue.value = { past: [], future: [] };
     });
@@ -95,6 +109,101 @@ describe('redo', () => {
             source: 'ai',
         });
         expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [entry], future: [] });
+    });
+
+    it('does not record an ungrouped AI redo into a user macro', async () => {
+        const entry = actionEntry({ source: 'ai' });
+        mocks.undoStoreValue.value = { past: [], future: [entry] };
+
+        await redo();
+
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(entry.action, {
+            skipMacroRecording: true,
+            source: 'ai',
+        });
+        expect(mocks.recordAction).not.toHaveBeenCalled();
+        expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [entry], future: [] });
+    });
+
+    it('replays a contiguous action group atomically in forward order', async () => {
+        const groupId = 'ai-midi-group';
+        const first = actionEntry({
+            id: 'track-entry',
+            groupId,
+            source: 'ai',
+            action: { type: 'addTrack', payload: { id: 'track-ai', name: 'AI MIDI', kind: 'midi' } },
+        });
+        const second = actionEntry({
+            id: 'clip-entry',
+            groupId,
+            source: 'ai',
+            action: {
+                type: 'addClip',
+                payload: { trackId: 'track-ai', startBeat: 0, endBeat: 4, name: 'AI Clip', type: 'midi' },
+            },
+            redoAction: {
+                type: 'addClip',
+                payload: {
+                    id: 'clip-ai',
+                    trackId: 'track-ai',
+                    startBeat: 0,
+                    endBeat: 4,
+                    name: 'AI Clip',
+                    type: 'midi',
+                },
+            },
+        });
+        const third = actionEntry({
+            id: 'notes-entry',
+            groupId,
+            source: 'ai',
+            action: {
+                type: 'addNotes',
+                payload: { clipId: 'clip-ai', notes: [{ pitch: 60, startBeat: 0, duration: 1 }] },
+            },
+        });
+        mocks.undoStoreValue.value = { past: [], future: [first, second, third] };
+
+        await redo();
+
+        expect(mocks.executeAppActionBatch).toHaveBeenCalledWith([first.action, second.redoAction, third.action], {
+            skipUndo: true,
+            skipMacroRecording: true,
+            source: 'ai',
+        });
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+        expect(mocks.recordAction).not.toHaveBeenCalled();
+        expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [first, second, third], future: [] });
+        expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('notes-entry');
+    });
+
+    it('keeps an entire grouped redo pending when its atomic batch conflicts', async () => {
+        const first = actionEntry({ id: 'group-1', groupId: 'group' });
+        const second = actionEntry({ id: 'group-2', groupId: 'group' });
+        mocks.undoStoreValue.value = { past: [], future: [first, second] };
+        mocks.executeAppActionBatch.mockResolvedValue({ status: 'conflicted', reason: 'stale', actions: [] });
+
+        await redo();
+
+        expect(mocks.executeAppActionBatch).toHaveBeenCalledOnce();
+        expect(mocks.undoStoreSet).not.toHaveBeenCalled();
+        expect(mocks.undoTreeMoveTo).not.toHaveBeenCalled();
+    });
+
+    it('advances a committed group but reports its post-commit warning', async () => {
+        const first = actionEntry({ id: 'group-1', groupId: 'group', source: 'ai' });
+        const second = actionEntry({ id: 'group-2', groupId: 'group', source: 'ai' });
+        mocks.undoStoreValue.value = { past: [], future: [first, second] };
+        mocks.executeAppActionBatch.mockResolvedValue({
+            status: 'committed-with-warning',
+            warning: 'runtime reconciliation failed',
+            actions: [],
+        });
+
+        await expect(redo()).rejects.toBeInstanceOf(AppActionCommittedError);
+
+        expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [first, second], future: [] });
+        expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('group-2');
     });
 
     it('should run callback redo entries without action replay', async () => {
