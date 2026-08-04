@@ -1,3 +1,4 @@
+import { resolveMarkerColorValue } from '#/utils/markerColorPalette';
 import { wouldCreateRoutingCycle } from '#/utils/routingCycle';
 
 import { type ProjectContext } from '../models/ProjectContext';
@@ -24,6 +25,7 @@ export type LlmActionBridgeResult = {
 
 export type MarkerPlanningSignature = {
     beat: number;
+    color?: string;
     markerId?: string;
     name: string;
 };
@@ -393,6 +395,38 @@ function bridgeToolCall({
             return rejection(index, call.name, 'Requested marker does not resolve to exactly one local marker');
         }
         return { type: 'removeMarker', payload: { markerId: match.markerId } };
+    }
+
+    if (call.name === 'setMarkerColor') {
+        const name = normalizeSafeProjectName(args.name);
+        const color = typeof args.color === 'string' ? resolveMarkerColorValue(args.color) : null;
+        if (
+            !hasExactKeys(args, ['beat', 'name', 'color']) ||
+            !isFiniteNumber(args.beat) ||
+            args.beat < 0 ||
+            !name ||
+            color === null
+        ) {
+            return rejection(
+                index,
+                call.name,
+                'Expected only a nonnegative finite beat, a safe explicit marker name, and a named marker palette color'
+            );
+        }
+        const matches = markerSignatures.filter(
+            (marker) =>
+                marker.markerId !== undefined &&
+                marker.beat === args.beat &&
+                normalizeMarkerName(marker.name) === normalizeMarkerName(name)
+        );
+        const match = matches[0];
+        if (matches.length !== 1 || match?.markerId === undefined) {
+            return rejection(index, call.name, 'Requested marker does not resolve to exactly one local marker');
+        }
+        if (match.color === color) {
+            return rejection(index, call.name, 'Requested marker already has that color');
+        }
+        return { type: 'setMarkerColor', payload: { markerId: match.markerId, color } };
     }
 
     if (call.name === 'addSection') {
@@ -1603,7 +1637,10 @@ function getMutationKeys(
         return [`marker:${String(action.payload.beat)}:${normalizeMarkerName(action.payload.name)}`];
     }
     if (action.type === 'removeMarker') {
-        return [`marker:${action.payload.markerId}:membership`];
+        return [`marker:${action.payload.markerId}:membership`, `marker:${action.payload.markerId}:color`];
+    }
+    if (action.type === 'setMarkerColor') {
+        return [`marker:${action.payload.markerId}:color`];
     }
     if (action.type === 'addSection') {
         return [

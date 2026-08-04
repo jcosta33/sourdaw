@@ -74,7 +74,7 @@ function bridge(
     calls: Parameters<typeof bridgeGroundedLlmToolCalls>[0]['calls'],
     prompt: string,
     context = projectContext,
-    markerSignatures: readonly { markerId?: string; beat: number; name: string }[] = [],
+    markerSignatures: readonly { markerId?: string; beat: number; color?: string; name: string }[] = [],
     sectionSignatures: readonly {
         sectionId?: string;
         startBeat: number;
@@ -407,6 +407,115 @@ describe('removeMarker grounding', () => {
         ];
 
         expect(rejected.every((result) => result.actions.length === 0)).toBe(true);
+    });
+});
+
+describe('setMarkerColor grounding', () => {
+    const markerSignatures = [
+        {
+            markerId: 'marker-amber',
+            beat: 16,
+            name: 'Amber',
+            color: 'oklch(0.38 0.08 340)',
+        },
+    ];
+
+    it('grounds the marker label, exact beat, and color named after the color connector', () => {
+        const result = bridge(
+            [{ name: 'setMarkerColor', arguments: { beat: 16, name: 'Amber', color: 'teal' } }],
+            'set marker color for "Amber" at beat 16 to teal',
+            projectContext,
+            markerSignatures
+        );
+
+        expect(result.actions).toEqual([
+            {
+                type: 'setMarkerColor',
+                payload: { markerId: 'marker-amber', color: 'oklch(0.40 0.07 200)' },
+            },
+        ]);
+    });
+
+    it('rejects a color mismatch, a missing explicit color, and an invented marker label', () => {
+        const rejected = [
+            bridge(
+                [{ name: 'setMarkerColor', arguments: { beat: 16, name: 'Amber', color: 'amber' } }],
+                'set marker color for "Amber" at beat 16 to teal',
+                projectContext,
+                markerSignatures
+            ),
+            bridge(
+                [{ name: 'setMarkerColor', arguments: { beat: 16, name: 'Amber', color: 'teal' } }],
+                'set marker color for "Amber" at beat 16',
+                projectContext,
+                markerSignatures
+            ),
+            bridge(
+                [{ name: 'setMarkerColor', arguments: { beat: 16, name: 'Chorus', color: 'teal' } }],
+                'set marker color for "Amber" at beat 16 to teal',
+                projectContext,
+                markerSignatures
+            ),
+        ];
+
+        expect(rejected.every((result) => result.actions.length === 0)).toBe(true);
+    });
+
+    it('does not treat color words inside marker labels as destination evidence', () => {
+        const quotedAmber = bridge(
+            [{ name: 'setMarkerColor', arguments: { beat: 16, name: 'Color Amber', color: 'amber' } }],
+            'set marker color for "Color Amber" at beat 16',
+            projectContext,
+            [
+                {
+                    markerId: 'marker-color-amber',
+                    beat: 16,
+                    name: 'Color Amber',
+                    color: 'oklch(0.38 0.08 340)',
+                },
+            ]
+        );
+        const quotedTeal = bridge(
+            [{ name: 'setMarkerColor', arguments: { beat: 16, name: 'To Teal', color: 'teal' } }],
+            'set marker color for "To Teal" at beat 16',
+            projectContext,
+            [
+                {
+                    markerId: 'marker-to-teal',
+                    beat: 16,
+                    name: 'To Teal',
+                    color: 'oklch(0.38 0.08 340)',
+                },
+            ]
+        );
+        const unquotedAmber = bridge(
+            [{ name: 'setMarkerColor', arguments: { beat: 16, name: 'Color Amber', color: 'amber' } }],
+            'set marker color for Color Amber at beat 16',
+            projectContext,
+            [
+                {
+                    markerId: 'marker-unquoted-amber',
+                    beat: 16,
+                    name: 'Color Amber',
+                    color: 'oklch(0.38 0.08 340)',
+                },
+            ]
+        );
+
+        expect(quotedAmber.actions).toEqual([]);
+        expect(quotedTeal.actions).toEqual([]);
+        expect(unquotedAmber.actions).toEqual([]);
+    });
+
+    it('rejects multiple or alternative palette colors after the marker reference', () => {
+        const result = bridge(
+            [{ name: 'setMarkerColor', arguments: { beat: 16, name: 'Amber', color: 'teal' } }],
+            'set marker color for "Amber" at beat 16 to teal or amber',
+            projectContext,
+            markerSignatures
+        );
+
+        expect(result.actions).toEqual([]);
     });
 });
 

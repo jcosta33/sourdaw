@@ -27,7 +27,7 @@ const {
     mockBuildLlmActionUserMessage: vi.fn(() => 'command user message'),
     markerStoreValue: {
         value: {
-            markers: [] as { id: string; beat: number; name: string }[],
+            markers: [] as { id: string; beat: number; color: string; name: string }[],
             sections: [] as { id: string; startBeat: number; endBeat: number; name: string }[],
         },
     },
@@ -288,7 +288,7 @@ describe('parsePromptToActions', () => {
         );
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
         markerStoreValue.value = {
-            markers: [{ id: 'marker-internal', beat: 16, name: 'Chorus' }],
+            markers: [{ id: 'marker-internal', beat: 16, name: 'Chorus', color: 'oklch(0.40 0.07 200)' }],
             sections: [],
         };
         vi.mocked(generateToolCalls).mockResolvedValue(
@@ -311,7 +311,7 @@ describe('parsePromptToActions', () => {
         );
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
         markerStoreValue.value = {
-            markers: [{ id: 'marker-internal', beat: 16, name: 'Chorus' }],
+            markers: [{ id: 'marker-internal', beat: 16, name: 'Chorus', color: 'oklch(0.40 0.07 200)' }],
             sections: [],
         };
         vi.mocked(generateToolCalls).mockResolvedValue(
@@ -326,6 +326,32 @@ describe('parsePromptToActions', () => {
             prompt: 'delete marker Chorus at beat 16',
             context: baseContext,
         });
+    });
+
+    it('resolves a provider marker color from local state without serializing marker identity', async () => {
+        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
+            '../agentReference/bridgeGroundedLlmToolCalls'
+        );
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        markerStoreValue.value = {
+            markers: [{ id: 'marker-internal', beat: 16, name: 'Chorus', color: 'oklch(0.40 0.07 200)' }],
+            sections: [],
+        };
+        vi.mocked(generateToolCalls).mockResolvedValue(
+            completePlan([{ name: 'setMarkerColor', arguments: { beat: 16, name: 'Chorus', color: 'amber' } }])
+        );
+
+        const prompt = 'set marker color for Chorus at beat 16 to amber';
+        const result = await parsePromptToActions(prompt, baseContext);
+
+        expect(result.actions).toEqual([
+            {
+                type: 'setMarkerColor',
+                payload: { markerId: 'marker-internal', color: 'oklch(0.40 0.08 70)' },
+            },
+        ]);
+        expect(result.requiresConfirmation).toBe(false);
+        expect(mockBuildLlmActionUserMessage).toHaveBeenCalledWith({ prompt, context: baseContext });
     });
 
     it('resolves a provider section removal from local state without serializing section identity', async () => {

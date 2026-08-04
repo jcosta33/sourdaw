@@ -30,8 +30,9 @@ describe('setMarkerColor', () => {
             markers: [{ id: 'm1', color: '#000' }],
         };
 
-        setMarkerColor('m1', '#fff');
+        const changed = setMarkerColor('m1', '#fff');
 
+        expect(changed).toBe(true);
         expect(mocks.markerStoreSet).toHaveBeenCalledWith({
             markers: [{ id: 'm1', color: '#fff' }],
         });
@@ -58,8 +59,22 @@ describe('setMarkerColor', () => {
     it('is a no-op when the marker store has not loaded', () => {
         mocks.markerStoreValue.value = null;
 
-        setMarkerColor('m1', '#fff');
+        const changed = setMarkerColor('m1', '#fff');
 
+        expect(changed).toBe(false);
+        expect(mocks.markerStoreSet).not.toHaveBeenCalled();
+    });
+
+    it('does not write when the marker is missing or already has the requested color', () => {
+        mocks.markerStoreValue.value = {
+            markers: [{ id: 'm1', color: '#fff' }],
+        };
+
+        const missing = setMarkerColor('missing', '#000');
+        const unchanged = setMarkerColor('m1', '#fff');
+
+        expect(missing).toBe(false);
+        expect(unchanged).toBe(false);
         expect(mocks.markerStoreSet).not.toHaveBeenCalled();
     });
 });
