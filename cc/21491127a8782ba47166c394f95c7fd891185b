@@ -1,0 +1,14 @@
+src/modules/DawInterchange/useCases/__tests__/readDawProjectZip.spec.ts
+  h_1228e573df1f42 1-128
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "cc21491127a8782ba47166c394f95c7fd891185b",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
