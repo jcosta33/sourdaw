@@ -1,0 +1,19 @@
+src/components/daw/__tests__/DawGridHeaderCellAndMeterBar.spec.tsx
+  s_bc88af7d3b054c::t_01f5b4eb26fedf 1-65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "c4a877e2dad3a63f262b055ebfc302ac42a18f39",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
