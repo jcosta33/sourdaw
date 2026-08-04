@@ -1,0 +1,76 @@
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_bc88af7d3b054c::t_767056786ed762 162-185,836,865-956
+  s_bc88af7d3b054c::t_984497d8465703 835,837-864,957-958
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_bc88af7d3b054c::t_d09a27ca611a66 227-280
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_bc88af7d3b054c::t_e9a6a914a24fdc 170
+  s_bc88af7d3b054c::t_971ae0709adec7 880
+  s_bc88af7d3b054c::t_427a017cb9dae7 171-185,867-879
+src/utils/handlerContract.ts
+  s_bc88af7d3b054c::t_3508bcd2a5c76e 607
+  s_bc88af7d3b054c::t_144f36fc28537c 608-626
+src/modules/Arrangement/useCases/clipEditing/restoreCrossfadeClips.ts
+  s_bc88af7d3b054c::t_144f36fc28537c 1-17,19-27,33-72
+  s_bc88af7d3b054c::t_eb07d111fecdbf 18,28-32
+src/modules/Arrangement/handlers/clip/__tests__/handleCrossfadeClips.spec.ts
+  s_bc88af7d3b054c::t_362121acf108dc 3-4,8-12,15-19,42,44-45,47-48,50,52-56,146-150
+  s_bc88af7d3b054c::t_da7995f2d3249b 25-27,43,46,49,51,102-125
+  s_bc88af7d3b054c::t_427a017cb9dae7 73-82
+  s_bc88af7d3b054c::t_cb8905c796b0d7 6,28-36,57-60,126,131-145,151-171
+  s_bc88af7d3b054c::t_c2f0ae98a6a74f 7
+  s_bc88af7d3b054c::t_e62bc7f48962c3 127
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_bc88af7d3b054c::t_984497d8465703 297-333,361-372,374-375
+  s_bc88af7d3b054c::t_e7c6e0d5815589 334-360,373
+src/modules/Arrangement/handlers/clip/clipHandlers.ts
+  s_bc88af7d3b054c::t_144f36fc28537c 24,57
+src/modules/Arrangement/handlers/clip/handleCrossfadeClips.ts
+  s_bc88af7d3b054c::t_eb07d111fecdbf 25-30
+  s_bc88af7d3b054c::t_144f36fc28537c 4,13-24,31-66
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_bc88af7d3b054c::t_3508bcd2a5c76e 451-457
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_66d4924c65dcd2::t_368206b159da55 372
+  s_bc88af7d3b054c::t_3508bcd2a5c76e 373-399
+src/modules/Arrangement/handlers/clip/__tests__/clipHandlers.spec.ts
+  s_bc88af7d3b054c::t_ed1cbebb0b3a14 46
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_bc88af7d3b054c::t_984497d8465703 159-169
+  s_66d4924c65dcd2::t_2dd48799a963af 158
+src/modules/Arrangement/handlers/clip/handleRestoreCrossfadeClips.ts
+  s_bc88af7d3b054c::t_144f36fc28537c 1-6,13-20,27-44,46-61,66-68
+  s_bc88af7d3b054c::t_29bc1f965536df 62-65
+  s_bc88af7d3b054c::t_ed1cbebb0b3a14 7-12
+  s_bc88af7d3b054c::t_ef3b5b443faa01 21-26,45
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_bc88af7d3b054c::t_eb07d111fecdbf 969-978
+  s_bc88af7d3b054c::t_27a076a508dca8 1899-1900,1903-1904
+  s_bc88af7d3b054c::t_3508bcd2a5c76e 928-968,979-980,1371-1374,1397,1399,1573-1580,1879-1887,1901,1905,1909-1910,1985,1994
+src/modules/AiRuntime/models/Tools/ClipAndDevice.ts
+  s_bc88af7d3b054c::t_3508bcd2a5c76e 165,167
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "3d57a477ab70d8814adee99246a0bb8cf3e3607a",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": null
+    }
+  }
+}
