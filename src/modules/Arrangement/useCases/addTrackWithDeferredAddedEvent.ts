@@ -5,6 +5,7 @@ import { getTrackById } from './getTrackById';
 import { publishTrackAdded } from './publishTrackAdded';
 
 type AddTrackWithDeferredAddedEventInput = {
+    id?: string;
     name: string;
     kind: Track['kind'];
     select?: boolean;

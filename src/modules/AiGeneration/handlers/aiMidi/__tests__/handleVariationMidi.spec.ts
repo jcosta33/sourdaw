@@ -157,11 +157,89 @@ describe('handleVariationMidi', () => {
     });
 
     it('provides a description', () => {
+        const existing = [{ id: 'existing-note', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }];
+        mocks.getNotesForClip.mockReturnValue(existing);
         const desc = handleVariationMidi.describe({
             type: 'variationMidi',
             payload: { clipId: 'c1' },
         });
         expect(desc.label).toBe('AI: create MIDI variation');
+        expect(desc.inverseAction).toEqual({
+            type: 'restoreMidiClipNotes',
+            payload: {
+                clipId: 'c1',
+                notes: existing,
+                expectedNotes: [],
+            },
+        });
+    });
+
+    it('replays the exact variation without invoking the model again', async () => {
+        const existing = [{ id: 'existing-note', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }];
+        mocks.getNotesForClip.mockReturnValue(existing);
+        mocks.llmGenerateNotes.mockResolvedValue([{ pitch: 64, startBeat: 0, duration: 1, velocity: 80 }]);
+        const action = { type: 'variationMidi' as const, payload: { clipId: 'c1', amount: 0.5 } };
+        const description = handleVariationMidi.describe(action);
+
+        await handleVariationMidi.execute(action);
+        await handleVariationMidi.execute(action);
+
+        expect(mocks.llmGenerateNotes).toHaveBeenCalledTimes(1);
+        expect(mocks.setNotesForClip).toHaveBeenLastCalledWith('c1', [
+            {
+                id: 'generated-note',
+                pitch: 64,
+                startBeat: 0,
+                duration: 1,
+                velocity: 80,
+                probability: 100,
+            },
+        ]);
+        expect(description.inverseAction).toEqual({
+            type: 'restoreMidiClipNotes',
+            payload: {
+                clipId: 'c1',
+                notes: existing,
+                expectedNotes: [
+                    {
+                        id: 'generated-note',
+                        pitch: 64,
+                        startBeat: 0,
+                        duration: 1,
+                        velocity: 80,
+                        probability: 100,
+                    },
+                ],
+            },
+        });
+        expect(description.redoAction).toEqual({
+            type: 'replayGeneratedMidi',
+            payload: {
+                operation: {
+                    kind: 'replace-notes',
+                    trackId: 't1',
+                    clip: {
+                        id: 'c1',
+                        trackId: 't1',
+                        name: 'Lead',
+                        startBeat: 0,
+                        endBeat: 4,
+                        type: 'midi',
+                    },
+                    expectedNotes: existing,
+                    replacementNotes: [
+                        {
+                            id: 'generated-note',
+                            pitch: 64,
+                            startBeat: 0,
+                            duration: 1,
+                            velocity: 80,
+                            probability: 100,
+                        },
+                    ],
+                },
+            },
+        });
     });
 
     it('is undoable', () => {

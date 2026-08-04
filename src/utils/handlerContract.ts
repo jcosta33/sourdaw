@@ -288,10 +288,57 @@ type LegacyVcaTrackMembershipPatch = {
     readonly replacementVcaGroupId: string | null;
 };
 
+export type GeneratedMidiStateGuard = {
+    entityJson: string;
+    midiByClipIdJson: string;
+};
+
+type MidiGenerationClipReplaySnapshot = {
+    id: string;
+    trackId: string;
+    name: string;
+    startBeat: number;
+    endBeat: number;
+    type: 'midi';
+};
+
+type MidiGenerationSourceReplaySnapshot = {
+    trackId: string;
+    clip: MidiGenerationClipReplaySnapshot;
+    notes: MidiClipNoteSnapshot[];
+};
+
+type GeneratedMidiReplayOperation =
+    | {
+          kind: 'replace-notes';
+          trackId: string;
+          clip: MidiGenerationClipReplaySnapshot;
+          expectedNotes: MidiClipNoteSnapshot[];
+          replacementNotes: MidiClipNoteSnapshot[];
+      }
+    | {
+          kind: 'create-clip';
+          source: MidiGenerationSourceReplaySnapshot;
+          targetTrackId: string;
+          clip: MidiGenerationClipReplaySnapshot;
+          notes: MidiClipNoteSnapshot[];
+      }
+    | {
+          kind: 'create-track';
+          source: MidiGenerationSourceReplaySnapshot;
+          trackJson: string;
+          trackIndex: number;
+          clip: MidiGenerationClipReplaySnapshot;
+          notes: MidiClipNoteSnapshot[];
+      };
+
 export type AppAction =
     | { type: 'addTrack'; payload: { id?: string; name: string; kind: TrackKind; select?: boolean } }
     | { type: 'removeTrack'; payload: { trackId: string } }
-    | { type: 'discardCreatedTrack'; payload: { trackId: string } }
+    | {
+          type: 'discardCreatedTrack';
+          payload: { trackId: string; generatedMidiStateGuard?: GeneratedMidiStateGuard };
+      }
     | {
           /** Inverse of `removeTrack`. Carries the removed track, every project reference
            *  rewritten by removal, and its satellite state. Emitted only by the
@@ -337,7 +384,7 @@ export type AppAction =
            *  `duplicateClip` / `duplicateClipToNextBar` without applying the user's
            *  current ripple-delete mode. */
           type: 'discardDuplicatedClip';
-          payload: { clipId: string };
+          payload: { clipId: string; generatedMidiStateGuard?: GeneratedMidiStateGuard };
       }
     | { type: 'removeAllTracks'; payload?: undefined }
     | { type: 'renameTrack'; payload: { trackId: string; name: string } }
@@ -804,6 +851,7 @@ export type AppAction =
       }
     | { type: 'variationMidi'; payload: { clipId: string; amount?: number } }
     | { type: 'generateBassline'; payload: { clipId: string; style?: string; trackId?: string } }
+    | { type: 'replayGeneratedMidi'; payload: { operation: GeneratedMidiReplayOperation } }
     | {
           type: 'generateAudio';
           payload: { prompt: string; durationSeconds?: number; trackId?: string };

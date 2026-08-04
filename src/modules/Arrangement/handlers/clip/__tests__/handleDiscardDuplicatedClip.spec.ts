@@ -3,7 +3,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { handleDiscardDuplicatedClip } from '../handleDiscardDuplicatedClip';
 
 const mocks = vi.hoisted(() => ({
+    getTrackStoreState: vi.fn(),
     removeClip: vi.fn(),
+}));
+
+vi.mock('../../../useCases/getTrackStoreState', () => ({
+    getTrackStoreState: mocks.getTrackStoreState,
 }));
 
 vi.mock('../../../useCases/clip/removeClip', () => ({
@@ -13,6 +18,7 @@ vi.mock('../../../useCases/clip/removeClip', () => ({
 describe('handleDiscardDuplicatedClip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
     });
 
     it('should remove the duplicated clip directly', () => {
@@ -22,6 +28,25 @@ describe('handleDiscardDuplicatedClip', () => {
         });
 
         expect(mocks.removeClip).toHaveBeenCalledWith('clip-copy');
+    });
+
+    it('rejects a guarded discard when the generated clip was edited', async () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 'track-1', clips: [{ id: 'clip-copy', name: 'edited' }] }],
+        });
+        const result = await handleDiscardDuplicatedClip.execute({
+            type: 'discardDuplicatedClip',
+            payload: {
+                clipId: 'clip-copy',
+                generatedMidiStateGuard: {
+                    entityJson: JSON.stringify({ id: 'clip-copy', name: 'original' }),
+                    midiByClipIdJson: JSON.stringify({}),
+                },
+            },
+        });
+
+        expect(result).toEqual({ status: 'conflict' });
+        expect(mocks.removeClip).not.toHaveBeenCalled();
     });
 
     it('should provide an internal inverse description', () => {
