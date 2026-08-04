@@ -1,0 +1,19 @@
+src/modules/Transport/useCases/tempoMap/__tests__/timelineMapTimeStateCodec.spec.ts
+  s_9fc0c7066997e6::t_c4f53039b28e91 1-218
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "5c509258aee0fedce76e59b889a59951f13fdf7d",
+  "prompts": {},
+  "sessions": {
+    "s_9fc0c7066997e6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fca38-177c-7812-965d-8bafd1f43a41",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
