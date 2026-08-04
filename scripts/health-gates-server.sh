@@ -59,8 +59,14 @@ fi
 # permanently red gate, and silencing them with `#[allow]` would be evasion.
 # Add `-D warnings` once that cleanup lands on its own.
 #
-# `cargo fmt --check` is absent for the same reason: it currently reports 310
-# files (224 in daw-dsp alone). A tree-wide reformat inside a CI-config change
-# is not a reviewable diff. Add the leg once the reformat lands separately.
+# `cargo fmt --check` runs first because it is the cheapest of the three and
+# needs no build at all. It was held back until the tree-wide reformat landed
+# separately in #1098 (96 files) — a reformat buried inside a CI-config change
+# would not have been a reviewable diff. It covers the whole workspace,
+# `src-tauri` included, even though the two build legs exclude it: formatting
+# needs no toolchain features, and `src-tauri` cannot build on ubuntu-latest
+# because its manifest unconditionally enables whisper-rs's `metal` and
+# mistralrs's `metal` + `accelerate`, and Tauri needs webkit2gtk.
+cargo fmt --all --check
 cargo clippy --workspace --exclude sourdaw --all-targets --all-features
 cargo test --workspace --exclude sourdaw --all-features
