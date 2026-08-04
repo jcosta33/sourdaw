@@ -1,0 +1,19 @@
+src/modules/Yeast/presentations/components/__tests__/KeyboardSplitBranches.spec.tsx
+  s_b7b7d9d028669e::t_7f36ee174221f1 1-80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "08003660eb8a714793df6c5d8e6b6f5dea2c4955",
+  "prompts": {},
+  "sessions": {
+    "s_b7b7d9d028669e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7de99988-56ed-47fd-b275-cf2df29995c7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
