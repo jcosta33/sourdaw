@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createNativeDspStrategy } from '../../../repositories/deviceStrategy/NativeDspDeviceStrategy';
+import { NO_PROGRESS_POLL_MS, NO_PROGRESS_TIMEOUT_MS } from '../constants';
 import { exportCancellationState } from '../exportCancellationState';
 import { renderInSegments } from '../renderInSegments';
 
@@ -47,13 +48,13 @@ type SegmentedContextHarness = {
  * render will now never reach reject instead of hanging, and `startRendering()`
  * rejects rather than resolving a buffer.
  */
-function createSegmentedContext(durationSeconds: number): SegmentedContextHarness {
+function createSegmentedContext(durationSeconds: number, sampleRate: number = SAMPLE_RATE): SegmentedContextHarness {
     type Checkpoint = { resolve: () => void; reject: (error: Error) => void; settled: boolean };
     const checkpoints = new Map<number, Checkpoint>();
     const buffer = {
         duration: durationSeconds,
-        length: Math.ceil(durationSeconds * SAMPLE_RATE),
-        sampleRate: SAMPLE_RATE,
+        length: Math.ceil(durationSeconds * sampleRate),
+        sampleRate,
     } as AudioBuffer;
 
     let resumeCount = 0;
@@ -62,8 +63,8 @@ function createSegmentedContext(durationSeconds: number): SegmentedContextHarnes
     let rejectRender: ((error: Error) => void) | null = null;
 
     const offlineCtx = {
-        sampleRate: SAMPLE_RATE,
-        length: Math.ceil(durationSeconds * SAMPLE_RATE),
+        sampleRate,
+        length: Math.ceil(durationSeconds * sampleRate),
         suspend: (seconds: number): Promise<void> =>
             new Promise<void>((resolve, reject) => {
                 checkpoints.set(seconds, { resolve, reject, settled: false });
@@ -119,6 +120,39 @@ function createSegmentedContext(durationSeconds: number): SegmentedContextHarnes
                 .filter(([, checkpoint]) => !checkpoint.settled)
                 .map(([seconds]) => seconds)
                 .sort((a, b) => a - b),
+    };
+}
+
+/**
+ * A context shaped the way a real Chromium `OfflineAudioContext` is: whole
+ * surface is `startRendering()`, `suspend()` and `resume()`, with **no
+ * `close()`**. `closeAbandonedContext` therefore early-returns, so once a
+ * checkpoint abandons the render nothing ever settles `startRendering()`.
+ */
+function createUnclosableContext(): {
+    offlineCtx: OfflineAudioContext;
+    reachCheckpoint: (seconds: number) => void;
+} {
+    const checkpointResolvers = new Map<number, () => void>();
+    const offlineCtx = {
+        sampleRate: SAMPLE_RATE,
+        suspend: (seconds: number): Promise<void> =>
+            new Promise<void>((resolve) => {
+                checkpointResolvers.set(seconds, resolve);
+            }),
+        resume: () => Promise.resolve(),
+        startRendering: () => new Promise<AudioBuffer>(() => undefined),
+    } as unknown as OfflineAudioContext;
+
+    return {
+        offlineCtx,
+        reachCheckpoint: (seconds: number): void => {
+            const resolve = checkpointResolvers.get(seconds);
+            if (!resolve) {
+                throw new Error(`no checkpoint scheduled at ${seconds}s`);
+            }
+            resolve();
+        },
     };
 }
 
@@ -283,6 +317,72 @@ describe('renderInSegments', () => {
             expect(harness.resumeCount()).toBe(1);
             expect(harness.closeCount()).toBe(1);
             expect(harness.pendingCheckpoints()).toEqual([]);
+        });
+
+        it('does not abort a healthy render when a frozen main thread advances the clock between polls', async () => {
+            vi.useFakeTimers();
+            const harness = createSegmentedContext(4);
+
+            const rendering = renderInSegments({
+                offlineCtx: harness.offlineCtx,
+                durationSeconds: 4,
+                timeoutMs: 60_000,
+                segmentSeconds: 1,
+            });
+
+            // Chrome froze the backgrounded tab. An offline render never makes
+            // a tab audible, so it *is* freezable — and one long main-thread
+            // task does the same thing. Thirty seconds of wall clock passed
+            // while the event loop delivered nothing, so on resume the watchdog
+            // gets ONE tick, not thirty. Elapsed time read at that tick says
+            // "no progress for 30s" about a render that is perfectly healthy;
+            // counting the ticks the loop actually delivered cannot, because a
+            // starved loop yields fewer of them, never more.
+            const frozenUntilMs = performance.now() + 30_000;
+            const frozenClock = vi.spyOn(performance, 'now').mockReturnValue(frozenUntilMs);
+            await vi.advanceTimersByTimeAsync(NO_PROGRESS_POLL_MS);
+            frozenClock.mockRestore();
+
+            await harness.reachCheckpoint(1);
+            await harness.reachCheckpoint(2);
+            await harness.reachCheckpoint(3);
+            await harness.finishRendering();
+
+            await expect(rendering).resolves.toBe(harness.buffer);
+            expect(harness.resumeCount()).toBe(3);
+        });
+
+        it('scales the no-progress budget with the render sample rate', async () => {
+            vi.useFakeTimers();
+            // Export offers 96 kHz (ExportDialog's rate list) and passes it
+            // straight into `new OfflineAudioContext(...)`. One 1 s segment is
+            // 750 quanta there against 375 at 48 kHz, so the segment's
+            // pessimistic cost doubles: a budget pinned to 48 kHz leaves ~7x
+            // margin where the constant's derivation claims 14x.
+            const harness = createSegmentedContext(6, 96_000);
+
+            const rendering = renderInSegments({
+                offlineCtx: harness.offlineCtx,
+                durationSeconds: 6,
+                timeoutMs: 60_000,
+                segmentSeconds: 1,
+            });
+            // Keeps the second half's rejection from surfacing as unhandled
+            // while the first half runs; the assertions below still read
+            // `rendering` itself.
+            void rendering.catch(() => undefined);
+
+            // A full 48 kHz budget of silence is inside the scaled one, so this
+            // render must still be alive to take its checkpoint...
+            await vi.advanceTimersByTimeAsync(NO_PROGRESS_TIMEOUT_MS);
+            await harness.reachCheckpoint(1);
+            expect(harness.resumeCount()).toBe(1);
+
+            // ...and twice the budget, which is past the scaled one, must abort.
+            const settled = expect(rendering).rejects.toThrow(/made no progress/);
+            await vi.advanceTimersByTimeAsync(2 * NO_PROGRESS_TIMEOUT_MS);
+            await settled;
+            expect(harness.resumeCount()).toBe(1);
         });
 
         it('is unmoved by a system clock that jumps backwards and forwards mid-render', async () => {
@@ -504,26 +604,38 @@ describe('renderInSegments', () => {
     });
 
     it('still aborts on a context that does not implement close()', async () => {
-        const checkpointResolvers = new Map<number, () => void>();
-        const offlineCtx = {
-            sampleRate: SAMPLE_RATE,
-            suspend: (seconds: number): Promise<void> =>
-                new Promise<void>((resolve) => {
-                    checkpointResolvers.set(seconds, resolve);
-                }),
-            resume: () => Promise.resolve(),
-            startRendering: () => new Promise<AudioBuffer>(() => undefined),
-        } as unknown as OfflineAudioContext;
+        const { offlineCtx, reachCheckpoint } = createUnclosableContext();
 
         const rendering = renderInSegments({ offlineCtx, durationSeconds: 4, timeoutMs: 60_000, segmentSeconds: 1 });
 
         exportCancellationState.cancelFlag = true;
-        checkpointResolvers.get(1)?.();
+        reachCheckpoint(1);
         await Promise.resolve();
         await Promise.resolve();
 
         // `close()` is not universally implemented on OfflineAudioContext, and
         // its absence must not cost the cancel.
         await expect(rendering).rejects.toThrow('Export cancelled');
+    });
+
+    it('clears the no-progress watchdog when a cancel abandons a context that cannot be closed', async () => {
+        vi.useFakeTimers();
+        const { offlineCtx, reachCheckpoint } = createUnclosableContext();
+
+        const rendering = renderInSegments({ offlineCtx, durationSeconds: 4, timeoutMs: 60_000, segmentSeconds: 1 });
+        expect(vi.getTimerCount()).toBe(1);
+
+        exportCancellationState.cancelFlag = true;
+        reachCheckpoint(1);
+        await expect(rendering).rejects.toThrow('Export cancelled');
+
+        // The cancel branch returns without resuming, so `startRendering()`
+        // never settles — and on a context with no `close()`, which is every
+        // Chromium `OfflineAudioContext`, nothing else settles it either. Both
+        // handlers that used to hold the only `clearInterval` are therefore
+        // dead. A surviving 1 Hz interval retains the context, its offline node
+        // graph, every worklet instance in it and the abandon closure for the
+        // page's lifetime — one leak per cancelled export, freeze or bounce.
+        expect(vi.getTimerCount()).toBe(0);
     });
 });

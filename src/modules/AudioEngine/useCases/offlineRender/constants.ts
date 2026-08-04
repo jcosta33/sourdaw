@@ -51,6 +51,14 @@ export const RENDER_TIMEOUT_MULTIPLIER = 10;
  * is deliberately generous: aborting work that is progressing is the failure
  * mode this constant exists to remove.
  *
+ * **This figure is per segment, at the reference rate.** Both terms of "375
+ * quanta" are variables: a segment holds `sampleRate / 128 × segmentSeconds`
+ * quanta, so 96 kHz — which export offers, see `ExportDialog`'s rate list —
+ * puts 750 in a 1 s segment and doubles its pessimistic cost, leaving ~7× rather
+ * than 14× against a fixed 10 s. `renderInSegments` therefore scales this value
+ * by {@link NO_PROGRESS_REFERENCE_SAMPLE_RATE} and
+ * {@link RENDER_SEGMENT_SECONDS} at the call site rather than reading it raw.
+ *
  * **State the limit.** This is a derivation from a landed per-quantum
  * measurement, not a directly measured per-segment wall clock. Taking that
  * measurement needs a real browser render of the reference project — the same
@@ -60,13 +68,27 @@ export const RENDER_TIMEOUT_MULTIPLIER = 10;
 export const NO_PROGRESS_TIMEOUT_MS = 10_000;
 
 /**
+ * The sample rate {@link NO_PROGRESS_TIMEOUT_MS} is stated at.
+ *
+ * The cost table was taken at 48 kHz, so this is the rate at which its 375
+ * quanta per second — and therefore the 713 ms segment figure the budget is
+ * fourteen times — actually hold. It is a property of the measurement, not a
+ * project or device setting, so it does not move with the audio context.
+ */
+export const NO_PROGRESS_REFERENCE_SAMPLE_RATE = 48_000;
+
+/**
  * How often the no-progress watchdog looks.
  *
  * It cannot be checked at checkpoint arrival, which is the trap the first draft
  * of this fell into: a wedged render produces no checkpoint, so a check that
  * only runs when one arrives never runs at all in exactly the case it exists
- * for. The watchdog is an independent timer; the abort it raises still goes
- * through the same reject-and-never-resume path a cancel does.
+ * for. The watchdog is an independent timer.
+ *
+ * It is also the *unit* the budget is spent in, not merely how often it is
+ * sampled: the watchdog counts consecutive polls that saw no progress rather
+ * than reading a wall-clock delta, so a starved or frozen event loop delivers
+ * fewer ticks and can only ever delay the abort, never manufacture one.
  */
 export const NO_PROGRESS_POLL_MS = 1_000;
 
