@@ -1,0 +1,43 @@
+src/modules/Fermenter/useCases/applyFermenterRuntimeParam.ts
+  s_ac9b259eab20ba::t_73f5ae6597b2e5 5,22
+  s_ac9b259eab20ba::t_0a65446ce11178 1-4,6-21,23-38
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/restoreAutomationBaseValue.spec.ts
+  s_ac9b259eab20ba::t_0a65446ce11178 4,33,78-97
+  s_bc88af7d3b054c::t_d06bda5981da16 98-99
+src/modules/Transport/useCases/scheduling/applyAutomation/restoreAutomationBaseValue.ts
+  s_ac9b259eab20ba::t_0a65446ce11178 9,100
+src/modules/Fermenter/useCases/index.ts
+  s_ac9b259eab20ba::t_0a65446ce11178 1
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomationDiscontinuity.spec.ts
+  s_ac9b259eab20ba::t_0a65446ce11178 55
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomation.spec.ts
+  s_ac9b259eab20ba::t_bb35d9f3a3ca8e 15,89,170,186-187,190
+src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts
+  s_ac9b259eab20ba::t_0a65446ce11178 17,211,279-282
+src/modules/Fermenter/useCases/__tests__/applyFermenterRuntimeParam.spec.ts
+  s_ac9b259eab20ba::t_0a65446ce11178 1-68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "ecccdca39ceb2495fb2d268b8175ac7d8890b015",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
