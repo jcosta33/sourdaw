@@ -1,0 +1,55 @@
+src/modules/AudioEngine/useCases/offlineRender/prepareOfflineContext.ts
+  s_66d4924c65dcd2::t_f02b072c130aa6 1-95
+src/modules/AudioEngine/useCases/offlineRender/destroyOfflineDeviceStrategies.ts
+  s_66d4924c65dcd2::t_361fa94b6472b1 1-43
+src/modules/AudioEngine/useCases/offlineRender/__tests__/offlineContextPreparation.spec.ts
+  s_66d4924c65dcd2::t_d092119e0fcd77 1-203
+  s_66d4924c65dcd2::t_4c100bac535109 204-206
+  s_d4265e6c06fe30::t_f3cefe6575a314 207-209
+src/modules/AudioEngine/useCases/offlineRender/__tests__/offlineDeviceTeardown.spec.ts
+  s_66d4924c65dcd2::t_f38a8c54766b3a 1-80
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderTrackSubgraphOffline.spec.ts
+  s_66d4924c65dcd2::t_ffb46deadf12f8 927-1199
+src/modules/AudioEngine/useCases/exportStems.ts
+  s_66d4924c65dcd2::t_8f3363652840a1 18-19,243-274,277-278,280-289,291-355,358-413,416-420,423-428
+src/modules/AudioEngine/useCases/offlineRender/renderTrackSubgraphOffline.ts
+  s_66d4924c65dcd2::t_43fa07614609e9 11-13,15,145-149,155-180,187-196,199-201,203-224,226,228-234,236-240,242-248,251-265,267-275,278-320,323-330,333-341,344-349,353-356
+src/modules/AudioEngine/engine/__tests__/telemetryAllocator.spec.ts
+  s_ac9b259eab20ba::t_947b1d3429acf5 110-200
+src/modules/AudioEngine/engine/telemetryAllocator.ts
+  s_d4265e6c06fe30::t_157659dffe46c0 248-256,263,276,284-316,319-323,325-326
+src/modules/AudioEngine/useCases/renderOffline.ts
+  s_d4265e6c06fe30::t_767f246551c157 14-15,44-50,141-152,337
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "c7f6e029e7aa4c8e8a5ae524fe16a0f16c069cee",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_d4265e6c06fe30": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a04c63a01468144a4",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
