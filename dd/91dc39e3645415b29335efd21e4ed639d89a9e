@@ -1,0 +1,84 @@
+src/modules/Transport/handlers/transport/__tests__/transportHandlers.spec.ts
+  s_bc88af7d3b054c::t_526674739cb209 80,86-91
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_bc88af7d3b054c::t_1f812eeca2379b 113,118,121-125
+src/modules/Transport/useCases/transportControls/stopPlayback.ts
+  s_bc88af7d3b054c::t_58dd219b83f25d 16-17
+  s_bc88af7d3b054c::t_d548286ea0b77e 12-15,18-20,24,35,52
+src/modules/Transport/handlers/transport/__tests__/handleStopPlayback.spec.ts
+  s_bc88af7d3b054c::t_6ae8320229164e 1-22,24-29,31,39,41-47,49-51,53-54,57,60-61
+  s_bc88af7d3b054c::t_58dd219b83f25d 40
+  s_bc88af7d3b054c::t_ff451bdb702a93 34,38,59
+  s_bc88af7d3b054c::t_07faf723598ea8 23,30,32-33,35-37,48,52,55-56,58
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_bc88af7d3b054c::t_805581429967a0 334
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_bc88af7d3b054c::t_469ba24d1f7682 397-403,1076-1080
+  s_bc88af7d3b054c::t_33f52fdcc1ed2d 396
+  s_bc88af7d3b054c::t_37cb245a4feabd 1081
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_bc88af7d3b054c::t_3be6509c614668 316-322,1390,1753-1757,1760
+  s_bc88af7d3b054c::t_b1288496f5f6ed 1758-1759
+  s_bc88af7d3b054c::t_978249d41b291b 1761
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_bc88af7d3b054c::t_eb52472974811f 1508-1517
+  s_bc88af7d3b054c::t_3be6509c614668 1503-1507,1518-1519,2038-2040
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_bc88af7d3b054c::t_94141b22f5b5fd 110-111,116,118-120,122-126,128-139
+  s_bc88af7d3b054c::t_eb52472974811f 112-115,117,121,127
+src/modules/AiRuntime/models/Tools/__tests__/Transport.spec.ts
+  s_bc88af7d3b054c::t_6ae8320229164e 14
+src/modules/Transport/useCases/transportControls/__tests__/stopPlayback.spec.ts
+  s_bc88af7d3b054c::t_92c805d6375acf 112-113
+  s_bc88af7d3b054c::t_58dd219b83f25d 63,90,118,175,210,228
+  s_bc88af7d3b054c::t_07faf723598ea8 71,82-85,93,96,103,109-111,119-123,134-140,145-161
+  s_bc88af7d3b054c::t_c2200cbc61f791 162-163
+src/modules/Transport/handlers/transport/handleStopPlayback.ts
+  s_bc88af7d3b054c::t_d548286ea0b77e 6-9,11
+  s_bc88af7d3b054c::t_1f812eeca2379b 10
+  s_bc88af7d3b054c::t_84284e4b5d79d7 12,14
+src/modules/AiRuntime/models/PresetActions/Presets/__tests__/Transport.spec.ts
+  s_bc88af7d3b054c::t_6ae8320229164e 26-31
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_bc88af7d3b054c::t_469ba24d1f7682 300-303
+  s_bc88af7d3b054c::t_283623344f6934 299
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_bc88af7d3b054c::t_e48105e92d74ba 793
+  s_bc88af7d3b054c::t_805581429967a0 794-800
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_bc88af7d3b054c::t_94141b22f5b5fd 276-311
+src/modules/Command/useCases/__tests__/appActionExecutionPolicy.spec.ts
+  s_bc88af7d3b054c::t_469ba24d1f7682 12
+src/modules/Command/useCases/executeAppAction.ts
+  s_bc88af7d3b054c::t_1f812eeca2379b 64-66
+src/utils/handlerContract.ts
+  s_bc88af7d3b054c::t_1f812eeca2379b 1040,1045,1047-1053
+src/modules/Command/useCases/__tests__/executeAppAction.spec.ts
+  s_bc88af7d3b054c::t_a1f5f6a9b6adb1 220-222
+  s_bc88af7d3b054c::t_c462041543f4fd 31,197-208,210-219
+  s_bc88af7d3b054c::t_ff451bdb702a93 125-140,209
+src/modules/Command/useCases/__tests__/executeAppActionBatch.spec.ts
+  s_bc88af7d3b054c::t_c04efe2749d64b 685
+  s_bc88af7d3b054c::t_c462041543f4fd 17,646-658,660-670,672-684,686
+  s_bc88af7d3b054c::t_f711165bdb2915 687-690
+  s_bc88af7d3b054c::t_58dd219b83f25d 671
+  s_bc88af7d3b054c::t_ff451bdb702a93 625,628,639,641,659,691-692,695,708
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_bc88af7d3b054c::t_2e02c9ebb38aff 210-226
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "dd91dc39e3645415b29335efd21e4ed639d89a9e",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": null
+    }
+  }
+}
