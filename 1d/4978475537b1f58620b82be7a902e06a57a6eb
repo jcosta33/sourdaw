@@ -1,0 +1,16 @@
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreClipLoop.spec.ts
+  h_1228e573df1f42 1-149
+src/modules/MIDI/handlers/noteTransform/__tests__/handleQuantizeNotes.spec.ts
+  h_1228e573df1f42 1-75
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "1d4978475537b1f58620b82be7a902e06a57a6eb",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
