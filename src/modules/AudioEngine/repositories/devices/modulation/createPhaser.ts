@@ -41,10 +41,12 @@ export function createPhaser(ctx: BaseAudioContext): OfflineDeviceNode {
     dry.connect(merger);
     wet.connect(merger);
     lfo.start(0);
+    const nodes = [splitter, dry, wet, ...filters, lfo, lfoGain, feedback, merger];
+    let disposed = false;
     return {
         inputNode: splitter,
         outputNode: merger,
-        nodes: [splitter, dry, wet, ...filters, lfo, lfoGain, feedback, dry, wet],
+        nodes,
         namedNodes: {
             splitter,
             dry,
@@ -57,6 +59,13 @@ export function createPhaser(ctx: BaseAudioContext): OfflineDeviceNode {
             filter1: filters[1]!,
             filter2: filters[2]!,
             filter3: filters[3]!,
+        },
+        dispose() {
+            if (disposed) {
+                return;
+            }
+            disposed = true;
+            lfo.stop();
         },
     };
 }

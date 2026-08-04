@@ -344,6 +344,32 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
 
             expect(() => track.removeDevice('ghost')).not.toThrow();
         });
+
+        it.each(['builtin-autopan', 'builtin-chorus', 'builtin-flanger', 'builtin-phaser', 'builtin-tremolo'])(
+            'stops sources and disconnects each %s graph node exactly once',
+            (deviceType) => {
+                const track = new TrackNode('t1', makeDeps(ctx));
+                track.addDevice('modulation-1', deviceType);
+                const device = track.strip.deviceNodes[0];
+                if (!device) {
+                    throw new Error(`Expected ${deviceType} to be published`);
+                }
+                const oscillators = device.nodes.filter((node) => typeof Reflect.get(node, 'stop') === 'function');
+                for (const node of device.nodes) {
+                    vi.mocked(node.disconnect).mockClear();
+                }
+
+                track.removeDevice('modulation-1');
+
+                expect(oscillators.length).toBeGreaterThan(0);
+                for (const oscillator of oscillators) {
+                    expect(Reflect.get(oscillator, 'stop')).toHaveBeenCalledTimes(1);
+                }
+                for (const node of device.nodes) {
+                    expect(node.disconnect).toHaveBeenCalledTimes(1);
+                }
+            }
+        );
     });
 
     describe('MIDI FX bookkeeping', () => {
@@ -820,12 +846,10 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             expect(deferred.generationCount).toBe(2);
             expect(track.strip.deviceNodes[1]).toBe(deferred.placeholder);
             expect(track.getDeviceLoadState('wasm-1')).toBe('failed');
-            expect(readinessDiagnostics.snapshot()).toMatchObject({
-                counts: { requested: 4, playableReady: 2, failed: 2 },
-                devices: expect.arrayContaining([
-                    expect.objectContaining({ deviceId: 'wasm-1', status: 'failed', failureStage: 'runtime' }),
-                ]),
-            });
+            const diagnostics = readinessDiagnostics.snapshot();
+            const failedDevice = diagnostics.devices.find((device) => device.deviceId === 'wasm-1');
+            expect(diagnostics.counts).toMatchObject({ requested: 4, playableReady: 2, failed: 2 });
+            expect(failedDevice).toMatchObject({ deviceId: 'wasm-1', status: 'failed', failureStage: 'runtime' });
         });
 
         it('cancels queued runtime recovery when the failed slot is removed', async () => {
