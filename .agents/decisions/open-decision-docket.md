@@ -947,10 +947,17 @@ or how a user moves work between machines, which is why none of them is engineer
   tracks where the two real saves had 40 and 64), and content-addressing the document took that to
   0 of 72. Git's object store, SQLite's WAL and atomic-rename-and-fsync all work this way. The
   portable form is still a ZIP.
-- **Does a project file contain its audio, or reference it?** All four shipping DAWs default to
-  *reference* and make consolidation an explicit action; DAWproject makes it a per-file attribute.
-  **Reference-by-path is desktop-only** — the web cannot re-open a user's file across sessions
-  without a prompt. So this is two answers, and whether the format expresses both.
+- ~~**Does a project file contain its audio, or reference it?**~~ **DECIDED 2026-08-04 — per asset,
+  and the web writer always embeds.** Recorded in ADR 0014 §Ratified 2026-08-04. It is two answers,
+  so the format expresses both: an embed-or-reference mode on each asset, `embed` from the web,
+  `reference` available to the deferred desktop build with no format change. Convention gives the
+  desktop half — all four shipping DAWs default to reference with explicit consolidation, and
+  DAWproject already makes it a per-file attribute, which is the shape `SPEC-dawproject-interchange`
+  needs regardless. Convention does not give the web half, because reference-by-path has no working
+  web form: a File System Access handle persists in IndexedDB but needs `requestPermission()` in
+  each new session, so a sixty-sample project prompts per file on every reload. Accepted costs: two
+  reader paths from day one, a *consolidate* action owed on the writer, and a shared sample
+  duplicated per project — that last one is the separate library question below, not this one.
 - ~~**May browser-resident storage ever be described as "safe"?**~~ **DECIDED 2026-08-02 — no.
   Browser storage is a cache, never the authority.** The authoritative copy is a file the user
   controls, written through the File System Access API and kept in sync. Recorded in ADR 0014
