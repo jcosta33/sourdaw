@@ -1,0 +1,25 @@
+crates/daw-dsp/src/fermenter/synth.rs
+  s_ac9b259eab20ba::t_9dec1dda7899ee 563-565
+crates/daw-dsp/src/fermenter/layer.rs
+  s_ac9b259eab20ba::t_c8530473d2247f 12,114-115,196-197,241-259,373,392-415,471-485,488-491
+crates/daw-dsp/tests/device_process_rt.rs
+  s_ac9b259eab20ba::t_c8530473d2247f 580-584,586,589
+  s_ac9b259eab20ba::t_2e5acba93082cd 568-569
+  s_ac9b259eab20ba::t_9dec1dda7899ee 585
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "353e8fb41fd7a982cd13c8ce05d44bd94982967f",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
