@@ -1,0 +1,14 @@
+src/modules/Automation/handlers/automation/__tests__/handleAddAutomationLane.spec.ts
+  h_1228e573df1f42 1-135
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "e02d5b2fe32e07007e7ad395300d65fff5ba768d",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
