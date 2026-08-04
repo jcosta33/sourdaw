@@ -1,0 +1,96 @@
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_bc88af7d3b054c::t_ff8b4b52843d92 1153
+  s_bc88af7d3b054c::t_ea838cbae0cefd 429-438,1147-1149,1156
+  s_bc88af7d3b054c::t_e092eea04ee21a 428
+  s_bc88af7d3b054c::t_cb1188da1596c4 1150-1152
+  s_bc88af7d3b054c::t_1e149b85c1138f 1154-1155
+  s_bc88af7d3b054c::t_7ee6dc9f509034 1157-1159
+  s_d4265e6c06fe30::t_de526934db9c1a 1160-1162
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_bc88af7d3b054c::t_30aa2c983dd1eb 275-281,284-294
+  s_bc88af7d3b054c::t_ea838cbae0cefd 183,186-187,206-207,210-211,229-238,243-274,295-296
+  s_bc88af7d3b054c::t_ad0d2f4b0f945c 239-242
+  s_bc88af7d3b054c::t_ff8b4b52843d92 76-77,79,184-185,188-205,208-209,282-283
+  s_bc88af7d3b054c::t_023c557b51457a 212-228
+src/modules/Arrangement/useCases/marker/markerOperations/__tests__/addMarker.spec.ts
+  s_bc88af7d3b054c::t_5406851d795ef2 31,33,45-47
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_bc88af7d3b054c::t_661e562864005d 1484-1485
+  s_bc88af7d3b054c::t_023c557b51457a 1489-1496
+  s_bc88af7d3b054c::t_747163308eca43 11,22,1085-1088,1476-1483,1486-1488,1497-1499,1903-1913,2275,2279,2349
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_bc88af7d3b054c::t_b3bcd397e29be3 56,863
+  s_bc88af7d3b054c::t_dcc39558703a65 855-862,864-873,875
+  s_bc88af7d3b054c::t_d95eb88115c40f 874
+  s_bc88af7d3b054c::t_2facce95b2c73c 876-878
+  s_d4265e6c06fe30::t_21ec6e25ad4295 879
+src/modules/Arrangement/handlers/marker/handleAddMarker.ts
+  s_bc88af7d3b054c::t_339ef36fea76d8 30-31
+  s_bc88af7d3b054c::t_b2531d350dfbf6 4-5,23,29
+src/modules/AiRuntime/useCases/__tests__/getProjectContext.spec.ts
+  s_bc88af7d3b054c::t_ff8b4b52843d92 119
+src/modules/Arrangement/handlers/marker/__tests__/markerHandlers.spec.ts
+  s_bc88af7d3b054c::t_5406851d795ef2 36,59-66,68-74,76,81
+  s_bc88af7d3b054c::t_30aa2c983dd1eb 67,75,77-80,82-95
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_bc88af7d3b054c::t_ea838cbae0cefd 329-336,339-342
+  s_bc88af7d3b054c::t_bf07e3e50c4f36 337-338
+  s_66d4924c65dcd2::t_89b5377d5d3662 328
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_bc88af7d3b054c::t_e1a3b83088317a 12-31,37-48,265,281-302
+  s_bc88af7d3b054c::t_ea838cbae0cefd 267-280
+  s_bc88af7d3b054c::t_bc129c5cd9dd53 266
+  s_d4265e6c06fe30::t_f52cfc944d480d 112,209
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_bc88af7d3b054c::t_dcc39558703a65 473-477
+src/modules/Arrangement/useCases/marker/markerOperations/addMarker.ts
+  s_bc88af7d3b054c::t_b2531d350dfbf6 4,7,14
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_bc88af7d3b054c::t_30aa2c983dd1eb 427-429,431-443
+  s_bc88af7d3b054c::t_ff8b4b52843d92 158-159,430,446
+  s_bc88af7d3b054c::t_5406851d795ef2 408-426,447
+  s_bc88af7d3b054c::t_ea838cbae0cefd 384-393,398-407
+  s_bc88af7d3b054c::t_bf07e3e50c4f36 394-397
+  s_bc88af7d3b054c::t_23c24f23ad54d6 444-445
+  s_bc88af7d3b054c::t_b506bf5d801a6e 448-450
+  s_d4265e6c06fe30::t_199371099430dd 451-456
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_bc88af7d3b054c::t_d4c6643bce79b5 3,125-129
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_bc88af7d3b054c::t_d4c6643bce79b5 25-29,33,284,289,356,1839-1843,1935
+  s_bc88af7d3b054c::t_dcc39558703a65 347-355,362-364,1487
+  s_bc88af7d3b054c::t_b2531d350dfbf6 209-212,1485-1486
+  s_bc88af7d3b054c::t_339ef36fea76d8 357-361
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "f629e91b27e27d00d653f0cc2a472fdebd79f45f",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_d4265e6c06fe30": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a04c63a01468144a4",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
