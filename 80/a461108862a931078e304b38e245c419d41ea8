@@ -1,0 +1,125 @@
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_bc88af7d3b054c::t_3ce003b4a5295f 64
+  s_bc88af7d3b054c::t_16a11575ccbf0a 1120,1134
+  s_bc88af7d3b054c::t_f1ff133d03af33 1035-1051,1071-1079,1089-1119,1121-1133,1135-1139,1155-1168,1171,1173-1174
+  s_bc88af7d3b054c::t_d67af3cad22dbd 1052-1070,1080-1088,1140-1154,1169-1170,1172
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_bc88af7d3b054c::t_92473947fbbf13 493-494,496-497,499-511,521-522,524-529,531-537,539,541-547,549-554,557-560,562-566,568-569,571-573,577-580,582-584,586-589
+  s_bc88af7d3b054c::t_edf705e0d1f91f 512-520,574-576
+  s_bc88af7d3b054c::t_16a11575ccbf0a 538
+  s_bc88af7d3b054c::t_001438e94ca63e 596,599,647
+  s_bc88af7d3b054c::t_ccf665ba57d661 590-595,597-598,600-646,648-661
+  s_bc88af7d3b054c::t_e08a61e3a14cdb 495,498,523,530,540,548,555-556,561,567,570,581,585
+  s_bc88af7d3b054c::t_b6e0ed882a6310 40
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_bc88af7d3b054c::t_707eface5fa06b 442-477
+  s_bc88af7d3b054c::t_89fd1f464091c0 1125-1159
+src/modules/Arrangement/handlers/vca/__tests__/handleAssignToVca.spec.ts
+  s_bc88af7d3b054c::t_5ec4517e6fdf15 7,14-17,21,31-35
+src/modules/Arrangement/handlers/vca/__tests__/handleRemoveFromVca.spec.ts
+  s_bc88af7d3b054c::t_5ec4517e6fdf15 7,14-17,21,31-35
+src/modules/Arrangement/handlers/vca/handleRestoreLegacyVcaState.ts
+  s_bc88af7d3b054c::t_513a48669350e5 14-25,27-28
+src/modules/Arrangement/handlers/vca/__tests__/handleCreateVcaGroup.spec.ts
+  s_bc88af7d3b054c::t_5ec4517e6fdf15 9,16-19,31,34-38
+  s_bc88af7d3b054c::t_46f1dfbde14b71 3-4,26,29
+  s_bc88af7d3b054c::t_487a509ecaa356 30
+src/modules/AiRuntime/useCases/agentReference/resolveAgentReference.ts
+  s_bc88af7d3b054c::t_35f991e22a68ac 99-104
+  s_bc88af7d3b054c::t_aa3e699dd46324 15,47,206-207
+  s_66d4924c65dcd2::t_4e1e17b8668f47 208
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_bc88af7d3b054c::t_4a1fe3eb530c25 892-954
+  s_bc88af7d3b054c::t_45c2e002fe3981 18,28,31,56-61
+src/modules/Arrangement/useCases/vca/__tests__/restoreLegacyVcaState.spec.ts
+  s_bc88af7d3b054c::t_917e2853e81d5f 251,263,274
+  s_bc88af7d3b054c::t_fdb6e383b22185 238,280-320
+  s_bc88af7d3b054c::t_d8e8a449a18c98 279
+src/modules/Arrangement/handlers/vca/handleAssignToVca.ts
+  s_bc88af7d3b054c::t_513a48669350e5 8-9,16-20,37-38
+  s_bc88af7d3b054c::t_0e81acc8eaecfc 4
+  s_bc88af7d3b054c::t_f1a17554066684 3,21-36,39
+src/modules/Transport/useCases/index.ts
+  s_bc88af7d3b054c::t_d5db2b69c7d6b9 7
+src/modules/Arrangement/useCases/vca/__tests__/captureLegacyVcaState.spec.ts
+  s_bc88af7d3b054c::t_22641b5acd7b64 272-292,368,390
+  s_bc88af7d3b054c::t_8d097a53258c3d 119-120,125-126,191,195-196,241-242,247-248,367,369
+src/modules/Arrangement/useCases/vca/restoreLegacyVcaState.ts
+  s_bc88af7d3b054c::t_8622f36d16f6df 47-60,94-95,137-138,141-142,148-161,163-172,191-195
+  s_bc88af7d3b054c::t_917e2853e81d5f 136
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_bc88af7d3b054c::t_c44ae9390387c5 376-385,387-422
+  s_bc88af7d3b054c::t_d04cc9e500b073 1391-1392,1394-1395,1404-1405,1411,1449-1451
+  s_bc88af7d3b054c::t_edf705e0d1f91f 208-214
+  s_bc88af7d3b054c::t_92e9809d11f472 185-207,215-218,222-223
+  s_bc88af7d3b054c::t_16a11575ccbf0a 219-221,386
+  s_bc88af7d3b054c::t_15f136dabf80a9 1353-1360,1393,1396-1403,1406-1410,1780,1820,1836
+src/app/bootstrap.ts
+  s_bc88af7d3b054c::t_ba8d762fa0de0c 138,196
+src/modules/Arrangement/useCases/vca/captureLegacyVcaState.ts
+  s_bc88af7d3b054c::t_8622f36d16f6df 23-36,50-51,58-59,110-111,113,115,121-122,149-150,156-157,213-214
+  s_bc88af7d3b054c::t_0e7c52876d6499 52
+src/modules/Arrangement/handlers/vca/handleRemoveFromVca.ts
+  s_bc88af7d3b054c::t_513a48669350e5 8-9,16-20
+  s_bc88af7d3b054c::t_f1a17554066684 3-4,21-37
+src/app/__tests__/bootstrap.spec.ts
+  s_bc88af7d3b054c::t_e61aa06c03755d 69,308,421
+  s_bc88af7d3b054c::t_c6b2fb5f122700 45
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/reconcileVcaGroupRuntimeGain.spec.ts
+  s_bc88af7d3b054c::t_0c5cb11368c4d2 31-38,42-44,90-105,164-183
+  s_bc88af7d3b054c::t_d5db2b69c7d6b9 136
+src/modules/Arrangement/handlers/vca/toVcaGainExecutionResult.ts
+  s_bc88af7d3b054c::t_c9795770c71c59 6-7,11-15,19-25,27-30
+src/modules/Transport/useCases/scheduling/applyAutomation/reconcileVcaRuntimeGain.ts
+  s_bc88af7d3b054c::t_d5db2b69c7d6b9 1-83
+src/utils/handlerContract.ts
+  s_bc88af7d3b054c::t_8622f36d16f6df 281-282
+src/modules/Transport/useCases/scheduling/applyAutomation/reconcileVcaGroupRuntimeGain.ts
+  s_bc88af7d3b054c::t_d5db2b69c7d6b9 1
+  s_bc88af7d3b054c::t_f03837a92f23f7 4
+src/modules/Arrangement/useCases/vca/vcaRuntimeProjectionDependencies.ts
+  s_bc88af7d3b054c::t_c9795770c71c59 2
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_bc88af7d3b054c::t_04b793fb74c376 846-847,850,852-855,857
+  s_bc88af7d3b054c::t_35f991e22a68ac 848-849,851,1256-1264,1907-1916,1918
+  s_bc88af7d3b054c::t_af4e584c034272 1241-1244,1248-1255
+  s_bc88af7d3b054c::t_77adedbdbcfc96 1265,1865-1906,1917,1919-1948,1950-1997,2167
+  s_bc88af7d3b054c::t_16a11575ccbf0a 1949,2044-2048,2163
+  s_bc88af7d3b054c::t_5374dd36017dd6 2034-2043,2049-2061,2162,2164-2166
+  s_bc88af7d3b054c::t_f5f2af8bc1c6e5 1795
+src/modules/Arrangement/handlers/vca/__tests__/handleRestoreLegacyVcaState.spec.ts
+  s_bc88af7d3b054c::t_980937ab721f5b 39,43-46
+  s_bc88af7d3b054c::t_7af60977434016 40-42
+  s_bc88af7d3b054c::t_9bf9e9264ebe8a 21-26
+src/modules/Arrangement/handlers/vca/handleCreateVcaGroup.ts
+  s_bc88af7d3b054c::t_f1a17554066684 29-30,33-34
+  s_bc88af7d3b054c::t_513a48669350e5 8-9,19-25
+src/modules/Arrangement/handlers/vca/__tests__/legacyVcaActionHistory.spec.ts
+  s_bc88af7d3b054c::t_0e7c52876d6499 182-202
+src/modules/Arrangement/handlers/vca/__tests__/toVcaGainExecutionResult.spec.ts
+  s_bc88af7d3b054c::t_e17d736e95fbdf 6,12,23,27,30-37,47-52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "80a461108862a931078e304b38e245c419d41ea8",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
