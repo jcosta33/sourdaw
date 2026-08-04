@@ -1,0 +1,23 @@
+src/modules/AudioEngine/useCases/advancedMetering/lufs/__tests__/ShortTermLUFSBranches.spec.ts
+  s_bc88af7d3b054c::t_79a0bd3d2bce29 1-87
+src/modules/MIDI/useCases/webMidiInput/__tests__/resolveBendRangeSemitones.spec.ts
+  s_bc88af7d3b054c::t_6c67cb8dda327b 1-54
+src/modules/Yeast/workers/__tests__/lcgRandom.spec.ts
+  s_bc88af7d3b054c::t_eb80290deca6af 1-82
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "2aa1205e70e008fe63e5ca44b2842bb2b976d428",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
