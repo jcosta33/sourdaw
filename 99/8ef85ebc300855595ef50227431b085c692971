@@ -1,0 +1,54 @@
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_bc88af7d3b054c::t_984497d8465703 835,837-864,957-958
+  s_bc88af7d3b054c::t_767056786ed762 162-185,836,865-956
+src/utils/handlerContract.ts
+  s_bc88af7d3b054c::t_3508bcd2a5c76e 607
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_bc88af7d3b054c::t_d09a27ca611a66 227-280
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_bc88af7d3b054c::t_984497d8465703 159-169
+  s_66d4924c65dcd2::t_2dd48799a963af 158
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_bc88af7d3b054c::t_3508bcd2a5c76e 451-457
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_bc88af7d3b054c::t_3508bcd2a5c76e 928-974,1365-1368,1391,1393,1567-1574,1873-1881,1895,1899,1903-1904,1979,1988
+  s_bc88af7d3b054c::t_27a076a508dca8 1893-1894,1897-1898
+src/modules/Arrangement/handlers/clip/__tests__/handleCrossfadeClips.spec.ts
+  s_bc88af7d3b054c::t_427a017cb9dae7 29-38
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_bc88af7d3b054c::t_3508bcd2a5c76e 373-399
+  s_66d4924c65dcd2::t_368206b159da55 372
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_bc88af7d3b054c::t_427a017cb9dae7 171-185,867-879
+  s_bc88af7d3b054c::t_e9a6a914a24fdc 170
+  s_bc88af7d3b054c::t_971ae0709adec7 880
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_bc88af7d3b054c::t_e7c6e0d5815589 334-360,373
+  s_bc88af7d3b054c::t_984497d8465703 297-333,361-372,374-375
+src/modules/AiRuntime/models/Tools/ClipAndDevice.ts
+  s_bc88af7d3b054c::t_3508bcd2a5c76e 165,167
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "998ef85ebc300855595ef50227431b085c692971",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
