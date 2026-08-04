@@ -1,39 +1,40 @@
-type ToasterControlsLike = {
-    ready: boolean;
-    setPadParam: (pad: number, name: string, value: number) => void;
-};
+import { findToasterNodeOnStrip, type ToasterStrip, type ToasterStripDeviceNode } from './findToasterNodeOnStrip';
 
-type StripLike = {
-    deviceNodes: Array<{ deviceId?: string; toasterControls?: ToasterControlsLike }>;
-};
+type ToasterControls = NonNullable<ToasterStripDeviceNode['toasterControls']>;
 
 type FindReadyToasterControlsOnStripInput = {
-    strip: StripLike;
+    strip: ToasterStrip;
     deviceId: string;
 };
 
 /**
- * Pick the controls belonging to *this* Toaster, and only once it is loaded.
+ * Controls for *this* Toaster, and only once it has finished loading.
  *
- * Both halves matter and both were wrong at two call sites.
+ * Device scoping is delegated to `findToasterNodeOnStrip` — that half is
+ * correct for every caller. Readiness is *not* shared, because it is not:
  *
- * Scoping: a track can host more than one Toaster. The old selector matched the
- * first node exposing toaster controls and ignored the `deviceId` it already
- * had in hand, so editing a pad on the second instance retuned the first.
- * `getToasterControls` was fixed for this once — its comment still records it —
- * and the two pad-param paths were left behind.
+ * - **Pad writes need it.** A device still loading publishes a placeholder
+ *   controller whose `setPadParam` is an empty function
+ *   (`AudioEngine/engine/wasmDeviceRegistry.ts`), so the write is dropped on
+ *   the floor. The predicate here used to be `ready !== undefined`, which is
+ *   *true* when `ready` is `false`, so the placeholder was matched in
+ *   preference to a real loaded device further down the chain.
+ * - **Kit writes must not have it.** The same placeholder's `setParam` pushes
+ *   into `pendingParams`, and the loader replays that buffer once the worklet
+ *   is up. `setToasterKitParam` therefore writes through a not-ready node on
+ *   purpose; gating it on readiness would discard every kit edit made while
+ *   the device loads, instead of deferring it.
  *
- * Readiness: the old predicate was `toasterControls?.ready !== undefined`,
- * which is *true* when `ready` is `false`. It therefore matched a placeholder
- * controller for a device still loading, in preference to a real one further
- * down the chain, and wrote into a function that goes nowhere.
- *
- * This lives in one place so the predicate cannot drift apart again.
+ * So reach for this from `setPadParam` paths. Where a not-ready write is the
+ * point, call `findToasterNodeOnStrip` directly and skip the gate.
  */
 export function findReadyToasterControlsOnStrip({
     strip,
     deviceId,
-}: FindReadyToasterControlsOnStripInput): ToasterControlsLike | null {
-    const node = strip.deviceNodes.find((data) => data.deviceId === deviceId && data.toasterControls?.ready);
-    return node?.toasterControls ?? null;
+}: FindReadyToasterControlsOnStripInput): ToasterControls | null {
+    const controls = findToasterNodeOnStrip({ strip, deviceId })?.toasterControls;
+    if (!controls?.ready) {
+        return null;
+    }
+    return controls;
 }

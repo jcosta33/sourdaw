@@ -4,6 +4,8 @@ import { getTrackStrip } from '#/modules/AudioEngine/useCases';
 import { type ToasterKit } from '../../models/ToasterKit';
 import { updateKit } from '../../stores/toasterStore';
 
+import { findToasterNodeOnStrip } from './findToasterNodeOnStrip';
+
 const KIT_PARAM_MAP = {
     swing: 'swing',
     masterGain: 'master_gain',
@@ -37,9 +39,14 @@ function flushKitParam(cacheKey: string): void {
     if (!strip) {
         return;
     }
-    const deviceNode = strip.deviceNodes.find(
-        (device) => device.toasterControls && device.toasterControls.ready !== undefined
-    );
+    // Scoped by id — a track can host two Toasters, and this flush used to take
+    // whichever came first, so dragging Swing on the second panel retuned the
+    // first. No readiness gate on purpose: a Toaster still loading publishes a
+    // placeholder whose `setParam` buffers into `pendingParams`, which the
+    // loader replays once the worklet is up
+    // (AudioEngine/engine/wasmDeviceRegistry.ts). Skipping a not-ready node
+    // here would discard every kit edit made during load rather than defer it.
+    const deviceNode = findToasterNodeOnStrip({ strip, deviceId: entry.deviceId });
     if (deviceNode?.toasterControls) {
         deviceNode.toasterControls.setParam(entry.paramName, entry.value);
     }

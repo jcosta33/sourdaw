@@ -26,6 +26,12 @@ type TestGrandBouleControls = {
 type TestStrip = {
     analyserNode: AnalyserNode | null;
     deviceNodes: ReadonlyArray<{
+        /**
+         * Real device nodes always carry an id (`BuiltinDeviceNode.deviceId` is
+         * required). The fixture used to omit it, which let a resolver that
+         * ignored `input.deviceId` look correct here.
+         */
+        deviceId: string;
         grandBouleControls?: TestGrandBouleControls;
     }>;
 };
@@ -70,17 +76,22 @@ function createControls(input?: { ready?: boolean }): TestGrandBouleControls {
     };
 }
 
-function createStrip(input: { controls: ReadonlyArray<TestGrandBouleControls | undefined> }): TestStrip {
+type TestStripNode = { deviceId: string; controls?: TestGrandBouleControls };
+
+function createStrip(input: { nodes: ReadonlyArray<TestStripNode> }): TestStrip {
     return {
         analyserNode: null,
-        deviceNodes: input.controls.map((grandBouleControls) => ({ grandBouleControls })),
+        deviceNodes: input.nodes.map((node) => ({
+            deviceId: node.deviceId,
+            grandBouleControls: node.controls,
+        })),
     };
 }
 
 describe('resolveGrandBouleEngine', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.ensureTrackStrip.mockReturnValue(createStrip({ controls: [] }));
+        mocks.ensureTrackStrip.mockReturnValue(createStrip({ nodes: [] }));
         mocks.getAllTracks.mockReturnValue([]);
         mocks.getAudioSampleRate.mockReturnValue(48000);
     });
@@ -89,7 +100,14 @@ describe('resolveGrandBouleEngine', () => {
         const inactiveControls = createControls({ ready: false });
         const readyControls = createControls();
         const samples = new Float32Array([0.25, -0.25]);
-        mocks.ensureTrackStrip.mockReturnValue(createStrip({ controls: [inactiveControls, readyControls] }));
+        mocks.ensureTrackStrip.mockReturnValue(
+            createStrip({
+                nodes: [
+                    { deviceId: 'other-grand-boule', controls: inactiveControls },
+                    { deviceId: 'grand-boule-device', controls: readyControls },
+                ],
+            })
+        );
         mocks.getAudioSampleRate.mockReturnValue(96000);
 
         const engine = resolveGrandBouleEngine({
@@ -129,7 +147,9 @@ describe('resolveGrandBouleEngine', () => {
     it('should fall back to getAllTracks when tracks are omitted', () => {
         const readyControls = createControls();
         mocks.getAllTracks.mockReturnValue([createTrack({ trackId: 'track-fallback', deviceId: 'fallback-device' })]);
-        mocks.ensureTrackStrip.mockReturnValue(createStrip({ controls: [readyControls] }));
+        mocks.ensureTrackStrip.mockReturnValue(
+            createStrip({ nodes: [{ deviceId: 'fallback-device', controls: readyControls }] })
+        );
 
         const engine = resolveGrandBouleEngine({ deviceId: 'fallback-device' });
 
@@ -151,7 +171,11 @@ describe('resolveGrandBouleEngine', () => {
 
     it('should return a disconnected handle when the matching strip has no ready GrandBoule controls', () => {
         const inactiveControls = createControls({ ready: false });
-        mocks.ensureTrackStrip.mockReturnValue(createStrip({ controls: [undefined, inactiveControls] }));
+        mocks.ensureTrackStrip.mockReturnValue(
+            createStrip({
+                nodes: [{ deviceId: 'plain-device' }, { deviceId: 'grand-boule-device', controls: inactiveControls }],
+            })
+        );
 
         const engine = resolveGrandBouleEngine({
             deviceId: 'grand-boule-device',
@@ -162,5 +186,47 @@ describe('resolveGrandBouleEngine', () => {
 
         expect(engine.isReady()).toBe(false);
         expect(inactiveControls.noteOn).not.toHaveBeenCalled();
+    });
+
+    it('should address the requested piano when a track hosts two ready GrandBoules', () => {
+        // The resolver had `input.deviceId` in scope — it uses it to find the
+        // owning track — and then discarded it when picking the device node, so
+        // the entire returned handle (noteOn, setParam, setSustain,
+        // loadAttackClip) addressed whichever piano came first in the chain.
+        const firstControls = createControls();
+        const addressedControls = createControls();
+        const samples = new Float32Array([0.5, -0.5]);
+        mocks.ensureTrackStrip.mockReturnValue(
+            createStrip({
+                nodes: [
+                    { deviceId: 'grand-boule-first', controls: firstControls },
+                    { deviceId: 'grand-boule-second', controls: addressedControls },
+                ],
+            })
+        );
+
+        const engine = resolveGrandBouleEngine({
+            deviceId: 'grand-boule-second',
+            tracks: [
+                {
+                    id: 'track-live',
+                    devices: [{ id: 'grand-boule-first' }, { id: 'grand-boule-second' }],
+                },
+            ],
+        });
+
+        engine.noteOn({ midiNote: 60, velocity: 0.75 });
+        engine.setParam({ name: 'master_gain', value: 0.25 });
+        engine.setSustain({ position: 1 });
+        engine.loadAttackClip({ key: 40, samples });
+
+        expect(addressedControls.noteOn).toHaveBeenCalledWith(60, 0.75);
+        expect(addressedControls.setParam).toHaveBeenCalledWith('master_gain', 0.25);
+        expect(addressedControls.setSustain).toHaveBeenCalledWith(1);
+        expect(addressedControls.loadAttackClip).toHaveBeenCalledWith(40, samples);
+        expect(firstControls.noteOn).not.toHaveBeenCalled();
+        expect(firstControls.setParam).not.toHaveBeenCalled();
+        expect(firstControls.setSustain).not.toHaveBeenCalled();
+        expect(firstControls.loadAttackClip).not.toHaveBeenCalled();
     });
 });

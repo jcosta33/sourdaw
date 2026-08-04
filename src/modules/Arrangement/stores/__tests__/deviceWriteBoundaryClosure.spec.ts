@@ -196,7 +196,14 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
     },
     'direct-built-in': {
         'src/modules/GrandBoule/useCases/loadGrandBoulePreset.ts': 4,
-        'src/modules/GrandBoule/useCases/resolveGrandBouleEngine.ts': 2,
+        // Count provenance: measured 3 with `grep -o`, was 2. The two
+        // executable hits are unchanged — the `setParam` handle on the returned
+        // engine and the `controls.setParam` call it forwards to. The new one
+        // is a comment mention: the node selector now scopes on
+        // `candidateNode.deviceId === input.deviceId`, and the comment names
+        // the handle members (`setParam` among them) that all drove the *first*
+        // GrandBoule on a track hosting two before the scope was added.
+        'src/modules/GrandBoule/useCases/resolveGrandBouleEngine.ts': 3,
         'src/modules/GrandBoule/useCases/setGrandBouleAttackBite.ts': 1,
         'src/modules/GrandBoule/useCases/setGrandBouleMasterGain.ts': 1,
         'src/modules/GrandBoule/useCases/setGrandBouleMorphPosition.ts': 7,
@@ -225,7 +232,17 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Proof/useCases/proofParamBridge/syncExciter.ts': 4,
         'src/modules/Proof/useCases/proofParamBridge/syncFullPatch.ts': 13,
         'src/modules/Proof/useCases/proofParamBridge/syncImager.ts': 3,
-        'src/modules/Toaster/useCases/getToasterControls.ts': 2,
+        // Count provenance: measured 0 with `grep -o`, was 2 — row removed
+        // rather than zeroed, since this census only records files that match.
+        // Both hits were the `setPadParam`/`setParam` fields of a hand-written
+        // `GetToasterControlsOutput`, never calls. The file now returns
+        // `ReturnType<typeof findReadyToasterControlsOnStrip>` and delegates
+        // the strip-level selection to that helper, so the structural
+        // re-declaration — and with it the drift between three call sites
+        // holding two return shapes — is gone. The owner lookup in front of it
+        // (`findDeviceRef`, no eligibility gate) is still deliberately its own.
+        // No device write left this file before or after.
+        // 'src/modules/Toaster/useCases/getToasterControls.ts': removed (0),
         // Count provenance: the kit projection was three hand-maintained copies —
         // 23 sinks in the preset loader and 22 in the live subscriber, each
         // enumerating the same pad fields. They now delegate to one shared
@@ -234,17 +251,29 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Toaster/useCases/loadToasterKit.ts': 3,
         'src/modules/Toaster/useCases/projectToasterKitToEngineMessages.ts': 4,
         'src/modules/Toaster/useCases/setPadParamImmediate.ts': 1,
-        // Count provenance: this is the shared device-node selector for the two
-        // pad-param paths. Its one hit is the `setPadParam` field in the
-        // controls type it returns, not a call — the same reason
-        // `getToasterControls.ts` counts 2. The two call sites keep their own
-        // count of 1 each; the sink did not move, only the lookup in front of
-        // it. The file exists because that lookup was duplicated three ways and
-        // two copies still ignored `deviceId`, writing pad edits to the wrong
-        // Toaster on a track hosting more than one.
-        'src/modules/Toaster/useCases/toasterParamBridge/findReadyToasterControlsOnStrip.ts': 1,
+        // Count provenance: measured 3 with `grep -o` (setPadParam 2, setParam
+        // 1), was 1. All three are doc-comment mentions — this file holds no
+        // write and no longer re-declares a controls type either; it derives
+        // the real one from the strip. It is the readiness gate for the three
+        // pad-param paths, and its comment has to name both identifiers to
+        // record why readiness is *not* shared with the kit path: a loading
+        // device's placeholder `setPadParam` is an empty function that drops
+        // the write, while its `setParam` buffers into `pendingParams` and is
+        // replayed on load. Deleting the explanation would drop this row toward
+        // 0, so a real sink added here still trips the closure.
+        'src/modules/Toaster/useCases/toasterParamBridge/findReadyToasterControlsOnStrip.ts': 3,
+        // findToasterNodeOnStrip.ts is absent on purpose: measured 0. It is the
+        // id-scoping half, shared by every caller, and names neither sink.
         'src/modules/Toaster/useCases/toasterParamBridge/setPadEngineImmediate.ts': 1,
-        'src/modules/Toaster/useCases/toasterParamBridge/setToasterKitParam.ts': 1,
+        // Count provenance: measured 2 with `grep -o`, was 1. The single
+        // executable sink is unchanged — one `setParam` call on the flush path.
+        // The added hit is a comment mention explaining why this flush scopes
+        // by `deviceId` but deliberately does *not* gate on `ready`: the
+        // placeholder controller for a loading Toaster buffers `setParam` into
+        // `pendingParams` and the loader replays it, so skipping a not-ready
+        // node here would discard kit edits made during load instead of
+        // deferring them.
+        'src/modules/Toaster/useCases/toasterParamBridge/setToasterKitParam.ts': 2,
         'src/modules/Toaster/useCases/toasterParamBridge/setToasterPadParam.ts': 1,
         'src/modules/Toaster/useCases/toasterSubscriber.ts': 2,
     },
