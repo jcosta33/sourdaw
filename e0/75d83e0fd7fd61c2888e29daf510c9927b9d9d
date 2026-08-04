@@ -1,0 +1,14 @@
+src/components/daw/__tests__/DawPluginChipBranches.spec.tsx
+  h_1228e573df1f42 1-94
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "e075d83e0fd7fd61c2888e29daf510c9927b9d9d",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
