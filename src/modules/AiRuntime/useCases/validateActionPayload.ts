@@ -291,7 +291,8 @@ const validators = {
         Number.isInteger(param.velocity),
 
     // Marker + section
-    removeMarker: (param): param is PayloadOf<'removeMarker'> => isObj(param) && isString(param.markerId),
+    removeMarker: (param): param is PayloadOf<'removeMarker'> =>
+        isObj(param) && hasExactKeys(param, ['markerId']) && isNonEmptyString(param.markerId),
     removeSection: (param): param is PayloadOf<'removeSection'> => isObj(param) && isString(param.sectionId),
     removeTimeSignatureChange: (param): param is PayloadOf<'removeTimeSignatureChange'> =>
         isObj(param) && isString(param.changeId),

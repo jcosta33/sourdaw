@@ -4,7 +4,7 @@ import { addMarker } from '../../useCases/marker/markerOperations/addMarker';
 import { getMarkerState } from '../../useCases/timelineQueries';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
-type AddMarkerAction = { payload: { beat: number; name: string; markerId?: string } };
+type AddMarkerAction = { payload: { beat: number; name: string; markerId?: string; color?: string } };
 
 // Mirror of handleDuplicateClip's ensureTargetClipId: the inverse needs the
 // new marker's id before execute runs, so describe mints it onto the payload
@@ -20,7 +20,9 @@ function ensureMarkerId(action: AddMarkerAction): string {
 
 export const handleAddMarker = createHandler<'addMarker'>({
     execute: (action) => {
-        return toHandlerExecutionResult(addMarker(action.payload.beat, action.payload.name, ensureMarkerId(action)));
+        return toHandlerExecutionResult(
+            addMarker(action.payload.beat, action.payload.name, ensureMarkerId(action), action.payload.color)
+        );
     },
     describe: (action) => ({
         label: `Add marker "${action.payload.name}"`,

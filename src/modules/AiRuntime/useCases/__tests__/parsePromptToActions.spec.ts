@@ -300,6 +300,28 @@ describe('parsePromptToActions', () => {
         expect(mockBuildLlmActionUserMessage).toHaveBeenCalledWith({ prompt, context: baseContext });
     });
 
+    it('resolves a provider marker removal from local state without serializing marker identity', async () => {
+        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
+            '../agentReference/bridgeGroundedLlmToolCalls'
+        );
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        markerStoreValue.value = {
+            markers: [{ id: 'marker-internal', beat: 16, name: 'Chorus' }],
+        };
+        vi.mocked(generateToolCalls).mockResolvedValue(
+            completePlan([{ name: 'removeMarker', arguments: { beat: 16, name: 'Chorus' } }])
+        );
+
+        const result = await parsePromptToActions('delete marker Chorus at beat 16', baseContext);
+
+        expect(result.actions).toEqual([{ type: 'removeMarker', payload: { markerId: 'marker-internal' } }]);
+        expect(result.requiresConfirmation).toBe(true);
+        expect(mockBuildLlmActionUserMessage).toHaveBeenCalledWith({
+            prompt: 'delete marker Chorus at beat 16',
+            context: baseContext,
+        });
+    });
+
     it('proposes a grounded two-clip crossfade as one confirmable atomic action', async () => {
         const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
             '../agentReference/bridgeGroundedLlmToolCalls'

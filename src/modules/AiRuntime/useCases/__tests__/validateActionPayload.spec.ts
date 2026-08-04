@@ -341,6 +341,17 @@ const guardedPayloadContractCases = [
         ],
     }),
     guardedPayloadCase({
+        actionType: 'removeMarker',
+        validPayload: { markerId: 'marker-chorus' },
+        invalidPayloads: [
+            {},
+            { markerId: '' },
+            { markerId: '   ' },
+            { markerId: 16 },
+            { markerId: 'marker-chorus', extra: true },
+        ],
+    }),
+    guardedPayloadCase({
         actionType: 'setLoopRegion',
         validPayload: { startBeat: 4, endBeat: 12 },
         invalidPayloads: [

@@ -34,21 +34,25 @@ describe('marker action handlers', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.addMarker.mockReturnValue(true);
+        mocks.removeMarker.mockReturnValue(true);
         mocks.getMarkerState.mockReturnValue(null);
     });
 
-    it('should delegate marker and section actions to Arrangement use cases', () => {
-        handleAddMarker.execute({ type: 'addMarker', payload: { beat: 4, name: 'Intro' } });
-        handleRemoveMarker.execute({ type: 'removeMarker', payload: { markerId: 'marker1' } });
-        handleSetMarkerColor.execute({ type: 'setMarkerColor', payload: { markerId: 'marker1', color: '#fff' } });
-        handleAddSection.execute({
+    it('should delegate marker and section actions to Arrangement use cases', async () => {
+        await handleAddMarker.execute({ type: 'addMarker', payload: { beat: 4, name: 'Intro' } });
+        await handleRemoveMarker.execute({ type: 'removeMarker', payload: { markerId: 'marker1' } });
+        await handleSetMarkerColor.execute({ type: 'setMarkerColor', payload: { markerId: 'marker1', color: '#fff' } });
+        await handleAddSection.execute({
             type: 'addSection',
             payload: { startBeat: 0, endBeat: 8, name: 'Verse' },
         });
-        handleRemoveSection.execute({ type: 'removeSection', payload: { sectionId: 'section1' } });
-        handleRenameSection.execute({ type: 'renameSection', payload: { sectionId: 'section1', name: 'Chorus' } });
+        await handleRemoveSection.execute({ type: 'removeSection', payload: { sectionId: 'section1' } });
+        await handleRenameSection.execute({
+            type: 'renameSection',
+            payload: { sectionId: 'section1', name: 'Chorus' },
+        });
 
-        expect(mocks.addMarker).toHaveBeenCalledWith(4, 'Intro', expect.stringMatching(/^marker-/));
+        expect(mocks.addMarker).toHaveBeenCalledWith(4, 'Intro', expect.stringMatching(/^marker-/), undefined);
         expect(mocks.removeMarker).toHaveBeenCalledWith('marker1');
         expect(mocks.setMarkerColor).toHaveBeenCalledWith('marker1', '#fff');
         expect(mocks.addSection).toHaveBeenCalledWith(0, 8, 'Verse', expect.stringMatching(/^section-/));
@@ -93,44 +97,44 @@ describe('marker action handlers', () => {
         ).toBe(true);
     });
 
-    it('handleAddMarker mints one id shared by the execute call and the inverse', () => {
+    it('handleAddMarker mints one id shared by the execute call and the inverse', async () => {
         const action: { type: 'addMarker'; payload: { beat: number; name: string; markerId?: string } } = {
             type: 'addMarker',
             payload: { beat: 4, name: 'Intro' },
         };
 
         const desc = handleAddMarker.describe(action);
-        handleAddMarker.execute(action);
+        await handleAddMarker.execute(action);
 
         const inverse = desc.inverseAction;
         if (inverse?.type !== 'removeMarker') {
             throw new Error('expected a removeMarker inverse');
         }
         expect(inverse.payload.markerId).toMatch(/^marker-/);
-        expect(mocks.addMarker).toHaveBeenCalledWith(4, 'Intro', inverse.payload.markerId);
+        expect(mocks.addMarker).toHaveBeenCalledWith(4, 'Intro', inverse.payload.markerId, undefined);
     });
 
-    it('handleAddMarker honors a caller-supplied id', () => {
+    it('handleAddMarker honors a caller-supplied id', async () => {
         const action: { type: 'addMarker'; payload: { beat: number; name: string; markerId?: string } } = {
             type: 'addMarker',
             payload: { beat: 4, name: 'Intro', markerId: 'marker-fixed' },
         };
 
         const desc = handleAddMarker.describe(action);
-        handleAddMarker.execute(action);
+        await handleAddMarker.execute(action);
 
-        expect(mocks.addMarker).toHaveBeenCalledWith(4, 'Intro', 'marker-fixed');
+        expect(mocks.addMarker).toHaveBeenCalledWith(4, 'Intro', 'marker-fixed', undefined);
         expect(desc.inverseAction).toEqual({ type: 'removeMarker', payload: { markerId: 'marker-fixed' } });
     });
 
-    it('handleAddSection mints one id shared by the execute call and the inverse', () => {
+    it('handleAddSection mints one id shared by the execute call and the inverse', async () => {
         const action: {
             type: 'addSection';
             payload: { startBeat: number; endBeat: number; name: string; sectionId?: string };
         } = { type: 'addSection', payload: { startBeat: 0, endBeat: 8, name: 'Verse' } };
 
         const desc = handleAddSection.describe(action);
-        handleAddSection.execute(action);
+        await handleAddSection.execute(action);
 
         const inverse = desc.inverseAction;
         if (inverse?.type !== 'removeSection') {
@@ -140,7 +144,7 @@ describe('marker action handlers', () => {
         expect(mocks.addSection).toHaveBeenCalledWith(0, 8, 'Verse', inverse.payload.sectionId);
     });
 
-    it('handleRemoveMarker describes an inverse restoring the exact marker', () => {
+    it('handleRemoveMarker describes an inverse restoring the exact marker', async () => {
         mocks.getMarkerState.mockReturnValue({
             markers: [{ id: 'm1', beat: 8, name: 'Verse', color: '#abc' }],
             sections: [],
@@ -148,16 +152,32 @@ describe('marker action handlers', () => {
 
         const desc = handleRemoveMarker.describe({ type: 'removeMarker', payload: { markerId: 'm1' } });
 
+        expect(desc.label).toBe('Remove marker "Verse" at beat 8 (m1)');
         expect(desc.inverseAction).toEqual({
             type: 'addMarker',
             payload: { beat: 8, name: 'Verse', markerId: 'm1', color: '#abc' },
         });
+        if (desc.inverseAction?.type !== 'addMarker') {
+            throw new Error('expected an addMarker inverse');
+        }
+
+        await handleAddMarker.execute(desc.inverseAction);
+
+        expect(mocks.addMarker).toHaveBeenCalledWith(8, 'Verse', 'm1', '#abc');
     });
 
     it('handleRemoveMarker describes a null inverse when the marker is not found', () => {
         const desc = handleRemoveMarker.describe({ type: 'removeMarker', payload: { markerId: 'missing' } });
 
         expect(desc.inverseAction).toBeNull();
+    });
+
+    it('handleRemoveMarker reports no-write when the target cannot be removed', () => {
+        mocks.removeMarker.mockReturnValue(false);
+
+        const result = handleRemoveMarker.execute({ type: 'removeMarker', payload: { markerId: 'missing' } });
+
+        expect(result).toEqual({ status: 'no-write' });
     });
 
     it('handleRemoveSection describes an inverse restoring the exact section', () => {
