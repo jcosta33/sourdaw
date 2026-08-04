@@ -618,6 +618,15 @@ fn fermenter_scheduled_note_offsets_do_not_allocate() {
 /// saturated before the interceptor arms, so it cannot go blind the same way.
 /// Eight steals per block also exhausts all 16 crossfade slots well inside the
 /// first 10 ms fade, covering the slot-recycling branch.
+///
+/// Unison is set above 1 deliberately, and it is the whole point of the guard
+/// rather than incidental configuration. A steal hands the incoming note a
+/// `Voice` taken from `steal_tails`, which `Voice::new` built with a
+/// single-element unison `Vec`; `note_on` then calls `set_unison(count, ..)` on
+/// it, and `UnisonOsc::set_voices` grows that `Vec`. At the default unison of 1
+/// the early return fires and nothing happens, so a guard left at the default
+/// exercises the steal path and still reports clean while `process` allocates
+/// for every user who ever turned unison up.
 #[test]
 fn fermenter_voice_stealing_does_not_allocate() {
     use daw_dsp::fermenter::FermenterInstance;
@@ -627,6 +636,7 @@ fn fermenter_voice_stealing_does_not_allocate() {
     instance.set_param("resonance", 0.4);
     instance.set_param("amp_sustain", 1.0);
     instance.set_param("amp_release", 2.0);
+    instance.set_param("unison_voices", 8.0);
 
     // Saturate the 16-slot pool outside the guard, so every guarded note-on is
     // a steal rather than a fill.
@@ -659,6 +669,49 @@ fn fermenter_voice_stealing_does_not_allocate() {
         peak(&out) > 1e-4,
         "fermenter produced silence under sustained stealing, so the guarded \
          region did not exercise the steal path"
+    );
+}
+
+/// Raising the unison count while voices sound, which allocated before the
+/// crossfade-slot work and does not now.
+///
+/// This is not the steal regression above — it fails on `main` too. Automating
+/// or sweeping `unison_voices` reaches `UnisonOsc::set_voices` for every
+/// sounding voice, and a `Vec` sized for the count it happens to hold has to
+/// grow every time the knob goes up. Reserving the full `clamp(1, 16)` range at
+/// construction closes both paths, so the pre-existing one is pinned here
+/// rather than left to be rediscovered.
+#[test]
+fn fermenter_unison_sweep_does_not_allocate() {
+    use daw_dsp::fermenter::FermenterInstance;
+
+    let mut instance = FermenterInstance::new(SAMPLE_RATE, 16);
+    instance.set_param("amp_sustain", 1.0);
+    instance.set_param("amp_release", 2.0);
+    instance.set_param("unison_voices", 1.0);
+
+    for note in 48_u8..56 {
+        instance.note_on(note, 100);
+    }
+    let warmup = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
+    assert_all_finite(&warmup, "fermenter unison sweep");
+
+    assert_no_alloc(|| {
+        for block in 0..GUARDED_BLOCKS {
+            // Walk the whole accepted range, up and back down, so both the
+            // growing and the already-large cases are covered.
+            let count = 1 + (block % 16);
+            instance.set_param("unison_voices", count as f32);
+            instance.process(BLOCK as u32);
+        }
+    });
+
+    let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
+    assert_all_finite(&out, "fermenter unison sweep");
+    assert!(
+        peak(&out) > 1e-4,
+        "fermenter produced silence under a unison sweep, so the guarded region \
+         did not exercise the resize path"
     );
 }
 
