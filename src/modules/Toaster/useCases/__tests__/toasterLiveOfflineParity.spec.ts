@@ -24,7 +24,10 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 
 vi.mock('../getToasterControls', () => ({ getToasterControls: mocks.getToasterControls }));
 
+import { toToasterKitState } from '../../models/ToasterKitState';
 import { registerToasterDevice, toasterStore } from '../../stores/toasterStore';
+import { getToasterPresetKit } from '../getToasterPresetKit';
+import { loadToasterKitPreset } from '../loadToasterKit';
 import { prepareOfflineToaster } from '../prepareOfflineToaster';
 import { setPadParamImmediate } from '../setPadParamImmediate';
 import { TOASTER_ENGINE_MAP } from '../toasterEngineMap';
@@ -159,6 +162,23 @@ describe('Toaster live/offline parity', () => {
         expect(padValue(sent, 1, 'engine_type')).not.toBe(RUST_DEFAULT_ENGINE_INDEX_BY_PAD[1]);
     });
 
+    it('projects persisted kit state when the transient session store is empty', () => {
+        const kit = getToasterPresetKit('fm-metallic');
+        if (kit === null) {
+            throw new Error('expected the FM preset fixture');
+        }
+        const deviceState = toToasterKitState(kit);
+        const { port, sent } = makeRecordingPort();
+
+        prepareOfflineToaster({ deviceId: DEVICE_ID, deviceState, port });
+
+        expect(padValue(sent, 1, 'engine_type')).toBe(TOASTER_ENGINE_MAP['fm-perc']);
+        expect(padValue(sent, 1, 'mod_ratio')).toBe(2.3);
+        expect(padValue(sent, 1, 'mod_amount')).toBe(3);
+        expect(padValue(sent, 1, 'feedback')).toBe(0.2);
+        expect(sent).toContainEqual({ type: 'param', name: 'master_gain', value: kit.masterGain });
+    });
+
     /**
      * The property the owner actually cares about: an export sounds like the
      * session. Stronger than either side being individually correct, because it
@@ -177,15 +197,42 @@ describe('Toaster live/offline parity', () => {
         expect(offline.length).toBeGreaterThan(16 * 10);
     });
 
-    it('posts nothing when the device has no record, matching the live subscriber', () => {
-        // Both paths leave such an instance on the engine's constructor kit, so
-        // they still agree. Substituting the application default here would make an
-        // export differ from the session.
-        const { port, sent } = makeRecordingPort();
+    it('keeps preset voicing identical across initial load, runtime reload, and offline render', () => {
+        const kit = getToasterPresetKit('fm-metallic');
+        if (kit === null) {
+            throw new Error('expected the FM preset fixture');
+        }
+        registerToasterDevice(DEVICE_ID);
+
+        const initial: Message[] = [];
+        mocks.getToasterControls.mockReturnValue({
+            setParam: (name: string, value: number) => initial.push({ type: 'param', name, value }),
+            setPadParam: (pad: number, name: string, value: number) =>
+                initial.push({ type: 'padParam', pad, name, value }),
+        });
+        loadToasterKitPreset(DEVICE_ID, kit);
+
+        const reloaded = captureLiveMessages();
+        const { port, sent: offline } = makeRecordingPort();
+        prepareOfflineToaster({ deviceId: DEVICE_ID, port });
+
+        expect(reloaded).toEqual(initial);
+        expect(offline).toEqual(initial);
+        expect(padValue(initial, 1, 'mod_ratio')).toBe(2.3);
+        expect(padValue(initial, 1, 'mod_amount')).toBe(3);
+        expect(padValue(initial, 1, 'feedback')).toBe(0.2);
+    });
+
+    it('projects the application default kit when no persisted or transient state exists', () => {
+        const live = captureLiveMessages();
+        toasterStore.set({});
+        const { port, sent: offline } = makeRecordingPort();
 
         prepareOfflineToaster({ deviceId: 'never-registered', port });
 
-        expect(sent).toEqual([]);
+        expect(offline).toEqual(live);
+        expect(padValue(offline, 0, 'engine_type')).toBe(TOASTER_ENGINE_MAP['kick-808']);
+        expect(offline.length).toBeGreaterThan(16 * 10);
     });
 
     it('never posts a non-finite value, matching the guard ToasterNode applies live', () => {

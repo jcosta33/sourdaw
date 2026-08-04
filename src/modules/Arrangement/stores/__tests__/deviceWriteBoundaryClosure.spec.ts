@@ -246,9 +246,13 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // Count provenance: the kit projection was three hand-maintained copies —
         // 23 sinks in the preset loader and 22 in the live subscriber, each
         // enumerating the same pad fields. They now delegate to one shared
-        // projection, so 45 sinks became 9. A row moving *down* here is a copy
-        // retiring; measured with `grep -o`, not estimated.
-        'src/modules/Toaster/useCases/loadToasterKit.ts': 3,
+        // projection. The preset loader has exactly two executable sinks: one
+        // setParam call and one setPadParam call. Its former third sink was a
+        // separate engineParams loop; engine-specific values now travel through
+        // the shared ordered projection so live reload and offline render cannot
+        // omit them. A row moving *down* here is a copy retiring; measured with
+        // the census pattern, not estimated.
+        'src/modules/Toaster/useCases/loadToasterKit.ts': 2,
         'src/modules/Toaster/useCases/projectToasterKitToEngineMessages.ts': 4,
         'src/modules/Toaster/useCases/setPadParamImmediate.ts': 1,
         // Count provenance: measured 3 with `grep -o` (setPadParam 2, setParam

@@ -125,6 +125,7 @@ async function runOfflineInstrumentSetup({ device, port, logger }: RunOfflineIns
         await getAudioDeviceRuntimeSink().prepareOfflineInstrument({
             deviceId: device.id,
             deviceType: device.type,
+            deviceState: device.deviceState,
             port,
             signal: controller.signal,
         });
@@ -274,25 +275,21 @@ export const buildDeviceChain = inject({ logger })(
                     // otherwise the device chain silently skipping the node is
                     // invisible. Other failures stay at `warn` to avoid noise for
                     // routine issues (missing assets, stale worklets during HMR, etc.).
-                    if (isPluginRequiresIsolationError(error)) {
-                        logger.error(error);
-                    } else {
-                        logger.warn(`Device ${device.type} failed to load: ${error}`);
-                    }
-                    // A degraded device is still missing from the render, so the
-                    // user has to hear about it from the export, not the console.
                     let detail = String(error);
                     if (error instanceof Error) {
                         detail = error.message;
                     }
+                    if (isPluginRequiresIsolationError(error)) {
+                        logger.error(error);
+                    } else {
+                        logger.warn(`Device ${device.type} failed to load: ${detail}`);
+                    }
+                    // A degraded device is still missing from the render, so the
+                    // user has to hear about it from the export, not the console.
                     context.onWarning?.(
                         `Device "${device.type}" on track "${trackLabel}" could not be loaded and is missing from ` +
                             `the export: ${detail}`
                     );
-                    continue;
-                }
-
-                if (!strategy) {
                     continue;
                 }
 

@@ -61,23 +61,23 @@ describe('toasterQueries', () => {
     });
 
     it('should return toaster preset kit data as defensive snapshots', () => {
-        const classicKit = getToasterPresetKit('808-classic');
+        const metallicKit = getToasterPresetKit('fm-metallic');
 
-        const classicKick = classicKit?.pads[0];
-        if (!classicKick) {
-            throw new Error('Expected the classic 808 Toaster preset to include a kick pad.');
+        const metallicSnare = metallicKit?.pads[1];
+        if (!metallicSnare) {
+            throw new Error('Expected the metallic Toaster preset to include an FM snare pad.');
         }
 
-        classicKick.engineParams.base_freq = 999;
-        classicKick.name = 'Mutated Kick';
+        metallicSnare.engineParams.mod_ratio = 999;
+        metallicSnare.name = 'Mutated FM Snare';
 
-        const freshClassicKick = getToasterPresetKit('808-classic')?.pads[0];
-        if (!freshClassicKick) {
-            throw new Error('Expected the classic 808 Toaster preset to include a kick pad.');
+        const freshMetallicSnare = getToasterPresetKit('fm-metallic')?.pads[1];
+        if (!freshMetallicSnare) {
+            throw new Error('Expected the metallic Toaster preset to include an FM snare pad.');
         }
 
-        expect(freshClassicKick.engineParams.base_freq).toBe(50);
-        expect(freshClassicKick.name).toBe('Kick');
+        expect(freshMetallicSnare.engineParams.mod_ratio).toBe(2.3);
+        expect(freshMetallicSnare.name).toBe('FM Snare');
     });
 
     it('should return null for an unknown toaster preset kit', () => {

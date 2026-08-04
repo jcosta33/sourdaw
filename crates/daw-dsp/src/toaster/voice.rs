@@ -152,7 +152,7 @@ impl DrumVoice {
         // applying these values afterwards makes a fresh/recycled voice play the
         // previous sound for its entire hit.
         let pitch_offset = midi_note as f32 - 60.0 + pad.tune;
-        engine.reset_base_freq();
+        engine.reset_engine_params();
         engine.set_param("open", if pad.is_open { 1.0 } else { 0.0 });
         engine.set_param("tune", pitch_offset);
         engine.set_param("decay", pad.decay);
@@ -166,6 +166,18 @@ impl DrumVoice {
         engine.set_param("pitch_amount", pad.pitch_amount);
         engine.set_param("pitch_decay", pad.pitch_decay);
         engine.set_param("noise_level", pad.noise_level);
+        // Engine-specific kit overrides belong after common controls: FM `tone`,
+        // for example, maps to modulation amount and must remain effective unless
+        // this kit explicitly carries a `mod_amount` override.
+        if let Some(value) = pad.mod_ratio {
+            engine.set_param("mod_ratio", value);
+        }
+        if let Some(value) = pad.mod_amount {
+            engine.set_param("mod_amount", value);
+        }
+        if let Some(value) = pad.feedback {
+            engine.set_param("feedback", value);
+        }
         engine.trigger(velocity, sample_rate);
 
         // Setup filter

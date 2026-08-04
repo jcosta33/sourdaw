@@ -72,6 +72,8 @@ export type AudioDeviceRuntimeSink = {
     prepareOfflineInstrument: (input: {
         deviceId: string;
         deviceType: string;
+        /** Opaque snapshot state; only the owning device module may decode it. */
+        deviceState?: unknown;
         port: MessagePort;
         /** Aborts the setup when the export is cancelled or outruns its deadline. */
         signal?: AbortSignal;

@@ -29,6 +29,9 @@ pub struct Pad {
     pub pitch_amount: f32,
     pub pitch_decay: f32,
     pub noise_level: f32,
+    pub mod_ratio: Option<f32>,
+    pub mod_amount: Option<f32>,
+    pub feedback: Option<f32>,
     pub is_open: bool,
 }
 
@@ -57,8 +60,23 @@ impl Pad {
             pitch_amount: 0.5,
             pitch_decay: 0.05,
             noise_level: 0.2,
+            mod_ratio: None,
+            mod_amount: None,
+            feedback: None,
             is_open: false,
         }
+    }
+
+    fn reset_engine_params(&mut self) {
+        self.snappy = 0.5;
+        self.noise_color = 0.5;
+        self.base_freq = 0.0;
+        self.pitch_amount = 0.5;
+        self.pitch_decay = 0.05;
+        self.noise_level = 0.2;
+        self.mod_ratio = None;
+        self.mod_amount = None;
+        self.feedback = None;
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {
@@ -122,13 +140,23 @@ impl Pad {
                     28 => DrumEngineType::Cr78Metallic,
                     _ => DrumEngineType::Kick,
                 };
+                self.reset_engine_params();
             }
             "snappy" => self.snappy = value.clamp(0.0, 1.0),
             "noise_color" => self.noise_color = value.clamp(0.0, 1.0),
-            "base_freq" => self.base_freq = value.clamp(20.0, 8000.0),
+            "base_freq" => {
+                self.base_freq = if value > 1.0 {
+                    value.clamp(20.0, 8000.0)
+                } else {
+                    0.0
+                };
+            }
             "pitch_amount" => self.pitch_amount = value.clamp(0.0, 2.0),
             "pitch_decay" => self.pitch_decay = value.clamp(0.0, 1.0),
             "noise_level" => self.noise_level = value.clamp(0.0, 2.0),
+            "mod_ratio" => self.mod_ratio = Some(value.clamp(0.5, 16.0)),
+            "mod_amount" => self.mod_amount = Some(value.clamp(0.0, 8.0)),
+            "feedback" => self.feedback = Some(value.clamp(0.0, 1.0)),
             "open" => self.is_open = value > 0.5,
             _ => {}
         }

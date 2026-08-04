@@ -24,8 +24,9 @@ function makePad(index: number, overrides: Partial<ToasterKit['pads'][number]> =
         filterResonance: 0,
         sendReverb: 0.3,
         sendDelay: 0,
+        engineParams: {},
         ...overrides,
-    } as ToasterKit['pads'][number];
+    };
 }
 
 function makeKit(pads: ToasterKit['pads'][number][], overrides: Partial<ToasterKit> = {}): ToasterKit {
@@ -55,7 +56,7 @@ describe('projectToasterKitToEngineMessages — kit-level params', () => {
         const messages = projectToasterKitToEngineMessages({ kit });
         const params = messages.filter((m) => m.type === 'param');
         expect(params).toHaveLength(9);
-        const names = params.map((m) => (m.type === 'param' ? m.name : ''));
+        const names = params.map((m) => m.name);
         expect(names).toContain('master_gain');
         expect(names).toContain('reverb_mix');
         expect(names).toContain('delay_time');
@@ -82,9 +83,7 @@ describe('projectToasterKitToEngineMessages — per-pad messages', () => {
     it('emits messages with correct pad index for each pad', () => {
         const kit = makeKit([makePad(0), makePad(1), makePad(2)]);
         const messages = projectToasterKitToEngineMessages({ kit });
-        const padIndices = new Set(
-            messages.filter((m) => m.type === 'padParam').map((m) => (m.type === 'padParam' ? m.pad : -1))
-        );
+        const padIndices = new Set(messages.filter((m) => m.type === 'padParam').map((m) => m.pad));
         expect(padIndices).toEqual(new Set([0, 1, 2]));
     });
 
@@ -93,6 +92,31 @@ describe('projectToasterKitToEngineMessages — per-pad messages', () => {
         const messages = projectToasterKitToEngineMessages({ kit });
         const engineType = messages.find((m) => m.type === 'padParam' && m.name === 'engine_type');
         expect(engineType?.type === 'padParam' && engineType.value).toBe(13);
+    });
+
+    it('emits engine-specific voicing after engine_type and common pad state', () => {
+        const kit = makeKit([
+            makePad(0, {
+                engineType: 'fm-perc',
+                engineParams: { mod_ratio: 7.1, mod_amount: 5, feedback: 0.5 },
+            }),
+        ]);
+
+        const padParams = projectToasterKitToEngineMessages({ kit }).filter(
+            (message) => message.type === 'padParam' && message.pad === 0
+        );
+
+        expect(padParams.slice(-3)).toEqual([
+            { type: 'padParam', pad: 0, name: 'mod_ratio', value: 7.1 },
+            { type: 'padParam', pad: 0, name: 'mod_amount', value: 5 },
+            { type: 'padParam', pad: 0, name: 'feedback', value: 0.5 },
+        ]);
+        expect(padParams.findIndex((message) => message.name === 'engine_type')).toBeLessThan(
+            padParams.findIndex((message) => message.name === 'mod_ratio')
+        );
+        expect(padParams.findIndex((message) => message.name === 'tone')).toBeLessThan(
+            padParams.findIndex((message) => message.name === 'mod_amount')
+        );
     });
 });
 

@@ -33,14 +33,11 @@ export type ProjectToasterKitToEngineMessagesInput = {
  * Keeping the projection pure is what lets the offline path reuse it without
  * acquiring a subscription or a store handle it has no business owning.
  *
- * **`engineParams` is deliberately not projected.** The preset loader sends it and
- * the live subscriber never has, so folding it in here would silently give every
- * device load a behaviour it did not previously have. That is not merely
- * out-of-scope: `engineParams` keys are shared `Pad` fields (`snappy`,
- * `noise_color`, `base_freq`, …) rather than per-engine ones, so an entry left
- * over from a previously selected engine would be re-applied on load. The preset
- * loader keeps sending it explicitly, as an addition to this projection rather
- * than a copy of it.
+ * `engine_type` is always sent before `engineParams`. The DSP treats that write as
+ * the reset boundary for engine-specific pad storage, then these explicit kit
+ * overrides are applied after the common controls. That ordering prevents a pad
+ * from inheriting voicing from its previous engine while keeping initial load,
+ * runtime reload, and offline construction on one exact message contract.
  */
 export function projectToasterKitToEngineMessages({
     kit,
@@ -90,6 +87,10 @@ export function projectToasterKitToEngineMessages({
         messages.push({ type: 'padParam', pad: index, name: 'filter_resonance', value: pad.filterResonance });
         messages.push({ type: 'padParam', pad: index, name: 'send_reverb', value: pad.sendReverb });
         messages.push({ type: 'padParam', pad: index, name: 'send_delay', value: pad.sendDelay });
+
+        for (const [name, value] of Object.entries(pad.engineParams)) {
+            messages.push({ type: 'padParam', pad: index, name, value });
+        }
     }
 
     // `ToasterNode.setParam`/`setPadParam` both refuse a non-finite value, so the

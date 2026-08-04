@@ -124,8 +124,11 @@ impl FmPercEngine {
         self.active
     }
 
-    pub fn reset_base_freq(&mut self) {
+    pub fn reset_engine_params(&mut self) {
         self.base_freq = DEFAULT_BASE_FREQ;
+        self.mod_ratio = 3.0;
+        self.mod_amount = 1.5;
+        self.feedback = 0.3;
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {

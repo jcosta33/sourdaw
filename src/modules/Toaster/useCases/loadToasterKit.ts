@@ -30,15 +30,4 @@ export function loadToasterKitPreset(deviceId: string, kit: ToasterKit): void {
         }
         controls.setPadParam(message.pad, message.name, message.value);
     }
-
-    // Engine-specific voicing, which the projection deliberately excludes because
-    // the other two callers have never sent it. Loading a preset is the one moment
-    // where applying it is unambiguously right: the values arrive together with the
-    // engine they belong to, so there is no stale-key hazard. Kept here as an
-    // addition to the shared projection rather than a reason to fork it.
-    for (const [index, pad] of kit.pads.entries()) {
-        for (const [key, value] of Object.entries(pad.engineParams)) {
-            controls.setPadParam(index, key, value);
-        }
-    }
 }

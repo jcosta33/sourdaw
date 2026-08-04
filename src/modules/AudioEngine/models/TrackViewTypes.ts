@@ -9,6 +9,8 @@ export type Device = {
     type: string;
     bypassed: boolean;
     parameterValues: Record<string, number>;
+    /** Opaque project-owned state passed through to the device's offline hydrator. */
+    deviceState?: unknown;
     externalPluginId?: string;
     externalInstanceId?: string;
 };

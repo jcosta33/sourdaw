@@ -1,5 +1,11 @@
 use assert_no_alloc::{assert_no_alloc, AllocDisabler};
-use daw_dsp::toaster::{engine::ToasterEngine, ToasterInstance};
+use daw_dsp::toaster::{
+    engine::ToasterEngine,
+    engines::{DrumEngineResources, DrumEngineType},
+    pad::Pad,
+    voice::DrumVoice,
+    ToasterInstance,
+};
 
 #[cfg(debug_assertions)]
 #[global_allocator]
@@ -72,6 +78,91 @@ fn explicit_tom_base_frequency_preserves_midi_note_pitch() {
         difference > 1.0,
         "the explicit tom base frequency must still be transposed by the MIDI note: difference={difference}"
     );
+}
+
+fn fm_first_block(configure: impl FnOnce(&mut ToasterEngine)) -> [f32; FRAMES] {
+    let mut engine = ToasterEngine::new(48_000.0, PADS);
+    engine.set_pad_param(0, "engine_type", 8.0);
+    configure(&mut engine);
+    engine.note_on(0, 127.0, 60);
+
+    let mut left = [0.0; FRAMES];
+    let mut right = [0.0; FRAMES];
+    engine.process_block(&mut left, &mut right);
+    left
+}
+
+#[test]
+fn fm_pad_voicing_reaches_the_triggered_voice() {
+    let default = fm_first_block(|_| {});
+    let voiced = fm_first_block(|engine| {
+        engine.set_pad_param(0, "mod_ratio", 7.1);
+        engine.set_pad_param(0, "mod_amount", 5.0);
+        engine.set_pad_param(0, "feedback", 0.5);
+    });
+    let difference = default
+        .iter()
+        .zip(voiced)
+        .map(|(default, voiced)| (default - voiced).abs())
+        .sum::<f32>();
+
+    assert!(
+        difference > 1.0,
+        "FM kit voicing must change the rendered hit: difference={difference}"
+    );
+}
+
+#[test]
+fn fm_tone_remains_audible_without_an_explicit_mod_amount() {
+    let dark = fm_first_block(|engine| engine.set_pad_param(0, "tone", 0.2));
+    let bright = fm_first_block(|engine| engine.set_pad_param(0, "tone", 0.9));
+    let difference = dark
+        .iter()
+        .zip(bright)
+        .map(|(dark, bright)| (dark - bright).abs())
+        .sum::<f32>();
+
+    assert!(
+        difference > 1.0,
+        "FM tone must remain effective when the kit has no mod_amount override: difference={difference}"
+    );
+}
+
+#[test]
+fn engine_type_rehydration_resets_fm_voicing_before_overrides() {
+    let expected = fm_first_block(|_| {});
+    let actual = fm_first_block(|engine| {
+        engine.set_pad_param(0, "mod_ratio", 7.1);
+        engine.set_pad_param(0, "mod_amount", 5.0);
+        engine.set_pad_param(0, "feedback", 0.5);
+        engine.set_pad_param(0, "engine_type", 8.0);
+    });
+
+    assert_bit_identical(&actual, &expected);
+}
+
+#[test]
+fn recycled_fm_voice_does_not_inherit_another_pads_voicing() {
+    let resources = DrumEngineResources::new();
+    let mut reused = DrumVoice::new(48_000.0, &resources);
+    let mut voiced_pad = Pad::new(DrumEngineType::FmPerc);
+    voiced_pad.set_param("mod_ratio", 7.1);
+    voiced_pad.set_param("mod_amount", 5.0);
+    voiced_pad.set_param("feedback", 0.5);
+    reused.trigger(0, &voiced_pad, 1.0, 60, 48_000.0);
+    for _ in 0..FRAMES {
+        let _ = reused.tick(48_000.0);
+    }
+
+    let default_pad = Pad::new(DrumEngineType::FmPerc);
+    reused.trigger(1, &default_pad, 1.0, 60, 48_000.0);
+    let actual: [f32; FRAMES] = std::array::from_fn(|_| reused.tick(48_000.0));
+
+    let mut fresh = DrumVoice::new(48_000.0, &resources);
+    fresh.trigger(1, &default_pad, 1.0, 60, 48_000.0);
+    let expected: [f32; FRAMES] = std::array::from_fn(|_| fresh.tick(48_000.0));
+
+    assert_bit_identical(&actual, &expected);
 }
 
 #[test]

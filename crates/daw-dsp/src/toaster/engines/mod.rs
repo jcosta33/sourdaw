@@ -292,11 +292,11 @@ impl DrumSynthEngine {
         }
     }
 
-    pub fn reset_base_freq(&mut self) {
+    pub fn reset_engine_params(&mut self) {
         match self {
             Self::Kick(engine) => engine.reset_base_freq(),
             Self::Tom(engine) => engine.reset_base_freq(),
-            Self::FmPerc(engine) => engine.reset_base_freq(),
+            Self::FmPerc(engine) => engine.reset_engine_params(),
             Self::Perc(engine)
             | Self::Cowbell(engine)
             | Self::Clave(engine)
