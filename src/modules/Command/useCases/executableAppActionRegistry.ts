@@ -840,6 +840,25 @@ export const executableAppActionDescriptors = [
             required: ['volume'],
         },
     },
+    {
+        actionType: 'setMasterGain',
+        risk: 'authority-sensitive',
+        description: 'Set master output gain from 0.0 through 1.0.',
+        intentPhrases: [
+            'set master gain',
+            'set the master gain',
+            'change master gain',
+            'set master volume',
+            'set the master volume',
+            'change master volume',
+        ],
+        targetRules: [],
+        valueRules: [{ argument: 'gain', kind: 'number-if-present', requiredInPrompt: true, scale: 'percentage-only' }],
+        parameters: {
+            properties: { gain: { type: 'number', description: '0.0 to 1.0' } },
+            required: ['gain'],
+        },
+    },
 
     {
         actionType: 'addDevice',

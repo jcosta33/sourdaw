@@ -295,6 +295,19 @@ function bridgeToolCall({
         return { type: 'setMetronomeVolume', payload: { volume: args.volume } };
     }
 
+    if (call.name === 'setMasterGain') {
+        if (
+            !hasExactKeys(args, ['gain']) ||
+            !isFiniteNumber(args.gain) ||
+            args.gain < 0 ||
+            args.gain > 1 ||
+            args.gain === context.masterGain
+        ) {
+            return rejection(index, call.name, 'Expected only a changed finite master gain from 0 through 1');
+        }
+        return { type: 'setMasterGain', payload: { gain: args.gain } };
+    }
+
     if (call.name === 'addAutomationLane') {
         const track = findTrack(context, args.trackId);
         if (
@@ -1250,6 +1263,9 @@ function getMutationKeys(action: RuntimeAction): string[] {
     if (action.type === 'setMetronomeVolume') {
         return ['metronome:volume'];
     }
+    if (action.type === 'setMasterGain') {
+        return ['master:gain'];
+    }
     if (action.type === 'clearSolos') {
         return ['solo:all'];
     }
@@ -1785,6 +1801,7 @@ export function buildLlmActionUserMessage({ prompt, context }: { prompt: string;
         loopEnd: context.loopEnd,
         metronomeEnabled: context.metronomeEnabled,
         metronomeVolume: context.metronomeVolume,
+        masterGain: context.masterGain,
         availableDeviceTypes: context.availableDeviceTypes ?? [],
         automationLanes: (context.automationLanes ?? []).map((lane) => ({
             id: lane.id,

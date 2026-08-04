@@ -1,11 +1,13 @@
 import { handleAddTimeSignatureChange } from '../handlers/transport/handleAddTimeSignatureChange';
 import { handleRemoveTimeSignatureChange } from '../handlers/transport/handleRemoveTimeSignatureChange';
 import { handleRestoreLoopRegion } from '../handlers/transport/handleRestoreLoopRegion';
+import { handleRestoreMasterGain } from '../handlers/transport/handleRestoreMasterGain';
 import { handleRestorePunchRegion } from '../handlers/transport/handleRestorePunchRegion';
 import { handleSeekPlayhead } from '../handlers/transport/handleSeekPlayhead';
 import { handleSetCountInBars } from '../handlers/transport/handleSetCountInBars';
 import { handleSetLoopEnabled } from '../handlers/transport/handleSetLoopEnabled';
 import { handleSetLoopRegion } from '../handlers/transport/handleSetLoopRegion';
+import { handleSetMasterGain } from '../handlers/transport/handleSetMasterGain';
 import { handleSetMetronomeEnabled } from '../handlers/transport/handleSetMetronomeEnabled';
 import { handleSetMetronomeVolume } from '../handlers/transport/handleSetMetronomeVolume';
 import { handleSetPreRollBars } from '../handlers/transport/handleSetPreRollBars';
@@ -27,10 +29,12 @@ export type TransportHandlersMap = {
     removeTimeSignatureChange: typeof handleRemoveTimeSignatureChange;
     restorePunchRegion: typeof handleRestorePunchRegion;
     restoreLoopRegion: typeof handleRestoreLoopRegion;
+    restoreMasterGain: typeof handleRestoreMasterGain;
     seekPlayhead: typeof handleSeekPlayhead;
     setCountInBars: typeof handleSetCountInBars;
     setLoopEnabled: typeof handleSetLoopEnabled;
     setLoopRegion: typeof handleSetLoopRegion;
+    setMasterGain: typeof handleSetMasterGain;
     setMetronomeVolume: typeof handleSetMetronomeVolume;
     setMetronomeEnabled: typeof handleSetMetronomeEnabled;
     setPreRollBars: typeof handleSetPreRollBars;
@@ -62,6 +66,8 @@ export function getTransportHandlers(): TransportHandlersMap {
         setLoopEnabled: handleSetLoopEnabled,
         setMetronomeEnabled: handleSetMetronomeEnabled,
         restoreLoopRegion: handleRestoreLoopRegion,
+        restoreMasterGain: handleRestoreMasterGain,
+        setMasterGain: handleSetMasterGain,
         setMetronomeVolume: handleSetMetronomeVolume,
         setLoopRegion: handleSetLoopRegion,
         seekPlayhead: handleSeekPlayhead,

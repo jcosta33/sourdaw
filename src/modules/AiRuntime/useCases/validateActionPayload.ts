@@ -181,7 +181,8 @@ const validators = {
         isObj(param) &&
         isInRange(param.numerator, 1, 32) &&
         (param.denominator === 2 || param.denominator === 4 || param.denominator === 8 || param.denominator === 16),
-    setMasterGain: (param): param is PayloadOf<'setMasterGain'> => isObj(param) && isInRange(param.gain, 0, 1),
+    setMasterGain: (param): param is PayloadOf<'setMasterGain'> =>
+        isObj(param) && hasExactKeys(param, ['gain']) && isInRange(param.gain, 0, 1),
     setMetronomeVolume: (param): param is PayloadOf<'setMetronomeVolume'> =>
         isObj(param) && hasExactKeys(param, ['volume']) && isInRange(param.volume, 0, 1),
     setLoopEnabled: (param): param is PayloadOf<'setLoopEnabled'> =>

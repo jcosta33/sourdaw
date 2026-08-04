@@ -49,6 +49,11 @@ const guardedPayloadContractCases = [
         validPayload: undefined,
         invalidPayloads: [{}, null, { trackId: 'track-1' }],
     }),
+    guardedPayloadCase({
+        actionType: 'setMasterGain',
+        validPayload: { gain: 0.65 },
+        invalidPayloads: [{}, { gain: -0.01 }, { gain: 1.01 }, { gain: Number.NaN }, { gain: 0.65, extra: true }],
+    }),
 
     guardedPayloadCase({
         actionType: 'addDevice',

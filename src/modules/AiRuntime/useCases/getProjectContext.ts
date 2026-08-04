@@ -83,6 +83,7 @@ export function getProjectContext(): ProjectContext {
         loopEnd: transportState?.loopEnd ?? 0,
         metronomeEnabled: transportState?.metronomeEnabled ?? false,
         metronomeVolume: transportState?.metronomeVolume ?? 0.5,
+        masterGain: (transportState?.masterGain ?? 80) / 100,
         availableDeviceTypes: getPlatformPlugins()
             .filter((plugin) => plugin.id !== 'crust')
             .map((plugin) => ({ id: plugin.id, name: plugin.name })),

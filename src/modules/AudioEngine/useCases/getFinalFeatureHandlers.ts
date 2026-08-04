@@ -10,7 +10,6 @@ import { handleEnableWarping } from '../handlers/finalFeature/handleEnableWarpin
 import { handleGetLatencyReport } from '../handlers/finalFeature/handleGetLatencyReport';
 import { handleOpenElasticEditor } from '../handlers/finalFeature/handleOpenElasticEditor';
 import { handleQuantizeTransients } from '../handlers/finalFeature/handleQuantizeTransients';
-import { handleSetMasterGain } from '../handlers/finalFeature/handleSetMasterGain';
 import { handleSetWarpAlgorithm } from '../handlers/finalFeature/handleSetWarpAlgorithm';
 import { handleSetWarpPitchShift } from '../handlers/finalFeature/handleSetWarpPitchShift';
 
@@ -27,7 +26,6 @@ export type FinalFeatureHandlersMap = {
     getLatencyReport: typeof handleGetLatencyReport;
     openElasticEditor: typeof handleOpenElasticEditor;
     quantizeTransients: typeof handleQuantizeTransients;
-    setMasterGain: typeof handleSetMasterGain;
     setWarpAlgorithm: typeof handleSetWarpAlgorithm;
     setWarpPitchShift: typeof handleSetWarpPitchShift;
 };
@@ -51,6 +49,5 @@ export function getFinalFeatureHandlers(): FinalFeatureHandlersMap {
         setWarpAlgorithm: handleSetWarpAlgorithm,
         setWarpPitchShift: handleSetWarpPitchShift,
         getLatencyReport: handleGetLatencyReport,
-        setMasterGain: handleSetMasterGain,
     };
 }

@@ -6,6 +6,7 @@ export type ProjectContext = {
     loopEnd: number;
     metronomeEnabled: boolean;
     metronomeVolume: number;
+    masterGain: number;
     availableDeviceTypes?: ProjectContextAvailableDeviceType[];
     automationLanes?: ProjectContextAutomationLane[];
     sidechainRoutes?: ProjectContextSidechainRoute[];

@@ -831,7 +831,7 @@ function hasInvalidNamedClipFadeField(prompt: string): boolean {
 
 function getPromptClauses(prompt: string, maskedPrompt: string): PromptClause[] {
     const clauses: PromptClause[] = [];
-    const separatorPattern = /\s+(?:and then|then|and|but)\s+|[;,\n]+|(?<!\d)\.|\.(?!\d)/giu;
+    const separatorPattern = /\s+(?:and then|then|and|but)\s+|[;,\n]+|\.(?!\d)/giu;
     let start = 0;
     for (const match of maskedPrompt.matchAll(separatorPattern)) {
         const separatorEnd = match.index + match[0].length;
@@ -1369,13 +1369,18 @@ function getExpectedNumbers(
     if (valueRule.kind !== 'number-if-present') {
         return [];
     }
-    const numbers = [...actionScope.masked.matchAll(/-?\d+(?:\.\d+)?(?:\s*\/\s*\d+(?:\.\d+)?)?%?/gu)].map((match) => ({
+    const numbers = [
+        ...actionScope.masked.matchAll(/-?(?:\d+(?:\.\d+)?|\.\d+)(?:\s*\/\s*(?:\d+(?:\.\d+)?|\.\d+))?%?/gu),
+    ].map((match) => ({
         end: match.index + match[0].length,
         index: match.index,
         raw: match[0],
     }));
     if (numbers.length === 0) {
         return [];
+    }
+    if (numbers.length > 1 && /\b(?:either|or)\b/iu.test(actionScope.masked)) {
+        return null;
     }
     if (valueRule.keywords) {
         const keywordBoundNumber = findKeywordBoundNumber(actionScope.masked, numbers, valueRule.keywords);

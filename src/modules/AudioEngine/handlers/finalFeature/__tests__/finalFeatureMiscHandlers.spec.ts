@@ -4,10 +4,8 @@ import { addCvOutput } from '#/modules/CvGate/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { getLatencyReport } from '../../../useCases/latencyCompensation/compensation/getLatencyReport';
-import { setMasterGain } from '../../../useCases/setMasterGain';
 import { handleAddCvOutput } from '../handleAddCvOutput';
 import { handleGetLatencyReport } from '../handleGetLatencyReport';
-import { handleSetMasterGain } from '../handleSetMasterGain';
 
 vi.mock('#/modules/CvGate/useCases', () => ({ addCvOutput: vi.fn() }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
@@ -15,7 +13,6 @@ vi.mock('#/modules/Project/useCases', () => ({
     exportDawProject: vi.fn(async () => ({ bytes: new Uint8Array([0]), fileName: 'demo.dawproject' })),
 }));
 vi.mock('../../../useCases/latencyCompensation/compensation/getLatencyReport', () => ({ getLatencyReport: vi.fn() }));
-vi.mock('../../../useCases/setMasterGain', () => ({ setMasterGain: vi.fn() }));
 
 describe('finalFeatureMiscHandlers', () => {
     beforeEach(() => {
@@ -38,11 +35,5 @@ describe('finalFeatureMiscHandlers', () => {
         handleGetLatencyReport.execute({ type: 'getLatencyReport', payload: undefined });
 
         expect(notifyUser).toHaveBeenCalledWith('Latency Report: Max: 15.5ms, Base: 10.0ms — t1: 15.5ms');
-    });
-
-    it('should set normalized master gain', () => {
-        handleSetMasterGain.execute({ type: 'setMasterGain', payload: { gain: 0.8 } });
-
-        expect(setMasterGain).toHaveBeenCalledWith(0.8);
     });
 });
