@@ -1,0 +1,19 @@
+src/modules/Metering/presentations/views/__tests__/SpectrumAnalyzerBranches.spec.tsx
+  s_42756eac38d6ad::t_746fcd09301a8e 1-53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "770f520232a5780a6083092c1b3000443152ef03",
+  "prompts": {},
+  "sessions": {
+    "s_42756eac38d6ad": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-acdb68d3a4c01af8f",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
