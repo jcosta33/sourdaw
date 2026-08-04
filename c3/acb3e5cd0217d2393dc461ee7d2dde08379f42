@@ -1,0 +1,19 @@
+src/modules/AudioRendering/repositories/audioEncoders/__tests__/measureIntegratedLoudnessBranches.spec.ts
+  s_ac9b259eab20ba::t_70f0a11fe2fd55 1-94
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "c3acb3e5cd0217d2393dc461ee7d2dde08379f42",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
