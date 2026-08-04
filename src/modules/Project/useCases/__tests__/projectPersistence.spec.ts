@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
     startCrdtAutoSave: vi.fn<() => () => void>(() => vi.fn<() => void>()),
     clearUndoHistory: vi.fn<() => void>(),
     resetActionReplayAuthority: vi.fn<() => void>(),
+    captureProjectRevision: vi.fn<() => string>(() => 'saved-revision'),
     persistCrdtProject: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     addToRecentProjects: vi.fn<(...args: unknown[]) => void>(),
     prepareCachedAudioBuffersFromIdb: vi.fn(),
@@ -43,6 +44,7 @@ vi.mock('../../stores/projectStore', () => ({
 // Vitest mocks should use the same path as the import in the source file.
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectRevision: mocks.captureProjectRevision,
     createCrdtProject: mocks.createCrdtProject,
     DOC_PREFIX_ROOT: 'root',
     getCrdtDoc: mocks.getCrdtDoc,
