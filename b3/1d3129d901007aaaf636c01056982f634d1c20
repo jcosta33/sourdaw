@@ -1,0 +1,76 @@
+crates/daw-dsp/src/toaster/engines/mod.rs
+  s_ac9b259eab20ba::t_5b90f8e51c9944 295,299
+src/modules/Toaster/repositories/toasterPresets.ts
+  s_ac9b259eab20ba::t_7ea239ec1e2adb 53
+src/modules/Toaster/useCases/__tests__/loadToasterKit.spec.ts
+  s_ac9b259eab20ba::t_ed70b6f38eb45f 275,283-284
+  s_ac9b259eab20ba::t_e1b57a056ad9af 279-281
+crates/daw-dsp/src/toaster/pad.rs
+  s_ac9b259eab20ba::t_5b90f8e51c9944 32-34,63-65,77-79,157-159
+  s_ac9b259eab20ba::t_dc5177e4df18a7 148-152
+  s_ac9b259eab20ba::t_7ea239ec1e2adb 70-76,80-81,143,147,153
+crates/daw-dsp/tests/toaster_pad_output.rs
+  s_ac9b259eab20ba::t_49ceb7944e6c03 159,163
+  s_ac9b259eab20ba::t_c79bec3d83f4ab 2-8,140-158,160-162
+  s_ac9b259eab20ba::t_dc5177e4df18a7 109-112
+  s_ac9b259eab20ba::t_0896118ae3a150 83-108,113-115,132-139,164-167
+  s_ac9b259eab20ba::t_2c153c741556a2 116-131
+src/modules/Toaster/useCases/projectToasterKitToEngineMessages.ts
+  s_ac9b259eab20ba::t_7ea239ec1e2adb 36-40,90-93
+src/modules/Toaster/useCases/__tests__/projectToasterKitToEngineMessages.spec.ts
+  s_ac9b259eab20ba::t_0896118ae3a150 27,29,96-119
+  s_ac9b259eab20ba::t_e1b57a056ad9af 59,86
+  s_66d4924c65dcd2::t_9a2492545d2d7e 120
+crates/daw-dsp/src/toaster/voice.rs
+  s_ac9b259eab20ba::t_5b90f8e51c9944 155,170-180
+  s_ac9b259eab20ba::t_7ea239ec1e2adb 169
+src/modules/Toaster/useCases/__tests__/toasterLiveOfflineParity.spec.ts
+  s_ac9b259eab20ba::t_0896118ae3a150 30,166,168,175-178,200-223
+  s_ac9b259eab20ba::t_62e904f57d9a47 224-225
+crates/daw-dsp/src/toaster/engines/fm_perc.rs
+  s_ac9b259eab20ba::t_5b90f8e51c9944 127,129-131
+src/modules/Toaster/useCases/__tests__/toasterQueries.spec.ts
+  s_ac9b259eab20ba::t_0ffa40eab6859a 64,66-68,71-72,74-76,79-80
+src/modules/Toaster/repositories/__tests__/toasterPresets.spec.ts
+  s_ac9b259eab20ba::t_ed70b6f38eb45f 81,83,85-92
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_bc88af7d3b054c::t_621500475f6a6a 1,878-889,930-969
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_bc88af7d3b054c::t_3807a4eecd4ae5 1,98-109,150-189
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_bc88af7d3b054c::t_fe5033bc91e6a6 1,878-889,930-969
+public/wasm/manifest.json
+  s_bc88af7d3b054c::t_e1f8814322168e 12,16-18,21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "b31d3129d901007aaaf636c01056982f634d1c20",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
