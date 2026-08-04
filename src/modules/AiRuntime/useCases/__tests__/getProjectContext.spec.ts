@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { getProjectContext, type ProjectContextSidechainRoute } from '../getProjectContext';
+import {
+    getProjectContext,
+    type ProjectContextSidechainRoute,
+    type ProjectContextVcaGroup,
+} from '../getProjectContext';
 
 const mocks = vi.hoisted(() => ({
     trackStoreValue: { value: null } as any,
@@ -10,6 +14,7 @@ const mocks = vi.hoisted(() => ({
     clipSelectionStoreValue: { value: null } as any,
     automationStoreValue: { value: null } as any,
     sidechainStoreValue: { value: null as { routes: ProjectContextSidechainRoute[] } | null },
+    vcaStoreValue: { value: null as { groups: ProjectContextVcaGroup[] } | null },
     getPluginById: vi.fn(),
     getPlatformPlugins: vi.fn(),
 }));
@@ -23,6 +28,11 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     clipSelectionStore: {
         get value() {
             return mocks.clipSelectionStoreValue.value;
+        },
+    },
+    vcaGroupStore: {
+        get value() {
+            return mocks.vcaStoreValue.value;
         },
     },
 }));
@@ -82,6 +92,7 @@ describe('getProjectContext', () => {
         mocks.clipSelectionStoreValue.value = null;
         mocks.automationStoreValue.value = null;
         mocks.sidechainStoreValue.value = null;
+        mocks.vcaStoreValue.value = null;
         mocks.getPluginById.mockReturnValue(undefined);
         mocks.getPlatformPlugins.mockReturnValue([
             { id: 'builtin-eq', name: 'EQ' },
@@ -103,6 +114,7 @@ describe('getProjectContext', () => {
         expect(context.availableDeviceTypes).toEqual([{ id: 'builtin-eq', name: 'EQ' }]);
         expect(context.automationLanes).toEqual([]);
         expect(context.sidechainRoutes).toEqual([]);
+        expect(context.vcaGroups).toEqual([]);
         expect(context.tracks).toEqual([]);
         expect(context.selectedTrackId).toBeNull();
         expect(context.selectedClipId).toBeNull();
@@ -126,6 +138,7 @@ describe('getProjectContext', () => {
                     pan: -10,
                     automationMode: 'touch',
                     outputId: 'master',
+                    vcaGroupId: 'vca-drums',
                     clips: [
                         {
                             id: 'c1',
@@ -240,6 +253,7 @@ describe('getProjectContext', () => {
             pan: -10,
             automationMode: 'touch',
             outputId: 'master',
+            vcaGroupId: 'vca-drums',
             clipCount: 1,
             deviceCount: 1,
         });
@@ -369,5 +383,22 @@ describe('getProjectContext', () => {
 
         expect(second).not.toBe(first);
         expect(second.automationLanes?.[0]?.enabled).toBe(false);
+    });
+
+    it('maps VCA groups and invalidates the cache when VCA state changes', () => {
+        mocks.vcaStoreValue.value = {
+            groups: [{ id: 'vca-drums', name: 'Drums', gain: 0.75, muted: false, trackIds: ['track-kick'] }],
+        };
+
+        const first = getProjectContext();
+        expect(first.vcaGroups).toEqual(mocks.vcaStoreValue.value.groups);
+
+        mocks.vcaStoreValue.value = {
+            groups: [{ ...mocks.vcaStoreValue.value.groups[0]!, gain: 0.6 }],
+        };
+        const second = getProjectContext();
+
+        expect(second).not.toBe(first);
+        expect(second.vcaGroups?.[0]?.gain).toBe(0.6);
     });
 });

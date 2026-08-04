@@ -41,6 +41,8 @@ const {
     actionHistoryStoreMock,
     trackStoreMock,
     setTimeOperationDependenciesMock,
+    setVcaRuntimeProjectionDependenciesMock,
+    reconcileVcaGroupRuntimeGainMock,
     prepareAutomationTimeOperationMock,
     prepareAutomationTimeStateRestoreMock,
     prepareMidiGlobalTimeTransactionMock,
@@ -63,6 +65,8 @@ const {
         actionHistoryStoreMock: { value: { entries: [] as unknown[] }, subscribe: vi.fn() },
         trackStoreMock: { subscribe: vi.fn() },
         setTimeOperationDependenciesMock: vi.fn(),
+        setVcaRuntimeProjectionDependenciesMock: vi.fn(),
+        reconcileVcaGroupRuntimeGainMock: vi.fn(),
         prepareAutomationTimeOperationMock: vi.fn(),
         prepareAutomationTimeStateRestoreMock: vi.fn(),
         prepareMidiGlobalTimeTransactionMock: vi.fn(),
@@ -110,6 +114,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     setArrangementEventBus: noop,
     setOfflineRenderDependencies: noop,
     setTimeOperationDependencies: setTimeOperationDependenciesMock,
+    setVcaRuntimeProjectionDependencies: setVcaRuntimeProjectionDependenciesMock,
     getSongStructureHandlers: sentinelHandlers('SongStructure'),
 }));
 
@@ -300,6 +305,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
     prepareTimelineMapTimeOperation: prepareTimelineMapTimeOperationMock,
     prepareTimelineMapStateRestore: prepareTimelineMapStateRestoreMock,
     setStopPlaybackCallback: noop,
+    reconcileVcaGroupRuntimeGain: reconcileVcaGroupRuntimeGainMock,
     stopPlayback: noop,
 }));
 
@@ -407,6 +413,12 @@ describe('bootstrap', () => {
             prepareMidiTimeStateRestore: prepareMidiTimeStateRestoreMock,
             prepareTimelineMapTimeOperation: prepareTimelineMapTimeOperationMock,
             prepareTimelineMapStateRestore: prepareTimelineMapStateRestoreMock,
+        });
+    });
+
+    it('wires VCA runtime projection through the composition root', () => {
+        expect(setVcaRuntimeProjectionDependenciesMock).toHaveBeenCalledExactlyOnceWith({
+            reconcileVcaGroupRuntimeGain: reconcileVcaGroupRuntimeGainMock,
         });
     });
 

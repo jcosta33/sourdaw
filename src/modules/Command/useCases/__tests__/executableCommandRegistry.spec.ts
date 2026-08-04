@@ -429,6 +429,17 @@ const EXPECTED_COMMANDS = [
         true
     ),
     expectedCommand(
+        'setVcaGain',
+        'Set an existing VCA group gain from 0.0 through 2.0.',
+        {
+            vcaGroupId: { type: 'string', description: 'Existing VCA group ID' },
+            gain: { type: 'number', description: '0.0 to 2.0' },
+        },
+        ['vcaGroupId', 'gain'],
+        'authority-sensitive',
+        true
+    ),
+    expectedCommand(
         'addDevice',
         'Insert a platform-available built-in device at the end of a track device chain.',
         {
@@ -1060,6 +1071,19 @@ const EXPECTED_GROUNDING = [
             'change master volume',
         ],
         targetRules: [],
+        valueRules: [{ argument: 'gain', kind: 'number-if-present', requiredInPrompt: true, scale: 'percentage-only' }],
+    },
+    {
+        actionType: 'setVcaGain',
+        intentPhrases: [
+            'set vca gain',
+            'set the vca gain',
+            'change vca gain',
+            'set vca volume',
+            'set the vca volume',
+            'change vca volume',
+        ],
+        targetRules: [{ argument: 'vcaGroupId', capability: 'vca-group' }],
         valueRules: [{ argument: 'gain', kind: 'number-if-present', requiredInPrompt: true, scale: 'percentage-only' }],
     },
     {

@@ -31,7 +31,11 @@ describe('handleRestoreLegacyVcaState', () => {
     it('reports a written status when the restore succeeds', () => {
         mocks.restoreLegacyVcaState.mockReturnValue('written');
 
-        expect(handleRestoreLegacyVcaState.execute(action())).toEqual({ status: 'written' });
+        expect(handleRestoreLegacyVcaState.execute(action())).toMatchObject({
+            status: 'written',
+            afterCommit: expect.any(Function),
+            afterAmbiguousCommit: expect.any(Function),
+        });
     });
 
     it('reports a conflict status when the restore detects one', () => {

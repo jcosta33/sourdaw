@@ -11,6 +11,7 @@ type AgentReferenceCapability =
     | 'device-host-track'
     | 'device'
     | 'device-parameter'
+    | 'vca-group'
     | 'automation-lane'
     | 'clip'
     | 'editable-clip'
@@ -42,6 +43,7 @@ type ResolveAgentReferenceResult =
 
 const duplicableTrackKinds: ReadonlySet<string> = new Set(['audio', 'midi', 'bus', 'folder']);
 const routableTrackKinds: ReadonlySet<string> = new Set(['audio', 'midi', 'bus']);
+const reservedVcaGroupReferenceWords: ReadonlySet<string> = new Set(['group', 'vca', 'vca group']);
 const reservedClipReferenceWords: ReadonlySet<string> = new Set([
     'track',
     'clip',
@@ -82,6 +84,17 @@ function containsExactPhrase(prompt: string, reference: string): boolean {
 function containsQualifiedMasterOutputReference(prompt: string): boolean {
     const normalized = normalizeReferenceText(prompt);
     return /\b(?:to|into|through) (?:the )?master\b|\bmaster (?:bus|channel|output)\b/u.test(normalized);
+}
+
+function containsQualifiedVcaGroupReference(prompt: string, reference: string): boolean {
+    const normalizedPrompt = ` ${normalizeReferenceText(prompt)} `;
+    const normalizedReference = normalizeReferenceText(reference);
+    return [
+        ` for ${normalizedReference} `,
+        ` for the ${normalizedReference} `,
+        ` on ${normalizedReference} `,
+        ` on the ${normalizedReference} `,
+    ].some((qualifiedReference) => normalizedPrompt.includes(qualifiedReference));
 }
 
 function hasExplicitTrackSelection(prompt: string): boolean {
@@ -251,6 +264,10 @@ function getReferenceCandidates(input: ResolveAgentReferenceInput): ReferenceCan
         return lanes.map((lane) => ({ id: lane.id, name: lane.name }));
     }
 
+    if (input.capability === 'vca-group') {
+        return (input.context.vcaGroups ?? []).map((group) => ({ id: group.id, name: group.name }));
+    }
+
     return [];
 }
 
@@ -310,11 +327,22 @@ export function resolveAgentReference(input: ResolveAgentReferenceInput): Resolv
         ) {
             continue;
         }
-        if (containsExactPhrase(input.prompt, candidate.id)) {
+        const hasUnqualifiedReservedVcaId =
+            input.capability === 'vca-group' &&
+            reservedVcaGroupReferenceWords.has(normalizeReferenceText(candidate.id)) &&
+            !containsQualifiedVcaGroupReference(input.prompt, candidate.id);
+        if (containsExactPhrase(input.prompt, candidate.id) && !hasUnqualifiedReservedVcaId) {
             evidenceById.set(candidate.id, 'literal-id');
             continue;
         }
         if (containsExactPhrase(input.prompt, candidate.name)) {
+            if (
+                input.capability === 'vca-group' &&
+                reservedVcaGroupReferenceWords.has(normalizeReferenceText(candidate.name)) &&
+                !containsQualifiedVcaGroupReference(input.prompt, candidate.name)
+            ) {
+                continue;
+            }
             evidenceById.set(candidate.id, 'exact-name');
         }
     }

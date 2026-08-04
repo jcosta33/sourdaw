@@ -1,13 +1,8 @@
 import { getTrackEligibility, resolveEligibleDeviceWriteTarget, trackStore } from '#/modules/Arrangement/stores';
-import {
-    clampDeviceParameterValue,
-    getEffectiveGain,
-    isDeviceParameterAutomatable,
-} from '#/modules/Arrangement/useCases';
+import { clampDeviceParameterValue, isDeviceParameterAutomatable } from '#/modules/Arrangement/useCases';
 import {
     getCompensationDelay,
     getCurrentTime,
-    scheduleTrackGain,
     scheduleTrackPan,
     updateDeviceParam,
     updateMidiFxParam,
@@ -15,7 +10,6 @@ import {
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationValueAtBeat, isRecordingAutomation, resolveAutoMatchValue } from '#/modules/Automation/useCases';
 import { applyFermenterRuntimeParam } from '#/modules/Fermenter/useCases';
-import { dbToGain } from '#/utils/audioLevelLaw';
 import {
     getDeviceAutomationParameterId,
     resolveDeviceAutomationTargetIndex,
@@ -27,6 +21,7 @@ import { schedulerSession } from '../../playheadScheduler/schedulerSession';
 
 import { appliedAutomationBases, clearAppliedAutomationBases } from './appliedAutomationBases';
 import { restoreAutomationBaseValue } from './restoreAutomationBaseValue';
+import { scheduleComposedTrackGainAutomation } from './scheduleComposedTrackGainAutomation';
 
 /**
  * Per-parameter exponential slew state for plugin automation. The IIR
@@ -215,18 +210,13 @@ export function applyAutomation(currentBeat: number): Set<string> {
         // (scheduleAutomationOnParam); this closes the live half for the
         // AudioParam-backed families only.
         if (lane.parameterId === 'gain') {
-            // One shared level law. A lane with `minValue < 0` is a
-            // decibel lane; `dbToGain` is the same conversion the offline
-            // scheduler now applies, so the bounce matches the monitor.
-            const linearGain = lane.minValue < 0 ? dbToGain(value) : value;
-            // Compose the VCA master multiplier so a gain lane on a VCA-member
-            // track scales WITH its group rather than nullifying it. getEffectiveGain
-            // with a base of 1 returns just the multiplier (1 for a non-VCA track).
-            // The track id is recorded so applyVcaGains skips its own write for it —
-            // the two writers compose instead of competing (our cancelScheduledValues
-            // would otherwise erase applyVcaGains' setTargetAtTime every tick).
-            const vcaMultiplier = getEffectiveGain(lane.trackId, 1);
-            scheduleTrackGain(lane.trackId, linearGain * vcaMultiplier, now + compensationFor(lane.trackId));
+            scheduleComposedTrackGainAutomation({
+                trackId: lane.trackId,
+                vcaGroupId: track.vcaGroupId,
+                value,
+                minValue: lane.minValue,
+                time: now + compensationFor(lane.trackId),
+            });
             gainAutomationTrackIds.add(lane.trackId);
         } else if (lane.parameterId === 'pan') {
             scheduleTrackPan(lane.trackId, value * 50, now + compensationFor(lane.trackId));

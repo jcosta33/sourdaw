@@ -48,6 +48,7 @@ const projectContext: ProjectContext = {
     metronomeEnabled: false,
     metronomeVolume: 0.5,
     masterGain: 0.8,
+    vcaGroups: [{ id: 'vca-drums', name: 'Drum VCA', gain: 0.75, muted: false, trackIds: [vocals.id] }],
     automationLanes: [
         {
             id: 'lane-vocal-gain',
@@ -963,6 +964,72 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(alternative.actions).toEqual([]);
         expect(noOp.actions).toEqual([]);
         expect(implicit.actions).toEqual([]);
+    });
+
+    it('grounds explicit changed VCA gain to one named group', () => {
+        const percentage = bridge(
+            [{ name: 'setVcaGain', arguments: { vcaGroupId: 'vca-drums', gain: 0.65 } }],
+            'set vca gain for Drum VCA to 65%'
+        );
+        const leadingDecimal = bridge(
+            [{ name: 'setVcaGain', arguments: { vcaGroupId: 'vca-drums', gain: 0.65 } }],
+            'set vca gain for Drum VCA to .65'
+        );
+        const noOp = bridge(
+            [{ name: 'setVcaGain', arguments: { vcaGroupId: 'vca-drums', gain: 0.75 } }],
+            'set vca gain for Drum VCA to 75%'
+        );
+        const ambiguousValue = bridge(
+            [{ name: 'setVcaGain', arguments: { vcaGroupId: 'vca-drums', gain: 0.65 } }],
+            'set vca gain for Drum VCA to 65% or 70%'
+        );
+        const missingTarget = bridge(
+            [{ name: 'setVcaGain', arguments: { vcaGroupId: 'vca-drums', gain: 0.65 } }],
+            'set vca gain to 65%'
+        );
+        const reservedNameContext = {
+            ...projectContext,
+            vcaGroups: [{ id: 'vca-generic', name: 'VCA', gain: 0.5, muted: false, trackIds: [] }],
+        };
+        const genericNameOnly = bridge(
+            [{ name: 'setVcaGain', arguments: { vcaGroupId: 'vca-generic', gain: 0.65 } }],
+            'set vca gain to 65%',
+            reservedNameContext
+        );
+        const reservedIdOnly = ['vca', 'group', 'vca group'].map((id) =>
+            bridge([{ name: 'setVcaGain', arguments: { vcaGroupId: id, gain: 0.65 } }], 'set vca gain to 65%', {
+                ...projectContext,
+                vcaGroups: [{ id, name: 'Drums', gain: 0.5, muted: false, trackIds: [] }],
+            })
+        );
+        const qualifiedGenericName = bridge(
+            [{ name: 'setVcaGain', arguments: { vcaGroupId: 'vca-generic', gain: 0.65 } }],
+            'set vca gain for VCA to 65%',
+            reservedNameContext
+        );
+        const ambiguousGroup = bridge(
+            [{ name: 'setVcaGain', arguments: { vcaGroupId: 'vca-drums', gain: 0.65 } }],
+            'set vca gain for Drum VCA to 65%',
+            {
+                ...projectContext,
+                vcaGroups: [
+                    ...(projectContext.vcaGroups ?? []),
+                    { id: 'vca-drums-2', name: 'Drum VCA', gain: 1, muted: false, trackIds: [] },
+                ],
+            }
+        );
+
+        expect(percentage.actions).toEqual([{ type: 'setVcaGain', payload: { vcaGroupId: 'vca-drums', gain: 0.65 } }]);
+        expect(leadingDecimal.actions).toEqual(percentage.actions);
+        expect(noOp.actions).toEqual([]);
+        expect(ambiguousValue.actions).toEqual([]);
+        expect(missingTarget.actions).toEqual([]);
+        expect(genericNameOnly.actions).toEqual([]);
+        expect(reservedIdOnly.map((result) => result.actions)).toEqual([[], [], []]);
+        expect(qualifiedGenericName.actions).toEqual([
+            { type: 'setVcaGain', payload: { vcaGroupId: 'vca-generic', gain: 0.65 } },
+        ]);
+        expect(ambiguousGroup.actions).toEqual([]);
     });
 
     it('grounds arm polarity to eligible named or selected tracks and respects cancellation', () => {

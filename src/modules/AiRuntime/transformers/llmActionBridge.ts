@@ -175,6 +175,13 @@ function findAutomationLane(context: ProjectContext, laneId: unknown) {
     return (context.automationLanes ?? []).find((lane) => lane.id === laneId);
 }
 
+function findVcaGroup(context: ProjectContext, vcaGroupId: unknown) {
+    if (typeof vcaGroupId !== 'string') {
+        return undefined;
+    }
+    return (context.vcaGroups ?? []).find((group) => group.id === vcaGroupId);
+}
+
 function wouldScaleAutomationChange(
     lane: NonNullable<ProjectContext['automationLanes']>[number],
     factor: number
@@ -306,6 +313,25 @@ function bridgeToolCall({
             return rejection(index, call.name, 'Expected only a changed finite master gain from 0 through 1');
         }
         return { type: 'setMasterGain', payload: { gain: args.gain } };
+    }
+
+    if (call.name === 'setVcaGain') {
+        const group = findVcaGroup(context, args.vcaGroupId);
+        if (
+            !hasExactKeys(args, ['vcaGroupId', 'gain']) ||
+            !group ||
+            !isFiniteNumber(args.gain) ||
+            args.gain < 0 ||
+            args.gain > 2 ||
+            args.gain === group.gain
+        ) {
+            return rejection(
+                index,
+                call.name,
+                'Expected an existing VCA group and a changed finite gain from 0 through 2'
+            );
+        }
+        return { type: 'setVcaGain', payload: { vcaGroupId: group.id, gain: args.gain } };
     }
 
     if (call.name === 'addAutomationLane') {
@@ -1266,6 +1292,9 @@ function getMutationKeys(action: RuntimeAction): string[] {
     if (action.type === 'setMasterGain') {
         return ['master:gain'];
     }
+    if (action.type === 'setVcaGain') {
+        return [`vca-gain:${action.payload.vcaGroupId}`];
+    }
     if (action.type === 'clearSolos') {
         return ['solo:all'];
     }
@@ -1821,6 +1850,13 @@ export function buildLlmActionUserMessage({ prompt, context }: { prompt: string;
             targetParameterId: route.targetParameterId,
             gain: route.gain,
         })),
+        vcaGroups: (context.vcaGroups ?? []).map((group) => ({
+            id: group.id,
+            name: group.name,
+            gain: group.gain,
+            muted: group.muted,
+            trackIds: group.trackIds,
+        })),
         selectedTrackId: context.selectedTrackId,
         selectedClipId: context.selectedClipId,
         selectedClipIds: context.selectedClipIds,
@@ -1836,6 +1872,7 @@ export function buildLlmActionUserMessage({ prompt, context }: { prompt: string;
             gain: track.gain,
             pan: track.pan,
             automationMode: track.automationMode,
+            vcaGroupId: track.vcaGroupId ?? null,
             outputId: track.outputId,
             devices: track.devices,
             sends: track.sends ?? [],

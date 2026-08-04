@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { resolveEligibleDeviceWriteTarget, trackStore } from '#/modules/Arrangement/stores';
-import { getEffectiveGain } from '#/modules/Arrangement/useCases';
+import { deriveVcaMultiplier, resolveEligibleDeviceWriteTarget, trackStore } from '#/modules/Arrangement/stores';
 import {
     getCompensationDelay,
     getCurrentTime,
@@ -24,6 +23,7 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     };
     return {
         ...mod,
+        deriveVcaMultiplier: vi.fn(() => 1),
         trackStore,
         resolveEligibleDeviceWriteTarget: vi.fn((deviceId: string) => {
             const owners = trackStore.value?.tracks.filter((candidate) =>
@@ -42,13 +42,6 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
             }
             return { status: 'eligible', trackId: track.id, deviceId };
         }),
-    };
-});
-vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
-    const mod = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
-    return {
-        ...mod,
-        getEffectiveGain: vi.fn((_id: string, gain: number) => gain),
     };
 });
 vi.mock('#/modules/Automation/stores', async (importOriginal) => {
@@ -146,7 +139,7 @@ describe('applyAutomation', () => {
         vi.mocked(isRecordingAutomation).mockReturnValue(false);
         vi.mocked(getCurrentTime).mockReturnValue(5);
         vi.mocked(getCompensationDelay).mockReturnValue(0);
-        vi.mocked(getEffectiveGain).mockImplementation((_id, gain) => gain);
+        vi.mocked(deriveVcaMultiplier).mockReturnValue(1);
     });
 
     it('should export applyAutomation', () => {
@@ -312,7 +305,7 @@ describe('applyAutomation', () => {
             seedDeviceLane({ devices: [], laneParameterId: 'gain' });
             vi.mocked(getCurrentTime).mockReturnValue(2);
             vi.mocked(getCompensationDelay).mockReturnValue(0);
-            vi.mocked(getEffectiveGain).mockImplementation((_id, base) => base * 0.5);
+            vi.mocked(deriveVcaMultiplier).mockReturnValue(0.5);
 
             applyAutomation(0);
 

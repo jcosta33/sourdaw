@@ -670,17 +670,25 @@ function escapeRegExp(value: string): string {
     return value.replaceAll(/[.*+?^${}()|[\]\\]/gu, '\\$&');
 }
 
+const reservedVcaGroupReferenceWords: ReadonlySet<string> = new Set(['group', 'vca', 'vca group']);
+
 function getProjectReferenceTexts(context: ProjectContext): string[] {
-    const references = context.tracks.flatMap((track) => [
-        track.id,
-        track.name,
-        ...track.devices.flatMap((device) => [
-            device.id,
-            device.type,
-            ...(device.parameters ?? []).flatMap((parameter) => [parameter.id, parameter.name]),
+    const vcaReferences = (context.vcaGroups ?? [])
+        .flatMap((group) => [group.id, group.name])
+        .filter((reference) => !reservedVcaGroupReferenceWords.has(normalizePromptText(reference)));
+    const references = [
+        ...vcaReferences,
+        ...context.tracks.flatMap((track) => [
+            track.id,
+            track.name,
+            ...track.devices.flatMap((device) => [
+                device.id,
+                device.type,
+                ...(device.parameters ?? []).flatMap((parameter) => [parameter.id, parameter.name]),
+            ]),
+            ...track.clips.flatMap((clip) => [clip.id, clip.name]),
         ]),
-        ...track.clips.flatMap((clip) => [clip.id, clip.name]),
-    ]);
+    ];
     return [...new Set(references)]
         .filter((reference) => reference.length > 0)
         .sort((left, right) => right.length - left.length);

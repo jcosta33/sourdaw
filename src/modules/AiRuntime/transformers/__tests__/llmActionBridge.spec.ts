@@ -12,6 +12,7 @@ const projectContext: ProjectContext = {
     metronomeEnabled: false,
     metronomeVolume: 0.5,
     masterGain: 0.8,
+    vcaGroups: [{ id: 'vca-drums', name: 'Drum VCA', gain: 0.75, muted: false, trackIds: ['track-vocals'] }],
     automationLanes: [
         {
             id: 'lane-vocal-gain',
@@ -441,6 +442,48 @@ describe('bridgeLlmToolCalls', () => {
             {
                 index: 1,
                 name: 'setMasterGain',
+                reason: 'Provider batch writes the same target field more than once',
+            },
+        ]);
+    });
+
+    it('bridges only changed exact VCA-gain calls and rejects repeated writes', () => {
+        const changed = bridge({
+            calls: [{ name: 'setVcaGain', arguments: { vcaGroupId: 'vca-drums', gain: 0.65 } }],
+        });
+        const rejected = [
+            bridge({ calls: [{ name: 'setVcaGain', arguments: { vcaGroupId: 'missing', gain: 0.65 } }] }),
+            bridge({ calls: [{ name: 'setVcaGain', arguments: { vcaGroupId: 'vca-drums', gain: 0.75 } }] }),
+            bridge({ calls: [{ name: 'setVcaGain', arguments: { vcaGroupId: 'vca-drums', gain: -0.01 } }] }),
+            bridge({ calls: [{ name: 'setVcaGain', arguments: { vcaGroupId: 'vca-drums', gain: 2.01 } }] }),
+            bridge({
+                calls: [{ name: 'setVcaGain', arguments: { vcaGroupId: 'vca-drums', gain: 0.65, extra: true } }],
+            }),
+            bridge({
+                calls: [{ name: 'setVcaGain', arguments: { vcaGroupId: 'vca-drums', gain: -0 } }],
+                context: {
+                    ...projectContext,
+                    vcaGroups: [{ ...projectContext.vcaGroups![0]!, gain: 0 }],
+                },
+            }),
+        ];
+        const repeated = bridge({
+            calls: [
+                { name: 'setVcaGain', arguments: { vcaGroupId: 'vca-drums', gain: 0.65 } },
+                { name: 'setVcaGain', arguments: { vcaGroupId: 'vca-drums', gain: 0.7 } },
+            ],
+        });
+
+        expect(changed).toEqual({
+            actions: [{ type: 'setVcaGain', payload: { vcaGroupId: 'vca-drums', gain: 0.65 } }],
+            rejections: [],
+        });
+        expect(rejected.map((result) => result.actions)).toEqual([[], [], [], [], [], []]);
+        expect(repeated.actions).toEqual([{ type: 'setVcaGain', payload: { vcaGroupId: 'vca-drums', gain: 0.65 } }]);
+        expect(repeated.rejections).toEqual([
+            {
+                index: 1,
+                name: 'setVcaGain',
                 reason: 'Provider batch writes the same target field more than once',
             },
         ]);
@@ -1684,6 +1727,9 @@ describe('bridgeLlmToolCalls', () => {
         expect(userMessage).toContain('"metronomeEnabled":false');
         expect(userMessage).toContain('"metronomeVolume":0.5');
         expect(userMessage).toContain('"masterGain":0.8');
+        expect(userMessage).toContain(
+            '"vcaGroups":[{"id":"vca-drums","name":"Drum VCA","gain":0.75,"muted":false,"trackIds":["track-vocals"]}]'
+        );
         expect(userMessage).toContain('"soloSafe":false');
         expect(userMessage).toContain('"automationLanes"');
         expect(userMessage).toContain('"id":"lane-vocal-gain"');

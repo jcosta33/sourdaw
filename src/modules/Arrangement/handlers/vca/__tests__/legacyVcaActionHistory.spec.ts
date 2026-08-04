@@ -254,6 +254,20 @@ describe('legacy VCA action history', () => {
         );
     });
 
+    it('keeps a stale guarded gain redo without overwriting a later durable gain', async () => {
+        await executeAppAction({ type: 'setVcaGain', payload: { vcaGroupId: 'vca-a', gain: 0.75 } });
+        await undo();
+        setVcaGroupsState(
+            getVcaGroupsState().map((group) => (group.id === 'vca-a' ? { ...group, gain: 1.25 } : group))
+        );
+
+        await expect(redo()).resolves.toBeUndefined();
+
+        expect(getVcaGroupsState().find((group) => group.id === 'vca-a')?.gain).toBe(1.25);
+        expect(undoStore.value?.past).toHaveLength(0);
+        expect(undoStore.value?.future).toHaveLength(1);
+    });
+
     it.each([
         {
             label: 'a colliding create replay identity',

@@ -143,6 +143,7 @@ export { deleteTime } from './timeOperations/deleteTime';
 export { duplicateTimeRange } from './timeOperations/duplicateTimeRange';
 export { insertTime } from './timeOperations/insertTime';
 export { setTimeOperationDependencies } from './timeOperations/timeOperationDependencies';
+export { setVcaRuntimeProjectionDependencies } from './vca/vcaRuntimeProjectionDependencies';
 
 export { addMarker } from './marker/markerOperations/addMarker';
 export { removeMarker } from './marker/markerOperations/removeMarker';
