@@ -42,7 +42,7 @@ const {
     trackStoreMock,
     setTimeOperationDependenciesMock,
     setVcaRuntimeProjectionDependenciesMock,
-    reconcileVcaGroupRuntimeGainMock,
+    reconcileVcaRuntimeGainMock,
     prepareAutomationTimeOperationMock,
     prepareAutomationTimeStateRestoreMock,
     prepareMidiGlobalTimeTransactionMock,
@@ -66,7 +66,7 @@ const {
         trackStoreMock: { subscribe: vi.fn() },
         setTimeOperationDependenciesMock: vi.fn(),
         setVcaRuntimeProjectionDependenciesMock: vi.fn(),
-        reconcileVcaGroupRuntimeGainMock: vi.fn(),
+        reconcileVcaRuntimeGainMock: vi.fn(),
         prepareAutomationTimeOperationMock: vi.fn(),
         prepareAutomationTimeStateRestoreMock: vi.fn(),
         prepareMidiGlobalTimeTransactionMock: vi.fn(),
@@ -305,7 +305,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
     prepareTimelineMapTimeOperation: prepareTimelineMapTimeOperationMock,
     prepareTimelineMapStateRestore: prepareTimelineMapStateRestoreMock,
     setStopPlaybackCallback: noop,
-    reconcileVcaGroupRuntimeGain: reconcileVcaGroupRuntimeGainMock,
+    reconcileVcaRuntimeGain: reconcileVcaRuntimeGainMock,
     stopPlayback: noop,
 }));
 
@@ -418,7 +418,7 @@ describe('bootstrap', () => {
 
     it('wires VCA runtime projection through the composition root', () => {
         expect(setVcaRuntimeProjectionDependenciesMock).toHaveBeenCalledExactlyOnceWith({
-            reconcileVcaGroupRuntimeGain: reconcileVcaGroupRuntimeGainMock,
+            reconcileVcaRuntimeGain: reconcileVcaRuntimeGainMock,
         });
     });
 

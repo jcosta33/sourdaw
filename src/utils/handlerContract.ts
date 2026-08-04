@@ -278,8 +278,8 @@ type LegacyVcaGroupGainPatch = {
 type LegacyVcaGroupMembershipPatch = {
     readonly groupId: string;
     readonly trackId: string;
-    readonly expectedIndex: number | null;
-    readonly replacementIndex: number | null;
+    readonly expectedIndices: readonly number[];
+    readonly replacementIndices: readonly number[];
 };
 
 type LegacyVcaTrackMembershipPatch = {

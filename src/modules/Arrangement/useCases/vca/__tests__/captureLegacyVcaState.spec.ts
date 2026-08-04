@@ -116,14 +116,14 @@ describe('captureLegacyVcaState', () => {
             expect(payload.groupMemberships).toContainEqual({
                 groupId: 'vca-1',
                 trackId: 't1',
-                expectedIndex: null,
-                replacementIndex: 0,
+                expectedIndices: [],
+                replacementIndices: [0],
             });
             expect(payload.groupMemberships).toContainEqual({
                 groupId: 'vca-2',
                 trackId: 't1',
-                expectedIndex: null,
-                replacementIndex: 0,
+                expectedIndices: [],
+                replacementIndices: [0],
             });
         });
 
@@ -188,12 +188,12 @@ describe('captureLegacyVcaState', () => {
 
             const payload = captureLegacyVcaState(action);
 
-            // After assigning to vca-1, t1 is removed from vca-2 (expectedIndex null) but lives at index 0 there now.
+            // After assigning to vca-1, t1 is removed from vca-2 but lives at index 0 there now.
             expect(payload.groupMemberships).toContainEqual({
                 groupId: 'vca-2',
                 trackId: 't1',
-                expectedIndex: null,
-                replacementIndex: 0,
+                expectedIndices: [],
+                replacementIndices: [0],
             });
             // Track-level membership: expected is the new group, replacement is the old group.
             expect(payload.trackMemberships).toEqual([
@@ -238,14 +238,14 @@ describe('captureLegacyVcaState', () => {
             expect(payload.groupMemberships).toContainEqual({
                 groupId: 'vca-1',
                 trackId: 't1',
-                expectedIndex: null,
-                replacementIndex: 0,
+                expectedIndices: [],
+                replacementIndices: [0],
             });
             expect(payload.groupMemberships).toContainEqual({
                 groupId: 'vca-2',
                 trackId: 't1',
-                expectedIndex: null,
-                replacementIndex: 1,
+                expectedIndices: [],
+                replacementIndices: [1],
             });
             expect(payload.trackMemberships).toEqual([
                 {
@@ -268,6 +268,27 @@ describe('captureLegacyVcaState', () => {
             const payload = captureLegacyVcaState(action);
 
             expect(payload.trackMemberships).toEqual([]);
+        });
+
+        it('captures every prior occurrence index for duplicate legacy memberships', () => {
+            setVcaGroupsState([group({ id: 'vca-1', trackIds: ['t1', 'other', 't1', 't1'] })]);
+            tracks(TrackDummy.create({ id: 't1', vcaGroupId: 'vca-1' }));
+
+            const action = {
+                type: 'removeFromVca',
+                payload: { trackId: 't1' },
+            } as const satisfies Extract<AppAction, { type: 'removeFromVca' }>;
+
+            const payload = captureLegacyVcaState(action);
+
+            expect(payload.groupMemberships).toEqual([
+                {
+                    groupId: 'vca-1',
+                    trackId: 't1',
+                    expectedIndices: [],
+                    replacementIndices: [0, 2, 3],
+                },
+            ]);
         });
     });
 
@@ -343,7 +364,9 @@ describe('captureLegacyVcaState', () => {
                     },
                 ],
                 groupGains: [{ groupId: 'vca-1', expectedGain: 1, replacementGain: 0.5 }],
-                groupMemberships: [{ groupId: 'vca-1', trackId: 't1', expectedIndex: 1, replacementIndex: null }],
+                groupMemberships: [
+                    { groupId: 'vca-1', trackId: 't1', expectedIndices: [1, 3], replacementIndices: [] },
+                ],
                 trackMemberships: [{ trackId: 't1', expectedVcaGroupId: 'vca-1', replacementVcaGroupId: null }],
             };
 
@@ -364,7 +387,7 @@ describe('captureLegacyVcaState', () => {
             });
             expect(inverted.groupGains).toEqual([{ groupId: 'vca-1', expectedGain: 0.5, replacementGain: 1 }]);
             expect(inverted.groupMemberships).toEqual([
-                { groupId: 'vca-1', trackId: 't1', expectedIndex: null, replacementIndex: 1 },
+                { groupId: 'vca-1', trackId: 't1', expectedIndices: [], replacementIndices: [1, 3] },
             ]);
             expect(inverted.trackMemberships).toEqual([
                 { trackId: 't1', expectedVcaGroupId: null, replacementVcaGroupId: 'vca-1' },

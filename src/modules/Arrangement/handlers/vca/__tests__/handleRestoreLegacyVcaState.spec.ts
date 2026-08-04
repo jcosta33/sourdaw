@@ -18,7 +18,12 @@ vi.mock('../../../useCases/vca/captureLegacyVcaState', () => ({
 function action() {
     return {
         type: 'restoreLegacyVcaState' as const,
-        payload: { groupRows: [], groupGains: [], groupMemberships: [], trackMemberships: [] },
+        payload: {
+            groupRows: [],
+            groupGains: [{ groupId: 'vca-1', expectedGain: 0.5, replacementGain: 1 }],
+            groupMemberships: [],
+            trackMemberships: [],
+        },
     };
 }
 
@@ -31,11 +36,14 @@ describe('handleRestoreLegacyVcaState', () => {
     it('reports a written status when the restore succeeds', () => {
         mocks.restoreLegacyVcaState.mockReturnValue('written');
 
-        expect(handleRestoreLegacyVcaState.execute(action())).toMatchObject({
-            status: 'written',
-            afterCommit: expect.any(Function),
-            afterAmbiguousCommit: expect.any(Function),
-        });
+        const result = handleRestoreLegacyVcaState.execute(action());
+        if (!result || result instanceof Promise) {
+            throw new Error('Expected a synchronous VCA restore execution result');
+        }
+
+        expect(result.status).toBe('written');
+        expect(typeof result.afterCommit).toBe('function');
+        expect(typeof result.afterAmbiguousCommit).toBe('function');
     });
 
     it('reports a conflict status when the restore detects one', () => {

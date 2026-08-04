@@ -44,6 +44,20 @@ function groupsEqual(left: VcaGroup, right: RestoreLegacyVcaStatePayload['groupR
     );
 }
 
+function getOccurrenceIndices(trackIds: readonly string[], targetTrackId: string): number[] {
+    const indices: number[] = [];
+    for (const [index, trackId] of trackIds.entries()) {
+        if (trackId === targetTrackId) {
+            indices.push(index);
+        }
+    }
+    return indices;
+}
+
+function occurrenceIndicesEqual(left: readonly number[], right: readonly number[]): boolean {
+    return left.length === right.length && left.every((index, position) => index === right[position]);
+}
+
 function expectedStateMatches(payload: RestoreLegacyVcaStatePayload): boolean {
     const groups = getVcaGroupsState();
     const trackState = getTrackStoreState();
@@ -77,9 +91,8 @@ function expectedStateMatches(payload: RestoreLegacyVcaStatePayload): boolean {
         if (!group) {
             return false;
         }
-        const currentIndex = group.trackIds.indexOf(patch.trackId);
-        const normalizedCurrentIndex = currentIndex < 0 ? null : currentIndex;
-        if (normalizedCurrentIndex !== patch.expectedIndex) {
+        const currentIndices = getOccurrenceIndices(group.trackIds, patch.trackId);
+        if (!occurrenceIndicesEqual(currentIndices, patch.expectedIndices)) {
             return false;
         }
     }
@@ -120,24 +133,43 @@ function applyGroupGainPatches(groups: VcaGroup[], payload: RestoreLegacyVcaStat
     });
 }
 
-function applyGroupMembershipPatches(groups: VcaGroup[], payload: RestoreLegacyVcaStatePayload): VcaGroup[] {
-    return groups.map((group) => {
+function applyGroupMembershipPatches(groups: VcaGroup[], payload: RestoreLegacyVcaStatePayload): VcaGroup[] | null {
+    const nextGroups: VcaGroup[] = [];
+    for (const group of groups) {
         const patches = payload.groupMemberships.filter((patch) => patch.groupId === group.id);
         if (patches.length === 0) {
-            return group;
+            nextGroups.push(group);
+            continue;
         }
 
         const patchedTrackIds = new Set(patches.map((patch) => patch.trackId));
         const trackIds = group.trackIds.filter((trackId) => !patchedTrackIds.has(trackId));
         const insertions = patches
-            .filter((patch) => patch.replacementIndex !== null)
-            .toSorted((left, right) => (left.replacementIndex ?? 0) - (right.replacementIndex ?? 0));
-        for (const patch of insertions) {
-            const insertionIndex = Math.max(0, Math.min(patch.replacementIndex ?? 0, trackIds.length));
-            trackIds.splice(insertionIndex, 0, patch.trackId);
+            .flatMap((patch) => patch.replacementIndices.map((index) => ({ index, trackId: patch.trackId })))
+            .toSorted((left, right) => left.index - right.index);
+        const occupiedIndices = new Set<number>();
+        for (const insertion of insertions) {
+            if (
+                !Number.isInteger(insertion.index) ||
+                insertion.index < 0 ||
+                insertion.index > trackIds.length ||
+                occupiedIndices.has(insertion.index)
+            ) {
+                return null;
+            }
+            occupiedIndices.add(insertion.index);
+            trackIds.splice(insertion.index, 0, insertion.trackId);
         }
-        return { ...group, trackIds };
-    });
+
+        const replacementIsExact = patches.every((patch) =>
+            occurrenceIndicesEqual(getOccurrenceIndices(trackIds, patch.trackId), patch.replacementIndices)
+        );
+        if (!replacementIsExact) {
+            return null;
+        }
+        nextGroups.push({ ...group, trackIds });
+    }
+    return nextGroups;
 }
 
 export function restoreLegacyVcaState(payload: RestoreLegacyVcaStatePayload): RestoreLegacyVcaStateResult {
@@ -156,7 +188,11 @@ export function restoreLegacyVcaState(payload: RestoreLegacyVcaStatePayload): Re
     if (payload.groupRows.length > 0 || payload.groupGains.length > 0 || payload.groupMemberships.length > 0) {
         let groups = applyGroupRowPatches(getVcaGroupsState(), payload);
         groups = applyGroupGainPatches(groups, payload);
-        groups = applyGroupMembershipPatches(groups, payload);
+        const groupsWithMemberships = applyGroupMembershipPatches(groups, payload);
+        if (!groupsWithMemberships) {
+            return 'conflict';
+        }
+        groups = groupsWithMemberships;
         setVcaGroupsState(groups);
     }
 

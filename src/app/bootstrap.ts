@@ -135,7 +135,7 @@ import {
     prepareTimelineMapTimeOperation,
     prepareTimelineMapStateRestore,
     setStopPlaybackCallback,
-    reconcileVcaGroupRuntimeGain,
+    reconcileVcaRuntimeGain,
     stopPlayback,
 } from '#/modules/Transport/useCases';
 import { updateTunerTelemetry } from '#/modules/Tuner/stores';
@@ -193,7 +193,7 @@ setOfflineRenderDependencies({
     selectMidiEventProbability: shouldPlayMidiEvent,
     createChordPitchProjector,
 });
-setVcaRuntimeProjectionDependencies({ reconcileVcaGroupRuntimeGain });
+setVcaRuntimeProjectionDependencies({ reconcileVcaRuntimeGain });
 setToasterGrooveAssignmentExecutor({ execute: executeAppAction });
 setArrangementEventBus(eventBus);
 setWorkspaceEventBus(eventBus);

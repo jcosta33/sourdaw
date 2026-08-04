@@ -37,6 +37,7 @@ const projectContext: ProjectContext = {
             gain: 0.8,
             pan: 0,
             automationMode: 'read',
+            vcaGroupId: 'vca-drums',
             outputId: 'master',
             clipCount: 1,
             deviceCount: 1,
@@ -487,6 +488,175 @@ describe('bridgeLlmToolCalls', () => {
                 reason: 'Provider batch writes the same target field more than once',
             },
         ]);
+    });
+
+    it('bridges strict VCA membership lifecycle calls and rejects no-ops and collisions', () => {
+        const created = bridge({
+            calls: [{ name: 'createVcaGroup', arguments: { name: 'Band', trackIds: ['bus-reverb'] } }],
+        });
+        const assigned = bridge({
+            calls: [{ name: 'assignToVca', arguments: { trackId: 'bus-reverb', vcaGroupId: 'vca-drums' } }],
+        });
+        const removed = bridge({
+            calls: [{ name: 'removeFromVca', arguments: { trackId: 'track-vocals' } }],
+        });
+        const repaired = bridge({
+            calls: [{ name: 'assignToVca', arguments: { trackId: 'track-vocals', vcaGroupId: 'vca-drums' } }],
+            context: {
+                ...projectContext,
+                tracks: projectContext.tracks.map((track) =>
+                    track.id === 'track-vocals' ? { ...track, vcaGroupId: null } : track
+                ),
+            },
+        });
+        const repairedDuplicate = bridge({
+            calls: [{ name: 'assignToVca', arguments: { trackId: 'track-vocals', vcaGroupId: 'vca-drums' } }],
+            context: {
+                ...projectContext,
+                vcaGroups: projectContext.vcaGroups?.map((group) =>
+                    group.id === 'vca-drums' ? { ...group, trackIds: [...group.trackIds, 'track-vocals'] } : group
+                ),
+            },
+        });
+        const rejected = [
+            bridge({
+                calls: [{ name: 'createVcaGroup', arguments: { name: 'drum vca', trackIds: ['bus-reverb'] } }],
+            }),
+            bridge({ calls: [{ name: 'createVcaGroup', arguments: { name: 'Band', trackIds: [] } }] }),
+            bridge({
+                calls: [
+                    {
+                        name: 'createVcaGroup',
+                        arguments: { name: 'Band', trackIds: ['bus-reverb', 'bus-reverb'] },
+                    },
+                ],
+            }),
+            bridge({
+                calls: [{ name: 'createVcaGroup', arguments: { name: 'Band', trackIds: ['master'] } }],
+            }),
+            bridge({
+                calls: [{ name: 'assignToVca', arguments: { trackId: 'track-vocals', vcaGroupId: 'vca-drums' } }],
+            }),
+            bridge({ calls: [{ name: 'removeFromVca', arguments: { trackId: 'bus-reverb' } }] }),
+            bridge({
+                calls: [{ name: 'assignToVca', arguments: { trackId: 'master', vcaGroupId: 'vca-drums' } }],
+            }),
+            bridge({
+                calls: [
+                    {
+                        name: 'assignToVca',
+                        arguments: { trackId: 'bus-reverb', vcaGroupId: 'missing-vca' },
+                    },
+                ],
+            }),
+        ];
+        const membershipCollision = bridge({
+            calls: [
+                { name: 'assignToVca', arguments: { trackId: 'bus-reverb', vcaGroupId: 'vca-drums' } },
+                { name: 'removeFromVca', arguments: { trackId: 'bus-reverb' } },
+            ],
+        });
+        const nameCollision = bridge({
+            calls: [
+                { name: 'createVcaGroup', arguments: { name: 'Band', trackIds: ['bus-reverb'] } },
+                { name: 'createVcaGroup', arguments: { name: 'band', trackIds: ['track-vocals'] } },
+            ],
+        });
+
+        expect(created.actions).toEqual([
+            { type: 'createVcaGroup', payload: { name: 'Band', trackIds: ['bus-reverb'] } },
+        ]);
+        expect(assigned.actions).toEqual([
+            { type: 'assignToVca', payload: { trackId: 'bus-reverb', vcaGroupId: 'vca-drums' } },
+        ]);
+        expect(removed.actions).toEqual([{ type: 'removeFromVca', payload: { trackId: 'track-vocals' } }]);
+        expect(repaired.actions).toEqual([
+            { type: 'assignToVca', payload: { trackId: 'track-vocals', vcaGroupId: 'vca-drums' } },
+        ]);
+        expect(repairedDuplicate.actions).toEqual([
+            { type: 'assignToVca', payload: { trackId: 'track-vocals', vcaGroupId: 'vca-drums' } },
+        ]);
+        expect(rejected.map((result) => result.actions)).toEqual([[], [], [], [], [], [], [], []]);
+        expect(membershipCollision.actions).toEqual([
+            { type: 'assignToVca', payload: { trackId: 'bus-reverb', vcaGroupId: 'vca-drums' } },
+        ]);
+        expect(membershipCollision.rejections).toHaveLength(1);
+        expect(nameCollision.actions).toEqual([
+            { type: 'createVcaGroup', payload: { name: 'Band', trackIds: ['bus-reverb'] } },
+        ]);
+        expect(nameCollision.rejections).toHaveLength(1);
+    });
+
+    it('rejects both orders of VCA collection mutations that would stale grouped history', () => {
+        const bus = projectContext.tracks.find((track) => track.id === 'bus-reverb');
+        if (!bus) {
+            throw new Error('Expected reverb bus fixture');
+        }
+        const guitar = { ...bus, id: 'track-guitar', name: 'Guitar', vcaGroupId: null };
+        const keys = { ...bus, id: 'track-keys', name: 'Keys', vcaGroupId: null };
+        const assignContext = {
+            ...projectContext,
+            tracks: [...projectContext.tracks, guitar, keys],
+        };
+        const sharedGroupContext = {
+            ...assignContext,
+            tracks: assignContext.tracks.map((track) =>
+                track.id === 'bus-reverb' || track.id === 'track-guitar' ? { ...track, vcaGroupId: 'vca-drums' } : track
+            ),
+            vcaGroups: projectContext.vcaGroups?.map((group) =>
+                group.id === 'vca-drums'
+                    ? { ...group, trackIds: [...group.trackIds, 'bus-reverb', 'track-guitar'] }
+                    : group
+            ),
+        };
+        const cases = [
+            {
+                context: assignContext,
+                calls: [
+                    { name: 'createVcaGroup', arguments: { name: 'Band A', trackIds: ['bus-reverb'] } },
+                    { name: 'createVcaGroup', arguments: { name: 'Band B', trackIds: ['track-guitar'] } },
+                ],
+            },
+            {
+                context: assignContext,
+                calls: [
+                    { name: 'assignToVca', arguments: { trackId: 'bus-reverb', vcaGroupId: 'vca-drums' } },
+                    { name: 'assignToVca', arguments: { trackId: 'track-guitar', vcaGroupId: 'vca-drums' } },
+                ],
+            },
+            {
+                context: sharedGroupContext,
+                calls: [
+                    { name: 'removeFromVca', arguments: { trackId: 'bus-reverb' } },
+                    { name: 'removeFromVca', arguments: { trackId: 'track-guitar' } },
+                ],
+            },
+            {
+                context: sharedGroupContext,
+                calls: [
+                    { name: 'createVcaGroup', arguments: { name: 'Band', trackIds: ['track-guitar'] } },
+                    { name: 'removeFromVca', arguments: { trackId: 'bus-reverb' } },
+                ],
+            },
+            {
+                context: sharedGroupContext,
+                calls: [
+                    { name: 'createVcaGroup', arguments: { name: 'Band', trackIds: ['track-guitar'] } },
+                    { name: 'assignToVca', arguments: { trackId: 'track-keys', vcaGroupId: 'vca-drums' } },
+                ],
+            },
+        ];
+
+        const results = cases.flatMap(({ calls, context }) => [
+            bridge({ calls, context }),
+            bridge({ calls: calls.toReversed(), context }),
+        ]);
+
+        expect(results.every((result) => result.actions.length === 1)).toBe(true);
+        expect(results.every((result) => result.rejections.length === 1)).toBe(true);
+        expect(results.flatMap((result) => result.rejections).map(({ reason }) => reason)).toEqual(
+            Array.from({ length: results.length }, () => 'Provider batch writes the same target field more than once')
+        );
     });
 
     it('converts the reversible single-clip command packet for an available clip', () => {

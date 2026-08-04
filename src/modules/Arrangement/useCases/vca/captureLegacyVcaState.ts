@@ -20,6 +20,20 @@ function emptyPatch(): RestoreLegacyVcaStatePayload {
     };
 }
 
+function getOccurrenceIndices(trackIds: readonly string[], targetTrackId: string): number[] {
+    const indices: number[] = [];
+    for (const [index, trackId] of trackIds.entries()) {
+        if (trackId === targetTrackId) {
+            indices.push(index);
+        }
+    }
+    return indices;
+}
+
+function occurrenceIndicesEqual(left: readonly number[], right: readonly number[]): boolean {
+    return left.length === right.length && left.every((index, position) => index === right[position]);
+}
+
 function captureCreatePatch(action: Extract<AppAction, { type: 'createVcaGroup' }>): RestoreLegacyVcaStatePayload {
     const groupId = action.payload.vcaGroupId;
     if (!groupId) {
@@ -30,19 +44,19 @@ function captureCreatePatch(action: Extract<AppAction, { type: 'createVcaGroup' 
     const tracks = getAllTracks();
     const trackById = new Map(tracks.map((track) => [track.id, track]));
     const validTrackIds = [...new Set(action.payload.trackIds)].filter((trackId) => trackById.has(trackId));
-    const validTrackIdSet = new Set(validTrackIds);
     const groupMemberships: RestoreLegacyVcaStatePayload['groupMemberships'][number][] = [];
 
     for (const group of groups) {
-        for (const [index, trackId] of group.trackIds.entries()) {
-            if (!validTrackIdSet.has(trackId)) {
+        for (const trackId of validTrackIds) {
+            const replacementIndices = getOccurrenceIndices(group.trackIds, trackId);
+            if (replacementIndices.length === 0) {
                 continue;
             }
             groupMemberships.push({
                 groupId: group.id,
                 trackId,
-                expectedIndex: null,
-                replacementIndex: index,
+                expectedIndices: [],
+                replacementIndices,
             });
         }
     }
@@ -93,20 +107,19 @@ function captureAssignPatch(action: Extract<AppAction, { type: 'assignToVca' }>)
 
     const groupMemberships: RestoreLegacyVcaStatePayload['groupMemberships'][number][] = [];
     for (const group of groups) {
-        const replacementIndex = group.trackIds.indexOf(action.payload.trackId);
-        let expectedIndex: number | null = null;
+        const replacementIndices = getOccurrenceIndices(group.trackIds, action.payload.trackId);
+        let expectedIndices: number[] = [];
         if (group.id === targetGroup.id) {
-            expectedIndex = group.trackIds.filter((trackId) => trackId !== action.payload.trackId).length;
+            expectedIndices = [group.trackIds.filter((trackId) => trackId !== action.payload.trackId).length];
         }
-        const normalizedReplacementIndex = replacementIndex < 0 ? null : replacementIndex;
-        if (expectedIndex === normalizedReplacementIndex) {
+        if (occurrenceIndicesEqual(expectedIndices, replacementIndices)) {
             continue;
         }
         groupMemberships.push({
             groupId: group.id,
             trackId: action.payload.trackId,
-            expectedIndex,
-            replacementIndex: normalizedReplacementIndex,
+            expectedIndices,
+            replacementIndices,
         });
     }
 
@@ -133,15 +146,15 @@ function captureRemovePatch(action: Extract<AppAction, { type: 'removeFromVca' }
     const track = getAllTracks().find((candidate) => candidate.id === action.payload.trackId);
     const groupMemberships: RestoreLegacyVcaStatePayload['groupMemberships'][number][] = [];
     for (const group of groups) {
-        const replacementIndex = group.trackIds.indexOf(action.payload.trackId);
-        if (replacementIndex < 0) {
+        const replacementIndices = getOccurrenceIndices(group.trackIds, action.payload.trackId);
+        if (replacementIndices.length === 0) {
             continue;
         }
         groupMemberships.push({
             groupId: group.id,
             trackId: action.payload.trackId,
-            expectedIndex: null,
-            replacementIndex,
+            expectedIndices: [],
+            replacementIndices,
         });
     }
 
@@ -197,8 +210,8 @@ function invertRestorePatch(payload: RestoreLegacyVcaStatePayload): RestoreLegac
         })),
         groupMemberships: payload.groupMemberships.map((patch) => ({
             ...patch,
-            expectedIndex: patch.replacementIndex,
-            replacementIndex: patch.expectedIndex,
+            expectedIndices: [...patch.replacementIndices],
+            replacementIndices: [...patch.expectedIndices],
         })),
         trackMemberships: payload.trackMemberships.map((patch) => ({
             ...patch,

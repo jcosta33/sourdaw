@@ -11,8 +11,21 @@ export const handleRestoreLegacyVcaState = createHandler<'restoreLegacyVcaState'
         if (result === 'conflict') {
             return { status: 'conflict' };
         }
+        const groupIds = [
+            ...action.payload.groupGains.map((patch) => patch.groupId),
+            ...action.payload.groupRows.map((patch) => patch.groupId),
+        ];
+        const trackIds = [
+            ...action.payload.trackMemberships.map((patch) => patch.trackId),
+            ...action.payload.groupMemberships.map((patch) => patch.trackId),
+            ...action.payload.groupRows.flatMap((patch) => [
+                ...(patch.expected?.group.trackIds ?? []),
+                ...(patch.replacement?.group.trackIds ?? []),
+            ]),
+        ];
         return toVcaGainExecutionResult({
-            groupIds: action.payload.groupGains.map((patch) => patch.groupId),
+            groupIds,
+            trackIds,
             status: result,
         });
     },

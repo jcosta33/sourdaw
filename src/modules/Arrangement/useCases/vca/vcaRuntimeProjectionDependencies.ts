@@ -1,5 +1,5 @@
 type VcaRuntimeProjectionDependencies = {
-    reconcileVcaGroupRuntimeGain: (vcaGroupId: string) => void;
+    reconcileVcaRuntimeGain: (input: { groupIds: readonly string[]; trackIds: readonly string[] }) => void;
 };
 
 export let vcaRuntimeProjectionDependencies: VcaRuntimeProjectionDependencies | null = null;

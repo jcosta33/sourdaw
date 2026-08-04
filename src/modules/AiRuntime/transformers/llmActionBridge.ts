@@ -182,6 +182,45 @@ function findVcaGroup(context: ProjectContext, vcaGroupId: unknown) {
     return (context.vcaGroups ?? []).find((group) => group.id === vcaGroupId);
 }
 
+function findVcaMemberTrack(context: ProjectContext, trackId: unknown) {
+    const track = findTrack(context, trackId);
+    if (
+        !track ||
+        (track.kind !== 'audio' && track.kind !== 'midi' && track.kind !== 'bus' && track.kind !== 'folder')
+    ) {
+        return undefined;
+    }
+    return track;
+}
+
+function normalizeVcaGroupName(name: string): string {
+    return name
+        .toLocaleLowerCase()
+        .replaceAll(/[^\p{L}\p{N}]+/gu, ' ')
+        .trim();
+}
+
+function isCanonicalVcaMembership(
+    context: ProjectContext,
+    track: ProjectContext['tracks'][number],
+    group: NonNullable<ProjectContext['vcaGroups']>[number]
+): boolean {
+    if (track.vcaGroupId !== group.id) {
+        return false;
+    }
+    return (context.vcaGroups ?? []).every((candidate) => {
+        const membershipCount = candidate.trackIds.filter((trackId) => trackId === track.id).length;
+        return candidate.id === group.id ? membershipCount === 1 : membershipCount === 0;
+    });
+}
+
+function hasAnyVcaMembership(context: ProjectContext, track: ProjectContext['tracks'][number]): boolean {
+    return (
+        (track.vcaGroupId !== null && track.vcaGroupId !== undefined) ||
+        (context.vcaGroups ?? []).some((group) => group.trackIds.includes(track.id))
+    );
+}
+
 function wouldScaleAutomationChange(
     lane: NonNullable<ProjectContext['automationLanes']>[number],
     factor: number
@@ -332,6 +371,53 @@ function bridgeToolCall({
             );
         }
         return { type: 'setVcaGain', payload: { vcaGroupId: group.id, gain: args.gain } };
+    }
+
+    if (call.name === 'createVcaGroup') {
+        const name = normalizeSafeProjectName(args.name);
+        const trackIds = args.trackIds;
+        if (
+            !hasExactKeys(args, ['name', 'trackIds']) ||
+            !name ||
+            !Array.isArray(trackIds) ||
+            trackIds.length === 0 ||
+            !trackIds.every((trackId): trackId is string => findVcaMemberTrack(context, trackId) !== undefined) ||
+            new Set(trackIds).size !== trackIds.length ||
+            (context.vcaGroups ?? []).some((group) => normalizeVcaGroupName(group.name) === normalizeVcaGroupName(name))
+        ) {
+            return rejection(
+                index,
+                call.name,
+                'Expected one safe unique VCA name and a non-empty unique list of eligible existing track IDs'
+            );
+        }
+        return { type: 'createVcaGroup', payload: { name, trackIds: [...trackIds] } };
+    }
+
+    if (call.name === 'assignToVca') {
+        const track = findVcaMemberTrack(context, args.trackId);
+        const group = findVcaGroup(context, args.vcaGroupId);
+        if (
+            !hasExactKeys(args, ['trackId', 'vcaGroupId']) ||
+            !track ||
+            !group ||
+            isCanonicalVcaMembership(context, track, group)
+        ) {
+            return rejection(
+                index,
+                call.name,
+                'Expected an eligible existing track and a different or inconsistent existing VCA membership'
+            );
+        }
+        return { type: 'assignToVca', payload: { trackId: track.id, vcaGroupId: group.id } };
+    }
+
+    if (call.name === 'removeFromVca') {
+        const track = findVcaMemberTrack(context, args.trackId);
+        if (!hasExactKeys(args, ['trackId']) || !track || !hasAnyVcaMembership(context, track)) {
+            return rejection(index, call.name, 'Expected an eligible existing track with current VCA membership');
+        }
+        return { type: 'removeFromVca', payload: { trackId: track.id } };
     }
 
     if (call.name === 'addAutomationLane') {
@@ -1264,7 +1350,14 @@ function getDeviceBatchTarget(action: RuntimeAction, context: ProjectContext): D
     };
 }
 
-function getMutationKeys(action: RuntimeAction): string[] {
+function getExistingVcaMembershipCollectionKeys(context: ProjectContext, trackIds: readonly string[]): string[] {
+    const affectedTrackIds = new Set(trackIds);
+    return (context.vcaGroups ?? [])
+        .filter((group) => group.trackIds.some((trackId) => affectedTrackIds.has(trackId)))
+        .map((group) => `vca-members:${group.id}`);
+}
+
+function getMutationKeys(action: RuntimeAction, context: ProjectContext): string[] {
     if (
         action.type === 'addTrack' ||
         action.type === 'createBus' ||
@@ -1294,6 +1387,27 @@ function getMutationKeys(action: RuntimeAction): string[] {
     }
     if (action.type === 'setVcaGain') {
         return [`vca-gain:${action.payload.vcaGroupId}`];
+    }
+    if (action.type === 'createVcaGroup') {
+        return [
+            'vca-group-rows',
+            `vca-name:${normalizeVcaGroupName(action.payload.name)}`,
+            ...action.payload.trackIds.map((trackId) => `vca-membership:${trackId}`),
+            ...getExistingVcaMembershipCollectionKeys(context, action.payload.trackIds),
+        ];
+    }
+    if (action.type === 'assignToVca') {
+        return [
+            `vca-membership:${action.payload.trackId}`,
+            `vca-members:${action.payload.vcaGroupId}`,
+            ...getExistingVcaMembershipCollectionKeys(context, [action.payload.trackId]),
+        ];
+    }
+    if (action.type === 'removeFromVca') {
+        return [
+            `vca-membership:${action.payload.trackId}`,
+            ...getExistingVcaMembershipCollectionKeys(context, [action.payload.trackId]),
+        ];
     }
     if (action.type === 'clearSolos') {
         return ['solo:all'];
@@ -1332,13 +1446,15 @@ function getMutationKeys(action: RuntimeAction): string[] {
     if (action.type === 'addSidechainRoute' || action.type === 'removeSidechainRoute') {
         return [`sidechain:${action.payload.sourceTrackId}:${action.payload.targetTrackId}`];
     }
+    if (action.type === 'removeTrack') {
+        return [`${action.type}:${action.payload.trackId}`, `vca-membership:${action.payload.trackId}`];
+    }
     if (
         action.type === 'renameTrack' ||
         action.type === 'muteTrack' ||
         action.type === 'soloTrack' ||
         action.type === 'setSoloSafe' ||
         action.type === 'armTrack' ||
-        action.type === 'removeTrack' ||
         action.type === 'setTrackGain' ||
         action.type === 'setTrackPan' ||
         action.type === 'setTrackColor' ||
@@ -1661,7 +1777,7 @@ export function bridgeLlmToolCalls({ calls, context }: BridgeLlmToolCallsInput):
             const clipTargetId = getClipTargetId(result);
             const clipTrackId = clipTargetId === null ? null : (findClip(context, clipTargetId)?.track.id ?? null);
             const deviceTarget = getDeviceBatchTarget(result, context);
-            const mutationKeysForAction = getMutationKeys(result);
+            const mutationKeysForAction = getMutationKeys(result, context);
             const automationPointLaneId = result.type === 'addAutomationPoint' ? result.payload.laneId : null;
             const automationTransformKey = mutationKeysForAction.find((key) =>
                 key.startsWith('automation-lane-points:')
@@ -1701,7 +1817,7 @@ export function bridgeLlmToolCalls({ calls, context }: BridgeLlmToolCallsInput):
                     }
                     const priorPointLaneId =
                         priorAction.type === 'addAutomationPoint' ? priorAction.payload.laneId : null;
-                    const priorTransformKey = getMutationKeys(priorAction).find((key) =>
+                    const priorTransformKey = getMutationKeys(priorAction, context).find((key) =>
                         key.startsWith('automation-lane-points:')
                     );
                     const priorTransformLaneId = priorTransformKey?.slice('automation-lane-points:'.length) ?? null;
@@ -1717,7 +1833,7 @@ export function bridgeLlmToolCalls({ calls, context }: BridgeLlmToolCallsInput):
             if (conflictingMutationKey?.startsWith('automation-lane-point:')) {
                 for (let actionIndex = actions.length - 1; actionIndex >= 0; actionIndex -= 1) {
                     const priorAction = actions[actionIndex];
-                    if (priorAction && getMutationKeys(priorAction).includes(conflictingMutationKey)) {
+                    if (priorAction && getMutationKeys(priorAction, context).includes(conflictingMutationKey)) {
                         actions.splice(actionIndex, 1);
                     }
                 }
