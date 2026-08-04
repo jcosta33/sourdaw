@@ -224,6 +224,60 @@ describe('parsePromptToActions', () => {
         expect(result.executionMode).toBe('atomic');
     });
 
+    it('proposes a grounded two-clip crossfade as one confirmable atomic action', async () => {
+        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
+            '../agentReference/bridgeGroundedLlmToolCalls'
+        );
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        vi.mocked(generateToolCalls).mockResolvedValue(
+            completePlan([{ name: 'crossfadeClips', arguments: { clipAId: 'clip-intro', clipBId: 'clip-chorus' } }])
+        );
+        const clip = {
+            id: 'clip-intro',
+            name: 'Intro',
+            type: 'audio' as const,
+            startBeat: 0,
+            endBeat: 8,
+            gain: 1,
+            locked: false,
+            noteCount: 0,
+        };
+        const providerContext: ProjectContext = {
+            ...baseContext,
+            tracks: [
+                {
+                    id: 'track-vocals',
+                    name: 'Vocals',
+                    kind: 'audio',
+                    muted: false,
+                    soloed: false,
+                    soloSafe: false,
+                    armed: false,
+                    gain: 0.8,
+                    pan: 0,
+                    automationMode: 'read',
+                    outputId: 'master',
+                    clipCount: 2,
+                    deviceCount: 0,
+                    clips: [{ ...clip }, { ...clip, id: 'clip-chorus', name: 'Chorus', startBeat: 8, endBeat: 16 }],
+                    devices: [],
+                    sends: [],
+                },
+            ],
+            selectedTrackId: 'track-vocals',
+            selectedClipId: clip.id,
+            selectedClipIds: [clip.id],
+        };
+
+        const result = await parsePromptToActions('crossfade Intro into Chorus', providerContext);
+
+        expect(result.actions).toEqual([
+            { type: 'crossfadeClips', payload: { clipAId: 'clip-intro', clipBId: 'clip-chorus' } },
+        ]);
+        expect(result.requiresConfirmation).toBe(true);
+        expect(result.executionMode).toBe('atomic');
+    });
+
     it('proposes a grounded whole-clip MIDI transform as one confirmable atomic action', async () => {
         const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
             '../agentReference/bridgeGroundedLlmToolCalls'

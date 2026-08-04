@@ -448,7 +448,13 @@ const validators = {
         isNonEmptyString(param.clipId) &&
         isNumber(param.beats) &&
         param.beats !== 0,
-    crossfadeClips: 'unchecked',
+    crossfadeClips: (param): param is PayloadOf<'crossfadeClips'> =>
+        isObj(param) &&
+        hasOnlyKeys(param, ['clipAId', 'clipBId', 'durationBeats']) &&
+        isNonEmptyString(param.clipAId) &&
+        isNonEmptyString(param.clipBId) &&
+        param.clipAId !== param.clipBId &&
+        isOptional(param.durationBeats, isNonNegativeNumber),
     consolidateSelection: 'unchecked',
     bounceSelection: 'unchecked',
     stripSilence: 'unchecked',

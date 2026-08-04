@@ -925,6 +925,59 @@ function bridgeToolCall({
         };
     }
 
+    if (call.name === 'crossfadeClips') {
+        const hasDuration = Object.hasOwn(args, 'durationBeats');
+        const expectedKeys = hasDuration ? ['clipAId', 'clipBId', 'durationBeats'] : ['clipAId', 'clipBId'];
+        const source = findClip(context, args.clipAId);
+        const destination = findClip(context, args.clipBId);
+        const durationBeats = hasDuration ? args.durationBeats : 0.5;
+        if (
+            !hasExactKeys(args, expectedKeys) ||
+            !source ||
+            !destination ||
+            source.clip.id === destination.clip.id ||
+            source.clip.locked === true ||
+            destination.clip.locked === true ||
+            !isFiniteNumber(durationBeats) ||
+            durationBeats < 0 ||
+            !isFiniteNumber(source.clip.endBeat) ||
+            !isFiniteNumber(destination.clip.startBeat) ||
+            source.clip.startBeat >= destination.clip.startBeat
+        ) {
+            return rejection(
+                index,
+                call.name,
+                'Expected two distinct unlocked clips in timeline order and an optional finite non-negative duration'
+            );
+        }
+        const halfDuration = durationBeats / 2;
+        const nextSourceEnd = source.clip.endBeat + halfDuration;
+        const nextDestinationStart = Math.max(0, destination.clip.startBeat - halfDuration);
+        const overlap = nextSourceEnd - nextDestinationStart;
+        if (
+            !Number.isFinite(nextSourceEnd) ||
+            !Number.isFinite(nextDestinationStart) ||
+            !Number.isFinite(overlap) ||
+            overlap < 0 ||
+            (source.clip.endBeat === nextSourceEnd &&
+                destination.clip.startBeat === nextDestinationStart &&
+                (source.clip.fadeOutBeats ?? 0) === overlap &&
+                (destination.clip.fadeInBeats ?? 0) === overlap)
+        ) {
+            return rejection(index, call.name, 'Expected a changed crossfade with finite non-negative overlap');
+        }
+        if (hasDuration) {
+            return {
+                type: 'crossfadeClips',
+                payload: { clipAId: source.clip.id, clipBId: destination.clip.id, durationBeats },
+            };
+        }
+        return {
+            type: 'crossfadeClips',
+            payload: { clipAId: source.clip.id, clipBId: destination.clip.id },
+        };
+    }
+
     if (call.name === 'lockClip') {
         const source = findClip(context, args.clipId);
         if (
@@ -1315,7 +1368,10 @@ function bridgeToolCall({
     return rejection(index, call.name, 'Tool is not in the executable LLM allowlist');
 }
 
-function getClipTargetId(action: RuntimeAction): string | null {
+function getClipTargetIds(action: RuntimeAction): string[] {
+    if (action.type === 'crossfadeClips') {
+        return [action.payload.clipAId, action.payload.clipBId];
+    }
     if (
         action.type === 'duplicateClip' ||
         action.type === 'duplicateClipToNextBar' ||
@@ -1338,9 +1394,9 @@ function getClipTargetId(action: RuntimeAction): string | null {
         action.type === 'scaleAllVelocities' ||
         action.type === 'setAllVelocities'
     ) {
-        return action.payload.clipId;
+        return [action.payload.clipId];
     }
-    return null;
+    return [];
 }
 
 type DeviceBatchTarget = {
@@ -1513,6 +1569,14 @@ function getMutationKeys(action: RuntimeAction, context: ProjectContext): string
     }
     if (action.type === 'setClipFade') {
         return [`clip:${action.payload.clipId}:fades`];
+    }
+    if (action.type === 'crossfadeClips') {
+        return [
+            `clip:${action.payload.clipAId}:geometry`,
+            `clip:${action.payload.clipAId}:fades`,
+            `clip:${action.payload.clipBId}:geometry`,
+            `clip:${action.payload.clipBId}:fades`,
+        ];
     }
     if (action.type === 'lockClip') {
         return [`clip:${action.payload.clipId}:lock`];
@@ -1812,8 +1876,15 @@ export function bridgeLlmToolCalls({ calls, context }: BridgeLlmToolCallsInput):
     for (const [index, call] of calls.entries()) {
         const result = bridgeToolCall({ call, context: prospectiveContext, index });
         if ('type' in result) {
-            const clipTargetId = getClipTargetId(result);
-            const clipTrackId = clipTargetId === null ? null : (findClip(context, clipTargetId)?.track.id ?? null);
+            const actionClipTargetIds = getClipTargetIds(result);
+            const actionClipTrackIds = [
+                ...new Set(
+                    actionClipTargetIds.flatMap((clipTargetId) => {
+                        const trackId = findClip(context, clipTargetId)?.track.id;
+                        return trackId ? [trackId] : [];
+                    })
+                ),
+            ];
             const deviceTarget = getDeviceBatchTarget(result, context);
             const mutationKeysForAction = getMutationKeys(result, context);
             const automationPointLaneId = result.type === 'addAutomationPoint' ? result.payload.laneId : null;
@@ -1825,18 +1896,19 @@ export function bridgeLlmToolCalls({ calls, context }: BridgeLlmToolCallsInput):
                 (automationPointLaneId !== null && automationTransformLaneIds.has(automationPointLaneId)) ||
                 (automationTransformLaneId !== null && automationPointWriteLaneIds.has(automationTransformLaneId));
             const hasClipLifecycleConflict =
-                clipTargetId !== null &&
-                ((result.type === 'removeClip' && clipTargetIds.has(clipTargetId)) || removedClipIds.has(clipTargetId));
+                (result.type === 'removeClip' &&
+                    actionClipTargetIds.some((clipTargetId) => clipTargetIds.has(clipTargetId))) ||
+                actionClipTargetIds.some((clipTargetId) => removedClipIds.has(clipTargetId));
+            const hasClipTrackLifecycleConflict = actionClipTrackIds.some((trackId) => removedTrackIds.has(trackId));
             const hasClipLockConflict =
-                clipTargetId !== null &&
-                ((result.type === 'lockClip' && clipTargetIds.has(clipTargetId)) ||
-                    lockClipTargetIds.has(clipTargetId));
+                (result.type === 'lockClip' &&
+                    actionClipTargetIds.some((clipTargetId) => clipTargetIds.has(clipTargetId))) ||
+                actionClipTargetIds.some((clipTargetId) => lockClipTargetIds.has(clipTargetId));
             const conflictingMutationKey = mutationKeysForAction.find((mutationKey) => mutationKeys.has(mutationKey));
             const hasMutationConflict = conflictingMutationKey !== undefined;
             const hasRippleCouplingConflict =
-                clipTrackId !== null &&
-                ((result.type === 'removeClip' && clipTrackIds.has(clipTrackId)) ||
-                    removedClipTrackIds.has(clipTrackId));
+                (result.type === 'removeClip' && actionClipTrackIds.some((trackId) => clipTrackIds.has(trackId))) ||
+                actionClipTrackIds.some((trackId) => removedClipTrackIds.has(trackId));
             const hasDeviceLifecycleConflict =
                 deviceTarget !== null &&
                 ((deviceTarget.deviceId !== null &&
@@ -1884,6 +1956,12 @@ export function bridgeLlmToolCalls({ calls, context }: BridgeLlmToolCallsInput):
                 );
                 continue;
             }
+            if (hasClipTrackLifecycleConflict) {
+                rejections.push(
+                    rejection(index, call.name, 'Provider batch mixes clip writes with removal of a target track')
+                );
+                continue;
+            }
             if (hasClipLifecycleConflict || hasClipLockConflict || hasMutationConflict) {
                 rejections.push(
                     rejection(index, call.name, 'Provider batch writes the same target field more than once')
@@ -1911,7 +1989,7 @@ export function bridgeLlmToolCalls({ calls, context }: BridgeLlmToolCallsInput):
             if (automationTransformLaneId !== null) {
                 automationTransformLaneIds.add(automationTransformLaneId);
             }
-            if (clipTargetId !== null) {
+            for (const clipTargetId of actionClipTargetIds) {
                 clipTargetIds.add(clipTargetId);
                 if (result.type === 'removeClip') {
                     removedClipIds.add(clipTargetId);
@@ -1920,7 +1998,7 @@ export function bridgeLlmToolCalls({ calls, context }: BridgeLlmToolCallsInput):
                     lockClipTargetIds.add(clipTargetId);
                 }
             }
-            if (clipTrackId !== null) {
+            for (const clipTrackId of actionClipTrackIds) {
                 clipTrackIds.add(clipTrackId);
                 if (result.type === 'removeClip') {
                     removedClipTrackIds.add(clipTrackId);
