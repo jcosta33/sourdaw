@@ -1,0 +1,86 @@
+src/modules/Arrangement/handlers/clip/__tests__/handleNormalizeClip.integration.spec.ts
+  s_bc88af7d3b054c::t_c3b75bd6cd6146 40-41,43-44,46-65
+  s_bc88af7d3b054c::t_fa0b6102c9b396 106-113
+  s_bc88af7d3b054c::t_62fef3299dda9c 1-39,42,45,66-105,114-118
+src/modules/Arrangement/useCases/clipEditing/getClipNormalizationTargetGain.ts
+  s_bc88af7d3b054c::t_2af915cdc3ce51 1-32,39
+  s_bc88af7d3b054c::t_0ffb6d7eb15477 33-38
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_bc88af7d3b054c::t_09b0b085450aa0 447-466
+src/modules/AiRuntime/useCases/agentReference/resolveAgentReference.ts
+  s_bc88af7d3b054c::t_6f197d0818a3b6 19,134-139,411-415,418-423
+  s_bc88af7d3b054c::t_6a80b5f04f2535 70-74
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_bc88af7d3b054c::t_e015b1324eceb6 209-225,228,1019-1039
+  s_bc88af7d3b054c::t_4702767918880d 226-227
+  s_bc88af7d3b054c::t_6b6870b4ca3cda 208
+  s_bc88af7d3b054c::t_e6ed7697871c43 1040-1041
+src/modules/AiRuntime/useCases/__tests__/describePlannedAction.spec.ts
+  s_bc88af7d3b054c::t_5dbae9d799e328 104-127
+src/modules/AiRuntime/useCases/describePlannedAction.ts
+  s_bc88af7d3b054c::t_788301a1564fff 28-42
+src/modules/AiRuntime/useCases/agentReference/__tests__/resolveAgentReference.spec.ts
+  s_bc88af7d3b054c::t_bc57b726ce4fbb 94-97,299-312
+  s_bc88af7d3b054c::t_6a80b5f04f2535 313-329
+src/modules/Arrangement/useCases/clipEditing/normalizeClip.ts
+  s_bc88af7d3b054c::t_2af915cdc3ce51 4-6,9-13,30,34
+src/modules/Arrangement/handlers/clip/handleNormalizeClip.ts
+  s_bc88af7d3b054c::t_2af915cdc3ce51 3,5,14-16,18,20-22,30-46
+  s_bc88af7d3b054c::t_2d7c2b292f6d8a 13,17,19,28-29,47
+  s_bc88af7d3b054c::t_45ce29591fe863 23-27
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_bc88af7d3b054c::t_14c82818789f70 12,64-67,122-129,876-883,886-891,905,913-916,922-924,1640,1844
+  s_bc88af7d3b054c::t_89a05fae7713f1 884-885,892-904,906-912
+  s_bc88af7d3b054c::t_4a586a931bf435 917-921
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_bc88af7d3b054c::t_6c52eb194fdc8a 23,67-74,122-125,477-478,480-516
+  s_bc88af7d3b054c::t_4702767918880d 479
+  s_bc88af7d3b054c::t_977cf81e552e44 517-518
+src/modules/Arrangement/useCases/clipEditing/__tests__/normalizeClip.spec.ts
+  s_bc88af7d3b054c::t_e69e1125fe3c5d 64,90,94-109
+  s_bc88af7d3b054c::t_6c6d00b6db4aa4 132-150
+  s_bc88af7d3b054c::t_67340c6636eea0 110,112-131
+  s_bc88af7d3b054c::t_af549b939d4a4a 111
+src/modules/Arrangement/handlers/clip/__tests__/handleNormalizeClip.spec.ts
+  s_bc88af7d3b054c::t_fa0b6102c9b396 6,19-22,26,79-84,86-93
+  s_bc88af7d3b054c::t_62fef3299dda9c 7,15-18,27,64-78,85
+  s_bc88af7d3b054c::t_77b62c3153b418 57,63
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_bc88af7d3b054c::t_1519fded82cc62 431
+  s_bc88af7d3b054c::t_cdaf60196d03f6 378-430,432
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_bc88af7d3b054c::t_460715af72c82b 1292-1301,1310-1381
+  s_bc88af7d3b054c::t_20b7ac0e532bc0 1626,1646
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_bc88af7d3b054c::t_a9f33435c1c8b5 963
+  s_bc88af7d3b054c::t_1816e4ccdb07e1 895-962,964-965
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_bc88af7d3b054c::t_da2cceb9c675b5 2024-2027,2030-2036
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_bc88af7d3b054c::t_1d3aa1570d4c63 234-245,563-572
+  s_b7b7d9d028669e::t_ce4dd53bdd5d77 233,573-574
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "e7dbecf2a1e78a0641222bdfac39c318b01db6e8",
+  "prompts": {},
+  "sessions": {
+    "s_b7b7d9d028669e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7de99988-56ed-47fd-b275-cf2df29995c7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
