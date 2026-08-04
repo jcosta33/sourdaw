@@ -1089,8 +1089,12 @@ function hasGroundedControlValueEvidence(
         return markerName !== null && normalizePromptText(assertedValue) === normalizePromptText(markerName);
     }
     if (valueRule.kind === 'marker-reference') {
-        const markerName = getRemoveMarkerNameFromPrompt(promptText);
+        const markerName = getMarkerReferenceNameFromPrompt(promptText);
         return markerName !== null && normalizePromptText(assertedValue) === normalizePromptText(markerName);
+    }
+    if (valueRule.kind === 'marker-color') {
+        const markerColor = getMarkerColorFromPrompt(promptText, valueRule.values);
+        return markerColor !== null && normalizePromptText(assertedValue) === markerColor;
     }
     if (valueRule.kind === 'section-name' || valueRule.kind === 'section-reference') {
         const sectionName = getSectionNameFromPrompt(promptText);
@@ -1511,8 +1515,11 @@ function getMarkerNameFromPrompt(promptText: string): string | null {
     return unquotedName || null;
 }
 
-function getRemoveMarkerNameFromPrompt(promptText: string): string | null {
-    const intent = /\b(?:remove|delete)(?:\s+the)?\s+marker\b/iu.exec(promptText);
+function getMarkerReferenceNameFromPrompt(promptText: string): string | null {
+    const intent =
+        /\b(?:(?:remove|delete)(?:\s+the)?\s+marker|(?:set|change)(?:\s+the)?\s+marker\s+color(?:\s+(?:for|of))?|recolor(?:\s+the)?\s+marker)\b/iu.exec(
+            promptText
+        );
     if (!intent) {
         return null;
     }
@@ -1545,7 +1552,33 @@ function getRemoveMarkerNameFromPrompt(promptText: string): string | null {
     return unquotedName || null;
 }
 
-function getMarkerBeatFromPrompt(promptText: string): number | null {
+function getMarkerColorFromPrompt(promptText: string, values: readonly string[]): string | null {
+    const beatReference = getMarkerBeatReference(promptText);
+    if (!beatReference) {
+        return null;
+    }
+    const colorNames = values
+        .map(escapeRegExp)
+        .sort((left, right) => right.length - left.length)
+        .join('|');
+    const suffix = promptText.slice(beatReference.endIndex);
+    const mentions = [...suffix.matchAll(new RegExp(`\\b(${colorNames})\\b`, 'giu'))];
+    if (mentions.length !== 1) {
+        return null;
+    }
+    const destination = new RegExp(`^\\s*(?:,\\s*)?(?:to|as|colou?r(?:\\s+to)?)\\s+(${colorNames})\\b`, 'iu').exec(
+        suffix
+    );
+    const color = destination?.[1];
+    return color ? normalizePromptText(color) : null;
+}
+
+type MarkerBeatReference = {
+    beat: number;
+    endIndex: number;
+};
+
+function getMarkerBeatReference(promptText: string): MarkerBeatReference | null {
     const withoutQuotedLabels = promptText.replaceAll(/"[^"]*"|'[^']*'|“[^”]*”|‘[^’]*’/gu, (quotedLabel) =>
         ' '.repeat(quotedLabel.length)
     );
@@ -1553,8 +1586,16 @@ function getMarkerBeatFromPrompt(promptText: string): number | null {
     if (matches.length !== 1) {
         return null;
     }
-    const beat = Number(matches[0]?.[1]);
-    return Number.isFinite(beat) ? beat : null;
+    const match = matches[0];
+    const beat = Number(match?.[1]);
+    if (!match || !Number.isFinite(beat)) {
+        return null;
+    }
+    return { beat, endIndex: match.index + match[0].length };
+}
+
+function getMarkerBeatFromPrompt(promptText: string): number | null {
+    return getMarkerBeatReference(promptText)?.beat ?? null;
 }
 
 type SectionRange = {
@@ -2065,11 +2106,22 @@ function validateGroundedValue(
             return null;
         }
         case 'marker-reference': {
-            const expectedValue = getRemoveMarkerNameFromPrompt(actionScope.text);
+            const expectedValue = getMarkerReferenceNameFromPrompt(actionScope.text);
             if (
                 expectedValue === null ||
                 typeof assertedValue !== 'string' ||
                 normalizePromptText(assertedValue) !== normalizePromptText(expectedValue)
+            ) {
+                return getValueMismatchReason(valueRule.argument);
+            }
+            return null;
+        }
+        case 'marker-color': {
+            const expectedValue = getMarkerColorFromPrompt(actionScope.text, valueRule.values);
+            if (
+                expectedValue === null ||
+                typeof assertedValue !== 'string' ||
+                normalizePromptText(assertedValue) !== expectedValue
             ) {
                 return getValueMismatchReason(valueRule.argument);
             }

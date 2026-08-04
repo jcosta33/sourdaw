@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
     markerStoreValue: {
         value: null as {
-            markers: { id: string; beat: number; name: string }[];
+            markers: { id: string; beat: number; color: string; name: string }[];
             sections: { id: string; startBeat: number; endBeat: number; name: string }[];
         } | null,
     },
@@ -103,7 +103,7 @@ describe('describePlannedAction', () => {
 
     it('names the exact local marker removal target and falls back when it is unavailable', () => {
         mocks.markerStoreValue.value = {
-            markers: [{ id: 'marker-chorus', beat: 16, name: 'Chorus' }],
+            markers: [{ id: 'marker-chorus', beat: 16, name: 'Chorus', color: 'oklch(0.40 0.07 200)' }],
             sections: [],
         };
 
@@ -119,6 +119,23 @@ describe('describePlannedAction', () => {
                 context,
             })
         ).toBe('Remove marker');
+    });
+
+    it('names the exact local marker and requested palette color', () => {
+        mocks.markerStoreValue.value = {
+            markers: [{ id: 'marker-chorus', beat: 16, name: 'Chorus', color: 'oklch(0.40 0.07 200)' }],
+            sections: [],
+        };
+
+        expect(
+            describePlannedAction({
+                action: {
+                    type: 'setMarkerColor',
+                    payload: { markerId: 'marker-chorus', color: 'oklch(0.40 0.08 70)' },
+                },
+                context,
+            })
+        ).toBe('Set marker "Chorus" at beat 16 (marker-chorus) color to amber');
     });
 
     it('names section range, local identity, and rename target for confirmation', () => {

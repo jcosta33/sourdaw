@@ -27,6 +27,8 @@
  * transient AI lifecycle events. The line is "would a malformed payload
  * cause data loss, persistent corruption, or an exploit".
  */
+import { resolveMarkerColorName } from '#/utils/markerColorPalette';
+
 import { type RuntimeAction, type RuntimeActionType } from '../models/RuntimeAction';
 import { normalizeSafeProjectName } from '../validators/normalizeSafeProjectName';
 
@@ -477,7 +479,12 @@ const validators = {
         hasExactKeys(param, ['beat', 'name']) &&
         isNonNegativeNumber(param.beat) &&
         normalizeSafeProjectName(param.name) !== null,
-    setMarkerColor: 'unchecked',
+    setMarkerColor: (param): param is PayloadOf<'setMarkerColor'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['markerId', 'color']) &&
+        isNonEmptyString(param.markerId) &&
+        isNonEmptyString(param.color) &&
+        resolveMarkerColorName(param.color) !== null,
     addSection: (param): param is PayloadOf<'addSection'> =>
         isObj(param) &&
         hasExactKeys(param, ['startBeat', 'endBeat', 'name']) &&
