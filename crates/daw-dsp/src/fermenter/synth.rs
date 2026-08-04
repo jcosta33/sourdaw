@@ -8,13 +8,32 @@ use super::layer::Layer;
 use super::oscillator::Wavetable;
 use super::params::SmoothedParam;
 
-/// MIDI event passed from JS to WASM.
-#[derive(Clone, Copy)]
+/// `MidiEvent::kind` — release voices at the pitch.
+pub const MIDI_EVENT_NOTE_OFF: u8 = 0;
+/// `MidiEvent::kind` — start a voice at the pitch.
+pub const MIDI_EVENT_NOTE_ON: u8 = 1;
+/// `MidiEvent::kind` — MPE per-note expression on an already-sounding voice.
+pub const MIDI_EVENT_NOTE_EXPRESSION: u8 = 2;
+
+/// MIDI event passed from JS to WASM, carrying the sample offset within the
+/// block at which it takes effect. `process_block` splits its render there, so
+/// a note lands on its own sample rather than on the block boundary.
+#[derive(Clone, Copy, Default)]
 pub struct MidiEvent {
-    pub kind: u8, // 0=noteOff, 1=noteOn
+    /// One of the `MIDI_EVENT_*` constants. Anything else is ignored.
+    pub kind: u8,
     pub note: u8,
     pub velocity: u8,
-    pub offset: u32, // Sample offset within the block
+    /// MPE member channel. `None` on a note-off releases *every* voice at the
+    /// pitch — the channel-unaware behaviour `note_off` has always had — and on
+    /// the other kinds means the non-MPE default channel 0.
+    pub channel: Option<u8>,
+    /// Expression payload; read only for `MIDI_EVENT_NOTE_EXPRESSION`.
+    pub bend_semitones: f32,
+    pub pressure: f32,
+    pub slide: f32,
+    /// Sample offset within the block.
+    pub offset: u32,
 }
 
 const MAX_LAYERS: usize = 4;
@@ -365,6 +384,14 @@ impl MasterSynth {
 
     /// Process a block of audio with MIDI events.
     /// `left` and `right` are output buffers (will be overwritten).
+    ///
+    /// The render splits at each event's `offset`, so a note starts on the
+    /// sample it was scheduled for instead of on the block boundary. `events`
+    /// must be in non-decreasing `offset` order and is applied **in the order
+    /// given** — never sorted here, because a note-off and a re-trigger of the
+    /// same pitch at the same offset would swap under an unstable sort and
+    /// leave the note silent. An out-of-order event is applied at the current
+    /// cursor rather than retroactively; the caller owns the ordering.
     pub fn process_block(&mut self, left: &mut [f32], right: &mut [f32], events: &[MidiEvent]) {
         let block_size = left.len().min(right.len());
 
@@ -372,9 +399,13 @@ impl MasterSynth {
         left[..block_size].fill(0.0);
         right[..block_size].fill(0.0);
 
+        if block_size > 0 {
+            self.advance_layer_block_params();
+        }
+
         let mut cursor = 0;
         for event in events {
-            let event_offset = (event.offset as usize).min(block_size);
+            let event_offset = (event.offset as usize).min(block_size).max(cursor);
             if event_offset > cursor {
                 self.render_layers(
                     &mut left[cursor..event_offset],
@@ -386,7 +417,10 @@ impl MasterSynth {
         }
 
         if cursor < block_size {
-            self.render_layers(&mut left[cursor..block_size], &mut right[cursor..block_size]);
+            self.render_layers(
+                &mut left[cursor..block_size],
+                &mut right[cursor..block_size],
+            );
         }
 
         // ── Global effects ──────────────────────────────────────────
@@ -510,9 +544,35 @@ impl MasterSynth {
 
     fn apply_midi_event(&mut self, event: &MidiEvent) {
         match event.kind {
-            1 => self.note_on(event.note, event.velocity),
-            0 => self.note_off(event.note),
+            MIDI_EVENT_NOTE_ON => {
+                self.note_on_with_channel(event.note, event.velocity, event.channel.unwrap_or(0));
+            }
+            MIDI_EVENT_NOTE_OFF => self.note_off_matching(event.note, event.channel),
+            MIDI_EVENT_NOTE_EXPRESSION => self.note_expression(
+                event.note,
+                event.channel.unwrap_or(0),
+                event.bend_semitones,
+                event.pressure,
+                event.slide,
+            ),
             _ => {}
+        }
+    }
+
+    fn advance_layer_block_params(&mut self) {
+        let any_solo = self.layers[..self.num_active_layers]
+            .iter()
+            .any(|layer| layer.solo);
+
+        for layer in &mut self.layers[..self.num_active_layers] {
+            if layer.muted {
+                continue;
+            }
+            if any_solo && !layer.solo {
+                continue;
+            }
+
+            layer.advance_block_params();
         }
     }
 
@@ -600,7 +660,33 @@ impl MasterSynth {
 
 #[cfg(test)]
 mod tests {
-    use super::{MasterSynth, MidiEvent};
+    use super::{
+        MasterSynth, MidiEvent, MIDI_EVENT_NOTE_EXPRESSION, MIDI_EVENT_NOTE_OFF, MIDI_EVENT_NOTE_ON,
+    };
+
+    fn note_on_event(note: u8, offset: u32) -> MidiEvent {
+        MidiEvent {
+            kind: MIDI_EVENT_NOTE_ON,
+            note,
+            velocity: 100,
+            offset,
+            ..MidiEvent::default()
+        }
+    }
+
+    fn note_off_event(note: u8, offset: u32) -> MidiEvent {
+        MidiEvent {
+            kind: MIDI_EVENT_NOTE_OFF,
+            note,
+            offset,
+            ..MidiEvent::default()
+        }
+    }
+
+    /// Index of the first sample that is not exactly zero, or `None` for silence.
+    fn first_sounding_sample(left: &[f32], right: &[f32]) -> Option<usize> {
+        (0..left.len().min(right.len())).find(|&index| left[index] != 0.0 || right[index] != 0.0)
+    }
 
     fn block_energy(left: &[f32], right: &[f32]) -> f32 {
         left.iter()
@@ -629,12 +715,7 @@ mod tests {
         let mut synth = MasterSynth::new(48_000.0, 8);
         let mut left = [0.0; 256];
         let mut right = [0.0; 256];
-        let events = [MidiEvent {
-            kind: 1,
-            note: 60,
-            velocity: 100,
-            offset: 0,
-        }];
+        let events = [note_on_event(60, 0)];
 
         synth.set_param("engine", engine as f32);
         synth.process_block(&mut left, &mut right, &events);
@@ -646,12 +727,7 @@ mod tests {
         let mut synth = MasterSynth::new(48_000.0, 8);
         let mut left = [0.0; 512];
         let mut right = [0.0; 512];
-        let events = [MidiEvent {
-            kind: 1,
-            note: 60,
-            velocity: 100,
-            offset: 0,
-        }];
+        let events = [note_on_event(60, 0)];
 
         synth.set_param("engine", engine as f32);
         for (name, value) in params {
@@ -667,12 +743,7 @@ mod tests {
         let mut synth = MasterSynth::new(48_000.0, 8);
         let mut left = [0.0; 128];
         let mut right = [0.0; 128];
-        let events = [MidiEvent {
-            kind: 1,
-            note: 60,
-            velocity: 100,
-            offset: 0,
-        }];
+        let events = [note_on_event(60, 0)];
 
         synth.process_block(&mut left, &mut right, &events);
 
@@ -688,12 +759,7 @@ mod tests {
         let mut synth = MasterSynth::new(48_000.0, 8);
         let mut left = [0.0; 128];
         let mut right = [0.0; 128];
-        let events = [MidiEvent {
-            kind: 1,
-            note: 60,
-            velocity: 100,
-            offset: 64,
-        }];
+        let events = [note_on_event(60, 64)];
 
         synth.process_block(&mut left, &mut right, &events);
 
@@ -706,20 +772,7 @@ mod tests {
         let mut synth = MasterSynth::new(48_000.0, 8);
         let mut left = [0.0; 128];
         let mut right = [0.0; 128];
-        let events = [
-            MidiEvent {
-                kind: 1,
-                note: 60,
-                velocity: 100,
-                offset: 32,
-            },
-            MidiEvent {
-                kind: 1,
-                note: 67,
-                velocity: 100,
-                offset: 96,
-            },
-        ];
+        let events = [note_on_event(60, 32), note_on_event(67, 96)];
 
         synth.process_block(&mut left, &mut right, &events);
 
@@ -727,6 +780,164 @@ mod tests {
         assert!(block_energy(&left[32..96], &right[32..96]) > 0.001);
         assert!(block_energy(&left[96..], &right[96..]) > 0.001);
         assert_eq!(synth.active_voice_count(), 2);
+    }
+
+    #[test]
+    fn note_onset_lands_on_the_requested_sample_for_offsets_that_are_not_block_multiples() {
+        // 0 exercises the "event at the very first sample" path; 127 the last.
+        // 37 and 101 are the point of the whole exercise — a block-quantised
+        // implementation cannot produce them.
+        for offset in [0_u32, 1, 37, 64, 101, 127] {
+            let mut synth = MasterSynth::new(48_000.0, 8);
+            let mut left = [0.0; 128];
+            let mut right = [0.0; 128];
+
+            synth.process_block(&mut left, &mut right, &[note_on_event(60, offset)]);
+
+            assert_eq!(
+                first_sounding_sample(&left, &right),
+                Some(offset as usize),
+                "note requested at sample {offset} did not start there"
+            );
+        }
+    }
+
+    #[test]
+    fn an_offset_render_is_the_zero_offset_render_shifted_by_exactly_that_many_samples() {
+        // The onset index alone would still pass if the offset only gated *when*
+        // the voice starts while the oscillator kept free-running from frame 0.
+        // Sample-for-sample equality of the shifted window pins that the voice
+        // itself starts at the offset.
+        const OFFSET: usize = 37;
+        let mut aligned_left = [0.0; 128];
+        let mut aligned_right = [0.0; 128];
+        MasterSynth::new(48_000.0, 8).process_block(
+            &mut aligned_left,
+            &mut aligned_right,
+            &[note_on_event(60, 0)],
+        );
+
+        let mut offset_left = [0.0; 128];
+        let mut offset_right = [0.0; 128];
+        MasterSynth::new(48_000.0, 8).process_block(
+            &mut offset_left,
+            &mut offset_right,
+            &[note_on_event(60, OFFSET as u32)],
+        );
+
+        assert_eq!(&offset_left[..OFFSET], &[0.0; OFFSET]);
+        assert_eq!(&offset_right[..OFFSET], &[0.0; OFFSET]);
+        assert_eq!(&offset_left[OFFSET..], &aligned_left[..128 - OFFSET]);
+        assert_eq!(&offset_right[OFFSET..], &aligned_right[..128 - OFFSET]);
+    }
+
+    #[test]
+    fn event_splits_do_not_accelerate_block_rate_parameter_smoothing() {
+        let mut uninterrupted = MasterSynth::new(48_000.0, 8);
+        let mut split = MasterSynth::new(48_000.0, 8);
+        for synth in [&mut uninterrupted, &mut split] {
+            synth.note_on(60, 100);
+            synth.set_param("cutoff", 750.0);
+            synth.set_param("resonance", 8.0);
+            synth.set_param("lfo_rate", 12.0);
+        }
+
+        let mut uninterrupted_left = [0.0; 128];
+        let mut uninterrupted_right = [0.0; 128];
+        uninterrupted.process_block(&mut uninterrupted_left, &mut uninterrupted_right, &[]);
+
+        let inert_events = [
+            note_off_event(1, 17),
+            note_off_event(2, 37),
+            note_off_event(3, 73),
+            note_off_event(4, 101),
+        ];
+        let mut split_left = [0.0; 128];
+        let mut split_right = [0.0; 128];
+        split.process_block(&mut split_left, &mut split_right, &inert_events);
+
+        assert_eq!(split_left, uninterrupted_left);
+        assert_eq!(split_right, uninterrupted_right);
+    }
+
+    #[test]
+    fn a_note_on_and_note_off_on_the_same_sample_are_applied_in_the_order_given() {
+        // The same two events at the same offset, in the two possible orders.
+        // Events are applied in list order and never sorted, so the last one
+        // wins: on-then-off releases the voice before it sounds, off-then-on is
+        // a legato retrigger that does sound. An implementation that reordered
+        // them — or sorted the list unstably — would give one answer for both.
+        fn render(events: [MidiEvent; 2]) -> f32 {
+            let mut synth = MasterSynth::new(48_000.0, 8);
+            let mut left = [0.0; 128];
+            let mut right = [0.0; 128];
+            synth.process_block(&mut left, &mut right, &events);
+            block_energy(&left[64..], &right[64..])
+        }
+
+        let released = render([note_on_event(60, 64), note_off_event(60, 64)]);
+        let retriggered = render([note_off_event(60, 64), note_on_event(60, 64)]);
+
+        assert_eq!(released, 0.0, "on-then-off left the voice sounding");
+        assert!(
+            retriggered > 0.001,
+            "off-then-on silenced the retrigger ({retriggered})"
+        );
+    }
+
+    #[test]
+    fn an_out_of_order_event_applies_at_the_cursor_instead_of_rewriting_rendered_audio() {
+        // The caller owns ordering; the engine's contract is only that it never
+        // renders a sample twice. An event behind the cursor lands at the cursor.
+        let mut synth = MasterSynth::new(48_000.0, 8);
+        let mut left = [0.0; 128];
+        let mut right = [0.0; 128];
+
+        synth.process_block(
+            &mut left,
+            &mut right,
+            &[note_on_event(60, 96), note_on_event(67, 32)],
+        );
+
+        assert_eq!(first_sounding_sample(&left, &right), Some(96));
+        assert_eq!(synth.active_voice_count(), 2);
+    }
+
+    #[test]
+    fn an_expression_event_reaches_the_voice_started_earlier_in_the_same_block() {
+        let mut synth = MasterSynth::new(48_000.0, 8);
+        let mut plain_left = [0.0; 512];
+        let mut plain_right = [0.0; 512];
+        synth.process_block(&mut plain_left, &mut plain_right, &[note_on_event(60, 32)]);
+
+        let mut bent = MasterSynth::new(48_000.0, 8);
+        let mut bent_left = [0.0; 512];
+        let mut bent_right = [0.0; 512];
+        let events = [
+            note_on_event(60, 32),
+            MidiEvent {
+                kind: MIDI_EVENT_NOTE_EXPRESSION,
+                note: 60,
+                channel: Some(0),
+                bend_semitones: 2.0,
+                offset: 64,
+                ..MidiEvent::default()
+            },
+        ];
+
+        bent.process_block(&mut bent_left, &mut bent_right, &events);
+
+        // Identical up to the expression offset, divergent after it.
+        assert_eq!(&bent_left[..64], &plain_left[..64]);
+        assert!(
+            sample_difference(
+                &plain_left[64..],
+                &plain_right[64..],
+                &bent_left[64..],
+                &bent_right[64..]
+            ) > 0.01,
+            "a 2-semitone bend at offset 64 did not change the rendered voice"
+        );
     }
 
     #[test]
@@ -752,12 +963,7 @@ mod tests {
         let mut synth = MasterSynth::new(48_000.0, 8);
         let mut left = [0.0; 256];
         let mut right = [0.0; 256];
-        let events = [MidiEvent {
-            kind: 1,
-            note: 60,
-            velocity: 100,
-            offset: 0,
-        }];
+        let events = [note_on_event(60, 0)];
 
         synth.set_param("unison_voices", 4.0);
         synth.set_param("unison_detune", 12.0);
