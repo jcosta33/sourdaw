@@ -60,46 +60,22 @@ function loadProcessorClass(filePath: string, className: string) {
 }
 
 describe('AudioWorklet Processor Queues (_queueHead Read Index)', () => {
-    for (const processorName of ['LevainProcessor', 'FermenterProcessor', 'ToasterProcessor', 'CrumbsProcessor']) {
+    for (const processorName of ['LevainProcessor', 'ToasterProcessor', 'CrumbsProcessor']) {
         describe(processorName, () => {
             let ProcessorClass: any;
             let processor: any;
-
-            // FermenterProcessor places each event on its own sample within the
-            // block, so its drain also takes the block start and hands events to
-            // the engine's per-block list via `_pushEvent` rather than firing
-            // them through the immediate `_dispatch`. The queue-*window*
-            // contract this spec covers — strictly below the bound, head
-            // advance, in-place clear — is identical for all four, so only the
-            // call shape differs here. Offsets are covered by
-            // fermenterProcessorEventOffsets.spec.ts.
-            const drainsWithBlockStart = processorName === 'FermenterProcessor';
-            function drain(blockEndFrame: number): void {
-                if (drainsWithBlockStart) {
-                    processor._drainQueue(0, blockEndFrame);
-                    return;
-                }
-                processor._drainQueue(blockEndFrame);
-            }
 
             beforeEach(() => {
                 const fileName = `${processorName.charAt(0).toLowerCase() + processorName.slice(1)}.ts`;
                 ProcessorClass = loadProcessorClass(`../${fileName}`, processorName);
                 processor = new ProcessorClass();
 
-                // Mock out both drain sinks to just record the messages
+                // Mock out the dispatch method to just record the messages
                 processor._dispatch = function (msg: any) {
                     if (!this.dispatched) {
                         this.dispatched = [];
                     }
                     this.dispatched.push(msg);
-                };
-                processor._pushEvent = function (msg: any) {
-                    if (!this.dispatched) {
-                        this.dispatched = [];
-                    }
-                    this.dispatched.push(msg);
-                    return true;
                 };
             });
 
@@ -123,7 +99,7 @@ describe('AudioWorklet Processor Queues (_queueHead Read Index)', () => {
                 expect(processor._queue.length).toBe(4);
 
                 // Drain up to frame 25 (should dispatch a and b)
-                drain(25);
+                processor._drainQueue(25);
 
                 expect(processor.dispatched).toEqual([
                     { sampleFrame: 10, val: 'a' },
@@ -135,7 +111,7 @@ describe('AudioWorklet Processor Queues (_queueHead Read Index)', () => {
                 expect(processor._queue.length).toBe(4);
 
                 // Drain the rest
-                drain(45);
+                processor._drainQueue(45);
                 expect(processor.dispatched).toEqual([
                     { sampleFrame: 10, val: 'a' },
                     { sampleFrame: 20, val: 'b' },
@@ -157,12 +133,12 @@ describe('AudioWorklet Processor Queues (_queueHead Read Index)', () => {
                 // block, so nothing here is due yet. Every other case in this
                 // spec keeps queued frames strictly inside the bound, which is
                 // why a `>` vs `>=` drain reads identically to them.
-                drain(128);
+                processor._drainQueue(128);
                 expect(processor.dispatched).toEqual([]);
                 expect(processor._queueHead).toBe(0);
 
                 // Block [128, 255]: bound 256 now covers frame 128.
-                drain(256);
+                processor._drainQueue(256);
                 expect(processor.dispatched).toEqual([
                     { sampleFrame: 128, val: 'onBound' },
                     { sampleFrame: 200, val: 'later' },

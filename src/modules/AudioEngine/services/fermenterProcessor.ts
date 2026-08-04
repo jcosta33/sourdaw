@@ -104,10 +104,19 @@ type FermenterMsg =
     | { type: 'paramAutomation'; paramId: number; segments: ParamAutomationSegment[] }
     | { type: 'patch'; patch: Record<string, number | number[]> };
 
-type FermenterQueued =
+type FermenterScheduledEvent =
     | { type: 'noteOn'; note: number; velocity: number; sampleFrame: number; channel?: number }
     | { type: 'noteOff'; note: number; sampleFrame: number; channel?: number }
     | (NoteExpressionMsg & { sampleFrame: number });
+
+type FermenterQueued = FermenterScheduledEvent & { queueSequence: number };
+
+function queuedEventComesBefore(left: FermenterQueued, right: FermenterQueued): boolean {
+    if (left.sampleFrame !== right.sampleFrame) {
+        return left.sampleFrame < right.sampleFrame;
+    }
+    return left.queueSequence < right.queueSequence;
+}
 
 class FermenterProcessor extends AudioWorkletProcessor {
     _instance: FermenterInstance | null = null;
@@ -115,7 +124,7 @@ class FermenterProcessor extends AudioWorkletProcessor {
     _ready = false;
     _faulted = false;
     _queue: FermenterQueued[] = [];
-    _queueHead = 0;
+    _nextQueueSequence = 0;
     _paramAutomation: ParamAutomationSchedule[] = [];
     /** Telemetry slot floats (peaks + scope waveform); null until `init-sab`. */
     _telemetryView: Float32Array | null = null;
@@ -172,19 +181,57 @@ class FermenterProcessor extends AudioWorkletProcessor {
         this.port.postMessage({ type: 'ready' });
     }
 
-    _enqueue(msg: FermenterQueued): void {
-        let lo = this._queueHead;
-        let hi = this._queue.length;
-        while (lo < hi) {
-            const mid = (lo + hi) >>> 1;
-            const midMsg = this._queue[mid];
-            if (midMsg && midMsg.sampleFrame <= msg.sampleFrame) {
-                lo = mid + 1;
-            } else {
-                hi = mid;
+    _enqueue(msg: FermenterScheduledEvent): void {
+        const queued: FermenterQueued = { ...msg, queueSequence: this._nextQueueSequence++ };
+        let index = this._queue.length;
+        this._queue.push(queued);
+
+        while (index > 0) {
+            const parentIndex = (index - 1) >>> 1;
+            const parent = this._queue[parentIndex];
+            if (!parent || !queuedEventComesBefore(queued, parent)) {
+                break;
             }
+            this._queue[index] = parent;
+            index = parentIndex;
         }
-        this._queue.splice(lo, 0, msg);
+        this._queue[index] = queued;
+    }
+
+    _dequeue(): FermenterQueued | undefined {
+        const first = this._queue[0];
+        if (!first) {
+            return undefined;
+        }
+
+        const tail = this._queue.pop();
+        if (this._queue.length === 0) {
+            this._nextQueueSequence = 0;
+            return first;
+        }
+        if (!tail) {
+            return first;
+        }
+
+        let index = 0;
+        while (true) {
+            const leftIndex = index * 2 + 1;
+            const left = this._queue[leftIndex];
+            if (!left) {
+                break;
+            }
+            const rightIndex = leftIndex + 1;
+            const right = this._queue[rightIndex];
+            const childIndex = right && queuedEventComesBefore(right, left) ? rightIndex : leftIndex;
+            const child = this._queue[childIndex]!;
+            if (!queuedEventComesBefore(child, tail)) {
+                break;
+            }
+            this._queue[index] = child;
+            index = childIndex;
+        }
+        this._queue[index] = tail;
+        return first;
     }
 
     _handleMessage(msg: FermenterMsg): void {
@@ -213,13 +260,17 @@ class FermenterProcessor extends AudioWorkletProcessor {
             }
             return;
         }
-        if (
-            (msg.type === 'noteOn' || msg.type === 'noteOff' || msg.type === 'noteExpression') &&
-            msg.sampleFrame !== undefined &&
-            msg.sampleFrame >= currentFrame
-        ) {
-            this._enqueue({ ...msg, sampleFrame: msg.sampleFrame });
-            return;
+        if (msg.type === 'noteOn' || msg.type === 'noteOff' || msg.type === 'noteExpression') {
+            const frame = msg.sampleFrame;
+            if (frame !== undefined) {
+                if (!Number.isSafeInteger(frame) || frame < 0) {
+                    return;
+                }
+                if (frame >= currentFrame) {
+                    this._enqueue({ ...msg, sampleFrame: frame });
+                    return;
+                }
+            }
         }
         this._dispatch(msg);
     }
@@ -261,7 +312,7 @@ class FermenterProcessor extends AudioWorkletProcessor {
                 // after the release. The 0..127 release loop runs on the audio
                 // thread but allocates nothing and is bounded.
                 this._queue.length = 0;
-                this._queueHead = 0;
+                this._nextQueueSequence = 0;
                 for (let note = 0; note < 128; note++) {
                     inst.note_off(note);
                 }
@@ -330,8 +381,8 @@ class FermenterProcessor extends AudioWorkletProcessor {
      * silently discards any humanise edit finer than a block.
      */
     _drainQueue(blockStartFrame: number, blockEndFrame: number): void {
-        while (this._queueHead < this._queue.length) {
-            const queued = this._queue[this._queueHead];
+        while (this._queue.length > 0) {
+            const queued = this._queue[0];
             if (!queued || queued.sampleFrame >= blockEndFrame) {
                 break;
             }
@@ -340,15 +391,10 @@ class FermenterProcessor extends AudioWorkletProcessor {
             const offset = Math.max(0, queued.sampleFrame - blockStartFrame);
             if (!this._pushEvent(queued, offset)) {
                 // The engine's list is full. Leave the remainder queued — they
-                // render at the start of the next block, one block late rather
-                // than lost. `_queueHead` deliberately does not advance.
+                // render at the start of a later block rather than being lost.
                 break;
             }
-            this._queueHead++;
-        }
-        if (this._queueHead >= this._queue.length) {
-            this._queue.length = 0;
-            this._queueHead = 0;
+            this._dequeue();
         }
     }
 

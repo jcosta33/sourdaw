@@ -33,6 +33,7 @@ type AppliedEvent = {
 
 type FermenterProcessorLike = {
     port: { onmessage: ((event: { data: unknown }) => void) | null; postMessage: ReturnType<typeof vi.fn> };
+    _queue: unknown[];
     process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean;
 };
 
@@ -324,5 +325,35 @@ describe('FermenterProcessor scheduled-note sample offsets', () => {
 
         proc.process([], [makeChannels(2, FRAMES)]);
         expect(applied).toEqual([{ kind: 'on', note: 60, velocity: 100, channel: 0, offset: 72 }]);
+    });
+
+    it('releases consumed queue storage during sustained look-ahead scheduling', async () => {
+        const proc = await loadProcessor();
+
+        for (let block = 0; block < 512; block++) {
+            const blockStart = block * FRAMES;
+            vi.stubGlobal('currentFrame', blockStart);
+            send(proc, {
+                type: 'noteOn',
+                note: 60,
+                velocity: 100,
+                sampleFrame: blockStart + FRAMES,
+            });
+            proc.process([], [makeChannels(2, FRAMES)]);
+
+            expect(proc._queue).toHaveLength(1);
+        }
+    });
+
+    it('rejects invalid absolute sample frames instead of pinning or immediately firing them', async () => {
+        const proc = await loadProcessor();
+        for (const sampleFrame of [Number.NaN, Number.POSITIVE_INFINITY, -1, 1.5]) {
+            send(proc, { type: 'noteOn', note: 60, velocity: 100, sampleFrame });
+        }
+
+        proc.process([], [makeChannels(2, FRAMES)]);
+
+        expect(proc._queue).toEqual([]);
+        expect(applied).toEqual([]);
     });
 });
