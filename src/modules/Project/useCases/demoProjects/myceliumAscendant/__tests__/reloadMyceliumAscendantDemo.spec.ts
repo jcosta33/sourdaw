@@ -8,6 +8,7 @@ import {
 import { markerStore, trackStore } from '#/modules/Arrangement/stores';
 import { automationStore } from '#/modules/Automation/stores';
 import { projectCrdtToStores } from '#/modules/CrdtDocument/useCases';
+import { yeastStore } from '#/modules/Yeast/stores';
 
 import { arrangementStore } from '../../../../stores/arrangementStore';
 import { projectStore } from '../../../../stores/projectStore';
@@ -86,8 +87,20 @@ describe('Mycelium Ascendant project reload', () => {
         const canonicalAutomation = structuredClone(automationStore.value);
         const canonicalArrangementState = structuredClone(arrangementStore.value);
         const canonicalDocumentAutomation = readDocumentSlot(peer, 'automation');
+        const canonicalYeast = structuredClone(yeastStore.value);
+        const canonicalDocumentYeast = readDocumentSlot(peer, 'yeast');
 
         expect(canonicalAutomation?.lanes).toHaveLength(115);
+        if (!canonicalYeast) {
+            throw new Error('Expected the canonical Yeast project state');
+        }
+        expect(canonicalYeast.processors).toEqual([
+            expect.objectContaining({
+                type: 'velocity',
+                name: 'Triplet Helix Dynamics',
+                params: { mode: 2, compress_amount: 0.72 },
+            }),
+        ]);
         expect(projectStore.value?.scaleName).toBe('harmonicMinor');
         const canonicalActiveArrangement = canonicalArrangementState?.arrangements.find(
             (arrangement) => arrangement.id === canonicalArrangementState.activeArrangementId
@@ -109,6 +122,7 @@ describe('Mycelium Ascendant project reload', () => {
         }
 
         expect(automationStore.value).toEqual(canonicalAutomation);
+        expect(yeastStore.value).toEqual(canonicalYeast);
         expect(projectStore.value?.scaleName).toBe('harmonicMinor');
         const reloadedArrangementState = arrangementStore.value;
         const reloadedActiveArrangement = reloadedArrangementState?.arrangements.find(
@@ -122,5 +136,6 @@ describe('Mycelium Ascendant project reload', () => {
         expect(trackStore.value?.tracks).toHaveLength(43);
         expect(markerStore.value?.sections.map((section) => section.name)).toContain('Sporefall');
         expect(readDocumentSlot(peer, 'automation')).toEqual(canonicalDocumentAutomation);
+        expect(readDocumentSlot(peer, 'yeast')).toEqual(canonicalDocumentYeast);
     });
 });

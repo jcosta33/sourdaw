@@ -118,6 +118,17 @@ export function createMyceliumAscendantBlueprint(): MyceliumAscendantBlueprint {
         automation: { lanes: [] },
         midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
         chordTrack: { enabled: true, events: chordEvents },
+        yeast: {
+            processors: [
+                {
+                    id: createMyceliumId('yeast-processor', 'triplet-helix-dynamics'),
+                    type: 'velocity',
+                    name: 'Triplet Helix Dynamics',
+                    bypassed: false,
+                    params: { mode: 2, compress_amount: 0.72 },
+                },
+            ],
+        },
         sidechainRoutes: topology.sidechainRoutes,
         mixer: { master: { gain: 0.8, pan: 0 }, buses: [] },
         markers: MARKER_SPECS.map(([name, beat], index) => ({

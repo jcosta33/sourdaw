@@ -4,7 +4,18 @@ import { createMyceliumId } from './createMyceliumId';
 
 import type { ProjectAutomationLane, ProjectAutomationPoint, ProjectTrack } from '../../../models/ProjectData';
 
-type Profile = 'drum' | 'bass' | 'voice' | 'atmosphere' | 'glitch' | 'return' | 'master' | 'pan' | 'motion' | 'width';
+type Profile =
+    | 'drum'
+    | 'bass'
+    | 'voice'
+    | 'atmosphere'
+    | 'glitch'
+    | 'return'
+    | 'parallel-return'
+    | 'master'
+    | 'pan'
+    | 'motion'
+    | 'width';
 type ParameterRange = readonly [min: number, max: number];
 type DeviceLaneSpec = readonly [trackName: string, deviceType: string, parameterIds: readonly string[]];
 
@@ -24,7 +35,8 @@ const GAIN_GROUPS: readonly [Profile, readonly string[]][] = [
     ],
     ['atmosphere', ['Root Drone', 'Granular Voices', 'Fractal Riser', 'Impact Field']],
     ['glitch', ['Glitch Spirits']],
-    ['return', ['Temple Chamber', 'Dub Tunnel', 'Mutation Return', 'Parallel Crush']],
+    ['return', ['Temple Chamber', 'Dub Tunnel', 'Mutation Return']],
+    ['parallel-return', ['Parallel Crush']],
     ['master', ['Master']],
 ];
 
@@ -80,10 +92,10 @@ const DEVICE_LANES: readonly DeviceLaneSpec[] = [
 ];
 
 const PARAMETER_RANGES: Readonly<Record<string, ParameterRange>> = {
-    'toaster:masterGain': [0.5, 1.2],
-    'toaster:swing': [0.02, 0.18],
-    'toaster:reverbMix': [0.04, 0.3],
-    'toaster:delayMix': [0.01, 0.25],
+    'toaster:masterGain': [0.78, 1.08],
+    'toaster:swing': [0.02, 0.12],
+    'toaster:reverbMix': [0.02, 0.14],
+    'toaster:delayMix': [0, 0.08],
     'fermenter:oscLevel': [0, 1],
     'fermenter:filterCutoff': [100, 12_000],
     'fermenter:filterResonance': [0.5, 10],
@@ -229,6 +241,27 @@ const PROFILES: Readonly<Record<Profile, readonly (readonly [number, number])[]>
         [484, 0.7],
         [544, 0.78],
         [568, 0.22],
+        [576, 0],
+    ],
+    'parallel-return': [
+        [0, 0],
+        [64, 0.02],
+        [128, 0.04],
+        [188, 0.1],
+        [192, 0.05],
+        [223.75, 0.05],
+        [224, 0.12],
+        [255.75, 0.12],
+        [256, 0.06],
+        [287.75, 0.06],
+        [288, 0.03],
+        [352, 0.03],
+        [412, 0.12],
+        [416, 0.05],
+        [480, 0],
+        [484, 0.14],
+        [544, 0.07],
+        [568, 0.03],
         [576, 0],
     ],
     master: [

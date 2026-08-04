@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { getBuiltinPlugins } from '#/modules/Arrangement/useCases';
+import { createOfflineYeastMidiProcessor } from '#/modules/Yeast/useCases';
 
 import { isHydratableProjectData } from '../../../projectPersistence/helpers/isHydratableProjectData';
 import { createMyceliumAscendantBlueprint } from '../createMyceliumAscendantBlueprint';
@@ -84,12 +85,25 @@ describe('createMyceliumTopology', () => {
         expect(isHydratableProjectData(projectData)).toBe(true);
     });
     it('builds the 16-child Toaster kit and supported device matrix', () => {
-        const tracks = createMyceliumAscendantBlueprint().projectData.arrangement.tracks;
+        const { projectData } = createMyceliumAscendantBlueprint();
+        const tracks = projectData.arrangement.tracks;
         const pulse = tracks.find((track) => track.name === 'Pulse Engine');
         const pads = tracks.filter((track) => track.parentId === pulse?.id);
+        const toaster = pulse?.devices.find((device) => device.type === 'toaster');
         const deviceTypes = new Set(tracks.flatMap((track) => track.devices.map((device) => device.type)));
         const chamberType = tracks.find((track) => track.name === 'Temple Chamber')?.devices[0]?.type;
         expect(pulse?.devices.map((device) => device.type)).toEqual(['toaster']);
+        expect(toaster?.deviceState).toMatchObject({
+            version: 1,
+            data: {
+                kit: {
+                    name: 'Mycelial Pulse',
+                    masterGain: 0.9,
+                    reverbMix: 0.08,
+                    delayMix: 0.02,
+                },
+            },
+        });
         expect(pads.map((track) => track.name)).toEqual(PAD_NAMES);
         expect(
             pads.every((track, index) => track.outputId === pulse?.id && track.notes.includes(`GM note ${36 + index}`))
@@ -118,6 +132,54 @@ describe('createMyceliumTopology', () => {
         }
         expect(tracks.find((track) => track.name === 'Acid Tendril')?.devices[0]?.parameterValues.filterModel).toBe(5);
         expect(tracks.find((track) => track.name === 'Fractal Riser')?.devices[0]?.parameterValues.filterModel).toBe(5);
+        const bacteriaDevices = tracks
+            .flatMap((track) => track.devices.map((device) => ({ device, trackName: track.name })))
+            .filter(({ device }) => device.type === 'bacteria');
+        expect(
+            bacteriaDevices.map(({ device, trackName }) => ({ parameterValues: device.parameterValues, trackName }))
+        ).toEqual([
+            {
+                trackName: 'Acid Tendril',
+                parameterValues: {
+                    mix: 0.45,
+                    inputGain: 0,
+                    outputGain: 0,
+                    bypass: 0,
+                    bandCount: 1,
+                    band0_enabled: 1,
+                    band0_oversampling: 2,
+                    band0_distortionEnabled: 1,
+                    band0_distortionMode: 5,
+                    band0_drive: 28,
+                    band0_asymmetry: 0.15,
+                    band0_filterEnabled: 1,
+                    band0_filterMode: 0,
+                    band0_filterCutoff: 6_200,
+                    band0_filterResonance: 0.35,
+                    band0_freqShiftEnabled: 1,
+                    band0_freqShiftHz: 14,
+                    band0_freqShiftMix: 0.18,
+                },
+            },
+            {
+                trackName: 'Mutation Return',
+                parameterValues: {
+                    mix: 1,
+                    inputGain: -2,
+                    outputGain: -1,
+                    bypass: 0,
+                    bandCount: 1,
+                    band0_enabled: 1,
+                    band0_oversampling: 2,
+                    band0_distortionEnabled: 1,
+                    band0_distortionMode: 3,
+                    band0_drive: 40,
+                    band0_lofiEnabled: 1,
+                    band0_lofiAmount: 35,
+                    band0_codecArtifact: 0.22,
+                },
+            },
+        ]);
         expect(tracks.find((track) => track.name === 'Master')?.devices.map((device) => device.type)).toEqual([
             'builtin-eq',
             'gluten',
@@ -152,6 +214,34 @@ describe('createMyceliumTopology', () => {
                 'builtin-compressor',
             ])
         );
+        expect(
+            Object.fromEntries(
+                pads.flatMap((track) => {
+                    const send = track.sends[0];
+                    return send ? [[track.name, send.level]] : [];
+                })
+            )
+        ).toEqual({
+            Snare: 0.1,
+            Clap: 0.08,
+            Rim: 0.06,
+            'Low Tom': 0.08,
+            'Mid Tom': 0.08,
+            'Hi Tom': 0.08,
+            'Perc 1': 0.05,
+            'Perc 2': 0.05,
+        });
+        const yeastProcessors = projectData.yeast?.processors ?? [];
+        expect(yeastProcessors).toHaveLength(1);
+        expect(yeastProcessors[0]?.id).toMatch(UUID_PATTERN);
+        expect(yeastProcessors.map(({ id: _id, ...processor }) => processor)).toEqual([
+            {
+                type: 'velocity',
+                name: 'Triplet Helix Dynamics',
+                bypassed: false,
+                params: { mode: 2, compress_amount: 0.72 },
+            },
+        ]);
     });
     it('creates a closed routing graph with four returns and one kick sidechain', () => {
         const { projectData } = createMyceliumAscendantBlueprint();
@@ -183,6 +273,28 @@ describe('createMyceliumTopology', () => {
             returns[2]?.devices.at(-1)?.parameterValues['crush-mix'],
             returns[3]?.devices.at(-1)?.parameterValues['dist-mix'],
         ]).toEqual([1, 1, 1, 1]);
+        expect(returns.find((track) => track.name === 'Parallel Crush')?.devices).toEqual([
+            expect.objectContaining({
+                type: 'builtin-compressor',
+                parameterValues: {
+                    'comp-threshold': -26,
+                    'comp-ratio': 6,
+                    'comp-attack': 12,
+                    'comp-release': 90,
+                    'comp-knee': 9,
+                    'comp-makeup': 3,
+                },
+            }),
+            expect.objectContaining({
+                type: 'builtin-distortion',
+                parameterValues: {
+                    'dist-drive': 2.5,
+                    'dist-tone': 6_500,
+                    'dist-output': -8,
+                    'dist-mix': 1,
+                },
+            }),
+        ]);
         expect(byId.get(route?.sourceTrackId ?? '')?.name).toBe('Kick');
         expect(byId.get(route?.targetTrackId ?? '')?.name).toBe('Rolling Colony');
         expect(
@@ -206,5 +318,46 @@ describe('createMyceliumTopology', () => {
             )
         ).toBe(true);
         expect(deviceTypes).not.toContain('crumbs');
+    });
+
+    it('compresses Triplet Helix velocity through the configured offline Yeast runtime', () => {
+        const { projectData } = createMyceliumAscendantBlueprint();
+        const tripletHelix = projectData.arrangement.tracks.find((track) => track.name === 'Triplet Helix');
+        if (!tripletHelix) {
+            throw new Error('Expected the Triplet Helix track');
+        }
+        const processYeastMidi = createOfflineYeastMidiProcessor({
+            processors: projectData.yeast?.processors ?? [],
+            resolveMusicalPosition: () => ({
+                bpm: 144,
+                barIndex: 0,
+                beatInBar: 0,
+                timeSigNum: 4,
+                timeSigDen: 4,
+                loopEnabled: false,
+                loopStartPpq: 0,
+                loopEndPpq: 576,
+            }),
+            resolvePpqPosition: ({ samples, sampleRate }) => (samples * 144) / (sampleRate * 60),
+        });
+
+        const events = processYeastMidi({
+            trackId: tripletHelix.id,
+            sampleRate: 48_000,
+            blockStartSamples: 0,
+            blockEndSamples: 128,
+            events: [
+                {
+                    timeSamples: 0,
+                    timePpq: 0,
+                    trackId: tripletHelix.id,
+                    sourceEventId: 'triplet-helix-proof',
+                    kind: { type: 'noteOn', channel: 0, note: 69, velocity: 100 },
+                },
+            ],
+        });
+        const transformedNoteOn = events.find((event) => event.kind.type === 'noteOn');
+
+        expect(transformedNoteOn?.kind).toEqual({ type: 'noteOn', channel: 0, note: 69, velocity: 90 });
     });
 });
