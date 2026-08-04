@@ -418,6 +418,14 @@ const EXPECTED_COMMANDS = [
         true
     ),
     expectedCommand(
+        'seekPlayhead',
+        'Move the playhead to a specific nonnegative beat position.',
+        { beat: { type: 'number', minimum: 0, description: 'Beat position (bar 1 = beat 0)' } },
+        ['beat'],
+        'authority-sensitive',
+        true
+    ),
+    expectedCommand(
         'setLoopEnabled',
         'Enable or disable the project loop.',
         { enabled: { type: 'boolean', description: 'true=enable looping, false=disable looping' } },
@@ -1116,6 +1124,14 @@ const EXPECTED_GROUNDING = [
         intentPhrases: ['stop', 'stop playback', 'halt', 'halt playback'],
         targetRules: [],
         valueRules: [],
+    },
+    {
+        actionType: 'seekPlayhead',
+        intentPhrases: ['seek playhead', 'seek the playhead', 'move playhead', 'move the playhead'],
+        targetRules: [],
+        valueRules: [
+            { argument: 'beat', kind: 'number-if-present', connector: 'beat', match: 'exact', requiredInPrompt: true },
+        ],
     },
     {
         actionType: 'setLoopEnabled',

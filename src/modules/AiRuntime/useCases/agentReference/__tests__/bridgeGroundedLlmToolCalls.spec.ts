@@ -137,6 +137,48 @@ describe('stopPlayback grounding', () => {
     });
 });
 
+describe('seekPlayhead grounding', () => {
+    it('grounds an explicit beat and preserves decimal precision', () => {
+        const seek = bridge([{ name: 'seekPlayhead', arguments: { beat: 8 } }], 'seek the playhead to beat 8');
+        const move = bridge([{ name: 'seekPlayhead', arguments: { beat: 12.5 } }], 'move playhead to beat 12.5');
+
+        expect(seek.actions).toEqual([{ type: 'seekPlayhead', payload: { beat: 8 } }]);
+        expect(move.actions).toEqual([{ type: 'seekPlayhead', payload: { beat: 12.5 } }]);
+    });
+
+    it('rejects invented, missing, negative, current, negated, cancelled, and malformed beats', () => {
+        const rejected = [
+            bridge([{ name: 'seekPlayhead', arguments: { beat: 8 } }], 'seek the playhead to beat 12'),
+            bridge([{ name: 'seekPlayhead', arguments: { beat: 8 } }], 'seek the playhead'),
+            bridge([{ name: 'seekPlayhead', arguments: { beat: -1 } }], 'seek the playhead to beat -1'),
+            bridge([{ name: 'seekPlayhead', arguments: { beat: 0 } }], 'seek the playhead to beat 0'),
+            bridge([{ name: 'seekPlayhead', arguments: { beat: 8 } }], 'do not seek the playhead to beat 8'),
+            bridge(
+                [{ name: 'seekPlayhead', arguments: { beat: 8 } }],
+                'seek the playhead to beat 8, actually cancel that command'
+            ),
+            bridge([{ name: 'seekPlayhead', arguments: { beat: 8, extra: true } }], 'seek the playhead to beat 8'),
+        ];
+
+        expect(rejected.every((result) => result.actions.length === 0)).toBe(true);
+    });
+
+    it('binds only the exact beat-qualified number when other numeric context is present', () => {
+        const grounded = bridge(
+            [{ name: 'seekPlayhead', arguments: { beat: 8 } }],
+            'move the playhead to beat 8 at tempo 120'
+        );
+        const rejected = [
+            bridge([{ name: 'seekPlayhead', arguments: { beat: 120 } }], 'move the playhead to beat 8 at tempo 120'),
+            bridge([{ name: 'seekPlayhead', arguments: { beat: 3 } }], 'move the playhead to bar 3'),
+            bridge([{ name: 'seekPlayhead', arguments: { beat: 8.000_000_1 } }], 'move the playhead to beat 8'),
+        ];
+
+        expect(grounded.actions).toEqual([{ type: 'seekPlayhead', payload: { beat: 8 } }]);
+        expect(rejected.every((result) => result.actions.length === 0)).toBe(true);
+    });
+});
+
 function createClipContext(): ProjectContext {
     const intro = {
         id: 'clip-intro',

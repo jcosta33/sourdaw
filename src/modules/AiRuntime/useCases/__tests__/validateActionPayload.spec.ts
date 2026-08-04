@@ -314,6 +314,18 @@ const guardedPayloadContractCases = [
         invalidPayloads: [{}, null, false, { reason: 'provider supplied data' }],
     }),
     guardedPayloadCase({
+        actionType: 'seekPlayhead',
+        validPayload: { beat: 8.5 },
+        invalidPayloads: [
+            {},
+            { beat: -0.01 },
+            { beat: '8' },
+            { beat: Number.NaN },
+            { beat: Number.POSITIVE_INFINITY },
+            { beat: 8, extra: true },
+        ],
+    }),
+    guardedPayloadCase({
         actionType: 'setLoopRegion',
         validPayload: { startBeat: 4, endBeat: 12 },
         invalidPayloads: [

@@ -836,6 +836,22 @@ export const executableAppActionDescriptors = [
         parameters: { properties: {}, required: [] },
     },
     {
+        actionType: 'seekPlayhead',
+        risk: 'authority-sensitive',
+        description: 'Move the playhead to a specific nonnegative beat position.',
+        intentPhrases: ['seek playhead', 'seek the playhead', 'move playhead', 'move the playhead'],
+        targetRules: [],
+        valueRules: [
+            { argument: 'beat', kind: 'number-if-present', connector: 'beat', match: 'exact', requiredInPrompt: true },
+        ],
+        parameters: {
+            properties: {
+                beat: { type: 'number', minimum: 0, description: 'Beat position (bar 1 = beat 0)' },
+            },
+            required: ['beat'],
+        },
+    },
+    {
         actionType: 'setLoopEnabled',
         risk: 'bounded-reversible',
         description: 'Enable or disable the project loop.',
