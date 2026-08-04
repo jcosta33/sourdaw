@@ -55,10 +55,10 @@ export type AudioDeviceRuntimeSink = {
      *
      * The offline render builds its nodes through a different registry than live
      * playback, so none of the per-device setup the live descriptors perform ever
-     * ran for an export. Levain therefore rendered digital silence: no zones, and
-     * a fallback tone that only a hydrated sample bank disarms. This is the seam
-     * where the offline path asks for that setup, and — unlike the live
-     * registration, which is deliberately fire-and-forget — waits for it.
+     * ran for an export. A bare Levain engine has no sample zones and therefore
+     * renders silence. This is the seam where the offline path asks for its
+     * context-local bank setup and — unlike live registration, which is
+     * deliberately fire-and-forget — waits for the commit acknowledgement.
      *
      * The offline device chain calls this for every worklet-backed device it
      * builds. Deciding which device types have anything to prepare belongs to the
