@@ -1,5 +1,5 @@
-import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { act, render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
 
@@ -42,6 +42,10 @@ describe('PlayheadDisplay', () => {
         playheadPosition.current = 0;
         transportState.value = { isPlaying: false };
         vi.clearAllMocks();
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
     });
 
     describe('musical mode (bars.beats.ticks)', () => {
@@ -122,6 +126,34 @@ describe('PlayheadDisplay', () => {
             const button = screen.getByRole('button', { name: /switch to wall-clock time/i });
             // When playing, the active styling applies — the button is still present.
             expect(button).toBeInTheDocument();
+        });
+
+        it('bounds live position writes to 60 Hz without replacing segment text nodes', () => {
+            const frameStart = 1_000;
+            vi.spyOn(performance, 'now').mockReturnValue(frameStart);
+            let animationFrameCallback: FrameRequestCallback | null = null;
+            vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+                animationFrameCallback = callback;
+                return 1;
+            });
+            vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {});
+            transportState.value = { isPlaying: true };
+            renderWithTooltip(<PlayheadDisplay tempo={120} numerator={4} timeDisplayMode="musical" />);
+            const segment = screen.getByText('000');
+            const initialTextNode = segment.firstChild;
+
+            playheadPosition.current = 0.25;
+            act(() => {
+                animationFrameCallback!(frameStart + 8);
+            });
+            expect(segment.textContent).toBe('000');
+
+            playheadPosition.current = 0.5;
+            act(() => {
+                animationFrameCallback!(frameStart + 17);
+            });
+            expect(segment.textContent).toBe('240');
+            expect(segment.firstChild).toBe(initialTextNode);
         });
     });
 });

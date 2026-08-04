@@ -8,12 +8,15 @@ import { defaultTransportState } from '#/modules/Transport/useCases';
 import { type TimeDisplayMode } from '../../../models/WorkspaceState';
 import { toggleTimeDisplayMode } from '../../../useCases/togglePanel/panelToggles/toggleTimeDisplayMode';
 import { TransportSegmentedReadout } from '../../components/Transport/TransportSegmentedReadout';
+import { updateTextNode } from '../../helpers/updateTextNode';
 
 type PlayheadDisplayProps = {
     tempo: number;
     numerator: number;
     timeDisplayMode: TimeDisplayMode;
 };
+
+const PLAYHEAD_READOUT_INTERVAL_MS = 1000 / 60;
 
 /**
  * PlayheadDisplay reads playhead position from the non-reactive
@@ -30,63 +33,48 @@ export const PlayheadDisplay = ({ tempo, numerator, timeDisplayMode }: PlayheadD
     const seg2Ref = useRef<HTMLSpanElement>(null);
     const seg3Ref = useRef<HTMLSpanElement>(null);
     const rafRef = useRef(0);
-    const tempoRef = useRef(tempo);
-    const numeratorRef = useRef(numerator);
-    const isMusicalRef = useRef(isMusical);
-
-    // Keep refs in sync with props (avoids stale closures in rAF loop)
-    tempoRef.current = tempo;
-    numeratorRef.current = numerator;
-    isMusicalRef.current = isMusical;
-
-    // Update segments once from current position (initial + on mode toggle)
-    const updateOnce = (): void => {
-        const position = playheadPositionRef.current;
-        if (isMusicalRef.current) {
-            const bar = Math.floor(position / numeratorRef.current) + 1;
-            const beat = Math.floor(position % numeratorRef.current) + 1;
-            const tick = Math.floor((position % 1) * 480);
-            if (seg1Ref.current) {
-                seg1Ref.current.textContent = String(bar);
-            }
-            if (seg2Ref.current) {
-                seg2Ref.current.textContent = String(beat);
-            }
-            if (seg3Ref.current) {
-                seg3Ref.current.textContent = String(tick).padStart(3, '0');
-            }
-        } else {
-            const seconds = position / (tempoRef.current / 60);
-            const mins = Math.floor(seconds / 60);
-            const secs = Math.floor(seconds % 60);
-            const ms = Math.floor((seconds % 1) * 1000);
-            if (seg1Ref.current) {
-                seg1Ref.current.textContent = String(mins).padStart(2, '0');
-            }
-            if (seg2Ref.current) {
-                seg2Ref.current.textContent = String(secs).padStart(2, '0');
-            }
-            if (seg3Ref.current) {
-                seg3Ref.current.textContent = String(ms).padStart(3, '0');
-            }
-        }
-    };
 
     // rAF loop for live updates during playback
     useEffect(() => {
+        let lastReadoutUpdateAt = performance.now();
+        const updateOnce = (): void => {
+            const currentPosition = playheadPositionRef.current;
+            if (isMusical) {
+                const bar = Math.floor(currentPosition / numerator) + 1;
+                const beat = Math.floor(currentPosition % numerator) + 1;
+                const tick = Math.floor((currentPosition % 1) * 480);
+                updateTextNode(seg1Ref.current, String(bar));
+                updateTextNode(seg2Ref.current, String(beat));
+                updateTextNode(seg3Ref.current, String(tick).padStart(3, '0'));
+                return;
+            }
+
+            const seconds = currentPosition / (tempo / 60);
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            const ms = Math.floor((seconds % 1) * 1000);
+            updateTextNode(seg1Ref.current, String(mins).padStart(2, '0'));
+            updateTextNode(seg2Ref.current, String(secs).padStart(2, '0'));
+            updateTextNode(seg3Ref.current, String(ms).padStart(3, '0'));
+        };
+
         // Always do an initial update
         updateOnce();
 
         if (!isPlaying) {
             return undefined;
         }
-        const loop = (): void => {
-            updateOnce();
+        const loop = (frameTimestamp: number): void => {
+            const elapsedSinceUpdate = frameTimestamp - lastReadoutUpdateAt;
+            if (elapsedSinceUpdate >= PLAYHEAD_READOUT_INTERVAL_MS) {
+                updateOnce();
+                lastReadoutUpdateAt = frameTimestamp - (elapsedSinceUpdate % PLAYHEAD_READOUT_INTERVAL_MS);
+            }
             rafRef.current = requestAnimationFrame(loop);
         };
         rafRef.current = requestAnimationFrame(loop);
         return () => cancelAnimationFrame(rafRef.current);
-    }, [isPlaying, isMusical]);
+    }, [isPlaying, isMusical, numerator, tempo]);
 
     // Compute initial values for SSR / first paint
     const position = playheadPositionRef.current;
