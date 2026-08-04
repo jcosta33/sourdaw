@@ -179,6 +179,27 @@ describe('legacy VCA action history', () => {
         }
     );
 
+    it('round-trips every duplicate legacy membership occurrence at its exact index', async () => {
+        setVcaGroupsState([
+            { id: 'vca-a', name: 'A', gain: 0.5, muted: false, trackIds: ['track-1', 'track-2', 'track-1'] },
+            { id: 'vca-b', name: 'B', gain: 1, muted: false, trackIds: ['track-1'] },
+        ]);
+        const before = captureState();
+
+        await executeAppAction({ type: 'removeFromVca', payload: { trackId: 'track-1' } });
+        const after = captureState();
+        expect(after.groups).toEqual([
+            { id: 'vca-a', name: 'A', gain: 0.5, muted: false, trackIds: ['track-2'] },
+            { id: 'vca-b', name: 'B', gain: 1, muted: false, trackIds: [] },
+        ]);
+
+        await undo();
+        expect(captureState()).toEqual(before);
+
+        await redo();
+        expect(captureState()).toEqual(after);
+    });
+
     it.each([
         {
             label: 'create',

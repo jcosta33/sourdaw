@@ -3,13 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setVcaRuntimeProjectionDependencies } from '../../../useCases/vca/vcaRuntimeProjectionDependencies';
 import { toVcaGainExecutionResult } from '../toVcaGainExecutionResult';
 
-const mocks = vi.hoisted(() => ({ reconcileVcaGroupRuntimeGain: vi.fn() }));
+const mocks = vi.hoisted(() => ({ reconcileVcaRuntimeGain: vi.fn() }));
 
 describe('toVcaGainExecutionResult', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         setVcaRuntimeProjectionDependencies({
-            reconcileVcaGroupRuntimeGain: mocks.reconcileVcaGroupRuntimeGain,
+            reconcileVcaRuntimeGain: mocks.reconcileVcaRuntimeGain,
         });
     });
 
@@ -20,14 +20,21 @@ describe('toVcaGainExecutionResult', () => {
     it('defers deduplicated runtime reconciliation until commit resolution', async () => {
         const result = toVcaGainExecutionResult({
             groupIds: ['vca-drums', 'vca-drums'],
+            trackIds: ['track-kick', 'track-kick'],
             status: 'written',
         });
 
-        expect(mocks.reconcileVcaGroupRuntimeGain).not.toHaveBeenCalled();
+        expect(mocks.reconcileVcaRuntimeGain).not.toHaveBeenCalled();
         await result.afterCommit?.();
         await result.afterAmbiguousCommit?.();
-        expect(mocks.reconcileVcaGroupRuntimeGain).toHaveBeenNthCalledWith(1, 'vca-drums');
-        expect(mocks.reconcileVcaGroupRuntimeGain).toHaveBeenNthCalledWith(2, 'vca-drums');
+        expect(mocks.reconcileVcaRuntimeGain).toHaveBeenNthCalledWith(1, {
+            groupIds: ['vca-drums'],
+            trackIds: ['track-kick'],
+        });
+        expect(mocks.reconcileVcaRuntimeGain).toHaveBeenNthCalledWith(2, {
+            groupIds: ['vca-drums'],
+            trackIds: ['track-kick'],
+        });
     });
 
     it('does not schedule runtime work for no-write or conflict outcomes', () => {
@@ -37,6 +44,11 @@ describe('toVcaGainExecutionResult', () => {
         expect(toVcaGainExecutionResult({ groupIds: ['vca-drums'], status: 'conflict' })).toEqual({
             status: 'conflict',
         });
-        expect(mocks.reconcileVcaGroupRuntimeGain).not.toHaveBeenCalled();
+        expect(mocks.reconcileVcaRuntimeGain).not.toHaveBeenCalled();
+    });
+
+    it('does not schedule runtime work when a durable write has no affected runtime targets', () => {
+        expect(toVcaGainExecutionResult({ status: 'written' })).toEqual({ status: 'written' });
+        expect(mocks.reconcileVcaRuntimeGain).not.toHaveBeenCalled();
     });
 });

@@ -12,6 +12,7 @@ type AgentReferenceCapability =
     | 'device'
     | 'device-parameter'
     | 'vca-group'
+    | 'vca-member-track'
     | 'automation-lane'
     | 'clip'
     | 'editable-clip'
@@ -43,6 +44,7 @@ type ResolveAgentReferenceResult =
 
 const duplicableTrackKinds: ReadonlySet<string> = new Set(['audio', 'midi', 'bus', 'folder']);
 const routableTrackKinds: ReadonlySet<string> = new Set(['audio', 'midi', 'bus']);
+const vcaMemberTrackKinds: ReadonlySet<string> = new Set(['audio', 'midi', 'bus', 'folder']);
 const reservedVcaGroupReferenceWords: ReadonlySet<string> = new Set(['group', 'vca', 'vca group']);
 const reservedClipReferenceWords: ReadonlySet<string> = new Set([
     'track',
@@ -94,6 +96,12 @@ function containsQualifiedVcaGroupReference(prompt: string, reference: string): 
         ` for the ${normalizedReference} `,
         ` on ${normalizedReference} `,
         ` on the ${normalizedReference} `,
+        ` from ${normalizedReference} `,
+        ` from the ${normalizedReference} `,
+        ` to ${normalizedReference} `,
+        ` to the ${normalizedReference} `,
+        ` into ${normalizedReference} `,
+        ` into the ${normalizedReference} `,
     ].some((qualifiedReference) => normalizedPrompt.includes(qualifiedReference));
 }
 
@@ -194,6 +202,9 @@ function getTrackCandidates(
     }
     if (capability === 'device-host-track') {
         return context.tracks.filter((track) => track.kind !== 'vca');
+    }
+    if (capability === 'vca-member-track') {
+        return context.tracks.filter((track) => vcaMemberTrackKinds.has(track.kind));
     }
     return null;
 }

@@ -28,10 +28,20 @@ const mocks = vi.hoisted(() => ({
                     enabled: true,
                     points: [{ beat: 0, value: 0.9 }],
                 },
+                {
+                    id: 'lane-removed-gain',
+                    trackId: 'removed-automated',
+                    parameterId: 'gain',
+                    minValue: 0,
+                    enabled: true,
+                    points: [{ beat: 0, value: 0.7 }],
+                },
             ],
         },
     },
-    deriveVcaMultiplier: vi.fn(() => 0.5),
+    deriveVcaMultiplier: vi.fn(({ vcaGroupId }: { vcaGroupId?: string | null }) =>
+        vcaGroupId === null || vcaGroupId === undefined ? 1 : 0.5
+    ),
     getAutomationValueAtBeat: vi.fn(() => 0.7),
     getCompensationDelay: vi.fn(() => 0.25),
     getCurrentTime: vi.fn(() => 10),
@@ -77,6 +87,22 @@ const mocks = vi.hoisted(() => ({
                     automationMode: 'read',
                     clips: [],
                 },
+                {
+                    id: 'removed-static',
+                    vcaGroupId: null,
+                    muted: true,
+                    gain: 0.5,
+                    automationMode: 'read',
+                    clips: [],
+                },
+                {
+                    id: 'removed-automated',
+                    vcaGroupId: null,
+                    muted: false,
+                    gain: 0.9,
+                    automationMode: 'read',
+                    clips: [],
+                },
             ],
         },
     },
@@ -107,6 +133,7 @@ vi.mock('#/modules/Automation/useCases', () => ({
 
 import { playheadPositionRef } from '../../../../stores/playheadPositionRef';
 import { reconcileVcaGroupRuntimeGain } from '../reconcileVcaGroupRuntimeGain';
+import { reconcileVcaRuntimeGain } from '../reconcileVcaRuntimeGain';
 
 describe('reconcileVcaGroupRuntimeGain', () => {
     beforeEach(() => {
@@ -133,5 +160,25 @@ describe('reconcileVcaGroupRuntimeGain', () => {
 
         expect(mocks.scheduleTrackGain).not.toHaveBeenCalled();
         expect(mocks.setTrackGain).toHaveBeenCalledWith('automated', 0.4);
+    });
+
+    it('reprojects removed tracks from current durable state, including muted and automated tracks', () => {
+        reconcileVcaRuntimeGain({
+            groupIds: [],
+            trackIds: ['removed-static', 'removed-automated', 'removed-static'],
+        });
+
+        expect(mocks.getAutomationValueAtBeat).toHaveBeenCalledOnce();
+        expect(mocks.getAutomationValueAtBeat).toHaveBeenCalledWith('lane-removed-gain', 37);
+        expect(mocks.scheduleTrackGain).toHaveBeenCalledWith('removed-automated', 0.7, 10.25);
+        expect(mocks.setTrackGain).toHaveBeenCalledWith('removed-static', 0.5);
+    });
+
+    it('does not touch runtime state when no tracks or groups are affected', () => {
+        reconcileVcaRuntimeGain({ groupIds: [], trackIds: [] });
+
+        expect(mocks.getCurrentTime).not.toHaveBeenCalled();
+        expect(mocks.setTrackGain).not.toHaveBeenCalled();
+        expect(mocks.scheduleTrackGain).not.toHaveBeenCalled();
     });
 });

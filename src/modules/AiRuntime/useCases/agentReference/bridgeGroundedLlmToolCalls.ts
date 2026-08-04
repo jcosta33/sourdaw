@@ -843,7 +843,18 @@ function getPromptClauses(prompt: string, maskedPrompt: string): PromptClause[] 
     let start = 0;
     for (const match of maskedPrompt.matchAll(separatorPattern)) {
         const separatorEnd = match.index + match[0].length;
+        const normalizedPrefix = normalizePromptText(maskedPrompt.slice(start, match.index));
+        const normalizedSuffix = normalizePromptText(maskedPrompt.slice(separatorEnd));
+        const normalizedSeparator = normalizePromptText(match[0]);
+        const isValidatedListSeparator = normalizedSeparator === 'and' || match[0].trim() === ',';
+        const isVcaMemberListSeparator =
+            isValidatedListSeparator &&
+            /^(?:create|add) vca group\b/u.test(normalizedPrefix) &&
+            /\bfor\b/u.test(normalizedPrefix) &&
+            !/\b(?:named|called)\b/u.test(normalizedPrefix) &&
+            /\b(?:named|called)\b/u.test(normalizedSuffix);
         if (
+            isVcaMemberListSeparator ||
             isClipFadeValueSeparator({
                 maskedPrompt,
                 separatorEnd,
@@ -1227,9 +1238,30 @@ function resolveActionPromptScope({
     return selectedScope;
 }
 
-function getTargetPromptScope(actionScope: ActionPromptScope, promptRole?: 'source' | 'destination'): string {
+function getTargetPromptScope(
+    actionScope: ActionPromptScope,
+    promptRole?: 'source' | 'destination' | 'members'
+): string {
     if (!promptRole) {
         return actionScope.text;
+    }
+    if (promptRole === 'members') {
+        const memberConnector = /\bfor\b/iu.exec(actionScope.masked);
+        if (!memberConnector) {
+            return '';
+        }
+        const memberStart = memberConnector.index + memberConnector[0].length;
+        const nameConnector = /\b(?:named|called)\b/iu.exec(actionScope.masked.slice(memberStart));
+        const memberEnd = nameConnector ? memberStart + nameConnector.index : actionScope.text.length;
+        const memberScope = actionScope.text.slice(memberStart, memberEnd).trim();
+        if (
+            /\b(?:not|except|excluding|without|but|then|mute|solo|remove|delete|rename|route|send|set|assign|unassign|create|add)\b/iu.test(
+                memberScope
+            )
+        ) {
+            return '';
+        }
+        return memberScope;
     }
     const separator = /\b(?:to|into|through)\b/iu.exec(actionScope.masked);
     if (!separator) {
@@ -1760,7 +1792,7 @@ function validateTextAfterKeywordValue(
 ): string | null {
     const expectedValue = getTextAfterKeyword(actionScope, valueRule.keywords);
     if (expectedValue === null) {
-        return null;
+        return valueRule.requiredInPrompt === true ? getValueMismatchReason(valueRule.argument) : null;
     }
     if (typeof assertedValue !== 'string') {
         return getValueMismatchReason(valueRule.argument);
@@ -1830,6 +1862,139 @@ function validateGroundedValues(
     return null;
 }
 
+type ResolveAgentReferenceArrayResult =
+    | { status: 'resolved'; ids: string[] }
+    | { status: 'rejected'; reason: 'ambiguous-target' | 'asserted-target-mismatch' | 'ungrounded-target' };
+
+function resolveAgentReferenceArray({
+    assertedIds,
+    capability,
+    context,
+    prompt,
+}: {
+    assertedIds: unknown;
+    capability: GroundingRules['targetRules'][number]['capability'];
+    context: ProjectContext;
+    prompt: string;
+}): ResolveAgentReferenceArrayResult {
+    if (
+        !Array.isArray(assertedIds) ||
+        assertedIds.length === 0 ||
+        !assertedIds.every((id): id is string => typeof id === 'string' && id.length > 0) ||
+        new Set(assertedIds).size !== assertedIds.length
+    ) {
+        return { status: 'rejected', reason: 'ungrounded-target' };
+    }
+    if (capability !== 'vca-member-track') {
+        return { status: 'rejected', reason: 'ungrounded-target' };
+    }
+
+    const candidates = context.tracks.filter(
+        (track) => track.kind === 'audio' || track.kind === 'midi' || track.kind === 'bus' || track.kind === 'folder'
+    );
+    const evidenced = candidates.flatMap((candidate) => {
+        const result = resolveAgentReference({
+            prompt,
+            assertedId: candidate.id,
+            capability,
+            context,
+            excludedIds: candidates.filter((other) => other.id !== candidate.id).map((other) => other.id),
+        });
+        if (result.status !== 'resolved') {
+            return [];
+        }
+        return [{ candidate, evidence: result.evidence }];
+    });
+    const withoutShadowedDuplicateNames = evidenced.filter(({ candidate, evidence }) => {
+        if (evidence !== 'exact-name') {
+            return true;
+        }
+        const normalizedName = normalizePromptText(candidate.name);
+        return !evidenced.some(
+            ({ candidate: other, evidence: otherEvidence }) =>
+                otherEvidence === 'literal-id' && normalizePromptText(other.name) === normalizedName
+        );
+    });
+    const withoutOverlappedNames = withoutShadowedDuplicateNames.filter(({ candidate, evidence }) => {
+        if (evidence !== 'exact-name') {
+            return true;
+        }
+        const normalizedName = normalizePromptText(candidate.name);
+        return !evidenced.some(
+            ({ candidate: other, evidence: otherEvidence }) =>
+                other.id !== candidate.id &&
+                otherEvidence === 'exact-name' &&
+                normalizePromptText(other.name).length > normalizedName.length &&
+                ` ${normalizePromptText(other.name)} `.includes(` ${normalizedName} `)
+        );
+    });
+    if (withoutOverlappedNames.length === 0) {
+        return { status: 'rejected', reason: 'ungrounded-target' };
+    }
+    const hasAmbiguousName = withoutOverlappedNames.some(({ candidate, evidence }) => {
+        if (evidence !== 'exact-name') {
+            return false;
+        }
+        const normalizedName = normalizePromptText(candidate.name);
+        return candidates.some(
+            (other) => other.id !== candidate.id && normalizePromptText(other.name) === normalizedName
+        );
+    });
+    if (hasAmbiguousName) {
+        return { status: 'rejected', reason: 'ambiguous-target' };
+    }
+
+    const evidencedIds = new Set(withoutOverlappedNames.map(({ candidate }) => candidate.id));
+    const assertedIdSet = new Set(assertedIds);
+    if (evidencedIds.size !== assertedIdSet.size || [...evidencedIds].some((id) => !assertedIdSet.has(id))) {
+        return { status: 'rejected', reason: 'asserted-target-mismatch' };
+    }
+    return { status: 'resolved', ids: [...assertedIds] };
+}
+
+function validateRemoveFromVcaGroupEvidence(
+    actionScope: ActionPromptScope,
+    trackId: unknown,
+    context: ProjectContext
+): string | null {
+    if (typeof trackId !== 'string') {
+        return 'Provider VCA membership target is not grounded in the user request';
+    }
+    const referencedGroupIds = new Set<string>();
+    let hasAmbiguousGroupReference = false;
+    for (const group of context.vcaGroups ?? []) {
+        const result = resolveAgentReference({
+            prompt: actionScope.text,
+            assertedId: group.id,
+            capability: 'vca-group',
+            context,
+        });
+        if (result.status === 'resolved') {
+            referencedGroupIds.add(result.id);
+        } else if (result.reason === 'ambiguous-target') {
+            hasAmbiguousGroupReference = true;
+        }
+    }
+    if (referencedGroupIds.size === 0 && !hasAmbiguousGroupReference) {
+        return null;
+    }
+    const track = context.tracks.find((candidate) => candidate.id === trackId);
+    const currentGroupIds = new Set(
+        (context.vcaGroups ?? [])
+            .filter((group) => group.trackIds.includes(trackId) || group.id === track?.vcaGroupId)
+            .map((group) => group.id)
+    );
+    if (
+        hasAmbiguousGroupReference ||
+        referencedGroupIds.size !== 1 ||
+        currentGroupIds.size !== 1 ||
+        !currentGroupIds.has([...referencedGroupIds][0]!)
+    ) {
+        return 'Provider VCA group reference does not match the track current membership';
+    }
+    return null;
+}
+
 function groundToolCall({
     actionOrdinal,
     batchLocalBusBindings,
@@ -1866,6 +2031,34 @@ function groundToolCall({
     const groundedArguments = { ...call.arguments };
     for (const targetRule of groundingRules.targetRules) {
         const assertedValue = groundedArguments[targetRule.argument];
+        const targetPrompt = getTargetPromptScope(actionScope, targetRule.promptRole);
+        if (targetRule.cardinality === 'many') {
+            const result = resolveAgentReferenceArray({
+                assertedIds: assertedValue,
+                capability: targetRule.capability,
+                context,
+                prompt: targetPrompt,
+            });
+            if (result.status === 'rejected') {
+                if (result.reason === 'ambiguous-target') {
+                    return rejection(
+                        index,
+                        call.name,
+                        `Target ${targetRule.argument} is ambiguous in the user request`
+                    );
+                }
+                if (result.reason === 'asserted-target-mismatch') {
+                    return rejection(
+                        index,
+                        call.name,
+                        `Provider target ${targetRule.argument} does not match the exactly grounded project references`
+                    );
+                }
+                return rejection(index, call.name, `Target ${targetRule.argument} is not grounded in the user request`);
+            }
+            groundedArguments[targetRule.argument] = result.ids;
+            continue;
+        }
         const dependencyValue = targetRule.dependsOn ? groundedArguments[targetRule.dependsOn] : undefined;
         const distinctValue = targetRule.distinctFrom ? groundedArguments[targetRule.distinctFrom] : undefined;
         if (targetRule.distinctFrom && typeof distinctValue === 'string' && assertedValue === distinctValue) {
@@ -1875,7 +2068,6 @@ function groundToolCall({
                 `Target ${targetRule.argument} must be distinct from ${targetRule.distinctFrom}`
             );
         }
-        const targetPrompt = getTargetPromptScope(actionScope, targetRule.promptRole);
         const batchLocalReference = resolveBatchLocalBusReference(
             assertedValue,
             index,
@@ -1966,6 +2158,12 @@ function groundToolCall({
     }
     if (call.name === 'clearSolos' && classifyClearSolosScope(actionScope, context) !== 'universal') {
         return rejection(index, call.name, 'Provider clear-solos scope is not explicitly universal');
+    }
+    if (call.name === 'removeFromVca') {
+        const vcaGroupRejection = validateRemoveFromVcaGroupEvidence(actionScope, groundedArguments.trackId, context);
+        if (vcaGroupRejection) {
+            return rejection(index, call.name, vcaGroupRejection);
+        }
     }
     if (
         (call.name === 'quantizeNotes' ||

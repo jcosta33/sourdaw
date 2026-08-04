@@ -235,7 +235,7 @@ describe('restoreLegacyVcaState', () => {
                 ...emptyPatch(),
                 groupMemberships: [
                     // t1 currently at index 0; move it to index 1 (after t2).
-                    { groupId: 'vca-1', trackId: 't1', expectedIndex: 0, replacementIndex: 1 },
+                    { groupId: 'vca-1', trackId: 't1', expectedIndices: [0], replacementIndices: [1] },
                 ],
             };
 
@@ -248,7 +248,7 @@ describe('restoreLegacyVcaState', () => {
 
             const payload: RestorePayload = {
                 ...emptyPatch(),
-                groupMemberships: [{ groupId: 'vca-1', trackId: 't1', expectedIndex: 0, replacementIndex: null }],
+                groupMemberships: [{ groupId: 'vca-1', trackId: 't1', expectedIndices: [0], replacementIndices: [] }],
             };
 
             expect(restoreLegacyVcaState(payload)).toBe<Result>('written');
@@ -260,7 +260,7 @@ describe('restoreLegacyVcaState', () => {
 
             const payload: RestorePayload = {
                 ...emptyPatch(),
-                groupMemberships: [{ groupId: 'vca-1', trackId: 't1', expectedIndex: 0, replacementIndex: null }],
+                groupMemberships: [{ groupId: 'vca-1', trackId: 't1', expectedIndices: [0], replacementIndices: [] }],
             };
 
             expect(restoreLegacyVcaState(payload)).toBe<Result>('conflict');
@@ -271,10 +271,52 @@ describe('restoreLegacyVcaState', () => {
 
             const payload: RestorePayload = {
                 ...emptyPatch(),
-                groupMemberships: [{ groupId: 'vca-1', trackId: 't1', expectedIndex: 0, replacementIndex: null }],
+                groupMemberships: [{ groupId: 'vca-1', trackId: 't1', expectedIndices: [0], replacementIndices: [] }],
             };
 
             expect(restoreLegacyVcaState(payload)).toBe<Result>('conflict');
+        });
+
+        it('restores every duplicate occurrence at its exact prior index', () => {
+            setVcaGroupsState([group({ id: 'vca-1', trackIds: ['other'] })]);
+
+            const payload: RestorePayload = {
+                ...emptyPatch(),
+                groupMemberships: [
+                    {
+                        groupId: 'vca-1',
+                        trackId: 't1',
+                        expectedIndices: [],
+                        replacementIndices: [0, 2, 3],
+                    },
+                ],
+            };
+
+            expect(restoreLegacyVcaState(payload)).toBe<Result>('written');
+            expect(getVcaGroupsState()[0]?.trackIds).toEqual(['t1', 'other', 't1', 't1']);
+        });
+
+        it('conflicts when any duplicate occurrence index differs from the exact guard', () => {
+            setVcaGroupsState([group({ id: 'vca-1', trackIds: ['t1', 'other', 't1'] })]);
+            const before = getVcaGroupsState().map((candidate) => ({
+                ...candidate,
+                trackIds: [...candidate.trackIds],
+            }));
+
+            const payload: RestorePayload = {
+                ...emptyPatch(),
+                groupMemberships: [
+                    {
+                        groupId: 'vca-1',
+                        trackId: 't1',
+                        expectedIndices: [0, 1],
+                        replacementIndices: [],
+                    },
+                ],
+            };
+
+            expect(restoreLegacyVcaState(payload)).toBe<Result>('conflict');
+            expect(getVcaGroupsState()).toEqual(before);
         });
     });
 

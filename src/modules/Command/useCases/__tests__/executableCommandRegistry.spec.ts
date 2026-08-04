@@ -440,6 +440,42 @@ const EXPECTED_COMMANDS = [
         true
     ),
     expectedCommand(
+        'createVcaGroup',
+        'Create a named VCA group from one or more existing tracks.',
+        {
+            name: { type: 'string', description: 'Explicit new VCA group name' },
+            trackIds: {
+                type: 'array',
+                items: { type: 'string' },
+                minItems: 1,
+                uniqueItems: true,
+                description: 'Existing non-master track IDs to place in the VCA group',
+            },
+        },
+        ['name', 'trackIds'],
+        'authority-sensitive',
+        true
+    ),
+    expectedCommand(
+        'assignToVca',
+        'Assign one existing non-master track to an existing VCA group.',
+        {
+            trackId: { type: 'string', description: 'Existing non-master track ID' },
+            vcaGroupId: { type: 'string', description: 'Existing VCA group ID' },
+        },
+        ['trackId', 'vcaGroupId'],
+        'authority-sensitive',
+        true
+    ),
+    expectedCommand(
+        'removeFromVca',
+        'Remove one existing non-master track from its current VCA group.',
+        { trackId: { type: 'string', description: 'Existing assigned non-master track ID' } },
+        ['trackId'],
+        'authority-sensitive',
+        true
+    ),
+    expectedCommand(
         'addDevice',
         'Insert a platform-available built-in device at the end of a track device chain.',
         {
@@ -1085,6 +1121,41 @@ const EXPECTED_GROUNDING = [
         ],
         targetRules: [{ argument: 'vcaGroupId', capability: 'vca-group' }],
         valueRules: [{ argument: 'gain', kind: 'number-if-present', requiredInPrompt: true, scale: 'percentage-only' }],
+    },
+    {
+        actionType: 'createVcaGroup',
+        intentPhrases: ['create vca group', 'add vca group'],
+        targetRules: [
+            {
+                argument: 'trackIds',
+                capability: 'vca-member-track',
+                cardinality: 'many',
+                promptRole: 'members',
+            },
+        ],
+        valueRules: [
+            {
+                argument: 'name',
+                kind: 'text-after-keyword-if-present',
+                keywords: ['named', 'called'],
+                requiredInPrompt: true,
+            },
+        ],
+    },
+    {
+        actionType: 'assignToVca',
+        intentPhrases: ['assign'],
+        targetRules: [
+            { argument: 'vcaGroupId', capability: 'vca-group', allowBatchLocal: false, promptRole: 'destination' },
+            { argument: 'trackId', capability: 'vca-member-track', allowBatchLocal: false, promptRole: 'source' },
+        ],
+        valueRules: [],
+    },
+    {
+        actionType: 'removeFromVca',
+        intentPhrases: ['unassign'],
+        targetRules: [{ argument: 'trackId', capability: 'vca-member-track', allowBatchLocal: false }],
+        valueRules: [],
     },
     {
         actionType: 'addDevice',

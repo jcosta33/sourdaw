@@ -61,7 +61,7 @@ const projectContext: ProjectContext = {
             points: [],
         },
     ],
-    tracks: [vocals, guitar, master],
+    tracks: [{ ...vocals, vcaGroupId: 'vca-drums' }, guitar, master],
     selectedTrackId: 'track-vocals',
     selectedClipId: null,
     selectedClipIds: [],
@@ -1030,6 +1030,146 @@ describe('bridgeGroundedLlmToolCalls', () => {
             { type: 'setVcaGain', payload: { vcaGroupId: 'vca-generic', gain: 0.65 } },
         ]);
         expect(ambiguousGroup.actions).toEqual([]);
+    });
+
+    it('grounds exact VCA creation and directional membership changes', () => {
+        const created = bridge(
+            [{ name: 'createVcaGroup', arguments: { name: 'Rhythm', trackIds: [vocals.id, guitar.id] } }],
+            'create VCA group for Vocals and Guitar named Rhythm'
+        );
+        const assigned = bridge(
+            [{ name: 'assignToVca', arguments: { trackId: guitar.id, vcaGroupId: 'vca-drums' } }],
+            'assign Guitar to Drum VCA'
+        );
+        const removed = bridge(
+            [{ name: 'removeFromVca', arguments: { trackId: vocals.id } }],
+            'unassign Vocals from Drum VCA'
+        );
+        const removedWithoutGroup = bridge(
+            [{ name: 'removeFromVca', arguments: { trackId: vocals.id } }],
+            'unassign Vocals'
+        );
+        const duplicateNameContext = {
+            ...projectContext,
+            tracks: [...projectContext.tracks, createTrack({ id: 'track-guitar-2', name: 'Guitar' })],
+        };
+        const literalIdMember = bridge(
+            [{ name: 'createVcaGroup', arguments: { name: 'Strings', trackIds: [guitar.id] } }],
+            'create VCA group for track-guitar named Strings',
+            duplicateNameContext
+        );
+        const bothLiteralIdMembers = bridge(
+            [
+                {
+                    name: 'createVcaGroup',
+                    arguments: { name: 'Strings', trackIds: [guitar.id, 'track-guitar-2'] },
+                },
+            ],
+            'create VCA group for track-guitar and track-guitar-2 named Strings',
+            duplicateNameContext
+        );
+
+        expect(created.actions).toEqual([
+            { type: 'createVcaGroup', payload: { name: 'Rhythm', trackIds: [vocals.id, guitar.id] } },
+        ]);
+        expect(assigned.actions).toEqual([
+            { type: 'assignToVca', payload: { trackId: guitar.id, vcaGroupId: 'vca-drums' } },
+        ]);
+        expect(removed.actions).toEqual([{ type: 'removeFromVca', payload: { trackId: vocals.id } }]);
+        expect(removedWithoutGroup.actions).toEqual(removed.actions);
+        expect(literalIdMember.actions).toEqual([
+            { type: 'createVcaGroup', payload: { name: 'Strings', trackIds: [guitar.id] } },
+        ]);
+        expect(bothLiteralIdMembers.actions).toEqual([
+            {
+                type: 'createVcaGroup',
+                payload: { name: 'Strings', trackIds: [guitar.id, 'track-guitar-2'] },
+            },
+        ]);
+    });
+
+    it('rejects invented, ambiguous, ineligible, incomplete, and no-op VCA membership plans', () => {
+        const omittedMember = bridge(
+            [{ name: 'createVcaGroup', arguments: { name: 'Rhythm', trackIds: [vocals.id] } }],
+            'create VCA group for Vocals and Guitar named Rhythm'
+        );
+        const inventedMember = bridge(
+            [{ name: 'createVcaGroup', arguments: { name: 'Rhythm', trackIds: [vocals.id, 'missing'] } }],
+            'create VCA group for Vocals named Rhythm'
+        );
+        const inventedName = bridge(
+            [{ name: 'createVcaGroup', arguments: { name: 'Invented', trackIds: [vocals.id] } }],
+            'create VCA group for Vocals named Rhythm'
+        );
+        const missingNameEvidence = bridge(
+            [{ name: 'createVcaGroup', arguments: { name: 'Rhythm', trackIds: [vocals.id] } }],
+            'create VCA group for Vocals'
+        );
+        const ineligibleMaster = bridge(
+            [{ name: 'createVcaGroup', arguments: { name: 'Mix', trackIds: [master.id] } }],
+            'create VCA group for Master named Mix'
+        );
+        const wrongDirection = bridge(
+            [{ name: 'assignToVca', arguments: { trackId: guitar.id, vcaGroupId: 'vca-drums' } }],
+            'assign Drum VCA to Guitar'
+        );
+        const noOpAssignment = bridge(
+            [{ name: 'assignToVca', arguments: { trackId: vocals.id, vcaGroupId: 'vca-drums' } }],
+            'assign Vocals to Drum VCA'
+        );
+        const noOpRemoval = bridge([{ name: 'removeFromVca', arguments: { trackId: guitar.id } }], 'unassign Guitar');
+        const wrongRemovalGroup = bridge(
+            [{ name: 'removeFromVca', arguments: { trackId: vocals.id } }],
+            'unassign Vocals from Vocal VCA',
+            {
+                ...projectContext,
+                vcaGroups: [
+                    ...(projectContext.vcaGroups ?? []),
+                    { id: 'vca-vocals', name: 'Vocal VCA', gain: 1, muted: false, trackIds: [] },
+                ],
+            }
+        );
+        const duplicateNameContext = {
+            ...projectContext,
+            tracks: [...projectContext.tracks, createTrack({ id: 'track-guitar-2', name: 'Guitar' })],
+        };
+        const ambiguousMember = bridge(
+            [{ name: 'createVcaGroup', arguments: { name: 'Strings', trackIds: [guitar.id] } }],
+            'create VCA group for Guitar named Strings',
+            duplicateNameContext
+        );
+        const negatedMember = bridge(
+            [{ name: 'createVcaGroup', arguments: { name: 'Rhythm', trackIds: [vocals.id, guitar.id] } }],
+            'create VCA group for Vocals but not Guitar named Rhythm'
+        );
+        const reservedWrongRemovalGroup = bridge(
+            [{ name: 'removeFromVca', arguments: { trackId: vocals.id } }],
+            'unassign Vocals from VCA',
+            {
+                ...projectContext,
+                vcaGroups: [
+                    ...(projectContext.vcaGroups ?? []),
+                    { id: 'vca-generic', name: 'VCA', gain: 1, muted: false, trackIds: [] },
+                ],
+            }
+        );
+
+        expect(
+            [
+                omittedMember,
+                inventedMember,
+                inventedName,
+                missingNameEvidence,
+                ineligibleMaster,
+                wrongDirection,
+                noOpAssignment,
+                noOpRemoval,
+                wrongRemovalGroup,
+                ambiguousMember,
+                negatedMember,
+                reservedWrongRemovalGroup,
+            ].map((result) => result.actions)
+        ).toEqual([[], [], [], [], [], [], [], [], [], [], [], []]);
     });
 
     it('grounds arm polarity to eligible named or selected tracks and respects cancellation', () => {

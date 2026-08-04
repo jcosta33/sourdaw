@@ -15,6 +15,7 @@ export type ExecutableAppActionTargetCapability =
     | 'device'
     | 'device-parameter'
     | 'vca-group'
+    | 'vca-member-track'
     | 'automation-lane'
     | 'clip'
     | 'editable-clip'
@@ -24,9 +25,10 @@ export type ExecutableAppActionTargetRule = {
     argument: string;
     capability: ExecutableAppActionTargetCapability;
     allowBatchLocal?: boolean;
+    cardinality?: 'many';
     dependsOn?: string;
     distinctFrom?: string;
-    promptRole?: 'source' | 'destination';
+    promptRole?: 'source' | 'destination' | 'members';
 };
 
 export type ExecutableAppActionValueRule =
@@ -51,7 +53,12 @@ export type ExecutableAppActionValueRule =
       }
     | { argument: string; kind: 'string-literal' }
     | { argument: string; kind: 'enum-if-present'; values: readonly string[]; requiredInPrompt?: boolean }
-    | { argument: string; kind: 'text-after-keyword-if-present'; keywords: readonly string[] }
+    | {
+          argument: string;
+          kind: 'text-after-keyword-if-present';
+          keywords: readonly string[];
+          requiredInPrompt?: boolean;
+      }
     | { argument: string; denominatorArgument: string; kind: 'time-signature' };
 
 export type ExecutableAppActionDirectionalIntent = {
@@ -880,6 +887,69 @@ export const executableAppActionDescriptors = [
                 gain: { type: 'number', description: '0.0 to 2.0' },
             },
             required: ['vcaGroupId', 'gain'],
+        },
+    },
+    {
+        actionType: 'createVcaGroup',
+        risk: 'authority-sensitive',
+        description: 'Create a named VCA group from one or more existing tracks.',
+        intentPhrases: ['create vca group', 'add vca group'],
+        targetRules: [
+            {
+                argument: 'trackIds',
+                capability: 'vca-member-track',
+                cardinality: 'many',
+                promptRole: 'members',
+            },
+        ],
+        valueRules: [
+            {
+                argument: 'name',
+                kind: 'text-after-keyword-if-present',
+                keywords: ['named', 'called'],
+                requiredInPrompt: true,
+            },
+        ],
+        parameters: {
+            properties: {
+                name: { type: 'string', description: 'Explicit new VCA group name' },
+                trackIds: {
+                    type: 'array',
+                    items: { type: 'string' },
+                    minItems: 1,
+                    uniqueItems: true,
+                    description: 'Existing non-master track IDs to place in the VCA group',
+                },
+            },
+            required: ['name', 'trackIds'],
+        },
+    },
+    {
+        actionType: 'assignToVca',
+        risk: 'authority-sensitive',
+        description: 'Assign one existing non-master track to an existing VCA group.',
+        intentPhrases: ['assign'],
+        targetRules: [
+            { argument: 'vcaGroupId', capability: 'vca-group', allowBatchLocal: false, promptRole: 'destination' },
+            { argument: 'trackId', capability: 'vca-member-track', allowBatchLocal: false, promptRole: 'source' },
+        ],
+        parameters: {
+            properties: {
+                trackId: { type: 'string', description: 'Existing non-master track ID' },
+                vcaGroupId: { type: 'string', description: 'Existing VCA group ID' },
+            },
+            required: ['trackId', 'vcaGroupId'],
+        },
+    },
+    {
+        actionType: 'removeFromVca',
+        risk: 'authority-sensitive',
+        description: 'Remove one existing non-master track from its current VCA group.',
+        intentPhrases: ['unassign'],
+        targetRules: [{ argument: 'trackId', capability: 'vca-member-track', allowBatchLocal: false }],
+        parameters: {
+            properties: { trackId: { type: 'string', description: 'Existing assigned non-master track ID' } },
+            required: ['trackId'],
         },
     },
 
