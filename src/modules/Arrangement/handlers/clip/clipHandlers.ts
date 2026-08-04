@@ -21,6 +21,7 @@ import { handleNudgeClip } from './handleNudgeClip';
 import { handlePasteClip } from './handlePasteClip';
 import { handleRemoveClip } from './handleRemoveClip';
 import { handleRenameClip } from './handleRenameClip';
+import { handleRestoreClipLoop } from './handleRestoreClipLoop';
 import { handleReverseClip } from './handleReverseClip';
 import { handleSetClipColor } from './handleSetClipColor';
 import { handleSetClipFade } from './handleSetClipFade';
@@ -56,6 +57,7 @@ export const clipHandlers = {
     setClipColor: handleSetClipColor,
     lockClip: handleLockClip,
     setClipLoop: handleSetClipLoop,
+    restoreClipLoop: handleRestoreClipLoop,
     setClipLoopLength: handleSetClipLoopLength,
     consolidateSelection: handleConsolidateSelection,
     bounceSelection: handleBounceSelection,

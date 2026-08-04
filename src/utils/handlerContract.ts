@@ -578,7 +578,17 @@ export type AppAction =
     | { type: 'copyClip'; payload?: undefined }
     | { type: 'cutClip'; payload?: undefined }
     | { type: 'pasteClip'; payload?: undefined }
-    | { type: 'setClipFade'; payload: { clipId: string; fadeInBeats: number; fadeOutBeats: number } }
+    | {
+          type: 'setClipFade';
+          payload: {
+              clipId: string;
+              fadeInBeats: number;
+              fadeOutBeats: number;
+              /** Internal stale-replay guards. AiRuntime payload validation rejects these fields. */
+              expectedFadeInBeats?: number;
+              expectedFadeOutBeats?: number;
+          };
+      }
     | { type: 'importMidiFile'; payload?: undefined }
     | { type: 'normalizeClip'; payload: { clipId: string; mode?: 'peak' | 'rms' | 'lufs'; targetDb?: number } }
     | { type: 'reverseClip'; payload: { clipId: string } }
@@ -586,8 +596,8 @@ export type AppAction =
     | { type: 'nudgeClip'; payload: { clipId: string; beats: number } }
     | { type: 'crossfadeClips'; payload: { clipAId: string; clipBId: string; durationBeats: number } }
     | { type: 'setClipGain'; payload: { clipId: string; gain: number } }
-    | { type: 'setClipColor'; payload: { clipId: string; color: string } }
-    | { type: 'lockClip'; payload: { clipId: string; locked: boolean } }
+    | { type: 'setClipColor'; payload: { clipId: string; color: string; expectedColor?: string } }
+    | { type: 'lockClip'; payload: { clipId: string; locked: boolean; expectedLocked?: boolean } }
     | { type: 'consolidateSelection'; payload: { trackId: string; startBeat: number; endBeat: number } }
     | { type: 'bounceSelection'; payload: { trackId: string; startBeat: number; endBeat: number } }
     | { type: 'seekPlayhead'; payload: { beat: number } }
@@ -696,6 +706,15 @@ export type AppAction =
           };
       }
     | { type: 'setClipLoop'; payload: { clipId: string; enabled: boolean } }
+    | {
+          /** Internal exact-state replay for optional clip loop metadata. */
+          type: 'restoreClipLoop';
+          payload: {
+              clipId: string;
+              expected: { present: boolean; enabled: boolean };
+              replacement: { present: boolean; enabled: boolean };
+          };
+      }
     | { type: 'setClipLoopLength'; payload: { clipId: string; loopLength: number } }
     | {
           type: 'createGrooveTemplate';
@@ -762,7 +781,7 @@ export type AppAction =
           type: 'restoreClipFileId';
           payload: { clipId: string; fileId: string };
       }
-    | { type: 'muteClip'; payload: { clipId: string; muted: boolean } }
+    | { type: 'muteClip'; payload: { clipId: string; muted: boolean; expectedMuted?: boolean } }
     | { type: 'clearSolos'; payload?: undefined }
     | { type: 'setTrackNotes'; payload: { trackId: string; notes: string } }
     | { type: 'deleteTime'; payload: { startBeat: number; endBeat: number } }

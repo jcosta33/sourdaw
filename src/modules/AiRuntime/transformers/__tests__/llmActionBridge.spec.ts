@@ -44,6 +44,13 @@ const projectContext: ProjectContext = {
                     type: 'audio',
                     startBeat: 0,
                     endBeat: 8,
+                    gain: 1,
+                    locked: false,
+                    muted: false,
+                    color: '#112233',
+                    fadeInBeats: 0,
+                    fadeOutBeats: 0,
+                    loopEnabled: false,
                     noteCount: 0,
                 },
             ],
@@ -347,6 +354,32 @@ describe('bridgeLlmToolCalls', () => {
                 call: { name: 'setClipGain', arguments: { clipId: 'clip-verse', gain: 1.25 } },
                 action: { type: 'setClipGain', payload: { clipId: 'clip-verse', gain: 1.25 } },
             },
+            {
+                call: { name: 'muteClip', arguments: { clipId: 'clip-verse', muted: true } },
+                action: { type: 'muteClip', payload: { clipId: 'clip-verse', muted: true } },
+            },
+            {
+                call: { name: 'setClipColor', arguments: { clipId: 'clip-verse', color: '#FF5500' } },
+                action: { type: 'setClipColor', payload: { clipId: 'clip-verse', color: '#ff5500' } },
+            },
+            {
+                call: {
+                    name: 'setClipFade',
+                    arguments: { clipId: 'clip-verse', fadeInBeats: 1, fadeOutBeats: 2 },
+                },
+                action: {
+                    type: 'setClipFade',
+                    payload: { clipId: 'clip-verse', fadeInBeats: 1, fadeOutBeats: 2 },
+                },
+            },
+            {
+                call: { name: 'lockClip', arguments: { clipId: 'clip-verse', locked: true } },
+                action: { type: 'lockClip', payload: { clipId: 'clip-verse', locked: true } },
+            },
+            {
+                call: { name: 'setClipLoop', arguments: { clipId: 'clip-verse', enabled: true } },
+                action: { type: 'setClipLoop', payload: { clipId: 'clip-verse', enabled: true } },
+            },
         ] as const;
 
         const results = cases.map(({ call }) => bridge({ calls: [call] }));
@@ -367,6 +400,14 @@ describe('bridgeLlmToolCalls', () => {
                 { name: 'trimClipEnd', arguments: { clipId: 'clip-verse', newEndBeat: 7, extra: true } },
                 { name: 'nudgeClip', arguments: { clipId: 'clip-verse', beats: 1, extra: true } },
                 { name: 'setClipGain', arguments: { clipId: 'clip-verse', gain: 1, extra: true } },
+                { name: 'muteClip', arguments: { clipId: 'clip-verse', muted: true, extra: true } },
+                { name: 'setClipColor', arguments: { clipId: 'clip-verse', color: '#ff5500', extra: true } },
+                {
+                    name: 'setClipFade',
+                    arguments: { clipId: 'clip-verse', fadeInBeats: 1, fadeOutBeats: 2, extra: true },
+                },
+                { name: 'lockClip', arguments: { clipId: 'clip-verse', locked: true, extra: true } },
+                { name: 'setClipLoop', arguments: { clipId: 'clip-verse', enabled: true, extra: true } },
             ],
         });
 
@@ -381,6 +422,11 @@ describe('bridgeLlmToolCalls', () => {
             'trimClipEnd',
             'nudgeClip',
             'setClipGain',
+            'muteClip',
+            'setClipColor',
+            'setClipFade',
+            'lockClip',
+            'setClipLoop',
         ]);
         expect(result.rejections.map(({ reason }) => reason)).not.toContain(
             'Tool is not in the executable LLM allowlist'
@@ -398,6 +444,13 @@ describe('bridgeLlmToolCalls', () => {
             { name: 'nudgeClip', arguments: { clipId: 'clip-verse', beats: Number.NaN } },
             { name: 'setClipGain', arguments: { clipId: 'clip-verse', gain: -0.01 } },
             { name: 'setClipGain', arguments: { clipId: 'clip-verse', gain: 2.01 } },
+            { name: 'muteClip', arguments: { clipId: 'clip-verse', muted: false } },
+            { name: 'setClipColor', arguments: { clipId: 'clip-verse', color: 'red' } },
+            { name: 'setClipColor', arguments: { clipId: 'clip-verse', color: '#112233' } },
+            { name: 'setClipFade', arguments: { clipId: 'clip-verse', fadeInBeats: -1, fadeOutBeats: 1 } },
+            { name: 'setClipFade', arguments: { clipId: 'clip-verse', fadeInBeats: 4.01, fadeOutBeats: 1 } },
+            { name: 'lockClip', arguments: { clipId: 'clip-verse', locked: false } },
+            { name: 'setClipLoop', arguments: { clipId: 'clip-verse', enabled: false } },
         ];
 
         const results = calls.map((call) => bridge({ calls: [call] }));
@@ -413,10 +466,76 @@ describe('bridgeLlmToolCalls', () => {
             'nudgeClip',
             'setClipGain',
             'setClipGain',
+            'muteClip',
+            'setClipColor',
+            'setClipColor',
+            'setClipFade',
+            'setClipFade',
+            'lockClip',
+            'setClipLoop',
         ]);
         expect(results.flatMap(({ rejections }) => rejections).map(({ reason }) => reason)).not.toContain(
             'Tool is not in the executable LLM allowlist'
         );
+    });
+
+    it('accepts fades exactly at the effective half-duration boundary', () => {
+        const result = bridge({
+            calls: [{ name: 'setClipFade', arguments: { clipId: 'clip-verse', fadeInBeats: 4, fadeOutBeats: 4 } }],
+        });
+
+        expect(result).toEqual({
+            actions: [
+                {
+                    type: 'setClipFade',
+                    payload: { clipId: 'clip-verse', fadeInBeats: 4, fadeOutBeats: 4 },
+                },
+            ],
+            rejections: [],
+        });
+    });
+
+    it('rejects locked metadata edits and lock/edit overlap on one clip', () => {
+        const lockedContext: ProjectContext = {
+            ...projectContext,
+            tracks: projectContext.tracks.map((track) => ({
+                ...track,
+                clips: track.clips.map((clip) => ({ ...clip, locked: true })),
+            })),
+        };
+        const lockedMetadata = bridge({
+            context: lockedContext,
+            calls: [
+                { name: 'muteClip', arguments: { clipId: 'clip-verse', muted: true } },
+                { name: 'setClipColor', arguments: { clipId: 'clip-verse', color: '#ff5500' } },
+                { name: 'setClipFade', arguments: { clipId: 'clip-verse', fadeInBeats: 1, fadeOutBeats: 2 } },
+                { name: 'setClipLoop', arguments: { clipId: 'clip-verse', enabled: true } },
+            ],
+        });
+        const unlock = bridge({
+            context: lockedContext,
+            calls: [{ name: 'lockClip', arguments: { clipId: 'clip-verse', locked: false } }],
+        });
+        const mixed = bridge({
+            calls: [
+                { name: 'muteClip', arguments: { clipId: 'clip-verse', muted: true } },
+                { name: 'lockClip', arguments: { clipId: 'clip-verse', locked: true } },
+            ],
+        });
+
+        expect(lockedMetadata.actions).toEqual([]);
+        expect(lockedMetadata.rejections.map(({ name }) => name)).toEqual([
+            'muteClip',
+            'setClipColor',
+            'setClipFade',
+            'setClipLoop',
+        ]);
+        expect(unlock).toEqual({
+            actions: [{ type: 'lockClip', payload: { clipId: 'clip-verse', locked: false } }],
+            rejections: [],
+        });
+        expect(mixed.actions).toEqual([{ type: 'muteClip', payload: { clipId: 'clip-verse', muted: true } }]);
+        expect(mixed.rejections[0]?.reason).toBe('Provider batch writes the same target field more than once');
     });
 
     it('bridges bounded whole-clip MIDI transforms without provider-owned snapshots', () => {
@@ -1449,7 +1568,7 @@ describe('bridgeLlmToolCalls', () => {
         );
         expect(userMessage).toContain('<user_request>\nmute the vocals\n</user_request>');
         expect(userMessage).toContain(
-            '"clips":[{"id":"clip-verse","name":"Verse","type":"audio","startBeat":0,"endBeat":8}]'
+            '"clips":[{"id":"clip-verse","name":"Verse","type":"audio","startBeat":0,"endBeat":8,"gain":1,"locked":false,"muted":false,"color":"#112233","fadeInBeats":0,"fadeOutBeats":0,"loopEnabled":false}]'
         );
         expect(userMessage).not.toContain('"noteCount"');
         expect(userMessage).toContain('"devices"');

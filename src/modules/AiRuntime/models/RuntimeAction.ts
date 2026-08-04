@@ -248,6 +248,11 @@ type AppActionPayload<ActionType extends AppActionType> =
 
 export const RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS = {
     armTrack: ['trackId', 'armed'],
+    lockClip: ['clipId', 'locked'],
+    muteClip: ['clipId', 'muted'],
+    setClipColor: ['clipId', 'color'],
+    setClipFade: ['clipId', 'fadeInBeats', 'fadeOutBeats'],
+    setClipLoop: ['clipId', 'enabled'],
     addClip: ['trackId', 'startBeat', 'endBeat', 'name', 'type', 'audioBufferId'],
     addNotes: ['clipId', 'notes'],
     addDevice: ['trackId', 'deviceType'],
@@ -283,6 +288,11 @@ export const RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS = {
 
 export const RUNTIME_ACTION_OVERRIDE_REQUIRED_PAYLOAD_KEYS = {
     armTrack: ['trackId', 'armed'],
+    lockClip: ['clipId', 'locked'],
+    muteClip: ['clipId', 'muted'],
+    setClipColor: ['clipId', 'color'],
+    setClipFade: ['clipId', 'fadeInBeats', 'fadeOutBeats'],
+    setClipLoop: ['clipId', 'enabled'],
     addClip: ['trackId', 'startBeat', 'endBeat', 'name'],
     addNotes: ['clipId', 'notes'],
     addDevice: ['trackId', 'deviceType'],

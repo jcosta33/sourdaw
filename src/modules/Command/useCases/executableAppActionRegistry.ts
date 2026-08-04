@@ -42,6 +42,7 @@ export type ExecutableAppActionValueRule =
           mayOmitWhenUnmentioned?: boolean;
           match?: 'exact';
           connector?: 'from' | 'to' | 'beat';
+          keywords?: readonly string[];
           scale?: 'unit-interval' | 'percentage-only' | 'automation-lane-range';
           direction?: 'pan';
           qualitativeDirection?: 'track-gain' | 'track-pan' | 'device-parameter';
@@ -275,6 +276,128 @@ export const executableAppActionDescriptors = [
         parameters: {
             properties: { clipId: { type: 'string' }, gain: { type: 'number', description: '0.0 to 2.0' } },
             required: ['clipId', 'gain'],
+        },
+    },
+    {
+        actionType: 'muteClip',
+        risk: 'bounded-reversible',
+        description: 'Mute or unmute an existing clip.',
+        intentPhrases: ['mute clip', 'mute the clip', 'unmute clip', 'unmute the clip'],
+        targetRules: editableClipTargetRules,
+        valueRules: [
+            {
+                argument: 'muted',
+                kind: 'boolean-intent',
+                truePhrases: ['mute clip', 'mute the clip'],
+                falsePhrases: ['unmute clip', 'unmute the clip'],
+            },
+        ],
+        parameters: {
+            properties: {
+                clipId: { type: 'string', description: 'Existing unlocked clip ID' },
+                muted: { type: 'boolean', description: 'true=mute, false=unmute' },
+            },
+            required: ['clipId', 'muted'],
+        },
+    },
+    {
+        actionType: 'setClipColor',
+        risk: 'bounded-reversible',
+        description: 'Color-code an existing clip for visual organization.',
+        intentPhrases: ['set clip color', 'set clip colour', 'color clip', 'colour clip'],
+        targetRules: editableClipTargetRules,
+        valueRules: [{ argument: 'color', kind: 'string-literal' }],
+        parameters: {
+            properties: {
+                clipId: { type: 'string', description: 'Existing unlocked clip ID' },
+                color: { type: 'string', description: 'Six-digit hexadecimal color (for example #ff5500)' },
+            },
+            required: ['clipId', 'color'],
+        },
+    },
+    {
+        actionType: 'setClipFade',
+        risk: 'bounded-reversible',
+        description: 'Set explicit fade-in and fade-out durations on an existing clip.',
+        intentPhrases: ['set clip fade', 'set clip fades'],
+        targetRules: editableClipTargetRules,
+        valueRules: [
+            {
+                argument: 'fadeInBeats',
+                kind: 'number-if-present',
+                requiredInPrompt: true,
+                match: 'exact',
+                connector: 'from',
+                keywords: ['fade in', 'fade-in'],
+            },
+            {
+                argument: 'fadeOutBeats',
+                kind: 'number-if-present',
+                requiredInPrompt: true,
+                match: 'exact',
+                connector: 'to',
+                keywords: ['fade out', 'fade-out'],
+            },
+        ],
+        parameters: {
+            properties: {
+                clipId: { type: 'string', description: 'Existing unlocked clip ID' },
+                fadeInBeats: {
+                    type: 'number',
+                    minimum: 0,
+                    description: 'Non-negative fade-in duration no longer than half the clip',
+                },
+                fadeOutBeats: {
+                    type: 'number',
+                    minimum: 0,
+                    description: 'Non-negative fade-out duration no longer than half the clip',
+                },
+            },
+            required: ['clipId', 'fadeInBeats', 'fadeOutBeats'],
+        },
+    },
+    {
+        actionType: 'lockClip',
+        risk: 'bounded-reversible',
+        description: 'Lock or unlock an existing clip.',
+        intentPhrases: ['lock clip', 'lock the clip', 'unlock clip', 'unlock the clip'],
+        targetRules: clipTargetRules,
+        valueRules: [
+            {
+                argument: 'locked',
+                kind: 'boolean-intent',
+                truePhrases: ['lock clip', 'lock the clip'],
+                falsePhrases: ['unlock clip', 'unlock the clip'],
+            },
+        ],
+        parameters: {
+            properties: {
+                clipId: { type: 'string', description: 'Existing clip ID' },
+                locked: { type: 'boolean', description: 'true=lock, false=unlock' },
+            },
+            required: ['clipId', 'locked'],
+        },
+    },
+    {
+        actionType: 'setClipLoop',
+        risk: 'bounded-reversible',
+        description: 'Enable or disable looping on an existing clip.',
+        intentPhrases: ['enable clip loop', 'disable clip loop'],
+        targetRules: editableClipTargetRules,
+        valueRules: [
+            {
+                argument: 'enabled',
+                kind: 'boolean-intent',
+                truePhrases: ['enable clip loop'],
+                falsePhrases: ['disable clip loop'],
+            },
+        ],
+        parameters: {
+            properties: {
+                clipId: { type: 'string', description: 'Existing unlocked clip ID' },
+                enabled: { type: 'boolean', description: 'true=enable looping, false=disable looping' },
+            },
+            required: ['clipId', 'enabled'],
         },
     },
     {

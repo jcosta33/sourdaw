@@ -131,6 +131,132 @@ function createMidiClipContext(): ProjectContext {
 }
 
 describe('bridgeGroundedLlmToolCalls', () => {
+    it('grounds reversible clip-state commands and binds both fade values by name', () => {
+        const context = createClipContext();
+        const cases = [
+            {
+                call: { name: 'muteClip', arguments: { clipId: 'clip-intro', muted: true } },
+                prompt: 'mute the Intro clip',
+                action: { type: 'muteClip', payload: { clipId: 'clip-intro', muted: true } },
+            },
+            {
+                call: { name: 'setClipColor', arguments: { clipId: 'clip-intro', color: '#ff5500' } },
+                prompt: 'set clip color on Intro to #ff5500',
+                action: { type: 'setClipColor', payload: { clipId: 'clip-intro', color: '#ff5500' } },
+            },
+            {
+                call: {
+                    name: 'setClipFade',
+                    arguments: { clipId: 'clip-intro', fadeInBeats: 1, fadeOutBeats: 2 },
+                },
+                prompt: 'set clip fade on Intro with fade in 1 beat and fade out 2 beats',
+                action: {
+                    type: 'setClipFade',
+                    payload: { clipId: 'clip-intro', fadeInBeats: 1, fadeOutBeats: 2 },
+                },
+            },
+            {
+                call: { name: 'lockClip', arguments: { clipId: 'clip-intro', locked: true } },
+                prompt: 'lock the Intro clip',
+                action: { type: 'lockClip', payload: { clipId: 'clip-intro', locked: true } },
+            },
+            {
+                call: { name: 'setClipLoop', arguments: { clipId: 'clip-intro', enabled: true } },
+                prompt: 'enable clip loop on Intro',
+                action: { type: 'setClipLoop', payload: { clipId: 'clip-intro', enabled: true } },
+            },
+        ] as const;
+
+        for (const testCase of cases) {
+            const result = bridge([testCase.call], testCase.prompt, context);
+            expect(result.actions).toEqual([testCase.action]);
+            expect(result.rejections).toEqual([]);
+        }
+
+        const swappedFade = bridge(
+            [
+                {
+                    name: 'setClipFade',
+                    arguments: { clipId: 'clip-intro', fadeInBeats: 2, fadeOutBeats: 1 },
+                },
+            ],
+            'set clip fade on Intro with fade in 1 beat and fade out 2 beats',
+            context
+        );
+        expect(swappedFade.actions).toEqual([]);
+        expect(swappedFade.rejections[0]?.reason).toContain('does not match');
+
+        const cancellationPrompts = [
+            'set clip fades on Intro from 1 to 2, but fade in should remain unchanged',
+            'set clip fades on Intro from 1 to 2, but keep fade out unchanged',
+            'set clip fades on Intro from 1 to 2, but do not modify fade in',
+            'set clip fades on Intro from 1 to 2, but do not alter fade out',
+            'set clip fades on Intro from 1 to 2, but keep fade in as it is',
+            'set clip fades on Intro from 1 to 2, but leave fade out untouched',
+            'set clip fades on Intro from 1 to 2, but do not under any circumstances make any changes whatsoever to the fade in',
+            'set clip fades on Intro from 1 to 2, but do not set fade in to 1',
+            'set clip fades on Intro with fade in 1 and fade out 2, but do not change fade out 2',
+        ];
+        for (const cancellationPrompt of cancellationPrompts) {
+            const cancelledFade = bridge(
+                [
+                    {
+                        name: 'setClipFade',
+                        arguments: { clipId: 'clip-intro', fadeInBeats: 1, fadeOutBeats: 2 },
+                    },
+                ],
+                cancellationPrompt,
+                context
+            );
+            expect(cancelledFade.actions).toEqual([]);
+            expect(cancelledFade.rejections[0]?.reason).toContain('not grounded');
+        }
+
+        const qualifiedFade = bridge(
+            [
+                {
+                    name: 'setClipFade',
+                    arguments: { clipId: 'clip-intro', fadeInBeats: 1, fadeOutBeats: 2 },
+                },
+            ],
+            'set clip fades on Intro from 1 to 2 to preserve the attack transients',
+            context
+        );
+        expect(qualifiedFade.actions).toEqual([
+            {
+                type: 'setClipFade',
+                payload: { clipId: 'clip-intro', fadeInBeats: 1, fadeOutBeats: 2 },
+            },
+        ]);
+        expect(qualifiedFade.rejections).toEqual([]);
+    });
+
+    it('allows explicit clip unlock while rejecting edits to a locked clip', () => {
+        const base = createClipContext();
+        const context: ProjectContext = {
+            ...base,
+            tracks: base.tracks.map((track) => ({
+                ...track,
+                clips: track.clips.map((clip) => (clip.id === 'clip-intro' ? { ...clip, locked: true } : clip)),
+            })),
+        };
+        const unlock = bridge(
+            [{ name: 'lockClip', arguments: { clipId: 'clip-intro', locked: false } }],
+            'unlock the Intro clip',
+            context
+        );
+        const mute = bridge(
+            [{ name: 'muteClip', arguments: { clipId: 'clip-intro', muted: true } }],
+            'mute clip Intro',
+            context
+        );
+
+        expect(unlock.actions).toEqual([{ type: 'lockClip', payload: { clipId: 'clip-intro', locked: false } }]);
+        expect(unlock.rejections).toEqual([]);
+        expect(mute.actions).toEqual([]);
+        expect(mute.rejections[0]?.reason).toContain('not grounded');
+    });
+
     it('grounds whole-clip MIDI transforms and rejects selected-note or mismatched values', () => {
         const context = createMidiClipContext();
         const quantize = bridge(

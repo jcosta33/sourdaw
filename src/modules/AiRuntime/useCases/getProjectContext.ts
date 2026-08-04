@@ -131,6 +131,11 @@ export function getProjectContext(): ProjectContext {
                 endBeat: context.endBeat,
                 gain: context.gain,
                 locked: context.locked,
+                muted: context.muted,
+                color: context.color,
+                fadeInBeats: context.fadeInBeats,
+                fadeOutBeats: context.fadeOutBeats,
+                loopEnabled: context.loopEnabled ?? false,
                 noteCount: context.type === 'midi' ? (notesByClipId?.[context.id]?.length ?? 0) : 0,
             })),
             devices: time.devices.map((data) => {

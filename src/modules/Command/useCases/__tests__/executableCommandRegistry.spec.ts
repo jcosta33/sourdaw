@@ -126,6 +126,70 @@ const EXPECTED_COMMANDS = [
         false
     ),
     expectedCommand(
+        'muteClip',
+        'Mute or unmute an existing clip.',
+        {
+            clipId: { type: 'string', description: 'Existing unlocked clip ID' },
+            muted: { type: 'boolean', description: 'true=mute, false=unmute' },
+        },
+        ['clipId', 'muted'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
+        'setClipColor',
+        'Color-code an existing clip for visual organization.',
+        {
+            clipId: { type: 'string', description: 'Existing unlocked clip ID' },
+            color: { type: 'string', description: 'Six-digit hexadecimal color (for example #ff5500)' },
+        },
+        ['clipId', 'color'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
+        'setClipFade',
+        'Set explicit fade-in and fade-out durations on an existing clip.',
+        {
+            clipId: { type: 'string', description: 'Existing unlocked clip ID' },
+            fadeInBeats: {
+                type: 'number',
+                minimum: 0,
+                description: 'Non-negative fade-in duration no longer than half the clip',
+            },
+            fadeOutBeats: {
+                type: 'number',
+                minimum: 0,
+                description: 'Non-negative fade-out duration no longer than half the clip',
+            },
+        },
+        ['clipId', 'fadeInBeats', 'fadeOutBeats'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
+        'lockClip',
+        'Lock or unlock an existing clip.',
+        {
+            clipId: { type: 'string', description: 'Existing clip ID' },
+            locked: { type: 'boolean', description: 'true=lock, false=unlock' },
+        },
+        ['clipId', 'locked'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
+        'setClipLoop',
+        'Enable or disable looping on an existing clip.',
+        {
+            clipId: { type: 'string', description: 'Existing unlocked clip ID' },
+            enabled: { type: 'boolean', description: 'true=enable looping, false=disable looping' },
+        },
+        ['clipId', 'enabled'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
         'quantizeNotes',
         'Snap every note in one MIDI clip to an explicit beat grid.',
         {
@@ -658,6 +722,74 @@ const EXPECTED_GROUNDING = [
         intentPhrases: ['set clip gain', 'clip gain', 'set clip volume'],
         targetRules: [{ argument: 'clipId', capability: 'editable-clip' }],
         valueRules: [{ argument: 'gain', kind: 'number-if-present', requiredInPrompt: true, scale: 'percentage-only' }],
+    },
+    {
+        actionType: 'muteClip',
+        intentPhrases: ['mute clip', 'mute the clip', 'unmute clip', 'unmute the clip'],
+        targetRules: [{ argument: 'clipId', capability: 'editable-clip' }],
+        valueRules: [
+            {
+                argument: 'muted',
+                kind: 'boolean-intent',
+                truePhrases: ['mute clip', 'mute the clip'],
+                falsePhrases: ['unmute clip', 'unmute the clip'],
+            },
+        ],
+    },
+    {
+        actionType: 'setClipColor',
+        intentPhrases: ['set clip color', 'set clip colour', 'color clip', 'colour clip'],
+        targetRules: [{ argument: 'clipId', capability: 'editable-clip' }],
+        valueRules: [{ argument: 'color', kind: 'string-literal' }],
+    },
+    {
+        actionType: 'setClipFade',
+        intentPhrases: ['set clip fade', 'set clip fades'],
+        targetRules: [{ argument: 'clipId', capability: 'editable-clip' }],
+        valueRules: [
+            {
+                argument: 'fadeInBeats',
+                kind: 'number-if-present',
+                requiredInPrompt: true,
+                match: 'exact',
+                connector: 'from',
+                keywords: ['fade in', 'fade-in'],
+            },
+            {
+                argument: 'fadeOutBeats',
+                kind: 'number-if-present',
+                requiredInPrompt: true,
+                match: 'exact',
+                connector: 'to',
+                keywords: ['fade out', 'fade-out'],
+            },
+        ],
+    },
+    {
+        actionType: 'lockClip',
+        intentPhrases: ['lock clip', 'lock the clip', 'unlock clip', 'unlock the clip'],
+        targetRules: [{ argument: 'clipId', capability: 'clip' }],
+        valueRules: [
+            {
+                argument: 'locked',
+                kind: 'boolean-intent',
+                truePhrases: ['lock clip', 'lock the clip'],
+                falsePhrases: ['unlock clip', 'unlock the clip'],
+            },
+        ],
+    },
+    {
+        actionType: 'setClipLoop',
+        intentPhrases: ['enable clip loop', 'disable clip loop'],
+        targetRules: [{ argument: 'clipId', capability: 'editable-clip' }],
+        valueRules: [
+            {
+                argument: 'enabled',
+                kind: 'boolean-intent',
+                truePhrases: ['enable clip loop'],
+                falsePhrases: ['disable clip loop'],
+            },
+        ],
     },
     {
         actionType: 'quantizeNotes',

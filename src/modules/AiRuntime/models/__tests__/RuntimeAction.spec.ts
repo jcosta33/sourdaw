@@ -46,6 +46,11 @@ describe('RuntimeAction', () => {
             { type: 'stretchAutomation', payload: { laneId: 'lane-1', factor: 2 } },
             { type: 'createVcaGroup', payload: { name: 'Band', trackIds: ['track-1'] } },
             { type: 'createCollabSession', payload: { name: 'Mix review' } },
+            { type: 'lockClip', payload: { clipId: 'clip-1', locked: true } },
+            { type: 'muteClip', payload: { clipId: 'clip-1', muted: true } },
+            { type: 'setClipColor', payload: { clipId: 'clip-1', color: '#112233' } },
+            { type: 'setClipFade', payload: { clipId: 'clip-1', fadeInBeats: 1, fadeOutBeats: 2 } },
+            { type: 'setClipLoop', payload: { clipId: 'clip-1', enabled: true } },
         ];
 
         expect(actions.map((action) => action.type)).toEqual([
@@ -63,6 +68,11 @@ describe('RuntimeAction', () => {
             'stretchAutomation',
             'createVcaGroup',
             'createCollabSession',
+            'lockClip',
+            'muteClip',
+            'setClipColor',
+            'setClipFade',
+            'setClipLoop',
         ]);
         expectTypeOf<PayloadHasKey<'duplicateClip', 'targetClipId'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'addAutomationLane', 'laneId'>>().toEqualTypeOf<false>();
@@ -80,5 +90,10 @@ describe('RuntimeAction', () => {
         expectTypeOf<PayloadHasKey<'createVcaGroup', 'vcaGroupId'>>().toEqualTypeOf<false>();
         expectTypeOf<RuntimeAddNotesNoteHasId>().toEqualTypeOf<false>();
         expectTypeOf<EmptyCollabSessionPayloadAllowed>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'lockClip', 'expectedLocked'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'muteClip', 'expectedMuted'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'setClipColor', 'expectedColor'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'setClipFade', 'expectedFadeInBeats'>>().toEqualTypeOf<false>();
+        expectTypeOf<PayloadHasKey<'setClipFade', 'expectedFadeOutBeats'>>().toEqualTypeOf<false>();
     });
 });

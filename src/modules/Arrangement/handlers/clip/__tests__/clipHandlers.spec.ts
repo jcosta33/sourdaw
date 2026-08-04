@@ -47,6 +47,7 @@ describe('clipHandlers', () => {
             'setClipColor',
             'lockClip',
             'setClipLoop',
+            'restoreClipLoop',
             'setClipLoopLength',
             'consolidateSelection',
             'bounceSelection',
