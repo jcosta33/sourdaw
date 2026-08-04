@@ -61,8 +61,8 @@ describe('createMyceliumVoicePerformance', () => {
         const sourceSnapshot = structuredClone(first);
 
         expect(voiceTracks.map((track) => track.name)).toEqual(VOICE_NAMES);
-        expect(allClips).toHaveLength(118);
-        expect(allNotes).toHaveLength(3_784);
+        expect(allClips).toHaveLength(119);
+        expect(allNotes).toHaveLength(3_818);
         expect(
             allNotes.every((note) => Number.isInteger(note.velocity) && note.velocity >= 1 && note.velocity <= 127)
         ).toBe(true);
@@ -76,7 +76,12 @@ describe('createMyceliumVoicePerformance', () => {
         expect(ids.every((id) => UUID_PATTERN.test(id))).toBe(true);
         expect(new Set(ids).size).toBe(ids.length);
         expect(active?.tracks?.tracks).toBe(first.arrangement.tracks);
-        expect(active?.midi).toBe(first.midi);
+        expect(active?.midi).toEqual({
+            notesByClipId: first.midi.notesByClipId,
+            ccByClipId: first.midi.ccByClipId,
+            pitchBendByClipId: first.midi.pitchBendByClipId,
+        });
+        expect(active?.midi).not.toHaveProperty('probabilitySeed');
         expect(first).toEqual(second);
         createMyceliumVoicePerformance(first);
         expect(first).toEqual(sourceSnapshot);
@@ -100,7 +105,7 @@ describe('createMyceliumVoicePerformance', () => {
             'Drop I: Psy Pluck=48, Main Vision=24, Counter Vision=24, FM Spores=48, Levain Call=12, Levain Answer=12, Grand Boule Ritual=12, Glitch Spirits=24',
             'Psilocybin Chapel: Psy Pluck=68, Harmonic Mist=68, Levain Call=36, Levain Answer=36, Grand Boule Ritual=36, Root Drone=5, Granular Voices=67, Glitch Spirits=68',
             'Singularity Build: Triplet Helix=64, FM Spores=63, Fractal Riser=32, Impact Field=32, Glitch Spirits=32',
-            'Drop II: Triplet Helix=64, Psy Pluck=63, Main Vision=32, Counter Vision=32, Harmonic Mist=63, FM Spores=63, Levain Call=16, Levain Answer=15, Grand Boule Ritual=15, Glitch Spirits=32',
+            'Drop II: Triplet Helix=64, Psy Pluck=64, Main Vision=32, Counter Vision=32, Harmonic Mist=64, FM Spores=64, Levain Call=16, Levain Answer=16, Grand Boule Ritual=16, Glitch Spirits=32',
             'Dissolution: Main Vision=4, Harmonic Mist=8, Levain Call=16, Grand Boule Ritual=16, Root Drone=2, Granular Voices=8',
         ]);
     });
@@ -150,15 +155,15 @@ describe('createMyceliumVoicePerformance', () => {
         expect(dropOrganic.length).toBeLessThan(96);
     });
 
-    it('exchanges drop voices, protects every silence window, and dissolves to organic atmosphere', () => {
+    it('exchanges drop voices, preserves automation-causal silence windows, and dissolves to organic atmosphere', () => {
         const projectData = createMyceliumAscendantBlueprint().projectData;
         const voices = getNotes(projectData, VOICE_NAMES);
         const late = inRange(voices, 560, 576);
+        const trackByName = new Map(projectData.arrangement.tracks.map((track) => [track.name, track]));
 
         const exchangeWindows = [
             [192, 288],
-            [416, 480],
-            [484, 544],
+            [416, 544],
         ] as const;
         for (const [startBeat, endBeat] of exchangeWindows) {
             const blockSets = ['Main Vision', 'Counter Vision'].map((trackName) => {
@@ -174,7 +179,17 @@ describe('createMyceliumVoicePerformance', () => {
         }
         expect(overlaps(voices, 191.75, 192)).toEqual([]);
         expect(overlaps(voices, 415.75, 416)).toEqual([]);
-        expect(overlaps(voices, 480, 484)).toEqual([]);
+        for (const trackName of ['Triplet Helix', 'Main Vision', 'Levain Call', 'Glitch Spirits']) {
+            const track = trackByName.get(trackName);
+            const gainLane = projectData.automation.lanes.find(
+                (lane) => lane.trackId === track?.id && lane.parameterId === 'gain'
+            );
+
+            expect(overlaps(getNotes(projectData, [trackName]), 480, 484).length).toBeGreaterThan(0);
+            expect(gainLane?.points.find((point) => point.beat === 480)?.value).toBe(0);
+            expect(gainLane?.points.find((point) => point.beat === 480)?.curve).toBe('step');
+            expect(gainLane?.points.find((point) => point.beat === 484)?.value).toBeGreaterThan(0);
+        }
         expect(new Set(late.map((note) => note.trackName))).toEqual(
             new Set(['Levain Call', 'Grand Boule Ritual', 'Root Drone', 'Granular Voices'])
         );

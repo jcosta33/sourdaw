@@ -85,10 +85,7 @@ const ACTIVE_TRACKS = {
 
 function getWindows(section: Section, trackName: string): readonly (readonly [number, number])[] {
     if (section.key === 'drop-two') {
-        return [
-            [416, 480],
-            [484, 544],
-        ];
+        return [[416, 544]];
     }
     if (section.key === 'chapel') {
         return [
@@ -302,7 +299,11 @@ export function createMyceliumVoicePerformance(projectData: ProjectData): Projec
         return {
             ...arrangement,
             tracks: { tracks, selectedTrackId: arrangement.tracks?.selectedTrackId ?? null },
-            midi,
+            midi: {
+                notesByClipId: midi.notesByClipId,
+                ccByClipId: midi.ccByClipId,
+                pitchBendByClipId: midi.pitchBendByClipId,
+            },
         };
     });
     return { ...projectData, arrangement: { tracks }, midi, arrangements };

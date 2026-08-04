@@ -10,6 +10,7 @@ import { automationStore } from '#/modules/Automation/stores';
 import { projectCrdtToStores } from '#/modules/CrdtDocument/useCases';
 
 import { arrangementStore } from '../../../../stores/arrangementStore';
+import { projectStore } from '../../../../stores/projectStore';
 import { resetModuleStoresToDefault } from '../../../projectPersistence/helpers/resetModuleStoresToDefault';
 import { createMyceliumAscendantDemo } from '../createMyceliumAscendantDemo';
 
@@ -75,7 +76,7 @@ describe('Mycelium Ascendant project reload', () => {
         vi.unstubAllGlobals();
     });
 
-    it('preserves canonical automation and the active arrangement through CRDT projection reload', () => {
+    it('preserves canonical automation, project scale, and the active arrangement through CRDT projection reload', () => {
         const peer = createPeer();
         configureAutomergeStoragePort(peer.port);
 
@@ -87,6 +88,7 @@ describe('Mycelium Ascendant project reload', () => {
         const canonicalDocumentAutomation = readDocumentSlot(peer, 'automation');
 
         expect(canonicalAutomation?.lanes).toHaveLength(115);
+        expect(projectStore.value?.scaleName).toBe('harmonicMinor');
         const canonicalActiveArrangement = canonicalArrangementState?.arrangements.find(
             (arrangement) => arrangement.id === canonicalArrangementState.activeArrangementId
         );
@@ -107,6 +109,7 @@ describe('Mycelium Ascendant project reload', () => {
         }
 
         expect(automationStore.value).toEqual(canonicalAutomation);
+        expect(projectStore.value?.scaleName).toBe('harmonicMinor');
         const reloadedArrangementState = arrangementStore.value;
         const reloadedActiveArrangement = reloadedArrangementState?.arrangements.find(
             (arrangement) => arrangement.id === reloadedArrangementState.activeArrangementId

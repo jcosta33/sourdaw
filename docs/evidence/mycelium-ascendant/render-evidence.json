@@ -1,5 +1,6 @@
 {
     "capturedAt": "2026-07-26T15:08:24.521Z",
+    "evidenceStatus": "historical-stale",
     "projectSha256": "1cea829dfa15f1e3ac94e611606cc3ef2ac3c4a2bccdfe1cc5707412565ffd9c",
     "wavSha256": "52b0b2203c0fdcdd549721e5a0d98510d48b47a683344d36b6fb3571b25a616b",
     "wavHashScope": "captured analyzed artifact; current stochastic DSP renders are re-analyzed by E2E and attach their own SHA",

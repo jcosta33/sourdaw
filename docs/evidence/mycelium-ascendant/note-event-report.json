@@ -1,5 +1,6 @@
 {
     "capturedAt": "2026-07-26T16:48:54+02:00",
+    "evidenceStatus": "historical-stale",
     "projectSha256": "1cea829dfa15f1e3ac94e611606cc3ef2ac3c4a2bccdfe1cc5707412565ffd9c",
     "normalization": "Absolute clip-relative MIDI events grouped by half-open section range [startBeat, endBeat), then by owning track name.",
     "totalNotes": 3784,

@@ -1,7 +1,9 @@
 # Mycelium Ascendant — launch and dependency integrity
 
-Evidence refreshed: 2026-07-26 18:05 CEST
+Historical evidence refreshed: 2026-07-26 18:05 CEST
 Project fingerprint: `1cea829dfa15f1e3ac94e611606cc3ef2ac3c4a2bccdfe1cc5707412565ffd9c`
+
+> Historical only: the canonical score has since changed. Current launch and dependency acceptance require a fresh run against the reconstructed blueprint.
 
 ## Browser launch
 
@@ -13,7 +15,7 @@ Project fingerprint: `1cea829dfa15f1e3ac94e611606cc3ef2ac3c4a2bccdfe1cc570741256
 
 This is a desktop-runtime contract simulation in Chromium, not a native-shell/WebDriver run. The repository has no Tauri WebDriver harness, and a fresh native build was intentionally not introduced while the workspace had only 19 GiB free; the evidence does not claim native window automation.
 
-**AC-020 status: partial / unsupported for native desktop launch.** Browser launch and the webview contract simulation pass; a native Tauri-shell launch has not been verified.
+**Historical AC-020 result:** browser launch and the webview contract simulation passed for the captured blueprint; a current run and native Tauri-shell launch remain unverified.
 
 ## Bundled-only dependency proof
 

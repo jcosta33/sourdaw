@@ -41,10 +41,7 @@ const PAD_NAMES = [
 ] as const;
 
 const DROP_ONE_RANGES = [[192, 288]] as const;
-const DROP_TWO_RANGES = [
-    [416, 480],
-    [484, 544],
-] as const;
+const DROP_TWO_RANGES = [[416, 544]] as const;
 
 function stepped(startBeat: number, endBeat: number, step: number, duration: number, velocity: number): NoteSeed[] {
     const count = Math.ceil((endBeat - startBeat) / step);
@@ -172,7 +169,7 @@ function drumSeeds(name: string, section: RhythmSection): NoteSeed[] {
         return name === 'Kick' ? stepped(352, 415.75, 4, 0.12, 94) : [];
     }
     if (section.key === 'drop-two') {
-        return [...dropDrumSeeds(name, 416, 480, 16), ...dropDrumSeeds(name, 484, 544, 16)];
+        return dropDrumSeeds(name, 416, 544, 16);
     }
     if (name === 'Kick') {
         return peelSeeds(544, 0.12, 104);
@@ -213,6 +210,9 @@ function bassSeeds(name: string, section: RhythmSection): NoteSeed[] {
     }
     if (name === 'Acid Tendril' && section.key === 'pressure') {
         return stepped(160.5, 191.75, 4, 0.18, 86);
+    }
+    if (name === 'Sub Mycelium' && section.key === 'chapel') {
+        return stepped(288.25, 316, 4, 0.22, 91);
     }
     if (name === 'Rolling Colony' && section.key === 'chapel') {
         return stepped(316.25, 352, 2, 0.16, 89);
@@ -284,7 +284,11 @@ export function createMyceliumRhythmPerformance(projectData: ProjectData): Proje
         return {
             ...arrangement,
             tracks: { tracks, selectedTrackId: arrangement.tracks?.selectedTrackId ?? null },
-            midi,
+            midi: {
+                notesByClipId: midi.notesByClipId,
+                ccByClipId: midi.ccByClipId,
+                pitchBendByClipId: midi.pitchBendByClipId,
+            },
         };
     });
     return { ...projectData, arrangement: { tracks }, midi, arrangements };

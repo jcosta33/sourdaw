@@ -4,7 +4,7 @@ import { createMyceliumId } from './createMyceliumId';
 
 import type { ProjectAutomationLane, ProjectAutomationPoint, ProjectTrack } from '../../../models/ProjectData';
 
-type Profile = 'drum' | 'bass' | 'voice' | 'atmosphere' | 'return' | 'master' | 'pan' | 'motion' | 'width';
+type Profile = 'drum' | 'bass' | 'voice' | 'atmosphere' | 'glitch' | 'return' | 'master' | 'pan' | 'motion' | 'width';
 type ParameterRange = readonly [min: number, max: number];
 type DeviceLaneSpec = readonly [trackName: string, deviceType: string, parameterIds: readonly string[]];
 
@@ -22,7 +22,8 @@ const GAIN_GROUPS: readonly [Profile, readonly string[]][] = [
             '|'
         ),
     ],
-    ['atmosphere', ['Root Drone', 'Granular Voices', 'Fractal Riser', 'Impact Field', 'Glitch Spirits']],
+    ['atmosphere', ['Root Drone', 'Granular Voices', 'Fractal Riser', 'Impact Field']],
+    ['glitch', ['Glitch Spirits']],
     ['return', ['Temple Chamber', 'Dub Tunnel', 'Mutation Return', 'Parallel Crush']],
     ['master', ['Master']],
 ];
@@ -130,8 +131,10 @@ const PROFILES: Readonly<Record<Profile, readonly (readonly [number, number])[]>
         [416, 1],
         [479.75, 1],
         [480, 0],
+        [483.75, 0],
         [484, 1],
         [544, 0.38],
+        [560, 0],
         [568, 0],
         [576, 0],
     ],
@@ -143,15 +146,18 @@ const PROFILES: Readonly<Record<Profile, readonly (readonly [number, number])[]>
         [191.75, 0],
         [192, 0.92],
         [288, 0],
+        [316, 0],
         [352, 0.18],
         [415.5, 0.96],
         [415.75, 0],
         [416, 0.96],
         [479.75, 0.96],
         [480, 0],
+        [483.75, 0],
         [484, 0.96],
         [544, 0.32],
-        [560, 0],
+        [560, 0.24],
+        [568, 0.16],
         [576, 0],
     ],
     voice: [
@@ -168,6 +174,7 @@ const PROFILES: Readonly<Record<Profile, readonly (readonly [number, number])[]>
         [416, 0.9],
         [479.75, 0.9],
         [480, 0],
+        [483.75, 0],
         [484, 0.88],
         [544, 0.48],
         [568, 0],
@@ -187,12 +194,33 @@ const PROFILES: Readonly<Record<Profile, readonly (readonly [number, number])[]>
         [568, 0.28],
         [576, 0],
     ],
+    glitch: [
+        [0, 0.5],
+        [64, 0.44],
+        [128, 0.38],
+        [192, 0.32],
+        [288, 0.76],
+        [352, 0.58],
+        [416, 0.38],
+        [479.75, 0.38],
+        [480, 0],
+        [483.75, 0],
+        [484, 0.42],
+        [544, 0.68],
+        [568, 0.28],
+        [576, 0],
+    ],
     return: [
         [0, 0.08],
         [64, 0.18],
         [128, 0.32],
         [188, 0.62],
-        [192, 0.22],
+        [192, 0.18],
+        [223.75, 0.18],
+        [224, 0.62],
+        [255.75, 0.62],
+        [256, 0.18],
+        [287.75, 0.18],
         [288, 0.54],
         [352, 0.28],
         [412, 0.72],
@@ -268,7 +296,7 @@ function createPoints(profile: Profile, min: number, max: number, invert = false
     return PROFILES[profile].map(([beat, normalized]) => ({
         beat,
         value: min + (max - min) * (invert ? 1 - normalized : normalized),
-        curve: [191.75, 415.75, 480].includes(beat) ? 'step' : 'linear',
+        curve: [191.75, 223.75, 224, 255.75, 256, 415.75, 480, 483.75].includes(beat) ? 'step' : 'linear',
         tension: 0,
     }));
 }

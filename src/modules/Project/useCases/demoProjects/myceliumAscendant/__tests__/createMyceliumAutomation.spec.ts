@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { getBuiltinPlugins } from '#/modules/Arrangement/useCases';
+import { evaluateAutomationCurve } from '#/utils/automationCurve';
 
 import { createMyceliumAutomation } from '../createMyceliumAutomation';
 import { createMyceliumTopology } from '../createMyceliumTopology';
@@ -14,6 +15,20 @@ function valueAt(points: Array<{ beat: number; value: number }>, beat: number): 
     return points.find((point) => point.beat === beat)?.value;
 }
 
+function valueBetween(
+    points: Array<Parameters<typeof evaluateAutomationCurve>[0]['firstPoint']>,
+    firstBeat: number,
+    secondBeat: number,
+    beat: number
+): number {
+    const firstPoint = points.find((point) => point.beat === firstBeat);
+    const secondPoint = points.find((point) => point.beat === secondBeat);
+    if (!firstPoint || !secondPoint) {
+        throw new Error(`Expected Mycelium automation segment ${String(firstBeat)}–${String(secondBeat)}`);
+    }
+    return evaluateAutomationCurve({ firstPoint, secondPoint, beat });
+}
+
 describe('createMyceliumAutomation', () => {
     it('builds dense, bounded, collision-free automation coverage', () => {
         const { tracks } = createMyceliumTopology();
@@ -23,7 +38,7 @@ describe('createMyceliumAutomation', () => {
         const laneKeys = lanes.map((lane) => `${lane.trackId}:${lane.parameterId}`);
 
         expect(lanes).toHaveLength(115);
-        expect(lanes.reduce((total, lane) => total + lane.points.length, 0)).toBe(1_579);
+        expect(lanes.reduce((total, lane) => total + lane.points.length, 0)).toBe(1_651);
         expect(new Set(lanes.map((lane) => lane.trackId)).size).toBe(39);
         expect(lanes.every((lane) => UUID_PATTERN.test(lane.id))).toBe(true);
         expect(new Set(lanes.map((lane) => lane.id)).size).toBe(lanes.length);
@@ -116,7 +131,7 @@ describe('createMyceliumAutomation', () => {
         expect(input).toEqual(original);
     });
 
-    it('encodes both clear windows, the false drop, return throws, and width contractions exactly', () => {
+    it('encodes clear windows, dry/wet answers, the false drop, dissolution order, and width contractions', () => {
         const result = createMyceliumAutomation(createMyceliumTopology().tracks);
         const trackByName = new Map(result.tracks.map((track) => [track.name, track]));
         function gainLane(name: string) {
@@ -134,13 +149,39 @@ describe('createMyceliumAutomation', () => {
             expect(valueAt(lane?.points ?? [], 479.75)).toBeGreaterThan(0);
             expect(valueAt(lane?.points ?? [], 480)).toBe(0);
             expect(lane?.points.find((point) => point.beat === 480)?.curve).toBe('step');
+            expect(valueAt(lane?.points ?? [], 483.75)).toBe(0);
+            expect(lane?.points.find((point) => point.beat === 483.75)?.curve).toBe('step');
             expect(valueAt(lane?.points ?? [], 484)).toBeGreaterThan(0);
+            expect(lane?.points.find((point) => point.beat === 484)?.curve).toBe('linear');
+            expect(valueBetween(lane?.points ?? [], 483.75, 484, 483.875)).toBe(0);
         }
         expect(valueAt(gainLane('Sub Mycelium')?.points ?? [], 288)).toBe(0);
+        expect(valueAt(gainLane('Sub Mycelium')?.points ?? [], 316)).toBe(0);
         expect(valueAt(gainLane('Sub Mycelium')?.points ?? [], 480)).toBe(0);
         expect(valueAt(gainLane('Dub Tunnel')?.points ?? [], 412)).toBeGreaterThan(
             valueAt(gainLane('Dub Tunnel')?.points ?? [], 416) ?? 1
         );
+        for (const returnName of ['Temple Chamber', 'Dub Tunnel', 'Mutation Return', 'Parallel Crush']) {
+            const points = gainLane(returnName)?.points ?? [];
+            expect(valueAt(points, 223.75)).toBe(valueAt(points, 192));
+            expect(points.find((point) => point.beat === 223.75)?.curve).toBe('step');
+            expect(valueAt(points, 224)).toBeGreaterThan(valueAt(points, 223.75) ?? 1);
+            expect(points.find((point) => point.beat === 224)?.curve).toBe('step');
+            expect(valueBetween(points, 223.75, 224, 223.875)).toBe(valueAt(points, 223.75));
+            expect(valueAt(points, 255.75)).toBe(valueAt(points, 224));
+            expect(points.find((point) => point.beat === 255.75)?.curve).toBe('step');
+            expect(valueAt(points, 256)).toBeLessThan(valueAt(points, 255.75) ?? 0);
+            expect(points.find((point) => point.beat === 256)?.curve).toBe('step');
+            expect(valueBetween(points, 255.75, 256, 255.875)).toBe(valueAt(points, 255.75));
+            expect(valueAt(points, 287.75)).toBe(valueAt(points, 256));
+        }
+        const kickPoints = gainLane('Kick')?.points ?? [];
+        expect(valueBetween(kickPoints, 484, 544, 514)).toBeLessThan(valueAt(kickPoints, 484) ?? 0);
+        expect(valueBetween(kickPoints, 484, 544, 514)).toBeGreaterThan(valueAt(kickPoints, 544) ?? 1);
+        expect(valueAt(gainLane('Kick')?.points ?? [], 560)).toBe(0);
+        expect(valueAt(gainLane('Rolling Colony')?.points ?? [], 560)).toBeGreaterThan(0);
+        expect(valueAt(gainLane('Rolling Colony')?.points ?? [], 568)).toBeGreaterThan(0);
+        expect(valueAt(gainLane('Rolling Colony')?.points ?? [], 576)).toBe(0);
         expect(result.lanes.some((lane) => lane.parameterId.endsWith(':mix'))).toBe(false);
         const master = trackByName.get('Master');
         const widener = master?.devices.find((device) => device.type === 'builtin-stereo-widener');

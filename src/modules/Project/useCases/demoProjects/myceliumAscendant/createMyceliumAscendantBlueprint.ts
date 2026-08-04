@@ -90,7 +90,7 @@ export function createMyceliumAscendantBlueprint(): MyceliumAscendantBlueprint {
             createdAt: 0,
             updatedAt: 0,
             keyRoot: 9,
-            scaleName: 'harmonic-minor',
+            scaleName: 'harmonicMinor',
             tuning: {
                 name: 'Equal Temperament',
                 frequencies: Array.from({ length: 128 }, (_, index) => 440 * 2 ** ((index - 69) / 12)),
@@ -151,7 +151,11 @@ export function createMyceliumAscendantBlueprint(): MyceliumAscendantBlueprint {
             name: 'Mycelium Ascendant',
             tracks: { tracks: projectData.arrangement.tracks, selectedTrackId: null },
             automation: projectData.automation,
-            midi: projectData.midi,
+            midi: {
+                notesByClipId: projectData.midi.notesByClipId,
+                ccByClipId: projectData.midi.ccByClipId,
+                pitchBendByClipId: projectData.midi.pitchBendByClipId,
+            },
             tempoMap: {
                 changes:
                     projectData.tempoMap?.changes.map((change, index) => ({
