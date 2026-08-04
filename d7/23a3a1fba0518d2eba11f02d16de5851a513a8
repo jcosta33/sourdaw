@@ -1,0 +1,21 @@
+src/modules/Arrangement/handlers/track/__tests__/handleRestoreSoloSafe.spec.ts
+  s_ac9b259eab20ba::t_c2ae32efeee3c3 1-97
+src/modules/MIDI/handlers/noteTransform/__tests__/handleTransposeAndRestoreSoloSafe.spec.ts
+  s_ac9b259eab20ba::t_77cb057e1f414c 1-75
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "d723a3a1fba0518d2eba11f02d16de5851a513a8",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
