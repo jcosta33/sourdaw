@@ -1,0 +1,19 @@
+src/components/daw/__tests__/DawSmallComponents.spec.tsx
+  s_ac9b259eab20ba::t_ce6fdd9bedd836 1-77
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "c1b0c3735ea972aa4b442fdb9d57f008fcc6221a",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
