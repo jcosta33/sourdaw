@@ -1,0 +1,227 @@
+crates/daw-dsp/src/fermenter/synth.rs
+  s_ac9b259eab20ba::t_5f3c8d6c2bdb0d 12-22,24-25,28-37,400-407,416-419,422,434-437,669-679,684-700,833,836,839-862,890,902,918,934,947,957-1114,1138
+  s_ac9b259eab20ba::t_c2f5f1666d9a6a 834-835
+src/modules/AudioEngine/services/fermenterProcessor.ts
+  s_ac9b259eab20ba::t_843dab71a0a2f1 30-37,117,122-141,147,149,164,167-169,185,212-258,260-263,265-266,295-305,347,374-417,421-429,523-526
+src/modules/AudioEngine/services/__tests__/fermenterProcessorEventOffsets.spec.ts
+  s_ac9b259eab20ba::t_c3eb0d8f7baba5 1-431
+src/modules/AudioEngine/engine/FermenterNode.ts
+  s_ac9b259eab20ba::t_629f15a28a6cbc 14,137,152-153,162,183-209,219-223,227-229,400
+src/modules/AudioEngine/services/__tests__/fermenterProcessor.spec.ts
+  s_ac9b259eab20ba::t_08b7209252d78f 37,40,54-75,84,101,139,141,203,586-605
+  s_ac9b259eab20ba::t_33a4e862e03e4e 606
+crates/daw-dsp/src/fermenter/mod.rs
+  s_ac9b259eab20ba::t_8ee58160f77987 29-30
+  s_ac9b259eab20ba::t_45342398fcf839 27-28,31,34-42,67-69,82-83,142-203,206-208,214-220,235-237,259-271,276,279-352
+  s_ac9b259eab20ba::t_039d72777334ce 353
+crates/daw-dsp/src/fermenter/layer.rs
+  s_ac9b259eab20ba::t_fa6ff93c823f29 12,114-115,196-197,241-259,345-353,373,392-415,471-485,488-491
+crates/daw-dsp/tests/device_process_rt.rs
+  s_ac9b259eab20ba::t_1357e1f5db5ec6 556-603
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_ac9b259eab20ba::t_8ac5bdfcad4f4f 1,277-279,282-304,759-831,932-935,938-952
+public/wasm/daw-dsp/daw_dsp.js
+  s_ac9b259eab20ba::t_0e5d5e24d4883b 572-574,582-635
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_ac9b259eab20ba::t_b0b7c939cd5d94 1,5-77,178-181,184-198
+public/wasm/manifest.json
+  s_ac9b259eab20ba::t_0aad15f9d41b86 12,15-18,20-21
+src/modules/AiGeneration/handlers/aiMidi/__tests__/handleCompleteMidi.spec.ts
+  s_ac9b259eab20ba::t_ef0da77e892dd5 5-30,69,74-75,78,86-88,92-105,110-111,113-119,129-131,145,147-150,155,157-159,166-172,174,182-186,195-198,200,203,208-244
+src/modules/AiGeneration/handlers/aiMidi/__tests__/handleGenerateBassline.spec.ts
+  s_ac9b259eab20ba::t_c80da7be58af63 5-33,42,66-73,77-79,83-85,91-100,103,108-112,129-146,153-155,158-161,163,166,171-198,202,204,209-212,216-221,225-228,230-234,238-252,266-337
+src/modules/AiGeneration/handlers/aiMidi/__tests__/handleVariationMidi.spec.ts
+  s_ac9b259eab20ba::t_0d3f460b9b1b25 5-29,38-41,57-59,63-64,67,76,83,85-97,102-104,106,121-158
+src/modules/AiGeneration/handlers/aiMidi/__tests__/llmNoteHelpers.spec.ts
+  s_ac9b259eab20ba::t_8bb8989239adf2 55,86,89-91
+src/modules/AiGeneration/handlers/aiMidi/createMidiGenerationSourceGuard.ts
+  s_ac9b259eab20ba::t_3fcfd3aaa25e27 1-78
+src/modules/AiGeneration/handlers/aiMidi/handleCompleteMidi.ts
+  s_ac9b259eab20ba::t_674873de85561f 2,4-5,9-10,15-20,23-26,29,41-47,51-52,54-75,77-87,89-93,95-99,102-123,126-154
+src/modules/AiGeneration/handlers/aiMidi/handleGenerateBassline.ts
+  s_ac9b259eab20ba::t_34f5e284e41d5f 2,4-6,10-11,16-19,21-28,33-37,39-55,58-61,65-66,69-88,90-118
+src/modules/AiGeneration/handlers/aiMidi/handleVariationMidi.ts
+  s_ac9b259eab20ba::t_7b92d85617786f 2,4,6,8-9,14-19,25-30,39-64
+src/modules/AiGeneration/handlers/aiMidi/hasDurableMidiGenerationResult.ts
+  s_ac9b259eab20ba::t_09e9df6ae6aba9 1-57
+src/modules/AiGeneration/handlers/aiMidi/llmNoteHelpers.ts
+  s_ac9b259eab20ba::t_3a492b783e1080 1-5,38-39,61-73
+src/modules/AiGeneration/useCases/__tests__/generateMidiVariations.spec.ts
+  s_ac9b259eab20ba::t_710e2d43a23013 1,3,5-17,21-27,32,35-37,40-42,45-47,50,53-74,78-79,83,90-98,100-101,103,106-109,111-147,150-157,160,163-164,166-168,171-175,177-180,183-188,190-191,194-197,199-203,206-210,212-213,216-227,230-231,234-242,245-246,249-251,253-256
+src/modules/AiGeneration/useCases/__tests__/llmMidiGeneration.spec.ts
+  s_ac9b259eab20ba::t_39f4f649342964 9,13,20,35,71,81,97-103,113,144-156,159-163,165,167-168,170-181,183-184,196-276
+src/modules/AiGeneration/useCases/actions/__tests__/buildSeedNotesFromPrompt.spec.ts
+  s_ac9b259eab20ba::t_dd50f3ced3089d 1-92
+src/modules/AiGeneration/useCases/actions/__tests__/handleGenerateMidiPrompt.spec.ts
+  s_ac9b259eab20ba::t_269d7272e27278 1,5-25,27-30,33-35,38-41,43-46,48-51,53-60,63,67,71,74-75,79-86,89-90,92-108,111-114,117,119-125,127-134,136,138-139,142-148,151,153-154,157-177,179-185,188-207,210-219
+src/modules/AiGeneration/useCases/actions/cancelProcessingTask.ts
+  s_ac9b259eab20ba::t_5ea2cf3d4256f9 6-10
+src/modules/AiGeneration/useCases/actions/handleGenerateMidiPrompt.ts
+  s_ac9b259eab20ba::t_cae20d38015f23 1-4,6-7,9,15,17-57,60-62,64-75,78-83,85-91,93-98,101-109,111,114-128,130-137,139-146,148-149,151,153-157,160,162-170,172-174
+src/modules/AiGeneration/useCases/generateMidiVariations.ts
+  s_ac9b259eab20ba::t_87308b1913a491 6,9-14,20-38,50-81,85-86,89,93,96,99,107,109,116-123,136,141,146,162,174,194,196-205,244,247-258,261,268-301,303-334
+src/modules/AiGeneration/useCases/llmMidiGeneration.ts
+  s_ac9b259eab20ba::t_86d6d877097966 4,17-22,44-46,48,55-56,58,66,71,73-78,96,98-99,102,109,165-172,179-180,183-192,198-233
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_ac9b259eab20ba::t_9ad0e84f506ec1 251-252,286-287,335-337,339-349
+src/modules/AiRuntime/models/Tools/CreateAddNotesToolSchema.ts
+  s_ac9b259eab20ba::t_8b615ad45f5fea 1-72
+src/modules/AiRuntime/models/Tools/GenerationAndView.ts
+  s_ac9b259eab20ba::t_076abc0be1ec53 1,67
+src/modules/AiRuntime/models/__tests__/RuntimeAction.spec.ts
+  s_ac9b259eab20ba::t_d7e740bd4e1ffa 28-29,80
+src/modules/AiRuntime/transformers/promptParser/__tests__/findDeniedPromptIntent.spec.ts
+  s_ac9b259eab20ba::t_b6ffab06188801 1-66
+src/modules/AiRuntime/useCases/__tests__/getMidiNoteGenerationToolSchemas.spec.ts
+  s_ac9b259eab20ba::t_6a8da8224c8101 1-77
+src/modules/AiRuntime/useCases/__tests__/requireMidiNoteGenerationToolCall.spec.ts
+  s_ac9b259eab20ba::t_0227c6192b1219 1-120
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_ac9b259eab20ba::t_2bddcd8bbd1ce6 713,720-737,780-781
+src/modules/AiRuntime/useCases/getMidiNoteGenerationToolSchemas.ts
+  s_ac9b259eab20ba::t_ec712c5014f4a0 1-2,4-7,9-10
+src/modules/AiRuntime/useCases/index.ts
+  s_ac9b259eab20ba::t_421bef15bb0494 40
+src/modules/AiRuntime/useCases/llmOrchestration/lifecycle/__tests__/initEngine.spec.ts
+  s_ac9b259eab20ba::t_8dfe5f292a1ad4 56,59,69,73,80,82,95,99
+src/modules/AiRuntime/useCases/llmOrchestration/lifecycle/initEngine.ts
+  s_ac9b259eab20ba::t_e814a7dd7d8eda 4,16,36,39,45,48,52,55,58
+src/modules/AiRuntime/useCases/requireMidiNoteGenerationToolCall.ts
+  s_ac9b259eab20ba::t_ac8917edb86da4 1-87
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_ac9b259eab20ba::t_11be057f558c71 122-125,152-153,156-158,430-435
+src/modules/Arrangement/handlers/clip/__tests__/handleAddClip.spec.ts
+  s_ac9b259eab20ba::t_35d3f6f509d362 5-12,14,34,39-42,57,66-73,75-99,104
+src/modules/Arrangement/handlers/clip/handleAddClip.ts
+  s_ac9b259eab20ba::t_72b790fe3ac750 4,7-23,26-35,38
+src/modules/Arrangement/services/__tests__/reconcileRoutingAfterRemoval.spec.ts
+  s_ac9b259eab20ba::t_77e814a27448d8 1-205
+src/modules/Arrangement/transformers/__tests__/clipDspTransformersBranches.spec.ts
+  s_ac9b259eab20ba::t_e82eed4beac91c 1-132
+src/modules/Arrangement/useCases/__tests__/addTrackWithDeferredAddedEvent.spec.ts
+  s_ac9b259eab20ba::t_8bab58ad0a1129 1-69
+src/modules/Arrangement/useCases/addTrackWithDeferredAddedEvent.ts
+  s_ac9b259eab20ba::t_8c99998d5261dc 1-46
+src/modules/Arrangement/useCases/audioAnalysis/__tests__/audioToMidiBranches.spec.ts
+  s_ac9b259eab20ba::t_ed6a9503bc850f 1-216
+src/modules/Arrangement/useCases/clip/getNextAppActionClipId.ts
+  s_ac9b259eab20ba::t_3d3442c4c500e8 1-5
+src/modules/Arrangement/useCases/index.ts
+  s_ac9b259eab20ba::t_8277450a78eba6 7
+src/modules/AudioEngine/engine/__tests__/FermenterNode.spec.ts
+  s_ac9b259eab20ba::t_d39cba0c5cdc01 19-20,38-42,44-46,48-49,127,129,133,135,138,150-155,165,167,170-256,396-428,444,471,538
+src/modules/AudioEngine/engine/__tests__/noteExpressionBranches.spec.ts
+  s_ac9b259eab20ba::t_7e75a2d8f77438 1-152
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistryDescriptors.spec.ts
+  s_ac9b259eab20ba::t_4dfb9f40d9def1 10,22,38-42,155-209
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_ac9b259eab20ba::t_a369f2f8ae7448 119-127,131-174,190,195-198,208,237-244,248
+src/modules/AudioEngine/repositories/deviceStrategy/__tests__/NativeDspDeviceStrategy.spec.ts
+  s_ac9b259eab20ba::t_9781994a4653c5 10-12,309-325
+src/modules/AudioEngine/repositories/deviceStrategy/nativeDspDeviceFactories.ts
+  s_ac9b259eab20ba::t_6475f7fb75bd5f 86-100,157
+src/modules/AudioEngine/repositories/devices/reverbDelay/__tests__/helpersBranches.spec.ts
+  s_ac9b259eab20ba::t_dde1801127cf9d 1-257
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/compileAutomationSegments.spec.ts
+  s_ac9b259eab20ba::t_02815c617838bb 1-93
+src/modules/AudioEngine/services/__tests__/kneadProcessor.spec.ts
+  s_ac9b259eab20ba::t_04d090627f100b 32,49-50,81-82,103-104,156,360,492-634
+src/modules/AudioEngine/services/__tests__/processorQueues.spec.ts
+  s_ac9b259eab20ba::t_2787010774ad2d 63
+src/modules/AudioEngine/services/__tests__/scoringProcessor.spec.ts
+  s_ac9b259eab20ba::t_e39fed240ccb74 132,240-317
+src/modules/AudioEngine/services/kneadProcessor.ts
+  s_ac9b259eab20ba::t_ad8e3823bc5726 59-68,75-83,266-291,307-320,322-338
+src/modules/AudioEngine/services/scoringProcessor.ts
+  s_ac9b259eab20ba::t_a4234f326e7a1f 34-42,115-120,124-138,141
+src/modules/AudioEngine/useCases/advancedMetering/lufs/__tests__/ShortTermLUFSBranches.spec.ts
+  s_ac9b259eab20ba::t_4999c40a28b717 1-87
+src/modules/AudioEngine/useCases/offlineRender/__tests__/projectStripTrack.spec.ts
+  s_ac9b259eab20ba::t_e83293e9e90f7f 1-142
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderInSegments.spec.ts
+  s_ac9b259eab20ba::t_26ccfd490e9157 3,7-22,369-395
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_ac9b259eab20ba::t_c30211b826ae9e 1,277-279,282-304,759-831,932-935,938-952
+src/modules/AudioEngine/wasm/daw_dsp.js
+  s_ac9b259eab20ba::t_0adc507fcb840a 749-751,759-812
+src/modules/AudioRendering/repositories/audioEncoders/__tests__/applyExportNormalization.spec.ts
+  s_ac9b259eab20ba::t_a9186485fa6679 1-169
+src/modules/Automation/useCases/automation/__tests__/transformAutomationPoints.spec.ts
+  s_ac9b259eab20ba::t_692f9962210acd 1-278
+src/modules/Command/useCases/__tests__/redo.spec.ts
+  s_ac9b259eab20ba::t_644018391a2da3 3,18-19,36-43,78-80,114-208
+src/modules/Command/useCases/redo.ts
+  s_ac9b259eab20ba::t_0bafe05e1ea00d 3,7,29-70,86-91,124-152
+src/modules/DawInterchange/useCases/__tests__/readDawProjectZip.spec.ts
+  s_ac9b259eab20ba::t_88814ef725da8b 1-128
+src/modules/DawInterchange/useCases/__tests__/serializeProjectXmlBranches.spec.ts
+  s_ac9b259eab20ba::t_d4ae2c880250c0 1-363
+src/modules/Fermenter/useCases/presetMorph/__tests__/lerpPatchArray.spec.ts
+  s_ac9b259eab20ba::t_a39c2db523d964 1-70
+src/modules/MIDI/handlers/noteCrud/__tests__/handleAddNotes.spec.ts
+  s_ac9b259eab20ba::t_f43a0a6cdd1380 1-110
+src/modules/MIDI/handlers/noteCrud/handleAddNotes.ts
+  s_ac9b259eab20ba::t_9ae04d05e7512e 3,5-31,35-63,66
+src/modules/MIDI/models/__tests__/MidiControllerState.spec.ts
+  s_ac9b259eab20ba::t_d1415196fde9e0 1-262
+src/modules/MIDI/transformers/normalizeMidiNoteInput.ts
+  s_ac9b259eab20ba::t_d7f9c2474b9854 1-20
+src/modules/MIDI/useCases/__tests__/getMidiNoteTransformHandlers.spec.ts
+  s_ac9b259eab20ba::t_1b182f29b9041e 4,27,85-94
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/batchAddMidiNotes.spec.ts
+  s_ac9b259eab20ba::t_d3bfb68c957937 33-41
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/midiTimeStateCodec.spec.ts
+  s_ac9b259eab20ba::t_45c2deb41fba1d 1-264
+src/modules/MIDI/useCases/midiNoteCrud/batchAddMidiNotes.ts
+  s_ac9b259eab20ba::t_862d0986a4a42a 2,4,7,33-38
+src/modules/MIDI/useCases/midiNoteTransforms/restoreMidiClipNotes.ts
+  s_ac9b259eab20ba::t_436b81a1868b61 10,17,20,23-28
+src/modules/MIDI/useCases/stepRecording/__tests__/stepRecordNavigationBranches.spec.ts
+  s_ac9b259eab20ba::t_616453010c9799 1-130
+src/modules/MIDI/useCases/webMidiInput/__tests__/resolveBendRangeSemitones.spec.ts
+  s_ac9b259eab20ba::t_476980b5af7e2f 1-54
+src/modules/Project/repositories/project/__tests__/compareProjectSnapshots.spec.ts
+  s_ac9b259eab20ba::t_38ccbe61e253cc 1-91
+src/modules/Proof/services/__tests__/getRestoredProofChainOrder.spec.ts
+  s_ac9b259eab20ba::t_7408a0547d75d5 1-48
+src/modules/ProofChamber/useCases/proofChamber/__tests__/decodeImpulseResponseBranches.spec.ts
+  s_ac9b259eab20ba::t_a18e0750f1281a 1-168
+src/modules/SampleLibrary/useCases/sampleDatabase/__tests__/getFilteredSamplesSort.spec.ts
+  s_ac9b259eab20ba::t_8c0add259906de 1-163
+src/modules/TimelineEditor/presentations/views/ClipView/PianoRollContextMenu.tsx
+  s_ac9b259eab20ba::t_61f21a106de079 62-67
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollContextMenu.spec.tsx
+  s_ac9b259eab20ba::t_3af5bc59d823e1 308,313-318
+src/modules/Toaster/useCases/__tests__/projectToasterKitToEngineMessages.spec.ts
+  s_ac9b259eab20ba::t_51fdd7d982b4ad 1-160
+src/modules/Toaster/useCases/__tests__/projectToasterStepEventsBranches.spec.ts
+  s_ac9b259eab20ba::t_475b45bdcdd7da 1-241
+src/modules/Transport/models/__tests__/TimeSignatureMapBranches.spec.ts
+  s_ac9b259eab20ba::t_675ed214fe71f9 1-118
+src/modules/Transport/useCases/scheduling/__tests__/selectMidiNotesForLoopWindowBranches.spec.ts
+  s_ac9b259eab20ba::t_fd8e5294335903 1-216
+src/modules/Transport/useCases/tempoMap/__tests__/timelineMapTimeStateCodec.spec.ts
+  s_ac9b259eab20ba::t_536ca8fab09689 1-218
+src/modules/Transport/useCases/transportControls/__tests__/punchRegionBranches.spec.ts
+  s_ac9b259eab20ba::t_880647b4871f6f 1-103
+src/modules/Yeast/workers/__tests__/lcgRandom.spec.ts
+  s_ac9b259eab20ba::t_56ec625f58d47b 1-82
+src/utils/handlerContract.ts
+  s_ac9b259eab20ba::t_ec169bf09d8a13 394-395,402-417,507-508,791-798
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "25b256a77b3ca2a84d94c89c975f52024bb9bbad",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
