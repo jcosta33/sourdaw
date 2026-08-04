@@ -1,0 +1,84 @@
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_bc88af7d3b054c::t_0195af9dfe6aae 60,76,909-926
+  s_bc88af7d3b054c::t_cc7f6495c1ddfe 75
+  s_bc88af7d3b054c::t_c267bba7e88c68 2
+  s_bc88af7d3b054c::t_95be2e8cd5ada9 927-928
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_bc88af7d3b054c::t_11e3a860c0e178 30-31,486-487
+  s_bc88af7d3b054c::t_7da10df5ed020c 482-485
+src/modules/Arrangement/useCases/marker/markerOperations/__tests__/setMarkerColor.spec.ts
+  s_bc88af7d3b054c::t_bd0a64fe2f17d6 33,35,62-74,76-77
+src/modules/Arrangement/models/ColorPalette.ts
+  s_bc88af7d3b054c::t_c267bba7e88c68 8-9,40
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_bc88af7d3b054c::t_bd0a64fe2f17d6 511-620
+src/modules/Arrangement/useCases/marker/markerOperations/setMarkerColor.ts
+  s_bc88af7d3b054c::t_7da10df5ed020c 3,6-10,16
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_bc88af7d3b054c::t_bd0a64fe2f17d6 355-361,365-367
+  s_bc88af7d3b054c::t_11e3a860c0e178 362-364
+  s_66d4924c65dcd2::t_13afda1944c2dd 354
+src/modules/AiRuntime/useCases/__tests__/describePlannedAction.spec.ts
+  s_bc88af7d3b054c::t_bd0a64fe2f17d6 6,106,124-138
+  s_bc88af7d3b054c::t_c6798ae68caa9f 139-140
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_bc88af7d3b054c::t_5d551c8e136b04 451-465,1236-1247
+  s_bc88af7d3b054c::t_46dba49dbf5884 450
+  s_bc88af7d3b054c::t_b055d1764f11a4 1248-1249
+src/modules/AiRuntime/useCases/describePlannedAction.ts
+  s_bc88af7d3b054c::t_bc50da0e921de9 34-36,38
+  s_bc88af7d3b054c::t_c267bba7e88c68 4
+  s_bc88af7d3b054c::t_cc7f6495c1ddfe 37
+  s_bc88af7d3b054c::t_dc8f745c905360 39-40
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_bc88af7d3b054c::t_43d62e5c0e6841 1556-1581,1589-1598
+  s_bc88af7d3b054c::t_c42661b6e1836c 1092,1095-1098,1518-1522,1555,2119-2125
+  s_bc88af7d3b054c::t_1e7230f5f14ce6 2109,2126-2129
+src/utils/markerColorPalette.ts
+  s_bc88af7d3b054c::t_c267bba7e88c68 1-35
+src/utils/__tests__/markerColorPalette.spec.ts
+  s_bc88af7d3b054c::t_c267bba7e88c68 1-23
+src/modules/Arrangement/handlers/marker/__tests__/markerHandlers.spec.ts
+  s_bc88af7d3b054c::t_bd0a64fe2f17d6 309-319
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_bc88af7d3b054c::t_bd0a64fe2f17d6 77,413-458
+  s_bc88af7d3b054c::t_43d62e5c0e6841 462-519
+  s_66d4924c65dcd2::t_74e6fdc1836017 459-461,520-521
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_bc88af7d3b054c::t_7da10df5ed020c 127
+src/modules/Arrangement/handlers/marker/handleSetMarkerColor.ts
+  s_bc88af7d3b054c::t_7da10df5ed020c 8-10,18-20
+  s_bc88af7d3b054c::t_e0e6c6e25fa2cb 11
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_bc88af7d3b054c::t_c70629b7147bde 291
+  s_bc88af7d3b054c::t_bd0a64fe2f17d6 30,314,331-354
+  s_bc88af7d3b054c::t_62cfd47df6b598 355-356
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_bc88af7d3b054c::t_34ac8f2dd6a33c 28,400-401,403-407,409-431,1640-1643
+  s_bc88af7d3b054c::t_cc7f6495c1ddfe 402,408
+  s_bc88af7d3b054c::t_c267bba7e88c68 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "3cb29dd1d6d2860c70234190bdbffeaa29700ded",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
