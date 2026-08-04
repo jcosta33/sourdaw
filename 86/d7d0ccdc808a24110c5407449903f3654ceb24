@@ -1,0 +1,19 @@
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts
+  s_ac9b259eab20ba::t_d2968e38860c42 22,47
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "86d7d0ccdc808a24110c5407449903f3654ceb24",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
