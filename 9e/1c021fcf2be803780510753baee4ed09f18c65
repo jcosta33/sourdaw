@@ -1,0 +1,19 @@
+src/modules/GrandBoule/presentations/components/__tests__/StringVibrationView.spec.tsx
+  s_66d4924c65dcd2::t_e2265bb339b193 1,6-30
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "9e1c021fcf2be803780510753baee4ed09f18c65",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
