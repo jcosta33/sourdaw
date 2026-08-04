@@ -55,7 +55,7 @@ import {
     setModulationDependencies,
 } from '#/modules/Automation/useCases';
 import { updateBacteriaMeters } from '#/modules/Bacteria/stores';
-import { initBrowserAi, getRaveHandlers } from '#/modules/BrowserAi/useCases';
+import { initBrowserAi, initRaveModels, getRaveHandlers } from '#/modules/BrowserAi/useCases';
 import { getCollaborationHandlers, leaveSession } from '#/modules/Collaboration/useCases';
 import { registerHandlerMap } from '#/modules/Command/stores';
 import {
@@ -433,6 +433,12 @@ migrateLegacyProjectSnapshots()
 // Detects WebGPU capability and populates model registry from OPFS cache.
 initBrowserAi().catch((error: unknown) => {
     logger.warn(`Browser AI initialization failed (non-fatal): ${String(error)}`);
+});
+
+// Probe OPFS for RAVE model weights. Registers only what is actually there, so
+// the RAVE command-palette entries stay withheld until a model exists.
+initRaveModels().catch((error: unknown) => {
+    logger.warn(`RAVE model presence probe failed (non-fatal): ${String(error)}`);
 });
 
 export { eventBus, logger };

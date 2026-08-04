@@ -1,8 +1,19 @@
+import { raveStore } from '#/modules/BrowserAi/stores';
 import { executeAppAction } from '#/modules/Command/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type CallableCommandEntry } from '../searchCommandRegistry';
 import { getSelectedClipId } from '../selectionHelpers/getSelectedClipId';
+
+/**
+ * RAVE weights are neither shipped nor hosted. `raveStore.models` holds only
+ * the models BrowserAi found in OPFS, so gating on it withholds the palette
+ * entry while there is nothing to load — and restores it, unchanged, the day
+ * the weights are there.
+ */
+function isRaveModelPresent(modelId: string): boolean {
+    return raveStore.value?.models.some((model) => model.id === modelId) ?? false;
+}
 
 function requireMidiClip(fn: (clipId: string) => void): () => void {
     return () => {
@@ -208,6 +219,7 @@ export const aiCommands: CallableCommandEntry[] = [
         description: 'Load the levain strings neural synthesis model',
         category: 'AI',
         action: { type: 'loadRaveModel', payload: { modelId: 'rave-strings' } },
+        isAvailable: () => isRaveModelPresent('rave-strings'),
     },
     {
         id: 'load-rave-vocals',
@@ -215,5 +227,6 @@ export const aiCommands: CallableCommandEntry[] = [
         description: 'Load the vocal synthesis neural model',
         category: 'AI',
         action: { type: 'loadRaveModel', payload: { modelId: 'rave-vocals' } },
+        isAvailable: () => isRaveModelPresent('rave-vocals'),
     },
 ];
