@@ -168,6 +168,22 @@ const EXPECTED_COMMANDS = [
         false
     ),
     expectedCommand(
+        'crossfadeClips',
+        'Create a crossfade between two distinct unlocked clips.',
+        {
+            clipAId: { type: 'string', description: 'Existing unlocked source clip ID' },
+            clipBId: { type: 'string', description: 'Existing unlocked destination clip ID' },
+            durationBeats: {
+                type: 'number',
+                minimum: 0,
+                description: 'Optional non-negative crossfade duration in beats; defaults to 0.5',
+            },
+        },
+        ['clipAId', 'clipBId'],
+        'broad-reversible',
+        true
+    ),
+    expectedCommand(
         'lockClip',
         'Lock or unlock an existing clip.',
         {
@@ -845,6 +861,28 @@ const EXPECTED_GROUNDING = [
                 match: 'exact',
                 connector: 'to',
                 keywords: ['fade out', 'fade-out'],
+            },
+        ],
+    },
+    {
+        actionType: 'crossfadeClips',
+        intentPhrases: ['crossfade clips', 'crossfade clip', 'crossfade'],
+        targetRules: [
+            { argument: 'clipAId', capability: 'editable-clip', promptRole: 'source' },
+            {
+                argument: 'clipBId',
+                capability: 'editable-clip',
+                distinctFrom: 'clipAId',
+                promptRole: 'destination',
+            },
+        ],
+        valueRules: [
+            {
+                argument: 'durationBeats',
+                kind: 'number-if-present',
+                defaultWhenUnmentioned: 0.5,
+                mayOmitWhenUnmentioned: true,
+                match: 'exact',
             },
         ],
     },

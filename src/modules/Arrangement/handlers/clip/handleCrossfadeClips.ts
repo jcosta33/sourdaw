@@ -14,7 +14,7 @@ export const handleCrossfadeClips = createHandler<'crossfadeClips'>({
         const clips = getTrackStoreState()?.tracks.flatMap((track) => track.clips) ?? [];
         const clipA = clips.find((clip) => clip.id === action.payload.clipAId);
         const clipB = clips.find((clip) => clip.id === action.payload.clipBId);
-        const durationBeats = action.payload.durationBeats;
+        const durationBeats = action.payload.durationBeats ?? 0.5;
         if (!clipA || !clipB || clipA.id === clipB.id || !Number.isFinite(durationBeats) || durationBeats < 0) {
             return { label: 'Crossfade clips', inverseAction: null };
         }

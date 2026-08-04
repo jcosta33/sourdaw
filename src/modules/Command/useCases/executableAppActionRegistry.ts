@@ -42,6 +42,7 @@ export type ExecutableAppActionValueRule =
     | {
           argument: string;
           kind: 'number-if-present';
+          defaultWhenUnmentioned?: number;
           requiredInPrompt?: boolean;
           mayOmitWhenUnmentioned?: boolean;
           match?: 'exact';
@@ -367,6 +368,42 @@ export const executableAppActionDescriptors = [
                 },
             },
             required: ['clipId', 'fadeInBeats', 'fadeOutBeats'],
+        },
+    },
+    {
+        actionType: 'crossfadeClips',
+        risk: 'broad-reversible',
+        description: 'Create a crossfade between two distinct unlocked clips.',
+        intentPhrases: ['crossfade clips', 'crossfade clip', 'crossfade'],
+        targetRules: [
+            { argument: 'clipAId', capability: 'editable-clip', promptRole: 'source' },
+            {
+                argument: 'clipBId',
+                capability: 'editable-clip',
+                distinctFrom: 'clipAId',
+                promptRole: 'destination',
+            },
+        ],
+        valueRules: [
+            {
+                argument: 'durationBeats',
+                kind: 'number-if-present',
+                defaultWhenUnmentioned: 0.5,
+                mayOmitWhenUnmentioned: true,
+                match: 'exact',
+            },
+        ],
+        parameters: {
+            properties: {
+                clipAId: { type: 'string', description: 'Existing unlocked source clip ID' },
+                clipBId: { type: 'string', description: 'Existing unlocked destination clip ID' },
+                durationBeats: {
+                    type: 'number',
+                    minimum: 0,
+                    description: 'Optional non-negative crossfade duration in beats; defaults to 0.5',
+                },
+            },
+            required: ['clipAId', 'clipBId'],
         },
     },
     {
