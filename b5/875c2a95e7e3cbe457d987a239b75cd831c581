@@ -1,0 +1,14 @@
+src/modules/ContentBrowser/presentations/components/Sidebar/__tests__/RailTabBarBranches.spec.tsx
+  h_1228e573df1f42 1-2,4,6-10,12-16,18-19,22-27,30-33,35,37-45,47-50,53-58,60-65,67,69-74,76-80,82-85
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "b5875c2a95e7e3cbe457d987a239b75cd831c581",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
