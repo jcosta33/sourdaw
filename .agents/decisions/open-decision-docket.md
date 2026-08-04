@@ -973,12 +973,29 @@ or how a user moves work between machines, which is why none of them is engineer
   via CDP, so it measured its own fixture; **that result is withdrawn.** The answer does not depend
   on it: even a granted persistent bucket cannot be described as safe, so install cannot be the
   durability story whether or not it is obtainable.
-- **Does a project's audio belong to the project, or to a shared library?** A global pool dedups
-  across projects but forces an all-projects scan to answer "is this sample safe to delete".
-  Per-project ownership avoids the scan and duplicates shared samples on disk.
-- **Version policy, and the web escape hatch.** Industry convention is forward-only. A browser DAW's
-  version of this is harder: a web user cannot pin an old build, so a bad migration is unrecoverable
-  in a way it is not on desktop.
+- ~~**Does a project's audio belong to the project, or to a shared library?**~~ **DECIDED
+  2026-08-04 — the project owns it; the library is a browse-and-import source, never a runtime
+  dependency.** Importing copies in. "Is this sample safe to delete?" is answered by deleting the
+  project directory, with no cross-project scan — and the scan is the operation that gets skipped
+  and turns into either a silent leak or a project broken by a freed blob. This is what every
+  shipping DAW does (Ableton's per-project Samples folder beside a User Library, Logic's package
+  beside its Loops library), and it is coherent with the per-asset embed ruling above, since an
+  embedded asset is a copy by definition. **Accepted cost:** a shared library used by ten projects
+  is duplicated ten times on disk. openDAW's global content-addressed pool was considered and not
+  taken; the refcounted hybrid was rejected as needing its own fault-injection gate before it could
+  be trusted, since a drifted refcount either leaks disk silently or frees audio still in use.
+- ~~**Version policy, and the web escape hatch.**~~ **DECIDED 2026-08-04 — forward-only, with no
+  retained pre-migration generation.** Newer opens older; older refuses newer; migration rewrites in
+  place. Strict industry convention, and the simplest thing to implement and reason about.
+
+  **The cost was stated before the call and accepted: there is no recourse after a bad migration.**
+  A web user cannot install the previous build, so unlike on desktop a migration bug reaches
+  everyone at once with no way back for work already migrated. Retaining the previous generation was
+  recommended and declined — ADR 0014's content-addressed layout would have made it close to free,
+  since the old document is a differently-named file that migration need only not delete. Recorded
+  here so that if a migration does go wrong, the absence of a fallback is a known accepted risk and
+  not a surprise. **What would change this:** the first migration that has to touch existing
+  projects is the point to re-examine it, and doing so is not re-litigation.
 - **How much budget the desktop store gets.** ADR 0012 is accepted and Option C is what compliance
   costs. Option B is materially cheaper and violates it. If the budget is not there, the honest move
   is to amend ADR 0012 explicitly and choose B — not to adopt C and under-build it.
@@ -1013,8 +1030,24 @@ do, that table is the record and this list is the pointer.
 - **Collaboration posture.** Build host-side admission and roles, or delete the role model and
   document that an invite string is unconditional write access. Leaving it guarantees the next
   feature built on it believes it enforces something.
-- **Model integrity policy.** Failing closed on a missing digest breaks every catalog entry today,
-  because none carries one. Security-posture call.
+- ~~**Model integrity policy.**~~ **DECIDED 2026-08-04 — verify every digest that exists, log its
+  absence, and require a digest on every catalog entry added from now on.** The digest-less set is
+  therefore closed and shrinks as entries are backfilled, rather than growing.
+
+  **This matches how the web actually behaves, which is the opposite of the justification this
+  entry originally carried.** Subresource Integrity performs **no check at all** when `integrity` is
+  absent — resources load normally — and requiring the attribute needs an explicit `Integrity-Policy`
+  response header to opt in ([W3C SRI](https://www.w3.org/TR/sri-2/),
+  [MDN Integrity-Policy](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Integrity-Policy)).
+  So failing closed on absence is *stricter than the ecosystem*, not the default, and the survey's
+  earlier claim that HuggingFace Hub, ONNX tooling and SRI treat a missing digest as an error is
+  wrong and was not used as justification. The shape adopted here is deliberately SRI's own: verify
+  what is declared, and make the requirement explicit for anything new.
+
+  **Accepted cost:** existing entries stay unverified until backfilled, and that backfill has to
+  actually happen — it is not implied by this decision. Failing closed today was considered and
+  declined because no catalog entry carries a digest, so it would break every model install; choosing
+  it would really have been choosing to complete the backfill first.
 
 ## RESOLVED 2026-08-01 by ADR 0016
 
