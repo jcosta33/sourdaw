@@ -1,0 +1,14 @@
+src/modules/TimelineEditor/presentations/views/__tests__/TimelineMinimapResizeHandle.spec.tsx
+  h_1228e573df1f42 1-126
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "011a65d7cdc11778218bbfb9129df445b62470da",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
