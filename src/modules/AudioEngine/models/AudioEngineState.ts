@@ -63,6 +63,8 @@ export type AudioEnginePlaybackStats = {
 };
 
 export type AudioEngineDeviceReadinessDiagnostics = {
+    /** Monotonic collector generation; advances whenever the live graph is reset. */
+    generation: number;
     counts: {
         requested: number;
         nodeReady: number;

@@ -698,6 +698,8 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
     });
 
     it('resetGraph tears down tracks, buses, sends, and the adjustment runtime but keeps the context', () => {
+        const beforeResetReadiness = engine.getDeviceReadinessDiagnostics();
+        expect(beforeResetReadiness.generation).toBe(0);
         engine.ensureTrackStrip('t1');
         engine.ensureBusStrip('bus-1');
         engine.setSend('t1', 'bus-1', 0.5, false);
@@ -710,6 +712,7 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
         expect(sendGain.disconnect).toHaveBeenCalled();
         expect(runtimeMocks.reset).toHaveBeenCalled();
         expect(mockCtx.close).not.toHaveBeenCalled();
+        expect(engine.getDeviceReadinessDiagnostics()).toEqual({ ...beforeResetReadiness, generation: 1 });
 
         // The engine remains usable for the next project.
         const strip = engine.ensureTrackStrip('t-next');

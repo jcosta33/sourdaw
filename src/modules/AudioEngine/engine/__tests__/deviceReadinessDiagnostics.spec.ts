@@ -9,6 +9,16 @@ describe('deviceReadinessDiagnostics', () => {
         deviceReadinessDiagnostics = createDeviceReadinessDiagnostics();
     });
 
+    it('increments the readiness generation once per graph reset', () => {
+        expect(deviceReadinessDiagnostics.snapshot().generation).toBe(0);
+
+        deviceReadinessDiagnostics.reset();
+        expect(deviceReadinessDiagnostics.snapshot().generation).toBe(1);
+
+        deviceReadinessDiagnostics.reset();
+        expect(deviceReadinessDiagnostics.snapshot().generation).toBe(2);
+    });
+
     it('records node, graph, and playable readiness for a worklet device', () => {
         const token = deviceReadinessDiagnostics.begin({
             deviceId: 'fermenter-1',
