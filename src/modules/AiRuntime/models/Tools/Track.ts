@@ -36,6 +36,15 @@ export const trackTools: readonly ToolSchema[] = [
         ['trackId', 'soloed']
     ),
     tool(
+        'setSoloSafe',
+        'Enable or disable solo-safe protection for a track.',
+        {
+            trackId: { type: 'string' },
+            soloSafe: { type: 'boolean', description: 'true=enable solo safe, false=disable solo safe' },
+        },
+        ['trackId', 'soloSafe']
+    ),
+    tool(
         'armTrack',
         'Arm a track for recording input.',
         {

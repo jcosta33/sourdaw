@@ -301,6 +301,18 @@ const EXPECTED_COMMANDS = [
         false
     ),
     expectedCommand(
+        'setSoloSafe',
+        'Enable or disable solo-safe protection for a track.',
+        {
+            trackId: { type: 'string' },
+            soloSafe: { type: 'boolean', description: 'true=enable solo safe, false=disable solo safe' },
+        },
+        ['trackId', 'soloSafe'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand('clearSolos', 'Unsolo every currently soloed track.', {}, [], 'broad-reversible', true),
+    expectedCommand(
         'armTrack',
         'Arm or disarm a track for recording.',
         {
@@ -884,6 +896,25 @@ const EXPECTED_GROUNDING = [
                 falsePhrases: ['unsolo'],
             },
         ],
+    },
+    {
+        actionType: 'setSoloSafe',
+        intentPhrases: ['enable solo safe', 'disable solo safe', 'make solo safe', 'remove solo safe'],
+        targetRules: [{ argument: 'trackId', capability: 'track', allowBatchLocal: false }],
+        valueRules: [
+            {
+                argument: 'soloSafe',
+                kind: 'boolean-intent',
+                truePhrases: ['enable solo safe', 'make solo safe'],
+                falsePhrases: ['disable solo safe', 'remove solo safe'],
+            },
+        ],
+    },
+    {
+        actionType: 'clearSolos',
+        intentPhrases: ['clear all solos', 'unsolo all tracks', 'unsolo everything'],
+        targetRules: [],
+        valueRules: [],
     },
     {
         actionType: 'armTrack',

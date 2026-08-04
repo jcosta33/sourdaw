@@ -22,6 +22,7 @@ export type ExecutableAppActionTargetCapability =
 export type ExecutableAppActionTargetRule = {
     argument: string;
     capability: ExecutableAppActionTargetCapability;
+    allowBatchLocal?: boolean;
     dependsOn?: string;
     distinctFrom?: string;
     promptRole?: 'source' | 'destination';
@@ -75,6 +76,10 @@ type ExecutableAppActionDescriptor = {
 
 const trackTargetRules = [
     { argument: 'trackId', capability: 'track' },
+] as const satisfies readonly ExecutableAppActionTargetRule[];
+
+const existingTrackTargetRules = [
+    { argument: 'trackId', capability: 'track', allowBatchLocal: false },
 ] as const satisfies readonly ExecutableAppActionTargetRule[];
 
 const clipTargetRules = [
@@ -593,6 +598,36 @@ export const executableAppActionDescriptors = [
             },
             required: ['trackId', 'soloed'],
         },
+    },
+    {
+        actionType: 'setSoloSafe',
+        risk: 'bounded-reversible',
+        description: 'Enable or disable solo-safe protection for a track.',
+        intentPhrases: ['enable solo safe', 'disable solo safe', 'make solo safe', 'remove solo safe'],
+        targetRules: existingTrackTargetRules,
+        valueRules: [
+            {
+                argument: 'soloSafe',
+                kind: 'boolean-intent',
+                truePhrases: ['enable solo safe', 'make solo safe'],
+                falsePhrases: ['disable solo safe', 'remove solo safe'],
+            },
+        ],
+        parameters: {
+            properties: {
+                trackId: { type: 'string' },
+                soloSafe: { type: 'boolean', description: 'true=enable solo safe, false=disable solo safe' },
+            },
+            required: ['trackId', 'soloSafe'],
+        },
+    },
+    {
+        actionType: 'clearSolos',
+        risk: 'broad-reversible',
+        description: 'Unsolo every currently soloed track.',
+        intentPhrases: ['clear all solos', 'unsolo all tracks', 'unsolo everything'],
+        targetRules: [],
+        parameters: { properties: {}, required: [] },
     },
     {
         actionType: 'armTrack',

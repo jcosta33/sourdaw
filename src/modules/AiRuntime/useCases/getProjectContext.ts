@@ -116,6 +116,7 @@ export function getProjectContext(): ProjectContext {
             kind: time.kind,
             muted: time.muted,
             soloed: time.soloed,
+            soloSafe: time.soloSafe,
             armed: time.armed,
             gain: time.gain,
             pan: time.pan,

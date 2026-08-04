@@ -364,6 +364,7 @@ function createProjectedBus(context: ProjectContext, binding: BatchLocalBusBindi
         kind: 'bus',
         muted: false,
         soloed: false,
+        soloSafe: true,
         armed: false,
         gain: 1,
         pan: 0,
@@ -683,6 +684,66 @@ function getProjectReferenceTexts(context: ProjectContext): string[] {
     return [...new Set(references)]
         .filter((reference) => reference.length > 0)
         .sort((left, right) => right.length - left.length);
+}
+
+const universalClearSolosIntentPhrases: ReadonlySet<string> = new Set([
+    'clear all solos',
+    'unsolo all tracks',
+    'unsolo everything',
+]);
+
+const clearSolosRestrictionPatterns: readonly RegExp[] = [
+    /\b(?:except|excluding|besides|minus)\b/u,
+    /\b(?:other|rather)\s+than\b/u,
+    /\bapart\s+from\b/u,
+    /\bsave\s+for\b/u,
+    /\bwith\s+(?:the\s+)?exception\s+of\b/u,
+    /\b(?:all\s+but|but\s+not|not\s+including)\b/u,
+    /\b(?:keep|leave|preserve|retain)\b/u,
+];
+
+type ClearSolosScope = 'restricted' | 'universal' | 'unsupported';
+
+function hasReferenceOutsideMatchedIntent(text: string, intentPhrase: string, reference: string): boolean {
+    const normalizedText = normalizePromptText(text);
+    const normalizedIntent = normalizePromptText(intentPhrase);
+    const normalizedReference = normalizePromptText(reference);
+    if (normalizedReference.length === 0) {
+        return false;
+    }
+    const intentStart = normalizedText.indexOf(normalizedIntent);
+    if (intentStart < 0) {
+        return true;
+    }
+    const intentEnd = intentStart + normalizedIntent.length;
+    const referencePattern = new RegExp(
+        `(?<![\\p{L}\\p{N}])${escapeRegExp(normalizedReference)}(?![\\p{L}\\p{N}])`,
+        'gu'
+    );
+    return [...normalizedText.matchAll(referencePattern)].some((match) => {
+        const referenceStart = match.index;
+        const referenceEnd = referenceStart + normalizedReference.length;
+        return referenceStart < intentStart || referenceEnd > intentEnd;
+    });
+}
+
+function classifyClearSolosScope(actionScope: ActionPromptScope, context: ProjectContext): ClearSolosScope {
+    if (!universalClearSolosIntentPhrases.has(normalizePromptText(actionScope.matchedIntentPhrase))) {
+        return 'unsupported';
+    }
+    const normalizedScope = normalizePromptText(actionScope.text);
+    const hasRestriction = clearSolosRestrictionPatterns.some((pattern) => pattern.test(normalizedScope));
+    const hasRelativeTrackReference =
+        /\b(?:selected|current|this|that|these|those)\s+tracks?\b/u.test(normalizedScope) ||
+        /\btrack\s+selection\b/u.test(normalizedScope);
+    if (hasRestriction || hasRelativeTrackReference) {
+        return 'restricted';
+    }
+    const trackReferences = context.tracks.flatMap((track) => [track.id, track.name]);
+    const hasNamedTrackReference = trackReferences.some((reference) =>
+        hasReferenceOutsideMatchedIntent(actionScope.text, actionScope.matchedIntentPhrase, reference)
+    );
+    return hasNamedTrackReference ? 'restricted' : 'universal';
 }
 
 const reservedClipReferenceWords: ReadonlySet<string> = new Set([
@@ -1812,6 +1873,13 @@ function groundToolCall({
             return rejection(index, call.name, batchLocalReference.reason);
         }
         if (batchLocalReference.status === 'resolved') {
+            if (targetRule.allowBatchLocal === false) {
+                return rejection(
+                    index,
+                    call.name,
+                    `Target ${targetRule.argument} must already exist in project context`
+                );
+            }
             if (!batchLocalBusCapabilities.has(targetRule.capability)) {
                 return rejection(
                     index,
@@ -1882,6 +1950,9 @@ function groundToolCall({
         })
     ) {
         return rejection(index, call.name, 'Provider clip deletion is not explicit in the user request');
+    }
+    if (call.name === 'clearSolos' && classifyClearSolosScope(actionScope, context) !== 'universal') {
+        return rejection(index, call.name, 'Provider clear-solos scope is not explicitly universal');
     }
     if (
         (call.name === 'quantizeNotes' ||

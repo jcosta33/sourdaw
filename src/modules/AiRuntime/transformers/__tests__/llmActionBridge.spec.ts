@@ -30,6 +30,7 @@ const projectContext: ProjectContext = {
             kind: 'audio',
             muted: false,
             soloed: false,
+            soloSafe: false,
             armed: false,
             gain: 0.8,
             pan: 0,
@@ -108,6 +109,7 @@ const projectContext: ProjectContext = {
             kind: 'bus',
             muted: false,
             soloed: false,
+            soloSafe: false,
             armed: false,
             gain: 0.8,
             pan: 0,
@@ -125,6 +127,7 @@ const projectContext: ProjectContext = {
             kind: 'master',
             muted: false,
             soloed: false,
+            soloSafe: false,
             armed: false,
             gain: 0.8,
             pan: 0,
@@ -249,6 +252,101 @@ describe('bridgeLlmToolCalls', () => {
             { type: 'setTrackPan', payload: { trackId: 'bus-reverb', pan: -20 } },
         ]);
         expect(result.rejections).toEqual([]);
+    });
+
+    it('converts explicit solo-safe and clear-all solo controls against current project state', () => {
+        const setSafe = bridge({
+            calls: [{ name: 'setSoloSafe', arguments: { trackId: 'track-vocals', soloSafe: true } }],
+        });
+        const clear = bridge({
+            calls: [{ name: 'clearSolos', arguments: {} }],
+            context: replaceTrack(projectContext, 'track-vocals', (track) => ({ ...track, soloed: true })),
+        });
+
+        expect(setSafe).toEqual({
+            actions: [{ type: 'setSoloSafe', payload: { trackId: 'track-vocals', soloSafe: true } }],
+            rejections: [],
+        });
+        expect(clear).toEqual({ actions: [{ type: 'clearSolos' }], rejections: [] });
+    });
+
+    it('rejects malformed, missing, and no-op solo-state controls', () => {
+        const result = bridge({
+            calls: [
+                { name: 'setSoloSafe', arguments: { trackId: 'track-vocals', soloSafe: false } },
+                { name: 'setSoloSafe', arguments: { trackId: 'missing', soloSafe: true } },
+                { name: 'setSoloSafe', arguments: { trackId: 'track-vocals', soloSafe: true, extra: true } },
+                { name: 'setSoloSafe', arguments: { trackId: 'track-vocals', soloSafe: 'yes' } },
+                { name: 'clearSolos', arguments: {} },
+                { name: 'clearSolos', arguments: { extra: true } },
+            ],
+        });
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections.map((rejection) => rejection.name)).toEqual([
+            'setSoloSafe',
+            'setSoloSafe',
+            'setSoloSafe',
+            'setSoloSafe',
+            'clearSolos',
+            'clearSolos',
+        ]);
+    });
+
+    it('rejects ambiguous batches that mix clear-all and per-track solo writes', () => {
+        const result = bridge({
+            calls: [
+                { name: 'clearSolos', arguments: {} },
+                { name: 'soloTrack', arguments: { trackId: 'track-vocals', soloed: true } },
+            ],
+            context: replaceTrack(projectContext, 'track-vocals', (track) => ({ ...track, soloed: true })),
+        });
+
+        expect(result).toEqual({
+            actions: [],
+            rejections: [
+                {
+                    index: 0,
+                    name: '<batch>',
+                    reason: 'Provider batch mixes clearSolos with per-track solo writes',
+                },
+            ],
+        });
+    });
+
+    it('rejects solo-state and same-track removal lifecycle overlap in either call order', () => {
+        const soloedContext = replaceTrack(projectContext, 'track-vocals', (track) => ({ ...track, soloed: true }));
+        const cases = [
+            [
+                { name: 'setSoloSafe', arguments: { trackId: 'track-vocals', soloSafe: true } },
+                { name: 'removeTrack', arguments: { trackId: 'track-vocals' } },
+            ],
+            [
+                { name: 'removeTrack', arguments: { trackId: 'track-vocals' } },
+                { name: 'setSoloSafe', arguments: { trackId: 'track-vocals', soloSafe: true } },
+            ],
+            [
+                { name: 'clearSolos', arguments: {} },
+                { name: 'removeTrack', arguments: { trackId: 'track-vocals' } },
+            ],
+            [
+                { name: 'removeTrack', arguments: { trackId: 'track-vocals' } },
+                { name: 'clearSolos', arguments: {} },
+            ],
+        ];
+
+        for (const calls of cases) {
+            expect(bridge({ calls, context: soloedContext })).toEqual({
+                actions: [],
+                rejections: [
+                    {
+                        index: 0,
+                        name: '<batch>',
+                        reason: 'Provider batch mixes solo-state writes with removal of the same track',
+                    },
+                ],
+            });
+        }
     });
 
     it('converts exact bounded loop and metronome calls into typed runtime actions', () => {
@@ -1557,6 +1655,7 @@ describe('bridgeLlmToolCalls', () => {
         expect(userMessage).toContain('"loopEnd":12');
         expect(userMessage).toContain('"metronomeEnabled":false');
         expect(userMessage).toContain('"metronomeVolume":0.5');
+        expect(userMessage).toContain('"soloSafe":false');
         expect(userMessage).toContain('"automationLanes"');
         expect(userMessage).toContain('"id":"lane-vocal-gain"');
         expect(userMessage).toContain('"pointCount":1');

@@ -94,6 +94,7 @@ export type ProjectContextTrack = {
     kind: string;
     muted: boolean;
     soloed: boolean;
+    soloSafe: boolean;
     armed: boolean;
     gain: number;
     pan: number;

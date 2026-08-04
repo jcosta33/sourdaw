@@ -13,6 +13,7 @@ function createProjectState(): ProjectContext {
         kind: 'audio',
         muted: false,
         soloed: false,
+        soloSafe: false,
         armed: false,
         gain: 0.8,
         pan: 0,

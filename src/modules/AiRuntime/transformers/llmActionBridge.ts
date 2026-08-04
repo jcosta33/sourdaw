@@ -855,6 +855,26 @@ function bridgeToolCall({
         return { type: 'soloTrack', payload: { trackId: args.trackId, soloed: args.soloed } };
     }
 
+    if (call.name === 'setSoloSafe') {
+        const track = findTrack(context, args.trackId);
+        if (
+            !hasExactKeys(args, ['trackId', 'soloSafe']) ||
+            !track ||
+            typeof args.soloSafe !== 'boolean' ||
+            args.soloSafe === track.soloSafe
+        ) {
+            return rejection(index, call.name, 'Expected an available trackId and changed boolean soloSafe value');
+        }
+        return { type: 'setSoloSafe', payload: { trackId: track.id, soloSafe: args.soloSafe } };
+    }
+
+    if (call.name === 'clearSolos') {
+        if (!hasExactKeys(args, []) || !context.tracks.some((track) => track.soloed)) {
+            return rejection(index, call.name, 'Expected no arguments and at least one currently soloed track');
+        }
+        return { type: 'clearSolos' };
+    }
+
     if (call.name === 'armTrack') {
         const track = findTrack(context, args.trackId);
         if (
@@ -1230,6 +1250,9 @@ function getMutationKeys(action: RuntimeAction): string[] {
     if (action.type === 'setMetronomeVolume') {
         return ['metronome:volume'];
     }
+    if (action.type === 'clearSolos') {
+        return ['solo:all'];
+    }
     if (action.type === 'addAutomationLane') {
         return [`automation-target:${action.payload.trackId}:${action.payload.parameterId}`];
     }
@@ -1268,6 +1291,7 @@ function getMutationKeys(action: RuntimeAction): string[] {
         action.type === 'renameTrack' ||
         action.type === 'muteTrack' ||
         action.type === 'soloTrack' ||
+        action.type === 'setSoloSafe' ||
         action.type === 'armTrack' ||
         action.type === 'removeTrack' ||
         action.type === 'setTrackGain' ||
@@ -1536,6 +1560,36 @@ export function bridgeLlmToolCalls({ calls, context }: BridgeLlmToolCallsInput):
         };
     }
 
+    if (calls.some((call) => call.name === 'clearSolos') && calls.some((call) => call.name === 'soloTrack')) {
+        return {
+            actions: [],
+            rejections: [rejection(0, '<batch>', 'Provider batch mixes clearSolos with per-track solo writes')],
+        };
+    }
+
+    const removedTrackIds = new Set(
+        calls.flatMap((call) =>
+            call.name === 'removeTrack' && typeof call.arguments.trackId === 'string' ? [call.arguments.trackId] : []
+        )
+    );
+    const hasRemovedSoloSafeTarget = calls.some(
+        (call) =>
+            call.name === 'setSoloSafe' &&
+            typeof call.arguments.trackId === 'string' &&
+            removedTrackIds.has(call.arguments.trackId)
+    );
+    const hasRemovedClearedSoloTarget =
+        calls.some((call) => call.name === 'clearSolos') &&
+        context.tracks.some((track) => track.soloed && removedTrackIds.has(track.id));
+    if (hasRemovedSoloSafeTarget || hasRemovedClearedSoloTarget) {
+        return {
+            actions: [],
+            rejections: [
+                rejection(0, '<batch>', 'Provider batch mixes solo-state writes with removal of the same track'),
+            ],
+        };
+    }
+
     let prospectiveContext = getProspectiveLoopContext(calls, context);
     const hasSidechainCall = calls.some(
         (call) => call.name === 'addSidechainRoute' || call.name === 'removeSidechainRoute'
@@ -1760,6 +1814,7 @@ export function buildLlmActionUserMessage({ prompt, context }: { prompt: string;
             kind: track.kind,
             muted: track.muted,
             soloed: track.soloed,
+            soloSafe: track.soloSafe,
             armed: track.armed,
             gain: track.gain,
             pan: track.pan,

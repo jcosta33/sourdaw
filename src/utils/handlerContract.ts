@@ -402,6 +402,11 @@ export type AppAction =
     | { type: 'muteTrack'; payload: { trackId: string; muted: boolean } }
     | { type: 'soloTrack'; payload: { trackId: string; soloed: boolean } }
     | { type: 'toggleSoloSafe'; payload: { trackId: string } }
+    | { type: 'setSoloSafe'; payload: { trackId: string; soloSafe: boolean } }
+    | {
+          type: 'restoreSoloSafe';
+          payload: { trackId: string; expected: boolean; replacement: boolean };
+      }
     | {
           type: 'armTrack';
           payload: {
@@ -783,6 +788,13 @@ export type AppAction =
       }
     | { type: 'muteClip'; payload: { clipId: string; muted: boolean; expectedMuted?: boolean } }
     | { type: 'clearSolos'; payload?: undefined }
+    | {
+          type: 'restoreTrackSoloStates';
+          payload: {
+              expected: { trackId: string; soloed: boolean }[];
+              replacement: { trackId: string; soloed: boolean }[];
+          };
+      }
     | { type: 'setTrackNotes'; payload: { trackId: string; notes: string } }
     | { type: 'deleteTime'; payload: { startBeat: number; endBeat: number } }
     | { type: 'insertTime'; payload: { atBeat: number; durationBeats: number } }
