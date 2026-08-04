@@ -1,0 +1,32 @@
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistryDescriptors.spec.ts
+  s_ac9b259eab20ba::t_a5e75afa09ed59 10,22,38-42,155-207
+  s_ac9b259eab20ba::t_09e6ed8ac9a58e 208-209
+src/modules/AudioEngine/engine/__tests__/FermenterNode.spec.ts
+  s_ac9b259eab20ba::t_25021d7ffd3c8d 151,153,200-201,204,206-211,241-242,413,440,507
+  s_ac9b259eab20ba::t_30ea5133dc95ae 203,205,218-219,223,231,233
+  s_ac9b259eab20ba::t_90bf1e44d99d85 5-6,24-28,30,34-35,115,121,136-141,154-184,186-197,202,212-217,220-222,224-230,232,234-239
+  s_ac9b259eab20ba::t_bfda0c95073250 31-32
+  s_ac9b259eab20ba::t_8f20e026facd9e 113,119,124,240
+  s_ac9b259eab20ba::t_f4f47f616b7d95 185
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_ac9b259eab20ba::t_c6beb3e03cc1f5 119-127,131-174,190,195-198,208,236-243
+  s_ac9b259eab20ba::t_c872e668fd4f4a 247
+src/modules/AudioEngine/engine/FermenterNode.ts
+  s_ac9b259eab20ba::t_c6beb3e03cc1f5 14,116,162-188,196-206,360
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "b2c2d9e304b523e55de22449bf5c88255bd2892a",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
