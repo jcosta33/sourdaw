@@ -1,0 +1,52 @@
+src/modules/Toaster/useCases/toasterParamBridge/__tests__/setPadEngineImmediate.spec.ts
+  s_66d4924c65dcd2::t_86a009c7f7a072 32-34,36,44-72
+  s_66d4924c65dcd2::t_27dea1c82ffb59 73
+src/modules/Toaster/useCases/toasterParamBridge/findToasterNodeOnStrip.ts
+  s_66d4924c65dcd2::t_1b1db86a1407b3 1-38
+src/modules/Toaster/useCases/getToasterControls.ts
+  s_66d4924c65dcd2::t_4c23f073c0480a 3,6,9-14,25
+src/modules/GrandBoule/useCases/__tests__/resolveGrandBouleEngine.spec.ts
+  s_66d4924c65dcd2::t_c195a56657f01b 94,103-110
+  s_66d4924c65dcd2::t_efefc1249dbc68 79-81,84-87
+  s_66d4924c65dcd2::t_90ea2dc6225a1b 150-152
+  s_66d4924c65dcd2::t_79902beadb4366 174-175,177-178,190-230
+  s_66d4924c65dcd2::t_116e612a346512 176
+  s_66d4924c65dcd2::t_f5c72b02716cdb 29-34
+  s_66d4924c65dcd2::t_40b0f2708b86e6 231
+src/modules/Toaster/useCases/toasterParamBridge/findReadyToasterControlsOnStrip.ts
+  s_66d4924c65dcd2::t_bae40d0732ba38 1
+  s_66d4924c65dcd2::t_736c6a5e87bc15 3,6,11,13-14,16-26,28-29,34-39
+src/modules/Toaster/useCases/toasterParamBridge/__tests__/setToasterKitParam.spec.ts
+  s_66d4924c65dcd2::t_0163212d87864e 65-67,69,77-111
+  s_66d4924c65dcd2::t_6a415b2efd98bb 112
+src/modules/GrandBoule/useCases/resolveGrandBouleEngine.ts
+  s_66d4924c65dcd2::t_2d746ce1ef148f 40-46
+src/modules/Toaster/useCases/toasterParamBridge/__tests__/setToasterPadParam.spec.ts
+  s_66d4924c65dcd2::t_32fbbe6aa848b4 90-124
+src/modules/Toaster/useCases/toasterParamBridge/setPadEngineImmediate.ts
+  s_66d4924c65dcd2::t_5b825c1cd8c7f3 4-5
+  s_66d4924c65dcd2::t_51a6413cb0abdf 21-23
+src/modules/Toaster/useCases/toasterParamBridge/setToasterKitParam.ts
+  s_66d4924c65dcd2::t_47ef2facec53a7 7-8
+  s_66d4924c65dcd2::t_96e4d45ed06fc3 42-49
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_66d4924c65dcd2::t_194412e0671228 235-245
+  s_66d4924c65dcd2::t_a08a14e974edc2 199-206
+  s_66d4924c65dcd2::t_0f1303e64ae181 254-266,268-276
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "e39063d19ab7db821c1dd5c901ad785ba02679c0",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
