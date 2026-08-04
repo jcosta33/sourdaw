@@ -19,6 +19,146 @@ fn assert_bit_identical(actual: &[f32], expected: &[f32]) {
     }
 }
 
+fn first_hit_tail_energy(decay: f32) -> f32 {
+    let mut engine = ToasterEngine::new(48_000.0, PADS);
+    engine.set_pad_param(0, "engine_type", 14.0);
+    engine.set_pad_param(0, "decay", decay);
+    engine.note_on(0, 127.0, 60);
+
+    let mut left = [0.0; FRAMES];
+    let mut right = [0.0; FRAMES];
+    let mut tail_energy = 0.0;
+    for block in 0..160 {
+        engine.process_block(&mut left, &mut right);
+        if block >= 80 {
+            tail_energy += energy(&left) + energy(&right);
+        }
+    }
+    tail_energy
+}
+
+fn tom_first_block(midi_note: u8) -> [f32; FRAMES] {
+    let mut engine = ToasterEngine::new(48_000.0, PADS);
+    engine.note_on(6, 127.0, midi_note);
+
+    let mut left = [0.0; FRAMES];
+    let mut right = [0.0; FRAMES];
+    engine.process_block(&mut left, &mut right);
+    left
+}
+
+#[test]
+fn first_hit_uses_pad_decay_before_the_voice_is_triggered() {
+    let short_tail = first_hit_tail_energy(0.0);
+    let long_tail = first_hit_tail_energy(1.0);
+
+    assert!(
+        long_tail > short_tail * 4.0,
+        "first-hit decay must shape the triggered envelope: short={short_tail}, long={long_tail}"
+    );
+}
+
+#[test]
+fn explicit_tom_base_frequency_preserves_midi_note_pitch() {
+    let root = tom_first_block(60);
+    let octave = tom_first_block(72);
+    let difference = root
+        .iter()
+        .zip(octave)
+        .map(|(root, octave)| (root - octave).abs())
+        .sum::<f32>();
+
+    assert!(
+        difference > 1.0,
+        "the explicit tom base frequency must still be transposed by the MIDI note: difference={difference}"
+    );
+}
+
+#[test]
+fn engine_switching_note_on_does_not_allocate() {
+    let mut engine = ToasterEngine::new(48_000.0, PADS);
+    engine.set_pad_param(0, "engine_type", 17.0);
+
+    assert_no_alloc(|| engine.note_on(0, 127.0, 60));
+}
+
+#[test]
+fn reused_percussion_voice_does_not_inherit_another_pads_base_frequency() {
+    let mut reused = ToasterEngine::new(48_000.0, PADS);
+    reused.set_pad_param(0, "engine_type", 4.0);
+    reused.set_pad_param(0, "base_freq", 240.0);
+    reused.set_pad_param(0, "decay", 0.0);
+    reused.note_on(0, 127.0, 60);
+
+    let mut discarded_left = [0.0; FRAMES];
+    let mut discarded_right = [0.0; FRAMES];
+    for _ in 0..64 {
+        reused.process_block(&mut discarded_left, &mut discarded_right);
+    }
+
+    let mut fresh = ToasterEngine::new(48_000.0, PADS);
+    for engine in [&mut reused, &mut fresh] {
+        engine.set_pad_param(1, "engine_type", 4.0);
+        engine.set_pad_param(1, "decay", 0.0);
+        engine.note_on(1, 127.0, 60);
+    }
+
+    let mut reused_left = [0.0; FRAMES];
+    let mut reused_right = [0.0; FRAMES];
+    let mut fresh_left = [0.0; FRAMES];
+    let mut fresh_right = [0.0; FRAMES];
+    reused.process_block(&mut reused_left, &mut reused_right);
+    fresh.process_block(&mut fresh_left, &mut fresh_right);
+
+    assert_bit_identical(&reused_left, &fresh_left);
+    assert_bit_identical(&reused_right, &fresh_right);
+}
+
+#[test]
+fn reused_tom_voice_does_not_inherit_another_pads_base_frequency() {
+    let mut reused = ToasterEngine::new(48_000.0, PADS);
+    reused.set_pad_param(0, "engine_type", 5.0);
+    reused.set_pad_param(0, "base_freq", 240.0);
+    reused.set_pad_param(0, "decay", 0.0);
+    reused.note_on(0, 127.0, 60);
+    reused.note_off(0);
+
+    let mut discarded_left = [0.0; FRAMES];
+    let mut discarded_right = [0.0; FRAMES];
+    for _ in 0..16 {
+        reused.process_block(&mut discarded_left, &mut discarded_right);
+    }
+
+    let mut fresh = ToasterEngine::new(48_000.0, PADS);
+    for engine in [&mut reused, &mut fresh] {
+        engine.set_pad_param(1, "engine_type", 5.0);
+        engine.set_pad_param(1, "decay", 0.0);
+        engine.note_on(1, 127.0, 60);
+    }
+
+    let mut reused_left = [0.0; FRAMES];
+    let mut reused_right = [0.0; FRAMES];
+    let mut reused_pads = [0.0; PADS * 2 * FRAMES];
+    let mut fresh_left = [0.0; FRAMES];
+    let mut fresh_right = [0.0; FRAMES];
+    let mut fresh_pads = [0.0; PADS * 2 * FRAMES];
+    reused.process_block_with_pad_outputs(
+        &mut reused_left,
+        &mut reused_right,
+        &mut reused_pads,
+        FRAMES,
+    );
+    fresh.process_block_with_pad_outputs(
+        &mut fresh_left,
+        &mut fresh_right,
+        &mut fresh_pads,
+        FRAMES,
+    );
+
+    let pad_one = 2 * FRAMES..4 * FRAMES;
+    assert_bit_identical(&reused_pads[pad_one.clone()], &fresh_pads[pad_one]);
+}
+
 #[test]
 fn parent_mix_is_bit_identical_to_legacy_processing_across_blocks() {
     let mut legacy = ToasterEngine::new(48_000.0, PADS);

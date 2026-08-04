@@ -5,6 +5,8 @@
 
 use std::f32::consts::TAU;
 
+const DEFAULT_BASE_FREQ: f32 = 50.0;
+
 /// Simple xorshift32 noise generator (deterministic, no alloc).
 fn noise(state: &mut u32) -> f32 {
     let mut x = *state;
@@ -32,6 +34,7 @@ pub struct KickEngine {
     noise_state: u32,
     // Parameters
     base_freq: f32,
+    tune_ratio: f32,
     pitch_amount: f32,
     pitch_decay: f32,
     pitch_decay_coeff: f32,
@@ -52,7 +55,8 @@ impl KickEngine {
             click_env: 0.0,
             click_decay_coeff: 0.0,
             noise_state: 0x12345678,
-            base_freq: 50.0,
+            base_freq: DEFAULT_BASE_FREQ,
+            tune_ratio: 1.0,
             pitch_amount: 0.5,
             pitch_decay: 0.06,
             pitch_decay_coeff: 0.0,
@@ -90,7 +94,8 @@ impl KickEngine {
 
         // Pitch envelope (exponential decay)
         self.pitch_env *= self.pitch_decay_coeff;
-        let freq = self.base_freq * (1.0 + self.pitch_amount * self.pitch_env * 5.0);
+        let freq =
+            self.base_freq * self.tune_ratio * (1.0 + self.pitch_amount * self.pitch_env * 5.0);
 
         // Phase accumulator
         self.phase += freq / sample_rate;
@@ -129,6 +134,10 @@ impl KickEngine {
         self.amp_env > 1e-6
     }
 
+    pub fn reset_base_freq(&mut self) {
+        self.base_freq = DEFAULT_BASE_FREQ;
+    }
+
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
             "base_freq" => self.base_freq = value.clamp(30.0, 200.0),
@@ -138,7 +147,7 @@ impl KickEngine {
             "click_level" => self.click_level = value.clamp(0.0, 1.0),
             "drive" => self.drive = value.clamp(0.0, 10.0),
             "tone" => self.tone_cutoff = value.clamp(0.01, 1.0),
-            "tune" => self.base_freq = 50.0 * (2.0f32).powf(value / 12.0),
+            "tune" => self.tune_ratio = 2.0f32.powf(value.clamp(-24.0, 24.0) / 12.0),
             _ => {}
         }
     }

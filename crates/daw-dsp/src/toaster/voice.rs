@@ -6,7 +6,10 @@
 
 use std::f32::consts::TAU;
 
-use super::engines::{DrumEngineType, DrumSynthEngine};
+use super::{
+    engines::{DrumEngineResources, DrumEngineType, DrumSynthEngine},
+    pad::Pad,
+};
 use crate::primitives::flush_denormal;
 
 /// Simple state-variable filter for per-voice filtering.
@@ -97,7 +100,8 @@ pub struct DrumVoice {
     pub pad_index: u8,
     pub velocity: f32,
     pub age: u32,
-    engine: DrumSynthEngine,
+    engines: [DrumSynthEngine; DrumEngineType::COUNT],
+    active_engine_index: usize,
     filter: SvfFilter,
     amp_env: ExpDecayEnv,
     filter_active: bool,
@@ -106,13 +110,16 @@ pub struct DrumVoice {
 }
 
 impl DrumVoice {
-    pub fn new(sample_rate: f32) -> Self {
+    pub fn new(sample_rate: f32, resources: &DrumEngineResources) -> Self {
         Self {
             active: false,
             pad_index: 0,
             velocity: 0.0,
             age: 0,
-            engine: DrumSynthEngine::new(DrumEngineType::Kick, sample_rate),
+            engines: DrumEngineType::ALL.map(|engine_type| {
+                DrumSynthEngine::new_with_resources(engine_type, sample_rate, resources)
+            }),
+            active_engine_index: DrumEngineType::Kick.index(),
             filter: SvfFilter::new(),
             amp_env: ExpDecayEnv::new(),
             filter_active: false,
@@ -125,12 +132,10 @@ impl DrumVoice {
     pub fn trigger(
         &mut self,
         pad_index: u8,
-        engine_type: DrumEngineType,
+        pad: &Pad,
         velocity: f32,
+        midi_note: u8,
         sample_rate: f32,
-        filter_cutoff: f32,
-        filter_resonance: f32,
-        is_open: bool,
     ) {
         self.active = true;
         self.pad_index = pad_index;
@@ -139,19 +144,34 @@ impl DrumVoice {
         self.choke_multiplier = 1.0;
         self.choke_decay = 1.0;
 
-        // Re-create engine if type changed
-        if self.engine.engine_type() != engine_type {
-            self.engine = DrumSynthEngine::new(engine_type, sample_rate);
+        self.active_engine_index = pad.engine_type.index();
+        let engine = &mut self.engines[self.active_engine_index];
+
+        // A voice snapshots the pad before it starts. Several engines derive their
+        // oscillator frequency and envelope coefficients inside `trigger`, so
+        // applying these values afterwards makes a fresh/recycled voice play the
+        // previous sound for its entire hit.
+        let pitch_offset = midi_note as f32 - 60.0 + pad.tune;
+        engine.reset_base_freq();
+        engine.set_param("open", if pad.is_open { 1.0 } else { 0.0 });
+        engine.set_param("tune", pitch_offset);
+        engine.set_param("decay", pad.decay);
+        engine.set_param("tone", pad.tone);
+        engine.set_param("drive", pad.drive);
+        engine.set_param("snappy", pad.snappy);
+        engine.set_param("noise_color", pad.noise_color);
+        if pad.base_freq > 1.0 {
+            engine.set_param("base_freq", pad.base_freq);
         }
-        // Set open/closed state BEFORE trigger so HiHat engines read the correct
-        // flag when computing their decay coefficient in trigger().
-        self.engine.set_param("open", if is_open { 1.0 } else { 0.0 });
-        self.engine.trigger(velocity, sample_rate);
+        engine.set_param("pitch_amount", pad.pitch_amount);
+        engine.set_param("pitch_decay", pad.pitch_decay);
+        engine.set_param("noise_level", pad.noise_level);
+        engine.trigger(velocity, sample_rate);
 
         // Setup filter
         self.filter.reset();
-        self.filter.set(filter_cutoff, filter_resonance);
-        self.filter_active = filter_cutoff < 0.99;
+        self.filter.set(pad.filter_cutoff, pad.filter_resonance);
+        self.filter_active = pad.filter_cutoff < 0.99;
 
         // Amp envelope (the engine has its own envelope, this is a
         // safety wrapper that ensures voice deactivation)
@@ -159,14 +179,9 @@ impl DrumVoice {
     }
 
     pub fn release(&mut self) {
-        self.engine.release();
+        self.engines[self.active_engine_index].release();
         // ~10ms fast fade out at typical sample rates to prevent choke clicks
         self.choke_decay = 0.99;
-    }
-
-    /// Forward a parameter to the inner synth engine.
-    pub fn set_engine_param(&mut self, name: &str, value: f32) {
-        self.engine.set_param(name, value);
     }
 
     /// Process one sample, returns mono output.
@@ -177,7 +192,8 @@ impl DrumVoice {
 
         self.age += 1;
 
-        let mut sample = self.engine.tick(sample_rate);
+        let engine = &mut self.engines[self.active_engine_index];
+        let mut sample = engine.tick(sample_rate);
 
         // Apply choke fade out if released
         sample *= self.choke_multiplier;
@@ -197,7 +213,7 @@ impl DrumVoice {
         };
 
         // Check if engine is done
-        if !self.engine.is_active() {
+        if !engine.is_active() {
             self.active = false;
         }
 

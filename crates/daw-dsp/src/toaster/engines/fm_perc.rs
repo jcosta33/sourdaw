@@ -4,6 +4,8 @@
 
 use core::f32::consts::TAU;
 
+const DEFAULT_BASE_FREQ: f32 = 200.0;
+
 pub struct FmPercEngine {
     // Carrier
     carrier_phase: f32,
@@ -26,6 +28,7 @@ pub struct FmPercEngine {
 
     // Params
     base_freq: f32,
+    tune_ratio: f32,
     drive: f32,
     active: bool,
 }
@@ -44,7 +47,8 @@ impl FmPercEngine {
             amp_decay_coeff: 0.0,
             mod_env: 0.0,
             mod_decay_coeff: 0.0,
-            base_freq: 200.0,
+            base_freq: DEFAULT_BASE_FREQ,
+            tune_ratio: 1.0,
             drive: 0.0,
             active: false,
         }
@@ -56,7 +60,7 @@ impl FmPercEngine {
         self.y_prev = 0.0;
         self.amp_env = velocity;
         self.mod_env = 1.0;
-        self.carrier_freq = self.base_freq;
+        self.carrier_freq = self.base_freq * self.tune_ratio;
         // Amp decays over ~200ms (clamp to avoid division by zero)
         let safe_amp_decay = 0.2_f32.max(0.001);
         self.amp_decay_coeff = (-1.0 / (safe_amp_decay * sample_rate)).exp();
@@ -120,6 +124,10 @@ impl FmPercEngine {
         self.active
     }
 
+    pub fn reset_base_freq(&mut self) {
+        self.base_freq = DEFAULT_BASE_FREQ;
+    }
+
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
             "decay" => {
@@ -129,9 +137,7 @@ impl FmPercEngine {
                 self.amp_decay_coeff = (-1.0 / (decay_s * 44100.0)).exp();
             }
             "tune" => {
-                // Shift base frequency by semitone ratio from default 200Hz
-                self.base_freq =
-                    (200.0 * 2.0f32.powf(value.clamp(-24.0, 24.0) / 12.0)).clamp(40.0, 4000.0);
+                self.tune_ratio = 2.0f32.powf(value.clamp(-24.0, 24.0) / 12.0);
             }
             "tone" => {
                 // Map 0-1 to mod_amount (FM brightness)

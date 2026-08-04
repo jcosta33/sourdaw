@@ -6,6 +6,8 @@
 
 use std::f32::consts::TAU;
 
+const DEFAULT_BASE_FREQ: f32 = 800.0;
+
 /// xorshift32 noise
 fn noise(state: &mut u32) -> f32 {
     let mut x = *state;
@@ -70,7 +72,7 @@ impl PercEngine {
             bp_ic1: 0.0,
             bp_ic2: 0.0,
             perc_type: PercType::Cowbell,
-            base_freq: 800.0,
+            base_freq: DEFAULT_BASE_FREQ,
             tune_ratio: 1.0,
             tone: 0.5,
             noise_level: 0.5,
@@ -202,6 +204,10 @@ impl PercEngine {
 
     pub fn is_active(&self) -> bool {
         self.amp_env > 1e-6
+    }
+
+    pub fn reset_base_freq(&mut self) {
+        self.base_freq = DEFAULT_BASE_FREQ;
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {

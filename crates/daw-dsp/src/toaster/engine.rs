@@ -3,7 +3,7 @@
 //! Manages pads, polyphonic voice pool, global effects (reverb + delay),
 //! and the per-block processing pipeline.
 
-use super::engines::DrumEngineType;
+use super::engines::{DrumEngineResources, DrumEngineType};
 use super::lofi::LofiProcessor;
 use super::pad::Pad;
 use super::transient::TransientShaper;
@@ -336,8 +336,9 @@ impl ToasterEngine {
             })
             .collect();
 
+        let engine_resources = DrumEngineResources::new();
         let voices: Vec<DrumVoice> = (0..MAX_VOICES)
-            .map(|_| DrumVoice::new(sample_rate))
+            .map(|_| DrumVoice::new(sample_rate, &engine_resources))
             .collect();
 
         let transient_shapers: Vec<TransientShaper> = (0..num_pads)
@@ -400,30 +401,11 @@ impl ToasterEngine {
         let pad_cfg = &self.pads[pad_idx];
         self.voices[voice_idx].trigger(
             pad,
-            pad_cfg.engine_type,
+            pad_cfg,
             vel_norm * pad_cfg.volume,
+            midi_note,
             self.sample_rate,
-            pad_cfg.filter_cutoff,
-            pad_cfg.filter_resonance,
-            pad_cfg.is_open,
         );
-
-        // Pitch from MIDI note: 60 = pad's base pitch, each semitone shifts ±1
-        let pitch_offset = (midi_note as f32) - 60.0 + pad_cfg.tune;
-        self.voices[voice_idx].set_engine_param("tune", pitch_offset);
-
-        // Forward pad-specific engine params
-        self.voices[voice_idx].set_engine_param("decay", pad_cfg.decay);
-        self.voices[voice_idx].set_engine_param("tone", pad_cfg.tone);
-        self.voices[voice_idx].set_engine_param("drive", pad_cfg.drive);
-        self.voices[voice_idx].set_engine_param("snappy", pad_cfg.snappy);
-        self.voices[voice_idx].set_engine_param("noise_color", pad_cfg.noise_color);
-        if pad_cfg.base_freq > 1.0 {
-            self.voices[voice_idx].set_engine_param("base_freq", pad_cfg.base_freq);
-        }
-        self.voices[voice_idx].set_engine_param("pitch_amount", pad_cfg.pitch_amount);
-        self.voices[voice_idx].set_engine_param("pitch_decay", pad_cfg.pitch_decay);
-        self.voices[voice_idx].set_engine_param("noise_level", pad_cfg.noise_level);
     }
 
     pub fn note_off(&mut self, pad: u8) {

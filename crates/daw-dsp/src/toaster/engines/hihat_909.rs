@@ -12,18 +12,22 @@
 //! The tune parameter affects playback speed, not buffer content.
 //! Sample rate: 32,040 Hz (measured; the actual 909 runs at ~32 kHz).
 
+use std::sync::Arc;
+
 use crate::toaster::dc_block::DcBlocker;
 use crate::toaster::poly_blep::PolyBlepSquare;
 
 const EPROM_SAMPLE_RATE: f32 = 32_040.0;
 const EPROM_LEN: usize = 32_040; // ~1 second at 32 kHz
 
+pub(crate) type HiHat909Buffer = Arc<[f32; EPROM_LEN]>;
+
 // Same 6 oscillator frequencies as 808 hi-hat
 const HH_FREQS: [f32; 6] = [800.0, 540.0, 522.7, 369.6, 304.4, 205.3];
 
 pub struct HiHat909Engine {
-    // Pre-baked 6-bit quantized buffer (allocated at init, never in tick)
-    buffer: Box<[f32; EPROM_LEN]>,
+    // Shared immutable EPROM image, generated once when the Toaster is built.
+    buffer: HiHat909Buffer,
 
     // Playback state
     playback_pos: f64, // sub-sample position in buffer
@@ -40,8 +44,8 @@ pub struct HiHat909Engine {
     dc_block: DcBlocker,
 
     // Parameters
-    tune: f32,    // semitones (affects playback rate)
-    decay: f32,   // 0..1
+    tune: f32,  // semitones (affects playback rate)
+    decay: f32, // 0..1
     is_open: bool,
 
     active: bool,
@@ -50,9 +54,10 @@ pub struct HiHat909Engine {
 
 impl HiHat909Engine {
     pub fn new(sample_rate: f32) -> Self {
-        // Generate metallic noise buffer once at init
-        let buffer = Self::generate_buffer();
+        Self::with_buffer(sample_rate, Self::generate_buffer())
+    }
 
+    pub(crate) fn with_buffer(sample_rate: f32, buffer: HiHat909Buffer) -> Self {
         // Post-DAC LPF: cutoff ~8 kHz to remove clock artifacts
         let lpf_coeff = (-2.0 * core::f32::consts::PI * 8_000.0 / sample_rate).exp();
 
@@ -74,8 +79,8 @@ impl HiHat909Engine {
 
     /// Generate the pre-baked 6-bit quantized metallic noise buffer.
     /// Called once at construction time.
-    fn generate_buffer() -> Box<[f32; EPROM_LEN]> {
-        let mut buf = Box::new([0.0_f32; EPROM_LEN]);
+    pub(crate) fn generate_buffer() -> HiHat909Buffer {
+        let mut buf = [0.0_f32; EPROM_LEN];
         let mut oscillators: [PolyBlepSquare; 6] =
             core::array::from_fn(|i| PolyBlepSquare::new(HH_FREQS[i]));
 
@@ -93,7 +98,7 @@ impl HiHat909Engine {
             *s = level / 32.0;
         }
 
-        buf
+        Arc::new(buf)
     }
 
     pub fn trigger(&mut self, velocity: f32, sample_rate: f32) {
