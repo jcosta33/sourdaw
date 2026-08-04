@@ -1,0 +1,16 @@
+src/modules/SampleLibrary/presentations/components/__tests__/SampleRowFormatters.spec.tsx
+  h_1228e573df1f42 1-157
+src/modules/WorkspaceShell/presentations/views/Transport/__tests__/UndoRedoButtonsBranches.spec.tsx
+  h_1228e573df1f42 1-73
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "e7d8c39544449773b9f8feefa8056af9dd720ec6",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
