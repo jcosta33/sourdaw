@@ -4,6 +4,8 @@ import { getTrackStrip } from '#/modules/AudioEngine/useCases';
 import { type PadState } from '../models/ToasterKit';
 import { updatePad } from '../stores/toasterStore';
 
+import { findReadyToasterControlsOnStrip } from './toasterParamBridge/findReadyToasterControlsOnStrip';
+
 /**
  * Send a pad param straight to the worklet, bypassing the rAF coalescing in
  * setToasterPadParam. 16-Levels triggers the pad synchronously right after
@@ -32,8 +34,6 @@ export function setPadParamImmediate(input: SetPadParamImmediateInput): void {
     if (!strip) {
         return;
     }
-    const toasterControls = strip.deviceNodes.find(
-        (data) => data.toasterControls?.ready !== undefined
-    )?.toasterControls;
+    const toasterControls = findReadyToasterControlsOnStrip({ strip, deviceId });
     toasterControls?.setPadParam(padIndex, key, value);
 }

@@ -29,13 +29,46 @@ describe('setPadEngineImmediate', () => {
             trackId: 'track-1',
             deviceId: 'dev-1',
         });
+        // Real device nodes always carry an id (`BuiltinDeviceNode.deviceId` is
+        // required). Omitting it here is what let a selector that ignored
+        // `deviceId` look correct against this fixture.
         mockGetTrackStrip.mockReturnValue({
-            deviceNodes: [{ toasterControls: { ready: true, setPadParam } }],
+            deviceNodes: [{ deviceId: 'dev-1', toasterControls: { ready: true, setPadParam } }],
         });
     });
 
     it('is a function', () => {
         expect(typeof setPadEngineImmediate).toBe('function');
+    });
+
+    it('sends the engine change to the addressed Toaster, not the first one on the track', () => {
+        const otherSetPadParam = vi.fn();
+        mockGetTrackStrip.mockReturnValue({
+            deviceNodes: [
+                { deviceId: 'dev-other', toasterControls: { ready: true, setPadParam: otherSetPadParam } },
+                { deviceId: 'dev-1', toasterControls: { ready: true, setPadParam } },
+            ],
+        });
+
+        setPadEngineImmediate('dev-1', 2, 4);
+
+        expect(setPadParam).toHaveBeenCalledWith(2, 'engine_type', 4);
+        expect(otherSetPadParam).not.toHaveBeenCalled();
+    });
+
+    it('skips a Toaster that is still loading rather than writing into its placeholder', () => {
+        // Unlike the kit path, a placeholder's `setPadParam` is an empty
+        // function that buffers nothing — the write is dropped, and the old
+        // `ready !== undefined` predicate preferred the placeholder over a real
+        // loaded device further down the chain.
+        const loadingSetPadParam = vi.fn();
+        mockGetTrackStrip.mockReturnValue({
+            deviceNodes: [{ deviceId: 'dev-1', toasterControls: { ready: false, setPadParam: loadingSetPadParam } }],
+        });
+
+        setPadEngineImmediate('dev-1', 2, 4);
+
+        expect(loadingSetPadParam).not.toHaveBeenCalled();
     });
 
     it('sends an eligible engine change immediately', () => {

@@ -37,7 +37,13 @@ export function resolveGrandBouleEngine(input: ResolveGrandBouleEngineInput): Re
     }
 
     const strip = ensureTrackStrip(track.id);
-    const deviceNode = strip.deviceNodes.find((candidateNode) => candidateNode.grandBouleControls?.ready);
+    // Scope to the addressed piano. `input.deviceId` located the owning track
+    // above and was then discarded here, so on a track hosting two GrandBoules
+    // the whole returned handle — noteOn, setParam, setSustain, loadAttackClip
+    // — drove the first instance.
+    const deviceNode = strip.deviceNodes.find(
+        (candidateNode) => candidateNode.deviceId === input.deviceId && candidateNode.grandBouleControls?.ready
+    );
     if (deviceNode?.grandBouleControls === undefined) {
         return createDisconnectedGrandBouleEngineHandle();
     }

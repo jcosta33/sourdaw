@@ -62,13 +62,52 @@ describe('setToasterKitParam rAF coalescing', () => {
             trackId: 'track-1',
             deviceId: 'dev-1',
         });
+        // Real device nodes always carry an id (`BuiltinDeviceNode.deviceId` is
+        // required). Omitting it here is what let a selector that ignored
+        // `deviceId` look correct against this fixture.
         mockGetTrackStrip.mockReturnValue({
-            deviceNodes: [{ toasterControls: { ready: true, setParam } }],
+            deviceNodes: [{ deviceId: 'dev-1', toasterControls: { ready: true, setParam } }],
         });
     });
 
     afterEach(() => {
         rafSpy.mockRestore();
+    });
+
+    it('flushes the kit param to the addressed Toaster, not the first one on the track', () => {
+        // A track can host two Toasters. The flush had `entry.deviceId` in scope
+        // and threw it away, taking whichever node exposed toaster controls
+        // first — so dragging Swing on the second panel retuned the first.
+        const otherSetParam = vi.fn();
+        mockGetTrackStrip.mockReturnValue({
+            deviceNodes: [
+                { deviceId: 'dev-other', toasterControls: { ready: true, setParam: otherSetParam } },
+                { deviceId: 'dev-1', toasterControls: { ready: true, setParam } },
+            ],
+        });
+
+        setToasterKitParam('dev-1', 'swing', 0.42);
+        flushFrame();
+
+        expect(setParam).toHaveBeenCalledWith('swing', 0.42);
+        expect(otherSetParam).not.toHaveBeenCalled();
+    });
+
+    it('still writes through a Toaster that is not ready yet, because the placeholder buffers and replays', () => {
+        // Deliberate asymmetry with the pad-param paths. A loading Toaster's
+        // placeholder controller pushes `setParam` into `pendingParams` and the
+        // loader replays the buffer once the worklet is up
+        // (AudioEngine/engine/wasmDeviceRegistry.ts). Gating this flush on
+        // `ready` would silently discard every kit edit made during load.
+        const loadingSetParam = vi.fn();
+        mockGetTrackStrip.mockReturnValue({
+            deviceNodes: [{ deviceId: 'dev-1', toasterControls: { ready: false, setParam: loadingSetParam } }],
+        });
+
+        setToasterKitParam('dev-1', 'masterGain', 0.6);
+        flushFrame();
+
+        expect(loadingSetParam).toHaveBeenCalledWith('master_gain', 0.6);
     });
 
     it('coalesces rapid writes of one param into a single worklet write', () => {

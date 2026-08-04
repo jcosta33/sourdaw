@@ -4,7 +4,7 @@ import { type DeviceWriteTargetResolution } from '#/modules/Arrangement/stores';
 
 type SetPadParam = (pad: number, name: string, value: number) => void;
 type ToasterControls = { ready: boolean; setPadParam: SetPadParam };
-type TrackStrip = { deviceNodes: Array<{ toasterControls?: ToasterControls }> };
+type TrackStrip = { deviceNodes: Array<{ deviceId?: string; toasterControls?: ToasterControls }> };
 
 const mockResolveDeviceTarget = vi.hoisted(() =>
     vi.fn<(deviceId: string) => DeviceWriteTargetResolution>(() => ({ status: 'missing' }))
@@ -41,8 +41,42 @@ describe('setPadParamImmediate', () => {
         });
         setPadParam = vi.fn<SetPadParam>();
         mockGetTrackStrip.mockReturnValue({
-            deviceNodes: [{ toasterControls: { ready: true, setPadParam } }],
+            deviceNodes: [{ deviceId: 'dev-1', toasterControls: { ready: true, setPadParam } }],
         });
+    });
+
+    it('writes to the addressed Toaster, not the first one on the track', () => {
+        // A track can host more than one Toaster. The selector had `deviceId` in
+        // scope — it passes it to `updatePad` on the line above — and then threw
+        // it away, taking whichever Toaster came first in the chain. Editing a
+        // pad on the second one silently retuned the first.
+        const otherSetPadParam = vi.fn<SetPadParam>();
+        mockGetTrackStrip.mockReturnValue({
+            deviceNodes: [
+                { deviceId: 'dev-other', toasterControls: { ready: true, setPadParam: otherSetPadParam } },
+                { deviceId: 'dev-1', toasterControls: { ready: true, setPadParam } },
+            ],
+        });
+
+        setPadParamImmediate({ deviceId: 'dev-1', padIndex: 5, key: 'tune', value: 12 });
+
+        expect(setPadParam).toHaveBeenCalledWith(5, 'tune', 12);
+        expect(otherSetPadParam).not.toHaveBeenCalled();
+    });
+
+    it('skips a device that is still loading rather than writing into its placeholder', () => {
+        // The old predicate was `ready !== undefined`, which is *true* when
+        // `ready` is false — so it matched a placeholder controller whose
+        // `setPadParam` goes nowhere, and did so in preference to a real
+        // loaded device later in the chain.
+        const loadingSetPadParam = vi.fn<SetPadParam>();
+        mockGetTrackStrip.mockReturnValue({
+            deviceNodes: [{ deviceId: 'dev-1', toasterControls: { ready: false, setPadParam: loadingSetPadParam } }],
+        });
+
+        setPadParamImmediate({ deviceId: 'dev-1', padIndex: 1, key: 'decay', value: 0.2 });
+
+        expect(loadingSetPadParam).not.toHaveBeenCalled();
     });
 
     it('writes the pad update to the store', () => {
