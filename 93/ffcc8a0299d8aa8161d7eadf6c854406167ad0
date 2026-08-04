@@ -1,0 +1,19 @@
+src/modules/AiRuntime/presentations/components/__tests__/ChatComposerBranches.spec.tsx
+  s_ac9b259eab20ba::t_c2cb4129e8bdc2 1-169
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "93ffcc8a0299d8aa8161d7eadf6c854406167ad0",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
