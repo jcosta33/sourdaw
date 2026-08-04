@@ -1,0 +1,21 @@
+src/utils/__tests__/deviceTypeMatching.spec.ts
+  s_191a04d66f160f::t_338b86cc7c4086 1-81
+src/utils/__tests__/frozenBufferTail.spec.ts
+  s_191a04d66f160f::t_b0ad0a97413efc 1-64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "bee384d14ff7ce9df62d60880820847351ec5205",
+  "prompts": {},
+  "sessions": {
+    "s_191a04d66f160f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fca41-7d2f-7463-9d02-9b70b043fced",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
