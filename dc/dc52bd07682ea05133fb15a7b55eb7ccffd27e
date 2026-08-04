@@ -1,0 +1,43 @@
+src/modules/AiGeneration/handlers/aiMidi/__tests__/handleGenerateBassline.spec.ts
+  s_bc88af7d3b054c::t_98a9d816ea8a51 5-27,33-34,91,133-135,371-375,382-386,392-409,422-424
+  s_bc88af7d3b054c::t_96f8eb0cfb56fb 36,75,387-391,410-421,425-439
+  s_bc88af7d3b054c::t_4e7579e11ca8ed 365,379,440
+src/modules/AiGeneration/handlers/aiMidi/__tests__/handleCompleteMidi.spec.ts
+  s_bc88af7d3b054c::t_98a9d816ea8a51 272-276
+  s_bc88af7d3b054c::t_96f8eb0cfb56fb 11,48,277-320
+  s_bc88af7d3b054c::t_4e7579e11ca8ed 248-249,255-271,321
+src/modules/AiGeneration/handlers/aiMidi/handleGenerateBassline.ts
+  s_bc88af7d3b054c::t_99539afda4e0bb 28,52,102,105-107,116-118,131,176-179
+  s_bc88af7d3b054c::t_466d44c670970c 6,8,15-27,29-51,53-99,124-130,132-175,180-187,205,216,252-261,263-264,266-280,282-283,286
+src/modules/AiGeneration/handlers/aiMidi/handleCompleteMidi.ts
+  s_bc88af7d3b054c::t_99539afda4e0bb 18-19,21,44-45,47,58,60-61,88,91-93,101-103,113,116,120-123,128,133,138,156,165-168,179,281,308
+  s_bc88af7d3b054c::t_c8084dcb799dbd 272,282,317-322,324-331
+  s_bc88af7d3b054c::t_be1237ca53d00f 4-5,7,14-17,20,22-43,46,48-57,59,62-85,108-112,114-115,117-119,124-127,129-132,134-137,139-155,157-164,169-178,180-186,237,263-270,273-274,276-280,283-286,297-303,305-307,309-316,335
+src/modules/AiGeneration/handlers/aiMidi/handleVariationMidi.ts
+  s_bc88af7d3b054c::t_99539afda4e0bb 17-18,20,33-34,36,44,46-47,53,56,63,72,75-77,87,90,94-97,99,121-123,125,127
+  s_bc88af7d3b054c::t_fd02c07fc3c9ee 6,13-16,19,21-32,35,37-43,45,48-52,54-55,57-62,64-69,83-86,88-89,91-93,98,100,118-119,128-134,136-143,147
+src/modules/Arrangement/useCases/addTrackWithDeferredAddedEvent.ts
+  s_bc88af7d3b054c::t_466d44c670970c 8
+src/modules/Arrangement/useCases/__tests__/addTrackWithDeferredAddedEvent.spec.ts
+  s_bc88af7d3b054c::t_b188a9a93f9b70 63-77
+src/modules/AiGeneration/handlers/aiMidi/__tests__/handleVariationMidi.spec.ts
+  s_bc88af7d3b054c::t_4e7579e11ca8ed 160-161,167-174
+  s_bc88af7d3b054c::t_96f8eb0cfb56fb 177-214
+  s_bc88af7d3b054c::t_0cd40541351bf8 175-176
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "dcdc52bd07682ea05133fb15a7b55eb7ccffd27e",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
