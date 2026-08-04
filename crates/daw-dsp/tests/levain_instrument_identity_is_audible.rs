@@ -102,12 +102,10 @@ fn an_instance_never_told_its_instrument_renders_a_different_signal() {
 }
 
 #[test]
-fn clearing_zones_after_set_instrument_keeps_the_configuration() {
-    // The offline path posts `setInstrument` and *then* starts the load, whose
-    // first message is `clearZones`. `clear_zones` calls `realism.reset()`, so
-    // this pins that reset clearing filter state only — if it ever also cleared
-    // the instrument, this render would collapse onto the unconfigured one and
-    // the ordering in `prepareOfflineLevain` would be silently wrong.
+fn clearing_zones_keeps_the_configured_instrument() {
+    // `clear_zones` is still a direct DSP maintenance operation. This pins its
+    // realism reset to filter state only; transactional worklet hydration now
+    // commits instrument identity with the replacement sample bank.
     let mut set_before_clear = armed_instance(Some("cello"));
 
     let mut set_after_clear = LevainInstance::new(SAMPLE_RATE, 8);

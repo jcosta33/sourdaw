@@ -148,7 +148,6 @@ export function isArticulationType(value: unknown): value is ArticulationType {
 export function getArticulationId(type: ArticulationType): number {
     return ARTICULATION_ID_BY_TYPE[type];
 }
-
 export type ArticulationEntry = {
     type: ArticulationType;
     keyswitch: number | null;

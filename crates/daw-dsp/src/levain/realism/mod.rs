@@ -122,10 +122,9 @@ impl Instrument {
             Instrument::Viola => BodyPreset::Viola,
             Instrument::Cello => BodyPreset::Cello,
             Instrument::Bass => BodyPreset::Bass,
-            Instrument::Trumpet
-            | Instrument::Horn
-            | Instrument::Trombone
-            | Instrument::Tuba => BodyPreset::Brass,
+            Instrument::Trumpet | Instrument::Horn | Instrument::Trombone | Instrument::Tuba => {
+                BodyPreset::Brass
+            }
             Instrument::Flute
             | Instrument::Piccolo
             | Instrument::Oboe
@@ -154,9 +153,10 @@ impl Instrument {
                 BreathPreset::Brass
             }
             Instrument::Flute | Instrument::Piccolo => BreathPreset::Flute,
-            Instrument::Oboe | Instrument::EnglishHorn | Instrument::Bassoon | Instrument::Contrabassoon => {
-                BreathPreset::DoubleReed
-            }
+            Instrument::Oboe
+            | Instrument::EnglishHorn
+            | Instrument::Bassoon
+            | Instrument::Contrabassoon => BreathPreset::DoubleReed,
             Instrument::Clarinet | Instrument::BassClarinet => BreathPreset::SingleReed,
             _ => BreathPreset::None,
         }
@@ -220,6 +220,11 @@ impl RealismEngine {
     /// per instrument family — there is no user-facing knob.
     pub fn configure_for(&mut self, instrument_id: &str) {
         self.configure(Instrument::from_id(instrument_id));
+    }
+
+    #[cfg(test)]
+    pub(crate) fn is_bowed_string_for_test(&self) -> bool {
+        self.instrument.is_bowed_string()
     }
 
     fn configure(&mut self, instrument: Instrument) {
@@ -356,7 +361,10 @@ mod tests {
                 let phase = (n as f32) * 220.0 / SAMPLE_RATE;
                 let input = (phase * std::f32::consts::TAU).sin() * 0.3;
                 let out = realism.tick(input, true);
-                assert!(out.is_finite(), "instrument {id}: non-finite output at sample {n}");
+                assert!(
+                    out.is_finite(),
+                    "instrument {id}: non-finite output at sample {n}"
+                );
                 sum_sq += (out as f64) * (out as f64);
             }
 
@@ -426,9 +434,15 @@ mod tests {
         // english-horn must NOT be parsed as plain horn.
         assert_eq!(Instrument::from_id("english-horn"), Instrument::EnglishHorn);
         // bass-clarinet must NOT be parsed as plain clarinet.
-        assert_eq!(Instrument::from_id("bass-clarinet"), Instrument::BassClarinet);
+        assert_eq!(
+            Instrument::from_id("bass-clarinet"),
+            Instrument::BassClarinet
+        );
         assert_eq!(Instrument::from_id("clarinet"), Instrument::Clarinet);
-        assert_eq!(Instrument::from_id("contrabassoon"), Instrument::Contrabassoon);
+        assert_eq!(
+            Instrument::from_id("contrabassoon"),
+            Instrument::Contrabassoon
+        );
         assert_eq!(Instrument::from_id("bassoon"), Instrument::Bassoon);
 
         // Choir voices and percussion fall through to Other.
@@ -470,7 +484,10 @@ mod tests {
         // must NOT be at sample 0 (which is what a monotonic decay would
         // give).
         let tau_samples = 240_usize;
-        assert!(peak_index > 30, "burst peak at {peak_index} — looks monotonic");
+        assert!(
+            peak_index > 30,
+            "burst peak at {peak_index} — looks monotonic"
+        );
         assert!(
             peak_index < tau_samples * 2,
             "burst peak at {peak_index} — too late for τ = {tau_samples}",
@@ -548,7 +565,9 @@ mod tests {
         // Build a minimal sample pool + zone so trigger() has something
         // to configure the voice's playback against.
         let mut pool = SamplePool::new();
-        let sample_id = pool.add(vec![0.0; 4096], 4096, 1, SAMPLE_RATE);
+        let sample_id = pool
+            .add(vec![0.0; 4096], 4096, 1, SAMPLE_RATE)
+            .expect("test sample should fit the bank");
         let zone = Zone {
             id: 0,
             key: KeyRange { lo: 0, hi: 127 },
@@ -653,7 +672,9 @@ mod tests {
         const ONSET_SECS: f32 = 0.2;
 
         let mut pool = SamplePool::new();
-        let sample_id = pool.add(vec![0.0; 4096], 4096, 1, SAMPLE_RATE);
+        let sample_id = pool
+            .add(vec![0.0; 4096], 4096, 1, SAMPLE_RATE)
+            .expect("test sample should fit the bank");
         let zone = Zone {
             id: 0,
             key: KeyRange { lo: 0, hi: 127 },
@@ -740,7 +761,9 @@ mod tests {
         const BLOCK: usize = 128;
 
         let mut pool = SamplePool::new();
-        let sample_id = pool.add(vec![0.0; 4096], 4096, 1, SAMPLE_RATE);
+        let sample_id = pool
+            .add(vec![0.0; 4096], 4096, 1, SAMPLE_RATE)
+            .expect("test sample should fit the bank");
         let zone = Zone {
             id: 0,
             key: KeyRange { lo: 0, hi: 127 },

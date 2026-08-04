@@ -7,7 +7,8 @@ import { setSampleLoadError, setSampleLoadProgress } from '../stores/levainStore
 
 /**
  * Load levain samples for a specific instrument into the worklet node.
- * Automatically clears previous zones before loading.
+ * Stages the replacement transactionally and keeps the sounding bank intact
+ * until the worklet acknowledges a successful commit.
  *
  * `instrumentId` is required — callers must pass the instrument from the
  * active patch (see `levainStore`). The previous silent default (`'violin-1'`)
@@ -16,9 +17,9 @@ import { setSampleLoadError, setSampleLoadProgress } from '../stores/levainStore
  * those samples would then race the patch-driven reload in `registerLevainDevice`.
  *
  * `signal` lets the caller cancel a load that a newer load for the same device
- * has superseded. When aborted, this function bails without writing the worklet
- * zone map or claiming completion, so the last-started load — not the
- * last-finishing one — owns the engine state and the UI.
+ * has superseded. When aborted, this function cancels the staged replacement
+ * without changing the committed bank or claiming completion, so the
+ * last-started load — not the last-finishing one — owns engine state and UI.
  */
 export async function autoLoadLevainSamples(
     deviceId: string,
@@ -42,19 +43,20 @@ export async function autoLoadLevainSamples(
     setSampleLoadProgress(deviceId, 0.01); // trigger UI loading state
 
     try {
-        await loadInstrumentFromManifest(
+        await loadInstrumentFromManifest({
             manifestUrl,
-            manifestBase,
+            basePath: manifestBase,
+            expectedInstrumentId: instrumentId,
             nodePort,
-            WEB_LOD,
-            (progress) => {
+            lod: WEB_LOD,
+            onProgress: (progress) => {
                 if (signal?.aborted) {
                     return;
                 }
                 setSampleLoadProgress(deviceId, progress);
             },
-            signal
-        );
+            signal,
+        });
     } catch (error) {
         // A superseding load aborted this one; it owns the UI now, stay silent.
         if (signal?.aborted) {
@@ -64,7 +66,7 @@ export async function autoLoadLevainSamples(
         // Fallback sine tone will continue to work. Surface the failure instead
         // of flashing a synthetic 100% then "Ready".
         setSampleLoadError(deviceId, error instanceof Error ? error.message : 'Sample load failed');
-        return;
+        throw error;
     }
 
     // Completed but superseded — don't claim 100%/Ready over the newer load.

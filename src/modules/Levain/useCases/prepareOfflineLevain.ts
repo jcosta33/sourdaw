@@ -14,33 +14,23 @@ export type PrepareOfflineLevainInput = {
 };
 
 /**
- * Give an offline Levain instance the two things live registration gives it —
- * its instrument identity and its zones — and resolve only once it can play.
+ * Give an offline Levain instance its context-local copy of the decoded bank
+ * used by live registration, and resolve only after the worklet commits it.
  *
  * The offline render constructs its own Levain node and never registers it, so
  * neither half happened and every exported Levain track was wrong twice over.
  *
- * **Identity.** The `setInstrument` message is the only thing that reaches
- * `RealismEngine::configure_for`. An instance that never receives it stays at the
- * constructor default `Instrument::Other`, whose branch zeroes body resonance,
- * sympathetic strings, bow noise, breath and damping — against 0.65 / 0.5 / 0.5 /
- * 0.4 for a bowed string — and never fires the bow-scrape and bow-lift transients,
- * which are gated on `is_bowed_string()`. `realism.tick` runs per sample, so an
- * export came out audibly flatter than the session even once the samples landed.
+ * **Identity.** The loader includes the instrument identity in `beginSampleBank`.
+ * Rust stages it with the PCM and zone map and applies it only when that bank
+ * commits, so a failed replacement cannot recolour the still-sounding bank.
  *
- * **Order.** Identity is posted before the load, matching the live bridge's
- * `loadSamplesForInstrument`, which calls `setInstrument` and only then starts the
- * load. Safe because the `clearZones` the loader posts first calls
- * `realism.reset()`, and every `reset()` under `levain/realism/` clears filter
- * state only — never the instrument, its presets, or its mix amounts.
- *
- * **Zones.** Reuses the live loader rather than keeping a second copy of it. It
- * resolves only once `buildZoneMap` has been posted, which is what an offline
- * render needs: `OfflineAudioContext` renders faster than real time, so a load
- * that is merely started never lands. Its progress and error writes land on the
- * panel keyed by the same device id, which is wanted here — a manifest that fails
- * during an export is a failure the user should see rather than one buried in a
- * log line.
+ * **Zones.** Reuses the live loader rather than keeping a second implementation.
+ * The main-thread decoded SAB cache avoids another fetch/decode pass, while the
+ * fresh `OfflineAudioContext` uploads one separate Rust/WASM bank into its own
+ * worklet scope. The loader waits for `sampleBankLoaded`; merely posting
+ * `buildZoneMap` is insufficient because offline rendering outruns asynchronous
+ * setup. Progress and errors remain keyed to the same device id so export
+ * failures reach the user instead of disappearing into a log line.
  *
  * **Where the instrument comes from.** The live patch when the session holds one,
  * then project truth, then the module default. `Device.parameterValues` holds
@@ -55,7 +45,6 @@ export async function prepareOfflineLevain({ deviceId, port, signal }: PrepareOf
     const state = instances[deviceId] ?? hydrateLevainStateFromProject(deviceId) ?? defaultLevainState;
     const { currentArticulation, instrumentId } = state.patch;
 
-    port.postMessage({ type: 'setInstrument', instrumentId });
     port.postMessage({ type: 'param', name: 'current_articulation', value: getArticulationId(currentArticulation) });
     await autoLoadLevainSamples(deviceId, port, instrumentId, signal);
 }

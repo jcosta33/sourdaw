@@ -120,7 +120,6 @@ describe('parseSampleManifest', () => {
             'articulations[0].type is not a supported Levain articulation'
         );
     });
-
     it('rejects round-robin dimensions beyond the DSP limit', () => {
         const manifest = createValidManifest();
         manifest.articulations[0]?.zones.push({ ...VALID_ZONE, rrLen: 13 });
@@ -170,7 +169,6 @@ describe('parseSampleManifest', () => {
             crossfadeFrames: 0,
         });
     });
-
     it('rejects finite JavaScript numbers that overflow a Rust f32', () => {
         const manifest = createValidManifest();
         manifest.articulations[0]?.zones.push({ ...VALID_ZONE, gainDb: Number.MAX_VALUE });

@@ -1439,6 +1439,12 @@ export class LevainInstance {
         wasm.__wbg_levaininstance_free(ptr, 0);
     }
     /**
+     * Discard a failed staged bank without changing the sounding bank.
+     */
+    abort_sample_bank() {
+        wasm.levaininstance_abort_sample_bank(this.__wbg_ptr);
+    }
+    /**
      * Get number of currently sounding voices.
      * @returns {number}
      */
@@ -1447,19 +1453,19 @@ export class LevainInstance {
         return ret >>> 0;
     }
     /**
-     * Add a sample to the pool. `data` is interleaved f32 PCM.
-     * Returns the SampleId.
+     * Add a sample to the uniquely-owned loading bank. `data` is interleaved
+     * f32 PCM. Returns `None` if the bank is already shared or exceeds limits.
      * @param {Float32Array} data
      * @param {number} frame_count
      * @param {number} channels
      * @param {number} sample_rate
-     * @returns {number}
+     * @returns {number | undefined}
      */
     add_sample(data, frame_count, channels, sample_rate) {
         const ptr0 = passArrayF32ToWasm0(data, wasm.__wbindgen_malloc);
         const len0 = WASM_VECTOR_LEN;
         const ret = wasm.levaininstance_add_sample(this.__wbg_ptr, ptr0, len0, frame_count, channels, sample_rate);
-        return ret >>> 0;
+        return ret === Number.MAX_SAFE_INTEGER ? undefined : ret;
     }
     /**
      * Add a zone to the zone map. Call build_zone_map() after all zones are added.
@@ -1497,18 +1503,48 @@ export class LevainInstance {
         wasm.levaininstance_all_notes_off(this.__wbg_ptr);
     }
     /**
+     * Attach an immutable PCM bank published in this rendering thread.
+     * @param {string} bank_key
+     * @returns {boolean}
+     */
+    attach_sample_bank(bank_key) {
+        const ptr0 = passStringToWasm0(bank_key, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.levaininstance_attach_sample_bank(this.__wbg_ptr, ptr0, len0);
+        return ret !== 0;
+    }
+    /**
+     * Reset this device to a uniquely-owned empty loading bank.
+     * @param {string} instrument_id
+     */
+    begin_sample_bank(instrument_id) {
+        const ptr0 = passStringToWasm0(instrument_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.levaininstance_begin_sample_bank(this.__wbg_ptr, ptr0, len0);
+    }
+    /**
      * Build the zone lookup table after all zones and samples are loaded.
      * @param {number} num_articulations
      * @param {number} num_mics
+     * @returns {boolean}
      */
     build_zone_map(num_articulations, num_mics) {
-        wasm.levaininstance_build_zone_map(this.__wbg_ptr, num_articulations, num_mics);
+        const ret = wasm.levaininstance_build_zone_map(this.__wbg_ptr, num_articulations, num_mics);
+        return ret !== 0;
     }
     /**
      * Clear all loaded zones and samples from the engine.
      */
     clear_zones() {
         wasm.levaininstance_clear_zones(this.__wbg_ptr);
+    }
+    /**
+     * Atomically activate a successfully built staged PCM bank and zone map.
+     * @returns {boolean}
+     */
+    commit_sample_bank() {
+        const ret = wasm.levaininstance_commit_sample_bank(this.__wbg_ptr);
+        return ret !== 0;
     }
     /**
      * Number of non-finite output samples scrubbed to silence since
@@ -1607,6 +1643,25 @@ export class LevainInstance {
     process(block_size) {
         const ret = wasm.levaininstance_process(this.__wbg_ptr, block_size);
         return ret >>> 0;
+    }
+    /**
+     * Publish the complete immutable PCM bank for sibling Levain instances.
+     * @param {string} bank_key
+     * @returns {boolean}
+     */
+    publish_sample_bank(bank_key) {
+        const ptr0 = passStringToWasm0(bank_key, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.levaininstance_publish_sample_bank(this.__wbg_ptr, ptr0, len0);
+        return ret !== 0;
+    }
+    /**
+     * Decoded PCM bytes retained by this instance's current shared bank.
+     * @returns {number}
+     */
+    sample_bank_bytes() {
+        const ret = wasm.levaininstance_sample_bank_bytes(this.__wbg_ptr);
+        return ret;
     }
     /**
      * Tell the engine which instrument id is now loaded (e.g. `violin-1`,

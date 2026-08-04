@@ -136,10 +136,7 @@ describe('Levain instrument persistence round trip', () => {
         const { port, posted } = fakePort();
         await prepareOfflineLevain({ deviceId: DEVICE_ID, port });
 
-        expect(posted).toEqual([
-            { type: 'setInstrument', instrumentId: 'cello' },
-            { type: 'param', name: 'current_articulation', value: 13 },
-        ]);
+        expect(posted).toEqual([{ type: 'param', name: 'current_articulation', value: 13 }]);
         expect(mocks.autoLoadLevainSamples).toHaveBeenCalledWith(DEVICE_ID, port, 'cello', undefined);
     });
 
@@ -156,10 +153,7 @@ describe('Levain instrument persistence round trip', () => {
 
         await prepareOfflineLevain({ deviceId: DEVICE_ID, port });
 
-        expect(posted).toEqual([
-            { type: 'setInstrument', instrumentId: 'cello' },
-            { type: 'param', name: 'current_articulation', value: 0 },
-        ]);
+        expect(posted).toEqual([{ type: 'param', name: 'current_articulation', value: 0 }]);
         expect(mocks.autoLoadLevainSamples).toHaveBeenCalledWith(DEVICE_ID, port, 'cello', undefined);
     });
 
@@ -171,10 +165,7 @@ describe('Levain instrument persistence round trip', () => {
 
         await prepareOfflineLevain({ deviceId: DEVICE_ID, port });
 
-        expect(posted).toEqual([
-            { type: 'setInstrument', instrumentId: defaultLevainState.patch.instrumentId },
-            { type: 'param', name: 'current_articulation', value: 0 },
-        ]);
+        expect(posted).toEqual([{ type: 'param', name: 'current_articulation', value: 0 }]);
     });
 
     it('registers a reloaded device onto the saved instrument, not onto the default', () => {
@@ -199,11 +190,11 @@ describe('Levain instrument persistence round trip', () => {
         });
         levainStore.set({});
 
-        const setInstrument = vi.fn();
-        registerLevainDevice(DEVICE_ID, { setParam: vi.fn(), handleCc: vi.fn(), setInstrument }, fakePort().port);
+        const port = fakePort().port;
+        registerLevainDevice(DEVICE_ID, { setParam: vi.fn(), handleCc: vi.fn() }, port);
 
         expect(levainStore.value?.[DEVICE_ID]?.patch.instrumentId).toBe('timpani');
-        expect(setInstrument).toHaveBeenCalledWith('timpani');
+        expect(autoLoadLevainSamples).toHaveBeenCalledWith(DEVICE_ID, port, 'timpani', expect.any(AbortSignal));
     });
 
     it('does not write a chunk for a device that only appeared', async () => {

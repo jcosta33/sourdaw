@@ -37,14 +37,12 @@ function makeDeps(
 type MockedLevainDevice = {
     setParam: Mock<LevainDevice['setParam']>;
     handleCc: Mock<LevainDevice['handleCc']>;
-    setInstrument: Mock<NonNullable<LevainDevice['setInstrument']>>;
 };
 
 function makeDevice(): MockedLevainDevice {
     return {
         setParam: vi.fn<LevainDevice['setParam']>(),
         handleCc: vi.fn<LevainDevice['handleCc']>(),
-        setInstrument: vi.fn<NonNullable<LevainDevice['setInstrument']>>(),
     };
 }
 
@@ -94,7 +92,6 @@ describe('createLevainBridge', () => {
                 expect(levainStore.value).toEqual({});
                 expect(deps.autoLoadLevainSamples).not.toHaveBeenCalled();
                 expect(deps.persistDeviceParam).not.toHaveBeenCalled();
-                expect(device.setInstrument).not.toHaveBeenCalled();
                 expect(rafCallbacks).toEqual([]);
 
                 deps.setResolutionStatus('eligible');
@@ -120,12 +117,10 @@ describe('createLevainBridge', () => {
                 bridge.registerLevainDevice('d1', device, {} as MessagePort);
                 expect(signals).toHaveLength(1);
                 deps.autoLoadLevainSamples.mockClear();
-                device.setInstrument.mockClear();
                 deps.setResolutionStatus(status);
 
                 bridge.loadSamplesForInstrument('d1', 'cello');
 
-                expect(device.setInstrument).not.toHaveBeenCalled();
                 expect(deps.autoLoadLevainSamples).not.toHaveBeenCalled();
                 expect(signals[0]?.aborted).toBe(false);
             }
@@ -250,7 +245,7 @@ describe('createLevainBridge', () => {
         });
     });
 
-    it('queues the canonical DSP id when registering and selecting an articulation', () => {
+    it('delivers the canonical DSP id without persisting duplicate articulation truth', () => {
         const deps = makeDeps();
         const bridge = createLevainBridge(deps);
         const device = makeDevice();
@@ -273,6 +268,26 @@ describe('createLevainBridge', () => {
     });
 
     describe('setLevainParamWithAudio — nested patch forwarding', () => {
+        it.each([
+            ['spiccato', 7],
+            ['staccato', 8],
+            ['pizzicato', 10],
+            ['tremolo', 13],
+        ] as const)('forwards %s with its canonical DSP articulation id', (articulation, expectedId) => {
+            const deps = makeDeps();
+            const bridge = createLevainBridge(deps);
+            const device = makeDevice();
+            seedDevice('d1');
+            bridge.registerLevainDevice('d1', device);
+
+            bridge.setLevainParamWithAudio('d1', 'currentArticulation', articulation);
+            flushRaf();
+
+            expect(levainStore.value?.d1?.patch.currentArticulation).toBe(articulation);
+            expect(device.setParam).toHaveBeenCalledWith('current_articulation', expectedId);
+            expect(deps.persistDeviceParam).not.toHaveBeenCalledWith('d1', 'current_articulation', expect.any(Number));
+        });
+
         it('should forward nested number and boolean fields to engine params', () => {
             const deps = makeDeps();
             const bridge = createLevainBridge(deps);

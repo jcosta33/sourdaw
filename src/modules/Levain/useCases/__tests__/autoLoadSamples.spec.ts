@@ -40,14 +40,20 @@ describe('autoLoadLevainSamples', () => {
         await autoLoadLevainSamples('d1', port, 'violin-1');
 
         expect(setSampleLoadProgress).toHaveBeenCalledWith('d1', 0.01);
-        expect(loadInstrumentFromManifest).toHaveBeenCalledWith(
-            expect.stringContaining('/samples/levain/violin-1/manifest.json'),
-            expect.stringContaining('/samples/levain/violin-1'),
-            port,
-            0,
-            expect.any(Function),
-            undefined
-        );
+        expect(loadInstrumentFromManifest).toHaveBeenCalledTimes(1);
+        const loadCall = vi.mocked(loadInstrumentFromManifest).mock.calls[0];
+        if (!loadCall) {
+            throw new Error('Expected one Levain manifest load');
+        }
+        expect(loadCall[0]).toMatchObject({
+            manifestUrl: '/samples/levain/violin-1/manifest.json',
+            basePath: '/samples/levain/violin-1',
+            expectedInstrumentId: 'violin-1',
+            nodePort: port,
+            lod: 0,
+            signal: undefined,
+        });
+        expect(loadCall[0].onProgress).toEqual(expect.any(Function));
         expect(setSampleLoadProgress).toHaveBeenCalledWith('d1', 1.0);
     });
 
@@ -83,7 +89,7 @@ describe('autoLoadLevainSamples', () => {
         it('records an error and never claims completion when the loader rejects', async () => {
             vi.mocked(loadInstrumentFromManifest).mockRejectedValueOnce(new Error('boom'));
 
-            await autoLoadLevainSamples('d1', {} as MessagePort, 'cello');
+            await expect(autoLoadLevainSamples('d1', {} as MessagePort, 'cello')).rejects.toThrow('boom');
 
             expect(setSampleLoadError).toHaveBeenCalledWith('d1', 'boom');
             // The old code set progress to 1.0 in a finally even on error.
@@ -104,8 +110,9 @@ describe('autoLoadLevainSamples', () => {
 
         it('does not claim 100% when aborted after the loader resolves', async () => {
             const controller = new AbortController();
-            vi.mocked(loadInstrumentFromManifest).mockImplementationOnce(async () => {
+            vi.mocked(loadInstrumentFromManifest).mockImplementationOnce(() => {
                 controller.abort();
+                return Promise.resolve();
             });
 
             await autoLoadLevainSamples('d1', {} as MessagePort, 'flute', controller.signal);
@@ -115,9 +122,9 @@ describe('autoLoadLevainSamples', () => {
 
         it('stays silent (no error) when an aborted load rejects', async () => {
             const controller = new AbortController();
-            vi.mocked(loadInstrumentFromManifest).mockImplementationOnce(async () => {
+            vi.mocked(loadInstrumentFromManifest).mockImplementationOnce(() => {
                 controller.abort();
-                throw new Error('aborted decode');
+                return Promise.reject(new Error('aborted decode'));
             });
 
             await autoLoadLevainSamples('d1', {} as MessagePort, 'oboe', controller.signal);

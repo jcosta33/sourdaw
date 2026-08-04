@@ -33,7 +33,6 @@ export type ManifestLoop =
           endFrame: number | 'sample-end';
           crossfadeFrames: number;
       };
-
 export type ManifestArticulation = {
     type: ArticulationType;
     id: number;
@@ -186,7 +185,6 @@ function parseZone(value: unknown, path: string): ManifestZone {
             crossfadeFrames: value.loopCrossfade,
         });
     }
-
     return Object.freeze({
         file: value.file,
         rootNote: value.rootNote,

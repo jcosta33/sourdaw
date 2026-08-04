@@ -817,42 +817,75 @@ fn knead_process_does_not_allocate_while_shifting_pitch() {
 fn levain_process_does_not_allocate_with_notes_held() {
     use daw_dsp::levain::LevainInstance;
 
-    let mut instance = LevainInstance::new(SAMPLE_RATE, 8);
+    let mut owner = LevainInstance::new(SAMPLE_RATE, 8);
+    owner.begin_sample_bank("violin-1");
 
-    // Load one real looping sample and map it across the keyboard. Without a
-    // zone map `note_on` falls through to the fallback sine, which is a
-    // different (and much smaller) code path than the sampler voice this guard
-    // is for — and that fallback is `enabled: false` on a fresh engine anyway,
-    // so an unconfigured instance renders silence.
+    // Publish one real looping bank, attach it to a second instance, then drop
+    // the publisher. The guarded render therefore exercises the shared-bank
+    // follower path and proves its Arc owns the PCM independently.
     let frame_count = 4_800_u32;
     let sample: Vec<f32> = (0..frame_count)
         .map(|i| (i as f32 / SAMPLE_RATE * 220.0 * std::f32::consts::TAU).sin() * 0.8)
         .collect();
-    let sample_id = instance.add_sample(sample, frame_count, 1, SAMPLE_RATE);
-    instance.add_zone(
-        0,          // zone_id
-        sample_id,  // sample_id
-        0,          // articulation_id
-        69,         // root_note
-        0,          // lo_key
-        127,        // hi_key
-        0,          // lo_vel
-        127,        // hi_vel
-        0,          // rr_pos
-        1,          // rr_len
-        0,          // mic_id
-        false,      // is_release
-        1,          // loop_mode: forward, so the voice never runs out of sample
-        0,          // loop_start
+    let sample_id = owner
+        .add_sample(sample, frame_count, 1, SAMPLE_RATE)
+        .expect("test sample should fit the bank");
+    owner.add_zone(
+        0,           // zone_id
+        sample_id,   // sample_id
+        0,           // articulation_id
+        69,          // root_note
+        0,           // lo_key
+        127,         // hi_key
+        0,           // lo_vel
+        127,         // hi_vel
+        0,           // rr_pos
+        1,           // rr_len
+        0,           // mic_id
+        false,       // is_release
+        1,           // loop_mode: forward, so the voice never runs out of sample
+        0,           // loop_start
         frame_count, // loop_end
-        0,          // loop_crossfade
-        0.0,        // gain_db
-        0.005,      // attack
-        0.1,        // decay
-        1.0,        // sustain
-        0.3,        // release
+        0,           // loop_crossfade
+        0.0,         // gain_db
+        0.005,       // attack
+        0.1,         // decay
+        1.0,         // sustain
+        0.3,         // release
     );
-    instance.build_zone_map(1, 1);
+    assert!(owner.build_zone_map(1, 1));
+    assert!(owner.publish_sample_bank("levain-rt-shared-bank"));
+    assert!(owner.commit_sample_bank());
+
+    let mut instance = LevainInstance::new(SAMPLE_RATE, 8);
+    instance.begin_sample_bank("violin-1");
+    assert!(instance.attach_sample_bank("levain-rt-shared-bank"));
+    instance.add_zone(
+        0,
+        sample_id,
+        0,
+        69,
+        0,
+        127,
+        0,
+        127,
+        0,
+        1,
+        0,
+        false,
+        1,
+        0,
+        frame_count,
+        0,
+        0.0,
+        0.005,
+        0.1,
+        1.0,
+        0.3,
+    );
+    assert!(instance.build_zone_map(1, 1));
+    assert!(instance.commit_sample_bank());
+    drop(owner);
 
     // Drive the macro-mapped Tone / Attack / Release slots off their centre
     // positions. Each is the identity at 0.5 — Tone takes its tilt section out

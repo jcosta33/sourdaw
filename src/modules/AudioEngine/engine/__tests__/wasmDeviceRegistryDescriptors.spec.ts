@@ -384,7 +384,6 @@ describe('wasmDeviceRegistry descriptors', () => {
                 allNotesOff: vi.fn(),
                 setParam: vi.fn(),
                 handleCc: vi.fn(),
-                setInstrument: vi.fn(),
                 setBypass: vi.fn(),
                 connect: vi.fn(),
                 disconnect: vi.fn(),
@@ -411,7 +410,6 @@ describe('wasmDeviceRegistry descriptors', () => {
                 device: {
                     setParam: result.setParam,
                     handleCc: result.handleCc,
-                    setInstrument: result.setInstrument,
                 },
                 port: result.workletNode.port,
             });

@@ -1,3 +1,4 @@
+export { getDecodedBankDiagnostics } from './getDecodedBankDiagnostics';
 export { commitLevainDeviceState } from './commitLevainDeviceState';
 export { hydrateLevainStateFromProject } from './hydrateLevainStateFromProject';
 export { initLevainDeviceStatePersistence } from './initLevainDeviceStatePersistence';

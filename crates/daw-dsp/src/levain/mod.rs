@@ -21,9 +21,9 @@ pub mod types;
 pub mod voice;
 pub mod zone;
 
+use crate::primitives::sanitize_block;
 use engine::LevainEngine;
 use wasm_bindgen::prelude::*;
-use crate::primitives::sanitize_block;
 
 /// WASM-exported Levain instance for AudioWorklet.
 #[wasm_bindgen]
@@ -113,17 +113,47 @@ impl LevainInstance {
         self.engine.handle_cc(cc, value);
     }
 
-    /// Add a sample to the pool. `data` is interleaved f32 PCM.
-    /// Returns the SampleId.
+    /// Add a sample to the uniquely-owned loading bank. `data` is interleaved
+    /// f32 PCM. Returns `None` if the bank is already shared or exceeds limits.
     pub fn add_sample(
         &mut self,
         data: Vec<f32>,
         frame_count: u32,
         channels: u8,
         sample_rate: f32,
-    ) -> u32 {
+    ) -> Option<u32> {
         self.engine
             .add_sample(data, frame_count, channels, sample_rate)
+    }
+
+    /// Reset this device to a uniquely-owned empty loading bank.
+    pub fn begin_sample_bank(&mut self, instrument_id: &str) {
+        self.engine.begin_sample_bank(instrument_id);
+    }
+
+    /// Discard a failed staged bank without changing the sounding bank.
+    pub fn abort_sample_bank(&mut self) {
+        self.engine.abort_sample_bank();
+    }
+
+    /// Attach an immutable PCM bank published in this rendering thread.
+    pub fn attach_sample_bank(&mut self, bank_key: &str) -> bool {
+        self.engine.attach_sample_bank(bank_key)
+    }
+
+    /// Publish the complete immutable PCM bank for sibling Levain instances.
+    pub fn publish_sample_bank(&self, bank_key: &str) -> bool {
+        self.engine.publish_sample_bank(bank_key)
+    }
+
+    /// Atomically activate a successfully built staged PCM bank and zone map.
+    pub fn commit_sample_bank(&mut self) -> bool {
+        self.engine.commit_sample_bank()
+    }
+
+    /// Decoded PCM bytes retained by this instance's current shared bank.
+    pub fn sample_bank_bytes(&self) -> f64 {
+        self.engine.sample_bank_bytes() as f64
     }
 
     /// Add a zone to the zone map. Call build_zone_map() after all zones are added.
@@ -196,9 +226,10 @@ impl LevainInstance {
     }
 
     /// Build the zone lookup table after all zones and samples are loaded.
-    pub fn build_zone_map(&mut self, num_articulations: u32, num_mics: u32) {
+    pub fn build_zone_map(&mut self, num_articulations: u32, num_mics: u32) -> bool {
         self.engine
-            .build_zone_map(num_articulations as usize, num_mics as usize);
+            .build_zone_map(num_articulations as usize, num_mics as usize)
+            .is_ok()
     }
 
     /// Clear all loaded zones and samples from the engine.
