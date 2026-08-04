@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => ({
     projectStoreValue: { value: null as ProjectStoreState | null },
     projectStoreSet: vi.fn<(value: ProjectStoreState) => void>(),
     persistCrdtProject: vi.fn<() => Promise<void>>(),
+    captureProjectRevision: vi.fn<() => string>(),
     buildProjectData: vi.fn(),
 }));
 
@@ -41,6 +42,7 @@ vi.mock('../../../../stores/projectStore', () => ({
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectRevision: mocks.captureProjectRevision,
     compactProject: vi.fn().mockResolvedValue(undefined),
     persistCrdtProject: mocks.persistCrdtProject,
     projectActionHistoryToStore: vi.fn(),
@@ -153,6 +155,7 @@ describe('saveProject -> recent list -> loadRecentProject round-trip', () => {
         window.localStorage.clear();
         mocks.projectStoreValue.value = makeProjectState();
         mocks.persistCrdtProject.mockResolvedValue(undefined);
+        mocks.captureProjectRevision.mockReturnValue('saved-revision');
         mocks.buildProjectData.mockResolvedValue({ data: makeProjectData(), missingBufferCount: 0 });
     });
 
@@ -161,7 +164,7 @@ describe('saveProject -> recent list -> loadRecentProject round-trip', () => {
     });
 
     it('a saved project appears in the recent list and reopens with its name', async () => {
-        saveProject();
+        void saveProject();
 
         // The recent entry only lands after CRDT persistence settles.
         await vi.waitFor(() => {

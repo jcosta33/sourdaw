@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
     projectStoreValue: { value: null as ProjectStoreState | null },
     projectStoreSet: vi.fn<(value: ProjectStoreState) => void>(),
     persistCrdtProject: vi.fn<() => Promise<void>>(),
+    captureProjectRevision: vi.fn<() => string>(),
     addToRecentProjects: vi.fn<(name: string, key: string) => void>(),
     buildProjectData: vi.fn<(input?: { includeAudioBuffers?: boolean }) => Promise<{ data: unknown } | null>>(),
     captureExternalPluginStates: vi.fn<() => Promise<void>>(),
@@ -38,6 +39,7 @@ vi.mock('../../../../stores/projectStore', () => ({
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectRevision: mocks.captureProjectRevision,
     persistCrdtProject: mocks.persistCrdtProject,
 }));
 
@@ -100,6 +102,7 @@ describe('saveProject durability', () => {
         localStorage.clear();
         mocks.projectStoreValue.value = makeProject();
         mocks.persistCrdtProject.mockResolvedValue(undefined);
+        mocks.captureProjectRevision.mockReturnValue('saved-revision');
         mocks.captureExternalPluginStates.mockResolvedValue(undefined);
         mocks.buildProjectData.mockResolvedValue({
             data: { version: 1, meta: { name: 'My Song', updatedAt: 1700000000000 } },
@@ -173,6 +176,30 @@ describe('saveProject durability', () => {
         await expect(saveProject()).resolves.toBe(false);
 
         expect(mocks.addToRecentProjects).not.toHaveBeenCalled();
+        expect(mocks.projectStoreSet).not.toHaveBeenCalledWith(expect.objectContaining({ dirty: false }));
+    });
+
+    it('keeps the project dirty when project truth changes while the snapshot is being written', async () => {
+        installFakeIndexedDb();
+        mocks.captureProjectRevision.mockReturnValueOnce('saved-revision').mockReturnValueOnce('newer-revision');
+        const saveProject = await importSaveProject();
+
+        await expect(saveProject()).resolves.toBe(true);
+
+        expect(mocks.projectStoreSet).not.toHaveBeenCalledWith(expect.objectContaining({ dirty: false }));
+    });
+
+    it('captures and persists the revision produced by project serialization', async () => {
+        installFakeIndexedDb();
+        const saveProject = await importSaveProject();
+
+        await expect(saveProject()).resolves.toBe(true);
+
+        const buildOrder = mocks.buildProjectData.mock.invocationCallOrder[0];
+        const captureOrder = mocks.captureProjectRevision.mock.invocationCallOrder[0];
+        const persistOrder = mocks.persistCrdtProject.mock.invocationCallOrder[0];
+        expect(buildOrder ?? 0).toBeLessThan(captureOrder ?? 0);
+        expect(captureOrder ?? 0).toBeLessThan(persistOrder ?? 0);
     });
 
     // AC-5. The live save snapshot references audio by id; the PCM itself lives
@@ -186,16 +213,18 @@ describe('saveProject durability', () => {
     it('persists a save snapshot that carries no embedded audio payload', async () => {
         const controls = installFakeIndexedDb();
         const snapshotWithoutAudio = { version: 1, meta: { name: 'My Song', updatedAt: 1700000000000 } };
-        const embedAudio = (data: Record<string, unknown>): Record<string, unknown> => ({
-            ...data,
-            audioBuffers: {
-                'buffer-1': {
-                    sampleRate: 48_000,
-                    numberOfChannels: 2,
-                    channelData: ['A'.repeat(BASE64_CHARS_FOR_60S_STEREO / 2)],
+        function embedAudio(data: Record<string, unknown>): Record<string, unknown> {
+            return {
+                ...data,
+                audioBuffers: {
+                    'buffer-1': {
+                        sampleRate: 48_000,
+                        numberOfChannels: 2,
+                        channelData: ['A'.repeat(BASE64_CHARS_FOR_60S_STEREO / 2)],
+                    },
                 },
-            },
-        });
+            };
+        }
         mocks.buildProjectData.mockImplementation((input) =>
             Promise.resolve({
                 data: input?.includeAudioBuffers === false ? snapshotWithoutAudio : embedAudio(snapshotWithoutAudio),

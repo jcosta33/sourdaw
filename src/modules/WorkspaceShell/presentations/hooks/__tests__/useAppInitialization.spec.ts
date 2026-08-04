@@ -13,6 +13,7 @@ const projectStoreMock = vi.hoisted(() => ({
     current: null as Record<string, unknown> | null,
     set: vi.fn(),
 }));
+const transportStateMock = vi.hoisted(() => ({ current: null as { isPlaying: boolean } | null }));
 // The hook fans out into the whole app boot sequence; every collaborator is
 // stubbed so the test can isolate the user-gesture effect (the fix-5 seam:
 // resumeEngine() must no longer be fire-and-forget). Async members resolve so
@@ -50,7 +51,10 @@ vi.mock('#/modules/SampleLibrary/useCases', () => ({
     seedFactoryLibrary: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('#/modules/Synth/useCases', () => ({ registerProSynthInstruments: vi.fn() }));
-vi.mock('#/modules/Transport/useCases', () => ({ ensureTrackStrips: vi.fn(), getTransportState: vi.fn(() => null) }));
+vi.mock('#/modules/Transport/useCases', () => ({
+    ensureTrackStrips: vi.fn(),
+    getTransportState: vi.fn(() => transportStateMock.current),
+}));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 const mockPreferencesValueHolder: { current: Record<string, unknown> | null } = { current: { uiScale: 1 } };
 // Mock the preferences store the hook imports from #/modules/Preferences/stores,
@@ -63,6 +67,10 @@ vi.mock('#/modules/Preferences/stores', () => ({
         subscribe: vi.fn(() => () => {}),
     },
 }));
+
+beforeEach(() => {
+    transportStateMock.current = null;
+});
 
 describe('useAppInitialization — first-gesture engine resume', () => {
     beforeEach(() => {
@@ -255,7 +263,7 @@ describe('useAppInitialization — autosave governed by preferences', () => {
         vi.restoreAllMocks();
     });
 
-    it('does NOT fire saveProject when the autoSave preference is disabled', () => {
+    it('does NOT persist when the autoSave preference is disabled', () => {
         // The "Auto Save" toggle must actually stop autosave: with autoSave:false
         // the 30s interval must never call saveProject.
         mockPreferencesValueHolder.current = { uiScale: 1, autoSave: false, autoSaveIntervalMs: 30_000 };
@@ -269,6 +277,7 @@ describe('useAppInitialization — autosave governed by preferences', () => {
 
     it('fires saveProject on the preference-configured interval when autoSave is enabled', () => {
         mockPreferencesValueHolder.current = { uiScale: 1, autoSave: true, autoSaveIntervalMs: 10_000 };
+        projectStoreMock.current = { dirty: true };
 
         renderHook(() => useAppInitialization());
 
@@ -277,6 +286,34 @@ describe('useAppInitialization — autosave governed by preferences', () => {
 
         vi.advanceTimersByTime(20_000);
         expect(saveProject).toHaveBeenCalledTimes(3);
+    });
+
+    it('does not rebuild a full project snapshot while the project is clean', () => {
+        mockPreferencesValueHolder.current = { uiScale: 1, autoSave: true, autoSaveIntervalMs: 10_000 };
+        projectStoreMock.current = { dirty: false };
+
+        renderHook(() => useAppInitialization());
+
+        vi.advanceTimersByTime(30_000);
+
+        expect(saveProject).not.toHaveBeenCalled();
+    });
+
+    it('defers the full project snapshot until transport stops', () => {
+        mockPreferencesValueHolder.current = { uiScale: 1, autoSave: true, autoSaveIntervalMs: 10_000 };
+        projectStoreMock.current = { dirty: true };
+        transportStateMock.current = { isPlaying: true };
+
+        renderHook(() => useAppInitialization());
+
+        vi.advanceTimersByTime(30_000);
+
+        expect(saveProject).not.toHaveBeenCalled();
+
+        transportStateMock.current = { isPlaying: false };
+        vi.advanceTimersByTime(10_000);
+
+        expect(saveProject).toHaveBeenCalledTimes(1);
     });
 });
 

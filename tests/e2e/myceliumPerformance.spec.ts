@@ -7,16 +7,20 @@ import {
     openMeasuredPage,
     readPageMemory,
     rebuildMycelium,
+    readRuntimeSnapshot,
     rejectOnPageErrorDuring,
+    type RuntimeSnapshot,
     startMyceliumPlaybackForReadiness,
     startLongTaskWindow,
     stopMyceliumPlaybackAfterReadiness,
     stopLongTaskWindow,
     waitForPlayableDevices,
+    warmPlaybackBeforeReplacement,
 } from './myceliumPerformanceEvidence';
 import {
     captureMyceliumPlayback,
     captureSimplePlaybackControl,
+    refreshPagePlaybackStats,
     type MyceliumPlaybackProgress,
     type SimplePlaybackControl,
 } from './myceliumPlaybackEvidence';
@@ -175,10 +179,13 @@ test('captures a windowed warm Mycelium project replacement in stable Chrome', a
     expect(browserName).toBe('chromium');
     const measured = await openMeasuredPage(testInfo);
     const longTaskWindow = { active: false };
+    const observedWarmupSnapshots: RuntimeSnapshot[] = [];
+    let completedWarmupLongTasks: Awaited<ReturnType<typeof stopLongTaskWindow>> | null = null;
     const captureWarmFailure = async (error: unknown): Promise<void> => {
+        let failureLongTasks = null;
         if (longTaskWindow.active) {
-            const longTasks = await stopLongTaskWindowBestEffort(measured);
-            if (longTasks) {
+            failureLongTasks = await stopLongTaskWindowBestEffort(measured);
+            if (failureLongTasks) {
                 longTaskWindow.active = false;
             }
         }
@@ -187,6 +194,11 @@ test('captures a windowed warm Mycelium project replacement in stable Chrome', a
             page: measured.page,
             environment: measured.environment,
             error,
+            partial: {
+                activeWindowLongTasks: failureLongTasks,
+                warmupLongTasks: completedWarmupLongTasks,
+                warmupSnapshots: observedWarmupSnapshots,
+            },
         });
     };
     try {
@@ -203,6 +215,20 @@ test('captures a windowed warm Mycelium project replacement in stable Chrome', a
                     timeoutMs: measured.environment.smoke ? 60_000 : 120_000,
                 });
                 expect(coldReady.outcome).toBe('ready');
+                await stopMyceliumPlaybackAfterReadiness(measured.page);
+                const staleWarmPlaybackBoundary = await readRuntimeSnapshot(measured.page);
+                await refreshPagePlaybackStats(measured.page, staleWarmPlaybackBoundary, false);
+                await startMyceliumPlaybackForReadiness(measured.page);
+                await startLongTaskWindow(measured.page);
+                longTaskWindow.active = true;
+                const warmupSnapshots = await warmPlaybackBeforeReplacement({
+                    expectedAudioDeviceCount: coldReady.expectedAudioDeviceCount,
+                    onSnapshot: (snapshot) => observedWarmupSnapshots.push(snapshot),
+                    readSnapshot: () => readRuntimeSnapshot(measured.page),
+                    wait: (durationMs) => measured.page.waitForTimeout(durationMs),
+                });
+                completedWarmupLongTasks = await stopLongTaskWindow(measured.page);
+                longTaskWindow.active = false;
                 await startLongTaskWindow(measured.page);
                 longTaskWindow.active = true;
                 const rebuildStartedAtMs = performance.now();
@@ -228,6 +254,8 @@ test('captures a windowed warm Mycelium project replacement in stable Chrome', a
                         expectedWarm: coldReady.readinessGeneration + 1,
                         warm: warmReady.readinessGeneration,
                     },
+                    warmupLongTasks: completedWarmupLongTasks,
+                    warmupSnapshots,
                     warmProjectReadinessDurationMs,
                     readinessOutcome: warmReady.outcome,
                     runtime: { cold: coldReady.snapshot, warm: warmReady.snapshot },
