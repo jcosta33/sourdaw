@@ -311,7 +311,13 @@ export const executableAppActionDescriptors = [
         actionType: 'invertNotes',
         risk: 'broad-reversible',
         description: 'Invert every pitch in one MIDI clip around its current pitch range.',
-        intentPhrases: ['invert midi notes', 'invert notes', 'mirror midi pitches'],
+        intentPhrases: [
+            'invert midi notes',
+            'invert the midi notes',
+            'invert notes',
+            'invert the notes',
+            'mirror midi pitches',
+        ],
         targetRules: editableMidiClipTargetRules,
         valueRules: [],
         parameters: {
@@ -325,7 +331,13 @@ export const executableAppActionDescriptors = [
         actionType: 'retrogradeNotes',
         risk: 'broad-reversible',
         description: 'Reverse every note in one MIDI clip across its current time range.',
-        intentPhrases: ['retrograde midi notes', 'retrograde notes', 'reverse midi notes'],
+        intentPhrases: [
+            'retrograde midi notes',
+            'retrograde the midi notes',
+            'retrograde notes',
+            'retrograde the notes',
+            'reverse midi notes',
+        ],
         targetRules: editableMidiClipTargetRules,
         valueRules: [],
         parameters: {

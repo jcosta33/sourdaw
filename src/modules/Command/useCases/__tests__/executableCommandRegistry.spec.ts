@@ -673,13 +673,25 @@ const EXPECTED_GROUNDING = [
     },
     {
         actionType: 'invertNotes',
-        intentPhrases: ['invert midi notes', 'invert notes', 'mirror midi pitches'],
+        intentPhrases: [
+            'invert midi notes',
+            'invert the midi notes',
+            'invert notes',
+            'invert the notes',
+            'mirror midi pitches',
+        ],
         targetRules: [{ argument: 'clipId', capability: 'editable-midi-clip' }],
         valueRules: [],
     },
     {
         actionType: 'retrogradeNotes',
-        intentPhrases: ['retrograde midi notes', 'retrograde notes', 'reverse midi notes'],
+        intentPhrases: [
+            'retrograde midi notes',
+            'retrograde the midi notes',
+            'retrograde notes',
+            'retrograde the notes',
+            'reverse midi notes',
+        ],
         targetRules: [{ argument: 'clipId', capability: 'editable-midi-clip' }],
         valueRules: [],
     },

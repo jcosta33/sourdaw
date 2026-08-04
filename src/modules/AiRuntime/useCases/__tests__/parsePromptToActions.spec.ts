@@ -260,6 +260,58 @@ describe('parsePromptToActions', () => {
         expect(result.executionMode).toBe('atomic');
     });
 
+    it('rejects provider MIDI transforms for audio, locked, empty, or missing selected clips', async () => {
+        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
+            '../agentReference/bridgeGroundedLlmToolCalls'
+        );
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        vi.mocked(generateToolCalls).mockResolvedValue(
+            completePlan([{ name: 'setAllVelocities', arguments: { clipId: 'clip-selected', velocity: 96 } }])
+        );
+        const baseClip = {
+            id: 'clip-selected',
+            name: 'Selected Clip',
+            type: 'midi' as const,
+            startBeat: 0,
+            endBeat: 8,
+            noteCount: 4,
+        };
+        const baseTrack = {
+            id: 'track-selected',
+            name: 'Selected Track',
+            kind: 'midi' as const,
+            muted: false,
+            soloed: false,
+            armed: false,
+            gain: 0.8,
+            pan: 0,
+            automationMode: 'read' as const,
+            outputId: 'master',
+            clipCount: 1,
+            deviceCount: 0,
+            devices: [],
+            sends: [],
+        };
+        const contexts: ProjectContext[] = [
+            { ...baseContext, tracks: [{ ...baseTrack, clips: [{ ...baseClip, type: 'audio' as const }] }] },
+            { ...baseContext, tracks: [{ ...baseTrack, clips: [{ ...baseClip, locked: true }] }] },
+            { ...baseContext, tracks: [{ ...baseTrack, clips: [{ ...baseClip, noteCount: 0 }] }] },
+            { ...baseContext, tracks: [{ ...baseTrack, clipCount: 0, clips: [] }] },
+        ].map((context) => ({
+            ...context,
+            selectedTrackId: baseTrack.id,
+            selectedClipId: baseClip.id,
+            selectedClipIds: [baseClip.id],
+        }));
+
+        for (const context of contexts) {
+            const result = await parsePromptToActions('set all velocities in Selected Clip to 96', context);
+
+            expect(result.actions).toEqual([]);
+            expect(result.rejectionReason).toContain('not grounded');
+        }
+    });
+
     it('proposes a grounded provider arm command as one confirmable atomic action', async () => {
         const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
             '../agentReference/bridgeGroundedLlmToolCalls'

@@ -197,12 +197,12 @@ describe('bridgeGroundedLlmToolCalls', () => {
         const cases = [
             {
                 call: { name: 'invertNotes', arguments: { clipId: 'clip-midi' } },
-                prompt: 'invert notes in Piano MIDI',
+                prompt: 'invert the MIDI notes in Piano MIDI',
                 action: { type: 'invertNotes', payload: { clipId: 'clip-midi' } },
             },
             {
                 call: { name: 'retrogradeNotes', arguments: { clipId: 'clip-midi' } },
-                prompt: 'retrograde notes in Piano MIDI',
+                prompt: 'retrograde the MIDI notes in Piano MIDI',
                 action: { type: 'retrogradeNotes', payload: { clipId: 'clip-midi' } },
             },
             {
@@ -235,6 +235,34 @@ describe('bridgeGroundedLlmToolCalls', () => {
             expect(selectedNoteScope.actions).toEqual([]);
             expect(selectedNoteScope.rejections[0]?.reason).toContain('Selected-note edits are not supported');
         }
+    });
+
+    it('grounds slash-fraction note-length grids before exact value comparison', () => {
+        const context = createMidiClipContext();
+        const eighth = bridge(
+            [{ name: 'quantizeNoteLengths', arguments: { clipId: 'clip-midi', gridSize: 0.125 } }],
+            'quantize note lengths in Piano MIDI to 1/8 beat',
+            context
+        );
+        const sixteenth = bridge(
+            [{ name: 'quantizeNoteLengths', arguments: { clipId: 'clip-midi', gridSize: 0.0625 } }],
+            'quantize note lengths in Piano MIDI to 1/16 beat',
+            context
+        );
+        const wrongNumerator = bridge(
+            [{ name: 'quantizeNoteLengths', arguments: { clipId: 'clip-midi', gridSize: 1 } }],
+            'quantize note lengths in Piano MIDI to 1/8 beat',
+            context
+        );
+
+        expect(eighth.actions).toEqual([
+            { type: 'quantizeNoteLengths', payload: { clipId: 'clip-midi', gridSize: 0.125 } },
+        ]);
+        expect(sixteenth.actions).toEqual([
+            { type: 'quantizeNoteLengths', payload: { clipId: 'clip-midi', gridSize: 0.0625 } },
+        ]);
+        expect(wrongNumerator.actions).toEqual([]);
+        expect(wrongNumerator.rejections[0]?.reason).toContain('does not match');
     });
 
     it('grounds multiple distinct targets from one provider plan', () => {

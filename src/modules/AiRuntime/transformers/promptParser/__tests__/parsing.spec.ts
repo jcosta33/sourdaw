@@ -154,10 +154,9 @@ describe('promptParser parsing', () => {
             expect(tryParameterizedPath('quantize Piano MIDI to 0.25', context)).toEqual([]);
         });
 
-        it('keeps note-length quantize restricted to valid selection-only syntax', () => {
-            expect(tryParameterizedPath('quantize note lengths to 1/16', context)).toEqual([
-                { type: 'quantizeNoteLengths', payload: { clipId: 'c1', gridSize: 1 / 16 } },
-            ]);
+        it('leaves all executable whole-clip transforms for the grounded provider path', () => {
+            expect(tryParameterizedPath('quantize note lengths to 1/16', context)).toEqual([]);
+            expect(tryParameterizedPath('set all velocities to 96', context)).toEqual([]);
             expect(tryParameterizedPath('quantize note lengths on Piano MIDI to 1/16', context)).toEqual([]);
             expect(tryParameterizedPath('quantize note lengths to 1/0', context)).toEqual([]);
         });
