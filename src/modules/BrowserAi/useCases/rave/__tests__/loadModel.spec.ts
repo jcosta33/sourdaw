@@ -19,6 +19,7 @@ function createModel(overrides: Partial<RaveModel>): RaveModel {
 
 describe('loadModel', () => {
     beforeEach(() => {
+        vi.restoreAllMocks();
         raveStore.set({
             models: [createModel({ id: 'model-a' }), createModel({ id: 'model-b' })],
             activeModelId: null,
@@ -46,11 +47,49 @@ describe('loadModel', () => {
         expect(infoSpy).toHaveBeenCalledWith('RAVE model loaded: model-a');
     });
 
-    it('does nothing when the rave store is null', () => {
+    it('throws instead of writing when the rave store is null', () => {
         raveStore.set(null);
 
-        loadModel('model-a');
-
+        expect(() => loadModel('model-a')).toThrow('RAVE store is not initialised');
         expect(raveStore.value).toBeNull();
+    });
+
+    it('throws on a model id that is not registered rather than reporting it active', () => {
+        // `initRaveModels` registers only models whose weights are in OPFS, so an
+        // unregistered id means there is nothing to load. The AI runtime can issue
+        // `loadRaveModel` without going through the palette.
+        //
+        // It has to *throw*, not return quietly. Withholding the store write is
+        // only half the gate: `executeAppActionBatch` reports a handler that
+        // returns cleanly as `executed`, and `notifyAiChange` then toasts the
+        // user's own prompt back at them as though a model had been loaded. A
+        // silent refusal produces exactly the fabricated success this branch
+        // exists to remove — just one layer further out.
+        const warnSpy = vi.spyOn(raveLogger, 'warn');
+
+        expect(() => loadModel('rave-strings')).toThrow(
+            'RAVE model unavailable: rave-strings — no model weights are present'
+        );
+
+        expect(raveStore.value?.activeModelId).toBeNull();
+        expect(raveStore.value?.models.every((model) => model.loaded === false)).toBe(true);
+        expect(warnSpy).toHaveBeenCalledWith('RAVE model unavailable: rave-strings — no model weights present');
+    });
+
+    it('throws for every model id when the registered model list is empty', () => {
+        raveStore.set({
+            models: [],
+            activeModelId: null,
+            transferBlend: 0.5,
+            temperature: 1,
+            realTimeEnabled: false,
+            latentCache: [],
+        });
+        const infoSpy = vi.spyOn(raveLogger, 'info');
+
+        expect(() => loadModel('model-a')).toThrow('no model weights are present');
+
+        expect(raveStore.value?.activeModelId).toBeNull();
+        expect(infoSpy).not.toHaveBeenCalled();
     });
 });

@@ -9,3 +9,5 @@ export { renderDiffSingerPhrase } from './renderDiffSingerPhrase';
 export { cancelRender } from './cancelRender';
 export { detectCapabilities } from './detectCapabilities';
 export { getRaveHandlers } from './getRaveHandlers';
+export { initRaveModels } from './initRaveModels';
+export { isRaveModelPresent } from './rave/isRaveModelPresent';

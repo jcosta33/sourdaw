@@ -1,3 +1,4 @@
+import { isRaveModelPresent } from '#/modules/BrowserAi/useCases';
 import { executeAppAction } from '#/modules/Command/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -208,6 +209,7 @@ export const aiCommands: CallableCommandEntry[] = [
         description: 'Load the levain strings neural synthesis model',
         category: 'AI',
         action: { type: 'loadRaveModel', payload: { modelId: 'rave-strings' } },
+        isAvailable: () => isRaveModelPresent('rave-strings'),
     },
     {
         id: 'load-rave-vocals',
@@ -215,5 +217,6 @@ export const aiCommands: CallableCommandEntry[] = [
         description: 'Load the vocal synthesis neural model',
         category: 'AI',
         action: { type: 'loadRaveModel', payload: { modelId: 'rave-vocals' } },
+        isAvailable: () => isRaveModelPresent('rave-vocals'),
     },
 ];

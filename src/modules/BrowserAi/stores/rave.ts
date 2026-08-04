@@ -3,8 +3,15 @@
  *
  * Extracted from raveUseCases.ts.
  *
+ * NO RAVE MODEL IS SHIPPED OR HOSTED. `FACTORY_MODELS` below is a catalog of
+ * models this module is *prepared* to run, not a list of models that exist.
+ * `models` is populated exclusively by `initRaveModels`, which registers only
+ * the entries whose weights are actually present in OPFS — so with nothing
+ * downloaded the list is empty and no RAVE surface is offered anywhere.
+ *
  * NOTES:
- * - `encodeAudio` simulates encoding via spectral features (not actual ONNX)
+ * - `encodeAudio` / `decodeLatent` are unwired placeholders, NOT a neural codec
+ *   (see the notice on each). They have no production caller.
  * - `randomizeLatent` uses Math.random() — non-deterministic
  */
 
@@ -49,6 +56,13 @@ export const raveStore = createStore<RaveState>({
 
 export { raveLogger };
 
+/** OPFS family directory the RAVE weights would live under, once any are hosted. */
+export const RAVE_MODEL_FAMILY = 'rave';
+
+/**
+ * Catalog of RAVE models this module can run. Presence is *not* implied —
+ * `initRaveModels` probes OPFS and registers only the ones that are there.
+ */
 export const FACTORY_MODELS: Omit<RaveModel, 'loaded'>[] = [
     {
         id: 'rave-strings',

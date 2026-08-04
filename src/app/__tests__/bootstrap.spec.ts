@@ -35,6 +35,7 @@ const {
     sentinelHandlers,
     registerHandlerMapMock,
     initBrowserAiMock,
+    initRaveModelsMock,
     registerGlobalErrorHandlersMock,
     eventBusMock,
     loggerMock,
@@ -59,6 +60,7 @@ const {
         sentinelHandlers,
         registerHandlerMapMock: vi.fn<(map: HandlerMapSentinel) => void>(),
         initBrowserAiMock: vi.fn(() => Promise.resolve()),
+        initRaveModelsMock: vi.fn(() => Promise.resolve()),
         registerGlobalErrorHandlersMock: vi.fn(() => vi.fn()),
         eventBusMock: { emit: vi.fn(), on: vi.fn(), off: vi.fn() },
         loggerMock: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), setWriters: vi.fn() },
@@ -154,6 +156,7 @@ vi.mock('#/modules/Bacteria/stores', () => ({ updateBacteriaMeters: noop }));
 
 vi.mock('#/modules/BrowserAi/useCases', () => ({
     initBrowserAi: initBrowserAiMock,
+    initRaveModels: initRaveModelsMock,
     getRaveHandlers: sentinelHandlers('Rave'),
 }));
 
@@ -471,5 +474,12 @@ describe('bootstrap', () => {
         // initBrowserAi() is fire-and-forget (`.catch(...)`, no await) — assert
         // it was invoked rather than that bootstrap awaits or returns it.
         expect(initBrowserAiMock).toHaveBeenCalledExactlyOnceWith();
+    });
+
+    it('probes OPFS for RAVE model weights exactly once as a non-blocking boot step', () => {
+        // Without this call raveStore.models stays empty forever, which would
+        // withhold the RAVE palette entries permanently rather than gating them
+        // on real model presence.
+        expect(initRaveModelsMock).toHaveBeenCalledExactlyOnceWith();
     });
 });
