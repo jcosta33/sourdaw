@@ -14,7 +14,7 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationValueAtBeat, isRecordingAutomation, resolveAutoMatchValue } from '#/modules/Automation/useCases';
-import { setFermenterMappedParam } from '#/modules/Fermenter/useCases';
+import { applyFermenterRuntimeParam } from '#/modules/Fermenter/useCases';
 import { dbToGain } from '#/utils/audioLevelLaw';
 import {
     getDeviceAutomationParameterId,
@@ -208,7 +208,7 @@ export function applyAutomation(currentBeat: number): Set<string> {
         // places the compensated audio on — and ramps a-rate instead of stepping
         // at the tick grid. Device params (below) and MIDI-FX params reach their
         // DSP through worklet MessagePort writes (updateDeviceParam /
-        // setFermenterMappedParam / updateMidiFxParam), which apply on the next
+        // applyFermenterRuntimeParam / updateMidiFxParam), which apply on the next
         // render block and cannot be JS-scheduled a-rate here — they keep the
         // tick-grid apply + exponential slew (with the #746 discontinuity snap).
         // Offline export already schedules every family a-rate
@@ -276,10 +276,10 @@ export function applyAutomation(currentBeat: number): Set<string> {
                     if (device.type === 'fermenter') {
                         // Fermenter params use camelCase ids that must be mapped to
                         // their snake_case DSP ids before reaching the WASM node —
-                        // the same translation the UI bridge applies. Route through
-                        // the public mapped use-case so automation and the UI share
-                        // one mapping path instead of hitting Rust's silent no-op arm.
-                        setFermenterMappedParam({ deviceId: device.id, paramId, value: smoothed });
+                        // the same translation the UI bridge applies. Runtime
+                        // automation bypasses UI state and persistence so the
+                        // user's manual base and CRDT history remain unchanged.
+                        applyFermenterRuntimeParam({ deviceId: device.id, paramId, value: smoothed });
                     } else {
                         updateDeviceParam(targetOwner.trackId, targetOwner.deviceId, paramId, smoothed);
                     }

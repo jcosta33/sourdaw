@@ -52,7 +52,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
 });
 vi.mock('#/modules/Fermenter/useCases', async (importOriginal) => {
     const mod = await importOriginal<typeof import('#/modules/Fermenter/useCases')>();
-    return { ...mod, setFermenterMappedParam: vi.fn() };
+    return { ...mod, applyFermenterRuntimeParam: vi.fn() };
 });
 
 type MutableTrackStore = { value: { tracks: unknown[] } };

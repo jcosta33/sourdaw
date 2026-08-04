@@ -118,6 +118,11 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // `grep -o` over the four sink identifiers: persistDeviceParam 1,
         // persistDevicePatch 1, updateDevicePatch 1, updateDeviceParam 2.
         'src/modules/Fermenter/useCases/fermenterDependencies.ts': 5,
+        // Runtime automation maps and clamps Fermenter's descriptor key before
+        // one engine-only write. The two matches are the destructured
+        // updateDeviceParam dependency and its single guarded call; this path
+        // intentionally contains no persistence identifier.
+        'src/modules/Fermenter/useCases/applyFermenterRuntimeParam.ts': 2,
         'src/modules/Fermenter/useCases/fermenterParamBridge/helpers.ts': 2,
         'src/modules/Fermenter/useCases/fermenterParamBridge/loadFermenterPatchWithAudio.ts': 6,
         'src/modules/Fermenter/useCases/fermenterParamBridge/setFermenterParamWithAudio.ts': 4,
@@ -466,6 +471,7 @@ const GUARDED_EXECUTABLE_PATHS = [
     'src/modules/Crust/useCases/crustParamBridge/createFlushHandlers.ts',
     'src/modules/Crust/useCases/crustParamBridge/loadCrustPatchWithAudio.ts',
     'src/modules/Crust/useCases/crustParamBridge/setCrustParamWithAudio.ts',
+    'src/modules/Fermenter/useCases/applyFermenterRuntimeParam.ts',
     'src/modules/Fermenter/useCases/fermenterParamBridge/loadFermenterPatchWithAudio.ts',
     'src/modules/Fermenter/useCases/fermenterParamBridge/setFermenterParamWithAudio.ts',
     'src/modules/Fermenter/useCases/presetMorph/applyMorphedPatch.ts',

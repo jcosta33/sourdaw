@@ -12,7 +12,7 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationValueAtBeat, isRecordingAutomation, resolveAutoMatchValue } from '#/modules/Automation/useCases';
-import { setFermenterMappedParam } from '#/modules/Fermenter/useCases';
+import { applyFermenterRuntimeParam, setFermenterMappedParam } from '#/modules/Fermenter/useCases';
 import { AUTOMATION_SLEW_ALPHA, slewStep } from '#/utils/automationSlew';
 
 import { applyAutomation } from '../applyAutomation';
@@ -86,6 +86,7 @@ vi.mock('#/modules/Fermenter/useCases', async (importOriginal) => {
     const mod = await importOriginal<typeof import('#/modules/Fermenter/useCases')>();
     return {
         ...mod,
+        applyFermenterRuntimeParam: vi.fn(),
         setFermenterMappedParam: vi.fn(),
     };
 });
@@ -166,7 +167,7 @@ describe('applyAutomation', () => {
         expect(scheduleTrackPan).toHaveBeenCalledWith('track-1', expectedPan, 5);
     });
 
-    it('routes a canonical Fermenter lane through the mapped use-case with the bare param id', () => {
+    it('routes a canonical Fermenter lane through the runtime-only mapped use-case', () => {
         seedDeviceLane({
             devices: [{ id: 'device-f1', type: 'fermenter', parameterValues: { filterCutoff: 0 } }],
             laneParameterId: 'device-f1:filterCutoff',
@@ -182,10 +183,11 @@ describe('applyAutomation', () => {
         // the camelCase→snake_case (`filterCutoff`→`cutoff`) DSP mapping that the
         // UI bridge applies, so the param reaches the engine instead of hitting
         // Rust's silent no-op arm.
-        expect(setFermenterMappedParam).toHaveBeenCalledTimes(1);
-        expect(setFermenterMappedParam).toHaveBeenCalledWith(
+        expect(applyFermenterRuntimeParam).toHaveBeenCalledTimes(1);
+        expect(applyFermenterRuntimeParam).toHaveBeenCalledWith(
             expect.objectContaining({ deviceId: 'device-f1', paramId: 'filterCutoff' })
         );
+        expect(setFermenterMappedParam).not.toHaveBeenCalled();
         // It must NOT forward the prefixed id straight to the raw engine call.
         expect(updateDeviceParam).not.toHaveBeenCalled();
     });
