@@ -34,7 +34,10 @@ describe('marker action handlers', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.addMarker.mockReturnValue(true);
+        mocks.addSection.mockReturnValue(true);
         mocks.removeMarker.mockReturnValue(true);
+        mocks.removeSection.mockReturnValue(true);
+        mocks.renameSection.mockReturnValue(true);
         mocks.getMarkerState.mockReturnValue(null);
     });
 
@@ -55,7 +58,7 @@ describe('marker action handlers', () => {
         expect(mocks.addMarker).toHaveBeenCalledWith(4, 'Intro', expect.stringMatching(/^marker-/), undefined);
         expect(mocks.removeMarker).toHaveBeenCalledWith('marker1');
         expect(mocks.setMarkerColor).toHaveBeenCalledWith('marker1', '#fff');
-        expect(mocks.addSection).toHaveBeenCalledWith(0, 8, 'Verse', expect.stringMatching(/^section-/));
+        expect(mocks.addSection).toHaveBeenCalledWith(0, 8, 'Verse', expect.stringMatching(/^section-/), undefined);
         expect(mocks.removeSection).toHaveBeenCalledWith('section1');
         expect(mocks.renameSection).toHaveBeenCalledWith('section1', 'Chorus');
     });
@@ -141,7 +144,27 @@ describe('marker action handlers', () => {
             throw new Error('expected a removeSection inverse');
         }
         expect(inverse.payload.sectionId).toMatch(/^section-/);
-        expect(mocks.addSection).toHaveBeenCalledWith(0, 8, 'Verse', inverse.payload.sectionId);
+        expect(mocks.addSection).toHaveBeenCalledWith(0, 8, 'Verse', inverse.payload.sectionId, undefined);
+    });
+
+    it('handleAddSection suppresses only an identity-bearing replay whose exact id exists', () => {
+        mocks.getMarkerState.mockReturnValue({
+            markers: [],
+            sections: [{ id: 'section-existing', startBeat: 0, endBeat: 8, name: 'Verse', color: '#def' }],
+        });
+
+        expect(
+            handleAddSection.isNoop?.({
+                type: 'addSection',
+                payload: { startBeat: 0, endBeat: 8, name: 'Verse' },
+            })
+        ).toBe(false);
+        expect(
+            handleAddSection.isNoop?.({
+                type: 'addSection',
+                payload: { startBeat: 16, endBeat: 32, name: 'Different', sectionId: 'section-existing' },
+            })
+        ).toBe(true);
     });
 
     it('handleRemoveMarker describes an inverse restoring the exact marker', async () => {
@@ -180,7 +203,7 @@ describe('marker action handlers', () => {
         expect(result).toEqual({ status: 'no-write' });
     });
 
-    it('handleRemoveSection describes an inverse restoring the exact section', () => {
+    it('handleRemoveSection describes and restores the exact section', async () => {
         mocks.getMarkerState.mockReturnValue({
             markers: [],
             sections: [{ id: 's1', startBeat: 8, endBeat: 16, name: 'Chorus', color: '#def' }],
@@ -188,10 +211,18 @@ describe('marker action handlers', () => {
 
         const desc = handleRemoveSection.describe({ type: 'removeSection', payload: { sectionId: 's1' } });
 
+        expect(desc.label).toBe('Remove section "Chorus" from beat 8 to beat 16 (s1)');
         expect(desc.inverseAction).toEqual({
             type: 'addSection',
             payload: { startBeat: 8, endBeat: 16, name: 'Chorus', sectionId: 's1', color: '#def' },
         });
+        if (desc.inverseAction?.type !== 'addSection') {
+            throw new Error('expected an addSection inverse');
+        }
+
+        await handleAddSection.execute(desc.inverseAction);
+
+        expect(mocks.addSection).toHaveBeenCalledWith(8, 16, 'Chorus', 's1', '#def');
     });
 
     it('handleRenameSection describes an inverse restoring the previous name', () => {
@@ -205,6 +236,7 @@ describe('marker action handlers', () => {
             payload: { sectionId: 's1', name: 'New Name' },
         });
 
+        expect(desc.label).toBe('Rename section "Old Name" to "New Name" from beat 8 to beat 16 (s1)');
         expect(desc.inverseAction).toEqual({
             type: 'renameSection',
             payload: { sectionId: 's1', name: 'Old Name' },
@@ -224,6 +256,29 @@ describe('marker action handlers', () => {
         });
 
         expect(desc.inverseAction).toBeNull();
+    });
+
+    it('section handlers report no-write when their use cases change nothing', () => {
+        mocks.addSection.mockReturnValue(false);
+        mocks.removeSection.mockReturnValue(false);
+        mocks.renameSection.mockReturnValue(false);
+
+        const addResult = handleAddSection.execute({
+            type: 'addSection',
+            payload: { startBeat: 0, endBeat: 8, name: 'Verse' },
+        });
+        const removeResult = handleRemoveSection.execute({
+            type: 'removeSection',
+            payload: { sectionId: 'missing' },
+        });
+        const renameResult = handleRenameSection.execute({
+            type: 'renameSection',
+            payload: { sectionId: 'missing', name: 'Verse' },
+        });
+
+        expect(addResult).toEqual({ status: 'no-write' });
+        expect(removeResult).toEqual({ status: 'no-write' });
+        expect(renameResult).toEqual({ status: 'no-write' });
     });
 
     it('handleSetMarkerColor describes an inverse restoring the previous color', () => {

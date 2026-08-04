@@ -26,7 +26,10 @@ const {
     mockBuildLlmActionSystemPrompt: vi.fn(() => 'command system prompt'),
     mockBuildLlmActionUserMessage: vi.fn(() => 'command user message'),
     markerStoreValue: {
-        value: { markers: [] as { id: string; beat: number; name: string }[] },
+        value: {
+            markers: [] as { id: string; beat: number; name: string }[],
+            sections: [] as { id: string; startBeat: number; endBeat: number; name: string }[],
+        },
     },
 }));
 
@@ -109,7 +112,7 @@ describe('parsePromptToActions', () => {
         mockBridgeGroundedLlmToolCalls.mockReset();
         mockBuildLlmActionSystemPrompt.mockClear();
         mockBuildLlmActionUserMessage.mockClear();
-        markerStoreValue.value = { markers: [] };
+        markerStoreValue.value = { markers: [], sections: [] };
     });
 
     it.each([
@@ -207,6 +210,7 @@ describe('parsePromptToActions', () => {
             calls: [{ name: 'setTempo', arguments: { bpm: 128 } }],
             context: baseContext,
             markerSignatures: [],
+            sectionSignatures: [],
             prompt: 'make the project faster',
         });
         expect(result.actions).toEqual([{ type: 'setTempo', payload: { bpm: 128 } }]);
@@ -285,6 +289,7 @@ describe('parsePromptToActions', () => {
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
         markerStoreValue.value = {
             markers: [{ id: 'marker-internal', beat: 16, name: 'Chorus' }],
+            sections: [],
         };
         vi.mocked(generateToolCalls).mockResolvedValue(
             completePlan([{ name: 'addMarker', arguments: { beat: 16, name: 'Chorus' } }])
@@ -307,6 +312,7 @@ describe('parsePromptToActions', () => {
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
         markerStoreValue.value = {
             markers: [{ id: 'marker-internal', beat: 16, name: 'Chorus' }],
+            sections: [],
         };
         vi.mocked(generateToolCalls).mockResolvedValue(
             completePlan([{ name: 'removeMarker', arguments: { beat: 16, name: 'Chorus' } }])
@@ -320,6 +326,27 @@ describe('parsePromptToActions', () => {
             prompt: 'delete marker Chorus at beat 16',
             context: baseContext,
         });
+    });
+
+    it('resolves a provider section removal from local state without serializing section identity', async () => {
+        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
+            '../agentReference/bridgeGroundedLlmToolCalls'
+        );
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        markerStoreValue.value = {
+            markers: [],
+            sections: [{ id: 'section-internal', startBeat: 8, endBeat: 16, name: 'Verse' }],
+        };
+        vi.mocked(generateToolCalls).mockResolvedValue(
+            completePlan([{ name: 'removeSection', arguments: { startBeat: 8, endBeat: 16, name: 'Verse' } }])
+        );
+
+        const prompt = 'remove the section named Verse from beat 8 to beat 16';
+        const result = await parsePromptToActions(prompt, baseContext);
+
+        expect(result.actions).toEqual([{ type: 'removeSection', payload: { sectionId: 'section-internal' } }]);
+        expect(result.requiresConfirmation).toBe(true);
+        expect(mockBuildLlmActionUserMessage).toHaveBeenCalledWith({ prompt, context: baseContext });
     });
 
     it('proposes a grounded two-clip crossfade as one confirmable atomic action', async () => {

@@ -28,10 +28,18 @@ export type MarkerPlanningSignature = {
     name: string;
 };
 
+export type SectionPlanningSignature = {
+    endBeat: number;
+    name: string;
+    sectionId?: string;
+    startBeat: number;
+};
+
 type BridgeLlmToolCallsInput = {
     calls: readonly ToolCallResult[];
     context: ProjectContext;
     markerSignatures?: readonly MarkerPlanningSignature[];
+    sectionSignatures?: readonly SectionPlanningSignature[];
 };
 
 function hasExactKeys(value: Record<string, unknown>, expectedKeys: readonly string[]): boolean {
@@ -283,11 +291,13 @@ function bridgeToolCall({
     context,
     index,
     markerSignatures,
+    sectionSignatures,
 }: {
     call: ToolCallResult;
     context: ProjectContext;
     index: number;
     markerSignatures: readonly MarkerPlanningSignature[];
+    sectionSignatures: readonly SectionPlanningSignature[];
 }): RuntimeAction | LlmActionRejection {
     const args = call.arguments;
 
@@ -383,6 +393,86 @@ function bridgeToolCall({
             return rejection(index, call.name, 'Requested marker does not resolve to exactly one local marker');
         }
         return { type: 'removeMarker', payload: { markerId: match.markerId } };
+    }
+
+    if (call.name === 'addSection') {
+        const name = normalizeSafeProjectName(args.name);
+        if (
+            !hasExactKeys(args, ['startBeat', 'endBeat', 'name']) ||
+            !isFiniteNumber(args.startBeat) ||
+            !isFiniteNumber(args.endBeat) ||
+            args.startBeat < 0 ||
+            args.endBeat <= args.startBeat ||
+            !name
+        ) {
+            return rejection(
+                index,
+                call.name,
+                'Expected only a valid finite beat range and a safe explicit section name'
+            );
+        }
+        const alreadyExists = sectionSignatures.some(
+            (section) =>
+                section.startBeat === args.startBeat &&
+                section.endBeat === args.endBeat &&
+                normalizeMarkerName(section.name) === normalizeMarkerName(name)
+        );
+        if (alreadyExists) {
+            return rejection(index, call.name, 'Requested section already exists at that range');
+        }
+        return { type: 'addSection', payload: { startBeat: args.startBeat, endBeat: args.endBeat, name } };
+    }
+
+    if (call.name === 'removeSection' || call.name === 'renameSection') {
+        let expectedKeys = ['startBeat', 'endBeat', 'name'];
+        if (call.name === 'renameSection') {
+            expectedKeys = [...expectedKeys, 'newName'];
+        }
+        const name = normalizeSafeProjectName(args.name);
+        const newName = call.name === 'renameSection' ? normalizeSafeProjectName(args.newName) : null;
+        if (
+            !hasExactKeys(args, expectedKeys) ||
+            !isFiniteNumber(args.startBeat) ||
+            !isFiniteNumber(args.endBeat) ||
+            args.startBeat < 0 ||
+            args.endBeat <= args.startBeat ||
+            !name ||
+            (call.name === 'renameSection' && (!newName || normalizeMarkerName(newName) === normalizeMarkerName(name)))
+        ) {
+            return rejection(
+                index,
+                call.name,
+                'Expected only one exact section range and label plus a changed safe replacement label when renaming'
+            );
+        }
+        const matches = sectionSignatures.filter(
+            (section) =>
+                section.sectionId !== undefined &&
+                section.startBeat === args.startBeat &&
+                section.endBeat === args.endBeat &&
+                normalizeMarkerName(section.name) === normalizeMarkerName(name)
+        );
+        const match = matches[0];
+        if (matches.length !== 1 || match?.sectionId === undefined) {
+            return rejection(index, call.name, 'Requested section does not resolve to exactly one local section');
+        }
+        if (call.name === 'removeSection') {
+            return { type: 'removeSection', payload: { sectionId: match.sectionId } };
+        }
+        if (!newName) {
+            return rejection(index, call.name, 'Expected a safe replacement section label');
+        }
+        const destinationExists = sectionSignatures.some(
+            (section) =>
+                section.sectionId !== match.sectionId &&
+                section.startBeat === match.startBeat &&
+                section.endBeat === match.endBeat &&
+                normalizeMarkerName(section.name) === normalizeMarkerName(newName)
+        );
+        if (destinationExists) {
+            return rejection(index, call.name, 'Replacement section label already exists at that range');
+        }
+        return { type: 'renameSection', payload: { sectionId: match.sectionId, name: newName } };
     }
 
     if (call.name === 'setLoopEnabled') {
@@ -1495,7 +1585,11 @@ function getExistingVcaMembershipCollectionKeys(context: ProjectContext, trackId
         .map((group) => `vca-members:${group.id}`);
 }
 
-function getMutationKeys(action: RuntimeAction, context: ProjectContext): string[] {
+function getMutationKeys(
+    action: RuntimeAction,
+    context: ProjectContext,
+    sectionSignatures: readonly SectionPlanningSignature[]
+): string[] {
     if (
         action.type === 'addTrack' ||
         action.type === 'createBus' ||
@@ -1510,6 +1604,24 @@ function getMutationKeys(action: RuntimeAction, context: ProjectContext): string
     }
     if (action.type === 'removeMarker') {
         return [`marker:${action.payload.markerId}:membership`];
+    }
+    if (action.type === 'addSection') {
+        return [
+            `section:${String(action.payload.startBeat)}:${String(action.payload.endBeat)}:${normalizeMarkerName(action.payload.name)}`,
+        ];
+    }
+    if (action.type === 'removeSection') {
+        return [`section:${action.payload.sectionId}:membership`, `section:${action.payload.sectionId}:name`];
+    }
+    if (action.type === 'renameSection') {
+        const section = sectionSignatures.find((candidate) => candidate.sectionId === action.payload.sectionId);
+        const keys = [`section:${action.payload.sectionId}:name`];
+        if (section) {
+            keys.push(
+                `section:${String(section.startBeat)}:${String(section.endBeat)}:${normalizeMarkerName(action.payload.name)}`
+            );
+        }
+        return keys;
     }
     if (action.type === 'setTempo' || action.type === 'setTimeSignature' || action.type === 'reorderTrack') {
         return [action.type];
@@ -1866,6 +1978,7 @@ export function bridgeLlmToolCalls({
     calls,
     context,
     markerSignatures = [],
+    sectionSignatures = [],
 }: BridgeLlmToolCallsInput): LlmActionBridgeResult {
     if (calls.length > MAX_LLM_ACTIONS_PER_BATCH) {
         return {
@@ -1958,7 +2071,13 @@ export function bridgeLlmToolCalls({
     const automationTransformLaneIds = new Set<string>();
 
     for (const [index, call] of calls.entries()) {
-        const result = bridgeToolCall({ call, context: prospectiveContext, index, markerSignatures });
+        const result = bridgeToolCall({
+            call,
+            context: prospectiveContext,
+            index,
+            markerSignatures,
+            sectionSignatures,
+        });
         if ('type' in result) {
             const actionClipTargetIds = getClipTargetIds(result);
             const actionClipTrackIds = [
@@ -1970,7 +2089,7 @@ export function bridgeLlmToolCalls({
                 ),
             ];
             const deviceTarget = getDeviceBatchTarget(result, context);
-            const mutationKeysForAction = getMutationKeys(result, context);
+            const mutationKeysForAction = getMutationKeys(result, context, sectionSignatures);
             const automationPointLaneId = result.type === 'addAutomationPoint' ? result.payload.laneId : null;
             const automationTransformKey = mutationKeysForAction.find((key) =>
                 key.startsWith('automation-lane-points:')
@@ -2011,7 +2130,7 @@ export function bridgeLlmToolCalls({
                     }
                     const priorPointLaneId =
                         priorAction.type === 'addAutomationPoint' ? priorAction.payload.laneId : null;
-                    const priorTransformKey = getMutationKeys(priorAction, context).find((key) =>
+                    const priorTransformKey = getMutationKeys(priorAction, context, sectionSignatures).find((key) =>
                         key.startsWith('automation-lane-points:')
                     );
                     const priorTransformLaneId = priorTransformKey?.slice('automation-lane-points:'.length) ?? null;
@@ -2027,7 +2146,10 @@ export function bridgeLlmToolCalls({
             if (conflictingMutationKey?.startsWith('automation-lane-point:')) {
                 for (let actionIndex = actions.length - 1; actionIndex >= 0; actionIndex -= 1) {
                     const priorAction = actions[actionIndex];
-                    if (priorAction && getMutationKeys(priorAction, context).includes(conflictingMutationKey)) {
+                    if (
+                        priorAction &&
+                        getMutationKeys(priorAction, context, sectionSignatures).includes(conflictingMutationKey)
+                    ) {
                         actions.splice(actionIndex, 1);
                     }
                 }

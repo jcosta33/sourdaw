@@ -2,7 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     markerStoreValue: {
-        value: null as { markers: { id: string; beat: number; name: string }[] } | null,
+        value: null as {
+            markers: { id: string; beat: number; name: string }[];
+            sections: { id: string; startBeat: number; endBeat: number; name: string }[];
+        } | null,
     },
 }));
 
@@ -101,6 +104,7 @@ describe('describePlannedAction', () => {
     it('names the exact local marker removal target and falls back when it is unavailable', () => {
         mocks.markerStoreValue.value = {
             markers: [{ id: 'marker-chorus', beat: 16, name: 'Chorus' }],
+            sections: [],
         };
 
         expect(
@@ -115,6 +119,32 @@ describe('describePlannedAction', () => {
                 context,
             })
         ).toBe('Remove marker');
+    });
+
+    it('names section range, local identity, and rename target for confirmation', () => {
+        mocks.markerStoreValue.value = {
+            markers: [],
+            sections: [{ id: 'section-verse', startBeat: 8, endBeat: 16, name: 'Verse' }],
+        };
+
+        expect(
+            describePlannedAction({
+                action: { type: 'addSection', payload: { startBeat: 16, endBeat: 32, name: 'Chorus' } },
+                context,
+            })
+        ).toBe('Add section "Chorus" from beat 16 to beat 32');
+        expect(
+            describePlannedAction({
+                action: { type: 'removeSection', payload: { sectionId: 'section-verse' } },
+                context,
+            })
+        ).toBe('Remove section "Verse" from beat 8 to beat 16 (section-verse)');
+        expect(
+            describePlannedAction({
+                action: { type: 'renameSection', payload: { sectionId: 'section-verse', name: 'Pre-Chorus' } },
+                context,
+            })
+        ).toBe('Rename section "Verse" to "Pre-Chorus" from beat 8 to beat 16 (section-verse)');
     });
 
     it('names the exact MIDI clip, stable ID, and transform value for confirmation', () => {

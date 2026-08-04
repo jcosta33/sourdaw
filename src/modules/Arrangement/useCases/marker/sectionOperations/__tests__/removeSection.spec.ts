@@ -30,8 +30,9 @@ describe('removeSection', () => {
             sections: [{ id: 's1' }, { id: 's2' }],
         };
 
-        removeSection('s1');
+        const changed = removeSection('s1');
 
+        expect(changed).toBe(true);
         expect(mocks.markerStoreSet).toHaveBeenCalledWith({
             sections: [{ id: 's2' }],
         });
@@ -40,8 +41,18 @@ describe('removeSection', () => {
     it('is a no-op when the marker store has not loaded', () => {
         mocks.markerStoreValue.value = null;
 
-        removeSection('s1');
+        const changed = removeSection('s1');
 
+        expect(changed).toBe(false);
+        expect(mocks.markerStoreSet).not.toHaveBeenCalled();
+    });
+
+    it('writes nothing and reports false when the section does not exist', () => {
+        mocks.markerStoreValue.value = { sections: [{ id: 's2' }] };
+
+        const changed = removeSection('missing');
+
+        expect(changed).toBe(false);
         expect(mocks.markerStoreSet).not.toHaveBeenCalled();
     });
 });
