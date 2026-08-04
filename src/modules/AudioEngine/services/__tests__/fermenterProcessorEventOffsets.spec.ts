@@ -126,6 +126,10 @@ class FermenterInstanceMock {
     get_right_ptr(): number {
         return OUT_RIGHT_PTR;
     }
+    lifecycle_state(): number {
+        return pendingEventCount > 0 ? 0 : 3;
+    }
+    advance_silence(): void {}
 }
 
 vi.mock('../../wasm/daw_dsp.js', () => ({
@@ -184,6 +188,15 @@ describe('FermenterProcessor scheduled-note sample offsets', () => {
 
     afterEach(() => {
         vi.stubGlobal('currentFrame', 0);
+    });
+
+    it('wakes a sleeping engine and preserves an event at offset 37', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'noteOn', note: 60, velocity: 100, sampleFrame: 37 });
+
+        const delivered = renderBlocks(proc, 1);
+
+        expect(delivered).toEqual([{ kind: 'on', note: 60, velocity: 100, channel: 0, offset: 37, absoluteFrame: 37 }]);
     });
 
     it('places a note requested mid-block at its own sample offset, not at the block start', async () => {

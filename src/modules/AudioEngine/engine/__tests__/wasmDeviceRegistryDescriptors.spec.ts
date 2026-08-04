@@ -166,6 +166,7 @@ describe('wasmDeviceRegistry descriptors', () => {
                 setPatch: vi.fn(),
                 setBypass: vi.fn(),
                 onTelemetry: vi.fn(),
+                processorLifecycle: vi.fn(() => 'continue' as const),
                 connect: vi.fn(),
                 disconnect: vi.fn(),
                 destroy: vi.fn(),

@@ -212,6 +212,7 @@ const fermenterDescriptor: WasmDeviceDescriptor = {
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
                     dispose: result.destroy,
+                    processorLifecycle: result.processorLifecycle,
                     controller: {
                         ready: true,
                         noteOn: result.noteOn,

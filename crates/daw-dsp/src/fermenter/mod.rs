@@ -24,9 +24,10 @@ pub mod stepseq;
 pub mod synth;
 pub mod voice;
 
-use crate::primitives::sanitize_block;
+use crate::primitives::{sanitize_block, ProcessLifecycle};
 use synth::{
-    MasterSynth, MidiEvent, MIDI_EVENT_NOTE_EXPRESSION, MIDI_EVENT_NOTE_OFF, MIDI_EVENT_NOTE_ON,
+    MasterSynth, MidiEvent, MIDI_EVENT_NOTE_EXPRESSION, MIDI_EVENT_NOTE_OFF,
+    MIDI_EVENT_NOTE_ON,
 };
 use wasm_bindgen::prelude::*;
 
@@ -224,6 +225,19 @@ impl FermenterInstance {
         self.left_buf.as_ptr()
     }
 
+    /// Advance control-rate smoothing while DSP is asleep.
+    pub fn advance_silence(&mut self) {
+        self.synth.advance_silent_block();
+    }
+
+    /// Stable numeric lifecycle code consumed by the AudioWorklet host.
+    pub fn lifecycle_state(&self) -> u32 {
+        if self.event_count > 0 {
+            return ProcessLifecycle::CONTINUE_CODE;
+        }
+        self.synth.lifecycle().code()
+    }
+
     /// Number of non-finite output samples scrubbed to silence since
     /// construction (DSP-8). Non-zero means a poisoned block was caught at the
     /// wasm output boundary and surfaced for health telemetry.
@@ -260,6 +274,7 @@ mod tests {
     use assert_no_alloc::assert_no_alloc;
 
     use super::{FermenterInstance, MAX_BLOCK_EVENTS};
+    use crate::primitives::ProcessLifecycle;
 
     /// Index of the first sample the instance rendered as non-zero.
     fn first_sounding_sample(instance: &FermenterInstance, size: usize) -> Option<usize> {
@@ -325,6 +340,18 @@ mod tests {
     }
 
     #[test]
+    fn a_sleeping_instance_wakes_for_a_pending_offset_event() {
+        let mut instance = FermenterInstance::new(48_000.0, 8);
+        assert_eq!(instance.lifecycle_state(), ProcessLifecycle::SLEEP_CODE);
+
+        assert!(instance.push_note_on(60, 100, 0, 37));
+        assert_eq!(instance.lifecycle_state(), ProcessLifecycle::CONTINUE_CODE);
+        instance.process(128);
+
+        assert_eq!(first_sounding_sample(&instance, 128), Some(37));
+    }
+
+    #[test]
     fn numeric_automation_setter_does_not_allocate() {
         let mut instance = FermenterInstance::new(48_000.0, 32);
         assert_no_alloc(|| {
@@ -332,6 +359,59 @@ mod tests {
                 instance.set_param_by_id(param_id, 0.5);
             }
             instance.set_param_by_id(u32::MAX, 0.5);
+        });
+    }
+
+    #[test]
+    fn lifecycle_sleeps_cold_wakes_for_note_and_preserves_default_reverb_tail() {
+        let mut instance = FermenterInstance::new(48_000.0, 32);
+        assert_eq!(instance.lifecycle_state(), ProcessLifecycle::SLEEP_CODE);
+
+        instance.note_on(60, 100);
+        assert_eq!(instance.lifecycle_state(), ProcessLifecycle::CONTINUE_CODE);
+        instance.process(128);
+        instance.note_off(60);
+
+        let mut observed_tail = false;
+        for _ in 0..4_000 {
+            instance.process(128);
+            let state = instance.lifecycle_state();
+            observed_tail |= state == ProcessLifecycle::CONTINUE_IF_NOT_QUIET_CODE
+                || state == ProcessLifecycle::TAIL_CODE;
+            if state == ProcessLifecycle::SLEEP_CODE {
+                break;
+            }
+        }
+
+        assert!(observed_tail);
+        assert_eq!(instance.lifecycle_state(), ProcessLifecycle::SLEEP_CODE);
+
+        let left_ptr = instance.process(128);
+        let right_ptr = instance.get_right_ptr();
+        let left = unsafe { std::slice::from_raw_parts(left_ptr, 128) };
+        let right = unsafe { std::slice::from_raw_parts(right_ptr, 128) };
+        let peak = left
+            .iter()
+            .chain(right)
+            .fold(0.0f32, |current, sample| current.max(sample.abs()));
+        assert!(
+            peak <= 3.162_277_6e-8,
+            "post-sleep peak {peak} exceeded the lifecycle quiet threshold"
+        );
+
+        instance.note_on(67, 90);
+        assert_eq!(instance.lifecycle_state(), ProcessLifecycle::CONTINUE_CODE);
+    }
+
+    #[test]
+    fn lifecycle_queries_and_silent_advance_do_not_allocate() {
+        let mut instance = FermenterInstance::new(48_000.0, 32);
+
+        assert_no_alloc(|| {
+            for _ in 0..1_024 {
+                let _ = instance.lifecycle_state();
+                instance.advance_silence();
+            }
         });
     }
 }

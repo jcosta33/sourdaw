@@ -25,6 +25,8 @@ import {
     type TelemetrySlot,
 } from './telemetryAllocator';
 
+import type { AudioProcessorLifecycleState } from '../models/AudioEngineState';
+
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 export const FERMENTER_AUTOMATION_PARAM_IDS: Readonly<Record<string, number>> = {
     oscLevel: 0,
@@ -75,6 +77,24 @@ function projectFermenterTelemetry(view: Float32Array): FermenterTelemetryData {
         scopeBuffer,
     };
 }
+
+function projectFermenterLifecycle(view: Float32Array): AudioProcessorLifecycleState | null {
+    switch (view[FERMENTER_IDX.lifecycle]) {
+        case 0:
+            return 'continue';
+        case 1:
+            return 'continueIfNotQuiet';
+        case 2:
+            return 'tail';
+        case 3:
+            return 'sleep';
+        case undefined:
+            return null;
+        default:
+            return null;
+    }
+}
+
 export type FermenterNodeResult = {
     workletNode: AudioWorkletNode;
     noteOn: (note: number, velocity: number, sampleFrame?: number, channel?: number) => void;
@@ -93,6 +113,7 @@ export type FermenterNodeResult = {
     scheduleParam?: (name: string, segments: readonly OfflineAutomationSegment[]) => void;
     setPatch: (patch: Record<string, unknown>) => void;
     setBypass: (bypassed: boolean) => void;
+    processorLifecycle: () => AudioProcessorLifecycleState | null;
     onTelemetry: (callback: (data: FermenterTelemetryData) => void) => void;
     connect: (dest: AudioNode) => void;
     disconnect: () => void;
@@ -190,6 +211,8 @@ export async function createFermenterNode(
     if (slot) {
         node.port.postMessage({ type: 'init-sab', sab: slot.sab, byteOffset: slot.byteOffset });
     }
+    const lifecycleReader = slot ? createTelemetryReader({ slot, project: projectFermenterLifecycle }) : null;
+    let lastLifecycle: AudioProcessorLifecycleState | null = null;
 
     const handshake = createReadyHandshake({ pluginName: 'FermenterNode' });
     node.port.onmessage = (event: MessageEvent) => {
@@ -297,6 +320,22 @@ export async function createFermenterNode(
             // entry is owned by TrackNode.updateBypass via controller.allNotesOff.
             bypassed = state;
         },
+        processorLifecycle() {
+            if (runtimeFaulted || !slot || !lifecycleReader) {
+                return null;
+            }
+            const before = Atomics.load(slot.seqView, TELEMETRY_SEQ_IDX);
+            if (before === 0 || (before & 1) !== 0) {
+                return lastLifecycle;
+            }
+            const lifecycle = lifecycleReader();
+            const after = Atomics.load(slot.seqView, TELEMETRY_SEQ_IDX);
+            if (before !== after || (after & 1) !== 0) {
+                return lastLifecycle;
+            }
+            lastLifecycle = lifecycle;
+            return lifecycle;
+        },
         onTelemetry(cb: (data: FermenterTelemetryData) => void) {
             if (telemetryRafId !== null) {
                 cancelAnimationFrame(telemetryRafId);
@@ -352,6 +391,7 @@ export async function createFermenterNode(
             // A wide slot owns its SharedArrayBuffer outright and has no index in
             // the pooled allocator — dropping the reference is the whole release.
             slot = null;
+            node.onprocessorerror = null;
             try {
                 node.disconnect();
             } catch {

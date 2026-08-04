@@ -32,6 +32,7 @@ const fermenterNodeMocks = vi.hoisted(() => ({
     noteOff: vi.fn(),
     noteOn: vi.fn(),
     onTelemetry: vi.fn(),
+    processorLifecycle: vi.fn(() => 'sleep' as const),
     setBypass: vi.fn(),
     setParam: vi.fn(),
     setPatch: vi.fn(),
@@ -260,6 +261,8 @@ describe('findWasmDescriptor', () => {
         }
         loadedNode.controller.allNotesOff();
         expect(fermenterNodeMocks.allNotesOff).toHaveBeenCalledTimes(1);
+        expect(loadedNode.processorLifecycle?.()).toBe('sleep');
+        expect(fermenterNodeMocks.processorLifecycle).toHaveBeenCalledTimes(1);
     });
 });
 
@@ -297,6 +300,7 @@ function createFermenterNodeResult(): FermenterNodeResult {
         noteOff: fermenterNodeMocks.noteOff,
         noteOn: fermenterNodeMocks.noteOn,
         onTelemetry: fermenterNodeMocks.onTelemetry,
+        processorLifecycle: fermenterNodeMocks.processorLifecycle,
         ready: Promise.resolve({}),
         setBypass: fermenterNodeMocks.setBypass,
         setParam: fermenterNodeMocks.setParam,
