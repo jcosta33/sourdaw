@@ -1,0 +1,19 @@
+src/modules/SampleLibrary/presentations/components/__tests__/LibraryRootCardBranches.spec.tsx
+  s_ac9b259eab20ba::t_5289627f0a8996 1-249
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "c4362e98942e5659e442b1ec6c2aefb42fb07ee3",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
