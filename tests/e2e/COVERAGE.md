@@ -420,3 +420,41 @@ Each PR passed a frozen stance-pool review (2-3 reviewers). PR #696 had 3 vacuou
 
 ### Bug fixes
 - **PR #205** — `markDirty()` not called on track add. Fixed by subscribing to `trackStore` changes in bootstrap. The dirty indicator now correctly appears when adding tracks and disappears after save.
+
+---
+
+## Unit & Component Coverage Campaign (PRs #1005-#1120)
+
+### Phase 1: Pure-Logic Unit Specs (PRs #1005-#1036, ~606 assertions)
+
+28 PRs covering pure-logic `.ts` files across all modules: DSP math (envelopes,
+filters, oscillators, normalization, bitcrusher, drum voices), codecs (midiTimeStateCodec,
+timelineMapTimeCodec), state machines (punch region, groove navigation, bend range),
+parsers (NAM, DAWproject zip, denied-prompt, seed notes), validators (frozen buffer tail,
+device type matching), music theory (scale navigation, time-signature math), and more.
+
+### Phase 2: Component Specs (PRs #1048-#1120, ~468 assertions)
+
+35 PRs covering component `.tsx` files: ChatComposer, MidiLearnButton, ProjectTab,
+LUFSMeter, ToolSelector, SoloModeSelector, UndoRedoButtons, SampleRow, ResizeHandle,
+StepPatternEditor, SpatialPanner, GrooveDropTarget, LibraryRootCard, BandStrip,
+PresetItem, RailTabBar, GenerativeParamGrids, ChoiceCard, InspectorDetailHeader,
+RailBackBar, ProjectLoadingOverlay, CrustGainStrip, CrustMeteringStrip,
+MixAnalysisSections, PresenceLabel, PresenceMarker, ControlHeader, InsetPanel,
+SearchSummary, BounceOptionsDialog, LegatoTuning, SliceOverlay, KeyboardSplit,
+TimelineMinimapResizeHandle, CompressorCurve, DawPluginChip, DawPluginToggle,
+DawCompactSelect, DawSwatchButton, DawCompactCheckbox, DawKeycap,
+DawGridHeaderCell, DawMeterBar, DawMeterFrame, DawInlineHint,
+DawPluginReadoutList, DawUtilityListRow, DawPluginChoiceRow,
+DawCompactTextarea, DawTransportCluster, DawDisplaySurface,
+OnlineSampleBrowser, SpectrumAnalyzer, Oscilloscope, Goniometer,
+PhaseCorrelationDisplay, StringVibrationView.
+
+### Threshold Raise (PR #1055)
+
+| Metric | Old Floor | Actual | New Threshold |
+|--------|-----------|--------|---------------|
+| Lines | 55 | 89.16% | 87 |
+| Statements | 52 | 85.93% | 84 |
+| Branches | 40 | 74.95% | 72 |
+| Functions | 50 | 86.75% | 84 |
