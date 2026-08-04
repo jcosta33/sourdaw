@@ -7,6 +7,7 @@ import { externalLatencyRegistry } from '../../useCases/latencyCompensation/comp
 import { setAudioDeviceRuntimeSink } from '../audioDeviceRuntimeSink';
 import { type BacteriaNodeResult } from '../BacteriaNode';
 import { type CrumbsNodeResult } from '../CrumbsNode';
+import { type CrustNodeResult } from '../CrustNode';
 import { type DeviceContentLoadOutcome } from '../deviceReadinessDiagnostics';
 import { type FermenterNodeResult } from '../FermenterNode';
 import { type GlutenNodeResult } from '../GlutenNode';
@@ -15,6 +16,7 @@ import { type GrinderNodeResult } from '../GrinderNode';
 import { type KneadNodeResult } from '../KneadNode';
 import { type LevainNodeResult } from '../LevainNode';
 import { type ProofChamberNodeResult } from '../ProofChamberNode';
+import { type ProofNodeResult } from '../ProofNode';
 import { type ScoringNodeResult } from '../ScoringNode';
 import { type ToasterNodeResult } from '../ToasterNode';
 import { findWasmDescriptor, type WasmDeviceCreateDeps } from '../wasmDeviceRegistry';
@@ -26,8 +28,10 @@ const factoryMocks = vi.hoisted(() => ({
     createCrumbsNode: vi.fn(),
     createProofChamberNode: vi.fn(),
     createGlutenNode: vi.fn(),
+    createCrustNode: vi.fn(),
     createBacteriaNode: vi.fn(),
     createGrinderNode: vi.fn(),
+    createProofNode: vi.fn(),
     createScoringNode: vi.fn(),
     createGrandBouleNode: vi.fn(),
     createKneadNode: vi.fn(),
@@ -61,6 +65,10 @@ vi.mock('../GlutenNode', async (importOriginal) => ({
     ...(await importOriginal<typeof import('../GlutenNode')>()),
     createGlutenNode: factoryMocks.createGlutenNode,
 }));
+vi.mock('../CrustNode', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../CrustNode')>()),
+    createCrustNode: factoryMocks.createCrustNode,
+}));
 vi.mock('../BacteriaNode', async (importOriginal) => ({
     ...(await importOriginal<typeof import('../BacteriaNode')>()),
     createBacteriaNode: factoryMocks.createBacteriaNode,
@@ -68,6 +76,10 @@ vi.mock('../BacteriaNode', async (importOriginal) => ({
 vi.mock('../GrinderNode', async (importOriginal) => ({
     ...(await importOriginal<typeof import('../GrinderNode')>()),
     createGrinderNode: factoryMocks.createGrinderNode,
+}));
+vi.mock('../ProofNode', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../ProofNode')>()),
+    createProofNode: factoryMocks.createProofNode,
 }));
 vi.mock('../ScoringNode', async (importOriginal) => ({
     ...(await importOriginal<typeof import('../ScoringNode')>()),
@@ -1381,6 +1393,404 @@ describe('wasmDeviceRegistry descriptors', () => {
             await requireDescriptor('knead').create(deps).loadPromise;
 
             expect(externalLatencyRegistry.get('knead-nolat')).toBe(0);
+        });
+    });
+
+    // A placeholder controller answers `setBypass` before the WASM node exists.
+    // Dropping the call brings the engine up unbypassed underneath a UI showing
+    // it bypassed, and nothing reconciles the two. Every descriptor that
+    // publishes an engine with a bypass has to latch the request and hand it
+    // over on load.
+    describe('state requested while the device is still loading', () => {
+        type LoadingEngine = { bypassed: boolean };
+
+        type LoadingBypassCase = {
+            deviceType: string;
+            /**
+             * Placeholder surfaces that advertise `setBypass` for this device.
+             * Pinned so the census cannot go blind: renaming a control surface
+             * drops it out of `collectBypassSurfaces` and this count reds.
+             */
+            surfaceCount: number;
+            /** Stub this device's factory with an engine that owns its bypass state. */
+            stubFactory: (engine: LoadingEngine) => void;
+        };
+
+        const BYPASS_SURFACE_KEYS = [
+            'controller',
+            'nativeDspControls',
+            'fermenterControls',
+            'toasterControls',
+            'grandBouleControls',
+            'crumbsControls',
+            'levainControls',
+            'kneadControls',
+        ] as const;
+
+        function collectBypassSurfaces(placeholder: BuiltinDeviceNode): Array<(bypassed: boolean) => void> {
+            const surfaces: Array<(bypassed: boolean) => void> = [];
+            for (const key of BYPASS_SURFACE_KEYS) {
+                const setBypass = placeholder[key]?.setBypass;
+                if (setBypass) {
+                    surfaces.push(setBypass);
+                }
+            }
+            return surfaces;
+        }
+
+        function recordBypass(engine: LoadingEngine): (bypassed: boolean) => void {
+            return (bypassed) => {
+                engine.bypassed = bypassed;
+            };
+        }
+
+        function meteredDspResult(engine: LoadingEngine) {
+            return {
+                workletNode: makeWorkletNode(),
+                setParam: vi.fn(),
+                setBypass: recordBypass(engine),
+                onMeterData: vi.fn(),
+                onLatencyChanged: vi.fn(),
+                connect: vi.fn(),
+                disconnect: vi.fn(),
+                destroy: vi.fn(),
+                ready: Promise.resolve({ latency: 0 }),
+            };
+        }
+
+        const LOADING_BYPASS_CASES: readonly LoadingBypassCase[] = [
+            {
+                deviceType: 'fermenter',
+                surfaceCount: 1,
+                stubFactory: (engine) => {
+                    const result: FermenterNodeResult = {
+                        workletNode: makeWorkletNode(),
+                        noteOn: vi.fn(),
+                        noteOff: vi.fn(),
+                        noteExpression: vi.fn(),
+                        allNotesOff: vi.fn(),
+                        setParam: vi.fn(),
+                        setPatch: vi.fn(),
+                        setBypass: recordBypass(engine),
+                        onTelemetry: vi.fn(),
+                        processorLifecycle: vi.fn(() => 'continue' as const),
+                        connect: vi.fn(),
+                        disconnect: vi.fn(),
+                        destroy: vi.fn(),
+                        ready: Promise.resolve({}),
+                    };
+                    factoryMocks.createFermenterNode.mockResolvedValue(result);
+                },
+            },
+            {
+                deviceType: 'toaster',
+                surfaceCount: 1,
+                stubFactory: (engine) => {
+                    const result: ToasterNodeResult = {
+                        workletNode: makeWorkletNode(),
+                        outputNode: makeGainNode(),
+                        noteOn: vi.fn(),
+                        noteOff: vi.fn(),
+                        scheduleHit: vi.fn(),
+                        cancelScheduled: vi.fn(),
+                        allNotesOff: vi.fn(),
+                        setFillActive: vi.fn(),
+                        setParam: vi.fn(),
+                        acceptsScheduledParam: vi.fn(),
+                        scheduleParam: vi.fn(),
+                        setPadParam: vi.fn(),
+                        setPadDryRouted: vi.fn(),
+                        setBypass: recordBypass(engine),
+                        processorLifecycle: vi.fn(() => 'continue' as const),
+                        connect: vi.fn(),
+                        disconnect: vi.fn(),
+                        destroy: vi.fn(),
+                        ready: Promise.resolve({}),
+                    };
+                    factoryMocks.createToasterNode.mockResolvedValue(result);
+                },
+            },
+            {
+                deviceType: 'levain',
+                surfaceCount: 1,
+                stubFactory: (engine) => {
+                    const result: LevainNodeResult = {
+                        workletNode: makeWorkletNode(),
+                        noteOn: vi.fn(),
+                        noteOff: vi.fn(),
+                        noteExpression: vi.fn(),
+                        allNotesOff: vi.fn(),
+                        setParam: vi.fn(),
+                        handleCc: vi.fn(),
+                        setBypass: recordBypass(engine),
+                        connect: vi.fn(),
+                        disconnect: vi.fn(),
+                        destroy: vi.fn(),
+                        ready: Promise.resolve({}),
+                    };
+                    factoryMocks.createLevainNode.mockResolvedValue(result);
+                },
+            },
+            {
+                deviceType: 'builtin-crumbs',
+                surfaceCount: 1,
+                stubFactory: (engine) => {
+                    const result: CrumbsNodeResult = {
+                        workletNode: makeWorkletNode(),
+                        noteOn: vi.fn(),
+                        noteOff: vi.fn(),
+                        allNotesOff: vi.fn(),
+                        allSoundOff: vi.fn(),
+                        setParam: vi.fn(),
+                        setMode: vi.fn(),
+                        setBypass: recordBypass(engine),
+                        connect: vi.fn(),
+                        disconnect: vi.fn(),
+                        destroy: vi.fn(),
+                        ready: Promise.resolve({}),
+                    };
+                    factoryMocks.createCrumbsNode.mockResolvedValue(result);
+                },
+            },
+            {
+                deviceType: 'dutch-oven',
+                surfaceCount: 1,
+                stubFactory: (engine) => {
+                    const result: ProofChamberNodeResult = {
+                        workletNode: makeWorkletNode(),
+                        setParam: vi.fn(),
+                        acceptsScheduledParam: vi.fn(),
+                        scheduleParam: vi.fn(),
+                        setBypass: recordBypass(engine),
+                        connect: vi.fn(),
+                        disconnect: vi.fn(),
+                        destroy: vi.fn(),
+                        ready: Promise.resolve({ latency: 0 }),
+                    };
+                    factoryMocks.createProofChamberNode.mockResolvedValue(result);
+                },
+            },
+            {
+                deviceType: 'gluten',
+                surfaceCount: 1,
+                stubFactory: (engine) => {
+                    const result: GlutenNodeResult = meteredDspResult(engine);
+                    factoryMocks.createGlutenNode.mockResolvedValue(result);
+                },
+            },
+            {
+                deviceType: 'crust',
+                surfaceCount: 1,
+                stubFactory: (engine) => {
+                    const result: CrustNodeResult = { ...meteredDspResult(engine), resetTruePeak: vi.fn() };
+                    factoryMocks.createCrustNode.mockResolvedValue(result);
+                },
+            },
+            {
+                deviceType: 'bacteria',
+                surfaceCount: 1,
+                stubFactory: (engine) => {
+                    const result: BacteriaNodeResult = meteredDspResult(engine);
+                    factoryMocks.createBacteriaNode.mockResolvedValue(result);
+                },
+            },
+            {
+                deviceType: 'grinder',
+                surfaceCount: 2,
+                stubFactory: (engine) => {
+                    const result: GrinderNodeResult = { ...meteredDspResult(engine), setPatch: vi.fn() };
+                    factoryMocks.createGrinderNode.mockResolvedValue(result);
+                },
+            },
+            {
+                deviceType: 'proof',
+                surfaceCount: 2,
+                stubFactory: (engine) => {
+                    const result: ProofNodeResult = {
+                        ...meteredDspResult(engine),
+                        reorderModules: vi.fn(),
+                        resetIntegrated: vi.fn(),
+                    };
+                    factoryMocks.createProofNode.mockResolvedValue(result);
+                },
+            },
+            {
+                deviceType: 'native-scoring',
+                surfaceCount: 1,
+                stubFactory: (engine) => {
+                    const result: ScoringNodeResult = {
+                        workletNode: makeWorkletNode(),
+                        setParam: vi.fn(),
+                        setBypass: recordBypass(engine),
+                        onTelemetry: vi.fn(),
+                        connect: vi.fn(),
+                        disconnect: vi.fn(),
+                        destroy: vi.fn(),
+                        ready: Promise.resolve({}),
+                    };
+                    factoryMocks.createScoringNode.mockResolvedValue(result);
+                },
+            },
+            {
+                deviceType: 'grand-boule',
+                surfaceCount: 1,
+                stubFactory: (engine) => {
+                    const result: GrandBouleNodeResult = {
+                        workletNode: makeWorkletNode(),
+                        noteOn: vi.fn(),
+                        noteOff: vi.fn(),
+                        noteExpression: vi.fn(),
+                        setParam: vi.fn(),
+                        setSustain: vi.fn(),
+                        setUnaCorda: vi.fn(),
+                        setSostenuto: vi.fn(),
+                        noteOnMidi2: vi.fn(),
+                        setTemperament: vi.fn(),
+                        loadAttackClip: vi.fn(),
+                        allNotesOff: vi.fn(),
+                        setBypass: recordBypass(engine),
+                        connect: vi.fn(),
+                        disconnect: vi.fn(),
+                        destroy: vi.fn(),
+                        ready: Promise.resolve({}),
+                    };
+                    factoryMocks.createGrandBouleNode.mockResolvedValue(result);
+                },
+            },
+            {
+                deviceType: 'knead',
+                surfaceCount: 1,
+                stubFactory: (engine) => {
+                    const result: KneadNodeResult = {
+                        workletNode: makeWorkletNode(),
+                        setParam: vi.fn(),
+                        setBypass: recordBypass(engine),
+                        updateState: vi.fn(),
+                        destroy: vi.fn(),
+                        ready: Promise.resolve({}),
+                    };
+                    factoryMocks.createKneadNode.mockResolvedValue(result);
+                },
+            },
+        ];
+
+        it.each(LOADING_BYPASS_CASES)(
+            '$deviceType comes up bypassed when bypass was toggled before the node loaded',
+            async ({ deviceType, surfaceCount, stubFactory }) => {
+                const engine: LoadingEngine = { bypassed: false };
+                stubFactory(engine);
+                const deps = createDeps({ deviceType, deviceId: `${deviceType}-loading-bypass` });
+
+                const { placeholder, loadPromise } = requireDescriptor(deviceType).create(deps);
+                const surfaces = collectBypassSurfaces(placeholder);
+                expect(surfaces).toHaveLength(surfaceCount);
+                for (const setBypass of surfaces) {
+                    setBypass(true);
+                }
+                // The engine cannot have seen anything yet — it does not exist.
+                expect(engine.bypassed).toBe(false);
+
+                await loadPromise;
+
+                expect(engine.bypassed).toBe(true);
+            }
+        );
+
+        it.each(LOADING_BYPASS_CASES)(
+            '$deviceType comes up unbypassed when bypass was withdrawn before the node loaded',
+            async ({ deviceType, stubFactory }) => {
+                const engine: LoadingEngine = { bypassed: false };
+                stubFactory(engine);
+                const deps = createDeps({ deviceType, deviceId: `${deviceType}-withdrawn-bypass` });
+
+                const { placeholder, loadPromise } = requireDescriptor(deviceType).create(deps);
+                for (const setBypass of collectBypassSurfaces(placeholder)) {
+                    setBypass(true);
+                    setBypass(false);
+                }
+
+                await loadPromise;
+
+                expect(engine.bypassed).toBe(false);
+            }
+        );
+
+        it('replays a Scoring param written before the node loaded', async () => {
+            const result: ScoringNodeResult = {
+                workletNode: makeWorkletNode(),
+                setParam: vi.fn(),
+                setBypass: vi.fn(),
+                onTelemetry: vi.fn(),
+                connect: vi.fn(),
+                disconnect: vi.fn(),
+                destroy: vi.fn(),
+                ready: Promise.resolve({}),
+            };
+            factoryMocks.createScoringNode.mockResolvedValue(result);
+            const deps = createDeps({ deviceType: 'native-scoring', deviceId: 'tuner-loading' });
+
+            const { placeholder, loadPromise } = requireDescriptor('native-scoring').create(deps);
+            placeholder.nativeDspControls?.setParam('reference-hz', 442);
+            await loadPromise;
+
+            expect(result.setParam).toHaveBeenCalledWith('reference-hz', 442);
+        });
+
+        it('replays Toaster pad params written before the node loaded, in order', async () => {
+            const result: ToasterNodeResult = {
+                workletNode: makeWorkletNode(),
+                outputNode: makeGainNode(),
+                noteOn: vi.fn(),
+                noteOff: vi.fn(),
+                scheduleHit: vi.fn(),
+                cancelScheduled: vi.fn(),
+                allNotesOff: vi.fn(),
+                setFillActive: vi.fn(),
+                setParam: vi.fn(),
+                acceptsScheduledParam: vi.fn(),
+                scheduleParam: vi.fn(),
+                setPadParam: vi.fn(),
+                setPadDryRouted: vi.fn(),
+                setBypass: vi.fn(),
+                processorLifecycle: vi.fn(() => 'continue' as const),
+                connect: vi.fn(),
+                disconnect: vi.fn(),
+                destroy: vi.fn(),
+                ready: Promise.resolve({}),
+            };
+            factoryMocks.createToasterNode.mockResolvedValue(result);
+            const deps = createDeps({ deviceType: 'toaster', deviceId: 'toaster-loading-pads' });
+
+            const { placeholder, loadPromise } = requireDescriptor('toaster').create(deps);
+            placeholder.toasterControls?.setPadParam(3, 'decay', 0.25);
+            placeholder.toasterControls?.setPadParam(3, 'decay', 0.75);
+            await loadPromise;
+
+            expect(vi.mocked(result.setPadParam).mock.calls).toEqual([
+                [3, 'decay', 0.25],
+                [3, 'decay', 0.75],
+            ]);
+        });
+
+        it('replays the last Knead clip state pushed before the node loaded', async () => {
+            const result: KneadNodeResult = {
+                workletNode: makeWorkletNode(),
+                setParam: vi.fn(),
+                setBypass: vi.fn(),
+                updateState: vi.fn(),
+                destroy: vi.fn(),
+                ready: Promise.resolve({}),
+            };
+            factoryMocks.createKneadNode.mockResolvedValue(result);
+            const deps = createDeps({ deviceType: 'knead', deviceId: 'knead-loading-state' });
+
+            const { placeholder, loadPromise } = requireDescriptor('knead').create(deps);
+            placeholder.kneadControls?.updateState({ 'clip-1': { shift: 1 } });
+            placeholder.kneadControls?.updateState({ 'clip-1': { shift: 2 } });
+            await loadPromise;
+
+            // A whole snapshot, so the newest one wins rather than being queued.
+            expect(vi.mocked(result.updateState).mock.calls).toEqual([[{ 'clip-1': { shift: 2 } }]]);
         });
     });
 });

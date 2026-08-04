@@ -116,6 +116,42 @@ async function waitForDeviceReady(input: WaitForDeviceReadyInput): Promise<Recor
     }
 }
 
+type PendingBypass = {
+    /** The placeholder's `setBypass`: remembers the newest request during load. */
+    capture: (bypassed: boolean) => void;
+    /** Hand a bypass requested during load to the engine that just came up. */
+    replayTo: (setBypass: (bypassed: boolean) => void) => void;
+};
+
+/**
+ * Latch a bypass requested while a device's WASM node is still loading.
+ *
+ * A placeholder controller answers `setBypass` before there is an engine to
+ * answer for. Dropping the call brings the device up unbypassed underneath a UI
+ * that shows it bypassed, with nothing to reconcile the two — the user has to
+ * toggle twice and is told nothing. Grinder latched it; every other descriptor
+ * kept its own copy of the placeholder and the copies drifted, so the latch
+ * lives here once instead of fourteen times.
+ *
+ * Only a latched `true` is replayed: a freshly constructed engine is already
+ * unbypassed, so a request withdrawn before the load finished has nothing to
+ * apply. Both closures are allocated on the main thread at device creation and
+ * never run on the audio thread.
+ */
+function createPendingBypass(): PendingBypass {
+    let pendingBypass = false;
+    return {
+        capture: (bypassed) => {
+            pendingBypass = bypassed;
+        },
+        replayTo: (setBypass) => {
+            if (pendingBypass) {
+                setBypass(true);
+            }
+        },
+    };
+}
+
 // ── Descriptors ──────────────────────────────────────────────────────────────
 
 const fermenterDescriptor: WasmDeviceDescriptor = {
@@ -132,6 +168,7 @@ const fermenterDescriptor: WasmDeviceDescriptor = {
     }) {
         const pendingParams: Array<[string, number | number[]]> = [];
         let pendingPatch: Record<string, unknown> | null = null;
+        const pendingBypass = createPendingBypass();
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         let runtimeFailureMessage: string | null = null;
         let publishedNode: BuiltinDeviceNode | null = null;
@@ -189,7 +226,7 @@ const fermenterDescriptor: WasmDeviceDescriptor = {
             setPatch: (patch) => {
                 pendingPatch = patch;
             },
-            setBypass: () => {},
+            setBypass: pendingBypass.capture,
             destroy: () => {},
         };
         const loadPromise = createFermenterNode(context, undefined, onRuntimeFailure, signal)
@@ -207,6 +244,7 @@ const fermenterDescriptor: WasmDeviceDescriptor = {
                 if (pendingPatch) {
                     result.setPatch(pendingPatch);
                 }
+                pendingBypass.replayTo(result.setBypass);
                 result.onTelemetry((data) => {
                     getAudioDeviceRuntimeSink().setFermenterTelemetry(deviceId, data);
                 });
@@ -270,6 +308,11 @@ const toasterDescriptor: WasmDeviceDescriptor = {
         onRuntimeRecovery: requestRuntimeRecovery,
     }) {
         const pendingParams: Array<[string, number]> = [];
+        // Pad params reach a *loading* Toaster: every caller in the Toaster
+        // module selects by `toasterControls?.ready !== undefined`, which the
+        // placeholder (ready: false) satisfies.
+        const pendingPadParams: Array<[number, string, number]> = [];
+        const pendingBypass = createPendingBypass();
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         let runtimeFailureMessage: string | null = null;
         let publishedNode: BuiltinDeviceNode | null = null;
@@ -292,8 +335,10 @@ const toasterDescriptor: WasmDeviceDescriptor = {
                 publishedNode.toasterControls.ready = false;
             }
             pendingParams.length = 0;
+            pendingPadParams.length = 0;
             if (placeholder.toasterControls) {
                 placeholder.toasterControls.setParam = () => {};
+                placeholder.toasterControls.setPadParam = () => {};
             }
             const replaced = replaceRuntimeFailure?.(publishedNode, placeholder) === true;
             try {
@@ -324,9 +369,11 @@ const toasterDescriptor: WasmDeviceDescriptor = {
             setParam: (name, value) => {
                 pendingParams.push([name, value]);
             },
-            setPadParam: () => {},
+            setPadParam: (pad, name, value) => {
+                pendingPadParams.push([pad, name, value]);
+            },
             setPadDryRouted: () => {},
-            setBypass: () => {},
+            setBypass: pendingBypass.capture,
             destroy: () => {},
         };
         const loadPromise = createToasterNode(context, undefined, onRuntimeFailure, signal)
@@ -341,6 +388,10 @@ const toasterDescriptor: WasmDeviceDescriptor = {
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
+                for (const [pad, name, value] of pendingPadParams) {
+                    result.setPadParam(pad, name, value);
+                }
+                pendingBypass.replayTo(result.setBypass);
                 const loadedNode: BuiltinDeviceNode = {
                     deviceId,
                     type: deviceType,
@@ -429,6 +480,7 @@ const levainDescriptor: WasmDeviceDescriptor = {
         onRuntimeRecovery: requestRuntimeRecovery,
     }) {
         const pendingParams: Array<[string, number]> = [];
+        const pendingBypass = createPendingBypass();
         let runtimeFailureMessage: string | null = null;
         let publishedNode: BuiltinDeviceNode | null = null;
         let publishedResult: LevainNodeResult | null = null;
@@ -478,7 +530,7 @@ const levainDescriptor: WasmDeviceDescriptor = {
             setParam: (name, value) => {
                 pendingParams.push([name, value]);
             },
-            setBypass: () => {},
+            setBypass: pendingBypass.capture,
             destroy: () => {},
         };
         const loadPromise = createLevainNode(context, undefined, onRuntimeFailure, signal)
@@ -493,6 +545,7 @@ const levainDescriptor: WasmDeviceDescriptor = {
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
+                pendingBypass.replayTo(result.setBypass);
                 const loadedNode: BuiltinDeviceNode = {
                     deviceId,
                     type: deviceType,
@@ -574,6 +627,7 @@ const crumbsDescriptor: WasmDeviceDescriptor = {
         onRuntimeRecovery: requestRuntimeRecovery,
     }) {
         const pendingParams: Array<[string, number]> = [];
+        const pendingBypass = createPendingBypass();
         let runtimeFailureMessage: string | null = null;
         let publishedNode: BuiltinDeviceNode | null = null;
         let publishedResult: CrumbsNodeResult | null = null;
@@ -621,7 +675,7 @@ const crumbsDescriptor: WasmDeviceDescriptor = {
                 pendingParams.push([name, value]);
             },
             setMode: () => {},
-            setBypass: () => {},
+            setBypass: pendingBypass.capture,
             destroy: () => {},
         };
         const loadPromise = createCrumbsNode(context, undefined, onRuntimeFailure, signal)
@@ -636,6 +690,7 @@ const crumbsDescriptor: WasmDeviceDescriptor = {
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
+                pendingBypass.replayTo(result.setBypass);
                 const loadedNode: BuiltinDeviceNode = {
                     deviceId,
                     type: deviceType,
@@ -704,12 +759,13 @@ const proofChamberDescriptor: WasmDeviceDescriptor = {
     matches: isProofChamberDevice,
     create({ context, deviceId, deviceType, signal, onLoaded }) {
         const pendingParams: Array<[string, number]> = [];
+        const pendingBypass = createPendingBypass();
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.nativeDspControls = {
             setParam: (name, value) => {
                 pendingParams.push([name, value]);
             },
-            setBypass: () => {},
+            setBypass: pendingBypass.capture,
         };
         const loadPromise = createProofChamberNode(context, signal)
             .then(async (result: ProofChamberNodeResult) => {
@@ -721,6 +777,7 @@ const proofChamberDescriptor: WasmDeviceDescriptor = {
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
+                pendingBypass.replayTo(result.setBypass);
                 const accepted = onLoaded({
                     deviceId,
                     type: deviceType,
@@ -756,12 +813,13 @@ const glutenDescriptor: WasmDeviceDescriptor = {
     matches: isGlutenDevice,
     create({ context, deviceId, deviceType, signal, onLoaded }) {
         const pendingParams: Array<[string, number]> = [];
+        const pendingBypass = createPendingBypass();
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.nativeDspControls = {
             setParam: (name, value) => {
                 pendingParams.push([name, value]);
             },
-            setBypass: () => {},
+            setBypass: pendingBypass.capture,
         };
         const loadPromise = createGlutenNode(context, undefined, signal)
             .then(async (result: GlutenNodeResult) => {
@@ -771,6 +829,7 @@ const glutenDescriptor: WasmDeviceDescriptor = {
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
+                pendingBypass.replayTo(result.setBypass);
                 result.onMeterData((data) => {
                     getAudioDeviceRuntimeSink().updateGlutenMeters(deviceId, {
                         grDb: data.grDb,
@@ -815,12 +874,13 @@ const crustDescriptor: WasmDeviceDescriptor = {
     matches: isCrustDevice,
     create({ context, deviceId, deviceType, isCurrent, signal, onLoaded }) {
         const pendingParams: Array<[string, number]> = [];
+        const pendingBypass = createPendingBypass();
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.nativeDspControls = {
             setParam: (name, value) => {
                 pendingParams.push([name, value]);
             },
-            setBypass: () => {},
+            setBypass: pendingBypass.capture,
         };
         const loadPromise = createCrustNode(context, undefined, signal)
             .then(async (result: CrustNodeResult) => {
@@ -842,6 +902,7 @@ const crustDescriptor: WasmDeviceDescriptor = {
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
+                pendingBypass.replayTo(result.setBypass);
                 result.onLatencyChanged((latency) => {
                     reportLatency(deviceId, (latency / context.sampleRate) * 1000);
                 });
@@ -881,12 +942,13 @@ const bacteriaDescriptor: WasmDeviceDescriptor = {
     matches: isBacteriaDevice,
     create({ context, deviceId, deviceType, isCurrent, signal, onLoaded }) {
         const pendingParams: Array<[string, number]> = [];
+        const pendingBypass = createPendingBypass();
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.nativeDspControls = {
             setParam: (name, value) => {
                 pendingParams.push([name, value]);
             },
-            setBypass: () => {},
+            setBypass: pendingBypass.capture,
         };
         const loadPromise = createBacteriaNode(context, undefined, signal)
             .then(async (result: BacteriaNodeResult) => {
@@ -904,6 +966,7 @@ const bacteriaDescriptor: WasmDeviceDescriptor = {
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
+                pendingBypass.replayTo(result.setBypass);
                 result.onLatencyChanged((latency) => {
                     reportLatency(deviceId, (latency / context.sampleRate) * 1000);
                 });
@@ -943,15 +1006,13 @@ const grinderDescriptor: WasmDeviceDescriptor = {
     create({ context, deviceId, deviceType, isCurrent, signal, onLoaded }) {
         const pendingParams: Array<[string, number]> = [];
         let pendingPatch: Record<string, unknown> | null = null;
-        let pendingBypass = false;
+        const pendingBypass = createPendingBypass();
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.nativeDspControls = {
             setParam: (name, value) => {
                 pendingParams.push([name, value]);
             },
-            setBypass: (bypassed) => {
-                pendingBypass = bypassed;
-            },
+            setBypass: pendingBypass.capture,
         };
         placeholder.controller = {
             setParam: (name, value) => {
@@ -960,9 +1021,7 @@ const grinderDescriptor: WasmDeviceDescriptor = {
             setPatch: (patch) => {
                 pendingPatch = patch;
             },
-            setBypass: (bypassed) => {
-                pendingBypass = bypassed;
-            },
+            setBypass: pendingBypass.capture,
         };
         const loadPromise = createGrinderNode(context, undefined, signal)
             .then(async (result: GrinderNodeResult) => {
@@ -1000,9 +1059,7 @@ const grinderDescriptor: WasmDeviceDescriptor = {
                         neuralWarmupProgress: data.neuralWarmupProgress,
                     });
                 });
-                if (pendingBypass) {
-                    result.setBypass(true);
-                }
+                pendingBypass.replayTo(result.setBypass);
                 onLoaded({
                     deviceId,
                     type: deviceType,
@@ -1036,6 +1093,7 @@ const proofDescriptor: WasmDeviceDescriptor = {
     matches: isProofDevice,
     create({ context, deviceId, deviceType, isCurrent, signal, onLoaded }) {
         const pendingParams: Array<[string, number]> = [];
+        const pendingBypass = createPendingBypass();
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         const loadingControls: {
             setParam(name: string, value: number): void;
@@ -1044,7 +1102,7 @@ const proofDescriptor: WasmDeviceDescriptor = {
             setParam: (name, value) => {
                 pendingParams.push([name, value]);
             },
-            setBypass: () => {},
+            setBypass: pendingBypass.capture,
         };
         placeholder.nativeDspControls = loadingControls;
         placeholder.controller = loadingControls;
@@ -1076,6 +1134,7 @@ const proofDescriptor: WasmDeviceDescriptor = {
                     // Proof owns restoration and validation. Its complete patch
                     // sync must be the final writer over raw pre-ready values.
                     runtimeSink.syncProofPatch(deviceId);
+                    pendingBypass.replayTo(result.setBypass);
 
                     result.onLatencyChanged((latency) => {
                         reportLatency(deviceId, (latency / context.sampleRate) * 1000);
@@ -1134,13 +1193,24 @@ const scoringDescriptor: WasmDeviceDescriptor = {
     requiresContent: false,
     matches: isScoringDevice,
     create({ context, deviceId, deviceType, signal, onLoaded }) {
+        const pendingParams: Array<[string, number]> = [];
+        const pendingBypass = createPendingBypass();
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
-        placeholder.nativeDspControls = { setParam: () => {}, setBypass: () => {} };
+        placeholder.nativeDspControls = {
+            setParam: (name, value) => {
+                pendingParams.push([name, value]);
+            },
+            setBypass: pendingBypass.capture,
+        };
         const loadPromise = createScoringNode(context, signal)
             .then(async (result: ScoringNodeResult) => {
                 if ((await waitForDeviceReady({ deviceType, result, signal })) === null) {
                     return;
                 }
+                for (const [name, value] of pendingParams) {
+                    result.setParam(name, value);
+                }
+                pendingBypass.replayTo(result.setBypass);
                 result.onTelemetry((data) => {
                     getAudioDeviceRuntimeSink().updateTunerTelemetry(deviceId, {
                         frequency: data.frequency,
@@ -1177,6 +1247,7 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
     matches: isGrandBouleDevice,
     create({ context, deviceId, deviceType, signal, onLoaded, onRuntimeFailure: replaceRuntimeFailure }) {
         const pendingParams: Array<[string, number]> = [];
+        const pendingBypass = createPendingBypass();
         let runtimeFailureMessage: string | null = null;
         let publishedNode: BuiltinDeviceNode | null = null;
         let publishedResult: GrandBouleNodeResult | null = null;
@@ -1231,7 +1302,7 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
             setTemperament: () => {},
             loadAttackClip: () => {},
             allNotesOff: () => {},
-            setBypass: () => {},
+            setBypass: pendingBypass.capture,
             destroy: () => {},
         };
         const loadPromise = createGrandBouleNode(context, undefined, onRuntimeFailure, signal)
@@ -1246,6 +1317,7 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
+                pendingBypass.replayTo(result.setBypass);
                 const loadedNode: BuiltinDeviceNode = {
                     deviceId,
                     type: deviceType,
@@ -1393,14 +1465,21 @@ const kneadDescriptor: WasmDeviceDescriptor = {
     matches: isKneadDevice,
     create({ context, deviceId, deviceType, transportSAB, signal, onLoaded }) {
         const pendingParams: Array<[string, number | number[]]> = [];
+        const pendingBypass = createPendingBypass();
+        // `syncKneadState` pushes into every device node without a readiness
+        // gate, so a loading Knead is a reachable target. The payload is a whole
+        // clip snapshot, so the newest one wins rather than being queued.
+        let pendingState: Record<string, unknown> | null = null;
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.kneadControls = {
             ready: false,
-            updateState: () => {},
+            updateState: (clips) => {
+                pendingState = clips;
+            },
             setParam: (name, value) => {
                 pendingParams.push([name, value]);
             },
-            setBypass: () => {},
+            setBypass: pendingBypass.capture,
             destroy: () => {},
         };
         const loadPromise = createKneadNode(context, transportSAB, signal)
@@ -1418,6 +1497,10 @@ const kneadDescriptor: WasmDeviceDescriptor = {
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
+                if (pendingState) {
+                    result.updateState(pendingState);
+                }
+                pendingBypass.replayTo(result.setBypass);
                 // Removing the device must retract its PDC entry; a stale entry
                 // keeps compensating a delay that is no longer in the graph.
                 // TrackNode.removeDevice prefers controller.destroy over dispose,
