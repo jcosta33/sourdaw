@@ -1,0 +1,61 @@
+src/modules/MIDI/useCases/index.ts
+  s_bc88af7d3b054c::t_8aa995ce8bf4e4 38
+src/modules/AiGeneration/handlers/aiMidi/__tests__/handleGenerateBassline.spec.ts
+  s_bc88af7d3b054c::t_6dcb2ee0233eee 162
+  s_bc88af7d3b054c::t_d374253e56d7fb 453
+  s_bc88af7d3b054c::t_03c569b6e59f07 5
+  s_bc88af7d3b054c::t_0082619eb399b1 160
+  s_bc88af7d3b054c::t_5eb532cfd8998a 110-119
+  s_bc88af7d3b054c::t_374f12e38d2eb8 52,77,104-109,120-127,497
+  s_bc88af7d3b054c::t_74e36f620792ee 466-496,498-540,542-548
+src/utils/handlerContract.ts
+  s_bc88af7d3b054c::t_e8d28bd0168104 291-295,299-302,348
+src/modules/MIDI/useCases/serializeMidiStateForClips.ts
+  s_bc88af7d3b054c::t_8aa995ce8bf4e4 1-17
+src/modules/AiGeneration/handlers/aiMidi/handleCompleteMidi.ts
+  s_bc88af7d3b054c::t_d350a068354d14 13,26-29,55-58,281-285
+src/modules/Arrangement/handlers/track/__tests__/discardCreatedTrack.spec.ts
+  s_bc88af7d3b054c::t_74e36f620792ee 77-97
+src/modules/Arrangement/handlers/isGeneratedMidiStateCurrent.ts
+  s_bc88af7d3b054c::t_8aa995ce8bf4e4 1-40,43-44,46-90,92-95,97-98
+  s_bc88af7d3b054c::t_76bfed5a146407 41-42,45,91,96
+src/modules/Arrangement/handlers/track/discardCreatedTrack.ts
+  s_bc88af7d3b054c::t_8aa995ce8bf4e4 10,14-24
+src/modules/AiGeneration/handlers/aiMidi/__tests__/handleCompleteMidi.spec.ts
+  s_bc88af7d3b054c::t_374f12e38d2eb8 26,50,69-74,85-92,207
+  s_bc88af7d3b054c::t_5eb532cfd8998a 75-84
+  s_bc88af7d3b054c::t_1ab27edc3a6a43 176
+  s_bc88af7d3b054c::t_74e36f620792ee 149,151-155,182-206,208-210
+src/modules/MIDI/useCases/__tests__/serializeMidiStateForClips.spec.ts
+  s_bc88af7d3b054c::t_8aa995ce8bf4e4 1-39
+src/modules/AiGeneration/handlers/aiMidi/populateGeneratedMidiStateGuard.ts
+  s_bc88af7d3b054c::t_8aa995ce8bf4e4 1-17
+src/modules/Arrangement/handlers/clip/handleDiscardDuplicatedClip.ts
+  s_bc88af7d3b054c::t_8aa995ce8bf4e4 8-18
+  s_bc88af7d3b054c::t_5eb532cfd8998a 4,20
+src/modules/AiGeneration/handlers/aiMidi/handleGenerateBassline.ts
+  s_bc88af7d3b054c::t_6dcb2ee0233eee 290-293
+  s_bc88af7d3b054c::t_03c569b6e59f07 150-151,171,225,289
+  s_bc88af7d3b054c::t_d350a068354d14 14,34-41,64-71,149,152,282-288,294-300
+src/modules/Arrangement/handlers/__tests__/isGeneratedMidiStateCurrent.spec.ts
+  s_bc88af7d3b054c::t_ab2e9480af48f2 1-108
+src/modules/Arrangement/handlers/clip/__tests__/handleDiscardDuplicatedClip.spec.ts
+  s_bc88af7d3b054c::t_374f12e38d2eb8 6,10-13,21,34-36
+  s_bc88af7d3b054c::t_74e36f620792ee 33,37-51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "2d7dc2a4a20ec2ad19f52df5d4e3847333077605",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
