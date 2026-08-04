@@ -192,6 +192,79 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(audioTarget.rejections[0]?.reason).toContain('not grounded');
     });
 
+    it('grounds the provider-only whole-clip transform surface and rejects selected-note scope', () => {
+        const context = createMidiClipContext();
+        const cases = [
+            {
+                call: { name: 'invertNotes', arguments: { clipId: 'clip-midi' } },
+                prompt: 'invert the MIDI notes in Piano MIDI',
+                action: { type: 'invertNotes', payload: { clipId: 'clip-midi' } },
+            },
+            {
+                call: { name: 'retrogradeNotes', arguments: { clipId: 'clip-midi' } },
+                prompt: 'retrograde the MIDI notes in Piano MIDI',
+                action: { type: 'retrogradeNotes', payload: { clipId: 'clip-midi' } },
+            },
+            {
+                call: { name: 'quantizeNoteLengths', arguments: { clipId: 'clip-midi', gridSize: 0.5 } },
+                prompt: 'quantize note lengths in Piano MIDI to a 0.5 beat grid',
+                action: { type: 'quantizeNoteLengths', payload: { clipId: 'clip-midi', gridSize: 0.5 } },
+            },
+            {
+                call: { name: 'scaleAllVelocities', arguments: { clipId: 'clip-midi', factor: 0.5 } },
+                prompt: 'scale note velocities in Piano MIDI by 50%',
+                action: { type: 'scaleAllVelocities', payload: { clipId: 'clip-midi', factor: 0.5 } },
+            },
+            {
+                call: { name: 'setAllVelocities', arguments: { clipId: 'clip-midi', velocity: 96 } },
+                prompt: 'set note velocities in Piano MIDI to 96',
+                action: { type: 'setAllVelocities', payload: { clipId: 'clip-midi', velocity: 96 } },
+            },
+        ] as const;
+
+        for (const testCase of cases) {
+            const grounded = bridge([testCase.call], testCase.prompt, context);
+            expect(grounded.actions).toEqual([testCase.action]);
+            expect(grounded.rejections).toEqual([]);
+
+            const selectedNoteScope = bridge(
+                [testCase.call],
+                `${testCase.prompt}, but only the selected MIDI notes`,
+                context
+            );
+            expect(selectedNoteScope.actions).toEqual([]);
+            expect(selectedNoteScope.rejections[0]?.reason).toContain('Selected-note edits are not supported');
+        }
+    });
+
+    it('grounds slash-fraction note-length grids before exact value comparison', () => {
+        const context = createMidiClipContext();
+        const eighth = bridge(
+            [{ name: 'quantizeNoteLengths', arguments: { clipId: 'clip-midi', gridSize: 0.125 } }],
+            'quantize note lengths in Piano MIDI to 1/8 beat',
+            context
+        );
+        const sixteenth = bridge(
+            [{ name: 'quantizeNoteLengths', arguments: { clipId: 'clip-midi', gridSize: 0.0625 } }],
+            'quantize note lengths in Piano MIDI to 1/16 beat',
+            context
+        );
+        const wrongNumerator = bridge(
+            [{ name: 'quantizeNoteLengths', arguments: { clipId: 'clip-midi', gridSize: 1 } }],
+            'quantize note lengths in Piano MIDI to 1/8 beat',
+            context
+        );
+
+        expect(eighth.actions).toEqual([
+            { type: 'quantizeNoteLengths', payload: { clipId: 'clip-midi', gridSize: 0.125 } },
+        ]);
+        expect(sixteenth.actions).toEqual([
+            { type: 'quantizeNoteLengths', payload: { clipId: 'clip-midi', gridSize: 0.0625 } },
+        ]);
+        expect(wrongNumerator.actions).toEqual([]);
+        expect(wrongNumerator.rejections[0]?.reason).toContain('does not match');
+    });
+
     it('grounds multiple distinct targets from one provider plan', () => {
         const result = bridge(
             [

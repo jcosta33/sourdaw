@@ -264,6 +264,28 @@ const validators = {
         isInRange(param.semitones, -127, 127) &&
         Number.isInteger(param.semitones) &&
         param.semitones !== 0,
+    invertNotes: (param): param is PayloadOf<'invertNotes'> =>
+        isObj(param) && hasExactKeys(param, ['clipId']) && isNonEmptyString(param.clipId),
+    retrogradeNotes: (param): param is PayloadOf<'retrogradeNotes'> =>
+        isObj(param) && hasExactKeys(param, ['clipId']) && isNonEmptyString(param.clipId),
+    quantizeNoteLengths: (param): param is PayloadOf<'quantizeNoteLengths'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['clipId', 'gridSize']) &&
+        isNonEmptyString(param.clipId) &&
+        isInRange(param.gridSize, 0.03125, 64),
+    scaleAllVelocities: (param): param is PayloadOf<'scaleAllVelocities'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['clipId', 'factor']) &&
+        isNonEmptyString(param.clipId) &&
+        isPositiveNumber(param.factor) &&
+        param.factor <= 16 &&
+        param.factor !== 1,
+    setAllVelocities: (param): param is PayloadOf<'setAllVelocities'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['clipId', 'velocity']) &&
+        isNonEmptyString(param.clipId) &&
+        isInRange(param.velocity, 1, 127) &&
+        Number.isInteger(param.velocity),
 
     // Marker + section
     removeMarker: (param): param is PayloadOf<'removeMarker'> => isObj(param) && isString(param.markerId),
@@ -419,13 +441,8 @@ const validators = {
     createAdjustmentLayer: 'unchecked',
 
     // MIDI-note ops (non-destructive enough: they're scoped by clipId on the handler)
-    quantizeNoteLengths: 'unchecked',
     humanizeNotes: 'unchecked',
-    invertNotes: 'unchecked',
-    retrogradeNotes: 'unchecked',
     scaleVelocities: 'unchecked',
-    scaleAllVelocities: 'unchecked',
-    setAllVelocities: 'unchecked',
     addNotes: (param): param is PayloadOf<'addNotes'> =>
         isObj(param) &&
         hasExactKeys(param, ['clipId', 'notes']) &&
