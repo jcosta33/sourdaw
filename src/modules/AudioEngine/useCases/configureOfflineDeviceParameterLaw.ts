@@ -10,6 +10,7 @@ type ConfigureOfflineDeviceParameterLawInput = Parameters<typeof setOfflineDevic
 export function configureOfflineDeviceParameterLaw({
     isAutomatable,
     clampValue,
+    quantiseValue,
 }: ConfigureOfflineDeviceParameterLawInput): void {
-    setOfflineDeviceParameterLaw({ isAutomatable, clampValue });
+    setOfflineDeviceParameterLaw({ isAutomatable, clampValue, quantiseValue });
 }

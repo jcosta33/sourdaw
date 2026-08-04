@@ -42,7 +42,15 @@ const GRINDER_PARAMS: readonly PluginParamDef[] = [
     { id: 'transformerLfSaturation', label: 'LF Sat', min: 0, max: 1, default: 0.3, unit: '', step: 0.01 },
 
     // Cabinet
-    { id: 'cabResonanceFreq', label: 'Cab Res', min: 40, max: 200, default: 80, unit: 'Hz', step: 1, scaling: 'log' },
+    // No `step`. The builder below reuses `step` as a *type* oracle
+    // (`step === 1 ? 'int' : 'float'`), and `int` is a write law, not a knob
+    // increment — but `cabinet.rs` holds this as
+    // `self.resonance_freq = value.clamp(40.0, 200.0)`. Of the ten log controls
+    // that lost `step: 1`, this is the only one whose readout precision moves
+    // with it (80 → 80.7), because
+    // `deriveStep` lands on 0.8 for a 160 Hz span; that is the correct precision
+    // for a control that steps in less than a hertz.
+    { id: 'cabResonanceFreq', label: 'Cab Res', min: 40, max: 200, default: 80, unit: 'Hz', scaling: 'log' },
     { id: 'cabResonanceQ', label: 'Cab Q', min: 0.5, max: 10, default: 2, unit: '', step: 0.1 },
     { id: 'cabDamping', label: 'Damping', min: 0, max: 1, default: 0.5, unit: '', step: 0.01 },
     { id: 'coneBreakup', label: 'Breakup', min: 0, max: 1, default: 0.3, unit: '', step: 0.01 },

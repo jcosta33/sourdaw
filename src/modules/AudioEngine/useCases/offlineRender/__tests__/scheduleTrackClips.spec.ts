@@ -892,6 +892,7 @@ describe('scheduleTrackClips — offline automation reads the same laws live doe
         isAutomatable: ({ paramId }: { deviceType: string; paramId: string }) => paramId === 'filterCutoff',
         clampValue: ({ value }: { deviceType: string; paramId: string; value: number }) =>
             Math.min(20_000, Math.max(20, value)),
+        quantiseValue: ({ value }: { deviceType: string; paramId: string; value: number }) => Math.round(value),
     };
 
     beforeEach(() => {
@@ -902,6 +903,7 @@ describe('scheduleTrackClips — offline automation reads the same laws live doe
         mocks.getCompensationDelay.mockReturnValue(0);
         offlineDeviceParameterLawState.isAutomatable = null;
         offlineDeviceParameterLawState.clampValue = null;
+        offlineDeviceParameterLawState.quantiseValue = null;
     });
 
     /**
@@ -920,6 +922,7 @@ describe('scheduleTrackClips — offline automation reads the same laws live doe
                           parameterId: string;
                       }) => boolean;
                       clampValue: (input: { deviceType: string; paramId: string; value: number }) => number;
+                      quantiseValue: (input: { deviceType: string; paramId: string; value: number }) => number;
                   };
               }
             | undefined;
@@ -974,6 +977,20 @@ describe('scheduleTrackClips — offline automation reads the same laws live doe
         expect(law.clampValue({ deviceType: 'fermenter', paramId: 'filterCutoff', value: -1e9 })).toBe(20);
     });
 
+    it('routes device writes through the injected declared-type quantiser', async () => {
+        // The clamp alone let the bounce render the slew's continuous filter
+        // state for a parameter the monitor delivers as an integer. The composition
+        // root has to hand the render both halves of the law, not one — and the
+        // quantiser has to arrive as its own member, because it is applied at a
+        // different point in the recurrence than the clamp (emitted value only,
+        // never fed back), which a single composed function could not express.
+        configureOfflineDeviceParameterLaw(injectedLaw);
+        const law = await lastAutomationLaw();
+
+        expect(law.quantiseValue({ deviceType: 'fermenter', paramId: 'filterCutoff', value: 12.59 })).toBe(13);
+        expect(law.quantiseValue({ deviceType: 'fermenter', paramId: 'filterCutoff', value: 14.4 })).toBe(14);
+    });
+
     it('refuses device automation outright when no law has been injected', async () => {
         // Unset is not "anything goes": with no law the render cannot tell an
         // automatable parameter from one live would refuse, and substituting a
@@ -987,5 +1004,9 @@ describe('scheduleTrackClips — offline automation reads the same laws live doe
             law.acceptsAutomation({ deviceId: 'inst-1', deviceType: 'fermenter', parameterId: 'filterCutoff' })
         ).toBe(false);
         expect(law.clampValue({ deviceType: 'fermenter', paramId: 'filterCutoff', value: 1e9 })).toBe(1e9);
+        // And nothing is rounded either: with no law the render has no basis to
+        // call a parameter stepped, and inventing one is the same substitution
+        // the clamp fallback refuses.
+        expect(law.quantiseValue({ deviceType: 'fermenter', paramId: 'filterCutoff', value: 12.59 })).toBe(12.59);
     });
 });

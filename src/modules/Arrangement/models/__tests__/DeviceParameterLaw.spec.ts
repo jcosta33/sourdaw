@@ -95,12 +95,33 @@ describe('quantiseDeviceParameterValue', () => {
 
     it('rounds a negative index toward the nearer neighbour without producing -0', () => {
         // Fermenter's coarse tune spans -24..24 semitones, so the negative half
-        // of an `int` range is real. `Math.round(-0.2)` is `-0`, which compares
-        // unequal to 0 under Object.is and would read as a spurious change.
+        // of an `int` range is real. `Math.round(-0.2)` is `-0`; normalising it
+        // keeps the function's output canonical, so one index is one number.
         expect(quantiseDeviceParameterValue({ deviceType: 'fermenter', paramId: 'oscCoarse', value: -7.6 })).toBe(-8);
         expect(
             Object.is(quantiseDeviceParameterValue({ deviceType: 'fermenter', paramId: 'oscCoarse', value: -0.2 }), 0)
         ).toBe(true);
+    });
+
+    it('reaches the -0 case on every stepped parameter that can produce it', () => {
+        // The normalisation is only worth its line if the input is reachable.
+        // Derived from the registry rather than argued in prose: these are the
+        // stepped parameters whose declared range straddles zero, so a ride
+        // through zero really does hand `Math.round` a small negative. The list
+        // is pinned so the claim in `DeviceParameterLaw`'s doc stays checkable.
+        const straddlingZero = BUILTIN_PLUGINS.flatMap((plugin) =>
+            plugin.parameters
+                .filter((parameter) => parameter.type !== 'float' && parameter.minValue < 0 && parameter.maxValue >= 0)
+                .map((parameter) => `${plugin.id}:${parameter.id}`)
+        );
+        expect(straddlingZero).toEqual(['fermenter:oscCoarse', 'fermenter:oscFine', 'grinder:gateThreshold']);
+        for (const identity of straddlingZero) {
+            const [deviceType, paramId] = identity.split(':') as [string, string];
+            expect(
+                Object.is(quantiseDeviceParameterValue({ deviceType, paramId, value: -0.2 }), 0),
+                `${identity} produced -0`
+            ).toBe(true);
+        }
     });
 
     it('leaves a `float` parameter fractional', () => {
@@ -173,6 +194,54 @@ describe('quantiseDeviceParameterValue', () => {
         );
         expect(steppedDevices.length).toBe(27);
         expect(steppedDevices.map((plugin) => plugin.id)).toContain('crust');
+    });
+
+    it('declares no logarithmic parameter stepped', () => {
+        // F5. `step` on a `PluginParamDef` is a knob increment; the descriptor
+        // builders reuse it as a *type* oracle (`step === 1 ? 'int' : 'float'`),
+        // and that heuristic loses exactly the distinction this law depends on.
+        // Ten frequency and time controls carried `step: 1` alongside
+        // `scaling: 'log'` — `bacteria/crossoverFreq1-5`, `bacteria/filterCutoff`,
+        // `bacteria/grainSize`, `gluten/release`, `gluten/scHpfFreq`,
+        // `grinder/cabResonanceFreq` — so a continuous `f32` in Rust
+        // (`self.cutoff = value.clamp(20.0, 20000.0)`) was declared `int` and
+        // would have been rounded onto a uniform 1 Hz grid. At 20 Hz that grid
+        // is 84 cents, so a slow low sweep staircases; the repeat gate on the
+        // delivered domain makes it a true staircase rather than a dither.
+        //
+        // A control that wants resolution at the bottom of its range asks for
+        // `scaling: 'log'` — which is the marker that its `step` was never a
+        // legal-value law. Derived from the registry, so the next log control
+        // that arrives with `step: 1` reds here rather than shipping quantised.
+        const logStepped = BUILTIN_PLUGINS.flatMap((plugin) =>
+            plugin.parameters
+                .filter((parameter) => parameter.scaling === 'log' && parameter.type !== 'float')
+                .map((parameter) => `${plugin.id}:${parameter.id}`)
+        );
+        expect(logStepped).toEqual([]);
+
+        // The sweep has to have actually looked at log parameters, or it passes
+        // vacuously the day `scaling` stops being copied onto `DeviceParameter`.
+        const logParameters = BUILTIN_PLUGINS.flatMap((plugin) =>
+            plugin.parameters.filter((parameter) => parameter.scaling === 'log')
+        );
+        expect(logParameters.length).toBeGreaterThan(10);
+    });
+
+    it('leaves a log-scaled frequency fractional at the value the UI actually stores', () => {
+        // The knob writes `toLog(v)` at a mapped step of 0.001
+        // (`DeviceParameterControl.tsx`), clamped and never rounded, so the
+        // stored base for these controls really is fractional. 2153.68 Hz and
+        // 2154 Hz are 0.26 cents apart — inaudible on their own, which is the
+        // point: the harm was the 1 Hz *grid* under a slow sweep, and the fix is
+        // that there is no grid.
+        expect(quantiseDeviceParameterValue({ deviceType: 'bacteria', paramId: 'filterCutoff', value: 2153.68 })).toBe(
+            2153.68
+        );
+        expect(quantiseDeviceParameterValue({ deviceType: 'gluten', paramId: 'release', value: 312.4 })).toBe(312.4);
+        // And the neighbouring non-log `int` on the same device still rounds, so
+        // this is not "bacteria stopped being quantised".
+        expect(quantiseDeviceParameterValue({ deviceType: 'bacteria', paramId: 'bitDepth', value: 12.59 })).toBe(13);
     });
 });
 

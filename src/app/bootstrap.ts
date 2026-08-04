@@ -16,6 +16,7 @@ import {
     getPluginById,
     isDeviceParameterAutomatable,
     persistDevicePatch,
+    quantiseDeviceParameterValue,
     cleanupUnusedFreezeFiles,
     setTrackGain as setTrackGainArrangement,
     setTrackPan as setTrackPanArrangement,
@@ -183,6 +184,7 @@ configureOfflineMidiEventProjection({
 configureOfflineDeviceParameterLaw({
     isAutomatable: isDeviceParameterAutomatable,
     clampValue: clampDeviceParameterValue,
+    quantiseValue: quantiseDeviceParameterValue,
 });
 configureOfflinePpqEndpointProjection({ project: projectPpqEndpoints });
 configureOfflineYeastMidiProcessing({ createProcessor: createOfflineYeastProcessor });
@@ -284,6 +286,7 @@ setModulationDependencies({
             automatable: paramDef.automatable,
         };
     },
+    quantiseValue: quantiseDeviceParameterValue,
 });
 
 setMidiLearnDependencies({

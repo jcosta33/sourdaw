@@ -113,6 +113,10 @@ function setDependencies(setModulationDependencies: SubjectModules['setModulatio
     setModulationDependencies({
         updateDeviceParam: mocks.updateDeviceParam,
         getPluginParamRange: mocks.getPluginParamRange,
+        // `revertMappingsToBase` writes the persisted base back, which is a
+        // restore rather than a slewed delivery and never reaches the quantiser;
+        // identity keeps that visible instead of masking a call with rounding.
+        quantiseValue: ({ value }) => value,
     });
 }
 

@@ -16,20 +16,20 @@ const BACTERIA_PARAMS: readonly PluginParamDef[] = [
 
     // Crossover
     { id: 'bandCount', label: 'Bands', min: 1, max: 6, default: 1, unit: '', step: 1 },
-    { id: 'crossoverFreq1', label: 'XOver 1', min: 20, max: 20000, default: 200, unit: 'Hz', step: 1, scaling: 'log' },
-    { id: 'crossoverFreq2', label: 'XOver 2', min: 20, max: 20000, default: 800, unit: 'Hz', step: 1, scaling: 'log' },
-    { id: 'crossoverFreq3', label: 'XOver 3', min: 20, max: 20000, default: 2500, unit: 'Hz', step: 1, scaling: 'log' },
-    { id: 'crossoverFreq4', label: 'XOver 4', min: 20, max: 20000, default: 6000, unit: 'Hz', step: 1, scaling: 'log' },
-    {
-        id: 'crossoverFreq5',
-        label: 'XOver 5',
-        min: 20,
-        max: 20000,
-        default: 12000,
-        unit: 'Hz',
-        step: 1,
-        scaling: 'log',
-    },
+    // The crossover corners carry no `step`. `step: 1` here used to read as a
+    // knob increment, but the descriptor builder below reuses `step` as a *type*
+    // oracle (`step === 1 ? 'int' : 'float'`), and `int` is a write law: it says
+    // the only legal values are the integers in the range. These are continuous
+    // `f32` in `crates/daw-dsp/src/bacteria/engine.rs`
+    // (`self.crossover_freqs[n] = value`), and a 1 Hz grid on a logarithmic
+    // 20 Hz..20 kHz control is 84 cents at the bottom. The knob takes its step
+    // from `deriveStep`, and a log control overrides that to 0.001 of normalized
+    // travel anyway, so nothing about the UI depends on the declaration.
+    { id: 'crossoverFreq1', label: 'XOver 1', min: 20, max: 20000, default: 200, unit: 'Hz', scaling: 'log' },
+    { id: 'crossoverFreq2', label: 'XOver 2', min: 20, max: 20000, default: 800, unit: 'Hz', scaling: 'log' },
+    { id: 'crossoverFreq3', label: 'XOver 3', min: 20, max: 20000, default: 2500, unit: 'Hz', scaling: 'log' },
+    { id: 'crossoverFreq4', label: 'XOver 4', min: 20, max: 20000, default: 6000, unit: 'Hz', scaling: 'log' },
+    { id: 'crossoverFreq5', label: 'XOver 5', min: 20, max: 20000, default: 12000, unit: 'Hz', scaling: 'log' },
     { id: 'crossoverSlope', label: 'Slope', min: 0, max: 3, default: 1, unit: '', step: 1 },
     { id: 'crossoverMode', label: 'XOver Mode', min: 0, max: 1, default: 0, unit: '', step: 1 },
 
@@ -44,7 +44,9 @@ const BACTERIA_PARAMS: readonly PluginParamDef[] = [
 
     // Per-band filter
     { id: 'filterMode', label: 'Filter Mode', min: 0, max: 5, default: 0, unit: '', step: 1 },
-    { id: 'filterCutoff', label: 'Cutoff', min: 20, max: 20000, default: 8000, unit: 'Hz', step: 1, scaling: 'log' },
+    // No `step`, for the same reason as the crossover corners above:
+    // `filter.rs` holds this as `self.cutoff = value.clamp(20.0, 20000.0)`.
+    { id: 'filterCutoff', label: 'Cutoff', min: 20, max: 20000, default: 8000, unit: 'Hz', scaling: 'log' },
     { id: 'filterResonance', label: 'Resonance', min: 0, max: 1, default: 0.3, unit: '', step: 0.01 },
     { id: 'filterEnvAmount', label: 'Env Amount', min: -1, max: 1, default: 0, unit: '', step: 0.01 },
 
@@ -61,7 +63,10 @@ const BACTERIA_PARAMS: readonly PluginParamDef[] = [
     { id: 'phaserMix', label: 'Phaser Mix', min: 0, max: 1, default: 0.5, unit: '', step: 0.01 },
 
     // Granular
-    { id: 'grainSize', label: 'Grain Size', min: 10, max: 500, default: 80, unit: 'ms', step: 1, scaling: 'log' },
+    // No `step`: `granular.rs` holds this as
+    // `self.grain_size_ms = value.clamp(1.0, 500.0)`, and a 1 ms grid at the
+    // 10 ms end of a log control is a tenth of the setting.
+    { id: 'grainSize', label: 'Grain Size', min: 10, max: 500, default: 80, unit: 'ms', scaling: 'log' },
     { id: 'grainDensity', label: 'Density', min: 1, max: 100, default: 15, unit: 'g/s', step: 1 },
     { id: 'grainPosOffset', label: 'Position', min: 0, max: 2000, default: 100, unit: 'ms', step: 1 },
     { id: 'grainPitch', label: 'Grain Pitch', min: -24, max: 24, default: 0, unit: 'st', step: 0.1 },

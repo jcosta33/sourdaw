@@ -288,6 +288,18 @@ export function applyAutomation(currentBeat: number): Set<string> {
                 // engine is already holding — read on the delivered domain. For
                 // a `float` parameter `delivered === smoothed` and
                 // `previousDelivered === prev`, so this changes nothing there.
+                //
+                // Known cost, deliberately accepted: this widens the window in
+                // which a *foreign* write to the same parameter goes
+                // un-re-asserted. The slew cannot strand a value — at α = 0.4 it
+                // clears SLEW_EPSILON within two ticks of any real movement — but
+                // `pluginParamSlew` is only dropped on a gate edge or an
+                // AutoMatch release, never on a device reload or a bypass
+                // toggle, so on a slow ramp across an index a value another
+                // writer clobbered can stay clobbered for roughly a second
+                // rather than ~10 ms. Closing that means clearing the slew on
+                // those two events, which is a scheduler-lifecycle change and
+                // not part of this one.
                 const previousDelivered = quantiseDeviceParameterValue({
                     deviceType: device.type,
                     paramId,
@@ -322,11 +334,13 @@ export function applyAutomation(currentBeat: number): Set<string> {
 
                 // The owning MIDI FX is found by key presence, but whether a
                 // curve may drive that key is the descriptor's call, exactly as
-                // it is for a device param forty lines above. No MIDI FX type
-                // carries a descriptor today, so both calls pass through
-                // untouched — which is the point: the branch is bound to the
-                // same law now instead of quietly diverging from it the day one
-                // does.
+                // it is for a device param forty lines above. Note what this
+                // gate can actually decide today: `fx.type` is a Yeast
+                // `ProcessorType` and the lookup keys on `PluginDescriptor.id`,
+                // so it resolves nothing and the permissive "no declared
+                // contract" branch is the only one reachable. It stays because
+                // it is the gate a `ProcessorType`-keyed descriptor would flow
+                // through — but it is not enforcing anything right now.
                 if (!isDeviceParameterAutomatable({ deviceType: fx.type, paramId: lane.parameterId })) {
                     break;
                 }
@@ -343,26 +357,23 @@ export function applyAutomation(currentBeat: number): Set<string> {
                     value: slewedFxValue,
                 });
                 laneSlew.set(fx.id, smoothed);
-                // Same split as the device branch forty lines above: the filter
-                // state stays continuous, the delivery is quantised. No MIDI FX
-                // type carries a descriptor today, so both calls pass through
-                // untouched — which is the point, the branch is bound to the law
-                // now instead of quietly diverging from it the day one does.
-                const deliveredFxValue = quantiseDeviceParameterValue({
-                    deviceType: fx.type,
-                    paramId: lane.parameterId,
-                    value: smoothed,
-                });
-                const previousDeliveredFxValue = quantiseDeviceParameterValue({
-                    deviceType: fx.type,
-                    paramId: lane.parameterId,
-                    value: prev,
-                });
-                if (
-                    isDiscontinuity ||
-                    (Math.abs(smoothed - prev) > SLEW_EPSILON && deliveredFxValue !== previousDeliveredFxValue)
-                ) {
-                    updateMidiFxParam(lane.trackId, fx.id, lane.parameterId, deliveredFxValue);
+                // MIDI FX parameters are delivered UNQUANTISED, and that is a
+                // statement of fact rather than a policy: `fx.type` is a Yeast
+                // `ProcessorType` ('arpeggiator', 'euclidean', …), and the
+                // quantiser keys on `PluginDescriptor.id`. The two name spaces
+                // are disjoint (asserted in Yeast's `ProcessorCatalog.spec.ts`),
+                // so `getPluginById(fx.type)` is `undefined` for every processor
+                // that exists and a quantise call here could never do anything.
+                // Writing one anyway would read as coverage this branch does not
+                // have.
+                //
+                // Some of these parameters really are stepped —
+                // `EuclideanGenerator` uses `steps`/`hits` as loop bounds and a
+                // modulus, so a slewed 12.6 builds a 12-long pattern and walks it
+                // 13 wide. Closing that needs descriptors keyed by
+                // `ProcessorType`, which is its own change; it is not closed here.
+                if (isDiscontinuity || Math.abs(smoothed - prev) > SLEW_EPSILON) {
+                    updateMidiFxParam(lane.trackId, fx.id, lane.parameterId, smoothed);
                 }
                 break;
             }

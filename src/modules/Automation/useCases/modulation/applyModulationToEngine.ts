@@ -271,19 +271,39 @@ export function applyModulationToEngine(
             const hadPrev = modulationParamSlew.has(key);
             const prev = modulationParamSlew.get(key) ?? target;
             const smoothed = hadPrev && !isDiscontinuity ? prev + (target - prev) * SLEW_ALPHA : target;
+            // The slew state stays continuous for the same reason the automation
+            // applier's does: rounding the value the filter feeds itself puts a
+            // dead zone in the recurrence (α = 0.4, `5 + 0.4·1` = 5.4 rounds
+            // straight back to 5), so a modulation that should carry the index
+            // one step would never arrive. Quantise the delivery, not the state.
             modulationParamSlew.set(key, smoothed);
+            const delivered = getModulationDependencies().quantiseValue({
+                deviceType: binding.deviceType,
+                paramId: mapping.targetParamId,
+                value: smoothed,
+            });
+            const previousDelivered = getModulationDependencies().quantiseValue({
+                deviceType: binding.deviceType,
+                paramId: mapping.targetParamId,
+                value: prev,
+            });
 
-            if (
-                !hadPrev ||
-                isDiscontinuity ||
-                Math.abs(smoothed - prev) > SLEW_EPSILON ||
-                hasCompetingAutomationWrites
-            ) {
+            // The epsilon gate reads on the delivered domain for the same reason
+            // `applyAutomation`'s does: a stepped parameter's filter keeps moving
+            // long after the delivered index has stopped changing, so the
+            // continuous gate alone re-sends an identical index every tick. The
+            // three unconditional terms are unchanged — a first tick, a
+            // transport discontinuity and a competing automation write each have
+            // to reach the engine whether or not the value moved. For a `float`
+            // parameter `delivered === smoothed`, so nothing changes there.
+            const movedPastEpsilon = Math.abs(smoothed - prev) > SLEW_EPSILON && delivered !== previousDelivered;
+
+            if (!hadPrev || isDiscontinuity || movedPastEpsilon || hasCompetingAutomationWrites) {
                 getModulationDependencies().updateDeviceParam(
                     targetOwner.trackId,
                     targetOwner.deviceId,
                     mapping.targetParamId,
-                    smoothed
+                    delivered
                 );
             }
         }

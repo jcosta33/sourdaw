@@ -43,6 +43,19 @@ export type OfflineDeviceAutomationLaw = {
     acceptsAutomation: (input: { deviceId: string; deviceType: string; parameterId: string }) => boolean;
     /** `clampDeviceParameterValue`: the declared range, applied to every write. */
     clampValue: (input: { deviceType: string; paramId: string; value: number }) => number;
+    /**
+     * `quantiseDeviceParameterValue`: the declared *type*, applied to the value
+     * that is emitted — never to the value the slew feeds itself.
+     *
+     * Live splits these two deliberately (`applyAutomation`: `slewStep` → clamp →
+     * `laneSlew.set(smoothed)` → quantise → `updateDeviceParam`). Rounding inside
+     * the recurrence would dead-zone it: at α = 0.4, `slewStep(5, 6)` is 5.4,
+     * which rounds back to 5 for ever, so a ride to index 6 stalls at 5. Offline
+     * has to make the same split, or a lane on an `int` parameter renders the
+     * filter state — 14.4, 13.44, 12.864 for a value the monitor delivers as
+     * 14, 13, 12.
+     */
+    quantiseValue: (input: { deviceType: string; paramId: string; value: number }) => number;
 };
 
 export type ScheduleTrackAutomationInput = {
@@ -218,6 +231,13 @@ export function scheduleTrackAutomation({
             }
             const clampStep = (value: number): number =>
                 deviceParameterLaw.clampValue({ deviceType: candidate.deviceType, paramId: parameterId, value });
+            // Deliberately NOT composed into `clampStep`: that function is the
+            // recurrence's feedback, and rounding there dead-zones the glide.
+            // This one runs on the emitted sample only — the offline analogue of
+            // live's `quantiseDeviceParameterValue(smoothed)` just before
+            // `updateDeviceParam`.
+            const quantiseEmit = (value: number): number =>
+                deviceParameterLaw.quantiseValue({ deviceType: candidate.deviceType, paramId: parameterId, value });
             if (binding.kind === 'segments') {
                 const segments = compileAutomationSegments(
                     points,
@@ -227,7 +247,11 @@ export function scheduleTrackAutomation({
                     sampleRate,
                     regionStartSeconds,
                     projectBeatToSeconds,
-                    { slew: { ...deviceSlewGrid, clampStep }, activeWindowSeconds, valueScale: laneScale }
+                    {
+                        slew: { ...deviceSlewGrid, clampStep, quantiseEmit },
+                        activeWindowSeconds,
+                        valueScale: laneScale,
+                    }
                 );
                 binding.apply(segments);
                 continue;
@@ -248,6 +272,14 @@ export function scheduleTrackAutomation({
                     scale === 0
                         ? undefined
                         : (scaled: number): number => clampStep((scaled - offset) / scale) * scale + offset;
+                // The type law is a law on the *device* value too, so it maps
+                // back through the same affine before rounding and forward after.
+                // Rounding in AudioParam units would snap to a grid of 1 there —
+                // for a binding with `scale: 10` that is a tenth of a bit depth.
+                const quantiseScaledEmit =
+                    scale === 0
+                        ? undefined
+                        : (scaled: number): number => quantiseEmit((scaled - offset) / scale) * scale + offset;
                 scheduleAutomationOnParam(
                     audioParam,
                     points,
@@ -258,7 +290,7 @@ export function scheduleTrackAutomation({
                     projectBeatToSeconds,
                     compensationDelaySec,
                     {
-                        slew: { ...deviceSlewGrid, clampStep: clampScaledStep },
+                        slew: { ...deviceSlewGrid, clampStep: clampScaledStep, quantiseEmit: quantiseScaledEmit },
                         activeWindowSeconds,
                         valueScale: laneScale * scale,
                         valueOffset: offset,

@@ -130,3 +130,88 @@ describe('restoreAutomationBaseValue', () => {
         expect(updateMidiFxParam).not.toHaveBeenCalled();
     });
 });
+
+/**
+ * F3: the restore is a **delivery**, so it is held to the delivery law.
+ *
+ * The stored base is not guaranteed integral even for a parameter the descriptor
+ * declares stepped: `setDeviceParameter` clamps and never rounds, and the MIDI
+ * CC route (`ControlSurface` `scaleMidiValue` → `setDeviceParameter`) scales a
+ * 0..127 controller straight across the declared span — CC 64 on
+ * `bacteria/bitDepth` (1..24) persists 12.59. A lane driving that parameter then
+ * delivers integers, and the tick the lane stops driving used to hand the
+ * worklet 12.59 back: an index no `match` arm in Rust names, arriving as an
+ * audible discontinuity exactly at the driving → not-driving edge.
+ *
+ * The stored base is deliberately left alone. Rounding it would rewrite project
+ * data, which is the boundary this whole change draws — quantise what leaves for
+ * the DSP, never what is persisted.
+ */
+describe('restoreAutomationBaseValue — stepped device parameters', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    function trackWithBacteriaParam(paramId: string, baseValue: number): RestorableTrack {
+        return {
+            gain: 0.4,
+            pan: 12,
+            devices: [{ id: 'bact-1', type: 'bacteria', parameterValues: { [paramId]: baseValue } }],
+            midiFx: [],
+        };
+    }
+
+    it('delivers the nearest legal index when the stored base is fractional', () => {
+        const track = trackWithBacteriaParam('bitDepth', 12.59);
+
+        restoreAutomationBaseValue({
+            lane: { trackId: 'track-1', parameterId: 'bact-1:bitDepth' },
+            track,
+            landTime: 7,
+        });
+
+        // 12.59 before the fix. 13 and 12 are both legal and audibly different
+        // bit depths, so this names the two values it decides between.
+        expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'bact-1', 'bitDepth', 13);
+        // And the persisted base is untouched — the restore is a delivery, not a
+        // rewrite of project truth.
+        expect(track.devices[0]!.parameterValues.bitDepth).toBe(12.59);
+    });
+
+    it('delivers a Fermenter stepped base as an integer through the runtime-only path', () => {
+        // The Fermenter arm is a separate dispatch (`applyFermenterRuntimeParam`,
+        // camelCase → snake_case), so it needs its own case. `oscEngine` defaults
+        // to 0 where rounded and raw agree; 4.6 decides between engines 4 and 5.
+        const track: RestorableTrack = {
+            gain: 0.4,
+            pan: 12,
+            devices: [{ id: 'fermenter-1', type: 'fermenter', parameterValues: { oscEngine: 4.6 } }],
+            midiFx: [],
+        };
+
+        restoreAutomationBaseValue({
+            lane: { trackId: 'track-1', parameterId: 'fermenter-1:oscEngine' },
+            track,
+            landTime: 7,
+        });
+
+        expect(applyFermenterRuntimeParam).toHaveBeenCalledWith({
+            deviceId: 'fermenter-1',
+            paramId: 'oscEngine',
+            value: 5,
+        });
+        expect(track.devices[0]!.parameterValues.oscEngine).toBe(4.6);
+    });
+
+    it('leaves a float base fractional on restore', () => {
+        // The complement: `bacteria/mix` is `float` (step 0.01), and rounding it
+        // would restore a continuous wet/dry as fully wet or fully dry.
+        restoreAutomationBaseValue({
+            lane: { trackId: 'track-1', parameterId: 'bact-1:mix' },
+            track: trackWithBacteriaParam('mix', 0.42),
+            landTime: 7,
+        });
+
+        expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'bact-1', 'mix', 0.42);
+    });
+});

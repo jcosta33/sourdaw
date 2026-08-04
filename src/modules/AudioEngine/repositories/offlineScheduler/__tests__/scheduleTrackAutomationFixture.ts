@@ -21,8 +21,10 @@ export const SHIPPING_GRAIN_SLEW_TICK_SECONDS = automationSlewTickSecondsForGrai
  * declared-range clamp — which is the whole point of the parameter. The fixtures
  * that use this helper carry no `parameterValues` and no descriptor-bearing
  * device instances, so they keep the predicate the offline path used before the
- * law arrived ("this strategy can be automated offline") and an identity clamp.
- * That preserves exactly what each of them was written to assert.
+ * law arrived ("this strategy can be automated offline"), an identity clamp and
+ * an identity quantiser. That preserves exactly what each of them was written to
+ * assert: none of them rides a parameter the registry declares stepped, so a
+ * real quantiser would round nothing and only obscure which law is under test.
  *
  * The production law is driven from its real caller in
  * `useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts` ("offline
@@ -41,6 +43,7 @@ function legacyFixtureDeviceLaw(
             return entry.strategy.resolveOfflineAutomation(parameterId) !== null;
         },
         clampValue: ({ value }) => value,
+        quantiseValue: ({ value }) => value,
     };
 }
 

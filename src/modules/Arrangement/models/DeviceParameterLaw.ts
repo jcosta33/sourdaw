@@ -86,16 +86,46 @@ export function clampDeviceParameterValue({ deviceType, paramId, value }: ClampD
  * where rounding would silently rewrite stored project data for every stepped
  * parameter — the exact failure `DeviceParameterTypes` warns about for range.
  *
+ * **What this does NOT cover.** Only the delivery path. A value that arrives by
+ * a *persistence* route is clamped and not rounded, and that includes the most
+ * common hardware route: a learned MIDI CC scales 0..127 across the declared
+ * span (`ControlSurface` `scaleMidiValue`) and calls `setDeviceParameter`, so
+ * CC 64 on `bacteria/bitDepth` stores and delivers 12.59. That is the same rule
+ * as everywhere else here — rounding on a persistence path silently rewrites
+ * project data — and it is why `restoreAutomationBaseValue` quantises: the
+ * fractional base has to be caught where it *leaves*, not where it is stored.
+ * MIDI-FX parameters are not covered either; see `applyAutomation`'s MIDI-FX
+ * branch for why that is structural rather than a gap.
+ *
  * **Why `Math.round` and not a step grid.** `step` is declared on
  * `PluginParamDef` and is consumed by the descriptor builders to *derive* the
  * type (`step === 1 ? 'int' : 'float'`); it is never copied onto
  * `DeviceParameter`, so no non-unit step survives into the write contract. The
  * params carrying `step: 0.5`, `10` or `100` are all typed `float` and are
- * deliberately continuous here — those steps are knob increments, not a legal-value
- * law. Every parameter that reaches this function as stepped declares integer
+ * deliberately continuous here — those steps are knob increments, not a
+ * legal-value law. That heuristic used to mis-classify ten logarithmic frequency
+ * and time controls that carried `step: 1` as a knob increment; they no longer
+ * declare a step at all, and `DeviceParameterLaw.spec.ts` holds the registry to
+ * "no logarithmic parameter is stepped" so the next one reds instead of shipping
+ * onto a 1 Hz grid.
+ *
+ * Every parameter that reaches this function as stepped declares integer
  * `minValue` and `maxValue` (asserted over the whole registry in
- * `DeviceParameterLaw.spec.ts`), so rounding to the nearest integer *is*
- * rounding to the nearest legal step, and it cannot leave the declared range.
+ * `DeviceParameterLaw.spec.ts`), so rounding to the nearest integer cannot leave
+ * the declared range.
+ *
+ * It does **not** follow that every integer in that range is a distinct legal
+ * setting, and three parameters are known not to satisfy it:
+ * `crust/oversampling` (declared 1..32, legal factors `{1,2,4,8,16,32}` —
+ * `crates/daw-dsp/src/crust/oversample.rs` `normalize_factor`),
+ * `gluten/oversampling` (declared 1..4, legal `{1,2,4}` —
+ * `crates/daw-dsp/src/gluten/oversample.rs` `set_rate`, whose `_ => 4` arm
+ * swallows 3), and `dutch-oven/algorithm` (declared 0..6, where 4 and 5 are
+ * documented reserved wire values that fall through to Plate). A glide across
+ * any of them is delivered an integer the engine then re-snaps itself, so the
+ * audible result is a legal setting either way; what is wrong is only the
+ * declaration. Closing it properly means declaring the legal set on the
+ * descriptor rather than special-casing it here, which is a separate change.
  */
 export function quantiseDeviceParameterValue({ deviceType, paramId, value }: ClampDeviceParameterValueInput): number {
     const descriptor = findParameterDescriptor({ deviceType, paramId });
@@ -105,9 +135,18 @@ export function quantiseDeviceParameterValue({ deviceType, paramId, value }: Cla
 
     const rounded = Math.round(value);
     if (Object.is(rounded, -0)) {
-        // `Math.round(-0.2)` is `-0`. It is a legal number and sounds identical,
-        // but it compares unequal to `0` under `Object.is`, so it would surface
-        // as a phantom change in any equality-keyed consumer downstream.
+        // `Math.round(-0.2)` is `-0`, and the input is reachable: three stepped
+        // parameters declare a negative minimum (`fermenter/oscCoarse` -24..24,
+        // `fermenter/oscFine` -100..100, `grinder/gateThreshold` -80..0), so a
+        // ride through zero produces it.
+        //
+        // Nothing downstream is broken by `-0` today — the only comparison on a
+        // delivered value is `delivered !== previousDelivered`, and `-0 !== 0`
+        // is `false`, so the repeat gate already treats the two as the same
+        // value. What this buys is that the function's output is canonical: an
+        // index is one number, so a delivered value can be compared, keyed,
+        // serialized or read in a log without `-0` and `0` presenting as two
+        // different settings for the same index.
         return 0;
     }
 
