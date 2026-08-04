@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { updateDeviceParam, updateMidiFxParam } from '#/modules/AudioEngine/useCases';
+import { applyFermenterRuntimeParam } from '#/modules/Fermenter/useCases';
 
 import { restoreAutomationBaseValue } from '../restoreAutomationBaseValue';
 
@@ -29,7 +30,7 @@ vi.mock('#/modules/Fermenter/useCases', async (importOriginal) => {
     const mod = await importOriginal<typeof import('#/modules/Fermenter/useCases')>();
     return {
         ...mod,
-        setFermenterMappedParam: vi.fn(),
+        applyFermenterRuntimeParam: vi.fn(),
     };
 });
 
@@ -72,6 +73,28 @@ describe('restoreAutomationBaseValue', () => {
         });
 
         expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'ov-1', 'mix', 0.42);
+    });
+
+    it('restores a Fermenter base through the runtime-only mapped path', () => {
+        const track: RestorableTrack = {
+            gain: 0.4,
+            pan: 12,
+            devices: [{ id: 'fermenter-1', type: 'fermenter', parameterValues: { filterCutoff: 840 } }],
+            midiFx: [],
+        };
+
+        restoreAutomationBaseValue({
+            lane: { trackId: 'track-1', parameterId: 'fermenter-1:filterCutoff' },
+            track,
+            landTime: 7,
+        });
+
+        expect(applyFermenterRuntimeParam).toHaveBeenCalledWith({
+            deviceId: 'fermenter-1',
+            paramId: 'filterCutoff',
+            value: 840,
+        });
+        expect(updateDeviceParam).not.toHaveBeenCalled();
     });
 
     it('does not restore a parameter the descriptor marks non-automatable', () => {

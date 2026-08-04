@@ -6,7 +6,7 @@ import {
     updateDeviceParam,
     updateMidiFxParam,
 } from '#/modules/AudioEngine/useCases';
-import { setFermenterMappedParam } from '#/modules/Fermenter/useCases';
+import { applyFermenterRuntimeParam } from '#/modules/Fermenter/useCases';
 import {
     getDeviceAutomationParameterId,
     resolveDeviceAutomationTargetIndex,
@@ -97,7 +97,7 @@ export function restoreAutomationBaseValue({ lane, track, landTime }: RestoreAut
             return;
         }
         if (device.type === 'fermenter') {
-            setFermenterMappedParam({ deviceId: device.id, paramId, value: baseValue });
+            applyFermenterRuntimeParam({ deviceId: device.id, paramId, value: baseValue });
             return;
         }
         updateDeviceParam(targetOwner.trackId, targetOwner.deviceId, paramId, baseValue);
