@@ -448,6 +448,43 @@ const EXPECTED_COMMANDS = [
         true
     ),
     expectedCommand(
+        'addSection',
+        'Add a named arrangement section spanning one explicit beat range.',
+        {
+            startBeat: { type: 'number', minimum: 0, description: 'Section start beat' },
+            endBeat: { type: 'number', minimum: 0, description: 'Section end beat, strictly after startBeat' },
+            name: { type: 'string', description: 'Explicit section label' },
+        },
+        ['startBeat', 'endBeat', 'name'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
+        'removeSection',
+        'Delete one existing arrangement section identified by its exact range and label.',
+        {
+            startBeat: { type: 'number', minimum: 0, description: 'Exact section start beat' },
+            endBeat: { type: 'number', minimum: 0, description: 'Exact section end beat' },
+            name: { type: 'string', description: 'Exact visible section label' },
+        },
+        ['startBeat', 'endBeat', 'name'],
+        'destructive-reversible',
+        true
+    ),
+    expectedCommand(
+        'renameSection',
+        'Rename one existing arrangement section identified by its exact range and current label.',
+        {
+            startBeat: { type: 'number', minimum: 0, description: 'Exact section start beat' },
+            endBeat: { type: 'number', minimum: 0, description: 'Exact section end beat' },
+            name: { type: 'string', description: 'Exact current section label' },
+            newName: { type: 'string', description: 'Explicit replacement section label' },
+        },
+        ['startBeat', 'endBeat', 'name', 'newName'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
         'setLoopEnabled',
         'Enable or disable the project loop.',
         { enabled: { type: 'boolean', description: 'true=enable looping, false=disable looping' } },
@@ -1178,6 +1215,37 @@ const EXPECTED_GROUNDING = [
         valueRules: [
             { argument: 'beat', kind: 'marker-beat' },
             { argument: 'name', kind: 'marker-reference' },
+        ],
+    },
+    {
+        actionType: 'addSection',
+        intentPhrases: ['add section', 'add a section', 'create section', 'create a section'],
+        targetRules: [],
+        valueRules: [
+            { argument: 'startBeat', kind: 'section-start-beat' },
+            { argument: 'endBeat', kind: 'section-end-beat' },
+            { argument: 'name', kind: 'section-name' },
+        ],
+    },
+    {
+        actionType: 'removeSection',
+        intentPhrases: ['remove section', 'remove the section', 'delete section', 'delete the section'],
+        targetRules: [],
+        valueRules: [
+            { argument: 'startBeat', kind: 'section-start-beat' },
+            { argument: 'endBeat', kind: 'section-end-beat' },
+            { argument: 'name', kind: 'section-reference' },
+        ],
+    },
+    {
+        actionType: 'renameSection',
+        intentPhrases: ['rename section', 'rename the section'],
+        targetRules: [],
+        valueRules: [
+            { argument: 'startBeat', kind: 'section-start-beat' },
+            { argument: 'endBeat', kind: 'section-end-beat' },
+            { argument: 'name', kind: 'section-reference' },
+            { argument: 'newName', kind: 'section-new-name' },
         ],
     },
     {

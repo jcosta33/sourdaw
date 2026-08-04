@@ -30,6 +30,18 @@ export function describePlannedAction({ action, context }: DescribePlannedAction
             return `Remove marker "${marker.name}" at beat ${String(marker.beat)} (${marker.id})`;
         }
     }
+    if (action.type === 'addSection') {
+        return `Add section "${action.payload.name}" from beat ${String(action.payload.startBeat)} to beat ${String(action.payload.endBeat)}`;
+    }
+    if (action.type === 'removeSection' || action.type === 'renameSection') {
+        const section = markerStore.value?.sections.find((candidate) => candidate.id === action.payload.sectionId);
+        if (section) {
+            if (action.type === 'removeSection') {
+                return `Remove section "${section.name}" from beat ${String(section.startBeat)} to beat ${String(section.endBeat)} (${section.id})`;
+            }
+            return `Rename section "${section.name}" to "${action.payload.name}" from beat ${String(section.startBeat)} to beat ${String(section.endBeat)} (${section.id})`;
+        }
+    }
     if (
         action.type === 'quantizeNotes' ||
         action.type === 'transposeNotes' ||

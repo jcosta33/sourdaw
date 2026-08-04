@@ -56,6 +56,11 @@ export type ExecutableAppActionValueRule =
     | { argument: string; kind: 'marker-name' }
     | { argument: string; kind: 'marker-reference' }
     | { argument: string; kind: 'marker-beat' }
+    | { argument: string; kind: 'section-start-beat' }
+    | { argument: string; kind: 'section-end-beat' }
+    | { argument: string; kind: 'section-name' }
+    | { argument: string; kind: 'section-reference' }
+    | { argument: string; kind: 'section-new-name' }
     | { argument: string; kind: 'enum-if-present'; values: readonly string[]; requiredInPrompt?: boolean }
     | {
           argument: string;
@@ -895,6 +900,68 @@ export const executableAppActionDescriptors = [
                 name: { type: 'string', description: 'Exact visible marker label' },
             },
             required: ['beat', 'name'],
+        },
+    },
+    {
+        actionType: 'addSection',
+        risk: 'bounded-reversible',
+        description: 'Add a named arrangement section spanning one explicit beat range.',
+        intentPhrases: ['add section', 'add a section', 'create section', 'create a section'],
+        targetRules: [],
+        valueRules: [
+            { argument: 'startBeat', kind: 'section-start-beat' },
+            { argument: 'endBeat', kind: 'section-end-beat' },
+            { argument: 'name', kind: 'section-name' },
+        ],
+        parameters: {
+            properties: {
+                startBeat: { type: 'number', minimum: 0, description: 'Section start beat' },
+                endBeat: { type: 'number', minimum: 0, description: 'Section end beat, strictly after startBeat' },
+                name: { type: 'string', description: 'Explicit section label' },
+            },
+            required: ['startBeat', 'endBeat', 'name'],
+        },
+    },
+    {
+        actionType: 'removeSection',
+        risk: 'destructive-reversible',
+        description: 'Delete one existing arrangement section identified by its exact range and label.',
+        intentPhrases: ['remove section', 'remove the section', 'delete section', 'delete the section'],
+        targetRules: [],
+        valueRules: [
+            { argument: 'startBeat', kind: 'section-start-beat' },
+            { argument: 'endBeat', kind: 'section-end-beat' },
+            { argument: 'name', kind: 'section-reference' },
+        ],
+        parameters: {
+            properties: {
+                startBeat: { type: 'number', minimum: 0, description: 'Exact section start beat' },
+                endBeat: { type: 'number', minimum: 0, description: 'Exact section end beat' },
+                name: { type: 'string', description: 'Exact visible section label' },
+            },
+            required: ['startBeat', 'endBeat', 'name'],
+        },
+    },
+    {
+        actionType: 'renameSection',
+        risk: 'bounded-reversible',
+        description: 'Rename one existing arrangement section identified by its exact range and current label.',
+        intentPhrases: ['rename section', 'rename the section'],
+        targetRules: [],
+        valueRules: [
+            { argument: 'startBeat', kind: 'section-start-beat' },
+            { argument: 'endBeat', kind: 'section-end-beat' },
+            { argument: 'name', kind: 'section-reference' },
+            { argument: 'newName', kind: 'section-new-name' },
+        ],
+        parameters: {
+            properties: {
+                startBeat: { type: 'number', minimum: 0, description: 'Exact section start beat' },
+                endBeat: { type: 'number', minimum: 0, description: 'Exact section end beat' },
+                name: { type: 'string', description: 'Exact current section label' },
+                newName: { type: 'string', description: 'Explicit replacement section label' },
+            },
+            required: ['startBeat', 'endBeat', 'name', 'newName'],
         },
     },
     {

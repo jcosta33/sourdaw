@@ -9,6 +9,7 @@ import {
     type LlmActionBridgeResult,
     type LlmActionRejection,
     type MarkerPlanningSignature,
+    type SectionPlanningSignature,
 } from '../../transformers/llmActionBridge';
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../../transformers/llmActionLimits';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
@@ -20,6 +21,7 @@ type BridgeGroundedLlmToolCallsInput = {
     calls: readonly ToolCallResult[];
     context: ProjectContext;
     markerSignatures?: readonly MarkerPlanningSignature[];
+    sectionSignatures?: readonly SectionPlanningSignature[];
     prompt: string;
 };
 
@@ -1090,6 +1092,14 @@ function hasGroundedControlValueEvidence(
         const markerName = getRemoveMarkerNameFromPrompt(promptText);
         return markerName !== null && normalizePromptText(assertedValue) === normalizePromptText(markerName);
     }
+    if (valueRule.kind === 'section-name' || valueRule.kind === 'section-reference') {
+        const sectionName = getSectionNameFromPrompt(promptText);
+        return sectionName !== null && normalizePromptText(assertedValue) === normalizePromptText(sectionName);
+    }
+    if (valueRule.kind === 'section-new-name') {
+        const sectionName = getSectionNewNameFromPrompt(promptText);
+        return sectionName !== null && normalizePromptText(assertedValue) === normalizePromptText(sectionName);
+    }
     if (valueRule.kind === 'text-after-connector') {
         return referenceRanges.some((range) => {
             const prefix = normalizePromptText(promptText.slice(0, range.start));
@@ -1547,6 +1557,89 @@ function getMarkerBeatFromPrompt(promptText: string): number | null {
     return Number.isFinite(beat) ? beat : null;
 }
 
+type SectionRange = {
+    endBeat: number;
+    endIndex: number;
+    startBeat: number;
+    startIndex: number;
+};
+
+function getSectionRangeFromPrompt(promptText: string): SectionRange | null {
+    const withoutQuotedLabels = promptText.replaceAll(/"[^"]*"|'[^']*'|“[^”]*”|‘[^’]*’/gu, (quotedLabel) =>
+        ' '.repeat(quotedLabel.length)
+    );
+    const matches = [
+        ...withoutQuotedLabels.matchAll(
+            /\bfrom\s+beat\s+([+-]?(?:\d+(?:\.\d+)?|\.\d+))\s+(?:to|through)\s+beat\s+([+-]?(?:\d+(?:\.\d+)?|\.\d+))\b/giu
+        ),
+    ];
+    const match = matches.at(0);
+    if (!match || matches.length !== 1) {
+        return null;
+    }
+    const startBeat = Number(match[1]);
+    const endBeat = Number(match[2]);
+    if (!Number.isFinite(startBeat) || !Number.isFinite(endBeat) || startBeat < 0 || endBeat <= startBeat) {
+        return null;
+    }
+    return {
+        startBeat,
+        endBeat,
+        startIndex: match.index,
+        endIndex: match.index + match[0].length,
+    };
+}
+
+function parseExplicitSectionName(value: string): string | null {
+    const trimmed = value.trim();
+    const quoted = /^(?:"([^"]+)"|'([^']+)'|“([^”]+)”|‘([^’]+)’)$/u.exec(trimmed);
+    const quotedName = quoted?.[1] ?? quoted?.[2] ?? quoted?.[3] ?? quoted?.[4];
+    if (quotedName !== undefined) {
+        return quotedName.trim() || null;
+    }
+    if (!trimmed || /\b(?:either|or)\b/iu.test(trimmed)) {
+        return null;
+    }
+    return trimmed.replace(/[,:;.?!]+$/u, '').trim() || null;
+}
+
+function getSectionNameFromPrompt(promptText: string): string | null {
+    const intent = /\b(?:add|create|remove|delete|rename)(?:\s+the|\s+a)?\s+section\b/iu.exec(promptText);
+    const range = getSectionRangeFromPrompt(promptText);
+    if (!intent || !range || range.startIndex <= intent.index + intent[0].length) {
+        return null;
+    }
+    const assertedName = promptText.slice(intent.index + intent[0].length, range.startIndex).trim();
+    const explicitLabel = /^(?:named|called)\s+(.+)$/iu.exec(assertedName);
+    if (!explicitLabel) {
+        return null;
+    }
+    const rawName = explicitLabel[1] ?? '';
+    if (/^(?:"|'|“|‘)/u.test(rawName.trim())) {
+        return parseExplicitSectionName(rawName);
+    }
+    const rationale = /\s+(?=(?:because|since|so|to|for|as|which|when|where)\b)/iu.exec(rawName);
+    return parseExplicitSectionName(rawName.slice(0, rationale?.index ?? rawName.length));
+}
+
+function getSectionNewNameFromPrompt(promptText: string): string | null {
+    if (!/\brename(?:\s+the)?\s+section\b/iu.test(promptText)) {
+        return null;
+    }
+    const range = getSectionRangeFromPrompt(promptText);
+    if (!range) {
+        return null;
+    }
+    const suffix = promptText.slice(range.endIndex);
+    const replacement = /^\s+(?:to|as)\s+(.+?)\s*$/iu.exec(suffix);
+    if (!replacement) {
+        return null;
+    }
+    const rawName = replacement[1] ?? '';
+    const rationale = /\s+(?=(?:because|since|so|for|which|when|where)\b)/iu.exec(rawName);
+    return parseExplicitSectionName(rawName.slice(0, rationale?.index ?? rawName.length));
+}
+
 function getValueMismatchReason(argument: string): string {
     return `Provider value ${argument} does not match the user request`;
 }
@@ -1946,6 +2039,12 @@ function validateGroundedValue(
             const expectedBeat = getMarkerBeatFromPrompt(actionScope.text);
             return assertedValue === expectedBeat ? null : getValueMismatchReason(valueRule.argument);
         }
+        case 'section-start-beat':
+        case 'section-end-beat': {
+            const range = getSectionRangeFromPrompt(actionScope.text);
+            const expectedBeat = valueRule.kind === 'section-start-beat' ? range?.startBeat : range?.endBeat;
+            return assertedValue === expectedBeat ? null : getValueMismatchReason(valueRule.argument);
+        }
         case 'time-signature':
             return validateTimeSignatureValue(valueRule, assertedValue, actionScope, groundedArguments, context);
         case 'string-literal':
@@ -1967,6 +2066,29 @@ function validateGroundedValue(
         }
         case 'marker-reference': {
             const expectedValue = getRemoveMarkerNameFromPrompt(actionScope.text);
+            if (
+                expectedValue === null ||
+                typeof assertedValue !== 'string' ||
+                normalizePromptText(assertedValue) !== normalizePromptText(expectedValue)
+            ) {
+                return getValueMismatchReason(valueRule.argument);
+            }
+            return null;
+        }
+        case 'section-name':
+        case 'section-reference': {
+            const expectedValue = getSectionNameFromPrompt(actionScope.text);
+            if (
+                expectedValue === null ||
+                typeof assertedValue !== 'string' ||
+                normalizePromptText(assertedValue) !== normalizePromptText(expectedValue)
+            ) {
+                return getValueMismatchReason(valueRule.argument);
+            }
+            return null;
+        }
+        case 'section-new-name': {
+            const expectedValue = getSectionNewNameFromPrompt(actionScope.text);
             if (
                 expectedValue === null ||
                 typeof assertedValue !== 'string' ||
@@ -2338,10 +2460,11 @@ export function bridgeGroundedLlmToolCalls({
     calls,
     context,
     markerSignatures = [],
+    sectionSignatures = [],
     prompt,
 }: BridgeGroundedLlmToolCallsInput): BridgeGroundedLlmToolCallsResult {
     if (calls.length > MAX_LLM_ACTIONS_PER_BATCH) {
-        return bridgeLlmToolCalls({ calls, context, markerSignatures });
+        return bridgeLlmToolCalls({ calls, context, markerSignatures, sectionSignatures });
     }
     const catalog = getExecutableAppActionGroundingCatalog();
     const promptRequestsLoopRegion = hasExplicitPromptIntent(prompt, catalog, 'setLoopRegion');
@@ -2411,7 +2534,12 @@ export function bridgeGroundedLlmToolCalls({
             };
         }
     }
-    const bridged = bridgeLlmToolCalls({ calls: groundedCalls, context: prospectiveContext, markerSignatures });
+    const bridged = bridgeLlmToolCalls({
+        calls: groundedCalls,
+        context: prospectiveContext,
+        markerSignatures,
+        sectionSignatures,
+    });
     const rejections = bridged.rejections.map((bridgeRejection) => {
         if (bridgeRejection.name === '<batch>') {
             return bridgeRejection;

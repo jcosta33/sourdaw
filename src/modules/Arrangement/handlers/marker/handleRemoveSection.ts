@@ -5,12 +5,20 @@ import { getMarkerState } from '../../useCases/timelineQueries';
 
 export const handleRemoveSection = createHandler<'removeSection'>({
     execute: (action) => {
-        removeSection(action.payload.sectionId);
+        const changed = removeSection(action.payload.sectionId);
+        if (!changed) {
+            return { status: 'no-write' };
+        }
+        return undefined;
     },
     describe: (action) => {
         const prev = getMarkerState()?.sections.find((state) => state.id === action.payload.sectionId);
+        let label = 'Remove section';
+        if (prev) {
+            label = `Remove section "${prev.name}" from beat ${String(prev.startBeat)} to beat ${String(prev.endBeat)} (${prev.id})`;
+        }
         return {
-            label: 'Remove section',
+            label,
             // Undo restores the exact section — same id, range, name, and color.
             inverseAction: prev
                 ? {
