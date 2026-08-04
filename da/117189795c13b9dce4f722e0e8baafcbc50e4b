@@ -1,0 +1,23 @@
+src/modules/Levain/useCases/autoLoadSamples.ts
+  s_ac9b259eab20ba::t_dba3ba8281861d 10-11,20-22
+src/modules/AudioEngine/engine/audioDeviceRuntimeSink.ts
+  s_ac9b259eab20ba::t_dba3ba8281861d 58-61
+src/modules/Levain/useCases/prepareOfflineLevain.ts
+  s_ac9b259eab20ba::t_dba3ba8281861d 17-18,27-33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "da117189795c13b9dce4f722e0e8baafcbc50e4b",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
