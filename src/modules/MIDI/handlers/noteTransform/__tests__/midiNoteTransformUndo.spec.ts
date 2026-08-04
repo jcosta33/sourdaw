@@ -8,8 +8,13 @@ import { type AppAction } from '#/utils/handlerContract';
 import { type MidiNote } from '../../../models/MidiNote';
 import { midiStore } from '../../../stores/midiStore';
 import { getMidiNoteTransformHandlers } from '../../../useCases/getMidiNoteTransformHandlers';
+import { handleInvertNotes } from '../handleInvertNotes';
+import { handleQuantizeNoteLengths } from '../handleQuantizeNoteLengths';
 import { handleQuantizeNotes } from '../handleQuantizeNotes';
 import { handleRestoreMidiClipNotes } from '../handleRestoreMidiClipNotes';
+import { handleRetrogradeNotes } from '../handleRetrogradeNotes';
+import { handleScaleAllVelocities } from '../handleScaleAllVelocities';
+import { handleSetAllVelocities } from '../handleSetAllVelocities';
 import { handleTransposeNotes } from '../handleTransposeNotes';
 
 const CLIP_ID = 'clip-1';
@@ -106,6 +111,80 @@ describe('MIDI note transform handlers', () => {
         expect(handleTransposeNotes.execute(action)).toEqual({ status: 'written' });
         expect(currentNotes()).toEqual(expectedPostState);
         expect(action).toEqual(providerAction);
+    });
+
+    it('gives every deterministic whole-clip transform exact snapshot undo and redo', () => {
+        const transforms = [
+            {
+                label: 'Invert notes',
+                describe: () => handleInvertNotes.describe({ type: 'invertNotes', payload: { clipId: CLIP_ID } }),
+                execute: () => handleInvertNotes.execute({ type: 'invertNotes', payload: { clipId: CLIP_ID } }),
+            },
+            {
+                label: 'Retrograde notes',
+                describe: () =>
+                    handleRetrogradeNotes.describe({ type: 'retrogradeNotes', payload: { clipId: CLIP_ID } }),
+                execute: () => handleRetrogradeNotes.execute({ type: 'retrogradeNotes', payload: { clipId: CLIP_ID } }),
+            },
+            {
+                label: 'Quantize note lengths',
+                describe: () =>
+                    handleQuantizeNoteLengths.describe({
+                        type: 'quantizeNoteLengths',
+                        payload: { clipId: CLIP_ID, gridSize: 0.25 },
+                    }),
+                execute: () =>
+                    handleQuantizeNoteLengths.execute({
+                        type: 'quantizeNoteLengths',
+                        payload: { clipId: CLIP_ID, gridSize: 0.25 },
+                    }),
+            },
+            {
+                label: 'Scale velocities ×0.5',
+                describe: () =>
+                    handleScaleAllVelocities.describe({
+                        type: 'scaleAllVelocities',
+                        payload: { clipId: CLIP_ID, factor: 0.5 },
+                    }),
+                execute: () =>
+                    handleScaleAllVelocities.execute({
+                        type: 'scaleAllVelocities',
+                        payload: { clipId: CLIP_ID, factor: 0.5 },
+                    }),
+            },
+            {
+                label: 'Set all velocities to 64',
+                describe: () =>
+                    handleSetAllVelocities.describe({
+                        type: 'setAllVelocities',
+                        payload: { clipId: CLIP_ID, velocity: 64 },
+                    }),
+                execute: () =>
+                    handleSetAllVelocities.execute({
+                        type: 'setAllVelocities',
+                        payload: { clipId: CLIP_ID, velocity: 64 },
+                    }),
+            },
+        ];
+
+        for (const transform of transforms) {
+            const before = seedNotes([note('a', 60, 0.11), note('b', 67, 0.62)]);
+            const description = transform.describe();
+            const inverse = requireRestoreAction(description.inverseAction);
+            const replay = requireRestoreAction(description.redoAction);
+
+            expect(description.label).toBe(transform.label);
+            expect(transform.execute()).toEqual({ status: 'written' });
+            const transformed = currentNotes().map((candidate) => ({ ...candidate }));
+            expect(transformed).not.toEqual(before);
+            expect(inverse.payload).toEqual({ clipId: CLIP_ID, notes: before, expectedNotes: transformed });
+            expect(replay.payload).toEqual({ clipId: CLIP_ID, notes: transformed, expectedNotes: before });
+
+            expect(handleRestoreMidiClipNotes.execute(inverse)).toEqual({ status: 'written' });
+            expect(currentNotes()).toEqual(before);
+            expect(handleRestoreMidiClipNotes.execute(replay)).toEqual({ status: 'written' });
+            expect(currentNotes()).toEqual(transformed);
+        }
     });
 
     it('rejects a stale inverse without overwriting later note edits', () => {
