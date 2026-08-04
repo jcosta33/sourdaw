@@ -7,9 +7,21 @@ import { projectTrackToLiveStrip } from '../../useCases/projectTrackToLiveStrip'
 import { publishTrackRemoved } from '../../useCases/publishTrackRemoved';
 import { removeTrack } from '../../useCases/removeTrack';
 import { removeTrackModulationReferences } from '../../useCases/removeTrackModulationReferences';
+import { isGeneratedMidiStateCurrent } from '../isGeneratedMidiStateCurrent';
 
 export const handleDiscardCreatedTrack = createHandler<'discardCreatedTrack'>({
     execute: (action) => {
+        const guard = action.payload.generatedMidiStateGuard;
+        if (
+            guard &&
+            !isGeneratedMidiStateCurrent({
+                entityId: action.payload.trackId,
+                entityType: 'track',
+                guard,
+            })
+        ) {
+            return { status: 'conflict' };
+        }
         const result = removeTrack(action.payload.trackId, {
             deferRuntimeEffects: true,
             suppressRemovedEvent: true,

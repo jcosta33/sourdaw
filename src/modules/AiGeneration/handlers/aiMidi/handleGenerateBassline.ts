@@ -11,6 +11,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { createMidiGenerationSourceGuard } from './createMidiGenerationSourceGuard';
 import { hasDurableMidiGenerationResult } from './hasDurableMidiGenerationResult';
 import { llmGenerateNotes } from './llmNoteHelpers';
+import { populateGeneratedMidiStateGuard } from './populateGeneratedMidiStateGuard';
 
 type GenerateBasslineAction = Extract<AppAction, { type: 'generateBassline' }>;
 type MidiGenerationSource = NonNullable<ReturnType<typeof createMidiGenerationSourceGuard>>;
@@ -30,8 +31,14 @@ type GenerateBasslineState = {
     materialized: boolean;
     targetTrackId: string;
     targetClipId: string;
-    trackInverse: { trackId: string };
-    clipInverse: { clipId: string };
+    trackInverse: {
+        trackId: string;
+        generatedMidiStateGuard: { entityJson: string; midiByClipIdJson: string };
+    };
+    clipInverse: {
+        clipId: string;
+        generatedMidiStateGuard: { entityJson: string; midiByClipIdJson: string };
+    };
     generatedClip: GeneratedClipSnapshot | null;
 };
 
@@ -54,8 +61,14 @@ function ensureGenerateBasslineState(
         materialized: false,
         targetTrackId,
         targetClipId,
-        trackInverse: { trackId: targetTrackId },
-        clipInverse: { clipId: targetClipId },
+        trackInverse: {
+            trackId: targetTrackId,
+            generatedMidiStateGuard: { entityJson: '', midiByClipIdJson: '' },
+        },
+        clipInverse: {
+            clipId: targetClipId,
+            generatedMidiStateGuard: { entityJson: '', midiByClipIdJson: '' },
+        },
         generatedClip: null,
     };
     generateBasslineStates.set(action, state);
@@ -133,7 +146,10 @@ export const handleGenerateBassline = createHandler<'generateBassline'>({
             }
             const currentState = getTrackStoreState();
             const currentTargetTrack = currentState?.tracks.find((track) => track.id === state.targetTrackId);
-            if (currentTargetTrack?.clips.some((clip) => clip.id === state.targetClipId)) {
+            const targetClipIdCollision =
+                currentState?.tracks.some((track) => track.clips.some((clip) => clip.id === state.targetClipId)) ??
+                true;
+            if (targetClipIdCollision) {
                 return { status: 'conflict' };
             }
             if (alpha.payload.trackId) {
@@ -152,6 +168,7 @@ export const handleGenerateBassline = createHandler<'generateBassline'>({
                         id: state.targetTrackId,
                         name: `Bass (${style})`,
                         kind: 'midi',
+                        select: false,
                     });
                     targetTrack = trackCreation?.track ?? null;
                 }
@@ -205,6 +222,7 @@ export const handleGenerateBassline = createHandler<'generateBassline'>({
                     id: state.targetTrackId,
                     name: `Bass (${style})`,
                     kind: 'midi',
+                    select: false,
                 });
                 targetTrack = trackCreation?.track ?? null;
             }
@@ -261,6 +279,25 @@ export const handleGenerateBassline = createHandler<'generateBassline'>({
             type: completedClip.type,
         };
         state.resultNotes.splice(0, state.resultNotes.length, ...writtenNotes.map((note) => ({ ...note })));
+        if (alpha.payload.trackId) {
+            populateGeneratedMidiStateGuard({
+                guard: state.clipInverse.generatedMidiStateGuard,
+                entity: completedClip,
+                clipIds: [completedClip.id],
+            });
+        } else {
+            const currentGeneratedTrack = getTrackStoreState()?.tracks.find((track) => track.id === completedTrack.id);
+            let fallbackTrack = completedTrack;
+            if (!completedTrack.clips.some((clip) => clip.id === completedClip.id)) {
+                fallbackTrack = { ...completedTrack, clips: [...completedTrack.clips, completedClip] };
+            }
+            const guardedTrack = currentGeneratedTrack ?? fallbackTrack;
+            populateGeneratedMidiStateGuard({
+                guard: state.trackInverse.generatedMidiStateGuard,
+                entity: guardedTrack,
+                clipIds: [completedClip.id],
+            });
+        }
         state.materialized = true;
 
         return createWrittenResult({ style, state, trackCreation: writeResult.trackCreation });

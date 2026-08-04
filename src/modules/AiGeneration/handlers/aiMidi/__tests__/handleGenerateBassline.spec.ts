@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { handleGenerateBassline } from '../handleGenerateBassline';
 
-type TestTrackInput = { id?: string; name: string; kind: string };
+type TestTrackInput = { id?: string; name: string; kind: string; select?: boolean };
 type TestTrack = { id: string; name: string; kind: string; clips: unknown[] };
 type TestTrackCreation = {
     track: TestTrack;
@@ -49,6 +49,7 @@ const mocks = vi.hoisted(() => {
         getTrackStoreState: vi.fn(),
         afterTrackCommit: vi.fn(),
         afterTrackAmbiguousCommit: vi.fn(),
+        serializeMidiStateForClips: vi.fn(),
     };
 });
 
@@ -73,6 +74,7 @@ vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
     getNotesForClip: mocks.getNotesForClip,
     addMidiNote: mocks.addMidiNote,
     setNotesForClip: mocks.setNotesForClip,
+    serializeMidiStateForClips: mocks.serializeMidiStateForClips,
 }));
 
 vi.mock('#/modules/AiRuntime/useCases', async (importOriginal) => ({
@@ -99,6 +101,30 @@ function createTrackCreation(track: TestTrack): TestTrackCreation {
 describe('handleGenerateBassline', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.serializeMidiStateForClips.mockImplementation((clipIds: readonly string[]) =>
+            JSON.stringify(
+                Object.fromEntries(
+                    clipIds.map((clipId) => [
+                        clipId,
+                        {
+                            notes: mocks.addMidiNote.mock.calls
+                                .filter(([writtenClipId]) => writtenClipId === clipId)
+                                .map(([, pitch, startBeat, duration, velocity]) => ({
+                                    id: `written-${clipId}`,
+                                    pitch,
+                                    startBeat,
+                                    duration,
+                                    velocity,
+                                    probability: 100,
+                                })),
+                            cc: [],
+                            pitchBends: [],
+                            migrated: false,
+                        },
+                    ])
+                )
+            )
+        );
         mocks.getNotesForClip.mockReturnValue([]);
         mocks.addTrack.mockReturnValue(null);
         mocks.addClip.mockReturnValue(null);
@@ -131,9 +157,9 @@ describe('handleGenerateBassline', () => {
         });
 
         const addTrackInput = mocks.addTrack.mock.calls[0]?.[0];
-        expect(addTrackInput).toMatchObject({ name: 'Bass (root-fifth)', kind: 'midi' });
+        expect(addTrackInput).toMatchObject({ name: 'Bass (root-fifth)', kind: 'midi', select: false });
         expect(addTrackInput?.id).toMatch(/^track-ai-/);
-        expect(mocks.getTrackStoreState).toHaveBeenCalledTimes(2);
+        expect(mocks.getTrackStoreState).toHaveBeenCalledTimes(3);
 
         // A new clip is created on the new track (t2), mirroring the source clip's span.
         expect(mocks.addClip).toHaveBeenCalledWith(
@@ -424,6 +450,7 @@ describe('handleGenerateBassline', () => {
         }
         expect(secondTrackId).toBe(firstTrackId);
         expect(secondClipId).toBe(firstClipId);
+        expect(mocks.addTrack.mock.calls.map(([input]) => input.select)).toEqual([false, false]);
         expect(mocks.setNotesForClip).toHaveBeenCalledWith(firstClipId, [
             {
                 id: `written-${String(firstClipId)}`,
@@ -436,8 +463,89 @@ describe('handleGenerateBassline', () => {
         ]);
         expect(description.inverseAction).toEqual({
             type: 'discardCreatedTrack',
-            payload: { trackId: firstTrackId },
+            payload: {
+                trackId: firstTrackId,
+                generatedMidiStateGuard: {
+                    entityJson: JSON.stringify({
+                        id: firstTrackId,
+                        name: 'Bass (root-fifth)',
+                        kind: 'midi',
+                        clips: [
+                            {
+                                id: firstClipId,
+                                startBeat: 4,
+                                endBeat: 8,
+                                name: 'Bassline (root-fifth)',
+                                type: 'midi',
+                            },
+                        ],
+                    }),
+                    midiByClipIdJson: JSON.stringify({
+                        [firstClipId]: {
+                            notes: [
+                                {
+                                    id: `written-${String(firstClipId)}`,
+                                    pitch: 36,
+                                    startBeat: 0,
+                                    duration: 1,
+                                    velocity: 80,
+                                    probability: 100,
+                                },
+                            ],
+                            cc: [],
+                            pitchBends: [],
+                            migrated: false,
+                        },
+                    }),
+                },
+            },
         });
+    });
+
+    it('rejects replay when the generated clip id was reused on another track', async () => {
+        mocks.addTrack.mockImplementation((input) => {
+            if (!input.id) {
+                throw new Error('Expected stable track id');
+            }
+            return createTrackCreation({ id: input.id, name: input.name, kind: input.kind, clips: [] });
+        });
+        mocks.addClip.mockImplementation((input) => {
+            if (!input.id) {
+                throw new Error('Expected stable clip id');
+            }
+            return {
+                id: input.id,
+                startBeat: input.startBeat,
+                endBeat: input.endBeat,
+                name: input.name,
+                type: 'midi',
+            };
+        });
+        mocks.llmGenerateNotes.mockResolvedValue([{ pitch: 36, startBeat: 0, duration: 1, velocity: 80 }]);
+        const action = { type: 'generateBassline' as const, payload: { clipId: 'c1' } };
+
+        await handleGenerateBassline.execute(action);
+        const generatedClipId = mocks.addClip.mock.calls[0]?.[0].id;
+        if (!generatedClipId) {
+            throw new Error('Expected generated clip id');
+        }
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                { id: 't1', kind: 'midi', clips: [{ id: 'c1', startBeat: 4, endBeat: 8, name: 'Lead', type: 'midi' }] },
+                {
+                    id: 'foreign-track',
+                    kind: 'midi',
+                    clips: [{ id: generatedClipId, startBeat: 0, endBeat: 4, name: 'Foreign', type: 'midi' }],
+                },
+            ],
+        });
+
+        const replay = await handleGenerateBassline.execute(action);
+
+        expect(replay).toEqual({ status: 'conflict' });
+        expect(mocks.llmGenerateNotes).toHaveBeenCalledTimes(1);
+        expect(mocks.addTrack).toHaveBeenCalledTimes(1);
+        expect(mocks.addClip).toHaveBeenCalledTimes(1);
     });
 
     it('is marked as undoable', () => {

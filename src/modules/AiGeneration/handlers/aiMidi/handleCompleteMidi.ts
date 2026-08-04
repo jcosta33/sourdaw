@@ -10,6 +10,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { createMidiGenerationSourceGuard } from './createMidiGenerationSourceGuard';
 import { hasDurableMidiGenerationResult } from './hasDurableMidiGenerationResult';
 import { llmGenerateNotes } from './llmNoteHelpers';
+import { populateGeneratedMidiStateGuard } from './populateGeneratedMidiStateGuard';
 
 type CompleteMidiAction = Extract<AppAction, { type: 'completeMidi' }>;
 type MidiGenerationSource = NonNullable<ReturnType<typeof createMidiGenerationSourceGuard>>;
@@ -22,7 +23,10 @@ type CompleteMidiState = {
     resultNotes: MidiClipNoteSnapshot[];
     materialized: boolean;
     generatedClipId: string;
-    generatedClipInverse: { clipId: string };
+    generatedClipInverse: {
+        clipId: string;
+        generatedMidiStateGuard: { entityJson: string; midiByClipIdJson: string };
+    };
     generatedClip: {
         id: string;
         name: string;
@@ -48,7 +52,10 @@ function ensureCompleteMidiState(action: CompleteMidiAction, source: MidiGenerat
         resultNotes: [],
         materialized: false,
         generatedClipId,
-        generatedClipInverse: { clipId: generatedClipId },
+        generatedClipInverse: {
+            clipId: generatedClipId,
+            generatedMidiStateGuard: { entityJson: '', midiByClipIdJson: '' },
+        },
         generatedClip: null,
     };
     completeMidiStates.set(action, state);
@@ -271,6 +278,11 @@ export const handleCompleteMidi = createHandler<'completeMidi'>({
             };
             const committedGeneratedClip = state.generatedClip;
             state.resultNotes.splice(0, state.resultNotes.length, ...writtenNotes.map((note) => ({ ...note })));
+            populateGeneratedMidiStateGuard({
+                guard: state.generatedClipInverse.generatedMidiStateGuard,
+                entity: completedClip,
+                clipIds: [completedClip.id],
+            });
             state.materialized = true;
 
             return createWrittenResult({

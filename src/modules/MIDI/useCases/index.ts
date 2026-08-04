@@ -35,6 +35,7 @@ export { formatChordName } from './formatChordName';
 
 // ── State Accessors ───────────────────────────────────────────────────────────
 export { getMidiStoreState } from './getMidiStoreState';
+export { serializeMidiStateForClips } from './serializeMidiStateForClips';
 export { mergeImportedMidiClipNotes } from './mergeImportedMidiClipNotes';
 export { setMidiStoreState } from './setMidiStoreState';
 export { hydrateMidiProjectState } from './hydrateMidiProjectState';
