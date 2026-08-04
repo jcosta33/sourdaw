@@ -1,0 +1,89 @@
+src/modules/Preferences/models/Preferences.ts
+  s_ac9b259eab20ba::t_f7d3b3dcde32dc 2,9,36-39,41-42
+  s_ac9b259eab20ba::t_754a79ffda0d21 1,3-6,10
+  s_ac9b259eab20ba::t_03a670a0845f07 95
+  s_ac9b259eab20ba::t_ffdb37cc3e14b2 46,66
+  s_ac9b259eab20ba::t_0f64f758f1d81d 11
+src/modules/Preferences/presentations/views/preferences/PerformanceSection.tsx
+  s_ac9b259eab20ba::t_cef4e3b5585a7a 20,24,26-27,36-37,57-59
+  s_ac9b259eab20ba::t_03a670a0845f07 1,11,25,28-34,38-40,42-45,47,53-56
+  s_ac9b259eab20ba::t_ffdb37cc3e14b2 9
+  s_ac9b259eab20ba::t_f7d3b3dcde32dc 10,21-23
+src/modules/Preferences/models/__tests__/Preferences.spec.ts
+  s_ac9b259eab20ba::t_0611d7291ce1f6 4,43-44,49,51
+src/modules/Preferences/presentations/views/preferences/__tests__/PerformanceSection.spec.tsx
+  s_ac9b259eab20ba::t_2197d31aa79523 19
+  s_ac9b259eab20ba::t_26984a5c9cc746 8,16,18,20-21,24,30-32,34
+  s_ac9b259eab20ba::t_d4b8280196d0ea 11,27,37,39,41-43,45
+  s_ac9b259eab20ba::t_cb8c119a5c17fa 25
+src/modules/Preferences/stores/__tests__/preferencesStore.spec.ts
+  s_ac9b259eab20ba::t_0611d7291ce1f6 97,101-104,112,136,146
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngineDelegation.spec.ts
+  s_ac9b259eab20ba::t_a2fb1339725d85 313-317,320
+  s_ac9b259eab20ba::t_deb5fe1a592279 318-319
+src/infra/audioContext/__tests__/audioLatencyProfile.spec.ts
+  s_ac9b259eab20ba::t_ffdb37cc3e14b2 1,3,5-29,38-41
+  s_ac9b259eab20ba::t_0c4f4d4aa028dd 2,4,30-37
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_ac9b259eab20ba::t_deb5fe1a592279 294-295,320-326,329-331
+  s_ac9b259eab20ba::t_ffdb37cc3e14b2 1-6,327
+  s_ac9b259eab20ba::t_b39488130f2cca 332-333
+  s_8e1f1269a320e2::t_6c2e008f4cdfe9 499-500
+tests/e2e/myceliumPerformanceEvidence.ts
+  s_ac9b259eab20ba::t_f96395d533aa45 112-118,354-363,378-379,386-387,408-414
+  s_ac9b259eab20ba::t_e13ed764372bef 2,331-333
+  s_ac9b259eab20ba::t_ffdb37cc3e14b2 89,111,224,241,259,351-353,407
+  s_ac9b259eab20ba::t_bae9a8077305b8 325-330,334-342
+  s_ac9b259eab20ba::t_a3a1b2e4a877d3 364-375
+  s_ac9b259eab20ba::t_a6c5e1e9fe6c4e 376-377,380-385,388-390
+src/infra/audioContext/audioLatencyProfile.ts
+  s_ac9b259eab20ba::t_ffdb37cc3e14b2 1-2,4,7-9,11-21,33-35
+  s_ac9b259eab20ba::t_0c4f4d4aa028dd 22-32
+  s_ac9b259eab20ba::t_f7d3b3dcde32dc 3,5-6,10
+src/modules/Preferences/stores/preferencesStore.ts
+  s_ac9b259eab20ba::t_ffdb37cc3e14b2 7,23,61
+  s_ac9b259eab20ba::t_546ae3fae7d235 91-94
+  s_ac9b259eab20ba::t_03a670a0845f07 89-90,95,112-114
+tests/e2e/playwright.mycelium.performance.config.cjs
+  s_ac9b259eab20ba::t_f96395d533aa45 22,58-59
+  s_ac9b259eab20ba::t_ffdb37cc3e14b2 18-21,39
+src/modules/Preferences/stores/__tests__/validateStoredPreferences.spec.ts
+  s_ac9b259eab20ba::t_03a670a0845f07 253-271
+  s_ac9b259eab20ba::t_0611d7291ce1f6 21-22,24,31,36,49,57,59,239,242,285,309
+tests/e2e/e2eUtils.ts
+  s_ac9b259eab20ba::t_bae9a8077305b8 14-17,23-25,32-39
+  s_ac9b259eab20ba::t_00f351e8ba7bd6 40-42
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngine.spec.ts
+  s_ac9b259eab20ba::t_0c4f4d4aa028dd 182,962-965,967
+  s_ac9b259eab20ba::t_26984a5c9cc746 953-961,966,968-975,977-979
+  s_ac9b259eab20ba::t_2197d31aa79523 854-861
+  s_ac9b259eab20ba::t_ffdb37cc3e14b2 976
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useStatusBarMetrics.spec.ts
+  s_ac9b259eab20ba::t_5a6e0be52a6048 62-69
+src/modules/AudioEngine/models/AudioEngineState.ts
+  s_ac9b259eab20ba::t_deb5fe1a592279 102-103
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "5be936b0e057e09f4a4191b2b749fccb0f8f6696",
+  "prompts": {},
+  "sessions": {
+    "s_8e1f1269a320e2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fca41-4fa0-7a23-b423-04c4a4c7416f",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
