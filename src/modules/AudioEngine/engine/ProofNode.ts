@@ -115,7 +115,6 @@ export async function createProofNode(
         throw error;
     }
 
-    let bypassed = false;
     let meterCallback: ((data: ProofMeterData) => void) | null = null;
     let latencyCallback: ((latency: number) => void) | null = null;
     let sabSlot = telemetryAllocator.allocateSlot();
@@ -153,13 +152,28 @@ export async function createProofNode(
 
     return {
         workletNode: node,
+        /**
+         * Forwarded regardless of bypass state — bypass is a signal-path
+         * decision, not a parameter gate.
+         *
+         * This used to be guarded by `!bypassed`, and `setBypass` performed no
+         * replay, so a value changed while Proof was bypassed never reached the
+         * worklet at all: the UI and the document showed the new number and the
+         * DSP kept the old one for the rest of the session. Automation writing
+         * into a bypassed Proof was dropped the same way, and that case has no
+         * un-bypass event to replay on, which is why forwarding is the fix
+         * rather than a replay.
+         *
+         * `TrackNode.updateParam` forwards writes without consulting bypass and
+         * `updateBypass` routes the device out without rebuilding the node, so
+         * this is also what every other device in `engine/` already does.
+         */
         setParam(name: string, value: number) {
-            if (!bypassed && Number.isFinite(value)) {
+            if (Number.isFinite(value)) {
                 node.port.postMessage({ type: 'param', name, value });
             }
         },
         setBypass(state: boolean) {
-            bypassed = state;
             node.port.postMessage({ type: 'param', name: 'bypass', value: state ? 1 : 0 });
         },
         reorderModules(order: [number, number, number, number, number]) {

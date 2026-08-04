@@ -136,7 +136,10 @@ describe('createProofNode', () => {
         expect(initCall).toEqual([{ type: 'init' }]);
     });
 
-    it('posts finite params, drops non-finite values, and gates params while bypassed', async () => {
+    // The bypass half of this case previously asserted that a write made while
+    // bypassed produced *no* post — it pinned the defect AC-8 removes, and it
+    // is updated here rather than deleted. The non-finite half is unchanged.
+    it('posts finite params, drops non-finite values, and keeps posting while bypassed', async () => {
         const node = await createProofNode(makeContext());
         const { port } = lastWorklet();
         port.postMessage.mockClear();
@@ -151,6 +154,7 @@ describe('createProofNode', () => {
         expect(paramPosts(port)).toEqual([
             { type: 'param', name: 'lim_ceiling', value: -0.3 },
             { type: 'param', name: 'bypass', value: 1 },
+            { type: 'param', name: 'lim_ceiling', value: -1 },
         ]);
 
         node.setBypass(false);
@@ -331,5 +335,71 @@ describe('createProofNode', () => {
         // The 16 ms poll is gone — no further frames arrive.
         vi.advanceTimersByTime(64);
         expect(frames).toHaveLength(1);
+    });
+
+    // ── SPEC-offline-live-collapse AC-8 ───────────────────────────────────
+    //
+    // `setParam` used to be guarded by `if (!bypassed && …)`, and `setBypass`
+    // only flipped the flag — there was no replay on un-bypass. Meanwhile
+    // `TrackNode.updateParam` forwards writes regardless of bypass state and
+    // `updateBypass` routes the device out without rebuilding the node, so a
+    // parameter changed while Proof was bypassed was lost for the whole
+    // session: the UI and the document showed the new value and the worklet
+    // kept the old one.
+    //
+    // **This changes the monitor, not the export.** The offline node is built
+    // fresh from `parameterValues`, so the bounce was already correct and
+    // playback was the wrong leg. The fix moves live onto offline.
+    //
+    // ProofNode was the only device in `engine/` that gated writes this way —
+    // Gluten, Bacteria, Crust, Grinder and the rest all forward on
+    // `Number.isFinite(value)` alone. Bypass is a signal-path decision, not a
+    // parameter gate.
+    describe('parameter writes while bypassed', () => {
+        it('forwards a parameter write that arrives while the device is bypassed', async () => {
+            const node = await createProofNode(makeContext());
+            const worklet = lastWorklet();
+            worklet.port.postMessage.mockClear();
+
+            node.setBypass(true);
+            node.setParam('limiter_ceiling', -0.3);
+
+            expect(paramPosts(worklet.port)).toContainEqual({
+                type: 'param',
+                name: 'limiter_ceiling',
+                value: -0.3,
+            });
+        });
+
+        it('runs the value written under bypass once the device is un-bypassed', async () => {
+            const node = await createProofNode(makeContext());
+            const worklet = lastWorklet();
+
+            node.setBypass(true);
+            node.setParam('limiter_ceiling', -0.3);
+            worklet.port.postMessage.mockClear();
+            node.setBypass(false);
+
+            // Un-bypass posts the bypass flag and nothing else: the ceiling is
+            // already in the worklet because the write was forwarded when it
+            // happened. A replay-on-un-bypass implementation would also pass
+            // the assertion above, so this pins which of the two shipped —
+            // and forwarding is the one that also fixes automation writing
+            // into a bypassed Proof, which no un-bypass event ever follows.
+            expect(paramPosts(worklet.port)).toEqual([{ type: 'param', name: 'bypass', value: 0 }]);
+        });
+
+        it('still refuses a non-finite value, bypassed or not', async () => {
+            const node = await createProofNode(makeContext());
+            const worklet = lastWorklet();
+            worklet.port.postMessage.mockClear();
+
+            node.setBypass(true);
+            node.setParam('limiter_ceiling', Number.NaN);
+            node.setBypass(false);
+            node.setParam('limiter_ceiling', Number.POSITIVE_INFINITY);
+
+            expect(paramPosts(worklet.port).filter((message) => message.name === 'limiter_ceiling')).toEqual([]);
+        });
     });
 });
