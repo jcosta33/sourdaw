@@ -30,8 +30,9 @@ describe('removeMarker', () => {
             markers: [{ id: 'm1' }, { id: 'm2' }],
         };
 
-        removeMarker('m1');
+        const removed = removeMarker('m1');
 
+        expect(removed).toBe(true);
         expect(mocks.markerStoreSet).toHaveBeenCalledWith({
             markers: [{ id: 'm2' }],
         });
@@ -40,8 +41,18 @@ describe('removeMarker', () => {
     it('is a no-op when the marker store has not loaded', () => {
         mocks.markerStoreValue.value = null;
 
-        removeMarker('m1');
+        const removed = removeMarker('m1');
 
+        expect(removed).toBe(false);
+        expect(mocks.markerStoreSet).not.toHaveBeenCalled();
+    });
+
+    it('is a no-op when the marker does not exist', () => {
+        mocks.markerStoreValue.value = { markers: [{ id: 'm1' }] };
+
+        const removed = removeMarker('missing');
+
+        expect(removed).toBe(false);
         expect(mocks.markerStoreSet).not.toHaveBeenCalled();
     });
 });

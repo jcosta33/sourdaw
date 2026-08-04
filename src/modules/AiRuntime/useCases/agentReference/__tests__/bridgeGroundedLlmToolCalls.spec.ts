@@ -74,7 +74,7 @@ function bridge(
     calls: Parameters<typeof bridgeGroundedLlmToolCalls>[0]['calls'],
     prompt: string,
     context = projectContext,
-    markerSignatures: readonly { beat: number; name: string }[] = []
+    markerSignatures: readonly { markerId?: string; beat: number; name: string }[] = []
 ) {
     return bridgeGroundedLlmToolCalls({ calls, prompt, context, markerSignatures });
 }
@@ -209,6 +209,15 @@ describe('addMarker grounding', () => {
         expect(rationale.actions).toEqual([{ type: 'addMarker', payload: { beat: 16, name: 'Chorus' } }]);
     });
 
+    it('ignores beat-like text inside a quoted marker label', () => {
+        const result = bridge(
+            [{ name: 'addMarker', arguments: { beat: 16, name: 'Verse at Beat 2' } }],
+            'add marker called "Verse at Beat 2" at beat 16'
+        );
+
+        expect(result.actions).toEqual([{ type: 'addMarker', payload: { beat: 16, name: 'Verse at Beat 2' } }]);
+    });
+
     it.each([
         'add a marker named Chorus so I remember at beat 16',
         'add a marker named Chorus so I can find it at beat 16',
@@ -291,6 +300,107 @@ describe('addMarker grounding', () => {
                 reason: 'Requested marker already exists at that beat',
             },
         ]);
+    });
+});
+
+describe('removeMarker grounding', () => {
+    const markerSignatures = [{ markerId: 'marker-chorus', beat: 16, name: 'Chorus' }];
+
+    it('grounds an exact visible label and beat to a local marker identity', () => {
+        const result = bridge(
+            [{ name: 'removeMarker', arguments: { beat: 16, name: 'Chorus' } }],
+            'delete marker Chorus at beat 16',
+            projectContext,
+            markerSignatures
+        );
+
+        expect(result.actions).toEqual([{ type: 'removeMarker', payload: { markerId: 'marker-chorus' } }]);
+    });
+
+    it('grounds an optional label cue and a quoted complex label', () => {
+        const named = bridge(
+            [{ name: 'removeMarker', arguments: { beat: 16, name: 'Chorus' } }],
+            'remove marker named Chorus at beat 16',
+            projectContext,
+            markerSignatures
+        );
+        const quoted = bridge(
+            [{ name: 'removeMarker', arguments: { beat: 32, name: 'Verse at Night' } }],
+            'delete marker "Verse at Night" at beat 32',
+            projectContext,
+            [{ markerId: 'marker-night', beat: 32, name: 'Verse at Night' }]
+        );
+
+        expect(named.actions).toEqual([{ type: 'removeMarker', payload: { markerId: 'marker-chorus' } }]);
+        expect(quoted.actions).toEqual([{ type: 'removeMarker', payload: { markerId: 'marker-night' } }]);
+    });
+
+    it('requires and grounds a beat clause after a quoted label', () => {
+        const grounded = bridge(
+            [{ name: 'removeMarker', arguments: { beat: 16, name: 'Verse at Beat 2' } }],
+            'delete marker "Verse at Beat 2" at beat 16',
+            projectContext,
+            [{ markerId: 'marker-quoted', beat: 16, name: 'Verse at Beat 2' }]
+        );
+        const missingExternalBeat = bridge(
+            [{ name: 'removeMarker', arguments: { beat: 16, name: 'Verse at beat 16' } }],
+            'delete marker "Verse at beat 16"',
+            projectContext,
+            [{ markerId: 'marker-missing-beat', beat: 16, name: 'Verse at beat 16' }]
+        );
+
+        expect(grounded.actions).toEqual([{ type: 'removeMarker', payload: { markerId: 'marker-quoted' } }]);
+        expect(missingExternalBeat.actions).toEqual([]);
+    });
+
+    it('rejects truncated and ambiguous visible labels', () => {
+        const truncated = bridge(
+            [{ name: 'removeMarker', arguments: { beat: 16, name: 'Verse' } }],
+            'delete marker Verse 2 at beat 16',
+            projectContext,
+            [{ markerId: 'marker-verse', beat: 16, name: 'Verse' }]
+        );
+        const ambiguous = bridge(
+            [{ name: 'removeMarker', arguments: { beat: 16, name: 'Verse' } }],
+            'delete marker Chorus or Verse at beat 16',
+            projectContext,
+            [
+                { markerId: 'marker-chorus', beat: 16, name: 'Chorus' },
+                { markerId: 'marker-verse', beat: 16, name: 'Verse' },
+            ]
+        );
+
+        expect(truncated.actions).toEqual([]);
+        expect(ambiguous.actions).toEqual([]);
+    });
+
+    it('rejects invented values, missing local state, and ambiguous local identities', () => {
+        const rejected = [
+            bridge(
+                [{ name: 'removeMarker', arguments: { beat: 8, name: 'Chorus' } }],
+                'delete marker Chorus at beat 16',
+                projectContext,
+                markerSignatures
+            ),
+            bridge(
+                [{ name: 'removeMarker', arguments: { beat: 16, name: 'Verse' } }],
+                'delete marker Chorus at beat 16',
+                projectContext,
+                markerSignatures
+            ),
+            bridge(
+                [{ name: 'removeMarker', arguments: { beat: 16, name: 'Chorus' } }],
+                'delete marker Chorus at beat 16'
+            ),
+            bridge(
+                [{ name: 'removeMarker', arguments: { beat: 16, name: 'Chorus' } }],
+                'delete marker Chorus at beat 16',
+                projectContext,
+                [...markerSignatures, { markerId: 'marker-duplicate', beat: 16, name: 'Chorus' }]
+            ),
+        ];
+
+        expect(rejected.every((result) => result.actions.length === 0)).toBe(true);
     });
 });
 

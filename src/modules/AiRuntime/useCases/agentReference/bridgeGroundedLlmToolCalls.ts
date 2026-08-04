@@ -1086,6 +1086,10 @@ function hasGroundedControlValueEvidence(
         const markerName = getMarkerNameFromPrompt(promptText);
         return markerName !== null && normalizePromptText(assertedValue) === normalizePromptText(markerName);
     }
+    if (valueRule.kind === 'marker-reference') {
+        const markerName = getRemoveMarkerNameFromPrompt(promptText);
+        return markerName !== null && normalizePromptText(assertedValue) === normalizePromptText(markerName);
+    }
     if (valueRule.kind === 'text-after-connector') {
         return referenceRanges.some((range) => {
             const prefix = normalizePromptText(promptText.slice(0, range.start));
@@ -1497,6 +1501,52 @@ function getMarkerNameFromPrompt(promptText: string): string | null {
     return unquotedName || null;
 }
 
+function getRemoveMarkerNameFromPrompt(promptText: string): string | null {
+    const intent = /\b(?:remove|delete)(?:\s+the)?\s+marker\b/iu.exec(promptText);
+    if (!intent) {
+        return null;
+    }
+
+    let tail = promptText.slice(intent.index + intent[0].length).trim();
+    tail = tail.replace(/^(?:named|called)\b/iu, '').trim();
+    const quoted = /^(?:"([^"]+)"|'([^']+)'|“([^”]+)”|‘([^’]+)’)/u.exec(tail);
+    const quotedName = quoted?.[1] ?? quoted?.[2] ?? quoted?.[3] ?? quoted?.[4] ?? null;
+    if (quoted && quotedName !== null) {
+        const afterQuotedLabel = tail.slice(quoted[0].length);
+        if (!/^\s+(?:at|on)\s+beat\b/iu.test(afterQuotedLabel)) {
+            return null;
+        }
+        return quotedName.trim() || null;
+    }
+
+    const beatClause = /\s+(?=(?:at|on)\s+beat\b)/iu.exec(tail);
+    if (!beatClause) {
+        return null;
+    }
+    const rationale = /\s+(?=(?:because\b|since\b|so\b|to\b|for\b|as\b|which\b|when\b|where\b))/iu.exec(tail);
+    const nameEnd = Math.min(beatClause.index, rationale?.index ?? beatClause.index);
+    const unquotedName = tail
+        .slice(0, nameEnd)
+        .replace(/[,:;.?!]+$/u, '')
+        .trim();
+    if (/\b(?:either|or)\b/iu.test(unquotedName)) {
+        return null;
+    }
+    return unquotedName || null;
+}
+
+function getMarkerBeatFromPrompt(promptText: string): number | null {
+    const withoutQuotedLabels = promptText.replaceAll(/"[^"]*"|'[^']*'|“[^”]*”|‘[^’]*’/gu, (quotedLabel) =>
+        ' '.repeat(quotedLabel.length)
+    );
+    const matches = [...withoutQuotedLabels.matchAll(/\b(?:at|on)\s+beat\s+([+-]?(?:\d+(?:\.\d+)?|\.\d+))\b/giu)];
+    if (matches.length !== 1) {
+        return null;
+    }
+    const beat = Number(matches[0]?.[1]);
+    return Number.isFinite(beat) ? beat : null;
+}
+
 function getValueMismatchReason(argument: string): string {
     return `Provider value ${argument} does not match the user request`;
 }
@@ -1892,6 +1942,10 @@ function validateGroundedValue(
             return validateBooleanIntentValue(valueRule, assertedValue, actionScope);
         case 'number-if-present':
             return validateNumberValue(valueRule, assertedValue, actionScope, groundedArguments, context);
+        case 'marker-beat': {
+            const expectedBeat = getMarkerBeatFromPrompt(actionScope.text);
+            return assertedValue === expectedBeat ? null : getValueMismatchReason(valueRule.argument);
+        }
         case 'time-signature':
             return validateTimeSignatureValue(valueRule, assertedValue, actionScope, groundedArguments, context);
         case 'string-literal':
@@ -1902,6 +1956,17 @@ function validateGroundedValue(
             return validateTextAfterKeywordValue(valueRule, assertedValue, actionScope);
         case 'marker-name': {
             const expectedValue = getMarkerNameFromPrompt(actionScope.text);
+            if (
+                expectedValue === null ||
+                typeof assertedValue !== 'string' ||
+                normalizePromptText(assertedValue) !== normalizePromptText(expectedValue)
+            ) {
+                return getValueMismatchReason(valueRule.argument);
+            }
+            return null;
+        }
+        case 'marker-reference': {
+            const expectedValue = getRemoveMarkerNameFromPrompt(actionScope.text);
             if (
                 expectedValue === null ||
                 typeof assertedValue !== 'string' ||

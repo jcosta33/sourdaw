@@ -124,6 +124,7 @@ export const parsePromptToActions = inject({ logger })(
                 const toolCalls = planningOutcome.toolCalls;
                 const markerSignatures = (markerStore.value?.markers ?? []).map((marker) => ({
                     beat: marker.beat,
+                    markerId: marker.id,
                     name: marker.name,
                 }));
                 const bridged = bridgeGroundedLlmToolCalls({ calls: toolCalls, context, markerSignatures, prompt });

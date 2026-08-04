@@ -1,4 +1,18 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const mocks = vi.hoisted(() => ({
+    markerStoreValue: {
+        value: null as { markers: { id: string; beat: number; name: string }[] } | null,
+    },
+}));
+
+vi.mock('#/modules/Arrangement/stores', () => ({
+    markerStore: {
+        get value() {
+            return mocks.markerStoreValue.value;
+        },
+    },
+}));
 
 import { type ProjectContext } from '../../models/ProjectContext';
 import { describePlannedAction } from '../describePlannedAction';
@@ -50,6 +64,10 @@ const context: ProjectContext = {
 };
 
 describe('describePlannedAction', () => {
+    beforeEach(() => {
+        mocks.markerStoreValue.value = null;
+    });
+
     it('names a resolved removal target and falls back when the target is unavailable', () => {
         expect(
             describePlannedAction({
@@ -78,6 +96,25 @@ describe('describePlannedAction', () => {
                 context,
             })
         ).toBe('Remove clip');
+    });
+
+    it('names the exact local marker removal target and falls back when it is unavailable', () => {
+        mocks.markerStoreValue.value = {
+            markers: [{ id: 'marker-chorus', beat: 16, name: 'Chorus' }],
+        };
+
+        expect(
+            describePlannedAction({
+                action: { type: 'removeMarker', payload: { markerId: 'marker-chorus' } },
+                context,
+            })
+        ).toBe('Remove marker "Chorus" at beat 16 (marker-chorus)');
+        expect(
+            describePlannedAction({
+                action: { type: 'removeMarker', payload: { markerId: 'missing' } },
+                context,
+            })
+        ).toBe('Remove marker');
     });
 
     it('names the exact MIDI clip, stable ID, and transform value for confirmation', () => {
