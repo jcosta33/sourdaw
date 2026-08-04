@@ -1,14 +1,16 @@
 # Mycelium Ascendant — render and score conformance sheet
 
-Score/stereo evidence captured: 2026-07-26 17:28 CEST; routed-mix evidence captured: 2026-07-26 18:03 CEST
+Historical score/stereo evidence captured: 2026-07-26 17:28 CEST; routed-mix evidence captured: 2026-07-26 18:03 CEST
 Project fingerprint: `1cea829dfa15f1e3ac94e611606cc3ef2ac3c4a2bccdfe1cc5707412565ffd9c`
 Stereo artifact: `52b0b2203c0fdcdd549721e5a0d98510d48b47a683344d36b6fb3571b25a616b`
 
+> Historical only: the canonical score has since changed. These measurements must not be used as current acceptance evidence; fresh user audition and render capture remain pending.
+
 Reviewer/method: Codex automated render, score, cue, and stem conformance; no loudspeaker/headphone subjective-listening claim is made. A decoded complete stereo export was attached only to the local Playwright run, not persisted on PR #837 because GitHub Actions did not start under the repository billing restriction. The mix is active for 96.68% of measured blocks and ends at 03:58.994 before its two-second export tail.
 
-**AC-001 / AC-006 / AC-016 status: partial / unsupported for subjective audition.** The machine-verifiable score, render, cue, automation, and stem requirements pass; timestamped human listening remains outstanding.
+**Historical AC-001 / AC-006 / AC-016 result:** the captured blueprint passed its machine-verifiable score, render, cue, automation, and stem requirements. Current machine acceptance and timestamped human listening are pending a fresh capture of the reconstructed score.
 
-## Eight-section machine conformance
+## Historical eight-section machine conformance
 
 | Section                 |   Beats | Time                | Clips | Notes | Active note tracks | Render/score checkpoint                                                                                                                                                                                  | Result |
 | ----------------------- | ------: | ------------------- | ----: | ----: | -----------------: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
@@ -21,7 +23,7 @@ Reviewer/method: Codex automated render, score, cue, and stem conformance; no lo
 | Drop II — Fractal Bloom | 416–544 | 02:53.150–03:45.753 |    29 | 1,277 |                 29 | 124 kicks, 372 rolling-bass notes, all 16 drum-pad roles, displaced/transformed leads, organic punctuations, false floor and return strike form the densest section.                                     | Pass   |
 | Dissolution             | 544–576 | 03:45.753–03:58.994 |    11 |   129 |                 11 | Rhythm and bass reduce to 15 events per remaining role while drone, granular, mist, Main Vision, Levain and Grand Boule signals carry the fade. Eleven stems measure audible.                            | Pass   |
 
-## Named cue machine conformance
+## Historical named cue machine conformance
 
 | Cue           | Beat | Time      | Evidence checkpoint                                                                                                                                           | Result   |
 | ------------- | ---: | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |

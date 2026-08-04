@@ -1,17 +1,19 @@
 # Mycelium Ascendant — originality review
 
-Review captured: 2026-07-26 17:28 CEST
+Historical review captured: 2026-07-26 17:28 CEST
 Project fingerprint: `1cea829dfa15f1e3ac94e611606cc3ef2ac3c4a2bccdfe1cc5707412565ffd9c`
 Stereo artifact: `52b0b2203c0fdcdd549721e5a0d98510d48b47a683344d36b6fb3571b25a616b`
 Review basis: decoded 24-bit/44.1 kHz stereo export metrics and hash, normalized MIDI-note and motif-event reports, automation report, and five 44.1 kHz stereo stem windows. The WAV was attached only to the local Playwright result and is not a persistent PR artifact.
+
+> Historical only: the canonical score has since changed. Current originality and listening acceptance require review of a fresh user render.
 
 ## Scope and verdict
 
 The track uses Astrix, Infected Mushroom, and Shpongle only as high-level genre references: psychedelic trance pacing, rolling low-end, organic/electronic contrast, spatial effects, and large-form tension/release. Repository inspection establishes that the deterministic project imports no reference recording, external sample, audio buffer, or attributed catalog asset; all sound is generated from Sourdaw instruments, devices, MIDI, routing, and automation. The score documents purpose-built melodic, harmonic, rhythmic, timbral, and arrangement material, but repository evidence cannot establish catalog-wide non-infringement.
 
-Verdict: the specification's source/asset originality boundary passes. Subjective originality listening remains unsupported, and no external music-catalog fingerprint comparison was performed.
+Historical verdict: the captured blueprint passed the specification's source/asset originality boundary. Current subjective originality listening remains pending, and no external music-catalog fingerprint comparison was performed.
 
-## Timestamped encoded creative-intent conformance
+## Historical timestamped encoded creative-intent conformance
 
 | Time                | Section                 | Original musical identity and transformation evidence                                                                                                                                                  | Result |
 | ------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ |

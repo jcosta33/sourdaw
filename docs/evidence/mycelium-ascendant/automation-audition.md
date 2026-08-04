@@ -1,14 +1,16 @@
 # Mycelium Ascendant — automation render-conformance sheet
 
-Stem evidence captured: 2026-07-26 17:23 CEST; routed-mix evidence captured: 2026-07-26 18:03 CEST
+Historical stem evidence captured: 2026-07-26 17:23 CEST; routed-mix evidence captured: 2026-07-26 18:03 CEST
 Project fingerprint: `1cea829dfa15f1e3ac94e611606cc3ef2ac3c4a2bccdfe1cc5707412565ffd9c`
 Renderer fingerprint: `d640394cb3899a812bfbdcbcb2af2ff8a81b94dc90d7c76e2fbda8175f5c8103` (`public/audio/worklets`, `public/wasm`, and `src`)
 
+> Historical only: the canonical score has since changed. Fresh user audition and render capture are required before these measurements can support current acceptance.
+
 After launching and reloading the saved demo, each required window was rendered through the app's real offline stem exporter at 44.1 kHz, stereo, with all 22 eligible track/bus stems. The false floor is additionally checked through a continuous, fully routed mix render against its return strike. Signal metrics are in `automation-stem-evidence.json`; the mastered stereo result is in `render-evidence.json`. Stem peaks are intentionally pre-master and are not delivery-level assertions.
 
-**AC-016 status: partial / unsupported for subjective audition.** Automation topology and routed render behavior are machine-verified; timestamped human listening remains outstanding.
+**Historical AC-016 result:** automation topology and routed render behavior passed for the captured blueprint. Current render verification and timestamped human listening are pending fresh capture.
 
-## Timestamped render-conformance results
+## Historical timestamped render-conformance results
 
 | Window                            | Time                | Automation evidence                                                                                                                                                                                                                                                                 | Stem evidence                                                                                                                                                                         | Result   |
 | --------------------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |

@@ -85,7 +85,12 @@ describe('createMyceliumRhythmPerformance', () => {
         expect(ids.every((id) => UUID_PATTERN.test(id))).toBe(true);
         expect(new Set(ids).size).toBe(ids.length);
         expect(active?.tracks?.tracks).toBe(first.arrangement.tracks);
-        expect(active?.midi).toBe(first.midi);
+        expect(active?.midi).toEqual({
+            notesByClipId: first.midi.notesByClipId,
+            ccByClipId: first.midi.ccByClipId,
+            pitchBendByClipId: first.midi.pitchBendByClipId,
+        });
+        expect(active?.midi).not.toHaveProperty('probabilitySeed');
         expect(first).toEqual(second);
         expect(JSON.parse(JSON.stringify(first))).toEqual(first);
         expect(isHydratableProjectData(first)).toBe(true);
@@ -126,8 +131,7 @@ describe('createMyceliumRhythmPerformance', () => {
         const rolling = getNotes(projectData, ['Rolling Colony']);
         const dropKickBeats = [
             ...Array.from({ length: 96 }, (_, index) => 192 + index),
-            ...Array.from({ length: 64 }, (_, index) => 416 + index),
-            ...Array.from({ length: 60 }, (_, index) => 484 + index),
+            ...Array.from({ length: 128 }, (_, index) => 416 + index),
         ];
 
         expect([...inRange(kick, 192, 288), ...inRange(kick, 416, 544)].map((note) => note.absoluteBeat)).toEqual(
@@ -144,17 +148,21 @@ describe('createMyceliumRhythmPerformance', () => {
         expect(new Set(rolling.map((note) => note.duration)).size).toBeGreaterThan(2);
         expect(getNotes(projectData, BASS_NAMES).every((note) => note.absoluteBeat % 1 >= 0.25)).toBe(true);
         expect(PAD_NAMES.every((name) => inRange(getNotes(projectData, [name]), 416, 544).length > 0)).toBe(true);
-        expect(overlaps(getNotes(projectData, [...PAD_NAMES, ...BASS_NAMES]), 480, 484)).toEqual([]);
+        expect(overlaps(getNotes(projectData, [...PAD_NAMES, ...BASS_NAMES]), 480, 484).length).toBeGreaterThan(0);
     });
 
     it('uses real 7/8 bars and section-cadenced tom, rim, shaker, and clap fills', () => {
         const projectData = createMyceliumAscendantBlueprint().projectData;
         const kickAndRolling = getNotes(projectData, ['Kick', 'Rolling Colony']);
         const shaker = inRange(getNotes(projectData, ['Shaker']), 288, 316);
+        const underlyingSub = inRange(getNotes(projectData, ['Sub Mycelium']), 288, 316);
         const fillNames = ['Low Tom', 'Mid Tom', 'Hi Tom', 'Rim', 'Shaker', 'Clap'];
         const fills = getNotes(projectData, fillNames);
 
         expect(inRange(kickAndRolling, 288, 316)).toEqual([]);
+        expect(underlyingSub.map((note) => note.absoluteBeat)).toEqual(
+            Array.from({ length: 7 }, (_, index) => 288.25 + index * 4)
+        );
         expect(shaker.map((note) => note.absoluteBeat)).toEqual(
             Array.from({ length: 56 }, (_, index) => 288 + index * 0.5)
         );
@@ -162,7 +170,7 @@ describe('createMyceliumRhythmPerformance', () => {
         for (const startBeat of [192, 224, 256]) {
             expect(inRange(fills, startBeat + 28, startBeat + 32).length).toBeGreaterThan(0);
         }
-        for (const startBeat of [416, 432, 448, 464, 484, 500, 516, 528]) {
+        for (const startBeat of [416, 432, 448, 464, 480, 496, 512, 528]) {
             expect(inRange(fills, Math.max(startBeat + 12, startBeat), startBeat + 16).length).toBeGreaterThan(0);
         }
         expect(new Set(fills.map((note) => note.trackName))).toEqual(new Set(fillNames));
@@ -173,6 +181,8 @@ describe('createMyceliumRhythmPerformance', () => {
         const buildBass = inRange(getNotes(projectData, BASS_NAMES), 352, 415.75);
         const rolls = getNotes(projectData, ['Hi Tom']);
         const allRhythm = getNotes(projectData, [...PAD_NAMES, ...BASS_NAMES]);
+        const lateDrums = inRange(getNotes(projectData, PAD_NAMES), 560, 576);
+        const lateBass = inRange(getNotes(projectData, BASS_NAMES), 560, 576);
         const rollCounts = [
             inRange(rolls, 352, 384).length,
             inRange(rolls, 384, 400).length,
@@ -186,5 +196,7 @@ describe('createMyceliumRhythmPerformance', () => {
         expect(peelCounts[0]).toBeGreaterThan(peelCounts[1]!);
         expect(peelCounts[1]).toBeGreaterThan(peelCounts[2]!);
         expect(peelCounts[2]).toBeGreaterThan(peelCounts[3]!);
+        expect(lateDrums.length).toBeGreaterThan(0);
+        expect(lateBass.length).toBeGreaterThan(0);
     });
 });

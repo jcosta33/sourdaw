@@ -1,5 +1,6 @@
 {
     "capturedAt": "2026-07-26T16:05:20.547Z",
+    "evidenceStatus": "historical-stale",
     "projectSha256": "1cea829dfa15f1e3ac94e611606cc3ef2ac3c4a2bccdfe1cc5707412565ffd9c",
     "scope": "Strict-allowlist Playwright simulation of the Tauri v2 webview runtime contract (__TAURI_INTERNALS__ present, legacy __TAURI__ absent); this is not a native-shell/WebDriver run.",
     "acceptanceStatus": "partial",
