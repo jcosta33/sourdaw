@@ -605,6 +605,25 @@ export type AppAction =
     | { type: 'glueClips'; payload: { clipIds: string[] } }
     | { type: 'nudgeClip'; payload: { clipId: string; beats: number } }
     | { type: 'crossfadeClips'; payload: { clipAId: string; clipBId: string; durationBeats: number } }
+    | {
+          type: 'restoreCrossfadeClips';
+          payload: {
+              clipAId: string;
+              clipBId: string;
+              expected: {
+                  clipAEndBeat: number;
+                  clipAFadeOutBeats: number;
+                  clipBStartBeat: number;
+                  clipBFadeInBeats: number;
+              };
+              replacement: {
+                  clipAEndBeat: number;
+                  clipAFadeOutBeats: number;
+                  clipBStartBeat: number;
+                  clipBFadeInBeats: number;
+              };
+          };
+      }
     | { type: 'setClipGain'; payload: { clipId: string; gain: number } }
     | { type: 'setClipColor'; payload: { clipId: string; color: string; expectedColor?: string } }
     | { type: 'lockClip'; payload: { clipId: string; locked: boolean; expectedLocked?: boolean } }
