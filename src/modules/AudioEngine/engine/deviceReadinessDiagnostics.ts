@@ -81,6 +81,7 @@ function isPending(status: DeviceReadinessStatus): boolean {
 
 class DeviceReadinessDiagnosticsCollector {
     private nextTokenId = 0;
+    private generation = 0;
     private requested = 0;
     private nodeReady = 0;
     private graphReady = 0;
@@ -96,6 +97,7 @@ class DeviceReadinessDiagnosticsCollector {
     private readonly terminalOrder = new Set<string>();
 
     reset(): void {
+        this.generation++;
         this.requested = 0;
         this.nodeReady = 0;
         this.graphReady = 0;
@@ -247,6 +249,7 @@ class DeviceReadinessDiagnosticsCollector {
 
     snapshot(): AudioEngineDeviceReadinessDiagnostics {
         return {
+            generation: this.generation,
             counts: {
                 requested: this.requested,
                 nodeReady: this.nodeReady,
