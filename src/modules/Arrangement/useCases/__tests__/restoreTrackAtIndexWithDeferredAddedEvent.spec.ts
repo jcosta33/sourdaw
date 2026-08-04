@@ -82,4 +82,46 @@ describe('restoreTrackAtIndexWithDeferredAddedEvent', () => {
         expect(mocks.setTrackState).not.toHaveBeenCalled();
         expect(mocks.publishTrackAdded).not.toHaveBeenCalled();
     });
+
+    it('rejects device and ghost-clip identity collisions before writing', () => {
+        const generatedTrack = createTrack({ id: 'generated-track', name: 'Bass', kind: 'midi' });
+        generatedTrack.devices[0]!.id = 'stable-device';
+        generatedTrack.clips = [
+            {
+                id: 'generated-clip',
+                trackId: generatedTrack.id,
+                name: 'Bassline',
+                startBeat: 0,
+                endBeat: 4,
+                type: 'midi',
+                fadeInBeats: 0,
+                fadeOutBeats: 0,
+                gain: 1,
+                color: '',
+                locked: false,
+                muted: false,
+            },
+        ];
+        const trackJson = JSON.stringify(generatedTrack);
+        const foreignTrack = createTrack({ id: 'foreign-track', name: 'Foreign', kind: 'midi' });
+        foreignTrack.devices[0]!.id = 'stable-device';
+        mocks.getTrackState.mockReturnValue({
+            tracks: [foreignTrack],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+
+        expect(restoreTrackAtIndexWithDeferredAddedEvent({ trackJson, trackIndex: 1 })).toBeNull();
+
+        foreignTrack.devices[0]!.id = 'foreign-device';
+        mocks.getTrackState.mockReturnValue({
+            tracks: [foreignTrack],
+            selectedTrackId: null,
+            ghostClips: [{ ...generatedTrack.clips[0]!, trackId: foreignTrack.id }],
+        });
+
+        expect(restoreTrackAtIndexWithDeferredAddedEvent({ trackJson, trackIndex: 1 })).toBeNull();
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+        expect(mocks.publishTrackAdded).not.toHaveBeenCalled();
+    });
 });
