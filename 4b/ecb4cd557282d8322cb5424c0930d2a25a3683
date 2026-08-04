@@ -1,0 +1,19 @@
+src/modules/Transport/models/__tests__/TimeSignatureMapBranches.spec.ts
+  s_ac9b259eab20ba::t_c40c3c69a34aba 1-118
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "4becb4cd557282d8322cb5424c0930d2a25a3683",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
