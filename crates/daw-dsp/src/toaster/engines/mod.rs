@@ -31,7 +31,7 @@ use cymbal::CymbalEngine;
 use fm_perc::FmPercEngine;
 use hihat::HiHatEngine;
 use hihat_808::HiHat808Engine;
-use hihat_909::HiHat909Engine;
+use hihat_909::{HiHat909Buffer, HiHat909Engine};
 use kick::KickEngine;
 use kick_808::Kick808Engine;
 use kick_909::Kick909Engine;
@@ -45,6 +45,7 @@ use tom_808::{Tom808Engine, TomVariant};
 
 /// Which synthesis algorithm a pad uses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
 pub enum DrumEngineType {
     // Existing generic engines (unchanged)
     Kick,
@@ -77,6 +78,45 @@ pub enum DrumEngineType {
     Maracas808,
     Cr78Drum,
     Cr78Metallic,
+}
+
+impl DrumEngineType {
+    pub const COUNT: usize = 29;
+    pub const ALL: [Self; Self::COUNT] = [
+        Self::Kick,
+        Self::Snare,
+        Self::HiHat,
+        Self::Clap,
+        Self::Perc,
+        Self::Tom,
+        Self::Cymbal,
+        Self::Modal,
+        Self::FmPerc,
+        Self::Cowbell,
+        Self::Clave,
+        Self::Shaker,
+        Self::Rim,
+        Self::Kick808,
+        Self::Kick909,
+        Self::Snare808,
+        Self::HiHat808,
+        Self::HiHat909,
+        Self::Clap808,
+        Self::Clap909,
+        Self::Tom808Low,
+        Self::Tom808Mid,
+        Self::Tom808High,
+        Self::Cowbell808,
+        Self::Clave808,
+        Self::Rimshot808,
+        Self::Maracas808,
+        Self::Cr78Drum,
+        Self::Cr78Metallic,
+    ];
+
+    pub const fn index(self) -> usize {
+        self as usize
+    }
 }
 
 impl Default for DrumEngineType {
@@ -118,6 +158,18 @@ pub enum DrumSynthEngine {
     Maracas808(Perc808Engine),
     Cr78Drum(Cr78Engine),
     Cr78Metallic(Cr78Engine),
+}
+
+pub struct DrumEngineResources {
+    hihat_909_buffer: HiHat909Buffer,
+}
+
+impl DrumEngineResources {
+    pub fn new() -> Self {
+        Self {
+            hihat_909_buffer: HiHat909Engine::generate_buffer(),
+        }
+    }
 }
 
 impl DrumSynthEngine {
@@ -191,6 +243,21 @@ impl DrumSynthEngine {
         }
     }
 
+    pub fn new_with_resources(
+        engine_type: DrumEngineType,
+        sample_rate: f32,
+        resources: &DrumEngineResources,
+    ) -> Self {
+        if engine_type == DrumEngineType::HiHat909 {
+            return Self::HiHat909(HiHat909Engine::with_buffer(
+                sample_rate,
+                resources.hihat_909_buffer.clone(),
+            ));
+        }
+
+        Self::new(engine_type, sample_rate)
+    }
+
     pub fn trigger(&mut self, velocity: f32, sample_rate: f32) {
         match self {
             Self::Kick(e) => e.trigger(velocity, sample_rate),
@@ -222,6 +289,17 @@ impl DrumSynthEngine {
             Self::Maracas808(e) => e.trigger(velocity, sample_rate),
             Self::Cr78Drum(e) => e.trigger(velocity, sample_rate),
             Self::Cr78Metallic(e) => e.trigger(velocity, sample_rate),
+        }
+    }
+
+    pub fn reset_base_freq(&mut self) {
+        match self {
+            Self::Perc(engine)
+            | Self::Cowbell(engine)
+            | Self::Clave(engine)
+            | Self::Shaker(engine)
+            | Self::Rim(engine) => engine.reset_base_freq(),
+            _ => {}
         }
     }
 
