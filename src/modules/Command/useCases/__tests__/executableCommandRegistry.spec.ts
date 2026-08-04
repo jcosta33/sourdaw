@@ -394,6 +394,14 @@ const EXPECTED_COMMANDS = [
         true
     ),
     expectedCommand(
+        'stopPlayback',
+        'Stop playback and return the playhead to the start.',
+        {},
+        [],
+        'authority-sensitive',
+        true
+    ),
+    expectedCommand(
         'setLoopEnabled',
         'Enable or disable the project loop.',
         { enabled: { type: 'boolean', description: 'true=enable looping, false=disable looping' } },
@@ -1064,6 +1072,12 @@ const EXPECTED_GROUNDING = [
                 falsePhrases: ['pause', 'pause playback'],
             },
         ],
+    },
+    {
+        actionType: 'stopPlayback',
+        intentPhrases: ['stop', 'stop playback', 'halt', 'halt playback'],
+        targetRules: [],
+        valueRules: [],
     },
     {
         actionType: 'setLoopEnabled',

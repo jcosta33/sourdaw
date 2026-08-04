@@ -791,6 +791,14 @@ export const executableAppActionDescriptors = [
         },
     },
     {
+        actionType: 'stopPlayback',
+        risk: 'authority-sensitive',
+        description: 'Stop playback and return the playhead to the start.',
+        intentPhrases: ['stop', 'stop playback', 'halt', 'halt playback'],
+        targetRules: [],
+        parameters: { properties: {}, required: [] },
+    },
+    {
         actionType: 'setLoopEnabled',
         risk: 'bounded-reversible',
         description: 'Enable or disable the project loop.',

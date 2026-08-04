@@ -11,6 +11,7 @@ describe('transportTools', () => {
             properties: { playing: { type: 'boolean' } },
             required: ['playing'],
         });
+        expect(names).toContain('stopPlayback');
         expect(names).not.toContain('togglePlayback');
         expect(names).not.toContain('toggleRecording');
     });

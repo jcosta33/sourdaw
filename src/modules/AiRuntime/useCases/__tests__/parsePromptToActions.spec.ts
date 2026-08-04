@@ -207,6 +207,23 @@ describe('parsePromptToActions', () => {
         expect(result.executionMode).toBe('atomic');
     });
 
+    it('proposes an explicit provider stop command even when visible playback is already stopped', async () => {
+        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
+            '../agentReference/bridgeGroundedLlmToolCalls'
+        );
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        vi.mocked(generateToolCalls).mockResolvedValue(completePlan([{ name: 'stopPlayback', arguments: {} }]));
+
+        const result = await parsePromptToActions('please stop the transport', {
+            ...baseContext,
+            isPlaying: false,
+        });
+
+        expect(result.actions).toEqual([{ type: 'stopPlayback' }]);
+        expect(result.requiresConfirmation).toBe(true);
+        expect(result.executionMode).toBe('atomic');
+    });
+
     it('proposes a grounded whole-clip MIDI transform as one confirmable atomic action', async () => {
         const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
             '../agentReference/bridgeGroundedLlmToolCalls'

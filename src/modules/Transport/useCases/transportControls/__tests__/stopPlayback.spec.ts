@@ -60,7 +60,7 @@ describe('stopPlayback', () => {
         });
         vi.mocked(updateTransportState).mockImplementation(update);
 
-        stopPlayback();
+        void stopPlayback();
 
         expect(stopPlayheadScheduler).toHaveBeenCalled();
         expect(yeastPanic).toHaveBeenCalledWith(48000);
@@ -68,7 +68,7 @@ describe('stopPlayback', () => {
         expect(playheadPositionRef.current).toBe(0);
     });
 
-    it('should finalise active recording before halting the transport', () => {
+    it('should begin recording teardown before Yeast and engine teardown', () => {
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,
             isPlaying: true,
@@ -79,32 +79,48 @@ describe('stopPlayback', () => {
             order.push('stopActiveRecording');
             return Promise.resolve();
         });
+        vi.mocked(yeastPanic).mockImplementation(() => {
+            order.push('yeastPanic');
+            return Promise.resolve();
+        });
         vi.mocked(stopPlayheadScheduler).mockImplementation(() => {
             order.push('stopPlayheadScheduler');
         });
 
-        stopPlayback();
+        void stopPlayback();
 
         expect(stopActiveRecording).toHaveBeenCalledTimes(1);
-        expect(order).toEqual(['stopActiveRecording', 'stopPlayheadScheduler']);
+        expect(order).toEqual(['stopActiveRecording', 'yeastPanic', 'stopPlayheadScheduler']);
     });
 
-    it('waits for recorder teardown even when transport is no longer recording', async () => {
+    it('waits for both recorder and Yeast teardown after applying Stop synchronously', async () => {
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,
             isPlaying: true,
             isRecording: false,
         });
         let finishRecordingStop: (() => void) | undefined;
+        let finishYeastStop: (() => void) | undefined;
         vi.mocked(stopActiveRecording).mockReturnValueOnce(
             new Promise<void>((resolve) => {
                 finishRecordingStop = resolve;
+            })
+        );
+        vi.mocked(yeastPanic).mockReturnValueOnce(
+            new Promise<void>((resolve) => {
+                finishYeastStop = resolve;
             })
         );
         let settled = false;
 
         const stopping = stopPlayback().then(() => {
             settled = true;
+            return undefined;
+        });
+        expect(updateTransportState).toHaveBeenCalledWith({
+            isPlaying: false,
+            isRecording: false,
+            playheadPosition: 0,
         });
         await Promise.resolve();
 
@@ -115,8 +131,34 @@ describe('stopPlayback', () => {
             throw new Error('Expected recorder teardown to be pending');
         }
         finish();
+        await Promise.resolve();
+        expect(settled).toBe(false);
+        const finishYeast = finishYeastStop;
+        if (!finishYeast) {
+            throw new Error('Expected Yeast teardown to be pending');
+        }
+        finishYeast();
         await stopping;
         expect(settled).toBe(true);
+    });
+
+    it('rejects teardown completion without rolling back the synchronously applied Stop', async () => {
+        const failure = new Error('recording flush failed');
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: true,
+            playheadPosition: 5,
+        });
+        vi.mocked(stopActiveRecording).mockRejectedValueOnce(failure);
+
+        const stopping = stopPlayback();
+
+        expect(updateTransportState).toHaveBeenCalledWith({
+            isPlaying: false,
+            isRecording: false,
+            playheadPosition: 0,
+        });
+        await expect(stopping).rejects.toBe(failure);
     });
 
     it('should jump playhead to loop start when a loop is defined', () => {
@@ -130,7 +172,7 @@ describe('stopPlayback', () => {
         });
         vi.mocked(updateTransportState).mockImplementation(update);
 
-        stopPlayback();
+        void stopPlayback();
 
         expect(update).toHaveBeenCalledWith({ isPlaying: false, isRecording: false, playheadPosition: 4 });
         expect(playheadPositionRef.current).toBe(4);
@@ -165,7 +207,7 @@ describe('stopPlayback', () => {
         });
         vi.mocked(updateTransportState).mockImplementation(update);
 
-        stopPlayback();
+        void stopPlayback();
 
         expect(update).toHaveBeenCalledWith({ isPlaying: false, isRecording: false, playheadPosition: 0 });
         expect(playheadPositionRef.current).toBe(0);
@@ -183,7 +225,7 @@ describe('stopPlayback', () => {
         });
         vi.mocked(updateTransportState).mockImplementation(update);
 
-        stopPlayback();
+        void stopPlayback();
 
         expect(update).toHaveBeenCalledWith({ isPlaying: false, isRecording: false, playheadPosition: 4 });
     });

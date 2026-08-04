@@ -110,32 +110,19 @@ async function executeRuntimeAction(
         }
 
         const actions = [{ action: prepared.action, label: prepared.label }];
-        if (!result?.afterCommit) {
+        if (!result?.afterRuntimeExecution) {
             return { status: 'executed', actions };
         }
 
         try {
-            await result.afterCommit();
+            await result.afterRuntimeExecution();
             return { status: 'executed', actions };
         } catch (effectError) {
-            const deferredResult: { afterAmbiguousCommit?: HandlerAfterCommit } = result;
-            if (!deferredResult.afterAmbiguousCommit) {
-                return {
-                    status: 'executed-with-warning',
-                    actions,
-                    warning: `${prepared.action.type} follow-up effect failed: ${failureReason(effectError)}`,
-                };
-            }
-            try {
-                await deferredResult.afterAmbiguousCommit();
-                return { status: 'executed', actions };
-            } catch (reconciliationError) {
-                return {
-                    status: 'executed-with-warning',
-                    actions,
-                    warning: `${prepared.action.type} follow-up effect failed: ${failureReason(effectError)}; runtime reconciliation failed: ${failureReason(reconciliationError)}`,
-                };
-            }
+            return {
+                status: 'executed-with-warning',
+                actions,
+                warning: `${prepared.action.type} follow-up effect failed: ${failureReason(effectError)}`,
+            };
         }
     } catch (error) {
         if (error instanceof AppActionBatchCancelledError) {

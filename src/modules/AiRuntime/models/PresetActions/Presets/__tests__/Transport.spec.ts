@@ -23,6 +23,12 @@ describe('transportPresets', () => {
         expect(pause?.buildAction(context)).toEqual({ type: 'setPlayback', payload: { playing: false } });
     });
 
+    it('maps Stop to the stopPlayback command so recording teardown is preserved', () => {
+        const stop = transportPresets.find((preset) => preset.id === 'stop');
+
+        expect(stop?.buildAction(context)).toEqual({ type: 'stopPlayback' });
+    });
+
     it('does not expose state-dependent playback or recording toggles', () => {
         const actions = transportPresets.flatMap((preset) => {
             const action = preset.buildAction(context);

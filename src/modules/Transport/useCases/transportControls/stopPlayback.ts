@@ -9,10 +9,19 @@ import { stopPlayheadScheduler } from '../playheadScheduler/stopPlayheadSchedule
 import { panicYeastRuntime } from './panicYeastRuntime';
 import { stopActiveRecording } from './stopActiveRecording';
 
+function captureTeardown(teardown: () => void | Promise<void>): Promise<void> {
+    try {
+        return Promise.resolve(teardown());
+    } catch (error) {
+        const failure = error instanceof Error ? error : new Error('Runtime teardown failed', { cause: error });
+        return Promise.reject(failure);
+    }
+}
+
 export function stopPlayback(): Promise<void> {
     // Runtime recording can still be flushing after transport state turns false,
     // and this also cancels a pending count-in.
-    const recordingFlush = stopActiveRecording();
+    const recordingFlush = captureTeardown(stopActiveRecording);
     const state = getTransportState();
     if (!state) {
         return recordingFlush;
@@ -23,7 +32,7 @@ export function stopPlayback(): Promise<void> {
     // recorder kept capturing, the audio buffer never flushed, and the clip
     // stayed empty. Route through `stopActiveRecording` so the recording
     // pipeline commits the buffer to the clip before we halt the transport.
-    void panicYeastRuntime();
+    const yeastTeardown = captureTeardown(panicYeastRuntime);
     stopPlayheadScheduler();
     stopAllScheduled();
     resetMidiState();
@@ -40,5 +49,5 @@ export function stopPlayback(): Promise<void> {
 
     updateTransportState({ isPlaying: false, isRecording: false, playheadPosition });
     playheadPositionRef.current = playheadPosition;
-    return recordingFlush;
+    return Promise.all([recordingFlush, yeastTeardown]).then(() => undefined);
 }

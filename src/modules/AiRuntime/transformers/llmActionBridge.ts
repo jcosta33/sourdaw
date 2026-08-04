@@ -313,6 +313,13 @@ function bridgeToolCall({
         return { type: 'setPlayback', payload: { playing: args.playing } };
     }
 
+    if (call.name === 'stopPlayback') {
+        if (!hasExactKeys(args, [])) {
+            return rejection(index, call.name, 'Expected no arguments');
+        }
+        return { type: 'stopPlayback' };
+    }
+
     if (call.name === 'setLoopEnabled') {
         if (
             !hasExactKeys(args, ['enabled']) ||
@@ -1380,7 +1387,7 @@ function getMutationKeys(action: RuntimeAction, context: ProjectContext): string
     if (action.type === 'setTempo' || action.type === 'setTimeSignature' || action.type === 'reorderTrack') {
         return [action.type];
     }
-    if (action.type === 'setPlayback') {
+    if (action.type === 'setPlayback' || action.type === 'stopPlayback') {
         return ['transport:runtime'];
     }
     if (action.type === 'setLoopEnabled') {
@@ -1739,6 +1746,15 @@ export function bridgeLlmToolCalls({ calls, context }: BridgeLlmToolCallsInput):
             actions: [],
             rejections: [
                 rejection(0, '<batch>', 'Provider runtime playback command must be the only action in its batch'),
+            ],
+        };
+    }
+
+    if (calls.length > 1 && calls.some((call) => call.name === 'stopPlayback')) {
+        return {
+            actions: [],
+            rejections: [
+                rejection(0, '<batch>', 'Provider runtime transport command must be the only action in its batch'),
             ],
         };
     }

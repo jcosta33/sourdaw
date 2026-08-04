@@ -331,7 +331,7 @@ const validators = {
     toggleInspector: 'unchecked',
     toggleChatPanel: 'unchecked',
     togglePlayback: 'unchecked',
-    stopPlayback: 'unchecked',
+    stopPlayback: hasNoPayload,
     toggleRecording: 'unchecked',
     toggleLoop: 'unchecked',
     toggleMetronome: 'unchecked',

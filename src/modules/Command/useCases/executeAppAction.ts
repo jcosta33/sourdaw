@@ -60,27 +60,10 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                     throw new AppActionConflictError(action.type);
                 }
 
-                let runtime_failure: unknown;
                 try {
-                    await runtime_result?.afterCommit?.();
-                } catch (effect_error) {
-                    const reconcile_runtime = runtime_result?.afterAmbiguousCommit;
-                    if (!reconcile_runtime) {
-                        runtime_failure = effect_error;
-                    } else {
-                        try {
-                            await reconcile_runtime();
-                        } catch (reconciliation_error) {
-                            runtime_failure = new AggregateError(
-                                [effect_error, reconciliation_error],
-                                'Runtime effect and reconciliation both failed'
-                            );
-                        }
-                    }
-                }
-
-                if (runtime_failure) {
-                    const committed_error = new AppActionCommittedError(action.type, runtime_failure);
+                    await runtime_result?.afterRuntimeExecution?.();
+                } catch (runtime_error) {
+                    const committed_error = new AppActionCommittedError(action.type, runtime_error);
                     logger.error(committed_error);
                     throw committed_error;
                 }

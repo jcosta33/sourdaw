@@ -1500,6 +1500,23 @@ function isExplicitSetPlaybackScope(actionScope: ActionPromptScope): boolean {
     return ['play', 'start playback', 'resume playback', 'pause', 'pause playback'].includes(normalized);
 }
 
+function isExplicitStopPlaybackPrompt(prompt: string): boolean {
+    let commandText = prompt.trim();
+    commandText = commandText.replace(/^(?:please\s+)?(?:can|could|would)\s+you(?:\s+please)?\s+/iu, '');
+    commandText = commandText.replace(/^please\s+/iu, '');
+    const normalized = normalizePromptText(commandText);
+    return [
+        'stop playback',
+        'stop the playback',
+        'stop transport',
+        'stop the transport',
+        'halt playback',
+        'halt the playback',
+        'halt transport',
+        'halt the transport',
+    ].includes(normalized);
+}
+
 type NumberValueRule = Extract<GroundingValueRule, { kind: 'number-if-present' }>;
 
 function containsPromptPhrase(actionScope: ActionPromptScope, phrases: readonly string[]): boolean {
@@ -2018,6 +2035,9 @@ function groundToolCall({
     visibleGroundedCalls,
     visiblePlannedTrackCreations,
 }: GroundToolCallInput): ToolCallResult | LlmActionRejection {
+    if (call.name === 'stopPlayback' && !isExplicitStopPlaybackPrompt(prompt)) {
+        return rejection(index, call.name, 'Provider action is not grounded in an explicit transport-stop request');
+    }
     const groundingRules = getExecutableAppActionGroundingRules(call.name);
     if (!groundingRules) {
         return call;
