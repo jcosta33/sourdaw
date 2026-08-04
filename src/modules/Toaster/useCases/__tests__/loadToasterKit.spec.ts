@@ -272,14 +272,16 @@ describe('loadToasterKitPreset', () => {
         wireToasterMocks(setParam, setPadParam);
 
         const kit = minimalKit({
-            pads: [minimalPad({ engineParams: { snap: 0.75, transient: 0.25 } })],
+            pads: [minimalPad({ engineType: 'fm-perc', engineParams: { mod_ratio: 2.3, feedback: 0.25 } })],
         });
         loadToasterKitPreset('d1', kit);
 
-        const engineParamCalls = setPadParam.mock.calls.filter(([, name]) => name === 'snap' || name === 'transient');
+        const engineParamCalls = setPadParam.mock.calls.filter(
+            ([, name]) => name === 'mod_ratio' || name === 'feedback'
+        );
         expect(engineParamCalls).toEqual([
-            [0, 'snap', 0.75],
-            [0, 'transient', 0.25],
+            [0, 'mod_ratio', 2.3],
+            [0, 'feedback', 0.25],
         ]);
     });
 

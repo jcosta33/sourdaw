@@ -27,6 +27,7 @@ vi.mock('../getToasterControls', () => ({ getToasterControls: mocks.getToasterCo
 import { toToasterKitState } from '../../models/ToasterKitState';
 import { registerToasterDevice, toasterStore } from '../../stores/toasterStore';
 import { getToasterPresetKit } from '../getToasterPresetKit';
+import { loadToasterKitPreset } from '../loadToasterKit';
 import { prepareOfflineToaster } from '../prepareOfflineToaster';
 import { setPadParamImmediate } from '../setPadParamImmediate';
 import { TOASTER_ENGINE_MAP } from '../toasterEngineMap';
@@ -162,17 +163,19 @@ describe('Toaster live/offline parity', () => {
     });
 
     it('projects persisted kit state when the transient session store is empty', () => {
-        const kit = getToasterPresetKit('909-punchy');
+        const kit = getToasterPresetKit('fm-metallic');
         if (kit === null) {
-            throw new Error('expected the 909 preset fixture');
+            throw new Error('expected the FM preset fixture');
         }
         const deviceState = toToasterKitState(kit);
         const { port, sent } = makeRecordingPort();
 
         prepareOfflineToaster({ deviceId: DEVICE_ID, deviceState, port });
 
-        expect(padValue(sent, 0, 'engine_type')).toBe(TOASTER_ENGINE_MAP['kick-909']);
-        expect(padValue(sent, 1, 'tone')).toBe(0.6);
+        expect(padValue(sent, 1, 'engine_type')).toBe(TOASTER_ENGINE_MAP['fm-perc']);
+        expect(padValue(sent, 1, 'mod_ratio')).toBe(2.3);
+        expect(padValue(sent, 1, 'mod_amount')).toBe(3);
+        expect(padValue(sent, 1, 'feedback')).toBe(0.2);
         expect(sent).toContainEqual({ type: 'param', name: 'master_gain', value: kit.masterGain });
     });
 
@@ -192,6 +195,32 @@ describe('Toaster live/offline parity', () => {
         expect(offline).toEqual(live);
         // Guard against the assertion passing because both are empty.
         expect(offline.length).toBeGreaterThan(16 * 10);
+    });
+
+    it('keeps preset voicing identical across initial load, runtime reload, and offline render', () => {
+        const kit = getToasterPresetKit('fm-metallic');
+        if (kit === null) {
+            throw new Error('expected the FM preset fixture');
+        }
+        registerToasterDevice(DEVICE_ID);
+
+        const initial: Message[] = [];
+        mocks.getToasterControls.mockReturnValue({
+            setParam: (name: string, value: number) => initial.push({ type: 'param', name, value }),
+            setPadParam: (pad: number, name: string, value: number) =>
+                initial.push({ type: 'padParam', pad, name, value }),
+        });
+        loadToasterKitPreset(DEVICE_ID, kit);
+
+        const reloaded = captureLiveMessages();
+        const { port, sent: offline } = makeRecordingPort();
+        prepareOfflineToaster({ deviceId: DEVICE_ID, port });
+
+        expect(reloaded).toEqual(initial);
+        expect(offline).toEqual(initial);
+        expect(padValue(initial, 1, 'mod_ratio')).toBe(2.3);
+        expect(padValue(initial, 1, 'mod_amount')).toBe(3);
+        expect(padValue(initial, 1, 'feedback')).toBe(0.2);
     });
 
     it('projects the application default kit when no persisted or transient state exists', () => {

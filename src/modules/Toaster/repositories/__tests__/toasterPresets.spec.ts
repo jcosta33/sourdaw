@@ -78,15 +78,18 @@ describe('TOASTER_PRESETS', () => {
         expect(initPreset?.kit).toEqual({ ...createDefaultKit(), name: 'Blank Flour' });
     });
 
-    it('builds the 808-classic preset with its documented kick engine params', () => {
+    it('does not attach generic-kick controls to circuit-model kick presets', () => {
         const classic = TOASTER_PRESETS.find((preset) => preset.id === '808-classic');
-        const kick = classic?.kit.pads[0];
+        const punchy = TOASTER_PRESETS.find((preset) => preset.id === '909-punchy');
 
-        expect(kick).toMatchObject({
-            name: 'Kick',
-            engineType: 'kick-808',
-            engineParams: { base_freq: 50, pitch_amount: 0.7, amp_decay: 0.4 },
-        });
+        expect(classic?.kit.pads[0]?.engineParams).toEqual({});
+        expect(punchy?.kit.pads[0]?.engineParams).toEqual({});
+    });
+
+    it('stores the audible FM voicing controls on metallic pads', () => {
+        const metallic = TOASTER_PRESETS.find((preset) => preset.id === 'fm-metallic');
+
+        expect(metallic?.kit.pads[1]?.engineParams).toEqual({ mod_ratio: 2.3, mod_amount: 3, feedback: 0.2 });
     });
 
     it('overrides only the kit-level fields a preset specifies, keeping the rest at baseline', () => {

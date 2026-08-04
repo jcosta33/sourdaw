@@ -30,7 +30,6 @@ export const TOASTER_PRESETS: ToasterKitPreset[] = [
                 ...createDefaultPad(0),
                 name: 'Kick',
                 engineType: 'kick-808',
-                engineParams: { base_freq: 50, pitch_amount: 0.7, amp_decay: 0.4 },
             },
             { ...createDefaultPad(1), name: 'Snare', engineType: 'snare-808' },
             { ...createDefaultPad(2), name: 'CH', engineType: 'hihat-closed', chokeGroup: 1, decay: 0.2 },
@@ -51,7 +50,7 @@ export const TOASTER_PRESETS: ToasterKitPreset[] = [
     }),
     kit('909-punchy', 'Rye 909', 'Punchy TR-909 kit — house/techno staple', ['909', 'house', 'techno'], {
         pads: [
-            { ...createDefaultPad(0), name: 'Kick', engineType: 'kick-909', engineParams: { base_freq: 55 } },
+            { ...createDefaultPad(0), name: 'Kick', engineType: 'kick-909' },
             { ...createDefaultPad(1), name: 'Snare', engineType: 'snare-analog', tone: 0.6 },
             { ...createDefaultPad(2), name: 'CH', engineType: 'hihat-closed', chokeGroup: 1 },
             { ...createDefaultPad(3), name: 'OH', engineType: 'hihat-open', chokeGroup: 1 },
