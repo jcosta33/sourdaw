@@ -1,0 +1,19 @@
+src/modules/MIDI/useCases/stepRecording/__tests__/stepRecordNavigationBranches.spec.ts
+  s_bc88af7d3b054c::t_c35522ec93f177 1-130
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "72cf691858e306ea6fd4d5b24b96b1262e8b9481",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
