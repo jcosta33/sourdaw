@@ -1,0 +1,35 @@
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_bc88af7d3b054c::t_353dc8f5d0ead2 275
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_bc88af7d3b054c::t_ec67c93f32ec73 699,703-704
+src/modules/MIDI/useCases/midiNoteTransforms/__tests__/quantizeNoteLengths.spec.ts
+  s_bc88af7d3b054c::t_ec67c93f32ec73 55-61
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_bc88af7d3b054c::t_127866792c8c2b 350,352
+src/modules/MIDI/transformers/quantizeMidiNoteLengths.ts
+  s_bc88af7d3b054c::t_127866792c8c2b 8-9,11-13,16-17
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_bc88af7d3b054c::t_127866792c8c2b 173,175
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_bc88af7d3b054c::t_ec67c93f32ec73 542-546
+  s_bc88af7d3b054c::t_866f89917f0a9d 547
+  s_bc88af7d3b054c::t_1c04eeefdaff63 566
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_bc88af7d3b054c::t_e5499b18108103 584,590
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "2bc89f0d0fd7f61554878d7d0f0d49c8b1cf1bdb",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
