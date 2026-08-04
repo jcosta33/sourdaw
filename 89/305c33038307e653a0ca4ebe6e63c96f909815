@@ -1,0 +1,40 @@
+src/modules/Arrangement/useCases/quantiseDeviceParameterValue.ts
+  s_66d4924c65dcd2::t_d47f100e2efad8 1-11
+  s_66d4924c65dcd2::t_0a89fd9928f2a1 12-15
+src/modules/Arrangement/models/__tests__/DeviceParameterLaw.spec.ts
+  s_66d4924c65dcd2::t_a72c94f4e25264 3-8
+  s_66d4924c65dcd2::t_3dd95cf9b6ec91 77-178
+src/modules/Arrangement/useCases/index.ts
+  s_66d4924c65dcd2::t_0c84202808ec27 240
+src/modules/Arrangement/models/DeviceParameterLaw.ts
+  s_66d4924c65dcd2::t_7b1fa483c7002f 67-116
+  s_66d4924c65dcd2::t_b246488a56aa7b 66
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomationSteppedQuantisation.spec.ts
+  s_66d4924c65dcd2::t_e5cf675a1e9c76 169-173
+  s_66d4924c65dcd2::t_62bec3b9a8d778 1-165,167-168,178-192,194-195,199-209,211-215
+  s_66d4924c65dcd2::t_0c6294a2a4dfa1 193,210
+  s_66d4924c65dcd2::t_29e6b6e787ec62 174-177
+  s_66d4924c65dcd2::t_7b98ba226eb831 166
+  s_66d4924c65dcd2::t_b662a9089615ad 196-198
+src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts
+  s_66d4924c65dcd2::t_5ce4e17af5285b 346-365
+  s_66d4924c65dcd2::t_1357485c42193d 2-6
+  s_66d4924c65dcd2::t_5522649389dee7 258-264,266-270,274-276,282-296
+  s_66d4924c65dcd2::t_3fc5e332fc4698 303,305
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "89305c33038307e653a0ca4ebe6e63c96f909815",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
