@@ -14,13 +14,23 @@ import { useTempoEditorState } from '../hooks/useTempoEditorState';
 export const TempoEditor = (): ReactElement => {
     const time = useTempoEditorState();
 
+    // With a tempo map the field reads out the map's value at the playhead and
+    // edits the event governing it, so say so rather than let it look like a
+    // free-standing project tempo.
+    let tempoFieldLabel = 'Tempo BPM';
+    let tempoFieldHint = 'Drag up/down to adjust, double-click to reset, Shift for fine.';
+    if (time.tempoGovernedByMap) {
+        tempoFieldLabel = 'Tempo BPM at playhead (tempo map)';
+        tempoFieldHint = 'Tempo at the playhead. Editing changes the tempo-map event that governs it.';
+    }
+
     return (
         <div className="daw-readout-well relative flex h-8 items-center gap-2 rounded-sm px-2">
             <Tooltip>
                 <TooltipTrigger asChild>
-                    <div aria-label="Tempo BPM">
+                    <div aria-label={tempoFieldLabel}>
                         <ValueField
-                            value={time.transport.tempo}
+                            value={time.effectiveTempo}
                             onChange={time.setTempoValue}
                             onReset={() => time.setTempoValue(120)}
                             min={20}
@@ -32,7 +42,7 @@ export const TempoEditor = (): ReactElement => {
                         />
                     </div>
                 </TooltipTrigger>
-                <TooltipContent>Drag up/down to adjust, double-click to reset, Shift for fine.</TooltipContent>
+                <TooltipContent>{tempoFieldHint}</TooltipContent>
             </Tooltip>
             <Tooltip>
                 <TooltipTrigger asChild>
