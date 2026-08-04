@@ -1,0 +1,21 @@
+src/modules/Toaster/useCases/__tests__/toasterLiveOfflineParity.spec.ts
+  s_ac9b259eab20ba::t_5ae1255862eeee 28
+src/modules/AudioEngine/useCases/buildDeviceChain.ts
+  s_ac9b259eab20ba::t_5ae1255862eeee 278-281,285
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "cb52bdc9001ad398feab84ad9e8a0626c2a07eb7",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
