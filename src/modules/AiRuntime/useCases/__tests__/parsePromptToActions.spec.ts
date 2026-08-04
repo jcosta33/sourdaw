@@ -205,6 +205,61 @@ describe('parsePromptToActions', () => {
         expect(result.executionMode).toBe('atomic');
     });
 
+    it('proposes a grounded whole-clip MIDI transform as one confirmable atomic action', async () => {
+        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
+            '../agentReference/bridgeGroundedLlmToolCalls'
+        );
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        const providerContext: ProjectContext = {
+            ...baseContext,
+            tracks: [
+                {
+                    id: 'track-piano',
+                    name: 'Piano',
+                    kind: 'midi',
+                    muted: false,
+                    soloed: false,
+                    armed: false,
+                    gain: 0.8,
+                    pan: 0,
+                    automationMode: 'read',
+                    outputId: 'master',
+                    clipCount: 1,
+                    deviceCount: 0,
+                    clips: [
+                        {
+                            id: 'clip-piano-midi',
+                            name: 'Piano MIDI',
+                            type: 'midi',
+                            startBeat: 0,
+                            endBeat: 8,
+                            noteCount: 4,
+                        },
+                    ],
+                    devices: [],
+                    sends: [],
+                },
+            ],
+            selectedTrackId: 'track-piano',
+            selectedClipId: 'clip-piano-midi',
+            selectedClipIds: ['clip-piano-midi'],
+        };
+        vi.mocked(generateToolCalls).mockResolvedValue(
+            completePlan([{ name: 'quantizeNoteLengths', arguments: { clipId: 'clip-piano-midi', gridSize: 0.25 } }])
+        );
+
+        const result = await parsePromptToActions(
+            'quantize note lengths in Piano MIDI to a 0.25 beat grid',
+            providerContext
+        );
+
+        expect(result.actions).toEqual([
+            { type: 'quantizeNoteLengths', payload: { clipId: 'clip-piano-midi', gridSize: 0.25 } },
+        ]);
+        expect(result.requiresConfirmation).toBe(true);
+        expect(result.executionMode).toBe('atomic');
+    });
+
     it('proposes a grounded provider arm command as one confirmable atomic action', async () => {
         const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
             '../agentReference/bridgeGroundedLlmToolCalls'

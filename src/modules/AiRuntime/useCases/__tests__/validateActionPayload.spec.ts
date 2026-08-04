@@ -674,6 +674,73 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
         });
     });
 
+    describe('whole-clip MIDI transforms', () => {
+        it.each(['invertNotes', 'retrogradeNotes'] as const)('%s accepts only one non-empty clip ID', (actionType) => {
+            const guard = PAYLOAD_VALIDATORS[actionType];
+            expect(guard).not.toBe('unchecked');
+            if (guard === 'unchecked') {
+                return;
+            }
+
+            expect(guard({ clipId: 'clip-1' })).toBe(true);
+            expect(guard({ clipId: '' })).toBe(false);
+            expect(guard({})).toBe(false);
+            expect(guard({ clipId: 'clip-1', extra: true })).toBe(false);
+        });
+
+        it('validates exact finite note-length quantization bounds', () => {
+            const guard = PAYLOAD_VALIDATORS.quantizeNoteLengths;
+            expect(guard).not.toBe('unchecked');
+            if (guard === 'unchecked') {
+                return;
+            }
+
+            expect(guard({ clipId: 'clip-1', gridSize: 0.25 })).toBe(true);
+            expect(guard({ clipId: 'clip-1', gridSize: 64 })).toBe(true);
+            expect(guard({ clipId: '', gridSize: 0.25 })).toBe(false);
+            expect(guard({ clipId: 'clip-1', gridSize: 0 })).toBe(false);
+            expect(guard({ clipId: 'clip-1', gridSize: 65 })).toBe(false);
+            expect(guard({ clipId: 'clip-1', gridSize: Number.NaN })).toBe(false);
+            expect(guard({ clipId: 'clip-1', gridSize: Number.POSITIVE_INFINITY })).toBe(false);
+            expect(guard({ clipId: 'clip-1', gridSize: 0.25, extra: true })).toBe(false);
+        });
+
+        it('validates exact non-identity velocity scale bounds', () => {
+            const guard = PAYLOAD_VALIDATORS.scaleAllVelocities;
+            expect(guard).not.toBe('unchecked');
+            if (guard === 'unchecked') {
+                return;
+            }
+
+            expect(guard({ clipId: 'clip-1', factor: 0.5 })).toBe(true);
+            expect(guard({ clipId: 'clip-1', factor: 16 })).toBe(true);
+            expect(guard({ clipId: '', factor: 0.5 })).toBe(false);
+            expect(guard({ clipId: 'clip-1', factor: 0 })).toBe(false);
+            expect(guard({ clipId: 'clip-1', factor: 1 })).toBe(false);
+            expect(guard({ clipId: 'clip-1', factor: 16.01 })).toBe(false);
+            expect(guard({ clipId: 'clip-1', factor: Number.NaN })).toBe(false);
+            expect(guard({ clipId: 'clip-1', factor: Number.POSITIVE_INFINITY })).toBe(false);
+            expect(guard({ clipId: 'clip-1', factor: 0.5, extra: true })).toBe(false);
+        });
+
+        it('validates exact integer MIDI velocity bounds', () => {
+            const guard = PAYLOAD_VALIDATORS.setAllVelocities;
+            expect(guard).not.toBe('unchecked');
+            if (guard === 'unchecked') {
+                return;
+            }
+
+            expect(guard({ clipId: 'clip-1', velocity: 1 })).toBe(true);
+            expect(guard({ clipId: 'clip-1', velocity: 127 })).toBe(true);
+            expect(guard({ clipId: '', velocity: 96 })).toBe(false);
+            expect(guard({ clipId: 'clip-1', velocity: 0 })).toBe(false);
+            expect(guard({ clipId: 'clip-1', velocity: 127.5 })).toBe(false);
+            expect(guard({ clipId: 'clip-1', velocity: 128 })).toBe(false);
+            expect(guard({ clipId: 'clip-1', velocity: Number.NaN })).toBe(false);
+            expect(guard({ clipId: 'clip-1', velocity: 96, extra: true })).toBe(false);
+        });
+    });
+
     describe('addNotes', () => {
         it('should require clipId and a notes array with finite bounded note fields', () => {
             const guard = PAYLOAD_VALIDATORS.addNotes;

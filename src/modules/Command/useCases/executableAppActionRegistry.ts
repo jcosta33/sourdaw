@@ -308,6 +308,102 @@ export const executableAppActionDescriptors = [
         },
     },
     {
+        actionType: 'invertNotes',
+        risk: 'broad-reversible',
+        description: 'Invert every pitch in one MIDI clip around its current pitch range.',
+        intentPhrases: ['invert midi notes', 'invert notes', 'mirror midi pitches'],
+        targetRules: editableMidiClipTargetRules,
+        valueRules: [],
+        parameters: {
+            properties: {
+                clipId: { type: 'string', description: 'Existing unlocked non-empty MIDI clip ID' },
+            },
+            required: ['clipId'],
+        },
+    },
+    {
+        actionType: 'retrogradeNotes',
+        risk: 'broad-reversible',
+        description: 'Reverse every note in one MIDI clip across its current time range.',
+        intentPhrases: ['retrograde midi notes', 'retrograde notes', 'reverse midi notes'],
+        targetRules: editableMidiClipTargetRules,
+        valueRules: [],
+        parameters: {
+            properties: {
+                clipId: { type: 'string', description: 'Existing unlocked non-empty MIDI clip ID' },
+            },
+            required: ['clipId'],
+        },
+    },
+    {
+        actionType: 'quantizeNoteLengths',
+        risk: 'destructive-reversible',
+        description: 'Snap every note duration in one MIDI clip to an explicit beat grid.',
+        intentPhrases: ['quantize note lengths', 'quantize midi note lengths', 'snap midi note lengths'],
+        targetRules: editableMidiClipTargetRules,
+        valueRules: [{ argument: 'gridSize', kind: 'number-if-present', requiredInPrompt: true, match: 'exact' }],
+        parameters: {
+            properties: {
+                clipId: { type: 'string', description: 'Existing unlocked non-empty MIDI clip ID' },
+                gridSize: {
+                    type: 'number',
+                    exclusiveMinimum: 0,
+                    maximum: 64,
+                    description: 'Beat grid greater than 0 and at most 64',
+                },
+            },
+            required: ['clipId', 'gridSize'],
+        },
+    },
+    {
+        actionType: 'scaleAllVelocities',
+        risk: 'broad-reversible',
+        description: 'Scale every note velocity in one MIDI clip by an explicit factor.',
+        intentPhrases: ['scale midi velocities', 'scale note velocities', 'multiply midi velocities'],
+        targetRules: editableMidiClipTargetRules,
+        valueRules: [
+            {
+                argument: 'factor',
+                kind: 'number-if-present',
+                requiredInPrompt: true,
+                match: 'exact',
+                scale: 'percentage-only',
+            },
+        ],
+        parameters: {
+            properties: {
+                clipId: { type: 'string', description: 'Existing unlocked non-empty MIDI clip ID' },
+                factor: {
+                    type: 'number',
+                    exclusiveMinimum: 0,
+                    maximum: 16,
+                    description: 'Velocity factor greater than 0 and at most 16, excluding 1',
+                },
+            },
+            required: ['clipId', 'factor'],
+        },
+    },
+    {
+        actionType: 'setAllVelocities',
+        risk: 'destructive-reversible',
+        description: 'Set every note velocity in one MIDI clip to an explicit MIDI value.',
+        intentPhrases: ['set midi velocities', 'set note velocities', 'set all velocities'],
+        targetRules: editableMidiClipTargetRules,
+        valueRules: [{ argument: 'velocity', kind: 'number-if-present', requiredInPrompt: true, match: 'exact' }],
+        parameters: {
+            properties: {
+                clipId: { type: 'string', description: 'Existing unlocked non-empty MIDI clip ID' },
+                velocity: {
+                    type: 'integer',
+                    minimum: 1,
+                    maximum: 127,
+                    description: 'MIDI velocity from 1 through 127',
+                },
+            },
+            required: ['clipId', 'velocity'],
+        },
+    },
+    {
         actionType: 'renameTrack',
         risk: 'bounded-reversible',
         description: 'Rename a track.',

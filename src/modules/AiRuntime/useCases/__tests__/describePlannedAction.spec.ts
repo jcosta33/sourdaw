@@ -102,6 +102,36 @@ describe('describePlannedAction', () => {
                 context: midiContext,
             })
         ).toBe('Transpose notes in "Verse Lead" (clip-verse) by +7 semitones');
+        expect(
+            describePlannedAction({
+                action: { type: 'invertNotes', payload: { clipId: 'clip-verse' } },
+                context: midiContext,
+            })
+        ).toBe('Invert notes in "Verse Lead" (clip-verse)');
+        expect(
+            describePlannedAction({
+                action: { type: 'retrogradeNotes', payload: { clipId: 'clip-verse' } },
+                context: midiContext,
+            })
+        ).toBe('Retrograde notes in "Verse Lead" (clip-verse)');
+        expect(
+            describePlannedAction({
+                action: { type: 'quantizeNoteLengths', payload: { clipId: 'clip-verse', gridSize: 0.5 } },
+                context: midiContext,
+            })
+        ).toBe('Quantize note lengths in "Verse Lead" (clip-verse) to a 0.5-beat grid');
+        expect(
+            describePlannedAction({
+                action: { type: 'scaleAllVelocities', payload: { clipId: 'clip-verse', factor: 0.75 } },
+                context: midiContext,
+            })
+        ).toBe('Scale note velocities in "Verse Lead" (clip-verse) by ×0.75');
+        expect(
+            describePlannedAction({
+                action: { type: 'setAllVelocities', payload: { clipId: 'clip-verse', velocity: 96 } },
+                context: midiContext,
+            })
+        ).toBe('Set note velocities in "Verse Lead" (clip-verse) to 96');
     });
 
     it('names both sidechain endpoints with IDs and direction for confirmation', () => {

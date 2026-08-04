@@ -27,6 +27,22 @@ describe('selectExecutableAppActionToolSchemasForPrompt', () => {
         );
     });
 
+    it.each([
+        ['invert the MIDI notes', 'invertNotes'],
+        ['retrograde the MIDI notes', 'retrogradeNotes'],
+        ['quantize MIDI note lengths to 0.25 beats', 'quantizeNoteLengths'],
+        ['scale MIDI velocities by 50%', 'scaleAllVelocities'],
+        ['set all velocities to 96', 'setAllVelocities'],
+    ])('retains %s within the WebLLM tool limit', (prompt, actionType) => {
+        const selected = selectExecutableAppActionToolSchemasForPrompt({
+            toolSchemas: getExecutableAppActionToolSchemas(),
+            prompt,
+        });
+
+        expect(selected).toHaveLength(30);
+        expect(selected.map((tool) => tool.function.name)).toContain(actionType);
+    });
+
     it('uses stable registry order as the bounded fallback for an unmatched prompt', () => {
         const allTools = getExecutableAppActionToolSchemas();
         const selected = selectExecutableAppActionToolSchemasForPrompt({

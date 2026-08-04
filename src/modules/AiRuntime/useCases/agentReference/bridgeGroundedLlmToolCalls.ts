@@ -1798,7 +1798,13 @@ function groundToolCall({
         return rejection(index, call.name, 'Provider clip deletion is not explicit in the user request');
     }
     if (
-        (call.name === 'quantizeNotes' || call.name === 'transposeNotes') &&
+        (call.name === 'quantizeNotes' ||
+            call.name === 'transposeNotes' ||
+            call.name === 'invertNotes' ||
+            call.name === 'retrogradeNotes' ||
+            call.name === 'quantizeNoteLengths' ||
+            call.name === 'scaleAllVelocities' ||
+            call.name === 'setAllVelocities') &&
         (hasSelectedNoteScope(actionScope.text) || (plannedActionNames.length === 1 && hasSelectedNoteScope(prompt)))
     ) {
         return rejection(index, call.name, 'Selected-note edits are not supported; target the whole MIDI clip');

@@ -97,6 +97,11 @@ describe('promptParser parsing', () => {
 
             expect(tryPresetMatch('quantize', context)).toEqual([]);
             expect(tryPresetMatch('transpose up an octave', context)).toEqual([]);
+            expect(tryPresetMatch('invert notes', context)).toEqual([]);
+            expect(tryPresetMatch('retrograde notes', context)).toEqual([]);
+            expect(tryPresetMatch('quantize note lengths to 1/8 beat', context)).toEqual([]);
+            expect(tryPresetMatch('scale all velocities to 50%', context)).toEqual([]);
+            expect(tryPresetMatch('set all velocities to 96', context)).toEqual([]);
         });
     });
 

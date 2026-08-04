@@ -80,7 +80,18 @@ export function tryPresetMatch(normalized: string, context: PresetContext): Runt
         return [];
     }
     const actions = Array.isArray(result) ? result : [result];
-    if (actions.some((action) => action.type === 'quantizeNotes' || action.type === 'transposeNotes')) {
+    if (
+        actions.some(
+            (action) =>
+                action.type === 'quantizeNotes' ||
+                action.type === 'transposeNotes' ||
+                action.type === 'invertNotes' ||
+                action.type === 'retrogradeNotes' ||
+                action.type === 'quantizeNoteLengths' ||
+                action.type === 'scaleAllVelocities' ||
+                action.type === 'setAllVelocities'
+        )
+    ) {
         return [];
     }
     return actions;
