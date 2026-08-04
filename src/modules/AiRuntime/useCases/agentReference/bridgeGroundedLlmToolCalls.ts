@@ -8,6 +8,7 @@ import {
     bridgeLlmToolCalls,
     type LlmActionBridgeResult,
     type LlmActionRejection,
+    type MarkerPlanningSignature,
 } from '../../transformers/llmActionBridge';
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../../transformers/llmActionLimits';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
@@ -18,6 +19,7 @@ import { resolveAgentReference } from './resolveAgentReference';
 type BridgeGroundedLlmToolCallsInput = {
     calls: readonly ToolCallResult[];
     context: ProjectContext;
+    markerSignatures?: readonly MarkerPlanningSignature[];
     prompt: string;
 };
 
@@ -1080,6 +1082,10 @@ function hasGroundedControlValueEvidence(
             return valueRule.keywords.some((keyword) => prefix.endsWith(normalizePromptText(keyword)));
         });
     }
+    if (valueRule.kind === 'marker-name') {
+        const markerName = getMarkerNameFromPrompt(promptText);
+        return markerName !== null && normalizePromptText(assertedValue) === normalizePromptText(markerName);
+    }
     if (valueRule.kind === 'text-after-connector') {
         return referenceRanges.some((range) => {
             const prefix = normalizePromptText(promptText.slice(0, range.start));
@@ -1465,6 +1471,30 @@ function getTextAfterKeyword(actionScope: ActionPromptScope, keywords: readonly 
         return null;
     }
     return actionScope.text.slice(match.index + match[0].length).trim();
+}
+
+function getMarkerNameFromPrompt(promptText: string): string | null {
+    const keyword = /\b(?:named|called)\b/iu.exec(promptText);
+    if (!keyword) {
+        return null;
+    }
+
+    const tail = promptText.slice(keyword.index + keyword[0].length).trim();
+    const quoted = /^(?:"([^"]+)"|'([^']+)'|“([^”]+)”|‘([^’]+)’)/u.exec(tail);
+    const quotedName = quoted?.[1] ?? quoted?.[2] ?? quoted?.[3] ?? quoted?.[4] ?? null;
+    if (quotedName !== null) {
+        return quotedName.trim() || null;
+    }
+
+    const boundary =
+        /\s+(?=(?:(?:at|on)\s+(?:beat|bar)\b|because\b|since\b|so\b|to\b|for\b|as\b|which\b|when\b|where\b))/iu.exec(
+            tail
+        );
+    const unquotedName = tail
+        .slice(0, boundary?.index ?? tail.length)
+        .replace(/[,:;.?!]+$/u, '')
+        .trim();
+    return unquotedName || null;
 }
 
 function getValueMismatchReason(argument: string): string {
@@ -1870,6 +1900,17 @@ function validateGroundedValue(
             return validateEnumValue(valueRule, assertedValue, actionScope);
         case 'text-after-keyword-if-present':
             return validateTextAfterKeywordValue(valueRule, assertedValue, actionScope);
+        case 'marker-name': {
+            const expectedValue = getMarkerNameFromPrompt(actionScope.text);
+            if (
+                expectedValue === null ||
+                typeof assertedValue !== 'string' ||
+                normalizePromptText(assertedValue) !== normalizePromptText(expectedValue)
+            ) {
+                return getValueMismatchReason(valueRule.argument);
+            }
+            return null;
+        }
         case 'text-after-connector':
             return validateTextAfterConnectorValue(valueRule, assertedValue, actionScope);
         default:
@@ -2231,10 +2272,11 @@ function hasExplicitPromptIntent(prompt: string, catalog: GroundingCatalog, acti
 export function bridgeGroundedLlmToolCalls({
     calls,
     context,
+    markerSignatures = [],
     prompt,
 }: BridgeGroundedLlmToolCallsInput): BridgeGroundedLlmToolCallsResult {
     if (calls.length > MAX_LLM_ACTIONS_PER_BATCH) {
-        return bridgeLlmToolCalls({ calls, context });
+        return bridgeLlmToolCalls({ calls, context, markerSignatures });
     }
     const catalog = getExecutableAppActionGroundingCatalog();
     const promptRequestsLoopRegion = hasExplicitPromptIntent(prompt, catalog, 'setLoopRegion');
@@ -2304,7 +2346,7 @@ export function bridgeGroundedLlmToolCalls({
             };
         }
     }
-    const bridged = bridgeLlmToolCalls({ calls: groundedCalls, context: prospectiveContext });
+    const bridged = bridgeLlmToolCalls({ calls: groundedCalls, context: prospectiveContext, markerSignatures });
     const rejections = bridged.rejections.map((bridgeRejection) => {
         if (bridgeRejection.name === '<batch>') {
             return bridgeRejection;

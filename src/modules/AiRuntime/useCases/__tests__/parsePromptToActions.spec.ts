@@ -9,22 +9,42 @@ import { getProjectContext } from '../getProjectContext';
 import { generateToolPlanningOutcome as generateToolCalls } from '../llmOrchestration/inference';
 import { parsePromptToActions } from '../parsePromptToActions';
 
-const { mockLogger, mockBridgeGroundedLlmToolCalls, mockBuildLlmActionSystemPrompt, mockBuildLlmActionUserMessage } =
-    vi.hoisted(() => ({
-        mockLogger: {
-            warn: vi.fn(),
-            info: vi.fn(),
-            error: vi.fn(),
-            debug: vi.fn(),
-        },
-        mockBridgeGroundedLlmToolCalls: vi.fn(),
-        mockBuildLlmActionSystemPrompt: vi.fn(() => 'command system prompt'),
-        mockBuildLlmActionUserMessage: vi.fn(() => 'command user message'),
-    }));
+const {
+    mockLogger,
+    mockBridgeGroundedLlmToolCalls,
+    mockBuildLlmActionSystemPrompt,
+    mockBuildLlmActionUserMessage,
+    markerStoreValue,
+} = vi.hoisted(() => ({
+    mockLogger: {
+        warn: vi.fn(),
+        info: vi.fn(),
+        error: vi.fn(),
+        debug: vi.fn(),
+    },
+    mockBridgeGroundedLlmToolCalls: vi.fn(),
+    mockBuildLlmActionSystemPrompt: vi.fn(() => 'command system prompt'),
+    mockBuildLlmActionUserMessage: vi.fn(() => 'command user message'),
+    markerStoreValue: {
+        value: { markers: [] as { id: string; beat: number; name: string }[] },
+    },
+}));
 
 vi.mock('#/infra/logger/appLogger', () => ({
     logger: mockLogger,
 }));
+
+vi.mock('#/modules/Arrangement/stores', async () => {
+    const actual = await vi.importActual<typeof import('#/modules/Arrangement/stores')>('#/modules/Arrangement/stores');
+    return {
+        ...actual,
+        markerStore: {
+            get value() {
+                return markerStoreValue.value;
+            },
+        },
+    };
+});
 
 vi.mock('../../transformers/promptParser/parsing', () => ({
     tryPresetMatch: vi.fn(() => []),
@@ -89,6 +109,7 @@ describe('parsePromptToActions', () => {
         mockBridgeGroundedLlmToolCalls.mockReset();
         mockBuildLlmActionSystemPrompt.mockClear();
         mockBuildLlmActionUserMessage.mockClear();
+        markerStoreValue.value = { markers: [] };
     });
 
     it.each([
@@ -185,6 +206,7 @@ describe('parsePromptToActions', () => {
         expect(mockBridgeGroundedLlmToolCalls).toHaveBeenCalledWith({
             calls: [{ name: 'setTempo', arguments: { bpm: 128 } }],
             context: baseContext,
+            markerSignatures: [],
             prompt: 'make the project faster',
         });
         expect(result.actions).toEqual([{ type: 'setTempo', payload: { bpm: 128 } }]);
@@ -238,6 +260,44 @@ describe('parsePromptToActions', () => {
         expect(result.actions).toEqual([{ type: 'seekPlayhead', payload: { beat: 8.5 } }]);
         expect(result.requiresConfirmation).toBe(true);
         expect(result.executionMode).toBe('atomic');
+    });
+
+    it('proposes a grounded provider marker as one reversible atomic action', async () => {
+        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
+            '../agentReference/bridgeGroundedLlmToolCalls'
+        );
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        vi.mocked(generateToolCalls).mockResolvedValue(
+            completePlan([{ name: 'addMarker', arguments: { beat: 16, name: 'Chorus' } }])
+        );
+
+        const result = await parsePromptToActions('add a marker at beat 16 named Chorus', baseContext);
+
+        expect(result.actions).toEqual([{ type: 'addMarker', payload: { beat: 16, name: 'Chorus' } }]);
+        expect(result.requiresConfirmation).toBe(false);
+        expect(result.executionMode).toBe('atomic');
+    });
+
+    it('rejects a provider marker retry from local state without serializing markers to the provider', async () => {
+        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
+            '../agentReference/bridgeGroundedLlmToolCalls'
+        );
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        markerStoreValue.value = {
+            markers: [{ id: 'marker-internal', beat: 16, name: 'Chorus' }],
+        };
+        vi.mocked(generateToolCalls).mockResolvedValue(
+            completePlan([{ name: 'addMarker', arguments: { beat: 16, name: 'Chorus' } }])
+        );
+
+        const prompt = 'add a marker at beat 16 named Chorus';
+        const result = await parsePromptToActions(prompt, baseContext);
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejectionReason).toBe(
+            'Provider action rejected: addMarker: Requested marker already exists at that beat'
+        );
+        expect(mockBuildLlmActionUserMessage).toHaveBeenCalledWith({ prompt, context: baseContext });
     });
 
     it('proposes a grounded two-clip crossfade as one confirmable atomic action', async () => {

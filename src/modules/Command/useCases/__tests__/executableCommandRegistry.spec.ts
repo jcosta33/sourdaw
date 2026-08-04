@@ -426,6 +426,17 @@ const EXPECTED_COMMANDS = [
         true
     ),
     expectedCommand(
+        'addMarker',
+        'Add a named arrangement marker at a specific nonnegative beat.',
+        {
+            beat: { type: 'number', minimum: 0, description: 'Marker beat position (bar 1 = beat 0)' },
+            name: { type: 'string', description: 'Explicit marker label' },
+        },
+        ['beat', 'name'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
         'setLoopEnabled',
         'Enable or disable the project loop.',
         { enabled: { type: 'boolean', description: 'true=enable looping, false=disable looping' } },
@@ -1131,6 +1142,22 @@ const EXPECTED_GROUNDING = [
         targetRules: [],
         valueRules: [
             { argument: 'beat', kind: 'number-if-present', connector: 'beat', match: 'exact', requiredInPrompt: true },
+        ],
+    },
+    {
+        actionType: 'addMarker',
+        intentPhrases: [
+            'add marker',
+            'add a marker',
+            'create marker',
+            'create a marker',
+            'place marker',
+            'place a marker',
+        ],
+        targetRules: [],
+        valueRules: [
+            { argument: 'beat', kind: 'number-if-present', connector: 'beat', match: 'exact', requiredInPrompt: true },
+            { argument: 'name', kind: 'marker-name' },
         ],
     },
     {

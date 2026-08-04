@@ -53,6 +53,7 @@ export type ExecutableAppActionValueRule =
           qualitativeDirection?: 'track-gain' | 'track-pan' | 'device-parameter';
       }
     | { argument: string; kind: 'string-literal' }
+    | { argument: string; kind: 'marker-name' }
     | { argument: string; kind: 'enum-if-present'; values: readonly string[]; requiredInPrompt?: boolean }
     | {
           argument: string;
@@ -849,6 +850,31 @@ export const executableAppActionDescriptors = [
                 beat: { type: 'number', minimum: 0, description: 'Beat position (bar 1 = beat 0)' },
             },
             required: ['beat'],
+        },
+    },
+    {
+        actionType: 'addMarker',
+        risk: 'bounded-reversible',
+        description: 'Add a named arrangement marker at a specific nonnegative beat.',
+        intentPhrases: [
+            'add marker',
+            'add a marker',
+            'create marker',
+            'create a marker',
+            'place marker',
+            'place a marker',
+        ],
+        targetRules: [],
+        valueRules: [
+            { argument: 'beat', kind: 'number-if-present', connector: 'beat', match: 'exact', requiredInPrompt: true },
+            { argument: 'name', kind: 'marker-name' },
+        ],
+        parameters: {
+            properties: {
+                beat: { type: 'number', minimum: 0, description: 'Marker beat position (bar 1 = beat 0)' },
+                name: { type: 'string', description: 'Explicit marker label' },
+            },
+            required: ['beat', 'name'],
         },
     },
     {

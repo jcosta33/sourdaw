@@ -1,5 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
+import { markerStore } from '#/modules/Arrangement/stores';
 import { getExecutableAppActionToolSchemas, requiresAppActionConfirmation } from '#/modules/Command/useCases';
 
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
@@ -121,7 +122,11 @@ export const parsePromptToActions = inject({ logger })(
                     };
                 }
                 const toolCalls = planningOutcome.toolCalls;
-                const bridged = bridgeGroundedLlmToolCalls({ calls: toolCalls, context, prompt });
+                const markerSignatures = (markerStore.value?.markers ?? []).map((marker) => ({
+                    beat: marker.beat,
+                    name: marker.name,
+                }));
+                const bridged = bridgeGroundedLlmToolCalls({ calls: toolCalls, context, markerSignatures, prompt });
                 for (const rejected of bridged.rejections) {
                     logger.warn(
                         `[AI] Rejected tool call ${String(rejected.index)} (${rejected.name}): ${rejected.reason}`

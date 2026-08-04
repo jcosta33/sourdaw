@@ -28,8 +28,9 @@ describe('addMarker', () => {
     });
 
     it('adds a marker to the store', () => {
-        addMarker(16, 'Drop');
+        const didWrite = addMarker(16, 'Drop');
 
+        expect(didWrite).toBe(true);
         expect(mocks.markerStoreSet).toHaveBeenCalledTimes(1);
         const newState = mocks.markerStoreSet.mock.calls[0]![0] as MarkerStoreState;
         expect(newState.markers).toHaveLength(1);
@@ -41,7 +42,9 @@ describe('addMarker', () => {
 
     it('bails if marker store is unavailable', () => {
         mocks.markerStoreValue.value = null;
-        addMarker(0, 'X');
+        const didWrite = addMarker(0, 'X');
+
+        expect(didWrite).toBe(false);
         expect(mocks.markerStoreSet).not.toHaveBeenCalled();
     });
 });

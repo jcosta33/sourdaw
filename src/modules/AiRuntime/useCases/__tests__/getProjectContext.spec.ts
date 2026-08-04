@@ -116,6 +116,7 @@ describe('getProjectContext', () => {
         expect(context.automationLanes).toEqual([]);
         expect(context.sidechainRoutes).toEqual([]);
         expect(context.vcaGroups).toEqual([]);
+        expect(context).not.toHaveProperty('markers');
         expect(context.tracks).toEqual([]);
         expect(context.selectedTrackId).toBeNull();
         expect(context.selectedClipId).toBeNull();
