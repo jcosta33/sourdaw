@@ -1,0 +1,19 @@
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/OnlineSampleBrowserBranches.spec.tsx
+  s_191a04d66f160f::t_138ac476728519 1-54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "3813d15bb7612089d8ebedb94828c8c5c16ef06b",
+  "prompts": {},
+  "sessions": {
+    "s_191a04d66f160f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fca41-7d2f-7463-9d02-9b70b043fced",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
