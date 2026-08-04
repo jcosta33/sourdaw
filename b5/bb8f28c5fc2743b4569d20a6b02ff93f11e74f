@@ -1,0 +1,46 @@
+crates/daw-dsp/tests/toaster_pad_output.rs
+  s_ac9b259eab20ba::t_8d25f08179be52 75,118-123,125-127,129-140,142-143,157,160-161
+  s_ac9b259eab20ba::t_3cd7415188255c 74,124,128,141,144-156,158-159
+  s_ac9b259eab20ba::t_dad1dd4574619e 40-49,61-73,117
+  s_ac9b259eab20ba::t_b7931ff15ab1d4 76
+crates/daw-dsp/src/toaster/engines/tom.rs
+  s_ac9b259eab20ba::t_8d25f08179be52 9-10,36,56-57,95-96,137-140,149
+crates/daw-dsp/src/toaster/engines/fm_perc.rs
+  s_ac9b259eab20ba::t_8d25f08179be52 7-8,31,50-51,63,127-130,140
+crates/daw-dsp/src/toaster/engines/kick.rs
+  s_ac9b259eab20ba::t_8d25f08179be52 8-9,37,58-59,97-98,137-140,150
+crates/daw-dsp/src/toaster/engines/mod.rs
+  s_ac9b259eab20ba::t_8d25f08179be52 297-299
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_947d7b6c56b368::t_aca5c6c75101fd 1
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_947d7b6c56b368::t_30867a672cf103 1
+public/wasm/manifest.json
+  s_947d7b6c56b368::t_5fbd11e4a11b65 12,16-18,21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_947d7b6c56b368::t_c005bb90ddc30b 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "b5bb8f28c5fc2743b4569d20a6b02ff93f11e74f",
+  "prompts": {},
+  "sessions": {
+    "s_947d7b6c56b368": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a5aa55c8e98a6abb1",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
