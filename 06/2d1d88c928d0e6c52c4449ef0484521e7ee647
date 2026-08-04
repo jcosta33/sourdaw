@@ -1,0 +1,21 @@
+src/modules/ContentBrowser/presentations/components/Sidebar/__tests__/SearchSummaryBranches.spec.tsx
+  s_a25fc74dcafeff::t_9a0de260c39088 1-28
+src/modules/TimelineEditor/presentations/components/Inspector/__tests__/ControlHeaderAndInsetPanel.spec.tsx
+  s_a25fc74dcafeff::t_0caf9a9842b63d 1-49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "062d1d88c928d0e6c52c4449ef0484521e7ee647",
+  "prompts": {},
+  "sessions": {
+    "s_a25fc74dcafeff": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a14f68a55bbc0ea42",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
