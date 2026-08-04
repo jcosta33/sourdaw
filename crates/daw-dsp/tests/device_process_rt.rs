@@ -494,11 +494,38 @@ fn crumbs_voice_stealing_does_not_allocate() {
     // Long release so a stolen note's replacement stays in the pool: a voice
     // that retired between rounds would be a fill, not a steal.
     instance.set_param("release", 2.0);
+    // Everything a steal touches, driven *off* its default.
+    //
+    // A steal hands the incoming note a voice that came fresh out of the pool
+    // and `trigger` reconfigures it, so anything that sizes per-voice storage
+    // from a parameter would allocate right there — and only at a value where
+    // the setter has real work to do. Fermenter shipped exactly that trap: its
+    // unison oscillator grew a buffer in `set_voices`, and the guard missed it
+    // because it ran at the default unison of 1, where the early return fires.
+    //
+    // Crumbs has no such parameter today — `CrumbsVoice` owns no heap storage
+    // at all, which `crumbs::engine`'s `needs_drop` assertion enforces at
+    // compile time — so this is defence in depth rather than the load-bearing
+    // check. It still costs nothing to steal with the filter engaged, the
+    // envelope shaped and eight stacked voices per note-on instead of one.
+    instance.set_param("filterCutoff", 2_000.0);
+    instance.set_param("filterResonance", 0.4);
+    instance.set_param("attack", 0.05);
+    instance.set_param("hold", 0.02);
+    instance.set_param("decay", 0.3);
+    instance.set_param("sustain", 0.6);
+    instance.set_param("loopCrossfade", 512.0);
+    instance.set_param("stackCount", 8.0);
+    instance.set_param("detuneSpread", 25.0);
+    instance.set_param("stackSpread", 0.8);
 
     // Saturate the 128-slot pool outside the guard, so every guarded note-on is
-    // a steal rather than a fill.
-    for note in 0..=127_u8 {
-        instance.note_on(note, 100);
+    // a steal rather than a fill. Sixteen notes at a stack of eight fill it
+    // exactly: one more note-on here would steal *before* the interceptor arms
+    // and leave fades outstanding, which the occupancy assertion below would
+    // then read as an over-full pool.
+    for step in 0..16_u8 {
+        instance.note_on(step * 7, 100);
     }
     let warmup = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
     assert_all_finite(&warmup, "crumbs steal");

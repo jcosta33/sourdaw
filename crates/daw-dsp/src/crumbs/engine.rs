@@ -42,6 +42,29 @@ use super::voice::{CrumbsVoice, VoiceTriggerParams};
 
 // ── Crumbs Engine ─────────────────────────────────────────────────────
 
+/// A `CrumbsVoice` must own no heap storage, transitively.
+///
+/// Two audio-thread paths depend on it. `move_voice_to_steal_tail` swaps a
+/// whole voice between the playable pool and a fade slot, and `trigger` then
+/// configures the freshly pooled voice the swap handed back. Both are plain
+/// field writes today; a `Vec`, `Box` or `String` anywhere inside the voice —
+/// especially a buffer sized from a parameter, which `trigger` would grow on
+/// the audio thread — turns either into an allocation.
+///
+/// An allocation guard cannot be relied on to catch that: it would only fire if
+/// the guard happened to drive the parameter that sizes the buffer away from
+/// its default, which is exactly how the same trap stayed hidden in Fermenter's
+/// unison oscillator. `needs_drop` is transitive and checked at compile time,
+/// so it fails the build the moment such a field is added, whatever any test
+/// happens to exercise.
+const _: () = assert!(
+    !core::mem::needs_drop::<CrumbsVoice>(),
+    "CrumbsVoice gained a field with drop glue (Vec/Box/String/...). Voice \
+     stealing swaps whole voices on the audio thread and `trigger` reconfigures \
+     a pooled one, so owned heap storage there allocates in `process`. Preallocate \
+     it to its full range outside the voice, or size it as a fixed-length array."
+);
+
 pub struct CrumbsEngine {
     // Voice management
     voices: Vec<CrumbsVoice>,
@@ -56,7 +79,8 @@ pub struct CrumbsEngine {
     /// pool before the first fade has finished, and reusing a slot that is
     /// still sounding is the very click this exists to remove. `CrumbsVoice`
     /// owns no heap storage, so the swap is a plain memory move and allocates
-    /// nothing.
+    /// nothing — enforced by the `needs_drop` assertion above this struct
+    /// rather than assumed.
     ///
     /// A tail is a dying note, so `note_off`, `all_notes_off` and the
     /// choke pass deliberately pass over it: it renders with the settings it
