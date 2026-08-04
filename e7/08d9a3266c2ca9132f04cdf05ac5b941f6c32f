@@ -1,0 +1,29 @@
+src/modules/AudioEngine/engine/ProofNode.ts
+  s_bc88af7d3b054c::t_9db25667f0e27b 155-170,172
+src/modules/AudioEngine/engine/__tests__/ProofNodeCreate.spec.ts
+  s_d4265e6c06fe30::t_fb1a9e7dfb14cf 139-142,157,339-404
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "e708d9a3266c2ca9132f04cdf05ac5b941f6c32f",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_d4265e6c06fe30": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a04c63a01468144a4",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
