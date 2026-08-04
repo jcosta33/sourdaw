@@ -235,6 +235,31 @@ describe('projectTrackToLiveStrip', () => {
         expect(mocks.addDeviceToStrip).not.toHaveBeenCalled();
     });
 
+    it('keeps MIDI-only Yeast out of the audio graph and predecessor order', () => {
+        const track = createTrack({ id: 'midi-1', name: 'MIDI', kind: 'midi' });
+        track.devices = [
+            { id: 'filter-1', name: 'Filter', type: 'filter', bypassed: false, parameterValues: { cutoff: 0.6 } },
+            { id: 'yeast-1', name: 'Yeast', type: 'yeast', bypassed: false, parameterValues: { chance: 0.75 } },
+            { id: 'delay-1', name: 'Delay', type: 'delay', bypassed: false, parameterValues: { mix: 0.4 } },
+        ];
+        trackStore.set({ tracks: [track], selectedTrackId: null });
+
+        projectTrackToLiveStrip({ trackId: track.id });
+
+        expect(mocks.addDeviceToStrip.mock.calls).toEqual([
+            ['midi-1', 'filter-1', 'filter', undefined, []],
+            ['midi-1', 'delay-1', 'delay', undefined, ['filter-1']],
+        ]);
+        expect(mocks.updateDeviceParam.mock.calls).toEqual([
+            ['midi-1', 'filter-1', 'cutoff', 0.6],
+            ['midi-1', 'delay-1', 'mix', 0.4],
+        ]);
+        expect(mocks.updateDeviceBypass.mock.calls).toEqual([
+            ['midi-1', 'filter-1', false],
+            ['midi-1', 'delay-1', false],
+        ]);
+    });
+
     it('projects a Toaster folder but leaves an ordinary folder dormant', () => {
         const dormant = createTrack({ id: 'folder', name: 'Folder', kind: 'folder' });
         const toaster = createTrack({ id: 'toaster', name: 'Toaster', kind: 'folder' });
