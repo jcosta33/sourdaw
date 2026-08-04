@@ -25,6 +25,11 @@ name: Health gates
 #   ./scripts/health-gates-web.sh
 #   ./scripts/health-gates-server.sh
 #
+# `health-gates-server.sh` covers the collaboration server build *and* the Rust
+# workspace (clippy --all-targets, then cargo test in debug). It is one script
+# on purpose: the local run and the CI run execute the same commands, so they
+# cannot drift.
+#
 # Note that a local run cannot catch a file that exists on disk but was never
 # committed. Verifying a merge target from a clean checkout — a fresh worktree
 # installed off the lockfile — is the substitute for that, and it is the one
@@ -63,7 +68,7 @@ jobs:
         run: ./scripts/health-gates-web.sh
 
   server:
-    name: Collaboration server health gate
+    name: Collaboration server and Rust workspace health gates
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -76,9 +81,32 @@ jobs:
           cache: npm
           cache-dependency-path: server/package-lock.json
 
+      # daw-engine depends on cpal, whose Linux backend builds against ALSA.
+      - name: Install ALSA development headers
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+
+      # No version is pinned here on purpose: `rustup show` reads
+      # rust-toolchain.toml, so the toolchain cannot drift from what a local
+      # run uses.
+      - name: Install the pinned Rust toolchain
+        run: rustup show
+
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
+
       - name: Install server dependencies
         working-directory: server
         run: npm ci
 
-      - name: Build server
+      # Builds the collaboration server and runs the Rust workspace gate
+      # (clippy --all-targets, then cargo test in debug). One script so the
+      # local run and the CI run cannot drift.
+      - name: Server and Rust workspace health gates
         run: ./scripts/health-gates-server.sh
