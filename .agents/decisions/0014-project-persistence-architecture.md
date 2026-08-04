@@ -272,9 +272,32 @@ Ratified by the owner directly.
   audio should live in a shared library instead, is the **separate** docket question below — this
   decision fixes how a project *stores* what it owns, not what it owns.
 
-**Still open and not decided here:** whether audio belongs to a project or to a shared library;
-version policy and whether web users get a pinned-build escape hatch; how much budget the desktop
-store gets. Those remain in `open-decision-docket.md`.
+## Ratified 2026-08-04 — audio ownership and version policy
+
+- **A project owns its audio. The sample library is a browse-and-import source, never a runtime
+  dependency.** Importing copies in; deleting a project is deleting its directory, with no
+  cross-project scan. Every shipping DAW is built this way, and it follows from the per-asset embed
+  ruling above — an embedded asset is a copy by definition. Accepted cost: a shared library used by
+  ten projects is duplicated ten times. openDAW's global content-addressed pool was considered and
+  not taken, and a refcounted hybrid was rejected as needing its own fault-injection gate first,
+  since a drifted refcount either leaks disk or frees audio still in use.
+
+- **Version policy is forward-only, with no retained pre-migration generation.** Newer opens older,
+  older refuses newer, migration rewrites in place.
+
+  **The cost was stated before the call and accepted: there is no recourse after a bad migration.**
+  A web user cannot install the previous build, so a migration bug reaches everyone at once with no
+  way back for work already migrated — the failure mode desktop does not have. Retaining the
+  previous generation was recommended and declined; this ADR's content-addressed layout would have
+  made it nearly free, since the superseded document is a differently-named file that migration need
+  only refrain from deleting. Recorded so that if a migration does go wrong, the absence of a
+  fallback is a known accepted risk rather than a surprise, and so the first migration touching real
+  projects is understood as the natural point to revisit it.
+
+**Still open and not decided here:** how much budget the desktop store gets — and that one is
+**blocked rather than pending**, because ADR 0016 defers desktop entirely. It becomes answerable
+when desktop returns to scope, and asking it before then would be asking about work nobody is
+doing. It remains listed in `open-decision-docket.md`.
 
 ## Status
 
