@@ -185,6 +185,23 @@ impl CrumbsVoice {
         self.steal_fade_decrement = 1.0 / fade_samples;
     }
 
+    /// Remaining gain multiplier of the de-click fade: 1.0 before it starts and
+    /// falling linearly to zero once `begin_steal_fade` has been called.
+    pub fn steal_fade(&self) -> f32 {
+        self.steal_fade
+    }
+
+    /// Silence the voice at once and reset its fade state.
+    ///
+    /// This is the one path that does cut a waveform, so it exists only where
+    /// there is nothing left to fade into: a fade slot that has to be recycled
+    /// because every one of them is still sounding.
+    pub fn kill(&mut self) {
+        self.active = false;
+        self.stealing = false;
+        self.steal_fade = 1.0;
+    }
+
     // ── Per-Sample Rendering ───────────────────────────────────────────
 
     /// Render one sample of audio into left/right output.

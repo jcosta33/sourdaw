@@ -47,6 +47,28 @@ pub struct CrumbsEngine {
     voices: Vec<CrumbsVoice>,
     allocator: VoiceAllocator,
 
+    /// Preallocated outgoing voices that carry a stolen note through its
+    /// de-click fade. A steal swaps the displaced voice in here and starts the
+    /// incoming note on the freed playable slot immediately, so no note is
+    /// delayed and the outgoing one is never jump-cut.
+    ///
+    /// One slot per playable voice: a burst of steals can displace the whole
+    /// pool before the first fade has finished, and reusing a slot that is
+    /// still sounding is the very click this exists to remove. `CrumbsVoice`
+    /// owns no heap storage, so the swap is a plain memory move and allocates
+    /// nothing.
+    ///
+    /// A tail is a dying note, so `note_off`, `all_notes_off` and the
+    /// choke pass deliberately pass over it: it renders with the settings it
+    /// was carrying and is gone within `FADE_STOLEN_SECS`. Releasing or
+    /// re-tuning a voice that is already on its way out would only put a
+    /// discontinuity back into the fade.
+    steal_tails: Vec<CrumbsVoice>,
+    /// Dense indices of the fades currently running. Capacity is fixed with the
+    /// tail pool, so activating and retiring tails neither scans all 128 idle
+    /// slots per sample nor grows storage on the audio thread.
+    active_steal_tails: Vec<usize>,
+
     // Sample data (shared read-only with audio thread in the in-memory path)
     sample_pool: SamplePool,
     active_sample_id: Option<SampleId>,
@@ -102,13 +124,17 @@ impl CrumbsEngine {
 
     pub fn with_metering(sample_rate: f32, metering: Arc<CrumbsMetering>) -> Self {
         let mut voices = Vec::with_capacity(MAX_VOICES);
+        let mut steal_tails = Vec::with_capacity(MAX_VOICES);
         for _ in 0..MAX_VOICES {
             voices.push(CrumbsVoice::new(sample_rate));
+            steal_tails.push(CrumbsVoice::new(sample_rate));
         }
 
         Self {
             voices,
             allocator: VoiceAllocator::new(),
+            steal_tails,
+            active_steal_tails: Vec::with_capacity(MAX_VOICES),
             sample_pool: SamplePool::new(),
             active_sample_id: None,
             // `QuickMode::default` releases in 50 ms; the engine has always
@@ -370,12 +396,21 @@ impl CrumbsEngine {
                     // All voices in use — need to steal one.
                     match self.find_steal_target(note, params.choke_group) {
                         Some(idx) => {
-                            self.voices[idx].begin_steal_fade();
-                            self.allocator.release(idx);
-                            match self.allocator.allocate() {
-                                Some(new_idx) => new_idx,
-                                None => return,
-                            }
+                            // The displaced voice moves aside before the slot
+                            // is reused. Starting its fade in place did
+                            // nothing: `release` freed exactly one bit, so the
+                            // `allocate` that followed handed the same index
+                            // straight back and `trigger` reset `steal_fade`
+                            // to 1.0 on the same struct. The fade never
+                            // rendered a single sample and every steal cut the
+                            // note at full gain.
+                            //
+                            // The allocator bit for `idx` is already set and
+                            // stays set: the slot is occupied continuously,
+                            // first by the outgoing voice and then — on the
+                            // same sample — by the incoming one.
+                            self.move_voice_to_steal_tail(idx);
+                            idx
                         }
                         None => return,
                     }
@@ -437,6 +472,84 @@ impl CrumbsEngine {
     }
 
     // ── Voice Stealing ─────────────────────────────────────────────────
+
+    /// Move the voice at `index` into a fade slot and start its de-click fade,
+    /// leaving `self.voices[index]` free for the incoming note on the same
+    /// sample.
+    ///
+    /// The tails are a pool, not a per-voice pairing: pairing tail `i` with
+    /// voice `i` would truncate an unrelated fade whenever the same slot is
+    /// stolen twice in quick succession while other tails sit idle.
+    fn move_voice_to_steal_tail(&mut self, index: usize) {
+        let (tail_index, tail_was_idle) = self.select_steal_tail_slot();
+        if !tail_was_idle {
+            // Reached only when all 128 fades are in flight at once, i.e. the
+            // whole pool was displaced inside one 3 ms fade. Cutting the
+            // quietest of them is the least audible bounded loss available.
+            self.steal_tails[tail_index].kill();
+        }
+        core::mem::swap(&mut self.voices[index], &mut self.steal_tails[tail_index]);
+        self.steal_tails[tail_index].begin_steal_fade();
+        if tail_was_idle {
+            self.active_steal_tails.push(tail_index);
+        }
+    }
+
+    /// Pick a fade slot: an idle one if there is one, otherwise the fade that
+    /// has decayed furthest. The scan is bounded by the tail pool and allocates
+    /// nothing.
+    fn select_steal_tail_slot(&self) -> (usize, bool) {
+        let mut quietest_index = 0;
+        let mut quietest_fade = f32::INFINITY;
+        for (index, tail) in self.steal_tails.iter().enumerate() {
+            if !tail.active {
+                return (index, true);
+            }
+            if tail.steal_fade() < quietest_fade {
+                quietest_fade = tail.steal_fade();
+                quietest_index = index;
+            }
+        }
+        (quietest_index, false)
+    }
+
+    /// Render one sample of every fade still running and retire the ones that
+    /// have reached silence.
+    fn render_steal_tails(&mut self, mix_l: &mut f32, mix_r: &mut f32) {
+        let mut position = 0;
+        while position < self.active_steal_tails.len() {
+            let tail_index = self.active_steal_tails[position];
+            let sample_id = self.steal_tails[tail_index].sample_id;
+            let still_active = match self.sample_pool.get(sample_id) {
+                Some(sample_data) => {
+                    self.steal_tails[tail_index].render_sample(sample_data, mix_l, mix_r)
+                }
+                None => {
+                    // Sample gone from under a dying note — nothing left to
+                    // fade into, so drop it rather than render silence forever.
+                    self.steal_tails[tail_index].active = false;
+                    false
+                }
+            };
+
+            if still_active {
+                position += 1;
+            } else {
+                self.active_steal_tails.swap_remove(position);
+            }
+        }
+    }
+
+    /// How many fade slots are still sounding.
+    ///
+    /// Crumbs has no `ProcessLifecycle`; the metered voice count is the only
+    /// thing it publishes about whether it is still making sound, and
+    /// `process_block` adds this to the playable count so a caller gating on it
+    /// cannot conclude the device fell silent while a steal fade is still
+    /// audible.
+    pub fn fading_steal_tail_count(&self) -> usize {
+        self.active_steal_tails.len()
+    }
 
     /// Find the best voice to steal. Zero-allocation — scans voices inline.
     ///
@@ -727,6 +840,11 @@ impl CrumbsEngine {
                 }
             }
 
+            // Stolen voices are no longer in the playable pool, so the loop
+            // above cannot reach them. They are still sounding until their fade
+            // runs out, and a fade that is not rendered is a jump-cut.
+            self.render_steal_tails(&mut mix_l, &mut mix_r);
+
             left[sample_idx] += mix_l * master;
             right[sample_idx] += mix_r * master;
 
@@ -739,6 +857,15 @@ impl CrumbsEngine {
             if voice.active {
                 voice_count = voice_count.saturating_add(1);
             }
+        }
+        // A stolen voice fading out in a tail slot is still audible output.
+        // Counting only the playable pool would report silence to a caller that
+        // gates on this while the fade is still running. The metering atomic is
+        // a `u8`, so a full pool plus more than 127 simultaneous fades reports
+        // 255; that only happens under a burst that displaces the whole pool
+        // inside 3 ms, and every reader of this treats it as "still sounding".
+        for _ in &self.active_steal_tails {
+            voice_count = voice_count.saturating_add(1);
         }
 
         // Track playback position from the youngest active voice.
@@ -781,6 +908,18 @@ impl CrumbsEngine {
     /// Read the number of currently active voices.
     pub fn read_active_voice_count(&self) -> u8 {
         self.metering.active_voice_count.load(Ordering::Relaxed)
+    }
+
+    /// Playable slots currently sounding, read straight from the pool rather
+    /// than from the metering atomic.
+    ///
+    /// `read_active_voice_count` reports the state of the *last rendered
+    /// block*, so it is stale before the first `process_block` and it cannot
+    /// separate the playable pool from the outgoing steal fades it also counts.
+    /// Both matter when asserting allocation behaviour. Not on any audio-thread
+    /// path.
+    pub fn playable_voice_count(&self) -> usize {
+        self.voices.iter().filter(|voice| voice.active).count()
     }
 
     /// Whether any live voice is playing `note`.
