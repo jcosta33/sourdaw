@@ -1,0 +1,11 @@
+{
+    "extends": "../../tsconfig.json",
+    "include": [
+        "myceliumPerformance.spec.ts",
+        "myceliumPerformanceEvidence.ts",
+        "myceliumPlaybackEvidence.ts",
+        "__tests__/myceliumPerformanceEvidence.spec.ts",
+        "__tests__/myceliumPlaybackEvidence.spec.ts"
+    ],
+    "exclude": []
+}
