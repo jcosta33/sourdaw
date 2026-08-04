@@ -101,6 +101,12 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Bacteria/useCases/bacteriaParamBridge/setBacteriaParamWithAudio.ts': 2,
         'src/modules/Crust/useCases/crustParamBridge/createFlushHandlers.ts': 4,
         'src/modules/Crust/useCases/crustParamBridge/helpers.ts': 8,
+        // Count provenance: new file entry, measured 2 — the `updateDeviceParam`
+        // import and its single call site. The panel's true-peak reset has to
+        // reach the engine as well as the store: Crust's engine holds the
+        // session true-peak maximum, so a store-only reset is undone by the
+        // next meter poll.
+        'src/modules/Crust/useCases/resetCrustTruePeakIndicator.ts': 2,
         // Count provenance: measured 5, was 4. This file is a type declaration
         // plus the holder — it performs no write, and all five matches are the
         // declared DI signatures and prose about them. The new one is a
@@ -126,6 +132,14 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Grinder/useCases/grinderParamBridge/setGrinderMicParamWithAudio.ts': 2,
         'src/modules/Grinder/useCases/grinderParamBridge/setGrinderParamWithAudio.ts': 2,
         'src/modules/Grinder/useCases/grinderParamBridge/setGrinderPedalParamWithAudio.ts': 2,
+        // Count provenance: measured 1, a single doc-comment mention. This model
+        // is the codec for Levain's `Device.deviceState` chunk and performs no
+        // write of any kind — the mention is `persistDevicePatch` named as the
+        // reason the chunk exists at all: it keeps only finite numbers, so the
+        // instrument id and articulation it drops are the two fields this codec
+        // carries instead. The write itself is `commitLevainDeviceState`, which
+        // goes through `executeAppAction`.
+        'src/modules/Levain/models/LevainDeviceState.ts': 1,
         'src/modules/Levain/useCases/levainParamBridge/helpers.ts': 6,
         'src/modules/Levain/useCases/levainParamBridge/levainBridge.ts': 1,
         'src/modules/Levain/useCases/levainParamBridge/levainBridgeDependencies.ts': 2,
@@ -278,21 +292,6 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Levain/useCases/levainParamBridge/helpers.ts': 3,
         'src/modules/Levain/useCases/levainParamBridge/loadSamplesForInstrument.ts': 2,
         'src/modules/Levain/useCases/loadPreset.ts': 4,
-        // Count provenance: 1 = the single word `loadSamplesForInstrument` in this
-        // file's JSDoc, under the **Order.** heading. It is a deliberate
-        // cross-reference, not an incidental mention: the offline path must post
-        // `setInstrument` and only then start the load, and that ordering is only
-        // legible next to the live bridge function it copies. Deleting the word
-        // would drop this row to 0 and the census would go green — so a future
-        // change here is a debt retired only if the *cross-reference* was retired
-        // (the offline path stopped mirroring the live order, or that function was
-        // renamed). If the count falls and the ordering requirement still holds,
-        // the comment was lost, not the debt.
-        //
-        // The file holds no device write of its own: it posts one worklet message
-        // and delegates the load to `autoLoadLevainSamples`, whose sinks stay
-        // censused on `autoLoadSamples.ts`.
-        'src/modules/Levain/useCases/prepareOfflineLevain.ts': 1,
         'src/modules/Levain/presentations/views/LevainPanel.tsx': 2,
         'src/modules/PluginHost/useCases/faustEngine/compileAllFaustModules.ts': 4,
         'src/modules/PluginHost/useCases/faustEngine/compileFaustDSP.ts': 1,

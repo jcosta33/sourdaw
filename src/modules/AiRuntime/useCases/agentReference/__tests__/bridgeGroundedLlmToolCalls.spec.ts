@@ -192,6 +192,79 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(audioTarget.rejections[0]?.reason).toContain('not grounded');
     });
 
+    it('grounds the provider-only whole-clip transform surface and rejects selected-note scope', () => {
+        const context = createMidiClipContext();
+        const cases = [
+            {
+                call: { name: 'invertNotes', arguments: { clipId: 'clip-midi' } },
+                prompt: 'invert the MIDI notes in Piano MIDI',
+                action: { type: 'invertNotes', payload: { clipId: 'clip-midi' } },
+            },
+            {
+                call: { name: 'retrogradeNotes', arguments: { clipId: 'clip-midi' } },
+                prompt: 'retrograde the MIDI notes in Piano MIDI',
+                action: { type: 'retrogradeNotes', payload: { clipId: 'clip-midi' } },
+            },
+            {
+                call: { name: 'quantizeNoteLengths', arguments: { clipId: 'clip-midi', gridSize: 0.5 } },
+                prompt: 'quantize note lengths in Piano MIDI to a 0.5 beat grid',
+                action: { type: 'quantizeNoteLengths', payload: { clipId: 'clip-midi', gridSize: 0.5 } },
+            },
+            {
+                call: { name: 'scaleAllVelocities', arguments: { clipId: 'clip-midi', factor: 0.5 } },
+                prompt: 'scale note velocities in Piano MIDI by 50%',
+                action: { type: 'scaleAllVelocities', payload: { clipId: 'clip-midi', factor: 0.5 } },
+            },
+            {
+                call: { name: 'setAllVelocities', arguments: { clipId: 'clip-midi', velocity: 96 } },
+                prompt: 'set note velocities in Piano MIDI to 96',
+                action: { type: 'setAllVelocities', payload: { clipId: 'clip-midi', velocity: 96 } },
+            },
+        ] as const;
+
+        for (const testCase of cases) {
+            const grounded = bridge([testCase.call], testCase.prompt, context);
+            expect(grounded.actions).toEqual([testCase.action]);
+            expect(grounded.rejections).toEqual([]);
+
+            const selectedNoteScope = bridge(
+                [testCase.call],
+                `${testCase.prompt}, but only the selected MIDI notes`,
+                context
+            );
+            expect(selectedNoteScope.actions).toEqual([]);
+            expect(selectedNoteScope.rejections[0]?.reason).toContain('Selected-note edits are not supported');
+        }
+    });
+
+    it('grounds slash-fraction note-length grids before exact value comparison', () => {
+        const context = createMidiClipContext();
+        const eighth = bridge(
+            [{ name: 'quantizeNoteLengths', arguments: { clipId: 'clip-midi', gridSize: 0.125 } }],
+            'quantize note lengths in Piano MIDI to 1/8 beat',
+            context
+        );
+        const sixteenth = bridge(
+            [{ name: 'quantizeNoteLengths', arguments: { clipId: 'clip-midi', gridSize: 0.0625 } }],
+            'quantize note lengths in Piano MIDI to 1/16 beat',
+            context
+        );
+        const wrongNumerator = bridge(
+            [{ name: 'quantizeNoteLengths', arguments: { clipId: 'clip-midi', gridSize: 1 } }],
+            'quantize note lengths in Piano MIDI to 1/8 beat',
+            context
+        );
+
+        expect(eighth.actions).toEqual([
+            { type: 'quantizeNoteLengths', payload: { clipId: 'clip-midi', gridSize: 0.125 } },
+        ]);
+        expect(sixteenth.actions).toEqual([
+            { type: 'quantizeNoteLengths', payload: { clipId: 'clip-midi', gridSize: 0.0625 } },
+        ]);
+        expect(wrongNumerator.actions).toEqual([]);
+        expect(wrongNumerator.rejections[0]?.reason).toContain('does not match');
+    });
+
     it('grounds multiple distinct targets from one provider plan', () => {
         const result = bridge(
             [
@@ -225,6 +298,245 @@ describe('bridgeGroundedLlmToolCalls', () => {
             { type: 'muteTrack', payload: { trackId: 'track-vocals', muted: true } },
             { type: 'muteTrack', payload: { trackId: 'track-guitar', muted: true } },
         ]);
+    });
+
+    it('grounds dependent device and send actions against a bus created earlier in the same plan', () => {
+        const result = bridge(
+            [
+                { name: 'createBus', arguments: { name: 'Vocal Plate', binding: 'vocal-plate' } },
+                { name: 'addDevice', arguments: { trackId: '$vocal-plate', deviceType: 'Reverb' } },
+                {
+                    name: 'addSend',
+                    arguments: { trackId: vocals.id, busId: '$vocal-plate', level: 0.25 },
+                },
+            ],
+            'create a bus called Vocal Plate, add Reverb to it, and send Vocals to it at 25%',
+            {
+                ...projectContext,
+                availableDeviceTypes: [{ id: 'builtin-reverb', name: 'Reverb' }],
+            }
+        );
+
+        expect(result.rejections).toEqual([]);
+        const addDevice = result.actions[1];
+        const addSend = result.actions[2];
+        if (addDevice?.type !== 'addDevice' || addSend?.type !== 'addSend') {
+            throw new Error('Expected dependent device and send actions');
+        }
+        const busId = addDevice.payload.trackId;
+        expect(busId).toMatch(/^bus-ai-/u);
+        expect(result.actions).toEqual([
+            { type: 'createBus', payload: { name: 'Vocal Plate' } },
+            {
+                type: 'addDevice',
+                payload: { trackId: busId, deviceType: 'builtin-reverb' },
+            },
+            {
+                type: 'addSend',
+                payload: {
+                    trackId: vocals.id,
+                    busId,
+                    level: 0.25,
+                    expectedAbsent: true,
+                },
+            },
+        ]);
+        expect(addDevice.payload.trackId).toBe(addSend.payload.busId);
+    });
+
+    it('rejects malformed, duplicate, missing, forward, colliding, and capability-incompatible bus bindings', () => {
+        const deviceContext: ProjectContext = {
+            ...projectContext,
+            availableDeviceTypes: [{ id: 'builtin-reverb', name: 'Reverb' }],
+        };
+        const malformed = bridge(
+            [{ name: 'createBus', arguments: { name: 'Plate', binding: 'Bad Binding' } }],
+            'create a bus called Plate',
+            deviceContext
+        );
+        const duplicate = bridge(
+            [
+                { name: 'createBus', arguments: { name: 'Plate A', binding: 'plate' } },
+                { name: 'createBus', arguments: { name: 'Plate B', binding: 'plate' } },
+            ],
+            'create a bus called Plate A and create a bus called Plate B',
+            deviceContext
+        );
+        const missing = bridge(
+            [{ name: 'addDevice', arguments: { trackId: '$missing', deviceType: 'Reverb' } }],
+            'add Reverb to the new bus',
+            deviceContext
+        );
+        const forward = bridge(
+            [
+                { name: 'addDevice', arguments: { trackId: '$plate', deviceType: 'Reverb' } },
+                { name: 'createBus', arguments: { name: 'Plate', binding: 'plate' } },
+            ],
+            'add Reverb to the new bus and create a bus called Plate',
+            deviceContext
+        );
+        const colliding = bridge(
+            [{ name: 'createBus', arguments: { name: 'Existing Plate', binding: 'plate' } }],
+            'create a bus called Existing Plate',
+            {
+                ...deviceContext,
+                tracks: [
+                    ...deviceContext.tracks,
+                    createTrack({ id: 'bus-existing', name: 'Existing Plate', kind: 'bus' }),
+                ],
+            }
+        );
+        const incompatible = bridge(
+            [
+                { name: 'createBus', arguments: { name: 'Plate', binding: 'plate' } },
+                { name: 'removeDevice', arguments: { deviceId: '$plate' } },
+            ],
+            'create a bus called Plate and remove a device from it',
+            deviceContext
+        );
+
+        expect(malformed.rejections[0]?.reason).toContain('binding must start with a lowercase letter');
+        expect(duplicate.rejections[0]?.reason).toContain('Duplicate batch-local bus binding');
+        expect(missing.rejections[0]?.reason).toContain('Unknown batch-local bus reference');
+        expect(forward.rejections[0]?.reason).toContain('Forward batch-local bus reference');
+        expect(colliding.rejections[0]?.reason).toContain('collides with an existing');
+        expect(incompatible.rejections[0]?.reason).toContain('cannot satisfy target capability device');
+        expect(
+            [malformed, duplicate, missing, forward, colliding, incompatible].every(
+                (result) => result.actions.length === 0
+            )
+        ).toBe(true);
+    });
+
+    it('rejects an anaphoric bus target when multiple earlier created buses are compatible', () => {
+        const result = bridge(
+            [
+                { name: 'createBus', arguments: { name: 'Plate A', binding: 'plate-a' } },
+                { name: 'createBus', arguments: { name: 'Plate B', binding: 'plate-b' } },
+                { name: 'addDevice', arguments: { trackId: '$plate-a', deviceType: 'Reverb' } },
+            ],
+            'create a bus called Plate A, create a bus called Plate B, and add Reverb to it',
+            {
+                ...projectContext,
+                availableDeviceTypes: [{ id: 'builtin-reverb', name: 'Reverb' }],
+            }
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toContain('not unambiguously grounded');
+    });
+
+    it('rejects a batch-local reference when a longer bus name uniquely identifies another created bus', () => {
+        const result = bridge(
+            [
+                { name: 'createBus', arguments: { name: 'Plate', binding: 'plate' } },
+                { name: 'createBus', arguments: { name: 'Vocal Plate', binding: 'vocal-plate' } },
+                { name: 'addDevice', arguments: { trackId: '$plate', deviceType: 'Reverb' } },
+            ],
+            'create a bus called Plate, create a bus called Vocal Plate, and add Reverb to Vocal Plate',
+            {
+                ...projectContext,
+                availableDeviceTypes: [{ id: 'builtin-reverb', name: 'Reverb' }],
+            }
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toContain('not unambiguously grounded');
+    });
+
+    it('rejects a bound bus name that overlaps an unbound track created in the same plan', () => {
+        const result = bridge(
+            [
+                { name: 'addTrack', arguments: { name: 'Plate', kind: 'audio' } },
+                { name: 'createBus', arguments: { name: 'Vocal Plate', binding: 'vocal-plate' } },
+                { name: 'addDevice', arguments: { trackId: '$vocal-plate', deviceType: 'Reverb' } },
+            ],
+            'create an audio track called Plate, create a bus called Vocal Plate, and add Reverb to Vocal Plate',
+            {
+                ...projectContext,
+                availableDeviceTypes: [{ id: 'builtin-reverb', name: 'Reverb' }],
+            }
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toContain('collides with an unbound planned track');
+    });
+
+    it('rejects an anaphoric batch-local target when an earlier unbound track is also compatible', () => {
+        const result = bridge(
+            [
+                { name: 'addTrack', arguments: { name: 'Parallel', kind: 'audio' } },
+                { name: 'createBus', arguments: { name: 'Plate', binding: 'plate' } },
+                { name: 'addDevice', arguments: { trackId: '$plate', deviceType: 'Reverb' } },
+            ],
+            'create an audio track called Parallel, create a bus called Plate, and add Reverb to it',
+            {
+                ...projectContext,
+                availableDeviceTypes: [{ id: 'builtin-reverb', name: 'Reverb' }],
+            }
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toContain('not unambiguously grounded');
+    });
+
+    it('rejects a bare anaphoric bus target after an intervening compatible track target', () => {
+        const result = bridge(
+            [
+                { name: 'createBus', arguments: { name: 'Plate', binding: 'plate' } },
+                { name: 'muteTrack', arguments: { trackId: vocals.id, muted: true } },
+                { name: 'addDevice', arguments: { trackId: '$plate', deviceType: 'Reverb' } },
+            ],
+            'create a bus called Plate, mute Vocals, and add Reverb to it',
+            {
+                ...projectContext,
+                availableDeviceTypes: [{ id: 'builtin-reverb', name: 'Reverb' }],
+            }
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toContain('not unambiguously grounded');
+    });
+
+    it('uses a noun-qualified bus anaphor despite an intervening audio-track target', () => {
+        const result = bridge(
+            [
+                { name: 'createBus', arguments: { name: 'Plate', binding: 'plate' } },
+                { name: 'muteTrack', arguments: { trackId: vocals.id, muted: true } },
+                { name: 'addDevice', arguments: { trackId: '$plate', deviceType: 'Reverb' } },
+            ],
+            'create a bus called Plate, mute Vocals, and add Reverb to that bus',
+            {
+                ...projectContext,
+                availableDeviceTypes: [{ id: 'builtin-reverb', name: 'Reverb' }],
+            }
+        );
+
+        expect(result.rejections).toEqual([]);
+        const addDevice = result.actions[2];
+        expect(addDevice?.type).toBe('addDevice');
+        if (addDevice?.type !== 'addDevice') {
+            throw new Error('Expected a grounded addDevice action');
+        }
+        expect(addDevice.payload.trackId).toMatch(/^bus-ai-/u);
+    });
+
+    it('rejects a noun-qualified bus anaphor after an intervening Master target', () => {
+        const result = bridge(
+            [
+                { name: 'createBus', arguments: { name: 'Plate', binding: 'plate' } },
+                { name: 'setTrackOutput', arguments: { trackId: vocals.id, outputId: 'master' } },
+                { name: 'addDevice', arguments: { trackId: '$plate', deviceType: 'Reverb' } },
+            ],
+            'create a bus called Plate, route Vocals to the Master bus, and add Reverb to that bus',
+            {
+                ...projectContext,
+                availableDeviceTypes: [{ id: 'builtin-reverb', name: 'Reverb' }],
+            }
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toContain('not unambiguously grounded');
     });
 
     it('rejects ambiguous, mismatched, and ungrounded provider targets', () => {
@@ -744,6 +1056,413 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(selected.actions).toEqual([{ type: 'setTrackGain', payload: { trackId: 'track-vocals', gain: 0.6 } }]);
         expect(withoutSelection.actions).toEqual([]);
         expect(wrongSelection.actions).toEqual([]);
+    });
+
+    it('grounds trailing device off intent without stealing parameter adjustment intent', () => {
+        const mixParameter = {
+            id: 'mix',
+            name: 'Mix',
+            type: 'float' as const,
+            value: 0.25,
+            minValue: 0,
+            maxValue: 1,
+            unit: '',
+        };
+        const reverbContext: ProjectContext = {
+            ...projectContext,
+            tracks: projectContext.tracks.map((track) =>
+                track.id === vocals.id
+                    ? {
+                          ...track,
+                          devices: [
+                              {
+                                  id: 'device-reverb',
+                                  type: 'Reverb',
+                                  bypassed: false,
+                                  parameters: [mixParameter],
+                              },
+                          ],
+                      }
+                    : track
+            ),
+        };
+        const compound = bridge(
+            [
+                { name: 'bypassDevice', arguments: { deviceId: 'device-reverb', bypassed: true } },
+                { name: 'muteTrack', arguments: { trackId: guitar.id, muted: true } },
+            ],
+            'turn the Vocals Reverb off and mute Guitar',
+            reverbContext
+        );
+        const ownerQualified = bridge(
+            [{ name: 'bypassDevice', arguments: { deviceId: 'device-reverb', bypassed: true } }],
+            'turn off Reverb on Vocals',
+            reverbContext
+        );
+        const wrongOwnerQualifiedPolarity = bridge(
+            [{ name: 'bypassDevice', arguments: { deviceId: 'device-reverb', bypassed: false } }],
+            'turn off Reverb on Vocals',
+            reverbContext
+        );
+        const adverbOwnerQualified = bridge(
+            [{ name: 'bypassDevice', arguments: { deviceId: 'device-reverb', bypassed: true } }],
+            'turn Reverb completely off on Vocals',
+            reverbContext
+        );
+        const quotedTarget = bridge(
+            [{ name: 'bypassDevice', arguments: { deviceId: 'device-reverb', bypassed: true } }],
+            'turn off "Reverb" on Vocals',
+            reverbContext
+        );
+        const ownerBeforeTrailingPolarity = ['turn', 'switch'].map((carrier) =>
+            bridge(
+                [{ name: 'bypassDevice', arguments: { deviceId: 'device-reverb', bypassed: true } }],
+                `${carrier} Reverb on Vocals off`,
+                reverbContext
+            )
+        );
+        const wrappedOwnerPrompts = ['turn Reverb on "Vocals" off', 'turn Reverb on my Vocals off'];
+        const wrappedOwnerAccepted = wrappedOwnerPrompts.map((prompt) =>
+            bridge(
+                [{ name: 'bypassDevice', arguments: { deviceId: 'device-reverb', bypassed: true } }],
+                prompt,
+                reverbContext
+            )
+        );
+        const wrappedOwnerWrongPolarity = wrappedOwnerPrompts.map((prompt) =>
+            bridge(
+                [{ name: 'bypassDevice', arguments: { deviceId: 'device-reverb', bypassed: false } }],
+                prompt,
+                reverbContext
+            )
+        );
+        const rejectedDirectionalPrompts = [
+            'do not turn off Reverb on Vocals',
+            'If you turn off Reverb on Vocals, the mix gets dry',
+            'maybe turn off Reverb on Vocals',
+            'compare "turn off Reverb on Vocals" with bypassing it',
+            '"turn off Reverb on Vocals"',
+            "'turn off Reverb on Vocals'",
+        ].map((prompt) =>
+            bridge(
+                [{ name: 'bypassDevice', arguments: { deviceId: 'device-reverb', bypassed: true } }],
+                prompt,
+                reverbContext
+            )
+        );
+        const controlWordCollisionContext: ProjectContext = {
+            ...reverbContext,
+            tracks: [
+                ...reverbContext.tracks,
+                createTrack({ id: 'track-dont-straight', name: "Don't" }),
+                createTrack({ id: 'track-dont-curly', name: 'Don’t' }),
+                createTrack({ id: 'track-dont-plain', name: 'Dont' }),
+                createTrack({ id: 'track-maybe', name: 'Maybe' }),
+                createTrack({ id: 'track-never', name: 'Never' }),
+                createTrack({ id: 'track-not', name: 'Not' }),
+                createTrack({ id: 'track-perhaps', name: 'Perhaps' }),
+                createTrack({ id: 'track-without', name: 'Without' }),
+                createTrack({ id: 'track-if', name: 'If' }),
+            ],
+        };
+        const controlWordCollisions = [
+            'maybe turn off Reverb on Vocals',
+            'perhaps turn off Reverb on Vocals',
+            'if you turn off Reverb on Vocals the mix gets dry',
+            'turn off Reverb on Vocals maybe',
+            'turn off Reverb on Vocals if it is too wet',
+            'turn off Reverb perhaps on Vocals',
+            'turn off Reverb if on Vocals',
+            'turn off Reverb on maybe the Vocals track',
+        ].map((prompt) =>
+            bridge(
+                [{ name: 'bypassDevice', arguments: { deviceId: 'device-reverb', bypassed: true } }],
+                prompt,
+                controlWordCollisionContext
+            )
+        );
+        const catalogControlWordCollisions = [
+            { prompt: 'maybe disable Reverb on Vocals', bypassed: true },
+            { prompt: 'maybe bypass Reverb on Vocals', bypassed: true },
+            { prompt: 'maybe enable Reverb on Vocals', bypassed: false },
+        ].map(({ prompt, bypassed }) =>
+            bridge(
+                [{ name: 'bypassDevice', arguments: { deviceId: 'device-reverb', bypassed } }],
+                prompt,
+                controlWordCollisionContext
+            )
+        );
+        const ordinaryControlWordCollisions = [
+            bridge(
+                [{ name: 'muteTrack', arguments: { trackId: vocals.id, muted: true } }],
+                'maybe mute Vocals',
+                controlWordCollisionContext
+            ),
+            bridge(
+                [{ name: 'soloTrack', arguments: { trackId: vocals.id, soloed: true } }],
+                'maybe solo Vocals',
+                controlWordCollisionContext
+            ),
+            bridge(
+                [{ name: 'muteTrack', arguments: { trackId: vocals.id, muted: true } }],
+                'not mute Vocals',
+                controlWordCollisionContext
+            ),
+            bridge(
+                [{ name: 'muteTrack', arguments: { trackId: vocals.id, muted: true } }],
+                'never mute Vocals',
+                controlWordCollisionContext
+            ),
+            ...["don't mute Vocals", 'don’t mute Vocals', 'dont mute Vocals'].map((prompt) =>
+                bridge(
+                    [{ name: 'muteTrack', arguments: { trackId: vocals.id, muted: true } }],
+                    prompt,
+                    controlWordCollisionContext
+                )
+            ),
+            bridge(
+                [{ name: 'muteTrack', arguments: { trackId: vocals.id, muted: true } }],
+                'mute Vocals without muting it',
+                controlWordCollisionContext
+            ),
+            ...["'mute Vocals'", '‘mute Vocals’', "please 'mute Vocals'", 'could you “mute Vocals”'].map((prompt) =>
+                bridge(
+                    [{ name: 'muteTrack', arguments: { trackId: vocals.id, muted: true } }],
+                    prompt,
+                    controlWordCollisionContext
+                )
+            ),
+        ];
+        const ordinaryControlWordTarget = bridge(
+            [{ name: 'muteTrack', arguments: { trackId: 'track-maybe', muted: true } }],
+            'mute Maybe',
+            controlWordCollisionContext
+        );
+        const ordinaryWithoutTarget = bridge(
+            [{ name: 'muteTrack', arguments: { trackId: 'track-without', muted: true } }],
+            'mute Without',
+            controlWordCollisionContext
+        );
+        const destructiveWithoutCues = [
+            'delete Vocals without deleting it',
+            'delete Vocals without removing it',
+            'remove Vocals without deleting it',
+        ].map((prompt) =>
+            bridge([{ name: 'removeTrack', arguments: { trackId: vocals.id } }], prompt, controlWordCollisionContext)
+        );
+        const ungroundedBindingCue = bridge(
+            [{ name: 'createBus', arguments: { name: 'Vocals', binding: 'maybe' } }],
+            'create a bus maybe called Vocals',
+            controlWordCollisionContext
+        );
+        const ungroundedCreationNameCues = [
+            bridge(
+                [{ name: 'addTrack', arguments: { name: 'Maybe', kind: 'audio' } }],
+                'create a track maybe',
+                controlWordCollisionContext
+            ),
+            bridge(
+                [{ name: 'createBus', arguments: { name: 'Maybe' } }],
+                'create a bus maybe',
+                controlWordCollisionContext
+            ),
+        ];
+        const groundedCreationNames = [
+            bridge(
+                [{ name: 'addTrack', arguments: { name: 'Maybe', kind: 'audio' } }],
+                'create an audio track named Maybe',
+                reverbContext
+            ),
+            bridge(
+                [{ name: 'addTrack', arguments: { name: "John's Guitar", kind: 'audio' } }],
+                "create an audio track named John's Guitar",
+                reverbContext
+            ),
+        ];
+        const negatedPolarity = [true, false].map((bypassed) =>
+            bridge(
+                [{ name: 'bypassDevice', arguments: { deviceId: 'device-reverb', bypassed } }],
+                'turn Reverb on Vocals without switching it off',
+                reverbContext
+            )
+        );
+        const controlWordTargets = [
+            { name: 'Maybe', promptReference: 'Maybe' },
+            { name: 'Perhaps', promptReference: 'Perhaps' },
+            { name: 'If', promptReference: 'If' },
+            { name: 'Maybe Vocals', promptReference: 'Maybe Vocals' },
+            { name: 'Maybe-Vocals', promptReference: 'Maybe Vocals' },
+        ].map((ownerReference, index) => {
+            const deviceId = `device-reverb-control-${String(index)}`;
+            const owner = createTrack({
+                id: `track-control-${String(index)}`,
+                name: ownerReference.name,
+                devices: [
+                    {
+                        id: deviceId,
+                        type: 'Reverb',
+                        bypassed: false,
+                        parameters: [mixParameter],
+                    },
+                ],
+            });
+            return bridge(
+                [{ name: 'bypassDevice', arguments: { deviceId, bypassed: true } }],
+                `turn off Reverb on ${ownerReference.promptReference}`,
+                { ...reverbContext, tracks: [...reverbContext.tracks, owner] }
+            );
+        });
+        const catalogControlOwnerDeviceId = 'device-reverb-catalog-control-owner';
+        const catalogControlWordTarget = bridge(
+            [{ name: 'bypassDevice', arguments: { deviceId: catalogControlOwnerDeviceId, bypassed: true } }],
+            'disable Reverb on Maybe',
+            {
+                ...reverbContext,
+                tracks: [
+                    ...reverbContext.tracks,
+                    createTrack({
+                        id: 'track-catalog-control-owner',
+                        name: 'Maybe',
+                        devices: [
+                            {
+                                id: catalogControlOwnerDeviceId,
+                                type: 'Reverb',
+                                bypassed: false,
+                                parameters: [mixParameter],
+                            },
+                        ],
+                    }),
+                ],
+            }
+        );
+        const maybeOwnerDeviceId = 'device-reverb-maybe-owner';
+        const perhapsOwnerDeviceId = 'device-reverb-perhaps-owner';
+        const multipleControlWordTargets = bridge(
+            [
+                { name: 'bypassDevice', arguments: { deviceId: maybeOwnerDeviceId, bypassed: true } },
+                { name: 'bypassDevice', arguments: { deviceId: perhapsOwnerDeviceId, bypassed: true } },
+            ],
+            'turn off Reverb on Maybe and turn off Reverb on Perhaps',
+            {
+                ...reverbContext,
+                tracks: [
+                    ...reverbContext.tracks,
+                    createTrack({
+                        id: 'track-maybe-owner',
+                        name: 'Maybe',
+                        devices: [
+                            {
+                                id: maybeOwnerDeviceId,
+                                type: 'Reverb',
+                                bypassed: false,
+                                parameters: [mixParameter],
+                            },
+                        ],
+                    }),
+                    createTrack({
+                        id: 'track-perhaps-owner',
+                        name: 'Perhaps',
+                        devices: [
+                            {
+                                id: perhapsOwnerDeviceId,
+                                type: 'Reverb',
+                                bypassed: false,
+                                parameters: [mixParameter],
+                            },
+                        ],
+                    }),
+                ],
+            }
+        );
+        const maybeDeviceId = 'device-maybe';
+        const crossCallCueCollision = bridge(
+            [
+                { name: 'bypassDevice', arguments: { deviceId: 'device-reverb', bypassed: true } },
+                { name: 'bypassDevice', arguments: { deviceId: maybeDeviceId, bypassed: true } },
+            ],
+            'turn off Reverb maybe on Vocals and turn off Maybe on Guitar',
+            {
+                ...reverbContext,
+                tracks: reverbContext.tracks.map((track) =>
+                    track.id === guitar.id
+                        ? {
+                              ...track,
+                              devices: [
+                                  ...track.devices,
+                                  {
+                                      id: maybeDeviceId,
+                                      type: 'Maybe',
+                                      bypassed: false,
+                                      parameters: [],
+                                  },
+                              ],
+                          }
+                        : track
+                ),
+            }
+        );
+        const parameter = bridge(
+            [
+                {
+                    name: 'setDeviceParameter',
+                    arguments: { deviceId: 'device-reverb', paramId: 'mix', value: 0.25 },
+                },
+            ],
+            'set Reverb Mix on Vocals',
+            reverbContext
+        );
+
+        expect(compound.actions).toEqual([
+            { type: 'bypassDevice', payload: { deviceId: 'device-reverb', bypassed: true } },
+            { type: 'muteTrack', payload: { trackId: guitar.id, muted: true } },
+        ]);
+        expect(ownerQualified.actions).toEqual([
+            { type: 'bypassDevice', payload: { deviceId: 'device-reverb', bypassed: true } },
+        ]);
+        expect(wrongOwnerQualifiedPolarity.actions).toEqual([]);
+        expect(adverbOwnerQualified.actions).toEqual([
+            { type: 'bypassDevice', payload: { deviceId: 'device-reverb', bypassed: true } },
+        ]);
+        expect(quotedTarget.actions).toEqual([
+            { type: 'bypassDevice', payload: { deviceId: 'device-reverb', bypassed: true } },
+        ]);
+        expect(ownerBeforeTrailingPolarity.every((result) => result.actions.length === 1)).toBe(true);
+        expect(wrappedOwnerAccepted.every((result) => result.actions.length === 1)).toBe(true);
+        expect(wrappedOwnerWrongPolarity.every((result) => result.actions.length === 0)).toBe(true);
+        expect(rejectedDirectionalPrompts.every((result) => result.actions.length === 0)).toBe(true);
+        expect(controlWordCollisions.every((result) => result.actions.length === 0)).toBe(true);
+        expect(catalogControlWordCollisions.every((result) => result.actions.length === 0)).toBe(true);
+        expect(ordinaryControlWordCollisions.every((result) => result.actions.length === 0)).toBe(true);
+        expect(ordinaryControlWordTarget.actions).toEqual([
+            { type: 'muteTrack', payload: { trackId: 'track-maybe', muted: true } },
+        ]);
+        expect(ordinaryWithoutTarget.actions).toEqual([
+            { type: 'muteTrack', payload: { trackId: 'track-without', muted: true } },
+        ]);
+        expect(destructiveWithoutCues.every((result) => result.actions.length === 0)).toBe(true);
+        expect(ungroundedBindingCue.actions).toEqual([]);
+        expect(ungroundedCreationNameCues.every((result) => result.actions.length === 0)).toBe(true);
+        expect(groundedCreationNames.map((result) => result.actions)).toEqual([
+            [{ type: 'addTrack', payload: { name: 'Maybe', kind: 'audio', select: false } }],
+            [{ type: 'addTrack', payload: { name: "John's Guitar", kind: 'audio', select: false } }],
+        ]);
+        expect(negatedPolarity.every((result) => result.actions.length === 0)).toBe(true);
+        expect(controlWordTargets.every((result) => result.actions.length === 1)).toBe(true);
+        expect(catalogControlWordTarget.actions).toEqual([
+            { type: 'bypassDevice', payload: { deviceId: catalogControlOwnerDeviceId, bypassed: true } },
+        ]);
+        expect(multipleControlWordTargets.actions).toEqual([
+            { type: 'bypassDevice', payload: { deviceId: maybeOwnerDeviceId, bypassed: true } },
+            { type: 'bypassDevice', payload: { deviceId: perhapsOwnerDeviceId, bypassed: true } },
+        ]);
+        expect(crossCallCueCollision.actions).toEqual([
+            { type: 'bypassDevice', payload: { deviceId: maybeDeviceId, bypassed: true } },
+        ]);
+        expect(crossCallCueCollision.rejections).toEqual([expect.objectContaining({ index: 0, name: 'bypassDevice' })]);
+        expect(parameter.rejections).toEqual([]);
+        expect(parameter.actions).toEqual([
+            { type: 'setDeviceParameter', payload: { deviceId: 'device-reverb', paramId: 'mix', value: 0.25 } },
+        ]);
     });
 
     it('scopes duplicate device names to a uniquely referenced owner track', () => {

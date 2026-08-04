@@ -60,7 +60,7 @@ function loadProcessorClass(filePath: string, className: string) {
 }
 
 describe('AudioWorklet Processor Queues (_queueHead Read Index)', () => {
-    for (const processorName of ['LevainProcessor', 'FermenterProcessor', 'ToasterProcessor', 'CrumbsProcessor']) {
+    for (const processorName of ['LevainProcessor', 'ToasterProcessor', 'CrumbsProcessor']) {
         describe(processorName, () => {
             let ProcessorClass: any;
             let processor: any;

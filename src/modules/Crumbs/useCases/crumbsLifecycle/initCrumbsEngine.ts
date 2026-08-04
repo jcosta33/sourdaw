@@ -1,7 +1,9 @@
 import { createCrumbsInstance } from '../../repositories/crumbsBridge/createCrumbsInstance';
-import { ensureInstance, removeInstance } from '../../stores/crumbsStore';
+import { removeInstance } from '../../stores/crumbsStore';
 import { ensurePadInstance, removePadInstance } from '../../stores/padStore';
 import { ensureSliceInstance, removeSliceInstance } from '../../stores/sliceStore';
+
+import { ensureCrumbsInstanceFromProject } from './ensureCrumbsInstanceFromProject';
 
 /**
  * Ensures the per-instance stores, then creates the backend crumbs engine.
@@ -12,7 +14,7 @@ import { ensureSliceInstance, removeSliceInstance } from '../../stores/sliceStor
  * re-thrown so callers can surface an engine-unavailable state.
  */
 export async function initCrumbsEngine(instanceId: string, sampleRate: number): Promise<void> {
-    ensureInstance(instanceId);
+    ensureCrumbsInstanceFromProject(instanceId);
     ensurePadInstance(instanceId);
     ensureSliceInstance(instanceId);
     try {

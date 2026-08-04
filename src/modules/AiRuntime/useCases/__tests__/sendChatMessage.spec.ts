@@ -376,7 +376,7 @@ describe('sendChatMessage injectables', () => {
             .map(([message]) => message)
             .find((message) => message.role === 'user' && message.content === 'save project');
         expect(rejectionUserMessage).toEqual(expect.objectContaining({ role: 'user', content: 'save project' }));
-        expect(rejectionUserMessage).not.toHaveProperty('isDsoAction');
+        expect(rejectionUserMessage).not.toHaveProperty('isCommandAction');
         expect(mocks.appendChatMessage).toHaveBeenCalledWith(
             expect.objectContaining({
                 role: 'assistant',
@@ -384,6 +384,31 @@ describe('sendChatMessage injectables', () => {
                 error: 'Recognized command failed runtime validation: saveProject',
             })
         );
+    });
+
+    it('reports an empty provider plan as an unmatched command without executing', async () => {
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'prompt',
+        };
+        mocks.parsePromptToActions.mockResolvedValue({
+            actions: [],
+            rawText: 'do something unknown',
+            requiresConfirmation: false,
+        });
+
+        await sendChatMessage('do something unknown');
+
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
+        const [userMessage, assistantMessage] = mocks.appendChatMessage.mock.calls.map(([message]) => message);
+        expect(userMessage?.role).toBe('user');
+        expect(userMessage?.content).toBe('do something unknown');
+        expect(userMessage?.isCommandAction).toBe(true);
+        expect(assistantMessage?.role).toBe('assistant');
+        expect(assistantMessage?.content).toBe('No actions were matched or executed for your command.');
+        expect(assistantMessage?.error).toBe('No actions matched');
     });
 
     it('binds validated provider actions and admission to one project revision', async () => {

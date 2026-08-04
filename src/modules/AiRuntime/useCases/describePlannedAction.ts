@@ -23,7 +23,15 @@ export function describePlannedAction({ action, context }: DescribePlannedAction
             return `Remove clip "${clip.name}"`;
         }
     }
-    if (action.type === 'quantizeNotes' || action.type === 'transposeNotes') {
+    if (
+        action.type === 'quantizeNotes' ||
+        action.type === 'transposeNotes' ||
+        action.type === 'invertNotes' ||
+        action.type === 'retrogradeNotes' ||
+        action.type === 'quantizeNoteLengths' ||
+        action.type === 'scaleAllVelocities' ||
+        action.type === 'setAllVelocities'
+    ) {
         const clip = context.tracks
             .flatMap((track) => track.clips)
             .find((candidate) => candidate.id === action.payload.clipId);
@@ -31,11 +39,26 @@ export function describePlannedAction({ action, context }: DescribePlannedAction
             if (action.type === 'quantizeNotes') {
                 return `Quantize notes in "${clip.name}" (${clip.id}) to a ${String(action.payload.gridSize)}-beat grid`;
             }
-            let signedSemitones = String(action.payload.semitones);
-            if (action.payload.semitones > 0) {
-                signedSemitones = `+${signedSemitones}`;
+            if (action.type === 'transposeNotes') {
+                let signedSemitones = String(action.payload.semitones);
+                if (action.payload.semitones > 0) {
+                    signedSemitones = `+${signedSemitones}`;
+                }
+                return `Transpose notes in "${clip.name}" (${clip.id}) by ${signedSemitones} semitones`;
             }
-            return `Transpose notes in "${clip.name}" (${clip.id}) by ${signedSemitones} semitones`;
+            if (action.type === 'invertNotes') {
+                return `Invert notes in "${clip.name}" (${clip.id})`;
+            }
+            if (action.type === 'retrogradeNotes') {
+                return `Retrograde notes in "${clip.name}" (${clip.id})`;
+            }
+            if (action.type === 'quantizeNoteLengths') {
+                return `Quantize note lengths in "${clip.name}" (${clip.id}) to a ${String(action.payload.gridSize)}-beat grid`;
+            }
+            if (action.type === 'scaleAllVelocities') {
+                return `Scale note velocities in "${clip.name}" (${clip.id}) by ×${String(action.payload.factor)}`;
+            }
+            return `Set note velocities in "${clip.name}" (${clip.id}) to ${String(action.payload.velocity)}`;
         }
     }
 

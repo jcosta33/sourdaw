@@ -1,12 +1,10 @@
-import { updateNotesForClip } from '../midiNoteCrud/updateNotesForClip';
+import { setMidiVelocities } from '../../transformers/setMidiVelocities';
 
-export function setAllVelocities(clipId: string, velocity: number): void {
-    const clamped = Math.max(1, Math.min(127, velocity));
+import { applyMidiNoteTransform } from './applyMidiNoteTransform';
 
-    updateNotesForClip(clipId, (notes) =>
-        notes.map((node) => ({
-            ...node,
-            velocity: clamped,
-        }))
-    );
+export function setAllVelocities(clipId: string, velocity: number): boolean {
+    return applyMidiNoteTransform({
+        clipId,
+        transform: (notes) => setMidiVelocities({ notes, velocity }),
+    });
 }

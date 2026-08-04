@@ -19,12 +19,24 @@ pub const MAX_SLICES: usize = 128;
 /// Default base note for slice mapping.
 const DEFAULT_BASE_NOTE: u8 = 36; // C2
 
+/// Slices in the default chop, before any markers have been set.
+///
+/// Equal division is the no-analysis chop every sampler offers — the MPC's
+/// Chop > Equal, Maschine's Slice > Split, Ableton's "Divide beat by" — and
+/// sixteen is the pad count all three default to. Onset detection is the
+/// better chop, but it needs the sample's PCM and it allocates, so it belongs
+/// on the setup path (`set_markers_from_onsets`) and cannot run here.
+const DEFAULT_SLICE_COUNT: u32 = 16;
+
 // ── Slice Mode ─────────────────────────────────────────────────────────
 
 /// Slice mode state: markers define regions within a single sample.
 #[derive(Debug, Clone)]
 pub struct SliceMode {
     pub sample_id: SampleId,
+    /// Length of `sample_id` in frames, so the default chop has something to
+    /// divide. Zero means nothing is loaded and no note maps to a slice.
+    sample_frames: u32,
     markers: Vec<SliceMarker>,
     base_note: u8,
 
@@ -50,6 +62,7 @@ impl Default for SliceMode {
     fn default() -> Self {
         Self {
             sample_id: 0,
+            sample_frames: 0,
             markers: Vec::new(),
             base_note: DEFAULT_BASE_NOTE,
             playback_mode: PlaybackMode::OneShot,
@@ -185,9 +198,60 @@ impl SliceMode {
         self.reassign_notes();
     }
 
+    /// Select which sample the slices cut, and how long it is.
+    ///
+    /// Two writes, no allocation — safe on the audio thread, which is where
+    /// the engine's sample selection is applied.
+    pub fn set_sample(&mut self, sample_id: SampleId, frame_count: u32) {
+        self.sample_id = sample_id;
+        self.sample_frames = frame_count;
+    }
+
     /// Get the slice marker for a given MIDI note.
-    fn note_to_slice(&self, note: u8) -> Option<&SliceMarker> {
-        self.markers.iter().find(|m| m.mapped_note == note)
+    ///
+    /// Falls back to the default equal chop while no markers have been set, so
+    /// a freshly loaded sample is already sliced. Returned by value because the
+    /// default slices are computed rather than stored.
+    fn note_to_slice(&self, note: u8) -> Option<SliceMarker> {
+        if !self.markers.is_empty() {
+            return self.markers.iter().copied().find(|m| m.mapped_note == note);
+        }
+        self.default_slice(note)
+    }
+
+    /// The `n`th of `DEFAULT_SLICE_COUNT` equal parts, where `n` is how far the
+    /// note sits above the base note.
+    ///
+    /// Bounded on both sides on purpose: below the base note and past the last
+    /// slice there is nothing mapped, so "the sample is chopped" stays
+    /// distinguishable from "every note plays from somewhere".
+    fn default_slice(&self, note: u8) -> Option<SliceMarker> {
+        if self.sample_frames == 0 || note < self.base_note {
+            return None;
+        }
+
+        let index = u32::from(note - self.base_note);
+        if index >= DEFAULT_SLICE_COUNT {
+            return None;
+        }
+
+        // 64-bit intermediates: `frames * index` overflows u32 for samples
+        // longer than ~93 minutes at 48 kHz, which a long field recording
+        // reaches.
+        let frames = u64::from(self.sample_frames);
+        let count = u64::from(DEFAULT_SLICE_COUNT);
+        let start = (frames * u64::from(index) / count) as u32;
+        let end = (frames * u64::from(index + 1) / count) as u32;
+
+        if start >= end {
+            return None;
+        }
+
+        Some(SliceMarker {
+            start_frame: start,
+            end_frame: end,
+            mapped_note: note,
+        })
     }
 
     /// Build voice trigger parameters for a given MIDI note.

@@ -60,7 +60,7 @@ fn an_instance_that_never_began_a_load_renders_silence_not_a_fallback_tone() {
 #[test]
 fn beginning_a_load_arms_the_fallback_so_the_instance_is_audible() {
     let mut instance = LevainInstance::new(SAMPLE_RATE, 8);
-    // `clear_zones` is what the sample loader posts first (`clearZones`), and it is
+    // `clear_zones` is the direct DSP reset operation, and it is
     // the only thing that arms the fallback. The offline render must reach this.
     instance.clear_zones();
     instance.note_on(69, 100);

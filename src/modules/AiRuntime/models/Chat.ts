@@ -12,8 +12,8 @@ export type ChatMessage = {
     error?: string;
     /** Hidden reasoning tokens from the model (collapsible in UI) */
     reasoning?: string;
-    /** Whether this message came from the DSO editor (not chat) */
-    isDsoAction?: boolean;
+    /** Whether this message is an executable prompt-command receipt rather than ordinary chat. */
+    isCommandAction?: boolean;
     /** Pending prompt-action confirmation owned by AiRuntime. */
     pendingActionConfirmationId?: string;
     pendingActionConfirmationStatus?: ChatActionConfirmationStatus;

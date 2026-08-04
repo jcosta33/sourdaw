@@ -24,6 +24,10 @@ describe('llmNoteHelpers', () => {
             expect(notePitchToName(69)).toBe('A4');
             expect(notePitchToName(71)).toBe('B4');
         });
+
+        it('rejects a pitch that cannot map to a MIDI note name', () => {
+            expect(() => notePitchToName(-1)).toThrow('Invalid MIDI pitch: -1');
+        });
     });
 
     describe('formatNotesForLlm', () => {
@@ -43,11 +47,12 @@ describe('llmNoteHelpers', () => {
     });
 
     describe('llmGenerateNotes', () => {
-        it('requests tool calls via LLM and returns note array', async () => {
+        it('requests only addNotes via LLM and returns the note array', async () => {
             const mockRunToolCalls = vi.fn().mockResolvedValue([
                 {
                     name: 'addNotes',
                     arguments: {
+                        clipId: 'clip-1',
                         notes: [{ pitch: 60, startBeat: 0, duration: 1, velocity: 100 }],
                     },
                 },
@@ -65,20 +70,25 @@ describe('llmNoteHelpers', () => {
             if (!call) {
                 throw new Error('Expected runToolCalls call');
             }
-            const userMsg = call[1];
+            const userMsg: unknown = call[1];
+            const toolSchemas = call[2] as Array<{ function: { name: string } }> | undefined;
+            if (typeof userMsg !== 'string') {
+                throw new TypeError('Expected a string user message');
+            }
             expect(userMsg).toContain('make a cool beat');
             expect(userMsg).toContain('E4(1-1.5,v90)');
             expect(userMsg).toContain('clip-1');
+            expect(toolSchemas?.map((toolSchema) => toolSchema.function.name)).toEqual(['addNotes']);
 
             expect(result).toEqual([{ pitch: 60, startBeat: 0, duration: 1, velocity: 100 }]);
         });
 
-        it('returns empty array if LLM tool call has no notes or is not addNotes', async () => {
+        it('rejects a tool batch that does not satisfy the MIDI generation contract', async () => {
             const mockRunToolCalls = vi.fn().mockResolvedValue([{ name: 'otherTool', arguments: {} }]);
 
-            const result = await llmGenerateNotes(asInjectable(mockRunToolCalls), 'instruction', [], 'c1');
-
-            expect(result).toEqual([]);
+            await expect(llmGenerateNotes(asInjectable(mockRunToolCalls), 'instruction', [], 'c1')).rejects.toThrow(
+                'exactly one addNotes tool call'
+            );
         });
     });
 });

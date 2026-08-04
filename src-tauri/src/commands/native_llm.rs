@@ -673,7 +673,7 @@ fn build_json_schema_constraint(json_schema: &str) -> Result<Constraint, String>
 
 /// Schema-constrained streaming generation.
 /// The output is guaranteed to conform to the provided JSON schema at the token level.
-/// This is the primary edit protocol — DSO output via schema constraints.
+/// Callers use schema constraints to validate provider-specific structured output at generation time.
 #[tauri::command]
 pub async fn schema_constrained_generation(
     request_id: String,

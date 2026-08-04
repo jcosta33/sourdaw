@@ -101,60 +101,89 @@ function installDeferredWasmDevice({
     beforeLoaded?: (finalDn: BuiltinDeviceNode) => void;
     requiresContent?: boolean;
 } = {}) {
-    const placeholderNode = createMockAudioNode('gain');
-    const placeholder: BuiltinDeviceNode = {
-        deviceId,
-        type: 'levain',
-        nodes: [placeholderNode],
-        inputNode: placeholderNode,
-        outputNode: placeholderNode,
-        controller,
+    type DeferredGeneration = {
+        load: PromiseWithResolvers<void>;
+        onLoaded: (finalDn: BuiltinDeviceNode) => void;
+        onContentLoadSettled?: (outcome: DeviceContentLoadOutcome) => void;
+        onRuntimeFailure?: (failedDn: BuiltinDeviceNode, replacementDn: BuiltinDeviceNode) => boolean;
+        onRuntimeRecovery?: (replacementDn: BuiltinDeviceNode) => void;
+        placeholder: BuiltinDeviceNode;
+        signal?: AbortSignal;
     };
-    let onLoaded: ((finalDn: BuiltinDeviceNode) => void) | undefined;
-    let onContentLoadSettled: ((outcome: DeviceContentLoadOutcome) => void) | undefined;
-    let onRuntimeFailure: ((failedDn: BuiltinDeviceNode, replacementDn: BuiltinDeviceNode) => void) | undefined;
-    let signal: AbortSignal | undefined;
-    const load = Promise.withResolvers<void>();
+    const generations: DeferredGeneration[] = [];
+    const getGeneration = (index = generations.length - 1): DeferredGeneration => {
+        const generation = generations[index];
+        if (!generation) {
+            throw new Error(`expected deferred device generation ${index}`);
+        }
+        return generation;
+    };
     mocks.findWasmDescriptor.mockReturnValue({
         requiresContent,
         matches: () => true,
         create: (deps: {
             onLoaded: (finalDn: BuiltinDeviceNode) => void;
             onContentLoadSettled?: (outcome: DeviceContentLoadOutcome) => void;
-            onRuntimeFailure?: (failedDn: BuiltinDeviceNode, replacementDn: BuiltinDeviceNode) => void;
+            onRuntimeFailure?: (failedDn: BuiltinDeviceNode, replacementDn: BuiltinDeviceNode) => boolean;
+            onRuntimeRecovery?: (replacementDn: BuiltinDeviceNode) => void;
             signal?: AbortSignal;
         }) => {
-            onLoaded = deps.onLoaded;
-            onContentLoadSettled = deps.onContentLoadSettled;
-            onRuntimeFailure = deps.onRuntimeFailure;
-            signal = deps.signal;
+            const placeholderNode = createMockAudioNode('gain');
+            const placeholder: BuiltinDeviceNode = {
+                deviceId,
+                type: 'levain',
+                nodes: [placeholderNode],
+                inputNode: placeholderNode,
+                outputNode: placeholderNode,
+                controller,
+            };
+            const load = Promise.withResolvers<void>();
+            generations.push({
+                load,
+                onLoaded: deps.onLoaded,
+                onContentLoadSettled: deps.onContentLoadSettled,
+                onRuntimeFailure: deps.onRuntimeFailure,
+                onRuntimeRecovery: deps.onRuntimeRecovery,
+                placeholder,
+                signal: deps.signal,
+            });
             return { placeholder, loadPromise: load.promise };
         },
     });
     return {
-        placeholder,
+        get generationCount(): number {
+            return generations.length;
+        },
+        get placeholder(): BuiltinDeviceNode {
+            return getGeneration().placeholder;
+        },
         get signal(): AbortSignal | undefined {
-            return signal;
+            return getGeneration().signal;
         },
-        resolve(finalDn: BuiltinDeviceNode): void {
-            if (!onLoaded) {
-                throw new Error('expected the deferred descriptor to capture onLoaded');
-            }
+        resolve(finalDn: BuiltinDeviceNode, generationIndex?: number): void {
+            const generation = getGeneration(generationIndex);
             beforeLoaded?.(finalDn);
-            onLoaded(finalDn);
+            generation.onLoaded(finalDn);
         },
-        fail(finalDn: BuiltinDeviceNode): void {
-            if (!onRuntimeFailure) {
+        fail(finalDn: BuiltinDeviceNode, generationIndex?: number): void {
+            const generation = getGeneration(generationIndex);
+            if (!generation.onRuntimeFailure) {
                 throw new Error('expected the deferred descriptor to capture onRuntimeFailure');
             }
-            onRuntimeFailure(finalDn, placeholder);
+            const replaced = generation.onRuntimeFailure(finalDn, generation.placeholder);
+            if (replaced) {
+                generation.onRuntimeRecovery?.(generation.placeholder);
+            }
         },
-        settle: load.resolve,
-        settleContent(outcome: DeviceContentLoadOutcome): void {
-            if (!onContentLoadSettled) {
+        settle(generationIndex?: number): void {
+            getGeneration(generationIndex).load.resolve();
+        },
+        settleContent(outcome: DeviceContentLoadOutcome, generationIndex?: number): void {
+            const generation = getGeneration(generationIndex);
+            if (!generation.onContentLoadSettled) {
                 throw new Error('expected the deferred descriptor to capture onContentLoadSettled');
             }
-            onContentLoadSettled(outcome);
+            generation.onContentLoadSettled(outcome);
         },
     };
 }
@@ -749,6 +778,74 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             });
         });
 
+        it('recovers a terminally failed loaded device once and preserves its bypass', async () => {
+            const deferred = installDeferredWasmDevice();
+            const readinessDiagnostics = createDeviceReadinessDiagnostics();
+            const track = new TrackNode('t1', makeDeps(ctx, { readinessDiagnostics }));
+            track.addDevice('first', 'builtin-gain');
+            track.addDevice('wasm-1', 'levain', undefined, ['first']);
+            track.addDevice('last', 'builtin-gain');
+            const loaded = createLoadedDevice();
+            deferred.resolve(loaded.device);
+            deferred.settleContent('ready');
+            deferred.settle();
+            await Promise.resolve();
+            await Promise.resolve();
+            expect(track.getDeviceLoadState('wasm-1')).toBe('ready');
+            track.updateBypass('wasm-1', true);
+
+            deferred.fail(loaded.device);
+            await Promise.resolve();
+
+            expect(deferred.generationCount).toBe(2);
+            expect(track.strip.deviceNodes.map((device) => device.deviceId)).toEqual(['first', 'wasm-1', 'last']);
+            expect(track.strip.deviceNodes[1]).toBe(deferred.placeholder);
+            expect(track.getDeviceLoadState('wasm-1')).toBe('pending');
+
+            const recovered = createLoadedDevice();
+            deferred.resolve(recovered.device);
+            deferred.settleContent('ready');
+            deferred.settle();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(track.strip.deviceNodes.map((device) => device.deviceId)).toEqual(['first', 'wasm-1', 'last']);
+            expect(track.strip.deviceNodes[1]).toBe(recovered.device);
+            expect(track.getDeviceLoadState('wasm-1')).toBe('ready');
+            expect(recovered.controller.setBypass).toHaveBeenCalledWith(true);
+
+            deferred.fail(recovered.device);
+            await Promise.resolve();
+
+            expect(deferred.generationCount).toBe(2);
+            expect(track.strip.deviceNodes[1]).toBe(deferred.placeholder);
+            expect(track.getDeviceLoadState('wasm-1')).toBe('failed');
+            expect(readinessDiagnostics.snapshot()).toMatchObject({
+                counts: { requested: 4, playableReady: 2, failed: 2 },
+                devices: expect.arrayContaining([
+                    expect.objectContaining({ deviceId: 'wasm-1', status: 'failed', failureStage: 'runtime' }),
+                ]),
+            });
+        });
+
+        it('cancels queued runtime recovery when the failed slot is removed', async () => {
+            const deferred = installDeferredWasmDevice();
+            const track = new TrackNode('t1', makeDeps(ctx));
+            track.addDevice('wasm-1', 'levain');
+            const loaded = createLoadedDevice();
+            deferred.resolve(loaded.device);
+            deferred.settle();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            deferred.fail(loaded.device);
+            track.removeDevice('wasm-1');
+            await Promise.resolve();
+
+            expect(deferred.generationCount).toBe(1);
+            expect(track.strip.deviceNodes).toEqual([]);
+        });
+
         it('keeps a live device with failed content observable until removal', () => {
             const deferred = installDeferredWasmDevice();
             const readinessDiagnostics = createDeviceReadinessDiagnostics();
@@ -768,31 +865,6 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             track.removeDevice('wasm-1');
             expect(deferred.signal?.aborted).toBe(true);
             expect(readinessDiagnostics.snapshot().devices).toEqual([]);
-        });
-
-        it('keeps a runtime failure terminal when the descriptor settles after replacing the loaded device', async () => {
-            const deferred = installDeferredWasmDevice({ requiresContent: false });
-            const readinessDiagnostics = createDeviceReadinessDiagnostics();
-            const track = new TrackNode('t1', makeDeps(ctx, { readinessDiagnostics }));
-            track.addDevice('wasm-1', 'grand-boule');
-            const loaded = createLoadedDevice();
-            deferred.resolve(loaded.device);
-            await Promise.resolve();
-            expect(track.getDeviceLoadState('wasm-1')).toBe('ready');
-
-            deferred.fail(loaded.device);
-            expect(track.getDeviceLoadState('wasm-1')).toBe('failed');
-            expect(deferred.signal?.aborted).toBe(true);
-            deferred.settle();
-            await Promise.resolve();
-            await Promise.resolve();
-
-            expect(track.strip.deviceNodes[0]).toBe(deferred.placeholder);
-            expect(track.getDeviceLoadState('wasm-1')).toBe('failed');
-            expect(readinessDiagnostics.snapshot()).toMatchObject({
-                counts: { requested: 1, playableReady: 1, failed: 1 },
-                devices: [{ deviceId: 'wasm-1', status: 'failed', failureStage: 'runtime' }],
-            });
         });
 
         it('marks a timed-out descriptor load failed and rejects its late result', () => {

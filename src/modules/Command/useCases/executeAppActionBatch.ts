@@ -126,14 +126,14 @@ async function executePreparedBatch(
 
 async function compensateAttemptedBatch(
     attemptedActions: readonly PreparedBatchAction[],
-    snapshotTransaction: object | undefined
+    scope: AutomergeStorageTransactionScope
 ): Promise<string | null> {
     const compensableActions = attemptedActions.filter((action) => action.requiresAbortCompensation);
     if (compensableActions.length === 0) {
         return null;
     }
 
-    const compensationTransaction = runWithAutomergeStorageTransaction(snapshotTransaction, async (scope) => {
+    try {
         for (const prepared of [...compensableActions].reverse()) {
             const inverseAction = prepared.description?.inverseAction;
             if (!inverseAction) {
@@ -148,19 +148,9 @@ async function compensateAttemptedBatch(
                 throw new Error(`Runtime compensation did not apply for ${inverseAction.type}`);
             }
         }
-    });
-
-    if (compensationTransaction.status === 'threw') {
-        compensationTransaction.abort();
-        return failureReason(compensationTransaction.error);
-    }
-    try {
-        await compensationTransaction.value;
         return null;
     } catch (error) {
         return failureReason(error);
-    } finally {
-        compensationTransaction.abort();
     }
 }
 
@@ -304,12 +294,9 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
             try {
                 executedActions = await storageTransaction.value;
             } catch (error) {
+                const compensationFailure = await compensateAttemptedBatch(attemptedActions, storageTransaction.scope);
                 storageTransaction.abort();
                 clearBatchSemanticContext();
-                const compensationFailure = await compensateAttemptedBatch(
-                    attemptedActions,
-                    options?.snapshotTransaction
-                );
                 const baseReason = failureReason(error);
                 const reason = compensationFailure
                     ? `${baseReason}; runtime compensation failed: ${compensationFailure}`
@@ -333,12 +320,9 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
             try {
                 assertExecutionAuthorized(options?.shouldExecute);
             } catch (error) {
+                const compensationFailure = await compensateAttemptedBatch(attemptedActions, storageTransaction.scope);
                 storageTransaction.abort();
                 clearBatchSemanticContext();
-                const compensationFailure = await compensateAttemptedBatch(
-                    attemptedActions,
-                    options?.snapshotTransaction
-                );
                 if (compensationFailure) {
                     return {
                         status: 'failed',
@@ -352,7 +336,6 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
             try {
                 storageTransaction.commit();
             } catch (error) {
-                storageTransaction.abort();
                 const cleanupWarning = clearBatchSemanticContext();
                 const reason = failureReason(error);
                 logger.error(new Error('Action batch storage commit failed', { cause: error }));
@@ -368,10 +351,8 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                         reason: ambiguousReason,
                     };
                 }
-                const compensationFailure = await compensateAttemptedBatch(
-                    attemptedActions,
-                    options?.snapshotTransaction
-                );
+                const compensationFailure = await compensateAttemptedBatch(attemptedActions, storageTransaction.scope);
+                storageTransaction.abort();
                 if (compensationFailure) {
                     return {
                         status: 'failed',

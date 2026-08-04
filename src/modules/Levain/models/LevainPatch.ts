@@ -13,51 +13,68 @@
 
 export type InstrumentFamily = 'strings' | 'brass' | 'woodwinds' | 'percussion' | 'choir';
 
-export type InstrumentId =
+/**
+ * Every instrument the sampler can be pointed at.
+ *
+ * A runtime array rather than a bare type union because the id is now project
+ * truth: `LevainDeviceState` reads one back out of a saved file or a peer's
+ * document, and a reader has to be able to tell a real id from a typo. Without
+ * this list the only place an unknown id would surface is a 404 on
+ * `/samples/levain/<id>/manifest.json`, several async hops after the patch has
+ * already been built with the wrong family and key range.
+ */
+export const INSTRUMENT_IDS = [
     // Strings
-    | 'violin-1'
-    | 'violin-2'
-    | 'viola'
-    | 'cello'
-    | 'double-bass'
-    | 'solo-violin'
-    | 'solo-viola'
-    | 'solo-cello'
+    'violin-1',
+    'violin-2',
+    'viola',
+    'cello',
+    'double-bass',
+    'solo-violin',
+    'solo-viola',
+    'solo-cello',
     // Brass
-    | 'trumpet'
-    | 'horn'
-    | 'trombone'
-    | 'tuba'
-    | 'solo-trumpet'
-    | 'solo-horn'
+    'trumpet',
+    'horn',
+    'trombone',
+    'tuba',
+    'solo-trumpet',
+    'solo-horn',
     // Woodwinds
-    | 'flute'
-    | 'oboe'
-    | 'clarinet'
-    | 'bassoon'
-    | 'piccolo'
-    | 'english-horn'
-    | 'bass-clarinet'
-    | 'contrabassoon'
+    'flute',
+    'oboe',
+    'clarinet',
+    'bassoon',
+    'piccolo',
+    'english-horn',
+    'bass-clarinet',
+    'contrabassoon',
     // Percussion
-    | 'timpani'
-    | 'snare'
-    | 'bass-drum'
-    | 'cymbals'
-    | 'glockenspiel'
-    | 'xylophone'
-    | 'marimba'
-    | 'vibraphone'
-    | 'celesta'
-    | 'tubular-bells'
-    | 'tam-tam'
-    | 'triangle'
-    | 'harp'
+    'timpani',
+    'snare',
+    'bass-drum',
+    'cymbals',
+    'glockenspiel',
+    'xylophone',
+    'marimba',
+    'vibraphone',
+    'celesta',
+    'tubular-bells',
+    'tam-tam',
+    'triangle',
+    'harp',
     // Choir
-    | 'soprano'
-    | 'alto'
-    | 'tenor'
-    | 'bass-voice';
+    'soprano',
+    'alto',
+    'tenor',
+    'bass-voice',
+] as const;
+
+export type InstrumentId = (typeof INSTRUMENT_IDS)[number];
+
+export function isInstrumentId(value: unknown): value is InstrumentId {
+    return typeof value === 'string' && INSTRUMENT_IDS.some((id) => id === value);
+}
 
 // ---------------------------------------------------------------------------
 // Articulation types
@@ -93,6 +110,44 @@ export type ArticulationType =
     | 'decrescendo'
     | 'runs';
 
+export const ARTICULATION_ID_BY_TYPE = {
+    sustain: 0,
+    'sustain-non-vib': 1,
+    'con-sordino': 2,
+    flautando: 3,
+    'sul-tasto': 4,
+    'sul-ponticello': 5,
+    harmonics: 6,
+    spiccato: 7,
+    staccato: 8,
+    staccatissimo: 9,
+    pizzicato: 10,
+    'bartok-pizz': 11,
+    'col-legno': 12,
+    tremolo: 13,
+    'trill-half': 14,
+    'trill-whole': 15,
+    legato: 16,
+    'legato-portamento': 17,
+    marcato: 18,
+    sforzando: 19,
+    'flutter-tongue': 20,
+    'muted-straight': 21,
+    'muted-cup': 22,
+    'muted-harmon': 23,
+    'muted-plunger': 24,
+    crescendo: 25,
+    decrescendo: 26,
+    runs: 27,
+} as const satisfies Record<ArticulationType, number>;
+
+export function isArticulationType(value: unknown): value is ArticulationType {
+    return typeof value === 'string' && Object.hasOwn(ARTICULATION_ID_BY_TYPE, value);
+}
+
+export function getArticulationId(type: ArticulationType): number {
+    return ARTICULATION_ID_BY_TYPE[type];
+}
 export type ArticulationEntry = {
     type: ArticulationType;
     keyswitch: number | null;

@@ -107,8 +107,20 @@ const BACTERIA_PARAMS: readonly PluginParamDef[] = [
     { id: 'envFollowerAttack', label: 'Env Atk', min: 0.1, max: 100, default: 5, unit: 'ms', scaling: 'log' },
     { id: 'envFollowerRelease', label: 'Env Rel', min: 1, max: 2000, default: 200, unit: 'ms', scaling: 'log' },
 
-    // Per-band gain (exposed for automation)
-    { id: 'bandGain', label: 'Band Gain', min: -24, max: 24, default: 0, unit: 'dB', step: 0.5 },
+    // Per-band gain (exposed for automation).
+    //
+    // The id is `gain` because that is what every other layer already calls it:
+    // `BacteriaBand.gain`, the BandStrip knob, the bridge's `bandN_gain` engine
+    // key, and `BandChain::set_param`'s `"gain"` arm. This entry read `bandGain`
+    // — a name nothing else used — so the lane picker offered "Band Gain", a
+    // drawn ±24 dB curve reached the engine, fell through `BandChain`'s
+    // catch-all to sub-processors that all ignored it, and persisted into the
+    // project file having never moved a sample.
+    //
+    // Bare, like every other per-band entry here (`drive`, `filterCutoff`, …):
+    // Bacteria's engine broadcasts an unprefixed name to all bands, while the
+    // panel addresses one band through the `bandN_` prefix.
+    { id: 'gain', label: 'Band Gain', min: -24, max: 24, default: 0, unit: 'dB', step: 0.5 },
 ];
 
 export const BACTERIA_DESCRIPTOR: PluginDescriptor = {

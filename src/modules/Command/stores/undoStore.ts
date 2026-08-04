@@ -5,6 +5,7 @@ import { type ActionUndoEntry, isActionEntry, type UndoEntry, type UndoSource } 
 
 const UNDO_SESSION_KEY = 'sourdaw-undo-session';
 const MAX_UNDO_PERSIST = 100;
+const RETIRED_SESSION_ACTION_TYPES = new Set(['restoreDsoSnapshot']);
 
 export type UndoStoreState = {
     past: UndoEntry[];
@@ -23,10 +24,7 @@ function isSessionPersistableAppAction(value: unknown): value is AppAction {
     if (!isRecord(value)) {
         return false;
     }
-    if (value.type === 'restoreDsoSnapshot') {
-        return false;
-    }
-    return typeof value.type === 'string' && value.type.length > 0;
+    return typeof value.type === 'string' && value.type.length > 0 && !RETIRED_SESSION_ACTION_TYPES.has(value.type);
 }
 
 function isSessionPersistableActionEntry(entry: UndoEntry): entry is ActionUndoEntry {
@@ -36,7 +34,10 @@ function isSessionPersistableActionEntry(entry: UndoEntry): entry is ActionUndoE
     if (!isSessionPersistableAppAction(entry.action)) {
         return false;
     }
-    return entry.inverseAction === null || isSessionPersistableAppAction(entry.inverseAction);
+    if (entry.inverseAction !== null && !isSessionPersistableAppAction(entry.inverseAction)) {
+        return false;
+    }
+    return entry.redoAction === undefined || isSessionPersistableAppAction(entry.redoAction);
 }
 
 function getOptionalString(value: Record<string, unknown>, key: string): string | null | undefined {
@@ -74,6 +75,11 @@ function sanitizeStoredEntry(value: unknown): ActionUndoEntry | null {
         return null;
     }
 
+    const redoAction = value.redoAction;
+    if (redoAction !== undefined && !isSessionPersistableAppAction(redoAction)) {
+        return null;
+    }
+
     const source = value.source ?? 'manual';
     if (!isUndoSource(source)) {
         return null;
@@ -104,6 +110,9 @@ function sanitizeStoredEntry(value: unknown): ActionUndoEntry | null {
     }
     if (groupLabel !== undefined) {
         entry.groupLabel = groupLabel;
+    }
+    if (redoAction !== undefined) {
+        entry.redoAction = redoAction;
     }
 
     return entry;

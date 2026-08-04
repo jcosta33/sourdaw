@@ -70,13 +70,34 @@ describe('undoStore / pushUndo', () => {
 
     it('should persist action stacks to sessionStorage when state updates', async () => {
         const { createUndoEntry, pushUndo } = await loadSubject();
+        const redoAction = {
+            type: 'replayGeneratedMidi' as const,
+            payload: {
+                operation: {
+                    kind: 'replace-notes' as const,
+                    trackId: 'track-1',
+                    clip: {
+                        id: 'clip-1',
+                        trackId: 'track-1',
+                        name: 'Lead',
+                        startBeat: 0,
+                        endBeat: 4,
+                        type: 'midi' as const,
+                    },
+                    expectedNotes: [],
+                    replacementNotes: [{ id: 'generated-note', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }],
+                },
+            },
+        };
         const entry = createUndoEntry(
             'persist',
             { type: 'setMasterGain', payload: { gain: 0.5 } },
             {
                 type: 'setMasterGain',
                 payload: { gain: 1 },
-            }
+            },
+            'ai',
+            redoAction
         );
         pushUndo(entry);
 
@@ -89,32 +110,17 @@ describe('undoStore / pushUndo', () => {
         }
         expect(parsed.future).toEqual([]);
         expect(parsed.past).toHaveLength(1);
-        expect(parsed.past[0]).toMatchObject({ id: entry.id, label: 'persist', kind: 'action' });
-    });
+        expect(parsed.past[0]).toMatchObject({
+            id: entry.id,
+            label: 'persist',
+            kind: 'action',
+            redoAction,
+        });
 
-    it('should not persist restoreDsoSnapshot entries because their bundles are runtime Maps', async () => {
-        const { createUndoEntry, pushUndo } = await loadSubject();
-        const entry = createUndoEntry(
-            'dso snapshot',
-            {
-                type: 'restoreDsoSnapshot',
-                payload: {
-                    bundle: new Map([['root', { state: 'present' as const, bytes: new Uint8Array([1, 2, 3]) }]]),
-                },
-            },
-            {
-                type: 'restoreDsoSnapshot',
-                payload: {
-                    bundle: new Map([['root', { state: 'present' as const, bytes: new Uint8Array([4, 5, 6]) }]]),
-                },
-            }
-        );
-
-        pushUndo(entry);
-        await flushPersistence();
-
-        const parsed = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
-        expect(parsed).toEqual({ past: [], future: [] });
+        const reloaded = await loadSubject();
+        expect(reloaded.undoStore.value?.past[0]).toMatchObject({
+            redoAction,
+        });
     });
 
     it('should hydrate valid action entries and default legacy missing kind to action', async () => {
@@ -200,6 +206,16 @@ describe('undoStore / pushUndo', () => {
                 source: 'manual',
             },
             {
+                id: 'undo-bad-redo',
+                kind: 'action',
+                label: 'Bad redo',
+                action: { type: 'setTempo', payload: { bpm: 120 } },
+                inverseAction: { type: 'setTempo', payload: { bpm: 100 } },
+                redoAction: { payload: { bpm: 120 } },
+                timestamp: 2004,
+                source: 'manual',
+            },
+            {
                 id: 'undo-bad-source',
                 kind: 'action',
                 label: 'Bad source',
@@ -221,7 +237,7 @@ describe('undoStore / pushUndo', () => {
             {
                 id: 'undo-dso-snapshot',
                 kind: 'action',
-                label: 'Corrupted DSO snapshot',
+                label: 'Retired snapshot action',
                 action: { type: 'restoreDsoSnapshot', payload: { bundle: {} } },
                 inverseAction: { type: 'restoreDsoSnapshot', payload: { bundle: {} } },
                 timestamp: 2007,

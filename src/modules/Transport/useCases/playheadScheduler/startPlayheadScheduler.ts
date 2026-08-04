@@ -85,9 +85,15 @@ function isSchedulerWorkerTick(value: unknown, receivedAtMs: number): value is S
 
 /**
  * How far behind the live position the MIDI high-water mark is rewound when a
- * window has to be re-emitted. The gate is `startBeat <= lastScheduledBeat`, so
- * a note sitting exactly on the current beat needs the mark strictly below it.
- * Matches the nudge the loop-wrap path already uses.
+ * window has to be re-emitted. The normal gate is the half-open interval
+ * `[lastScheduledBeat, scheduleUpTo)`. Rewinding by this amount also re-opens
+ * notes infinitesimally before the live position after their scheduled voices
+ * have been stopped.
+ *
+ * Only the tempo/loop-edit re-emit uses it. The loop-wrap and follow-action
+ * paths are relocations, not re-emissions: they anchor on the destination beat
+ * itself (`loopStart`, `jumpToPosition`) because the gate is already inclusive
+ * there, and an extra nudge below would emit the destination twice.
  */
 const REEMIT_EPSILON_BEATS = 0.0001;
 
@@ -121,6 +127,7 @@ export function startPlayheadScheduler(): void {
         },
         isCurrent: () =>
             schedulerSession.generation === schedulerGeneration && transportStore.value?.isPlaying === true,
+        yeastRouteLineage: new Map(),
     };
 
     startAutomationRecording();
@@ -214,7 +221,7 @@ export function startPlayheadScheduler(): void {
             // high-water mark, which `stopAllScheduled`'s allNotesOff does not
             // move. Without rewinding it, every note already emitted into the
             // current look-ahead is silenced here and then blocked from
-            // re-emission (`unswungStartBeat <= lastScheduledBeat`), so a
+            // re-emission (`unswungStartBeat < lastScheduledBeat`), so a
             // tempo or loop edit drops a window of notes outright while audio
             // clips re-align (audit MD-5). Rewinding to the live position
             // re-opens exactly the window that was just cut, at the new rate.
@@ -254,7 +261,20 @@ export function startPlayheadScheduler(): void {
             newPosition = current.loopStart + ((newPosition - current.loopStart) % loopLength);
             advanceSchedulerDiscontinuityEpoch();
             rackDiscontinuity = true;
-            schedulerSession.lastScheduledBeat = newPosition - 0.0001;
+            // Anchor the next window at the seam itself, not at the wrapped
+            // playhead. The wrap only fires once `newPosition >= loopEnd`, so
+            // after the modulo `newPosition` is `loopStart + overshoot` — up to
+            // one whole clamped tick past the seam. Anchoring there left
+            // `[loopStart, loopStart + overshoot)` outside the half-open gate
+            // `[lastScheduledBeat, scheduleUpTo)`, and the pre-wrap look-ahead
+            // could not have covered it either: that window ran past `loopEnd`
+            // into post-loop material, which `stopAllScheduled()` below then
+            // cancels. So the note on the loop start was never emitted on any
+            // pass whose overshoot exceeded the old epsilon — at 120 BPM and a
+            // 10 ms grain, essentially all of them. `loopStart` exactly, with
+            // no epsilon: the gate is already inclusive at its lower bound, and
+            // nudging below it would re-open the seam a second time.
+            schedulerSession.lastScheduledBeat = current.loopStart;
             resetMetronomeBeat(newPosition);
             stopAllScheduled();
             stopActiveSources(schedulerSession.activeAudioSources, ctx);

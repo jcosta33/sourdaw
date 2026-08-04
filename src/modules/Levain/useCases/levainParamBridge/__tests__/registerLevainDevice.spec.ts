@@ -5,7 +5,7 @@ import { registerLevainDevice } from '../registerLevainDevice';
 import type { LevainDevice } from '../helpers';
 
 const bridge = {
-    registerLevainDevice: vi.fn(),
+    registerLevainDevice: vi.fn(() => Promise.resolve('ready' as const)),
 };
 
 vi.mock('../levainBridge', () => ({
@@ -17,12 +17,13 @@ describe('registerLevainDevice', () => {
         vi.clearAllMocks();
     });
 
-    it('forwards deviceId, device, and port to the bridge', () => {
+    it('forwards deviceId, device, and port to the bridge', async () => {
         const device: LevainDevice = { setParam: vi.fn(), handleCc: vi.fn() };
         const port = {} as MessagePort;
 
-        registerLevainDevice('dev-1', device, port);
+        const outcome = await registerLevainDevice('dev-1', device, port);
 
+        expect(outcome).toBe('ready');
         expect(bridge.registerLevainDevice).toHaveBeenCalledTimes(1);
         expect(bridge.registerLevainDevice).toHaveBeenCalledWith('dev-1', device, port);
     });

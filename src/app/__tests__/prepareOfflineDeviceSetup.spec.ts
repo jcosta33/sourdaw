@@ -208,9 +208,12 @@ describe('prepareOfflineDeviceSetup — hydration table routing', () => {
         // Guards the split above: if a device moves off `null`, this count changes
         // and whoever moved it has to say so here. Crumbs arrived hydrating
         // rather than `null`, taking the table from 11 rows to 12; Toaster then
-        // moved off `null`, taking the non-hydrating count from 9 to 8.
-        expect(NON_HYDRATING_TYPES).toHaveLength(8);
-        expect(NATIVE_DSP_DEVICE_TYPES).toHaveLength(12);
+        // moved off `null`, taking the non-hydrating count from 9 to 8. Crust
+        // then arrived as a native device with nothing to hydrate — every
+        // control it owns is a `parameterValue` — taking the table to 13 rows
+        // and the non-hydrating count to 9.
+        expect(NON_HYDRATING_TYPES).toHaveLength(9);
+        expect(NATIVE_DSP_DEVICE_TYPES).toHaveLength(13);
     });
 
     // Pins the table entry itself, not just the module function behind it. Written

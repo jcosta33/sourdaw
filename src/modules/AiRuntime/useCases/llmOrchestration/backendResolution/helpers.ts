@@ -20,15 +20,14 @@ function isBackendAvailable(backend: RunnableAiBackend): boolean {
 }
 
 /**
- * Resolve the primary backend for DSO edit planning.
+ * Resolve the active inference backend for chat and provider-neutral tool planning.
  *
- * Single-model policy: Qwen3-8B only.
- * - native: Tauri desktop (mistral.rs with Constraint::JsonSchema)
- * - webllm: Browser with WebGPU (response_format with EditPlanSchema)
- * - cloud: Claude API — used for CHAT ONLY, not DSO planning
- * - none: no backend available — AI editing is disabled
+ * - native: Tauri desktop runtime
+ * - webllm: browser-local WebGPU runtime
+ * - cloud: configured hosted-provider adapter
+ * - none: no backend is currently available
  *
- * No automatic fallback between model families.
+ * An explicit unavailable preference fails closed instead of silently changing providers.
  */
 export function resolveBackend(): AiBackend {
     const preference = aiBackendPreferenceStore.value ?? 'auto';

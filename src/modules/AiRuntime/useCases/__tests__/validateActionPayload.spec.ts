@@ -674,6 +674,76 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
         });
     });
 
+    describe('whole-clip MIDI transforms', () => {
+        it.each(['invertNotes', 'retrogradeNotes'] as const)('%s accepts only one non-empty clip ID', (actionType) => {
+            const guard = PAYLOAD_VALIDATORS[actionType];
+            expect(guard).not.toBe('unchecked');
+            if (guard === 'unchecked') {
+                return;
+            }
+
+            expect(guard({ clipId: 'clip-1' })).toBe(true);
+            expect(guard({ clipId: '' })).toBe(false);
+            expect(guard({})).toBe(false);
+            expect(guard({ clipId: 'clip-1', extra: true })).toBe(false);
+        });
+
+        it('validates exact finite note-length quantization bounds', () => {
+            const guard = PAYLOAD_VALIDATORS.quantizeNoteLengths;
+            expect(guard).not.toBe('unchecked');
+            if (guard === 'unchecked') {
+                return;
+            }
+
+            expect(guard({ clipId: 'clip-1', gridSize: 0.25 })).toBe(true);
+            expect(guard({ clipId: 'clip-1', gridSize: 0.03125 })).toBe(true);
+            expect(guard({ clipId: 'clip-1', gridSize: 64 })).toBe(true);
+            expect(guard({ clipId: '', gridSize: 0.25 })).toBe(false);
+            expect(guard({ clipId: 'clip-1', gridSize: 0 })).toBe(false);
+            expect(guard({ clipId: 'clip-1', gridSize: 0.03124 })).toBe(false);
+            expect(guard({ clipId: 'clip-1', gridSize: Number.MIN_VALUE })).toBe(false);
+            expect(guard({ clipId: 'clip-1', gridSize: 65 })).toBe(false);
+            expect(guard({ clipId: 'clip-1', gridSize: Number.NaN })).toBe(false);
+            expect(guard({ clipId: 'clip-1', gridSize: Number.POSITIVE_INFINITY })).toBe(false);
+            expect(guard({ clipId: 'clip-1', gridSize: 0.25, extra: true })).toBe(false);
+        });
+
+        it('validates exact non-identity velocity scale bounds', () => {
+            const guard = PAYLOAD_VALIDATORS.scaleAllVelocities;
+            expect(guard).not.toBe('unchecked');
+            if (guard === 'unchecked') {
+                return;
+            }
+
+            expect(guard({ clipId: 'clip-1', factor: 0.5 })).toBe(true);
+            expect(guard({ clipId: 'clip-1', factor: 16 })).toBe(true);
+            expect(guard({ clipId: '', factor: 0.5 })).toBe(false);
+            expect(guard({ clipId: 'clip-1', factor: 0 })).toBe(false);
+            expect(guard({ clipId: 'clip-1', factor: 1 })).toBe(false);
+            expect(guard({ clipId: 'clip-1', factor: 16.01 })).toBe(false);
+            expect(guard({ clipId: 'clip-1', factor: Number.NaN })).toBe(false);
+            expect(guard({ clipId: 'clip-1', factor: Number.POSITIVE_INFINITY })).toBe(false);
+            expect(guard({ clipId: 'clip-1', factor: 0.5, extra: true })).toBe(false);
+        });
+
+        it('validates exact integer MIDI velocity bounds', () => {
+            const guard = PAYLOAD_VALIDATORS.setAllVelocities;
+            expect(guard).not.toBe('unchecked');
+            if (guard === 'unchecked') {
+                return;
+            }
+
+            expect(guard({ clipId: 'clip-1', velocity: 1 })).toBe(true);
+            expect(guard({ clipId: 'clip-1', velocity: 127 })).toBe(true);
+            expect(guard({ clipId: '', velocity: 96 })).toBe(false);
+            expect(guard({ clipId: 'clip-1', velocity: 0 })).toBe(false);
+            expect(guard({ clipId: 'clip-1', velocity: 127.5 })).toBe(false);
+            expect(guard({ clipId: 'clip-1', velocity: 128 })).toBe(false);
+            expect(guard({ clipId: 'clip-1', velocity: Number.NaN })).toBe(false);
+            expect(guard({ clipId: 'clip-1', velocity: 96, extra: true })).toBe(false);
+        });
+    });
+
     describe('addNotes', () => {
         it('should require clipId and a notes array with finite bounded note fields', () => {
             const guard = PAYLOAD_VALIDATORS.addNotes;
@@ -710,12 +780,31 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
             }
 
             expect(guard({ clipId: 1, notes: [] })).toBe(false);
+            expect(guard({ clipId: 'clip-1', notes: [] })).toBe(false);
             expect(guard({ clipId: 'clip-1', notes: 'bad' })).toBe(false);
             expect(guard({ clipId: 'clip-1', notes: [{ pitch: -1, startBeat: 0, duration: 1 }] })).toBe(false);
             expect(guard({ clipId: 'clip-1', notes: [{ pitch: 128, startBeat: 0, duration: 1 }] })).toBe(false);
             expect(guard({ clipId: 'clip-1', notes: [{ pitch: 60, startBeat: -0.01, duration: 1 }] })).toBe(false);
             expect(guard({ clipId: 'clip-1', notes: [{ pitch: 60, startBeat: 0, duration: 0 }] })).toBe(false);
             expect(guard({ clipId: 'clip-1', notes: [{ pitch: 60, startBeat: 0, duration: Number.NaN }] })).toBe(false);
+            expect(guard({ clipId: '', notes: [] })).toBe(false);
+            expect(guard({ clipId: 'clip-1', notes: [{ pitch: 60, startBeat: 0 }] })).toBe(false);
+            expect(guard({ clipId: 'clip-1', notes: [{ pitch: 60, startBeat: 0, duration: 1, channel: 2 }] })).toBe(
+                false
+            );
+            expect(
+                guard({
+                    clipId: 'clip-1',
+                    notes: [{ id: 'command-owned', pitch: 60, startBeat: 0, duration: 1 }],
+                })
+            ).toBe(false);
+            expect(
+                guard({
+                    clipId: 'clip-1',
+                    notes: [{ pitch: 60, startBeat: 0, duration: 1 }],
+                    replace: true,
+                })
+            ).toBe(false);
             expect(guard({ clipId: 'clip-1', notes: [{ pitch: 60, startBeat: 0, duration: 1, velocity: 0 }] })).toBe(
                 false
             );
@@ -758,41 +847,11 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
                 return;
             }
             expect(guard({ trackId: 't-1', startBeat: 0, endBeat: 4, name: 'Clip' })).toBe(true);
+            expect(guard({ id: 'command-owned', trackId: 't-1', startBeat: 0, endBeat: 4, name: 'Clip' })).toBe(false);
+            expect(guard({ trackId: 't-1', startBeat: 0, endBeat: 4, name: 'Clip', muted: true })).toBe(false);
             // name is required by the payload type but was previously unchecked.
             expect(guard({ trackId: 't-1', startBeat: 0, endBeat: 4 })).toBe(false);
             expect(guard({ trackId: 't-1', startBeat: 0, endBeat: 4, name: 1 })).toBe(false);
-        });
-    });
-
-    describe('restoreDsoSnapshot', () => {
-        it('should accept present bytes and absent membership entries', () => {
-            const guard = PAYLOAD_VALIDATORS.restoreDsoSnapshot;
-            expect(guard).not.toBe('unchecked');
-            if (guard === 'unchecked') {
-                return;
-            }
-            const bundle = new Map([
-                ['root', { state: 'present' as const, bytes: new Uint8Array([1, 2, 3]) }],
-                ['removed', { state: 'absent' as const }],
-            ]);
-            expect(guard({ bundle })).toBe(true);
-            expect(guard({ bundle: new Map() })).toBe(true);
-        });
-
-        it('should reject a non-Map bundle or a Map with the wrong entry shapes', () => {
-            const guard = PAYLOAD_VALIDATORS.restoreDsoSnapshot;
-            expect(guard).not.toBe('unchecked');
-            if (guard === 'unchecked') {
-                return;
-            }
-            // A hallucinated JSON payload deserializes to a plain object, not a Map.
-            expect(guard({ bundle: { root: [1, 2, 3] } })).toBe(false);
-            expect(guard({})).toBe(false);
-            expect(guard({ bundle: new Map([['root', [1, 2, 3]]]) })).toBe(false);
-            expect(guard({ bundle: new Map([['root', { state: 'present', bytes: [1, 2, 3] }]]) })).toBe(false);
-            expect(guard({ bundle: new Map([['root', { state: 'unknown' }]]) })).toBe(false);
-            expect(guard({ bundle: new Map([['root', { state: 'absent', bytes: new Uint8Array() }]]) })).toBe(false);
-            expect(guard({ bundle: new Map([[1, { state: 'absent' }]]) })).toBe(false);
         });
     });
 

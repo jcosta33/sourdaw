@@ -4,6 +4,7 @@
 // ── Track ────────────────────────────────────────────────────────────────────
 
 export { addTrack } from './addTrack';
+export { addTrackWithDeferredAddedEvent } from './addTrackWithDeferredAddedEvent';
 export { setArrangementEventBus } from './arrangementEventBus';
 export { createTrack } from './createTrack';
 export { normalizeTrack } from './normalizeTrack';
@@ -18,6 +19,7 @@ export { getTrackStoreState } from './getTrackStoreState';
 export { hydrateTracksForProject } from './hydrateTracksForProject';
 export { projectTrackToLiveStrip } from './projectTrackToLiveStrip';
 export { restoreTrackSnapshot } from './restoreTrackSnapshot';
+export { restoreTrackAtIndexWithDeferredAddedEvent } from './restoreTrackAtIndexWithDeferredAddedEvent';
 export { restoreMarkerSnapshot } from './restoreMarkerSnapshot';
 export { restoreArrangementMetadataSnapshot } from './restoreArrangementMetadataSnapshot';
 export { setTrackState } from './setTrackState';
@@ -76,6 +78,7 @@ export { setClipLoop } from './clipLoop/setClipLoop';
 export { addGainEnvelopePoint } from './clipGainEnvelope/addGainEnvelopePoint';
 export { getClipGainEnvelope } from './clipGainEnvelope/getClipGainEnvelope';
 export { getGainAtBeat } from './clipGainEnvelope/getGainAtBeat';
+export { hydrateClipGainEnvelopes } from './clipGainEnvelope/hydrateClipGainEnvelopes';
 export { removeGainEnvelopePoint } from './clipGainEnvelope/removeGainEnvelopePoint';
 export { resetClipGainEnvelope } from './clipGainEnvelope/resetClipGainEnvelope';
 export { toggleClipGainEnvelope } from './clipGainEnvelope/toggleClipGainEnvelope';
@@ -208,6 +211,7 @@ export { createVcaGroup } from './vca/createVcaGroup';
 export { commitLegacyVcaTemplateState } from './vca/commitLegacyVcaTemplateState';
 export { getEffectiveGain } from './vca/getEffectiveGain';
 export { getVcaGroups } from './vca/getVcaGroups';
+export { hydrateVcaGroups } from './vca/hydrateVcaGroups';
 export { removeFromVca } from './vca/removeFromVca';
 export { toggleVcaMembership } from './vca/toggleVcaMembership';
 

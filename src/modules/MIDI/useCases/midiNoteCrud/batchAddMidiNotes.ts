@@ -1,8 +1,10 @@
 import { createMidiError } from '../../errors/MidiError';
-import { createMidiNote, type MidiNote } from '../../models/MidiNote';
+import { type MidiNote } from '../../models/MidiNote';
 import { midiStore } from '../../stores/midiStore';
+import { normalizeMidiNoteInput } from '../../transformers/normalizeMidiNoteInput';
 
 type NoteInput = {
+    id?: string;
     pitch: number;
     startBeat: number;
     duration: number;
@@ -28,13 +30,12 @@ export function batchAddMidiNotes(clipId: string, notes: NoteInput[]): MidiNote[
 
     const existing = state.notesByClipId[clipId] ?? [];
 
-    const createdNotes = notes.map((node) => {
-        const safePitch = Math.round(Math.max(0, Math.min(127, node.pitch)));
-        const safeVelocity = Math.round(Math.max(1, Math.min(127, node.velocity ?? 100)));
-        const safeStart = Math.max(0, node.startBeat);
-        const safeDuration = Math.max(0.0625, node.duration);
-        return createMidiNote(safePitch, safeStart, safeDuration, safeVelocity);
-    });
+    const createdNotes = notes.map((node) =>
+        normalizeMidiNoteInput({
+            ...node,
+            id: node.id ?? `note-${crypto.randomUUID()}`,
+        })
+    );
 
     midiStore.set({
         ...state,

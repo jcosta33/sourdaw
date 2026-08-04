@@ -804,6 +804,7 @@ describe('scheduleMidiNotes', () => {
             generation: 1,
             discontinuityEpoch: 1,
             isCurrent: () => current,
+            yeastRouteLineage: new Map(),
         };
 
         const scheduling = scheduleMidiNotes(
@@ -906,6 +907,44 @@ describe('scheduleMidiNotes', () => {
         expect(scheduled[2]).toBe(64);
         expect(scheduled[3]).toBe(0);
         expect(scheduled[4]).toBe(0.5);
+    });
+
+    it('does not recarry delayed route-owned Yeast output onto a later occurrence', async () => {
+        const routeId = 'live-yeast:track-1:clip-1:0';
+        const track = midiTrack({
+            clips: [midiClip({ endBeat: 8, gain: 0.25, loopEnabled: true, loopLength: 2 })],
+            devices: [{ id: 'y', type: 'yeast' }],
+        });
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = {
+            notesByClipId: {
+                'clip-1': [{ id: 'n0', pitch: 60, startBeat: 0.25, duration: 0.25, velocity: 100 }],
+            },
+        };
+        const cancellation = {
+            generation: 1,
+            discontinuityEpoch: 1,
+            isCurrent: () => true,
+            yeastRouteLineage: new Map(),
+        };
+        vi.mocked(processYeastMidi)
+            .mockImplementationOnce(({ events }) => Promise.resolve([...events]))
+            .mockResolvedValueOnce([
+                {
+                    timeSamples: 108_000,
+                    timePpq: 4.5,
+                    durationSamples: 12_000,
+                    trackId: routeId,
+                    noteInstanceId: `${routeId}:n0`,
+                    kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+                },
+            ]);
+
+        await scheduleMidiNotes(0, 1, 0, -1, new Set<string>(), [], defaultTransportState, 120, cancellation);
+        vi.mocked(scheduleNote).mockClear();
+        await scheduleMidiNotes(4, 5, 4, 4, new Set<string>(), [], defaultTransportState, 120, cancellation);
+
+        expect(scheduleNote).not.toHaveBeenCalled();
     });
 
     // §3 — The Yeast block's beats↔samples conversion must use the tempo map's
@@ -1378,6 +1417,132 @@ describe('scheduleMidiNotes', () => {
     });
 
     describe('note-window filtering', () => {
+        it('bounds projection work for a dense non-looping clip', async () => {
+            const track = midiTrack({ clips: [midiClip({ endBeat: 128 })] });
+            const notes = Array.from({ length: 1_280 }, (_, index) => ({
+                id: `n${index}`,
+                pitch: 60,
+                startBeat: index / 10,
+                duration: index === 0 ? 128 : 0.05,
+                velocity: 100,
+            })).reverse();
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = { notesByClipId: { 'clip-1': notes } };
+
+            await scheduleMidiNotes(64, 65, 64, -1, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(projectClipMidiEvents).toHaveBeenCalledTimes(30);
+            expect(scheduleNote).toHaveBeenCalledTimes(10);
+        });
+
+        it('preserves persisted note order inside a bounded non-looping window', async () => {
+            const track = midiTrack({ clips: [midiClip()] });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: {
+                    'clip-1': [
+                        { id: 'late', pitch: 62, startBeat: 2, duration: 0.25, velocity: 100 },
+                        { id: 'early', pitch: 60, startBeat: 0, duration: 0.25, velocity: 100 },
+                        { id: 'middle', pitch: 61, startBeat: 1, duration: 0.25, velocity: 100 },
+                    ],
+                },
+            };
+
+            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+
+            const projectedIds = vi.mocked(projectClipMidiEvents).mock.calls.map(([input]) => input.events[0]!.id);
+            expect(projectedIds).toEqual(['late', 'early', 'middle']);
+            expect(vi.mocked(scheduleNote).mock.calls.map((call) => call[2])).toEqual([62, 60, 61]);
+        });
+
+        it('projects only loop occurrences that intersect the scheduler window', async () => {
+            const track = midiTrack({
+                clips: [midiClip({ endBeat: 128, loopEnabled: true, loopLength: 4 })],
+            });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: {
+                    'clip-1': [{ id: 'loop-note', pitch: 60, startBeat: 0.25, duration: 0.25, velocity: 100 }],
+                },
+            };
+
+            await scheduleMidiNotes(64, 65, 64, 64, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(projectClipMidiEvents).toHaveBeenCalledTimes(1);
+            expect(scheduleNote).toHaveBeenCalledTimes(1);
+            expect(shouldPlayMidiEvent).toHaveBeenCalledWith(
+                expect.objectContaining({ eventId: 'loop-note', absoluteOccurrenceIndex: 16 })
+            );
+        });
+
+        it('bounds projection work for a dense looping clip', async () => {
+            const track = midiTrack({
+                clips: [midiClip({ endBeat: 256, loopEnabled: true, loopLength: 128 })],
+            });
+            const notes = Array.from({ length: 1_280 }, (_, index) => ({
+                id: `n${index}`,
+                pitch: 60,
+                startBeat: index / 10,
+                duration: index === 0 ? 128 : 0.05,
+                velocity: 100,
+            })).reverse();
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = { notesByClipId: { 'clip-1': notes } };
+
+            await scheduleMidiNotes(64, 65, 64, 64, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(projectClipMidiEvents).toHaveBeenCalledTimes(30);
+            expect(scheduleNote).toHaveBeenCalledTimes(10);
+        });
+
+        it('bounds Yeast loop work while retaining a prior occurrence release in the window', async () => {
+            const track = midiTrack({
+                clips: [midiClip({ endBeat: 128, loopEnabled: true, loopLength: 4 })],
+                devices: [{ id: 'yeast-1', type: 'yeast' }],
+            });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: {
+                    'clip-1': [{ id: 'long-note', pitch: 60, startBeat: 0, duration: 5, velocity: 100 }],
+                },
+            };
+
+            await scheduleMidiNotes(4.5, 5.5, 4.5, 4.5, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(shouldPlayMidiEvent).toHaveBeenCalledTimes(1);
+            expect(shouldPlayMidiEvent).toHaveBeenCalledWith(
+                expect.objectContaining({ eventId: 'long-note', absoluteOccurrenceIndex: 0 })
+            );
+            expect(processYeastMidi).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    events: [
+                        expect.objectContaining({
+                            noteInstanceId: 'live-yeast:track-1:clip-1:0:long-note',
+                            kind: { type: 'noteOff', channel: 0, note: 60 },
+                        }),
+                    ],
+                })
+            );
+        });
+
+        it('retains a leading interval when the clip starts at the scheduler high-water mark', async () => {
+            const track = midiTrack({ clips: [midiClip({ startBeat: 4, endBeat: 8 })] });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: {
+                    'clip-1': [{ id: 'leading', pitch: 60, startBeat: -2, duration: 7, velocity: 100 }],
+                },
+            };
+            vi.mocked(projectClipMidiEvents).mockImplementationOnce((input) =>
+                input.events.map((event) => ({ ...event, startBeat: 4, duration: 1 }))
+            );
+
+            await scheduleMidiNotes(4, 5, 4, 4, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(projectClipMidiEvents).toHaveBeenCalledTimes(1);
+            expect(scheduleNote).toHaveBeenCalledTimes(1);
+        });
+
         it('skips a note whose start beat is before lastScheduledBeat', async () => {
             const track = midiTrack({ clips: [midiClip()] });
             (trackStore as { value: unknown }).value = { tracks: [track] };
@@ -1402,6 +1567,45 @@ describe('scheduleMidiNotes', () => {
             await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
 
             expect(scheduleNote).not.toHaveBeenCalled();
+            expect(projectClipMidiEvents).not.toHaveBeenCalled();
+            expect(getSynthParamsForTrack).not.toHaveBeenCalled();
+            expect(ensureTrackStrip).not.toHaveBeenCalled();
+            expect(resolveClipsWithComping).not.toHaveBeenCalled();
+        });
+
+        it('reuses an active-clip index instead of rescanning project-wide geometry', async () => {
+            let geometryReads = 0;
+            const clips = Array.from({ length: 2_048 }, (_, index) => {
+                const startBeat = index * 2;
+                const clip = midiClip({ id: `clip-${index}` });
+                Object.defineProperties(clip, {
+                    startBeat: {
+                        enumerable: true,
+                        get: () => {
+                            geometryReads++;
+                            return startBeat;
+                        },
+                    },
+                    endBeat: {
+                        enumerable: true,
+                        get: () => {
+                            geometryReads++;
+                            return startBeat + 1;
+                        },
+                    },
+                });
+                return clip;
+            });
+            const track = midiTrack({ clips });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = { notesByClipId: {} };
+
+            await scheduleMidiNotes(2_048, 2_049, 2_048, 2_048, new Set<string>(), [], defaultTransportState, 120);
+            geometryReads = 0;
+            await scheduleMidiNotes(2_048, 2_049, 2_048, 2_048, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(geometryReads).toBeLessThan(100);
+            expect(resolveClipsWithComping).toHaveBeenLastCalledWith('track-1', [clips[1_024]]);
         });
 
         it('skips a clip whose loopLen collapses to <= 0 (startBeat === endBeat)', async () => {
@@ -1537,13 +1741,14 @@ describe('scheduleMidiNotes', () => {
                     'clip-b': [{ id: 'n2', pitch: 62, startBeat: 0.5, duration: 0.25, velocity: 100 }],
                 },
             };
-            // isCurrent returns true for track A's guard (call 1) and its single
-            // note's pre-dispatch guard (call 2), then false at track B's guard.
+            // isCurrent returns true for track A's guard, bounded iteration,
+            // note-loop guard, and note dispatch, then false at track B's guard.
             let calls = 0;
             const cancellation: SchedulerCancellation = {
                 generation: 0,
                 discontinuityEpoch: 0,
-                isCurrent: () => ++calls <= 2,
+                isCurrent: () => ++calls <= 4,
+                yeastRouteLineage: new Map(),
             };
 
             await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120, cancellation);
@@ -1563,18 +1768,48 @@ describe('scheduleMidiNotes', () => {
                     ],
                 },
             };
-            // isCurrent is true for the track guard, then false at the first note's
-            // pre-dispatch check, aborting before either note is scheduled.
+            // isCurrent is true for the track and bounded-iteration guards, then
+            // false at the first note-loop check.
             let calls = 0;
             const cancellation: SchedulerCancellation = {
                 generation: 0,
                 discontinuityEpoch: 0,
-                isCurrent: () => ++calls <= 1,
+                isCurrent: () => ++calls <= 2,
+                yeastRouteLineage: new Map(),
             };
 
             await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120, cancellation);
 
             expect(vi.mocked(scheduleNote)).not.toHaveBeenCalled();
+        });
+
+        it('does not project loop notes after cancellation turns stale at the occurrence boundary', async () => {
+            const track = midiTrack({
+                clips: [midiClip({ endBeat: 128, loopEnabled: true, loopLength: 4 })],
+            });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: {
+                    'clip-1': Array.from({ length: 100 }, (_, index) => ({
+                        id: `off-window-${index}`,
+                        pitch: 60,
+                        startBeat: 2,
+                        duration: 0.25,
+                        velocity: 100,
+                    })),
+                },
+            };
+            let calls = 0;
+            const cancellation: SchedulerCancellation = {
+                generation: 0,
+                discontinuityEpoch: 0,
+                isCurrent: () => ++calls <= 2,
+                yeastRouteLineage: new Map(),
+            };
+
+            await scheduleMidiNotes(64, 65, 64, 64, new Set<string>(), [], defaultTransportState, 120, cancellation);
+
+            expect(projectClipMidiEvents).not.toHaveBeenCalled();
         });
 
         it('skips a yeast track clip whose visual length collapses to zero (loopLength <= 0)', async () => {

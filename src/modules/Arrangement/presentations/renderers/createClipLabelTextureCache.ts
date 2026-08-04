@@ -1,0 +1,213 @@
+/**
+ * Clip name rasterisation for the WebGPU timeline renderer.
+ *
+ * WebGPU has no text primitive. The conventional route is to rasterise the
+ * string with a 2D context and upload the result as a texture, which is what
+ * this cache does: one `OffscreenCanvas` `fillText` per distinct label, one
+ * `GPUTexture` and one bind group held for as long as that label keeps being
+ * asked for.
+ *
+ * Rasterising is far too expensive to redo per frame, so entries are keyed by
+ * everything that can change the pixels — the string, the condensed width
+ * (which moves with zoom) and the device pixel ratio. A label whose text or
+ * zoom changed therefore misses the cache and is redrawn; an unchanged one is
+ * reused. The map is bounded and evicts least-recently-used entries so a long
+ * zoom drag cannot grow it without limit.
+ */
+
+import {
+    CLIP_LABEL_ASCENT_CSS_PX,
+    CLIP_LABEL_BLOCK_HEIGHT_CSS_PX,
+    CLIP_LABEL_FILL_STYLE,
+    CLIP_LABEL_FONT,
+} from './clipLabel';
+
+/** Distinct labels held before the least-recently-used one is destroyed. */
+const MAX_CACHED_LABELS = 256;
+
+export type ClipLabelTexture = {
+    /** Bound at group 0 of the text pipeline before drawing the label's quad. */
+    bindGroup: GPUBindGroup;
+    /**
+     * Width the glyph run actually occupies, in CSS px — never wider than the
+     * clip, and usually far narrower.
+     *
+     * The caller must size the textured quad from this rather than from the
+     * clip's own width, or the raster is stretched across the whole clip. It
+     * exists because a label only needs a texture as wide as its text: sizing
+     * one from the clip instead asks for a texture as wide as the clip is
+     * drawn, which at any real zoom is both enormous and, past
+     * `maxTextureDimension2D`, invalid.
+     */
+    widthCssPx: number;
+};
+
+export type AcquireClipLabelInput = {
+    /** The clip name to draw. */
+    text: string;
+    /** Width the glyph run is condensed into, in CSS px. */
+    maxWidthCssPx: number;
+    /** Backing-store scale, so the raster is sharp on HiDPI displays. */
+    dpr: number;
+};
+
+export type ClipLabelTextureCache = {
+    /** Rasterise (or reuse) `text` and return its bind group, or null if unrenderable. */
+    acquire: (input: AcquireClipLabelInput) => ClipLabelTexture | null;
+    /** Destroy every held texture. */
+    dispose: () => void;
+};
+
+export type CreateClipLabelTextureCacheInput = {
+    device: GPUDevice;
+    /** Layout of the text pipeline's group 0 (sampler + texture). */
+    bindGroupLayout: GPUBindGroupLayout;
+    sampler: GPUSampler;
+};
+
+type CacheEntry = {
+    texture: GPUTexture;
+    bindGroup: GPUBindGroup;
+    widthCssPx: number;
+};
+
+export function createClipLabelTextureCache({
+    device,
+    bindGroupLayout,
+    sampler,
+}: CreateClipLabelTextureCacheInput): ClipLabelTextureCache {
+    // Insertion order doubles as recency: a hit is deleted and re-set so the
+    // oldest key is always the first one Map iteration yields.
+    const entries = new Map<string, CacheEntry>();
+
+    // One 1x1 scratch context, kept for the cache's lifetime, purely to measure
+    // glyph runs before deciding how large the real raster needs to be. Its own
+    // size is irrelevant — `measureText` reads the font, not the backing store —
+    // and reusing it avoids allocating a canvas per measurement.
+    let measuringContext: OffscreenCanvasRenderingContext2D | null | undefined;
+
+    function measureLabelWidthCssPx(text: string): number {
+        if (measuringContext === undefined) {
+            measuringContext = new OffscreenCanvas(1, 1).getContext('2d');
+            if (measuringContext) {
+                measuringContext.font = CLIP_LABEL_FONT;
+            }
+        }
+        if (!measuringContext) {
+            // No 2D context to measure with. Fall back to the caller's bound,
+            // which is the pre-existing behaviour: correct, merely wasteful.
+            return Number.POSITIVE_INFINITY;
+        }
+        return measuringContext.measureText(text).width;
+    }
+
+    function rasterise(text: string, maxWidthCssPx: number, dpr: number): CacheEntry | null {
+        if (typeof OffscreenCanvas === 'undefined') {
+            return null;
+        }
+
+        // Size the raster to the glyph run, not to the clip. `maxWidthCssPx` is
+        // the clip's drawn width, which grows without limit as the user zooms —
+        // a 3-minute clip at editing zoom is thousands of CSS px wide, and at
+        // dpr 2 that asks for a texture past the default `maxTextureDimension2D`
+        // of 8192, which is a validation error and a silently missing label.
+        // The text needs no more than it occupies, so measure it first.
+        //
+        // `measureText` runs under the same `scale(dpr, dpr)` the draw does, so
+        // its result is already CSS px. When the run is wider than the clip,
+        // `fillText`'s `maxWidth` condenses it to fit and the clip width is the
+        // right answer; when it is narrower, the run's own width is.
+        const measured = measureLabelWidthCssPx(text);
+        const deviceCeilingCssPx = device.limits.maxTextureDimension2D / dpr;
+        const usedWidthCssPx = Math.min(measured, maxWidthCssPx, deviceCeilingCssPx);
+
+        const widthPx = Math.max(1, Math.ceil(usedWidthCssPx * dpr));
+        const heightPx = Math.max(1, Math.ceil(CLIP_LABEL_BLOCK_HEIGHT_CSS_PX * dpr));
+
+        const offscreen = new OffscreenCanvas(widthPx, heightPx);
+        const context = offscreen.getContext('2d');
+        if (!context) {
+            return null;
+        }
+
+        // Work in CSS px so the typography constants read the same here as they
+        // do in the Canvas2D renderer.
+        context.scale(dpr, dpr);
+        context.font = CLIP_LABEL_FONT;
+        context.textBaseline = 'alphabetic';
+        context.fillStyle = CLIP_LABEL_FILL_STYLE;
+        context.fillText(text, 0, CLIP_LABEL_ASCENT_CSS_PX, usedWidthCssPx);
+
+        const texture = device.createTexture({
+            size: { width: widthPx, height: heightPx },
+            format: 'rgba8unorm',
+            usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+        });
+
+        device.queue.copyExternalImageToTexture(
+            { source: offscreen },
+            // The canvas holds straight alpha; ask the copy to premultiply so it
+            // matches the premultiplied blend the render pipeline uses.
+            { texture, premultipliedAlpha: true },
+            { width: widthPx, height: heightPx }
+        );
+
+        const bindGroup = device.createBindGroup({
+            layout: bindGroupLayout,
+            entries: [
+                { binding: 0, resource: sampler },
+                { binding: 1, resource: texture.createView() },
+            ],
+        });
+
+        return { texture, bindGroup, widthCssPx: usedWidthCssPx };
+    }
+
+    function evictOldest(): void {
+        const oldestKey = entries.keys().next().value;
+        if (oldestKey === undefined) {
+            return;
+        }
+        const oldest = entries.get(oldestKey);
+        entries.delete(oldestKey);
+        oldest?.texture.destroy();
+    }
+
+    return {
+        acquire({ text, maxWidthCssPx, dpr }: AcquireClipLabelInput): ClipLabelTexture | null {
+            if (text.length === 0 || maxWidthCssPx <= 0) {
+                return null;
+            }
+
+            // Quantise the width so sub-pixel zoom jitter does not rasterise a
+            // fresh texture on every frame of a drag.
+            const quantisedWidth = Math.round(maxWidthCssPx);
+            const key = `${dpr}${quantisedWidth}${text}`;
+
+            const cached = entries.get(key);
+            if (cached) {
+                entries.delete(key);
+                entries.set(key, cached);
+                return { bindGroup: cached.bindGroup, widthCssPx: cached.widthCssPx };
+            }
+
+            const created = rasterise(text, quantisedWidth, dpr);
+            if (!created) {
+                return null;
+            }
+
+            entries.set(key, created);
+            if (entries.size > MAX_CACHED_LABELS) {
+                evictOldest();
+            }
+            return { bindGroup: created.bindGroup, widthCssPx: created.widthCssPx };
+        },
+
+        dispose(): void {
+            for (const entry of entries.values()) {
+                entry.texture.destroy();
+            }
+            entries.clear();
+        },
+    };
+}

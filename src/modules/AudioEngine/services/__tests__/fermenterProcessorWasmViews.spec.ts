@@ -65,6 +65,10 @@ class FermenterInstanceMock {
     get_right_ptr(): number {
         return OUT_RIGHT_PTR;
     }
+    lifecycle_state(): number {
+        return 0;
+    }
+    advance_silence(): void {}
 }
 
 vi.mock('../../wasm/daw_dsp.js', () => ({

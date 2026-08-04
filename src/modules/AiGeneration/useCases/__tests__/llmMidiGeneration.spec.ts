@@ -6,15 +6,18 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { generateMidiViaLlm } from '../llmMidiGeneration';
 
 type CloudChatOutcome = { status: 'complete' } | { status: 'incomplete'; reason: string };
+type InitializedBackend = Awaited<ReturnType<typeof import('#/modules/AiRuntime/useCases').initEngine>>;
 
 const {
     resolveBackendMock,
+    initEngineMock,
     isNativeEngineReadyMock,
     generateNativeCompletionMock,
     generateWebLlmCompletionMock,
     streamCloudChatCompletionMock,
 } = vi.hoisted(() => ({
     resolveBackendMock: vi.fn<() => string>(() => 'none'),
+    initEngineMock: vi.fn<() => Promise<InitializedBackend>>(),
     isNativeEngineReadyMock: vi.fn<() => boolean>(() => false),
     generateNativeCompletionMock:
         vi.fn<(systemPrompt: string, userMessage: string, options?: unknown) => Promise<string>>(),
@@ -29,6 +32,7 @@ vi.mock('#/modules/AiRuntime/useCases', async (importOriginal) => {
     return {
         ...actual,
         resolveBackend: resolveBackendMock,
+        initEngine: initEngineMock,
         isNativeEngineReady: isNativeEngineReadyMock,
         generateNativeCompletion: generateNativeCompletionMock,
         generateWebLlmCompletion: generateWebLlmCompletionMock,
@@ -64,8 +68,7 @@ const mockNotificationEventBus = {
 const VALID_NOTES_JSON = JSON.stringify({
     notes: [
         { pitch: 60, velocity: 80, start_beat: 0, duration_beats: 1 },
-        { pitch: 999, velocity: -5, start_beat: -1, duration_beats: 0.001 },
-        { pitch: Number.NaN, velocity: 80, start_beat: 0, duration_beats: 1 },
+        { pitch: 67, velocity: 72, start_beat: 1, duration_beats: 0.5 },
     ],
 });
 
@@ -75,6 +78,7 @@ describe('generateMidiViaLlm', () => {
         vi.clearAllMocks();
         resolveBackendMock.mockReturnValue('none');
         isNativeEngineReadyMock.mockReturnValue(false);
+        initEngineMock.mockResolvedValue('native');
         streamCloudChatCompletionMock.mockResolvedValue({ status: 'complete' });
     });
 
@@ -90,7 +94,13 @@ describe('generateMidiViaLlm', () => {
         });
     });
 
-    it('calls the native completion backend and clamps/filters the parsed notes', async () => {
+    it('bounds built-in fallback output to the sanitized requested maximum', async () => {
+        const notes = await generateMidiViaLlm('no matching built-in pattern', 4);
+
+        expect(notes).toHaveLength(4);
+    });
+
+    it('calls the selected native completion backend and accepts its validated notes', async () => {
         resolveBackendMock.mockReturnValue('native');
         isNativeEngineReadyMock.mockReturnValue(true);
         generateNativeCompletionMock.mockResolvedValue(VALID_NOTES_JSON);
@@ -98,10 +108,9 @@ describe('generateMidiViaLlm', () => {
         const notes = await generateMidiViaLlm('a bassline', 16, 0.2);
 
         expect(generateNativeCompletionMock).toHaveBeenCalledTimes(1);
-        // Middle note (pitch 999) is out-of-range and gets clamped; the NaN-pitch note is dropped.
         expect(notes).toEqual([
             { pitch: 60, velocity: 80, start_beat: 0, duration_beats: 1 },
-            { pitch: 127, velocity: 1, start_beat: 0, duration_beats: 0.0625 },
+            { pitch: 67, velocity: 72, start_beat: 1, duration_beats: 0.5 },
         ]);
     });
 
@@ -132,16 +141,47 @@ describe('generateMidiViaLlm', () => {
         expect(mockNotificationEventBus.emit).not.toHaveBeenCalled();
     });
 
-    it('does not fall through to WebLLM when the selected native backend is unready', async () => {
+    it('initializes the selected native backend before generating', async () => {
+        resolveBackendMock.mockReturnValue('native');
+        isNativeEngineReadyMock.mockReturnValueOnce(false).mockReturnValue(true);
+        generateNativeCompletionMock.mockResolvedValue(VALID_NOTES_JSON);
+
+        await expect(generateMidiViaLlm('a wholly unrelated prompt', 32, 0.45)).resolves.toHaveLength(2);
+
+        expect(initEngineMock).toHaveBeenCalledOnce();
+        expect(generateWebLlmCompletionMock).not.toHaveBeenCalled();
+        expect(generateNativeCompletionMock).toHaveBeenCalledOnce();
+    });
+
+    it('uses cloud when automatic native initialization selects the configured hosted fallback', async () => {
         resolveBackendMock.mockReturnValue('native');
         isNativeEngineReadyMock.mockReturnValue(false);
+        initEngineMock.mockResolvedValue('cloud');
+        streamCloudChatCompletionMock.mockImplementation((_messages, onToken) => {
+            onToken(VALID_NOTES_JSON);
+            return Promise.resolve({ status: 'complete' });
+        });
 
-        await expect(generateMidiViaLlm('a wholly unrelated prompt', 32, 0.45)).rejects.toThrow(
-            'The selected native AI backend is not ready.'
+        await expect(generateMidiViaLlm('a bassline')).resolves.toHaveLength(2);
+
+        expect(initEngineMock).toHaveBeenCalledOnce();
+        expect(generateNativeCompletionMock).not.toHaveBeenCalled();
+        expect(generateWebLlmCompletionMock).not.toHaveBeenCalled();
+        expect(streamCloudChatCompletionMock).toHaveBeenCalledOnce();
+    });
+
+    it('does not start WebLLM when backend initialization was cancelled', async () => {
+        resolveBackendMock.mockReturnValue('native');
+        isNativeEngineReadyMock.mockReturnValue(false);
+        initEngineMock.mockResolvedValue('none');
+
+        await expect(generateMidiViaLlm('a bassline')).rejects.toThrow(
+            'AI backend initialization was cancelled before MIDI generation.'
         );
 
-        expect(generateWebLlmCompletionMock).not.toHaveBeenCalled();
         expect(generateNativeCompletionMock).not.toHaveBeenCalled();
+        expect(generateWebLlmCompletionMock).not.toHaveBeenCalled();
+        expect(streamCloudChatCompletionMock).not.toHaveBeenCalled();
     });
 
     it('treats a non-array "notes" field as an empty parse and falls back to the pattern match', async () => {
@@ -151,6 +191,87 @@ describe('generateMidiViaLlm', () => {
         const notes = await generateMidiViaLlm('ambient pad');
 
         expect(notes.length).toBeGreaterThan(0);
+    });
+
+    it('rejects the whole provider payload when a note is out of range or carries extra fields', async () => {
+        resolveBackendMock.mockReturnValue('webllm');
+        generateWebLlmCompletionMock.mockResolvedValue(
+            JSON.stringify({
+                notes: [
+                    { pitch: 60, velocity: 80, start_beat: 0, duration_beats: 1 },
+                    { pitch: 999, velocity: 80, start_beat: 1, duration_beats: 1, hidden: true },
+                ],
+            })
+        );
+
+        const notes = await generateMidiViaLlm('ambient pad');
+
+        expect(notes).toEqual([{ pitch: 60, velocity: 100, start_beat: 0, duration_beats: 1 }]);
+    });
+
+    it('rejects extra root keys instead of accepting a second provider protocol', async () => {
+        resolveBackendMock.mockReturnValue('webllm');
+        generateWebLlmCompletionMock.mockResolvedValue(
+            JSON.stringify({
+                notes: [{ pitch: 60, velocity: 80, start_beat: 0, duration_beats: 1 }],
+                explanation: 'also change the tempo',
+            })
+        );
+
+        const notes = await generateMidiViaLlm('ambient pad');
+
+        expect(notes).toEqual([{ pitch: 60, velocity: 100, start_beat: 0, duration_beats: 1 }]);
+    });
+
+    it('rejects provider output above the trusted requested note maximum', async () => {
+        resolveBackendMock.mockReturnValue('webllm');
+        generateWebLlmCompletionMock.mockResolvedValue(
+            JSON.stringify({
+                notes: Array.from({ length: 5 }, (_, index) => ({
+                    pitch: 60,
+                    velocity: 80,
+                    start_beat: index,
+                    duration_beats: 0.5,
+                })),
+            })
+        );
+
+        const notes = await generateMidiViaLlm('ambient pad', 4);
+
+        expect(notes).toEqual([{ pitch: 60, velocity: 100, start_beat: 0, duration_beats: 1 }]);
+    });
+
+    it('rejects provider notes beyond the safe generation horizon', async () => {
+        resolveBackendMock.mockReturnValue('webllm');
+        generateWebLlmCompletionMock.mockResolvedValue(
+            JSON.stringify({
+                notes: [{ pitch: 60, velocity: 80, start_beat: 1024, duration_beats: 0.0625 }],
+            })
+        );
+
+        const notes = await generateMidiViaLlm('ambient pad');
+
+        expect(notes).toEqual([{ pitch: 60, velocity: 100, start_beat: 0, duration_beats: 1 }]);
+    });
+
+    it('rejects provider timing whose individually finite fields overflow when combined', async () => {
+        resolveBackendMock.mockReturnValue('webllm');
+        generateWebLlmCompletionMock.mockResolvedValue(
+            JSON.stringify({
+                notes: [
+                    {
+                        pitch: 60,
+                        velocity: 80,
+                        start_beat: Number.MAX_VALUE,
+                        duration_beats: Number.MAX_VALUE,
+                    },
+                ],
+            })
+        );
+
+        const notes = await generateMidiViaLlm('ambient pad');
+
+        expect(notes).toEqual([{ pitch: 60, velocity: 100, start_beat: 0, duration_beats: 1 }]);
     });
 
     it('returns no notes (and falls back) when the balanced JSON object is syntactically invalid', async () => {

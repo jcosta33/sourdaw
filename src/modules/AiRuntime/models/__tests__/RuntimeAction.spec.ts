@@ -18,13 +18,16 @@ describe('RuntimeAction', () => {
             }
         }
 
-        expect(RUNTIME_ACTION_TYPES).toHaveLength(238);
+        expect(RUNTIME_ACTION_TYPES).toHaveLength(237);
         expect(new Set(RUNTIME_ACTION_TYPES).size).toBe(RUNTIME_ACTION_TYPES.length);
-        expect(digest >>> 0).toBe(1_670_677_419);
+        expect(RUNTIME_ACTION_TYPES).not.toContain('replayGeneratedMidi');
+        expect(digest >>> 0).toBe(2_617_455_263);
     });
 
     it('derives initiating payloads without exposing command-owned replay fields', () => {
         type EmptyCollabSessionPayloadAllowed = {} extends RuntimePayload<'createCollabSession'> ? true : false;
+        type RuntimeAddNotesNote = RuntimePayload<'addNotes'>['notes'][number];
+        type RuntimeAddNotesNoteHasId = 'id' extends keyof RuntimeAddNotesNote ? true : false;
         const actions: RuntimeAction[] = [
             { type: 'duplicateClip', payload: { clipId: 'clip-1' } },
             {
@@ -75,6 +78,7 @@ describe('RuntimeAction', () => {
         expectTypeOf<PayloadHasKey<'scaleAutomation', 'anchor'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'stretchAutomation', 'anchorBeat'>>().toEqualTypeOf<false>();
         expectTypeOf<PayloadHasKey<'createVcaGroup', 'vcaGroupId'>>().toEqualTypeOf<false>();
+        expectTypeOf<RuntimeAddNotesNoteHasId>().toEqualTypeOf<false>();
         expectTypeOf<EmptyCollabSessionPayloadAllowed>().toEqualTypeOf<false>();
     });
 });

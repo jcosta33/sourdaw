@@ -97,6 +97,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
     clampDeviceParameterValue: noop,
+    isDeviceParameterAutomatable: noop,
     getAllTracks: noop,
     getPluginById: noop,
     persistDevicePatch: noop,
@@ -127,6 +128,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getFinalFeatureHandlers: sentinelHandlers('FinalFeature'),
     commitPitchEdit: noop,
     configureAudioDeviceRuntimeSink: configureAudioDeviceRuntimeSinkMock,
+    configureOfflineDeviceParameterLaw: noop,
     configureOfflineMidiEventProjection: noop,
     configureOfflinePpqEndpointProjection: noop,
     configureOfflineYeastMidiProcessing: noop,
@@ -179,7 +181,6 @@ vi.mock('#/modules/ControlSurface/useCases', () => ({
 vi.mock('#/modules/CrdtDocument/stores', () => ({ actionHistoryStore: actionHistoryStoreMock }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
-    getDsoSnapshotHandlers: sentinelHandlers('DsoSnapshot'),
     markActionHistoryEntryReverted: noop,
     recordActionHistoryEntry: noop,
     clearActionHistory: noop,
@@ -214,6 +215,7 @@ vi.mock('#/modules/Knead/useCases', () => ({
 vi.mock('#/modules/Levain/stores', () => ({ setEngineReady: noop }));
 
 vi.mock('#/modules/Levain/useCases', () => ({
+    initLevainDeviceStatePersistence: () => noop,
     registerLevainDevice: noop,
     unregisterLevainDevice: noop,
     prepareOfflineLevain: prepareOfflineLevainMock,
@@ -375,7 +377,6 @@ describe('bootstrap', () => {
         'WebMidiInput',
         'Rave',
         'ControlRoom',
-        'DsoSnapshot',
     ];
 
     it('registers every module handler map exactly once, in bootstrap wiring order', () => {

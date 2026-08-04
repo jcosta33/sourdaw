@@ -1,275 +1,258 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { generateMidiVariations } from '../generateMidiVariations';
 
 type CloudChatOutcome = { status: 'complete' } | { status: 'incomplete'; reason: string };
+type InitializedBackend = Awaited<ReturnType<typeof import('#/modules/AiRuntime/useCases').initEngine>>;
 
-const { streamCloudChatCompletionMock, resolveBackendMock } = vi.hoisted(() => ({
-    streamCloudChatCompletionMock:
+const mocks = vi.hoisted(() => ({
+    captureProjectRevision: vi.fn(() => 'revision-1'),
+    executeAppActionBatch: vi.fn(),
+    getNotesForClip: vi.fn(),
+    getTrackStoreState: vi.fn(),
+    generateNativeCompletion: vi.fn(),
+    initEngine: vi.fn<() => Promise<InitializedBackend>>(),
+    isNativeEngineReady: vi.fn(() => false),
+    resolveBackend: vi.fn(() => 'cloud'),
+    streamCloudChatCompletion:
         vi.fn<(messages: unknown, onToken: (token: string) => void) => Promise<CloudChatOutcome>>(),
-    resolveBackendMock: vi.fn<(...args: unknown[]) => unknown>(),
-}));
-
-const { getTrackStoreStateMock, createAlternativeClipsMock, setTrackStoreStateMock, trackStateMock } = vi.hoisted(
-    () => {
-        const trackStateMock: { value: unknown } = { value: null };
-
-        return {
-            getTrackStoreStateMock: vi.fn<() => unknown>(() => trackStateMock.value),
-            createAlternativeClipsMock: vi.fn<(...args: unknown[]) => unknown>(),
-            setTrackStoreStateMock: vi.fn<(value: unknown) => void>(),
-            trackStateMock,
-        };
-    }
-);
-
-const { getMidiStoreStateMock, getNotesForClipMock, setMidiStoreStateMock, midiStateMock } = vi.hoisted(() => {
-    const midiStateMock: { value: unknown } = { value: null };
-
-    return {
-        getMidiStoreStateMock: vi.fn<() => unknown>(() => midiStateMock.value),
-        getNotesForClipMock: vi.fn<(...args: unknown[]) => unknown>(),
-        setMidiStoreStateMock: vi.fn<(value: unknown) => void>(),
-        midiStateMock,
-    };
-});
-
-const { pushUndoEntryMock } = vi.hoisted(() => ({
-    pushUndoEntryMock: vi.fn<(...args: unknown[]) => unknown>(),
-}));
-
-vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
-    getTrackStoreState: getTrackStoreStateMock,
-    createAlternativeClips: createAlternativeClipsMock,
-    setTrackStoreState: setTrackStoreStateMock,
 }));
 
 vi.mock('#/modules/AiRuntime/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AiRuntime/useCases')>()),
-    streamCloudChatCompletion: streamCloudChatCompletionMock,
-    resolveBackend: resolveBackendMock,
+    generateNativeCompletion: mocks.generateNativeCompletion,
+    initEngine: mocks.initEngine,
+    isNativeEngineReady: mocks.isNativeEngineReady,
+    resolveBackend: mocks.resolveBackend,
+    streamCloudChatCompletion: mocks.streamCloudChatCompletion,
 }));
 
-vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),
-    getMidiStoreState: getMidiStoreStateMock,
-    getNotesForClip: getNotesForClipMock,
-    setMidiStoreState: setMidiStoreStateMock,
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
+    getTrackStoreState: mocks.getTrackStoreState,
 }));
 
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
-    pushUndoEntry: pushUndoEntryMock,
+    executeAppActionBatch: mocks.executeAppActionBatch,
 }));
 
-import { generateMidiVariations } from '../generateMidiVariations';
+vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
+    captureProjectRevision: mocks.captureProjectRevision,
+}));
 
-const midiClipState = {
+vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),
+    getNotesForClip: mocks.getNotesForClip,
+}));
+
+const sourceState = {
     tracks: [
         {
-            clips: [{ id: 'clip-1', type: 'midi', startBeat: 0, endBeat: 4 }],
+            id: 'track-1',
+            clips: [
+                {
+                    id: 'clip-1',
+                    name: 'Verse',
+                    type: 'midi',
+                    startBeat: 8,
+                    endBeat: 12,
+                    midiOffsetBeats: 0.5,
+                    fadeInBeats: 0.25,
+                    fadeOutBeats: 0.5,
+                    gain: 0.8,
+                    color: '#123456',
+                    locked: true,
+                    stretchMode: 'repitch',
+                    stretchRatio: 1.25,
+                    loopEnabled: true,
+                    loopLength: 2,
+                    followAction: 'play_next',
+                    isGhost: true,
+                },
+            ],
         },
     ],
 };
-
-const validNotes = [{ pitch: 60, startBeat: 0, duration: 1, velocity: 100 }];
-
-const validVariationsJson = JSON.stringify({
+const sourceNotes = [{ pitch: 60, startBeat: 0, duration: 1, velocity: 100 }];
+const variationsJson = JSON.stringify({
     variations: [
         [{ pitch: 60, startBeat: 0, duration: 1, velocity: 100 }],
         [{ pitch: 62, startBeat: 1, duration: 0.5, velocity: 90 }],
+        [{ pitch: 64, startBeat: 2, duration: 1, velocity: 80 }],
     ],
 });
 
 describe('generateMidiVariations', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        trackStateMock.value = null;
-        midiStateMock.value = null;
-        resolveBackendMock.mockReturnValue('cloud');
-        getNotesForClipMock.mockReturnValue(validNotes);
-        streamCloudChatCompletionMock.mockResolvedValue({ status: 'complete' });
+        mocks.captureProjectRevision.mockReturnValue('revision-1');
+        mocks.getTrackStoreState.mockReturnValue(sourceState);
+        mocks.getNotesForClip.mockReturnValue(sourceNotes);
+        mocks.initEngine.mockResolvedValue('native');
+        mocks.isNativeEngineReady.mockReturnValue(false);
+        mocks.resolveBackend.mockReturnValue('cloud');
+        mocks.streamCloudChatCompletion.mockImplementation((_messages, onToken) => {
+            onToken(variationsJson);
+            return Promise.resolve({ status: 'complete' });
+        });
+        mocks.executeAppActionBatch.mockResolvedValue({ status: 'committed', actions: [] });
     });
 
-    it('throws when track state is unavailable', async () => {
-        await expect(generateMidiVariations('clip-1')).rejects.toThrow(/Track state unavailable/);
-        expect(streamCloudChatCompletionMock).not.toHaveBeenCalled();
-    });
-
-    it('parses variations, creates alternative clips, and pushes a restorable undo entry', async () => {
-        const trackLookupState = midiClipState;
-        const trackSnapshotBefore = {
-            tracks: [
-                {
-                    clips: [{ id: 'clip-1', type: 'midi', startBeat: 0, endBeat: 4 }],
-                    name: 'Edited while AI generated',
-                },
-            ],
-        };
-        const midiSnapshotBefore = { snapshot: 'midi-before' };
-        const trackSnapshotAfter = { snapshot: 'track-after' };
-        const midiSnapshotAfter = { snapshot: 'midi-after' };
-        trackStateMock.value = trackLookupState;
-        midiStateMock.value = midiSnapshotBefore;
-        streamCloudChatCompletionMock.mockImplementation((_messages: unknown, onToken: (token: string) => void) => {
-            onToken(validVariationsJson);
-            trackStateMock.value = trackSnapshotBefore;
-            return Promise.resolve({ status: 'complete' as const });
-        });
-
-        // Distinct lookup/before/after snapshots prove undo reads the owner getter
-        // after the async model response, not the stale initial lookup state.
-        createAlternativeClipsMock.mockImplementation(() => {
-            trackStateMock.value = trackSnapshotAfter;
-            midiStateMock.value = midiSnapshotAfter;
-        });
-
+    it('applies validated variations as one compensable AppAction batch', async () => {
         const count = await generateMidiVariations('clip-1');
 
-        expect(count).toBe(2);
-        expect(createAlternativeClipsMock).toHaveBeenCalledWith('clip-1', [
-            [{ pitch: 60, startBeat: 0, duration: 1, velocity: 100 }],
-            [{ pitch: 62, startBeat: 1, duration: 0.5, velocity: 90 }],
-        ]);
-        expect(pushUndoEntryMock).toHaveBeenCalledTimes(1);
-
-        const [label, undoFn, redoFn, undoOptions] = pushUndoEntryMock.mock.calls[0] as [
-            string,
-            () => void,
-            () => void,
-            { source: string },
+        expect(count).toBe(3);
+        const [actions, options] = mocks.executeAppActionBatch.mock.calls[0] as [
+            Array<{ type: string; payload: Record<string, unknown> }>,
+            { source: string; requireCompensation: boolean; shouldExecute: () => boolean },
         ];
-        expect(label).toBe('AI Variations: clip-1');
-        expect(undoOptions).toEqual({ source: 'ai' });
-
-        // Undo restores the pre-mutation snapshots captured before createAlternativeClips
-        // ran, routed through the owning modules' write-path use-cases (not a direct
-        // foreign-store.set).
-        undoFn();
-        expect(setTrackStoreStateMock).toHaveBeenLastCalledWith(trackSnapshotBefore);
-        expect(setMidiStoreStateMock).toHaveBeenLastCalledWith(midiSnapshotBefore);
-
-        // Redo restores the post-mutation snapshots, also through the owning use-cases.
-        redoFn();
-        expect(setTrackStoreStateMock).toHaveBeenLastCalledWith(trackSnapshotAfter);
-        expect(setMidiStoreStateMock).toHaveBeenLastCalledWith(midiSnapshotAfter);
-    });
-
-    it('drops out-of-range and non-finite variation notes before creating clips', async () => {
-        trackStateMock.value = midiClipState;
-        // First variation is valid; second carries an out-of-range pitch and must be rejected.
-        const mixedJson = JSON.stringify({
-            variations: [
-                [{ pitch: 60, startBeat: 0, duration: 1, velocity: 100 }],
-                [{ pitch: 999, startBeat: 0, duration: 1, velocity: 100 }],
-                [{ pitch: 64, startBeat: 0, duration: Number.NaN, velocity: 100 }],
-            ],
-        });
-        streamCloudChatCompletionMock.mockImplementation((_messages: unknown, onToken: (token: string) => void) => {
-            onToken(mixedJson);
-            return Promise.resolve({ status: 'complete' as const });
-        });
-
-        const count = await generateMidiVariations('clip-1');
-
-        expect(count).toBe(1);
-        expect(createAlternativeClipsMock).toHaveBeenCalledWith('clip-1', [
-            [{ pitch: 60, startBeat: 0, duration: 1, velocity: 100 }],
+        expect(actions.map((action) => action.type)).toEqual([
+            'addClip',
+            'addNotes',
+            'addClip',
+            'addNotes',
+            'addClip',
+            'addNotes',
         ]);
+        expect(actions[0]?.payload).toMatchObject({
+            trackId: 'track-1',
+            startBeat: 12,
+            endBeat: 16,
+            name: 'Verse (Var 1)',
+            midiOffsetBeats: 0.5,
+            fadeInBeats: 0.25,
+            fadeOutBeats: 0.5,
+            gain: 0.8,
+            color: '#123456',
+            locked: true,
+            muted: true,
+            stretchMode: 'repitch',
+            stretchRatio: 1.25,
+            loopEnabled: true,
+            loopLength: 2,
+            followAction: 'play_next',
+            isGhost: true,
+        });
+        expect(actions[1]?.payload.notes).toEqual([{ pitch: 60, startBeat: 0, duration: 1, velocity: 100 }]);
+        expect(actions[2]?.payload).toMatchObject({ startBeat: 16, endBeat: 20, name: 'Verse (Var 2)' });
+        expect(actions[3]?.payload.notes).toEqual([{ pitch: 62, startBeat: 1, duration: 0.5, velocity: 90 }]);
+        expect(actions[4]?.payload).toMatchObject({ startBeat: 20, endBeat: 24, name: 'Verse (Var 3)' });
+        expect(actions[5]?.payload.notes).toEqual([{ pitch: 64, startBeat: 2, duration: 1, velocity: 80 }]);
+        expect(options).toMatchObject({ source: 'ai', requireCompensation: true, skipMacroRecording: true });
+        expect(options.shouldExecute()).toBe(true);
+        const messages = mocks.streamCloudChatCompletion.mock.calls[0]?.[0] as Array<{ content: string }>;
+        expect(messages[1]?.content).toContain('start=0.00');
+        expect(messages[1]?.content).not.toContain('start=-8.00');
     });
 
-    it('extracts the variations object from a multi-object response, skipping a preamble', async () => {
-        trackStateMock.value = midiClipState;
-        // A leading "thinking" object (with brace-containing string), then the real
-        // variations object, then trailing junk. A greedy /\{[\s\S]*\}/ would span
-        // from the first { to the last } and merge all three into one unparseable blob.
-        const multiObject = `{"thinking":"about {nested} braces"}\n${validVariationsJson}\n{"trailing":"junk"}`;
-        streamCloudChatCompletionMock.mockImplementation((_messages: unknown, onToken: (token: string) => void) => {
-            onToken(multiObject);
-            return Promise.resolve({ status: 'complete' as const });
+    it('fails truthfully when project revision changes before execution', async () => {
+        mocks.executeAppActionBatch.mockImplementation((_actions, options: { shouldExecute?: () => boolean }) => {
+            mocks.captureProjectRevision.mockReturnValue('revision-2');
+            return Promise.resolve(
+                options.shouldExecute?.()
+                    ? { status: 'committed' as const, actions: [] }
+                    : { status: 'cancelled' as const, reason: 'revoked', actions: [] }
+            );
         });
 
-        const count = await generateMidiVariations('clip-1');
-
-        expect(count).toBe(2);
-        expect(createAlternativeClipsMock).toHaveBeenCalledWith('clip-1', [
-            [{ pitch: 60, startBeat: 0, duration: 1, velocity: 100 }],
-            [{ pitch: 62, startBeat: 1, duration: 0.5, velocity: 90 }],
-        ]);
+        await expect(generateMidiVariations('clip-1')).rejects.toThrow(/project changed/);
     });
 
-    it('rejects a clip whose duration computes to NaN before prompting the model', async () => {
-        trackStateMock.value = {
-            tracks: [
-                {
-                    clips: [{ id: 'clip-1', type: 'midi', startBeat: Number.NaN, endBeat: 4 }],
-                },
-            ],
-        };
+    it('does not report success when the action batch rejects the write', async () => {
+        mocks.executeAppActionBatch.mockResolvedValue({ status: 'rejected', reason: 'ineligible track', actions: [] });
 
-        await expect(generateMidiVariations('clip-1')).rejects.toThrow(/zero or negative duration/);
-        expect(streamCloudChatCompletionMock).not.toHaveBeenCalled();
+        await expect(generateMidiVariations('clip-1')).rejects.toThrow(
+            'Failed to apply MIDI variations: ineligible track'
+        );
     });
 
-    it('throws when the target clip is not a MIDI clip', async () => {
-        trackStateMock.value = {
-            tracks: [{ clips: [{ id: 'clip-1', type: 'audio', startBeat: 0, endBeat: 4 }] }],
-        };
-
-        await expect(generateMidiVariations('clip-1')).rejects.toThrow(/must be a MIDI clip/);
-        expect(streamCloudChatCompletionMock).not.toHaveBeenCalled();
-    });
-
-    it('throws when the MIDI clip has no notes to vary', async () => {
-        trackStateMock.value = midiClipState;
-        getNotesForClipMock.mockReturnValue([]);
-
-        await expect(generateMidiVariations('clip-1')).rejects.toThrow(/no notes to vary/);
-        expect(streamCloudChatCompletionMock).not.toHaveBeenCalled();
-    });
-
-    it('throws when no AI backend is available', async () => {
-        trackStateMock.value = midiClipState;
-        resolveBackendMock.mockReturnValue('none');
-
-        await expect(generateMidiVariations('clip-1')).rejects.toThrow(/No AI backend available/);
-        expect(streamCloudChatCompletionMock).not.toHaveBeenCalled();
-    });
-
-    it('rejects incomplete hosted output before creating clips or undo history', async () => {
-        trackStateMock.value = midiClipState;
-        streamCloudChatCompletionMock.mockImplementation((_messages, onToken) => {
-            onToken(validVariationsJson);
+    it('rejects incomplete hosted output before dispatch', async () => {
+        mocks.streamCloudChatCompletion.mockImplementation((_messages, onToken) => {
+            onToken(variationsJson);
             return Promise.resolve({ status: 'incomplete', reason: 'max_tokens' });
         });
 
         await expect(generateMidiVariations('clip-1')).rejects.toThrow(
             'Hosted AI MIDI variations were incomplete (max_tokens).'
         );
-        expect(createAlternativeClipsMock).not.toHaveBeenCalled();
-        expect(pushUndoEntryMock).not.toHaveBeenCalled();
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
     });
 
-    it('throws when the model response contains no JSON object', async () => {
-        trackStateMock.value = midiClipState;
-        streamCloudChatCompletionMock.mockImplementation((_messages: unknown, onToken: (token: string) => void) => {
-            onToken('sorry, I cannot help with that.');
-            return Promise.resolve({ status: 'complete' as const });
-        });
+    it('initializes the native backend before requesting variations', async () => {
+        mocks.resolveBackend.mockReturnValue('native');
+        mocks.isNativeEngineReady.mockReturnValueOnce(false).mockReturnValue(true);
+        mocks.generateNativeCompletion.mockResolvedValue(variationsJson);
 
-        await expect(generateMidiVariations('clip-1')).rejects.toThrow(/No JSON object found/);
+        await expect(generateMidiVariations('clip-1')).resolves.toBe(3);
+
+        expect(mocks.initEngine).toHaveBeenCalledOnce();
+        expect(mocks.generateNativeCompletion).toHaveBeenCalledOnce();
     });
 
-    it('throws when every variation entry is malformed (non-array or non-object notes)', async () => {
-        trackStateMock.value = midiClipState;
-        // "not-an-array" fails the Array.isArray guard; [null] fails the object/null guard.
-        // Both are rejected by isVariationNoteArray, leaving zero valid variations.
-        const allInvalidJson = JSON.stringify({ variations: ['not-an-array', [null]] });
-        streamCloudChatCompletionMock.mockImplementation((_messages: unknown, onToken: (token: string) => void) => {
-            onToken(allInvalidJson);
-            return Promise.resolve({ status: 'complete' as const });
+    it('uses cloud when automatic native initialization selects the configured hosted fallback', async () => {
+        mocks.resolveBackend.mockReturnValue('native');
+        mocks.isNativeEngineReady.mockReturnValue(false);
+        mocks.initEngine.mockResolvedValue('cloud');
+
+        await expect(generateMidiVariations('clip-1')).resolves.toBe(3);
+
+        expect(mocks.initEngine).toHaveBeenCalledOnce();
+        expect(mocks.generateNativeCompletion).not.toHaveBeenCalled();
+        expect(mocks.streamCloudChatCompletion).toHaveBeenCalledOnce();
+    });
+
+    it('rejects malformed provider notes before dispatch', async () => {
+        mocks.streamCloudChatCompletion.mockImplementation((_messages, onToken) => {
+            onToken(JSON.stringify({ variations: [[{ pitch: 999, startBeat: 0, duration: 1, velocity: 100 }]] }));
+            return Promise.resolve({ status: 'complete' });
         });
 
-        await expect(generateMidiVariations('clip-1')).rejects.toThrow(/no valid variation note arrays/);
-        expect(createAlternativeClipsMock).not.toHaveBeenCalled();
+        await expect(generateMidiVariations('clip-1')).rejects.toThrow(/invalid "variations" array/);
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
+    });
+
+    it('rejects notes that extend past the source clip duration', async () => {
+        mocks.streamCloudChatCompletion.mockImplementation((_messages, onToken) => {
+            onToken(
+                JSON.stringify({
+                    variations: [
+                        [{ pitch: 60, startBeat: 3.75, duration: 0.5, velocity: 100 }],
+                        [{ pitch: 62, startBeat: 0, duration: 1, velocity: 90 }],
+                        [{ pitch: 64, startBeat: 0, duration: 1, velocity: 80 }],
+                    ],
+                })
+            );
+            return Promise.resolve({ status: 'complete' });
+        });
+
+        await expect(generateMidiVariations('clip-1')).rejects.toThrow(/invalid "variations" array/);
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
+    });
+
+    it('rejects extra provider fields instead of accepting a second command protocol', async () => {
+        mocks.streamCloudChatCompletion.mockImplementation((_messages, onToken) => {
+            onToken(
+                JSON.stringify({
+                    variations: [[{ pitch: 60, startBeat: 0, duration: 1, velocity: 100 }]],
+                    action: { type: 'removeAllTracks' },
+                })
+            );
+            return Promise.resolve({ status: 'complete' });
+        });
+
+        await expect(generateMidiVariations('clip-1')).rejects.toThrow(/invalid "variations" array/);
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
+    });
+
+    it('rejects missing and empty source clips before inference', async () => {
+        mocks.getTrackStoreState.mockReturnValue(null);
+        await expect(generateMidiVariations('clip-1')).rejects.toThrow(/Track state unavailable/);
+
+        mocks.getTrackStoreState.mockReturnValue(sourceState);
+        mocks.getNotesForClip.mockReturnValue([]);
+        await expect(generateMidiVariations('clip-1')).rejects.toThrow(/no notes to vary/);
+        expect(mocks.streamCloudChatCompletion).not.toHaveBeenCalled();
     });
 });

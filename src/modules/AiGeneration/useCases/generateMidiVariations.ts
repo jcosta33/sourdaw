@@ -3,21 +3,39 @@ import {
     streamCloudChatCompletion,
     generateNativeCompletion,
     generateWebLlmCompletion,
+    initEngine,
     isNativeEngineReady,
 } from '#/modules/AiRuntime/useCases';
-import {
-    createAlternativeClips,
-    getTrackStoreState as getTrackState,
-    setTrackStoreState,
-} from '#/modules/Arrangement/useCases';
-import { pushUndoEntry } from '#/modules/Command/useCases';
-import { getMidiStoreState as getMidiState, getNotesForClip, setMidiStoreState } from '#/modules/MIDI/useCases';
+import { getTrackStoreState as getTrackState } from '#/modules/Arrangement/useCases';
+import { executeAppActionBatch } from '#/modules/Command/useCases';
+import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
+import { getNotesForClip } from '#/modules/MIDI/useCases';
+import { type AppAction } from '#/utils/handlerContract';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { createAiGenerationError } from '../errors/AiGenerationError';
 import { readBalancedObject } from '../services/readBalancedObject';
 
 // Consumer-local shape (AGENTS.md §95 — model isolation). Only the fields used here.
-type Clip = { id: string; type: 'audio' | 'midi'; startBeat: number; endBeat: number };
+type Clip = {
+    id: string;
+    name: string;
+    type: 'audio' | 'midi';
+    startBeat: number;
+    endBeat: number;
+    midiOffsetBeats?: number;
+    fadeInBeats?: number;
+    fadeOutBeats?: number;
+    gain?: number;
+    color?: string;
+    locked?: boolean;
+    stretchMode?: 'off' | 'repitch' | 'timestretch';
+    stretchRatio?: number;
+    loopEnabled?: boolean;
+    loopLength?: number;
+    followAction?: 'stop' | 'play_next' | 'play_previous' | 'play_random' | 'play_first' | 'play_last';
+    isGhost?: boolean;
+};
 
 // Consumer-local shape (model isolation) — field-identical to Arrangement's VariationNote.
 type VariationNote = { pitch: number; startBeat: number; duration: number; velocity: number };
@@ -29,25 +47,56 @@ type GenerateMidiVariationsOptions = {
     onToken?: (token: string) => void;
 };
 
+type PlannedVariation = {
+    clipId: string;
+    notes: VariationNote[];
+};
+
+function hasDurableVariations(planned: readonly PlannedVariation[]): boolean {
+    const state = getTrackState();
+    if (!state) {
+        return false;
+    }
+
+    return planned.every((variation) => {
+        const clipExists = state.tracks.some((track) => track.clips.some((clip) => clip.id === variation.clipId));
+        if (!clipExists) {
+            return false;
+        }
+        const expected = variation.notes
+            .map(
+                (note) =>
+                    `${String(note.pitch)}:${String(note.startBeat)}:${String(note.duration)}:${String(note.velocity)}`
+            )
+            .sort();
+        const written = getNotesForClip(variation.clipId)
+            .map(
+                (note) =>
+                    `${String(note.pitch)}:${String(note.startBeat)}:${String(note.duration)}:${String(note.velocity)}`
+            )
+            .sort();
+        return expected.length === written.length && expected.every((note, index) => note === written[index]);
+    });
+}
+
 /**
  * Validate that an unknown value is a well-formed VariationNote array.
  * Each note must have finite, in-range pitch, startBeat, duration, and
- * velocity. NaN/Infinity and out-of-range MIDI values are rejected so they
- * never reach createAlternativeClips. (A bare typeof check passes for NaN.)
+ * velocity. NaN/Infinity, extra fields, empty arrays, and out-of-range MIDI
+ * values are rejected before any AppAction is constructed.
  */
 function isVariationNoteArray(arr: unknown): arr is VariationNote[] {
-    if (!Array.isArray(arr)) {
+    if (!Array.isArray(arr) || arr.length === 0 || arr.length > 256) {
         return false;
     }
     return arr.every((node) => {
-        if (typeof node !== 'object' || node === null) {
+        if (!isExactRecord(node, ['pitch', 'startBeat', 'duration', 'velocity'])) {
             return false;
         }
-        const record = node as Record<string, unknown>;
-        const { pitch, startBeat, duration, velocity } = record;
+        const { pitch, startBeat, duration, velocity } = node;
         return (
             typeof pitch === 'number' &&
-            Number.isFinite(pitch) &&
+            Number.isInteger(pitch) &&
             pitch >= 0 &&
             pitch <= 127 &&
             typeof startBeat === 'number' &&
@@ -55,13 +104,21 @@ function isVariationNoteArray(arr: unknown): arr is VariationNote[] {
             startBeat >= 0 &&
             typeof duration === 'number' &&
             Number.isFinite(duration) &&
-            duration > 0 &&
+            duration >= 0.0625 &&
             typeof velocity === 'number' &&
-            Number.isFinite(velocity) &&
+            Number.isInteger(velocity) &&
             velocity >= 1 &&
             velocity <= 127
         );
     });
+}
+
+function isExactRecord(value: unknown, keys: readonly string[]): value is Record<string, unknown> {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+        return false;
+    }
+    const actualKeys = Object.keys(value);
+    return actualKeys.length === keys.length && keys.every((key) => actualKeys.includes(key));
 }
 
 export async function generateMidiVariations(
@@ -76,15 +133,17 @@ export async function generateMidiVariations(
     }
 
     let targetClip: Clip | null = null;
+    let targetTrackId: string | null = null;
     for (const track of state.tracks) {
         const clip = track.clips.find((context) => context.id === clipId);
         if (clip) {
             targetClip = clip;
+            targetTrackId = track.id;
             break;
         }
     }
 
-    if (!targetClip || targetClip.type !== 'midi') {
+    if (!targetClip || !targetTrackId || targetClip.type !== 'midi') {
         throw createAiGenerationError('Target clip must be a MIDI clip.');
     }
 
@@ -100,7 +159,7 @@ export async function generateMidiVariations(
         throw createAiGenerationError('Clip has zero or negative duration — cannot generate variations.');
     }
 
-    const startBeat = targetClip.startBeat;
+    const projectRevision = captureProjectRevision();
 
     // Cap the note list so a long clip can't blow the LLM context window. We
     // describe the variation goal, not reproduce every note, so a representative
@@ -112,7 +171,7 @@ export async function generateMidiVariations(
     const noteStrings = promptNotes
         .map(
             (node) =>
-                `[pitch=${node.pitch}, start=${(node.startBeat - startBeat).toFixed(2)}, duration=${node.duration.toFixed(2)}, velocity=${node.velocity.toFixed(2)}]`
+                `[pitch=${node.pitch}, start=${node.startBeat.toFixed(2)}, duration=${node.duration.toFixed(2)}, velocity=${node.velocity.toFixed(2)}]`
         )
         .join(', ');
 
@@ -132,11 +191,19 @@ ONLY output raw JSON, no markdown blocks.`;
     const userMessage = `${projectContext}\n\n${prompt}`;
     let responseStr = '';
 
-    const backend = resolveBackend();
+    let backend = resolveBackend();
 
-    if (backend === 'native' && isNativeEngineReady()) {
+    if (backend === 'native') {
+        if (!isNativeEngineReady()) {
+            backend = await initEngine();
+        }
+        if (backend === 'native' && !isNativeEngineReady()) {
+            throw createAiGenerationError('The selected native AI backend could not be initialized.');
+        }
+    }
+
+    if (backend === 'native') {
         responseStr = await generateNativeCompletion(VARIATIONS_SYSTEM_PROMPT, userMessage, { maxTokens: 4000 });
-        // Native returns the full string at once — fire the callback once so callers can react
         onToken?.(responseStr);
     } else if (backend === 'webllm') {
         responseStr = await generateWebLlmCompletion(VARIATIONS_SYSTEM_PROMPT, userMessage, { maxTokens: 4000 });
@@ -174,54 +241,97 @@ ONLY output raw JSON, no markdown blocks.`;
     let variations: VariationNote[][];
     try {
         const parsed: unknown = JSON.parse(jsonText);
-        if (typeof parsed !== 'object' || parsed === null) {
+        if (!isExactRecord(parsed, ['variations'])) {
             throw new TypeError('Missing or invalid "variations" array in AI response');
         }
-        const data = parsed as Record<string, unknown>;
-        if (!Array.isArray(data.variations)) {
+        const rawVariations = parsed.variations;
+        if (
+            !Array.isArray(rawVariations) ||
+            rawVariations.length !== 3 ||
+            !rawVariations.every(isVariationNoteArray) ||
+            !rawVariations.every((variation) =>
+                variation.every((note) => {
+                    const noteEnd = note.startBeat + note.duration;
+                    return Number.isFinite(noteEnd) && noteEnd <= duration;
+                })
+            )
+        ) {
             throw new TypeError('Missing or invalid "variations" array in AI response');
         }
-        // Filter out any variation entries that don't match the expected note shape
-        variations = (data.variations as unknown[]).filter(isVariationNoteArray);
-        if (variations.length === 0) {
-            throw new Error('AI response contained no valid variation note arrays');
-        }
+        variations = rawVariations;
     } catch (error) {
         throw createAiGenerationError(
             `Failed to parse variations from AI: ${error instanceof Error ? error.message : String(error)}`
         );
     }
 
-    // Snapshot both stores before mutation so the undo entry can restore them
-    const trackSnapshotBefore = getTrackState();
-    const midiSnapshotBefore = getMidiState();
+    const actions: AppAction[] = [];
+    const plannedVariations: PlannedVariation[] = [];
+    let variationStartBeat = targetClip.endBeat;
+    for (const [index, variation] of variations.entries()) {
+        const variationClipId = `clip-ai-${crypto.randomUUID()}`;
+        plannedVariations.push({ clipId: variationClipId, notes: variation });
+        actions.push(
+            {
+                type: 'addClip',
+                payload: {
+                    id: variationClipId,
+                    trackId: targetTrackId,
+                    startBeat: variationStartBeat,
+                    endBeat: variationStartBeat + duration,
+                    name: `${targetClip.name} (Var ${String(index + 1)})`,
+                    type: 'midi',
+                    midiOffsetBeats: targetClip.midiOffsetBeats,
+                    fadeInBeats: targetClip.fadeInBeats,
+                    fadeOutBeats: targetClip.fadeOutBeats,
+                    gain: targetClip.gain,
+                    color: targetClip.color,
+                    locked: targetClip.locked,
+                    muted: true,
+                    stretchMode: targetClip.stretchMode,
+                    stretchRatio: targetClip.stretchRatio,
+                    loopEnabled: targetClip.loopEnabled,
+                    loopLength: targetClip.loopLength,
+                    followAction: targetClip.followAction,
+                    isGhost: targetClip.isGhost,
+                },
+            },
+            {
+                type: 'addNotes',
+                payload: { clipId: variationClipId, notes: variation },
+            }
+        );
+        variationStartBeat += duration;
+    }
 
-    createAlternativeClips(targetClip.id, variations);
-
-    const trackSnapshotAfter = getTrackState();
-    const midiSnapshotAfter = getMidiState();
-
-    pushUndoEntry(
-        `AI Variations: ${clipId}`,
-        () => {
-            if (trackSnapshotBefore) {
-                setTrackStoreState(trackSnapshotBefore);
-            }
-            if (midiSnapshotBefore) {
-                setMidiStoreState(midiSnapshotBefore);
-            }
-        },
-        () => {
-            if (trackSnapshotAfter) {
-                setTrackStoreState(trackSnapshotAfter);
-            }
-            if (midiSnapshotAfter) {
-                setMidiStoreState(midiSnapshotAfter);
-            }
-        },
-        { source: 'ai' }
-    );
-    return variations.length;
+    const result = await executeAppActionBatch(actions, {
+        source: 'ai',
+        groupId: `ai-variations-${crypto.randomUUID()}`,
+        groupLabel: `AI Variations: ${clipId}`,
+        requireCompensation: true,
+        skipMacroRecording: true,
+        shouldExecute: () => captureProjectRevision() === projectRevision,
+    });
+    if (result.status === 'committed-with-warning') {
+        notifyUser(`MIDI variations committed with degraded history: ${result.warning}`, 'warning');
+        return variations.length;
+    }
+    if (result.status === 'committed') {
+        return variations.length;
+    }
+    if (result.status === 'ambiguous' && hasDurableVariations(plannedVariations)) {
+        return variations.length;
+    }
+    if (result.status === 'cancelled' || result.status === 'conflicted') {
+        throw createAiGenerationError(
+            'The project changed while AI was generating variations. No variations were applied.'
+        );
+    }
+    if (result.status === 'ambiguous') {
+        throw createAiGenerationError('Variation commit outcome is unknown. Check the timeline before retrying.');
+    }
+    const reason = 'reason' in result ? result.reason : 'No variation actions were applied.';
+    throw createAiGenerationError(`Failed to apply MIDI variations: ${reason}`);
 }
 
 /**

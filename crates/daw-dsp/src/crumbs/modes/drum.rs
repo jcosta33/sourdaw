@@ -13,7 +13,12 @@ use super::super::voice::VoiceTriggerParams;
 pub const MAX_PADS: usize = 128;
 
 /// Default base note for the first pad.
-const DEFAULT_BASE_NOTE: u8 = 36; // C2 (standard drum mapping)
+///
+/// 36 is where the General MIDI percussion map begins (35/36 are the two bass
+/// drums) and where Ableton's Drum Rack, Battery and the MPC pad banks all put
+/// their first visible pad. Every one of them maps one pad per semitone upward
+/// from there, which is what `note_to_pad` does.
+const DEFAULT_BASE_NOTE: u8 = 36;
 
 // ── Drum Mode ──────────────────────────────────────────────────────────
 
@@ -22,6 +27,18 @@ const DEFAULT_BASE_NOTE: u8 = 36; // C2 (standard drum mapping)
 pub struct DrumMode {
     pads: Vec<PadConfig>,
     base_note: u8,
+    /// The loaded sample, which sits on the base-note pad until assigned.
+    ///
+    /// Loading a sample has to leave something playable, but it must land on
+    /// *one* pad: drop a sample on an Ableton Drum Rack, Battery, Maschine or
+    /// an MPC and it takes a single pad while the rest stay empty. Spreading it
+    /// across the grid is a state none of them can be put into, and eight pads
+    /// playing one identical hit reads as broken rather than as a default.
+    ///
+    /// So this is the fallback for pad 0 only. An explicit `set_pad_sample`
+    /// overrides it, every other pad stays silent until assigned, and an empty
+    /// pool yields None rather than a voice pointed at a missing sample.
+    default_sample: Option<SampleId>,
 }
 
 impl DrumMode {
@@ -36,7 +53,16 @@ impl DrumMode {
         Self {
             pads,
             base_note: DEFAULT_BASE_NOTE,
+            default_sample: None,
         }
+    }
+
+    /// Land the loaded sample on the base-note pad.
+    ///
+    /// Called when the engine's sample selection changes. Writes one `Option`,
+    /// so it is safe on the audio thread.
+    pub fn set_default_sample(&mut self, sample_id: SampleId) {
+        self.default_sample = Some(sample_id);
     }
 
     /// Get the pad index for a given MIDI note.
@@ -78,16 +104,17 @@ impl DrumMode {
 
     /// Build voice trigger parameters for a given MIDI note.
     ///
-    /// Returns None if the note doesn't map to a valid, loaded pad.
+    /// Returns None if the note maps to no pad, or if nothing is loaded for the
+    /// pad to play — an explicit assignment first, then the default kit.
     pub fn trigger_params(&self, note: u8, velocity: u8) -> Option<VoiceTriggerParams> {
         let pad_idx = self.note_to_pad(note)?;
         let pad = &self.pads[pad_idx];
 
-        // Don't trigger if no sample is assigned.
-        let sample_id = match pad.sample_id {
-            Some(id) => id,
-            None => return None,
-        };
+        // An explicit assignment wins. Failing that, only the base-note pad
+        // falls back to the loaded sample — see `default_sample`. Every other
+        // unassigned pad is silent, which is what an empty pad is.
+        let unassigned_fallback = if pad_idx == 0 { self.default_sample } else { None };
+        let sample_id = pad.sample_id.or(unassigned_fallback)?;
 
         Some(VoiceTriggerParams {
             note,

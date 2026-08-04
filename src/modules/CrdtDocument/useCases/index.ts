@@ -28,10 +28,7 @@ export { preserveBranchStateForSession } from './preserveBranchStateForSession';
 export { replaceBranchState } from './replaceBranchState';
 export { restoreBranchStateAfterSession } from './restoreBranchStateAfterSession';
 
-export { restoreSnapshot } from './restoreSnapshot';
-export { getDsoSnapshotHandlers } from './getDsoSnapshotHandlers';
 export { registerCrdtStorageRuntime } from './registerCrdtStorageRuntime';
-export { saveSnapshot } from './saveSnapshot';
 export { transactSnapshot } from './transactSnapshot';
 export { startCrdtAutoSave } from './startCrdtAutoSave';
 export { subscribeToCrdtChanges } from './subscribeToCrdtChanges';

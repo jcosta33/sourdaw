@@ -89,6 +89,8 @@ export type AudioEngineDeviceReadinessDiagnostics = {
     }>;
 };
 
+export type AudioProcessorLifecycleState = 'continue' | 'continueIfNotQuiet' | 'tail' | 'sleep';
+
 export type AudioEngineDiagnostics = {
     context: {
         state: AudioContextState;
@@ -200,6 +202,8 @@ export type BuiltinDeviceNode = {
     bypassed?: boolean;
     /** Stop oscillators and release resources when the device is removed. */
     dispose?: () => void;
+    /** Current processor-owned lifecycle state when this device has adopted the shared contract. */
+    processorLifecycle?: () => AudioProcessorLifecycleState | null;
     /** Unified controller for all device types */
     controller?: DeviceController;
     /** Controls for native Rust/WASM DSP devices (param updates via MessagePort) */

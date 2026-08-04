@@ -291,6 +291,166 @@ export class CrumbsInstance {
 if (Symbol.dispose) CrumbsInstance.prototype[Symbol.dispose] = CrumbsInstance.prototype.free;
 
 /**
+ * WASM-exported Crust instance for AudioWorklet. An *effect*: it processes
+ * input audio rather than generating it.
+ */
+export class CrustInstance {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        CrustInstanceFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_crustinstance_free(ptr, 0);
+    }
+    /**
+     * @returns {number}
+     */
+    get_gr_db() {
+        const ret = wasm.crustinstance_get_gr_db(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get_input_db() {
+        const ret = wasm.crustinstance_get_input_db(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Pointer to the input left buffer — the caller writes input audio here.
+     * @returns {number}
+     */
+    get_input_left_ptr() {
+        const ret = wasm.crustinstance_get_input_left_ptr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Pointer to the input right buffer.
+     * @returns {number}
+     */
+    get_input_right_ptr() {
+        const ret = wasm.crustinstance_get_input_right_ptr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Delay imposed on the audio path, in samples, for host compensation.
+     * @returns {number}
+     */
+    get_latency_samples() {
+        const ret = wasm.crustinstance_get_latency_samples(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    get_lra() {
+        const ret = wasm.crustinstance_get_lra(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get_lufs_integrated() {
+        const ret = wasm.crustinstance_get_lufs_integrated(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get_lufs_momentary() {
+        const ret = wasm.crustinstance_get_lufs_momentary(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get_lufs_short_term() {
+        const ret = wasm.crustinstance_get_lufs_short_term(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Number of non-finite output samples scrubbed to silence since
+     * construction. Non-zero means a poisoned block was caught at the wasm
+     * output boundary and surfaced for health telemetry.
+     * @returns {number}
+     */
+    get_nan_flush_count() {
+        const ret = wasm.crustinstance_get_nan_flush_count(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get_output_db() {
+        const ret = wasm.crustinstance_get_output_db(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Pointer to the output right buffer (call after `process`).
+     * @returns {number}
+     */
+    get_right_ptr() {
+        const ret = wasm.crustinstance_get_right_ptr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * 1.0 when the held true-peak maximum is above the configured ceiling.
+     * @returns {number}
+     */
+    get_true_peak_exceeded() {
+        const ret = wasm.crustinstance_get_true_peak_exceeded(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Held true-peak maximum in dBTP.
+     * @returns {number}
+     */
+    get_true_peak_max() {
+        const ret = wasm.crustinstance_get_true_peak_max(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @param {number} sample_rate
+     */
+    constructor(sample_rate) {
+        const ret = wasm.crustinstance_new(sample_rate);
+        this.__wbg_ptr = ret;
+        CrustInstanceFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * Process a block. Input must already be written to the input buffers.
+     * Returns a pointer to the output left buffer.
+     * @param {number} block_size
+     * @returns {number}
+     */
+    process(block_size) {
+        const ret = wasm.crustinstance_process(this.__wbg_ptr, block_size);
+        return ret >>> 0;
+    }
+    /**
+     * Clear the held true-peak maximum behind the panel's TP reset.
+     */
+    reset_true_peak() {
+        wasm.crustinstance_reset_true_peak(this.__wbg_ptr);
+    }
+    /**
+     * Set a parameter by its snake_case engine name.
+     * @param {string} name
+     * @param {number} value
+     */
+    set_param(name, value) {
+        const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.crustinstance_set_param(this.__wbg_ptr, ptr0, len0, value);
+    }
+}
+if (Symbol.dispose) CrustInstance.prototype[Symbol.dispose] = CrustInstance.prototype.free;
+
+/**
  * WASM-exported Fermenter instance for AudioWorklet.
  */
 export class FermenterInstance {
@@ -313,6 +473,12 @@ export class FermenterInstance {
         return ret >>> 0;
     }
     /**
+     * Advance control-rate smoothing while DSP is asleep.
+     */
+    advance_silence() {
+        wasm.fermenterinstance_advance_silence(this.__wbg_ptr);
+    }
+    /**
      * Number of non-finite output samples scrubbed to silence since
      * construction (DSP-8). Non-zero means a poisoned block was caught at the
      * wasm output boundary and surfaced for health telemetry.
@@ -328,6 +494,14 @@ export class FermenterInstance {
      */
     get_right_ptr() {
         const ret = wasm.fermenterinstance_get_right_ptr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Stable numeric lifecycle code consumed by the AudioWorklet host.
+     * @returns {number}
+     */
+    lifecycle_state() {
+        const ret = wasm.fermenterinstance_lifecycle_state(this.__wbg_ptr);
         return ret >>> 0;
     }
     /**
@@ -395,12 +569,69 @@ export class FermenterInstance {
     /**
      * Process a block of 128 samples. Returns pointer to left channel.
      * Caller reads left + right from WASM memory.
+     *
+     * Consumes every event queued since the last call, splitting the render at
+     * each event's sample offset, and empties the list.
      * @param {number} block_size
      * @returns {number}
      */
     process(block_size) {
         const ret = wasm.fermenterinstance_process(this.__wbg_ptr, block_size);
         return ret >>> 0;
+    }
+    /**
+     * Queue MPE per-note expression at `offset` samples into the next block.
+     * @param {number} note
+     * @param {number} channel
+     * @param {number} bend_semitones
+     * @param {number} pressure
+     * @param {number} slide
+     * @param {number} offset
+     * @returns {boolean}
+     */
+    push_note_expression(note, channel, bend_semitones, pressure, slide, offset) {
+        const ret = wasm.fermenterinstance_push_note_expression(this.__wbg_ptr, note, channel, bend_semitones, pressure, slide, offset);
+        return ret !== 0;
+    }
+    /**
+     * Queue a note-off releasing every voice at `note`, at `offset` samples
+     * into the next rendered block.
+     * @param {number} note
+     * @param {number} offset
+     * @returns {boolean}
+     */
+    push_note_off(note, offset) {
+        const ret = wasm.fermenterinstance_push_note_off(this.__wbg_ptr, note, offset);
+        return ret !== 0;
+    }
+    /**
+     * Queue a note-off narrowed to one MPE member channel (audit MD-2).
+     * @param {number} note
+     * @param {number} channel
+     * @param {number} offset
+     * @returns {boolean}
+     */
+    push_note_off_on_channel(note, channel, offset) {
+        const ret = wasm.fermenterinstance_push_note_off_on_channel(this.__wbg_ptr, note, channel, offset);
+        return ret !== 0;
+    }
+    /**
+     * Queue a note-on at `offset` samples into the next rendered block.
+     *
+     * Returns `false` when the block's event list is full, so the caller can
+     * hold the event back for the next block instead of losing it. Events must
+     * be pushed in non-decreasing `offset` order — the engine applies them in
+     * the order given and never sorts, so a note-off and a re-trigger of one
+     * pitch on the same sample keep the sequence the caller intended.
+     * @param {number} note
+     * @param {number} velocity
+     * @param {number} channel
+     * @param {number} offset
+     * @returns {boolean}
+     */
+    push_note_on(note, velocity, channel, offset) {
+        const ret = wasm.fermenterinstance_push_note_on(this.__wbg_ptr, note, velocity, channel, offset);
+        return ret !== 0;
     }
     /**
      * Set a named parameter value.
@@ -945,6 +1176,16 @@ export class KneadInstance {
         return ret >>> 0;
     }
     /**
+     * Samples of group delay this instance imposes, for plugin delay
+     * compensation. Mirrors `GlutenInstance::get_latency_samples`; the worklet
+     * forwards it on the ready handshake so PDC can offset the track.
+     * @returns {number}
+     */
+    get_latency_samples() {
+        const ret = wasm.kneadinstance_get_latency_samples(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
      * Number of non-finite output samples scrubbed to silence since
      * construction (DSP-8). Non-zero means a poisoned block was caught at the
      * wasm output boundary and surfaced for health telemetry.
@@ -1021,6 +1262,12 @@ export class LevainInstance {
         wasm.__wbg_levaininstance_free(ptr, 0);
     }
     /**
+     * Discard a failed staged bank without changing the sounding bank.
+     */
+    abort_sample_bank() {
+        wasm.levaininstance_abort_sample_bank(this.__wbg_ptr);
+    }
+    /**
      * Get number of currently sounding voices.
      * @returns {number}
      */
@@ -1029,19 +1276,19 @@ export class LevainInstance {
         return ret >>> 0;
     }
     /**
-     * Add a sample to the pool. `data` is interleaved f32 PCM.
-     * Returns the SampleId.
+     * Add a sample to the uniquely-owned loading bank. `data` is interleaved
+     * f32 PCM. Returns `None` if the bank is already shared or exceeds limits.
      * @param {Float32Array} data
      * @param {number} frame_count
      * @param {number} channels
      * @param {number} sample_rate
-     * @returns {number}
+     * @returns {number | undefined}
      */
     add_sample(data, frame_count, channels, sample_rate) {
         const ptr0 = passArrayF32ToWasm0(data, wasm.__wbindgen_malloc);
         const len0 = WASM_VECTOR_LEN;
         const ret = wasm.levaininstance_add_sample(this.__wbg_ptr, ptr0, len0, frame_count, channels, sample_rate);
-        return ret >>> 0;
+        return ret === Number.MAX_SAFE_INTEGER ? undefined : ret;
     }
     /**
      * Add a zone to the zone map. Call build_zone_map() after all zones are added.
@@ -1079,18 +1326,48 @@ export class LevainInstance {
         wasm.levaininstance_all_notes_off(this.__wbg_ptr);
     }
     /**
+     * Attach an immutable PCM bank published in this rendering thread.
+     * @param {string} bank_key
+     * @returns {boolean}
+     */
+    attach_sample_bank(bank_key) {
+        const ptr0 = passStringToWasm0(bank_key, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.levaininstance_attach_sample_bank(this.__wbg_ptr, ptr0, len0);
+        return ret !== 0;
+    }
+    /**
+     * Reset this device to a uniquely-owned empty loading bank.
+     * @param {string} instrument_id
+     */
+    begin_sample_bank(instrument_id) {
+        const ptr0 = passStringToWasm0(instrument_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.levaininstance_begin_sample_bank(this.__wbg_ptr, ptr0, len0);
+    }
+    /**
      * Build the zone lookup table after all zones and samples are loaded.
      * @param {number} num_articulations
      * @param {number} num_mics
+     * @returns {boolean}
      */
     build_zone_map(num_articulations, num_mics) {
-        wasm.levaininstance_build_zone_map(this.__wbg_ptr, num_articulations, num_mics);
+        const ret = wasm.levaininstance_build_zone_map(this.__wbg_ptr, num_articulations, num_mics);
+        return ret !== 0;
     }
     /**
      * Clear all loaded zones and samples from the engine.
      */
     clear_zones() {
         wasm.levaininstance_clear_zones(this.__wbg_ptr);
+    }
+    /**
+     * Atomically activate a successfully built staged PCM bank and zone map.
+     * @returns {boolean}
+     */
+    commit_sample_bank() {
+        const ret = wasm.levaininstance_commit_sample_bank(this.__wbg_ptr);
+        return ret !== 0;
     }
     /**
      * Number of non-finite output samples scrubbed to silence since
@@ -1189,6 +1466,25 @@ export class LevainInstance {
     process(block_size) {
         const ret = wasm.levaininstance_process(this.__wbg_ptr, block_size);
         return ret >>> 0;
+    }
+    /**
+     * Publish the complete immutable PCM bank for sibling Levain instances.
+     * @param {string} bank_key
+     * @returns {boolean}
+     */
+    publish_sample_bank(bank_key) {
+        const ptr0 = passStringToWasm0(bank_key, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.levaininstance_publish_sample_bank(this.__wbg_ptr, ptr0, len0);
+        return ret !== 0;
+    }
+    /**
+     * Decoded PCM bytes retained by this instance's current shared bank.
+     * @returns {number}
+     */
+    sample_bank_bytes() {
+        const ret = wasm.levaininstance_sample_bank_bytes(this.__wbg_ptr);
+        return ret;
     }
     /**
      * Tell the engine which instrument id is now loaded (e.g. `violin-1`,
@@ -1423,6 +1719,13 @@ export class ToasterInstance {
         wasm.__wbg_toasterinstance_free(ptr, 0);
     }
     /**
+     * Advance control-rate state while the processor is intentionally asleep.
+     * @param {number} block_size
+     */
+    advance_silence(block_size) {
+        wasm.toasterinstance_advance_silence(this.__wbg_ptr, block_size);
+    }
+    /**
      * Number of non-finite output samples scrubbed to silence since
      * construction (DSP-8). Covers the main stereo pair and every pad output;
      * non-zero means a poisoned block was caught at the wasm output boundary.
@@ -1438,6 +1741,14 @@ export class ToasterInstance {
      */
     get_right_ptr() {
         const ret = wasm.toasterinstance_get_right_ptr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Stable processor lifecycle code shared with the AudioWorklet host.
+     * @returns {number}
+     */
+    lifecycle_state() {
+        const ret = wasm.toasterinstance_lifecycle_state(this.__wbg_ptr);
         return ret >>> 0;
     }
     /**
@@ -1621,6 +1932,9 @@ const BacteriaInstanceFinalization = (typeof FinalizationRegistry === 'undefined
 const CrumbsInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_crumbsinstance_free(ptr, 1));
+const CrustInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_crustinstance_free(ptr, 1));
 const FermenterInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_fermenterinstance_free(ptr, 1));

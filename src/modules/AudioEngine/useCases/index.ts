@@ -65,6 +65,7 @@ export { updateMidiFxParam } from './deviceControls/updateMidiFxParam';
 export { getAudioContext, audioEngine } from './engineAccess/getAudioContext';
 export { getEngineState } from './engineAccess/getEngineState';
 export { getEngineDiagnostics } from './engineAccess/getEngineDiagnostics';
+export { getEngineHealth } from './engineAccess/getEngineHealth';
 export { getDeviceReadinessDiagnostics } from './engineAccess/getDeviceReadinessDiagnostics';
 export { resetEnginePlaybackLatencyStats } from './engineAccess/resetEnginePlaybackLatencyStats';
 export { resumeEngine } from './engineAccess/resumeEngine';
@@ -106,6 +107,7 @@ export { getAutoDetectedTailSeconds } from './offlineRender/getAutoDetectedTailS
 export { getDeviceChainTailSeconds } from './offlineRender/getDeviceChainTailSeconds';
 export { renderOffline } from './renderOffline';
 export { exportStems } from './exportStems';
+export { configureOfflineDeviceParameterLaw } from './configureOfflineDeviceParameterLaw';
 export { configureOfflineMidiEventProjection } from './configureOfflineMidiEventProjection';
 export { configureOfflinePpqEndpointProjection } from './configureOfflinePpqEndpointProjection';
 export { configureOfflineYeastMidiProcessing } from './configureOfflineYeastMidiProcessing';

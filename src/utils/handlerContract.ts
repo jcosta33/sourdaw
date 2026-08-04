@@ -169,9 +169,6 @@ export type AdjustmentLayerSnapshot = {
     readonly mix: number;
     readonly color: string;
 };
-type CommandDocumentSnapshotEntry =
-    { readonly state: 'present'; readonly bytes: Uint8Array } | { readonly state: 'absent' };
-type CommandDocumentSnapshot = Map<string, CommandDocumentSnapshotEntry>;
 /** A pitch-shift segment carried by `commitPitchEdit`. Command cannot import Knead's
  *  segment model (model isolation), so this specifies only the structural fields the
  *  pitch render consumes. Kept assignable to Knead's mutable shape (plain arrays). */
@@ -291,10 +288,57 @@ type LegacyVcaTrackMembershipPatch = {
     readonly replacementVcaGroupId: string | null;
 };
 
+export type GeneratedMidiStateGuard = {
+    entityJson: string;
+    midiByClipIdJson: string;
+};
+
+type MidiGenerationClipReplaySnapshot = {
+    id: string;
+    trackId: string;
+    name: string;
+    startBeat: number;
+    endBeat: number;
+    type: 'midi';
+};
+
+type MidiGenerationSourceReplaySnapshot = {
+    trackId: string;
+    clip: MidiGenerationClipReplaySnapshot;
+    notes: MidiClipNoteSnapshot[];
+};
+
+type GeneratedMidiReplayOperation =
+    | {
+          kind: 'replace-notes';
+          trackId: string;
+          clip: MidiGenerationClipReplaySnapshot;
+          expectedNotes: MidiClipNoteSnapshot[];
+          replacementNotes: MidiClipNoteSnapshot[];
+      }
+    | {
+          kind: 'create-clip';
+          source: MidiGenerationSourceReplaySnapshot;
+          targetTrackId: string;
+          clip: MidiGenerationClipReplaySnapshot;
+          notes: MidiClipNoteSnapshot[];
+      }
+    | {
+          kind: 'create-track';
+          source: MidiGenerationSourceReplaySnapshot;
+          trackJson: string;
+          trackIndex: number;
+          clip: MidiGenerationClipReplaySnapshot;
+          notes: MidiClipNoteSnapshot[];
+      };
+
 export type AppAction =
     | { type: 'addTrack'; payload: { id?: string; name: string; kind: TrackKind; select?: boolean } }
     | { type: 'removeTrack'; payload: { trackId: string } }
-    | { type: 'discardCreatedTrack'; payload: { trackId: string } }
+    | {
+          type: 'discardCreatedTrack';
+          payload: { trackId: string; generatedMidiStateGuard?: GeneratedMidiStateGuard };
+      }
     | {
           /** Inverse of `removeTrack`. Carries the removed track, every project reference
            *  rewritten by removal, and its satellite state. Emitted only by the
@@ -340,7 +384,7 @@ export type AppAction =
            *  `duplicateClip` / `duplicateClipToNextBar` without applying the user's
            *  current ripple-delete mode. */
           type: 'discardDuplicatedClip';
-          payload: { clipId: string };
+          payload: { clipId: string; generatedMidiStateGuard?: GeneratedMidiStateGuard };
       }
     | { type: 'removeAllTracks'; payload?: undefined }
     | { type: 'renameTrack'; payload: { trackId: string; name: string } }
@@ -394,12 +438,30 @@ export type AppAction =
     | {
           type: 'addClip';
           payload: {
+              /** Internal replay identity. AiRuntime payload validation rejects this field. */
+              id?: string;
               trackId: string;
               startBeat: number;
               endBeat: number;
               name: string;
               type?: 'audio' | 'midi';
               audioBufferId?: string;
+              /** Internal clip state. AiRuntime payload validation rejects these fields. */
+              assetHash?: string;
+              isGhost?: boolean;
+              audioOffsetBeats?: number;
+              midiOffsetBeats?: number;
+              fadeInBeats?: number;
+              fadeOutBeats?: number;
+              gain?: number;
+              color?: string;
+              locked?: boolean;
+              muted?: boolean;
+              stretchMode?: 'off' | 'repitch' | 'timestretch';
+              stretchRatio?: number;
+              loopEnabled?: boolean;
+              loopLength?: number;
+              followAction?: 'stop' | 'play_next' | 'play_previous' | 'play_random' | 'play_first' | 'play_last';
           };
       }
     | { type: 'moveClip'; payload: { clipId: string; trackId: string; startBeat: number } }
@@ -489,6 +551,8 @@ export type AppAction =
               clipId: string;
               notes: readonly MidiClipNoteSnapshot[];
               expectedNotes: readonly MidiClipNoteSnapshot[];
+              /** Internal redo allowance for a newly recreated clip whose MIDI bucket does not exist yet. */
+              allowMissingExpectedEmpty?: boolean;
           };
       }
     | { type: 'quantizeNoteLengths'; payload: { clipId: string; gridSize: number } }
@@ -771,7 +835,14 @@ export type AppAction =
           type: 'addNotes';
           payload: {
               clipId: string;
-              notes: Array<{ pitch: number; startBeat: number; duration: number; velocity?: number }>;
+              notes: Array<{
+                  /** Internal replay identity. Provider note validation rejects this field. */
+                  id?: string;
+                  pitch: number;
+                  startBeat: number;
+                  duration: number;
+                  velocity?: number;
+              }>;
           };
       }
     | {
@@ -780,6 +851,7 @@ export type AppAction =
       }
     | { type: 'variationMidi'; payload: { clipId: string; amount?: number } }
     | { type: 'generateBassline'; payload: { clipId: string; style?: string; trackId?: string } }
+    | { type: 'replayGeneratedMidi'; payload: { operation: GeneratedMidiReplayOperation } }
     | {
           type: 'generateAudio';
           payload: { prompt: string; durationSeconds?: number; trackId?: string };
@@ -909,8 +981,7 @@ export type AppAction =
     | { type: 'setRaveBlend'; payload: { blend: number } }
     | { type: 'enableWarping'; payload: { clipId: string } }
     | { type: 'setWarpAlgorithm'; payload: { clipId: string; algorithm: string } }
-    | { type: 'setWarpPitchShift'; payload: { clipId: string; semitones: number } }
-    | { type: 'restoreDsoSnapshot'; payload: { bundle: CommandDocumentSnapshot } };
+    | { type: 'setWarpPitchShift'; payload: { clipId: string; semitones: number } };
 
 export type TrackKind = 'audio' | 'midi' | 'bus' | 'master' | 'folder';
 
@@ -960,8 +1031,7 @@ export type ExecuteOptions = {
     /** Recheck transient authority after queued CRDT work completes and before dispatch begins. */
     shouldExecute?: () => boolean;
     source?: 'manual' | 'prompt' | 'voice' | 'ai';
-    /** When true, skip pushing an undo entry and action history entry.
-     *  Use this when the caller manages batch undo externally (e.g. executeDsoEdit). */
+    /** When true, skip pushing an undo entry and action history entry during replay or migration. */
     skipUndo?: boolean;
     /** Opaque owner for CRDT writes made synchronously by this action. */
     snapshotTransaction?: object;

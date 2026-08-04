@@ -1,4 +1,6 @@
-import { updateNotesForClip } from '../midiNoteCrud/updateNotesForClip';
+import { quantizeMidiNoteLengths } from '../../transformers/quantizeMidiNoteLengths';
+
+import { applyMidiNoteTransform } from './applyMidiNoteTransform';
 
 /**
  * Snaps each note's duration to the nearest multiple of `gridSize`.
@@ -10,17 +12,9 @@ import { updateNotesForClip } from '../midiNoteCrud/updateNotesForClip';
  * to fill a grid cell they never occupied. Notes that round to one or more grid
  * steps are snapped to the nearest multiple as before.
  */
-export function quantizeNoteLengths(clipId: string, gridSize: number): void {
-    updateNotesForClip(clipId, (notes) =>
-        notes.map((node) => {
-            const multiples = Math.round(node.duration / gridSize);
-            // A note shorter than half a grid step rounds to zero multiples; keep its
-            // original (sub-grid) duration instead of inflating it to a full step.
-            const newDuration = multiples < 1 ? node.duration : multiples * gridSize;
-            return {
-                ...node,
-                duration: newDuration,
-            };
-        })
-    );
+export function quantizeNoteLengths(clipId: string, gridSize: number): boolean {
+    return applyMidiNoteTransform({
+        clipId,
+        transform: (notes) => quantizeMidiNoteLengths({ notes, gridSize }),
+    });
 }

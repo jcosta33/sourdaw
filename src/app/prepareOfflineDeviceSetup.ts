@@ -101,6 +101,12 @@ const OFFLINE_DEVICE_HYDRATION: Record<NativeDspDeviceType, HydrateOfflineDevice
     // source yet. Fill this in once it does.
     'grand-boule': null,
     gluten: null,
+    // Every control the panel owns is a `CrustPatch` key, and every one of them
+    // is encoded to a number by `crustParamBridge` and persisted as a
+    // `parameterValue` — the strategy already replays all of them. The meter
+    // state is read-only telemetry, and the true-peak hold is a UI affordance,
+    // so there is nothing an export needs that a flat map of numbers misses.
+    crust: null,
     bacteria: null,
     grinder: null,
     // Its module order is persisted as `chain_order_N` params the worklet ignores;

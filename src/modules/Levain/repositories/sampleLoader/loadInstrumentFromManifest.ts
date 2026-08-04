@@ -1,53 +1,144 @@
-import { logger } from '#/infra/logger/appLogger';
-
-import { type ArticulationType } from '../../models/LevainPatch';
-
-import { fetchAndDecode } from './fetchAndDecode';
+import { decodedBankResource } from './decodedBankResource';
 import { type SampleLodConfig } from './helpers';
 
-export type ManifestZone = {
-    file: string;
-    rootNote: number;
-    loKey: number;
-    hiKey: number;
-    loVel: number;
-    hiVel: number;
-    rrPos: number;
-    rrLen: number;
-    micId: number;
-    isRelease: boolean;
-    loopMode: 'none' | 'forward' | 'pingpong';
-    loopStart: number;
-    loopEnd: number;
-    loopCrossfade: number;
-    gainDb: number;
-    attack: number;
-    decay: number;
-    sustain: number;
-    release: number;
-};
+import type { DecodedBankLease } from './createDecodedBankResource';
 
-export type ManifestArticulation = {
-    type: ArticulationType;
-    id: number;
-    zones: ManifestZone[];
-};
-
-// ---------------------------------------------------------------------------
-// Manifest types (SFZ-style zone descriptions in JSON)
-// ---------------------------------------------------------------------------
-
-export type SampleManifest = {
-    version: number;
-    instrumentId: string;
-    sampleRate: number;
-    articulations: ManifestArticulation[];
-    micPositions: string[];
-};
+export type { ManifestArticulation, ManifestZone, SampleManifest } from './sampleManifest';
 
 export const DEFAULT_LOD: SampleLodConfig = {
     maxMics: 0,
     maxRoundRobins: 0,
+};
+
+let bankLoadSequence = 0;
+
+type SampleBankHandshake = {
+    uploadRequired: Promise<boolean>;
+    completed: Promise<void>;
+    cancel: () => void;
+};
+
+function allocateBankLoadToken(): number {
+    if (bankLoadSequence >= Number.MAX_SAFE_INTEGER) {
+        throw new Error('Levain sample-bank load token capacity exhausted');
+    }
+    bankLoadSequence += 1;
+    return bankLoadSequence;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
+}
+
+function createSampleBankHandshake(
+    nodePort: MessagePort,
+    loadToken: number,
+    signal?: AbortSignal
+): SampleBankHandshake {
+    function ignoreUploadDecision(_uploadRequired: boolean): void {}
+    function ignoreError(_error: Error): void {}
+    function ignoreCompletion(): void {}
+
+    let uploadSettled = false;
+    let completedSettled = false;
+    let resolveUpload = ignoreUploadDecision;
+    let rejectUpload = ignoreError;
+    let resolveCompleted = ignoreCompletion;
+    let rejectCompleted = ignoreError;
+
+    const uploadRequired = new Promise<boolean>((resolve, reject) => {
+        resolveUpload = resolve;
+        rejectUpload = reject;
+    });
+    const completed = new Promise<void>((resolve, reject) => {
+        resolveCompleted = resolve;
+        rejectCompleted = reject;
+    });
+    void uploadRequired.catch(() => {});
+    void completed.catch(() => {});
+
+    function cleanup(): void {
+        nodePort.removeEventListener('message', onMessage);
+        signal?.removeEventListener('abort', onAbort);
+    }
+    function reject(error: Error): void {
+        if (!uploadSettled) {
+            uploadSettled = true;
+            rejectUpload(error);
+        }
+        if (!completedSettled) {
+            completedSettled = true;
+            rejectCompleted(error);
+        }
+        cleanup();
+    }
+    function onMessage(event: MessageEvent<unknown>): void {
+        const message = event.data;
+        if (!isRecord(message)) {
+            return;
+        }
+        if (message.type === 'disposed' || message.type === 'error') {
+            const detail = typeof message.message === 'string' ? `: ${message.message}` : '';
+            reject(new Error(`Levain processor ended during sample-bank loading${detail}`));
+            return;
+        }
+        if (message.loadToken !== loadToken) {
+            return;
+        }
+        if (message.type === 'sampleBankUploadDecision' && typeof message.uploadRequired === 'boolean') {
+            if (!uploadSettled) {
+                uploadSettled = true;
+                resolveUpload(message.uploadRequired);
+            }
+            return;
+        }
+        if (message.type === 'sampleBankLoaded') {
+            if (!uploadSettled) {
+                reject(new Error('Levain processor committed a sample bank before its upload decision'));
+                return;
+            }
+            if (!completedSettled) {
+                completedSettled = true;
+                resolveCompleted();
+                cleanup();
+            }
+            return;
+        }
+        if (message.type === 'sampleBankError') {
+            const detail = typeof message.message === 'string' ? `: ${message.message}` : '';
+            reject(new Error(`Levain sample-bank load failed${detail}`));
+        }
+    }
+    function onAbort(): void {
+        if (uploadSettled && completedSettled) {
+            return;
+        }
+        try {
+            nodePort.postMessage({ type: 'abortSampleBank', loadToken });
+        } catch {
+            // The port may already be closed; local cancellation still settles.
+        }
+        const reason: unknown = signal?.reason;
+        reject(reason instanceof Error ? reason : new DOMException('Levain sample-bank load aborted', 'AbortError'));
+    }
+
+    nodePort.addEventListener('message', onMessage);
+    signal?.addEventListener('abort', onAbort, { once: true });
+    if (signal?.aborted) {
+        onAbort();
+    }
+
+    return { uploadRequired, completed, cancel: onAbort };
+}
+
+export type LoadInstrumentFromManifestInput = {
+    manifestUrl: string;
+    basePath: string;
+    expectedInstrumentId: string;
+    nodePort: MessagePort;
+    lod?: SampleLodConfig;
+    onProgress?: (progress: number) => void;
+    signal?: AbortSignal;
 };
 
 // ---------------------------------------------------------------------------
@@ -56,7 +147,8 @@ export const DEFAULT_LOD: SampleLodConfig = {
 
 /**
  * Load a complete instrument from a manifest file.
- * Sends addSample, addZone, and buildZoneMap messages to the worklet node.
+ * Negotiates shared-bank ownership, uploads PCM only for the elected owner,
+ * and resolves only after the worklet commits the bank.
  *
  * @param manifestUrl URL to the JSON manifest
  * @param basePath Base path for sample file URLs
@@ -64,166 +156,137 @@ export const DEFAULT_LOD: SampleLodConfig = {
  * @param lod LOD configuration for memory management
  * @param onProgress Optional progress callback (0-1)
  * @param signal Optional abort signal. When a newer load supersedes this one,
- *   the caller aborts it; this loader then bails without posting `clearZones`,
- *   `addSample`, or `buildZoneMap`, so the superseded load never overwrites the
- *   worklet zone map the newer load built.
+ *   the caller aborts it; per-load tokens fence any messages already queued for
+ *   the superseded transaction from the replacement bank.
  */
-export async function loadInstrumentFromManifest(
-    manifestUrl: string,
-    basePath: string,
-    nodePort: MessagePort,
-    lod: SampleLodConfig = DEFAULT_LOD,
-    onProgress?: (progress: number) => void,
-    signal?: AbortSignal
-): Promise<void> {
-    const response = await fetch(manifestUrl, signal ? { signal } : undefined);
-    if (!response.ok) {
-        throw new Error(`Failed to fetch manifest: ${manifestUrl} (${response.status})`);
-    }
-
-    const manifest = (await response.json()) as SampleManifest;
-
-    // Collect all unique sample file URLs.
-    const allZones: { zone: ManifestZone; artId: number }[] = [];
-    let numMics = manifest.micPositions.length;
-    const numArticulations = manifest.articulations.length;
-
-    for (const art of manifest.articulations) {
-        for (const zone of art.zones) {
-            // Apply LOD filtering.
-            if (lod.maxMics > 0 && zone.micId >= lod.maxMics) {
-                continue;
-            }
-            if (lod.maxRoundRobins > 0 && zone.rrPos >= lod.maxRoundRobins) {
-                continue;
-            }
-            allZones.push({ zone, artId: art.id });
+export async function loadInstrumentFromManifest({
+    manifestUrl,
+    basePath,
+    expectedInstrumentId,
+    nodePort,
+    lod = DEFAULT_LOD,
+    onProgress,
+    signal,
+}: LoadInstrumentFromManifestInput): Promise<void> {
+    let lease: DecodedBankLease;
+    try {
+        lease = await decodedBankResource.acquire({
+            manifestUrl,
+            basePath,
+            expectedInstrumentId,
+            lod,
+            onProgress,
+            signal,
+        });
+    } catch (error) {
+        if (signal?.aborted) {
+            return;
         }
+        throw error;
     }
-
-    if (lod.maxMics > 0) {
-        numMics = Math.min(numMics, lod.maxMics);
-    }
-
-    // A newer load may have superseded this one while the manifest fetched.
-    // Bail before clearing zones so we don't wipe the newer load's map.
     if (signal?.aborted) {
+        lease.release();
         return;
     }
 
-    // Send clear command before adding new samples.
-    nodePort.postMessage({ type: 'clearZones' });
+    const bank = lease.bank;
+    let handshake: SampleBankHandshake | null = null;
+    let completed = false;
+    try {
+        const loadToken = allocateBankLoadToken();
+        handshake = createSampleBankHandshake(nodePort, loadToken, signal);
+        nodePort.postMessage({
+            type: 'beginSampleBank',
+            bankKey: bank.bankKey,
+            instrumentId: bank.instrumentId,
+            loadToken,
+        });
 
-    // Pre-assign a stable sampleId to every unique file so fetches can run
-    // in parallel without racing on a shared counter. Path segments are
-    // individually `encodeURIComponent`-ed so filenames containing `#`,
-    // spaces, or other reserved characters don't 404.
-    const sampleIdMap = new Map<string, number>();
-    const uniqueFiles: string[] = [];
-    for (const { zone } of allZones) {
-        if (!sampleIdMap.has(zone.file)) {
-            sampleIdMap.set(zone.file, uniqueFiles.length);
-            uniqueFiles.push(zone.file);
-        }
-    }
-
-    function encodePath(path: string): string {
-        return path.split('/').map(encodeURIComponent).join('/');
-    }
-
-    let completed = 0;
-    const total = uniqueFiles.length;
-    const loadedFiles = new Set<string>();
-
-    const results = await Promise.allSettled(
-        uniqueFiles.map(async (file) => {
-            const url = `${basePath}/${encodePath(file)}`;
-            try {
-                const decoded = await fetchAndDecode(url);
-                return { file, decoded };
-            } finally {
-                completed++;
-                if (onProgress) {
-                    onProgress(completed / total);
-                }
+        const uploadRequired = await handshake.uploadRequired;
+        signal?.throwIfAborted();
+        const sampleIdMap = new Map<string, number>();
+        for (const [sampleId, file] of bank.files.entries()) {
+            signal?.throwIfAborted();
+            const decoded = bank.samples.get(file);
+            if (!decoded) {
+                throw new Error(`Decoded Levain bank ${bank.instrumentId}@${bank.version} is missing ${file}`);
             }
-        })
-    );
-
-    // Decoding the (large) sample banks is where most time passes, so re-check
-    // for supersession before streaming samples and the final zone map into the
-    // worklet. Without this, a slow superseded load that already cleared zones
-    // could still win by posting its stale map after the newer load's.
-    if (signal?.aborted) {
-        return;
-    }
-
-    for (const result of results) {
-        if (result.status === 'rejected') {
-            logger.warn('[Levain] Failed to load sample:', result.reason);
-            continue;
+            sampleIdMap.set(file, sampleId);
+            if (uploadRequired) {
+                nodePort.postMessage({
+                    type: 'addSample',
+                    loadToken,
+                    sampleId,
+                    data: decoded.data,
+                    frameCount: decoded.frameCount,
+                    channels: decoded.channels,
+                    sampleRate: decoded.sampleRate,
+                });
+            }
         }
-        const { file, decoded } = result.value;
-        const sampleId = sampleIdMap.get(file);
-        if (sampleId === undefined) {
-            continue;
-        }
-        const transferable = decoded.data.buffer;
-        nodePort.postMessage(
-            {
-                type: 'addSample',
+
+        let zoneId = 0;
+        for (const { zone, articulationId } of bank.zones) {
+            signal?.throwIfAborted();
+            const sampleId = sampleIdMap.get(zone.file);
+            if (sampleId === undefined) {
+                throw new Error(`Decoded Levain bank ${bank.instrumentId}@${bank.version} has no id for ${zone.file}`);
+            }
+            const decoded = bank.samples.get(zone.file);
+            if (!decoded) {
+                throw new Error(`Decoded Levain bank ${bank.instrumentId}@${bank.version} is missing ${zone.file}`);
+            }
+
+            let loopMode: 'none' | 'forward' | 'pingpong' = 'none';
+            let loopStart = 0;
+            let loopEnd = 0;
+            let loopCrossfade = 0;
+            if (zone.loop.mode !== 'none') {
+                loopMode = zone.loop.mode;
+                loopStart = zone.loop.startFrame;
+                loopEnd = zone.loop.endFrame === 'sample-end' ? decoded.frameCount : zone.loop.endFrame;
+                loopCrossfade = zone.loop.crossfadeFrames;
+            }
+            nodePort.postMessage({
+                type: 'addZone',
+                loadToken,
+                zoneId,
                 sampleId,
-                data: decoded.data,
-                frameCount: decoded.frameCount,
-                channels: decoded.channels,
-                sampleRate: decoded.sampleRate,
-            },
-            [transferable]
-        );
-        loadedFiles.add(file);
-    }
-
-    // Send zone definitions. Skip zones whose sample file failed to load
-    // — we pre-assigned every file a sampleId, so we can't rely on the map
-    // alone to detect failures anymore.
-    let zoneId = 0;
-    for (const { zone, artId } of allZones) {
-        const sampleId = sampleIdMap.get(zone.file);
-        if (sampleId === undefined || !loadedFiles.has(zone.file)) {
-            continue;
+                articulationId,
+                rootNote: zone.rootNote,
+                loKey: zone.loKey,
+                hiKey: zone.hiKey,
+                loVel: zone.loVel,
+                hiVel: zone.hiVel,
+                rrPos: zone.rrPos,
+                rrLen: zone.rrLen,
+                micId: zone.micId,
+                isRelease: zone.isRelease,
+                loopMode,
+                loopStart,
+                loopEnd,
+                loopCrossfade,
+                gainDb: zone.gainDb,
+                attack: zone.attack,
+                decay: zone.decay,
+                sustain: zone.sustain,
+                release: zone.release,
+            });
+            zoneId++;
         }
 
         nodePort.postMessage({
-            type: 'addZone',
-            zoneId,
-            sampleId,
-            articulationId: artId,
-            rootNote: zone.rootNote,
-            loKey: zone.loKey,
-            hiKey: zone.hiKey,
-            loVel: zone.loVel,
-            hiVel: zone.hiVel,
-            rrPos: zone.rrPos,
-            rrLen: zone.rrLen,
-            micId: zone.micId,
-            isRelease: zone.isRelease,
-            loopMode: zone.loopMode,
-            loopStart: zone.loopStart,
-            loopEnd: zone.loopEnd,
-            loopCrossfade: zone.loopCrossfade,
-            gainDb: zone.gainDb,
-            attack: zone.attack,
-            decay: zone.decay,
-            sustain: zone.sustain,
-            release: zone.release,
+            type: 'buildZoneMap',
+            loadToken,
+            numArticulations: bank.numArticulations,
+            numMics: bank.numMics,
         });
-        zoneId++;
+        await handshake.completed;
+        completed = true;
+    } finally {
+        if (handshake && !completed) {
+            handshake.cancel();
+        }
+        lease.release();
     }
-
-    // Build the zone lookup table.
-    nodePort.postMessage({
-        type: 'buildZoneMap',
-        numArticulations,
-        numMics,
-    });
 }

@@ -230,14 +230,14 @@ describe('prepareCrumbsEngine', () => {
         expect(messagesOfType(posts, 'loadSample')).toEqual([]);
     });
 
-    it('seeds an unopened project device and prepares its silent default state', async () => {
+    it('does not create session state when neither the store nor project owns the device', async () => {
         const { port, posts } = recordingPort();
 
         const outcome = await prepareCrumbsEngine({ deviceId: 'never-created', port });
 
-        expect(crumbsStore.value?.['never-created']).toBeDefined();
-        expect(messagesOfType(posts, 'mode')).toEqual([{ type: 'mode', mode: 'quick' }]);
-        expect(outcome).toBe('ready');
+        expect(crumbsStore.value?.['never-created']).toBeUndefined();
+        expect(posts).toEqual([]);
+        expect(outcome).toBe('failed');
     });
 
     // Throwing here would abort the caller's device setup, and `buildDeviceChain`

@@ -6,7 +6,9 @@ Tool-neutral guidance for AI coding agents (Cursor, Codex CLI, Windsurf, Cline, 
 
 See `package.json` for all scripts.
 
-- **Tests:** `pnpm test:run <path/to/file.spec.ts>` — always pass a file (or narrow path). `pnpm test` is watch mode; do not use it for verification. See `docs/06-testing.md`.
+- **Tests:** `pnpm test:run <path/to/file.spec.ts>` — pass a file (or narrow path) while iterating. `pnpm test` is watch mode; do not use it for verification. See `docs/06-testing.md`.
+  - **Scope with `--dir src` whenever you pass a path.** A bare relative path is a *pattern*, and it also matches the copy inside every `.agents/worktrees/*` lane — which both invents phantom failures and can manufacture real ones by running two copies of the same spec concurrently.
+  - **Changed shared code? Run the whole suite before claiming green.** Anything under `src/infra/`, `src/app/`, `src/helpers/`, `src/utils/`, or a store/model other modules read is covered by specs that do **not** live next to it. `main` has gone red more than once from a change that updated some of the specs covering a function and missed the rest — focused tests cannot tell you a widely-imported file is safe.
 - **Lint:** `pnpm exec oxlint <path/to/file.ts>` — always specify the touched files (oxlint covers ESLint core, unicorn, promise, import, jsx-a11y, and all typescript-eslint rules incl. type-aware). `pnpm exec eslint <path/to/file.ts>` covers the retained-only rules (custom `sourdaw/*`, `@eslint-react`, `react-hooks`, `@tanstack/query`, prettier, `import-x/order`). `pnpm lint` runs both (oxlint first). Do not run whole-tree `pnpm lint` unless the task is a repo-wide lint pass. CI uses `pnpm lint --quiet` (errors only; **warns do not fail**).
 - **Type check (app):** `pnpm typecheck` — `tsconfig.app.json`; **excludes** `*.spec.ts(x)`. (The base `tsconfig.json` is spec-inclusive so oxlint's type-aware linting sees real types in tests.)
 - **Type check (tests):** `pnpm typecheck:test` — spec-inclusive (`tsconfig.test.json`: all of `src` **including** `*.spec.ts(x)`). Run after touching any spec, dummy factory, or model shape that fixtures mirror; must stay at zero errors.
@@ -27,7 +29,7 @@ After cross-module moves or bulk import changes, re-run `pnpm deps:validate` bef
 
 ## Device naming key (bakery metaphor)
 
-Bread-named modules under `src/modules/` are the built-in devices. Most have a matching DSP engine in `crates/daw-dsp/src/` (compiled to native + WASM; Crumbs' *disk-streaming* mode is native-only, but its engine renders under WASM from an in-memory sample pool) and a node in `AudioEngine/engine/`; exceptions: ProofChamber is the sibling `proof-chamber` crate, the Tuner is the `scoring` crate (`ScoringNode`), and Crust, Yeast, and CvGate have no Rust engine. "Dutch Oven" in engine/device ids is the ProofChamber reverb, not a separate module.
+Bread-named modules under `src/modules/` are the built-in devices. Most have a matching DSP engine in `crates/daw-dsp/src/` (compiled to native + WASM; Crumbs' *disk-streaming* mode is native-only, but its engine renders under WASM from an in-memory sample pool) and a node in `AudioEngine/engine/`; exceptions: ProofChamber is the sibling `proof-chamber` crate, the Tuner is the `scoring` crate (`ScoringNode`), and Yeast and CvGate have no Rust engine (Crust gained one — `crates/daw-dsp/src/crust/`). "Dutch Oven" in engine/device ids is the ProofChamber reverb, not a separate module.
 
 | Module     | Device                                 | Module       | Device                            |
 | ---------- | -------------------------------------- | ------------ | --------------------------------- |

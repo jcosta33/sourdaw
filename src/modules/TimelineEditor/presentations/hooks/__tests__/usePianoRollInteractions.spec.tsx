@@ -118,7 +118,6 @@ const Harness = ({ args }: { args: HarnessArgs }): ReactElement => {
             onMouseMove={handlers.handleMouseMove}
             onMouseUp={handlers.handleMouseUp}
             onDoubleClick={handlers.handleDoubleClick}
-            onWheel={handlers.handleWheel}
             onKeyDown={handlers.handleKeyDown}
             onContextMenu={handlers.handleContextMenu}
         />
@@ -475,6 +474,53 @@ describe('usePianoRollInteractions', () => {
             fireEvent.mouseUp(canvas, { clientX: 45, clientY: yForPitch(61) });
 
             expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-1', 60, 1, 1, 100);
+        });
+    });
+
+    describe('wheel: modifier zoom cancels the browser page default', () => {
+        // A cancellable native wheel event is the only way to observe the defect:
+        // React registers `wheel` at its root container with `{ passive: true }`,
+        // so a `preventDefault()` inside a JSX `onWheel` prop is silently inert
+        // and the browser applies its own ctrl+wheel page zoom instead. jsdom
+        // enforces the same passive rule, so `defaultPrevented` is a real signal.
+        const dispatchWheel = (canvas: HTMLElement, init: WheelEventInit): WheelEvent => {
+            const event = new WheelEvent('wheel', { bubbles: true, cancelable: true, ...init });
+            act(() => {
+                canvas.dispatchEvent(event);
+            });
+            return event;
+        };
+
+        it('cancels the page default and zooms the editor on ctrl+wheel', () => {
+            const { canvas } = renderRoll();
+
+            const event = dispatchWheel(canvas, { ctrlKey: true, deltaY: -100 });
+
+            expect(event.defaultPrevented).toBe(true);
+            const zoomUpdater = setZoom.mock.calls[0]?.[0];
+            expect(zoomUpdater(1)).toBeCloseTo(1.2);
+        });
+
+        it('cancels the page default and zooms the editor on cmd+wheel', () => {
+            const { canvas } = renderRoll();
+
+            const event = dispatchWheel(canvas, { metaKey: true, deltaY: -100 });
+
+            expect(event.defaultPrevented).toBe(true);
+            const zoomUpdater = setZoom.mock.calls[0]?.[0];
+            expect(zoomUpdater(1)).toBeCloseTo(1.2);
+        });
+
+        it('leaves shift+wheel and plain wheel to the native scroll container', () => {
+            const { canvas } = renderRoll();
+
+            const shiftEvent = dispatchWheel(canvas, { shiftKey: true, deltaY: 60 });
+            expect(shiftEvent.defaultPrevented).toBe(false);
+
+            const plainEvent = dispatchWheel(canvas, { deltaY: 60 });
+            expect(plainEvent.defaultPrevented).toBe(false);
+
+            expect(setZoom).not.toHaveBeenCalled();
         });
     });
 

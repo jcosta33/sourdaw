@@ -29,7 +29,6 @@ export type LevainNodeResult = {
     allNotesOff: () => void;
     setParam: (name: string, value: number) => void;
     handleCc: (cc: number, value: number) => void;
-    setInstrument: (instrumentId: string) => void;
     setBypass: (bypassed: boolean) => void;
     connect: (dest: AudioNode) => void;
     disconnect: () => void;
@@ -87,9 +86,15 @@ export async function createLevainNode(
     }
 
     let bypassed = false;
+    let destroyed = false;
 
     const handshake = createReadyHandshake({ pluginName: 'LevainNode' });
     node.port.onmessage = (event: MessageEvent<unknown>) => {
+        if (event.data && typeof event.data === 'object' && 'type' in event.data && event.data.type === 'disposed') {
+            handshake.reject(new Error('LevainNode disposed before initialization completed'));
+            node.port.close();
+            return;
+        }
         const outcome = handshake.onMessage(event);
         if (
             outcome === 'late' &&
@@ -171,10 +176,6 @@ export async function createLevainNode(
         node.port.postMessage({ type: 'cc', cc, value });
     };
 
-    const setInstrument = (instrumentId: string): void => {
-        node.port.postMessage({ type: 'setInstrument', instrumentId });
-    };
-
     const setBypass = (b: boolean): void => {
         // Mutes the processor (process() short-circuits while bypassed) and
         // gates new noteOn. Releasing voices already held on bypass entry is
@@ -199,8 +200,12 @@ export async function createLevainNode(
     };
 
     const destroy = (): void => {
+        if (destroyed) {
+            return;
+        }
+        destroyed = true;
         disconnect();
-        node.port.close();
+        node.port.postMessage({ type: 'dispose' });
     };
 
     return {
@@ -211,7 +216,6 @@ export async function createLevainNode(
         allNotesOff,
         setParam,
         handleCc,
-        setInstrument,
         setBypass,
         connect,
         disconnect,

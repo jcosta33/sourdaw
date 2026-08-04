@@ -4,6 +4,10 @@
 //! legato, mic mixing, and humanization. The section + voice engine
 //! processes MIDI events and renders audio blocks.
 
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::sync::{Arc, Weak};
+
 use super::articulation::ArticulationState;
 use super::expression::ExpressionState;
 use super::fallback::FallbackToneEngine;
@@ -13,9 +17,37 @@ use super::mic::MicMixer;
 use super::performance::{AutoArticulation, AutoDivisi, EnsembleTiming};
 use super::realism::RealismEngine;
 use super::release::{PedalDeferredRelease, ReleaseTracker};
+use super::tone::ToneTilt;
 use super::types::*;
 use super::voice::VoicePool;
-use super::zone::{SamplePool, ZoneMap};
+use super::zone::{SamplePool, ZoneMap, ZoneMapBuildError};
+
+thread_local! {
+    static SHARED_SAMPLE_BANKS: RefCell<HashMap<String, Weak<SamplePool>>> =
+        RefCell::new(HashMap::new());
+}
+
+struct PendingSampleBank {
+    zone_map: ZoneMap,
+    sample_pool: Arc<SamplePool>,
+    instrument_id: String,
+    num_articulations: usize,
+    num_mics: usize,
+    built: bool,
+}
+
+impl PendingSampleBank {
+    fn new(instrument_id: &str) -> Self {
+        Self {
+            zone_map: ZoneMap::new(),
+            sample_pool: Arc::new(SamplePool::new()),
+            instrument_id: instrument_id.to_owned(),
+            num_articulations: 0,
+            num_mics: 0,
+            built: false,
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // LevainEngine
@@ -27,7 +59,8 @@ pub struct LevainEngine {
     /// Zone map for O(1) sample lookup.
     zone_map: ZoneMap,
     /// Sample pool (in-memory PCM data).
-    sample_pool: SamplePool,
+    sample_pool: Arc<SamplePool>,
+    pending_sample_bank: Option<PendingSampleBank>,
     /// Member channel a channel-narrowed note-off is currently running for
     /// (audit MD-2). `note_off` has a long body — keyswitches, release
     /// triggers, pedal deferral — so `note_off_on_channel` sets this for the
@@ -57,6 +90,10 @@ pub struct LevainEngine {
     fallback: FallbackToneEngine,
     /// Orchestral realism augmentation layer.
     realism: RealismEngine,
+    /// Tone macro — a brightness tilt over the whole instrument output.
+    tone: ToneTilt,
+    /// Attack/Release macro scaling applied over each zone's own ADSR.
+    envelope_scaling: EnvelopeScaling,
 
     /// Audio settings.
     sample_rate: f32,
@@ -80,7 +117,8 @@ impl LevainEngine {
         Self {
             voice_pool: VoicePool::new(max_voices, sample_rate),
             zone_map: ZoneMap::new(),
-            sample_pool: SamplePool::new(),
+            sample_pool: Arc::new(SamplePool::new()),
+            pending_sample_bank: None,
             pending_note_off_channel: None,
             expression: ExpressionState::new(sample_rate, &config),
             articulation: ArticulationState::new(),
@@ -94,6 +132,8 @@ impl LevainEngine {
             ensemble_timing: EnsembleTiming::new(42),
             fallback: FallbackToneEngine::new(sample_rate),
             realism: RealismEngine::new(sample_rate),
+            tone: ToneTilt::new(sample_rate),
+            envelope_scaling: EnvelopeScaling::IDENTITY,
             sample_rate,
             master_gain: 0.8,
             num_articulations: 1,
@@ -103,8 +143,9 @@ impl LevainEngine {
     }
 
     pub fn clear_zones(&mut self) {
+        self.pending_sample_bank = None;
         self.zone_map.clear();
-        self.sample_pool.clear();
+        self.sample_pool = Arc::new(SamplePool::new());
         for voice in &mut self.voice_pool.voices {
             voice.active = false;
         }
@@ -117,20 +158,106 @@ impl LevainEngine {
     // Sample loading (call from main thread before audio starts)
     // -----------------------------------------------------------------------
 
-    /// Add a sample to the pool. Returns its SampleId.
+    /// Add a sample to the uniquely-owned loading bank. Returns `None` once
+    /// the bank is shared or its identifiers/byte count exceed the ABI.
     pub fn add_sample(
         &mut self,
         data: Vec<f32>,
         frame_count: u32,
         channels: u8,
         sample_rate: f32,
-    ) -> SampleId {
-        self.sample_pool
-            .add(data, frame_count, channels, sample_rate)
+    ) -> Option<SampleId> {
+        let sample_pool = match self.pending_sample_bank.as_mut() {
+            Some(pending) => &mut pending.sample_pool,
+            None => &mut self.sample_pool,
+        };
+        Arc::get_mut(sample_pool)?.add(data, frame_count, channels, sample_rate)
+    }
+
+    pub fn begin_sample_bank(&mut self, instrument_id: &str) {
+        self.pending_sample_bank = Some(PendingSampleBank::new(instrument_id));
+    }
+
+    pub fn abort_sample_bank(&mut self) {
+        self.pending_sample_bank = None;
+    }
+
+    /// Attach immutable PCM already published by another instance in this
+    /// rendering thread. Zones, voices, parameters, and realism stay local.
+    pub fn attach_sample_bank(&mut self, bank_key: &str) -> bool {
+        let shared = SHARED_SAMPLE_BANKS.with(|banks| {
+            let mut banks = banks.borrow_mut();
+            banks.retain(|_, bank| bank.strong_count() > 0);
+            let shared = banks.get(bank_key).and_then(Weak::upgrade);
+            shared
+        });
+        let Some(shared) = shared else {
+            return false;
+        };
+        let Some(pending) = self.pending_sample_bank.as_mut() else {
+            return false;
+        };
+        pending.sample_pool = shared;
+        true
+    }
+
+    /// Publish this instance's complete immutable PCM pool under `bank_key`.
+    /// The registry stores a weak reference so it never owns bank lifetime.
+    pub fn publish_sample_bank(&self, bank_key: &str) -> bool {
+        let sample_pool = self
+            .pending_sample_bank
+            .as_ref()
+            .map_or(&self.sample_pool, |pending| &pending.sample_pool);
+        if bank_key.is_empty() || sample_pool.len() == 0 {
+            return false;
+        }
+        SHARED_SAMPLE_BANKS.with(|banks| {
+            let mut banks = banks.borrow_mut();
+            banks.retain(|_, bank| bank.strong_count() > 0);
+            if let Some(existing) = banks.get(bank_key).and_then(Weak::upgrade) {
+                return Arc::ptr_eq(&existing, sample_pool);
+            }
+            banks.insert(bank_key.to_owned(), Arc::downgrade(sample_pool));
+            true
+        })
+    }
+
+    pub fn commit_sample_bank(&mut self) -> bool {
+        let Some(pending) = self.pending_sample_bank.take() else {
+            return false;
+        };
+        if !pending.built || pending.sample_pool.len() == 0 {
+            self.pending_sample_bank = Some(pending);
+            return false;
+        }
+
+        for voice in &mut self.voice_pool.voices {
+            voice.active = false;
+        }
+        self.auto_divisi.clear();
+        self.zone_map = pending.zone_map;
+        self.sample_pool = pending.sample_pool;
+        self.num_articulations = pending.num_articulations;
+        self.num_mics = pending.num_mics;
+        self.mic_mixer = MicMixer::new(pending.num_mics);
+        self.realism.configure_for(&pending.instrument_id);
+        self.fallback.enabled = false;
+        self.expression
+            .crossfader
+            .configure(3, ExpressionConfig::default().cc1_curve);
+        true
+    }
+
+    pub fn sample_bank_bytes(&self) -> usize {
+        self.sample_pool.decoded_bytes()
     }
 
     /// Add a zone to the zone map. Call `build_zone_map()` after all zones are added.
     pub fn add_zone(&mut self, zone: Zone) {
+        if let Some(pending) = self.pending_sample_bank.as_mut() {
+            pending.zone_map.add_zone(zone);
+            return;
+        }
         self.zone_map.add_zone(zone);
     }
 
@@ -143,16 +270,28 @@ impl LevainEngine {
 
     /// Build the zone lookup table. Must be called after all zones and samples are loaded.
     /// Disables the fallback tone since real samples are now available.
-    pub fn build_zone_map(&mut self, num_articulations: usize, num_mics: usize) {
+    pub fn build_zone_map(
+        &mut self,
+        num_articulations: usize,
+        num_mics: usize,
+    ) -> Result<(), ZoneMapBuildError> {
+        if let Some(pending) = self.pending_sample_bank.as_mut() {
+            pending.zone_map.build_lut(num_articulations, num_mics)?;
+            pending.num_articulations = num_articulations;
+            pending.num_mics = num_mics;
+            pending.built = true;
+            return Ok(());
+        }
+        self.zone_map.build_lut(num_articulations, num_mics)?;
         self.num_articulations = num_articulations;
         self.num_mics = num_mics;
-        self.zone_map.build_lut(num_articulations, num_mics);
         self.mic_mixer = MicMixer::new(num_mics);
         // Disable fallback — real samples are loaded
         self.fallback.enabled = false;
         self.expression
             .crossfader
             .configure(3, ExpressionConfig::default().cc1_curve);
+        Ok(())
     }
 
     // -----------------------------------------------------------------------
@@ -317,7 +456,8 @@ impl LevainEngine {
         // Fire release trigger if available.
         let (_should_trigger, _release_vol) = self.release_tracker.note_off(note, cc1);
         self.fallback.note_off(note);
-        self.voice_pool.release_note_matching(note, self.pending_note_off_channel);
+        self.voice_pool
+            .release_note_matching(note, self.pending_note_off_channel);
     }
 
     /// Note-off narrowed to one MPE member channel, so releasing a note on
@@ -463,11 +603,19 @@ impl LevainEngine {
             "pitch_convergence" => self.ensemble_timing.initial_detune_cents = value,
 
             // ── Tone / Attack / Release (macro-mapped) ───────────────
-            // "tone" maps to a simple brightness tilt — no EQ in the engine yet, no-op.
-            "tone" => {}
-            // "attack" / "release" would override per-zone ADSR but that
-            // requires tracking a global override — stub for now.
-            "attack" | "release" => {}
+            // All three take a 0..1 macro position whose centre, 0.5, is the
+            // patch's own voicing — the panel's macro strip defaults them there
+            // and resets them there, so a patch that never touches these knobs
+            // renders exactly as it did before they existed.
+            "tone" => self.tone.set_position(value),
+            "attack" => {
+                self.envelope_scaling.attack = macro_time_scale(value);
+                self.voice_pool.set_envelope_scaling(self.envelope_scaling);
+            }
+            "release" => {
+                self.envelope_scaling.release = macro_time_scale(value);
+                self.voice_pool.set_envelope_scaling(self.envelope_scaling);
+            }
 
             // ── Mic positions ─────────────────────────────────────────
             n if n.starts_with("mic_") => self.handle_mic_param(n, value),
@@ -549,8 +697,7 @@ impl LevainEngine {
         // state at block boundaries (MIDI events are drained at block start
         // and envelope-driven voice deactivations are picked up next
         // block), so block-granularity is sufficient.
-        let voices_active =
-            self.voice_pool.active_count() > 0 || self.fallback.active_count() > 0;
+        let voices_active = self.voice_pool.active_count() > 0 || self.fallback.active_count() > 0;
 
         for i in 0..len {
             let mut mono_sum = 0.0_f32;
@@ -572,6 +719,11 @@ impl LevainEngine {
             // Orchestral realism augmentation (body resonance, sympathetic
             // strings, bow/breath noise, frequency-dependent damping).
             mono_sum = self.realism.tick(mono_sum, voices_active);
+
+            // Tone macro. Last stage before the mic mix, so it voices the whole
+            // instrument — the sampled body and the realism layer's bow, breath
+            // and air alike — rather than only the sample content.
+            mono_sum = self.tone.tick(mono_sum);
 
             // Mix through mic positions (single mic for now).
             let (l, r) = self.mic_mixer.mix_mono(mono_sum);
@@ -610,9 +762,11 @@ fn cc1_to_dynamic(cc1: f32) -> Dynamic {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::LevainEngine;
     use crate::levain::types::{
-        AdsrParams, KeyRange, LoopMode, SampleRef, VelRange, Zone,
+        AdsrParams, KeyRange, LoopMode, SampleRef, VelRange, Zone, MAX_ARTICULATIONS,
     };
 
     const SAMPLE_RATE: f32 = 48_000.0;
@@ -629,11 +783,27 @@ mod tests {
     }
 
     fn engine_with_sawtooth_zone_voices(max_voices: usize) -> LevainEngine {
+        engine_with_sawtooth_envelope(
+            max_voices,
+            AdsrParams {
+                attack: 0.001,
+                decay: 0.001,
+                sustain: 1.0,
+                release: 0.2,
+            },
+        )
+    }
+
+    /// The same single-zone sawtooth engine with a caller-chosen amplitude
+    /// envelope, so the Attack/Release macros have a per-zone ADSR to offset.
+    fn engine_with_sawtooth_envelope(max_voices: usize, amp_env: AdsrParams) -> LevainEngine {
         let mut engine = LevainEngine::new(SAMPLE_RATE, max_voices);
         let data: Vec<f32> = (0..SAMPLE_FRAMES)
             .map(|frame| (frame % PERIOD_FRAMES) as f32 / PERIOD_FRAMES as f32 * 2.0 - 1.0)
             .collect();
-        let sample_id = engine.add_sample(data, SAMPLE_FRAMES, 1, SAMPLE_RATE);
+        let sample_id = engine
+            .add_sample(data, SAMPLE_FRAMES, 1, SAMPLE_RATE)
+            .expect("test sample should fit the bank");
         engine.add_zone(Zone {
             id: 0,
             key: KeyRange { lo: 0, hi: 127 },
@@ -654,15 +824,12 @@ mod tests {
                 loop_end: SAMPLE_FRAMES,
                 loop_crossfade: 0,
             },
-            amp_env: AdsrParams {
-                attack: 0.001,
-                decay: 0.001,
-                sustain: 1.0,
-                release: 0.2,
-            },
+            amp_env,
             gain_db: 0.0,
         });
-        engine.build_zone_map(1, 1);
+        engine
+            .build_zone_map(1, 1)
+            .expect("test zone map should build");
         engine
     }
 
@@ -703,6 +870,215 @@ mod tests {
     fn high_band_rms(samples: &[f32]) -> f32 {
         let differences: Vec<f32> = samples.windows(2).map(|pair| pair[1] - pair[0]).collect();
         rms(&differences)
+    }
+
+    // ── Macro-mapped Tone / Attack / Release ───────────────────────────────
+
+    /// The share of the rendered energy sitting in the high band. The
+    /// first-difference RMS is an HF-weighted measure, and dividing by the
+    /// broadband RMS takes the *level* back out of it — so this number moves
+    /// only when the spectral balance moves. A tilt that merely made the
+    /// instrument louder or quieter would leave it exactly where it was, which
+    /// is what makes it a claim about tone rather than about gain.
+    fn brightness(samples: &[f32]) -> f32 {
+        high_band_rms(samples) / rms(samples)
+    }
+
+    fn render_with_tone(tone: Option<f32>) -> Vec<f32> {
+        let mut engine = engine_with_sawtooth_zone();
+        if let Some(value) = tone {
+            engine.set_param("tone", value);
+        }
+        engine.note_on(60, 100);
+        render(&mut engine, 24)
+    }
+
+    /// The envelope tests play two octaves above the zone's root key, so the
+    /// 200 Hz sawtooth runs at 800 Hz and one cycle is exactly 60 frames. That
+    /// is the window the amplitude is measured over: a whole cycle, so each
+    /// window's peak is the true amplitude at that instant rather than wherever
+    /// the waveform happened to be sitting, and short enough (1.25 ms) that a
+    /// 12 ms rise is still resolved to a tenth of itself.
+    const ENVELOPE_NOTE: u8 = 84;
+    const ENVELOPE_WINDOW: usize = 60;
+
+    fn window_peaks(samples: &[f32]) -> Vec<f32> {
+        samples
+            .chunks_exact(ENVELOPE_WINDOW)
+            .map(|window| window.iter().fold(0.0_f32, |acc, value| acc.max(value.abs())))
+            .collect()
+    }
+
+    /// Seconds from note-on until the amplitude first reaches 90% of the level
+    /// the note settles at — the envelope's measured rise time.
+    fn rise_seconds(samples: &[f32]) -> f32 {
+        let peaks = window_peaks(samples);
+        let settled = peaks.iter().copied().fold(0.0_f32, f32::max);
+        let index = peaks
+            .iter()
+            .position(|peak| *peak >= settled * 0.9)
+            .expect("the note never reached its settled level");
+        index as f32 * ENVELOPE_WINDOW as f32 / SAMPLE_RATE
+    }
+
+    /// Seconds from note-off until the amplitude falls to a tenth of the level
+    /// it was holding — the envelope's measured fall time.
+    fn fall_seconds(samples: &[f32]) -> f32 {
+        let peaks = window_peaks(samples);
+        let held = peaks[0];
+        let index = peaks
+            .iter()
+            .position(|peak| *peak <= held * 0.1)
+            .expect("the note never fell to a tenth of its held level");
+        index as f32 * ENVELOPE_WINDOW as f32 / SAMPLE_RATE
+    }
+
+    fn render_attack(attack: Option<f32>) -> Vec<f32> {
+        let mut engine = engine_with_sawtooth_envelope(
+            8,
+            AdsrParams {
+                attack: 0.05,
+                decay: 0.001,
+                sustain: 1.0,
+                release: 0.2,
+            },
+        );
+        if let Some(value) = attack {
+            engine.set_param("attack", value);
+        }
+        engine.note_on(ENVELOPE_NOTE, 100);
+        render(&mut engine, 96)
+    }
+
+    fn render_release(release: Option<f32>) -> Vec<f32> {
+        let mut engine = engine_with_sawtooth_envelope(
+            8,
+            AdsrParams {
+                attack: 0.001,
+                decay: 0.001,
+                sustain: 1.0,
+                release: 0.1,
+            },
+        );
+        if let Some(value) = release {
+            engine.set_param("release", value);
+        }
+        engine.note_on(ENVELOPE_NOTE, 100);
+        render(&mut engine, 8);
+        engine.note_off(ENVELOPE_NOTE);
+        render(&mut engine, 400)
+    }
+
+    #[test]
+    fn the_tone_macro_tilts_the_spectrum_and_is_bit_identical_at_centre() {
+        let baseline = render_with_tone(None);
+        let centre = render_with_tone(Some(0.5));
+        let bright = render_with_tone(Some(1.0));
+        let dark = render_with_tone(Some(0.0));
+
+        assert_eq!(
+            centre, baseline,
+            "a centred Tone macro is the patch's own voicing and must render bit-identically"
+        );
+
+        let flat = brightness(&baseline[1024..]);
+        let raised = brightness(&bright[1024..]);
+        let lowered = brightness(&dark[1024..]);
+
+        assert!(
+            raised > flat * 1.2,
+            "Tone at its bright extreme must shift energy towards the high band: {flat} -> {raised}"
+        );
+        assert!(
+            lowered < flat * 0.8,
+            "Tone at its dark extreme must shift energy away from the high band: {flat} -> {lowered}"
+        );
+    }
+
+    #[test]
+    fn the_attack_macro_scales_the_patch_envelope_rise_time() {
+        let baseline = render_attack(None);
+        let centre = render_attack(Some(0.5));
+        let slow = render_attack(Some(1.0));
+        let fast = render_attack(Some(0.0));
+
+        assert_eq!(
+            centre, baseline,
+            "a centred Attack macro must leave the patch's own envelope untouched"
+        );
+
+        let patch = rise_seconds(&baseline);
+        let slowed = rise_seconds(&slow);
+        let quickened = rise_seconds(&fast);
+
+        assert!(
+            (3.6..=4.4).contains(&(slowed / patch)),
+            "Attack at its slow extreme must stretch the patch's 45 ms rise about fourfold, \
+             got {patch} s -> {slowed} s"
+        );
+        assert!(
+            (0.20..=0.30).contains(&(quickened / patch)),
+            "Attack at its fast extreme must shorten the patch's 45 ms rise to about a quarter, \
+             got {patch} s -> {quickened} s"
+        );
+    }
+
+    #[test]
+    fn the_release_macro_scales_the_patch_envelope_fall_time() {
+        let baseline = render_release(None);
+        let centre = render_release(Some(0.5));
+        let long = render_release(Some(1.0));
+        let short = render_release(Some(0.0));
+
+        assert_eq!(
+            centre, baseline,
+            "a centred Release macro must leave the patch's own envelope untouched"
+        );
+
+        let patch = fall_seconds(&baseline);
+        let lengthened = fall_seconds(&long);
+        let shortened = fall_seconds(&short);
+
+        assert!(
+            (3.6..=4.4).contains(&(lengthened / patch)),
+            "Release at its long extreme must stretch the patch's fall about fourfold, \
+             got {patch} s -> {lengthened} s"
+        );
+        assert!(
+            (0.20..=0.30).contains(&(shortened / patch)),
+            "Release at its short extreme must shorten the patch's fall to about a quarter, \
+             got {patch} s -> {shortened} s"
+        );
+    }
+
+    #[test]
+    fn the_release_macro_reaches_a_note_that_is_already_held() {
+        // Note first, macro second — the order a player produces by holding a
+        // chord and then reaching for the knob. A scaling that only landed at
+        // trigger time would leave this chord on the patch's own release.
+        let mut engine = engine_with_sawtooth_envelope(
+            8,
+            AdsrParams {
+                attack: 0.001,
+                decay: 0.001,
+                sustain: 1.0,
+                release: 0.1,
+            },
+        );
+        engine.note_on(ENVELOPE_NOTE, 100);
+        render(&mut engine, 8);
+        engine.set_param("release", 1.0);
+        engine.note_off(ENVELOPE_NOTE);
+        let held_through = render(&mut engine, 400);
+
+        let patch = fall_seconds(&render_release(None));
+        let lengthened = fall_seconds(&held_through);
+
+        assert!(
+            (3.6..=4.4).contains(&(lengthened / patch)),
+            "a Release macro moved while the note was sounding must stretch that \
+             note's fall, got {patch} s -> {lengthened} s"
+        );
     }
 
     // ── MPE per-note expression (audit MD-2) ───────────────────────────────
@@ -793,7 +1169,11 @@ mod tests {
         engine.note_on(60, 100);
 
         let before = active_voices_at(&engine, 60);
-        assert_eq!(before.len(), 2, "the release tail and the retrigger must both be active");
+        assert_eq!(
+            before.len(),
+            2,
+            "the release tail and the retrigger must both be active"
+        );
         assert_eq!((before[0].1, before[1].1), (false, true));
 
         engine.note_expression(60, 0, 12.0, 0.0, 0.0);
@@ -836,7 +1216,10 @@ mod tests {
 
         let voices = active_voices_at(&engine, 60);
         assert_eq!(voices.len(), 1, "legato collapses the pair into one voice");
-        assert_eq!(voices[0].0, 3, "the surviving voice carries the newer channel");
+        assert_eq!(
+            voices[0].0, 3,
+            "the surviving voice carries the newer channel"
+        );
 
         engine.note_expression(60, 3, 12.0, 0.0, 0.0);
         assert_eq!(active_voices_at(&engine, 60), vec![(3, true, 12.0)]);
@@ -936,6 +1319,77 @@ mod tests {
             loading_level > 1.0e-3,
             "once a load has begun the fallback must cover it, got RMS {loading_level:e}"
         );
+    }
+
+    #[test]
+    fn published_sample_banks_are_shared_without_copying_pcm_between_engines() {
+        let mut owner = LevainEngine::new(SAMPLE_RATE, 8);
+        owner.begin_sample_bank("violin");
+        assert_eq!(
+            owner.add_sample(vec![0.25; 64], 64, 1, SAMPLE_RATE),
+            Some(0)
+        );
+        owner
+            .build_zone_map(0, 0)
+            .expect("empty test zone map should build");
+        assert!(owner.publish_sample_bank("levain-test-shared-bank"));
+        assert!(owner.commit_sample_bank());
+
+        let mut follower = LevainEngine::new(SAMPLE_RATE, 8);
+        follower.begin_sample_bank("violin");
+        assert!(follower.attach_sample_bank("levain-test-shared-bank"));
+        follower
+            .build_zone_map(0, 0)
+            .expect("empty test zone map should build");
+        assert!(follower.commit_sample_bank());
+
+        assert!(std::sync::Arc::ptr_eq(
+            &owner.sample_pool,
+            &follower.sample_pool
+        ));
+        assert_eq!(owner.sample_bank_bytes(), 64 * std::mem::size_of::<f32>());
+        assert_eq!(follower.sample_bank_bytes(), owner.sample_bank_bytes());
+        assert_eq!(owner.add_sample(vec![0.5; 64], 64, 1, SAMPLE_RATE), None);
+
+        owner.set_param("master_gain", 0.2);
+        assert_eq!(owner.master_gain, 0.2);
+        assert_eq!(follower.master_gain, 0.8);
+    }
+
+    #[test]
+    fn shared_sample_bank_registry_does_not_retain_unused_pcm() {
+        {
+            let mut owner = LevainEngine::new(SAMPLE_RATE, 8);
+            owner.begin_sample_bank("violin");
+            owner
+                .add_sample(vec![0.25; 64], 64, 1, SAMPLE_RATE)
+                .expect("test sample should fit the bank");
+            assert!(owner.publish_sample_bank("levain-test-weak-bank"));
+        }
+
+        let mut fresh = LevainEngine::new(SAMPLE_RATE, 8);
+        assert!(!fresh.attach_sample_bank("levain-test-weak-bank"));
+        assert_eq!(fresh.sample_bank_bytes(), 0);
+    }
+
+    #[test]
+    fn rejected_staged_bank_preserves_the_sounding_bank_for_retry() {
+        let mut engine = engine_with_sawtooth_zone();
+        engine.set_instrument("violin");
+        let sounding_pool = Arc::as_ptr(&engine.sample_pool);
+        assert!(engine.realism.is_bowed_string_for_test());
+
+        engine.begin_sample_bank("trumpet");
+        engine
+            .add_sample(vec![0.5; 64], 64, 1, SAMPLE_RATE)
+            .expect("replacement sample should fit the staging bank");
+        assert!(engine.build_zone_map(MAX_ARTICULATIONS + 1, 1).is_err());
+        engine.abort_sample_bank();
+
+        assert_eq!(Arc::as_ptr(&engine.sample_pool), sounding_pool);
+        assert!(engine.realism.is_bowed_string_for_test());
+        engine.note_on(60, 100);
+        assert!(rms(&render(&mut engine, 24)) > 1.0e-3);
     }
 
     /// The other half of the contract, so the fix above cannot be "leave the

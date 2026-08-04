@@ -35,7 +35,14 @@ const EXPECTED_COMMANDS = [
     expectedCommand(
         'createBus',
         'Create a new bus track in the session.',
-        { name: { type: 'string', description: 'Display name for the new bus track' } },
+        {
+            name: { type: 'string', description: 'Display name for the new bus track' },
+            binding: {
+                type: 'string',
+                pattern: '^[a-z][a-z0-9-]{0,63}$',
+                description: 'Optional plan-local name. Later calls may target this newly created bus as $<binding>.',
+            },
+        },
         ['name'],
         'bounded-reversible',
         false
@@ -138,6 +145,65 @@ const EXPECTED_COMMANDS = [
         },
         ['clipId', 'semitones'],
         'broad-reversible',
+        true
+    ),
+    expectedCommand(
+        'invertNotes',
+        'Invert every pitch in one MIDI clip around its current pitch range.',
+        { clipId: { type: 'string', description: 'Existing unlocked non-empty MIDI clip ID' } },
+        ['clipId'],
+        'broad-reversible',
+        true
+    ),
+    expectedCommand(
+        'retrogradeNotes',
+        'Reverse every note in one MIDI clip across its current time range.',
+        { clipId: { type: 'string', description: 'Existing unlocked non-empty MIDI clip ID' } },
+        ['clipId'],
+        'broad-reversible',
+        true
+    ),
+    expectedCommand(
+        'quantizeNoteLengths',
+        'Snap every note duration in one MIDI clip to an explicit beat grid.',
+        {
+            clipId: { type: 'string', description: 'Existing unlocked non-empty MIDI clip ID' },
+            gridSize: {
+                type: 'number',
+                minimum: 0.03125,
+                maximum: 64,
+                description: 'Beat grid from 0.03125 through 64',
+            },
+        },
+        ['clipId', 'gridSize'],
+        'destructive-reversible',
+        true
+    ),
+    expectedCommand(
+        'scaleAllVelocities',
+        'Scale every note velocity in one MIDI clip by an explicit factor.',
+        {
+            clipId: { type: 'string', description: 'Existing unlocked non-empty MIDI clip ID' },
+            factor: {
+                type: 'number',
+                exclusiveMinimum: 0,
+                maximum: 16,
+                description: 'Velocity factor greater than 0 and at most 16, excluding 1',
+            },
+        },
+        ['clipId', 'factor'],
+        'broad-reversible',
+        true
+    ),
+    expectedCommand(
+        'setAllVelocities',
+        'Set every note velocity in one MIDI clip to an explicit MIDI value.',
+        {
+            clipId: { type: 'string', description: 'Existing unlocked non-empty MIDI clip ID' },
+            velocity: { type: 'integer', minimum: 1, maximum: 127, description: 'MIDI velocity from 1 through 127' },
+        },
+        ['clipId', 'velocity'],
+        'destructive-reversible',
         true
     ),
     expectedCommand(
@@ -606,6 +672,56 @@ const EXPECTED_GROUNDING = [
         valueRules: [{ argument: 'semitones', kind: 'number-if-present', requiredInPrompt: true, match: 'exact' }],
     },
     {
+        actionType: 'invertNotes',
+        intentPhrases: [
+            'invert midi notes',
+            'invert the midi notes',
+            'invert notes',
+            'invert the notes',
+            'mirror midi pitches',
+        ],
+        targetRules: [{ argument: 'clipId', capability: 'editable-midi-clip' }],
+        valueRules: [],
+    },
+    {
+        actionType: 'retrogradeNotes',
+        intentPhrases: [
+            'retrograde midi notes',
+            'retrograde the midi notes',
+            'retrograde notes',
+            'retrograde the notes',
+            'reverse midi notes',
+        ],
+        targetRules: [{ argument: 'clipId', capability: 'editable-midi-clip' }],
+        valueRules: [],
+    },
+    {
+        actionType: 'quantizeNoteLengths',
+        intentPhrases: ['quantize note lengths', 'quantize midi note lengths', 'snap midi note lengths'],
+        targetRules: [{ argument: 'clipId', capability: 'editable-midi-clip' }],
+        valueRules: [{ argument: 'gridSize', kind: 'number-if-present', requiredInPrompt: true, match: 'exact' }],
+    },
+    {
+        actionType: 'scaleAllVelocities',
+        intentPhrases: ['scale midi velocities', 'scale note velocities', 'multiply midi velocities'],
+        targetRules: [{ argument: 'clipId', capability: 'editable-midi-clip' }],
+        valueRules: [
+            {
+                argument: 'factor',
+                kind: 'number-if-present',
+                requiredInPrompt: true,
+                match: 'exact',
+                scale: 'percentage-only',
+            },
+        ],
+    },
+    {
+        actionType: 'setAllVelocities',
+        intentPhrases: ['set midi velocities', 'set note velocities', 'set all velocities'],
+        targetRules: [{ argument: 'clipId', capability: 'editable-midi-clip' }],
+        valueRules: [{ argument: 'velocity', kind: 'number-if-present', requiredInPrompt: true, match: 'exact' }],
+    },
+    {
         actionType: 'renameTrack',
         intentPhrases: ['rename'],
         targetRules: [{ argument: 'trackId', capability: 'track', promptRole: 'source' }],
@@ -786,13 +902,18 @@ const EXPECTED_GROUNDING = [
     {
         actionType: 'bypassDevice',
         intentPhrases: ['bypass', 'enable', 'disable', 're-enable'],
+        directionalIntent: {
+            carrierPhrases: ['turn', 'switch'],
+            truePhrases: ['off'],
+            falsePhrases: ['on'],
+        },
         targetRules: [{ argument: 'deviceId', capability: 'device' }],
         valueRules: [
             {
                 argument: 'bypassed',
                 kind: 'boolean-intent',
-                truePhrases: ['bypass', 'disable'],
-                falsePhrases: ['enable', 're-enable'],
+                truePhrases: ['bypass', 'disable', 'turn off', 'switch off'],
+                falsePhrases: ['enable', 're-enable', 'turn on', 'switch on'],
             },
         ],
     },

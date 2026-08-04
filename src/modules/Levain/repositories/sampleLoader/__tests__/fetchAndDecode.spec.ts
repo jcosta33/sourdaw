@@ -159,6 +159,7 @@ describe('fetchAndDecode', () => {
         const decoded = await fetchAndDecode('/samples/stereo.wav');
 
         expect(Array.from(decoded.data)).toEqual([1, 10, 2, 20, 3, 30]);
+        expect(decoded.data.buffer).toBeInstanceOf(SharedArrayBuffer);
         expect(decoded.frameCount).toBe(3);
         expect(decoded.channels).toBe(2);
         expect(decoded.sampleRate).toBe(48_000);
@@ -185,7 +186,7 @@ describe('fetchAndDecode', () => {
         expect(offlineContexts[0]).toMatchObject({ numberOfChannels: 2, length: 44_100, sampleRate: 44_100 });
     });
 
-    it('should strictly sequence decodeAudioData calls', async () => {
+    it('allows the bank resource to run bounded Chrome decodes concurrently', async () => {
         installOfflineAudioContext();
         stubFetch({
             replies: [
@@ -199,15 +200,35 @@ describe('fetchAndDecode', () => {
         const firstDecode = fetchAndDecode('/samples/one.wav');
         const secondDecode = fetchAndDecode('/samples/two.wav');
 
-        await waitForDecodeRequestCount({ count: 1 });
-        expect(decodeRequests).toHaveLength(1);
+        await waitForDecodeRequestCount({ count: 2 });
+        expect(decodeRequests).toHaveLength(2);
 
         getDecodeRequest({ index: 0 }).resolve(makeAudioBuffer({ channels: [new Float32Array([1])] }));
-        await expect(firstDecode).resolves.toMatchObject({ frameCount: 1, channels: 1, sampleRate: 48_000 });
-        await waitForDecodeRequestCount({ count: 2 });
-
         getDecodeRequest({ index: 1 }).resolve(makeAudioBuffer({ channels: [new Float32Array([2])] }));
+        await expect(firstDecode).resolves.toMatchObject({ frameCount: 1, channels: 1, sampleRate: 48_000 });
         await expect(secondDecode).resolves.toMatchObject({ frameCount: 1, channels: 1, sampleRate: 48_000 });
+    });
+
+    it('does not allocate or interleave stale PCM after a pending Chrome decode is aborted', async () => {
+        installOfflineAudioContext();
+        stubFetch({ replies: [{ ok: true, status: 200, body: new ArrayBuffer(4) }] });
+        decodePlans.push({ kind: 'manual' });
+        const getChannelData = vi.fn(() => new Float32Array([1]));
+        const controller = new AbortController();
+        const { fetchAndDecode } = await importSubject();
+
+        const decode = fetchAndDecode('/samples/stale.wav', controller.signal);
+        await waitForDecodeRequestCount({ count: 1 });
+        controller.abort();
+        getDecodeRequest({ index: 0 }).resolve({
+            numberOfChannels: 1,
+            length: 1,
+            sampleRate: 48_000,
+            getChannelData,
+        });
+
+        await expect(decode).rejects.toMatchObject({ name: 'AbortError' });
+        expect(getChannelData).not.toHaveBeenCalled();
     });
 
     it('should normalize non-Error decode failures', async () => {

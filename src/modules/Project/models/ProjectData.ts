@@ -48,7 +48,27 @@ export type ProjectData = {
     chordTrack?: ProjectChordTrackState;
     grooves?: ProjectGrooveState;
     yeast?: ProjectYeastState;
+    /**
+     * DEAD FIELD — written, never read.
+     *
+     * `buildProjectData` writes the literal `{ master: { gain: 0.8, pan: 0 }, buses: [] }`
+     * and so do `mapToProjectData`, `normalizeLegacyProjectData` and the Mycelium
+     * blueprint. No import, hydration or render path reads `data.mixer`: the real
+     * master gain round-trips as {@link ProjectTransport.masterGain}, and buses are
+     * ordinary `kind: 'bus'` rows in {@link ProjectArrangement.tracks}.
+     *
+     * Deleting it is the correct fix and is blocked on one owner decision, not on
+     * code: `renderMyceliumAscendantDemo.spec.ts` pins a sha256 of the serialized
+     * demo blueprint against four hand-transcribed capture records under
+     * `docs/evidence/mycelium-ascendant/`. Dropping the field moves that digest from
+     * `1cea829d…` to `c9f7fa16…`, and refreshing the records by hand would date a
+     * render nobody performed. Re-record the Mycelium evidence, then remove this.
+     */
     mixer: ProjectMixer;
+    vcaGroups?: ProjectVcaGroup[];
+    gainEnvelopes?: ProjectClipGainEnvelope[];
+    modulation?: ProjectModulation;
+    cvGate?: ProjectCvGate;
     markers: ProjectMarker[];
     tempoMap?: ProjectTempoMap;
     timeSignatureMap?: ProjectTimeSignatureMap;
@@ -299,6 +319,108 @@ export type ProjectYeastProcessor = {
 
 export type ProjectYeastState = {
     processors: ProjectYeastProcessor[];
+};
+
+/**
+ * A VCA group master and its membership. Local mirror of Arrangement's
+ * `VcaGroup`, duplicated rather than imported because models do not cross
+ * module boundaries.
+ *
+ * `gain` is the linear multiplier the group applies on top of each member
+ * track's own fader — `1` is unity, so a group omitted from the file comes back
+ * as an unattenuated submix rather than the mix that was saved.
+ */
+export type ProjectVcaGroup = {
+    id: string;
+    name: string;
+    gain: number;
+    muted: boolean;
+    trackIds: string[];
+};
+
+export type ProjectGainEnvelopePoint = {
+    id: string;
+    /** Beats from the owning clip's start. */
+    beatOffset: number;
+    gainDb: number;
+};
+
+/** Local mirror of Arrangement's `ClipGainEnvelope`, keyed by its own `clipId`. */
+export type ProjectClipGainEnvelope = {
+    clipId: string;
+    points: ProjectGainEnvelopePoint[];
+    enabled: boolean;
+};
+
+export type ProjectModulatorKind = 'lfo' | 'envelope' | 'step';
+
+export type ProjectLfoModulatorConfig = {
+    kind: 'lfo';
+    waveform: 'sine' | 'square' | 'saw' | 'triangle' | 'random';
+    /** Beats. */
+    rate: number;
+    sync: boolean;
+    phase: number;
+    depth: number;
+};
+
+export type ProjectEnvelopeModulatorConfig = {
+    kind: 'envelope';
+    attack: number;
+    decay: number;
+    sustain: number;
+    release: number;
+    triggerMode: 'midi' | 'audio' | 'sync';
+};
+
+export type ProjectStepModulatorConfig = {
+    kind: 'step';
+    steps: number[];
+    rate: number;
+    smooth: number;
+};
+
+export type ProjectModulatorMapping = {
+    targetTrackId: string;
+    targetDeviceId: string;
+    targetParamId: string;
+    /** -1 to 1. */
+    amount: number;
+};
+
+/** Local mirror of Automation's `Modulator`. */
+export type ProjectModulator = {
+    id: string;
+    name: string;
+    trackId: string;
+    kind: ProjectModulatorKind;
+    config: ProjectLfoModulatorConfig | ProjectEnvelopeModulatorConfig | ProjectStepModulatorConfig;
+    mappings: ProjectModulatorMapping[];
+    enabled: boolean;
+};
+
+export type ProjectModulation = {
+    modulators: ProjectModulator[];
+};
+
+export type ProjectCvOutputChannel = {
+    id: string;
+    name: string;
+    outputChannel: number;
+    type: 'cv-pitch' | 'cv-velocity' | 'cv-modulation' | 'gate' | 'trigger' | 'clock';
+    minVoltage: number;
+    maxVoltage: number;
+    value: number;
+    active: boolean;
+};
+
+/** Local mirror of CvGate's `CvGateState`. */
+export type ProjectCvGate = {
+    outputs: ProjectCvOutputChannel[];
+    voltageStandard: '1v-per-octave' | 'hz-per-volt';
+    clockDivision: number;
+    triggerPulseMs: number;
+    gateThreshold: number;
 };
 
 export type ProjectDevice = {

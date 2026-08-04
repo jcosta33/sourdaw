@@ -15,6 +15,7 @@ import {
 } from '../transformers/promptParser/parsing';
 
 import { bridgeGroundedLlmToolCalls } from './agentReference/bridgeGroundedLlmToolCalls';
+import { materializeBatchLocalActionIdentities } from './agentReference/materializeBatchLocalActionIdentities';
 import { type ProjectContext } from './getProjectContext';
 import { generateToolPlanningOutcome } from './llmOrchestration/inference';
 import { validateActions } from './validateActions';
@@ -103,7 +104,8 @@ export const parsePromptToActions = inject({ logger })(
                     buildLlmActionSystemPrompt(),
                     buildLlmActionUserMessage({ prompt, context }),
                     getExecutableAppActionToolSchemas(),
-                    signal
+                    signal,
+                    prompt
                 );
 
                 if (signal?.aborted) {
@@ -154,10 +156,24 @@ export const parsePromptToActions = inject({ logger })(
                         };
                     }
 
+                    const materialized = materializeBatchLocalActionIdentities(
+                        validated,
+                        bridged.batchLocalActionIdentities ?? []
+                    );
+                    if (materialized.status === 'rejected') {
+                        logger.warn(`[AI] Rejected LLM action batch because ${materialized.reason}`);
+                        return {
+                            actions: [],
+                            rawText: prompt,
+                            requiresConfirmation: false,
+                            rejectionReason: `Provider action identity rejected: ${materialized.reason}`,
+                        };
+                    }
+
                     return {
-                        actions: validated,
+                        actions: materialized.actions,
                         rawText: prompt,
-                        requiresConfirmation: requiresAppActionConfirmation(validated),
+                        requiresConfirmation: requiresAppActionConfirmation(materialized.actions),
                         executionMode: 'atomic',
                     };
                 }
@@ -189,7 +205,7 @@ export const parsePromptToActions = inject({ logger })(
                 };
             }
 
-            // The legacy DSO editor can escape the AppAction transaction, so an empty tool plan must stop here.
+            // An empty provider plan is a no-op; there is no alternate mutation path.
 
             return { actions: [], rawText: prompt, requiresConfirmation: false };
         }

@@ -1,4 +1,5 @@
 import { type BacteriaMeterData } from './BacteriaNode';
+import { type CrustMeterData } from './CrustNode';
 import { type DeviceContentLoadOutcome } from './deviceReadinessDiagnostics';
 import { type FermenterNodeResult } from './FermenterNode';
 import { type GlutenMeterData } from './GlutenNode';
@@ -15,7 +16,6 @@ type DeviceLifecyclePayload = {
 type LevainRuntimeDevice = {
     setParam: LevainNodeResult['setParam'];
     handleCc: LevainNodeResult['handleCc'];
-    setInstrument: LevainNodeResult['setInstrument'];
 };
 
 type ProofRuntimeBridge = {
@@ -35,12 +35,18 @@ type ScoringTelemetry = Parameters<ScoringNodeResult['onTelemetry']>[0] extends 
 export type AudioDeviceRuntimeSink = {
     emitDeviceLoaded: (payload: DeviceLifecyclePayload) => void;
     emitDeviceRemoved: (payload: DeviceLifecyclePayload) => void;
-    registerLevainDevice: (input: { deviceId: string; device: LevainRuntimeDevice; port?: MessagePort }) => void;
+    registerLevainDevice: (input: {
+        deviceId: string;
+        device: LevainRuntimeDevice;
+        port?: MessagePort;
+    }) => Promise<DeviceContentLoadOutcome>;
     unregisterLevainDevice: (deviceId: string) => void;
     setLevainEngineReady: (input: { deviceId: string; isReady: boolean }) => void;
     setFermenterTelemetry: (deviceId: string, telemetry: FermenterTelemetry) => void;
     updateGlutenMeters: (deviceId: string, meters: GlutenMeterData) => void;
     deleteGlutenMeters: (deviceId: string) => void;
+    updateCrustMeters: (deviceId: string, meters: CrustMeterData) => void;
+    deleteCrustMeters: (deviceId: string) => void;
     updateBacteriaMeters: (deviceId: string, meters: BacteriaMeterData) => void;
     updateGrinderTelemetry: (deviceId: string, telemetry: GrinderMeterData) => void;
     registerProofDevice: (input: { deviceId: string; bridge: ProofRuntimeBridge }) => void;
@@ -54,12 +60,10 @@ export type AudioDeviceRuntimeSink = {
      *
      * The offline render builds its nodes through a different registry than live
      * playback, so none of the per-device setup the live descriptors perform ever
-     * ran for an export. Levain therefore rendered digital silence: no zones, and
-     * a fallback tone that only `clear_zones()` arms — and, once that was fixed,
-     * still rendered as an unconfigured engine, because `setInstrument` is what
-     * configures the realism layer and it was never posted either. This is the
-     * seam where the offline path asks for that setup, and — unlike the live
-     * registration, which is deliberately fire-and-forget — waits for it.
+     * ran for an export. A bare Levain engine has no sample zones and therefore
+     * renders silence. This is the seam where the offline path asks for its
+     * context-local bank setup and — unlike live registration, which is
+     * deliberately fire-and-forget — waits for the commit acknowledgement.
      *
      * The offline device chain calls this for every worklet-backed device it
      * builds. Deciding which device types have anything to prepare belongs to the
@@ -97,12 +101,14 @@ export type AudioDeviceRuntimeSink = {
 const defaultSink: AudioDeviceRuntimeSink = {
     emitDeviceLoaded: () => {},
     emitDeviceRemoved: () => {},
-    registerLevainDevice: () => {},
+    registerLevainDevice: () => Promise.resolve('failed'),
     unregisterLevainDevice: () => {},
     setLevainEngineReady: () => {},
     setFermenterTelemetry: () => {},
     updateGlutenMeters: () => {},
     deleteGlutenMeters: () => {},
+    updateCrustMeters: () => {},
+    deleteCrustMeters: () => {},
     updateBacteriaMeters: () => {},
     updateGrinderTelemetry: () => {},
     registerProofDevice: () => {},

@@ -102,10 +102,8 @@ describe('tryParameterizedPath', () => {
         expect(tryParameterizedPath('quantize to 1/16', ctx)).toEqual([]);
     });
 
-    it('parses set velocity', () => {
-        const result = tryParameterizedPath('set velocity to 100', ctx);
-        expect(result).toHaveLength(1);
-        expect(result[0]).toMatchObject({ type: 'setAllVelocities', payload: { clipId: 'c1', velocity: 100 } });
+    it('leaves whole-clip velocity changes for the grounded provider path', () => {
+        expect(tryParameterizedPath('set velocity to 100', ctx)).toEqual([]);
     });
 
     it('parses humanize with amount', () => {

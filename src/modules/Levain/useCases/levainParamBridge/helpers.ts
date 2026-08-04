@@ -6,16 +6,24 @@ import {
 } from '#/modules/Arrangement/stores';
 import { createRafBatcher } from '#/utils/DOM/createRafBatcher';
 
-import { type LevainPatch } from '../../models/LevainPatch';
+import { getArticulationId, isArticulationType, type LevainPatch } from '../../models/LevainPatch';
 import { defaultLevainState, levainStore, setLevainParam, setMacro } from '../../stores/levainStore';
 import { type autoLoadLevainSamples } from '../autoLoadSamples';
+import { hydrateLevainStateFromProject } from '../hydrateLevainStateFromProject';
 
 import { camelToSnake } from './camelToSnake';
 
 export type LevainDevice = {
     setParam: (name: string, value: number) => void;
     handleCc: (cc: number, value: number) => void;
-    setInstrument?: (instrumentId: string) => void;
+};
+
+export type LevainSampleLoadOutcome = 'ready' | 'failed' | 'cancelled';
+
+type SampleLoadOperation = {
+    controller: AbortController;
+    completion: Promise<LevainSampleLoadOutcome>;
+    successor?: SampleLoadOperation;
 };
 
 export type LevainBridgeDeps = {
@@ -31,7 +39,7 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
     // Per-device load cancellation. A new instrument load for a device aborts
     // the previous one so the last-started load — not the last-finishing one —
     // wins the worklet zone map and the UI progress.
-    const loadControllers = new Map<string, AbortController>();
+    const loadOperations = new Map<string, SampleLoadOperation>();
 
     // §33.2 — Shared rAF-batch primitive. Last-write-wins per rustKey,
     // coalesced into one flush per animation frame.
@@ -42,6 +50,11 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
     // can cancel exactly this device's batches. The batcher does not expose its
     // key set, so we mirror it here; entries are dropped on flush and on cancel.
     const pendingKeysByDevice = new Map<string, Set<string>>();
+
+    function setRuntimeParam(deviceId: string, rustKey: string, value: number): void {
+        activeDevices.get(deviceId)?.setParam(rustKey, value);
+    }
+
     function flushParam(compositeKey: string, value: number): void {
         const parts = compositeKey.split(':');
         const deviceId = parts[0];
@@ -55,10 +68,7 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         }
 
         const rustKey = parts.slice(1).join(':');
-        const device = activeDevices.get(deviceId);
-        if (device) {
-            device.setParam(rustKey, value);
-        }
+        setRuntimeParam(deviceId, rustKey, value);
         deps.persistDeviceParam(deviceId, rustKey, value);
     }
 
@@ -77,57 +87,95 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         return activeDevices.get(deviceId);
     }
 
-    function loadSamplesForInstrument(deviceId: string, instrumentId: string): void {
-        const target = deps.resolveEligibleDeviceWriteTarget(deviceId);
-        if (target.status !== 'eligible') {
-            return;
+    async function followCurrentSampleLoad(operation: SampleLoadOperation): Promise<LevainSampleLoadOutcome> {
+        let current = operation;
+        let outcome = await current.completion;
+        while (outcome === 'cancelled' && current.successor) {
+            current = current.successor;
+            outcome = await current.completion;
         }
-
-        // Tell the engine which instrument it now is, so the realism layer
-        // (body modes, sympathetic strings, breath/bow noise) reconfigures.
-        activeDevices.get(deviceId)?.setInstrument?.(instrumentId);
-        const port = activePorts.get(deviceId);
-        if (!port) {
-            return;
-        }
-        // Supersede any in-flight load for this device before starting a new one.
-        loadControllers.get(deviceId)?.abort();
-        const controller = new AbortController();
-        loadControllers.set(deviceId, controller);
-        deps.autoLoadLevainSamples(deviceId, port, instrumentId, controller.signal)
-            .finally(() => {
-                // Only clear the slot if it's still ours — a newer load may have
-                // already replaced it.
-                if (loadControllers.get(deviceId) === controller) {
-                    loadControllers.delete(deviceId);
-                }
-            })
-            .catch((error) => {
-                logger.warn(`[LevainBridge] Sample load failed for device ${deviceId}:`, error);
-            });
+        return outcome;
     }
 
-    function registerLevainDevice(deviceId: string, device: LevainDevice, port?: MessagePort): void {
+    function loadSamplesForInstrument(deviceId: string, instrumentId: string): Promise<LevainSampleLoadOutcome> {
         const target = deps.resolveEligibleDeviceWriteTarget(deviceId);
         if (target.status !== 'eligible') {
-            return;
+            return Promise.resolve('cancelled');
+        }
+
+        const port = activePorts.get(deviceId);
+        if (!port) {
+            return Promise.resolve('failed');
+        }
+
+        const controller = new AbortController();
+        const sampleLoad = deps.autoLoadLevainSamples(deviceId, port, instrumentId, controller.signal);
+        const observedLoad = sampleLoad.then<LevainSampleLoadOutcome, LevainSampleLoadOutcome>(
+            () => (controller.signal.aborted ? 'cancelled' : 'ready'),
+            (error) => {
+                if (controller.signal.aborted) {
+                    return 'cancelled';
+                }
+                logger.warn(`[LevainBridge] Sample load failed for device ${deviceId}:`, error);
+                return 'failed';
+            }
+        );
+        const { promise: aborted, resolve: resolveAborted } = Promise.withResolvers<LevainSampleLoadOutcome>();
+        function onAbort(): void {
+            resolveAborted('cancelled');
+        }
+        controller.signal.addEventListener('abort', onAbort, { once: true });
+        const completion = Promise.race([observedLoad, aborted]).finally(() => {
+            controller.signal.removeEventListener('abort', onAbort);
+        });
+        const operation: SampleLoadOperation = { controller, completion };
+        const previous = loadOperations.get(deviceId);
+        if (previous) {
+            previous.successor = operation;
+            previous.controller.abort();
+        }
+        loadOperations.set(deviceId, operation);
+        void completion.then(() => {
+            if (loadOperations.get(deviceId) === operation) {
+                loadOperations.delete(deviceId);
+            }
+            return undefined;
+        });
+        return followCurrentSampleLoad(operation);
+    }
+
+    function registerLevainDevice(
+        deviceId: string,
+        device: LevainDevice,
+        port?: MessagePort
+    ): Promise<LevainSampleLoadOutcome> {
+        const target = deps.resolveEligibleDeviceWriteTarget(deviceId);
+        if (target.status !== 'eligible') {
+            return Promise.resolve('cancelled');
         }
 
         activeDevices.set(deviceId, device);
+        let contentSettlement: Promise<LevainSampleLoadOutcome> = Promise.resolve('failed');
         if (port) {
             activePorts.set(deviceId, port);
-            // Seed a default store entry on first registration so newly-added
-            // devices get their default instrument's samples loaded — without
-            // this the worklet has no zones and produces silence until the
-            // user opens the panel and changes presets.
+            // Seed a store entry on first registration so newly-added devices get
+            // their instrument's samples loaded — without this the worklet has no
+            // zones and produces silence until the user opens the panel and changes
+            // presets.
+            //
+            // Project truth first, module default only for a device that has never
+            // been pointed at an instrument. A reload wipes this store, so reading
+            // the default here unconditionally is what made every saved Levain track
+            // come back as violin-1.
             const instances = levainStore.value ?? {};
-            const state = instances[deviceId] ?? defaultLevainState;
+            const state = instances[deviceId] ?? hydrateLevainStateFromProject(deviceId) ?? defaultLevainState;
             if (!instances[deviceId]) {
                 levainStore.set({ ...instances, [deviceId]: state });
             }
 
-            loadSamplesForInstrument(deviceId, state.patch.instrumentId);
+            contentSettlement = loadSamplesForInstrument(deviceId, state.patch.instrumentId);
             queueParam(deviceId, 'master_gain', state.patch.masterGain);
+            setRuntimeParam(deviceId, 'current_articulation', getArticulationId(state.patch.currentArticulation));
             queueParam(deviceId, 'legato_enabled', state.patch.legato.enabled ? 1 : 0);
             queueParam(deviceId, 'humanize_amount', state.patch.humanize.amount);
             // vibratoDepthMax is in cents (default 40, range 0-50). Send it to the
@@ -143,6 +191,7 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
                 queueParam(deviceId, `mic_${i}_enabled`, m.enabled ? 1 : 0);
             }
         }
+        return contentSettlement;
     }
 
     function unregisterLevainDevice(deviceId: string): void {
@@ -151,8 +200,8 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         // Cancel any in-flight sample load so it can't write back to a store
         // entry we're about to delete (the store mutators also no-op on a
         // missing device, but cancelling avoids the wasted decode work).
-        loadControllers.get(deviceId)?.abort();
-        loadControllers.delete(deviceId);
+        loadOperations.get(deviceId)?.controller.abort();
+        loadOperations.delete(deviceId);
 
         // Cancel this device's pending rAF batches by their deterministic keys.
         // The `activeDevices` miss already guards `device.setParam`, but
@@ -186,14 +235,8 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
 
         setLevainParam(deviceId, key, value);
 
-        if (key === 'currentArticulation' && typeof value === 'string') {
-            const patch = levainStore.value?.[deviceId]?.patch;
-            if (patch) {
-                const artIndex = patch.articulations.findIndex((a) => a.type === value);
-                if (artIndex !== -1) {
-                    queueParam(deviceId, 'current_articulation', artIndex);
-                }
-            }
+        if (key === 'currentArticulation' && isArticulationType(value)) {
+            setRuntimeParam(deviceId, 'current_articulation', getArticulationId(value));
         } else if (typeof value === 'number') {
             const rustKey = camelToSnake(String(key));
             queueParam(deviceId, rustKey, value);

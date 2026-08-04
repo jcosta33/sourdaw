@@ -12,7 +12,7 @@ describe('levainParamBridge', () => {
         Container.clear();
     });
 
-    it('registers a device by id and exposes it through the bridge singleton', () => {
+    it('registers a device by id and exposes it through the bridge singleton', async () => {
         const getAllTracks = vi.fn(() => []);
         const persistDeviceParam = vi.fn();
         const autoLoadLevainSamples = vi.fn().mockResolvedValue(undefined);
@@ -29,7 +29,7 @@ describe('levainParamBridge', () => {
         });
 
         const mockDevice = { setParam: vi.fn(), handleCc: vi.fn() };
-        registerLevainDevice('levain-device-1', mockDevice, undefined);
+        await registerLevainDevice('levain-device-1', mockDevice, undefined);
 
         const bridge = levainBridge();
         expect(bridge).toBeDefined();
