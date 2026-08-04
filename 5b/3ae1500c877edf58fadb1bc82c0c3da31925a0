@@ -1,0 +1,19 @@
+src/modules/AudioEngine/repositories/devices/reverbDelay/__tests__/createReverb.spec.ts
+  s_ac9b259eab20ba::t_c9443b3e5acd2a 27,32,36,39,41-43
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "5b3ae1500c877edf58fadb1bc82c0c3da31925a0",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
