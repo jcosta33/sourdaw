@@ -421,6 +421,14 @@ const EXPECTED_COMMANDS = [
         false
     ),
     expectedCommand(
+        'setMasterGain',
+        'Set master output gain from 0.0 through 1.0.',
+        { gain: { type: 'number', description: '0.0 to 1.0' } },
+        ['gain'],
+        'authority-sensitive',
+        true
+    ),
+    expectedCommand(
         'addDevice',
         'Insert a platform-available built-in device at the end of a track device chain.',
         {
@@ -1040,6 +1048,19 @@ const EXPECTED_GROUNDING = [
         valueRules: [
             { argument: 'volume', kind: 'number-if-present', requiredInPrompt: true, scale: 'percentage-only' },
         ],
+    },
+    {
+        actionType: 'setMasterGain',
+        intentPhrases: [
+            'set master gain',
+            'set the master gain',
+            'change master gain',
+            'set master volume',
+            'set the master volume',
+            'change master volume',
+        ],
+        targetRules: [],
+        valueRules: [{ argument: 'gain', kind: 'number-if-present', requiredInPrompt: true, scale: 'percentage-only' }],
     },
     {
         actionType: 'addDevice',

@@ -99,6 +99,7 @@ describe('getProjectContext', () => {
         expect(context.loopEnd).toBe(0);
         expect(context.metronomeEnabled).toBe(false);
         expect(context.metronomeVolume).toBe(0.5);
+        expect(context.masterGain).toBe(0.8);
         expect(context.availableDeviceTypes).toEqual([{ id: 'builtin-eq', name: 'EQ' }]);
         expect(context.automationLanes).toEqual([]);
         expect(context.sidechainRoutes).toEqual([]);
@@ -184,6 +185,7 @@ describe('getProjectContext', () => {
             loopEnd: 12,
             metronomeEnabled: true,
             metronomeVolume: 0.25,
+            masterGain: 65,
         };
 
         mocks.clipSelectionStoreValue.value = {
@@ -217,6 +219,7 @@ describe('getProjectContext', () => {
         expect(context.loopEnd).toBe(12);
         expect(context.metronomeEnabled).toBe(true);
         expect(context.metronomeVolume).toBe(0.25);
+        expect(context.masterGain).toBe(0.65);
         expect(context.selectedTrackId).toBe('t1');
         expect(context.selectedClipId).toBe('c2');
         expect(context.selectedClipIds).toEqual(['c2']);

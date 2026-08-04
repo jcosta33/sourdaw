@@ -430,6 +430,10 @@ export type AppAction =
     | { type: 'stopPlayback'; payload?: undefined }
     | { type: 'toggleRecording'; payload?: undefined }
     | { type: 'setMasterGain'; payload: { gain: number } }
+    | {
+          type: 'restoreMasterGain';
+          payload: { expectedPercent: number; replacementPercent: number };
+      }
     | { type: 'toggleLoop'; payload?: undefined }
     | { type: 'toggleMetronome'; payload?: undefined }
     | { type: 'setMetronomeVolume'; payload: { volume: number } }

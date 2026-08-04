@@ -11,6 +11,7 @@ const context: ProjectContext = {
     loopEnd: 0,
     metronomeEnabled: false,
     metronomeVolume: 0.5,
+    masterGain: 0.8,
     tracks: [
         {
             id: 'track-drums',

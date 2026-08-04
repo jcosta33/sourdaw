@@ -158,6 +158,7 @@ describe('sendChatMessage injectables', () => {
             loopEnd: 0,
             metronomeEnabled: false,
             metronomeVolume: 0.5,
+            masterGain: 0.8,
             tracks: [],
             selectedTrackId: null,
             selectedClipId: null,
@@ -195,6 +196,7 @@ describe('sendChatMessage injectables', () => {
             loopEnd: 0,
             metronomeEnabled: false,
             metronomeVolume: 0.5,
+            masterGain: 0.8,
             tracks: [
                 {
                     id: 'track-1',
@@ -261,6 +263,7 @@ describe('sendChatMessage injectables', () => {
             loopEnd: 0,
             metronomeEnabled: false,
             metronomeVolume: 0.5,
+            masterGain: 0.8,
             tracks: [
                 {
                     id: 'track-1',

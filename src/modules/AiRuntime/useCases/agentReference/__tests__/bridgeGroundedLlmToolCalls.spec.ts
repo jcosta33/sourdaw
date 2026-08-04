@@ -47,6 +47,7 @@ const projectContext: ProjectContext = {
     loopEnd: 12,
     metronomeEnabled: false,
     metronomeVolume: 0.5,
+    masterGain: 0.8,
     automationLanes: [
         {
             id: 'lane-vocal-gain',
@@ -939,6 +940,29 @@ describe('bridgeGroundedLlmToolCalls', () => {
             expect.soft(result.actions).toEqual([regionAction]);
         }
         expect(implicitVolume.actions).toEqual([]);
+    });
+
+    it('grounds explicit changed master gain with percentage normalization', () => {
+        const percentage = bridge(
+            [{ name: 'setMasterGain', arguments: { gain: 0.65 } }],
+            'set the master volume to 65%'
+        );
+        const absolute = bridge([{ name: 'setMasterGain', arguments: { gain: 0.65 } }], 'set master gain to 0.65');
+        const leadingDecimal = bridge([{ name: 'setMasterGain', arguments: { gain: 0.65 } }], 'set master gain to .65');
+        const alternative = bridge(
+            [{ name: 'setMasterGain', arguments: { gain: 0.65 } }],
+            'set master gain to 65% or 70%'
+        );
+        const noOp = bridge([{ name: 'setMasterGain', arguments: { gain: 0.8 } }], 'set master gain to 80%');
+        const implicit = bridge([{ name: 'setMasterGain', arguments: { gain: 0.65 } }], 'turn down the master');
+
+        expect(percentage.actions).toEqual([{ type: 'setMasterGain', payload: { gain: 0.65 } }]);
+        expect(absolute.actions).toEqual([{ type: 'setMasterGain', payload: { gain: 0.65 } }]);
+        expect(leadingDecimal.rejections).toEqual([]);
+        expect(leadingDecimal.actions).toEqual([{ type: 'setMasterGain', payload: { gain: 0.65 } }]);
+        expect(alternative.actions).toEqual([]);
+        expect(noOp.actions).toEqual([]);
+        expect(implicit.actions).toEqual([]);
     });
 
     it('grounds arm polarity to eligible named or selected tracks and respects cancellation', () => {

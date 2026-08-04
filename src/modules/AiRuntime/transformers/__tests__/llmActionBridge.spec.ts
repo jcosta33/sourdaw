@@ -11,6 +11,7 @@ const projectContext: ProjectContext = {
     loopEnd: 12,
     metronomeEnabled: false,
     metronomeVolume: 0.5,
+    masterGain: 0.8,
     automationLanes: [
         {
             id: 'lane-vocal-gain',
@@ -416,6 +417,33 @@ describe('bridgeLlmToolCalls', () => {
             actions: [{ type: 'setLoopEnabled', payload: { enabled: false } }],
             rejections: [],
         });
+    });
+
+    it('bridges only changed exact master-gain calls and rejects repeated writes', () => {
+        const changed = bridge({ calls: [{ name: 'setMasterGain', arguments: { gain: 0.65 } }] });
+        const rejected = [
+            bridge({ calls: [{ name: 'setMasterGain', arguments: { gain: 0.8 } }] }),
+            bridge({ calls: [{ name: 'setMasterGain', arguments: { gain: -0.01 } }] }),
+            bridge({ calls: [{ name: 'setMasterGain', arguments: { gain: 1.01 } }] }),
+            bridge({ calls: [{ name: 'setMasterGain', arguments: { gain: 0.65, extra: true } }] }),
+        ];
+        const repeated = bridge({
+            calls: [
+                { name: 'setMasterGain', arguments: { gain: 0.65 } },
+                { name: 'setMasterGain', arguments: { gain: 0.7 } },
+            ],
+        });
+
+        expect(changed).toEqual({ actions: [{ type: 'setMasterGain', payload: { gain: 0.65 } }], rejections: [] });
+        expect(rejected.map((result) => result.actions)).toEqual([[], [], [], []]);
+        expect(repeated.actions).toEqual([{ type: 'setMasterGain', payload: { gain: 0.65 } }]);
+        expect(repeated.rejections).toEqual([
+            {
+                index: 1,
+                name: 'setMasterGain',
+                reason: 'Provider batch writes the same target field more than once',
+            },
+        ]);
     });
 
     it('converts the reversible single-clip command packet for an available clip', () => {
@@ -1655,6 +1683,7 @@ describe('bridgeLlmToolCalls', () => {
         expect(userMessage).toContain('"loopEnd":12');
         expect(userMessage).toContain('"metronomeEnabled":false');
         expect(userMessage).toContain('"metronomeVolume":0.5');
+        expect(userMessage).toContain('"masterGain":0.8');
         expect(userMessage).toContain('"soloSafe":false');
         expect(userMessage).toContain('"automationLanes"');
         expect(userMessage).toContain('"id":"lane-vocal-gain"');

@@ -7,6 +7,8 @@ const EXPECTED_KEYS = [
     'togglePlayback',
     'stopPlayback',
     'toggleRecording',
+    'setMasterGain',
+    'restoreMasterGain',
     'toggleLoop',
     'setLoopEnabled',
     'toggleMetronome',
