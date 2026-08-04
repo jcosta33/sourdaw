@@ -457,6 +457,86 @@ fn crumbs_process_does_not_allocate_with_a_sample_playing() {
     );
 }
 
+/// The voice-stealing path, held open deliberately.
+///
+/// Neither existing crumbs guard reaches it, which was checked rather than
+/// assumed — a `Vec::with_capacity` planted in the tail render branch left both
+/// of them passing:
+///
+/// - `crumbs_process_does_not_allocate_with_a_sample_playing` holds two notes
+///   against a 128-slot pool, so nothing is ever stolen and no fade is ever
+///   rendered;
+/// - `crumbs_note_on_does_not_allocate_in_any_mode` does saturate the pool and
+///   does cover the swap into a fade slot, but every one of its
+///   `process_block` calls is *outside* the guarded region, so the rendering
+///   half of the steal path is not in it.
+///
+/// This one saturates the pool by construction and asserts it *is* saturated
+/// before the interceptor arms, so it cannot go blind if the note mapping or
+/// the envelope defaults change. It then steals and renders inside the same
+/// guarded region, and the closing burst starts more fades than there are slots
+/// within one 3 ms fade so the slot-recycling branch is covered too.
+#[test]
+fn crumbs_voice_stealing_does_not_allocate() {
+    use daw_dsp::crumbs::CrumbsInstance;
+
+    let mut instance = CrumbsInstance::new(SAMPLE_RATE);
+
+    let frame_count = 4_800_usize;
+    let pcm: Vec<f32> = (0..frame_count)
+        .map(|i| (i as f32 / SAMPLE_RATE * 220.0 * std::f32::consts::TAU).sin() * 0.8)
+        .collect();
+    let sample_id = instance.add_sample(pcm, 1, SAMPLE_RATE as u32);
+    instance.set_active_sample(sample_id);
+    // Forward looping so no voice runs off the end of a 100 ms sample and
+    // quietly frees the slot the next note would otherwise steal.
+    instance.set_param("loopMode", 1.0);
+    // Long release so a stolen note's replacement stays in the pool: a voice
+    // that retired between rounds would be a fill, not a steal.
+    instance.set_param("release", 2.0);
+
+    // Saturate the 128-slot pool outside the guard, so every guarded note-on is
+    // a steal rather than a fill.
+    for note in 0..=127_u8 {
+        instance.note_on(note, 100);
+    }
+    let warmup = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
+    assert_all_finite(&warmup, "crumbs steal");
+    assert_eq!(
+        instance.active_voices(),
+        128,
+        "the pool is not full, so the guarded blocks would allocate free slots \
+         instead of stealing"
+    );
+
+    let mut note = 0_u8;
+    assert_no_alloc(|| {
+        for _ in 0..GUARDED_BLOCKS {
+            for _ in 0..8 {
+                instance.note_on(note, 100);
+                note = note.wrapping_add(7);
+            }
+            instance.process(BLOCK as u32);
+        }
+        // 200 steals with nothing rendered in between: all 128 fade slots are
+        // in flight before the first of them has decayed, which is the only way
+        // to reach the recycle branch.
+        for _ in 0..200 {
+            instance.note_on(note, 100);
+            note = note.wrapping_add(7);
+        }
+        instance.process(BLOCK as u32);
+    });
+
+    let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
+    assert_all_finite(&out, "crumbs steal");
+    assert!(
+        peak(&out) > 1e-6,
+        "crumbs produced silence under sustained stealing, so the guarded \
+         region did not exercise the steal path"
+    );
+}
+
 /// Crust drives more stages per sample than any other effect here — five band
 /// limiters, an oversampled saturator, the LR-4 splitter, dither and the full
 /// EBU R 128 meter set — and each of them owns a buffer sized at construction.
