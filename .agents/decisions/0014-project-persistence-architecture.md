@@ -245,6 +245,33 @@ Ratified by the owner directly.
   covers "how does an Automerge document commit atomically on OPFS", which is why that half was
   measured rather than looked up.
 
+## Ratified 2026-08-04 — audio is embedded or referenced per asset, and the web writes embed
+
+- **The format carries an embed-or-reference mode on each asset. The web writer always emits
+  `embed`; the deferred desktop build may emit `reference` without a format change.**
+
+  This is the docket's *"does a project file contain its audio, or reference it"*, and it is two
+  answers rather than one — which is why the format has to express both rather than pick.
+
+  Convention gives the desktop half and does not give the web half. All four shipping DAWs default
+  to **reference** with consolidation as an explicit action, and **DAWproject already makes this a
+  per-file attribute** — so a per-asset mode is the shape the interchange format Sourdaw plans to
+  speak (`SPEC-dawproject-interchange`) requires anyway.
+
+  The web half has no precedent because reference-by-path has no working web form. A File System
+  Access handle survives in IndexedDB, but re-opening it in a new session requires
+  `requestPermission()`; a project with sixty samples would prompt per file on every reload, or
+  break. That is not a measurement of ours and does not need to be — it is what the API specifies.
+  So on the web, embedding is not a preference, it is the only mode that yields a project that
+  reliably reopens, and ADR 0012's "neither target degrades the other" is satisfied by the mode
+  being per-asset rather than by both targets behaving identically.
+
+  **Costs accepted, stated rather than discovered later:** the reader carries two paths from day
+  one, and the writer owes a *consolidate* action converting reference→embed. Embedding also
+  duplicates a shared sample per project on disk. Whether that duplication is acceptable, or whether
+  audio should live in a shared library instead, is the **separate** docket question below — this
+  decision fixes how a project *stores* what it owns, not what it owns.
+
 **Still open and not decided here:** whether audio belongs to a project or to a shared library;
 version policy and whether web users get a pinned-build escape hatch; how much budget the desktop
 store gets. Those remain in `open-decision-docket.md`.
