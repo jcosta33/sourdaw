@@ -27,6 +27,14 @@ import { WasmView } from './wasmView';
 
 const AUTOMATION_PARAM_COUNT = 15;
 
+// The live transport schedules 100 ms ahead. At Web Audio's maximum valid
+// 96 kHz context rate that spans 75 128-frame quanta; Fermenter's Rust engine
+// can accept 256 events per quantum. 32,768 therefore covers more than the
+// maximum on-time event throughput of one complete live look-ahead window
+// (19,200) without allowing a malformed or hostile producer to grow the
+// AudioWorklet heap forever. Overflow is a runtime fault, never a silent drop.
+const MAX_PENDING_SCHEDULED_EVENTS = 32_768;
+
 // Fermenter telemetry SAB layout. Duplicated (not imported) from
 // engine/telemetryAllocator.ts on purpose — worklet code stays isolated from app
 // modules, so both sides pin the same literals and the processor specs assert
@@ -104,18 +112,39 @@ type FermenterMsg =
     | { type: 'paramAutomation'; paramId: number; segments: ParamAutomationSegment[] }
     | { type: 'patch'; patch: Record<string, number | number[]> };
 
-type FermenterQueued =
+type FermenterScheduledEvent =
     | { type: 'noteOn'; note: number; velocity: number; sampleFrame: number; channel?: number }
     | { type: 'noteOff'; note: number; sampleFrame: number; channel?: number }
     | (NoteExpressionMsg & { sampleFrame: number });
+
+type FermenterQueued = FermenterScheduledEvent & { queueSequence: number };
+type FermenterSchedulingMode = 'live' | 'offline';
+
+function resolveSchedulingMode(options: unknown): FermenterSchedulingMode {
+    if (options && typeof options === 'object' && 'processorOptions' in options) {
+        const processorOptions = options.processorOptions;
+        if (processorOptions && typeof processorOptions === 'object' && 'schedulingMode' in processorOptions) {
+            return processorOptions.schedulingMode === 'offline' ? 'offline' : 'live';
+        }
+    }
+    return 'live';
+}
+
+function queuedEventComesBefore(left: FermenterQueued, right: FermenterQueued): boolean {
+    if (left.sampleFrame !== right.sampleFrame) {
+        return left.sampleFrame < right.sampleFrame;
+    }
+    return left.queueSequence < right.queueSequence;
+}
 
 class FermenterProcessor extends AudioWorkletProcessor {
     _instance: FermenterInstance | null = null;
     _memory: WebAssembly.Memory | null = null;
     _ready = false;
     _faulted = false;
+    _schedulingMode: FermenterSchedulingMode;
     _queue: FermenterQueued[] = [];
-    _queueHead = 0;
+    _nextQueueSequence = 0;
     _paramAutomation: ParamAutomationSchedule[] = [];
     /** Telemetry slot floats (peaks + scope waveform); null until `init-sab`. */
     _telemetryView: Float32Array | null = null;
@@ -129,8 +158,12 @@ class FermenterProcessor extends AudioWorkletProcessor {
 
     constructor(...args: unknown[]) {
         super();
+        this._schedulingMode = resolveSchedulingMode(args[0]);
         let wasmModule = resolveProcessorWasmModule(args[0]);
         this.port.onmessage = (event: MessageEvent<FermenterMsg>) => {
+            if (this._faulted) {
+                return;
+            }
             const msg = event.data;
             try {
                 if (msg.type === 'init') {
@@ -145,7 +178,7 @@ class FermenterProcessor extends AudioWorkletProcessor {
                 } else if (msg.type === 'init-sab') {
                     this._telemetryView = new Float32Array(msg.sab, msg.byteOffset, TELEMETRY_SLOT_FLOATS);
                     this._telemetrySeqView = new Int32Array(msg.sab, msg.byteOffset, TELEMETRY_SLOT_FLOATS);
-                } else if (this._ready && !this._faulted) {
+                } else if (this._ready) {
                     this._handleMessage(msg);
                 }
             } catch (error) {
@@ -172,19 +205,61 @@ class FermenterProcessor extends AudioWorkletProcessor {
         this.port.postMessage({ type: 'ready' });
     }
 
-    _enqueue(msg: FermenterQueued): void {
-        let lo = this._queueHead;
-        let hi = this._queue.length;
-        while (lo < hi) {
-            const mid = (lo + hi) >>> 1;
-            const midMsg = this._queue[mid];
-            if (midMsg && midMsg.sampleFrame <= msg.sampleFrame) {
-                lo = mid + 1;
-            } else {
-                hi = mid;
-            }
+    _enqueue(msg: FermenterScheduledEvent): void {
+        if (this._schedulingMode === 'live' && this._queue.length >= MAX_PENDING_SCHEDULED_EVENTS) {
+            throw new RangeError(
+                `Fermenter scheduled-event queue exceeded ${MAX_PENDING_SCHEDULED_EVENTS} pending events`
+            );
         }
-        this._queue.splice(lo, 0, msg);
+        const queued: FermenterQueued = { ...msg, queueSequence: this._nextQueueSequence++ };
+        let index = this._queue.length;
+        this._queue.push(queued);
+
+        while (index > 0) {
+            const parentIndex = (index - 1) >>> 1;
+            const parent = this._queue[parentIndex];
+            if (!parent || !queuedEventComesBefore(queued, parent)) {
+                break;
+            }
+            this._queue[index] = parent;
+            index = parentIndex;
+        }
+        this._queue[index] = queued;
+    }
+
+    _dequeue(): FermenterQueued | undefined {
+        const first = this._queue[0];
+        if (!first) {
+            return undefined;
+        }
+
+        const tail = this._queue.pop();
+        if (this._queue.length === 0) {
+            this._nextQueueSequence = 0;
+            return first;
+        }
+        if (!tail) {
+            return first;
+        }
+
+        let index = 0;
+        let leftIndex = index * 2 + 1;
+        let left = this._queue[leftIndex];
+        while (left) {
+            const rightIndex = leftIndex + 1;
+            const right = this._queue[rightIndex];
+            const childIndex = right && queuedEventComesBefore(right, left) ? rightIndex : leftIndex;
+            const child = this._queue[childIndex]!;
+            if (!queuedEventComesBefore(child, tail)) {
+                break;
+            }
+            this._queue[index] = child;
+            index = childIndex;
+            leftIndex = index * 2 + 1;
+            left = this._queue[leftIndex];
+        }
+        this._queue[index] = tail;
+        return first;
     }
 
     _handleMessage(msg: FermenterMsg): void {
@@ -213,13 +288,17 @@ class FermenterProcessor extends AudioWorkletProcessor {
             }
             return;
         }
-        if (
-            (msg.type === 'noteOn' || msg.type === 'noteOff' || msg.type === 'noteExpression') &&
-            msg.sampleFrame !== undefined &&
-            msg.sampleFrame > currentFrame
-        ) {
-            this._enqueue({ ...msg, sampleFrame: msg.sampleFrame });
-            return;
+        if (msg.type === 'noteOn' || msg.type === 'noteOff' || msg.type === 'noteExpression') {
+            const frame = msg.sampleFrame;
+            if (frame !== undefined) {
+                if (!Number.isSafeInteger(frame) || frame < 0) {
+                    return;
+                }
+                if (frame >= currentFrame) {
+                    this._enqueue({ ...msg, sampleFrame: frame });
+                    return;
+                }
+            }
         }
         this._dispatch(msg);
     }
@@ -261,7 +340,7 @@ class FermenterProcessor extends AudioWorkletProcessor {
                 // after the release. The 0..127 release loop runs on the audio
                 // thread but allocates nothing and is bounded.
                 this._queue.length = 0;
-                this._queueHead = 0;
+                this._nextQueueSequence = 0;
                 for (let note = 0; note < 128; note++) {
                     inst.note_off(note);
                 }
@@ -288,18 +367,62 @@ class FermenterProcessor extends AudioWorkletProcessor {
         }
     }
 
-    _drainQueue(blockEndFrame: number): void {
-        while (this._queueHead < this._queue.length) {
-            const queued = this._queue[this._queueHead];
+    /**
+     * Hand one scheduled event to the engine's per-block event list at its
+     * offset within the block. Returns false when the list is full — the
+     * engine's own answer, so no capacity constant is mirrored here.
+     */
+    _pushEvent(queued: FermenterQueued, offset: number): boolean {
+        const inst = this._instance;
+        if (!inst) {
+            return false;
+        }
+        if (queued.type === 'noteOn') {
+            return inst.push_note_on(queued.note, queued.velocity, queued.channel ?? 0, offset);
+        }
+        if (queued.type === 'noteOff') {
+            // Without a channel every voice at the pitch is released —
+            // the historical behaviour channel-unaware callers rely on.
+            if (queued.channel === undefined) {
+                return inst.push_note_off(queued.note, offset);
+            }
+            return inst.push_note_off_on_channel(queued.note, queued.channel, offset);
+        }
+        return inst.push_note_expression(
+            queued.note,
+            queued.channel,
+            queued.bendSemitones,
+            queued.pressure,
+            queued.slide,
+            offset
+        );
+    }
+
+    /**
+     * Move every event belonging to this block onto the engine's event list,
+     * each carrying its sample offset within the block.
+     *
+     * This used to fire the events through the immediate setters *before*
+     * `process()`, which applied all of them at frame 0 — so a scheduled note
+     * was pulled back to the block boundary, up to 127 frames (2.6 ms at
+     * 48 kHz) early, by a sawtooth error that wrecks programmed groove and
+     * silently discards any humanise edit finer than a block.
+     */
+    _drainQueue(blockStartFrame: number, blockEndFrame: number): void {
+        while (this._queue.length > 0) {
+            const queued = this._queue[0];
             if (!queued || queued.sampleFrame >= blockEndFrame) {
                 break;
             }
-            this._dispatch(queued);
-            this._queueHead++;
-        }
-        if (this._queueHead >= this._queue.length) {
-            this._queue.length = 0;
-            this._queueHead = 0;
+            // An event delivered after its own frame passed is placed as early
+            // as this block can place it rather than being pushed negative.
+            const offset = Math.max(0, queued.sampleFrame - blockStartFrame);
+            if (!this._pushEvent(queued, offset)) {
+                // The engine's list is full. Leave the remainder queued — they
+                // render at the start of a later block rather than being lost.
+                break;
+            }
+            this._dequeue();
         }
     }
 
@@ -347,9 +470,6 @@ class FermenterProcessor extends AudioWorkletProcessor {
         }
         const frames = out0.length;
 
-        const blockEndFrame = currentFrame + frames;
-        this._drainQueue(blockEndFrame);
-
         try {
             const inst = this._instance;
             const mem = this._memory?.buffer;
@@ -357,6 +477,10 @@ class FermenterProcessor extends AudioWorkletProcessor {
                 return true;
             }
 
+            // Drained after every render guard and inside the WASM fault
+            // boundary. A declined block leaves its events queued, while a trap
+            // from an offset-carrying push faults and reports like process().
+            this._drainQueue(currentFrame, currentFrame + frames);
             this._applyParamAutomation(currentFrame);
             const leftPtr = inst.process(frames);
             const rightPtr = inst.get_right_ptr();

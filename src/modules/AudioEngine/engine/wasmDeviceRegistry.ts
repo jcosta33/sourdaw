@@ -116,10 +116,62 @@ async function waitForDeviceReady(input: WaitForDeviceReadyInput): Promise<Recor
 
 const fermenterDescriptor: WasmDeviceDescriptor = {
     matches: isFermenterDevice,
-    create({ context, deviceId, deviceType, signal, onLoaded }) {
+    create({
+        context,
+        deviceId,
+        deviceType,
+        signal,
+        onLoaded,
+        onRuntimeFailure: replaceRuntimeFailure,
+        onRuntimeRecovery: requestRuntimeRecovery,
+    }) {
         const pendingParams: Array<[string, number | number[]]> = [];
         let pendingPatch: Record<string, unknown> | null = null;
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
+        let runtimeFailureMessage: string | null = null;
+        let publishedNode: BuiltinDeviceNode | null = null;
+        let publishedResult: FermenterNodeResult | null = null;
+        let runtimeFailureHandled = false;
+        const applyRuntimeFailure = (): void => {
+            if (
+                runtimeFailureHandled ||
+                runtimeFailureMessage === null ||
+                publishedNode === null ||
+                publishedResult === null
+            ) {
+                return;
+            }
+            runtimeFailureHandled = true;
+            if (publishedNode.controller) {
+                publishedNode.controller.ready = false;
+            }
+            if (publishedNode.fermenterControls) {
+                publishedNode.fermenterControls.ready = false;
+            }
+            pendingParams.length = 0;
+            pendingPatch = null;
+            if (placeholder.fermenterControls) {
+                placeholder.fermenterControls.setParam = () => {};
+                placeholder.fermenterControls.setPatch = () => {};
+            }
+            const replaced = replaceRuntimeFailure?.(publishedNode, placeholder) === true;
+            try {
+                publishedResult.destroy();
+            } catch (error) {
+                logger.warn(`[WebAudioEngine] ${deviceType} runtime cleanup failed: ${String(error)}`);
+            }
+            if (replaced) {
+                requestRuntimeRecovery?.(placeholder);
+            }
+        };
+        const onRuntimeFailure = (message: string): void => {
+            if (runtimeFailureMessage !== null) {
+                return;
+            }
+            runtimeFailureMessage = message;
+            logger.warn(`[WebAudioEngine] ${deviceType} runtime failure: ${message}`);
+            applyRuntimeFailure();
+        };
         placeholder.fermenterControls = {
             ready: false,
             noteOn: () => {},
@@ -135,9 +187,13 @@ const fermenterDescriptor: WasmDeviceDescriptor = {
             setBypass: () => {},
             destroy: () => {},
         };
-        const loadPromise = createFermenterNode(context, undefined, signal)
+        const loadPromise = createFermenterNode(context, undefined, onRuntimeFailure, signal)
             .then(async (result: FermenterNodeResult) => {
                 if ((await waitForDeviceReady({ deviceType, result, signal })) === null) {
+                    return;
+                }
+                if (runtimeFailureMessage !== null) {
+                    result.destroy();
                     return;
                 }
                 for (const [name, value] of pendingParams) {
@@ -149,7 +205,7 @@ const fermenterDescriptor: WasmDeviceDescriptor = {
                 result.onTelemetry((data) => {
                     getAudioDeviceRuntimeSink().setFermenterTelemetry(deviceId, data);
                 });
-                onLoaded({
+                const loadedNode: BuiltinDeviceNode = {
                     deviceId,
                     type: deviceType,
                     nodes: [result.workletNode],
@@ -177,11 +233,18 @@ const fermenterDescriptor: WasmDeviceDescriptor = {
                         setBypass: result.setBypass,
                         destroy: result.destroy,
                     },
-                });
+                };
+                const accepted = onLoaded(loadedNode);
+                if (accepted === false) {
+                    return;
+                }
+                publishedNode = loadedNode;
+                publishedResult = result;
+                applyRuntimeFailure();
                 return;
             })
             .catch((error) => {
-                logger.warn(`[WebAudioEngine] ${deviceType} failed: ${error}`);
+                logger.warn(`[WebAudioEngine] ${deviceType} failed: ${String(error)}`);
                 return;
             });
         return { placeholder, loadPromise };
