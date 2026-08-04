@@ -1,0 +1,14 @@
+src/modules/Arrangement/presentations/views/__tests__/BounceOptionsDialogBranches.spec.tsx
+  h_1228e573df1f42 1-98
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "89e1e63e4ee1d5384bce7a5cebcc35abb4c806d5",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
