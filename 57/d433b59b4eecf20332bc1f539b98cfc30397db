@@ -1,0 +1,20 @@
+src/modules/Crumbs/useCases/__tests__/crumbsStatePersistenceRoundTrip.spec.ts
+  s_ac9b259eab20ba::t_5c49ef4051bbc8 45-46,50-67
+  s_ac9b259eab20ba::t_60e75140784ad5 144-147,175-178
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "57d433b59b4eecf20332bc1f539b98cfc30397db",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
