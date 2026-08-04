@@ -7,6 +7,7 @@ import { externalLatencyRegistry } from '../../useCases/latencyCompensation/comp
 import { setAudioDeviceRuntimeSink } from '../audioDeviceRuntimeSink';
 import { type BacteriaNodeResult } from '../BacteriaNode';
 import { type CrumbsNodeResult } from '../CrumbsNode';
+import { type FermenterNodeResult } from '../FermenterNode';
 import { type GlutenNodeResult } from '../GlutenNode';
 import { type GrandBouleNodeResult } from '../GrandBouleNode';
 import { type GrinderNodeResult } from '../GrinderNode';
@@ -18,6 +19,7 @@ import { type ToasterNodeResult } from '../ToasterNode';
 import { findWasmDescriptor, type WasmDeviceCreateDeps } from '../wasmDeviceRegistry';
 
 const factoryMocks = vi.hoisted(() => ({
+    createFermenterNode: vi.fn(),
     createToasterNode: vi.fn(),
     createLevainNode: vi.fn(),
     createProofChamberNode: vi.fn(),
@@ -31,6 +33,11 @@ const factoryMocks = vi.hoisted(() => ({
     createFaustDeviceNode: vi.fn(),
     isFaustModule: vi.fn((moduleId: string) => moduleId === 'faust-flanger'),
     loggerWarn: vi.fn(),
+}));
+
+vi.mock('../FermenterNode', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../FermenterNode')>()),
+    createFermenterNode: factoryMocks.createFermenterNode,
 }));
 
 vi.mock('../ToasterNode', async (importOriginal) => ({
@@ -143,6 +150,61 @@ describe('wasmDeviceRegistry descriptors', () => {
     afterEach(() => {
         setAudioDeviceRuntimeSink({});
         externalLatencyRegistry.clear();
+    });
+
+    describe('fermenter', () => {
+        function makeFermenterResult(): FermenterNodeResult {
+            return {
+                workletNode: makeWorkletNode(),
+                noteOn: vi.fn(),
+                noteOff: vi.fn(),
+                noteExpression: vi.fn(),
+                allNotesOff: vi.fn(),
+                setParam: vi.fn(),
+                acceptsScheduledParam: vi.fn(),
+                scheduleParam: vi.fn(),
+                setPatch: vi.fn(),
+                setBypass: vi.fn(),
+                onTelemetry: vi.fn(),
+                connect: vi.fn(),
+                disconnect: vi.fn(),
+                destroy: vi.fn(),
+                ready: Promise.resolve({}),
+            };
+        }
+
+        it('retires a faulted runtime before requesting one fresh generation', async () => {
+            const result = makeFermenterResult();
+            factoryMocks.createFermenterNode.mockResolvedValue(result);
+            const replaceRuntimeFailure = vi.fn(() => true);
+            const requestRuntimeRecovery = vi.fn();
+            const deps = createDeps({
+                deviceType: 'fermenter',
+                deviceId: 'fermenter-failed',
+                onRuntimeFailure: replaceRuntimeFailure,
+                onRuntimeRecovery: requestRuntimeRecovery,
+            });
+
+            const { placeholder, loadPromise } = requireDescriptor('fermenter').create(deps);
+            await loadPromise;
+            const loaded = lastLoadedNode(deps.onLoaded);
+            const factoryCall = factoryMocks.createFermenterNode.mock.calls.at(-1);
+            const reportRuntimeFailure: unknown = factoryCall?.[2];
+            if (!isRuntimeFailureReporter(reportRuntimeFailure)) {
+                throw new TypeError('expected FermenterNode to report post-ready runtime failures');
+            }
+
+            reportRuntimeFailure('event queue overloaded');
+            reportRuntimeFailure('duplicate failure');
+
+            expect(loaded.controller?.ready).toBe(false);
+            expect(loaded.fermenterControls?.ready).toBe(false);
+            expect(replaceRuntimeFailure).toHaveBeenCalledOnce();
+            expect(replaceRuntimeFailure).toHaveBeenCalledWith(loaded, placeholder);
+            expect(result.destroy).toHaveBeenCalledOnce();
+            expect(requestRuntimeRecovery).toHaveBeenCalledOnce();
+            expect(requestRuntimeRecovery).toHaveBeenCalledWith(placeholder);
+        });
     });
 
     describe('toaster', () => {

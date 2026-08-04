@@ -11,6 +11,7 @@
 
 import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
+import { logger } from '#/infra/logger/appLogger';
 
 import fermenterProcessorUrl from '../services/fermenterProcessor.ts?worker&url';
 
@@ -94,10 +95,6 @@ function projectFermenterLifecycle(view: Float32Array): AudioProcessorLifecycleS
     }
 }
 
-function isWorkletErrorMessage(data: unknown): boolean {
-    return typeof data === 'object' && data !== null && 'type' in data && data.type === 'error';
-}
-
 export type FermenterNodeResult = {
     workletNode: AudioWorkletNode;
     noteOn: (note: number, velocity: number, sampleFrame?: number, channel?: number) => void;
@@ -137,6 +134,7 @@ export function isFermenterDevice(deviceType: string): boolean {
 export async function createFermenterNode(
     ctx: BaseAudioContext,
     wasmUrl?: string,
+    onFault?: (message: string) => void,
     signal?: AbortSignal
 ): Promise<FermenterNodeResult> {
     if (ctx instanceof AudioContext && ctx.state === 'suspended') {
@@ -151,6 +149,8 @@ export async function createFermenterNode(
 
     signal?.throwIfAborted();
 
+    const schedulingMode =
+        typeof OfflineAudioContext !== 'undefined' && ctx instanceof OfflineAudioContext ? 'offline' : 'live';
     let node: AudioWorkletNode;
     try {
         node = new AudioWorkletNode(ctx, 'fermenter-processor', {
@@ -159,7 +159,7 @@ export async function createFermenterNode(
             outputChannelCount: [2],
             channelCount: 2,
             channelCountMode: 'explicit',
-            processorOptions: { wasmModule: wasmLease.module },
+            processorOptions: { wasmModule: wasmLease.module, schedulingMode },
         });
         wasmLease.commit();
     } catch (error) {
@@ -180,23 +180,53 @@ export async function createFermenterNode(
         deviceName: 'Fermenter',
     });
     let telemetryRafId: number | null = null;
+    let runtimeFaulted = false;
+    let portClosed = false;
+
+    const closePort = (): void => {
+        if (portClosed) {
+            return;
+        }
+        portClosed = true;
+        node.onprocessorerror = null;
+        node.port.close();
+    };
+
+    const handleTerminalFault = (message: string, reportToOwner: boolean): void => {
+        if (runtimeFaulted) {
+            return;
+        }
+        runtimeFaulted = true;
+        if (reportToOwner) {
+            logger.warn('FermenterNode runtime fault (processor terminated):', message);
+            try {
+                onFault?.(message);
+            } catch (callbackError) {
+                logger.error(new Error('FermenterNode runtime-failure callback failed', { cause: callbackError }));
+            }
+        }
+        closePort();
+    };
 
     if (slot) {
         node.port.postMessage({ type: 'init-sab', sab: slot.sab, byteOffset: slot.byteOffset });
     }
     const lifecycleReader = slot ? createTelemetryReader({ slot, project: projectFermenterLifecycle }) : null;
     let lastLifecycle: AudioProcessorLifecycleState | null = null;
-    let runtimeFaulted = false;
 
     const handshake = createReadyHandshake({ pluginName: 'FermenterNode' });
     node.port.onmessage = (event: MessageEvent) => {
-        if (isWorkletErrorMessage(event.data)) {
-            runtimeFaulted = true;
+        const outcome = handshake.onMessage(event);
+        const data: unknown = event.data;
+        if (data && typeof data === 'object' && 'type' in data && data.type === 'error') {
+            const message = 'message' in data ? String(data.message) : 'Unknown error';
+            handleTerminalFault(message, outcome === 'late');
         }
-        handshake.onMessage(event);
     };
     node.onprocessorerror = () => {
-        runtimeFaulted = true;
+        const message = 'FermenterNode worklet processor failed';
+        const outcome = handshake.reject(new Error(message));
+        handleTerminalFault(message, outcome === 'late');
     };
     const readyPromise = handshake.promise;
 
@@ -367,7 +397,7 @@ export async function createFermenterNode(
             } catch {
                 // ignore
             }
-            node.port.close();
+            closePort();
         },
         ready: readyPromise,
     };

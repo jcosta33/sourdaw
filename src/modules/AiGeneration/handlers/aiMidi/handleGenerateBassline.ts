@@ -1,65 +1,121 @@
 import { logger } from '#/infra/logger/appLogger';
+import { captureAutomergeStorageTransactionScope } from '#/infra/store/storage/createAutomergeStorage';
 import { generateToolCalls } from '#/modules/AiRuntime/useCases';
-import { addClip, addTrack, getTrackStoreState } from '#/modules/Arrangement/useCases';
-import { addMidiNote, getNotesForClip } from '#/modules/MIDI/useCases';
+import { type Clip, type Track } from '#/modules/Arrangement/stores';
+import { addClip, addTrackWithDeferredAddedEvent, getTrackStoreState } from '#/modules/Arrangement/useCases';
+import { addMidiNote } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { createMidiGenerationSourceGuard } from './createMidiGenerationSourceGuard';
+import { hasDurableMidiGenerationResult } from './hasDurableMidiGenerationResult';
 import { llmGenerateNotes } from './llmNoteHelpers';
 
 export const handleGenerateBassline = createHandler<'generateBassline'>({
     execute: async (alpha) => {
-        const referenceNotes = getNotesForClip(alpha.payload.clipId);
-        const style = alpha.payload.style ?? 'root-fifth';
-
-        let targetId = alpha.payload.trackId;
-        if (!targetId) {
-            const newTrack = addTrack({ name: `Bass (${style})`, kind: 'midi' });
-            targetId = newTrack?.id;
+        const source = createMidiGenerationSourceGuard(alpha.payload.clipId);
+        if (!source) {
+            notifyUser('Bassline generation failed: source clip not found', 'error');
+            return { status: 'no-write' };
         }
-        if (!targetId) {
-            return;
+
+        const style = alpha.payload.style ?? 'root-fifth';
+        if (alpha.payload.trackId) {
+            const targetTrack = getTrackStoreState()?.tracks.find((track) => track.id === alpha.payload.trackId);
+            if (!targetTrack || targetTrack.kind !== 'midi') {
+                notifyUser('Bassline generation failed: target MIDI track not found', 'error');
+                return { status: 'no-write' };
+            }
         }
 
         const instruction = `Generate a ${style} bassline that harmonically fits these chord/melody notes. The bass should be in octave 2-3 (MIDI 36-59). Use a "${style}" pattern. Output the bass notes using addNotes.`;
 
-        const notes = await llmGenerateNotes(generateToolCalls, instruction, referenceNotes, alpha.payload.clipId);
+        const transactionScope = captureAutomergeStorageTransactionScope();
+        const notes = await llmGenerateNotes(generateToolCalls, instruction, source.notes, alpha.payload.clipId);
+        if (!source.isCurrent()) {
+            return { status: 'conflict' };
+        }
 
-        let targetClipId = alpha.payload.clipId;
-
-        // If we created a new track, we must create a new clip on THAT track to
-        // hold the notes. If the reference clip can't be found (or the new clip
-        // can't be created), bail with a notification — falling back to the
-        // source clip id would append the bassline onto the original clip on a
-        // different track, silently mis-placing it.
-        if (targetId !== alpha.payload.trackId) {
-            const trackState = getTrackStoreState();
-            const refTrack = trackState?.tracks.find((t) => t.clips.some((c) => c.id === alpha.payload.clipId));
-            const refClip = refTrack?.clips.find((c) => c.id === alpha.payload.clipId);
-
-            if (!refClip) {
-                notifyUser('Bassline generation failed: source clip not found', 'error');
-                throw new Error('Generate bassline: source clip not found');
+        const writeResult = transactionScope(() => {
+            let targetTrack: Track | null;
+            let trackCreation: ReturnType<typeof addTrackWithDeferredAddedEvent> = null;
+            if (alpha.payload.trackId) {
+                targetTrack = getTrackStoreState()?.tracks.find((track) => track.id === alpha.payload.trackId) ?? null;
+                if (targetTrack?.kind !== 'midi') {
+                    return { status: 'target-conflict' } as const;
+                }
+            } else {
+                trackCreation = addTrackWithDeferredAddedEvent({
+                    name: `Bass (${style})`,
+                    kind: 'midi',
+                });
+                targetTrack = trackCreation?.track ?? null;
+            }
+            if (!targetTrack) {
+                return { status: 'write-failed' } as const;
             }
 
-            const newClip = addClip({
-                trackId: targetId,
-                startBeat: refClip.startBeat,
-                endBeat: refClip.endBeat,
+            const targetClip: Clip | null = addClip({
+                trackId: targetTrack.id,
+                startBeat: source.clip.startBeat,
+                endBeat: source.clip.endBeat,
                 name: `Bassline (${style})`,
                 type: 'midi',
             });
-            if (!newClip) {
-                notifyUser('Bassline generation failed: could not create clip', 'error');
-                throw new Error('Generate bassline: could not create clip on new track');
+            if (!targetClip) {
+                return { status: 'write-failed' } as const;
             }
-            targetClipId = newClip.id;
+
+            const writtenNotes: Array<ReturnType<typeof addMidiNote>> = [];
+            for (const note of notes) {
+                writtenNotes.push(
+                    addMidiNote(targetClip.id, note.pitch, note.startBeat, note.duration, note.velocity ?? 100)
+                );
+            }
+            return {
+                status: 'written',
+                track: targetTrack,
+                clip: targetClip,
+                notes: writtenNotes,
+                trackCreation,
+            } as const;
+        });
+        if (writeResult.status === 'target-conflict') {
+            return { status: 'conflict' };
+        }
+        if (writeResult.status === 'write-failed') {
+            notifyUser('Bassline generation failed: could not create the target clip', 'error');
+            return { status: 'no-write' };
         }
 
-        for (const note of notes) {
-            addMidiNote(targetClipId, note.pitch, note.startBeat, note.duration, note.velocity ?? 100);
-        }
-        logger.info(`[AI MIDI] Generated ${style} bassline with ${String(notes.length)} notes`);
+        const completedTrack = writeResult.track;
+        const completedClip = writeResult.clip;
+        const writtenNotes = writeResult.notes;
+        const logSuccess = (): void => {
+            logger.info(`[AI MIDI] Generated ${style} bassline with ${String(writtenNotes.length)} notes`);
+        };
+        const isDurable = (): boolean =>
+            hasDurableMidiGenerationResult({
+                trackId: completedTrack.id,
+                clip: completedClip,
+                notes: writtenNotes,
+                noteMatch: 'contains',
+            });
+        const publishEffects = async (): Promise<void> => {
+            await writeResult.trackCreation?.afterCommit();
+            logSuccess();
+        };
+
+        return {
+            status: 'written',
+            afterCommit: publishEffects,
+            afterAmbiguousCommit: async () => {
+                if (isDurable()) {
+                    await writeResult.trackCreation?.afterAmbiguousCommit();
+                    logSuccess();
+                }
+            },
+        };
     },
     describe: (alpha) => ({ label: `AI: generate ${alpha.payload.style ?? 'root-fifth'} bassline` }),
     undoable: true,

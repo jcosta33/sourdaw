@@ -9,6 +9,7 @@ use super::params::SmoothedParam;
 use super::voice::{Voice, VoiceParams};
 
 const MAX_VOICES_PER_LAYER: usize = 16;
+const MAX_SCRATCH_FRAMES: usize = 4096;
 
 pub struct Layer {
     pub voices: Vec<Voice>,
@@ -110,6 +111,8 @@ pub struct Layer {
     pub fm_mod_amount: f32,
 
     sample_rate: f32,
+    scratch_left: Vec<f32>,
+    scratch_right: Vec<f32>,
 }
 
 impl Layer {
@@ -190,6 +193,8 @@ impl Layer {
             fm_feedback: 0.0,
             fm_mod_amount: 1.0,
             sample_rate,
+            scratch_left: vec![0.0; MAX_SCRATCH_FRAMES],
+            scratch_right: vec![0.0; MAX_SCRATCH_FRAMES],
         }
     }
 
@@ -233,6 +238,25 @@ impl Layer {
             // Set engine BEFORE note_on so the voice knows which engine to use
             voice.set_engine(self.engine, self.sample_rate);
             voice.set_ks_damping(self.ks_damping);
+            voice.set_noise(self.noise_level, self.noise_color);
+            voice.set_unison(self.unison_voices, self.unison_detune, self.unison_spread);
+            voice.set_pulse_width(self.pulse_width);
+            voice.set_portamento(self.portamento_time, self.sample_rate);
+            voice.set_granular_params(
+                self.grain_density,
+                self.grain_size,
+                self.grain_position,
+                self.grain_spray,
+                self.grain_pitch_var,
+                self.grain_pan_spread,
+            );
+            voice.configure_fm(
+                self.fm_algorithm,
+                &self.fm_ratio,
+                &self.fm_level,
+                self.fm_feedback,
+                self.fm_mod_amount,
+            );
             voice.set_additive_partials(self.additive_partials);
             voice.set_additive_tilt(self.additive_tilt);
             voice.set_additive_odd(self.additive_odd);
@@ -318,30 +342,16 @@ impl Layer {
         }
     }
 
-    /// Render all active voices with this layer's params, applying level and pan.
-    pub fn render(
-        &mut self,
-        left: &mut [f32],
-        right: &mut [f32],
-        tables: &[Wavetable],
-        sample_rate: f32,
-    ) {
-        if self.muted {
-            return;
-        }
+    /// Advance parameters whose smoothing cadence is once per host block.
+    ///
+    /// A host block may be rendered in several slices to honor sample-accurate
+    /// MIDI events. Keeping this step separate from `render` prevents those
+    /// extra slices from accelerating automation.
+    pub fn advance_block_params(&mut self) {
+        self.cutoff.tick();
+        self.resonance.tick();
+        self.lfo_rate.tick();
 
-        let cutoff = self.cutoff.tick();
-        let resonance = self.resonance.tick();
-        let lfo_rate = self.lfo_rate.tick();
-
-        let filter_mode = match self.filter_mode {
-            0 => FilterMode::Lowpass,
-            1 => FilterMode::Highpass,
-            2 => FilterMode::Bandpass,
-            _ => FilterMode::Notch,
-        };
-
-        // Set parameters on active voices
         for voice in &mut self.voices {
             if !voice.is_active() {
                 continue;
@@ -360,7 +370,7 @@ impl Layer {
             voice.set_unison(self.unison_voices, self.unison_detune, self.unison_spread);
             voice.set_engine(self.engine, self.sample_rate);
             voice.set_pulse_width(self.pulse_width);
-            voice.set_portamento(self.portamento_time, sample_rate);
+            voice.set_portamento(self.portamento_time, self.sample_rate);
             voice.set_ks_damping(self.ks_damping);
             voice.set_granular_params(
                 self.grain_density,
@@ -379,6 +389,30 @@ impl Layer {
             );
             voice.set_sampler_params(self.sampler_mode, self.sampler_start, self.sampler_end);
         }
+    }
+
+    /// Render all active voices with this layer's params, applying level and pan.
+    pub fn render(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        tables: &[Wavetable],
+        sample_rate: f32,
+    ) {
+        if self.muted {
+            return;
+        }
+
+        let cutoff = self.cutoff.value();
+        let resonance = self.resonance.value();
+        let lfo_rate = self.lfo_rate.value();
+
+        let filter_mode = match self.filter_mode {
+            0 => FilterMode::Lowpass,
+            1 => FilterMode::Highpass,
+            2 => FilterMode::Bandpass,
+            _ => FilterMode::Notch,
+        };
 
         // Build per-block voice params
         let voice_params = VoiceParams {
@@ -434,24 +468,27 @@ impl Layer {
                 }
             }
         } else {
-            // Render into scratch, then apply gain
-            let block_size = left.len();
-            // Use small stack buffers for the layer render
-            let mut scratch_l = [0.0f32; 4096];
-            let mut scratch_r = [0.0f32; 4096];
+            // Reuse construction-time scratch. Chunking keeps large offline
+            // blocks bounded without growing or allocating on the audio thread.
+            let block_size = left.len().min(right.len());
+            for chunk_start in (0..block_size).step_by(MAX_SCRATCH_FRAMES) {
+                let chunk_end = (chunk_start + MAX_SCRATCH_FRAMES).min(block_size);
+                let chunk_size = chunk_end - chunk_start;
+                let scratch_left = &mut self.scratch_left[..chunk_size];
+                let scratch_right = &mut self.scratch_right[..chunk_size];
+                scratch_left.fill(0.0);
+                scratch_right.fill(0.0);
 
-            let l_slice = &mut scratch_l[..block_size];
-            let r_slice = &mut scratch_r[..block_size];
-
-            for voice in &mut self.voices {
-                if voice.is_active() {
-                    voice.render(l_slice, r_slice, &voice_params);
+                for voice in &mut self.voices {
+                    if voice.is_active() {
+                        voice.render(scratch_left, scratch_right, &voice_params);
+                    }
                 }
-            }
 
-            for i in 0..block_size {
-                left[i] += l_slice[i] * gain_l;
-                right[i] += r_slice[i] * gain_r;
+                for index in 0..chunk_size {
+                    left[chunk_start + index] += scratch_left[index] * gain_l;
+                    right[chunk_start + index] += scratch_right[index] * gain_r;
+                }
             }
         }
     }

@@ -1,6 +1,7 @@
 import {
     generateNativeCompletion,
     generateWebLlmCompletion,
+    initEngine,
     isNativeEngineReady,
     resolveBackend,
     streamCloudChatCompletion,
@@ -10,11 +11,15 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { createAiGenerationError } from '../errors/AiGenerationError';
 import { readBalancedObject } from '../services/readBalancedObject';
 
-import { type generateMidiAI } from './nativeAiBridge/generateMidiAI';
 import { filterTemplates } from './patternQueries/filterTemplates';
 import { PATTERN_TEMPLATES } from './patternQueries/PATTERN_TEMPLATES';
 
-type MidiGenerationNote = Awaited<ReturnType<typeof generateMidiAI>>['notes'][number];
+type MidiGenerationNote = {
+    pitch: number;
+    velocity: number;
+    start_beat: number;
+    duration_beats: number;
+};
 
 // ── System prompt for music generation ──
 
@@ -36,25 +41,21 @@ RULES:
 Examples of valid output:
 {"notes":[{"pitch":60,"velocity":80,"start_beat":0,"duration_beats":1},{"pitch":64,"velocity":75,"start_beat":1,"duration_beats":1}]}`;
 
-// ── Types ──
+const MIN_GENERATION_NOTES = 4;
+const MAX_GENERATION_NOTES = 128;
+const MAX_GENERATED_NOTE_END_BEATS = 1024;
 
-type LlmMidiResponse = {
-    notes: Array<{
-        pitch: number;
-        velocity: number;
-        start_beat: number;
-        duration_beats: number;
-    }>;
-};
+// ── Types ──
 
 export async function generateMidiViaLlm(
     prompt: string,
     numNotes: number = 32,
     creativity: number = 0.65
 ): Promise<MidiGenerationNote[]> {
-    const userMessage = buildUserMessage(prompt, numNotes, creativity);
+    const requestedNoteLimit = normalizeRequestedNoteLimit(numNotes);
+    const userMessage = buildUserMessage(prompt, requestedNoteLimit, creativity);
 
-    const backend = resolveBackend();
+    let backend = resolveBackend();
     let rawResponse: string;
 
     if (backend === 'none') {
@@ -62,13 +63,19 @@ export async function generateMidiViaLlm(
             'No AI backend is configured — using a built-in pattern instead. Add a cloud API key in Settings → AI, or use Chrome with WebGPU to enable the browser AI engine.',
             'warning'
         );
-        return fallbackToPatternMatch(prompt);
+        return fallbackToPatternMatch(prompt).slice(0, requestedNoteLimit);
     }
 
     if (backend === 'native') {
         if (!isNativeEngineReady()) {
-            throw createAiGenerationError('The selected native AI backend is not ready.');
+            backend = await initEngine();
         }
+        if (backend === 'native' && !isNativeEngineReady()) {
+            throw createAiGenerationError('The selected native AI backend could not be initialized.');
+        }
+    }
+
+    if (backend === 'native') {
         rawResponse = await generateNativeCompletion(MIDI_SYSTEM_PROMPT, userMessage);
     } else if (backend === 'cloud') {
         let accumulated = '';
@@ -86,18 +93,20 @@ export async function generateMidiViaLlm(
             throw createAiGenerationError(`Hosted AI MIDI response was incomplete (${outcome.reason}).`);
         }
         rawResponse = accumulated;
-    } else {
+    } else if (backend === 'webllm') {
         rawResponse = await generateWebLlmCompletion(MIDI_SYSTEM_PROMPT, userMessage);
+    } else {
+        throw createAiGenerationError('AI backend initialization was cancelled before MIDI generation.');
     }
 
-    const notes = parseMidiResponse(rawResponse);
+    const notes = parseMidiResponse(rawResponse, requestedNoteLimit);
 
     if (notes.length === 0) {
         notifyUser(
             'AI returned an unreadable response — falling back to a built-in pattern. Try rephrasing your prompt.',
             'warning'
         );
-        return fallbackToPatternMatch(prompt);
+        return fallbackToPatternMatch(prompt).slice(0, requestedNoteLimit);
     }
 
     return notes;
@@ -153,38 +162,73 @@ function buildUserMessage(prompt: string, numNotes: number, creativity: number):
 - Output ONLY the JSON object, nothing else.`;
 }
 
-function parseMidiResponse(raw: string): MidiGenerationNote[] {
+function normalizeRequestedNoteLimit(numNotes: number): number {
+    if (!Number.isFinite(numNotes)) {
+        return 32;
+    }
+    return Math.min(MAX_GENERATION_NOTES, Math.max(MIN_GENERATION_NOTES, Math.floor(numNotes)));
+}
+
+function parseMidiResponse(raw: string, maxNotes: number): MidiGenerationNote[] {
     try {
         const jsonText = extractNotesJsonObject(raw);
         if (jsonText === null) {
             return [];
         }
 
-        const parsed = JSON.parse(jsonText) as LlmMidiResponse;
-        if (!Array.isArray(parsed.notes)) {
+        const parsed: unknown = JSON.parse(jsonText);
+        if (!isExactRecord(parsed, ['notes'])) {
             return [];
         }
-
-        return parsed.notes
-            .filter(
-                (note) =>
-                    // Number.isFinite excludes NaN/Infinity (and non-numbers): a bare
-                    // typeof === 'number' passes for NaN, and Math.round/clamp are
-                    // NaN-fixed-points, so a NaN field would otherwise reach the engine.
-                    Number.isFinite(note.pitch) &&
-                    Number.isFinite(note.velocity) &&
-                    Number.isFinite(note.start_beat) &&
-                    Number.isFinite(note.duration_beats)
-            )
-            .map((note) => ({
-                pitch: clamp(Math.round(note.pitch), 0, 127),
-                velocity: clamp(Math.round(note.velocity), 1, 127),
-                start_beat: Math.max(0, note.start_beat),
-                duration_beats: Math.max(0.0625, note.duration_beats),
-            }));
+        const notes = parsed.notes;
+        if (
+            !Array.isArray(notes) ||
+            notes.length === 0 ||
+            notes.length > maxNotes ||
+            !notes.every(isMidiGenerationNote)
+        ) {
+            return [];
+        }
+        return notes;
     } catch {
         return [];
     }
+}
+
+function isExactRecord(value: unknown, keys: readonly string[]): value is Record<string, unknown> {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+        return false;
+    }
+    const actualKeys = Object.keys(value);
+    return actualKeys.length === keys.length && keys.every((key) => actualKeys.includes(key));
+}
+
+function isMidiGenerationNote(value: unknown): value is MidiGenerationNote {
+    if (!isExactRecord(value, ['pitch', 'velocity', 'start_beat', 'duration_beats'])) {
+        return false;
+    }
+    let noteEnd = Number.NaN;
+    if (typeof value.start_beat === 'number' && typeof value.duration_beats === 'number') {
+        noteEnd = value.start_beat + value.duration_beats;
+    }
+    return (
+        typeof value.pitch === 'number' &&
+        Number.isInteger(value.pitch) &&
+        value.pitch >= 0 &&
+        value.pitch <= 127 &&
+        typeof value.velocity === 'number' &&
+        Number.isInteger(value.velocity) &&
+        value.velocity >= 1 &&
+        value.velocity <= 127 &&
+        typeof value.start_beat === 'number' &&
+        Number.isFinite(value.start_beat) &&
+        value.start_beat >= 0 &&
+        typeof value.duration_beats === 'number' &&
+        Number.isFinite(value.duration_beats) &&
+        value.duration_beats >= 0.0625 &&
+        Number.isFinite(noteEnd) &&
+        noteEnd <= MAX_GENERATED_NOTE_END_BEATS
+    );
 }
 
 /**
@@ -204,8 +248,4 @@ function extractNotesJsonObject(raw: string): string | null {
         }
     }
     return null;
-}
-
-function clamp(value: number, min: number, max: number): number {
-    return Math.min(max, Math.max(min, value));
 }

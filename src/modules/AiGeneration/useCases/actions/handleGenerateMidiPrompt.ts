@@ -1,166 +1,177 @@
-import { addClip, addTrack, getTrackStoreState, selectClip, setTrackStoreState } from '#/modules/Arrangement/useCases';
-import { pushUndoEntry } from '#/modules/Command/useCases';
-import { batchAddMidiNotes, getMidiStoreState, setMidiStoreState } from '#/modules/MIDI/useCases';
+import { getTrackStoreState, selectClip } from '#/modules/Arrangement/useCases';
+import { executeAppActionBatch } from '#/modules/Command/useCases';
+import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
+import { getNotesForClip } from '#/modules/MIDI/useCases';
 import { getTransportState } from '#/modules/Transport/useCases';
-import { isTauri } from '#/utils/tauriRuntime';
+import { type AppAction } from '#/utils/handlerContract';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { getAiSnapshot } from '../../stores/aiStore';
 import { generateMidiViaLlm } from '../llmMidiGeneration';
-import { generateMidiAI } from '../nativeAiBridge/generateMidiAI';
 
 import { addTask } from './addTask';
-import { buildSeedNotesFromPrompt } from './buildSeedNotesFromPrompt';
 import { updateTask } from './updateTask';
 
-type MidiGenerationNote = Awaited<ReturnType<typeof generateMidiAI>>['notes'][number];
+type MidiGenerationNote = Awaited<ReturnType<typeof generateMidiViaLlm>>[number];
 
-export async function handleGenerateMidiPrompt(prompt: string, numNotes: number = 32, creativity: number = 0.65) {
+function isTaskProcessing(taskId: string): boolean {
+    return getAiSnapshot().tasks.some((task) => task.id === taskId && task.status === 'processing');
+}
+
+function hasDurableGeneration(clipId: string, expectedNotes: readonly MidiGenerationNote[]): boolean {
+    const state = getTrackStoreState();
+    const clipExists = state?.tracks.some((track) => track.clips.some((clip) => clip.id === clipId)) ?? false;
+    if (!clipExists) {
+        return false;
+    }
+
+    const expected = expectedNotes
+        .map(
+            (note) =>
+                `${String(note.pitch)}:${String(note.start_beat)}:${String(note.duration_beats)}:${String(note.velocity)}`
+        )
+        .sort();
+    const written = getNotesForClip(clipId)
+        .map(
+            (note) =>
+                `${String(note.pitch)}:${String(note.startBeat)}:${String(note.duration)}:${String(note.velocity)}`
+        )
+        .sort();
+    return expected.length === written.length && expected.every((note, index) => note === written[index]);
+}
+
+function failureMessage(status: string, reason?: string): string {
+    if (status === 'cancelled' || status === 'conflicted') {
+        return 'MIDI generation was cancelled because the project changed while AI was working.';
+    }
+    if (status === 'ambiguous') {
+        return 'MIDI generation may have committed, but its final state could not be verified.';
+    }
+    return reason ? `MIDI generation failed: ${reason}` : 'MIDI generation failed: the project rejected the write.';
+}
+
+export async function handleGenerateMidiPrompt(
+    prompt: string,
+    numNotes: number = 32,
+    creativity: number = 0.65
+): Promise<void> {
     const taskId = addTask({ type: 'midi-generation', status: 'processing', prompt });
     const start = performance.now();
+    const projectRevision = captureProjectRevision();
+    const initialTrackState = getTrackStoreState();
+    const startBeat = getTransportState()?.playheadPosition ?? 0;
+
     try {
-        let finalNotes: MidiGenerationNote[] = [];
-
-        if (isTauri()) {
-            const seedNotes = buildSeedNotesFromPrompt(prompt);
-            const res = await generateMidiAI(seedNotes, numNotes, creativity, 40);
-            finalNotes = res.notes;
-        } else {
-            finalNotes = await generateMidiViaLlm(prompt, numNotes, creativity);
+        const finalNotes = await generateMidiViaLlm(prompt, numNotes, creativity);
+        if (!isTaskProcessing(taskId)) {
+            return;
         }
-
-        if (finalNotes.length > 0) {
-            // Snapshot state before for undo support. §77.1 — stores are
-            // immutable-via-set so capturing the reference is equivalent
-            // to structuredClone without the deep-copy jank.
-            const trackSnapshotBefore = getTrackStoreState();
-            const midiSnapshotBefore = getMidiStoreState();
-
-            const tState = trackSnapshotBefore;
-            const selectedTrackId = tState?.selectedTrackId;
-
-            // Prefer selected MIDI track → create new one if selected isn't MIDI or nothing selected
-            let targetTrack = tState?.tracks.find((time) => time.id === selectedTrackId && time.kind === 'midi');
-            let createdNewTrack = false;
-            if (!targetTrack) {
-                const newTrack = addTrack({
-                    name: prompt ? `AI: ${prompt.slice(0, 20)}` : 'AI MIDI',
-                    kind: 'midi',
-                });
-                targetTrack = newTrack ?? undefined;
-                createdNewTrack = newTrack !== null;
-            }
-
-            let clipCreated = false;
-            if (targetTrack) {
-                const transport = getTransportState();
-                const startBeat = transport ? transport.playheadPosition : 0;
-                let maxNoteBeat = 0;
-                for (const node of finalNotes) {
-                    const value = node.start_beat + node.duration_beats;
-                    if (value > maxNoteBeat) {
-                        maxNoteBeat = value;
-                    }
-                }
-                const endBeat = startBeat + maxNoteBeat;
-
-                const clip = addClip({
-                    trackId: targetTrack.id,
-                    startBeat,
-                    endBeat,
-                    name: prompt ? `✨ AI: ${prompt.slice(0, 15)}` : '✨ AI Generation',
-                    type: 'midi',
-                });
-
-                if (clip) {
-                    clipCreated = true;
-                    // Batch-insert all notes in a single store mutation (avoids O(N) CRDT flood)
-                    batchAddMidiNotes(
-                        clip.id,
-                        finalNotes.map((node) => ({
-                            pitch: node.pitch,
-                            startBeat: node.start_beat,
-                            duration: node.duration_beats,
-                            velocity: node.velocity,
-                        }))
-                    );
-
-                    // Register undo entry for the entire generation
-                    const trackSnapshotAfter = getTrackStoreState();
-                    const midiSnapshotAfter = getMidiStoreState();
-
-                    pushUndoEntry(
-                        `AI MIDI: ${prompt ? prompt.slice(0, 30) : 'Generation'}`,
-                        () => {
-                            if (trackSnapshotBefore) {
-                                setTrackStoreState(trackSnapshotBefore);
-                            }
-                            if (midiSnapshotBefore) {
-                                setMidiStoreState(midiSnapshotBefore);
-                            }
-                        },
-                        () => {
-                            if (trackSnapshotAfter) {
-                                setTrackStoreState(trackSnapshotAfter);
-                            }
-                            if (midiSnapshotAfter) {
-                                setMidiStoreState(midiSnapshotAfter);
-                            }
-                        },
-                        { source: 'ai' }
-                    );
-
-                    selectClip(clip.id);
-                } else if (createdNewTrack) {
-                    // addClip failed but we already created a track for this
-                    // generation. Register an undo entry so the orphan track can
-                    // be rolled back (the before-snapshot predates the track),
-                    // mirroring the success path's undo. Without this the empty
-                    // track is stranded with no way to undo it.
-                    const trackSnapshotAfter = getTrackStoreState();
-                    const midiSnapshotAfter = getMidiStoreState();
-                    pushUndoEntry(
-                        `AI MIDI: ${prompt ? prompt.slice(0, 30) : 'Generation'} (no clip)`,
-                        () => {
-                            if (trackSnapshotBefore) {
-                                setTrackStoreState(trackSnapshotBefore);
-                            }
-                            if (midiSnapshotBefore) {
-                                setMidiStoreState(midiSnapshotBefore);
-                            }
-                        },
-                        () => {
-                            if (trackSnapshotAfter) {
-                                setTrackStoreState(trackSnapshotAfter);
-                            }
-                            if (midiSnapshotAfter) {
-                                setMidiStoreState(midiSnapshotAfter);
-                            }
-                        },
-                        { source: 'ai' }
-                    );
-                }
-            }
-
-            if (clipCreated) {
-                updateTask(taskId, {
-                    status: 'success',
-                    data: { noteCount: finalNotes.length },
-                    durationMs: Math.round(performance.now() - start),
-                });
-            } else {
-                updateTask(taskId, {
-                    status: 'error',
-                    error: 'MIDI generation failed: could not create a clip for the notes',
-                    durationMs: Math.round(performance.now() - start),
-                });
-            }
-        } else {
+        if (finalNotes.length === 0) {
             updateTask(taskId, {
                 status: 'error',
                 error: 'No notes generated — try rephrasing the prompt',
                 durationMs: Math.round(performance.now() - start),
             });
+            return;
         }
+
+        const selectedTrackId = initialTrackState?.selectedTrackId;
+        const selectedMidiTrack = initialTrackState?.tracks.find(
+            (track) => track.id === selectedTrackId && track.kind === 'midi'
+        );
+        const targetTrackId = selectedMidiTrack?.id ?? `track-ai-${crypto.randomUUID()}`;
+        const clipId = `clip-ai-${crypto.randomUUID()}`;
+
+        let maxNoteBeat = 0;
+        for (const note of finalNotes) {
+            const noteEnd = note.start_beat + note.duration_beats;
+            if (noteEnd > maxNoteBeat) {
+                maxNoteBeat = noteEnd;
+            }
+        }
+
+        const actions: AppAction[] = [];
+        if (!selectedMidiTrack) {
+            actions.push({
+                type: 'addTrack',
+                payload: {
+                    id: targetTrackId,
+                    name: prompt ? `AI: ${prompt.slice(0, 20)}` : 'AI MIDI',
+                    kind: 'midi',
+                },
+            });
+        }
+        actions.push(
+            {
+                type: 'addClip',
+                payload: {
+                    id: clipId,
+                    trackId: targetTrackId,
+                    startBeat,
+                    endBeat: startBeat + maxNoteBeat,
+                    name: prompt ? `✨ AI: ${prompt.slice(0, 15)}` : '✨ AI Generation',
+                    type: 'midi',
+                },
+            },
+            {
+                type: 'addNotes',
+                payload: {
+                    clipId,
+                    notes: finalNotes.map((note) => ({
+                        pitch: note.pitch,
+                        startBeat: note.start_beat,
+                        duration: note.duration_beats,
+                        velocity: note.velocity,
+                    })),
+                },
+            }
+        );
+
+        const result = await executeAppActionBatch(actions, {
+            source: 'ai',
+            groupId: `ai-midi-${taskId}`,
+            groupLabel: `AI MIDI: ${prompt ? prompt.slice(0, 30) : 'Generation'}`,
+            requireCompensation: true,
+            skipMacroRecording: true,
+            shouldExecute: () => isTaskProcessing(taskId) && captureProjectRevision() === projectRevision,
+        });
+
+        const committed = result.status === 'committed' || result.status === 'committed-with-warning';
+        const durablyCommitted = result.status === 'ambiguous' && hasDurableGeneration(clipId, finalNotes);
+        if (committed || durablyCommitted) {
+            let warning: string | undefined;
+            if (result.status === 'committed-with-warning') {
+                warning = result.warning;
+            } else if (result.status === 'ambiguous') {
+                warning = result.reason;
+            }
+            if (warning) {
+                notifyUser(`MIDI generation committed with a warning: ${warning}`, 'warning');
+            }
+            selectClip(clipId);
+            updateTask(taskId, {
+                status: 'success',
+                data: {
+                    noteCount: finalNotes.length,
+                    warning,
+                },
+                durationMs: Math.round(performance.now() - start),
+            });
+            return;
+        }
+
+        if (!isTaskProcessing(taskId)) {
+            return;
+        }
+        updateTask(taskId, {
+            status: 'error',
+            error: failureMessage(result.status, 'reason' in result ? result.reason : undefined),
+            durationMs: Math.round(performance.now() - start),
+        });
     } catch (error: unknown) {
+        if (!isTaskProcessing(taskId)) {
+            return;
+        }
         updateTask(taskId, {
             status: 'error',
             error: error instanceof Error ? error.message : 'Generation failed',

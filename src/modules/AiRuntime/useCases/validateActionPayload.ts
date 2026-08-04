@@ -119,6 +119,10 @@ function hasClipId(param: unknown): param is { clipId: string } {
 function isAddNotesNote(param: unknown): param is PayloadOf<'addNotes'>['notes'][number] {
     return (
         isObj(param) &&
+        hasOnlyKeys(param, ['pitch', 'startBeat', 'duration', 'velocity']) &&
+        Object.hasOwn(param, 'pitch') &&
+        Object.hasOwn(param, 'startBeat') &&
+        Object.hasOwn(param, 'duration') &&
         isInRange(param.pitch, 0, 127) &&
         isNonNegativeNumber(param.startBeat) &&
         isPositiveNumber(param.duration) &&
@@ -145,10 +149,13 @@ const validators = {
     // Clip lifecycle
     addClip: (param): param is PayloadOf<'addClip'> =>
         isObj(param) &&
-        isString(param.trackId) &&
+        hasOnlyKeys(param, ['trackId', 'startBeat', 'endBeat', 'name', 'type', 'audioBufferId']) &&
+        isNonEmptyString(param.trackId) &&
         isNumber(param.startBeat) &&
         isNumber(param.endBeat) &&
-        isString(param.name),
+        isString(param.name) &&
+        isOptional(param.type, (value): value is 'audio' | 'midi' => value === 'audio' || value === 'midi') &&
+        isOptional(param.audioBufferId, isString),
     removeClip: hasClipId,
     splitClip: (param): param is PayloadOf<'splitClip'> =>
         isObj(param) && isString(param.clipId) && isNumber(param.beat),
@@ -420,7 +427,12 @@ const validators = {
     scaleAllVelocities: 'unchecked',
     setAllVelocities: 'unchecked',
     addNotes: (param): param is PayloadOf<'addNotes'> =>
-        isObj(param) && isString(param.clipId) && Array.isArray(param.notes) && param.notes.every(isAddNotesNote),
+        isObj(param) &&
+        hasExactKeys(param, ['clipId', 'notes']) &&
+        isNonEmptyString(param.clipId) &&
+        Array.isArray(param.notes) &&
+        param.notes.length > 0 &&
+        param.notes.every(isAddNotesNote),
     arpeggiate: 'unchecked',
 
     // Automation secondary ops
