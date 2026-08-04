@@ -273,6 +273,42 @@ describe('bridgeLlmToolCalls', () => {
         });
     });
 
+    it('bridges only an exact no-argument stopPlayback call regardless of visible playback state', () => {
+        const stopped = bridge({
+            calls: [{ name: 'stopPlayback', arguments: {} }],
+            context: { ...projectContext, isPlaying: false },
+        });
+        const extraArgument = bridge({
+            calls: [{ name: 'stopPlayback', arguments: { beat: 0 } }],
+            context: projectContext,
+        });
+
+        expect(stopped.actions).toEqual([{ type: 'stopPlayback' }]);
+        expect(extraArgument.actions).toEqual([]);
+        expect(extraArgument.rejections[0]?.reason).toContain('no arguments');
+    });
+
+    it('keeps stopPlayback exclusive from every provider batch', () => {
+        const result = bridge({
+            calls: [
+                { name: 'stopPlayback', arguments: {} },
+                { name: 'setTempo', arguments: { bpm: 128 } },
+            ],
+            context: projectContext,
+        });
+
+        expect(result).toEqual({
+            actions: [],
+            rejections: [
+                {
+                    index: 0,
+                    name: '<batch>',
+                    reason: 'Provider runtime transport command must be the only action in its batch',
+                },
+            ],
+        });
+    });
+
     it('converts allowlisted provider calls into typed runtime actions', () => {
         const result = bridge({
             calls: [

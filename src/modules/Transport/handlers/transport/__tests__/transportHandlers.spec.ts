@@ -77,15 +77,18 @@ describe('Transport Handlers', () => {
         expect(mocks.togglePlayback).toHaveBeenCalled();
     });
 
-    it('handleStopPlayback delegates to use case and returns its completion', async () => {
+    it('handleStopPlayback delegates to the use case and exposes its runtime completion', async () => {
         const completion = Promise.resolve();
         mocks.stopPlayback.mockReturnValueOnce(completion);
 
         const execution = handleStopPlayback.execute({ type: 'stopPlayback', payload: undefined });
 
-        expect(execution).toBe(completion);
-        await execution;
-        expect(mocks.stopPlayback).toHaveBeenCalled();
+        if (!execution || execution instanceof Promise || !execution.afterRuntimeExecution) {
+            throw new Error('Expected a written Stop result with runtime completion');
+        }
+        expect(execution.status).toBe('written');
+        await execution.afterRuntimeExecution();
+        expect(mocks.stopPlayback).toHaveBeenCalledOnce();
     });
 
     it('handleSeekPlayhead delegates to use case', () => {

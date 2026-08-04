@@ -9,6 +9,7 @@ describe('app action execution policy', () => {
         'toggleRecording',
         'setTempo',
         'setMasterGain',
+        'stopPlayback',
         'setTrackOutput',
         'setSend',
         'addSend',

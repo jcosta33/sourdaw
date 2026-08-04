@@ -14,6 +14,7 @@ import { executeAppActionBatch } from '../executeAppActionBatch';
 type SetEditingToolAction = Extract<AppAction, { type: 'setEditingTool' }>;
 type SetSnapValueAction = Extract<AppAction, { type: 'setSnapValue' }>;
 type SetPlaybackAction = Extract<AppAction, { type: 'setPlayback' }>;
+type StopPlaybackAction = Extract<AppAction, { type: 'stopPlayback' }>;
 
 const mocks = vi.hoisted(() => ({
     logger: {
@@ -621,42 +622,10 @@ describe('executeAppActionBatch', () => {
     });
 
     it('reports a runtime follow-up failure as executed truth without post-dispatch cancellation', async () => {
-        const reconcileRuntime = vi.fn().mockRejectedValue(new Error('transport unavailable'));
-        const afterCommit = vi.fn().mockRejectedValue(new Error('event unavailable'));
+        const afterRuntimeExecution = vi.fn().mockRejectedValue(new Error('event unavailable'));
         registerHandlerMap({
             setPlayback: createHandler<SetPlaybackAction>({
-                execute: () => ({ status: 'written', afterCommit, afterAmbiguousCommit: reconcileRuntime }),
-                executionKind: 'runtime',
-                undoable: false,
-            }),
-        });
-
-        const result = await executeAppActionBatch([{ type: 'setPlayback', payload: { playing: true } }]);
-
-        expect(result).toEqual({
-            status: 'executed-with-warning',
-            actions: [{ action: { type: 'setPlayback', payload: { playing: true } }, label: 'Batch action' }],
-            warning:
-                'setPlayback follow-up effect failed: event unavailable; runtime reconciliation failed: transport unavailable',
-        });
-        expect(afterCommit).toHaveBeenCalledOnce();
-        expect(reconcileRuntime).toHaveBeenCalledOnce();
-        expect(mocks.recordAction).not.toHaveBeenCalled();
-        expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
-    });
-
-    it('preserves the original runtime follow-up failure when reconciliation is unavailable', async () => {
-        const afterCommit = vi.fn().mockRejectedValue(new Error('event unavailable'));
-        const reconcileRuntime = vi.fn();
-        const executionResult = {
-            status: 'written' as const,
-            afterCommit,
-            afterAmbiguousCommit: reconcileRuntime,
-        };
-        Reflect.deleteProperty(executionResult, 'afterAmbiguousCommit');
-        registerHandlerMap({
-            setPlayback: createHandler<SetPlaybackAction>({
-                execute: () => executionResult,
+                execute: () => ({ status: 'written', afterRuntimeExecution }),
                 executionKind: 'runtime',
                 undoable: false,
             }),
@@ -669,8 +638,74 @@ describe('executeAppActionBatch', () => {
             actions: [{ action: { type: 'setPlayback', payload: { playing: true } }, label: 'Batch action' }],
             warning: 'setPlayback follow-up effect failed: event unavailable',
         });
-        expect(afterCommit).toHaveBeenCalledOnce();
-        expect(reconcileRuntime).not.toHaveBeenCalled();
+        expect(afterRuntimeExecution).toHaveBeenCalledOnce();
+        expect(mocks.recordAction).not.toHaveBeenCalled();
+        expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+    });
+
+    it('reports rejected Stop teardown as executed-with-warning after waiting for its completion', async () => {
+        const teardownFailure = new Error('recording flush failed');
+        let rejectTeardown: ((reason: Error) => void) | undefined;
+        const teardown = new Promise<void>((_resolve, reject) => {
+            rejectTeardown = reject;
+        });
+        let stopApplied = false;
+        registerHandlerMap({
+            stopPlayback: createHandler<StopPlaybackAction>({
+                execute: () => {
+                    stopApplied = true;
+                    return {
+                        status: 'written',
+                        afterRuntimeExecution: () => teardown,
+                    };
+                },
+                executionKind: 'runtime',
+                undoable: false,
+            }),
+        });
+
+        const pending = executeAppActionBatch([{ type: 'stopPlayback' }]);
+        let settled = false;
+        void pending.then(() => {
+            settled = true;
+            return undefined;
+        });
+        await Promise.resolve();
+
+        expect(stopApplied).toBe(true);
+        expect(settled).toBe(false);
+        if (!rejectTeardown) {
+            throw new Error('Expected Stop teardown to remain pending');
+        }
+        rejectTeardown(teardownFailure);
+
+        await expect(pending).resolves.toEqual({
+            status: 'executed-with-warning',
+            actions: [{ action: { type: 'stopPlayback' }, label: 'Batch action' }],
+            warning: 'stopPlayback follow-up effect failed: recording flush failed',
+        });
+        expect(mocks.recordAction).not.toHaveBeenCalled();
+        expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+    });
+
+    it('preserves the original runtime-only follow-up failure', async () => {
+        const afterRuntimeExecution = vi.fn().mockRejectedValue(new Error('event unavailable'));
+        registerHandlerMap({
+            setPlayback: createHandler<SetPlaybackAction>({
+                execute: () => ({ status: 'written', afterRuntimeExecution }),
+                executionKind: 'runtime',
+                undoable: false,
+            }),
+        });
+
+        const result = await executeAppActionBatch([{ type: 'setPlayback', payload: { playing: true } }]);
+
+        expect(result).toEqual({
+            status: 'executed-with-warning',
+            actions: [{ action: { type: 'setPlayback', payload: { playing: true } }, label: 'Batch action' }],
+            warning: 'setPlayback follow-up effect failed: event unavailable',
+        });
+        expect(afterRuntimeExecution).toHaveBeenCalledOnce();
     });
 
     it('cancels without dispatch when authority is revoked during a snapshot wait', async () => {

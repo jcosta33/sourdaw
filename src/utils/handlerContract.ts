@@ -1037,12 +1037,20 @@ type HandlerDeferredEffects =
     | {
           afterCommit?: undefined;
           afterAmbiguousCommit?: undefined;
+          afterRuntimeExecution?: undefined;
       }
     | {
           /** External effects that must happen only after the owning project transaction commits. */
           afterCommit: HandlerAfterCommit;
-          /** Reconcile external state from durable project truth after a partially committed transaction. */
+          /** Reconcile external state from durable project truth after an ambiguous project commit. */
           afterAmbiguousCommit: HandlerAfterCommit;
+          afterRuntimeExecution?: undefined;
+      }
+    | {
+          afterCommit?: undefined;
+          afterAmbiguousCommit?: undefined;
+          /** Complete a runtime-only action after its applied state is already observable. */
+          afterRuntimeExecution: HandlerAfterCommit;
       };
 
 export type HandlerExecutionResult = {

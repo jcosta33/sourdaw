@@ -28,6 +28,7 @@ type CommitUndoEntryInput = Parameters<CommitUndoEntryModule['commitUndoEntry']>
 type SetEditingToolAction = Extract<AppAction, { type: 'setEditingTool' }>;
 type SetSnapValueAction = Extract<AppAction, { type: 'setSnapValue' }>;
 type SetPlaybackAction = Extract<AppAction, { type: 'setPlayback' }>;
+type StopPlaybackAction = Extract<AppAction, { type: 'stopPlayback' }>;
 type ToggleSidebarAction = Extract<AppAction, { type: 'toggleSidebar' }>;
 
 type MockCommandHandler<Action extends AppAction> = ActionHandler<Action> & {
@@ -121,6 +122,22 @@ describe('executeAppAction', () => {
         vi.restoreAllMocks();
     });
 
+    it('requires project reconciliation while accepting a runtime-only follow-up', () => {
+        const runtimeResult = {
+            status: 'written',
+            afterRuntimeExecution: () => undefined,
+        } satisfies HandlerExecutionResult;
+
+        // @ts-expect-error Project deferred effects require ambiguity reconciliation.
+        const invalidProjectResult: HandlerExecutionResult = {
+            status: 'written',
+            afterCommit: () => undefined,
+        };
+
+        expect(runtimeResult.status).toBe('written');
+        expect(invalidProjectResult.status).toBe('written');
+    });
+
     it('should reject as not dispatched and log when no handler is found', async () => {
         const action: ToggleSidebarAction = { type: 'toggleSidebar' };
 
@@ -174,6 +191,32 @@ describe('executeAppAction', () => {
         expect(handler.describe).not.toHaveBeenCalled();
         expect(mocks.setSemanticContext).not.toHaveBeenCalled();
         expect(mocks.clearSemanticContext).not.toHaveBeenCalled();
+        expect(mocks.recordAction).not.toHaveBeenCalled();
+        expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
+        expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+    });
+
+    it('classifies rejected Stop teardown as committed after Stop was applied', async () => {
+        const teardownFailure = new Error('recording flush failed');
+        const teardown = Promise.reject(teardownFailure);
+        let stopApplied = false;
+        const action: StopPlaybackAction = { type: 'stopPlayback' };
+        const handler = create_mock_handler<StopPlaybackAction>({
+            execute: () => {
+                stopApplied = true;
+                return {
+                    status: 'written',
+                    afterRuntimeExecution: () => teardown,
+                };
+            },
+            executionKind: 'runtime',
+            undoable: false,
+        });
+        registerHandlerMap({ [action.type]: handler });
+
+        await expect(executeAppAction(action)).rejects.toBeInstanceOf(AppActionCommittedError);
+
+        expect(stopApplied).toBe(true);
         expect(mocks.recordAction).not.toHaveBeenCalled();
         expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
         expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
