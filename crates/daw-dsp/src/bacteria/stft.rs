@@ -539,16 +539,18 @@ mod tests {
     #[test]
     fn smudge_is_unity_gain_on_steady_material() {
         let mut smudge = SmudgeProcessor::new();
-        let tone = |index: usize| {
-            (2.0 * PI * 440.0 * index as f32 / 48_000.0).sin() * 0.5
-        };
+        let tone = |index: usize| (2.0 * PI * 440.0 * index as f32 / 48_000.0).sin() * 0.5;
 
         let total = 48_000;
-        let rendered: Vec<f32> = (0..total).map(|index| smudge.process_sample(tone(index))).collect();
+        let rendered: Vec<f32> = (0..total)
+            .map(|index| smudge.process_sample(tone(index)))
+            .collect();
 
         // Settled tail only: the smoother needs several frames to converge.
         let tail = total / 2;
-        let output_peak = rendered[tail..].iter().fold(0.0_f32, |acc, s| acc.max(s.abs()));
+        let output_peak = rendered[tail..]
+            .iter()
+            .fold(0.0_f32, |acc, s| acc.max(s.abs()));
         let gain_db = 20.0 * (output_peak / 0.5).log10();
         assert!(
             gain_db.abs() < 0.5,

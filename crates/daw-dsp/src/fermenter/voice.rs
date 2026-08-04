@@ -393,7 +393,11 @@ impl Voice {
 
     /// Current per-note expression as (bend semitones, pressure, slide).
     pub fn expression(&self) -> (f32, f32, f32) {
-        (self.expr_bend_semitones, self.expr_pressure, self.expr_slide)
+        (
+            self.expr_bend_semitones,
+            self.expr_pressure,
+            self.expr_slide,
+        )
     }
 
     pub fn note_off(&mut self) {

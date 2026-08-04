@@ -275,7 +275,10 @@ mod tests {
 
         println!("grand-boule block-rate retune (audit MD-2 measurement)");
         println!("  per voice          : {:.1} µs", per_voice_secs * 1e6);
-        println!("  {VOICES} voices bent   : {:.1} µs", full_polyphony_secs * 1e6);
+        println!(
+            "  {VOICES} voices bent   : {:.1} µs",
+            full_polyphony_secs * 1e6
+        );
         println!("  block budget       : {:.1} µs", block_budget_secs * 1e6);
         println!("  budget consumed    : {:.1}%", budget_fraction * 100.0);
     }

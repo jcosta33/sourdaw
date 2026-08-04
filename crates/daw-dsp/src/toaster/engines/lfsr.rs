@@ -90,10 +90,7 @@ mod tests {
         for i in 0..10_000 {
             let va = a.step();
             let vb = b.step();
-            assert_eq!(
-                va, vb,
-                "LFSR mismatch at step {i}: {va} != {vb}"
-            );
+            assert_eq!(va, vb, "LFSR mismatch at step {i}: {va} != {vb}");
         }
     }
 

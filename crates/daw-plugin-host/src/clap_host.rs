@@ -44,7 +44,10 @@ impl std::fmt::Debug for HostCallbackState {
         formatter
             .debug_struct("HostCallbackState")
             .field("latency_dirty", &self.latency_dirty.load(Ordering::Relaxed))
-            .field("has_latency_notifier", &self.latency_notifier.get().is_some())
+            .field(
+                "has_latency_notifier",
+                &self.latency_notifier.get().is_some(),
+            )
             .finish()
     }
 }
@@ -281,7 +284,10 @@ mod tests {
 
         assert!(!state.take_latency_dirty(), "flag starts clear");
         unsafe { host_latency_changed(&host as *const clap_host) };
-        assert!(state.take_latency_dirty(), "changed() marks the instance dirty");
+        assert!(
+            state.take_latency_dirty(),
+            "changed() marks the instance dirty"
+        );
         assert!(!state.take_latency_dirty(), "take clears the flag");
     }
 
@@ -313,9 +319,17 @@ mod tests {
         );
         let host = host_with_state(&state);
 
-        assert_eq!(wakes.load(Ordering::Relaxed), 0, "no wake before a callback");
+        assert_eq!(
+            wakes.load(Ordering::Relaxed),
+            0,
+            "no wake before a callback"
+        );
         unsafe { host_latency_changed(&host as *const clap_host) };
-        assert_eq!(wakes.load(Ordering::Relaxed), 1, "changed() wakes the observer");
+        assert_eq!(
+            wakes.load(Ordering::Relaxed),
+            1,
+            "changed() wakes the observer"
+        );
         unsafe { host_request_restart(&host as *const clap_host) };
         assert_eq!(
             wakes.load(Ordering::Relaxed),
@@ -326,7 +340,11 @@ mod tests {
         // A second install is refused, so the wake cannot be hijacked mid-life.
         assert!(!state.set_latency_notifier(Box::new(|| {})));
         unsafe { host_latency_changed(&host as *const clap_host) };
-        assert_eq!(wakes.load(Ordering::Relaxed), 3, "original notifier still fires");
+        assert_eq!(
+            wakes.load(Ordering::Relaxed),
+            3,
+            "original notifier still fires"
+        );
     }
 
     #[test]

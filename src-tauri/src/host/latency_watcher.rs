@@ -129,7 +129,10 @@ pub fn start(app: AppHandle, engine_plugins: EnginePlugins) {
         });
 
     if let Err(error) = spawned {
-        eprintln!("[Plugin] failed to start the CLAP latency watcher: {}", error);
+        eprintln!(
+            "[Plugin] failed to start the CLAP latency watcher: {}",
+            error
+        );
     }
 }
 

@@ -233,10 +233,7 @@ mod tests {
             for step in -400..=400 {
                 let x = step as f32 * 0.25;
                 let y = shape(algorithm, x, &mut tape);
-                assert!(
-                    y.abs() <= 1.05,
-                    "curve escaped its rails at x={x}: y={y}"
-                );
+                assert!(y.abs() <= 1.05, "curve escaped its rails at x={x}: y={y}");
             }
         }
     }

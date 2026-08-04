@@ -222,10 +222,7 @@ mod tests {
         }
 
         for (i, &e) in burst_energies.iter().enumerate() {
-            assert!(
-                e > 1e-6,
-                "Burst {i} should have energy, got {e}"
-            );
+            assert!(e > 1e-6, "Burst {i} should have energy, got {e}");
         }
     }
 }

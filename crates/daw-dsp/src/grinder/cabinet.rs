@@ -20,7 +20,7 @@ pub struct CabinetConvolver {
     mic_1_pos_x: f32, // 0 = center, 1 = edge
     mic_1_pos_y: f32, // 0 = on-axis, 1 = off-axis
     mic_1_distance: f32,
-    
+
     mic_2_enabled: bool,
     mic_2_gain: f32,
     mic_2_pos_x: f32,
@@ -79,13 +79,13 @@ impl CabinetConvolver {
     pub fn load_ir_slot(&mut self, slot: u32, ir_data: &[f32]) {
         let head_len = ir_data.len().min(128);
         let ir = ir_data[..head_len].to_vec();
-        
+
         if slot == 1 {
             self.head_ir_1 = ir;
         } else {
             self.head_ir_2 = ir;
         }
-        
+
         if self.head_buffer.len() < head_len {
             self.head_buffer = vec![0.0; head_len];
         }
@@ -167,7 +167,7 @@ impl CabinetConvolver {
         for k in 0..self.head_length {
             let read_pos = (self.head_write_pos + self.head_length - k) % self.head_length;
             let in_val = self.head_buffer[read_pos];
-            
+
             if self.mic_1_enabled && k < self.head_ir_1.len() {
                 out1 += in_val * self.head_ir_1[k];
             }
@@ -200,16 +200,19 @@ impl CabinetConvolver {
         let direct = out1 * w1 + out2 * w2;
 
         self.room_buffer[self.room_write_pos] = direct;
-        let blended_distance = (self.mic_1_distance * w1 + self.mic_2_distance * w2).clamp(0.0, 1.0);
+        let blended_distance =
+            (self.mic_1_distance * w1 + self.mic_2_distance * w2).clamp(0.0, 1.0);
         let room = if self.room_amount > 0.001 {
-            let tap_1 = self.read_room_tap((self.sample_rate * (0.012 + blended_distance * 0.006)) as usize);
-            let tap_2 = self.read_room_tap((self.sample_rate * (0.021 + blended_distance * 0.010)) as usize);
-            let tap_3 = self.read_room_tap((self.sample_rate * (0.034 + blended_distance * 0.016)) as usize);
+            let tap_1 = self
+                .read_room_tap((self.sample_rate * (0.012 + blended_distance * 0.006)) as usize);
+            let tap_2 = self
+                .read_room_tap((self.sample_rate * (0.021 + blended_distance * 0.010)) as usize);
+            let tap_3 = self
+                .read_room_tap((self.sample_rate * (0.034 + blended_distance * 0.016)) as usize);
             let reflections = tap_1 * 0.52 + tap_2 * 0.31 + tap_3 * 0.17;
             let room_cut_hz = 2_400.0 - blended_distance * 1_100.0;
             let room_coeff = (2.0 * PI * room_cut_hz.max(400.0) / self.sample_rate).min(0.65);
-            self.room_lp =
-                flush_denormal(self.room_lp + (reflections - self.room_lp) * room_coeff);
+            self.room_lp = flush_denormal(self.room_lp + (reflections - self.room_lp) * room_coeff);
             self.room_lp * self.room_amount * (0.18 + blended_distance * 0.22)
         } else {
             0.0
@@ -381,7 +384,8 @@ mod tests {
 
         for index in 0..total {
             let low = ((index as f32 * 2.0 * std::f32::consts::PI * 180.0) / 48_000.0).sin() * 0.12;
-            let high = ((index as f32 * 2.0 * std::f32::consts::PI * 3200.0) / 48_000.0).sin() * 0.05;
+            let high =
+                ((index as f32 * 2.0 * std::f32::consts::PI * 3200.0) / 48_000.0).sin() * 0.05;
             let output = cabinet.process_sample(low + high);
             sum += output.abs();
         }

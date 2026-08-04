@@ -196,8 +196,14 @@ mod tests {
             }
         }
 
-        assert!(saw_effect_tail, "the reverb tail must outlive its drum voice");
-        assert!(reached_sleep, "the finite reverb tail must eventually settle");
+        assert!(
+            saw_effect_tail,
+            "the reverb tail must outlive its drum voice"
+        );
+        assert!(
+            reached_sleep,
+            "the finite reverb tail must eventually settle"
+        );
     }
 
     #[test]
@@ -225,7 +231,10 @@ mod tests {
             saw_hidden_tail,
             "delay state must remain managed even while its wet output is muted"
         );
-        assert!(reached_sleep, "the finite muted delay tail must eventually settle");
+        assert!(
+            reached_sleep,
+            "the finite muted delay tail must eventually settle"
+        );
     }
 
     #[test]

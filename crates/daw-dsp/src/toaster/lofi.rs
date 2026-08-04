@@ -157,7 +157,10 @@ mod tests {
             sleeping.process_block(&mut sleeping_left, &mut sleeping_right, SAMPLE_RATE);
 
             assert_eq!(continuous_left, sleeping_left, "left at {target_rate} Hz");
-            assert_eq!(continuous_right, sleeping_right, "right at {target_rate} Hz");
+            assert_eq!(
+                continuous_right, sleeping_right,
+                "right at {target_rate} Hz"
+            );
         }
     }
 }

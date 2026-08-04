@@ -65,8 +65,8 @@ pub struct Kick808Engine {
     // Feedback buffer state (first-order high-shelf, decay-controlled)
     fb_state: f32,
     fb_gain: f32,
-    fb_hs_state: f32,  // LPF state for high-shelf computation
-    fb_hs_coeff: f32,  // one-pole LPF coeff for shelf at ~800 Hz
+    fb_hs_state: f32, // LPF state for high-shelf computation
+    fb_hs_coeff: f32, // one-pole LPF coeff for shelf at ~800 Hz
 
     // Pulse shaper ADAA state
     ps_xprev: f32,
@@ -136,13 +136,9 @@ impl Kick808Engine {
         };
 
         // Initialize bridged-T at resting R_eff
-        engine.bridged_t.update_coefficients(
-            r_eff_rest,
-            r167,
-            c41,
-            c42,
-            sample_rate,
-        );
+        engine
+            .bridged_t
+            .update_coefficients(r_eff_rest, r167, c41, c42, sample_rate);
 
         engine
     }
@@ -198,7 +194,8 @@ impl Kick808Engine {
                 * (1.0 - self.pitch_env * (1.0 - self.sigh_phase));
 
         // Per-sample coefficient update (critical during attack phase)
-        self.bridged_t.update_coefficients(r_eff, self.r167, self.c41, self.c42, sample_rate);
+        self.bridged_t
+            .update_coefficients(r_eff, self.r167, self.c41, self.c42, sample_rate);
 
         // --- Pulse shaper excitation ---
         // Accent: trigger voltage scales pulse amplitude (5V unaccented, 15V full accent)
@@ -230,8 +227,8 @@ impl Kick808Engine {
         // First-order high-shelf in feedback path: y = x + hs_gain * (x - lpf(x))
         // hs_gain scales with decay: higher decay → more high-frequency boost → longer sustain
         let hs_gain = self.decay * 0.5; // 0..0.5 range
-        let lpf_out = self.fb_hs_coeff * self.fb_hs_state
-            + (1.0 - self.fb_hs_coeff) * resonator_clipped;
+        let lpf_out =
+            self.fb_hs_coeff * self.fb_hs_state + (1.0 - self.fb_hs_coeff) * resonator_clipped;
         self.fb_hs_state = lpf_out;
         self.fb_state = resonator_clipped + hs_gain * (resonator_clipped - lpf_out);
 
@@ -350,11 +347,14 @@ mod tests {
 
         // Collect first 256 samples and compare RMS — should differ due to different fc
         let collect = |engine: &mut Kick808Engine| {
-            (0..256).map(|_| engine.tick(sample_rate)).collect::<Vec<_>>()
+            (0..256)
+                .map(|_| engine.tick(sample_rate))
+                .collect::<Vec<_>>()
         };
         let s1 = collect(&mut e1);
         let s2 = collect(&mut e2);
-        let diff_rms = (s1.iter()
+        let diff_rms = (s1
+            .iter()
             .zip(s2.iter())
             .map(|(a, b)| (a - b) * (a - b))
             .sum::<f32>()

@@ -252,7 +252,11 @@ mod tests {
 
         let mut plugins = Vec::new();
         let mut errors = Vec::new();
-        scan_directory(&symlinked_scan_root.join("Vendor"), &mut plugins, &mut errors);
+        scan_directory(
+            &symlinked_scan_root.join("Vendor"),
+            &mut plugins,
+            &mut errors,
+        );
         let _ = std::fs::remove_dir_all(&temp_root);
 
         assert!(

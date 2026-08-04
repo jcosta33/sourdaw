@@ -321,7 +321,8 @@ impl CrustEngine {
         }
         self.safety.set_true_peak(self.true_peak);
         self.safety.set_ceiling_db(self.ceiling_db);
-        self.safety.set_lookahead_samples(safety_lookahead(self.true_peak));
+        self.safety
+            .set_lookahead_samples(safety_lookahead(self.true_peak));
         // The attack clamp is derived from the look-ahead, so a geometry change
         // has to re-derive it or a shortened window leaves a stale ramp budget.
         self.apply_envelope();
@@ -444,7 +445,8 @@ impl CrustEngine {
 
     fn apply_dither(&mut self) {
         let kind = DitherKind::from_index(self.dither_index);
-        let bits = DitherKind::implied_bit_depth(self.dither_index).unwrap_or(self.output_bit_depth);
+        let bits =
+            DitherKind::implied_bit_depth(self.dither_index).unwrap_or(self.output_bit_depth);
         self.ditherer.set_param("dither_bits", bits as f32);
         self.ditherer
             .set_param("dither_mode", kind.shared_mode_index());
@@ -523,8 +525,16 @@ impl CrustEngine {
             // Silenced rather than clamped to the ceiling: a non-finite sample
             // is not signal, and emitting the ceiling would invent full-scale
             // content where the upstream device produced garbage.
-            let dry_left = if left[frame].is_finite() { left[frame] } else { 0.0 };
-            let dry_right = if right[frame].is_finite() { right[frame] } else { 0.0 };
+            let dry_left = if left[frame].is_finite() {
+                left[frame]
+            } else {
+                0.0
+            };
+            let dry_right = if right[frame].is_finite() {
+                right[frame]
+            } else {
+                0.0
+            };
             input_peak = input_peak.max(dry_left.abs()).max(dry_right.abs());
 
             let (delayed_dry_left, delayed_dry_right) =
@@ -752,7 +762,11 @@ mod tests {
                 engine.process_block(&mut left, &mut right);
             }
 
-            let escaped = left.iter().chain(right.iter()).filter(|s| !s.is_finite()).count();
+            let escaped = left
+                .iter()
+                .chain(right.iter())
+                .filter(|s| !s.is_finite())
+                .count();
             assert_eq!(
                 escaped, 0,
                 "{bad} reached the output {escaped} times — the master bus carries it \
@@ -1099,7 +1113,9 @@ mod tests {
         engine.set_param("delta_listen", 1.0);
 
         let (out_left, _) = render(&mut engine, &signal, &signal);
-        let settled = out_left[2_048..].iter().fold(0.0_f32, |a, s| a.max(s.abs()));
+        let settled = out_left[2_048..]
+            .iter()
+            .fold(0.0_f32, |a, s| a.max(s.abs()));
 
         assert!(
             settled < 1e-4,
@@ -1125,7 +1141,9 @@ mod tests {
         let (untouched, _) = render(&mut reference, &signal, &signal);
 
         let trimmed_peak = trimmed[1_024..].iter().fold(0.0_f32, |a, s| a.max(s.abs()));
-        let reference_peak = untouched[1_024..].iter().fold(0.0_f32, |a, s| a.max(s.abs()));
+        let reference_peak = untouched[1_024..]
+            .iter()
+            .fold(0.0_f32, |a, s| a.max(s.abs()));
 
         assert!(
             (db(trimmed_peak) - db(reference_peak)).abs() < 0.05,

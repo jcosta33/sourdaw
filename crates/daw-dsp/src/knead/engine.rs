@@ -53,7 +53,7 @@ pub struct KneadEngine {
     // Accumulator buffers for RT block processing
     in_buffer_l: Vec<f32>,
     in_buffer_r: Vec<f32>,
-    
+
     // Fixed-size output ring buffers to avoid allocations
     out_buffer_l: Vec<f32>,
     out_buffer_r: Vec<f32>,
@@ -131,7 +131,7 @@ impl KneadEngine {
     pub fn process_block(&mut self, left: &mut [f32], right: &mut [f32]) {
         let num_samples = left.len();
         let ring_cap = self.out_buffer_l.len();
-        
+
         for i in 0..num_samples {
             self.in_buffer_l.push(left[i]);
             self.in_buffer_r.push(right[i]);
@@ -172,7 +172,7 @@ impl KneadEngine {
                 } else {
                     self.analyze_and_shift();
                 }
-                
+
                 self.in_buffer_l.clear();
                 self.in_buffer_r.clear();
             }
@@ -194,12 +194,13 @@ impl KneadEngine {
             &self.in_buffer_l,
             &self.yin_cfg,
             &mut self.work_d,
-            &mut self.work_cmnd
+            &mut self.work_cmnd,
         );
 
         self.current_f0 = yin_res.f0_hz;
         self.current_periodicity = yin_res.periodicity;
-        self.is_actively_voiced = is_voiced(&self.in_buffer_l, yin_res.periodicity, &self.voicing_cfg);
+        self.is_actively_voiced =
+            is_voiced(&self.in_buffer_l, yin_res.periodicity, &self.voicing_cfg);
 
         let frame_len = self.in_buffer_l.len();
         let mut shifted = false;
@@ -230,8 +231,7 @@ impl KneadEngine {
                 // cannot be shifted (every grain would bail, emitting
                 // zeroed voiced audio). Treat them as unshiftable and fall
                 // through to passthrough instead.
-                let shiftable =
-                    2 * (target_period.ceil() as usize) <= self.window_scratchpad.len();
+                let shiftable = 2 * (target_period.ceil() as usize) <= self.window_scratchpad.len();
 
                 // Span = last h samples of raw input history ++ this frame.
                 let hist_start = self.hist_l.len() - h;
@@ -352,11 +352,15 @@ impl KneadEngine {
                     // the grain overhang [frame_len, frame_len + t) that
                     // covers the next frame's start (work indices
                     // [frame_len + t, frame_len + 2t)).
-                    self.held_l[..t].copy_from_slice(&self.psola_l_buffer[frame_len..frame_len + t]);
-                    self.held_r[..t].copy_from_slice(&self.psola_r_buffer[frame_len..frame_len + t]);
+                    self.held_l[..t]
+                        .copy_from_slice(&self.psola_l_buffer[frame_len..frame_len + t]);
+                    self.held_r[..t]
+                        .copy_from_slice(&self.psola_r_buffer[frame_len..frame_len + t]);
                     self.held_len = t;
-                    self.overhang_l[..t].copy_from_slice(&self.psola_l_buffer[frame_len + t..frame_len + 2 * t]);
-                    self.overhang_r[..t].copy_from_slice(&self.psola_r_buffer[frame_len + t..frame_len + 2 * t]);
+                    self.overhang_l[..t]
+                        .copy_from_slice(&self.psola_l_buffer[frame_len + t..frame_len + 2 * t]);
+                    self.overhang_r[..t]
+                        .copy_from_slice(&self.psola_r_buffer[frame_len + t..frame_len + 2 * t]);
                     self.overhang_len = t;
                 }
             }
@@ -400,8 +404,10 @@ impl KneadEngine {
         let frame_len = self.in_buffer_l.len();
         let t_max = self.hist_l.len();
         if frame_len >= t_max {
-            self.hist_l.copy_from_slice(&self.in_buffer_l[frame_len - t_max..]);
-            self.hist_r.copy_from_slice(&self.in_buffer_r[frame_len - t_max..]);
+            self.hist_l
+                .copy_from_slice(&self.in_buffer_l[frame_len - t_max..]);
+            self.hist_r
+                .copy_from_slice(&self.in_buffer_r[frame_len - t_max..]);
         } else {
             self.hist_l.copy_within(frame_len..t_max, 0);
             self.hist_l[t_max - frame_len..].copy_from_slice(&self.in_buffer_l);
@@ -488,7 +494,9 @@ mod tests {
         let mut n = 0usize;
         while n < total {
             let block = (total - n).min(128);
-            let mut left: Vec<f32> = (0..block).map(|i| pitched(freq_l, sample_rate, n + i)).collect();
+            let mut left: Vec<f32> = (0..block)
+                .map(|i| pitched(freq_l, sample_rate, n + i))
+                .collect();
             let mut right: Vec<f32> = (0..block)
                 .map(|i| sign * pitched(freq_r, sample_rate, n + i))
                 .collect();

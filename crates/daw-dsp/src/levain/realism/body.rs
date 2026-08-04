@@ -33,13 +33,13 @@ const fn mode(freq_hz: f32, q: f32, gain_db: f32) -> BodyMode {
 /// Spec §2.1 + §2.2 — violin LPC mode frequencies (Princeton NBody / Smith, Cook).
 /// Q and gains are perceptually-tuned starting values.
 const VIOLIN_MODES: [BodyMode; 7] = [
-    mode(280.0, 12.0, 4.5),  // A0 (Helmholtz air mode)
-    mode(460.0, 10.0, 3.5),  // A1
-    mode(524.0, 9.0, 4.0),   // C2/3 cluster
-    mode(1156.0, 6.0, 3.0),  //
-    mode(1870.0, 5.0, 2.5),  //
-    mode(2302.0, 4.5, 2.0),  // bridge hill region
-    mode(2836.0, 4.0, 1.5),  //
+    mode(280.0, 12.0, 4.5), // A0 (Helmholtz air mode)
+    mode(460.0, 10.0, 3.5), // A1
+    mode(524.0, 9.0, 4.0),  // C2/3 cluster
+    mode(1156.0, 6.0, 3.0), //
+    mode(1870.0, 5.0, 2.5), //
+    mode(2302.0, 4.5, 2.0), // bridge hill region
+    mode(2836.0, 4.0, 1.5), //
 ];
 
 /// Viola modes — frequency-scaled from violin (~violin × 0.78).
@@ -76,16 +76,10 @@ const BASS_MODES: [BodyMode; 7] = [
 ];
 
 /// Brass bell radiation — single broad "bridge hill" style peak.
-const BRASS_MODES: [BodyMode; 2] = [
-    mode(700.0, 1.5, 2.0),
-    mode(2500.0, 2.5, 4.0),
-];
+const BRASS_MODES: [BodyMode; 2] = [mode(700.0, 1.5, 2.0), mode(2500.0, 2.5, 4.0)];
 
 /// Woodwind body — gentler colouration around the bore tube formant.
-const WIND_MODES: [BodyMode; 2] = [
-    mode(900.0, 2.0, 2.0),
-    mode(2800.0, 2.5, 2.5),
-];
+const WIND_MODES: [BodyMode; 2] = [mode(900.0, 2.0, 2.0), mode(2800.0, 2.5, 2.5)];
 
 #[derive(Debug, Clone, Copy)]
 pub enum BodyPreset {

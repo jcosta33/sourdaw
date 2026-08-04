@@ -88,7 +88,7 @@ pub struct Tom808Engine {
     dc_block: DcBlocker,
 
     // Parameters
-    tune: f32, // semitones
+    tune: f32,  // semitones
     decay: f32, // 0..1 normalized scale on base decay
 
     active: bool,
@@ -143,7 +143,8 @@ impl Tom808Engine {
         self.diode_r = 0.0;
         self.dc_block.reset();
 
-        self.bridged_t.update_coefficients(self.r_eff, self.r_shunt, self.c1, self.c2, sample_rate);
+        self.bridged_t
+            .update_coefficients(self.r_eff, self.r_shunt, self.c1, self.c2, sample_rate);
     }
 
     pub fn release(&mut self) {}
@@ -161,7 +162,13 @@ impl Tom808Engine {
         self.diode_r = self.diode_r * 0.999 + diode_model * 0.001; // smooth
         let r_eff_current = self.r_eff + self.diode_r;
 
-        self.bridged_t.update_coefficients(r_eff_current, self.r_shunt, self.c1, self.c2, sample_rate);
+        self.bridged_t.update_coefficients(
+            r_eff_current,
+            self.r_shunt,
+            self.c1,
+            self.c2,
+            sample_rate,
+        );
 
         let excitation = self.amp_env + self.fb_state * 0.15;
         let out = self.bridged_t.process(excitation);

@@ -113,7 +113,11 @@ impl DrumMode {
         // An explicit assignment wins. Failing that, only the base-note pad
         // falls back to the loaded sample — see `default_sample`. Every other
         // unassigned pad is silent, which is what an empty pad is.
-        let unassigned_fallback = if pad_idx == 0 { self.default_sample } else { None };
+        let unassigned_fallback = if pad_idx == 0 {
+            self.default_sample
+        } else {
+            None
+        };
         let sample_id = pad.sample_id.or(unassigned_fallback)?;
 
         Some(VoiceTriggerParams {

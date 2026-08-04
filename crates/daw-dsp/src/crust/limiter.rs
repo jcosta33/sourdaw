@@ -348,9 +348,7 @@ impl TruePeakLimiter {
     /// 6-sample floor this costs 0.125 ms at 48 kHz.
     pub fn set_lookahead_ms(&mut self, lookahead_ms: f32) {
         let requested = (lookahead_ms.clamp(0.0, 10.0) * 0.001 * self.sample_rate).round() as usize;
-        let clamped = requested
-            .max(self.group_delay())
-            .min(MAX_LOOKAHEAD_SAMPLES);
+        let clamped = requested.max(self.group_delay()).min(MAX_LOOKAHEAD_SAMPLES);
         if clamped == self.lookahead_samples {
             return;
         }

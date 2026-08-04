@@ -86,7 +86,11 @@ mod tests {
     /// The box average this module replaces, kept verbatim in the test so the
     /// improvement is measured against the real previous behaviour rather than
     /// asserted from memory.
-    fn box_average_2x(previous_input: &mut f32, input: f32, mut stage: impl FnMut(f32) -> f32) -> f32 {
+    fn box_average_2x(
+        previous_input: &mut f32,
+        input: f32,
+        mut stage: impl FnMut(f32) -> f32,
+    ) -> f32 {
         let midpoint = 0.5 * (*previous_input + input);
         let first = stage(midpoint);
         let second = stage(input);
@@ -106,9 +110,7 @@ mod tests {
     fn render_box_average() -> Vec<f32> {
         let mut previous = 0.0_f32;
         (0..RENDER_LEN)
-            .map(|n| {
-                box_average_2x(&mut previous, drive_tone(n, SAMPLE_RATE, 0.9), hard_drive)
-            })
+            .map(|n| box_average_2x(&mut previous, drive_tone(n, SAMPLE_RATE, 0.9), hard_drive))
             .collect()
     }
 
@@ -197,7 +199,10 @@ mod tests {
         for n in 0..256 {
             let from_used = used.process(drive_tone(n, SAMPLE_RATE, 0.4), hard_drive);
             let from_fresh = fresh.process(drive_tone(n, SAMPLE_RATE, 0.4), hard_drive);
-            assert_eq!(from_used, from_fresh, "reset must clear history at sample {n}");
+            assert_eq!(
+                from_used, from_fresh,
+                "reset must clear history at sample {n}"
+            );
         }
     }
 }

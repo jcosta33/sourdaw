@@ -129,12 +129,7 @@ impl HammerState {
     /// The δ̇ term is computed from a one-sample finite difference, no
     /// history buffer needed. More expensive than [`Self::tick`] but still
     /// allocation-free and branch-free in the hot path.
-    pub fn tick_stulov(
-        &mut self,
-        string_displacement: f32,
-        dt: f32,
-        params: &HammerParams,
-    ) -> f32 {
+    pub fn tick_stulov(&mut self, string_displacement: f32, dt: f32, params: &HammerParams) -> f32 {
         let compression = (string_displacement - self.position).max(0.0);
         let compression_dot = (compression - self.prev_compression) / dt.max(1.0e-9);
 

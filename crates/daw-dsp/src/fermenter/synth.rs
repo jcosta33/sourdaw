@@ -899,7 +899,10 @@ mod tests {
         (left, right)
     }
 
-    fn render_note_for_engine_with_params(engine: u8, params: &[(&str, f32)]) -> ([f32; 512], [f32; 512]) {
+    fn render_note_for_engine_with_params(
+        engine: u8,
+        params: &[(&str, f32)],
+    ) -> ([f32; 512], [f32; 512]) {
         let mut synth = MasterSynth::new(48_000.0, 8);
         let mut left = [0.0; 512];
         let mut right = [0.0; 512];
@@ -1152,8 +1155,10 @@ mod tests {
 
     #[test]
     fn additive_params_change_rendered_output() {
-        let (simple_left, simple_right) =
-            render_note_for_engine_with_params(5, &[("additive_partials", 1.0), ("additive_tilt", -6.0)]);
+        let (simple_left, simple_right) = render_note_for_engine_with_params(
+            5,
+            &[("additive_partials", 1.0), ("additive_tilt", -6.0)],
+        );
         let (rich_left, rich_right) = render_note_for_engine_with_params(
             5,
             &[
@@ -1171,8 +1176,14 @@ mod tests {
 
     #[test]
     fn granular_params_change_rendered_output() {
-        let (sparse_left, sparse_right) =
-            render_note_for_engine_with_params(4, &[("grain_density", 1.0), ("grain_size", 20.0), ("grain_pan_spread", 0.0)]);
+        let (sparse_left, sparse_right) = render_note_for_engine_with_params(
+            4,
+            &[
+                ("grain_density", 1.0),
+                ("grain_size", 20.0),
+                ("grain_pan_spread", 0.0),
+            ],
+        );
         let (dense_left, dense_right) = render_note_for_engine_with_params(
             4,
             &[
@@ -1474,11 +1485,7 @@ mod tests {
     }
 
     fn difference_rms(left: &[f32], right: &[f32]) -> f32 {
-        let differences: Vec<f32> = left
-            .iter()
-            .zip(right.iter())
-            .map(|(a, b)| a - b)
-            .collect();
+        let differences: Vec<f32> = left.iter().zip(right.iter()).map(|(a, b)| a - b).collect();
         rms(&differences)
     }
 

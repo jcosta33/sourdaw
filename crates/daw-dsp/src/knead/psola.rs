@@ -104,7 +104,8 @@ pub(crate) fn psola_process_span(
         if center as f32 >= coord_end {
             break;
         }
-        let src_center = (center + input_offset).clamp(0, input.len().saturating_sub(1) as isize) as usize;
+        let src_center =
+            (center + input_offset).clamp(0, input.len().saturating_sub(1) as isize) as usize;
 
         // Nearest analysis mark to this output position.
         let mut nearest_idx = mark_hint;
@@ -150,7 +151,9 @@ pub(crate) fn psola_process_span(
 
         let half_grain = target_period_samples.round() as isize;
         let start = (pm as isize - half_grain).max(0) as usize;
-        let end = (pm as isize + half_grain).min(input.len() as isize - 1).max(0) as usize;
+        let end = (pm as isize + half_grain)
+            .min(input.len() as isize - 1)
+            .max(0) as usize;
 
         if end <= start {
             out_t += target_period_samples;

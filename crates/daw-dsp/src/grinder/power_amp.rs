@@ -199,8 +199,9 @@ impl PowerAmp {
 
         let positive_drive = (1.0 + asymmetry + bias_shift * 0.10).clamp(0.8, 1.35);
         let negative_drive = (1.0 - asymmetry + bias_shift * 0.06).clamp(0.72, 1.20);
-        let clipped = biased_push_pull_clip(signal, positive_drive, negative_drive, crossover_width)
-            * saturation_curve;
+        let clipped =
+            biased_push_pull_clip(signal, positive_drive, negative_drive, crossover_width)
+                * saturation_curve;
 
         let crossover = if signal > crossover_width {
             1.0
@@ -216,7 +217,8 @@ impl PowerAmp {
         };
         let sag_makeup = 1.0 + (self.v_nominal - self.vb_plus) * 0.12;
         let bias_even = signal * bias_shift * 0.02;
-        let mut output = (clipped + bias_even + bias_shift * crossover * 0.02) * tube_makeup * sag_makeup;
+        let mut output =
+            (clipped + bias_even + bias_shift * crossover * 0.02) * tube_makeup * sag_makeup;
 
         // During recovery after a hard burst, real power stages and their load
         // interaction stop feeling as edge-heavy as the initial attack. Model

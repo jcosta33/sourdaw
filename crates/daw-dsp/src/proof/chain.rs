@@ -276,7 +276,6 @@ impl ProofChain {
     }
 }
 
-
 #[cfg(test)]
 mod latency_contract_tests {
     //! Wave 3 feeds `ProofInstance::get_latency_samples()` into host

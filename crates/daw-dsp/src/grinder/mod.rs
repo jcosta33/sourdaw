@@ -18,10 +18,10 @@ pub mod tone_stack;
 pub mod transformer;
 pub mod triode;
 
+use crate::primitives::sanitize_block;
 use engine::GrinderEngine;
 use params::GRINDER_AUTOMATABLE_PARAM_COUNT;
 use wasm_bindgen::prelude::*;
-use crate::primitives::sanitize_block;
 
 const MAX_GRINDER_BLOCK_SIZE: usize = 2048;
 const GRINDER_AUTOMATION_BUFFER_SIZE: usize =

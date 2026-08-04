@@ -68,10 +68,7 @@ impl DynEqBand {
             max_gain_db: 12.0,
             sc_bp_l: BiquadState::new(),
             sc_bp_r: BiquadState::new(),
-            sc_bp_coeffs: SmoothedBiquadCoeffs::new(
-                BiquadCoeffs::bandpass(freq, q, sr),
-                sr,
-            ),
+            sc_bp_coeffs: SmoothedBiquadCoeffs::new(BiquadCoeffs::bandpass(freq, q, sr), sr),
             eq_l: BiquadState::new(),
             eq_r: BiquadState::new(),
             eq_coeffs: SmoothedBiquadCoeffs::new(BiquadCoeffs::unity(), sr),
@@ -152,8 +149,7 @@ impl DynEqBand {
         // is transparent and continuous through the crossing.
         if (gr_db - self.designed_gr_db).abs() >= GR_REDESIGN_STEP_DB {
             self.designed_gr_db = gr_db;
-            let designed =
-                BiquadCoeffs::peak(self.freq, gr_db as f64, self.q, self.sample_rate);
+            let designed = BiquadCoeffs::peak(self.freq, gr_db as f64, self.q, self.sample_rate);
             self.eq_coeffs.set_target(designed);
         }
 

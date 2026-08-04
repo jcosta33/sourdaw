@@ -1,7 +1,6 @@
 /// TPT (Topology-Preserving Transform) State Variable Filter.
 /// Implements LP, HP, BP, Notch with zero-delay feedback.
 /// Based on Vadim Zavalishin's "The Art of VA Filter Design."
-
 use crate::primitives::flush_denormal;
 
 #[derive(Clone, Copy, PartialEq)]
@@ -350,8 +349,9 @@ impl Ms20Filter {
         let y1_lp = v1_lp + self.lp_s1;
         let v2_lp = (y1_lp - self.lp_s2) * g;
         let y2_lp = v2_lp + self.lp_s2;
-        self.lp_s1 =
-            flush_denormal(self.lp_s1 + 2.0 * g * (hp - fb_lp - self.lp_s1) / (1.0 + 2.0 * g + g * g));
+        self.lp_s1 = flush_denormal(
+            self.lp_s1 + 2.0 * g * (hp - fb_lp - self.lp_s1) / (1.0 + 2.0 * g + g * g),
+        );
         self.lp_s2 = flush_denormal(self.lp_s2 + 2.0 * g * (y1_lp - self.lp_s2));
 
         y2_lp

@@ -56,8 +56,7 @@ impl OverdrivePedal {
         let gain = 1.0 + self.drive * 4.4;
         let pushed = tightened * gain;
 
-        self.sag_state =
-            flush_denormal(self.sag_state + 0.0014 * (pushed.abs() - self.sag_state));
+        self.sag_state = flush_denormal(self.sag_state + 0.0014 * (pushed.abs() - self.sag_state));
         let headroom = (1.08 - self.sag_state * (0.10 + self.drive * 0.14)).clamp(0.72, 1.02);
         let clipped = Self::soft_clip(pushed / headroom.max(0.55), self.drive) * headroom;
 
@@ -66,7 +65,8 @@ impl OverdrivePedal {
         self.tone_lp_state =
             flush_denormal(self.tone_lp_state + tone_coeff * (clipped - self.tone_lp_state));
         let brightness = clipped - self.tone_lp_state;
-        let voiced = self.tone_lp_state * (1.02 - self.tone * 0.06) + brightness * (0.10 + self.tone * 0.46);
+        let voiced =
+            self.tone_lp_state * (1.02 - self.tone * 0.06) + brightness * (0.10 + self.tone * 0.46);
 
         let output_hp_coeff = (2.0 * PI * 75.0 * dt).min(0.35);
         self.output_hp_state = flush_denormal(
@@ -371,8 +371,7 @@ impl CompressorPedal {
         if abs_in > self.envelope {
             self.envelope = flush_denormal(abs_in + self.attack_coeff * (self.envelope - abs_in));
         } else {
-            self.envelope =
-                flush_denormal(abs_in + self.release_coeff * (self.envelope - abs_in));
+            self.envelope = flush_denormal(abs_in + self.release_coeff * (self.envelope - abs_in));
         }
 
         let gain = if self.envelope > self.threshold {
@@ -415,12 +414,7 @@ mod tests {
         sum / total as f32
     }
 
-    fn average_abs_distortion_output(
-        drive: f32,
-        tone: f32,
-        level: f32,
-        enabled: bool,
-    ) -> f32 {
+    fn average_abs_distortion_output(drive: f32, tone: f32, level: f32, enabled: bool) -> f32 {
         let mut pedal = DistortionPedal::new(48_000.0);
         pedal.set_param("enabled", if enabled { 1.0 } else { 0.0 });
         pedal.set_param("drive", drive);

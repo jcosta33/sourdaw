@@ -26,8 +26,7 @@ pub mod voice;
 
 use crate::primitives::{sanitize_block, ProcessLifecycle};
 use synth::{
-    MasterSynth, MidiEvent, MIDI_EVENT_NOTE_EXPRESSION, MIDI_EVENT_NOTE_OFF,
-    MIDI_EVENT_NOTE_ON,
+    MasterSynth, MidiEvent, MIDI_EVENT_NOTE_EXPRESSION, MIDI_EVENT_NOTE_OFF, MIDI_EVENT_NOTE_ON,
 };
 use wasm_bindgen::prelude::*;
 

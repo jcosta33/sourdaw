@@ -89,11 +89,7 @@ impl MpmDetector {
     /// MPM peak-picking on a precomputed autocorrelation of `buffer` (full
     /// length, zero-padded FFT form). Shared with the engine, which computes
     /// one autocorrelation per analysis window for both detectors.
-    pub(crate) fn detect_from_autocorr(
-        &mut self,
-        buffer: &[f32],
-        autocorr: &[f32],
-    ) -> (f32, f32) {
+    pub(crate) fn detect_from_autocorr(&mut self, buffer: &[f32], autocorr: &[f32]) -> (f32, f32) {
         let len = buffer.len();
         if len < self.min_tau * 2 {
             self.frequency = 0.0;
@@ -165,9 +161,7 @@ impl MpmDetector {
                 break;
             }
             let val = self.nsdf[tau];
-            let is_local_max = val > 0.0
-                && val >= self.nsdf[tau - 1]
-                && val > self.nsdf[tau + 1];
+            let is_local_max = val > 0.0 && val >= self.nsdf[tau - 1] && val > self.nsdf[tau + 1];
             if !is_local_max {
                 continue;
             }

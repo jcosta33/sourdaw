@@ -295,7 +295,8 @@ impl NeuralCapture {
     }
 
     pub fn process_capture(&mut self, input: f32) -> f32 {
-        if self.engine_mode == EngineMode::Circuit || !self.has_active_model() || !self.model_loaded {
+        if self.engine_mode == EngineMode::Circuit || !self.has_active_model() || !self.model_loaded
+        {
             return input;
         }
 
@@ -447,32 +448,33 @@ impl NeuralCapture {
         self.selected_model_slot = Some(slot);
         self.custom_profile_active = false;
 
-        let (weight_triplets, input_drive, asymmetry, output_trim, contour_mix, lstm_bias) = match slot {
-            1 => (
-                [(0.16_f32, 0.60_f32, 0.24_f32), (0.08, 0.72, 0.20)],
-                1.28,
-                -0.10,
-                0.86,
-                0.12,
-                0.14,
-            ),
-            2 => (
-                [(0.22_f32, 0.58_f32, 0.20_f32), (0.12, 0.66, 0.22)],
-                1.08,
-                0.08,
-                0.98,
-                0.22,
-                -0.08,
-            ),
-            _ => (
-                [(0.10_f32, 0.80_f32, 0.10_f32), (0.06, 0.78, 0.16)],
-                1.16,
-                0.03,
-                0.92,
-                0.18,
-                0.04,
-            ),
-        };
+        let (weight_triplets, input_drive, asymmetry, output_trim, contour_mix, lstm_bias) =
+            match slot {
+                1 => (
+                    [(0.16_f32, 0.60_f32, 0.24_f32), (0.08, 0.72, 0.20)],
+                    1.28,
+                    -0.10,
+                    0.86,
+                    0.12,
+                    0.14,
+                ),
+                2 => (
+                    [(0.22_f32, 0.58_f32, 0.20_f32), (0.12, 0.66, 0.22)],
+                    1.08,
+                    0.08,
+                    0.98,
+                    0.22,
+                    -0.08,
+                ),
+                _ => (
+                    [(0.10_f32, 0.80_f32, 0.10_f32), (0.06, 0.78, 0.16)],
+                    1.16,
+                    0.03,
+                    0.92,
+                    0.18,
+                    0.04,
+                ),
+            };
 
         for (index, layer) in self.conv_layers.iter_mut().enumerate() {
             let profile = weight_triplets[index % weight_triplets.len()];
@@ -548,9 +550,18 @@ mod tests {
         neural.set_param("neuralCustomContourMix", 0.24);
         neural.set_param("neuralCustomLstmBias", 0.03);
         for index in 0..10 {
-            neural.set_param(&format!("neuralCustomConvWeight{}_0", index), 0.08 + index as f32 * 0.002);
-            neural.set_param(&format!("neuralCustomConvWeight{}_1", index), 0.70 - index as f32 * 0.003);
-            neural.set_param(&format!("neuralCustomConvWeight{}_2", index), 0.18 + index as f32 * 0.001);
+            neural.set_param(
+                &format!("neuralCustomConvWeight{}_0", index),
+                0.08 + index as f32 * 0.002,
+            );
+            neural.set_param(
+                &format!("neuralCustomConvWeight{}_1", index),
+                0.70 - index as f32 * 0.003,
+            );
+            neural.set_param(
+                &format!("neuralCustomConvWeight{}_2", index),
+                0.18 + index as f32 * 0.001,
+            );
         }
 
         let mut alternate = NeuralCapture::new(48_000.0);
@@ -563,9 +574,18 @@ mod tests {
         alternate.set_param("neuralCustomContourMix", 0.14);
         alternate.set_param("neuralCustomLstmBias", -0.02);
         for index in 0..10 {
-            alternate.set_param(&format!("neuralCustomConvWeight{}_0", index), 0.16 - index as f32 * 0.002);
-            alternate.set_param(&format!("neuralCustomConvWeight{}_1", index), 0.58 + index as f32 * 0.004);
-            alternate.set_param(&format!("neuralCustomConvWeight{}_2", index), 0.22 - index as f32 * 0.001);
+            alternate.set_param(
+                &format!("neuralCustomConvWeight{}_0", index),
+                0.16 - index as f32 * 0.002,
+            );
+            alternate.set_param(
+                &format!("neuralCustomConvWeight{}_1", index),
+                0.58 + index as f32 * 0.004,
+            );
+            alternate.set_param(
+                &format!("neuralCustomConvWeight{}_2", index),
+                0.22 - index as f32 * 0.001,
+            );
         }
 
         let total = 6000;

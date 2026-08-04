@@ -276,7 +276,11 @@ fn schedule_plugin_gui_reset_after_os_close<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
 ) -> tauri::async_runtime::JoinHandle<()> {
     tauri::async_runtime::spawn(async move {
-        reset_plugin_gui_state_after_os_close(&instance_id, &window_label, app.state::<AppState>().inner());
+        reset_plugin_gui_state_after_os_close(
+            &instance_id,
+            &window_label,
+            app.state::<AppState>().inner(),
+        );
     })
 }
 
@@ -373,10 +377,12 @@ pub async fn close_plugin_gui(
         };
 
         if is_engine_owned {
-            state.inner().with_engine_plugin_control(&instance_id, |plugin| {
-                plugin.close_gui();
-                Ok(())
-            })?;
+            state
+                .inner()
+                .with_engine_plugin_control(&instance_id, |plugin| {
+                    plugin.close_gui();
+                    Ok(())
+                })?;
         }
     }
 
@@ -424,10 +430,12 @@ pub async fn close_all_plugin_guis(
     };
 
     for instance_id in engine_instance_ids {
-        state.inner().with_engine_plugin_control(&instance_id, |plugin| {
-            plugin.close_gui();
-            Ok(())
-        })?;
+        state
+            .inner()
+            .with_engine_plugin_control(&instance_id, |plugin| {
+                plugin.close_gui();
+                Ok(())
+            })?;
     }
 
     // Destroy all native windows
@@ -725,7 +733,10 @@ mod tests {
             .plugin_windows
             .lock()
             .expect("plugin_windows lock")
-            .insert("engine-owned-fixture".to_string(), "plugin-newer".to_string());
+            .insert(
+                "engine-owned-fixture".to_string(),
+                "plugin-newer".to_string(),
+            );
 
         reset_plugin_gui_state_after_os_close("engine-owned-fixture", "plugin-older", &state);
 
@@ -788,7 +799,10 @@ mod tests {
             },
         );
 
-        assert_eq!(result, Err("Failed to lock plugin_windows: poisoned".to_string()));
+        assert_eq!(
+            result,
+            Err("Failed to lock plugin_windows: poisoned".to_string())
+        );
         assert!(!shown.get());
     }
 }

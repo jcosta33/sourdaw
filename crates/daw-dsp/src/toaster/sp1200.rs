@@ -69,8 +69,8 @@ pub struct Sp1200Effect {
     cheby_pole_a1: f32,
 
     // Parameters
-    semitones: f32,       // pitch shift in semitones
-    output_rate: f32,     // host sample rate (for ZOH period calculation)
+    semitones: f32,   // pitch shift in semitones
+    output_rate: f32, // host sample rate (for ZOH period calculation)
 }
 
 impl Sp1200Effect {
@@ -169,19 +169,15 @@ impl Sp1200Effect {
     fn process_chebyshev(&mut self, input: f32) -> f32 {
         // Biquad 1
         let v1 = self.cheby_biquad1_b0 * input + self.cheby_biquad1_s1;
-        self.cheby_biquad1_s1 = self.cheby_biquad1_b1 * input
-            - self.cheby_biquad1_a1 * v1
-            + self.cheby_biquad1_s2;
-        self.cheby_biquad1_s2 =
-            self.cheby_biquad1_b2 * input - self.cheby_biquad1_a2 * v1;
+        self.cheby_biquad1_s1 =
+            self.cheby_biquad1_b1 * input - self.cheby_biquad1_a1 * v1 + self.cheby_biquad1_s2;
+        self.cheby_biquad1_s2 = self.cheby_biquad1_b2 * input - self.cheby_biquad1_a2 * v1;
 
         // Biquad 2
         let v2 = self.cheby_biquad2_b0 * v1 + self.cheby_biquad2_s1;
-        self.cheby_biquad2_s1 = self.cheby_biquad2_b1 * v1
-            - self.cheby_biquad2_a1 * v2
-            + self.cheby_biquad2_s2;
-        self.cheby_biquad2_s2 =
-            self.cheby_biquad2_b2 * v1 - self.cheby_biquad2_a2 * v2;
+        self.cheby_biquad2_s1 =
+            self.cheby_biquad2_b1 * v1 - self.cheby_biquad2_a1 * v2 + self.cheby_biquad2_s2;
+        self.cheby_biquad2_s2 = self.cheby_biquad2_b2 * v1 - self.cheby_biquad2_a2 * v2;
 
         // One-pole
         self.cheby_pole_state =
@@ -224,7 +220,7 @@ fn quantize_12bit(x: f32) -> f32 {
 /// approximation with equivalent filter structure.)
 struct EllipticFilter {
     sections: [(f32, f32, f32, f32, f32); 4], // (b0, b1, b2, a1, a2)
-    states: [(f32, f32); 4],                   // (s1, s2) per section
+    states: [(f32, f32); 4],                  // (s1, s2) per section
 }
 
 impl EllipticFilter {

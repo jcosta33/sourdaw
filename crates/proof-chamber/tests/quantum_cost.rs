@@ -102,7 +102,9 @@ fn mean_of(samples: &[u64]) -> f64 {
 /// The numbers looked like a measurement of a device and were partly a
 /// measurement of the scheduler, and nothing in the output said so.
 fn load_average() -> Option<f64> {
-    let output = std::process::Command::new("/usr/bin/uptime").output().ok()?;
+    let output = std::process::Command::new("/usr/bin/uptime")
+        .output()
+        .ok()?;
     let text = String::from_utf8_lossy(&output.stdout).to_string();
     let tail = text
         .rsplit_once("load averages:")

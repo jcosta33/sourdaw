@@ -225,7 +225,8 @@ mod tests {
         let tuned: Vec<f32> = (0..100).map(|_| engine_tuned.tick(sample_rate)).collect();
 
         // The two should be different (different playback speeds)
-        let diff_rms = (normal.iter()
+        let diff_rms = (normal
+            .iter()
             .zip(tuned.iter())
             .map(|(a, b)| (a - b) * (a - b))
             .sum::<f32>()

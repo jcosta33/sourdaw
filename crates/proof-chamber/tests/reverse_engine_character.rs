@@ -101,7 +101,10 @@ fn render(algorithm: f32, size: f32) -> Response {
     }
 
     for (i, sample) in output.iter().enumerate() {
-        assert!(sample.is_finite(), "non-finite output sample at {i}: {sample}");
+        assert!(
+            sample.is_finite(),
+            "non-finite output sample at {i}: {sample}"
+        );
     }
 
     let onset = output
@@ -157,7 +160,11 @@ fn envelope_rise(output: &[f32], onset: usize) -> f32 {
     assert!(quarter > 0, "response window too short to measure a slope");
 
     let rms = |xs: &[f32]| {
-        (xs.iter().map(|s| f64::from(*s) * f64::from(*s)).sum::<f64>() / xs.len() as f64).sqrt()
+        (xs.iter()
+            .map(|s| f64::from(*s) * f64::from(*s))
+            .sum::<f64>()
+            / xs.len() as f64)
+            .sqrt()
     };
     let first = rms(&window[..quarter]).max(1e-12);
     let last = rms(&window[window.len() - quarter..]);

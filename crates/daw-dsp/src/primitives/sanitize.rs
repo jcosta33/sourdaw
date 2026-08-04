@@ -46,7 +46,11 @@ mod tests {
         let scrubbed = sanitize_block(&mut block);
         assert_eq!(scrubbed, 0, "a finite block scrubs nothing");
         for (out, expected) in block.iter().zip(original.iter()) {
-            assert_eq!(out.to_bits(), expected.to_bits(), "finite samples stay bit-exact");
+            assert_eq!(
+                out.to_bits(),
+                expected.to_bits(),
+                "finite samples stay bit-exact"
+            );
         }
     }
 

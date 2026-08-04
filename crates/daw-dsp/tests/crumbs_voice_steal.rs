@@ -81,8 +81,7 @@ const FADE_SAMPLES: f32 = 0.003 * SAMPLE_RATE;
 fn pooled_sine() -> Arc<SampleData> {
     let pcm: Vec<f32> = (0..SAMPLE_FRAMES)
         .map(|frame| {
-            let phase =
-                frame as f32 / SAMPLE_FRAMES as f32 * SAMPLE_CYCLES * std::f32::consts::TAU;
+            let phase = frame as f32 / SAMPLE_FRAMES as f32 * SAMPLE_CYCLES * std::f32::consts::TAU;
             phase.sin() * SAMPLE_PEAK
         })
         .collect();

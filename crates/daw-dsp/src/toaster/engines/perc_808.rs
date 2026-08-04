@@ -93,7 +93,13 @@ impl Perc808Engine {
         let clave_c2 = cap(CLAVE_C2_NOM, &mut state);
 
         let mut clave_filter = BridgedTFilter::new();
-        clave_filter.update_coefficients(clave_r_eff, clave_r_shunt, clave_c1, clave_c2, sample_rate);
+        clave_filter.update_coefficients(
+            clave_r_eff,
+            clave_r_shunt,
+            clave_c1,
+            clave_c2,
+            sample_rate,
+        );
 
         // Rimshot bridged-T component values derived from target frequencies
         // fc = 1/(2π√(R_eff × R_shunt × C1 × C2))
@@ -198,7 +204,8 @@ impl Perc808Engine {
         self.cowbell_osc1.set_freq(COWBELL_FREQ1 * tune_ratio);
         self.cowbell_osc2.set_freq(COWBELL_FREQ2 * tune_ratio);
 
-        let osc_sum = (self.cowbell_osc1.tick(sample_rate) + self.cowbell_osc2.tick(sample_rate)) * 0.5;
+        let osc_sum =
+            (self.cowbell_osc1.tick(sample_rate) + self.cowbell_osc2.tick(sample_rate)) * 0.5;
 
         // BPF at ~850 Hz, Q=4.25
         svf_bandpass_cowbell(

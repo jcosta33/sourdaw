@@ -538,11 +538,8 @@ fn bench_fermenter_instance(criterion: &mut Criterion) {
 /// (oversampling, triode stages, neural capture), so the sweep is over models
 /// at the fixed operating point `engine_output_level.rs` pins: lead channel,
 /// gain 8.2, master 8.0, tone controls centred.
-const GRINDER_MODELS: [(&str, f32); 3] = [
-    ("clean_twin", 0.0),
-    ("lead_jcm", 2.0),
-    ("rectifier", 4.0),
-];
+const GRINDER_MODELS: [(&str, f32); 3] =
+    [("clean_twin", 0.0), ("lead_jcm", 2.0), ("rectifier", 4.0)];
 
 fn grinder_instance(amp_model: f32) -> GrinderInstance {
     let mut instance = GrinderInstance::new(SAMPLE_RATE);
@@ -643,9 +640,14 @@ const TABLE_SAMPLE_QUANTA: usize = 20_000;
 ///
 /// A parseable, dependency-free load reading is worth an `uptime` fork.
 fn load_average() -> Option<f64> {
-    let output = std::process::Command::new("/usr/bin/uptime").output().ok()?;
+    let output = std::process::Command::new("/usr/bin/uptime")
+        .output()
+        .ok()?;
     let text = String::from_utf8_lossy(&output.stdout).to_string();
-    let tail = text.rsplit_once("load averages:").or_else(|| text.rsplit_once("load average:"))?.1;
+    let tail = text
+        .rsplit_once("load averages:")
+        .or_else(|| text.rsplit_once("load average:"))?
+        .1;
     tail.split_whitespace()
         .next()?
         .trim_end_matches(',')
@@ -867,7 +869,11 @@ macro_rules! effect_row {
         let samples = sample_quanta(
             &mut instance,
             &mut |device, block| unsafe {
-                fill_input(device.get_input_left_ptr(), device.get_input_right_ptr(), block)
+                fill_input(
+                    device.get_input_left_ptr(),
+                    device.get_input_right_ptr(),
+                    block,
+                )
             },
             &mut |device| device.process(QUANTUM as u32),
         );
@@ -1038,7 +1044,11 @@ fn row_grinder() -> Row {
     let samples = sample_quanta(
         &mut instance,
         &mut |device, block| unsafe {
-            fill_input(device.get_input_left_ptr(), device.get_input_right_ptr(), block)
+            fill_input(
+                device.get_input_left_ptr(),
+                device.get_input_right_ptr(),
+                block,
+            )
         },
         &mut |device| device.process(QUANTUM as u32),
     );
@@ -1056,11 +1066,9 @@ fn row_grinder() -> Row {
 fn row_fermenter() -> Row {
     let struck = 16;
     let mut instance = fermenter_instance(struck);
-    let samples = sample_quanta(
-        &mut instance,
-        &mut |_, _| {},
-        &mut |device| device.process(QUANTUM as u32),
-    );
+    let samples = sample_quanta(&mut instance, &mut |_, _| {}, &mut |device| {
+        device.process(QUANTUM as u32)
+    });
     let active = instance.active_voices();
     Row {
         id: "fermenter",
@@ -1098,7 +1106,8 @@ fn row_grand_boule() -> Row {
     Row {
         id: "grand_boule",
         label: "Grand Boule (64 voices, re-struck 1/s)",
-        load: "grandBouleEngineCore.ts:143 constructs 64; pedalled playing fills and holds the pool",
+        load:
+            "grandBouleEngineCore.ts:143 constructs 64; pedalled playing fills and holds the pool",
         distribution: summarise(samples),
         occupancy: format!("64 voices (no active-voice export), output RMS {level:.3e}"),
         occupancy_ok: level > 1.0e-5,
@@ -1187,8 +1196,27 @@ fn load_levain_bank(instance: &mut daw_dsp::levain::LevainInstance, frame_count:
         .add_sample(loop_sample(frame_count), frame_count, 1, SAMPLE_RATE)
         .expect("staged bank is uniquely owned, so add_sample cannot return None here");
     instance.add_zone(
-        0, sample_id, 0, 69, 0, 127, 0, 127, 0, 1, 0, false, 1, 0, frame_count, 0, 0.0, 0.005,
-        0.1, 1.0, 0.3,
+        0,
+        sample_id,
+        0,
+        69,
+        0,
+        127,
+        0,
+        127,
+        0,
+        1,
+        0,
+        false,
+        1,
+        0,
+        frame_count,
+        0,
+        0.0,
+        0.005,
+        0.1,
+        1.0,
+        0.3,
     );
     assert!(
         instance.build_zone_map(1, 1),
@@ -1222,11 +1250,9 @@ fn row_levain() -> Row {
     for note in spread_notes(64) {
         instance.note_on(note, 100);
     }
-    let samples = sample_quanta(
-        &mut instance,
-        &mut |_, _| {},
-        &mut |device| device.process(QUANTUM as u32),
-    );
+    let samples = sample_quanta(&mut instance, &mut |_, _| {}, &mut |device| {
+        device.process(QUANTUM as u32)
+    });
     let active = instance.active_voices();
     Row {
         id: "levain",
@@ -1256,11 +1282,9 @@ fn row_crumbs() -> Row {
     for note in spread_notes(32) {
         instance.note_on(note, 100);
     }
-    let samples = sample_quanta(
-        &mut instance,
-        &mut |_, _| {},
-        &mut |device| device.process(QUANTUM as u32),
-    );
+    let samples = sample_quanta(&mut instance, &mut |_, _| {}, &mut |device| {
+        device.process(QUANTUM as u32)
+    });
     let active = instance.active_voices();
     Row {
         id: "crumbs",
@@ -1363,7 +1387,10 @@ fn cost_table(_criterion: &mut Criterion) {
     // compared rather than confused. Occupancy is still a hard gate — a row that
     // was not sounding measures nothing in either direction.
     let ceiling = load_ceiling();
-    let busiest = [load_before, load_after].into_iter().flatten().fold(0.0_f64, f64::max);
+    let busiest = [load_before, load_after]
+        .into_iter()
+        .flatten()
+        .fold(0.0_f64, f64::max);
     let unverified: Vec<&str> = rows
         .iter()
         .filter(|row| !row.occupancy_ok)
@@ -1398,7 +1425,17 @@ fn cost_table(_criterion: &mut Criterion) {
     );
     eprintln!(
         "\n{:<46} {:>9} {:>9} {:>9} {:>9} {:>9} {:>9} {:>9} {:>9} | {:>9} {:>8}",
-        "device", "FLOOR", "min", "median", "MEAN", "p95", "p99", "p99.9", "max", "floor %", "mean %"
+        "device",
+        "FLOOR",
+        "min",
+        "median",
+        "MEAN",
+        "p95",
+        "p99",
+        "p99.9",
+        "max",
+        "floor %",
+        "mean %"
     );
     for row in &rows {
         let d = &row.distribution;
@@ -1452,7 +1489,9 @@ fn cost_table(_criterion: &mut Criterion) {
          the device; read the tail as an upper bound that includes the scheduler."
     );
 
-    eprintln!("\nper row: occupancy after the timed run, stationarity, and where the load comes from");
+    eprintln!(
+        "\nper row: occupancy after the timed run, stationarity, and where the load comes from"
+    );
     for row in &rows {
         let d = &row.distribution;
         let drift = (d.last_five_hundred_mean / d.first_five_hundred_mean - 1.0) * 100.0;
@@ -1500,7 +1539,9 @@ fn cost_table(_criterion: &mut Criterion) {
         worker_floor += lookup(id).floor * count as f64;
     }
 
-    eprintln!("\n=== Reference project (defined in this file — nothing in the repo defines it) ===");
+    eprintln!(
+        "\n=== Reference project (defined in this file — nothing in the repo defines it) ==="
+    );
     eprintln!("  audio thread:");
     for (id, count) in REFERENCE_PROJECT_AUDIO_THREAD {
         eprintln!("    {count} x {id}");
@@ -1511,7 +1552,9 @@ fn cost_table(_criterion: &mut Criterion) {
         eprintln!("    {count} x {id}");
     }
     eprintln!("  (Scoring excluded: the tuner renders only while its surface is open.)");
-    eprintln!("  (ProofChamber and the Grand Boule ring consumer are wasm-leg rows; see the header.)");
+    eprintln!(
+        "  (ProofChamber and the Grand Boule ring consumer are wasm-leg rows; see the header.)"
+    );
     eprintln!(
         "\n  AUDIO THREAD >= {:.3} ms ({:.1}% of the {:.4} ms budget)   lower bound, valid under load",
         audio_floor / 1.0e6,
@@ -1546,8 +1589,6 @@ fn cost_table(_criterion: &mut Criterion) {
         "\n  Read against the wasm column, not this one. Native is a lower bound; production runs \
          wasm in a worklet."
     );
-
-
 }
 
 // ---------------------------------------------------------------------------

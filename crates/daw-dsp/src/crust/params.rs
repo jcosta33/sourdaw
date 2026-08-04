@@ -220,7 +220,11 @@ mod tests {
         sorted.sort_by(f32::total_cmp);
         sorted.dedup();
 
-        assert_eq!(sorted.len(), releases.len(), "releases collided: {releases:?}");
+        assert_eq!(
+            sorted.len(),
+            releases.len(),
+            "releases collided: {releases:?}"
+        );
     }
 
     #[test]

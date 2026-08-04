@@ -74,8 +74,10 @@ impl CrustInstance {
         self.output_left[..size].copy_from_slice(&self.input_left[..size]);
         self.output_right[..size].copy_from_slice(&self.input_right[..size]);
 
-        self.engine
-            .process_block(&mut self.output_left[..size], &mut self.output_right[..size]);
+        self.engine.process_block(
+            &mut self.output_left[..size],
+            &mut self.output_right[..size],
+        );
 
         self.nan_flush_count += sanitize_block(&mut self.output_left[..size]) as u64;
         self.nan_flush_count += sanitize_block(&mut self.output_right[..size]) as u64;

@@ -135,8 +135,8 @@ impl Soundboard {
                     true,
                 )
             } else {
-                let local = (index - plate_count) as f32
-                    / (waveguide_count.max(1) as f32 - 1.0).max(1.0);
+                let local =
+                    (index - plate_count) as f32 / (waveguide_count.max(1) as f32 - 1.0).max(1.0);
                 (
                     (log_wg_lo + local.clamp(0.0, 1.0) * (log_wg_hi - log_wg_lo)).exp(),
                     false,
@@ -150,8 +150,8 @@ impl Soundboard {
             // characteristic upper-mid "shimmer" without dominating.
             let q = if is_plate {
                 // Lowest plate modes are highly resonant (Suzuki 1986).
-                let bass_bias = 1.0 - ((freq - MODE_MIN_HZ) / (PLATE_WAVEGUIDE_HZ - MODE_MIN_HZ))
-                    .clamp(0.0, 1.0);
+                let bass_bias = 1.0
+                    - ((freq - MODE_MIN_HZ) / (PLATE_WAVEGUIDE_HZ - MODE_MIN_HZ)).clamp(0.0, 1.0);
                 60.0 + 180.0 * bass_bias
             } else {
                 // Waveguide region modes — moderate Q with mild peak around

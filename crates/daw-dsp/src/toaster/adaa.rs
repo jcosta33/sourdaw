@@ -14,13 +14,7 @@
 /// - `xprev`: previous input sample
 /// - `f_xn`: direct evaluation of the nonlinearity at current input (fallback for small dx)
 #[inline]
-pub fn adaa_first_order(
-    f1_xn: f32,
-    f1_xprev: f32,
-    xn: f32,
-    xprev: f32,
-    f_xn: f32,
-) -> f32 {
+pub fn adaa_first_order(f1_xn: f32, f1_xprev: f32, xn: f32, xprev: f32, f_xn: f32) -> f32 {
     let dx = xn - xprev;
     if dx.abs() > 1e-7 {
         (f1_xn - f1_xprev) / dx
@@ -165,9 +159,6 @@ mod tests {
         // For 1 Hz input at 48 kHz, per-sample change is tiny (~1.3e-4 per sample).
         // Maximum absolute error should be well below 1e-3 (excluding zero-crossing transients).
         // We verify the output is well-behaved (bounded and finite — checked above).
-        assert!(
-            adaa_energy > 0.0,
-            "ADAA output energy should be non-zero"
-        );
+        assert!(adaa_energy > 0.0, "ADAA output energy should be non-zero");
     }
 }

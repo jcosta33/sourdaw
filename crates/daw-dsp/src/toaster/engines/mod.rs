@@ -234,9 +234,7 @@ impl DrumSynthEngine {
             DrumEngineType::Maracas808 => {
                 Self::Maracas808(Perc808Engine::new(sample_rate, Perc808Mode::Maracas))
             }
-            DrumEngineType::Cr78Drum => {
-                Self::Cr78Drum(Cr78Engine::new_drum(sample_rate))
-            }
+            DrumEngineType::Cr78Drum => Self::Cr78Drum(Cr78Engine::new_drum(sample_rate)),
             DrumEngineType::Cr78Metallic => {
                 Self::Cr78Metallic(Cr78Engine::new_metallic(sample_rate))
             }

@@ -8,13 +8,13 @@ use cpal::traits::{DeviceTrait, HostTrait};
 use daw_engine::audio_bridge::create_audio_bridge;
 use daw_engine::plugin_slot::{MidiNoteEvent, TransportState};
 use daw_engine::EngineHandle;
+use daw_plugin_host::scanner::{self, ScanResult};
+use daw_plugin_host::{AudioPlugin, ClapWrapper, Vst3Wrapper};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::Manager;
-use daw_plugin_host::scanner::{self, ScanResult};
-use daw_plugin_host::{AudioPlugin, ClapWrapper, Vst3Wrapper};
 
 // Re-export PluginParameter from daw-plugin-host for TypeScript binding generation
 pub use daw_plugin_host::PluginParameter;
@@ -967,7 +967,10 @@ mod tests {
         let read = read_plugin_state_chunk("no-such-instance", &app.state::<AppState>());
         let write = write_plugin_state_chunk("no-such-instance", &[1], &app.state::<AppState>());
 
-        assert_eq!(read, Err("No plugin instance: no-such-instance".to_string()));
+        assert_eq!(
+            read,
+            Err("No plugin instance: no-such-instance".to_string())
+        );
         assert_eq!(
             write,
             Err("No plugin instance: no-such-instance".to_string())
@@ -1022,10 +1025,8 @@ mod tests {
 
     #[test]
     fn remove_engine_plugin_record_after_scheduler_removal_preserves_record_on_queue_failure() {
-        let mut engine_plugins = std::collections::HashMap::from([(
-            "engine-owned-1".to_string(),
-            42_u32,
-        )]);
+        let mut engine_plugins =
+            std::collections::HashMap::from([("engine-owned-1".to_string(), 42_u32)]);
 
         let result = remove_engine_plugin_record_after_scheduler_removal(
             &mut engine_plugins,
@@ -1039,10 +1040,8 @@ mod tests {
 
     #[test]
     fn remove_engine_plugin_record_after_scheduler_removal_removes_record_after_acceptance() {
-        let mut engine_plugins = std::collections::HashMap::from([(
-            "engine-owned-1".to_string(),
-            42_u32,
-        )]);
+        let mut engine_plugins =
+            std::collections::HashMap::from([("engine-owned-1".to_string(), 42_u32)]);
 
         let result = remove_engine_plugin_record_after_scheduler_removal(
             &mut engine_plugins,
