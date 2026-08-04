@@ -72,7 +72,15 @@
 //! # Which devices are here, and which are not
 //!
 //! Every `#[wasm_bindgen]` render export in this crate: Bacteria, Crumbs,
-//! Fermenter, Gluten, Grand Boule, Grinder, Knead, Levain, Proof, Toaster.
+//! Crust, Fermenter, Gluten, Grand Boule, Grinder, Knead, Levain, Proof,
+//! Toaster.
+//!
+//! That sentence was false for as long as Crust had an engine, because the
+//! list is written by hand and nothing checked it. `tests/quantum_bench_census.rs`
+//! now derives the population from the crate source and compares it against the
+//! row ids in this file — two independently-sourced lists, per ADR 0015 rule 3 —
+//! so the next device added without a row fails a test instead of quietly
+//! shrinking the table.
 //!
 //! **ProofChamber and Scoring are measured in the wasm leg only, and natively
 //! by `crates/proof-chamber/tests/quantum_cost.rs` and
@@ -82,9 +90,30 @@
 //! reverb would invalidate the DSP crate's committed artifacts. A coupled gate
 //! is worse than a bench split across three files.
 //!
-//! **Crust, Yeast and CvGate are absent because they have no Rust engine at
-//! all.** Their cost is JavaScript, which this instrument does not measure and
-//! does not claim to.
+//! **Yeast and CvGate are absent because they have no Rust engine at all.**
+//! Their cost is JavaScript, which this instrument does not measure and does
+//! not claim to. Crust was listed here on the same grounds and had stopped
+//! being true; it has a row now.
+//!
+//! # A row measures the configuration it is set to, not the device
+//!
+//! Two rows here were timing a device with the expensive part switched off,
+//! and both passed every gate this file has while doing it:
+//!
+//! * **Levain** was loaded through the direct pool rather than the staged-bank
+//!   protocol production uses, so `commit_sample_bank` never ran, the realism
+//!   layer stayed at `Instrument::Other`, and all five realism stages
+//!   early-returned on a zero amount. See `load_levain_bank`.
+//! * **Bacteria** shipped a single row at the constructor defaults, where
+//!   every creative stage is disabled. See `row_bacteria` and
+//!   `row_bacteria_smudge`.
+//!
+//! Neither was caught by occupancy: the device was sounding, the voice count
+//! was right, the RMS was healthy. Occupancy proves a row was *running*; it
+//! proves nothing about *what* was running. When adding a row, ask what the
+//! smallest change is that switches off the thing you meant to measure and
+//! leaves every assertion here passing — and then set the parameter that makes
+//! that change visible.
 //!
 //! # Distribution, not a mean
 //!
@@ -652,8 +681,36 @@ struct Distribution {
     p99: f64,
     p999: f64,
     max: f64,
+    /// Mean over every sample — the **amortised** per-quantum cost, and the
+    /// only figure that is right for a device that does its work in blocks.
+    ///
+    /// Added because a row exposed the gap. Bacteria in Smudge mode runs an
+    /// overlap-add STFT: most quanta only fill the window and cost ~19 us,
+    /// and one in a handful runs the transform and costs hundreds. Its median
+    /// is 18.9 us and its mean is ~130 us — a 7x spread, and the median is the
+    /// wrong one. Every other row here is flat enough that mean and median
+    /// agree, which is exactly why nothing noticed.
+    ///
+    /// Read `mean` for "can the thread sustain this", and `p99`/`max` for
+    /// "does any single quantum miss". `median` answers neither for a block
+    /// device, and it is kept only because it is the honest upper bound on a
+    /// quiet machine for the flat rows.
+    mean: f64,
     first_five_hundred_mean: f64,
     last_five_hundred_mean: f64,
+}
+
+impl Distribution {
+    /// Whether this row's work arrives in bursts rather than evenly.
+    ///
+    /// A flat device has mean ~= median. A block device does not, and summing
+    /// its median into a thread total understates it by the ratio below. The
+    /// 1.5x threshold is well clear of the <=1.1x every flat row here shows
+    /// and well under the ~7x Smudge shows, so it separates the two classes
+    /// without needing a per-device list.
+    fn is_bursty(&self) -> bool {
+        self.median > 0.0 && self.mean / self.median > 1.5
+    }
 }
 
 fn quantile(sorted: &[u64], fraction: f64) -> f64 {
@@ -686,6 +743,7 @@ fn summarise(mut samples: Vec<u64>) -> Distribution {
         p99: quantile(&samples, 0.99),
         p999: quantile(&samples, 0.999),
         max: *samples.last().unwrap_or(&0) as f64,
+        mean: mean_of(&samples),
         first_five_hundred_mean: head,
         last_five_hundred_mean: tail,
     }
@@ -825,15 +883,56 @@ macro_rules! effect_row {
     }};
 }
 
+/// Bacteria with its creative stages **off**, which is what
+/// `BacteriaEngine::new` ships (`bacteria/engine.rs:220`,
+/// `distortion_enabled: false`, and every sibling `*_enabled` flag beside it).
+///
+/// Kept as a row, and kept labelled for what it is. `bandCount` and `mix` set
+/// the crossover and the wet/dry tap; they do not switch on a single processor.
+/// So this row is the crossover, the alignment delays and the band sum — the
+/// floor Bacteria costs before it does anything a user opened it for. Read it
+/// as the floor, not as Bacteria's cost, and read `bacteria_smudge` below for
+/// the other end.
 fn row_bacteria() -> Row {
     effect_row!(
         "bacteria",
-        "Bacteria (3 bands, mix 1.0)",
-        "effect; no voice pool",
+        "Bacteria (3 bands, mix 1.0, all stages off)",
+        "effect; no voice pool; engine.rs:220 ships every stage disabled",
         {
             let mut i = daw_dsp::bacteria::BacteriaInstance::new(SAMPLE_RATE);
             i.set_param("bandCount", 3.0);
             i.set_param("mix", 1.0);
+            i
+        }
+    )
+}
+
+/// Bacteria with the distortion stage engaged in **Smudge**, its STFT mode.
+///
+/// This row exists because the row above measures a configuration nobody uses,
+/// and the header used to let a reader take that figure for Bacteria's cost.
+/// Smudge is `DistortionMode::from_index(7)` (`bacteria/distortion.rs:41`) and
+/// runs an overlap-add spectral blur through `stft::SmudgeProcessor` with a
+/// 2048-sample window (`distortion.rs:92-99`), on every band — the most
+/// expensive thing this device can be asked to do, and reachable from the
+/// shipped panel.
+///
+/// Enabling distortion also puts the oversampler in the path
+/// (`engine.rs:327-332`), so the two rows differ by the whole wet chain rather
+/// than by one shaper. Bare parameter names broadcast to every band
+/// (`engine.rs:50-52`), so three bands each carry a Smudge window here.
+fn row_bacteria_smudge() -> Row {
+    effect_row!(
+        "bacteria_smudge",
+        "Bacteria (3 bands, distortion on, Smudge/STFT)",
+        "effect; no voice pool; distortionMode 7 = Smudge, distortion.rs:41",
+        {
+            let mut i = daw_dsp::bacteria::BacteriaInstance::new(SAMPLE_RATE);
+            i.set_param("bandCount", 3.0);
+            i.set_param("mix", 1.0);
+            i.set_param("distortionEnabled", 1.0);
+            i.set_param("distortionMode", 7.0);
+            i.set_param("drive", 0.6);
             i
         }
     )
@@ -865,6 +964,40 @@ fn row_proof() -> Row {
             let mut i = daw_dsp::proof::ProofInstance::new(SAMPLE_RATE);
             i.set_param("limiter_ceiling", -1.0);
             i.set_param("limiter_threshold", -12.0);
+            i
+        }
+    )
+}
+
+/// Crust, the true-peak mastering limiter.
+///
+/// **This row did not exist, and the header claimed it could not.** It said
+/// "Crust, Yeast and CvGate are absent because they have no Rust engine at
+/// all" while `crates/daw-dsp/src/crust/` shipped a `#[wasm_bindgen]`
+/// `CrustInstance` with a `process` export (`crust/mod.rs:22,32,69`). A
+/// hand-written device list went stale against the crate it claims to
+/// enumerate, which is the census failure ADR 0015 rule 2 names. The list is
+/// now checked against the crate by `tests/quantum_bench_census.rs`.
+///
+/// Driven at the shipped defaults — `CrustEngine::new` sets `true_peak: true`
+/// and `oversampling: 4` (`crust/engine.rs:258-259`), matching
+/// `DEFAULT_CRUST_PATCH` (`CrustPatch.ts:78`), so the 4x oversampled
+/// inter-sample peak detector is in the path exactly as it is in production.
+///
+/// `gain` is raised to 6 dB because the row has to be *limiting* to measure
+/// anything. The shared excitation peaks near -2.1 dBFS and the shipped ceiling
+/// is -0.3 dB, so at the default 0 dB input gain the limiter would never engage
+/// and this row would time a gain stage. Same reason `row_proof` sets a -12 dB
+/// threshold rather than trusting a default.
+fn row_crust() -> Row {
+    effect_row!(
+        "crust",
+        "Crust (true-peak limiting, 4x OS)",
+        "effect; no voice pool; CrustPatch.ts:78 ships ceiling -0.3, truePeak, OS 4",
+        {
+            let mut i = daw_dsp::crust::CrustInstance::new(SAMPLE_RATE);
+            i.set_param("gain", 6.0);
+            i.set_param("ceiling", -0.3);
             i
         }
     )
@@ -1014,6 +1147,60 @@ fn loop_sample(frames: u32) -> Vec<f32> {
         .collect()
 }
 
+/// The instrument identity Levain ships defaulted to — `levainStore.ts:41`
+/// builds `createDefaultPatch('violin-1')`. It is not decoration: see
+/// `load_levain_bank` for what selecting it switches on.
+const LEVAIN_INSTRUMENT_ID: &str = "violin-1";
+
+/// Load a Levain bank **the way production loads one**, which is not the way
+/// this bench used to.
+///
+/// `levainProcessor.ts:207,251,259` drives the staged-bank protocol —
+/// `begin_sample_bank(instrumentId)` → `add_sample` → `add_zone` →
+/// `build_zone_map` → `commit_sample_bank`. The bench previously skipped
+/// `begin_sample_bank` and `commit_sample_bank` and wrote straight into the
+/// live pool, which builds a zone map that sounds and therefore looked correct.
+///
+/// It was not correct, and the cost it printed was not Levain's.
+/// `commit_sample_bank` is the **only** production path to
+/// `RealismEngine::configure_for` (`levain/engine.rs:245`), and
+/// `RealismEngine::new` leaves the instrument at `Instrument::Other`
+/// (`levain/realism/mod.rs:204-213`), whose branch sets every realism amount to
+/// `0.0` (`:249-253`). Every one of the five realism stages then early-returns
+/// on `amount < 1e-4` — `body.rs:162`, `sympathetic.rs:89`, `bow_noise.rs:109`,
+/// `breath_noise.rs:65`, `damping.rs:42`. So the old row rendered Levain with
+/// its entire realism layer switched off and reported the result as Levain's
+/// per-quantum cost.
+///
+/// `violin-1` is a bowed string, which is the expensive branch — body resonator
+/// at 0.65, sympathetic bank at 0.5, bow noise at 0.5 and damping at 0.4
+/// (`realism/mod.rs:236-241`) — and it is also the shipped default patch, so
+/// this is the ordinary case rather than a chosen worst one.
+///
+/// This is exactly the shape the phase exists to catch: a harness that runs the
+/// path under test, produces output, passes its own occupancy gate, and still
+/// measures the wrong thing, because the costly branch is unreachable at the
+/// default parameter value.
+fn load_levain_bank(instance: &mut daw_dsp::levain::LevainInstance, frame_count: u32) {
+    instance.begin_sample_bank(LEVAIN_INSTRUMENT_ID);
+    let sample_id = instance
+        .add_sample(loop_sample(frame_count), frame_count, 1, SAMPLE_RATE)
+        .expect("staged bank is uniquely owned, so add_sample cannot return None here");
+    instance.add_zone(
+        0, sample_id, 0, 69, 0, 127, 0, 127, 0, 1, 0, false, 1, 0, frame_count, 0, 0.0, 0.005,
+        0.1, 1.0, 0.3,
+    );
+    assert!(
+        instance.build_zone_map(1, 1),
+        "Levain zone map failed to build; the row would measure the fallback tone engine"
+    );
+    assert!(
+        instance.commit_sample_bank(),
+        "Levain bank did not commit, so realism stays at Instrument::Other and every \
+         realism stage early-returns — the row would understate the device"
+    );
+}
+
 /// Levain at the polyphony it actually reaches, which is **not** the 64 voices
 /// `levainProcessor.ts:155` constructs.
 ///
@@ -1031,12 +1218,7 @@ fn loop_sample(frames: u32) -> Vec<f32> {
 fn row_levain() -> Row {
     let frame_count = 48_000_u32;
     let mut instance = daw_dsp::levain::LevainInstance::new(SAMPLE_RATE, 64);
-    let sample_id = instance.add_sample(loop_sample(frame_count), frame_count, 1, SAMPLE_RATE);
-    instance.add_zone(
-        0, sample_id, 0, 69, 0, 127, 0, 127, 0, 1, 0, false, 1, 0, frame_count, 0, 0.0, 0.005,
-        0.1, 1.0, 0.3,
-    );
-    instance.build_zone_map(1, 1);
+    load_levain_bank(&mut instance, frame_count);
     for note in spread_notes(64) {
         instance.note_on(note, 100);
     }
@@ -1150,8 +1332,10 @@ fn cost_table(_criterion: &mut Criterion) {
     let floor = timer_floor();
     let rows = vec![
         row_bacteria(),
+        row_bacteria_smudge(),
         row_gluten(),
         row_proof(),
+        row_crust(),
         row_knead(),
         row_grinder(),
         row_fermenter(),
@@ -1213,31 +1397,53 @@ fn cost_table(_criterion: &mut Criterion) {
          deadline — that is AC-3's observation, not this one."
     );
     eprintln!(
-        "\n{:<44} {:>9} {:>9} {:>9} {:>9} | {:>9} {:>8}",
-        "device", "FLOOR", "min", "median", "p95", "floor %", "median %"
+        "\n{:<46} {:>9} {:>9} {:>9} {:>9} {:>9} {:>9} {:>9} {:>9} | {:>9} {:>8}",
+        "device", "FLOOR", "min", "median", "MEAN", "p95", "p99", "p99.9", "max", "floor %", "mean %"
     );
     for row in &rows {
         let d = &row.distribution;
+        let burst = if d.is_bursty() { " <- BURSTY" } else { "" };
         eprintln!(
-            "{:<44} {:>8.1}us {:>8.1}us {:>8.1}us {:>8.1}us | {:>8.2}% {:>7.2}%",
+            "{:<46} {:>8.1}us {:>8.1}us {:>8.1}us {:>8.1}us {:>8.1}us {:>8.1}us {:>8.1}us {:>8.1}us | {:>8.2}% {:>7.2}%{}",
             row.label,
             d.floor / 1000.0,
             d.min / 1000.0,
             d.median / 1000.0,
+            d.mean / 1000.0,
             d.p95 / 1000.0,
+            d.p99 / 1000.0,
+            d.p999 / 1000.0,
+            d.max / 1000.0,
             percent_of_budget(d.floor),
-            percent_of_budget(d.median),
+            percent_of_budget(d.mean),
+            burst,
+        );
+    }
+    let bursty: Vec<&str> = rows
+        .iter()
+        .filter(|row| row.distribution.is_bursty())
+        .map(|row| row.id)
+        .collect();
+    if !bursty.is_empty() {
+        eprintln!(
+            "\nBURSTY rows do their work in blocks, so their MEDIAN is the cost of a quantum that \n\
+             did nothing. Read MEAN for sustained load and p99/max for whether a single quantum \n\
+             misses. Summing a bursty median into a thread total understates it: {bursty:?}"
         );
     }
     eprintln!(
-        "{:<44} {:>8.3}us {:>8.3}us {:>8.3}us {:>8.3}us | {:>8.4}% {:>7.4}%",
+        "{:<46} {:>8.3}us {:>8.3}us {:>8.3}us {:>8.3}us {:>8.3}us {:>8.3}us {:>8.3}us {:>8.3}us | {:>8.4}% {:>7.4}%",
         "(timer floor — Instant::now() twice)",
         floor.floor / 1000.0,
         floor.min / 1000.0,
         floor.median / 1000.0,
+        floor.mean / 1000.0,
         floor.p95 / 1000.0,
+        floor.p99 / 1000.0,
+        floor.p999 / 1000.0,
+        floor.max / 1000.0,
         percent_of_budget(floor.floor),
-        percent_of_budget(floor.median),
+        percent_of_budget(floor.mean),
     );
     eprintln!(
         "\nThe far tail is not DSP cost. This bench thread runs at normal priority, not the \n\
@@ -1273,19 +1479,24 @@ fn cost_table(_criterion: &mut Criterion) {
             .unwrap_or_else(|| panic!("the reference project names {id}, which is not a table row"))
             .distribution
     };
-    let mut audio_median = 0.0;
+    // Summed on the **mean**, not the median. A median total is only the
+    // sustained cost if every row is flat, and `bacteria_smudge` is not — its
+    // mean is ~7x its median. Using the median here would have charged a block
+    // device at the price of its idle quantum. The floor stays a 1st-percentile
+    // sum: it is a lower bound and does not claim to be a sustained figure.
+    let mut audio_mean = 0.0;
     let mut audio_floor = 0.0;
     for (id, count) in REFERENCE_PROJECT_AUDIO_THREAD {
-        audio_median += lookup(id).median * count as f64;
+        audio_mean += lookup(id).mean * count as f64;
         audio_floor += lookup(id).floor * count as f64;
     }
-    audio_median += lookup("gluten").median * REFERENCE_PROJECT_GLUTEN_INSTANCES as f64;
+    audio_mean += lookup("gluten").mean * REFERENCE_PROJECT_GLUTEN_INSTANCES as f64;
     audio_floor += lookup("gluten").floor * REFERENCE_PROJECT_GLUTEN_INSTANCES as f64;
 
-    let mut worker_median = 0.0;
+    let mut worker_mean = 0.0;
     let mut worker_floor = 0.0;
     for (id, count) in REFERENCE_PROJECT_WORKER {
-        worker_median += lookup(id).median * count as f64;
+        worker_mean += lookup(id).mean * count as f64;
         worker_floor += lookup(id).floor * count as f64;
     }
 
@@ -1308,16 +1519,21 @@ fn cost_table(_criterion: &mut Criterion) {
         BUDGET_NS / 1.0e6
     );
     eprintln!(
-        "  AUDIO THREAD <= {:.3} ms ({:.1}% of budget)   upper bound, taken at load {busiest:.1}",
-        audio_median / 1.0e6,
-        percent_of_budget(audio_median)
+        "  AUDIO THREAD <= {:.3} ms ({:.1}% of budget)   sustained (mean) upper bound, at load {busiest:.1}",
+        audio_mean / 1.0e6,
+        percent_of_budget(audio_mean)
     );
     eprintln!(
         "  WORKER line item, Grand Boule >= {:.3} ms ({:.1}%), <= {:.3} ms per quantum of audio, \
          on its own thread",
         worker_floor / 1.0e6,
         percent_of_budget(worker_floor),
-        worker_median / 1.0e6
+        worker_mean / 1.0e6
+    );
+    eprintln!(
+        "\n  Totals are summed on the MEAN, which is the amortised per-quantum cost and is the \
+         \n  only summable statistic once any row is bursty. A median total charges a block device \
+         \n  the price of the quantum in which it did nothing."
     );
     eprintln!(
         "\n  No summed p99 is reported. Knead's expensive mode is a duty cycle, not a tail — \
@@ -1408,12 +1624,7 @@ fn bench_remaining_devices(criterion: &mut Criterion) {
 
     let frame_count = 48_000_u32;
     let mut levain = daw_dsp::levain::LevainInstance::new(SAMPLE_RATE, 64);
-    let levain_sample = levain.add_sample(loop_sample(frame_count), frame_count, 1, SAMPLE_RATE);
-    levain.add_zone(
-        0, levain_sample, 0, 69, 0, 127, 0, 127, 0, 1, 0, false, 1, 0, frame_count, 0, 0.0, 0.005,
-        0.1, 1.0, 0.3,
-    );
-    levain.build_zone_map(1, 1);
+    load_levain_bank(&mut levain, frame_count);
     for note in spread_notes(64) {
         levain.note_on(note, 100);
     }

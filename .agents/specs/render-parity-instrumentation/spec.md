@@ -2,9 +2,10 @@
 type: spec
 id: SPEC-render-parity-instrumentation
 subject: the four instruments every later design decision is argued from
-status: ready
+status: landed
 repo: sourdaw
 date: 2026-08-01
+landed: 2026-08-04
 blocked_by: SPEC-project-durability
 blocks: survey programme phases 2-8, ADR 0014 phase 2
 sources:
@@ -129,3 +130,56 @@ validated by the fix it motivated proves nothing.
 - Every guard mutation-checked; name the assertion that reds.
 - Full suite at least twice, both exit codes quoted, read from the command itself.
 - `scripts/health-gates-web.sh` and `health-gates-server.sh` from a clean checkout off the lockfile.
+
+## Outcome — landed 2026-08-04
+
+| AC | Where it lives | Outcome |
+| --- | --- | --- |
+| AC-1 signal-level null test | `AudioEngine/useCases/offlineRender/__tests__/liveOfflineNullTest.spec.ts` + `nullTestRenderHarness.ts` | **Landed.** 27 cases. Both directions ship: six under "the instrument can fail", including a broken fixture that drops `applyParams` from the offline registry, plus a sensitivity block that catches a fader divergence of 1 part in 500 and a filter cutoff divergence of 1 Hz in 2400. Budget held at −90 dBFS; not widened. |
+| AC-2 per-quantum cost table | `crates/daw-dsp/benches/quantum.rs`, `benches/wasm/`, `benches/quantum-cost-table.{md,json}` | **Landed, and corrected — see "What the instruments found" below.** Both legs regenerated; machine, browser and SHA stated in the artifact. |
+| AC-3 dropout observation | `scripts/measureRenderDeadline.ts`, `renderDeadlineBrowser.ts` | **Landed.** `renderCapacity` is absent on the shipping target across eight probed configurations; the file says so explicitly and pins the absence so it reds if it ever appears. A real deadline miss *was* captured via `AudioContext.playbackStats` under a deliberately over-budget worklet, with an in-budget control leg recording none. |
+| AC-4 main-thread stall budget | `scripts/measureStallBudget.ts` | **Landed.** Both thresholds measured and named per verdict — 10 ms `scheduleGrainMs`, 100 ms `SCHEDULE_AHEAD_SECONDS`. Breaches read the minimum, passes the max or p95, and four persistence spans are reported *inconclusive* rather than restated on the favourable statistic. End-to-end `saveProject`/`loadProject` are deliberately not timed; the reason is in the file. |
+| AC-5 gates M2 and M9 | ADR 0014 §"Gates reported", `SPEC-project-durability` AC-7 | **Cited, not re-run**, per this spec's own "whichever phase runs them first records the result and the other cites it". **M9** ran in Phase 0 (#963): the two `.sdaw` codecs agree, one real UTF-8 divergence was found and fixed, nine fixtures checked in both directions. **M2** is formally deferred — it is entirely a Tauri-webview question and ADR 0016 defers desktop; ADR 0014 records it unmeasured rather than deleted. It has no web leg to run. |
+| AC-6 budget in each header | all of the above | **Landed** for `quantum.rs`, `measureRenderDeadline.ts` and `measureStallBudget.ts`. **Gap:** `scripts/renderDeadlineBrowser.ts` has no header at all and gives no reason for its `channel: 'chrome'` requirement, which the main harness's own probe matrix appears to contradict. Left as a finding rather than guessed at. |
+
+### What the instruments found
+
+Out of scope for this phase is *fixing* what the instruments find — but a defect **in an instrument**
+is this phase's own work, and three were found in the cost table.
+
+1. **The bench did not compile, and had not for some time.** `cargo clippy -p daw-dsp --all-targets`
+   exited **101** on clean `main`: two `E0308`s where `LevainInstance::add_sample`'s `Option<u32>`
+   was handed to `add_zone` unwrapped. Nothing in CI runs cargo at all — `.github/workflows/health-gates.yml`
+   has no Rust step — which is why `--all-targets` was unavailable as a gate. **The CI gap is
+   reported, not closed**; adding a Rust job is a CI change this phase did not scope.
+2. **Three hand-written device lists had all gone stale against the crate.** The native bench header,
+   `DEVICE_IDS`, and the worklet's import list each claimed to enumerate every `#[wasm_bindgen]`
+   render export while asserting Crust "[has] no Rust engine at all" — and `src/crust/` had shipped
+   one, exported by the committed wasm. Crust now has a row in both legs, and
+   `crates/daw-dsp/tests/quantum_bench_census.rs` derives the population from the crate source and
+   compares it against the bench, per ADR 0015 rules 2 and 3.
+3. **Two rows were timing a device with the expensive part switched off**, and both passed every
+   gate the bench had while doing it. Occupancy proved they were *running*; nothing proved *what*.
+   - **Levain** loaded through the direct pool rather than production's staged-bank protocol, so
+     `commit_sample_bank` never ran, realism stayed at `Instrument::Other`, and all five realism
+     stages early-returned on a zero amount. Corrected: +10% native.
+   - **Bacteria** had a single row at the constructor defaults, where every creative stage is
+     disabled. Engaging the shipped Smudge mode moves it from 15 µs (0.58% of budget) to an
+     **amortised 300 µs (11%)**, with a **1100 µs tick quantum at 42% of the entire budget** every
+     fourth quantum. Roughly **19x amortised and 73x on the tick**, from one user-reachable control.
+
+   Correcting these exposed a fourth defect: the reference-project total summed **medians**, which is
+   only the sustained cost if every row is flat. It charged a block device the price of the quantum
+   in which it did nothing. Totals now sum the **mean**, and rows whose mean exceeds 1.5x their
+   median are flagged `BURSTY`.
+
+### Survey stop condition 6 — not triggered
+
+AC-2 requires reporting rather than silently reordering if the reference project already sits near
+deadline. **It does not.** The wasm leg's audio-thread total is well inside budget and the artifact
+states "the upper bound already fits"; Grand Boule's 91–100% figure is charged to its own Worker
+thread, not to the 2.667 ms worklet deadline. The CPU findings stay where the programme put them.
+
+The Smudge figure is the one to watch: it is a single device reaching 42% of the whole budget in its
+tick quantum. That is a finding for a later phase, not a reordering of this one — nothing in the
+reference project enables it today.

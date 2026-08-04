@@ -29,13 +29,23 @@ export const BUDGET_MS = (QUANTUM / SAMPLE_RATE) * 1000;
  * Every row of the table, in the order it is measured. The page renders one
  * `OfflineAudioContext` per entry.
  *
- * Crust, Yeast and CvGate are absent because they have no Rust engine at all —
- * see the device-naming key in the repository `AGENTS.md`. Their cost is
- * JavaScript on the main thread or in a plain node graph, which this instrument
- * does not measure and does not claim to.
+ * Yeast and CvGate are absent because they have no Rust engine at all — see the
+ * device-naming key in the repository `AGENTS.md`. Their cost is JavaScript on
+ * the main thread or in a plain node graph, which this instrument does not
+ * measure and does not claim to.
+ *
+ * **Crust was listed on those grounds and should not have been.** It has a
+ * `#[wasm_bindgen]` `CrustInstance` with a `process` export
+ * (`crust/mod.rs:22,32,69`), and the committed `daw_dsp_bg.wasm` exports it, so
+ * this leg could always have measured it. A hand-written list went stale
+ * against the crate it claims to enumerate; `tests/quantum_bench_census.rs`
+ * now derives the population from the crate source and compares it against the
+ * native bench, so the next such gap fails a test.
  */
 export const DEVICE_IDS = [
     'bacteria',
+    'bacteria_smudge',
+    'crust',
     'gluten',
     'proof',
     'knead',
@@ -75,6 +85,8 @@ export const DEVICE_IDS = [
  */
 export const COST_SITE = {
     bacteria: 'audio-thread',
+    bacteria_smudge: 'audio-thread',
+    crust: 'audio-thread',
     gluten: 'audio-thread',
     proof: 'audio-thread',
     knead: 'audio-thread',
@@ -110,6 +122,16 @@ export const COST_SITE = {
 export const DUTY_CYCLE = {
     knead: { periodQuanta: 16, source: 'yin_cfg.frame_size = 2048 frames / 128 = 16 quanta' },
     scoring: { periodQuanta: 12.5, source: 'hop = sample_rate / 30 = 1600 frames / 128 = 12.5 quanta' },
+    // The heaviest duty cycle here, and the only one above the 5% line by a
+    // wide margin. `SmudgeProcessor` runs a 2048-point FFT at 75% overlap
+    // (`bacteria/stft.rs:11-12,164`), so its hop is 2048/4 = 512 frames = 4
+    // quanta — one expensive quantum in every four, 25%, on each of the three
+    // bands. Its median is therefore the cost of a quantum that only filled the
+    // window and carries no information about the device; read its mean.
+    bacteria_smudge: {
+        periodQuanta: 4,
+        source: 'stft.rs:11-12,164 — fft 2048, hop = fft/4 = 512 frames / 128 = 4 quanta',
+    },
 };
 
 /**
@@ -341,6 +363,13 @@ export function buildDevices({ dsp, chamber, scoring, ring, readBlockAcquire, on
     };
 
     // -- Bacteria — multiband creative FX ----------------------------------
+    //
+    // Two rows, because one was misleading. `BacteriaEngine::new` ships every
+    // creative stage disabled (`bacteria/engine.rs:220`), and `bandCount` and
+    // `mix` do not switch any of them on — so this row is the crossover, the
+    // alignment delays and the band sum, and nothing else. It is the floor
+    // Bacteria costs before it does anything a user opened it for. Keep it,
+    // and keep it labelled for what it is.
     if (wanted('bacteria')) {
         const instance = new dsp.BacteriaInstance(SAMPLE_RATE);
         instance.set_param('bandCount', 3);
@@ -348,8 +377,38 @@ export function buildDevices({ dsp, chamber, scoring, ring, readBlockAcquire, on
         devices.push(
             pointerEffect({
                 id: 'bacteria',
-                label: 'Bacteria (3 bands, mix 1.0)',
-                note: 'effect; no voice pool',
+                label: 'Bacteria (3 bands, mix 1.0, all stages off)',
+                note: 'effect; no voice pool; engine.rs:220 ships every stage disabled',
+                instance,
+                module: dsp,
+            })
+        );
+    }
+
+    // -- Bacteria in Smudge — the STFT path --------------------------------
+    //
+    // The other end of the same device. Smudge is distortion mode 7
+    // (`bacteria/distortion.rs:41`) and runs an overlap-add spectral blur with
+    // a 2048-sample window (`distortion.rs:92-99`); bare parameter names
+    // broadcast to every band (`engine.rs:50-52`), so all three carry one.
+    // Enabling distortion also puts the oversampler in the path
+    // (`engine.rs:327-332`).
+    //
+    // Its work arrives in bursts, so read its **mean**, not its median: the
+    // median is the cost of a quantum that only filled the window. Natively the
+    // two differ by about 7x.
+    if (wanted('bacteria_smudge')) {
+        const instance = new dsp.BacteriaInstance(SAMPLE_RATE);
+        instance.set_param('bandCount', 3);
+        instance.set_param('mix', 1);
+        instance.set_param('distortionEnabled', 1);
+        instance.set_param('distortionMode', 7);
+        instance.set_param('drive', 0.6);
+        devices.push(
+            pointerEffect({
+                id: 'bacteria_smudge',
+                label: 'Bacteria (3 bands, distortion on, Smudge/STFT)',
+                note: 'effect; no voice pool; distortionMode 7 = Smudge, distortion.rs:41',
                 instance,
                 module: dsp,
             })
@@ -385,6 +444,39 @@ export function buildDevices({ dsp, chamber, scoring, ring, readBlockAcquire, on
                 id: 'proof',
                 label: 'Proof (limiter engaged)',
                 note: 'effect; no voice pool',
+                instance,
+                module: dsp,
+            })
+        );
+    }
+
+    // -- Crust — true-peak mastering limiter -------------------------------
+    //
+    // Absent from both legs of this bench until now, while the native header
+    // asserted Crust had "no Rust engine at all". It has had one — a
+    // `#[wasm_bindgen]` `CrustInstance` with a `process` export
+    // (`crust/mod.rs:22,32,69`) — and the committed `daw_dsp_bg.wasm` exports
+    // it, so the wasm leg could always have measured it and simply never
+    // listed it.
+    //
+    // Shipped defaults are already right: `CrustEngine::new` sets
+    // `true_peak: true` and `oversampling: 4` (`crust/engine.rs:258-259`),
+    // matching `DEFAULT_CRUST_PATCH` (`CrustPatch.ts:78`), so the 4x
+    // oversampled inter-sample peak detector is in the path as in production.
+    //
+    // `gain` is raised to 6 dB so the row is actually limiting. The shared
+    // excitation peaks near -2.1 dBFS against a shipped -0.3 dB ceiling, so at
+    // the default 0 dB input gain the limiter never engages and the row would
+    // time a gain stage — the same reason `proof` sets an explicit threshold.
+    if (wanted('crust')) {
+        const instance = new dsp.CrustInstance(SAMPLE_RATE);
+        instance.set_param('gain', 6);
+        instance.set_param('ceiling', -0.3);
+        devices.push(
+            pointerEffect({
+                id: 'crust',
+                label: 'Crust (true-peak limiting, 4x OS)',
+                note: 'effect; no voice pool; CrustPatch.ts:78 ships ceiling -0.3, truePeak, OS 4',
                 instance,
                 module: dsp,
             })
