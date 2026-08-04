@@ -1,0 +1,64 @@
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_bc88af7d3b054c::t_c8dabaefe6a9f2 1132-1134
+  s_bc88af7d3b054c::t_3ecd921432eaa9 421-427,1128-1131
+  s_66d4924c65dcd2::t_58d09914a1e99c 420,1135
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_bc88af7d3b054c::t_a4aa2ccc97f693 844-846
+  s_bc88af7d3b054c::t_17b5678b783aa3 839-843,847-853
+  s_bc88af7d3b054c::t_aaa3a616ce239e 838
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_bc88af7d3b054c::t_17b5678b783aa3 323-334,1838,1845
+  s_66d4924c65dcd2::t_c6779686ee1d72 1839-1844,1846
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_bc88af7d3b054c::t_3ecd921432eaa9 317-327
+  s_66d4924c65dcd2::t_91f774be1f5758 316
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_bc88af7d3b054c::t_3ecd921432eaa9 336-338,340-370
+  s_66d4924c65dcd2::t_828f08855caff0 327-335,339
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_bc88af7d3b054c::t_c8dabaefe6a9f2 165-181
+  s_bc88af7d3b054c::t_3ecd921432eaa9 140-164
+src/modules/Transport/handlers/transport/__tests__/handleSeekPlayhead.spec.ts
+  s_bc88af7d3b054c::t_f4aaf1cb724cf9 7,14-21,25,31-40
+  s_bc88af7d3b054c::t_2dcf16b0aa22d4 1-6,8-13,22-24,26-30,41-84
+src/modules/Transport/useCases/transportControls/executePlayheadSeek.ts
+  s_bc88af7d3b054c::t_294bbbc14b5e2e 1-60,64-74,78-82
+  s_bc88af7d3b054c::t_1aa3ade7afa433 61-63,75,77
+  s_bc88af7d3b054c::t_8a833f608d257d 76
+  s_66d4924c65dcd2::t_c0ed6cba33eacb 83-84
+src/modules/Transport/useCases/transportControls/seekPlayhead.ts
+  s_bc88af7d3b054c::t_294bbbc14b5e2e 3,6-8
+src/modules/Transport/handlers/transport/__tests__/transportHandlers.spec.ts
+  s_bc88af7d3b054c::t_294bbbc14b5e2e 25,45-47,96-106
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_bc88af7d3b054c::t_3ecd921432eaa9 227-242
+src/modules/Transport/handlers/transport/handleSeekPlayhead.ts
+  s_bc88af7d3b054c::t_294bbbc14b5e2e 4,7-15
+  s_bc88af7d3b054c::t_f3479b3796c522 3,16-18
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_bc88af7d3b054c::t_17b5678b783aa3 345-346
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "c2f1bf4afa96667b6f7b7be29ad07dfb1072bcb7",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
