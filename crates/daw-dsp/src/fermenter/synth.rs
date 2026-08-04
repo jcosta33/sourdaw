@@ -399,6 +399,10 @@ impl MasterSynth {
         left[..block_size].fill(0.0);
         right[..block_size].fill(0.0);
 
+        if block_size > 0 {
+            self.advance_layer_block_params();
+        }
+
         let mut cursor = 0;
         for event in events {
             let event_offset = (event.offset as usize).min(block_size).max(cursor);
@@ -552,6 +556,21 @@ impl MasterSynth {
                 event.slide,
             ),
             _ => {}
+        }
+    }
+
+    fn advance_layer_block_params(&mut self) {
+        let any_solo = self.layers[..self.num_active_layers].iter().any(|layer| layer.solo);
+
+        for layer in &mut self.layers[..self.num_active_layers] {
+            if layer.muted {
+                continue;
+            }
+            if any_solo && !layer.solo {
+                continue;
+            }
+
+            layer.advance_block_params();
         }
     }
 
@@ -808,6 +827,35 @@ mod tests {
         assert_eq!(&offset_right[..OFFSET], &[0.0; OFFSET]);
         assert_eq!(&offset_left[OFFSET..], &aligned_left[..128 - OFFSET]);
         assert_eq!(&offset_right[OFFSET..], &aligned_right[..128 - OFFSET]);
+    }
+
+    #[test]
+    fn event_splits_do_not_accelerate_block_rate_parameter_smoothing() {
+        let mut uninterrupted = MasterSynth::new(48_000.0, 8);
+        let mut split = MasterSynth::new(48_000.0, 8);
+        for synth in [&mut uninterrupted, &mut split] {
+            synth.note_on(60, 100);
+            synth.set_param("cutoff", 750.0);
+            synth.set_param("resonance", 8.0);
+            synth.set_param("lfo_rate", 12.0);
+        }
+
+        let mut uninterrupted_left = [0.0; 128];
+        let mut uninterrupted_right = [0.0; 128];
+        uninterrupted.process_block(&mut uninterrupted_left, &mut uninterrupted_right, &[]);
+
+        let inert_events = [
+            note_off_event(1, 17),
+            note_off_event(2, 37),
+            note_off_event(3, 73),
+            note_off_event(4, 101),
+        ];
+        let mut split_left = [0.0; 128];
+        let mut split_right = [0.0; 128];
+        split.process_block(&mut split_left, &mut split_right, &inert_events);
+
+        assert_eq!(split_left, uninterrupted_left);
+        assert_eq!(split_right, uninterrupted_right);
     }
 
     #[test]

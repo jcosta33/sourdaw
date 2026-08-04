@@ -318,6 +318,17 @@ impl Layer {
         }
     }
 
+    /// Advance parameters whose smoothing cadence is once per host block.
+    ///
+    /// A host block may be rendered in several slices to honor sample-accurate
+    /// MIDI events. Keeping this step separate from `render` prevents those
+    /// extra slices from accelerating automation.
+    pub fn advance_block_params(&mut self) {
+        self.cutoff.tick();
+        self.resonance.tick();
+        self.lfo_rate.tick();
+    }
+
     /// Render all active voices with this layer's params, applying level and pan.
     pub fn render(
         &mut self,
@@ -330,9 +341,9 @@ impl Layer {
             return;
         }
 
-        let cutoff = self.cutoff.tick();
-        let resonance = self.resonance.tick();
-        let lfo_rate = self.lfo_rate.tick();
+        let cutoff = self.cutoff.value();
+        let resonance = self.resonance.value();
+        let lfo_rate = self.lfo_rate.value();
 
         let filter_mode = match self.filter_mode {
             0 => FilterMode::Lowpass,
