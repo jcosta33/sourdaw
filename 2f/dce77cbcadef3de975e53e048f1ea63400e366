@@ -1,0 +1,16 @@
+src/modules/AiGeneration/useCases/actions/__tests__/buildSeedNotesFromPrompt.spec.ts
+  h_1228e573df1f42 1-92
+src/modules/Fermenter/useCases/presetMorph/__tests__/lerpPatchArray.spec.ts
+  h_1228e573df1f42 1-70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "2fdce77cbcadef3de975e53e048f1ea63400e366",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
