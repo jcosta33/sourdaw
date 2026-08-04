@@ -167,7 +167,9 @@ export class CrumbsInstance {
         wasm.__wbg_crumbsinstance_free(ptr, 0);
     }
     /**
-     * Voices sounding as of the last rendered block.
+     * Voices sounding as of the last rendered block, counting stolen notes
+     * that are still running their de-click fade. Can exceed the 128-slot
+     * pool; see `CrumbsEngine::read_active_voice_count`.
      * @returns {number}
      */
     active_voices() {

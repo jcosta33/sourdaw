@@ -159,7 +159,9 @@ impl CrumbsInstance {
         self.nan_flush_count as f64
     }
 
-    /// Voices sounding as of the last rendered block.
+    /// Voices sounding as of the last rendered block, counting stolen notes
+    /// that are still running their de-click fade. Can exceed the 128-slot
+    /// pool; see `CrumbsEngine::read_active_voice_count`.
     pub fn active_voices(&self) -> u32 {
         u32::from(self.engine.read_active_voice_count())
     }

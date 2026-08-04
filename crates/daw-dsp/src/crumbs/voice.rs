@@ -196,6 +196,15 @@ impl CrumbsVoice {
     /// This is the one path that does cut a waveform, so it exists only where
     /// there is nothing left to fade into: a fade slot that has to be recycled
     /// because every one of them is still sounding.
+    ///
+    /// It is *not* what silences a stolen voice. The engine swaps the recycled
+    /// struct back into the playable pool, and on the `note_on` path `trigger`
+    /// would overwrite `active`, `stealing` and `steal_fade` anyway. What this
+    /// call is load-bearing for is the path that does not retrigger:
+    /// `all_sound_off` swaps every sounding voice out and then hands its slot
+    /// back to the allocator, so a recycled tail that arrived still active
+    /// would sit in a free slot, sounding, waiting for the next note to
+    /// overwrite it mid-fade.
     pub fn kill(&mut self) {
         self.active = false;
         self.stealing = false;
