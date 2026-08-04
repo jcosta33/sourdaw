@@ -3,6 +3,7 @@ import { handleCreateCompGroup } from '../handlers/batchFeature/handleCreateComp
 import { handleSearchSamples } from '../handlers/batchFeature/handleSearchSamples';
 import { clipHandlers } from '../handlers/clip/clipHandlers';
 import { handleFitClipToBeats } from '../handlers/clipStretch/handleFitClipToBeats';
+import { handleRestoreClipStretchState } from '../handlers/clipStretch/handleRestoreClipStretchState';
 import { handleSetClipStretchMode } from '../handlers/clipStretch/handleSetClipStretchMode';
 import { handleSetClipStretchRatio } from '../handlers/clipStretch/handleSetClipStretchRatio';
 import { handleAddDevice } from '../handlers/device/handleAddDevice';
@@ -153,6 +154,7 @@ export function getArrangementHandlers() {
         restoreLegacyVcaState: handleRestoreLegacyVcaState,
         setClipStretchMode: handleSetClipStretchMode,
         setClipStretchRatio: handleSetClipStretchRatio,
+        restoreClipStretchState: handleRestoreClipStretchState,
         fitClipToBeats: handleFitClipToBeats,
         loadPreset: handleLoadPreset,
         savePreset: handleSavePreset,

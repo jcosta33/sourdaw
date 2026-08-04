@@ -244,6 +244,18 @@ const guardedPayloadContractCases = [
         ],
     }),
     guardedPayloadCase({
+        actionType: 'setClipStretchRatio',
+        validPayload: { clipId: 'clip-1', ratio: 1.5 },
+        invalidPayloads: [
+            { clipId: '', ratio: 1.5 },
+            { clipId: 'clip-1' },
+            { clipId: 'clip-1', ratio: 0.249 },
+            { clipId: 'clip-1', ratio: 4.001 },
+            { clipId: 'clip-1', ratio: Number.NaN },
+            { clipId: 'clip-1', ratio: 1.5, extra: true },
+        ],
+    }),
+    guardedPayloadCase({
         actionType: 'splitClip',
         validPayload: { clipId: 'clip-1', beat: 4 },
         invalidPayloads: [

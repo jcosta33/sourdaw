@@ -53,6 +53,7 @@ export type ExecutableAppActionValueRule =
           scale?: 'unit-interval' | 'percentage-only' | 'automation-lane-range';
           direction?: 'pan';
           qualitativeDirection?: 'track-gain' | 'track-pan' | 'device-parameter';
+          unit?: 'stretch-ratio';
       }
     | { argument: string; kind: 'string-literal' }
     | { argument: string; kind: 'marker-name' }
@@ -514,6 +515,40 @@ export const executableAppActionDescriptors = [
                 },
             },
             required: ['clipId'],
+        },
+    },
+    {
+        actionType: 'setClipStretchRatio',
+        risk: 'broad-reversible',
+        description: 'Set the non-destructive time-stretch ratio of one unlocked audio clip.',
+        intentPhrases: [
+            'set clip stretch ratio',
+            'set the clip stretch ratio',
+            'time stretch clip',
+            'time stretch the clip',
+            'stretch clip',
+        ],
+        targetRules: editableAudioClipTargetRules,
+        valueRules: [
+            {
+                argument: 'ratio',
+                kind: 'number-if-present',
+                requiredInPrompt: true,
+                match: 'exact',
+                unit: 'stretch-ratio',
+            },
+        ],
+        parameters: {
+            properties: {
+                clipId: { type: 'string', description: 'Existing unlocked audio clip ID' },
+                ratio: {
+                    type: 'number',
+                    minimum: 0.25,
+                    maximum: 4,
+                    description: 'Time-stretch ratio from 0.25 through 4',
+                },
+            },
+            required: ['clipId', 'ratio'],
         },
     },
     {

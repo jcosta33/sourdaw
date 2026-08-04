@@ -1366,6 +1366,26 @@ function findKeywordBoundNumber(
     return null;
 }
 
+function findStretchRatioNumbers(maskedScope: string, numbers: readonly PromptNumber[]): PromptNumber[] {
+    function hasDurationUnit(number: PromptNumber): boolean {
+        return /^\s*(?:beats?|bars?|seconds?|secs?|minutes?|mins?)\b/iu.test(maskedScope.slice(number.end));
+    }
+    const matches: PromptNumber[] = [];
+    const keywordBoundNumber = findKeywordBoundNumber(maskedScope, numbers, ['ratio']);
+    if (keywordBoundNumber && !hasDurationUnit(keywordBoundNumber)) {
+        matches.push(keywordBoundNumber);
+    }
+    for (const number of numbers) {
+        if (hasDurationUnit(number) || !/^\s*(?:x\b|×|times\b)/iu.test(maskedScope.slice(number.end))) {
+            continue;
+        }
+        if (!matches.includes(number)) {
+            matches.push(number);
+        }
+    }
+    return matches;
+}
+
 function findDirectionBoundNumber(maskedScope: string, numbers: readonly PromptNumber[]): PromptNumber | null {
     return numbers.find((number) => /^\s*(?:left|right)\b/iu.test(maskedScope.slice(number.end))) ?? null;
 }
@@ -1445,6 +1465,13 @@ function getExpectedNumbers(
     }
     if (numbers.length > 1 && /\b(?:either|or)\b/iu.test(actionScope.masked)) {
         return null;
+    }
+    if (valueRule.unit === 'stretch-ratio') {
+        const ratioNumbers = findStretchRatioNumbers(actionScope.masked, numbers);
+        if (ratioNumbers.length !== 1) {
+            return ratioNumbers.length === 0 ? [] : null;
+        }
+        return [normalizePromptNumber(ratioNumbers[0]!, actionScope, valueRule, automationLane)];
     }
     if (valueRule.keywords) {
         const keywordBoundNumber = findKeywordBoundNumber(actionScope.masked, numbers, valueRule.keywords);
