@@ -1,0 +1,14 @@
+src/modules/AudioEngine/repositories/devices/reverbDelay/__tests__/helpersBranches.spec.ts
+  h_1228e573df1f42 1-257
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "5efcc5bb9d3be089a58d525e957a78993e478e6e",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
