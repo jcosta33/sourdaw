@@ -24,7 +24,7 @@
  * to this file; the bench header states it.
  */
 
-import { initSync as initDsp, BacteriaInstance, CrumbsInstance, FermenterInstance, GlutenInstance, GrandBouleInstance, GrinderInstance, KneadInstance, LevainInstance, ProofInstance, ToasterInstance } from '/src/modules/AudioEngine/wasm/daw_dsp.js';
+import { initSync as initDsp, BacteriaInstance, CrumbsInstance, CrustInstance, FermenterInstance, GlutenInstance, GrandBouleInstance, GrinderInstance, KneadInstance, LevainInstance, ProofInstance, ToasterInstance } from '/src/modules/AudioEngine/wasm/daw_dsp.js';
 import { initSync as initChamber, ProofChamberInstance } from '/src/modules/AudioEngine/wasm/proof_chamber.js';
 import { initSync as initScoring, ScoringInstance } from '/src/modules/AudioEngine/wasm/scoring.js';
 
@@ -83,12 +83,24 @@ class QuantumCostProcessor extends AudioWorkletProcessor {
         this._warmupQuanta = config.warmupQuanta;
         this._measureQuanta = config.measureQuanta;
 
-        const [device] = buildDevices({
+        // Build inside a try, and post the real message.
+        //
+        // `AudioWorkletNode.onprocessorerror` carries no diagnostic — the host
+        // gets `${deviceId}: the worklet processor threw` and nothing else. That
+        // cost an hour on the first device added after this file was written:
+        // `CrustInstance` was missing from the import list above, so
+        // `dsp.CrustInstance` was `undefined`, and the only symptom available
+        // was that the processor threw. An instrument whose failure mode is
+        // "something went wrong" is not finished equipment.
+        let built;
+        try {
+            built = buildDevices({
             only: config.deviceId,
             dsp: {
                 memory: dspExports.memory,
                 BacteriaInstance,
                 CrumbsInstance,
+                CrustInstance,
                 FermenterInstance,
                 GlutenInstance,
                 GrandBouleInstance,
@@ -102,7 +114,31 @@ class QuantumCostProcessor extends AudioWorkletProcessor {
             scoring: { memory: scoringExports.memory, ScoringInstance },
             ring,
             readBlockAcquire,
-        });
+            });
+        } catch (error) {
+            this.port.postMessage({
+                type: 'fatal',
+                message:
+                    `building device "${config.deviceId}" threw: ${error && error.message ? error.message : String(error)}. ` +
+                    'If the message names an undefined constructor, the class is missing from the ' +
+                    'import list at the top of this file — that list is written by hand and does not ' +
+                    'follow the crate.',
+            });
+            this._done = true;
+            return;
+        }
+        const [device] = built;
+        if (!device) {
+            this.port.postMessage({
+                type: 'fatal',
+                message:
+                    `no recipe produced a device for "${config.deviceId}". It is in DEVICE_IDS but ` +
+                    'deviceRecipes.js has no matching `wanted(...)` block, so this row would have ' +
+                    'been silently absent from the table rather than failing.',
+            });
+            this._done = true;
+            return;
+        }
         this._device = device;
 
         this._phase = 'warmup';
