@@ -1,3 +1,5 @@
+import { getToasterPresetDeviceState } from '#/modules/Toaster/useCases';
+
 import { createMyceliumId } from './createMyceliumId';
 
 import type { ProjectDevice, ProjectSidechainRoute, ProjectTrack, ProjectTrackKind } from '../../../models/ProjectData';
@@ -29,10 +31,27 @@ const PAD_NAMES = [
     'Perc 2',
 ] as const;
 
+const PARALLEL_CRUSH_SEND_LEVELS: Readonly<Record<string, number>> = {
+    Snare: 0.1,
+    Clap: 0.08,
+    Rim: 0.06,
+    'Low Tom': 0.08,
+    'Mid Tom': 0.08,
+    'Hi Tom': 0.08,
+    'Perc 1': 0.05,
+    'Perc 2': 0.05,
+};
+
 const TRACK_SPECS: readonly TrackSpec[] = [
     ['Master', 'master', null, ['builtin-eq', 'gluten', 'builtin-stereo-widener', 'proof', 'builtin-lufs-meter']],
     ['Pulse Engine', 'folder', null, ['toaster']],
-    ...PAD_NAMES.map((name): TrackSpec => [name, 'midi', 'Pulse Engine', [], ['Parallel Crush']]),
+    ...PAD_NAMES.map((name): TrackSpec => [
+        name,
+        'midi',
+        'Pulse Engine',
+        [],
+        PARALLEL_CRUSH_SEND_LEVELS[name] === undefined ? [] : ['Parallel Crush'],
+    ]),
     ['Bass Mutation', 'folder', null, []],
     ['Sub Mycelium', 'midi', 'Bass Mutation', ['fermenter', 'builtin-eq']],
     ['Rolling Colony', 'midi', 'Bass Mutation', ['fermenter', 'builtin-eq', 'builtin-sidechain-compressor']],
@@ -152,7 +171,7 @@ function createDeviceParams(type: string, kind: ProjectTrackKind, trackName: str
         return { 'lufs-target': -9.5 };
     }
     if (type === 'toaster') {
-        return { masterGain: 1, swing: 0.08, reverbMix: 0.12, delayMix: 0.04 };
+        return { masterGain: 0.9, swing: 0.04, reverbMix: 0.08, delayMix: 0.02 };
     }
     if (type === 'fermenter') {
         return { ...FERMENTER_AUTOMATION_DEFAULTS, ...FERMENTER_ROLE_OVERRIDES[trackName] };
@@ -178,6 +197,58 @@ function createDeviceParams(type: string, kind: ProjectTrackKind, trackName: str
     if (type === 'builtin-delay' && kind !== 'bus') {
         return { 'delay-mix': 0.3, 'delay-feedback': 0.4 };
     }
+    if (type === 'bacteria' && trackName === 'Acid Tendril') {
+        return {
+            mix: 0.45,
+            inputGain: 0,
+            outputGain: 0,
+            bypass: 0,
+            bandCount: 1,
+            band0_enabled: 1,
+            band0_oversampling: 2,
+            band0_distortionEnabled: 1,
+            band0_distortionMode: 5,
+            band0_drive: 28,
+            band0_asymmetry: 0.15,
+            band0_filterEnabled: 1,
+            band0_filterMode: 0,
+            band0_filterCutoff: 6_200,
+            band0_filterResonance: 0.35,
+            band0_freqShiftEnabled: 1,
+            band0_freqShiftHz: 14,
+            band0_freqShiftMix: 0.18,
+        };
+    }
+    if (type === 'bacteria' && trackName === 'Mutation Return') {
+        return {
+            mix: 1,
+            inputGain: -2,
+            outputGain: -1,
+            bypass: 0,
+            bandCount: 1,
+            band0_enabled: 1,
+            band0_oversampling: 2,
+            band0_distortionEnabled: 1,
+            band0_distortionMode: 3,
+            band0_drive: 40,
+            band0_lofiEnabled: 1,
+            band0_lofiAmount: 35,
+            band0_codecArtifact: 0.22,
+        };
+    }
+    if (type === 'builtin-compressor' && trackName === 'Parallel Crush') {
+        return {
+            'comp-threshold': -26,
+            'comp-ratio': 6,
+            'comp-attack': 12,
+            'comp-release': 90,
+            'comp-knee': 9,
+            'comp-makeup': 3,
+        };
+    }
+    if (type === 'builtin-distortion' && trackName === 'Parallel Crush') {
+        return { 'dist-drive': 2.5, 'dist-tone': 6_500, 'dist-output': -8, 'dist-mix': 1 };
+    }
     if (kind !== 'bus') {
         return {};
     }
@@ -194,6 +265,29 @@ function createDeviceParams(type: string, kind: ProjectTrackKind, trackName: str
         return { 'dist-mix': 1 };
     }
     return {};
+}
+
+function createDeviceState(type: string): ProjectDevice['deviceState'] {
+    if (type !== 'toaster') {
+        return undefined;
+    }
+
+    const state = getToasterPresetDeviceState('psytrance-mycelium');
+    if (!state) {
+        throw new Error('Missing Mycelium Toaster kit');
+    }
+    return state;
+}
+
+function createSendLevel(trackName: string, busName: string): number {
+    if (busName === 'Parallel Crush') {
+        const level = PARALLEL_CRUSH_SEND_LEVELS[trackName];
+        if (level === undefined) {
+            throw new Error(`Missing Parallel Crush send level for ${trackName}`);
+        }
+        return level;
+    }
+    return 0.25;
 }
 
 function requireId(ids: ReadonlyMap<string, string>, name: string): string {
@@ -231,13 +325,17 @@ export function createMyceliumTopology(): { tracks: ProjectTrack[]; sidechainRou
         ([name, kind, parentName, deviceTypes, sendNames = []], trackIndex): ProjectTrack => {
             const id = requireId(ids, name);
             const alternativeId = createMyceliumId('alternative', name);
-            const devices: ProjectDevice[] = deviceTypes.map((type, deviceIndex) => ({
-                id: createMyceliumId('device', `${name}:${deviceIndex}:${type}`),
-                name: type.replace('builtin-', '').replaceAll('-', ' '),
-                type,
-                bypassed: false,
-                parameterValues: createDeviceParams(type, kind, name),
-            }));
+            const devices: ProjectDevice[] = deviceTypes.map((type, deviceIndex) => {
+                const deviceState = createDeviceState(type);
+                return {
+                    id: createMyceliumId('device', `${name}:${deviceIndex}:${type}`),
+                    name: type.replace('builtin-', '').replaceAll('-', ' '),
+                    type,
+                    bypassed: false,
+                    parameterValues: createDeviceParams(type, kind, name),
+                    ...(deviceState ? { deviceState } : {}),
+                };
+            });
             return {
                 id,
                 name,
@@ -250,7 +348,11 @@ export function createMyceliumTopology(): { tracks: ProjectTrack[]; sidechainRou
                 color: `oklch(0.42 0.07 ${220 + ((trackIndex * 17) % 140)})`,
                 clips: [],
                 devices,
-                sends: sendNames.map((busName) => ({ busId: requireId(ids, busName), level: 0.25, preFader: false })),
+                sends: sendNames.map((busName) => ({
+                    busId: requireId(ids, busName),
+                    level: createSendLevel(name, busName),
+                    preFader: false,
+                })),
                 midiFx: [],
                 frozen: false,
                 freezeState: { status: 'unfrozen' },

@@ -82,6 +82,23 @@ describe('createMyceliumAutomation', () => {
         for (const parameterId of ['masterGain', 'swing', 'reverbMix', 'delayMix']) {
             expect(laneKeys.has(`${pulse?.id ?? ''}:${toaster?.id ?? ''}:${parameterId}`)).toBe(true);
         }
+        expect(
+            Object.fromEntries(
+                lanes
+                    .filter(
+                        (lane) => lane.trackId === pulse?.id && lane.parameterId.startsWith(`${toaster?.id ?? ''}:`)
+                    )
+                    .map((lane) => [
+                        lane.parameterId.slice(lane.parameterId.indexOf(':') + 1),
+                        [lane.minValue, lane.maxValue],
+                    ])
+            )
+        ).toEqual({
+            masterGain: [0.78, 1.08],
+            swing: [0.02, 0.12],
+            reverbMix: [0.02, 0.14],
+            delayMix: [0, 0.08],
+        });
 
         const bassNames = new Set(['Sub Mycelium', 'Rolling Colony', 'Acid Tendril']);
         const pannedNames = lanes
@@ -161,7 +178,7 @@ describe('createMyceliumAutomation', () => {
         expect(valueAt(gainLane('Dub Tunnel')?.points ?? [], 412)).toBeGreaterThan(
             valueAt(gainLane('Dub Tunnel')?.points ?? [], 416) ?? 1
         );
-        for (const returnName of ['Temple Chamber', 'Dub Tunnel', 'Mutation Return', 'Parallel Crush']) {
+        for (const returnName of ['Temple Chamber', 'Dub Tunnel', 'Mutation Return']) {
             const points = gainLane(returnName)?.points ?? [];
             expect(valueAt(points, 223.75)).toBe(valueAt(points, 192));
             expect(points.find((point) => point.beat === 223.75)?.curve).toBe('step');
@@ -175,6 +192,10 @@ describe('createMyceliumAutomation', () => {
             expect(valueBetween(points, 255.75, 256, 255.875)).toBe(valueAt(points, 255.75));
             expect(valueAt(points, 287.75)).toBe(valueAt(points, 256));
         }
+        const parallelCrushPoints = gainLane('Parallel Crush')?.points ?? [];
+        expect(Math.max(...parallelCrushPoints.map((point) => point.value))).toBeLessThanOrEqual(0.14);
+        expect(valueAt(parallelCrushPoints, 480)).toBe(0);
+        expect(valueAt(parallelCrushPoints, 484)).toBeGreaterThan(0);
         const kickPoints = gainLane('Kick')?.points ?? [];
         expect(valueBetween(kickPoints, 484, 544, 514)).toBeLessThan(valueAt(kickPoints, 484) ?? 0);
         expect(valueBetween(kickPoints, 484, 544, 514)).toBeGreaterThan(valueAt(kickPoints, 544) ?? 1);

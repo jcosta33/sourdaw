@@ -62,7 +62,7 @@ describe('createMyceliumVoicePerformance', () => {
 
         expect(voiceTracks.map((track) => track.name)).toEqual(VOICE_NAMES);
         expect(allClips).toHaveLength(119);
-        expect(allNotes).toHaveLength(3_818);
+        expect(allNotes).toHaveLength(3_873);
         expect(
             allNotes.every((note) => Number.isInteger(note.velocity) && note.velocity >= 1 && note.velocity <= 127)
         ).toBe(true);

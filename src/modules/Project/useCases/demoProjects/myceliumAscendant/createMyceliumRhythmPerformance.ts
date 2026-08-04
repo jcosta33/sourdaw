@@ -10,6 +10,12 @@ type RhythmSection = {
 };
 
 type NoteSeed = { beat: number; duration: number; velocity: number };
+type DropPattern = {
+    offsets: readonly number[];
+    step: number;
+    duration: number;
+    velocity: number;
+};
 
 const SECTIONS: readonly RhythmSection[] = [
     { key: 'germination', name: 'First Germination', startBeat: 64, endBeat: 128 },
@@ -45,21 +51,22 @@ const DROP_TWO_RANGES = [[416, 544]] as const;
 
 function stepped(startBeat: number, endBeat: number, step: number, duration: number, velocity: number): NoteSeed[] {
     const count = Math.ceil((endBeat - startBeat) / step);
+    const velocityOffsets = [0, 7, 3, 5] as const;
+    const durationFactors = [1, 0.94, 0.88, 0.94] as const;
     return Array.from({ length: count }, (_, index) => ({
         beat: startBeat + index * step,
-        duration: duration * [1, 0.9, 0.8][index % 3]!,
-        velocity: velocity - ((index * 7) % 13),
+        duration: duration * durationFactors[index % durationFactors.length]!,
+        velocity: velocity - velocityOffsets[index % velocityOffsets.length]!,
     })).filter((note) => note.beat < endBeat && note.beat + note.duration <= endBeat);
 }
 
 function fillSeeds(name: string, startBeat: number, endBeat: number, cadence: number): NoteSeed[] {
     const offsetsByName: Record<string, readonly number[]> = {
-        Clap: [-3.5],
-        Rim: [-3, -2.25],
-        'Low Tom': [-2.75],
-        'Mid Tom': [-2, -1.25],
-        'Hi Tom': [-1.75, -1, -0.75],
-        Shaker: [-3.75, -3.25, -2.75, -2.25, -1.75, -1.25, -0.75],
+        Clap: [-1],
+        Rim: [-2.5],
+        'Low Tom': [-2],
+        'Mid Tom': [-1.5],
+        'Hi Tom': [-1, -0.5],
     };
     const offsets = offsetsByName[name];
     if (!offsets) {
@@ -74,7 +81,7 @@ function fillSeeds(name: string, startBeat: number, endBeat: number, cadence: nu
             seeds.push({
                 beat: blockEnd + offset,
                 duration,
-                velocity: 97 + index * 3 + (blockIndex % 3) * 2,
+                velocity: 84 + index * 4 + (blockIndex % 3) * 2,
             });
         }
     }
@@ -82,20 +89,25 @@ function fillSeeds(name: string, startBeat: number, endBeat: number, cadence: nu
 }
 
 function dropDrumSeeds(name: string, startBeat: number, endBeat: number, cadence: number): NoteSeed[] {
-    const patterns: Record<string, readonly [offset: number, step: number, duration: number, velocity: number]> = {
-        Kick: [0, 1, 0.12, 124],
-        Snare: [2, 4, 0.12, 107],
-        'Closed HH': [0.5, 4, 0.08, 91],
-        'Open HH': [1.5, 8, 0.16, 95],
-        Crash: [0, cadence, 0.24, 112],
-        Ride: [1, 4, 0.12, 89],
-        Cowbell: [0.75, 8, 0.1, 86],
-        Clave: [0.5, 8, 0.08, 89],
-        'Perc 1': [1.25, 4, 0.08, 84],
-        'Perc 2': [1.75, 8, 0.08, 81],
+    const patterns: Record<string, DropPattern> = {
+        Kick: { offsets: [0], step: 1, duration: 0.12, velocity: 124 },
+        Snare: { offsets: [1, 3], step: 4, duration: 0.12, velocity: 104 },
+        'Closed HH': { offsets: [0.5], step: 2, duration: 0.08, velocity: 86 },
+        'Open HH': { offsets: [1.5], step: 2, duration: 0.16, velocity: 90 },
+        Crash: { offsets: [0], step: cadence, duration: 0.24, velocity: 106 },
+        Ride: { offsets: [2.75], step: 8, duration: 0.12, velocity: 78 },
+        Cowbell: { offsets: [6.75], step: 16, duration: 0.1, velocity: 76 },
+        Clave: { offsets: [10.5], step: 16, duration: 0.08, velocity: 78 },
+        Shaker: { offsets: [0.25], step: 1, duration: 0.08, velocity: 72 },
+        'Perc 1': { offsets: [3.25], step: 8, duration: 0.08, velocity: 78 },
+        'Perc 2': { offsets: [7.75], step: 16, duration: 0.08, velocity: 76 },
     };
     const pattern = patterns[name];
-    const regular = pattern ? stepped(startBeat + pattern[0], endBeat, pattern[1], pattern[2], pattern[3]) : [];
+    const regular = pattern
+        ? pattern.offsets.flatMap((offset) =>
+              stepped(startBeat + offset, endBeat, pattern.step, pattern.duration, pattern.velocity)
+          )
+        : [];
     return [...regular, ...fillSeeds(name, startBeat, endBeat, cadence)].sort((left, right) => left.beat - right.beat);
 }
 
@@ -123,7 +135,11 @@ function drumSeeds(name: string, section: RhythmSection): NoteSeed[] {
     }
     if (section.key === 'pressure') {
         if (name === 'Kick') {
-            return stepped(128, 191.75, 1, 0.12, 108);
+            return [
+                ...stepped(128, 160, 4, 0.12, 96),
+                ...stepped(160, 176, 2, 0.12, 102),
+                ...stepped(176, 191.75, 1, 0.12, 110),
+            ];
         }
         if (name === 'Closed HH') {
             return [
@@ -133,7 +149,7 @@ function drumSeeds(name: string, section: RhythmSection): NoteSeed[] {
             ];
         }
         if (name === 'Open HH') {
-            return [...stepped(162.5, 176, 4, 0.12, 81), ...stepped(176.75, 191.75, 2, 0.12, 89)];
+            return [...stepped(162.75, 176, 4, 0.12, 81), ...stepped(176.75, 191.75, 2, 0.12, 89)];
         }
         if (['Clap', 'Rim', 'Low Tom', 'Mid Tom', 'Hi Tom'].includes(name)) {
             return [...fillSeeds(name, 160, 176, 16), ...fillSeeds(name, 176, 191.75, 8)];
@@ -148,7 +164,7 @@ function drumSeeds(name: string, section: RhythmSection): NoteSeed[] {
     }
     if (section.key === 'chapel') {
         if (name === 'Shaker') {
-            return stepped(288, 316, 0.5, 0.08, 76);
+            return stepped(288.25, 316, 1, 0.08, 72);
         }
         if (name === 'Rim') {
             return stepped(288, 316, 3.5, 0.08, 86);
@@ -161,9 +177,11 @@ function drumSeeds(name: string, section: RhythmSection): NoteSeed[] {
     if (section.key === 'build') {
         if (name === 'Hi Tom') {
             return [
-                ...stepped(352, 384, 2, 0.08, 81),
-                ...stepped(384, 400, 0.5, 0.08, 91),
-                ...stepped(400, 415.75, 0.125, 0.08, 104),
+                ...stepped(352, 384, 4, 0.08, 81),
+                ...stepped(384, 400, 1, 0.08, 87),
+                ...stepped(400, 408, 0.5, 0.08, 92),
+                ...stepped(408, 412, 0.25, 0.08, 98),
+                ...stepped(412, 415.75, 0.125, 0.06, 104),
             ];
         }
         return name === 'Kick' ? stepped(352, 415.75, 4, 0.12, 94) : [];
@@ -205,7 +223,7 @@ function bassSeeds(name: string, section: RhythmSection): NoteSeed[] {
     }
     if (section.key === 'drop-one' || section.key === 'drop-two') {
         const ranges = section.key === 'drop-one' ? DROP_ONE_RANGES : DROP_TWO_RANGES;
-        const offset = name === 'Sub Mycelium' ? 0.25 : 1.75;
+        const offset = name === 'Sub Mycelium' ? 0.75 : 1.75;
         return ranges.flatMap(([startBeat, endBeat]) => stepped(startBeat + offset, endBeat, 4, 0.22, 91));
     }
     if (name === 'Acid Tendril' && section.key === 'pressure') {
