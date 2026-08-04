@@ -1,0 +1,94 @@
+src/modules/Transport/useCases/replaceMasterGain.ts
+  s_bc88af7d3b054c::t_21753ce5ecaaf1 1-4,7-8,11-12,15-17,19-20,22-23
+  s_bc88af7d3b054c::t_e5d301bf020f75 5-6,9-10,13-14,18,21
+src/modules/Transport/useCases/index.ts
+  s_bc88af7d3b054c::t_21753ce5ecaaf1 11
+src/modules/Transport/handlers/transport/toMasterGainExecutionResult.ts
+  s_bc88af7d3b054c::t_ae062bc1cd25ab 1-22
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_bc88af7d3b054c::t_dda05b17ad9668 422-448
+  s_bc88af7d3b054c::t_ad51f7d0c850ed 1686
+  s_bc88af7d3b054c::t_6ed4328323e2ca 14
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_bc88af7d3b054c::t_473feeb904ba3a 961
+  s_bc88af7d3b054c::t_e54cf634a32ca9 950-955,962-963
+  s_bc88af7d3b054c::t_6ed4328323e2ca 50
+  s_bc88af7d3b054c::t_dda05b17ad9668 945-949,956-960,964-967
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_bc88af7d3b054c::t_6ed4328323e2ca 67
+src/modules/AiRuntime/useCases/getProjectContext.ts
+  s_bc88af7d3b054c::t_d8822cdc89436e 86
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_bc88af7d3b054c::t_d8822cdc89436e 184-185
+src/modules/Transport/useCases/__tests__/replaceMasterGain.spec.ts
+  s_bc88af7d3b054c::t_7da4324396681b 1-16,19-22,31,35,37-40
+  s_bc88af7d3b054c::t_e5d301bf020f75 17-18,26,32-34,36
+  s_bc88af7d3b054c::t_db452aa899b4af 23-25,27-30
+src/modules/Transport/handlers/transport/handleSetMasterGain.ts
+  s_bc88af7d3b054c::t_e5d301bf020f75 15,27-30,37-40
+  s_bc88af7d3b054c::t_ae062bc1cd25ab 1-14,16-26,31-36,41-43,48-49
+  s_bc88af7d3b054c::t_3780cdf024aeb4 44-47
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_bc88af7d3b054c::t_be64181b8a37d1 199
+  s_bc88af7d3b054c::t_c6ed79e1ce4ce2 161,266
+src/modules/Transport/handlers/transport/__tests__/masterGainUndo.spec.ts
+  s_bc88af7d3b054c::t_a4c6e7c3a731f3 6-13
+  s_bc88af7d3b054c::t_ae062bc1cd25ab 1-5,14-32,34-36,38-41,43-55,57-64,68-70,72-75
+  s_bc88af7d3b054c::t_e5d301bf020f75 33,37,42,56,71
+  s_bc88af7d3b054c::t_f7b58e35013eee 65-67
+src/modules/AiRuntime/models/ProjectContext.ts
+  s_bc88af7d3b054c::t_d8822cdc89436e 9
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_bc88af7d3b054c::t_d8822cdc89436e 298-310,1266-1268,1804
+src/modules/AiRuntime/useCases/__tests__/describePlannedAction.spec.ts
+  s_bc88af7d3b054c::t_6ed4328323e2ca 14
+src/modules/AiRuntime/useCases/agentReference/__tests__/resolveAgentReference.spec.ts
+  s_bc88af7d3b054c::t_6ed4328323e2ca 37
+src/modules/Transport/handlers/transport/handleRestoreMasterGain.ts
+  s_bc88af7d3b054c::t_e5d301bf020f75 10,13-18,21
+  s_bc88af7d3b054c::t_ae062bc1cd25ab 3-4,6-8,11-12,20,22
+src/modules/AiRuntime/useCases/__tests__/getProjectContext.spec.ts
+  s_bc88af7d3b054c::t_ad51f7d0c850ed 102,188,222
+src/modules/Transport/useCases/getTransportHandlers.ts
+  s_bc88af7d3b054c::t_ae062bc1cd25ab 10,32,37,69-70
+  s_bc88af7d3b054c::t_2beb761b63f6a2 4
+src/modules/WorkspaceShell/presentations/hooks/__tests__/usePromptExecution.spec.ts
+  s_bc88af7d3b054c::t_160ed15fbba2c6 344
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_bc88af7d3b054c::t_590e05025ce52a 423
+  s_bc88af7d3b054c::t_dda05b17ad9668 424-430,1052-1062
+  s_bc88af7d3b054c::t_e89840d7d3705f 1063-1064
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_bc88af7d3b054c::t_d8822cdc89436e 843-861
+src/utils/handlerContract.ts
+  s_bc88af7d3b054c::t_e5d301bf020f75 435
+  s_bc88af7d3b054c::t_21753ce5ecaaf1 433-434,436
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_bc88af7d3b054c::t_4918ce37edae72 834
+  s_bc88af7d3b054c::t_85d3b9cb609028 1384
+  s_bc88af7d3b054c::t_e54cf634a32ca9 1372-1374,1382-1383
+src/modules/AiRuntime/transformers/promptParser/__tests__/parsingDeep.spec.ts
+  s_bc88af7d3b054c::t_6ed4328323e2ca 15
+src/modules/Transport/useCases/__tests__/getTransportHandlers.spec.ts
+  s_bc88af7d3b054c::t_e8ba1cb542b538 10-11
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_bc88af7d3b054c::t_dda05b17ad9668 52-56
+src/modules/AiRuntime/transformers/promptParser/__tests__/parsing.spec.ts
+  s_bc88af7d3b054c::t_a2258173bfc95d 45,119,217
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "699623fe023c2e52d9ff02e0fb2643a8814b861f",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": null
+    }
+  }
+}
