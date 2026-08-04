@@ -1,0 +1,39 @@
+src/modules/AudioEngine/repositories/devices/reverbDelay/__tests__/createReverb.spec.ts
+  s_ac9b259eab20ba::t_18e5c366d2edf6 1-40
+src/modules/AudioEngine/repositories/devices/modulation/__tests__/applyModulationParams.spec.ts
+  s_ac9b259eab20ba::t_18e5c366d2edf6 17,73,102-114
+  s_66d4924c65dcd2::t_df4d4ea7b05a12 115
+src/modules/AudioEngine/engine/__tests__/TrackNodeDevices.spec.ts
+  s_ac9b259eab20ba::t_484d5056f4cbf6 348-370,372,851
+  s_ac9b259eab20ba::t_18e5c366d2edf6 347,371,849-850,852
+src/modules/AudioEngine/models/OfflineDeviceNode.ts
+  s_66d4924c65dcd2::t_9e23c0442d9aa3 11
+src/modules/AudioEngine/repositories/devices/modulation/createPhaser.ts
+  s_66d4924c65dcd2::t_461b27fc970590 44-45,49,63-69
+src/modules/AudioEngine/repositories/devices/reverbDelay/createReverb.ts
+  s_66d4924c65dcd2::t_549671be347f86 5-29,42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "ee7b1e13cbe012b93e8786d1e178b62da247e705",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
