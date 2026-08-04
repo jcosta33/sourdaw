@@ -1,0 +1,21 @@
+src/modules/Project/repositories/project/__tests__/compareProjectSnapshots.spec.ts
+  s_ac9b259eab20ba::t_c973733f6b6bae 1-91
+src/modules/Proof/services/__tests__/getRestoredProofChainOrder.spec.ts
+  s_ac9b259eab20ba::t_c030fcb23242aa 1-48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "96a187c8cc9c2915e4ec3eece4243f6adea596de",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
