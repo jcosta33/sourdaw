@@ -33,6 +33,7 @@ import { handleSetMarkerColor } from '../handleSetMarkerColor';
 describe('marker action handlers', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.addMarker.mockReturnValue(true);
         mocks.getMarkerState.mockReturnValue(null);
     });
 
@@ -53,6 +54,43 @@ describe('marker action handlers', () => {
         expect(mocks.addSection).toHaveBeenCalledWith(0, 8, 'Verse', expect.stringMatching(/^section-/));
         expect(mocks.removeSection).toHaveBeenCalledWith('section1');
         expect(mocks.renameSection).toHaveBeenCalledWith('section1', 'Chorus');
+    });
+
+    it('handleAddMarker reports no-write when marker state is unavailable', () => {
+        mocks.addMarker.mockReturnValue(false);
+
+        const result = handleAddMarker.execute({ type: 'addMarker', payload: { beat: 4, name: 'Intro' } });
+
+        expect(result).toEqual({ status: 'no-write' });
+    });
+
+    it('handleAddMarker preserves identity-less macro repeats and identity-bearing restores', () => {
+        mocks.getMarkerState.mockReturnValue({
+            markers: [{ id: 'marker-existing', beat: 4, name: '  CHORUS  ', color: '#abc' }],
+            sections: [],
+        });
+
+        expect(handleAddMarker.isNoop?.({ type: 'addMarker', payload: { beat: 4, name: 'chorus' } })).toBe(false);
+        expect(
+            handleAddMarker.isNoop?.({
+                type: 'addMarker',
+                payload: { beat: 4, name: 'chorus', markerId: 'marker-restored' },
+            })
+        ).toBe(false);
+    });
+
+    it('handleAddMarker suppresses an identity-bearing replay only when its exact id already exists', () => {
+        mocks.getMarkerState.mockReturnValue({
+            markers: [{ id: 'marker-existing', beat: 4, name: 'Chorus', color: '#abc' }],
+            sections: [],
+        });
+
+        expect(
+            handleAddMarker.isNoop?.({
+                type: 'addMarker',
+                payload: { beat: 32, name: 'Different', markerId: 'marker-existing' },
+            })
+        ).toBe(true);
     });
 
     it('handleAddMarker mints one id shared by the execute call and the inverse', () => {

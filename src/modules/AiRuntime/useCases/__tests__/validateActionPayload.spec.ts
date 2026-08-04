@@ -326,6 +326,21 @@ const guardedPayloadContractCases = [
         ],
     }),
     guardedPayloadCase({
+        actionType: 'addMarker',
+        validPayload: { beat: 16, name: 'Chorus' },
+        invalidPayloads: [
+            {},
+            { beat: -0.01, name: 'Chorus' },
+            { beat: Number.NaN, name: 'Chorus' },
+            { beat: 16, name: '' },
+            { beat: 16, name: '   ' },
+            { beat: 16, name: '<Chorus>' },
+            { beat: 16, name: 'x'.repeat(121) },
+            { beat: 16, name: 'Chorus', markerId: 'provider-owned-id' },
+            { beat: 16, name: 'Chorus', extra: true },
+        ],
+    }),
+    guardedPayloadCase({
         actionType: 'setLoopRegion',
         validPayload: { startBeat: 4, endBeat: 12 },
         invalidPayloads: [

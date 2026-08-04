@@ -155,8 +155,8 @@ type BridgeInput = Omit<Parameters<typeof bridgeLlmToolCalls>[0], 'context'> & {
     context?: ProjectContext;
 };
 
-function bridge({ calls, context = projectContext }: BridgeInput) {
-    return bridgeLlmToolCalls({ calls, context });
+function bridge({ calls, context = projectContext, markerSignatures }: BridgeInput) {
+    return bridgeLlmToolCalls({ calls, context, markerSignatures });
 }
 
 function createCrossfadeContext(): ProjectContext {
@@ -379,6 +379,79 @@ describe('bridgeLlmToolCalls', () => {
                 },
             ],
         });
+    });
+
+    it('bridges only an exact nonnegative addMarker beat and safe explicit name', () => {
+        const marker = bridge({
+            calls: [{ name: 'addMarker', arguments: { beat: 16, name: '  Chorus  ' } }],
+            context: projectContext,
+        });
+        const rejected = [
+            bridge({
+                calls: [{ name: 'addMarker', arguments: { beat: -0.01, name: 'Chorus' } }],
+                context: projectContext,
+            }),
+            bridge({
+                calls: [{ name: 'addMarker', arguments: { beat: Number.NaN, name: 'Chorus' } }],
+                context: projectContext,
+            }),
+            bridge({ calls: [{ name: 'addMarker', arguments: { beat: 16, name: '' } }], context: projectContext }),
+            bridge({ calls: [{ name: 'addMarker', arguments: { beat: 16, name: '   ' } }], context: projectContext }),
+            bridge({
+                calls: [{ name: 'addMarker', arguments: { beat: 16, name: '<Chorus>' } }],
+                context: projectContext,
+            }),
+            bridge({
+                calls: [{ name: 'addMarker', arguments: { beat: 16, name: 'x'.repeat(121) } }],
+                context: projectContext,
+            }),
+            bridge({
+                calls: [{ name: 'addMarker', arguments: { beat: '16', name: 'Chorus' } }],
+                context: projectContext,
+            }),
+            bridge({
+                calls: [{ name: 'addMarker', arguments: { beat: 16, name: 'Chorus', markerId: 'provider-id' } }],
+                context: projectContext,
+            }),
+        ];
+
+        expect(marker.actions).toEqual([{ type: 'addMarker', payload: { beat: 16, name: 'Chorus' } }]);
+        expect(rejected.every((result) => result.actions.length === 0)).toBe(true);
+    });
+
+    it('rejects equivalent addMarker writes in one provider batch', () => {
+        const result = bridge({
+            calls: [
+                { name: 'addMarker', arguments: { beat: 16, name: 'Chorus' } },
+                { name: 'addMarker', arguments: { beat: 16, name: '  chorus  ' } },
+            ],
+            context: projectContext,
+        });
+
+        expect(result.actions).toEqual([{ type: 'addMarker', payload: { beat: 16, name: 'Chorus' } }]);
+        expect(result.rejections).toEqual([
+            {
+                index: 1,
+                name: 'addMarker',
+                reason: 'Provider batch writes the same target field more than once',
+            },
+        ]);
+    });
+
+    it('rejects an addMarker call that exactly repeats current project state', () => {
+        const result = bridge({
+            calls: [{ name: 'addMarker', arguments: { beat: 16, name: ' chorus ' } }],
+            markerSignatures: [{ beat: 16, name: 'Chorus' }],
+        });
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toEqual([
+            {
+                index: 0,
+                name: 'addMarker',
+                reason: 'Requested marker already exists at that beat',
+            },
+        ]);
     });
 
     it('converts allowlisted provider calls into typed runtime actions', () => {

@@ -1,6 +1,8 @@
 import { createHandler } from '#/utils/createHandler';
 
 import { addMarker } from '../../useCases/marker/markerOperations/addMarker';
+import { getMarkerState } from '../../useCases/timelineQueries';
+import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
 type AddMarkerAction = { payload: { beat: number; name: string; markerId?: string } };
 
@@ -18,11 +20,14 @@ function ensureMarkerId(action: AddMarkerAction): string {
 
 export const handleAddMarker = createHandler<'addMarker'>({
     execute: (action) => {
-        addMarker(action.payload.beat, action.payload.name, ensureMarkerId(action));
+        return toHandlerExecutionResult(addMarker(action.payload.beat, action.payload.name, ensureMarkerId(action)));
     },
     describe: (action) => ({
         label: `Add marker "${action.payload.name}"`,
         inverseAction: { type: 'removeMarker', payload: { markerId: ensureMarkerId(action) } },
     }),
+    isNoop: (action) =>
+        action.payload.markerId !== undefined &&
+        getMarkerState()?.markers.some((marker) => marker.id === action.payload.markerId) === true,
     undoable: true,
 });

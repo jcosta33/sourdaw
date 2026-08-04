@@ -470,7 +470,11 @@ const validators = {
     removeSend: 'unchecked',
 
     // Markers / sections / time signature / adjustments
-    addMarker: 'unchecked',
+    addMarker: (param): param is PayloadOf<'addMarker'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['beat', 'name']) &&
+        isNonNegativeNumber(param.beat) &&
+        normalizeSafeProjectName(param.name) !== null,
     setMarkerColor: 'unchecked',
     addSection: 'unchecked',
     renameSection: 'unchecked',

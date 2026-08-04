@@ -73,9 +73,10 @@ const projectContext: ProjectContext = {
 function bridge(
     calls: Parameters<typeof bridgeGroundedLlmToolCalls>[0]['calls'],
     prompt: string,
-    context = projectContext
+    context = projectContext,
+    markerSignatures: readonly { beat: number; name: string }[] = []
 ) {
-    return bridgeGroundedLlmToolCalls({ calls, prompt, context });
+    return bridgeGroundedLlmToolCalls({ calls, prompt, context, markerSignatures });
 }
 
 describe('setPlayback grounding', () => {
@@ -176,6 +177,120 @@ describe('seekPlayhead grounding', () => {
 
         expect(grounded.actions).toEqual([{ type: 'seekPlayhead', payload: { beat: 8 } }]);
         expect(rejected.every((result) => result.actions.length === 0)).toBe(true);
+    });
+});
+
+describe('addMarker grounding', () => {
+    it('grounds a bounded explicit label before or after the exact beat clause', () => {
+        const trailingLabel = bridge(
+            [{ name: 'addMarker', arguments: { beat: 16, name: 'Chorus' } }],
+            'add a marker at beat 16 named Chorus'
+        );
+        const leadingLabel = bridge(
+            [{ name: 'addMarker', arguments: { beat: 16, name: 'Chorus' } }],
+            'add a marker named Chorus at beat 16'
+        );
+
+        expect(trailingLabel.actions).toEqual([{ type: 'addMarker', payload: { beat: 16, name: 'Chorus' } }]);
+        expect(leadingLabel.actions).toEqual([{ type: 'addMarker', payload: { beat: 16, name: 'Chorus' } }]);
+    });
+
+    it('grounds quoted labels and excludes trailing positional or rationale clauses', () => {
+        const quoted = bridge(
+            [{ name: 'addMarker', arguments: { beat: 32, name: 'Verse at Night' } }],
+            'add a marker called "Verse at Night" at beat 32'
+        );
+        const rationale = bridge(
+            [{ name: 'addMarker', arguments: { beat: 16, name: 'Chorus' } }],
+            'add a marker named Chorus at beat 16 because the hook starts there'
+        );
+
+        expect(quoted.actions).toEqual([{ type: 'addMarker', payload: { beat: 32, name: 'Verse at Night' } }]);
+        expect(rationale.actions).toEqual([{ type: 'addMarker', payload: { beat: 16, name: 'Chorus' } }]);
+    });
+
+    it.each([
+        'add a marker named Chorus so I remember at beat 16',
+        'add a marker named Chorus so I can find it at beat 16',
+        'add a marker named Chorus to mark the drop at beat 16',
+        'add a marker named Chorus since the hook starts at beat 16',
+    ])('excludes unquoted rationale from the marker label in %s', (prompt) => {
+        const grounded = bridge([{ name: 'addMarker', arguments: { beat: 16, name: 'Chorus' } }], prompt);
+        const absorbedRationale = prompt.slice(
+            prompt.indexOf('named ') + 'named '.length,
+            prompt.lastIndexOf(' at beat')
+        );
+        const rejected = bridge([{ name: 'addMarker', arguments: { beat: 16, name: absorbedRationale } }], prompt);
+
+        expect(grounded.actions).toEqual([{ type: 'addMarker', payload: { beat: 16, name: 'Chorus' } }]);
+        expect(rejected.actions).toEqual([]);
+    });
+
+    it('rejects invented, ambiguous, malformed, negated, and cancelled marker values', () => {
+        const rejected = [
+            bridge(
+                [{ name: 'addMarker', arguments: { beat: 8, name: 'Chorus' } }],
+                'add a marker at beat 16 named Chorus'
+            ),
+            bridge(
+                [{ name: 'addMarker', arguments: { beat: 16, name: 'Drop' } }],
+                'add a marker at beat 16 named Chorus'
+            ),
+            bridge(
+                [{ name: 'addMarker', arguments: { beat: 16, name: 'Chorus at beat 16' } }],
+                'add a marker named Chorus at beat 16'
+            ),
+            bridge([{ name: 'addMarker', arguments: { beat: 16, name: 'Chorus' } }], 'add a marker named Chorus'),
+            bridge([{ name: 'addMarker', arguments: { beat: 16, name: 'Chorus' } }], 'add a marker at beat 16'),
+            bridge(
+                [{ name: 'addMarker', arguments: { beat: 16, name: 'Chorus' } }],
+                'do not add a marker at beat 16 named Chorus'
+            ),
+            bridge(
+                [{ name: 'addMarker', arguments: { beat: 16, name: 'Chorus' } }],
+                'add a marker at beat 16 named Chorus, actually cancel that command'
+            ),
+            bridge(
+                [{ name: 'addMarker', arguments: { beat: 16, name: 'Chorus', markerId: 'provider-id' } }],
+                'add a marker at beat 16 named Chorus'
+            ),
+        ];
+
+        expect(rejected.every((result) => result.actions.length === 0)).toBe(true);
+    });
+
+    it('binds only the beat-qualified number when the label contains another number', () => {
+        const grounded = bridge(
+            [{ name: 'addMarker', arguments: { beat: 16, name: 'Verse 2' } }],
+            'place a marker at beat 16 called Verse 2'
+        );
+        const rejected = bridge(
+            [{ name: 'addMarker', arguments: { beat: 2, name: 'Verse 2' } }],
+            'place a marker at beat 16 called Verse 2'
+        );
+
+        expect(grounded.actions).toEqual([{ type: 'addMarker', payload: { beat: 16, name: 'Verse 2' } }]);
+        expect(rejected.actions).toEqual([]);
+    });
+
+    it('rejects an exact marker retry against the planning snapshot', () => {
+        const result = bridge(
+            [{ name: 'addMarker', arguments: { beat: 16, name: 'Chorus' } }],
+            'add a marker at beat 16 named Chorus',
+            {
+                ...projectContext,
+            },
+            [{ beat: 16, name: ' chorus ' }]
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).toEqual([
+            {
+                index: 0,
+                name: 'addMarker',
+                reason: 'Requested marker already exists at that beat',
+            },
+        ]);
     });
 });
 

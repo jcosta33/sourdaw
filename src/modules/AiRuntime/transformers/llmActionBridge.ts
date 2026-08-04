@@ -22,9 +22,15 @@ export type LlmActionBridgeResult = {
     rejections: LlmActionRejection[];
 };
 
+export type MarkerPlanningSignature = {
+    beat: number;
+    name: string;
+};
+
 type BridgeLlmToolCallsInput = {
     calls: readonly ToolCallResult[];
     context: ProjectContext;
+    markerSignatures?: readonly MarkerPlanningSignature[];
 };
 
 function hasExactKeys(value: Record<string, unknown>, expectedKeys: readonly string[]): boolean {
@@ -200,6 +206,10 @@ function normalizeVcaGroupName(name: string): string {
         .trim();
 }
 
+function normalizeMarkerName(name: string): string {
+    return name.trim().toLocaleLowerCase();
+}
+
 function isCanonicalVcaMembership(
     context: ProjectContext,
     track: ProjectContext['tracks'][number],
@@ -271,10 +281,12 @@ function bridgeToolCall({
     call,
     context,
     index,
+    markerSignatures,
 }: {
     call: ToolCallResult;
     context: ProjectContext;
     index: number;
+    markerSignatures: readonly MarkerPlanningSignature[];
 }): RuntimeAction | LlmActionRejection {
     const args = call.arguments;
 
@@ -330,6 +342,24 @@ function bridgeToolCall({
             return rejection(index, call.name, 'Expected only a changed finite beat greater than or equal to 0');
         }
         return { type: 'seekPlayhead', payload: { beat: args.beat } };
+    }
+
+    if (call.name === 'addMarker') {
+        const name = normalizeSafeProjectName(args.name);
+        if (!hasExactKeys(args, ['beat', 'name']) || !isFiniteNumber(args.beat) || args.beat < 0 || !name) {
+            return rejection(
+                index,
+                call.name,
+                'Expected only a nonnegative finite beat and a safe explicit marker name'
+            );
+        }
+        const alreadyExists = markerSignatures.some(
+            (marker) => marker.beat === args.beat && normalizeMarkerName(marker.name) === normalizeMarkerName(name)
+        );
+        if (alreadyExists) {
+            return rejection(index, call.name, 'Requested marker already exists at that beat');
+        }
+        return { type: 'addMarker', payload: { beat: args.beat, name } };
     }
 
     if (call.name === 'setLoopEnabled') {
@@ -1452,6 +1482,9 @@ function getMutationKeys(action: RuntimeAction, context: ProjectContext): string
     ) {
         return [];
     }
+    if (action.type === 'addMarker') {
+        return [`marker:${String(action.payload.beat)}:${normalizeMarkerName(action.payload.name)}`];
+    }
     if (action.type === 'setTempo' || action.type === 'setTimeSignature' || action.type === 'reorderTrack') {
         return [action.type];
     }
@@ -1803,7 +1836,11 @@ function hasInvalidatingSidechainLifecycleMutation(
     return false;
 }
 
-export function bridgeLlmToolCalls({ calls, context }: BridgeLlmToolCallsInput): LlmActionBridgeResult {
+export function bridgeLlmToolCalls({
+    calls,
+    context,
+    markerSignatures = [],
+}: BridgeLlmToolCallsInput): LlmActionBridgeResult {
     if (calls.length > MAX_LLM_ACTIONS_PER_BATCH) {
         return {
             actions: [],
@@ -1895,7 +1932,7 @@ export function bridgeLlmToolCalls({ calls, context }: BridgeLlmToolCallsInput):
     const automationTransformLaneIds = new Set<string>();
 
     for (const [index, call] of calls.entries()) {
-        const result = bridgeToolCall({ call, context: prospectiveContext, index });
+        const result = bridgeToolCall({ call, context: prospectiveContext, index, markerSignatures });
         if ('type' in result) {
             const actionClipTargetIds = getClipTargetIds(result);
             const actionClipTrackIds = [
