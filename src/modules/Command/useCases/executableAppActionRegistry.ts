@@ -770,6 +770,27 @@ export const executableAppActionDescriptors = [
         },
     },
     {
+        actionType: 'setPlayback',
+        risk: 'authority-sensitive',
+        description: 'Set transport playback to playing or paused.',
+        intentPhrases: ['play', 'start playback', 'resume playback', 'pause', 'pause playback'],
+        targetRules: [],
+        valueRules: [
+            {
+                argument: 'playing',
+                kind: 'boolean-intent',
+                truePhrases: ['play', 'start playback', 'resume playback'],
+                falsePhrases: ['pause', 'pause playback'],
+            },
+        ],
+        parameters: {
+            properties: {
+                playing: { type: 'boolean', description: 'true=start or resume playback, false=pause playback' },
+            },
+            required: ['playing'],
+        },
+    },
+    {
         actionType: 'setLoopEnabled',
         risk: 'bounded-reversible',
         description: 'Enable or disable the project loop.',

@@ -386,6 +386,14 @@ const EXPECTED_COMMANDS = [
         true
     ),
     expectedCommand(
+        'setPlayback',
+        'Set transport playback to playing or paused.',
+        { playing: { type: 'boolean', description: 'true=start or resume playback, false=pause playback' } },
+        ['playing'],
+        'authority-sensitive',
+        true
+    ),
+    expectedCommand(
         'setLoopEnabled',
         'Enable or disable the project loop.',
         { enabled: { type: 'boolean', description: 'true=enable looping, false=disable looping' } },
@@ -1043,6 +1051,19 @@ const EXPECTED_GROUNDING = [
         ],
         targetRules: [],
         valueRules: [{ argument: 'numerator', denominatorArgument: 'denominator', kind: 'time-signature' }],
+    },
+    {
+        actionType: 'setPlayback',
+        intentPhrases: ['play', 'start playback', 'resume playback', 'pause', 'pause playback'],
+        targetRules: [],
+        valueRules: [
+            {
+                argument: 'playing',
+                kind: 'boolean-intent',
+                truePhrases: ['play', 'start playback', 'resume playback'],
+                falsePhrases: ['pause', 'pause playback'],
+            },
+        ],
     },
     {
         actionType: 'setLoopEnabled',

@@ -22,6 +22,7 @@ vi.mock('../notifyAiChange', () => ({ notifyAiChange: vi.fn() }));
 vi.mock('../recordAiActionGroup', () => ({ recordAiActionGroup: vi.fn() }));
 
 const action = { type: 'togglePlayback' } as const;
+const runtimeAction = { type: 'setPlayback', payload: { playing: true } } as const;
 
 describe('executePlannedActions', () => {
     beforeEach(() => {
@@ -58,6 +59,7 @@ describe('executePlannedActions', () => {
         expect(vi.mocked(recordAiActionGroup)).toHaveBeenCalledWith({
             prompt: 'Mute vocals',
             groupId: 'group-1',
+            executionKind: 'project',
             actions: [{ kind: 'appAction', actionType: 'togglePlayback', label: 'Toggle playback' }],
         });
         expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith('Executed: Mute vocals', ['togglePlayback']);
@@ -65,6 +67,60 @@ describe('executePlannedActions', () => {
             status: 'committed',
             actions: [{ actionType: 'togglePlayback', label: 'Toggle playback' }],
         });
+    });
+
+    it('reports a runtime-only command as executed rather than committed', async () => {
+        vi.mocked(executeAppActionBatch).mockResolvedValue({
+            status: 'executed',
+            actions: [{ action: runtimeAction, label: 'Start playback' }],
+        });
+
+        const result = await executePlannedActions({
+            prompt: 'Start playback',
+            actions: [runtimeAction],
+            projectRevision: 'revision-1',
+            executionMode: 'atomic',
+        });
+
+        expect(vi.mocked(executeAppActionBatch)).toHaveBeenCalledWith(
+            [runtimeAction],
+            expect.objectContaining({ requireCompensation: true })
+        );
+        expect(vi.mocked(recordAiActionGroup)).toHaveBeenCalledWith({
+            prompt: 'Start playback',
+            groupId: 'group-1',
+            executionKind: 'runtime',
+            actions: [{ kind: 'appAction', actionType: 'setPlayback', label: 'Start playback' }],
+        });
+        expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith('Executed: Start playback', ['setPlayback']);
+        expect(result).toEqual({
+            status: 'executed',
+            actions: [{ actionType: 'setPlayback', label: 'Start playback' }],
+        });
+    });
+
+    it('uses executed wording when a runtime follow-up reports a warning', async () => {
+        vi.mocked(executeAppActionBatch).mockResolvedValue({
+            status: 'executed-with-warning',
+            actions: [{ action: runtimeAction, label: 'Start playback' }],
+            warning: 'setPlayback follow-up effect failed: transport unavailable',
+        });
+
+        const result = await executePlannedActions({
+            prompt: 'Start playback',
+            actions: [runtimeAction],
+            projectRevision: 'revision-1',
+        });
+
+        expect(result).toEqual({
+            status: 'executed',
+            actions: [{ actionType: 'setPlayback', label: 'Start playback' }],
+            executionWarning: 'setPlayback follow-up effect failed: transport unavailable',
+        });
+        expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith(
+            'Executed: Start playback. Executed with follow-up warning: setPlayback follow-up effect failed: transport unavailable',
+            ['setPlayback']
+        );
     });
 
     it('reports invalidation when the project revision changes before admission', async () => {

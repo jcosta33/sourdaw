@@ -59,6 +59,7 @@ vi.mock('../../transformers/llmActionBridge', async () => {
 const baseContext: ProjectContext = {
     tempo: 120,
     timeSignature: [4, 4],
+    isPlaying: false,
     isLooping: false,
     loopStart: 0,
     loopEnd: 0,

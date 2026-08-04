@@ -33,6 +33,8 @@ type ExecutedBatchAction = {
 type ExecuteAppActionBatchResult =
     | { status: 'committed'; actions: ExecutedBatchAction[] }
     | { status: 'committed-with-warning'; actions: ExecutedBatchAction[]; warning: string }
+    | { status: 'executed'; actions: ExecutedBatchAction[] }
+    | { status: 'executed-with-warning'; actions: ExecutedBatchAction[]; warning: string }
     | { status: 'no-op'; actions: [] }
     | { status: 'ambiguous'; reason: string; actions: [] }
     | { status: 'rejected' | 'conflicted' | 'cancelled' | 'failed'; reason: string; actions: [] };
@@ -81,6 +83,66 @@ function clearBatchSemanticContext(): string | null {
         return null;
     } catch (error) {
         return failureReason(error);
+    }
+}
+
+async function executeRuntimeAction(
+    prepared: PreparedBatchAction,
+    source: ExecuteOptions['source'] | undefined,
+    shouldExecute: ExecuteOptions['shouldExecute'] | undefined
+): Promise<ExecuteAppActionBatchResult> {
+    try {
+        assertExecutionAuthorized(shouldExecute);
+        if (prepared.handler.isNoop?.(prepared.action)) {
+            return { status: 'no-op', actions: [] };
+        }
+        traceAppAction(prepared.action.type, source ?? 'manual');
+        const result: HandlerExecutionResult | void = await prepared.handler.execute(prepared.action);
+        if (result?.status === 'no-write') {
+            return { status: 'no-op', actions: [] };
+        }
+        if (result?.status === 'conflict') {
+            return {
+                status: 'conflicted',
+                reason: `Action conflicts with current project state: ${prepared.action.type}`,
+                actions: [],
+            };
+        }
+
+        const actions = [{ action: prepared.action, label: prepared.label }];
+        if (!result?.afterCommit) {
+            return { status: 'executed', actions };
+        }
+
+        try {
+            await result.afterCommit();
+            return { status: 'executed', actions };
+        } catch (effectError) {
+            const deferredResult: { afterAmbiguousCommit?: HandlerAfterCommit } = result;
+            if (!deferredResult.afterAmbiguousCommit) {
+                return {
+                    status: 'executed-with-warning',
+                    actions,
+                    warning: `${prepared.action.type} follow-up effect failed: ${failureReason(effectError)}`,
+                };
+            }
+            try {
+                await deferredResult.afterAmbiguousCommit();
+                return { status: 'executed', actions };
+            } catch (reconciliationError) {
+                return {
+                    status: 'executed-with-warning',
+                    actions,
+                    warning: `${prepared.action.type} follow-up effect failed: ${failureReason(effectError)}; runtime reconciliation failed: ${failureReason(reconciliationError)}`,
+                };
+            }
+        }
+    } catch (error) {
+        if (error instanceof AppActionBatchCancelledError) {
+            return { status: 'cancelled', reason: error.message, actions: [] };
+        }
+        logger.error(new Error('Runtime action handler failed', { cause: error }));
+        return { status: 'failed', reason: failureReason(error), actions: [] };
     }
 }
 
@@ -234,7 +296,10 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 }
                 let description: HandlerDescribeResult | null;
                 try {
-                    description = handler.undoable ? handler.describe(action) : null;
+                    description = null;
+                    if (handler.undoable || handler.executionKind === 'runtime') {
+                        description = handler.describe(action);
+                    }
                 } catch (error) {
                     return {
                         status: 'rejected',
@@ -242,7 +307,11 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                         actions: [],
                     };
                 }
-                if (options?.requireCompensation && !description?.inverseAction) {
+                if (
+                    options?.requireCompensation &&
+                    handler.executionKind !== 'runtime' &&
+                    !description?.inverseAction
+                ) {
                     return {
                         status: 'rejected',
                         reason: `Action is not compensable inside an atomic batch: ${action.type}`,
@@ -262,6 +331,19 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
 
             if (preparedActions.length === 0) {
                 return { status: 'no-op', actions: [] };
+            }
+
+            const runtimeActions = preparedActions.filter((prepared) => prepared.handler.executionKind === 'runtime');
+            if (runtimeActions.length > 0 && preparedActions.length !== 1) {
+                return {
+                    status: 'rejected',
+                    reason: 'Runtime actions must execute as singleton batches',
+                    actions: [],
+                };
+            }
+            const runtimeAction = runtimeActions[0];
+            if (runtimeAction) {
+                return executeRuntimeAction(runtimeAction, options?.source, options?.shouldExecute);
             }
 
             for (const prepared of preparedActions) {

@@ -160,6 +160,32 @@ export async function sendChatMessage(userText: string): Promise<void> {
                     return;
                 }
 
+                if (execution.status === 'executed') {
+                    const receiptWarnings: string[] = [];
+                    if (execution.executionWarning) {
+                        receiptWarnings.push(`Runtime follow-up warning: ${execution.executionWarning}`);
+                    }
+                    if (execution.reportingWarning) {
+                        receiptWarnings.push(
+                            `AI history or notification reporting warning: ${execution.reportingWarning}`
+                        );
+                    }
+                    const actionSummary = execution.actions
+                        .map((entry) => `- **${entry.actionType.replaceAll('_', ' ')}**: ${entry.label}`)
+                        .join('\n');
+                    const warningSummary = receiptWarnings.join(' ');
+                    let content = `Executed:\n\n${actionSummary}`;
+                    if (warningSummary) {
+                        content = `${content}\n\n${warningSummary} The runtime command executed. Do not retry automatically; inspect the current runtime state.`;
+                    }
+                    updateChatMessage(assistantMsgId, {
+                        isStreaming: false,
+                        error: warningSummary || undefined,
+                        content,
+                    });
+                    return;
+                }
+
                 if (execution.status === 'invalidated') {
                     updateChatMessage(assistantMsgId, {
                         isStreaming: false,

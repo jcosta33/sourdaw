@@ -39,6 +39,7 @@ export { setMetronomeVolume } from './transportControls/setMetronomeVolume';
 export { setPreRollBars } from './transportControls/setPreRollBars';
 export { setPunchIn } from './transportControls/setPunchIn';
 export { setPunchOut } from './transportControls/setPunchOut';
+export { setPlayback } from './transportControls/setPlayback';
 export { stopPlayback } from './transportControls/stopPlayback';
 export { toggleCountIn } from './transportControls/toggleCountIn';
 export { toggleLoop } from './transportControls/toggleLoop';

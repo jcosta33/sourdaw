@@ -13,6 +13,7 @@ type WrittenHistoryGroup = {
     groupId: string;
     timestamp: number;
     reverted: boolean;
+    executionKind: 'project' | 'runtime';
 };
 
 const module_mocks = vi.hoisted(() => ({
@@ -44,6 +45,7 @@ describe('recordAiActionGroup', () => {
                 },
             ],
             groupId: 'group-1',
+            executionKind: 'project',
         });
 
         expect(module_mocks.push_ai_action_group).toHaveBeenCalledTimes(1);
@@ -60,6 +62,7 @@ describe('recordAiActionGroup', () => {
             groupId: 'group-1',
             timestamp: 1_720_000_000_000,
             reverted: false,
+            executionKind: 'project',
         });
     });
 });

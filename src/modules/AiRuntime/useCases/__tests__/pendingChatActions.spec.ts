@@ -62,6 +62,7 @@ vi.mock('../notifyAiChange', () => ({
 
 const pendingAction: RuntimeAction = { type: 'removeTrack', payload: { trackId: 'track-1' } };
 const secondPendingAction: RuntimeAction = { type: 'removeClip', payload: { clipId: 'clip-1' } };
+const runtimeOnlyAction: RuntimeAction = { type: 'setPlayback', payload: { playing: true } };
 
 function proposePendingAppAction(id: string): void {
     proposePendingActionConfirmation({
@@ -123,6 +124,7 @@ describe('pending chat action confirmation', () => {
             groupId: 'group-1',
             timestamp: expect.any(Number),
             reverted: false,
+            executionKind: 'project',
         });
         expect(mocks.notifyAiChange).toHaveBeenCalledWith('Confirmed: delete drums', ['removeTrack']);
         expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
@@ -134,7 +136,7 @@ describe('pending chat action confirmation', () => {
         );
         expect(getPendingActionConfirmation('confirm-1')?.status).toBe('executed');
         expect(getPendingActionConfirmation('confirm-1')?.executedActions).toEqual([
-            { actionType: 'removeTrack', label: 'Remove track' },
+            { actionType: 'removeTrack', label: 'Remove track', executionKind: 'project' },
         ]);
     });
 
@@ -369,7 +371,7 @@ describe('pending chat action confirmation', () => {
     });
 
     it('should record a committed confirmation action as executed and warn against retrying', async () => {
-        const warning = 'Action committed but history failed';
+        const warning = 'transport synchronization unavailable';
         mocks.executeAppActionBatch.mockResolvedValueOnce({
             status: 'committed-with-warning',
             actions: [{ action: pendingAction, label: 'Remove track' }],
@@ -389,18 +391,59 @@ describe('pending chat action confirmation', () => {
         expect(result).toEqual({ status: 'executed' });
         expect(getPendingActionConfirmation('confirm-1')?.status).toBe('executed');
         expect(getPendingActionConfirmation('confirm-1')?.executedActions).toEqual([
-            { actionType: 'removeTrack', label: 'Remove track' },
+            { actionType: 'removeTrack', label: 'Remove track', executionKind: 'project' },
         ]);
         expect(mocks.pushAiActionGroup).toHaveBeenCalledWith(
             expect.objectContaining({
                 actions: [{ kind: 'appAction', actionType: 'removeTrack', label: 'Remove track' }],
+                executionKind: 'project',
             })
         );
         expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
             'assistant-1',
             expect.objectContaining({
                 pendingActionConfirmationStatus: 'executed',
-                content: expect.stringMatching(/applied.*history.*do not retry/is),
+                content: expect.stringMatching(/applied.*committed with a follow-up warning.*do not retry/is),
+            })
+        );
+    });
+
+    it('should record a confirmed runtime command as executed rather than failed', async () => {
+        const warning = 'setPlayback follow-up effect failed: transport unavailable';
+        mocks.executeAppActionBatch.mockResolvedValueOnce({
+            status: 'executed-with-warning',
+            actions: [{ action: runtimeOnlyAction, label: 'Start playback' }],
+            warning,
+        });
+        proposePendingActionConfirmation({
+            id: 'confirm-1',
+            prompt: 'start playback',
+            assistantMessageId: 'assistant-1',
+            actions: [runtimeOnlyAction],
+            actionLabels: ['Start playback'],
+            executionMode: 'atomic',
+            projectRevision: 'revision-1',
+        });
+
+        const result = await confirmPendingChatActions({ confirmationId: 'confirm-1' });
+
+        expect(result).toEqual({ status: 'executed' });
+        expect(getPendingActionConfirmation('confirm-1')?.status).toBe('executed');
+        expect(getPendingActionConfirmation('confirm-1')?.executedActions).toEqual([
+            { actionType: 'setPlayback', label: 'Start playback', executionKind: 'runtime' },
+        ]);
+        expect(mocks.pushAiActionGroup).toHaveBeenCalledWith(
+            expect.objectContaining({
+                actions: [{ kind: 'appAction', actionType: 'setPlayback', label: 'Start playback' }],
+                executionKind: 'runtime',
+            })
+        );
+        expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+            'assistant-1',
+            expect.objectContaining({
+                error: warning,
+                pendingActionConfirmationStatus: 'executed',
+                content: expect.stringMatching(/runtime command executed.*do not retry/is),
             })
         );
     });
@@ -436,6 +479,38 @@ describe('pending chat action confirmation', () => {
         );
     });
 
+    it('keeps a confirmed runtime command executed when reporting throws without claiming a project commit', async () => {
+        mocks.executeAppActionBatch.mockResolvedValueOnce({
+            status: 'executed',
+            actions: [{ action: runtimeOnlyAction, label: 'Start playback' }],
+        });
+        mocks.pushAiActionGroup.mockImplementationOnce(() => {
+            throw new Error('AI history unavailable');
+        });
+        proposePendingActionConfirmation({
+            id: 'confirm-1',
+            prompt: 'start playback',
+            assistantMessageId: 'assistant-1',
+            actions: [runtimeOnlyAction],
+            actionLabels: ['Start playback'],
+            projectRevision: 'revision-1',
+        });
+
+        const result = await confirmPendingChatActions({ confirmationId: 'confirm-1' });
+
+        expect(result).toEqual({ status: 'executed' });
+        expect(getPendingActionConfirmation('confirm-1')?.status).toBe('executed');
+        expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+            'assistant-1',
+            expect.objectContaining({
+                pendingActionConfirmationStatus: 'executed',
+                error: 'AI history unavailable',
+                content:
+                    'The confirmed runtime command executed, but reporting it failed: AI history unavailable. Do not retry these actions.',
+            })
+        );
+    });
+
     it('should execute a multi-action confirmation through one atomic batch', async () => {
         mocks.executeAppActionBatch.mockResolvedValueOnce({
             status: 'committed',
@@ -458,8 +533,8 @@ describe('pending chat action confirmation', () => {
 
         expect(result).toEqual({ status: 'executed' });
         expect(getPendingActionConfirmation('confirm-1')?.executedActions).toEqual([
-            { actionType: 'removeTrack', label: 'Remove track' },
-            { actionType: 'removeClip', label: 'Remove clip' },
+            { actionType: 'removeTrack', label: 'Remove track', executionKind: 'project' },
+            { actionType: 'removeClip', label: 'Remove clip', executionKind: 'project' },
         ]);
         expect(mocks.executeAppActionBatch.mock.calls[0]?.[0]).toEqual([pendingAction, secondPendingAction]);
         expect(mocks.executeAppActionBatch.mock.calls[0]?.[1]).toMatchObject({
@@ -475,6 +550,7 @@ describe('pending chat action confirmation', () => {
                     { kind: 'appAction', actionType: 'removeTrack', label: 'Remove track' },
                     { kind: 'appAction', actionType: 'removeClip', label: 'Remove clip' },
                 ],
+                executionKind: 'project',
             })
         );
         expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(

@@ -27,6 +27,7 @@ type CommitUndoEntryModule = typeof import('../commitUndoEntry');
 type CommitUndoEntryInput = Parameters<CommitUndoEntryModule['commitUndoEntry']>[0];
 type SetEditingToolAction = Extract<AppAction, { type: 'setEditingTool' }>;
 type SetSnapValueAction = Extract<AppAction, { type: 'setSnapValue' }>;
+type SetPlaybackAction = Extract<AppAction, { type: 'setPlayback' }>;
 type ToggleSidebarAction = Extract<AppAction, { type: 'toggleSidebar' }>;
 
 type MockCommandHandler<Action extends AppAction> = ActionHandler<Action> & {
@@ -38,7 +39,9 @@ type CreateMockHandlerInput<Action extends AppAction> = {
     label?: string;
     execute?: (action: Action) => void | HandlerExecutionResult | Promise<void | HandlerExecutionResult>;
     describe?: (action: Action) => HandlerDescribeResult;
+    executionKind?: ActionHandler<Action>['executionKind'];
     isNoop?: (action: Action) => boolean;
+    undoable?: boolean;
 };
 
 type CreateMockHandlerOutput<Action extends AppAction> = MockCommandHandler<Action>;
@@ -47,13 +50,16 @@ function create_mock_handler<Action extends AppAction>({
     label = 'Mock Label',
     execute = () => undefined,
     describe = () => ({ label }),
+    executionKind,
     isNoop,
+    undoable = true,
 }: CreateMockHandlerInput<Action> = {}): CreateMockHandlerOutput<Action> {
     return {
         execute:
             vi.fn<(action: Action) => void | HandlerExecutionResult | Promise<void | HandlerExecutionResult>>(execute),
         describe: vi.fn<(action: Action) => HandlerDescribeResult>(describe),
-        undoable: true,
+        executionKind,
+        undoable,
         isNoop,
     };
 }
@@ -155,6 +161,22 @@ describe('executeAppAction', () => {
         expect(mocks.setSemanticContext).toHaveBeenCalledWith(expect.objectContaining({ message: 'Mock Label' }));
         expect(mocks.commitUndoEntry).toHaveBeenCalled();
         expect(mocks.recordActionHistoryMetadata).toHaveBeenCalled();
+    });
+
+    it('executes runtime handlers without CRDT semantics, undo history, or macro recording', async () => {
+        const action: SetPlaybackAction = { type: 'setPlayback', payload: { playing: true } };
+        const handler = create_mock_handler<SetPlaybackAction>({ executionKind: 'runtime', undoable: false });
+        registerHandlerMap({ [action.type]: handler });
+
+        await executeAppAction(action);
+
+        expect(handler.execute).toHaveBeenCalledWith(action);
+        expect(handler.describe).not.toHaveBeenCalled();
+        expect(mocks.setSemanticContext).not.toHaveBeenCalled();
+        expect(mocks.clearSemanticContext).not.toHaveBeenCalled();
+        expect(mocks.recordAction).not.toHaveBeenCalled();
+        expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
+        expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
     });
 
     it('runs deferred external effects only after the action commits', async () => {

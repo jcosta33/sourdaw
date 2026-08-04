@@ -6,6 +6,7 @@ import { bridgeLlmToolCalls, buildLlmActionSystemPrompt, buildLlmActionUserMessa
 const projectContext: ProjectContext = {
     tempo: 120,
     timeSignature: [4, 4],
+    isPlaying: false,
     isLooping: true,
     loopStart: 4,
     loopEnd: 12,
@@ -228,6 +229,50 @@ function createMidiClipContext(): ProjectContext {
 }
 
 describe('bridgeLlmToolCalls', () => {
+    it('bridges exact desired playback state and rejects no-ops or malformed payloads', () => {
+        const play = bridge({
+            calls: [{ name: 'setPlayback', arguments: { playing: true } }],
+            context: projectContext,
+        });
+        const pause = bridge({
+            calls: [{ name: 'setPlayback', arguments: { playing: false } }],
+            context: { ...projectContext, isPlaying: true },
+        });
+        const rejected = [
+            bridge({ calls: [{ name: 'setPlayback', arguments: { playing: false } }], context: projectContext }),
+            bridge({ calls: [{ name: 'setPlayback', arguments: { playing: 'yes' } }], context: projectContext }),
+            bridge({
+                calls: [{ name: 'setPlayback', arguments: { playing: true, extra: true } }],
+                context: projectContext,
+            }),
+        ];
+
+        expect(play.actions).toEqual([{ type: 'setPlayback', payload: { playing: true } }]);
+        expect(pause.actions).toEqual([{ type: 'setPlayback', payload: { playing: false } }]);
+        expect(rejected.every((result) => result.actions.length === 0)).toBe(true);
+    });
+
+    it('keeps runtime playback commands exclusive from provider batches', () => {
+        const result = bridge({
+            calls: [
+                { name: 'setPlayback', arguments: { playing: true } },
+                { name: 'setTempo', arguments: { bpm: 128 } },
+            ],
+            context: projectContext,
+        });
+
+        expect(result).toEqual({
+            actions: [],
+            rejections: [
+                {
+                    index: 0,
+                    name: '<batch>',
+                    reason: 'Provider runtime playback command must be the only action in its batch',
+                },
+            ],
+        });
+    });
+
     it('converts allowlisted provider calls into typed runtime actions', () => {
         const result = bridge({
             calls: [
@@ -1891,6 +1936,7 @@ describe('bridgeLlmToolCalls', () => {
         expect(userMessage).toContain('"index":0');
         expect(userMessage).toContain('"selectedTrackId":"track-vocals"');
         expect(userMessage).toContain('"selectedClipId":"clip-verse"');
+        expect(userMessage).toContain('"isPlaying":false');
         expect(userMessage).toContain('"isLooping":true');
         expect(userMessage).toContain('"loopStart":4');
         expect(userMessage).toContain('"loopEnd":12');

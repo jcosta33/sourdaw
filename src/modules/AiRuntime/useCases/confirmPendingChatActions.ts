@@ -96,11 +96,25 @@ export async function confirmPendingChatActions(
         return invalidatePendingConfirmation(confirmation);
     }
 
-    if (batchResult.status === 'committed' || batchResult.status === 'committed-with-warning') {
+    if (
+        batchResult.status === 'committed' ||
+        batchResult.status === 'committed-with-warning' ||
+        batchResult.status === 'executed' ||
+        batchResult.status === 'executed-with-warning'
+    ) {
+        let executionKind: 'project' | 'runtime' = 'project';
+        if (batchResult.status === 'executed' || batchResult.status === 'executed-with-warning') {
+            executionKind = 'runtime';
+        }
         const executedLabels = batchResult.actions.map(({ action, label }) => ({
             actionType: action.type,
             label,
+            executionKind,
         }));
+        let warning: string | undefined;
+        if (batchResult.status === 'committed-with-warning' || batchResult.status === 'executed-with-warning') {
+            warning = batchResult.warning;
+        }
         try {
             for (const execution of executedLabels) {
                 recordPendingActionExecution({ confirmationId: confirmation.id, execution });
@@ -116,6 +130,7 @@ export async function confirmPendingChatActions(
                 groupId: group.groupId,
                 timestamp: Date.now(),
                 reverted: false,
+                executionKind,
             };
             pushAiActionGroup(historyGroup);
             notifyAiChange(
@@ -123,31 +138,39 @@ export async function confirmPendingChatActions(
                 executedLabels.map((entry) => entry.actionType)
             );
             updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed' });
+            let content = `Executed after confirmation:\n\n${executedLabels.map((entry) => `- **${entry.actionType}**: ${entry.label}`).join('\n')}`;
+            if (batchResult.status === 'committed-with-warning') {
+                content = `Applied after confirmation:\n\n${executedLabels.map((entry) => `- **${entry.actionType}**: ${entry.label}`).join('\n')}\n\nThe project change committed with a follow-up warning: ${batchResult.warning}. Do not retry these confirmed actions.`;
+            }
+            if (batchResult.status === 'executed-with-warning') {
+                content = `Executed after confirmation:\n\n${executedLabels.map((entry) => `- **${entry.actionType}**: ${entry.label}`).join('\n')}\n\nThe runtime command executed with a follow-up warning: ${batchResult.warning}. Do not retry these confirmed actions.`;
+            }
             updateChatMessage(confirmation.assistantMessageId, {
                 pendingActionConfirmationStatus: 'executed',
-                error: batchResult.status === 'committed-with-warning' ? batchResult.warning : undefined,
-                content:
-                    batchResult.status === 'committed-with-warning'
-                        ? `Applied after confirmation:\n\n${executedLabels.map((entry) => `- **${entry.actionType}**: ${entry.label}`).join('\n')}\n\nThe project change committed, but its history record failed: ${batchResult.warning}. Do not retry these confirmed actions.`
-                        : `Executed after confirmation:\n\n${executedLabels.map((entry) => `- **${entry.actionType}**: ${entry.label}`).join('\n')}`,
+                error: warning,
+                content,
             });
         } catch (error) {
             const warning = error instanceof Error ? error.message : String(error);
-            logger.error(new Error('Confirmed AI action reporting failed after commit', { cause: error }));
+            logger.error(new Error('Confirmed AI action reporting failed after execution', { cause: error }));
             try {
                 updatePendingActionConfirmationStatus({
                     confirmationId: confirmation.id,
                     status: 'executed',
                     error: warning,
                 });
+                let executionDescription = 'project change committed';
+                if (executionKind === 'runtime') {
+                    executionDescription = 'runtime command executed';
+                }
                 updateChatMessage(confirmation.assistantMessageId, {
                     pendingActionConfirmationStatus: 'executed',
                     error: warning,
-                    content: `The confirmed project change committed, but reporting it failed: ${warning}. Do not retry these actions.`,
+                    content: `The confirmed ${executionDescription}, but reporting it failed: ${warning}. Do not retry these actions.`,
                 });
             } catch (reportingError) {
                 logger.error(
-                    new Error('Confirmed AI post-commit warning could not be persisted', {
+                    new Error('Confirmed AI post-execution warning could not be persisted', {
                         cause: reportingError,
                     })
                 );

@@ -83,6 +83,7 @@ export function getProjectContext(): ProjectContext {
     const built: ProjectContext = {
         tempo: transportState?.tempo ?? 120,
         timeSignature: [transportState?.timeSignatureNumerator ?? 4, transportState?.timeSignatureDenominator ?? 4],
+        isPlaying: transportState?.isPlaying ?? false,
         isLooping: transportState?.isLooping ?? false,
         loopStart: transportState?.loopStart ?? 0,
         loopEnd: transportState?.loopEnd ?? 0,

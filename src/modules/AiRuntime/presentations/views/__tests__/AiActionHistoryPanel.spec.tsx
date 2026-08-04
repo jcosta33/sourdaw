@@ -12,6 +12,7 @@ type MockAiActionGroup = {
     groupId: string;
     timestamp: number;
     reverted: boolean;
+    executionKind?: 'project' | 'runtime';
 };
 
 type MockActionHistoryEntry = {
@@ -129,6 +130,26 @@ describe('AiActionHistoryPanel', () => {
         ];
         render(<AiActionHistoryPanel />);
         expect(screen.getByText('Test prompt')).toBeInTheDocument();
+    });
+
+    it('labels runtime execution receipts without offering Undo', () => {
+        mock_ai_state.groups = [
+            {
+                id: 'g1',
+                prompt: 'Play',
+                actions: [{ kind: 'appAction', actionType: 'setPlayback', label: 'Start playback' }],
+                groupId: 'group-1',
+                timestamp: Date.now(),
+                reverted: false,
+                executionKind: 'runtime',
+            },
+        ];
+
+        render(<AiActionHistoryPanel />);
+
+        expect(screen.getByText(/1 runtime command/)).toBeInTheDocument();
+        expect(screen.getByText('runtime')).toBeInTheDocument();
+        expect(screen.queryByTitle('Undo all changes from this AI action')).not.toBeInTheDocument();
     });
 
     it('should render user actions', () => {

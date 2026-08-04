@@ -237,7 +237,7 @@ export const usePromptExecution = (): PromptExecutionState => {
     // ── Execute action group ────────────────────────────────────────────
     const executeWithGroup = async (input: ExecutePromptActionGroupInput): Promise<void> => {
         const execution = await executePlannedActions(input);
-        if (execution.status === 'committed') {
+        if (execution.status === 'committed' || execution.status === 'executed') {
             return;
         }
         if (execution.status === 'invalidated' || execution.status === 'failed') {

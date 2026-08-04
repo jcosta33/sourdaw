@@ -10,6 +10,7 @@ export type AiActionGroup = {
     groupId: string;
     timestamp: number;
     reverted: boolean;
+    executionKind?: 'project' | 'runtime';
 };
 
 export type AiActionHistoryState = {
@@ -80,6 +81,9 @@ function validateStoredActionGroup(value: unknown): AiActionGroup | null {
     ) {
         return null;
     }
+    if (value.executionKind !== undefined && value.executionKind !== 'project' && value.executionKind !== 'runtime') {
+        return null;
+    }
 
     const actions = validateStoredActionEntries(value.actions);
     if (actions === null) {
@@ -93,6 +97,7 @@ function validateStoredActionGroup(value: unknown): AiActionGroup | null {
         groupId: value.groupId,
         timestamp: value.timestamp,
         reverted: value.reverted,
+        ...(value.executionKind ? { executionKind: value.executionKind } : {}),
     };
 }
 
@@ -144,7 +149,12 @@ export function markGroupReverted(groupId: string): void {
     }
     aiActionHistoryStore.set({
         ...state,
-        groups: state.groups.map((g) => (g.groupId === groupId ? { ...g, reverted: true } : g)),
+        groups: state.groups.map((group) => {
+            if (group.groupId !== groupId || group.executionKind === 'runtime') {
+                return group;
+            }
+            return { ...group, reverted: true };
+        }),
     });
 }
 

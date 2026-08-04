@@ -105,6 +105,7 @@ describe('getProjectContext', () => {
 
         expect(context.tempo).toBe(120);
         expect(context.timeSignature).toEqual([4, 4]);
+        expect(context.isPlaying).toBe(false);
         expect(context.isLooping).toBe(false);
         expect(context.loopStart).toBe(0);
         expect(context.loopEnd).toBe(0);
@@ -193,6 +194,7 @@ describe('getProjectContext', () => {
             timeSignatureNumerator: 3,
             timeSignatureDenominator: 4,
             playheadPosition: 16,
+            isPlaying: true,
             isLooping: true,
             loopStart: 4,
             loopEnd: 12,
@@ -227,6 +229,7 @@ describe('getProjectContext', () => {
 
         expect(context.tempo).toBe(130);
         expect(context.timeSignature).toEqual([3, 4]);
+        expect(context.isPlaying).toBe(true);
         expect(context.isLooping).toBe(true);
         expect(context.loopStart).toBe(4);
         expect(context.loopEnd).toBe(12);
