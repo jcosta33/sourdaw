@@ -1,0 +1,96 @@
+src/modules/Arrangement/handlers/marker/handleAddSection.ts
+  s_bc88af7d3b054c::t_5b1cfe17f02206 34
+  s_bc88af7d3b054c::t_4f4df3bd94b880 4,6-8,24-30,37,40-43
+  s_bc88af7d3b054c::t_5cf9a872f0c994 31-33
+  s_bc88af7d3b054c::t_98bfcdfd5c283f 44-45
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_bc88af7d3b054c::t_61a1f780c41a12 1618-1623
+  s_bc88af7d3b054c::t_7e28a30c168c3a 1577-1578
+  s_bc88af7d3b054c::t_6b3146b5f0936a 1613-1617,1636-1641
+  s_bc88af7d3b054c::t_7b9f2d33886e49 12,24,1095-1102,1560-1576,1579-1612,1624-1635,1642,2042-2047,2078-2100,2463,2467,2537-2542
+src/modules/Arrangement/handlers/marker/handleRemoveSection.ts
+  s_bc88af7d3b054c::t_5cf9a872f0c994 9-11,16-19,21
+  s_bc88af7d3b054c::t_4f4df3bd94b880 8
+  s_bc88af7d3b054c::t_5b1cfe17f02206 12
+src/modules/Arrangement/handlers/marker/__tests__/markerHandlers.spec.ts
+  s_bc88af7d3b054c::t_3a037edbf518bf 37,39-40,61,147,206,214,219-225,239,262-265,278
+  s_bc88af7d3b054c::t_d5603000b7f118 261,266-277,279-281
+  s_bc88af7d3b054c::t_d6f04a02f55bf0 150-167
+  s_bc88af7d3b054c::t_9c508ca2ea78aa 148-149
+  s_bc88af7d3b054c::t_ff997daab05f0e 282-283
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_bc88af7d3b054c::t_7299d25c81610d 59-63,905-966
+src/modules/Arrangement/handlers/marker/handleRenameSection.ts
+  s_bc88af7d3b054c::t_4f4df3bd94b880 8
+  s_bc88af7d3b054c::t_5cf9a872f0c994 9-11,16-19,21
+  s_bc88af7d3b054c::t_5b1cfe17f02206 12
+src/modules/AiRuntime/useCases/__tests__/describePlannedAction.spec.ts
+  s_bc88af7d3b054c::t_0679d7d4c7f940 5-8,107,124-147
+  s_bc88af7d3b054c::t_787b846b2f88fa 148-149
+src/modules/AiRuntime/useCases/describePlannedAction.ts
+  s_bc88af7d3b054c::t_77218bd8eb293d 33-44
+src/modules/Arrangement/useCases/marker/sectionOperations/__tests__/addSection.spec.ts
+  s_bc88af7d3b054c::t_3a037edbf518bf 31,33,41-42,49,51
+src/modules/Arrangement/useCases/marker/sectionOperations/__tests__/renameSection.spec.ts
+  s_bc88af7d3b054c::t_3a037edbf518bf 34,36,54,56,64,66-80
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_bc88af7d3b054c::t_1a06185d1145b3 450-486,1220-1250
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_bc88af7d3b054c::t_845883c27c1bed 296-297,481-492
+src/modules/Arrangement/useCases/marker/sectionOperations/addSection.ts
+  s_bc88af7d3b054c::t_4f4df3bd94b880 4-7
+  s_bc88af7d3b054c::t_8b8881882ccce9 8-10
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_bc88af7d3b054c::t_4fe90af2fe7d5b 29-32,115,213,292,315,331-351
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_bc88af7d3b054c::t_34533e2983b6b7 461-470,1588,1613-1620
+  s_bc88af7d3b054c::t_6831a3300e970c 458-460,471
+  s_bc88af7d3b054c::t_89fa5c60d516e0 1610
+  s_bc88af7d3b054c::t_72bd7cdf5bb89c 31-37,42,294,300,398-422,427-457,472,475,1608-1609,1611-1612,1621,1624
+  s_bc88af7d3b054c::t_018912cdcd13cc 423-426
+  s_ac9b259eab20ba::t_a6c233f3430074 473-474,476-477,1589-1592,1622-1623,1625,1981,2074-2080,2092,2133,2149-2152
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_bc88af7d3b054c::t_3d3508c9663def 130-142
+src/modules/Arrangement/useCases/marker/sectionOperations/renameSection.ts
+  s_bc88af7d3b054c::t_4f4df3bd94b880 3,6-10,16
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_bc88af7d3b054c::t_a02ece633331af 546-572
+  s_bc88af7d3b054c::t_e03c7812fbfb57 158-159,511-545,603-633
+  s_bc88af7d3b054c::t_89fa5c60d516e0 573-602
+  s_bc88af7d3b054c::t_34533e2983b6b7 634,636-690
+  s_ac9b259eab20ba::t_923dd3ef20fe79 635
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_bc88af7d3b054c::t_e03c7812fbfb57 77-83,85,413-428,484-545,549
+  s_bc88af7d3b054c::t_61a1f780c41a12 429-483
+  s_ac9b259eab20ba::t_bfdecbda7b262e 546-548
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_bc88af7d3b054c::t_1a147be96089d4 354-385
+src/modules/Arrangement/useCases/marker/sectionOperations/removeSection.ts
+  s_bc88af7d3b054c::t_4f4df3bd94b880 3,6-9,12
+src/modules/Arrangement/useCases/marker/sectionOperations/__tests__/removeSection.spec.ts
+  s_bc88af7d3b054c::t_3a037edbf518bf 33,35,44,46-55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "627c8dfc1f5f3ed97f03c58bda51d3db4e282bd2",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
