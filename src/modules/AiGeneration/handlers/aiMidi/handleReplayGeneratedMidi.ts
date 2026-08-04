@@ -1,4 +1,4 @@
-import { addClip, addTrackWithDeferredAddedEvent, getTrackStoreState } from '#/modules/Arrangement/useCases';
+import { addClip, getTrackStoreState, restoreTrackAtIndexWithDeferredAddedEvent } from '#/modules/Arrangement/useCases';
 import { setNotesForClip } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type MidiClipNoteSnapshot } from '#/utils/handlerContract';
@@ -8,6 +8,47 @@ import { hasDurableMidiGenerationResult } from './hasDurableMidiGenerationResult
 type ReplayGeneratedMidiAction = Extract<AppAction, { type: 'replayGeneratedMidi' }>;
 type ReplayOperation = ReplayGeneratedMidiAction['payload']['operation'];
 type ReplayClip = ReplayOperation['clip'];
+
+type ReplayTrackSnapshot = {
+    id: string;
+    kind: 'midi';
+    clips: ReplayClip[];
+};
+
+function parseReplayTrack(operation: Extract<ReplayOperation, { kind: 'create-track' }>): ReplayTrackSnapshot | null {
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(operation.trackJson);
+    } catch {
+        return null;
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return null;
+    }
+    const candidate = parsed as Record<string, unknown>;
+    if (candidate.id !== operation.clip.trackId || candidate.kind !== 'midi' || !Array.isArray(candidate.clips)) {
+        return null;
+    }
+    if (candidate.clips.length !== 1) {
+        return null;
+    }
+    const clip: unknown = candidate.clips[0];
+    if (!clip || typeof clip !== 'object' || Array.isArray(clip)) {
+        return null;
+    }
+    const replayClip = clip as Record<string, unknown>;
+    if (
+        replayClip.id !== operation.clip.id ||
+        replayClip.trackId !== operation.clip.trackId ||
+        replayClip.name !== operation.clip.name ||
+        replayClip.startBeat !== operation.clip.startBeat ||
+        replayClip.endBeat !== operation.clip.endBeat ||
+        replayClip.type !== 'midi'
+    ) {
+        return null;
+    }
+    return parsed as ReplayTrackSnapshot;
+}
 
 function isExactClipResult(input: {
     trackId: string;
@@ -111,28 +152,24 @@ export const handleReplayGeneratedMidi = createHandler<'replayGeneratedMidi'>({
             return { status: 'written' };
         }
 
-        if (operation.clip.trackId !== operation.track.id) {
+        const replayTrack = parseReplayTrack(operation);
+        if (!replayTrack) {
             return { status: 'conflict' };
         }
-        if (getTrackStoreState()?.tracks.some((track) => track.id === operation.track.id) ?? true) {
+        if (getTrackStoreState()?.tracks.some((track) => track.id === replayTrack.id) ?? true) {
             return { status: 'conflict' };
         }
-        const trackCreation = addTrackWithDeferredAddedEvent({
-            id: operation.track.id,
-            name: operation.track.name,
-            kind: 'midi',
-            select: false,
+        const trackCreation = restoreTrackAtIndexWithDeferredAddedEvent({
+            trackJson: operation.trackJson,
+            trackIndex: operation.trackIndex,
         });
-        if (
-            !trackCreation ||
-            !createClipWithNotes({
-                trackId: trackCreation.track.id,
-                clip: operation.clip,
-                notes: operation.notes,
-            })
-        ) {
+        if (!trackCreation || trackCreation.track.id !== replayTrack.id) {
             return { status: 'conflict' };
         }
+        setNotesForClip(
+            operation.clip.id,
+            operation.notes.map((note) => ({ ...note }))
+        );
         return {
             status: 'written',
             afterCommit: trackCreation.afterCommit,

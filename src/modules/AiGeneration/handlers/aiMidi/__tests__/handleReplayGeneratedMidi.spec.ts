@@ -4,19 +4,19 @@ import { handleReplayGeneratedMidi } from '../handleReplayGeneratedMidi';
 
 const mocks = vi.hoisted(() => ({
     addClip: vi.fn(),
-    addTrack: vi.fn(),
     afterTrackAmbiguousCommit: vi.fn(),
     afterTrackCommit: vi.fn(),
     getTrackStoreState: vi.fn(),
     hasDurableMidiGenerationResult: vi.fn(),
+    restoreTrack: vi.fn(),
     setNotesForClip: vi.fn(),
 }));
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
     addClip: mocks.addClip,
-    addTrackWithDeferredAddedEvent: mocks.addTrack,
     getTrackStoreState: mocks.getTrackStoreState,
+    restoreTrackAtIndexWithDeferredAddedEvent: mocks.restoreTrack,
 }));
 vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),
@@ -67,12 +67,30 @@ describe('handleReplayGeneratedMidi', () => {
 
     it('recreates a generated track and MIDI clip with stable ids without selecting it', async () => {
         mocks.hasDurableMidiGenerationResult.mockReturnValue(true);
-        mocks.addTrack.mockReturnValue({
-            track: { id: 'generated-track', name: 'Bass', kind: 'midi', clips: [] },
+        const generatedTrack = {
+            id: 'generated-track',
+            name: 'Bass',
+            kind: 'midi',
+            color: '#123456',
+            devices: [{ id: 'stable-device' }],
+            alternatives: [{ id: 'stable-alternative' }],
+            clips: [
+                {
+                    id: 'generated-clip',
+                    trackId: 'generated-track',
+                    name: 'Bassline',
+                    startBeat: 0,
+                    endBeat: 4,
+                    type: 'midi',
+                },
+            ],
+        };
+        const trackJson = JSON.stringify(generatedTrack);
+        mocks.restoreTrack.mockReturnValue({
+            track: generatedTrack,
             afterCommit: mocks.afterTrackCommit,
             afterAmbiguousCommit: mocks.afterTrackAmbiguousCommit,
         });
-        mocks.addClip.mockReturnValue({ id: 'generated-clip' });
 
         const result = await handleReplayGeneratedMidi.execute({
             type: 'replayGeneratedMidi',
@@ -80,7 +98,8 @@ describe('handleReplayGeneratedMidi', () => {
                 operation: {
                     kind: 'create-track',
                     source: { trackId: 'source-track', clip: sourceClip, notes: sourceNotes },
-                    track: { id: 'generated-track', name: 'Bass' },
+                    trackJson,
+                    trackIndex: 1,
                     clip: {
                         id: 'generated-clip',
                         trackId: 'generated-track',
@@ -94,20 +113,11 @@ describe('handleReplayGeneratedMidi', () => {
             },
         });
 
-        expect(mocks.addTrack).toHaveBeenCalledWith({
-            id: 'generated-track',
-            name: 'Bass',
-            kind: 'midi',
-            select: false,
+        expect(mocks.restoreTrack).toHaveBeenCalledWith({
+            trackJson,
+            trackIndex: 1,
         });
-        expect(mocks.addClip).toHaveBeenCalledWith({
-            id: 'generated-clip',
-            trackId: 'generated-track',
-            startBeat: 0,
-            endBeat: 4,
-            name: 'Bassline',
-            type: 'midi',
-        });
+        expect(mocks.addClip).not.toHaveBeenCalled();
         expect(mocks.setNotesForClip).toHaveBeenCalledWith('generated-clip', generatedNotes);
         if (result?.status !== 'written') {
             throw new Error('Expected replay write');

@@ -505,7 +505,7 @@ describe('handleGenerateBassline', () => {
         }
         expect(description.redoAction.payload.operation).toMatchObject({
             kind: 'create-track',
-            track: { id: firstTrackId, name: 'Bass (root-fifth)' },
+            trackIndex: 1,
             clip: { id: firstClipId, trackId: firstTrackId },
             notes: [
                 {
@@ -515,6 +515,24 @@ describe('handleGenerateBassline', () => {
                     duration: 1,
                     velocity: 80,
                     probability: 100,
+                },
+            ],
+        });
+        const replayOperation = description.redoAction.payload.operation;
+        if (replayOperation.kind !== 'create-track') {
+            throw new Error('Expected generated track replay');
+        }
+        expect(JSON.parse(replayOperation.trackJson)).toEqual({
+            id: firstTrackId,
+            name: 'Bass (root-fifth)',
+            kind: 'midi',
+            clips: [
+                {
+                    id: firstClipId,
+                    startBeat: 4,
+                    endBeat: 8,
+                    name: 'Bassline (root-fifth)',
+                    type: 'midi',
                 },
             ],
         });

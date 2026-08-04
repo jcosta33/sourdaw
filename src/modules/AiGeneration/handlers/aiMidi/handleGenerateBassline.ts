@@ -97,7 +97,8 @@ function ensureGenerateBasslineState(
                 operation: {
                     kind: 'create-track',
                     source: sourceReplay,
-                    track: { id: targetTrackId, name: `Bass (${style})` },
+                    trackJson: '',
+                    trackIndex: 0,
                     clip: targetClip,
                     notes: resultNotes,
                 },
@@ -342,8 +343,19 @@ export const handleGenerateBassline = createHandler<'generateBassline'>({
         if (replayOperation.kind === 'create-clip') {
             replayOperation.targetTrackId = completedTrack.id;
         }
+        let generatedTrackForGuard: Track | null = null;
         if (replayOperation.kind === 'create-track') {
-            replayOperation.track = { id: completedTrack.id, name: completedTrack.name };
+            const currentState = getTrackStoreState();
+            const currentTrackIndex = currentState?.tracks.findIndex((track) => track.id === completedTrack.id) ?? -1;
+            const currentGeneratedTrack = currentTrackIndex >= 0 ? currentState?.tracks[currentTrackIndex] : undefined;
+            let replayTrack = completedTrack;
+            if (!completedTrack.clips.some((clip) => clip.id === completedClip.id)) {
+                replayTrack = { ...completedTrack, clips: [...completedTrack.clips, completedClip] };
+            }
+            generatedTrackForGuard = currentGeneratedTrack ?? replayTrack;
+            replayOperation.trackJson = JSON.stringify(generatedTrackForGuard);
+            replayOperation.trackIndex =
+                currentTrackIndex >= 0 ? currentTrackIndex : (currentState?.tracks.length ?? 0);
         }
         if (alpha.payload.trackId) {
             populateGeneratedMidiStateGuard({
@@ -352,12 +364,11 @@ export const handleGenerateBassline = createHandler<'generateBassline'>({
                 clipIds: [completedClip.id],
             });
         } else {
-            const currentGeneratedTrack = getTrackStoreState()?.tracks.find((track) => track.id === completedTrack.id);
             let fallbackTrack = completedTrack;
             if (!completedTrack.clips.some((clip) => clip.id === completedClip.id)) {
                 fallbackTrack = { ...completedTrack, clips: [...completedTrack.clips, completedClip] };
             }
-            const guardedTrack = currentGeneratedTrack ?? fallbackTrack;
+            const guardedTrack = generatedTrackForGuard ?? fallbackTrack;
             populateGeneratedMidiStateGuard({
                 guard: state.trackInverse.generatedMidiStateGuard,
                 entity: guardedTrack,

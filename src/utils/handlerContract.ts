@@ -326,7 +326,8 @@ type GeneratedMidiReplayOperation =
     | {
           kind: 'create-track';
           source: MidiGenerationSourceReplaySnapshot;
-          track: { id: string; name: string };
+          trackJson: string;
+          trackIndex: number;
           clip: MidiGenerationClipReplaySnapshot;
           notes: MidiClipNoteSnapshot[];
       };
