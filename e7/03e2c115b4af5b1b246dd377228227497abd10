@@ -1,0 +1,26 @@
+src/modules/AudioEngine/services/fermenterProcessor.ts
+  s_ac9b259eab20ba::t_9992dea32abdd1 291-332,338-346,406-409
+src/modules/AudioEngine/services/__tests__/fermenterProcessor.spec.ts
+  s_ac9b259eab20ba::t_1c9d88875c4124 37,49-67,123,532-549
+  s_ac9b259eab20ba::t_c6a744869a8da3 550-552
+src/modules/AudioEngine/services/__tests__/fermenterProcessorEventOffsets.spec.ts
+  s_ac9b259eab20ba::t_15e68e81ccad0b 1-302
+src/modules/AudioEngine/services/__tests__/processorQueues.spec.ts
+  s_ac9b259eab20ba::t_31e413fba49079 68-84,90,97-103,126,138,160,165
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "e703e2c115b4af5b1b246dd377228227497abd10",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
