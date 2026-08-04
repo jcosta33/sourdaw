@@ -28,8 +28,9 @@ describe('addSection', () => {
     });
 
     it('adds a section to the store', () => {
-        addSection(0, 32, 'Intro');
+        const changed = addSection(0, 32, 'Intro', 'section-intro', '#123456');
 
+        expect(changed).toBe(true);
         expect(mocks.markerStoreSet).toHaveBeenCalledTimes(1);
         const newState = mocks.markerStoreSet.mock.calls[0]![0] as MarkerStoreState;
         expect(newState.sections).toHaveLength(1);
@@ -37,14 +38,17 @@ describe('addSection', () => {
             startBeat: 0,
             endBeat: 32,
             name: 'Intro',
+            id: 'section-intro',
+            color: '#123456',
         });
     });
 
     it('is a no-op when the marker store holds no state (cleared/absent project)', () => {
         mocks.markerStoreValue.value = null;
 
-        addSection(0, 32, 'Intro');
+        const changed = addSection(0, 32, 'Intro');
 
+        expect(changed).toBe(false);
         expect(mocks.markerStoreSet).not.toHaveBeenCalled();
     });
 });

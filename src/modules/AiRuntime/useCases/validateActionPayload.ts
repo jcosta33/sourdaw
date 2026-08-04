@@ -293,7 +293,8 @@ const validators = {
     // Marker + section
     removeMarker: (param): param is PayloadOf<'removeMarker'> =>
         isObj(param) && hasExactKeys(param, ['markerId']) && isNonEmptyString(param.markerId),
-    removeSection: (param): param is PayloadOf<'removeSection'> => isObj(param) && isString(param.sectionId),
+    removeSection: (param): param is PayloadOf<'removeSection'> =>
+        isObj(param) && hasExactKeys(param, ['sectionId']) && isNonEmptyString(param.sectionId),
     removeTimeSignatureChange: (param): param is PayloadOf<'removeTimeSignatureChange'> =>
         isObj(param) && isString(param.changeId),
 
@@ -477,8 +478,18 @@ const validators = {
         isNonNegativeNumber(param.beat) &&
         normalizeSafeProjectName(param.name) !== null,
     setMarkerColor: 'unchecked',
-    addSection: 'unchecked',
-    renameSection: 'unchecked',
+    addSection: (param): param is PayloadOf<'addSection'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['startBeat', 'endBeat', 'name']) &&
+        isNonNegativeNumber(param.startBeat) &&
+        isNumber(param.endBeat) &&
+        param.endBeat > param.startBeat &&
+        normalizeSafeProjectName(param.name) !== null,
+    renameSection: (param): param is PayloadOf<'renameSection'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['sectionId', 'name']) &&
+        isNonEmptyString(param.sectionId) &&
+        normalizeSafeProjectName(param.name) !== null,
     addTimeSignatureChange: 'unchecked',
     createAdjustmentLayer: 'unchecked',
 

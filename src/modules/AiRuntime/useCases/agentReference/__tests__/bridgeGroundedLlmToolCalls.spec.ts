@@ -74,9 +74,15 @@ function bridge(
     calls: Parameters<typeof bridgeGroundedLlmToolCalls>[0]['calls'],
     prompt: string,
     context = projectContext,
-    markerSignatures: readonly { markerId?: string; beat: number; name: string }[] = []
+    markerSignatures: readonly { markerId?: string; beat: number; name: string }[] = [],
+    sectionSignatures: readonly {
+        sectionId?: string;
+        startBeat: number;
+        endBeat: number;
+        name: string;
+    }[] = []
 ) {
-    return bridgeGroundedLlmToolCalls({ calls, prompt, context, markerSignatures });
+    return bridgeGroundedLlmToolCalls({ calls, prompt, context, markerSignatures, sectionSignatures });
 }
 
 describe('setPlayback grounding', () => {
@@ -397,6 +403,143 @@ describe('removeMarker grounding', () => {
                 'delete marker Chorus at beat 16',
                 projectContext,
                 [...markerSignatures, { markerId: 'marker-duplicate', beat: 16, name: 'Chorus' }]
+            ),
+        ];
+
+        expect(rejected.every((result) => result.actions.length === 0)).toBe(true);
+    });
+});
+
+describe('section grounding', () => {
+    const sectionSignatures = [{ sectionId: 'section-verse', startBeat: 8, endBeat: 16, name: 'Verse' }];
+
+    it('grounds an addSection name and exact beat range', () => {
+        const result = bridge(
+            [{ name: 'addSection', arguments: { startBeat: 16, endBeat: 32, name: 'Chorus' } }],
+            'add a section named Chorus from beat 16 to beat 32'
+        );
+
+        expect(result.actions).toEqual([
+            { type: 'addSection', payload: { startBeat: 16, endBeat: 32, name: 'Chorus' } },
+        ]);
+    });
+
+    it('bounds unquoted section labels before rationale and preserves quoted complex labels', () => {
+        const bounded = bridge(
+            [{ name: 'addSection', arguments: { startBeat: 16, endBeat: 32, name: 'Chorus' } }],
+            'add a section named Chorus for the hook from beat 16 to beat 32'
+        );
+        const quoted = bridge(
+            [{ name: 'addSection', arguments: { startBeat: 16, endBeat: 32, name: 'Chorus for the Hook' } }],
+            'add a section named "Chorus for the Hook" from beat 16 to beat 32'
+        );
+        const absorbed = bridge(
+            [
+                {
+                    name: 'addSection',
+                    arguments: { startBeat: 16, endBeat: 32, name: 'Chorus for the hook' },
+                },
+            ],
+            'add a section named Chorus for the hook from beat 16 to beat 32'
+        );
+
+        expect(bounded.actions).toEqual([
+            { type: 'addSection', payload: { startBeat: 16, endBeat: 32, name: 'Chorus' } },
+        ]);
+        expect(quoted.actions).toEqual([
+            { type: 'addSection', payload: { startBeat: 16, endBeat: 32, name: 'Chorus for the Hook' } },
+        ]);
+        expect(absorbed.actions).toEqual([]);
+    });
+
+    it('bounds remove and rename current labels before rationale', () => {
+        const removed = bridge(
+            [{ name: 'removeSection', arguments: { startBeat: 8, endBeat: 16, name: 'Verse' } }],
+            'remove the section named Verse for the arrangement from beat 8 to beat 16',
+            projectContext,
+            [],
+            sectionSignatures
+        );
+        const renamed = bridge(
+            [
+                {
+                    name: 'renameSection',
+                    arguments: { startBeat: 8, endBeat: 16, name: 'Verse', newName: 'Pre-Chorus' },
+                },
+            ],
+            'rename the section named Verse for the arrangement from beat 8 to beat 16 to Pre-Chorus',
+            projectContext,
+            [],
+            sectionSignatures
+        );
+
+        expect(removed.actions).toEqual([{ type: 'removeSection', payload: { sectionId: 'section-verse' } }]);
+        expect(renamed.actions).toEqual([
+            { type: 'renameSection', payload: { sectionId: 'section-verse', name: 'Pre-Chorus' } },
+        ]);
+    });
+
+    it('grounds removeSection to local identity without accepting an invented range or name', () => {
+        const removed = bridge(
+            [{ name: 'removeSection', arguments: { startBeat: 8, endBeat: 16, name: 'Verse' } }],
+            'remove the section named Verse from beat 8 to beat 16',
+            projectContext,
+            [],
+            sectionSignatures
+        );
+        const invented = bridge(
+            [{ name: 'removeSection', arguments: { startBeat: 8, endBeat: 32, name: 'Verse' } }],
+            'remove the section named Verse from beat 8 to beat 16',
+            projectContext,
+            [],
+            sectionSignatures
+        );
+
+        expect(removed.actions).toEqual([{ type: 'removeSection', payload: { sectionId: 'section-verse' } }]);
+        expect(invented.actions).toEqual([]);
+    });
+
+    it('grounds renameSection old and new names against one exact local section', () => {
+        const result = bridge(
+            [
+                {
+                    name: 'renameSection',
+                    arguments: { startBeat: 8, endBeat: 16, name: 'Verse', newName: 'Pre-Chorus' },
+                },
+            ],
+            'rename the section named Verse from beat 8 to beat 16 to Pre-Chorus',
+            projectContext,
+            [],
+            sectionSignatures
+        );
+
+        expect(result.actions).toEqual([
+            { type: 'renameSection', payload: { sectionId: 'section-verse', name: 'Pre-Chorus' } },
+        ]);
+    });
+
+    it('rejects missing range evidence, truncated names, and ambiguous local section identities', () => {
+        const rejected = [
+            bridge(
+                [{ name: 'removeSection', arguments: { startBeat: 8, endBeat: 16, name: 'Verse' } }],
+                'remove the section named Verse',
+                projectContext,
+                [],
+                sectionSignatures
+            ),
+            bridge(
+                [{ name: 'removeSection', arguments: { startBeat: 8, endBeat: 16, name: 'Verse' } }],
+                'remove the section named Verse 2 from beat 8 to beat 16',
+                projectContext,
+                [],
+                sectionSignatures
+            ),
+            bridge(
+                [{ name: 'removeSection', arguments: { startBeat: 8, endBeat: 16, name: 'Verse' } }],
+                'remove the section named Verse from beat 8 to beat 16',
+                projectContext,
+                [],
+                [...sectionSignatures, { ...sectionSignatures[0]!, sectionId: 'section-duplicate' }]
             ),
         ];
 

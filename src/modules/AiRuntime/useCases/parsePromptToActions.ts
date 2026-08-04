@@ -127,7 +127,19 @@ export const parsePromptToActions = inject({ logger })(
                     markerId: marker.id,
                     name: marker.name,
                 }));
-                const bridged = bridgeGroundedLlmToolCalls({ calls: toolCalls, context, markerSignatures, prompt });
+                const sectionSignatures = (markerStore.value?.sections ?? []).map((section) => ({
+                    endBeat: section.endBeat,
+                    name: section.name,
+                    sectionId: section.id,
+                    startBeat: section.startBeat,
+                }));
+                const bridged = bridgeGroundedLlmToolCalls({
+                    calls: toolCalls,
+                    context,
+                    markerSignatures,
+                    sectionSignatures,
+                    prompt,
+                });
                 for (const rejected of bridged.rejections) {
                     logger.warn(
                         `[AI] Rejected tool call ${String(rejected.index)} (${rejected.name}): ${rejected.reason}`

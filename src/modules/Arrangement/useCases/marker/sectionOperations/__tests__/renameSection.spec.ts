@@ -31,8 +31,9 @@ describe('renameSection', () => {
             ],
         };
 
-        subject.renameSection('drop', 'Chorus');
+        const changed = subject.renameSection('drop', 'Chorus');
 
+        expect(changed).toBe(true);
         expect(mocks.storeSet).toHaveBeenCalledTimes(1);
         const next = mocks.storeSet.mock.calls[0]?.[0] as {
             sections: { id: string; name: string }[];
@@ -50,8 +51,9 @@ describe('renameSection', () => {
             sections: [{ id: 'intro', name: 'Intro' }],
         };
 
-        subject.renameSection('intro', 'Verse');
+        const changed = subject.renameSection('intro', 'Verse');
 
+        expect(changed).toBe(true);
         const next = mocks.storeSet.mock.calls[0]?.[0] as { markers: unknown[] };
         expect(next.markers).toBe(markers);
     });
@@ -59,8 +61,23 @@ describe('renameSection', () => {
     it('writes nothing when the marker store has not loaded', () => {
         mocks.storeValue.value = null;
 
-        subject.renameSection('intro', 'Verse');
+        const changed = subject.renameSection('intro', 'Verse');
 
+        expect(changed).toBe(false);
+        expect(mocks.storeSet).not.toHaveBeenCalled();
+    });
+
+    it('writes nothing when the section is missing or already has the requested name', () => {
+        mocks.storeValue.value = {
+            markers: [],
+            sections: [{ id: 'intro', name: 'Intro' }],
+        };
+
+        const missing = subject.renameSection('missing', 'Verse');
+        const unchanged = subject.renameSection('intro', 'Intro');
+
+        expect(missing).toBe(false);
+        expect(unchanged).toBe(false);
         expect(mocks.storeSet).not.toHaveBeenCalled();
     });
 });

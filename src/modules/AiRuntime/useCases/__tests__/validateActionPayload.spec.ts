@@ -352,6 +352,38 @@ const guardedPayloadContractCases = [
         ],
     }),
     guardedPayloadCase({
+        actionType: 'addSection',
+        validPayload: { startBeat: 8, endBeat: 16, name: 'Verse' },
+        invalidPayloads: [
+            {},
+            { startBeat: -1, endBeat: 16, name: 'Verse' },
+            { startBeat: 16, endBeat: 8, name: 'Verse' },
+            { startBeat: 8, endBeat: 8, name: 'Verse' },
+            { startBeat: Number.NaN, endBeat: 16, name: 'Verse' },
+            { startBeat: 8, endBeat: Number.POSITIVE_INFINITY, name: 'Verse' },
+            { startBeat: 8, endBeat: 16, name: '' },
+            { startBeat: 8, endBeat: 16, name: '<Verse>' },
+            { startBeat: 8, endBeat: 16, name: 'Verse', sectionId: 'provider-id' },
+            { startBeat: 8, endBeat: 16, name: 'Verse', color: '#fff' },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'removeSection',
+        validPayload: { sectionId: 'section-verse' },
+        invalidPayloads: [{}, { sectionId: '' }, { sectionId: 8 }, { sectionId: 'section-verse', extra: true }],
+    }),
+    guardedPayloadCase({
+        actionType: 'renameSection',
+        validPayload: { sectionId: 'section-verse', name: 'Pre-Chorus' },
+        invalidPayloads: [
+            {},
+            { sectionId: '', name: 'Pre-Chorus' },
+            { sectionId: 'section-verse', name: '' },
+            { sectionId: 'section-verse', name: '<Pre-Chorus>' },
+            { sectionId: 'section-verse', name: 'Pre-Chorus', extra: true },
+        ],
+    }),
+    guardedPayloadCase({
         actionType: 'setLoopRegion',
         validPayload: { startBeat: 4, endBeat: 12 },
         invalidPayloads: [

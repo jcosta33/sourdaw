@@ -155,8 +155,8 @@ type BridgeInput = Omit<Parameters<typeof bridgeLlmToolCalls>[0], 'context'> & {
     context?: ProjectContext;
 };
 
-function bridge({ calls, context = projectContext, markerSignatures }: BridgeInput) {
-    return bridgeLlmToolCalls({ calls, context, markerSignatures });
+function bridge({ calls, context = projectContext, markerSignatures, sectionSignatures }: BridgeInput) {
+    return bridgeLlmToolCalls({ calls, context, markerSignatures, sectionSignatures });
 }
 
 function createCrossfadeContext(): ProjectContext {
@@ -507,6 +507,186 @@ describe('bridgeLlmToolCalls', () => {
             },
         ]);
     });
+
+    it('bridges addSection with an exact finite range and safe name', () => {
+        const result = bridge({
+            calls: [{ name: 'addSection', arguments: { startBeat: 16, endBeat: 32, name: 'Chorus' } }],
+            sectionSignatures: [],
+        });
+
+        expect(result.actions).toEqual([
+            { type: 'addSection', payload: { startBeat: 16, endBeat: 32, name: 'Chorus' } },
+        ]);
+    });
+
+    it('resolves removeSection and renameSection through one exact local signature', () => {
+        const sectionSignatures = [{ sectionId: 'section-verse', startBeat: 8, endBeat: 16, name: 'Verse' }];
+        const removed = bridge({
+            calls: [{ name: 'removeSection', arguments: { startBeat: 8, endBeat: 16, name: 'Verse' } }],
+            sectionSignatures,
+        });
+        const renamed = bridge({
+            calls: [
+                {
+                    name: 'renameSection',
+                    arguments: { startBeat: 8, endBeat: 16, name: 'Verse', newName: 'Pre-Chorus' },
+                },
+            ],
+            sectionSignatures,
+        });
+
+        expect(removed.actions).toEqual([{ type: 'removeSection', payload: { sectionId: 'section-verse' } }]);
+        expect(renamed.actions).toEqual([
+            { type: 'renameSection', payload: { sectionId: 'section-verse', name: 'Pre-Chorus' } },
+        ]);
+    });
+
+    it('rejects existing addSection state and duplicate writes to one resolved section', () => {
+        const sectionSignatures = [{ sectionId: 'section-verse', startBeat: 8, endBeat: 16, name: 'Verse' }];
+        const existing = bridge({
+            calls: [{ name: 'addSection', arguments: { startBeat: 8, endBeat: 16, name: ' verse ' } }],
+            sectionSignatures,
+        });
+        const duplicate = bridge({
+            calls: [
+                { name: 'removeSection', arguments: { startBeat: 8, endBeat: 16, name: 'Verse' } },
+                { name: 'removeSection', arguments: { startBeat: 8, endBeat: 16, name: 'Verse' } },
+            ],
+            sectionSignatures,
+        });
+
+        expect(existing.actions).toEqual([]);
+        expect(duplicate.actions).toEqual([{ type: 'removeSection', payload: { sectionId: 'section-verse' } }]);
+        expect(duplicate.rejections).toEqual([
+            {
+                index: 1,
+                name: 'removeSection',
+                reason: 'Provider batch writes the same target field more than once',
+            },
+        ]);
+    });
+
+    it.each([
+        ['remove then rename', ['removeSection', 'renameSection']],
+        ['rename then remove', ['renameSection', 'removeSection']],
+    ] as const)('rejects overlapping section removal and rename in either order: %s', (_label, order) => {
+        const sectionSignatures = [{ sectionId: 'section-verse', startBeat: 8, endBeat: 16, name: 'Verse' }];
+        const calls = order.map((name) => {
+            if (name === 'removeSection') {
+                return { name, arguments: { startBeat: 8, endBeat: 16, name: 'Verse' } };
+            }
+            return {
+                name,
+                arguments: { startBeat: 8, endBeat: 16, name: 'Verse', newName: 'Pre-Chorus' },
+            };
+        });
+
+        const result = bridge({ calls, sectionSignatures });
+
+        expect(result.actions).toHaveLength(1);
+        expect(result.actions[0]?.type).toBe(order[0]);
+        expect(result.rejections).toEqual([
+            {
+                index: 1,
+                name: order[1],
+                reason: 'Provider batch writes the same target field more than once',
+            },
+        ]);
+    });
+
+    it('rejects invalid, ambiguous, and provider-identified section writes', () => {
+        const section = { sectionId: 'section-verse', startBeat: 8, endBeat: 16, name: 'Verse' };
+        const rejected = [
+            bridge({
+                calls: [{ name: 'addSection', arguments: { startBeat: 16, endBeat: 8, name: 'Chorus' } }],
+            }),
+            bridge({
+                calls: [
+                    {
+                        name: 'removeSection',
+                        arguments: { startBeat: 8, endBeat: 16, name: 'Verse', sectionId: 'provider-id' },
+                    },
+                ],
+                sectionSignatures: [section],
+            }),
+            bridge({
+                calls: [{ name: 'removeSection', arguments: { startBeat: 8, endBeat: 16, name: 'Verse' } }],
+                sectionSignatures: [section, { ...section, sectionId: 'section-duplicate' }],
+            }),
+            bridge({
+                calls: [
+                    {
+                        name: 'renameSection',
+                        arguments: { startBeat: 8, endBeat: 16, name: 'Verse', newName: 'Verse' },
+                    },
+                ],
+                sectionSignatures: [section],
+            }),
+        ];
+
+        expect(rejected.every((result) => result.actions.length === 0)).toBe(true);
+    });
+
+    it('rejects a rename whose destination signature already exists locally', () => {
+        const result = bridge({
+            calls: [
+                {
+                    name: 'renameSection',
+                    arguments: { startBeat: 8, endBeat: 16, name: 'Verse', newName: 'Chorus' },
+                },
+            ],
+            sectionSignatures: [
+                { sectionId: 'section-verse', startBeat: 8, endBeat: 16, name: 'Verse' },
+                { sectionId: 'section-chorus', startBeat: 8, endBeat: 16, name: 'Chorus' },
+            ],
+        });
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toBe('Replacement section label already exists at that range');
+    });
+
+    it('rejects two same-range renames that converge on one destination signature', () => {
+        const result = bridge({
+            calls: [
+                {
+                    name: 'renameSection',
+                    arguments: { startBeat: 8, endBeat: 16, name: 'Verse', newName: 'Break' },
+                },
+                {
+                    name: 'renameSection',
+                    arguments: { startBeat: 8, endBeat: 16, name: 'Chorus', newName: 'Break' },
+                },
+            ],
+            sectionSignatures: [
+                { sectionId: 'section-verse', startBeat: 8, endBeat: 16, name: 'Verse' },
+                { sectionId: 'section-chorus', startBeat: 8, endBeat: 16, name: 'Chorus' },
+            ],
+        });
+
+        expect(result.actions).toEqual([
+            { type: 'renameSection', payload: { sectionId: 'section-verse', name: 'Break' } },
+        ]);
+        expect(result.rejections[0]?.reason).toBe('Provider batch writes the same target field more than once');
+    });
+
+    it.each(['add-then-rename', 'rename-then-add'] as const)(
+        'rejects addSection and renameSection converging on one signature: %s',
+        (order) => {
+            const add = { name: 'addSection', arguments: { startBeat: 8, endBeat: 16, name: 'Break' } };
+            const rename = {
+                name: 'renameSection',
+                arguments: { startBeat: 8, endBeat: 16, name: 'Verse', newName: 'Break' },
+            };
+            const calls = order === 'add-then-rename' ? [add, rename] : [rename, add];
+            const result = bridge({
+                calls,
+                sectionSignatures: [{ sectionId: 'section-verse', startBeat: 8, endBeat: 16, name: 'Verse' }],
+            });
+
+            expect(result.actions).toHaveLength(1);
+            expect(result.rejections[0]?.reason).toBe('Provider batch writes the same target field more than once');
+        }
+    );
 
     it('converts allowlisted provider calls into typed runtime actions', () => {
         const result = bridge({
