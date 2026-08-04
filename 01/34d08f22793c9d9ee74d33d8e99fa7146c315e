@@ -1,0 +1,35 @@
+src/modules/Arrangement/useCases/clipEditing/crossfadeClips.ts
+  s_bc88af7d3b054c::t_25d9212476ec81 47-48
+src/modules/Arrangement/useCases/clipEditing/__tests__/crossfadeClips.spec.ts
+  s_bc88af7d3b054c::t_65350fd3625470 118-126
+src/modules/Arrangement/handlers/clip/handleCrossfadeClips.ts
+  s_bc88af7d3b054c::t_b283ffcf076105 4,13-66
+src/utils/handlerContract.ts
+  s_bc88af7d3b054c::t_45704bcda2c075 608-626
+src/modules/Arrangement/handlers/clip/__tests__/handleCrossfadeClips.spec.ts
+  s_bc88af7d3b054c::t_45704bcda2c075 3-4,6-12,15-19,25-36,42-60,92-117,121-161
+src/modules/Arrangement/handlers/clip/clipHandlers.ts
+  s_bc88af7d3b054c::t_ac4f90b5d8031f 25,57
+src/modules/Arrangement/handlers/clip/__tests__/clipHandlers.spec.ts
+  s_bc88af7d3b054c::t_36d440e0107418 46
+src/modules/Arrangement/handlers/clip/handleRestoreCrossfadeClips.ts
+  s_bc88af7d3b054c::t_50209d95768c92 1-68
+src/modules/Arrangement/useCases/clipEditing/restoreCrossfadeClips.ts
+  s_bc88af7d3b054c::t_8bce38ea9a9854 1-72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "0134d08f22793c9d9ee74d33d8e99fa7146c315e",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
