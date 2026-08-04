@@ -42,9 +42,29 @@ function sampleMeta(): SampleMeta {
 
 function recordingPort(): { port: MessagePort; posts: Array<Record<string, unknown>> } {
     const posts: Array<Record<string, unknown>> = [];
+    type MessageListener = (event: MessageEvent<unknown>) => void;
+    const listeners = new Set<MessageListener>();
     const port = {
         postMessage: (message: Record<string, unknown>) => {
             posts.push(message);
+            if (message.type === 'loadSample') {
+                queueMicrotask(() => {
+                    const event = { data: { type: 'sampleLoaded', loadToken: message.loadToken } } as MessageEvent;
+                    for (const listener of listeners) {
+                        listener(event);
+                    }
+                });
+            }
+        },
+        addEventListener: (type: string, listener: MessageListener) => {
+            if (type === 'message') {
+                listeners.add(listener);
+            }
+        },
+        removeEventListener: (type: string, listener: MessageListener) => {
+            if (type === 'message') {
+                listeners.delete(listener);
+            }
         },
     } as unknown as MessagePort;
     return { port, posts };
@@ -121,10 +141,10 @@ describe('Crumbs state persistence round trip', () => {
         await prepareCrumbsEngine({ deviceId: DEVICE_ID, port });
 
         expect(decodeMock).toHaveBeenCalledWith({ filePath: '/samples/break.wav' });
-        expect(posts).toEqual([
-            { type: 'mode', mode: 'slice' },
-            { type: 'loadSample', data, channels: 2, sampleRate: 44_100 },
-        ]);
+        expect(posts).toHaveLength(2);
+        expect(posts[0]).toEqual({ type: 'mode', mode: 'slice' });
+        expect(posts[1]).toMatchObject({ type: 'loadSample', data, channels: 2, sampleRate: 44_100 });
+        expect(typeof posts[1]?.loadToken).toBe('number');
 
         // The panel reads the session store, so the restored sample has to reach it
         // too — a sample the engine plays but the waveform does not name is still a
@@ -152,10 +172,10 @@ describe('Crumbs state persistence round trip', () => {
         await prepareCrumbsEngine({ deviceId: DEVICE_ID, port });
 
         expect(decodeMock).toHaveBeenCalledWith({ filePath: '/samples/break.wav' });
-        expect(posts).toEqual([
-            { type: 'mode', mode: 'slice' },
-            { type: 'loadSample', data, channels: 2, sampleRate: 44_100 },
-        ]);
+        expect(posts).toHaveLength(2);
+        expect(posts[0]).toEqual({ type: 'mode', mode: 'slice' });
+        expect(posts[1]).toMatchObject({ type: 'loadSample', data, channels: 2, sampleRate: 44_100 });
+        expect(typeof posts[1]?.loadToken).toBe('number');
     });
 
     it('posts nothing for a device neither the session nor project truth knows', async () => {
