@@ -135,12 +135,8 @@ describe('useStatusBarMetrics', () => {
     afterEach(() => {
         vi.useRealTimers();
         vi.unstubAllGlobals();
-        if (originalRequestIdle) {
-            (globalThis as { requestIdleCallback?: unknown }).requestIdleCallback = originalRequestIdle;
-        }
-        if (originalCancelIdle) {
-            (globalThis as { cancelIdleCallback?: unknown }).cancelIdleCallback = originalCancelIdle;
-        }
+        (globalThis as { requestIdleCallback?: unknown }).requestIdleCallback = originalRequestIdle;
+        (globalThis as { cancelIdleCallback?: unknown }).cancelIdleCallback = originalCancelIdle;
     });
 
     it('writes the audio engine sample rate and latency to the DOM on tick', () => {
@@ -164,6 +160,31 @@ describe('useStatusBarMetrics', () => {
         // 48000 Hz → "48kHz"; 0.005s → 5.0ms.
         expect(refs.sampleRate.current!.textContent).toBe('48kHz');
         expect(refs.latency.current!.textContent).toBe('5.0ms');
+    });
+
+    it('preserves metric text nodes when consecutive ticks render the same values', () => {
+        vi.mocked(getEngineState).mockReturnValue({
+            isReady: true,
+            sampleRate: 48000,
+            state: 'running',
+            masterGain: 1,
+            currentTime: 0,
+            baseLatency: 0.005,
+        });
+        vi.mocked(getMasterPeakLevel).mockReturnValue(0);
+
+        const refs = makeRefs();
+        makeElements(refs);
+        renderHook(() => useStatusBarMetrics(refs));
+
+        capturedTick!();
+        const sampleRateTextNode = refs.sampleRate.current!.firstChild;
+        const latencyTextNode = refs.latency.current!.firstChild;
+
+        capturedTick!();
+
+        expect(refs.sampleRate.current!.firstChild).toBe(sampleRateTextNode);
+        expect(refs.latency.current!.firstChild).toBe(latencyTextNode);
     });
 
     it('writes the master level as dB (20*log10) and scales the bar width', () => {

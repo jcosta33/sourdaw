@@ -9,8 +9,10 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
 
+import { updateTextNode } from '../helpers/updateTextNode';
+
 /**
- * Refs for DOM elements that StatusBar updates at 60 fps via direct mutation.
+ * Refs for DOM elements that StatusBar updates at animation-frame rate via direct mutation.
  * The hook registers an animation tick that writes to these refs every frame.
  */
 export type StatusBarMetricRefs = {
@@ -69,7 +71,6 @@ function describeDropouts({ playback, health }: DescribeDropoutsInput): string {
  * via direct DOM mutations (bypassing React renders for performance).
  */
 export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
-    const idRef = useRef(crypto.randomUUID());
     const lastFrameRef = useRef(0);
     // §162.x — ring buffer for CPU samples. 30-entry Array.shift() on
     // every status-bar tick was O(n); fixed-size Float32Array + head
@@ -83,6 +84,7 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
     const engineDiagnosticsTitleRef = useRef('');
 
     useEffect(() => {
+        const animationId = `status-${crypto.randomUUID()}`;
         lastFrameRef.current = performance.now();
 
         // requestIdleCallback loop — measures how much idle time the browser has
@@ -151,7 +153,7 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
             }
 
             // Combine: higher of frame jank or idle pressure
-            const isPlaying = engineInfo?.state === 'running';
+            const isPlaying = engineInfo.state === 'running';
             const floor = isPlaying ? 3 : 0;
             const load = Math.max(floor, frameLoad, idleLoad);
             const samples = cpuSamplesRef.current;
@@ -176,9 +178,7 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
                 cls.toggle('bg-[var(--color-state-warning)]', cpuPct >= 50 && cpuPct < 80);
                 cls.toggle('bg-[var(--color-state-danger)]', cpuPct >= 80);
             }
-            if (refs.cpuText.current) {
-                refs.cpuText.current.textContent = `${cpuPct}%`;
-            }
+            updateTextNode(refs.cpuText.current, `${cpuPct}%`);
 
             // ── Memory ──────────────────────────────────────────────────
             // performance.memory is a Chrome non-standard extension not in TypeScript's lib.dom.d.ts
@@ -188,9 +188,7 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
                 if (refs.memContainer.current) {
                     refs.memContainer.current.style.display = memMb > 0 ? 'flex' : 'none';
                 }
-                if (refs.memText.current) {
-                    refs.memText.current.textContent = `${memMb} MB`;
-                }
+                updateTextNode(refs.memText.current, `${memMb} MB`);
             } else {
                 if (refs.memContainer.current) {
                     refs.memContainer.current.style.display = 'none';
@@ -198,12 +196,8 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
             }
 
             // ── Audio engine info ───────────────────────────────────────
-            if (refs.sampleRate.current) {
-                refs.sampleRate.current.textContent = `${engineInfo.sampleRate / 1000}kHz`;
-            }
-            if (refs.latency.current) {
-                refs.latency.current.textContent = `${(engineInfo.baseLatency * 1000).toFixed(1)}ms`;
-            }
+            updateTextNode(refs.sampleRate.current, `${engineInfo.sampleRate / 1000}kHz`);
+            updateTextNode(refs.latency.current, `${(engineInfo.baseLatency * 1000).toFixed(1)}ms`);
             if (refs.engineState.current) {
                 refs.engineState.current.className = getDawStatusDotClassName({
                     tone: engineInfo.state === 'running' ? 'success' : 'muted',
@@ -216,14 +210,12 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
             if (refs.masterLevelBar.current) {
                 refs.masterLevelBar.current.style.width = `${Math.min(100, masterLevel * 300)}%`;
             }
-            if (refs.masterLevelText.current) {
-                refs.masterLevelText.current.textContent = `${levelDb} dB`;
-            }
+            updateTextNode(refs.masterLevelText.current, `${levelDb} dB`);
         };
 
-        animationScheduler.register(`status-${idRef.current}`, tick);
+        animationScheduler.register(animationId, tick);
         return () => {
-            animationScheduler.unregister(`status-${idRef.current}`);
+            animationScheduler.unregister(animationId);
             if (typeof cancelIdleCallback === 'function' && idleId) {
                 cancelIdleCallback(idleId);
             }
