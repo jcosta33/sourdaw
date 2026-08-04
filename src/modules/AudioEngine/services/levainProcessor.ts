@@ -5,7 +5,7 @@
  * WASM memory management is handled by the generated glue — no manual malloc/free.
  *
  * Messages from main thread:
- *   { type: 'init', wasmBytes: ArrayBuffer }
+ *   { type: 'init' }
  *   { type: 'noteOn', note, velocity, sampleFrame? }
  *   { type: 'noteOff', note, sampleFrame? }
  *   { type: 'allNotesOff' }
@@ -20,6 +20,7 @@
  *   { type: 'dispose' }
  */
 
+import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
 import { initSync, LevainInstance } from '../wasm/daw_dsp.js';
 
 import { WasmView } from './wasmView';
@@ -77,7 +78,7 @@ type NoteExpressionMsg = {
     sampleFrame?: number;
 };
 type LevainMsg =
-    | { type: 'init'; wasmBytes: BufferSource }
+    | { type: 'init' }
     | { type: 'noteOn'; note: number; velocity: number; sampleFrame?: number; channel?: number }
     | { type: 'noteOff'; note: number; sampleFrame?: number; channel?: number }
     | NoteExpressionMsg
@@ -110,15 +111,6 @@ type BankBuild = { numArticulations: number; numMics: number };
 type InFlightBank = { owner: LevainProcessor; followers: Set<LevainProcessor> };
 
 const inFlightBanks = new Map<string, InFlightBank>();
-let sharedWasmMemory: WebAssembly.Memory | null = null;
-
-function initializeLevainWasm(wasmBytes: BufferSource): WebAssembly.Memory {
-    if (!sharedWasmMemory) {
-        const wasmExports = initSync({ module: new WebAssembly.Module(wasmBytes) });
-        sharedWasmMemory = wasmExports.memory;
-    }
-    return sharedWasmMemory;
-}
 
 class LevainProcessor extends AudioWorkletProcessor {
     _instance: LevainInstance | null = null;
@@ -140,8 +132,9 @@ class LevainProcessor extends AudioWorkletProcessor {
     _outLeftView = new WasmView();
     _outRightView = new WasmView();
 
-    constructor() {
+    constructor(...args: unknown[]) {
         super();
+        let wasmModule = resolveProcessorWasmModule(args[0]);
         this.port.onmessage = (event: MessageEvent<LevainMsg>) => {
             const msg = event.data;
             if (msg.type === 'dispose') {
@@ -156,7 +149,11 @@ class LevainProcessor extends AudioWorkletProcessor {
                     if (this._ready) {
                         return;
                     }
-                    this._initWasm(msg.wasmBytes);
+                    if (!wasmModule) {
+                        throw new TypeError('LevainProcessor requires a compiled WASM module');
+                    }
+                    this._initWasm(wasmModule);
+                    wasmModule = null;
                 } else if (!this._ready) {
                     this._pendingMessages.push(msg);
                 } else if (!this._faulted) {
@@ -180,8 +177,9 @@ class LevainProcessor extends AudioWorkletProcessor {
         };
     }
 
-    _initWasm(wasmBytes: BufferSource): void {
-        this._memory = initializeLevainWasm(wasmBytes);
+    _initWasm(wasmModule: WebAssembly.Module): void {
+        const wasmExports = initSync({ module: wasmModule });
+        this._memory = wasmExports.memory;
         this._instance = new LevainInstance(sampleRate, 64);
         this._ready = true;
 

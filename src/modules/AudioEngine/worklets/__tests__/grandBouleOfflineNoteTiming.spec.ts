@@ -32,7 +32,7 @@ const BLOCK_FRAMES = 128;
 /** The offline context's rate. Deliberately small so frame numbers stay legible. */
 const OFFLINE_SAMPLE_RATE = 1000;
 
-/** `\0asm` + version 1 — the shortest byte string `new WebAssembly.Module` accepts. */
+/** `\0asm` + version 1 — the shortest byte string `WebAssembly.compile` accepts. */
 const EMPTY_WASM_MODULE = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]).buffer;
 
 let harnessFrame = 0;
@@ -79,7 +79,7 @@ vi.mock('../../wasm/daw_dsp.js', () => ({
     GrandBouleInstance: GrandBouleInstanceMock,
 }));
 
-vi.mock('../../services/grandBouleProcessor.ts?worker&url', () => ({ default: 'grand-boule-processor-url' }));
+vi.mock('../grandBouleProcessor.ts?worker&url', () => ({ default: 'grand-boule-processor-url' }));
 vi.mock('../grandBouleOfflineProcessor.ts?worker&url', () => ({ default: 'grand-boule-offline-processor-url' }));
 
 // The factory table imports every engine node at module load; stub the ones this
@@ -110,7 +110,7 @@ type HarnessPort = {
     close: () => void;
 };
 
-const processorRegistry = new Map<string, new () => ProcessorLike>();
+const processorRegistry = new Map<string, new (...args: unknown[]) => ProcessorLike>();
 let pendingProcessorPort: HarnessPort | null = null;
 let liveProcessor: ProcessorLike | null = null;
 
@@ -141,7 +141,7 @@ class AudioWorkletProcessorShim {
 class HarnessAudioWorkletNode {
     readonly port: HarnessPort;
     readonly numberOfInputs = 0;
-    constructor(_context: unknown, processorName: string) {
+    constructor(_context: unknown, processorName: string, options?: AudioWorkletNodeOptions) {
         const Processor = processorRegistry.get(processorName);
         if (!Processor) {
             throw new Error(`AudioWorklet processor "${processorName}" is not registered`);
@@ -150,7 +150,7 @@ class HarnessAudioWorkletNode {
         this.port = outer;
         pendingProcessorPort = inner;
         try {
-            liveProcessor = new Processor();
+            liveProcessor = new Processor(options);
         } finally {
             pendingProcessorPort = null;
         }
@@ -199,7 +199,7 @@ describe('offline Grand Boule scheduling reaches the engine at the scheduled fra
         Object.defineProperty(globalThis, 'currentFrame', { configurable: true, get: () => harnessFrame });
         Object.defineProperty(globalThis, 'sampleRate', { configurable: true, get: () => OFFLINE_SAMPLE_RATE });
         vi.stubGlobal('AudioWorkletProcessor', AudioWorkletProcessorShim);
-        vi.stubGlobal('registerProcessor', (name: string, processor: new () => ProcessorLike) => {
+        vi.stubGlobal('registerProcessor', (name: string, processor: new (...args: unknown[]) => ProcessorLike) => {
             processorRegistry.set(name, processor);
         });
         await import('../grandBouleOfflineProcessor');

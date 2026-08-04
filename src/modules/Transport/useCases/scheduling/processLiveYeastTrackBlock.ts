@@ -49,6 +49,7 @@ type ProcessLiveYeastTrackBlockInput = {
     transport: TransportState;
     discontinuityEpoch?: number;
     isCurrent: () => boolean;
+    routeLineage?: ReadonlyMap<string, LiveYeastIteration>;
 };
 
 type ProcessLiveYeastTrackBlockOutput = {
@@ -81,6 +82,7 @@ export async function processLiveYeastTrackBlock({
     transport,
     discontinuityEpoch,
     isCurrent,
+    routeLineage,
 }: ProcessLiveYeastTrackBlockInput): Promise<ProcessLiveYeastTrackBlockOutput | null> {
     const sampleRate = context.sampleRate;
     const tempoMap = {
@@ -207,7 +209,9 @@ export async function processLiveYeastTrackBlock({
             continue;
         }
 
-        const iteration = event.trackId ? iterationsByRoute.get(event.trackId) : undefined;
+        const iteration = event.trackId
+            ? (routeLineage?.get(event.trackId) ?? iterationsByRoute.get(event.trackId))
+            : undefined;
         const routeId = iteration?.routeId ?? trackId;
         const noteKey = `${routeId}:${event.kind.channel}:${event.kind.note}`;
         const targetNotes = iteration ? (notesByRoute.get(routeId) ?? []) : generatedNotes;

@@ -42,13 +42,8 @@ export function addDevice(trackId: string, deviceType: string, displayName?: str
         return null;
     }
 
-    if (deviceType.toLowerCase() === 'crust') {
-        notifyUser('PluginNotImplementedError: Crust is not fully implemented', 'error');
-        return null;
-    }
-
-    // Same class as the guard above: a device this runtime cannot host must not
-    // be half-placed. `getPlatformPlugins()` below is platform-filtered, so in a
+    // A device this runtime cannot host must not be half-placed.
+    // `getPlatformPlugins()` below is platform-filtered, so in a
     // browser build a native-only id resolves to no plugin and falls into the
     // generic branch, writing a device with no parameters whose type is on the
     // export refusal table — the project then refuses to export over a device

@@ -1,6 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 
 import { createAiRuntimeError } from '../../../errors/AiRuntimeError';
+import { type AiBackend } from '../../../models/LlmOrchestrationTypes';
 import { initNativeEngine } from '../../../repositories/nativeEngine/initNativeEngine';
 import { getActiveModelId } from '../../../repositories/webLlm/getActiveModelId';
 import { initWebLlmEngine } from '../../../repositories/webLlm/initWebLlmEngine';
@@ -12,7 +13,7 @@ import { getBackendChain } from '../backendResolution/getBackendChain';
  * Initialize the selected backend plan. Explicit preferences contain one
  * backend; automatic mode may contain ordered fallbacks.
  */
-export async function initEngine(modelId?: string): Promise<void> {
+export async function initEngine(modelId?: string): Promise<AiBackend> {
     const controller = engineInitializationState.begin();
     const backends = getBackendChain();
 
@@ -32,29 +33,29 @@ export async function initEngine(modelId?: string): Promise<void> {
                 if (backend === 'native') {
                     await initNativeEngine({ signal: controller.signal });
                     if (controller.signal.aborted) {
-                        return;
+                        return 'none';
                     }
                     llmStatusStore.set({ state: 'ready', backend: 'native', modelId: 'native' });
-                    return;
+                    return 'native';
                 }
 
                 if (backend === 'webllm') {
                     await initWebLlmEngine(modelId, { signal: controller.signal });
                     if (controller.signal.aborted) {
-                        return;
+                        return 'none';
                     }
                     llmStatusStore.set({ state: 'ready', backend: 'webllm', modelId: getActiveModelId() });
-                    return;
+                    return 'webllm';
                 }
 
                 if (controller.signal.aborted) {
-                    return;
+                    return 'none';
                 }
                 llmStatusStore.set({ state: 'idle' });
-                return;
+                return 'cloud';
             } catch (error) {
                 if (controller.signal.aborted) {
-                    return;
+                    return 'none';
                 }
                 lastError = error instanceof Error ? error : new Error(String(error));
                 logger.warn(`[AI Engine] ${backend} backend failed: ${lastError.message}`);

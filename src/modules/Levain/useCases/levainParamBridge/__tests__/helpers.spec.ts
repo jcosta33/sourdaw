@@ -245,6 +245,28 @@ describe('createLevainBridge', () => {
         });
     });
 
+    it('delivers the canonical DSP id without persisting duplicate articulation truth', () => {
+        const deps = makeDeps();
+        const bridge = createLevainBridge(deps);
+        const device = makeDevice();
+        const patch = { ...createDefaultPatch('violin-1'), currentArticulation: 'tremolo' as const };
+        levainStore.set({ d1: { ...defaultLevainState, patch } });
+
+        bridge.registerLevainDevice('d1', device, {} as MessagePort);
+        flushRaf();
+
+        expect(device.setParam).toHaveBeenCalledWith('current_articulation', 13);
+        expect(deps.persistDeviceParam).not.toHaveBeenCalledWith('d1', 'current_articulation', expect.any(Number));
+        device.setParam.mockClear();
+        deps.persistDeviceParam.mockClear();
+
+        bridge.setLevainParamWithAudio('d1', 'currentArticulation', 'pizzicato');
+        flushRaf();
+
+        expect(device.setParam).toHaveBeenCalledWith('current_articulation', 10);
+        expect(deps.persistDeviceParam).not.toHaveBeenCalledWith('d1', 'current_articulation', expect.any(Number));
+    });
+
     describe('setLevainParamWithAudio — nested patch forwarding', () => {
         it.each([
             ['spiccato', 7],
@@ -263,7 +285,7 @@ describe('createLevainBridge', () => {
 
             expect(levainStore.value?.d1?.patch.currentArticulation).toBe(articulation);
             expect(device.setParam).toHaveBeenCalledWith('current_articulation', expectedId);
-            expect(deps.persistDeviceParam).toHaveBeenCalledWith('d1', 'current_articulation', expectedId);
+            expect(deps.persistDeviceParam).not.toHaveBeenCalledWith('d1', 'current_articulation', expect.any(Number));
         });
 
         it('should forward nested number and boolean fields to engine params', () => {

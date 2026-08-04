@@ -82,7 +82,7 @@ describe('macroStore', () => {
         expect(state).toEqual({ macros: [], recording: false, currentRecording: [] });
     });
 
-    it('should drop persisted macros with non-JSON-persistable action payloads', async () => {
+    it('should drop persisted macros containing a retired action type', async () => {
         const state = await loadHydratedMacroState(
             JSON.stringify([
                 {

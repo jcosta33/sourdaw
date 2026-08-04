@@ -1,7 +1,12 @@
 import { type RefObject, useEffect, useRef } from 'react';
 
 import { getDawStatusDotClassName } from '#/components/daw/DawStatusDot';
-import { getEngineDiagnostics, getEngineState, getMasterPeakLevel } from '#/modules/AudioEngine/useCases';
+import {
+    getEngineDiagnostics,
+    getEngineHealth,
+    getEngineState,
+    getMasterPeakLevel,
+} from '#/modules/AudioEngine/useCases';
 import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
 
 /**
@@ -19,6 +24,45 @@ export type StatusBarMetricRefs = {
     masterLevelText: RefObject<HTMLSpanElement | null>;
     engineState: RefObject<HTMLSpanElement | null>;
 };
+
+type DescribeDropoutsInput = {
+    playback: ReturnType<typeof getEngineDiagnostics>['playback'];
+    health: ReturnType<typeof getEngineHealth>;
+};
+
+/**
+ * The engine's two dropout signals, rendered into the engine-status tooltip.
+ *
+ * Both were computed and thrown away before this: `getEngineDiagnostics()` has
+ * sampled `AudioContext.playbackStats` on every tick since it was written and
+ * the tooltip only ever read `.graph`, and `getHealth()` had no production
+ * reader at all. A dropout counter nobody can see is worth about as much as no
+ * counter, so the pair is surfaced here.
+ *
+ * They count different things and must not be added together:
+ *
+ * - **Missed render deadlines** come from `AudioContext.playbackStats`. The
+ *   output sink asked for frames the render thread had not produced, whatever
+ *   the cause — DSP overrun, GC pause, a stalled worker. This is the broad
+ *   signal, and `scripts/measureRenderDeadline.ts` is the harness that proves
+ *   it actually fires. It reads `unavailable` in fallback mode, where there is
+ *   no live `AudioContext` to sample.
+ * - **Engine-detected dropouts** come from the worklet-side counters in
+ *   `engine/dropoutCounter.ts`. Narrow by construction: today the only detector
+ *   is Grand Boule's ring-buffer starvation, and it needs `SharedArrayBuffer`
+ *   (so cross-origin isolation) to report anything at all. Non-zero is always a
+ *   real problem; zero is not a clean bill of health.
+ */
+function describeDropouts({ playback, health }: DescribeDropoutsInput): string {
+    if (!playback) {
+        return ` · missed render deadlines: unavailable · engine-detected dropouts: ${String(health.dropouts.detectedUnderrunBlocks)}`;
+    }
+    const underrunMs = (playback.underrunDuration * 1000).toFixed(1);
+    return (
+        ` · missed render deadlines: ${String(playback.underrunEvents)} (${underrunMs} ms)` +
+        ` · engine-detected dropouts: ${String(health.dropouts.detectedUnderrunBlocks)}`
+    );
+}
 
 /**
  * Drives StatusBar CPU / memory / latency / level meters at animation-frame rate
@@ -62,6 +106,8 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
             const masterLevel = getMasterPeakLevel();
             if (now - lastDiagnosticsAtRef.current >= 1_000) {
                 const diagnostics = getEngineDiagnostics();
+                const health = getEngineHealth();
+                const dropoutSummary = describeDropouts({ playback: diagnostics.playback, health });
                 const deviceTypes = Object.entries(diagnostics.graph.deviceInstancesByType)
                     .map(([type, count]) => `${type}: ${String(count)}`)
                     .join(', ');
@@ -78,7 +124,7 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
                     ` · strip meter worklets: ${String(diagnostics.graph.stripMeterWorklets)}` +
                     ` · master meter worklets: ${String(diagnostics.graph.masterMeterWorklets)}` +
                     ` · adjustment-layer buses: ${String(diagnostics.graph.adjustmentLayerBuses)}` +
-                    ` · tracked AudioScheduledSources: ${String(diagnostics.runtime.trackedAudioScheduledSources)}`;
+                    ` · tracked AudioScheduledSources: ${String(diagnostics.runtime.trackedAudioScheduledSources)}${dropoutSummary}`;
                 lastDiagnosticsAtRef.current = now;
             }
 

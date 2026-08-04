@@ -1,7 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { createDecodedBankResource, type DecodedSample, type LoadDecodedBankInput } from '../createDecodedBankResource';
+import {
+    createDecodedBankResource,
+    type DecodedBank,
+    type DecodedBankResource,
+    type DecodedSample,
+    type LoadDecodedBankInput,
+} from '../createDecodedBankResource';
 
+import type { InstrumentId } from '../../../models/LevainPatch';
 import type { SampleManifest } from '../sampleManifest';
 
 vi.mock('#/infra/logger/appLogger', () => ({
@@ -58,10 +65,7 @@ function createZone(file: string) {
         rrLen: 1,
         micId: 0,
         isRelease: false,
-        loopMode: 'none' as const,
-        loopStart: 0,
-        loopEnd: 0,
-        loopCrossfade: 0,
+        loop: { mode: 'none' as const },
         gainDb: 0,
         attack: 0,
         decay: 0,
@@ -74,15 +78,13 @@ function createManifest({
     articulationId = 0,
     files,
     instrumentId = 'violin-1',
-    version = 1,
 }: {
     articulationId?: number;
     files: string[];
-    instrumentId?: string;
-    version?: number;
+    instrumentId?: InstrumentId;
 }): SampleManifest {
     return {
-        version,
+        version: 1,
         instrumentId,
         sampleRate: 48_000,
         micPositions: ['close'],
@@ -114,6 +116,18 @@ async function flushPromises(): Promise<void> {
     await Promise.resolve();
 }
 
+async function loadBank(
+    resource: DecodedBankResource,
+    input: LoadDecodedBankInput = DEFAULT_INPUT
+): Promise<DecodedBank> {
+    const lease = await resource.acquire(input);
+    try {
+        return lease.bank;
+    } finally {
+        lease.release();
+    }
+}
+
 describe('createDecodedBankResource', () => {
     afterEach(() => {
         vi.restoreAllMocks();
@@ -129,7 +143,7 @@ describe('createDecodedBankResource', () => {
             loadSample,
         });
 
-        const [first, second] = await Promise.all([resource.load(DEFAULT_INPUT), resource.load(DEFAULT_INPUT)]);
+        const [first, second] = await Promise.all([loadBank(resource), loadBank(resource)]);
 
         expect(first).toBe(second);
         expect(Object.isFrozen(first)).toBe(true);
@@ -152,9 +166,9 @@ describe('createDecodedBankResource', () => {
             loadSample: vi.fn().mockResolvedValue(createSample(1)),
         });
 
-        const first = await resource.load(DEFAULT_INPUT);
+        const first = await loadBank(resource);
         resource.invalidate(DEFAULT_INPUT);
-        const replacement = await resource.load(DEFAULT_INPUT);
+        const replacement = await loadBank(resource);
 
         expect(replacement.bankKey).not.toBe(first.bankKey);
     });
@@ -167,7 +181,7 @@ describe('createDecodedBankResource', () => {
             loadSample: vi.fn().mockResolvedValue(createSample(1)),
         });
 
-        await expect(resource.load(DEFAULT_INPUT)).resolves.toMatchObject({ numArticulations: 14 });
+        await expect(loadBank(resource)).resolves.toMatchObject({ numArticulations: 14 });
     });
 
     it('bounds sample fetch and decode work across a bank', async () => {
@@ -190,7 +204,7 @@ describe('createDecodedBankResource', () => {
             loadSample,
         });
 
-        const bankPromise = resource.load(DEFAULT_INPUT);
+        const bankPromise = loadBank(resource);
         await flushPromises();
 
         expect(loadSample).toHaveBeenCalledTimes(2);
@@ -225,7 +239,7 @@ describe('createDecodedBankResource', () => {
             loadSample,
         });
 
-        const bankPromise = resource.load(DEFAULT_INPUT);
+        const bankPromise = loadBank(resource);
         await flushPromises();
 
         expect(loadSample).toHaveBeenCalledTimes(2);
@@ -257,7 +271,7 @@ describe('createDecodedBankResource', () => {
             loadSample,
         });
 
-        const bank = resource.load(DEFAULT_INPUT);
+        const bank = loadBank(resource);
         await flushPromises();
         firstSample.resolve(createSample(1));
         await flushPromises();
@@ -279,8 +293,8 @@ describe('createDecodedBankResource', () => {
         });
         const controller = new AbortController();
 
-        const cancelledConsumer = resource.load({ ...DEFAULT_INPUT, signal: controller.signal });
-        const remainingConsumer = resource.load(DEFAULT_INPUT);
+        const cancelledConsumer = loadBank(resource, { ...DEFAULT_INPUT, signal: controller.signal });
+        const remainingConsumer = loadBank(resource);
         controller.abort();
         deferredSample.resolve(createSample(1));
 
@@ -307,7 +321,7 @@ describe('createDecodedBankResource', () => {
         });
         const controller = new AbortController();
 
-        const abandoned = resource.load({ ...DEFAULT_INPUT, signal: controller.signal });
+        const abandoned = loadBank(resource, { ...DEFAULT_INPUT, signal: controller.signal });
         await flushPromises();
         controller.abort();
 
@@ -329,7 +343,7 @@ describe('createDecodedBankResource', () => {
         const controller = new AbortController();
         controller.abort();
 
-        await expect(resource.load({ ...DEFAULT_INPUT, signal: controller.signal })).rejects.toMatchObject({
+        await expect(loadBank(resource, { ...DEFAULT_INPUT, signal: controller.signal })).rejects.toMatchObject({
             name: 'AbortError',
         });
 
@@ -348,7 +362,7 @@ describe('createDecodedBankResource', () => {
         });
         const controller = new AbortController();
 
-        const cancelled = resource.load({
+        const cancelled = loadBank(resource, {
             ...DEFAULT_INPUT,
             signal: controller.signal,
             onProgress: () => controller.abort(),
@@ -374,13 +388,13 @@ describe('createDecodedBankResource', () => {
             loadSample: vi.fn().mockResolvedValue(createSample(1)),
         });
 
-        const throwingConsumer = resource.load({
+        const throwingConsumer = loadBank(resource, {
             ...DEFAULT_INPUT,
             onProgress: () => {
                 throw new Error('panel was disposed');
             },
         });
-        const healthyConsumer = resource.load({ ...DEFAULT_INPUT, onProgress: healthyProgress });
+        const healthyConsumer = loadBank(resource, { ...DEFAULT_INPUT, onProgress: healthyProgress });
 
         await expect(throwingConsumer).resolves.toMatchObject({ decodedByteLength: 4 });
         await expect(healthyConsumer).resolves.toMatchObject({ decodedByteLength: 4 });
@@ -401,8 +415,8 @@ describe('createDecodedBankResource', () => {
             loadSample,
         });
 
-        await expect(resource.load(DEFAULT_INPUT)).rejects.toThrow('decode failed');
-        await expect(resource.load(DEFAULT_INPUT)).resolves.toMatchObject({ decodedByteLength: 4 });
+        await expect(loadBank(resource)).rejects.toThrow('decode failed');
+        await expect(loadBank(resource)).resolves.toMatchObject({ decodedByteLength: 4 });
 
         expect(loadManifest).toHaveBeenCalledTimes(2);
         expect(loadSample).toHaveBeenCalledTimes(2);
@@ -427,10 +441,10 @@ describe('createDecodedBankResource', () => {
             loadSample,
         });
 
-        await expect(resource.load(DEFAULT_INPUT)).rejects.toThrow('synchronous decode failure');
+        await expect(loadBank(resource)).rejects.toThrow('synchronous decode failure');
         expect(resource.getDiagnostics()).toMatchObject({ activeSampleLoads: 0, sampleLoadFailures: 1 });
 
-        await expect(resource.load(DEFAULT_INPUT)).resolves.toMatchObject({ decodedByteLength: 4 });
+        await expect(loadBank(resource)).resolves.toMatchObject({ decodedByteLength: 4 });
         expect(loadSample).toHaveBeenCalledTimes(2);
         expect(resource.getDiagnostics()).toMatchObject({ activeSampleLoads: 0, resolvedBanks: 1 });
     });
@@ -449,8 +463,8 @@ describe('createDecodedBankResource', () => {
             loadSample: vi.fn().mockResolvedValue(createSample(1)),
         });
 
-        await expect(resource.load(DEFAULT_INPUT)).rejects.toThrow('synchronous manifest failure');
-        await expect(resource.load(DEFAULT_INPUT)).resolves.toMatchObject({ decodedByteLength: 4 });
+        await expect(loadBank(resource)).rejects.toThrow('synchronous manifest failure');
+        await expect(loadBank(resource)).resolves.toMatchObject({ decodedByteLength: 4 });
 
         expect(loadManifest).toHaveBeenCalledTimes(2);
         expect(resource.getDiagnostics()).toMatchObject({ manifestLoads: 2, resolvedBanks: 1 });
@@ -466,7 +480,7 @@ describe('createDecodedBankResource', () => {
             loadSample,
         });
 
-        const staleLoad = resource.load(DEFAULT_INPUT);
+        const staleLoad = loadBank(resource);
         await flushPromises();
         resource.invalidate(DEFAULT_INPUT);
 
@@ -490,7 +504,7 @@ describe('createDecodedBankResource', () => {
             loadSample,
         });
 
-        const staleLoad = resource.load(DEFAULT_INPUT);
+        const staleLoad = loadBank(resource);
         await flushPromises();
         resource.clear();
 
@@ -513,7 +527,7 @@ describe('createDecodedBankResource', () => {
             loadSample,
         });
 
-        const staleLoad = resource.load(DEFAULT_INPUT);
+        const staleLoad = loadBank(resource);
         await flushPromises();
         resource.invalidate(DEFAULT_INPUT);
 
@@ -524,7 +538,7 @@ describe('createDecodedBankResource', () => {
             resolvedBanks: 0,
         });
 
-        const retry = resource.load(DEFAULT_INPUT);
+        const retry = loadBank(resource);
         await flushPromises();
         expect(loadSample).toHaveBeenCalledTimes(1);
         expect(resource.getDiagnostics()).toMatchObject({ activeSampleLoads: 1, queuedSampleLoads: 1 });
@@ -574,7 +588,7 @@ describe('createDecodedBankResource', () => {
             loadSample,
         });
 
-        const cancelledLoad = resource.load(DEFAULT_INPUT);
+        const cancelledLoad = loadBank(resource);
         await flushPromises();
         expect(resource.getDiagnostics()).toMatchObject({ activeSampleLoads: 2, decodedBytes: 0, inFlightBanks: 1 });
 
@@ -586,7 +600,7 @@ describe('createDecodedBankResource', () => {
         await expect(cancelledLoad).rejects.toMatchObject({ name: 'AbortError' });
         expect(resource.getDiagnostics()).toMatchObject({ activeSampleLoads: 1, decodedBytes: 0, inFlightBanks: 0 });
 
-        await expect(resource.load(celloInput)).resolves.toMatchObject({ decodedByteLength: 4 });
+        await expect(loadBank(resource, celloInput)).resolves.toMatchObject({ decodedByteLength: 4 });
         expect(resource.getDiagnostics()).toMatchObject({ activeSampleLoads: 1, decodedBytes: 4, resolvedBanks: 1 });
 
         pendingSample.resolve(createSample(2));
@@ -603,7 +617,7 @@ describe('createDecodedBankResource', () => {
             loadSample,
         });
 
-        await expect(resource.load(DEFAULT_INPUT)).rejects.toThrow(
+        await expect(loadBank(resource)).rejects.toThrow(
             'Levain manifest instrument cello does not match requested violin-1'
         );
 
@@ -629,9 +643,9 @@ describe('createDecodedBankResource', () => {
             expectedInstrumentId: 'cello',
         };
 
-        await resource.load(DEFAULT_INPUT);
-        await resource.load(celloInput);
-        await resource.load(DEFAULT_INPUT);
+        await loadBank(resource);
+        await loadBank(resource, celloInput);
+        await loadBank(resource);
 
         expect(loadManifest).toHaveBeenCalledTimes(3);
         expect(resource.getDiagnostics()).toMatchObject({
@@ -639,6 +653,48 @@ describe('createDecodedBankResource', () => {
             decodedBytes: 4,
             resolvedBanks: 1,
         });
+    });
+
+    it('does not evict a decoded bank while a consumer still owns its samples', async () => {
+        const loadManifest = vi.fn((url: string) => {
+            const instrumentId = url.includes('violin') ? 'violin-1' : 'cello';
+            return Promise.resolve(createManifest({ files: [`${instrumentId}.wav`], instrumentId }));
+        });
+        const resource = createDecodedBankResource({
+            maxDecodedBytes: 4,
+            maxConcurrentSampleLoads: 1,
+            loadManifest,
+            loadSample: vi.fn().mockResolvedValue(createSample(1)),
+        });
+        const celloInput = {
+            ...DEFAULT_INPUT,
+            manifestUrl: '/samples/levain/cello/manifest.json',
+            basePath: '/samples/levain/cello',
+            expectedInstrumentId: 'cello',
+        };
+
+        const heldLease = await resource.acquire(DEFAULT_INPUT);
+
+        await expect(loadBank(resource, celloInput)).rejects.toThrow('Levain decoded-bank memory budget exceeded');
+        expect(heldLease.bank.samples.size).toBe(1);
+        expect(resource.getDiagnostics()).toMatchObject({ activeLeases: 1, decodedBytes: 4, resolvedBanks: 1 });
+        heldLease.release();
+    });
+
+    it('keeps retired PCM accounted until the final lease is released', async () => {
+        const resource = createDecodedBankResource({
+            maxDecodedBytes: 4,
+            maxConcurrentSampleLoads: 1,
+            loadManifest: vi.fn().mockResolvedValue(createManifest({ files: ['violin-1.wav'] })),
+            loadSample: vi.fn().mockResolvedValue(createSample(1)),
+        });
+        const heldLease = await resource.acquire(DEFAULT_INPUT);
+
+        resource.clear();
+
+        expect(resource.getDiagnostics()).toMatchObject({ activeLeases: 1, decodedBytes: 4, resolvedBanks: 0 });
+        heldLease.release();
+        expect(resource.getDiagnostics()).toMatchObject({ activeLeases: 0, decodedBytes: 0, resolvedBanks: 0 });
     });
 
     it('keeps the newer bank when an older in-flight request resolves last', async () => {
@@ -667,18 +723,18 @@ describe('createDecodedBankResource', () => {
             expectedInstrumentId: 'cello',
         };
 
-        const violinLoad = resource.load(DEFAULT_INPUT);
-        const celloLoad = resource.load(celloInput);
+        const violinLoad = loadBank(resource);
+        const celloLoad = loadBank(resource, celloInput);
         await flushPromises();
         celloSample.resolve(createSample(2));
         await celloLoad;
         violinSample.resolve(createSample(1));
         await expect(violinLoad).rejects.toThrow('Levain decoded-bank memory budget exceeded');
 
-        await resource.load(celloInput);
+        await loadBank(resource, celloInput);
         expect(resource.getDiagnostics()).toMatchObject({ evictions: 0, failedBanks: 1, resolvedBanks: 1 });
 
-        await resource.load(DEFAULT_INPUT);
+        await loadBank(resource);
 
         const manifestUrls = loadManifest.mock.calls.map(([url]) => url);
         expect(manifestUrls.filter((url) => url.includes('cello'))).toHaveLength(2);
@@ -698,7 +754,7 @@ describe('createDecodedBankResource', () => {
             loadSample: vi.fn().mockResolvedValue(createSample(1)),
         });
 
-        await expect(resource.load(DEFAULT_INPUT)).rejects.toThrow('Levain decoded-bank memory budget exceeded');
+        await expect(loadBank(resource)).rejects.toThrow('Levain decoded-bank memory budget exceeded');
 
         expect(loadManifest).toHaveBeenCalledTimes(1);
         expect(resource.getDiagnostics()).toMatchObject({
@@ -708,11 +764,11 @@ describe('createDecodedBankResource', () => {
         });
     });
 
-    it('revalidates a same-URL manifest and replaces an older decoded version', async () => {
+    it('revalidates a same-URL manifest after explicit invalidation', async () => {
         const loadManifest = vi
             .fn()
-            .mockResolvedValueOnce(createManifest({ files: ['v1.wav'], version: 1 }))
-            .mockResolvedValueOnce(createManifest({ files: ['v2.wav'], version: 2 }));
+            .mockResolvedValueOnce(createManifest({ files: ['first.wav'] }))
+            .mockResolvedValueOnce(createManifest({ files: ['replacement.wav'] }));
         const resource = createDecodedBankResource({
             maxDecodedBytes: 1024,
             maxConcurrentSampleLoads: 1,
@@ -720,11 +776,12 @@ describe('createDecodedBankResource', () => {
             loadSample: vi.fn().mockResolvedValue(createSample(1)),
         });
 
-        const first = await resource.load(DEFAULT_INPUT);
-        const second = await resource.load(DEFAULT_INPUT);
+        const first = await loadBank(resource);
+        resource.invalidate(DEFAULT_INPUT);
+        const second = await loadBank(resource);
 
-        expect(first.version).toBe(1);
-        expect(second.version).toBe(2);
+        expect(first.files).toEqual(['first.wav']);
+        expect(second.files).toEqual(['replacement.wav']);
         expect(loadManifest).toHaveBeenCalledTimes(2);
         expect(resource.getDiagnostics()).toMatchObject({ resolvedBanks: 1 });
     });

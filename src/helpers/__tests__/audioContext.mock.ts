@@ -20,6 +20,17 @@ type MockEventTarget = {
     dispatchEvent: Mock<(event: Event) => boolean>;
 };
 
+type MockAudioPlaybackStats = {
+    underrunDuration: number;
+    underrunEvents: number;
+    totalDuration: number;
+    averageLatency: number;
+    minimumLatency: number;
+    maximumLatency: number;
+    resetLatency: Mock;
+    toJSON: Mock;
+};
+
 type MockAudioNodeBase = MockEventTarget & {
     connect: Mock;
     disconnect: Mock;
@@ -118,6 +129,7 @@ export type MockAudioContext = MockEventTarget & {
     state: AudioContextState;
     baseLatency: number;
     outputLatency: number;
+    playbackStats: MockAudioPlaybackStats;
     destination: MockChannelNode;
     listener: Record<string, MockAudioParam>;
     audioWorklet: { addModule: Mock };
@@ -331,6 +343,16 @@ export function createMockAudioContext(): MockAudioContext {
         state: 'running',
         baseLatency: 0.01,
         outputLatency: 0.01,
+        playbackStats: {
+            underrunDuration: 0.002,
+            underrunEvents: 2,
+            totalDuration: 30,
+            averageLatency: 0.015,
+            minimumLatency: 0.01,
+            maximumLatency: 0.02,
+            resetLatency: vi.fn(),
+            toJSON: vi.fn(),
+        },
         destination,
         listener,
         audioWorklet: { addModule: vi.fn().mockResolvedValue(undefined) },

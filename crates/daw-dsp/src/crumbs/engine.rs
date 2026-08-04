@@ -29,6 +29,9 @@ impl Default for CrumbsMetering {
 }
 
 use super::allocator::{StealPriority, VoiceAllocator};
+use super::modes::drum::DrumMode;
+use super::modes::quick::QuickMode;
+use super::modes::slice::SliceMode;
 use super::sample::SamplePool;
 use super::smooth::ParamSmoother;
 use super::types::{
@@ -48,28 +51,19 @@ pub struct CrumbsEngine {
     sample_pool: SamplePool,
     active_sample_id: Option<SampleId>,
 
+    // Per-mode note mapping. Each owns the settings its mode is defined by and
+    // builds the `VoiceTriggerParams` for a note in that mode, so these are the
+    // storage for the voice settings the engine used to duplicate: `quick` and
+    // `slice` carry the shared envelope/filter/loop settings `set_param`
+    // writes, and `drum` carries them per pad.
+    quick: QuickMode,
+    drum: DrumMode,
+    slice: SliceMode,
+
     // Global parameters
     mode: CrumbsMode,
     master_gain: ParamSmoother,
-    root_note: u8,
     tune_cents: f32,
-    playback_mode: PlaybackMode,
-    loop_mode: LoopMode,
-    loop_start: u32,
-    loop_end: u32,
-    loop_crossfade: u32,
-
-    // Global envelope defaults
-    attack: f32,
-    hold: f32,
-    decay: f32,
-    sustain: f32,
-    release: f32,
-
-    // Global filter defaults
-    filter_cutoff: f32,
-    filter_resonance: f32,
-    filter_type: FilterType,
 
     // Voice stacking (unison)
     stack_count: u8,
@@ -117,23 +111,17 @@ impl CrumbsEngine {
             allocator: VoiceAllocator::new(),
             sample_pool: SamplePool::new(),
             active_sample_id: None,
+            // `QuickMode::default` releases in 50 ms; the engine has always
+            // shipped 10 ms, and moving the storage must not move the sound.
+            quick: QuickMode {
+                release: 0.01,
+                ..QuickMode::default()
+            },
+            drum: DrumMode::new(),
+            slice: SliceMode::default(),
             mode: CrumbsMode::Quick,
             master_gain: ParamSmoother::with_value(sample_rate, 0.01, 1.0),
-            root_note: 60,
             tune_cents: 0.0,
-            playback_mode: PlaybackMode::Sustain,
-            loop_mode: LoopMode::Off,
-            loop_start: 0,
-            loop_end: 0,
-            loop_crossfade: 256,
-            attack: 0.001,
-            hold: 0.0,
-            decay: 0.0,
-            sustain: 1.0,
-            release: 0.01,
-            filter_cutoff: 20000.0,
-            filter_resonance: 0.0,
-            filter_type: FilterType::Lowpass,
             stack_count: 1,
             detune_spread: 0.0,
             stack_spread: 0.0,
@@ -207,9 +195,46 @@ impl CrumbsEngine {
         &self.sample_pool
     }
 
+    /// Mutable access to the Drum-mode pad grid.
+    ///
+    /// Pad assignment is setup work reached from the integration layer the same
+    /// way `set_sample` is, rather than through a `CrumbsCommand` — nothing here
+    /// is safe to call from the audio thread.
+    pub fn drum_mode_mut(&mut self) -> &mut DrumMode {
+        &mut self.drum
+    }
+
+    /// Mutable access to the Slice-mode marker map. Setup-time, like
+    /// `drum_mode_mut`: `set_markers_from_onsets` allocates.
+    pub fn slice_mode_mut(&mut self) -> &mut SliceMode {
+        &mut self.slice
+    }
+
     /// Set the active sample for playback.
     pub fn set_active_sample(&mut self, sample_id: SampleId) {
+        self.select_sample(sample_id);
+    }
+
+    /// The one place the active sample is chosen.
+    ///
+    /// Every mode needs telling: Quick and Slice build trigger params from the
+    /// id they hold, Slice additionally needs the length to divide for its
+    /// default chop, and Drum needs the sample its unassigned pads fall back to
+    /// so that loading a sample gives a playable kit. A selection that only
+    /// wrote `active_sample_id` left all three pointed at the previous one.
+    ///
+    /// Runs on the audio thread (`CrumbsCommand::SetActiveSample`): a pool
+    /// lookup is a `Vec` index and the rest are field writes.
+    fn select_sample(&mut self, sample_id: SampleId) {
         self.active_sample_id = Some(sample_id);
+        self.quick.sample_id = sample_id;
+
+        let frame_count = match self.sample_pool.get(sample_id) {
+            Some(sample) => sample.frame_count() as u32,
+            None => 0,
+        };
+        self.slice.set_sample(sample_id, frame_count);
+        self.drum.set_default_sample(sample_id);
     }
 
     // ── Command Processing ─────────────────────────────────────────────
@@ -234,7 +259,7 @@ impl CrumbsEngine {
                 self.set_sample(id, data);
             }
             CrumbsCommand::SetActiveSample(sample_id) => {
-                self.active_sample_id = Some(sample_id);
+                self.select_sample(sample_id);
             }
             CrumbsCommand::AllNotesOff => {
                 self.all_notes_off();
@@ -277,16 +302,63 @@ impl CrumbsEngine {
 
     // ── Note On / Off ──────────────────────────────────────────────────
 
+    /// Build the trigger parameters this note maps to under the active mode.
+    ///
+    /// `None` means the note maps to nothing in this mode — an unassigned or
+    /// out-of-range pad, or a note with no slice marker behind it — and the
+    /// caller must not fall back to a default voice. Playing the active sample
+    /// chromatically in that case is what made Drum and Slice aliases of Quick.
+    fn mode_trigger_params(&self, note: u8, velocity: u8) -> Option<VoiceTriggerParams> {
+        match self.mode {
+            CrumbsMode::Drum => self.drum.trigger_params(note, velocity),
+            CrumbsMode::Slice => self.slice.trigger_params(note, velocity),
+            // Warp and Record have no mapping of their own: Warp's stretching
+            // happens downstream of the note, and Record's notes audition the
+            // take. Both play the selected sample chromatically, which is
+            // exactly Quick.
+            CrumbsMode::Quick | CrumbsMode::Warp | CrumbsMode::Record => {
+                // Nothing selected means there is no sample for Quick to map
+                // the keyboard onto. `select_sample` holds `quick.sample_id`
+                // equal to this id, so this only gates.
+                self.active_sample_id?;
+                Some(self.quick.trigger_params(note, velocity))
+            }
+        }
+    }
+
+    /// MPC choke: a pad that names a choke group silences everything already
+    /// sounding in that group. Group 0 means "no group" and cuts nothing.
+    ///
+    /// Only the de-click fade is started — the allocator slot is freed by
+    /// `process_block` once the voice goes inactive. Releasing it here would
+    /// let `allocate` hand the same slot straight back and overwrite a voice
+    /// mid-fade, which is an audible click rather than a choke.
+    fn choke_voices_in_group(&mut self, choke_group: u8) {
+        if choke_group == 0 {
+            return;
+        }
+        for voice in &mut self.voices {
+            if voice.active && voice.choke_group == choke_group {
+                voice.begin_steal_fade();
+            }
+        }
+    }
+
     fn note_on(&mut self, note: u8, velocity: u8) {
-        let sample_id = match self.active_sample_id {
-            Some(id) => id,
+        let params = match self.mode_trigger_params(note, velocity) {
+            Some(params) => params,
             None => return,
         };
 
-        // Check sample exists
-        if self.sample_pool.get(sample_id).is_none() {
+        // Check the sample this note actually maps to exists. In Drum mode
+        // that is the pad's sample, not the engine's selection.
+        if self.sample_pool.get(params.sample_id).is_none() {
             return;
         }
+
+        // Choke once per note, before any voice is allocated — otherwise the
+        // second voice of a stack would choke the first.
+        self.choke_voices_in_group(params.choke_group);
 
         let count = self.stack_count.max(1);
 
@@ -296,7 +368,7 @@ impl CrumbsEngine {
                 Some(idx) => idx,
                 None => {
                     // All voices in use — need to steal one.
-                    match self.find_steal_target(note) {
+                    match self.find_steal_target(note, params.choke_group) {
                         Some(idx) => {
                             self.voices[idx].begin_steal_fade();
                             self.allocator.release(idx);
@@ -320,28 +392,6 @@ impl CrumbsEngine {
                 (detune, pan)
             } else {
                 (0.0, 0.0)
-            };
-
-            let params = VoiceTriggerParams {
-                note,
-                velocity,
-                sample_id,
-                root_note: self.root_note,
-                choke_group: 0,
-                playback_mode: self.playback_mode,
-                loop_mode: self.loop_mode,
-                loop_start: self.loop_start,
-                loop_end: self.loop_end,
-                loop_crossfade: self.loop_crossfade,
-                start_frame: 0,
-                attack: self.attack,
-                hold: self.hold,
-                decay: self.decay,
-                sustain: self.sustain,
-                release: self.release,
-                filter_cutoff: self.filter_cutoff,
-                filter_resonance: self.filter_resonance,
-                filter_type: self.filter_type,
             };
 
             self.voices[voice_index].trigger(&params);
@@ -389,7 +439,12 @@ impl CrumbsEngine {
     // ── Voice Stealing ─────────────────────────────────────────────────
 
     /// Find the best voice to steal. Zero-allocation — scans voices inline.
-    fn find_steal_target(&self, target_note: u8) -> Option<usize> {
+    ///
+    /// `target_choke` is the incoming note's choke group. Passing 0 here
+    /// unconditionally made `StealPriority::ChokeGroup` unreachable, so a
+    /// saturated pool stole by age instead of taking the group that was about
+    /// to be cut anyway.
+    fn find_steal_target(&self, target_note: u8, target_choke: u8) -> Option<usize> {
         let mut best_idx: Option<usize> = None;
         let mut best_priority = StealPriority::None;
         let mut oldest_age = 0u32;
@@ -401,8 +456,21 @@ impl CrumbsEngine {
             if !voice.active {
                 continue;
             }
+            // Skip voices already fading out. This has to be here rather than in
+            // `steal_priority`, because the oldest and quietest fallbacks below
+            // run outside the priority comparison — a fading voice with
+            // `StealPriority::None` would still win them, which is exactly how a
+            // just-choked voice was getting its slot handed straight back.
+            //
+            // Its slot returns from `process_block` within the 3 ms fade, so
+            // passing over it costs at most one block. If every voice is fading,
+            // the note is dropped rather than clicked, which is the right trade
+            // in a pool that is by then 128 voices deep.
+            if voice.is_stealing() {
+                continue;
+            }
 
-            let priority = voice.steal_priority(target_note, 0);
+            let priority = voice.steal_priority(target_note, target_choke);
 
             // Track the highest-priority (lowest enum value) candidate.
             if priority < best_priority {
@@ -426,45 +494,95 @@ impl CrumbsEngine {
 
     // ── Parameter Setting ──────────────────────────────────────────────
 
+    /// Apply an engine-wide parameter.
+    ///
+    /// The envelope, filter and loop settings are the *shared* voice settings:
+    /// they belong to Quick and to Slice, which are the two modes where one set
+    /// of values governs every note. Drum is absent on purpose — a pad carries
+    /// its own envelope and filter, and having a global control silently
+    /// overwrite 128 pads is not a sampler anyone would ship.
     fn set_param(&mut self, param: CrumbsParam, value: f32) {
         match param {
             CrumbsParam::MasterGain => self.master_gain.set(value),
-            CrumbsParam::Attack => self.attack = value.max(0.0),
-            CrumbsParam::Hold => self.hold = value.max(0.0),
-            CrumbsParam::Decay => self.decay = value.max(0.0),
-            CrumbsParam::Sustain => self.sustain = value.clamp(0.0, 1.0),
-            CrumbsParam::Release => self.release = value.max(0.0),
-            CrumbsParam::FilterCutoff => self.filter_cutoff = value.clamp(20.0, 20000.0),
-            CrumbsParam::FilterResonance => self.filter_resonance = value.clamp(0.0, 1.0),
+            CrumbsParam::Attack => {
+                let attack = value.max(0.0);
+                self.quick.attack = attack;
+                self.slice.attack = attack;
+            }
+            CrumbsParam::Hold => {
+                let hold = value.max(0.0);
+                self.quick.hold = hold;
+                self.slice.hold = hold;
+            }
+            CrumbsParam::Decay => {
+                let decay = value.max(0.0);
+                self.quick.decay = decay;
+                self.slice.decay = decay;
+            }
+            CrumbsParam::Sustain => {
+                let sustain = value.clamp(0.0, 1.0);
+                self.quick.sustain = sustain;
+                self.slice.sustain = sustain;
+            }
+            CrumbsParam::Release => {
+                let release = value.max(0.0);
+                self.quick.release = release;
+                self.slice.release = release;
+            }
+            CrumbsParam::FilterCutoff => {
+                let cutoff = value.clamp(20.0, 20000.0);
+                self.quick.filter_cutoff = cutoff;
+                self.slice.filter_cutoff = cutoff;
+            }
+            CrumbsParam::FilterResonance => {
+                let resonance = value.clamp(0.0, 1.0);
+                self.quick.filter_resonance = resonance;
+                self.slice.filter_resonance = resonance;
+            }
             CrumbsParam::FilterType => {
-                self.filter_type = match value as u8 {
+                let filter_type = match value as u8 {
                     0 => FilterType::Lowpass,
                     1 => FilterType::Highpass,
                     2 => FilterType::Bandpass,
                     3 => FilterType::Notch,
                     _ => FilterType::Lowpass,
                 };
+                self.quick.filter_type = filter_type;
+                self.slice.filter_type = filter_type;
             }
             CrumbsParam::LoopMode => {
-                self.loop_mode = match value as u8 {
+                let loop_mode = match value as u8 {
                     0 => LoopMode::Off,
                     1 => LoopMode::Forward,
                     2 => LoopMode::PingPong,
                     3 => LoopMode::Reverse,
                     _ => LoopMode::Off,
                 };
+                self.quick.loop_mode = loop_mode;
+                self.slice.loop_mode = loop_mode;
             }
-            CrumbsParam::LoopStart => self.loop_start = value as u32,
-            CrumbsParam::LoopEnd => self.loop_end = value as u32,
-            CrumbsParam::LoopCrossfade => self.loop_crossfade = value as u32,
+            // Loop bounds are Quick-only: a slice's bounds come from its own
+            // markers, and a global override would collapse every slice onto
+            // the same region.
+            CrumbsParam::LoopStart => self.quick.loop_start = value as u32,
+            CrumbsParam::LoopEnd => self.quick.loop_end = value as u32,
+            CrumbsParam::LoopCrossfade => {
+                let crossfade = value as u32;
+                self.quick.loop_crossfade = crossfade;
+                self.slice.loop_crossfade = crossfade;
+            }
             CrumbsParam::PlaybackMode => {
-                self.playback_mode = match value as u8 {
+                let playback_mode = match value as u8 {
                     0 => PlaybackMode::OneShot,
                     1 => PlaybackMode::Sustain,
                     _ => PlaybackMode::Sustain,
                 };
+                self.quick.playback_mode = playback_mode;
+                self.slice.playback_mode = playback_mode;
             }
-            CrumbsParam::RootNote => self.root_note = (value as u8).min(127),
+            // Slice mode has no root note — a slice plays at the pitch it was
+            // recorded at, whichever key it is mapped to.
+            CrumbsParam::RootNote => self.quick.root_note = (value as u8).min(127),
             CrumbsParam::Tune => self.tune_cents = value.clamp(-2400.0, 2400.0),
             CrumbsParam::Pan => {
                 // Pan is set per-voice; this sets the default for new voices.
@@ -557,7 +675,7 @@ impl CrumbsEngine {
             super::sample::SampleData::from_stereo(left, right, self.sample_rate as u32);
 
         let sample_id = self.sample_pool.add(std::sync::Arc::new(sample_data));
-        self.active_sample_id = Some(sample_id);
+        self.select_sample(sample_id);
         self.record_state = RecordState::Idle;
 
         // The target_pad is stored for integration code to pick up,
@@ -663,6 +781,16 @@ impl CrumbsEngine {
     /// Read the number of currently active voices.
     pub fn read_active_voice_count(&self) -> u8 {
         self.metering.active_voice_count.load(Ordering::Relaxed)
+    }
+
+    /// Whether any live voice is playing `note`.
+    ///
+    /// Exists so allocation behaviour can be asserted by note identity rather
+    /// than by level: a summed pool cannot show whether one particular voice
+    /// was overwritten, and a test that measured the sum passed with the bug
+    /// reverted. Read-only, and not on any audio-thread path.
+    pub fn any_active_voice_has_note(&self, note: u8) -> bool {
+        self.voices.iter().any(|voice| voice.active && voice.note == note)
     }
 
     /// Feed input audio for recording (called from audio thread).

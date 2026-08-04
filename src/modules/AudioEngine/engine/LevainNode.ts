@@ -2,12 +2,12 @@
  * LevainNode — AudioWorkletNode wrapper for the Levain suite engine.
  *
  * Creates and manages the WASM-powered worklet. Provides noteOn/noteOff/setParam/handleCc
- * methods that forward via MessagePort. Caches WASM binary and worklet registration.
+ * methods that forward via MessagePort. Caches the compiled WASM module and worklet registration.
  * Follows the same pattern as FermenterNode.
  */
 
 import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
-import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from '#/infra/audioWorklet/workletInitShared';
+import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
 import { logger } from '#/infra/logger/appLogger';
 
 import levainProcessorUrl from '../services/levainProcessor.ts?worker&url';
@@ -43,7 +43,7 @@ export function isLevainDevice(deviceType: string): boolean {
 /**
  * Create an Levain AudioWorkletNode.
  *
- * Resumes the AudioContext if suspended. Caches WASM binary across calls.
+ * Resumes the AudioContext if suspended. Caches the compiled WASM module across calls.
  * Await `result.ready` before sending MIDI.
  *
  * `onFault` is invoked if the worklet posts a runtime-fault `error` message
@@ -62,17 +62,28 @@ export async function createLevainNode(
     }
 
     await raceAbortSignal(ensureWorkletRegistered(ctx, levainProcessorUrl), signal);
-    const wasmBytes = await raceAbortSignal(fetchWasmBinary(wasmUrl ?? DEFAULT_WASM_URL), signal);
+    const wasmLease = await raceAbortSignal(
+        fetchWasmModule({ ctx, bundleId: 'daw-dsp', url: wasmUrl ?? DEFAULT_WASM_URL, signal }),
+        signal
+    );
 
     signal?.throwIfAborted();
 
-    const node = new AudioWorkletNode(ctx, 'levain-processor', {
-        numberOfInputs: 0,
-        numberOfOutputs: 1,
-        outputChannelCount: [2],
-        channelCount: 2,
-        channelCountMode: 'explicit',
-    });
+    let node: AudioWorkletNode;
+    try {
+        node = new AudioWorkletNode(ctx, 'levain-processor', {
+            numberOfInputs: 0,
+            numberOfOutputs: 1,
+            outputChannelCount: [2],
+            channelCount: 2,
+            channelCountMode: 'explicit',
+            processorOptions: { wasmModule: wasmLease.module },
+        });
+        wasmLease.commit();
+    } catch (error) {
+        wasmLease.release();
+        throw error;
+    }
 
     let bypassed = false;
     let destroyed = false;
@@ -80,7 +91,7 @@ export async function createLevainNode(
     const handshake = createReadyHandshake({ pluginName: 'LevainNode' });
     node.port.onmessage = (event: MessageEvent<unknown>) => {
         if (event.data && typeof event.data === 'object' && 'type' in event.data && event.data.type === 'disposed') {
-            handshake.cancel(new Error('LevainNode disposed before initialization completed'));
+            handshake.reject(new Error('LevainNode disposed before initialization completed'));
             node.port.close();
             return;
         }
@@ -100,8 +111,7 @@ export async function createLevainNode(
     const readyPromise = handshake.promise;
 
     // Initialize the processor with the binary acquired before node allocation.
-    const copy = wasmBytes.slice(0);
-    node.port.postMessage({ type: 'init', wasmBytes: copy }, [copy]);
+    node.port.postMessage({ type: 'init' });
 
     // Sample loading is driven by `registerLevainDevice` → `loadSamplesForInstrument`,
     // which reads the active patch's `instrumentId`. Do NOT eagerly load a default

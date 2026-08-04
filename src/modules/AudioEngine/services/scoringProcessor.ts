@@ -8,18 +8,19 @@
  * Telemetry sent back to main thread via postMessage every ~30ms.
  *
  * Messages from main thread:
- *   { type: 'init', wasmBytes: ArrayBuffer }
+ *   { type: 'init' }
  *   { type: 'param', name, value }
  *   { type: 'bypass', bypassed }
  */
 
+import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
 import { initSync, ScoringInstance } from '../wasm/scoring.js';
 
 import { beginTelemetryPublish, endTelemetryPublish } from './telemetrySeqlock';
 import { WasmView } from './wasmView';
 
 type ScoringMsg =
-    | { type: 'init'; wasmBytes: BufferSource }
+    | { type: 'init' }
     | { type: 'init-sab'; sab: SharedArrayBuffer; byteOffset: number }
     | { type: 'param'; name: string; value: number }
     | { type: 'bypass'; bypassed: boolean };
@@ -30,6 +31,15 @@ class ScoringProcessor extends AudioWorkletProcessor {
     _ready = false;
     _faulted = false;
     _bypassed = false;
+    /**
+     * Whether the telemetry slot still holds a reading taken while running.
+     *
+     * Set on every analysed block and consumed once when the processor stops
+     * analysing, so the clearing publish happens on the transition rather than
+     * on every bypassed block — a write per block would churn the seqlock for
+     * no reader benefit.
+     */
+    _telemetryStale = false;
     _frameCount = 0;
     _telemetryInterval = 4; // send telemetry every N process calls (~21ms at 128 samples/48kHz)
     _sabView: Float32Array | null = null;
@@ -41,8 +51,9 @@ class ScoringProcessor extends AudioWorkletProcessor {
     _outLeftView = new WasmView();
     _outRightView = new WasmView();
 
-    constructor() {
+    constructor(...args: unknown[]) {
         super();
+        let wasmModule = resolveProcessorWasmModule(args[0]);
         this.port.onmessage = (event: MessageEvent<ScoringMsg>) => {
             const msg = event.data;
             try {
@@ -50,7 +61,11 @@ class ScoringProcessor extends AudioWorkletProcessor {
                     if (this._ready) {
                         return;
                     }
-                    this._initWasm(msg.wasmBytes);
+                    if (!wasmModule) {
+                        throw new TypeError('ScoringProcessor requires a compiled WASM module');
+                    }
+                    this._initWasm(wasmModule);
+                    wasmModule = null;
                 } else if (msg.type === 'init-sab') {
                     this._sabView = new Float32Array(msg.sab, msg.byteOffset, 32);
                     this._sabSeqView = new Int32Array(msg.sab, msg.byteOffset, 32);
@@ -75,8 +90,8 @@ class ScoringProcessor extends AudioWorkletProcessor {
         };
     }
 
-    _initWasm(wasmBytes: BufferSource): void {
-        const wasmExports = initSync({ module: new WebAssembly.Module(wasmBytes) });
+    _initWasm(wasmModule: WebAssembly.Module): void {
+        const wasmExports = initSync({ module: wasmModule });
         this._memory = wasmExports.memory;
         this._instance = new ScoringInstance(sampleRate);
         this._ready = true;
@@ -97,12 +112,33 @@ class ScoringProcessor extends AudioWorkletProcessor {
         const input = inputs[0];
         const output = outputs[0];
 
-        if (!this._ready || this._faulted) {
+        // Bypassed, the tuner does nothing: no analysis, no telemetry, and the
+        // dry signal reaches the output unchanged (the sibling shape — see
+        // proofChamberProcessor). The detector has no audible state to protect,
+        // so unlike Knead there is nothing to keep warm; the readout re-converges
+        // within one analysis window after un-bypassing.
+        if (!this._ready || this._bypassed || this._faulted) {
             if (input && output) {
                 this._passthrough(input, output);
             }
+            // Clear the readout once on the way in. Skipping the publish
+            // entirely leaves the last real detection sitting in the slot, and
+            // the poll keeps reading it every frame — so a bypassed tuner goes
+            // on reporting "in tune at A4" indefinitely, with nothing in the
+            // panel able to tell a live reading from a frozen one.
+            //
+            // Published under the same seqlock bracket as a real frame so a
+            // concurrent poll cannot read the cleared flag beside a stale
+            // frequency.
+            if (this._telemetryStale && this._sabView && this._sabSeqView) {
+                beginTelemetryPublish(this._sabSeqView);
+                this._sabView[0] = 0;
+                endTelemetryPublish(this._sabSeqView);
+                this._telemetryStale = false;
+            }
             return true;
         }
+        this._telemetryStale = true;
 
         const in0 = input?.[0];
         if (!in0 || !output || output.length === 0) {

@@ -1,8 +1,11 @@
 import { AppActionCommittedError, AppActionConflictError } from '../errors/AppActionExecutionError';
 import { type UndoEntry } from '../models/UndoEntry';
+import { isActionEntry } from '../models/UndoEntry';
 import { undoStore } from '../stores/undoStore';
 
 import { executeAppAction } from './executeAppAction';
+import { executeAppActionBatch } from './executeAppActionBatch';
+import { recordAction } from './macro/recording/recordAction';
 import { REDO_NOT_APPLIED } from './redoResult';
 import { runUndoRedoExclusive } from './undoRedo';
 import { undoTreeMoveTo } from './undoTree/undoTreeMoveTo';
@@ -23,6 +26,48 @@ type RedoOutcome =
     | { readonly status: 'conflict' }
     | { readonly status: 'committed'; readonly error: AppActionCommittedError };
 
+function recordRedoAction(entry: Extract<UndoEntry, { kind: 'action' }>): void {
+    if (entry.source !== 'ai') {
+        recordAction(entry.action);
+    }
+}
+
+async function executeActionGroupRedo(entries: readonly UndoEntry[]): Promise<RedoOutcome> {
+    if (!entries.every(isActionEntry)) {
+        return { status: 'not-applied' };
+    }
+
+    const actions = entries.map((entry) => entry.redoAction ?? entry.action);
+    const result = await executeAppActionBatch(actions, {
+        skipUndo: true,
+        skipMacroRecording: true,
+        source: entries[0]?.source,
+    });
+    if (result.status === 'conflicted' || result.status === 'cancelled') {
+        return { status: 'conflict' };
+    }
+    if (result.status === 'rejected' || result.status === 'failed') {
+        throw new Error(`Grouped redo failed: ${result.reason}`);
+    }
+
+    for (const entry of entries) {
+        recordRedoAction(entry);
+    }
+    if (result.status === 'ambiguous') {
+        return {
+            status: 'committed',
+            error: new AppActionCommittedError('appActionBatch', new Error(result.reason)),
+        };
+    }
+    if (result.status === 'committed-with-warning') {
+        return {
+            status: 'committed',
+            error: new AppActionCommittedError('appActionBatch', new Error(result.warning)),
+        };
+    }
+    return { status: 'applied' };
+}
+
 async function executeRedo(entry: UndoEntry): Promise<RedoOutcome> {
     if (entry.kind === 'callback') {
         if (entry.redo() === REDO_NOT_APPLIED) {
@@ -32,7 +77,21 @@ async function executeRedo(entry: UndoEntry): Promise<RedoOutcome> {
     }
 
     try {
-        await executeAppAction(entry.action);
+        if (entry.redoAction) {
+            await executeAppAction(entry.redoAction, {
+                skipUndo: true,
+                skipMacroRecording: true,
+                source: entry.source,
+            });
+            recordRedoAction(entry);
+        } else if (entry.source === 'ai') {
+            await executeAppAction(entry.action, {
+                skipMacroRecording: true,
+                source: 'ai',
+            });
+        } else {
+            await executeAppAction(entry.action);
+        }
         return { status: 'applied' };
     } catch (error) {
         if (error instanceof AppActionConflictError) {
@@ -61,6 +120,35 @@ async function redoImpl(): Promise<void> {
     while (future.length > 0) {
         const entry = future[0]!;
         const remainingFuture = future.slice(1);
+
+        if (entry.groupId) {
+            const groupEntries: UndoEntry[] = [];
+            for (const candidate of future) {
+                if (candidate.groupId !== entry.groupId) {
+                    break;
+                }
+                groupEntries.push(candidate);
+            }
+            if (groupEntries.every(isActionEntry)) {
+                const outcome = await executeActionGroupRedo(groupEntries);
+                if (outcome.status === 'conflict') {
+                    if (future.length !== state.future.length) {
+                        undoStore.set({ past: state.past, future });
+                        undoTreeMoveTo(currentEntryId(state.past));
+                    }
+                    return;
+                }
+
+                future = future.slice(groupEntries.length);
+                const newPast = [...state.past, ...groupEntries];
+                undoStore.set({ past: newPast, future });
+                undoTreeMoveTo(currentEntryId(newPast));
+                if (outcome.status === 'committed') {
+                    throw outcome.error;
+                }
+                return;
+            }
+        }
 
         const outcome = await executeRedo(entry);
 

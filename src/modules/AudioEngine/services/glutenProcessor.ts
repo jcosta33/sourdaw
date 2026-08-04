@@ -7,6 +7,7 @@
  * Effect processor: reads from inputs[0] (main) and inputs[1] (sidechain), writes to outputs[0].
  */
 
+import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
 import { initSync, GlutenInstance } from '../wasm/daw_dsp.js';
 
 import { beginTelemetryPublish, endTelemetryPublish } from './telemetrySeqlock';
@@ -63,7 +64,7 @@ const PARAM_MAP: Record<string, string> = {
 };
 
 type GlutenMsg =
-    | { type: 'init'; wasmBytes: BufferSource }
+    | { type: 'init' }
     | { type: 'init-sab'; sab: SharedArrayBuffer; byteOffset: number }
     | { type: 'param'; name: string; value: number };
 
@@ -86,8 +87,9 @@ class GlutenProcessor extends AudioWorkletProcessor {
     _outLeftView = new WasmView();
     _outRightView = new WasmView();
 
-    constructor() {
+    constructor(...args: unknown[]) {
         super();
+        let wasmModule = resolveProcessorWasmModule(args[0]);
         this.port.onmessage = (event: MessageEvent<GlutenMsg>) => {
             const msg = event.data;
             try {
@@ -95,7 +97,11 @@ class GlutenProcessor extends AudioWorkletProcessor {
                     if (this._ready) {
                         return;
                     }
-                    this._initWasm(msg.wasmBytes);
+                    if (!wasmModule) {
+                        throw new TypeError('GlutenProcessor requires a compiled WASM module');
+                    }
+                    this._initWasm(wasmModule);
+                    wasmModule = null;
                 } else if (msg.type === 'init-sab') {
                     this._sabView = new Float32Array(msg.sab, msg.byteOffset, 32);
                     this._sabSeqView = new Int32Array(msg.sab, msg.byteOffset, 32);
@@ -124,8 +130,8 @@ class GlutenProcessor extends AudioWorkletProcessor {
         };
     }
 
-    _initWasm(wasmBytes: BufferSource): void {
-        const wasmExports = initSync({ module: new WebAssembly.Module(wasmBytes) });
+    _initWasm(wasmModule: WebAssembly.Module): void {
+        const wasmExports = initSync({ module: wasmModule });
         this._memory = wasmExports.memory;
         this._instance = new GlutenInstance(sampleRate);
         this._ready = true;

@@ -7,7 +7,6 @@ import { type ReactElement, useRef, useState } from 'react';
 import { DawContextMenuSurface } from '#/components/daw/DawContextMenuSurface';
 import { DawMenuButton, DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { logger } from '#/infra/logger/appLogger';
-import { generateMidiAI } from '#/modules/AiGeneration/useCases';
 import { copySelectedNotes, pasteNotes } from '#/modules/Arrangement/useCases';
 import { executeAppAction, pushUndoEntry } from '#/modules/Command/useCases';
 import {
@@ -16,8 +15,6 @@ import {
     moveMidiNote,
     setNoteVelocity,
     humanizeNotes,
-    quantizeNotes,
-    transposeNotes,
     getNotesForClip,
     strumNotes,
     restoreStrumOriginals,
@@ -25,7 +22,6 @@ import {
     getGrooveTemplate,
     getStraightGrooveTemplateId,
 } from '#/modules/MIDI/useCases';
-import { isTauri } from '#/utils/tauriRuntime';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 
 import { type MidiNote } from '../../../models/MidiNoteViewTypes';
@@ -63,24 +59,12 @@ export const PianoRollContextMenu = ({
 
     const handleAIGenerate = async (): Promise<void> => {
         try {
-            const clipNotes = getNotesForClip(clipId);
-            const seed = clipNotes
-                .slice(-8)
-                .map(
-                    (node) =>
-                        [Math.floor(node.pitch), node.velocity, node.startBeat, node.duration] as [
-                            number,
-                            number,
-                            number,
-                            number,
-                        ]
-                );
-            const res = await generateMidiAI(seed, 16);
-            for (const note of res.notes) {
-                addMidiNote(clipId, note.pitch, note.start_beat, note.duration_beats, note.velocity);
-            }
-        } catch {
-            logger.warn('AI Generation requires native backend');
+            await executeAppAction(
+                { type: 'completeMidi', payload: { clipId, direction: 'forward', bars: 4 } },
+                { source: 'ai' }
+            );
+        } catch (error) {
+            logger.warn('AI MIDI completion failed', error);
         }
     };
 
@@ -161,22 +145,10 @@ export const PianoRollContextMenu = ({
                         key={g}
                         className={pillBtnClass}
                         onClick={act(() => {
-                            const before = getNotesForClip(clipId).map((node) => ({ ...node }));
-                            quantizeNotes(clipId, g);
-                            const after = getNotesForClip(clipId).map((node) => ({ ...node }));
-                            pushUndoEntry(
-                                `Quantize notes (${{ 1: '1/1', 0.5: '1/2', 0.25: '1/4', 0.125: '1/8' }[g]})`,
-                                () => {
-                                    for (const node of before) {
-                                        moveMidiNote(clipId, node.id, node.pitch, node.startBeat);
-                                    }
-                                },
-                                () => {
-                                    for (const node of after) {
-                                        moveMidiNote(clipId, node.id, node.pitch, node.startBeat);
-                                    }
-                                }
-                            );
+                            void executeAppAction({
+                                type: 'quantizeNotes',
+                                payload: { clipId, gridSize: g },
+                            }).catch(() => logger.warn('Could not quantize notes'));
                         })}
                     >
                         {{ 1: '1/1', 0.5: '1/2', 0.25: '1/4', 0.125: '1/8' }[g]}
@@ -195,12 +167,10 @@ export const PianoRollContextMenu = ({
                         key={semi}
                         className={pillBtnClass}
                         onClick={act(() => {
-                            transposeNotes(clipId, semi);
-                            pushUndoEntry(
-                                `Transpose ${semi > 0 ? '+' : ''}${semi} semitone${Math.abs(semi) !== 1 ? 's' : ''}`,
-                                () => transposeNotes(clipId, -semi),
-                                () => transposeNotes(clipId, semi)
-                            );
+                            void executeAppAction({
+                                type: 'transposeNotes',
+                                payload: { clipId, semitones: semi },
+                            }).catch(() => logger.warn('Could not transpose notes'));
                         })}
                     >
                         {{ '-12': '-Oct', '-1': '-1', '1': '+1', '12': '+Oct' }[semi]}
@@ -321,11 +291,6 @@ export const PianoRollContextMenu = ({
             <DawMenuButton
                 role="menuitem"
                 className="font-medium text-[var(--color-accent-lavender)]"
-                trailingContent={
-                    <span className="rounded border border-current px-1 text-[9px] opacity-60">
-                        {isTauri() ? 'Desktop' : 'Web'}
-                    </span>
-                }
                 onClick={() => {
                     void handleAIGenerate();
                     onClose();

@@ -1,6 +1,8 @@
+import { getArticulationId } from '../models/LevainPatch';
 import { defaultLevainState, levainStore } from '../stores/levainStore';
 
 import { autoLoadLevainSamples } from './autoLoadSamples';
+import { hydrateLevainStateFromProject } from './hydrateLevainStateFromProject';
 
 export type PrepareOfflineLevainInput = {
     /** Id of the device being rendered; keys the patch that selects the instrument. */
@@ -30,15 +32,19 @@ export type PrepareOfflineLevainInput = {
  * during an export is a failure the user should see rather than one buried in a
  * log line.
  *
- * The instrument comes from the live patch when there is one. Note that
- * `instrumentId` is not persisted — `Device.parameterValues` holds numbers only —
- * so a project reopened from disk takes the `defaultLevainState` branch, the same
- * instrument live registration seeds for a device nobody has opened.
+ * **Where the instrument comes from.** The live patch when the session holds one,
+ * then project truth, then the module default. `Device.parameterValues` holds
+ * numbers only, so the id rides `Device.deviceState` instead; the middle branch is
+ * what makes a bounce from a freshly reopened project render the instrument that
+ * was saved rather than violin-1. The default branch stays reachable for a device
+ * nobody has ever pointed at an instrument, and is the same one live registration
+ * seeds.
  */
 export async function prepareOfflineLevain({ deviceId, port, signal }: PrepareOfflineLevainInput): Promise<void> {
     const instances = levainStore.value ?? {};
-    const state = instances[deviceId] ?? defaultLevainState;
-    const { instrumentId } = state.patch;
+    const state = instances[deviceId] ?? hydrateLevainStateFromProject(deviceId) ?? defaultLevainState;
+    const { currentArticulation, instrumentId } = state.patch;
 
+    port.postMessage({ type: 'param', name: 'current_articulation', value: getArticulationId(currentArticulation) });
     await autoLoadLevainSamples(deviceId, port, instrumentId, signal);
 }

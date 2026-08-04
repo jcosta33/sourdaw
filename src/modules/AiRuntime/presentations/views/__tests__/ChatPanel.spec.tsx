@@ -142,7 +142,7 @@ describe('ChatPanel', () => {
                     role: 'assistant',
                     content: 'This prompt requires confirmation',
                     timestamp: 1,
-                    isDsoAction: true,
+                    isCommandAction: true,
                     pendingActionConfirmationId: 'confirm-1',
                     pendingActionConfirmationStatus: 'proposed',
                 },
@@ -154,6 +154,7 @@ describe('ChatPanel', () => {
 
         render(<ChatPanel />);
 
+        expect(screen.getByText('Action')).toBeInTheDocument();
         fireEvent.click(screen.getByRole('button', { name: 'Confirm pending actions' }));
         expect(confirmPendingChatActions).toHaveBeenCalledWith({ confirmationId: 'confirm-1' });
 

@@ -90,7 +90,10 @@ function installFakeIndexedDb(): Map<string, StoredAudioBuffer> {
                 abort: vi.fn(),
                 objectStore: () => objectStore,
             };
-            queueMicrotask(() => transaction.oncomplete?.());
+            // `complete` fires only after every queued request has been
+            // delivered (IDB 3.0 §5.6). Requests here resolve on microtasks, so
+            // the commit has to be a task or it would outrun them.
+            setTimeout(() => transaction.oncomplete?.(), 0);
             return transaction;
         },
     };
@@ -334,15 +337,16 @@ describe('audioBufferCache lifecycle', () => {
     });
 
     describe('serialization and export', () => {
-        it('serializeBuffers encodes every channel as base64 Float32 PCM', async () => {
+        it('encodes every channel of a resident buffer as base64 Float32 PCM', async () => {
             installFakeIndexedDb();
             const buffer = createAudioBuffer({
                 length: 3,
                 channels: 2,
                 fill: (index, channel) => (channel === 0 ? index * 0.25 : -index * 0.25),
             });
+            audioBufferCache.set('stems', buffer);
 
-            const exported = await audioBufferCache.serializeBuffers([{ id: 'stems', buffer }]);
+            const exported = await audioBufferCache.exportBuffers(['stems']);
 
             expect(Object.keys(exported)).toEqual(['stems']);
             expect(exported.stems!.sampleRate).toBe(48_000);

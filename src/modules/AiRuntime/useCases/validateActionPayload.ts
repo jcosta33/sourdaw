@@ -119,37 +119,15 @@ function hasClipId(param: unknown): param is { clipId: string } {
 function isAddNotesNote(param: unknown): param is PayloadOf<'addNotes'>['notes'][number] {
     return (
         isObj(param) &&
+        hasOnlyKeys(param, ['pitch', 'startBeat', 'duration', 'velocity']) &&
+        Object.hasOwn(param, 'pitch') &&
+        Object.hasOwn(param, 'startBeat') &&
+        Object.hasOwn(param, 'duration') &&
         isInRange(param.pitch, 0, 127) &&
         isNonNegativeNumber(param.startBeat) &&
         isPositiveNumber(param.duration) &&
         isOptional(param.velocity, (value): value is number => isInRange(value, 1, 127))
     );
-}
-
-// Snapshot entries carry exact membership as well as present Automerge bytes.
-// The LLM never produces this inverse-only action; reject JSON-like lookalikes
-// and malformed runtime Maps at the action boundary.
-function isDocumentSnapshot(
-    value: unknown
-): value is Map<string, { readonly state: 'present'; readonly bytes: Uint8Array } | { readonly state: 'absent' }> {
-    if (!(value instanceof Map)) {
-        return false;
-    }
-    for (const [key, entry] of value) {
-        if (!isString(key) || !isObj(entry)) {
-            return false;
-        }
-        if (entry.state === 'absent') {
-            if ('bytes' in entry) {
-                return false;
-            }
-            continue;
-        }
-        if (entry.state !== 'present' || !(entry.bytes instanceof Uint8Array)) {
-            return false;
-        }
-    }
-    return true;
 }
 
 const validators = {
@@ -171,10 +149,13 @@ const validators = {
     // Clip lifecycle
     addClip: (param): param is PayloadOf<'addClip'> =>
         isObj(param) &&
-        isString(param.trackId) &&
+        hasOnlyKeys(param, ['trackId', 'startBeat', 'endBeat', 'name', 'type', 'audioBufferId']) &&
+        isNonEmptyString(param.trackId) &&
         isNumber(param.startBeat) &&
         isNumber(param.endBeat) &&
-        isString(param.name),
+        isString(param.name) &&
+        isOptional(param.type, (value): value is 'audio' | 'midi' => value === 'audio' || value === 'midi') &&
+        isOptional(param.audioBufferId, isString),
     removeClip: hasClipId,
     splitClip: (param): param is PayloadOf<'splitClip'> =>
         isObj(param) && isString(param.clipId) && isNumber(param.beat),
@@ -271,9 +252,18 @@ const validators = {
 
     // MIDI note batch ops
     quantizeNotes: (param): param is PayloadOf<'quantizeNotes'> =>
-        isObj(param) && isString(param.clipId) && isNumber(param.gridSize),
+        isObj(param) &&
+        hasExactKeys(param, ['clipId', 'gridSize']) &&
+        isNonEmptyString(param.clipId) &&
+        isPositiveNumber(param.gridSize) &&
+        param.gridSize <= 64,
     transposeNotes: (param): param is PayloadOf<'transposeNotes'> =>
-        isObj(param) && isString(param.clipId) && isNumber(param.semitones),
+        isObj(param) &&
+        hasExactKeys(param, ['clipId', 'semitones']) &&
+        isNonEmptyString(param.clipId) &&
+        isInRange(param.semitones, -127, 127) &&
+        Number.isInteger(param.semitones) &&
+        param.semitones !== 0,
 
     // Marker + section
     removeMarker: (param): param is PayloadOf<'removeMarker'> => isObj(param) && isString(param.markerId),
@@ -437,7 +427,12 @@ const validators = {
     scaleAllVelocities: 'unchecked',
     setAllVelocities: 'unchecked',
     addNotes: (param): param is PayloadOf<'addNotes'> =>
-        isObj(param) && isString(param.clipId) && Array.isArray(param.notes) && param.notes.every(isAddNotesNote),
+        isObj(param) &&
+        hasExactKeys(param, ['clipId', 'notes']) &&
+        isNonEmptyString(param.clipId) &&
+        Array.isArray(param.notes) &&
+        param.notes.length > 0 &&
+        param.notes.every(isAddNotesNote),
     arpeggiate: 'unchecked',
 
     // Automation secondary ops
@@ -569,11 +564,6 @@ const validators = {
     createVersionBranch: 'unchecked',
     restoreTrack: 'unchecked',
     restoreClip: 'unchecked',
-    // Inverse-only action emitted by the AI undo pipeline (executeDsoEdit.ts) with
-    // binary Automerge snapshots — the LLM is never meant to produce it. Guard the
-    // bundle shape so an arbitrary/hand-crafted payload can't be restored unchecked.
-    restoreDsoSnapshot: (param): param is PayloadOf<'restoreDsoSnapshot'> =>
-        isObj(param) && isDocumentSnapshot(param.bundle),
 
     // Warp + pitch
     enableWarping: 'unchecked',

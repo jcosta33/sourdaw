@@ -1,14 +1,14 @@
 /**
  * GlutenNode — AudioWorkletNode wrapper for the Gluten bus compressor.
  *
- * Same pattern as FermenterNode/ToasterNode: caches WASM binary, resumes
+ * Same pattern as FermenterNode/ToasterNode: caches the compiled WASM module, resumes
  * AudioContext, provides setParam/setBypass via MessagePort.
  *
  * Key difference: Gluten is an *effect* (1 input, 1 output), not an instrument.
  */
 
 import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
-import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from '#/infra/audioWorklet/workletInitShared';
+import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
 
 import glutenProcessorUrl from '../services/glutenProcessor.ts?worker&url';
 
@@ -72,17 +72,28 @@ export async function createGlutenNode(
     }
 
     await raceAbortSignal(ensureWorkletRegistered(ctx, glutenProcessorUrl), signal);
-    const wasmBytes = await raceAbortSignal(fetchWasmBinary(wasmUrl ?? DEFAULT_WASM_URL), signal);
+    const wasmLease = await raceAbortSignal(
+        fetchWasmModule({ ctx, bundleId: 'daw-dsp', url: wasmUrl ?? DEFAULT_WASM_URL, signal }),
+        signal
+    );
 
     signal?.throwIfAborted();
 
-    const node = new AudioWorkletNode(ctx, 'gluten-processor', {
-        numberOfInputs: 2, // Input 0: main audio, Input 1: external sidechain
-        numberOfOutputs: 1,
-        outputChannelCount: [2],
-        channelCount: 2,
-        channelCountMode: 'explicit',
-    });
+    let node: AudioWorkletNode;
+    try {
+        node = new AudioWorkletNode(ctx, 'gluten-processor', {
+            numberOfInputs: 2, // Input 0: main audio, Input 1: external sidechain
+            numberOfOutputs: 1,
+            outputChannelCount: [2],
+            channelCount: 2,
+            channelCountMode: 'explicit',
+            processorOptions: { wasmModule: wasmLease.module },
+        });
+        wasmLease.commit();
+    } catch (error) {
+        wasmLease.release();
+        throw error;
+    }
 
     let slot: TelemetrySlot | null = telemetryAllocator.allocateSlot();
     let meterRafId: number | null = null;
@@ -105,8 +116,7 @@ export async function createGlutenNode(
     };
     const readyPromise = handshake.promise;
 
-    const copy = wasmBytes.slice(0);
-    node.port.postMessage({ type: 'init', wasmBytes: copy }, [copy]);
+    node.port.postMessage({ type: 'init' });
 
     return {
         workletNode: node,

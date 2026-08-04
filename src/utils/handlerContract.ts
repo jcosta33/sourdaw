@@ -118,6 +118,19 @@ export type AutomationPointSnapshot = {
 };
 export type TakeLaneSnapshot = { readonly id: string; readonly trackId: string };
 export type MidiNotesSnapshot = readonly { readonly id: string }[];
+export type MidiClipNoteSnapshot = {
+    readonly id: string;
+    readonly pitch: number;
+    readonly startBeat: number;
+    readonly duration: number;
+    readonly velocity: number;
+    readonly probability?: number;
+    readonly pressure?: number;
+    readonly slide?: number;
+    readonly pitchBend?: number;
+    readonly pitchBendRangeSemitones?: number;
+    readonly channel?: number;
+};
 export type MidiCcSnapshot = readonly { readonly id: string }[];
 export type MidiPitchBendSnapshot = readonly { readonly id: string }[];
 export type RippleShiftSnapshot = {
@@ -156,9 +169,6 @@ export type AdjustmentLayerSnapshot = {
     readonly mix: number;
     readonly color: string;
 };
-type CommandDocumentSnapshotEntry =
-    { readonly state: 'present'; readonly bytes: Uint8Array } | { readonly state: 'absent' };
-type CommandDocumentSnapshot = Map<string, CommandDocumentSnapshotEntry>;
 /** A pitch-shift segment carried by `commitPitchEdit`. Command cannot import Knead's
  *  segment model (model isolation), so this specifies only the structural fields the
  *  pitch render consumes. Kept assignable to Knead's mutable shape (plain arrays). */
@@ -381,12 +391,30 @@ export type AppAction =
     | {
           type: 'addClip';
           payload: {
+              /** Internal replay identity. AiRuntime payload validation rejects this field. */
+              id?: string;
               trackId: string;
               startBeat: number;
               endBeat: number;
               name: string;
               type?: 'audio' | 'midi';
               audioBufferId?: string;
+              /** Internal clip state. AiRuntime payload validation rejects these fields. */
+              assetHash?: string;
+              isGhost?: boolean;
+              audioOffsetBeats?: number;
+              midiOffsetBeats?: number;
+              fadeInBeats?: number;
+              fadeOutBeats?: number;
+              gain?: number;
+              color?: string;
+              locked?: boolean;
+              muted?: boolean;
+              stretchMode?: 'off' | 'repitch' | 'timestretch';
+              stretchRatio?: number;
+              loopEnabled?: boolean;
+              loopLength?: number;
+              followAction?: 'stop' | 'play_next' | 'play_previous' | 'play_random' | 'play_first' | 'play_last';
           };
       }
     | { type: 'moveClip'; payload: { clipId: string; trackId: string; startBeat: number } }
@@ -469,6 +497,17 @@ export type AppAction =
           };
       }
     | { type: 'quantizeNotes'; payload: { clipId: string; gridSize: number; strength?: number; swing?: number } }
+    | {
+          /** Internal inverse for whole-clip MIDI note transforms. Provider payloads never carry snapshots. */
+          type: 'restoreMidiClipNotes';
+          payload: {
+              clipId: string;
+              notes: readonly MidiClipNoteSnapshot[];
+              expectedNotes: readonly MidiClipNoteSnapshot[];
+              /** Internal redo allowance for a newly recreated clip whose MIDI bucket does not exist yet. */
+              allowMissingExpectedEmpty?: boolean;
+          };
+      }
     | { type: 'quantizeNoteLengths'; payload: { clipId: string; gridSize: number } }
     | { type: 'transposeNotes'; payload: { clipId: string; semitones: number } }
     | {
@@ -749,7 +788,14 @@ export type AppAction =
           type: 'addNotes';
           payload: {
               clipId: string;
-              notes: Array<{ pitch: number; startBeat: number; duration: number; velocity?: number }>;
+              notes: Array<{
+                  /** Internal replay identity. Provider note validation rejects this field. */
+                  id?: string;
+                  pitch: number;
+                  startBeat: number;
+                  duration: number;
+                  velocity?: number;
+              }>;
           };
       }
     | {
@@ -887,18 +933,18 @@ export type AppAction =
     | { type: 'setRaveBlend'; payload: { blend: number } }
     | { type: 'enableWarping'; payload: { clipId: string } }
     | { type: 'setWarpAlgorithm'; payload: { clipId: string; algorithm: string } }
-    | { type: 'setWarpPitchShift'; payload: { clipId: string; semitones: number } }
-    | { type: 'restoreDsoSnapshot'; payload: { bundle: CommandDocumentSnapshot } };
+    | { type: 'setWarpPitchShift'; payload: { clipId: string; semitones: number } };
 
 export type TrackKind = 'audio' | 'midi' | 'bus' | 'master' | 'folder';
 
 export type AppActionType = AppAction['type'];
 
 /** Result of a handler's `describe(action)` — the human label for the undo/history
- *  entry plus the optional inverse action that redo/undo replays. */
+ *  entry plus optional guarded inverse and redo actions. */
 export type HandlerDescribeResult = {
     label: string;
     inverseAction?: AppAction | null;
+    redoAction?: AppAction;
 };
 
 export type HandlerAfterCommit = () => void | Promise<void>;
@@ -937,8 +983,7 @@ export type ExecuteOptions = {
     /** Recheck transient authority after queued CRDT work completes and before dispatch begins. */
     shouldExecute?: () => boolean;
     source?: 'manual' | 'prompt' | 'voice' | 'ai';
-    /** When true, skip pushing an undo entry and action history entry.
-     *  Use this when the caller manages batch undo externally (e.g. executeDsoEdit). */
+    /** When true, skip pushing an undo entry and action history entry during replay or migration. */
     skipUndo?: boolean;
     /** Opaque owner for CRDT writes made synchronously by this action. */
     snapshotTransaction?: object;

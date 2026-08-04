@@ -1,12 +1,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
+
 import { createCrumbsNode, isCrumbsDevice } from '../CrumbsNode';
 
 // Mock the worklet-init helpers so createCrumbsNode resolves without a real
 // AudioContext / worklet module / WASM fetch.
 vi.mock('#/infra/audioWorklet/workletInitShared', () => ({
     ensureWorkletRegistered: vi.fn().mockResolvedValue(undefined),
-    fetchWasmBinary: vi.fn().mockResolvedValue(new ArrayBuffer(8)),
+    fetchWasmModule: vi.fn().mockResolvedValue({
+        module: new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0])),
+        commit: vi.fn(),
+        release: vi.fn(),
+    }),
     createReadyHandshake: vi.fn(() => ({
         promise: Promise.resolve({}),
         onMessage: () => 'other' as const,
@@ -29,11 +35,16 @@ describe('isCrumbsDevice', () => {
 
 describe('createCrumbsNode', () => {
     let postMessage: ReturnType<typeof vi.fn>;
+    let workletOptions: AudioWorkletNodeOptions | undefined;
 
     beforeEach(() => {
         postMessage = vi.fn();
+        workletOptions = undefined;
 
         class FakeWorkletNode {
+            constructor(_context: unknown, _processorName: string, options?: AudioWorkletNodeOptions) {
+                workletOptions = options;
+            }
             port = { postMessage, onmessage: null, close: vi.fn() };
             connect = vi.fn();
             disconnect = vi.fn();
@@ -124,5 +135,29 @@ describe('createCrumbsNode', () => {
         await createCrumbsNode(makeCtx());
 
         expect(messagesOfType('loadSample')).toEqual([]);
+    });
+
+    it('passes the compiled module in processor options and posts an empty init message', async () => {
+        await createCrumbsNode(makeCtx());
+
+        expect(workletOptions?.processorOptions?.wasmModule).toBeInstanceOf(WebAssembly.Module);
+        expect(messagesOfType('init')).toEqual([{ type: 'init' }]);
+    });
+
+    it('abandons registration without fetching or constructing after cancellation', async () => {
+        let resolveRegistration: () => void = () => {};
+        const registration = new Promise<void>((resolve) => {
+            resolveRegistration = resolve;
+        });
+        vi.mocked(ensureWorkletRegistered).mockReturnValueOnce(registration);
+        const controller = new AbortController();
+
+        const creating = createCrumbsNode(makeCtx(), undefined, undefined, controller.signal);
+        controller.abort();
+        resolveRegistration();
+
+        await expect(creating).rejects.toMatchObject({ name: 'AbortError' });
+        expect(fetchWasmModule).not.toHaveBeenCalled();
+        expect(workletOptions).toBeUndefined();
     });
 });

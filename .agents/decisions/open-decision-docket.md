@@ -51,7 +51,7 @@ code: no (all dormant).
 | **Toaster performance features** | Toaster | Note-Repeat / 16-Levels / Sound-Locks / Pattern-Morph / multi-pattern / polymetric — full impls, no UI/command entry; their sequencer reader branches are dead | Ship each (UI + command + e2e) or retire it with its branches |
 | **Yeast param-readback / introspection UI** | Yeast | StepPatternEditor edits never reach the Arpeggiator; all panel knobs uncontrolled; 12 introspection methods + reorder are unbuilt-feature groundwork. (`yeastPanic` is now wired via Transport `panicYeastRuntime` → Yeast `yeastPanic` — no longer part of this row) | Build the param-projection store + pattern/reorder wiring, or retire |
 | **SoundLibrary vs SampleLibrary** | SoundLibrary | Two modules own "the sample library"; only SampleLibrary has a UI; their `findSimilarSamples` return types are incompatible (`SampleEntry[]` vs `string[]`) | Decide the owner; retire or merge the other (cross-module model-merge is forbidden — an ownership/migration decision) |
-| **Collaboration transport-permission** | Collaboration | `canControlTransport`/`getRole`/`transport` capability + `transport-controller`/`viewer` roles never granted (only `editor` is) (`useCases/permissions.ts:93`) | Enforce transport perms + role-grant UI, or remove the scaffold |
+| ~~**Collaboration transport-permission**~~ *(closed — ADR 0016 ruling 4)* | Collaboration | The role scaffold (`PermissionManager`, `canControlTransport`, `getRole`, `transport-controller`/`viewer`) was deleted; an invite is documented as unconditional write access in `useCases/collaboration/generateInvite.ts` and `Collaboration/AGENTS.md` | Resolved: scaffold removed |
 | **GrandBoule sampled-attack** | GrandBoule | Hybrid attack-clip pathway wired through types, no production caller | Wire the attack-clip load flow, or remove |
 | **Synth CV/Gate** | Synth | Convert+write path inert; only `addCvOutput` wired | Build the modular CV/Gate UI, or remove the convert/write ops |
 | **SampleLibrary embedding (Find-Similar / UMAP)** | SampleLibrary | `setEmbedding` never called (`stores/embeddingStore.ts:22`, zero callers) → embeddings map always empty → Find-Similar returns `[]`. The `presentations/views/LibraryBrowser.tsx:449` "Re-project UMAP" button is live but silently no-ops for the same reason — hide or wire it regardless of the finish-or-remove call | Build embedding population, or remove the G2/G3 controls |
@@ -394,15 +394,13 @@ code: no (all dormant).
 
 ## Collaboration
 
-- **Host auto-grants editor to every connecting peer**, so a wired permission
-  filter would still say yes to everyone. Options: role-selection UX on join
-  vs deliberate open-by-default. Blocks code: yes, for permissions work.
-  Source:
-  `src/modules/Collaboration/useCases/collaboration/sessionManagement.ts:531-532`.
-- **Role-revocation semantics undefined**: PermissionManager epoch increments
-  on grant, last-writer-by-epoch wins, no revoke/reorder defined. Blocks code:
-  yes, for permissions work. Source:
-  `src/modules/Collaboration/useCases/permissions.ts:41-63,126-129`.
+- ~~**Host auto-grants editor to every connecting peer**~~ — **closed by ADR 0016
+  ruling 4.** Answered as deliberate open-by-default: the role scaffold is
+  deleted and an invite is documented as unconditional write access. No
+  role-selection UX.
+- ~~**Role-revocation semantics undefined**~~ — **closed by ADR 0016 ruling 4.**
+  Moot: `PermissionManager` and its epoch/grant model no longer exist. The only
+  way to revoke access is to end the session.
 - **Is manual SDP copy-paste signaling permanent or a placeholder** for a
   signaling server (SignalingMessage types exist)? Blocks code: no. Source:
   `src/modules/Collaboration/models/CollaborationTypes.ts:51`.
@@ -934,3 +932,100 @@ finding as absence of a problem.
   as owed by the combined review.
 - **Backlog module reads**: Knead, Fermenter, LocalStorage, Scoring were not
   opened in the overview pass — unverified rather than confirmed.
+
+
+## Project persistence (ADR 0014, proposed)
+
+Decisions the architecture cannot be chosen without. Evidence:
+`.agents/artifacts/sourdaw/RESEARCH-project-persistence.md`. Each changes what a project file *is*
+or how a user moves work between machines, which is why none of them is engineering's to make.
+
+- ~~**Is a project one file, or a folder?**~~ **DECIDED 2026-08-02 — a folder, with a
+  content-addressed document.** Recorded in ADR 0014 §Owner decisions taken. Settled by the standard
+  the campaign is held to rather than by preference: gate M6 tore the layout as originally drawn
+  (6 of 72 injected crashes opened as a project that was neither generation, one of them with 52
+  tracks where the two real saves had 40 and 64), and content-addressing the document took that to
+  0 of 72. Git's object store, SQLite's WAL and atomic-rename-and-fsync all work this way. The
+  portable form is still a ZIP.
+- **Does a project file contain its audio, or reference it?** All four shipping DAWs default to
+  *reference* and make consolidation an explicit action; DAWproject makes it a per-file attribute.
+  **Reference-by-path is desktop-only** — the web cannot re-open a user's file across sessions
+  without a prompt. So this is two answers, and whether the format expresses both.
+- ~~**May browser-resident storage ever be described as "safe"?**~~ **DECIDED 2026-08-02 — no.
+  Browser storage is a cache, never the authority.** The authoritative copy is a file the user
+  controls, written through the File System Access API and kept in sync. Recorded in ADR 0014
+  §Owner decisions taken. The grounds are the Storage Standard, exactly as this entry originally
+  stated them: §7.1 has the user agent offer to clear even `persistent` buckets under continued
+  pressure, and §5 protects them only by requiring user involvement. ADR 0012 then settles it — a
+  desktop project file has no equivalent failure mode.
+- ~~**Is "install the app" a stated durability requirement?**~~ **DECIDED 2026-08-02 — no, for the
+  spec reason above rather than anything about installing.** Chrome's documented grant heuristics
+  *do* include installation, alongside site engagement and notification permission
+  ([web.dev](https://web.dev/articles/persistent-storage)). A gate-M1 probe reported `persist()`
+  false even for an installed PWA, but it ran on a throwaway profile with no history and installed
+  via CDP, so it measured its own fixture; **that result is withdrawn.** The answer does not depend
+  on it: even a granted persistent bucket cannot be described as safe, so install cannot be the
+  durability story whether or not it is obtainable.
+- **Does a project's audio belong to the project, or to a shared library?** A global pool dedups
+  across projects but forces an all-projects scan to answer "is this sample safe to delete".
+  Per-project ownership avoids the scan and duplicates shared samples on disk.
+- **Version policy, and the web escape hatch.** Industry convention is forward-only. A browser DAW's
+  version of this is harder: a web user cannot pin an old build, so a bad migration is unrecoverable
+  in a way it is not on desktop.
+- **How much budget the desktop store gets.** ADR 0012 is accepted and Option C is what compliance
+  costs. Option B is materially cheaper and violates it. If the budget is not there, the honest move
+  is to amend ADR 0012 explicitly and choose B — not to adopt C and under-build it.
+
+## Whole-application remediation (SURVEY-ultracode-scope)
+
+From `.agents/artifacts/sourdaw/SURVEY-ultracode-scope.md` §3 — 134 verified findings, and these are
+the calls an agent may not make alone. Several overlap the finish-or-remove table above; where they
+do, that table is the record and this list is the pointer.
+
+- **Gluten's +6.31 dB round-trip gain** (`crates/daw-dsp/src/gluten/oversample.rs:27`). Fixing it
+  makes every existing mix using FET or Diode topology — including the shipped "Punch" preset —
+  about 6 dB quieter and differently coloured. Fix / fix-plus-version-gated-legacy-gain / leave.
+- **Knead's 2048-sample latency** (`crates/daw-dsp/src/knead/engine.rs:139`), reported to PDC as
+  zero. Reporting it shifts every other track by up to ~43 ms; three shipped templates put Knead on
+  vocals, and users may have hand-nudged to compensate.
+- **Turning on offline automation for the five effects.** Every export made to date silently omitted
+  it. Correct, but a user who mixed into a frozen-parameter bounce hears something different.
+  Decide whether the first export of a pre-existing project warns.
+- **Restoring device state that was previously lost** — Levain's instrument, Fermenter's layers,
+  Crumbs' sample and pads, Toaster's `engineParams`. A reopened project currently plays defaults;
+  after the fix it plays what was saved, which for a project developed *since* the loss is something
+  the user has never heard.
+- **Native plugin hosting: ship or gate.** Unreachable today via two independent mechanisms (the ACL
+  grants 3 of ~78 commands; `start_native_engine` has no caller). Shipping is an XL transport
+  rework; gating removes VST/AU/CLAP as an advertised capability.
+- **Capabilities to remove or build.** Crust, CvGate, RAVE, the DDSP/TF.js instruments, Bacteria's
+  three dead distortion modes, Levain's macros and mic strips, Proof's linear-phase EQ, Crumbs' pads
+  and slices, Toaster's internal sequencer. Each removal deletes something a user may have
+  configured and persisted. Several are cheaper to *build* than the survey assumed — the DSP already
+  exists and is simply never instantiated.
+- **Collaboration posture.** Build host-side admission and roles, or delete the role model and
+  document that an invite string is unconditional write access. Leaving it guarantees the next
+  feature built on it believes it enforces something.
+- **Model integrity policy.** Failing closed on a missing digest breaks every catalog entry today,
+  because none carries one. Security-posture call.
+
+## RESOLVED 2026-08-01 by ADR 0016
+
+Four rulings that close a large part of the docket above. Recorded here so the entries are not
+re-litigated; ADR 0016 is the record.
+
+- **Native plugin hosting: ship or gate** — neither. **Desktop is out of scope** for this work
+  entirely, and the plugin host is a desktop concern. Survey Phase 4 is dropped. The findings stay;
+  the work is deferred.
+- **Unbuilt feature subsystems (finish-or-remove)** — **finish, wherever it can run in the browser.**
+  That is the scope rule now, and it replaces the per-row finish-or-remove call for every
+  browser-capable entry in the table above. Two rows (RAVE, DDSP/TF.js) carry an unproven premise:
+  establish that the models run in-browser at acceptable cost before committing to a shape. Rows
+  whose home is native — the Tauri CRDT backend, Push hardware, MIDI hardware controllers — follow
+  the desktop deferral.
+- **Correctness versus existing mixes** — **there are no users; correctness wins outright.** No
+  compatibility shims, no version-gated legacy behaviour. This answers Gluten's +6.31 dB, Knead's
+  latency, turning on offline automation, and restoring lost device state, and it collapses the
+  ADR 0014 owner decisions that assumed existing projects had to be preserved.
+- **Collaboration transport-permission** — **delete the scaffold.** Remove the unreachable role
+  machinery and document that an invite string is unconditional write access.

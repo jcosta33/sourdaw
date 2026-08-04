@@ -142,7 +142,9 @@ export class AssetTransfer {
             mime: blob.type || 'application/octet-stream',
         };
 
-        this.peerManager.sendCrdtSync({
+        // The manifest must land before its chunks: a chunk for a hash with no
+        // manifest is rejected by `handleChunk`.
+        await this.peerManager.sendCrdtSync({
             peerId,
             message: {
                 type: 'crdt-sync',

@@ -29,6 +29,11 @@ export type DecodedBank = {
     decodedByteLength: number;
 };
 
+export type DecodedBankLease = {
+    bank: DecodedBank;
+    release: () => void;
+};
+
 export type LoadDecodedBankInput = {
     manifestUrl: string;
     basePath: string;
@@ -49,12 +54,13 @@ export type DecodedBankResourceDiagnostics = {
     resolvedBanks: number;
     inFlightBanks: number;
     decodedBytes: number;
+    activeLeases: number;
     activeSampleLoads: number;
     queuedSampleLoads: number;
 };
 
 export type DecodedBankResource = {
-    load: (input: LoadDecodedBankInput) => Promise<DecodedBank>;
+    acquire: (input: LoadDecodedBankInput) => Promise<DecodedBankLease>;
     invalidate: (
         input: Pick<LoadDecodedBankInput, 'basePath' | 'expectedInstrumentId' | 'lod' | 'manifestUrl'>
     ) => void;
@@ -76,12 +82,14 @@ type BankEntry = {
     consumerController: AbortController;
     controller: AbortController;
     consumers: Set<symbol>;
+    activeLeases: number;
     decodedBytes: number;
     lastAccess: number;
     listeners: Map<symbol, (progress: number) => void>;
     progress: number;
     promise: Promise<DecodedBank> | null;
     samples: Map<string, DecodedSample>;
+    retired: boolean;
     state: 'loading' | 'resolved';
 };
 
@@ -178,6 +186,7 @@ export function createDecodedBankResource({
     let sampleQueueHead = 0;
     let clearEpoch = 0;
     let activeSampleLoads = 0;
+    let activeLeases = 0;
     let decodedBytes = 0;
     let cacheHits = 0;
     let cacheMisses = 0;
@@ -389,6 +398,14 @@ export function createDecodedBankResource({
         entry.decodedBytes = 0;
     }
 
+    function releaseRetiredEntry(entry: BankEntry): void {
+        if (!entry.retired || entry.activeLeases > 0) {
+            return;
+        }
+        entry.samples.clear();
+        releaseDecodedBytes(entry);
+    }
+
     function removeEntry({
         entry,
         key,
@@ -407,23 +424,32 @@ export function createDecodedBankResource({
         if (ownsCacheSlot && currentBankKeys.get(entry.baseKey) === key) {
             currentBankKeys.delete(entry.baseKey);
         }
+        if (notifyConsumers) {
+            entry.consumerController.abort();
+        }
         if (entry.state === 'loading') {
             entry.controller.abort();
-            if (notifyConsumers) {
-                entry.consumerController.abort();
-            }
             entry.samples.clear();
-        } else if (recordEviction) {
+            releaseDecodedBytes(entry);
+            return;
+        }
+        if (recordEviction) {
             evictions++;
         }
-        releaseDecodedBytes(entry);
+        entry.retired = true;
+        releaseRetiredEntry(entry);
     }
 
     function makeRoomFor(entry: BankEntry, additionalBytes: number): void {
         while (decodedBytes + additionalBytes > maxDecodedBytes) {
             let evictionCandidate: { key: string; entry: BankEntry } | null = null;
             for (const [key, candidate] of entries) {
-                if (candidate === entry || candidate.decodedBytes === 0 || candidate.lastAccess >= entry.lastAccess) {
+                if (
+                    candidate === entry ||
+                    candidate.activeLeases > 0 ||
+                    candidate.decodedBytes === 0 ||
+                    candidate.lastAccess >= entry.lastAccess
+                ) {
                     continue;
                 }
                 if (!evictionCandidate || candidate.lastAccess < evictionCandidate.entry.lastAccess) {
@@ -560,12 +586,14 @@ export function createDecodedBankResource({
             consumerController: new AbortController(),
             controller,
             consumers: new Set(),
+            activeLeases: 0,
             decodedBytes: 0,
             lastAccess: ++accessSequence,
             listeners: new Map(),
             progress: 0,
             promise: null,
             samples: new Map(),
+            retired: false,
             state: 'loading',
         };
         entry.promise = decodeBank({ controller, entry, input, manifest }).then(
@@ -587,7 +615,7 @@ export function createDecodedBankResource({
         return entry;
     }
 
-    function consumeEntry(key: string, entry: BankEntry, input: LoadDecodedBankInput): Promise<DecodedBank> {
+    function consumeEntry(key: string, entry: BankEntry, input: LoadDecodedBankInput): Promise<DecodedBankLease> {
         const sharedPromise = entry.promise;
         if (!sharedPromise) {
             throw new Error('Levain decoded-bank entry was consumed before initialization');
@@ -600,7 +628,7 @@ export function createDecodedBankResource({
         return new Promise((resolve, reject) => {
             let settled = false;
 
-            function release(): void {
+            function releaseConsumer(): void {
                 if (signal) {
                     signal.removeEventListener('abort', onAbort);
                 }
@@ -612,12 +640,30 @@ export function createDecodedBankResource({
                 }
             }
 
+            function createLease(bank: DecodedBank): DecodedBankLease {
+                entry.activeLeases++;
+                activeLeases++;
+                let released = false;
+                return Object.freeze({
+                    bank,
+                    release(): void {
+                        if (released) {
+                            return;
+                        }
+                        released = true;
+                        entry.activeLeases--;
+                        activeLeases--;
+                        releaseRetiredEntry(entry);
+                    },
+                });
+            }
+
             function onAbort(): void {
                 if (settled) {
                     return;
                 }
                 settled = true;
-                release();
+                releaseConsumer();
                 reject(createAbortError());
             }
 
@@ -636,15 +682,19 @@ export function createDecodedBankResource({
                 (bank) => {
                     if (!settled) {
                         settled = true;
-                        release();
-                        resolve(bank);
+                        releaseConsumer();
+                        if (entry.retired || entries.get(key) !== entry) {
+                            reject(createAbortError());
+                        } else {
+                            resolve(createLease(bank));
+                        }
                     }
                     return undefined;
                 },
                 (error: unknown) => {
                     if (!settled) {
                         settled = true;
-                        release();
+                        releaseConsumer();
                         reject(normalizeError(error));
                     }
                     return undefined;
@@ -654,7 +704,7 @@ export function createDecodedBankResource({
     }
 
     return {
-        async load(input): Promise<DecodedBank> {
+        async acquire(input): Promise<DecodedBankLease> {
             if (input.signal?.aborted) {
                 throw createAbortError();
             }
@@ -758,6 +808,7 @@ export function createDecodedBankResource({
                 resolvedBanks,
                 inFlightBanks,
                 decodedBytes,
+                activeLeases,
                 activeSampleLoads,
                 queuedSampleLoads: sampleQueue.length - sampleQueueHead,
             };

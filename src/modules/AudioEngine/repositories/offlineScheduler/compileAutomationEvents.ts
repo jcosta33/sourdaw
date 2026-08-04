@@ -12,7 +12,19 @@ const AUTOMATION_SAMPLE_INTERVAL_SEC = 0.01;
 // render holds the true value (not a mid-glide undershoot).
 const SLEW_SETTLE_EPSILON = 1e-6;
 type BeatProjector = (beat: number) => number;
-type SlewConfig = { alpha: number; tickSeconds: number };
+type SlewConfig = {
+    alpha: number;
+    tickSeconds: number;
+    /**
+     * Applied to every slewed sample, and fed back into the recurrence — the
+     * position live puts the declared-range clamp in
+     * (`applyAutomation`: `slewStep` → `clampDeviceParameterValue` →
+     * `laneSlew.set(clamped)`). A clamp is not affine, so it does not commute
+     * with the IIR: applying it to the target instead of to the smoothed value
+     * renders a different curve. Omit for a lane with no declared range.
+     */
+    clampStep?: (value: number) => number;
+};
 type ActiveWindowSeconds = { startSeconds: number; endSeconds: number };
 export type CompileAutomationEventsOptions = {
     // Device-param control slew (AU-2). Omit for gain/pan — they are a-rate and
@@ -101,7 +113,7 @@ function appendEvent(events: CompiledAutomationEvent[], event: CompiledAutomatio
 
 function slewEvents(
     events: CompiledAutomationEvent[],
-    { alpha, tickSeconds }: SlewConfig,
+    { alpha, tickSeconds, clampStep }: SlewConfig,
     windowEndSeconds: number
 ): CompiledAutomationEvent[] {
     if (events.length <= 1 || tickSeconds <= 0) {
@@ -122,7 +134,11 @@ function slewEvents(
     // events already carry the true curve at <= tick resolution, so x[n] equals
     // what the live path reads and y[n] matches it sample-for-sample. Emit the
     // slewed samples as linear ramps.
+    const clamp = clampStep ?? ((value: number) => value);
     const finalTarget = events.at(-1)!.value;
+    // The value the glide can actually settle on. Live never dispatches past the
+    // declared bound either, so an out-of-range tail settles at the bound.
+    const settledTarget = clamp(finalTarget);
     let cursor = 0;
     const sampleAt = (time: number): number => {
         while (cursor + 1 < events.length && events[cursor + 1]!.timeSeconds <= time) {
@@ -139,7 +155,9 @@ function slewEvents(
         }
         return current.value + (next.value - current.value) * ((time - current.timeSeconds) / span);
     };
-    let smoothed = sampleAt(startTime);
+    // The live seed is `prev ?? value`, so its first tick emits `slewStep(value,
+    // value)` = value and then clamps it. Clamp the seed here for the same reason.
+    let smoothed = clamp(sampleAt(startTime));
     const slewed: CompiledAutomationEvent[] = [{ type: 'set', timeSeconds: startTime, value: smoothed }];
     const sampleCount = Math.ceil((endTime - startTime) / tickSeconds);
     for (let index = 1; index <= sampleCount; index++) {
@@ -147,13 +165,13 @@ function slewEvents(
         // Past the last point the curve holds finalTarget; before it, sample the
         // compiled curve.
         const target = time <= lastEventTime ? sampleAt(time) : finalTarget;
-        smoothed = slewStep(smoothed, target, alpha);
+        smoothed = clamp(slewStep(smoothed, target, alpha));
         // Once settled past the last point the value is held: emit the exact
         // target and stop. WebAudio holds it, and the live path has settled too.
         // If the window ends first (short clip), the loop stops mid-glide and the
         // param holds that value — matching the live clip-bounds skip.
-        const settledHold = time > lastEventTime && Math.abs(smoothed - finalTarget) <= SLEW_SETTLE_EPSILON;
-        appendEvent(slewed, { type: 'linear', timeSeconds: time, value: settledHold ? finalTarget : smoothed });
+        const settledHold = time > lastEventTime && Math.abs(smoothed - settledTarget) <= SLEW_SETTLE_EPSILON;
+        appendEvent(slewed, { type: 'linear', timeSeconds: time, value: settledHold ? settledTarget : smoothed });
         if (settledHold) {
             break;
         }
@@ -274,10 +292,19 @@ export function compileAutomationEvents(
             !hasTempoBoundary &&
             Math.abs(projectBeat(visibleStartBeat + beatSpan / 4) - (visibleStart + timeSpan / 4)) < 1e-4 &&
             Math.abs(projectBeat(visibleStartBeat + beatSpan / 2) - (visibleStart + timeSpan / 2)) < 1e-4;
+        // A non-linear curve (bezier, smooth, exponential, s-curve — or a
+        // linear one crossing a tempo change) is pre-sampled into linear
+        // segments. That grid has to be at least as fine as the slew tick, or
+        // the slew resamples an already-coarser approximation: live evaluates
+        // the true curve at every tick, so at a grain under this interval the
+        // bounce would low-pass a stair-stepped input the monitor never saw.
+        // Only tightened when a slew is actually configured — gain and pan are
+        // a-rate and unslewed on both sides, and pay nothing for this.
+        const sampleIntervalSec = Math.min(AUTOMATION_SAMPLE_INTERVAL_SEC, options?.slew?.tickSeconds ?? Infinity);
         const steps =
             current.point.curve === 'linear' && hasLinearTimeProjection
                 ? 1
-                : Math.max(1, Math.ceil(timeSpan / AUTOMATION_SAMPLE_INTERVAL_SEC));
+                : Math.max(1, Math.ceil(timeSpan / sampleIntervalSec));
         for (let step = 1; step <= steps; step++) {
             const time = visibleStart + ((visibleEnd - visibleStart) * step) / steps;
             const beat = beatAtTime(visibleStartBeat, visibleEndBeat, time, projectBeat);

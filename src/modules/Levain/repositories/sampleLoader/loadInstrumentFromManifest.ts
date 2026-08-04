@@ -1,7 +1,7 @@
 import { decodedBankResource } from './decodedBankResource';
 import { type SampleLodConfig } from './helpers';
 
-import type { DecodedBank } from './createDecodedBankResource';
+import type { DecodedBankLease } from './createDecodedBankResource';
 
 export type { ManifestArticulation, ManifestZone, SampleManifest } from './sampleManifest';
 
@@ -35,12 +35,16 @@ function createSampleBankHandshake(
     loadToken: number,
     signal?: AbortSignal
 ): SampleBankHandshake {
+    function ignoreUploadDecision(_uploadRequired: boolean): void {}
+    function ignoreError(_error: Error): void {}
+    function ignoreCompletion(): void {}
+
     let uploadSettled = false;
     let completedSettled = false;
-    let resolveUpload = (_uploadRequired: boolean): void => {};
-    let rejectUpload = (_error: Error): void => {};
-    let resolveCompleted = (): void => {};
-    let rejectCompleted = (_error: Error): void => {};
+    let resolveUpload = ignoreUploadDecision;
+    let rejectUpload = ignoreError;
+    let resolveCompleted = ignoreCompletion;
+    let rejectCompleted = ignoreError;
 
     const uploadRequired = new Promise<boolean>((resolve, reject) => {
         resolveUpload = resolve;
@@ -53,11 +57,11 @@ function createSampleBankHandshake(
     void uploadRequired.catch(() => {});
     void completed.catch(() => {});
 
-    const cleanup = (): void => {
+    function cleanup(): void {
         nodePort.removeEventListener('message', onMessage);
         signal?.removeEventListener('abort', onAbort);
-    };
-    const reject = (error: Error): void => {
+    }
+    function reject(error: Error): void {
         if (!uploadSettled) {
             uploadSettled = true;
             rejectUpload(error);
@@ -67,8 +71,8 @@ function createSampleBankHandshake(
             rejectCompleted(error);
         }
         cleanup();
-    };
-    const onMessage = (event: MessageEvent<unknown>): void => {
+    }
+    function onMessage(event: MessageEvent<unknown>): void {
         const message = event.data;
         if (!isRecord(message)) {
             return;
@@ -104,8 +108,8 @@ function createSampleBankHandshake(
             const detail = typeof message.message === 'string' ? `: ${message.message}` : '';
             reject(new Error(`Levain sample-bank load failed${detail}`));
         }
-    };
-    const onAbort = (): void => {
+    }
+    function onAbort(): void {
         if (uploadSettled && completedSettled) {
             return;
         }
@@ -116,7 +120,7 @@ function createSampleBankHandshake(
         }
         const reason: unknown = signal?.reason;
         reject(reason instanceof Error ? reason : new DOMException('Levain sample-bank load aborted', 'AbortError'));
-    };
+    }
 
     nodePort.addEventListener('message', onMessage);
     signal?.addEventListener('abort', onAbort, { once: true });
@@ -164,9 +168,9 @@ export async function loadInstrumentFromManifest({
     onProgress,
     signal,
 }: LoadInstrumentFromManifestInput): Promise<void> {
-    let bank: DecodedBank;
+    let lease: DecodedBankLease;
     try {
-        bank = await decodedBankResource.load({
+        lease = await decodedBankResource.acquire({
             manifestUrl,
             basePath,
             expectedInstrumentId,
@@ -181,13 +185,16 @@ export async function loadInstrumentFromManifest({
         throw error;
     }
     if (signal?.aborted) {
+        lease.release();
         return;
     }
 
-    const loadToken = allocateBankLoadToken();
-    const handshake = createSampleBankHandshake(nodePort, loadToken, signal);
+    const bank = lease.bank;
+    let handshake: SampleBankHandshake | null = null;
     let completed = false;
     try {
+        const loadToken = allocateBankLoadToken();
+        handshake = createSampleBankHandshake(nodePort, loadToken, signal);
         nodePort.postMessage({
             type: 'beginSampleBank',
             bankKey: bank.bankKey,
@@ -225,7 +232,21 @@ export async function loadInstrumentFromManifest({
             if (sampleId === undefined) {
                 throw new Error(`Decoded Levain bank ${bank.instrumentId}@${bank.version} has no id for ${zone.file}`);
             }
+            const decoded = bank.samples.get(zone.file);
+            if (!decoded) {
+                throw new Error(`Decoded Levain bank ${bank.instrumentId}@${bank.version} is missing ${zone.file}`);
+            }
 
+            let loopMode: 'none' | 'forward' | 'pingpong' = 'none';
+            let loopStart = 0;
+            let loopEnd = 0;
+            let loopCrossfade = 0;
+            if (zone.loop.mode !== 'none') {
+                loopMode = zone.loop.mode;
+                loopStart = zone.loop.startFrame;
+                loopEnd = zone.loop.endFrame === 'sample-end' ? decoded.frameCount : zone.loop.endFrame;
+                loopCrossfade = zone.loop.crossfadeFrames;
+            }
             nodePort.postMessage({
                 type: 'addZone',
                 loadToken,
@@ -241,10 +262,10 @@ export async function loadInstrumentFromManifest({
                 rrLen: zone.rrLen,
                 micId: zone.micId,
                 isRelease: zone.isRelease,
-                loopMode: zone.loopMode,
-                loopStart: zone.loopStart,
-                loopEnd: zone.loopEnd,
-                loopCrossfade: zone.loopCrossfade,
+                loopMode,
+                loopStart,
+                loopEnd,
+                loopCrossfade,
                 gainDb: zone.gainDb,
                 attack: zone.attack,
                 decay: zone.decay,
@@ -263,8 +284,9 @@ export async function loadInstrumentFromManifest({
         await handshake.completed;
         completed = true;
     } finally {
-        if (!completed) {
+        if (handshake && !completed) {
             handshake.cancel();
         }
+        lease.release();
     }
 }

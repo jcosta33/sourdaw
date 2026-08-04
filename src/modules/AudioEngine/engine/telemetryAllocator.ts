@@ -71,6 +71,23 @@ export const GLUTEN_IDX = Object.freeze({
     latency: 5,
 });
 
+/**
+ * Crust telemetry slot layout. `truePeakExceeded` is published as a float
+ * because the slot is a `Float32Array`; the reader turns it back into a boolean.
+ */
+export const CRUST_IDX = Object.freeze({
+    grDb: 0,
+    inputDb: 1,
+    outputDb: 2,
+    lufsIntegrated: 3,
+    lufsShortTerm: 4,
+    lufsMomentary: 5,
+    lra: 6,
+    truePeakMax: 7,
+    truePeakExceeded: 8,
+    latency: 9,
+});
+
 /** active (0/1), then pitch fields. noteName is derived from noteIndex on the main thread. */
 export const SCORING_IDX = Object.freeze({
     active: 0,
@@ -110,6 +127,10 @@ export const PROOF_IDX = Object.freeze({
     latency: 24,
 });
 
+export const TOASTER_IDX = Object.freeze({
+    lifecycle: 0,
+});
+
 // ── Wide slot layout: Fermenter ──────────────────────────────────────────────
 //
 // Fermenter's telemetry is a 128-sample oscilloscope waveform plus two peak
@@ -130,6 +151,7 @@ export const FERMENTER_SCOPE_SAMPLES = 128;
 export const FERMENTER_IDX = Object.freeze({
     peakL: 0,
     peakR: 1,
+    lifecycle: 2,
     /** First waveform sample — immediately past the seqlock counter. */
     scopeBase: FLOATS_PER_SLOT,
 });

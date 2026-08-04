@@ -32,7 +32,6 @@ import { collaborationStore } from '../../stores/collaborationStore';
 import { AssetTransfer } from '../assetTransfer';
 import { AutomergeSync, type AutomergeSyncHooks } from '../automergeSync';
 import { type CollaborationPeer } from '../collaborationQueries';
-import { PermissionManager } from '../permissions';
 
 /**
  * §14.1 — Coalesce all collaboration-session mutables into one holder so the
@@ -51,7 +50,6 @@ const sessionState: {
     peerManager: PeerConnectionManager | null;
     automergeSync: AutomergeSync | null;
     assetTransfer: AssetTransfer | null;
-    permissionManager: PermissionManager | null;
     cleanupProjectionBridge: (() => void) | null;
     presenceListeners: Set<(data: PresenceDelta) => void>;
     playheadBroadcastInterval: ReturnType<typeof setInterval> | null;
@@ -74,7 +72,6 @@ const sessionState: {
     peerManager: null,
     automergeSync: null,
     assetTransfer: null,
-    permissionManager: null,
     cleanupProjectionBridge: null,
     presenceListeners: new Set(),
     playheadBroadcastInterval: null,
@@ -253,39 +250,46 @@ function setCollaborationError(message: string): void {
 }
 
 /**
- * Build the hooks AutomergeSync uses to (1) enforce the edit boundary and
- * (2) surface persistence failures. Read lazily so the predicate sees the
- * permission manager once it's constructed.
+ * Build the hooks AutomergeSync uses to (1) keep branch metadata
+ * host-authoritative and (2) surface persistence failures.
+ *
+ * There is deliberately no per-peer permission check here. An invite string
+ * grants unconditional write access to the project: any peer that completes
+ * the WebRTC handshake may mutate the root document and any branch content
+ * document, with no role, capability or approval step in between. See
+ * `generateInvite` and ADR 0016 (ruling 4) — a role scaffold with `viewer`
+ * and `transport-controller` tiers used to sit at this call site, was never
+ * reachable (`editor` was the only state ever granted), and was deleted
+ * rather than left implying an enforcement that did not exist. Restricting
+ * what a peer may do requires building and enforcing a real permission
+ * model, not re-reading a role off the sync path.
  */
 function buildAutomergeSyncHooks(): AutomergeSyncHooks {
     return {
         canApplySync: (peerId: PeerId, docId: string) => {
-            // The host is the session authority: its syncs always apply. The
-            // host's own edit capability is never broadcast as a role.grant
-            // (it's implicit), so canEdit(host) is false on joiners — without
-            // this short-circuit a joiner would wrongly drop the host's root
-            // sync and break the fundamental project sync.
+            // The host is the session authority: its syncs always apply.
             const senderIsHost =
                 collaborationStore.value?.peers.some((param) => param.id === peerId && param.isHost) ?? false;
             if (senderIsHost) {
                 return true;
             }
             // §fix-7 — Branch metadata is host-authoritative. A non-host sender
-            // may never rewrite every joiner's branch list.
+            // may never rewrite every joiner's branch list. This is a
+            // structural single-writer rule for one document, not a
+            // per-peer permission: every other document stays open to write.
             if (docId === DOC_BRANCHES) {
                 return false;
             }
-            const manager = sessionState.permissionManager;
-            // No permission manager yet → fail open (session not fully wired).
-            if (!manager) {
-                return true;
-            }
-            // §fix-1 — A non-host peer without edit capability (e.g. a viewer)
-            // must not be able to mutate the project via the sync channel.
-            return manager.canEdit(peerId);
+            return true;
         },
         onPersistError: () => {
             setCollaborationError('Failed to save received changes locally.');
+        },
+        onSendError: () => {
+            // The peer is still connected but has not received these changes.
+            // Saying so is the whole point: the alternative is a session that
+            // looks healthy while the other side silently falls behind.
+            setCollaborationError('Could not send project changes to a peer — they may be out of date.');
         },
     };
 }
@@ -337,6 +341,10 @@ function initializeSessionRuntime(): PeerConnectionManager {
         onMessage: handlePeerMessage,
         onConnected: handlePeerConnected,
         onDisconnected: handlePeerDisconnected,
+        onSendError: ({ error }) => {
+            logger.warn('[Collaboration] Failed to broadcast to a peer:', error);
+            setCollaborationError('Could not send project changes to a peer — they may be out of date.');
+        },
     });
     sessionState.peerManager = peerManager;
 
@@ -353,7 +361,6 @@ function initializeSessionRuntime(): PeerConnectionManager {
         },
     });
 
-    sessionState.permissionManager = new PermissionManager(peerManager);
     return peerManager;
 }
 
@@ -373,10 +380,6 @@ function cleanupSubsystems(): void {
     if (sessionState.cleanupProjectionBridge) {
         sessionState.cleanupProjectionBridge();
         sessionState.cleanupProjectionBridge = null;
-    }
-    if (sessionState.permissionManager) {
-        sessionState.permissionManager.clear();
-        sessionState.permissionManager = null;
     }
     sessionState.assetTransfer = null;
     if (sessionState.peerManager) {
@@ -469,9 +472,10 @@ function handlePeerMessage({ peerId, message }: HandlePeerMessageInput): void {
         // Route by docId to the appropriate subsystem
         if (message.docId === DOC_ID_ASSET) {
             void sessionState.assetTransfer?.handleMessage(peerId, message);
-        } else if (message.docId === '__permissions__') {
-            sessionState.permissionManager?.handleMessage(peerId, message);
         } else {
+            // A `__permissions__` doc used to be routed to a role manager here.
+            // That scaffold is gone (ADR 0016 ruling 4); AutomergeSync drops the
+            // docId as unknown, so a stale peer's role grant has no effect.
             sessionState.automergeSync?.handlePeerMessage({ peerId, message });
         }
     } else if (message.type === 'presence') {
@@ -508,10 +512,14 @@ function handlePeerConnected(peerId: PeerId): void {
 
     sessionState.automergeSync?.addPeer(peerId);
 
-    sessionState.peerManager?.sendCrdtSync({
-        peerId,
-        message: { type: 'peer-info', peer: getLocalPeerInfo() },
-    });
+    void sessionState.peerManager
+        ?.sendCrdtSync({
+            peerId,
+            message: { type: 'peer-info', peer: getLocalPeerInfo() },
+        })
+        .catch((error: unknown) => {
+            logger.warn('[Collaboration] Failed to send peer-info to', peerId, error);
+        });
 
     // §fix-16 — As host, tell the joiner the color we assigned it (chosen in
     // acceptAnswer) so it can reconcile its locally-picked color. The joiner
@@ -521,16 +529,22 @@ function handlePeerConnected(peerId: PeerId): void {
     if (hostState?.isHost) {
         const assigned = hostState.peers.find((param) => param.id === peerId);
         if (assigned) {
-            sessionState.peerManager?.sendCrdtSync({
-                peerId,
-                message: { type: 'peer-info', peer: { ...assigned, isConnected: true, lastSeen: Date.now() } },
-            });
+            void sessionState.peerManager
+                ?.sendCrdtSync({
+                    peerId,
+                    message: { type: 'peer-info', peer: { ...assigned, isConnected: true, lastSeen: Date.now() } },
+                })
+                .catch((error: unknown) => {
+                    logger.warn('[Collaboration] Failed to send assigned peer-info to', peerId, error);
+                });
         }
     }
 
-    // Host auto-grants editor role so joiners can edit immediately.
-    sessionState.permissionManager?.grantRole(peerId, 'editor');
-
+    // No role or capability is assigned on connect. Completing the handshake
+    // *is* the grant: this peer now has unconditional write access to the
+    // project. The host previously auto-granted an `editor` role here, which
+    // made the permission machinery look meaningful while never denying
+    // anyone — deleted per ADR 0016 ruling 4.
     updatePeerConnectionState(peerId, true);
 
     const state = collaborationStore.value;

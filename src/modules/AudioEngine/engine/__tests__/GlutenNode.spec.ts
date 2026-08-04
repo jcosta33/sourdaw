@@ -7,7 +7,11 @@ import { createGlutenNode, isGlutenDevice } from '../GlutenNode';
 // immediately so the factory's `await` chain completes.
 vi.mock('#/infra/audioWorklet/workletInitShared', () => ({
     ensureWorkletRegistered: vi.fn().mockResolvedValue(undefined),
-    fetchWasmBinary: vi.fn().mockResolvedValue(new ArrayBuffer(8)),
+    fetchWasmModule: vi.fn().mockResolvedValue({
+        module: new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0])),
+        commit: vi.fn(),
+        release: vi.fn(),
+    }),
     createReadyHandshake: vi.fn(() => ({
         promise: Promise.resolve({}),
         onMessage: () => 'other' as const,
@@ -89,11 +93,16 @@ describe('createGlutenNode', () => {
     /// requires a callable"), silently killing every template whose bus chain
     /// carries the compressor.
     it('should fetch the canonical combined daw-dsp binary, not the legacy gluten snapshot', async () => {
-        const { fetchWasmBinary } = await import('#/infra/audioWorklet/workletInitShared');
+        const { fetchWasmModule } = await import('#/infra/audioWorklet/workletInitShared');
 
-        await createGlutenNode(makeCtx());
+        const context = makeCtx();
+        await createGlutenNode(context);
 
-        expect(fetchWasmBinary).toHaveBeenCalledWith('/wasm/daw-dsp/daw_dsp_bg.wasm');
+        expect(fetchWasmModule).toHaveBeenCalledWith({
+            ctx: context,
+            bundleId: 'daw-dsp',
+            url: '/wasm/daw-dsp/daw_dsp_bg.wasm',
+        });
     });
 
     it('should guard on SharedArrayBuffer availability and post init-sab only when a slot was allocated', async () => {
@@ -272,8 +281,8 @@ describe('createGlutenNode', () => {
         vi.mocked(createReadyHandshake).mockReturnValueOnce({
             promise: Promise.resolve({}),
             onMessage: () => 'ready' as const,
+            reject: () => 'late' as const,
             isSettled: () => true,
-            cancel: vi.fn(),
         });
 
         const node = await createGlutenNode(makeCtx());

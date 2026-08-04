@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:3cc4d1afe65bcf5f3f6304a1966a29e5106b0dab62c3188b9461940af97b6219
+// @wasm-bindgen-dts crate-source: sha256:40e9bbc4ceacdf6d1cdf0a0d24008a7df662531d2a1aaf3169995500b401e7c3
 /* tslint:disable */
 /* eslint-disable */
 
@@ -154,6 +154,66 @@ export class CrumbsInstance {
 }
 
 /**
+ * WASM-exported Crust instance for AudioWorklet. An *effect*: it processes
+ * input audio rather than generating it.
+ */
+export class CrustInstance {
+    free(): void;
+    [Symbol.dispose](): void;
+    get_gr_db(): number;
+    get_input_db(): number;
+    /**
+     * Pointer to the input left buffer — the caller writes input audio here.
+     */
+    get_input_left_ptr(): number;
+    /**
+     * Pointer to the input right buffer.
+     */
+    get_input_right_ptr(): number;
+    /**
+     * Delay imposed on the audio path, in samples, for host compensation.
+     */
+    get_latency_samples(): number;
+    get_lra(): number;
+    get_lufs_integrated(): number;
+    get_lufs_momentary(): number;
+    get_lufs_short_term(): number;
+    /**
+     * Number of non-finite output samples scrubbed to silence since
+     * construction. Non-zero means a poisoned block was caught at the wasm
+     * output boundary and surfaced for health telemetry.
+     */
+    get_nan_flush_count(): number;
+    get_output_db(): number;
+    /**
+     * Pointer to the output right buffer (call after `process`).
+     */
+    get_right_ptr(): number;
+    /**
+     * 1.0 when the held true-peak maximum is above the configured ceiling.
+     */
+    get_true_peak_exceeded(): number;
+    /**
+     * Held true-peak maximum in dBTP.
+     */
+    get_true_peak_max(): number;
+    constructor(sample_rate: number);
+    /**
+     * Process a block. Input must already be written to the input buffers.
+     * Returns a pointer to the output left buffer.
+     */
+    process(block_size: number): number;
+    /**
+     * Clear the held true-peak maximum behind the panel's TP reset.
+     */
+    reset_true_peak(): void;
+    /**
+     * Set a parameter by its snake_case engine name.
+     */
+    set_param(name: string, value: number): void;
+}
+
+/**
  * WASM-exported Fermenter instance for AudioWorklet.
  */
 export class FermenterInstance {
@@ -164,6 +224,10 @@ export class FermenterInstance {
      */
     active_voices(): number;
     /**
+     * Advance control-rate smoothing while DSP is asleep.
+     */
+    advance_silence(): void;
+    /**
      * Number of non-finite output samples scrubbed to silence since
      * construction (DSP-8). Non-zero means a poisoned block was caught at the
      * wasm output boundary and surfaced for health telemetry.
@@ -173,6 +237,10 @@ export class FermenterInstance {
      * Get pointer to right channel buffer (call after process).
      */
     get_right_ptr(): number;
+    /**
+     * Stable numeric lifecycle code consumed by the AudioWorklet host.
+     */
+    lifecycle_state(): number;
     constructor(sample_rate: number, max_voices: number);
     /**
      * Apply MPE per-note expression to the voices held on `channel` at `note`
@@ -206,8 +274,34 @@ export class FermenterInstance {
     /**
      * Process a block of 128 samples. Returns pointer to left channel.
      * Caller reads left + right from WASM memory.
+     *
+     * Consumes every event queued since the last call, splitting the render at
+     * each event's sample offset, and empties the list.
      */
     process(block_size: number): number;
+    /**
+     * Queue MPE per-note expression at `offset` samples into the next block.
+     */
+    push_note_expression(note: number, channel: number, bend_semitones: number, pressure: number, slide: number, offset: number): boolean;
+    /**
+     * Queue a note-off releasing every voice at `note`, at `offset` samples
+     * into the next rendered block.
+     */
+    push_note_off(note: number, offset: number): boolean;
+    /**
+     * Queue a note-off narrowed to one MPE member channel (audit MD-2).
+     */
+    push_note_off_on_channel(note: number, channel: number, offset: number): boolean;
+    /**
+     * Queue a note-on at `offset` samples into the next rendered block.
+     *
+     * Returns `false` when the block's event list is full, so the caller can
+     * hold the event back for the next block instead of losing it. Events must
+     * be pushed in non-decreasing `offset` order — the engine applies them in
+     * the order given and never sorts, so a note-off and a re-trigger of one
+     * pitch on the same sample keep the sequence the caller intended.
+     */
+    push_note_on(note: number, velocity: number, channel: number, offset: number): boolean;
     /**
      * Set a named parameter value.
      */
@@ -307,6 +401,10 @@ export class GrandBouleInstance {
      * Pointer to the right channel buffer (call after `process`).
      */
     get_right_ptr(): number;
+    /**
+     * Current DSP-owned render lifecycle for the worker host.
+     */
+    lifecycle_state(): number;
     /**
      * Load an attack-sample clip into the hybrid sampled-attack set.
      */
@@ -411,6 +509,12 @@ export class KneadInstance {
     get_f0(): number;
     get_input_left_ptr(): number;
     get_input_right_ptr(): number;
+    /**
+     * Samples of group delay this instance imposes, for plugin delay
+     * compensation. Mirrors `GlutenInstance::get_latency_samples`; the worklet
+     * forwards it on the ready handshake so PDC can offset the track.
+     */
+    get_latency_samples(): number;
     /**
      * Number of non-finite output samples scrubbed to silence since
      * construction (DSP-8). Non-zero means a poisoned block was caught at the
@@ -607,6 +711,10 @@ export class ToasterInstance {
     free(): void;
     [Symbol.dispose](): void;
     /**
+     * Advance control-rate state while the processor is intentionally asleep.
+     */
+    advance_silence(block_size: number): void;
+    /**
      * Number of non-finite output samples scrubbed to silence since
      * construction (DSP-8). Covers the main stereo pair and every pad output;
      * non-zero means a poisoned block was caught at the wasm output boundary.
@@ -616,6 +724,10 @@ export class ToasterInstance {
      * Get pointer to right channel buffer (call after process).
      */
     get_right_ptr(): number;
+    /**
+     * Stable processor lifecycle code shared with the AudioWorklet host.
+     */
+    lifecycle_state(): number;
     constructor(sample_rate: number, num_pads: number);
     /**
      * Release a pad (for sustained sounds like open hi-hat).
@@ -668,24 +780,86 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
-    readonly __wbg_crumbsinstance_free: (a: number, b: number) => void;
+    readonly __wbg_proofinstance_free: (a: number, b: number) => void;
+    readonly proofinstance_get_ab_gain_offset: (a: number) => number;
+    readonly proofinstance_get_correlation: (a: number) => number;
+    readonly proofinstance_get_dynamics_gr: (a: number, b: number) => number;
+    readonly proofinstance_get_input_left_ptr: (a: number) => number;
+    readonly proofinstance_get_input_lufs: (a: number) => number;
+    readonly proofinstance_get_input_right_ptr: (a: number) => number;
+    readonly proofinstance_get_integrated_lufs: (a: number) => number;
+    readonly proofinstance_get_latency_samples: (a: number) => number;
+    readonly proofinstance_get_limiter_gr_db: (a: number) => number;
+    readonly proofinstance_get_lra: (a: number) => number;
+    readonly proofinstance_get_module_order: (a: number) => [number, number];
+    readonly proofinstance_get_nan_flush_count: (a: number) => number;
+    readonly proofinstance_get_output_lufs: (a: number) => number;
+    readonly proofinstance_get_output_st_lufs: (a: number) => number;
+    readonly proofinstance_get_right_ptr: (a: number) => number;
+    readonly proofinstance_get_tap_peak_l: (a: number, b: number) => number;
+    readonly proofinstance_get_tap_peak_r: (a: number, b: number) => number;
+    readonly proofinstance_get_true_peak_db: (a: number) => number;
+    readonly proofinstance_new: (a: number) => number;
+    readonly proofinstance_process: (a: number, b: number) => number;
+    readonly proofinstance_reorder: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly proofinstance_reset_integrated: (a: number) => void;
+    readonly proofinstance_set_param: (a: number, b: number, c: number, d: number) => void;
+    readonly __wbg_fermenterinstance_free: (a: number, b: number) => void;
+    readonly __wbg_grinderinstance_free: (a: number, b: number) => void;
+    readonly __wbg_kneadinstance_free: (a: number, b: number) => void;
+    readonly fermenterinstance_active_voices: (a: number) => number;
+    readonly fermenterinstance_advance_silence: (a: number) => void;
+    readonly fermenterinstance_get_nan_flush_count: (a: number) => number;
+    readonly fermenterinstance_get_right_ptr: (a: number) => number;
+    readonly fermenterinstance_lifecycle_state: (a: number) => number;
+    readonly fermenterinstance_new: (a: number, b: number) => number;
+    readonly fermenterinstance_note_expression: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly fermenterinstance_note_off: (a: number, b: number) => void;
+    readonly fermenterinstance_note_off_on_channel: (a: number, b: number, c: number) => void;
+    readonly fermenterinstance_note_on: (a: number, b: number, c: number) => void;
+    readonly fermenterinstance_note_on_with_channel: (a: number, b: number, c: number, d: number) => void;
+    readonly fermenterinstance_process: (a: number, b: number) => number;
+    readonly fermenterinstance_push_note_expression: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
+    readonly fermenterinstance_push_note_off: (a: number, b: number, c: number) => number;
+    readonly fermenterinstance_push_note_off_on_channel: (a: number, b: number, c: number, d: number) => number;
+    readonly fermenterinstance_push_note_on: (a: number, b: number, c: number, d: number, e: number) => number;
+    readonly fermenterinstance_set_param: (a: number, b: number, c: number, d: number) => void;
+    readonly fermenterinstance_set_param_by_id: (a: number, b: number, c: number) => void;
+    readonly grinderinstance_get_automation_values_ptr: (a: number) => number;
+    readonly grinderinstance_get_gate_envelope_db: (a: number) => number;
+    readonly grinderinstance_get_gate_open: (a: number) => number;
+    readonly grinderinstance_get_input_db: (a: number) => number;
+    readonly grinderinstance_get_input_left_ptr: (a: number) => number;
+    readonly grinderinstance_get_input_right_ptr: (a: number) => number;
+    readonly grinderinstance_get_latency_samples: (a: number) => number;
+    readonly grinderinstance_get_nan_flush_count: (a: number) => number;
+    readonly grinderinstance_get_neural_cpu_percent: (a: number) => number;
+    readonly grinderinstance_get_neural_warmup_progress: (a: number) => number;
+    readonly grinderinstance_get_output_db: (a: number) => number;
+    readonly grinderinstance_get_output_left_ptr: (a: number) => number;
+    readonly grinderinstance_get_power_amp_db: (a: number) => number;
+    readonly grinderinstance_get_preamp_db: (a: number) => number;
+    readonly grinderinstance_get_right_ptr: (a: number) => number;
+    readonly grinderinstance_get_sag_voltage: (a: number) => number;
+    readonly grinderinstance_new: (a: number) => number;
+    readonly grinderinstance_process: (a: number, b: number) => number;
+    readonly grinderinstance_process_automated: (a: number, b: number) => number;
+    readonly grinderinstance_set_param: (a: number, b: number, c: number, d: number) => void;
+    readonly kneadinstance_get_f0: (a: number) => number;
+    readonly kneadinstance_get_input_left_ptr: (a: number) => number;
+    readonly kneadinstance_get_input_right_ptr: (a: number) => number;
+    readonly kneadinstance_get_latency_samples: (a: number) => number;
+    readonly kneadinstance_get_nan_flush_count: (a: number) => number;
+    readonly kneadinstance_get_periodicity: (a: number) => number;
+    readonly kneadinstance_get_right_ptr: (a: number) => number;
+    readonly kneadinstance_is_voiced: (a: number) => number;
+    readonly kneadinstance_new: (a: number) => number;
+    readonly kneadinstance_process: (a: number, b: number) => number;
+    readonly kneadinstance_set_shift_semitones: (a: number, b: number) => void;
     readonly __wbg_gluteninstance_free: (a: number, b: number) => void;
     readonly __wbg_grandbouleinstance_free: (a: number, b: number) => void;
-    readonly __wbg_levaininstance_free: (a: number, b: number) => void;
-    readonly __wbg_toasterinstance_free: (a: number, b: number) => void;
-    readonly crumbsinstance_active_voices: (a: number) => number;
-    readonly crumbsinstance_add_sample: (a: number, b: number, c: number, d: number, e: number) => number;
-    readonly crumbsinstance_all_notes_off: (a: number) => void;
-    readonly crumbsinstance_all_sound_off: (a: number) => void;
-    readonly crumbsinstance_get_nan_flush_count: (a: number) => number;
-    readonly crumbsinstance_get_right_ptr: (a: number) => number;
-    readonly crumbsinstance_new: (a: number) => number;
-    readonly crumbsinstance_note_off: (a: number, b: number) => void;
-    readonly crumbsinstance_note_on: (a: number, b: number, c: number) => void;
-    readonly crumbsinstance_process: (a: number, b: number) => number;
-    readonly crumbsinstance_set_active_sample: (a: number, b: number) => void;
-    readonly crumbsinstance_set_mode: (a: number, b: number, c: number) => void;
-    readonly crumbsinstance_set_param: (a: number, b: number, c: number, d: number) => void;
+    readonly analyze_pitch_wasm: (a: number, b: number, c: number) => [number, number];
+    readonly commit_pitch_edit_wasm: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number];
     readonly gluteninstance_get_crest: (a: number) => number;
     readonly gluteninstance_get_gr_db: (a: number) => number;
     readonly gluteninstance_get_input_db: (a: number) => number;
@@ -704,6 +878,7 @@ export interface InitOutput {
     readonly grandbouleinstance_all_notes_off: (a: number) => void;
     readonly grandbouleinstance_get_nan_flush_count: (a: number) => number;
     readonly grandbouleinstance_get_right_ptr: (a: number) => number;
+    readonly grandbouleinstance_lifecycle_state: (a: number) => number;
     readonly grandbouleinstance_load_attack_clip: (a: number, b: number, c: number, d: number) => void;
     readonly grandbouleinstance_new: (a: number, b: number) => number;
     readonly grandbouleinstance_note_expression: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
@@ -718,6 +893,41 @@ export interface InitOutput {
     readonly grandbouleinstance_set_sustain: (a: number, b: number) => void;
     readonly grandbouleinstance_set_temperament: (a: number, b: number) => void;
     readonly grandbouleinstance_set_una_corda: (a: number, b: number) => void;
+    readonly __wbg_crumbsinstance_free: (a: number, b: number) => void;
+    readonly __wbg_crustinstance_free: (a: number, b: number) => void;
+    readonly __wbg_levaininstance_free: (a: number, b: number) => void;
+    readonly __wbg_toasterinstance_free: (a: number, b: number) => void;
+    readonly crumbsinstance_active_voices: (a: number) => number;
+    readonly crumbsinstance_add_sample: (a: number, b: number, c: number, d: number, e: number) => number;
+    readonly crumbsinstance_all_notes_off: (a: number) => void;
+    readonly crumbsinstance_all_sound_off: (a: number) => void;
+    readonly crumbsinstance_get_nan_flush_count: (a: number) => number;
+    readonly crumbsinstance_get_right_ptr: (a: number) => number;
+    readonly crumbsinstance_new: (a: number) => number;
+    readonly crumbsinstance_note_off: (a: number, b: number) => void;
+    readonly crumbsinstance_note_on: (a: number, b: number, c: number) => void;
+    readonly crumbsinstance_process: (a: number, b: number) => number;
+    readonly crumbsinstance_set_active_sample: (a: number, b: number) => void;
+    readonly crumbsinstance_set_mode: (a: number, b: number, c: number) => void;
+    readonly crumbsinstance_set_param: (a: number, b: number, c: number, d: number) => void;
+    readonly crustinstance_get_gr_db: (a: number) => number;
+    readonly crustinstance_get_input_db: (a: number) => number;
+    readonly crustinstance_get_input_left_ptr: (a: number) => number;
+    readonly crustinstance_get_input_right_ptr: (a: number) => number;
+    readonly crustinstance_get_latency_samples: (a: number) => number;
+    readonly crustinstance_get_lra: (a: number) => number;
+    readonly crustinstance_get_lufs_integrated: (a: number) => number;
+    readonly crustinstance_get_lufs_momentary: (a: number) => number;
+    readonly crustinstance_get_lufs_short_term: (a: number) => number;
+    readonly crustinstance_get_nan_flush_count: (a: number) => number;
+    readonly crustinstance_get_output_db: (a: number) => number;
+    readonly crustinstance_get_right_ptr: (a: number) => number;
+    readonly crustinstance_get_true_peak_exceeded: (a: number) => number;
+    readonly crustinstance_get_true_peak_max: (a: number) => number;
+    readonly crustinstance_new: (a: number) => number;
+    readonly crustinstance_process: (a: number, b: number) => number;
+    readonly crustinstance_reset_true_peak: (a: number) => void;
+    readonly crustinstance_set_param: (a: number, b: number, c: number, d: number) => void;
     readonly levaininstance_abort_sample_bank: (a: number) => void;
     readonly levaininstance_active_voices: (a: number) => number;
     readonly levaininstance_add_sample: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
@@ -742,8 +952,10 @@ export interface InitOutput {
     readonly levaininstance_sample_bank_bytes: (a: number) => number;
     readonly levaininstance_set_instrument: (a: number, b: number, c: number) => void;
     readonly levaininstance_set_param: (a: number, b: number, c: number, d: number) => void;
+    readonly toasterinstance_advance_silence: (a: number, b: number) => void;
     readonly toasterinstance_get_nan_flush_count: (a: number) => number;
     readonly toasterinstance_get_right_ptr: (a: number) => number;
+    readonly toasterinstance_lifecycle_state: (a: number) => number;
     readonly toasterinstance_new: (a: number, b: number) => number;
     readonly toasterinstance_note_off: (a: number, b: number) => void;
     readonly toasterinstance_note_on: (a: number, b: number, c: number, d: number) => void;
@@ -753,44 +965,7 @@ export interface InitOutput {
     readonly toasterinstance_set_pad_param: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly toasterinstance_set_param: (a: number, b: number, c: number, d: number) => void;
     readonly toasterinstance_set_param_by_id: (a: number, b: number, c: number) => void;
-    readonly __wbg_grinderinstance_free: (a: number, b: number) => void;
-    readonly __wbg_kneadinstance_free: (a: number, b: number) => void;
-    readonly grinderinstance_get_automation_values_ptr: (a: number) => number;
-    readonly grinderinstance_get_gate_envelope_db: (a: number) => number;
-    readonly grinderinstance_get_gate_open: (a: number) => number;
-    readonly grinderinstance_get_input_db: (a: number) => number;
-    readonly grinderinstance_get_input_left_ptr: (a: number) => number;
-    readonly grinderinstance_get_input_right_ptr: (a: number) => number;
-    readonly grinderinstance_get_latency_samples: (a: number) => number;
-    readonly grinderinstance_get_nan_flush_count: (a: number) => number;
-    readonly grinderinstance_get_neural_cpu_percent: (a: number) => number;
-    readonly grinderinstance_get_neural_warmup_progress: (a: number) => number;
-    readonly grinderinstance_get_output_db: (a: number) => number;
-    readonly grinderinstance_get_output_left_ptr: (a: number) => number;
-    readonly grinderinstance_get_power_amp_db: (a: number) => number;
-    readonly grinderinstance_get_preamp_db: (a: number) => number;
-    readonly grinderinstance_get_right_ptr: (a: number) => number;
-    readonly grinderinstance_get_sag_voltage: (a: number) => number;
-    readonly grinderinstance_new: (a: number) => number;
-    readonly grinderinstance_process: (a: number, b: number) => number;
-    readonly grinderinstance_process_automated: (a: number, b: number) => number;
-    readonly grinderinstance_set_param: (a: number, b: number, c: number, d: number) => void;
-    readonly kneadinstance_get_f0: (a: number) => number;
-    readonly kneadinstance_get_input_left_ptr: (a: number) => number;
-    readonly kneadinstance_get_input_right_ptr: (a: number) => number;
-    readonly kneadinstance_get_nan_flush_count: (a: number) => number;
-    readonly kneadinstance_get_periodicity: (a: number) => number;
-    readonly kneadinstance_get_right_ptr: (a: number) => number;
-    readonly kneadinstance_is_voiced: (a: number) => number;
-    readonly kneadinstance_new: (a: number) => number;
-    readonly kneadinstance_process: (a: number, b: number) => number;
-    readonly kneadinstance_set_shift_semitones: (a: number, b: number) => void;
-    readonly analyze_pitch_wasm: (a: number, b: number, c: number) => [number, number];
-    readonly commit_pitch_edit_wasm: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number];
-    readonly init_panic_hook: () => void;
     readonly __wbg_bacteriainstance_free: (a: number, b: number) => void;
-    readonly __wbg_fermenterinstance_free: (a: number, b: number) => void;
-    readonly __wbg_proofinstance_free: (a: number, b: number) => void;
     readonly bacteriainstance_add_macro_mapping: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly bacteriainstance_add_mod_assignment: (a: number, b: number, c: number, d: number) => void;
     readonly bacteriainstance_get_band_levels_ptr: (a: number) => number;
@@ -804,41 +979,7 @@ export interface InitOutput {
     readonly bacteriainstance_new: (a: number) => number;
     readonly bacteriainstance_process: (a: number, b: number) => number;
     readonly bacteriainstance_set_param: (a: number, b: number, c: number, d: number) => void;
-    readonly fermenterinstance_active_voices: (a: number) => number;
-    readonly fermenterinstance_get_nan_flush_count: (a: number) => number;
-    readonly fermenterinstance_get_right_ptr: (a: number) => number;
-    readonly fermenterinstance_new: (a: number, b: number) => number;
-    readonly fermenterinstance_note_expression: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
-    readonly fermenterinstance_note_off: (a: number, b: number) => void;
-    readonly fermenterinstance_note_off_on_channel: (a: number, b: number, c: number) => void;
-    readonly fermenterinstance_note_on: (a: number, b: number, c: number) => void;
-    readonly fermenterinstance_note_on_with_channel: (a: number, b: number, c: number, d: number) => void;
-    readonly fermenterinstance_process: (a: number, b: number) => number;
-    readonly fermenterinstance_set_param: (a: number, b: number, c: number, d: number) => void;
-    readonly fermenterinstance_set_param_by_id: (a: number, b: number, c: number) => void;
-    readonly proofinstance_get_ab_gain_offset: (a: number) => number;
-    readonly proofinstance_get_correlation: (a: number) => number;
-    readonly proofinstance_get_dynamics_gr: (a: number, b: number) => number;
-    readonly proofinstance_get_input_left_ptr: (a: number) => number;
-    readonly proofinstance_get_input_lufs: (a: number) => number;
-    readonly proofinstance_get_input_right_ptr: (a: number) => number;
-    readonly proofinstance_get_integrated_lufs: (a: number) => number;
-    readonly proofinstance_get_latency_samples: (a: number) => number;
-    readonly proofinstance_get_limiter_gr_db: (a: number) => number;
-    readonly proofinstance_get_lra: (a: number) => number;
-    readonly proofinstance_get_module_order: (a: number) => [number, number];
-    readonly proofinstance_get_nan_flush_count: (a: number) => number;
-    readonly proofinstance_get_output_lufs: (a: number) => number;
-    readonly proofinstance_get_output_st_lufs: (a: number) => number;
-    readonly proofinstance_get_right_ptr: (a: number) => number;
-    readonly proofinstance_get_tap_peak_l: (a: number, b: number) => number;
-    readonly proofinstance_get_tap_peak_r: (a: number, b: number) => number;
-    readonly proofinstance_get_true_peak_db: (a: number) => number;
-    readonly proofinstance_new: (a: number) => number;
-    readonly proofinstance_process: (a: number, b: number) => number;
-    readonly proofinstance_reorder: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
-    readonly proofinstance_reset_integrated: (a: number) => void;
-    readonly proofinstance_set_param: (a: number, b: number, c: number, d: number) => void;
+    readonly init_panic_hook: () => void;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

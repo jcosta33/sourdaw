@@ -65,6 +65,10 @@ class FermenterInstanceMock {
     get_right_ptr(): number {
         return OUT_RIGHT_PTR;
     }
+    lifecycle_state(): number {
+        return 0;
+    }
+    advance_silence(): void {}
 }
 
 vi.mock('../../wasm/daw_dsp.js', () => ({
@@ -72,7 +76,7 @@ vi.mock('../../wasm/daw_dsp.js', () => ({
     FermenterInstance: FermenterInstanceMock,
 }));
 
-const MINIMAL_WASM = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
+const MINIMAL_WASM_MODULE = new WebAssembly.Module(new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]));
 
 async function loadProcessor(): Promise<FermenterProcessorLike> {
     await import('../fermenterProcessor');
@@ -80,7 +84,7 @@ async function loadProcessor(): Promise<FermenterProcessorLike> {
     if (!Ctor) {
         throw new Error('fermenter-processor was not registered');
     }
-    return new Ctor();
+    return new Ctor({ processorOptions: { wasmModule: MINIMAL_WASM_MODULE } });
 }
 
 function send(proc: FermenterProcessorLike, data: unknown): void {
@@ -107,7 +111,7 @@ describe('FermenterProcessor WASM-view lifecycle (audit RT-1 / RT-7)', () => {
 
     it('allocates no WASM-memory view across steady-state process() blocks once warmed up', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
 
         const warmup = makeBlock();
         proc.process(warmup.inputs, warmup.outputs);
@@ -128,7 +132,7 @@ describe('FermenterProcessor WASM-view lifecycle (audit RT-1 / RT-7)', () => {
 
     it('maps output and peak/scope views over the new buffer when memory.grow() happens inside process()', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         const slotView = attachSlot(proc);
 
         const warmup = makeBlock();

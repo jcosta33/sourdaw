@@ -1,7 +1,24 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { createNativeDspStrategy } from '../../../repositories/deviceStrategy/NativeDspDeviceStrategy';
 import { exportCancellationState } from '../exportCancellationState';
 import { renderInSegments } from '../renderInSegments';
+
+const createFermenterNodeMock = vi.hoisted(() =>
+    vi.fn((_ctx?: BaseAudioContext, _wasmUrl?: string, _onFault?: (message: string) => void) =>
+        Promise.resolve({
+            workletNode: {} as AudioWorkletNode,
+            ready: Promise.resolve({}),
+            noteOn: vi.fn(),
+            noteOff: vi.fn(),
+        })
+    )
+);
+
+vi.mock('../../../engine/FermenterNode', () => ({
+    isFermenterDevice: (deviceType: string) => deviceType === 'fermenter',
+    createFermenterNode: createFermenterNodeMock,
+}));
 
 const SAMPLE_RATE = 48_000;
 
@@ -324,6 +341,84 @@ describe('renderInSegments', () => {
 
         await expect(rendering).resolves.toBe(harness.buffer);
         expect(harness.closeCount()).toBe(0);
+    });
+
+    it('rejects and abandons the context when an offline device processor fails', async () => {
+        const harness = createSegmentedContext(2);
+        let rejectRuntimeFailure: ((error: Error) => void) | undefined;
+        const runtimeFailure = new Promise<never>((_resolve, reject) => {
+            rejectRuntimeFailure = reject;
+        });
+
+        const rendering = renderInSegments({
+            offlineCtx: harness.offlineCtx,
+            durationSeconds: 2,
+            timeoutMs: 60_000,
+            segmentSeconds: 1,
+            runtimeFailures: [runtimeFailure],
+        });
+
+        rejectRuntimeFailure?.(new Error('GrandBoule offline worklet processor failed'));
+        await harness.finishRendering();
+
+        await expect(rendering).rejects.toThrow('GrandBoule offline worklet processor failed');
+        expect(harness.closeCount()).toBe(1);
+        expect(harness.pendingCheckpoints()).toEqual([]);
+    });
+
+    it('rejects the render kernel when a post-ready offline Fermenter processor fails', async () => {
+        const harness = createSegmentedContext(2);
+        createFermenterNodeMock.mockClear();
+        const strategy = await createNativeDspStrategy(harness.offlineCtx, {
+            type: 'fermenter',
+            parameterValues: {},
+        } as never);
+        const onFault = createFermenterNodeMock.mock.calls[0]?.[2];
+        if (!onFault || !strategy.runtimeFailure) {
+            throw new Error('Offline Fermenter did not expose its runtime-failure signal');
+        }
+        const rendering = renderInSegments({
+            offlineCtx: harness.offlineCtx,
+            durationSeconds: 2,
+            timeoutMs: 60_000,
+            segmentSeconds: 1,
+            runtimeFailures: [strategy.runtimeFailure],
+        });
+
+        onFault('Fermenter offline worklet processor failed');
+        await harness.finishRendering();
+
+        await expect(rendering).rejects.toThrow('Fermenter offline worklet processor failed');
+        expect(harness.closeCount()).toBe(1);
+        expect(harness.pendingCheckpoints()).toEqual([]);
+    });
+
+    it('checks terminal device health before accepting a completed render', async () => {
+        const harness = createSegmentedContext(2);
+        let rejectHealthCheck: ((error: Error) => void) | undefined;
+        const runtimeHealthCheck = vi.fn(
+            () =>
+                new Promise<void>((_resolve, reject) => {
+                    rejectHealthCheck = reject;
+                })
+        );
+
+        const rendering = renderInSegments({
+            offlineCtx: harness.offlineCtx,
+            durationSeconds: 2,
+            timeoutMs: 60_000,
+            segmentSeconds: 1,
+            runtimeHealthChecks: [runtimeHealthCheck],
+        });
+
+        await harness.reachCheckpoint(1);
+        await harness.finishRendering();
+        expect(runtimeHealthCheck).toHaveBeenCalledOnce();
+
+        rejectHealthCheck?.(new Error('fault delivered after render completion'));
+
+        await expect(rendering).rejects.toThrow('fault delivered after render completion');
+        expect(harness.closeCount()).toBe(1);
     });
 
     it('still aborts on a context that does not implement close()', async () => {

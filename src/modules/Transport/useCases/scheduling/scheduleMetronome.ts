@@ -6,7 +6,11 @@ import { type TransportState } from '../../models/TransportState';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
 
-import { CLICK_TIME_EPSILON, metronomeSchedulingState } from './metronomeSchedulingState';
+import {
+    CLICK_DEDUP_RETENTION_SECONDS,
+    CLICK_TIME_EPSILON,
+    metronomeSchedulingState,
+} from './metronomeSchedulingState';
 
 /**
  * Records the audioContextTime of every click we have already emitted so a
@@ -35,9 +39,11 @@ export function scheduleMetronome(
     const tsChanges = timeSignatureMapStore.value?.changes ?? [];
 
     const nowTime = getCurrentTime();
-    // Drop dedup entries whose click time has already played so the map stays bounded.
+    // Drop dedup entries whose click time played longer ago than the widest wrap
+    // overshoot the scheduler can carry, so the map stays bounded without losing
+    // the seam entry before the wrap that has to match it arrives.
     for (const [key, firedTime] of metronomeSchedulingState.firedClickTimes) {
-        if (firedTime < nowTime - CLICK_TIME_EPSILON) {
+        if (firedTime < nowTime - CLICK_DEDUP_RETENTION_SECONDS) {
             metronomeSchedulingState.firedClickTimes.delete(key);
         }
     }

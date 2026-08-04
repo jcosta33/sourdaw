@@ -20,7 +20,7 @@
  * would be. The cost is a ceiling on total sample bytes, not on correctness.
  *
  * Messages from main thread:
- *   { type: 'init', wasmBytes: ArrayBuffer }
+ *   { type: 'init' } with `processorOptions.wasmModule`
  *   { type: 'loadSample', data: Float32Array, channels, sampleRate }
  *   { type: 'noteOn', note, velocity, sampleFrame? }
  *   { type: 'noteOff', note, sampleFrame? }
@@ -30,12 +30,13 @@
  *   { type: 'bypass', bypassed }
  */
 
+import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
 import { CrumbsInstance, initSync } from '../wasm/daw_dsp.js';
 
 import { WasmView } from './wasmView';
 
 type CrumbsMsg =
-    | { type: 'init'; wasmBytes: BufferSource }
+    | { type: 'init' }
     | { type: 'loadSample'; data: Float32Array; channels: number; sampleRate: number }
     | { type: 'noteOn'; note: number; velocity: number; sampleFrame?: number }
     | { type: 'noteOff'; note: number; sampleFrame?: number }
@@ -63,8 +64,9 @@ class CrumbsProcessor extends AudioWorkletProcessor {
     _outLeftView = new WasmView();
     _outRightView = new WasmView();
 
-    constructor() {
+    constructor(...args: unknown[]) {
         super();
+        let wasmModule = resolveProcessorWasmModule(args[0]);
         this.port.onmessage = (event: MessageEvent<CrumbsMsg>) => {
             const msg = event.data;
             try {
@@ -72,7 +74,11 @@ class CrumbsProcessor extends AudioWorkletProcessor {
                     if (this._ready) {
                         return;
                     }
-                    this._initWasm(msg.wasmBytes);
+                    if (!wasmModule) {
+                        throw new TypeError('CrumbsProcessor requires a compiled WASM module');
+                    }
+                    this._initWasm(wasmModule);
+                    wasmModule = null;
                 } else if (!this._ready) {
                     this._pendingMessages.push(msg);
                 } else if (!this._faulted) {
@@ -94,8 +100,8 @@ class CrumbsProcessor extends AudioWorkletProcessor {
         };
     }
 
-    _initWasm(wasmBytes: BufferSource): void {
-        const wasmExports = initSync({ module: new WebAssembly.Module(wasmBytes) });
+    _initWasm(wasmModule: WebAssembly.Module): void {
+        const wasmExports = initSync({ module: wasmModule });
         this._memory = wasmExports.memory;
         this._instance = new CrumbsInstance(sampleRate);
         this._ready = true;

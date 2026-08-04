@@ -58,7 +58,6 @@ const ACRONYMS: Record<string, string> = {
     vca: 'VCA',
     cv: 'CV',
     rave: 'RAVE',
-    dso: 'DSO',
     crdt: 'CRDT',
     daw: 'DAW',
     cc: 'CC',

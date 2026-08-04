@@ -16,11 +16,15 @@ describe('isLevainDevice', () => {
 // test), and the ready handshake resolves immediately so the factory completes.
 vi.mock('#/infra/audioWorklet/workletInitShared', () => ({
     ensureWorkletRegistered: vi.fn().mockResolvedValue(undefined),
-    fetchWasmBinary: vi.fn().mockResolvedValue(new ArrayBuffer(8)),
+    fetchWasmModule: vi.fn().mockResolvedValue({
+        module: new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0])),
+        commit: vi.fn(),
+        release: vi.fn(),
+    }),
     createReadyHandshake: vi.fn(() => ({
         promise: Promise.resolve({}),
         onMessage: () => 'late' as const,
-        cancel: vi.fn(),
+        reject: vi.fn(() => 'error' as const),
         isSettled: () => true,
     })),
 }));

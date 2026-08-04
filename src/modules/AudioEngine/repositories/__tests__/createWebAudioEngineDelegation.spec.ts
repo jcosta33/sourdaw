@@ -3,13 +3,27 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createMockAudioContext, type MockAudioContext } from '../../../../helpers/__tests__/audioContext.mock';
 import { DROPOUT_IDX, dropoutCounters } from '../../engine/dropoutCounter';
 import { createAudioEngine } from '../createWebAudioEngine';
+import { createPhaser } from '../devices/modulation/createPhaser';
 
-import type { AdjustmentLayerTickInput, AudioEngine, BuiltinDeviceNode } from '../../models/AudioEngineState';
+import type {
+    AdjustmentLayerTickInput,
+    AudioEngine,
+    AudioProcessorLifecycleState,
+    BuiltinDeviceNode,
+} from '../../models/AudioEngineState';
 
 const runtimeMocks = vi.hoisted(() => ({
     applyTick: vi.fn(),
     reset: vi.fn(),
     listLiveBusKeys: vi.fn(() => ['adj:t1']),
+    getDiagnostics: vi.fn<
+        () => {
+            buses: number;
+            busesByEffectType: Record<string, number>;
+            audioNodes: number;
+            audioWorkletProcessors: number;
+        }
+    >(() => ({ buses: 1, busesByEffectType: { delay: 1 }, audioNodes: 8, audioWorkletProcessors: 0 })),
 }));
 
 const trackNodeInstances = vi.hoisted(
@@ -21,6 +35,7 @@ vi.mock('../../engine/AdjustmentLayerRuntime', () => ({
         applyTick: runtimeMocks.applyTick,
         reset: runtimeMocks.reset,
         listLiveBusKeys: runtimeMocks.listLiveBusKeys,
+        getDiagnostics: runtimeMocks.getDiagnostics,
     })),
 }));
 
@@ -160,6 +175,12 @@ function asAudioContext(ctx: MockAudioContext): AudioContext {
     return ctx as unknown as AudioContext;
 }
 
+class FakeWorkletNode {
+    port = { postMessage: vi.fn() };
+    connect = vi.fn();
+    disconnect = vi.fn();
+}
+
 type DiagnosticTestDevice = BuiltinDeviceNode & {
     diagnosticLoadState?: 'ready' | 'pending' | 'failed';
 };
@@ -169,18 +190,35 @@ type DiagnosticDeviceInput = {
     deviceId: string;
     deviceType: string;
     nodeCount?: number;
+    workletNodeCount?: number;
+    workerInstances?: number;
     loadState?: DiagnosticTestDevice['diagnosticLoadState'];
+    processorLifecycle?: AudioProcessorLifecycleState | null;
 };
 
 function createDiagnosticDevice(input: DiagnosticDeviceInput): DiagnosticTestDevice {
-    const nodes = Array.from({ length: input.nodeCount ?? 1 }, () => input.context.createGain());
+    const nodeCount = input.nodeCount ?? 1;
+    const workletNodeCount = input.workletNodeCount ?? 0;
+    if (workletNodeCount > nodeCount) {
+        throw new Error('workletNodeCount cannot exceed nodeCount');
+    }
+    const workletNodes = Array.from(
+        { length: workletNodeCount },
+        () => new FakeWorkletNode() as unknown as AudioWorkletNode
+    );
+    const gainNodes = Array.from({ length: nodeCount - workletNodeCount }, () => input.context.createGain());
+    const nodes: AudioNode[] = [...workletNodes, ...gainNodes];
     const device: DiagnosticTestDevice = {
         deviceId: input.deviceId,
         type: input.deviceType,
         nodes,
         inputNode: nodes[0]!,
         outputNode: nodes.at(-1)!,
+        workerInstances: input.workerInstances,
     };
+    if (input.processorLifecycle !== undefined) {
+        device.processorLifecycle = () => input.processorLifecycle ?? null;
+    }
     if (input.loadState && input.loadState !== 'ready') {
         device.controller = {
             ready: false,
@@ -203,17 +241,23 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
     let engine: AudioEngine;
     let mockCtx: MockAudioContext;
 
-    class FakeWorkletNode {
-        port = { postMessage: vi.fn() };
-        connect = vi.fn();
-        disconnect = vi.fn();
-    }
-
     beforeEach(() => {
         vi.clearAllMocks();
         runtimeMocks.listLiveBusKeys.mockReturnValue(['adj:t1']);
+        runtimeMocks.getDiagnostics.mockReturnValue({
+            buses: 1,
+            busesByEffectType: { delay: 1 },
+            audioNodes: 8,
+            audioWorkletProcessors: 1,
+        });
         runtimeMocks.reset.mockImplementation(() => {
             runtimeMocks.listLiveBusKeys.mockReturnValue([]);
+            runtimeMocks.getDiagnostics.mockReturnValue({
+                buses: 0,
+                busesByEffectType: {},
+                audioNodes: 0,
+                audioWorkletProcessors: 0,
+            });
         });
         trackNodeInstances.length = 0;
         mockCtx = createMockAudioContext();
@@ -267,6 +311,14 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
 
     it('reports the live graph and runtime load without touching the render path', async () => {
         const expectedCtx = { state: 'running' as const, sampleRate: 48_000, baseLatency: 0.01, outputLatency: 0.01 };
+        const expectedPlayback = {
+            underrunDuration: 0.002,
+            underrunEvents: 2,
+            totalDuration: 30,
+            averageLatency: 0.015,
+            minimumLatency: 0.01,
+            maximumLatency: 0.02,
+        };
         const emptyGraph = {
             trackStrips: 0,
             busStrips: 0,
@@ -277,14 +329,31 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
             failedDeviceInstances: 0,
             deviceInstancesByType: {},
             deviceAudioNodes: 0,
+            graphSlotResourcesByLoadState: {
+                ready: { audioNodes: 0, audioWorkletProcessors: 0, workers: 0 },
+                pending: { audioNodes: 0, audioWorkletProcessors: 0, workers: 0 },
+                failed: { audioNodes: 0, audioWorkletProcessors: 0, workers: 0 },
+            },
+            deviceAudioWorkletProcessors: 0,
+            deviceAudioWorkletProcessorsByType: {},
             stripMeterWorklets: 0,
             masterMeterWorklets: 0,
+            graphAudioWorkletProcessors: 1,
+            workerInstances: 0,
+            workerInstancesByType: {},
             adjustmentLayerBuses: 1,
+            adjustmentLayerBusesByEffectType: { delay: 1 },
+            adjustmentLayerAudioNodes: 8,
+            adjustmentLayerAudioWorkletProcessors: 1,
         };
         expect(engine.getDiagnostics()).toEqual({
             context: expectedCtx,
+            playback: expectedPlayback,
             graph: emptyGraph,
-            runtime: { trackedAudioScheduledSources: 0 },
+            runtime: {
+                trackedAudioScheduledSources: 0,
+                processorLifecycle: { unmanaged: 1, continue: 0, continueIfNotQuiet: 0, tail: 0, sleep: 0 },
+            },
         });
 
         await engine.initialize();
@@ -298,55 +367,116 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
         function createDevice(input: Omit<DiagnosticDeviceInput, 'context'>): DiagnosticTestDevice {
             return createDiagnosticDevice({ context: mockCtx, ...input });
         }
-        const fermenter = createDevice({ deviceId: 'fermenter-1', deviceType: 'fermenter' });
-        const bacteria = createDevice({ deviceId: 'bacteria-1', deviceType: 'bacteria', nodeCount: 2 });
+        const toaster = createDevice({
+            deviceId: 'toaster-1',
+            deviceType: 'toaster',
+            nodeCount: 2,
+            workletNodeCount: 2,
+            processorLifecycle: 'sleep',
+        });
+        const bacteria = createDevice({
+            deviceId: 'bacteria-1',
+            deviceType: 'bacteria',
+            nodeCount: 2,
+            workletNodeCount: 1,
+            processorLifecycle: null,
+        });
+        const grandBoule = createDevice({
+            deviceId: 'grand-boule-1',
+            deviceType: 'grand-boule',
+            workletNodeCount: 1,
+            workerInstances: 1,
+        });
         const sidechain = createDevice({
             deviceId: 'sidechain-1',
             deviceType: 'builtin-sidechain-compressor',
         });
         const pending = createDevice({ deviceId: 'pending-1', deviceType: 'levain', loadState: 'pending' });
-        const failed = createDevice({ deviceId: 'failed-1', deviceType: 'grand-boule', loadState: 'failed' });
-        track.deviceNodes.push(fermenter, bacteria, pending, failed);
+        const failed = createDevice({ deviceId: 'failed-1', deviceType: 'proof', loadState: 'failed' });
+        track.deviceNodes.push(toaster, bacteria, grandBoule, pending, failed);
         busTrack.deviceNodes.push(sidechain);
         engine.wireSidechainRoute('t1', 'bus-1', 'sidechain-1');
         engine.registerScheduledSource(mockCtx.createOscillator());
 
         expect(engine.getDiagnostics()).toEqual({
             context: expectedCtx,
+            playback: expectedPlayback,
             graph: {
                 trackStrips: 1,
                 busStrips: 1,
                 sends: 1,
                 sidechains: 1,
-                deviceInstances: 3,
+                deviceInstances: 4,
                 pendingDeviceInstances: 1,
                 failedDeviceInstances: 1,
                 deviceInstancesByType: {
                     bacteria: 1,
                     'builtin-sidechain-compressor': 1,
-                    fermenter: 1,
+                    'grand-boule': 1,
+                    toaster: 1,
                 },
-                deviceAudioNodes: 6,
+                deviceAudioNodes: 8,
+                graphSlotResourcesByLoadState: {
+                    ready: { audioNodes: 6, audioWorkletProcessors: 4, workers: 1 },
+                    pending: { audioNodes: 1, audioWorkletProcessors: 0, workers: 0 },
+                    failed: { audioNodes: 1, audioWorkletProcessors: 0, workers: 0 },
+                },
+                deviceAudioWorkletProcessors: 4,
+                deviceAudioWorkletProcessorsByType: { bacteria: 1, 'grand-boule': 1, toaster: 2 },
                 stripMeterWorklets: 1,
                 masterMeterWorklets: 1,
+                graphAudioWorkletProcessors: 7,
+                workerInstances: 1,
+                workerInstancesByType: { 'grand-boule': 1 },
                 adjustmentLayerBuses: 1,
+                adjustmentLayerBusesByEffectType: { delay: 1 },
+                adjustmentLayerAudioNodes: 8,
+                adjustmentLayerAudioWorkletProcessors: 1,
             },
-            runtime: { trackedAudioScheduledSources: 1 },
+            runtime: {
+                trackedAudioScheduledSources: 1,
+                processorLifecycle: { unmanaged: 4, continue: 0, continueIfNotQuiet: 0, tail: 0, sleep: 1 },
+            },
         });
 
         engine.resetGraph();
         expect(engine.getDiagnostics()).toEqual({
             context: expectedCtx,
+            playback: expectedPlayback,
             graph: {
                 ...emptyGraph,
                 masterMeterWorklets: 1,
+                graphAudioWorkletProcessors: 1,
                 adjustmentLayerBuses: 0,
+                adjustmentLayerBusesByEffectType: {},
+                adjustmentLayerAudioNodes: 0,
+                adjustmentLayerAudioWorkletProcessors: 0,
             },
-            runtime: { trackedAudioScheduledSources: 0 },
+            runtime: {
+                trackedAudioScheduledSources: 0,
+                processorLifecycle: { unmanaged: 0, continue: 0, continueIfNotQuiet: 0, tail: 0, sleep: 0 },
+            },
         });
 
         await engine.dispose();
         expect(engine.getDiagnostics().graph.masterMeterWorklets).toBe(0);
+    });
+
+    it('rejects a live context without the required current-Chrome playback statistics API', () => {
+        Object.defineProperty(mockCtx, 'playbackStats', { value: undefined, configurable: true });
+
+        expect(() => engine.getDiagnostics()).toThrow('Audio diagnostics require AudioContext.playbackStats');
+    });
+
+    it('resets the current-Chrome latency window before a new measurement run', () => {
+        const resetPlaybackLatencyStats = Reflect.get(engine, 'resetPlaybackLatencyStats');
+        if (typeof resetPlaybackLatencyStats !== 'function') {
+            throw new TypeError('AudioEngine must expose a playback latency window reset');
+        }
+
+        resetPlaybackLatencyStats.call(engine);
+
+        expect(mockCtx.playbackStats.resetLatency).toHaveBeenCalledOnce();
     });
 
     it('suspend suspends a running context and skips an already-suspended one', async () => {
@@ -376,6 +506,26 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
             masterGain: 0.8,
             currentTime: 0,
             baseLatency: 0.01,
+        });
+    });
+
+    it('counts device-owned audio node identities across registry and boundary nodes', () => {
+        const track = engine.ensureTrackStrip('t1');
+        const phaser = createPhaser(asAudioContext(mockCtx));
+        track.deviceNodes.push({
+            ...phaser,
+            deviceId: 'phaser-1',
+            type: 'phaser',
+        });
+
+        const diagnostics = engine.getDiagnostics();
+
+        expect({
+            deviceAudioNodes: diagnostics.graph.deviceAudioNodes,
+            readyAudioNodes: diagnostics.graph.graphSlotResourcesByLoadState.ready.audioNodes,
+        }).toEqual({
+            deviceAudioNodes: 11,
+            readyAudioNodes: 11,
         });
     });
 

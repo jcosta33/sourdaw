@@ -1,4 +1,4 @@
-import { markerStore, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
+import { gainEnvelopeStore, markerStore, takeLaneStore, trackStore, vcaGroupStore } from '#/modules/Arrangement/stores';
 import { automationStore, modulationStore } from '#/modules/Automation/stores';
 import { cvGateStore } from '#/modules/CvGate/stores';
 import { kneadStore } from '#/modules/Knead/stores';
@@ -78,6 +78,8 @@ export const projectSlotProjections: readonly ProjectSlotProjection[] = [
     slotProjection({ slot: 'tracks', getStore: () => trackStore }),
     slotProjection({ slot: 'takeLanes', getStore: () => takeLaneStore }),
     slotProjection({ slot: 'markers', getStore: () => markerStore }),
+    slotProjection({ slot: 'vcaGroups', getStore: () => vcaGroupStore }),
+    slotProjection({ slot: 'gainEnvelopes', getStore: () => gainEnvelopeStore }),
     slotProjection({ slot: 'automation', getStore: () => automationStore }),
     slotProjection({ slot: 'modulation', getStore: () => modulationStore }),
     slotProjection({ slot: 'transport', getStore: () => transportStore }),

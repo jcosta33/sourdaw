@@ -59,6 +59,7 @@ export class TrackNode {
     private _outputDestination: AudioNode | null = null;
     private readonly _failedDeviceLoads = new Set<string>();
     private readonly _pendingDeviceLoads = new Map<string, PendingDeviceLoad>();
+    private readonly _runtimeRecoveryAttempts = new Set<string>();
 
     constructor(
         public trackId: string,
@@ -455,7 +456,13 @@ export class TrackNode {
         this.deps.pendingDevicePromises.add(loadPromise);
         void loadPromise.finally(() => {
             if (this._pendingDeviceLoads.get(deviceId) === pendingLoad) {
-                this.invalidatePendingDeviceLoad(deviceId, !pendingLoad.resolved);
+                if (!pendingLoad.resolved) {
+                    this.invalidatePendingDeviceLoad(deviceId, true);
+                    return;
+                }
+                this._pendingDeviceLoads.delete(deviceId);
+                pendingLoad.parameterWrites.length = 0;
+                this.deps.pendingDevicePromises.delete(loadPromise);
             } else {
                 this.deps.pendingDevicePromises.delete(loadPromise);
             }
@@ -498,6 +505,7 @@ export class TrackNode {
         }
 
         pendingLoad.resolved = true;
+        this._failedDeviceLoads.delete(deviceId);
         for (const [name, value] of pendingLoad.parameterWrites) {
             finalDn.controller?.setParam(name, value);
         }
@@ -510,6 +518,48 @@ export class TrackNode {
         this.deps.onDeviceLoaded?.(this.trackId, finalDn);
         this.scheduleRebuildChain();
         return true;
+    }
+
+    private failLoadedDevice(deviceId: string, failedDn: BuiltinDeviceNode, replacementDn: BuiltinDeviceNode): boolean {
+        const index = this.strip.deviceNodes.findIndex((device) => device === failedDn && device.deviceId === deviceId);
+        if (this._disposed || index === -1) {
+            return false;
+        }
+
+        this._failedDeviceLoads.add(deviceId);
+        replacementDn.bypassed = failedDn.bypassed;
+        this.strip.deviceNodes[index] = replacementDn;
+        this.scheduleRebuildChain();
+        return true;
+    }
+
+    private scheduleFailedDeviceRecovery(deviceId: string, replacementDn: BuiltinDeviceNode): void {
+        if (this._disposed || this._runtimeRecoveryAttempts.has(deviceId) || !this._failedDeviceLoads.has(deviceId)) {
+            return;
+        }
+        if (!this.strip.deviceNodes.some((device) => device === replacementDn && device.deviceId === deviceId)) {
+            return;
+        }
+
+        this._runtimeRecoveryAttempts.add(deviceId);
+        queueMicrotask(() => {
+            const index = this.strip.deviceNodes.findIndex(
+                (device) => device === replacementDn && device.deviceId === deviceId
+            );
+            if (this._disposed || !this._failedDeviceLoads.has(deviceId) || index === -1) {
+                return;
+            }
+
+            const precedingDeviceIds = this.strip.deviceNodes.slice(0, index).map((device) => device.deviceId);
+            const { bypassed, type } = replacementDn;
+            this.invalidatePendingDeviceLoad(deviceId);
+            this.strip.deviceNodes.splice(index, 1);
+            this.destroyRejectedDeviceNode(replacementDn);
+            this.addDevice(deviceId, type, undefined, precedingDeviceIds);
+            if (bypassed !== undefined) {
+                this.updateBypass(deviceId, bypassed);
+            }
+        });
     }
 
     public timeoutPendingDeviceLoads(): void {
@@ -677,6 +727,9 @@ export class TrackNode {
                     isCurrent: () => this._pendingDeviceLoads.get(deviceId) === pendingLoad && !this._disposed,
                     signal: pendingLoad.abortController.signal,
                     onLoaded: (finalDn) => this.completePendingDeviceLoad(deviceId, pendingLoad, finalDn),
+                    onRuntimeFailure: (failedDn, replacementDn) =>
+                        this.failLoadedDevice(deviceId, failedDn, replacementDn),
+                    onRuntimeRecovery: (replacementDn) => this.scheduleFailedDeviceRecovery(deviceId, replacementDn),
                 });
                 if (!placeholder.controller) {
                     placeholder.controller = this.createPlaceholderController(deviceId, pendingLoad);
@@ -701,6 +754,7 @@ export class TrackNode {
     }
 
     public removeDevice(deviceId: string): void {
+        this._runtimeRecoveryAttempts.delete(deviceId);
         const dn = this.strip.deviceNodes.find((d) => d.deviceId === deviceId);
         if (!dn) {
             return;
@@ -809,6 +863,7 @@ export class TrackNode {
             this.invalidatePendingDeviceLoad(deviceId);
         }
         this._failedDeviceLoads.clear();
+        this._runtimeRecoveryAttempts.clear();
         this.strip.preFaderTap.disconnect();
         this.strip.gainNode.disconnect();
         this.strip.faderNode.disconnect();

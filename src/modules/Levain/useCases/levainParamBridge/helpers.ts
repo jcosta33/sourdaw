@@ -6,9 +6,10 @@ import {
 } from '#/modules/Arrangement/stores';
 import { createRafBatcher } from '#/utils/DOM/createRafBatcher';
 
-import { ARTICULATION_ID_BY_TYPE, type LevainPatch } from '../../models/LevainPatch';
+import { getArticulationId, isArticulationType, type LevainPatch } from '../../models/LevainPatch';
 import { defaultLevainState, levainStore, setLevainParam, setMacro } from '../../stores/levainStore';
 import { type autoLoadLevainSamples } from '../autoLoadSamples';
+import { hydrateLevainStateFromProject } from '../hydrateLevainStateFromProject';
 
 import { camelToSnake } from './camelToSnake';
 
@@ -41,6 +42,11 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
     // can cancel exactly this device's batches. The batcher does not expose its
     // key set, so we mirror it here; entries are dropped on flush and on cancel.
     const pendingKeysByDevice = new Map<string, Set<string>>();
+
+    function setRuntimeParam(deviceId: string, rustKey: string, value: number): void {
+        activeDevices.get(deviceId)?.setParam(rustKey, value);
+    }
+
     function flushParam(compositeKey: string, value: number): void {
         const parts = compositeKey.split(':');
         const deviceId = parts[0];
@@ -54,10 +60,7 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         }
 
         const rustKey = parts.slice(1).join(':');
-        const device = activeDevices.get(deviceId);
-        if (device) {
-            device.setParam(rustKey, value);
-        }
+        setRuntimeParam(deviceId, rustKey, value);
         deps.persistDeviceParam(deviceId, rustKey, value);
     }
 
@@ -112,18 +115,24 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         activeDevices.set(deviceId, device);
         if (port) {
             activePorts.set(deviceId, port);
-            // Seed a default store entry on first registration so newly-added
-            // devices get their default instrument's samples loaded — without
-            // this the worklet has no zones and produces silence until the
-            // user opens the panel and changes presets.
+            // Seed a store entry on first registration so newly-added devices get
+            // their instrument's samples loaded — without this the worklet has no
+            // zones and produces silence until the user opens the panel and changes
+            // presets.
+            //
+            // Project truth first, module default only for a device that has never
+            // been pointed at an instrument. A reload wipes this store, so reading
+            // the default here unconditionally is what made every saved Levain track
+            // come back as violin-1.
             const instances = levainStore.value ?? {};
-            const state = instances[deviceId] ?? defaultLevainState;
+            const state = instances[deviceId] ?? hydrateLevainStateFromProject(deviceId) ?? defaultLevainState;
             if (!instances[deviceId]) {
                 levainStore.set({ ...instances, [deviceId]: state });
             }
 
             loadSamplesForInstrument(deviceId, state.patch.instrumentId);
             queueParam(deviceId, 'master_gain', state.patch.masterGain);
+            setRuntimeParam(deviceId, 'current_articulation', getArticulationId(state.patch.currentArticulation));
             queueParam(deviceId, 'legato_enabled', state.patch.legato.enabled ? 1 : 0);
             queueParam(deviceId, 'humanize_amount', state.patch.humanize.amount);
             // vibratoDepthMax is in cents (default 40, range 0-50). Send it to the
@@ -182,14 +191,8 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
 
         setLevainParam(deviceId, key, value);
 
-        if (key === 'currentArticulation' && typeof value === 'string') {
-            const patch = levainStore.value?.[deviceId]?.patch;
-            if (patch) {
-                const articulation = patch.articulations.find((candidate) => candidate.type === value);
-                if (articulation) {
-                    queueParam(deviceId, 'current_articulation', ARTICULATION_ID_BY_TYPE[articulation.type]);
-                }
-            }
+        if (key === 'currentArticulation' && isArticulationType(value)) {
+            setRuntimeParam(deviceId, 'current_articulation', getArticulationId(value));
         } else if (typeof value === 'number') {
             const rustKey = camelToSnake(String(key));
             queueParam(deviceId, rustKey, value);

@@ -14,6 +14,7 @@ import {
     clampDeviceParameterValue,
     getAllTracks,
     getPluginById,
+    isDeviceParameterAutomatable,
     persistDevicePatch,
     cleanupUnusedFreezeFiles,
     setTrackGain as setTrackGainArrangement,
@@ -37,6 +38,7 @@ import {
     getFinalFeatureHandlers,
     commitPitchEdit,
     configureAudioDeviceRuntimeSink,
+    configureOfflineDeviceParameterLaw,
     configureOfflineMidiEventProjection,
     configureOfflinePpqEndpointProjection,
     configureOfflineYeastMidiProcessing,
@@ -68,13 +70,13 @@ import { getControlRoomHandlers } from '#/modules/ControlRoom/useCases';
 import { getControlSurfaceHandlers, setMidiLearnDependencies } from '#/modules/ControlSurface/useCases';
 import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 import {
-    getDsoSnapshotHandlers,
     markActionHistoryEntryReverted,
     recordActionHistoryEntry,
     clearActionHistory as clearCrdtActionHistory,
     registerCrdtStorageRuntime,
 } from '#/modules/CrdtDocument/useCases';
-import { prepareCrumbsEngine } from '#/modules/Crumbs/useCases';
+import { initCrumbsDeviceStatePersistence, prepareCrumbsEngine } from '#/modules/Crumbs/useCases';
+import { updateCrustMeters, resetCrustMeters } from '#/modules/Crust/stores';
 import { getDawProjectHandlers } from '#/modules/DawInterchange/useCases';
 import { setFermenterTelemetry } from '#/modules/Fermenter/stores';
 import { setFermenterMappedParam, setFermenterDependencies } from '#/modules/Fermenter/useCases';
@@ -83,7 +85,11 @@ import { setGrandBouleEventBus } from '#/modules/GrandBoule/useCases';
 import { updateGrinderTelemetry } from '#/modules/Grinder/stores';
 import { getPitchHandlers, setPitchEditDependencies } from '#/modules/Knead/useCases';
 import { setEngineReady } from '#/modules/Levain/stores';
-import { registerLevainDevice, unregisterLevainDevice } from '#/modules/Levain/useCases';
+import {
+    initLevainDeviceStatePersistence,
+    registerLevainDevice,
+    unregisterLevainDevice,
+} from '#/modules/Levain/useCases';
 import {
     getChordTrackHandlers,
     getMidiGrooveHandlers,
@@ -103,6 +109,7 @@ import {
     getProjectHandlers,
     initGrooveTemplateDirtyTracking,
     markDirty,
+    migrateLegacyProjectSnapshots,
     setProjectIdentityTransitionDependencies,
 } from '#/modules/Project/useCases';
 import { getVersionControlHandlers } from '#/modules/ProjectVersioning/useCases';
@@ -168,6 +175,12 @@ configureOfflineMidiEventProjection({
     selectProbability: shouldPlayMidiEvent,
     createChordPitchProjector,
     evaluateAutomationValue: getAutomationValueAtBeat,
+});
+// The offline render enforces the same device-parameter law the live apply path
+// does; only the composition root sees both Arrangement and the audio engine.
+configureOfflineDeviceParameterLaw({
+    isAutomatable: isDeviceParameterAutomatable,
+    clampValue: clampDeviceParameterValue,
 });
 configureOfflinePpqEndpointProjection({ project: projectPpqEndpoints });
 configureOfflineYeastMidiProcessing({ createProcessor: createOfflineYeastProcessor });
@@ -312,6 +325,26 @@ configureAudioDeviceRuntimeSink({
     },
     updateGlutenMeters,
     deleteGlutenMeters,
+    // Crust's meter store is a single slot rather than a per-device map, which
+    // is the shape its panel was built against: one loudness desk on screen at
+    // a time. The device id is therefore dropped here, and a second Crust
+    // instance would tick the same readout.
+    updateCrustMeters: (_deviceId, meters) => {
+        updateCrustMeters({
+            grDb: meters.grDb,
+            inputDb: meters.inputDb,
+            outputDb: meters.outputDb,
+            lufsIntegrated: meters.lufsIntegrated,
+            lufsShortTerm: meters.lufsShortTerm,
+            lufsMomentary: meters.lufsMomentary,
+            lra: meters.lra,
+            truepeakMax: meters.truepeakMax,
+            truepeakExceeded: meters.truepeakExceeded,
+        });
+    },
+    deleteCrustMeters: () => {
+        resetCrustMeters();
+    },
     updateBacteriaMeters: (deviceId, meters) => {
         updateBacteriaMeters(deviceId, meters.inputDb, meters.outputDb, meters.bandLevels, meters.latency);
     },
@@ -355,16 +388,43 @@ registerHandlerMap(getNodeViewHandlers());
 registerHandlerMap(getWebMidiInputHandlers());
 registerHandlerMap(getRaveHandlers());
 registerHandlerMap(getControlRoomHandlers());
-registerHandlerMap(getDsoSnapshotHandlers());
 
 initToasterSubscribers({ eventBus, logger });
 // Registered after the lifecycle subscriber so a device's first appearance is
 // already carrying the kit read back from the document by the time this observes it.
 initToasterKitPersistence();
+// Same shape and the same reason: `Device.parameterValues` holds numbers, and
+// neither Levain's instrument id nor Crumbs' sample reference is one. Registered
+// here so a device's first appearance is already carrying whatever the document
+// held for it, and only a genuine edit afterwards writes back.
+initLevainDeviceStatePersistence();
+initCrumbsDeviceStatePersistence();
 initStalenessDetection();
 
 trackStore.subscribe(() => markDirty());
 initGrooveTemplateDirtyTracking();
+
+// Drain pre-ADR-0013 project content out of localStorage into IndexedDB. A
+// mirror is removed only once its own rewrite has been observed to commit, or
+// once a copy is confirmed equal or newer; anything it cannot account for is
+// left in place. Safe to race a concurrent *load* — reads resolve by recency —
+// but not audited against a concurrent *save* to the same key, which startup
+// timing makes unreachable today. The report is logged as instrumentation for
+// ADR 0013's stop condition, which ADR 0016 settles rather than leaves open.
+migrateLegacyProjectSnapshots()
+    .then((report) => {
+        if (report.inspected === 0) {
+            return;
+        }
+        logger.info(
+            `Legacy project snapshot migration: inspected=${report.inspected} recovered=${report.recovered} ` +
+                `supersededByPrimary=${report.supersededByPrimary} ` +
+                `mirrorsWithoutPrimary=${report.mirrorsWithoutPrimary} failed=${report.failed}`
+        );
+    })
+    .catch((error: unknown) => {
+        logger.warn(`Legacy project snapshot migration failed (non-fatal): ${String(error)}`);
+    });
 
 // Initialize browser AI module asynchronously — non-blocking, non-fatal.
 // Detects WebGPU capability and populates model registry from OPFS cache.

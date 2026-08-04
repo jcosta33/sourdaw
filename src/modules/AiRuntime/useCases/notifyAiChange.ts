@@ -12,7 +12,7 @@ export type { AiChangeNotification };
 /**
  * Monotonic counter combined with the timestamp so two notifications emitted
  * within the same millisecond receive distinct ids (a React list keyed on id
- * would otherwise collapse the second — observable during batch DSO execution).
+ * would otherwise collapse the second during batch command execution).
  */
 let notificationSeq = 0;
 

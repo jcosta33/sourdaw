@@ -1,4 +1,10 @@
-import { ARTICULATION_ID_BY_TYPE, type ArticulationType } from '../../models/LevainPatch';
+import {
+    ARTICULATION_ID_BY_TYPE,
+    isArticulationType,
+    isInstrumentId,
+    type ArticulationType,
+    type InstrumentId,
+} from '../../models/LevainPatch';
 
 export type ManifestZone = {
     file: string;
@@ -11,10 +17,7 @@ export type ManifestZone = {
     rrLen: number;
     micId: number;
     isRelease: boolean;
-    loopMode: 'none' | 'forward' | 'pingpong';
-    loopStart: number;
-    loopEnd: number;
-    loopCrossfade: number;
+    loop: ManifestLoop;
     gainDb: number;
     attack: number;
     decay: number;
@@ -22,6 +25,14 @@ export type ManifestZone = {
     release: number;
 };
 
+export type ManifestLoop =
+    | { mode: 'none' }
+    | {
+          mode: 'forward' | 'pingpong';
+          startFrame: number;
+          endFrame: number | 'sample-end';
+          crossfadeFrames: number;
+      };
 export type ManifestArticulation = {
     type: ArticulationType;
     id: number;
@@ -29,8 +40,8 @@ export type ManifestArticulation = {
 };
 
 export type SampleManifest = {
-    version: number;
-    instrumentId: string;
+    version: 1;
+    instrumentId: InstrumentId;
     sampleRate: number;
     articulations: readonly ManifestArticulation[];
     micPositions: readonly string[];
@@ -40,9 +51,11 @@ const MAX_F32 = 3.402_823_466_385_288_6e38;
 const MAX_U32 = 4_294_967_295;
 const MAX_MICS = 8;
 const MAX_RR = 12;
+const MAX_ARTICULATIONS = Object.keys(ARTICULATION_ID_BY_TYPE).length;
 const MAX_ZONE_ARENA = 65_536;
 const MAX_ZONE_LIST_COUNT = 65_535;
 const VELOCITY_BUCKET_SIZE = 8;
+const SAMPLE_BANK_BASE_URL = new URL('https://sourdaw.invalid/bank/');
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null;
@@ -64,15 +77,37 @@ function isNonNegativeF32(value: unknown): value is number {
     return fitsF32(value) && value >= 0;
 }
 
-function isSafeRelativeSamplePath(value: unknown): value is string {
-    if (typeof value !== 'string' || value.length === 0 || value.startsWith('/') || value.includes('\\')) {
-        return false;
+function toPositiveF32(value: unknown): number | undefined {
+    if (!isFiniteNumber(value)) {
+        return undefined;
     }
-    return value.split('/').every((segment) => segment.length > 0 && segment !== '.' && segment !== '..');
+
+    const rounded = Math.fround(value);
+    if (!Number.isFinite(rounded) || rounded <= 0) {
+        return undefined;
+    }
+    return rounded;
 }
 
-function isArticulationType(value: unknown): value is ArticulationType {
-    return typeof value === 'string' && Object.hasOwn(ARTICULATION_ID_BY_TYPE, value);
+function isSafeRelativeSamplePath(value: unknown): value is string {
+    if (
+        typeof value !== 'string' ||
+        value.length === 0 ||
+        value.startsWith('/') ||
+        value.includes('\\') ||
+        /^[A-Za-z][A-Za-z\d+.-]*:/.test(value) ||
+        /%(?:2f|5c)/i.test(value)
+    ) {
+        return false;
+    }
+    if (!value.split('/').every((segment) => segment.length > 0 && segment !== '.' && segment !== '..')) {
+        return false;
+    }
+
+    const resolved = new URL(value, SAMPLE_BANK_BASE_URL);
+    return (
+        resolved.origin === SAMPLE_BANK_BASE_URL.origin && resolved.pathname.startsWith(SAMPLE_BANK_BASE_URL.pathname)
+    );
 }
 
 function parseZone(value: unknown, path: string): ManifestZone {
@@ -118,6 +153,10 @@ function parseZone(value: unknown, path: string): ManifestZone {
     if (!isIntegerInRange(value.loopEnd, 0, MAX_U32)) {
         throw new TypeError(`${path}.loopEnd must be an integer from 0 through ${MAX_U32}`);
     }
+    const hasExplicitLoopRange = value.loopStart !== 0 || value.loopEnd !== 0;
+    if (value.loopMode !== 'none' && hasExplicitLoopRange && value.loopEnd <= value.loopStart) {
+        throw new TypeError(`${path}.loopEnd must be greater than loopStart for an explicit loop`);
+    }
     if (!isIntegerInRange(value.loopCrossfade, 0, MAX_U32)) {
         throw new TypeError(`${path}.loopCrossfade must be an integer from 0 through ${MAX_U32}`);
     }
@@ -137,6 +176,15 @@ function parseZone(value: unknown, path: string): ManifestZone {
         throw new TypeError(`${path}.release must be a non-negative finite 32-bit float`);
     }
 
+    let loop: ManifestLoop = Object.freeze({ mode: 'none' });
+    if (value.loopMode !== 'none') {
+        loop = Object.freeze({
+            mode: value.loopMode,
+            startFrame: value.loopStart,
+            endFrame: hasExplicitLoopRange ? value.loopEnd : 'sample-end',
+            crossfadeFrames: value.loopCrossfade,
+        });
+    }
     return Object.freeze({
         file: value.file,
         rootNote: value.rootNote,
@@ -148,10 +196,7 @@ function parseZone(value: unknown, path: string): ManifestZone {
         rrLen: value.rrLen,
         micId: value.micId,
         isRelease: value.isRelease,
-        loopMode: value.loopMode,
-        loopStart: value.loopStart,
-        loopEnd: value.loopEnd,
-        loopCrossfade: value.loopCrossfade,
+        loop,
         gainDb: value.gainDb,
         attack: value.attack,
         decay: value.decay,
@@ -174,11 +219,19 @@ function parseArticulation(value: unknown, path: string): ManifestArticulation {
     if (!Array.isArray(value.zones)) {
         throw new TypeError(`${path}.zones must be an array`);
     }
+    if (value.zones.length > MAX_ZONE_LIST_COUNT) {
+        throw new TypeError(`${path}.zones must contain at most ${MAX_ZONE_LIST_COUNT} entries`);
+    }
+
+    const zones = Object.freeze(value.zones.map((zone, index) => parseZone(zone, `${path}.zones[${index}]`)));
+    if (!zones.some((zone) => !zone.isRelease)) {
+        throw new TypeError(`${path} must contain a playable note-on zone`);
+    }
 
     return Object.freeze({
         type: value.type,
         id: canonicalId,
-        zones: Object.freeze(value.zones.map((zone, index) => parseZone(zone, `${path}.zones[${index}]`))),
+        zones,
     });
 }
 
@@ -186,24 +239,39 @@ export function parseSampleManifest(value: unknown): SampleManifest {
     if (!isRecord(value)) {
         throw new TypeError('Levain sample manifest must be an object');
     }
-    if (!isIntegerInRange(value.version, 1, Number.MAX_SAFE_INTEGER)) {
-        throw new TypeError('Levain sample manifest version must be a positive integer');
+    if (value.version !== 1) {
+        throw new TypeError('Levain sample manifest version must be 1');
     }
-    if (typeof value.instrumentId !== 'string' || value.instrumentId.length === 0) {
-        throw new TypeError('Levain sample manifest instrumentId must be a non-empty string');
+    if (!isInstrumentId(value.instrumentId)) {
+        throw new TypeError('Levain sample manifest instrumentId must be a supported instrument id');
     }
-    if (!isNonNegativeF32(value.sampleRate) || value.sampleRate === 0) {
+    const sampleRate = toPositiveF32(value.sampleRate);
+    if (sampleRate === undefined) {
         throw new TypeError('Levain sample manifest sampleRate must be a finite 32-bit float greater than zero');
     }
     if (
         !Array.isArray(value.micPositions) ||
+        value.micPositions.length === 0 ||
         value.micPositions.length > MAX_MICS ||
         !value.micPositions.every((position) => typeof position === 'string')
     ) {
-        throw new TypeError(`Levain sample manifest micPositions must contain at most ${MAX_MICS} strings`);
+        throw new TypeError(`Levain sample manifest micPositions must contain 1 through ${MAX_MICS} microphone names`);
     }
-    if (!Array.isArray(value.articulations)) {
-        throw new TypeError('Levain sample manifest articulations must be an array');
+    if (!Array.isArray(value.articulations) || value.articulations.length === 0) {
+        throw new TypeError('Levain sample manifest articulations must contain at least one articulation');
+    }
+    if (value.articulations.length > MAX_ARTICULATIONS) {
+        throw new TypeError(`Levain sample manifest articulations must contain at most ${MAX_ARTICULATIONS} entries`);
+    }
+
+    let rawZoneCount = 0;
+    for (const articulation of value.articulations) {
+        if (isRecord(articulation) && Array.isArray(articulation.zones)) {
+            rawZoneCount += articulation.zones.length;
+        }
+    }
+    if (rawZoneCount > MAX_ZONE_ARENA) {
+        throw new TypeError(`Levain sample manifest contains more than ${MAX_ZONE_ARENA} zones`);
     }
 
     const micPositions = Object.freeze([...value.micPositions]);
@@ -217,9 +285,6 @@ export function parseSampleManifest(value: unknown): SampleManifest {
             throw new TypeError('Levain sample manifest articulation ids must be unique');
         }
         articulationIds.add(articulation.id);
-        if (articulation.zones.length > MAX_ZONE_LIST_COUNT) {
-            throw new TypeError(`Levain sample manifest articulation ${articulation.type} has too many zones`);
-        }
         for (const zone of articulation.zones) {
             if (zone.micId >= micPositions.length) {
                 throw new TypeError(`Levain sample manifest zone micId ${zone.micId} has no mic position`);
@@ -237,7 +302,7 @@ export function parseSampleManifest(value: unknown): SampleManifest {
     return Object.freeze({
         version: value.version,
         instrumentId: value.instrumentId,
-        sampleRate: value.sampleRate,
+        sampleRate,
         micPositions,
         articulations,
     });

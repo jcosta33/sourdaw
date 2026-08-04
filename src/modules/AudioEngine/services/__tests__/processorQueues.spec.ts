@@ -4,10 +4,12 @@ import path from 'path';
 import ts from 'typescript';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-// The eval harness strips imports from the processor source, so any symbol a
-// processor imports and references at class-eval time (WasmView is used in field
-// initializers) must be re-supplied as an injected global. The real class is used.
+import { resolveProcessorWasmModule } from '../../transformers/resolveProcessorWasmModule';
 import { WasmView } from '../wasmView';
+
+// The eval harness strips imports from the processor source, so any symbol a
+// processor imports and references at class-eval or construction time must be
+// re-supplied as an injected global. The real implementations are used.
 
 // Helper to evaluate an AudioWorklet script and extract its class
 function loadProcessorClass(filePath: string, className: string) {
@@ -28,6 +30,7 @@ function loadProcessorClass(filePath: string, className: string) {
         sampleRate: 48000,
         console,
         WasmView,
+        resolveProcessorWasmModule,
     };
 
     // Strip TypeScript types so `new Function` can parse pure JS. Use ESNext
@@ -57,7 +60,7 @@ function loadProcessorClass(filePath: string, className: string) {
 }
 
 describe('AudioWorklet Processor Queues (_queueHead Read Index)', () => {
-    for (const processorName of ['LevainProcessor', 'FermenterProcessor', 'ToasterProcessor', 'CrumbsProcessor']) {
+    for (const processorName of ['LevainProcessor', 'ToasterProcessor', 'CrumbsProcessor']) {
         describe(processorName, () => {
             let ProcessorClass: any;
             let processor: any;

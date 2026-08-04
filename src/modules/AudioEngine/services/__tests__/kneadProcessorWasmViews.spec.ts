@@ -12,7 +12,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // can be simulated mid-call. No transport SAB is provided, so the shift resolves
 // to zero and the view lifecycle is isolated.
 
-const registry = new Map<string, new () => KneadProcessorLike>();
+const registry = new Map<string, new (...args: unknown[]) => KneadProcessorLike>();
 
 class AudioWorkletProcessorShim {
     port = {
@@ -30,7 +30,7 @@ type KneadProcessorLike = {
 };
 
 vi.stubGlobal('AudioWorkletProcessor', AudioWorkletProcessorShim);
-vi.stubGlobal('registerProcessor', (name: string, proc: new () => KneadProcessorLike) => {
+vi.stubGlobal('registerProcessor', (name: string, proc: new (...args: unknown[]) => KneadProcessorLike) => {
     registry.set(name, proc);
 });
 vi.stubGlobal('sampleRate', 48000);
@@ -87,6 +87,9 @@ class KneadInstanceMock {
     get_right_ptr(): number {
         return OUT_RIGHT_PTR;
     }
+    get_latency_samples(): number {
+        return 2047;
+    }
 }
 
 vi.mock('../../wasm/daw_dsp.js', () => ({
@@ -94,7 +97,7 @@ vi.mock('../../wasm/daw_dsp.js', () => ({
     KneadInstance: KneadInstanceMock,
 }));
 
-const MINIMAL_WASM = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
+const MINIMAL_WASM_MODULE = new WebAssembly.Module(new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]));
 
 async function loadProcessor(): Promise<KneadProcessorLike> {
     await import('../kneadProcessor');
@@ -102,7 +105,7 @@ async function loadProcessor(): Promise<KneadProcessorLike> {
     if (!Ctor) {
         throw new Error('knead-processor was not registered');
     }
-    return new Ctor();
+    return new Ctor({ processorOptions: { wasmModule: MINIMAL_WASM_MODULE } });
 }
 
 function send(proc: KneadProcessorLike, data: unknown): void {
@@ -130,7 +133,7 @@ describe('KneadProcessor WASM-view lifecycle (audit RT-7)', () => {
 
     it('maps output views over the new buffer when memory.grow() happens inside process() (mid-block)', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
 
         // Warm up so the output views are cached over the pre-grow buffer.
         const warmup = makeBlock((_channel, frame) => frame);
@@ -154,5 +157,54 @@ describe('KneadProcessor WASM-view lifecycle (audit RT-7)', () => {
         expect(out0).not.toEqual(Array.from(block.input[0]!));
         expect(out0).toEqual(expectedLeft);
         expect(Array.from(block.output[1]!)).toEqual(expectedRight);
+    });
+
+    // The quantum AFTER the grow is the one the sibling test above never reaches,
+    // and it is the only one where the input-view half of the cache is observable.
+    // The hand-rolled cache advanced its tracked buffer to the post-grow buffer but
+    // reset only the two OUTPUT pointers, so on the next quantum the pre-call
+    // invalidation branch sees an unchanged buffer identity, the cached INPUT views
+    // still map the detached pre-grow buffer (length 0), and `.set(in0)` throws a
+    // RangeError. That is caught into `_faulted = true`, which is permanent: every
+    // later quantum takes the passthrough early-return, so pitch correction is off
+    // for the rest of the session with audio still flowing and no user-visible signal.
+    it('keeps processing on the quanta after a mid-call memory.grow() instead of faulting into permanent passthrough', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+
+        const warmup = makeBlock((_channel, frame) => frame);
+        proc.process([warmup.input], [warmup.output]);
+
+        growOnNextProcess = true;
+        const growBlock = makeBlock((_channel, frame) => 500 + frame);
+        proc.process([growBlock.input], [growBlock.output]);
+
+        const expectedLeft = Array.from({ length: FRAMES }, (_unused, frame) => GROWN_OUT_LEFT_BASE + frame);
+        const expectedRight = Array.from({ length: FRAMES }, (_unused, frame) => GROWN_OUT_RIGHT_BASE + frame);
+
+        // Two further quanta with no further growth. Both must still route the wasm
+        // result, and the input writes must land in the post-grow buffer.
+        const after = makeBlock((_channel, frame) => 900 + frame);
+        proc.process([after.input], [after.output]);
+        const later = makeBlock((_channel, frame) => 1300 + frame);
+        proc.process([later.input], [later.output]);
+
+        expect(proc.port.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'error' }));
+
+        // Passthrough (the faulted state) copies the input block verbatim; a working
+        // node emits the wasm output window of the live buffer.
+        expect(Array.from(after.output[0]!)).not.toEqual(Array.from(after.input[0]!));
+        expect(Array.from(after.output[0]!)).toEqual(expectedLeft);
+        expect(Array.from(after.output[1]!)).toEqual(expectedRight);
+        expect(Array.from(later.output[0]!)).toEqual(expectedLeft);
+        expect(Array.from(later.output[1]!)).toEqual(expectedRight);
+
+        // The input side is the half the old cache left stale: the processor must
+        // have written the last block's samples into the post-grow buffer's input
+        // window, not into the detached one.
+        const liveInputLeft = new RealFloat32Array(memory.buffer, IN_LEFT_PTR, FRAMES);
+        expect(Array.from(liveInputLeft)).toEqual(Array.from(later.input[0]!));
+        const liveInputRight = new RealFloat32Array(memory.buffer, IN_RIGHT_PTR, FRAMES);
+        expect(Array.from(liveInputRight)).toEqual(Array.from(later.input[1]!));
     });
 });

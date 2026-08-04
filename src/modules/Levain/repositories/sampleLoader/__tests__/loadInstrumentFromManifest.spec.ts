@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 
 import { decodedBankResource } from '../decodedBankResource';
 import { fetchAndDecode } from '../fetchAndDecode';
-import { loadInstrumentFromManifest, type SampleManifest } from '../loadInstrumentFromManifest';
+import { loadInstrumentFromManifest } from '../loadInstrumentFromManifest';
 
 vi.mock('#/infra/logger/appLogger', () => ({
     logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn() },
@@ -20,7 +20,7 @@ vi.mock('../fetchAndDecode', () => {
     };
 });
 
-const MANIFEST: SampleManifest = {
+const MANIFEST = {
     version: 1,
     instrumentId: 'violin-1',
     sampleRate: 44100,
@@ -80,12 +80,12 @@ type MakePortOptions = {
 
 function makePort(options: MakePortOptions = {}): FakePort {
     const listeners = new Set<(event: MessageEvent<unknown>) => void>();
-    const emit = (message: unknown): void => {
+    function emit(message: unknown): void {
         const event = { data: message } as MessageEvent<unknown>;
         for (const listener of listeners) {
             listener(event);
         }
-    };
+    }
     const postMessage = vi.fn((message: unknown) => {
         if (!isRecord(message) || typeof message.loadToken !== 'number') {
             return;
@@ -164,6 +164,7 @@ describe('loadInstrumentFromManifest', () => {
             nodePort: port,
         });
 
+        expect(decodedBankResource.getDiagnostics().activeLeases).toBe(0);
         const types = postedTypes(port);
         expect(types).toContain('beginSampleBank');
         expect(types).toContain('addSample');
@@ -187,6 +188,44 @@ describe('loadInstrumentFromManifest', () => {
             .map(([message]) => message as { type: string; loadToken?: number })
             .filter((message) => message.type === 'addZone' || message.type === 'buildZoneMap');
         expect(zoneAndBuildMessages.every((message) => message.loadToken === beginMessage.loadToken)).toBe(true);
+    });
+
+    it('resolves the validated sample-end loop sentinel against decoded frame count', async () => {
+        const port = makePort();
+        const manifest = {
+            ...MANIFEST,
+            articulations: [
+                {
+                    ...MANIFEST.articulations[0],
+                    zones: [{ ...MANIFEST.articulations[0]!.zones[0], loopMode: 'forward' }],
+                },
+            ],
+        };
+        vi.stubGlobal(
+            'fetch',
+            vi.fn().mockResolvedValue({
+                ok: true,
+                status: 200,
+                json: () => Promise.resolve(manifest),
+            })
+        );
+
+        await loadInstrumentFromManifest({
+            manifestUrl: '/m.json',
+            basePath: '/base',
+            expectedInstrumentId: 'violin-1',
+            nodePort: port,
+        });
+
+        let addZone: unknown;
+        for (const call of port.postMessage.mock.calls) {
+            const message: unknown = call[0];
+            if (isRecord(message) && message.type === 'addZone') {
+                addZone = message;
+                break;
+            }
+        }
+        expect(addZone).toMatchObject({ loopMode: 'forward', loopStart: 0, loopEnd: 1, loopCrossfade: 0 });
     });
 
     it('skips PCM upload when the worklet assigns this loader as a shared-bank follower', async () => {
@@ -215,6 +254,7 @@ describe('loadInstrumentFromManifest', () => {
                 nodePort: port,
             })
         ).rejects.toThrow('zone map rejected');
+        expect(decodedBankResource.getDiagnostics().activeLeases).toBe(0);
     });
 
     it('does not resolve before the worklet acknowledges the committed bank', async () => {
@@ -234,6 +274,7 @@ describe('loadInstrumentFromManifest', () => {
             expect(postedTypes(port)).toContain('buildZoneMap');
         });
         expect(settled).toBe(false);
+        expect(decodedBankResource.getDiagnostics().activeLeases).toBe(1);
         const buildMessage: unknown = port.postMessage.mock.calls.find(([message]) => {
             return isRecord(message) && message.type === 'buildZoneMap';
         })?.[0];
@@ -244,6 +285,7 @@ describe('loadInstrumentFromManifest', () => {
 
         await pending;
         expect(settled).toBe(true);
+        expect(decodedBankResource.getDiagnostics().activeLeases).toBe(0);
     });
 
     it('aborts the active worklet transaction while waiting for its commit acknowledgement', async () => {
@@ -264,6 +306,7 @@ describe('loadInstrumentFromManifest', () => {
 
         await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
         expect(postedTypes(port)).toContain('abortSampleBank');
+        expect(decodedBankResource.getDiagnostics().activeLeases).toBe(0);
     });
 
     it('hydrates two concurrent instances from one manifest fetch and one decoded sample', async () => {
@@ -376,7 +419,7 @@ describe('loadInstrumentFromManifest', () => {
                 expectedInstrumentId: 'violin-1',
                 nodePort: port,
             })
-        ).rejects.toThrow('no playable zones');
+        ).rejects.toThrow('must contain at least one articulation');
 
         expect(port.postMessage).not.toHaveBeenCalled();
     });

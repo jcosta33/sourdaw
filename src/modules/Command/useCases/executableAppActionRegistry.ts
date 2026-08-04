@@ -16,7 +16,8 @@ export type ExecutableAppActionTargetCapability =
     | 'device-parameter'
     | 'automation-lane'
     | 'clip'
-    | 'editable-clip';
+    | 'editable-clip'
+    | 'editable-midi-clip';
 
 export type ExecutableAppActionTargetRule = {
     argument: string;
@@ -39,6 +40,7 @@ export type ExecutableAppActionValueRule =
           kind: 'number-if-present';
           requiredInPrompt?: boolean;
           mayOmitWhenUnmentioned?: boolean;
+          match?: 'exact';
           connector?: 'from' | 'to' | 'beat';
           scale?: 'unit-interval' | 'percentage-only' | 'automation-lane-range';
           direction?: 'pan';
@@ -49,11 +51,19 @@ export type ExecutableAppActionValueRule =
     | { argument: string; kind: 'text-after-keyword-if-present'; keywords: readonly string[] }
     | { argument: string; denominatorArgument: string; kind: 'time-signature' };
 
+export type ExecutableAppActionDirectionalIntent = {
+    carrierPhrases: readonly string[];
+    truePhrases: readonly string[];
+    falsePhrases: readonly string[];
+};
+
 type ExecutableAppActionDescriptor = {
     actionType: AppActionType;
     risk: ExecutableAppActionRisk;
     description: string;
     intentPhrases: readonly string[];
+    selectionPhrases?: readonly string[];
+    directionalIntent?: ExecutableAppActionDirectionalIntent;
     targetRules: readonly ExecutableAppActionTargetRule[];
     valueRules?: readonly ExecutableAppActionValueRule[];
     parameters: {
@@ -72,6 +82,10 @@ const clipTargetRules = [
 
 const editableClipTargetRules = [
     { argument: 'clipId', capability: 'editable-clip' },
+] as const satisfies readonly ExecutableAppActionTargetRule[];
+
+const editableMidiClipTargetRules = [
+    { argument: 'clipId', capability: 'editable-midi-clip' },
 ] as const satisfies readonly ExecutableAppActionTargetRule[];
 
 const sendTargetRules = [
@@ -147,7 +161,15 @@ export const executableAppActionDescriptors = [
         targetRules: [],
         valueRules: [{ argument: 'name', kind: 'text-after-keyword-if-present', keywords: ['named', 'called'] }],
         parameters: {
-            properties: { name: { type: 'string', description: 'Display name for the new bus track' } },
+            properties: {
+                name: { type: 'string', description: 'Display name for the new bus track' },
+                binding: {
+                    type: 'string',
+                    pattern: '^[a-z][a-z0-9-]{0,63}$',
+                    description:
+                        'Optional plan-local name. Later calls may target this newly created bus as $<binding>.',
+                },
+            },
             required: ['name'],
         },
     },
@@ -253,6 +275,36 @@ export const executableAppActionDescriptors = [
         parameters: {
             properties: { clipId: { type: 'string' }, gain: { type: 'number', description: '0.0 to 2.0' } },
             required: ['clipId', 'gain'],
+        },
+    },
+    {
+        actionType: 'quantizeNotes',
+        risk: 'destructive-reversible',
+        description: 'Snap every note in one MIDI clip to an explicit beat grid.',
+        intentPhrases: ['quantize notes', 'quantize midi', 'snap midi notes'],
+        targetRules: editableMidiClipTargetRules,
+        valueRules: [{ argument: 'gridSize', kind: 'number-if-present', requiredInPrompt: true, match: 'exact' }],
+        parameters: {
+            properties: {
+                clipId: { type: 'string', description: 'Existing unlocked non-empty MIDI clip ID' },
+                gridSize: { type: 'number', description: 'Beat grid greater than 0 and at most 64' },
+            },
+            required: ['clipId', 'gridSize'],
+        },
+    },
+    {
+        actionType: 'transposeNotes',
+        risk: 'broad-reversible',
+        description: 'Transpose every note in one MIDI clip by an explicit semitone delta.',
+        intentPhrases: ['transpose notes', 'transpose midi', 'shift midi notes', 'shift notes'],
+        targetRules: editableMidiClipTargetRules,
+        valueRules: [{ argument: 'semitones', kind: 'number-if-present', requiredInPrompt: true, match: 'exact' }],
+        parameters: {
+            properties: {
+                clipId: { type: 'string', description: 'Existing unlocked non-empty MIDI clip ID' },
+                semitones: { type: 'integer', description: 'Non-zero semitone delta from -127 through 127' },
+            },
+            required: ['clipId', 'semitones'],
         },
     },
     {
@@ -580,13 +632,30 @@ export const executableAppActionDescriptors = [
         risk: 'bounded-reversible',
         description: 'Bypass or re-enable an effect (keeps settings, just disables processing).',
         intentPhrases: ['bypass', 'enable', 'disable', 're-enable'],
+        selectionPhrases: [
+            'turn',
+            'switch',
+            'effect',
+            'plugin',
+            'reverb',
+            'delay',
+            'compressor',
+            'equalizer',
+            'distortion',
+            'chorus',
+        ],
+        directionalIntent: {
+            carrierPhrases: ['turn', 'switch'],
+            truePhrases: ['off'],
+            falsePhrases: ['on'],
+        },
         targetRules: [{ argument: 'deviceId', capability: 'device' }],
         valueRules: [
             {
                 argument: 'bypassed',
                 kind: 'boolean-intent',
-                truePhrases: ['bypass', 'disable'],
-                falsePhrases: ['enable', 're-enable'],
+                truePhrases: ['bypass', 'disable', 'turn off', 'switch off'],
+                falsePhrases: ['enable', 're-enable', 'turn on', 'switch on'],
             },
         ],
         parameters: {

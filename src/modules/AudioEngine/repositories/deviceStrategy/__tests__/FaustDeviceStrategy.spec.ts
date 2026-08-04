@@ -4,7 +4,7 @@ import { logger } from '#/infra/logger/appLogger';
 
 import { type AutomationLane } from '../../../models/AutomationViewTypes';
 import { type Device } from '../../../models/TrackViewTypes';
-import { scheduleTrackAutomation } from '../../offlineScheduler/automationScheduling';
+import { scheduleTrackAutomationFixture } from '../../offlineScheduler/__tests__/scheduleTrackAutomationFixture';
 import { FaustDeviceStrategy, createFaustStrategy } from '../FaustDeviceStrategy';
 
 type FaustNodeLike = ConstructorParameters<typeof FaustDeviceStrategy>[1];
@@ -242,8 +242,8 @@ describe('FaustDeviceStrategy.resolveOfflineAutomation', () => {
         const { strategy, params } = make_faust_strategy(['/reverb/cutoff']);
         const cutoff = params.get('/reverb/cutoff')!;
 
-        scheduleTrackAutomation(
-            [
+        scheduleTrackAutomationFixture({
+            lanes: [
                 make_lane({
                     parameterId: 'faust-1:cutoff',
                     points: [
@@ -252,14 +252,14 @@ describe('FaustDeviceStrategy.resolveOfflineAutomation', () => {
                     ],
                 }),
             ],
-            'track-1',
-            { gain: make_faust_param() } as unknown as GainNode,
-            { pan: make_faust_param() } as unknown as StereoPannerNode,
-            [{ deviceId: 'faust-1', deviceType: 'faust-reverb', strategy }],
-            10,
-            120,
-            []
-        );
+            trackId: 'track-1',
+            trackGainNode: { gain: make_faust_param() } as unknown as GainNode,
+            trackPanNode: { pan: make_faust_param() } as unknown as StereoPannerNode,
+            deviceEntries: [{ deviceId: 'faust-1', deviceType: 'faust-reverb', strategy }],
+            durationSeconds: 10,
+            defaultTempo: 120,
+            changes: [],
+        });
 
         // 120 bpm → beatToSeconds(beat) === beat / 2. AU-2: device automation is
         // slewed offline (matching the live path), so the ramp is not a raw jump

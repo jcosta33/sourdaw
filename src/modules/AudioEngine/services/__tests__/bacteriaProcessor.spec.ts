@@ -87,7 +87,7 @@ vi.mock('../../wasm/daw_dsp.js', () => ({
     BacteriaInstance: BacteriaInstanceMock,
 }));
 
-const MINIMAL_WASM = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
+const MINIMAL_WASM_MODULE = new WebAssembly.Module(new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]));
 
 async function loadProcessor(): Promise<BacteriaProcessorLike> {
     await import('../bacteriaProcessor');
@@ -95,7 +95,7 @@ async function loadProcessor(): Promise<BacteriaProcessorLike> {
     if (!Ctor) {
         throw new Error('bacteria-processor was not registered');
     }
-    return new Ctor();
+    return new Ctor({ processorOptions: { wasmModule: MINIMAL_WASM_MODULE } });
 }
 
 function send(proc: BacteriaProcessorLike, data: unknown): void {
@@ -122,8 +122,8 @@ describe('BacteriaProcessor message handling', () => {
 
     it('posts ready with the initial latency on init and ignores a second init', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         const ready = proc.port.postMessage.mock.calls.filter((c) => (c[0] as { type: string }).type === 'ready');
         expect(ready).toHaveLength(1);
         expect((ready[0]![0] as { latency: number }).latency).toBe(0);
@@ -131,7 +131,7 @@ describe('BacteriaProcessor message handling', () => {
 
     it('maps camelCase param names through PARAM_MAP and reports latency changes', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         resetRecording();
 
         // threshold (identity-mapped) does not change latency.
@@ -154,7 +154,7 @@ describe('BacteriaProcessor message handling', () => {
 
     it('forwards unmapped param names as-is (fallback to raw name)', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         resetRecording();
         send(proc, { type: 'param', name: 'someUnknownParam', value: 0.3 });
         expect(paramCalls).toContainEqual({ name: 'someUnknownParam', value: 0.3 });
@@ -169,7 +169,7 @@ describe('BacteriaProcessor message handling', () => {
 
     it('installs an SAB telemetry view on init-sab', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         const sab = new SharedArrayBuffer(Float32Array.BYTES_PER_ELEMENT * 32);
         const view = new Float32Array(sab);
         send(proc, { type: 'init-sab', sab, byteOffset: 0 });
@@ -205,7 +205,7 @@ describe('BacteriaProcessor process & telemetry', () => {
 
     it('returns early when input has fewer than 2 channels', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         resetRecording();
         const output = stereo(FRAMES, 0);
         // Mono input (< 2 channels).
@@ -217,7 +217,7 @@ describe('BacteriaProcessor process & telemetry', () => {
 
     it('returns early when the left input or left output is absent', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         resetRecording();
         // Left input absent (undefined channel) → !in0 guard.
         proc.process(
@@ -230,7 +230,7 @@ describe('BacteriaProcessor process & telemetry', () => {
 
     it('copies left input to both stereo outputs (wiring) and blits 6 band levels into the SAB', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         const sab = new SharedArrayBuffer(Float32Array.BYTES_PER_ELEMENT * 32);
         const view = new Float32Array(sab);
         send(proc, { type: 'init-sab', sab, byteOffset: 0 });
@@ -262,7 +262,7 @@ describe('BacteriaProcessor process & telemetry', () => {
 
     it('upmixes a mono right channel (input[1] absent) to the right input view', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         resetRecording();
         const output = stereo(FRAMES, 0);
         // Two-channel input whose right channel is undefined → synthesized from
@@ -279,7 +279,7 @@ describe('BacteriaProcessor process & telemetry', () => {
 
     it('faults, posts an error, and passthrough-copies when instance.process throws', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         resetRecording();
         processShouldThrow = true;
 
@@ -294,7 +294,7 @@ describe('BacteriaProcessor process & telemetry', () => {
 
     it('stops processing after faulting (subsequent blocks passthrough-skip the engine)', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         resetRecording();
         processShouldThrow = true;
         proc.process([stereo(FRAMES, 0.4)], [stereo(FRAMES, 0)]);

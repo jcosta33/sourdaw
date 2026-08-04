@@ -36,12 +36,15 @@ const FRAMES = 128;
 const SLOT_FLOATS = 160;
 const PEAK_L_IDX = 0;
 const PEAK_R_IDX = 1;
+const LIFECYCLE_IDX = 2;
 const SEQ_IDX = 31;
 const SCOPE_BASE = 32;
 const SCOPE_SAMPLES = 128;
 const TELEMETRY_PERIOD_FRAMES = 2048;
 
 const memory = createGrowableMemory(HEAP_BYTES);
+let lifecycleState = 0;
+const advanceSilence = vi.fn();
 
 /** Seed the left/right output windows so telemetry has recognizable content. */
 function seedOutputs(leftAt: (index: number) => number, rightAt: (index: number) => number): void {
@@ -64,6 +67,12 @@ class FermenterInstanceMock {
     get_right_ptr(): number {
         return OUT_RIGHT_PTR;
     }
+    lifecycle_state(): number {
+        return lifecycleState;
+    }
+    advance_silence(): void {
+        advanceSilence();
+    }
 }
 
 vi.mock('../../wasm/daw_dsp.js', () => ({
@@ -71,7 +80,7 @@ vi.mock('../../wasm/daw_dsp.js', () => ({
     FermenterInstance: FermenterInstanceMock,
 }));
 
-const MINIMAL_WASM = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
+const MINIMAL_WASM_MODULE = new WebAssembly.Module(new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]));
 
 async function loadProcessor(): Promise<FermenterProcessorLike> {
     await import('../fermenterProcessor');
@@ -79,7 +88,7 @@ async function loadProcessor(): Promise<FermenterProcessorLike> {
     if (!Ctor) {
         throw new Error('fermenter-processor was not registered');
     }
-    return new Ctor();
+    return new Ctor({ processorOptions: { wasmModule: MINIMAL_WASM_MODULE } });
 }
 
 function send(proc: FermenterProcessorLike, data: unknown): void {
@@ -98,7 +107,7 @@ async function bootWithSlot(): Promise<{
 }> {
     const proc = await loadProcessor();
     const sab = new ArrayBuffer(SLOT_FLOATS * 4);
-    send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+    send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
     send(proc, { type: 'init-sab', sab, byteOffset: 0 });
     return { proc, view: new RealFloat32Array(sab, 0, SLOT_FLOATS), seqView: new Int32Array(sab, 0, SLOT_FLOATS) };
 }
@@ -115,6 +124,8 @@ function renderBlocks(proc: FermenterProcessorLike, blocks: number, startFrame =
 describe('FermenterProcessor telemetry publish (audit RT-3)', () => {
     beforeEach(() => {
         resetGrowableMemory(memory, HEAP_BYTES);
+        lifecycleState = 0;
+        advanceSilence.mockClear();
         vi.stubGlobal('currentFrame', 0);
     });
 
@@ -167,10 +178,36 @@ describe('FermenterProcessor telemetry publish (audit RT-3)', () => {
 
         expect(view[PEAK_L_IDX]).toBe(FRAMES - 1);
         expect(view[PEAK_R_IDX]).toBe(0.5);
+        expect(view[LIFECYCLE_IDX]).toBe(0);
         // frames/128 === 1 here, so the waveform is the left output verbatim.
         expect(Array.from(view.subarray(SCOPE_BASE, SCOPE_BASE + SCOPE_SAMPLES))).toEqual(
             Array.from({ length: SCOPE_SAMPLES }, (_unused, index) => index)
         );
+    });
+
+    it('publishes sleep with zeroed peaks and scope without invoking the DSP process path', async () => {
+        const { proc, view } = await bootWithSlot();
+        lifecycleState = 3;
+
+        renderBlocks(proc, 1);
+
+        expect(advanceSilence).toHaveBeenCalledOnce();
+        expect(view[PEAK_L_IDX]).toBe(0);
+        expect(view[PEAK_R_IDX]).toBe(0);
+        expect(view[LIFECYCLE_IDX]).toBe(3);
+        expect(Array.from(view.subarray(SCOPE_BASE, SCOPE_BASE + SCOPE_SAMPLES))).toEqual(
+            Array.from({ length: SCOPE_SAMPLES }, () => 0)
+        );
+    });
+
+    it('publishes one sleep transition instead of rewriting zero telemetry every period', async () => {
+        const { proc, seqView } = await bootWithSlot();
+        lifecycleState = 3;
+
+        renderBlocks(proc, 32);
+
+        expect(advanceSilence).toHaveBeenCalledTimes(32);
+        expect(Atomics.load(seqView, SEQ_IDX)).toBe(2);
     });
 
     it('brackets each publish with an even→odd→even seqlock generation', async () => {
@@ -208,7 +245,7 @@ describe('FermenterProcessor telemetry publish (audit RT-3)', () => {
 
     it('renders audio and stays unfaulted when no telemetry slot was supplied', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         seedOutputs(
             (index) => index / FRAMES,
             (index) => index / FRAMES

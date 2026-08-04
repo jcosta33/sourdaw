@@ -18,9 +18,9 @@ pub mod tolerance;
 pub mod transient;
 pub mod voice;
 
+use crate::primitives::sanitize_block;
 use engine::ToasterEngine;
 use wasm_bindgen::prelude::*;
-use crate::primitives::sanitize_block;
 
 const MAX_BLOCK_SIZE: usize = 4096;
 
@@ -82,6 +82,17 @@ impl ToasterInstance {
         self.engine.reset_pad_dry_routing();
     }
 
+    /// Advance control-rate state while the processor is intentionally asleep.
+    pub fn advance_silence(&mut self, block_size: u32) {
+        self.engine
+            .advance_silence((block_size as usize).min(MAX_BLOCK_SIZE));
+    }
+
+    /// Stable processor lifecycle code shared with the AudioWorklet host.
+    pub fn lifecycle_state(&self) -> u32 {
+        self.engine.lifecycle().code()
+    }
+
     /// Process a block of audio. Returns pointer to left channel buffer.
     /// Caller reads left + right from WASM memory.
     pub fn process(&mut self, block_size: u32) -> *const f32 {
@@ -98,7 +109,9 @@ impl ToasterInstance {
 
         let mut scrubbed = sanitize_block(&mut left_buf[..size]);
         scrubbed += sanitize_block(&mut right_buf[..size]);
-        scrubbed += sanitize_block(&mut pad_outputs[..pad_output_len]);
+        for channel in pad_outputs[..pad_output_len].chunks_exact_mut(MAX_BLOCK_SIZE) {
+            scrubbed += sanitize_block(&mut channel[..size]);
+        }
         self.nan_flush_count += scrubbed as u64;
 
         self.output_buf.as_ptr()
@@ -121,8 +134,10 @@ impl ToasterInstance {
 mod tests {
     use assert_no_alloc::assert_no_alloc;
 
+    use crate::primitives::ProcessLifecycle;
+
     use super::engine::{PlateReverb, StereoDelay};
-    use super::ToasterInstance;
+    use super::{ToasterInstance, MAX_BLOCK_SIZE};
 
     #[test]
     fn numeric_mix_setter_does_not_allocate() {
@@ -132,6 +147,96 @@ mod tests {
                 instance.set_param_by_id(param_id, 0.5);
             }
             instance.set_param_by_id(u32::MAX, 0.5);
+        });
+    }
+
+    #[test]
+    fn inactive_pad_capacity_is_not_scanned_as_rendered_output() {
+        let mut instance = ToasterInstance::new(48_000.0, 16);
+        let first_pad_output = 2 * MAX_BLOCK_SIZE;
+        instance.output_buf[first_pad_output + 1] = f32::NAN;
+
+        instance.process(1);
+
+        assert_eq!(instance.get_nan_flush_count(), 0.0);
+    }
+
+    #[test]
+    fn cold_instance_sleeps_and_note_on_wakes_it() {
+        let mut instance = ToasterInstance::new(48_000.0, 16);
+
+        assert_eq!(instance.lifecycle_state(), ProcessLifecycle::Sleep.code());
+
+        instance.note_on(0, 100.0, 60);
+
+        assert_eq!(
+            instance.lifecycle_state(),
+            ProcessLifecycle::Continue.code()
+        );
+    }
+
+    #[test]
+    fn effect_tail_finishes_before_the_instance_sleeps() {
+        let mut instance = ToasterInstance::new(48_000.0, 16);
+        instance.set_pad_param(0, "send_reverb", 1.0);
+        instance.set_param("reverb_mix", 1.0);
+        instance.note_on(0, 127.0, 60);
+
+        let mut saw_effect_tail = false;
+        let mut reached_sleep = false;
+        for _ in 0..8_000 {
+            instance.process(128);
+            let lifecycle = instance.lifecycle_state();
+            if lifecycle == ProcessLifecycle::ContinueIfNotQuiet.code() {
+                saw_effect_tail = true;
+            }
+            if lifecycle == ProcessLifecycle::Sleep.code() {
+                reached_sleep = true;
+                break;
+            }
+        }
+
+        assert!(saw_effect_tail, "the reverb tail must outlive its drum voice");
+        assert!(reached_sleep, "the finite reverb tail must eventually settle");
+    }
+
+    #[test]
+    fn muted_delay_tail_remains_managed_until_it_settles() {
+        let mut instance = ToasterInstance::new(48_000.0, 16);
+        instance.set_pad_param(0, "send_delay", 1.0);
+        instance.set_param("delay_mix", 0.0);
+        instance.note_on(0, 127.0, 60);
+
+        let mut saw_hidden_tail = false;
+        let mut reached_sleep = false;
+        for _ in 0..8_000 {
+            instance.process(128);
+            let lifecycle = instance.lifecycle_state();
+            if lifecycle == ProcessLifecycle::ContinueIfNotQuiet.code() {
+                saw_hidden_tail = true;
+            }
+            if lifecycle == ProcessLifecycle::Sleep.code() {
+                reached_sleep = true;
+                break;
+            }
+        }
+
+        assert!(
+            saw_hidden_tail,
+            "delay state must remain managed even while its wet output is muted"
+        );
+        assert!(reached_sleep, "the finite muted delay tail must eventually settle");
+    }
+
+    #[test]
+    fn lifecycle_queries_and_silent_advance_do_not_allocate() {
+        let mut instance = ToasterInstance::new(48_000.0, 16);
+
+        assert_no_alloc(|| {
+            for _ in 0..128 {
+                let _ = instance.lifecycle_state();
+                instance.advance_silence(128);
+            }
         });
     }
 

@@ -9,13 +9,14 @@
  * Writes metering data (LUFS, GR, correlation, tap levels) into a shared telemetry slot.
  */
 
+import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
 import { initSync, ProofInstance } from '../wasm/daw_dsp.js';
 
 import { beginTelemetryPublish, endTelemetryPublish } from './telemetrySeqlock';
 import { WasmView } from './wasmView';
 
 type ProofMsg =
-    | { type: 'init'; wasmBytes: BufferSource }
+    | { type: 'init' }
     | { type: 'init-sab'; sab: SharedArrayBuffer; byteOffset: number }
     | { type: 'param'; name: string; value: number }
     | { type: 'reorder'; order: [number, number, number, number, number] }
@@ -37,8 +38,9 @@ class ProofProcessor extends AudioWorkletProcessor {
     _outLeftView = new WasmView();
     _outRightView = new WasmView();
 
-    constructor() {
+    constructor(...args: unknown[]) {
         super();
+        let wasmModule = resolveProcessorWasmModule(args[0]);
         this.port.onmessage = (event: MessageEvent<ProofMsg>) => {
             const msg = event.data;
             try {
@@ -46,7 +48,11 @@ class ProofProcessor extends AudioWorkletProcessor {
                     if (this._ready) {
                         return;
                     }
-                    this._initWasm(msg.wasmBytes);
+                    if (!wasmModule) {
+                        throw new TypeError('ProofProcessor requires a compiled WASM module');
+                    }
+                    this._initWasm(wasmModule);
+                    wasmModule = null;
                 } else if (msg.type === 'init-sab') {
                     this._sabView = new Float32Array(msg.sab, msg.byteOffset, 32);
                     // Int32 view over the same slot bytes for the seqlock counter.
@@ -70,8 +76,8 @@ class ProofProcessor extends AudioWorkletProcessor {
         };
     }
 
-    _initWasm(wasmBytes: BufferSource): void {
-        const wasmExports = initSync({ module: new WebAssembly.Module(wasmBytes) });
+    _initWasm(wasmModule: WebAssembly.Module): void {
+        const wasmExports = initSync({ module: wasmModule });
         this._memory = wasmExports.memory;
         this._instance = new ProofInstance(sampleRate);
         this._ready = true;

@@ -11,7 +11,7 @@ vi.mock('../autoLoadSamples', () => ({
     autoLoadLevainSamples: mocks.autoLoadLevainSamples,
 }));
 
-type PostedMessage = { type: string; instrumentId?: string };
+type PostedMessage = { type: string; instrumentId?: string; name?: string; value?: number };
 
 function fakePort(): { port: MessagePort; posted: PostedMessage[] } {
     const posted: PostedMessage[] = [];
@@ -33,12 +33,15 @@ describe('prepareOfflineLevain', () => {
     it('loads the instrument selected by the device patch without mutating the engine first', async () => {
         const { port, posted } = fakePort();
         levainStore.set({
-            'device-a': { ...defaultLevainState, patch: { ...defaultLevainState.patch, instrumentId: 'cello' } },
+            'device-a': {
+                ...defaultLevainState,
+                patch: { ...defaultLevainState.patch, instrumentId: 'cello', currentArticulation: 'tremolo' },
+            },
         });
 
         await prepareOfflineLevain({ deviceId: 'device-a', port });
 
-        expect(posted).toEqual([]);
+        expect(posted).toEqual([{ type: 'param', name: 'current_articulation', value: 13 }]);
         expect(mocks.autoLoadLevainSamples).toHaveBeenCalledWith('device-a', port, 'cello', undefined);
     });
 
@@ -52,7 +55,7 @@ describe('prepareOfflineLevain', () => {
 
         await prepareOfflineLevain({ deviceId: 'device-a', port });
 
-        expect(postedWhenLoadStarted).toEqual([]);
+        expect(postedWhenLoadStarted).toEqual([{ type: 'param', name: 'current_articulation', value: 0 }]);
     });
 
     it('loads the selected instrument into that device port, forwarding the abort signal', async () => {
@@ -72,7 +75,7 @@ describe('prepareOfflineLevain', () => {
 
         await prepareOfflineLevain({ deviceId: 'never-opened', port });
 
-        expect(posted).toEqual([]);
+        expect(posted).toEqual([{ type: 'param', name: 'current_articulation', value: 0 }]);
         expect(mocks.autoLoadLevainSamples).toHaveBeenCalledWith(
             'never-opened',
             port,
@@ -85,7 +88,8 @@ describe('prepareOfflineLevain', () => {
         // The reason this matters: an offline context renders faster than real
         // time, so a load that is merely started never lands. Starting it is not
         // enough — the caller must be able to wait for it.
-        let releaseLoad = (): void => {};
+        function ignoreRelease(): void {}
+        let releaseLoad = ignoreRelease;
         mocks.autoLoadLevainSamples.mockImplementation(
             () =>
                 new Promise<void>((resolve) => {
@@ -96,6 +100,7 @@ describe('prepareOfflineLevain', () => {
         let settled = false;
         const pending = prepareOfflineLevain({ deviceId: 'device-a', port: fakePort().port }).then(() => {
             settled = true;
+            return undefined;
         });
 
         await Promise.resolve();

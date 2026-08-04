@@ -1,4 +1,4 @@
-import { type ReactElement, type MouseEvent, type WheelEvent, type KeyboardEvent, useState, useRef } from 'react';
+import { type ReactElement, type MouseEvent, type KeyboardEvent, useState, useRef, useEffect } from 'react';
 
 import { useStore } from '#/infra/store/useStore';
 import { interpolateAutomationValue } from '#/modules/Arrangement/useCases';
@@ -55,6 +55,7 @@ export const AutomationLaneRow = ({
     containerWidth,
 }: AutomationLaneRowProps): ReactElement => {
     const svgRef = useRef<SVGSVGElement>(null);
+    const rowRef = useRef<HTMLDivElement>(null);
     const [dragPointBeat, setDragPointBeat] = useState<number | null>(null);
     const [hoveredBeat, setHoveredBeat] = useState<number | null>(null);
     const [selectedPoints, setSelectedPoints] = useState<number[]>([]);
@@ -239,14 +240,28 @@ export const AutomationLaneRow = ({
     };
 
     // ── Y-axis zoom ───────────────────────────────────────────────────────────
-    const handleWheel = (event: WheelEvent<HTMLDivElement>) => {
-        if (!event.altKey) {
-            return;
+    // Attached imperatively and non-passively: React registers `wheel` at its
+    // root container with `{ passive: true }`, so a `preventDefault()` inside a
+    // JSX `onWheel` prop cannot stop the browser also acting on the gesture.
+    // Only the alt branch cancels; a plain wheel still scrolls the lane.
+    useEffect(() => {
+        const row = rowRef.current;
+        if (!row) {
+            return undefined;
         }
-        event.preventDefault();
-        event.stopPropagation();
-        adjustYZoom(lane.id, event.deltaY > 0 ? -1 : 1);
-    };
+        const onWheel = (event: globalThis.WheelEvent): void => {
+            if (!event.altKey) {
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            adjustYZoom(lane.id, event.deltaY > 0 ? -1 : 1);
+        };
+        row.addEventListener('wheel', onWheel, { passive: false });
+        return () => {
+            row.removeEventListener('wheel', onWheel);
+        };
+    }, [lane.id]);
 
     const showZeroLine = vMin < 0 && vMax > 0;
 
@@ -273,7 +288,7 @@ export const AutomationLaneRow = ({
             // eslint-disable-next-line jsx-a11y-x/no-noninteractive-tabindex -- handles keyboard events (arrow key point editing); tabIndex needed for focus
             tabIndex={0}
             onKeyDown={handleKeyDown}
-            onWheel={handleWheel}
+            ref={rowRef}
         >
             <AutomationLaneHeader
                 parameterName={lane.parameterName}

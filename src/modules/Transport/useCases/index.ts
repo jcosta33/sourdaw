@@ -2,6 +2,7 @@
 // Re-exports only from files within this folder. See docs/architecture/03-typescript-module.md §3.3.
 
 export { ensureTrackStrips } from './ensureTrackStrips';
+export { getSchedulerTimingDiagnostics } from './getSchedulerTimingDiagnostics';
 export { setStopPlaybackCallback } from './playheadScheduler/setStopPlaybackCallback';
 
 export { disableLooping } from './setLooping';

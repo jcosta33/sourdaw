@@ -1,7 +1,7 @@
 import { clampFaderGain, dbToGain } from '#/utils/audioLevelLaw';
 import { getDeviceAutomationParameterId, resolveDeviceAutomationTargetIndex } from '#/utils/automationDeviceTarget';
 import { resolveLinkedLane } from '#/utils/automationLaneLink';
-import { AUTOMATION_SLEW_ALPHA, AUTOMATION_SLEW_TICK_SECONDS } from '#/utils/automationSlew';
+import { AUTOMATION_SLEW_ALPHA } from '#/utils/automationSlew';
 
 import { type AutomationLane } from '../../models/AutomationViewTypes';
 import { beatToSeconds } from '../../services/beatConversion';
@@ -21,41 +21,87 @@ type ScheduleTrackAutomationDeviceEntry = {
     strategy: Pick<AudioDeviceStrategy, 'resolveOfflineAutomation'>;
 };
 
-function acceptsOfflineAutomationParameter(
-    candidate: ScheduleTrackAutomationDeviceEntry,
-    parameterId: string
-): boolean {
-    return candidate.strategy.resolveOfflineAutomation(parameterId) !== null;
-}
+/**
+ * The two parts of the device-parameter contract the live apply path enforces,
+ * handed in by the calling render use case.
+ *
+ * Both live in `Arrangement`'s `DeviceParameterLaw`, which this repository may
+ * not import (a repository must not reach into another module's business
+ * contracts). Passing them in is what stops the offline path re-deciding the
+ * question — the divergence being closed here is precisely that it used to have
+ * no answer at all, so a lane the monitor refused to run still rendered into the
+ * bounce, and a lane that overshot its declared range rendered past the value
+ * the monitor clamped it to.
+ */
+export type OfflineDeviceAutomationLaw = {
+    /**
+     * `applyAutomation`'s `deviceAcceptsAutomationParameter`: the device carries
+     * this key in `parameterValues` **and** the descriptor declares it
+     * automatable. Resolution has to run on the same predicate live runs on, or
+     * a legacy bare lane can resolve to a different device offline.
+     */
+    acceptsAutomation: (input: { deviceId: string; deviceType: string; parameterId: string }) => boolean;
+    /** `clampDeviceParameterValue`: the declared range, applied to every write. */
+    clampValue: (input: { deviceType: string; paramId: string; value: number }) => number;
+};
 
-export function scheduleTrackAutomation(
-    lanes: AutomationLane[],
-    trackId: string,
-    trackGainNode: GainNode,
-    trackPanNode: StereoPannerNode,
-    deviceEntries: ScheduleTrackAutomationDeviceEntry[],
-    durationSeconds: number,
-    defaultTempo: number,
-    changes: AutomationTempoChange[],
-    regionStartSeconds = 0,
-    projectBeatToSeconds?: (beat: number) => number,
-    sampleRate = 44_100,
-    compensationDelaySec = 0,
-    clipBoundsById?: Map<string, { startBeat: number; endBeat: number }>,
+export type ScheduleTrackAutomationInput = {
+    lanes: AutomationLane[];
+    trackId: string;
+    trackGainNode: GainNode;
+    trackPanNode: StereoPannerNode;
+    deviceEntries: ScheduleTrackAutomationDeviceEntry[];
+    durationSeconds: number;
+    defaultTempo: number;
+    changes: AutomationTempoChange[];
+    /**
+     * Seconds between live slew ticks — `scheduleGrainMs / 1000`, read off the
+     * same transport state `startPlayheadScheduler` reads. Required, and with no
+     * default on purpose: a default is a second source of truth that agrees with
+     * the monitor only at the shipping grain.
+     */
+    slewTickSeconds: number;
+    deviceParameterLaw: OfflineDeviceAutomationLaw;
+    regionStartSeconds?: number;
+    projectBeatToSeconds?: (beat: number) => number;
+    sampleRate?: number;
+    compensationDelaySec?: number;
+    clipBoundsById?: Map<string, { startBeat: number; endBeat: number }>;
     /**
      * The track's VCA group master as a plain multiplier (`1` outside a group).
      * Resolved by the calling render use case and passed in, because this
      * repository must not reach into Arrangement's VCA read model itself.
      */
-    vcaMultiplier = 1
-): void {
+    vcaMultiplier?: number;
+};
+
+export function scheduleTrackAutomation({
+    lanes,
+    trackId,
+    trackGainNode,
+    trackPanNode,
+    deviceEntries,
+    durationSeconds,
+    defaultTempo,
+    changes,
+    slewTickSeconds,
+    deviceParameterLaw,
+    regionStartSeconds = 0,
+    projectBeatToSeconds,
+    sampleRate = 44_100,
+    compensationDelaySec = 0,
+    clipBoundsById,
+    vcaMultiplier = 1,
+}: ScheduleTrackAutomationInput): void {
     const projectBeat = projectBeatToSeconds ?? ((beat) => beatToSeconds(beat, defaultTempo, changes));
     const laneById = new Map<string, AutomationLane>();
     for (const lane of lanes) {
         laneById.set(lane.id, lane);
     }
     // AU-2: device/MIDI-FX params carry the live control slew; gain/pan do not.
-    const deviceSlew = { alpha: AUTOMATION_SLEW_ALPHA, tickSeconds: AUTOMATION_SLEW_TICK_SECONDS };
+    // The tick grid is the live scheduler grain, not a constant — see
+    // `automationSlewTickSecondsForGrain`.
+    const deviceSlewGrid = { alpha: AUTOMATION_SLEW_ALPHA, tickSeconds: slewTickSeconds };
 
     // AU-12: track-level lanes (no clipId) AND clip-scoped lanes both render; a
     // clip lane emits only within its clip span (activeWindowSeconds below).
@@ -151,10 +197,17 @@ export function scheduleTrackAutomation(
             continue;
         }
 
-        const deviceIndex = resolveDeviceAutomationTargetIndex(
-            lane.parameterId,
-            deviceEntries,
-            acceptsOfflineAutomationParameter
+        // Resolve the target on the *live* predicate, then ask whether that
+        // device can be automated offline. Two steps, not one conjunction: a
+        // conjunction can hand a legacy bare lane to a different device than the
+        // monitor picked, because ambiguity is resolved over whichever devices
+        // the predicate admitted.
+        const deviceIndex = resolveDeviceAutomationTargetIndex(lane.parameterId, deviceEntries, (candidate, id) =>
+            deviceParameterLaw.acceptsAutomation({
+                deviceId: candidate.deviceId,
+                deviceType: candidate.deviceType,
+                parameterId: id,
+            })
         );
         const parameterId = getDeviceAutomationParameterId(lane.parameterId);
         if (deviceIndex >= 0 && parameterId) {
@@ -163,6 +216,8 @@ export function scheduleTrackAutomation(
             if (!binding) {
                 continue;
             }
+            const clampStep = (value: number): number =>
+                deviceParameterLaw.clampValue({ deviceType: candidate.deviceType, paramId: parameterId, value });
             if (binding.kind === 'segments') {
                 const segments = compileAutomationSegments(
                     points,
@@ -172,7 +227,7 @@ export function scheduleTrackAutomation(
                     sampleRate,
                     regionStartSeconds,
                     projectBeatToSeconds,
-                    { slew: deviceSlew, activeWindowSeconds, valueScale: laneScale }
+                    { slew: { ...deviceSlewGrid, clampStep }, activeWindowSeconds, valueScale: laneScale }
                 );
                 binding.apply(segments);
                 continue;
@@ -182,6 +237,17 @@ export function scheduleTrackAutomation(
                 // one affine post-transform: paramValue = interpolate(source) *
                 // (linkScale * scale) + offset — evaluated on the unscaled source
                 // curve (AU-3), never a pre-scale of point.value.
+                //
+                // The declared-range clamp is a law on the *device parameter*, but
+                // the value inside the slew here is already in AudioParam units.
+                // Map back through the binding's affine, clamp, map forward. The
+                // affine is monotone and invertible, and `slewStep` is affine-
+                // equivariant, so this is exactly the live device-space
+                // recurrence viewed in AudioParam units — not an approximation.
+                const clampScaledStep =
+                    scale === 0
+                        ? undefined
+                        : (scaled: number): number => clampStep((scaled - offset) / scale) * scale + offset;
                 scheduleAutomationOnParam(
                     audioParam,
                     points,
@@ -191,7 +257,12 @@ export function scheduleTrackAutomation(
                     regionStartSeconds,
                     projectBeatToSeconds,
                     compensationDelaySec,
-                    { slew: deviceSlew, activeWindowSeconds, valueScale: laneScale * scale, valueOffset: offset }
+                    {
+                        slew: { ...deviceSlewGrid, clampStep: clampScaledStep },
+                        activeWindowSeconds,
+                        valueScale: laneScale * scale,
+                        valueOffset: offset,
+                    }
                 );
             }
         }

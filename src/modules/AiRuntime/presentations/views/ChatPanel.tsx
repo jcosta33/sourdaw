@@ -130,14 +130,14 @@ const ChatMessageItem = ({
     onCancelPendingActions,
 }: ChatMessageItemProps): ReactElement => {
     let msgIcon = <User className="size-3" />;
-    if (msg.isDsoAction) {
+    if (msg.isCommandAction) {
         msgIcon = <Zap className="size-3 text-emerald-400" />;
     } else if (msg.role === 'assistant') {
         msgIcon = <Bot className="size-3 text-[var(--color-accent-lavender)]" />;
     }
 
     let msgRoleLabel = 'You';
-    if (msg.isDsoAction) {
+    if (msg.isCommandAction) {
         msgRoleLabel = 'Action';
     } else if (msg.role === 'assistant') {
         msgRoleLabel = 'Assistant';
@@ -146,7 +146,7 @@ const ChatMessageItem = ({
     let msgBubbleClassName = 'bg-surface-raised text-foreground border border-border/50 rounded-tl-sm w-full';
     if (msg.role === 'user') {
         msgBubbleClassName = 'bg-primary text-primary-foreground rounded-tr-sm';
-    } else if (msg.isDsoAction) {
+    } else if (msg.isCommandAction) {
         msgBubbleClassName = 'bg-emerald-500/10 text-foreground border border-emerald-500/20 rounded-tl-sm w-full';
     }
 

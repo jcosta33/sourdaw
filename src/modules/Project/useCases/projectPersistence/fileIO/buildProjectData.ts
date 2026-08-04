@@ -1,12 +1,15 @@
 import {
     adjustmentLayerStore,
+    gainEnvelopeStore,
     markerStore,
     takeLaneStore,
     trackStore,
+    vcaGroupStore,
     type TrackStoreState,
 } from '#/modules/Arrangement/stores';
 import { exportCachedAudioBuffers } from '#/modules/AudioEngine/useCases';
-import { automationStore } from '#/modules/Automation/stores';
+import { automationStore, modulationStore } from '#/modules/Automation/stores';
+import { cvGateStore } from '#/modules/CvGate/stores';
 import {
     chordTrackStore,
     defaultChordTrackState,
@@ -64,10 +67,19 @@ export type BuiltProjectData = {
 };
 
 type BuildProjectDataInput = {
-    /** Embed base64 PCM for every referenced buffer (default). Interchange
-     * exporters that package audio themselves pass `false` to skip the
-     * redundant encode; the snapshot shape is unchanged (`audioBuffers`
-     * simply stays unset). */
+    /**
+     * Embed base64 PCM for every referenced buffer. **Opt-in**, because it is
+     * ruinous by default: measured at 420 ms per minute of stereo on the main
+     * thread, and `JSON.stringify` throws outright past roughly 17.5 minutes of
+     * it (V8's 536,870,888-character ceiling, which is the string type rather
+     * than any quota).
+     *
+     * Only the explicit user-initiated `.sourdaw` export passes `true`. Every
+     * live path leaves it off and relies on the raw `Float32Array` copy the
+     * audio cache already holds in IndexedDB — the base64 layer existed solely
+     * to survive JSON. The snapshot shape is unchanged either way;
+     * `audioBuffers` simply stays unset.
+     */
     includeAudioBuffers?: boolean;
 };
 
@@ -82,7 +94,7 @@ type BuildProjectDataInput = {
  * project), so callers can no-op rather than write a malformed blob.
  */
 export async function buildProjectData({
-    includeAudioBuffers = true,
+    includeAudioBuffers = false,
 }: BuildProjectDataInput = {}): Promise<BuiltProjectData | null> {
     syncCurrentArrangementToStore();
 
@@ -122,6 +134,12 @@ export async function buildProjectData({
         };
     }
 
+    let cvGateState: ProjectData['cvGate'];
+    const liveCvGate = cvGateStore.value;
+    if (liveCvGate) {
+        cvGateState = structuredClone(liveCvGate);
+    }
+
     const data: ProjectData = {
         version: CURRENT_PROJECT_VERSION,
         meta: {
@@ -158,10 +176,25 @@ export async function buildProjectData({
             tracks: serializeArrangementTracks(tracks.tracks, midi.notesByClipId),
         },
         automation,
+        // Dead field, kept only because `ProjectData.mixer` still requires it.
+        // Nothing reads it back — see the field's own note in `ProjectData` for
+        // what blocks the deletion. The real master gain is `transport.masterGain`
+        // above, and buses are `kind: 'bus'` rows in `arrangement.tracks`.
         mixer: {
             master: { gain: 0.8, pan: 0 },
             buses: [],
         },
+        // A VCA master is a gain the mixer applies but no track carries: tracks
+        // persist only their `vcaGroupId`, so without the group rows themselves
+        // every member comes back at `deriveVcaMultiplier`'s unity fallback and
+        // the submix reopens louder than it was saved — in playback and in the
+        // bounce alike.
+        vcaGroups: structuredClone(vcaGroupStore.value?.groups ?? []),
+        gainEnvelopes: Object.values(gainEnvelopeStore.value?.envelopes ?? {}).map((envelope) =>
+            structuredClone(envelope)
+        ),
+        modulation: { modulators: structuredClone(modulationStore.value?.modulators ?? []) },
+        cvGate: cvGateState,
         midi: serializeProjectMidi(midi),
         chordTrack: structuredClone(chordTrackStore.value ?? defaultChordTrackState),
         grooves: serializeProjectGrooves(grooveTemplateStore.value ?? defaultGrooveTemplateState),

@@ -4,9 +4,14 @@ import {
 } from '#/modules/Command/useCases';
 
 import { type ProjectContext } from '../../models/ProjectContext';
-import { bridgeLlmToolCalls, type LlmActionRejection } from '../../transformers/llmActionBridge';
+import {
+    bridgeLlmToolCalls,
+    type LlmActionBridgeResult,
+    type LlmActionRejection,
+} from '../../transformers/llmActionBridge';
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../../transformers/llmActionLimits';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
+import { normalizeSafeProjectName } from '../../validators/normalizeSafeProjectName';
 
 import { resolveAgentReference } from './resolveAgentReference';
 
@@ -18,13 +23,18 @@ type BridgeGroundedLlmToolCallsInput = {
 
 type GroundToolCallInput = {
     actionOrdinal: number;
+    batchLocalBusBindings: ReadonlyMap<string, BatchLocalBusBinding>;
     call: ToolCallResult;
     catalog: GroundingCatalog;
     context: ProjectContext;
+    declaredBatchLocalBusBindings: ReadonlyMap<string, BatchLocalBusBinding>;
     index: number;
     prompt: string;
     plannedActionNames: readonly string[];
+    sameActionAssertedArguments: readonly Readonly<Record<string, unknown>>[];
     sameActionCallCount: number;
+    visibleGroundedCalls: readonly ToolCallResult[];
+    visiblePlannedTrackCreations: readonly ToolCallResult[];
 };
 
 type PromptClause = {
@@ -35,22 +45,345 @@ type PromptClause = {
 type GroundingCatalog = ReturnType<typeof getExecutableAppActionGroundingCatalog>;
 type GroundingRules = NonNullable<ReturnType<typeof getExecutableAppActionGroundingRules>>;
 
+export type BatchLocalActionIdentity = {
+    actionOrdinal: number;
+    actionType: 'createBus';
+    busId: string;
+};
+
+type BridgeGroundedLlmToolCallsResult = LlmActionBridgeResult & {
+    batchLocalActionIdentities?: BatchLocalActionIdentity[];
+};
+
+type BatchLocalBusBinding = BatchLocalActionIdentity & {
+    binding: string;
+    callIndex: number;
+    name: string;
+};
+
+type PlannedTrackName = {
+    callIndex: number;
+    isBoundBus: boolean;
+    name: string;
+};
+
+type CollectBatchLocalBusBindingsResult =
+    | {
+          status: 'accepted';
+          bindingsByCallIndex: ReadonlyMap<number, BatchLocalBusBinding>;
+          bindingsByName: ReadonlyMap<string, BatchLocalBusBinding>;
+      }
+    | { status: 'rejected'; rejection: LlmActionRejection };
+
+type ResolveBatchLocalBusReferenceResult =
+    { status: 'none' } | { status: 'resolved'; binding: BatchLocalBusBinding } | { status: 'rejected'; reason: string };
+
 type ActionPromptScope = PromptClause & {
+    directional: boolean;
     matchedIntentPhrase: string;
 };
 
 type ResolveActionPromptScopeInput = {
     actionName: string;
     actionOrdinal: number;
+    assertedArguments: Readonly<Record<string, unknown>>;
     catalog: GroundingCatalog;
     context: ProjectContext;
     prompt: string;
     plannedActionNames: readonly string[];
+    sameActionAssertedArguments: readonly Readonly<Record<string, unknown>>[];
     sameActionCallCount: number;
+};
+
+type DirectionalTargetReferences = {
+    direct: readonly string[];
+    owners: readonly string[];
 };
 
 function rejection(index: number, name: string, reason: string): LlmActionRejection {
     return { index, name, reason };
+}
+
+const BATCH_LOCAL_BINDING_PATTERN = /^[a-z][a-z0-9-]{0,63}$/u;
+const batchLocalBusCapabilities: ReadonlySet<string> = new Set([
+    'track',
+    'armable-track',
+    'duplicable-track',
+    'removable-track',
+    'routable-source',
+    'bus',
+    'output',
+    'device-host-track',
+]);
+
+function namesOverlap(left: string, right: string): boolean {
+    const normalizedLeft = normalizePromptText(left);
+    const normalizedRight = normalizePromptText(right);
+    return (
+        ` ${normalizedLeft} `.includes(` ${normalizedRight} `) || ` ${normalizedRight} `.includes(` ${normalizedLeft} `)
+    );
+}
+
+function collectPlannedTrackNames(calls: readonly ToolCallResult[]): PlannedTrackName[] {
+    const plannedTrackNames: PlannedTrackName[] = [];
+    for (const [callIndex, call] of calls.entries()) {
+        if (call.name !== 'createBus' && call.name !== 'addTrack') {
+            continue;
+        }
+        const name = normalizeSafeProjectName(call.arguments.name);
+        if (!name) {
+            continue;
+        }
+        plannedTrackNames.push({
+            callIndex,
+            isBoundBus: call.name === 'createBus' && call.arguments.binding !== undefined,
+            name,
+        });
+    }
+    return plannedTrackNames;
+}
+
+function collectBatchLocalBusBindings(
+    calls: readonly ToolCallResult[],
+    context: ProjectContext
+): CollectBatchLocalBusBindingsResult {
+    const bindingsByCallIndex = new Map<number, BatchLocalBusBinding>();
+    const bindingsByName = new Map<string, BatchLocalBusBinding>();
+    const plannedTrackNames = collectPlannedTrackNames(calls);
+    const reservedBusNames = new Set(context.tracks.map((track) => normalizePromptText(track.name)));
+    let createBusOrdinal = 0;
+
+    for (const [callIndex, call] of calls.entries()) {
+        if (call.name !== 'createBus') {
+            continue;
+        }
+        const actionOrdinal = createBusOrdinal;
+        createBusOrdinal += 1;
+        if (call.arguments.binding === undefined) {
+            continue;
+        }
+        if (typeof call.arguments.binding !== 'string' || !BATCH_LOCAL_BINDING_PATTERN.test(call.arguments.binding)) {
+            return {
+                status: 'rejected',
+                rejection: rejection(
+                    callIndex,
+                    call.name,
+                    'Batch-local bus binding must start with a lowercase letter and contain at most 64 lowercase letters, digits, or hyphens'
+                ),
+            };
+        }
+        if (bindingsByName.has(call.arguments.binding)) {
+            return {
+                status: 'rejected',
+                rejection: rejection(
+                    callIndex,
+                    call.name,
+                    `Duplicate batch-local bus binding: ${call.arguments.binding}`
+                ),
+            };
+        }
+        const name = normalizeSafeProjectName(call.arguments.name);
+        if (!name) {
+            return {
+                status: 'rejected',
+                rejection: rejection(callIndex, call.name, 'A bound bus requires one safe bus name'),
+            };
+        }
+        const normalizedName = normalizePromptText(name);
+        const collidingUnboundTrack = plannedTrackNames.find(
+            (plannedTrack) =>
+                plannedTrack.callIndex !== callIndex &&
+                !plannedTrack.isBoundBus &&
+                namesOverlap(name, plannedTrack.name)
+        );
+        if (collidingUnboundTrack) {
+            return {
+                status: 'rejected',
+                rejection: rejection(
+                    callIndex,
+                    call.name,
+                    `Bound bus name collides with an unbound planned track: ${collidingUnboundTrack.name}`
+                ),
+            };
+        }
+        if (reservedBusNames.has(normalizedName)) {
+            return {
+                status: 'rejected',
+                rejection: rejection(
+                    callIndex,
+                    call.name,
+                    `Bound bus name collides with an existing or earlier planned track: ${name}`
+                ),
+            };
+        }
+        reservedBusNames.add(normalizedName);
+        const binding: BatchLocalBusBinding = {
+            actionOrdinal,
+            actionType: 'createBus',
+            binding: call.arguments.binding,
+            busId: `bus-ai-${crypto.randomUUID()}`,
+            callIndex,
+            name,
+        };
+        bindingsByCallIndex.set(callIndex, binding);
+        bindingsByName.set(binding.binding, binding);
+    }
+
+    return { status: 'accepted', bindingsByCallIndex, bindingsByName };
+}
+
+function resolveBatchLocalBusReference(
+    assertedValue: unknown,
+    callIndex: number,
+    visibleBindings: ReadonlyMap<string, BatchLocalBusBinding>,
+    declaredBindings: ReadonlyMap<string, BatchLocalBusBinding>
+): ResolveBatchLocalBusReferenceResult {
+    if (typeof assertedValue !== 'string' || !assertedValue.startsWith('$')) {
+        return { status: 'none' };
+    }
+    const bindingName = assertedValue.slice(1);
+    if (!BATCH_LOCAL_BINDING_PATTERN.test(bindingName)) {
+        return { status: 'rejected', reason: `Malformed batch-local bus reference: ${assertedValue}` };
+    }
+    const visible = visibleBindings.get(bindingName);
+    if (visible) {
+        return { status: 'resolved', binding: visible };
+    }
+    const declared = declaredBindings.get(bindingName);
+    if (declared && declared.callIndex > callIndex) {
+        return { status: 'rejected', reason: `Forward batch-local bus reference is not allowed: ${assertedValue}` };
+    }
+    return { status: 'rejected', reason: `Unknown batch-local bus reference: ${assertedValue}` };
+}
+
+function containsBatchLocalBusEvidence(
+    targetPrompt: string,
+    binding: BatchLocalBusBinding,
+    capability: GroundingRules['targetRules'][number]['capability'],
+    context: ProjectContext,
+    visibleBindings: ReadonlyMap<string, BatchLocalBusBinding>,
+    visibleGroundedCalls: readonly ToolCallResult[],
+    visiblePlannedTrackCreations: readonly ToolCallResult[]
+): boolean {
+    const normalizedPrompt = normalizePromptText(targetPrompt);
+    const normalizedName = normalizePromptText(binding.name);
+    const hasBusAnaphora = /\b(?:that bus|this bus|the new bus|new bus|newly created bus|created bus)\b/u.test(
+        normalizedPrompt
+    );
+    const hasAnaphora = hasBusAnaphora || /\bit\b/u.test(normalizedPrompt);
+    const hasQualifiedName = [
+        ` to ${normalizedName} `,
+        ` into ${normalizedName} `,
+        ` on ${normalizedName} `,
+        ` onto ${normalizedName} `,
+        ` through ${normalizedName} `,
+        ` in ${normalizedName} `,
+        ` ${normalizedName} bus `,
+        ` ${normalizedName} track `,
+    ].some((phrase) => ` ${normalizedPrompt} `.includes(phrase));
+    if (!hasAnaphora || hasQualifiedName) {
+        const explicitReference = resolveAgentReference({
+            prompt: targetPrompt,
+            assertedId: binding.busId,
+            capability,
+            context,
+        });
+        if (explicitReference.status === 'resolved') {
+            return true;
+        }
+        if (explicitReference.reason !== 'ungrounded-target') {
+            return false;
+        }
+    }
+    if (!hasAnaphora) {
+        return false;
+    }
+    const anaphoraCapability = hasBusAnaphora ? 'output' : capability;
+    const candidateIds = new Set([...visibleBindings.values()].map((visibleBinding) => visibleBinding.busId));
+    for (const groundedCall of visibleGroundedCalls) {
+        const rules = getExecutableAppActionGroundingRules(groundedCall.name);
+        if (!rules) {
+            continue;
+        }
+        for (const targetRule of rules.targetRules) {
+            const assertedId = groundedCall.arguments[targetRule.argument];
+            if (typeof assertedId !== 'string' || !isCompatibleTargetId(assertedId, anaphoraCapability, context)) {
+                continue;
+            }
+            candidateIds.add(assertedId);
+        }
+    }
+    const compatibleCreationCount = countCompatiblePlannedTrackCreations(
+        visiblePlannedTrackCreations,
+        anaphoraCapability
+    );
+    const unknownCreationCount = compatibleCreationCount - visibleBindings.size;
+    return unknownCreationCount === 0 && candidateIds.size === 1 && candidateIds.has(binding.busId);
+}
+
+function isCompatibleTargetId(
+    id: string,
+    capability: GroundingRules['targetRules'][number]['capability'],
+    context: ProjectContext
+): boolean {
+    const prompt = capability === 'output' && id === 'master' ? 'to master output' : id;
+    return resolveAgentReference({ prompt, assertedId: id, capability, context }).status === 'resolved';
+}
+
+function countCompatiblePlannedTrackCreations(
+    calls: readonly ToolCallResult[],
+    capability: GroundingRules['targetRules'][number]['capability']
+): number {
+    return calls.filter((call) => {
+        if (call.name === 'createBus') {
+            return batchLocalBusCapabilities.has(capability);
+        }
+        if (call.name !== 'addTrack' || typeof call.arguments.kind !== 'string') {
+            return false;
+        }
+        if (capability === 'track' || capability === 'armable-track' || capability === 'removable-track') {
+            return true;
+        }
+        if (capability === 'duplicable-track' || capability === 'device-host-track') {
+            return call.arguments.kind !== 'vca';
+        }
+        if (capability === 'routable-source') {
+            return call.arguments.kind === 'audio' || call.arguments.kind === 'midi' || call.arguments.kind === 'bus';
+        }
+        if (capability === 'bus' || capability === 'output') {
+            return call.arguments.kind === 'bus';
+        }
+        return false;
+    }).length;
+}
+
+function createProjectedBus(context: ProjectContext, binding: BatchLocalBusBinding): ProjectContext['tracks'][number] {
+    return {
+        id: binding.busId,
+        name: binding.name,
+        kind: 'bus',
+        muted: false,
+        soloed: false,
+        armed: false,
+        gain: 1,
+        pan: 0,
+        automationMode: 'read',
+        outputId: context.tracks.find((track) => track.kind === 'master')?.id,
+        clipCount: 0,
+        deviceCount: 0,
+        clips: [],
+        devices: [],
+        sends: [],
+    };
+}
+
+function stripBatchLocalBinding(call: ToolCallResult): ToolCallResult {
+    if (call.name !== 'createBus' || call.arguments.binding === undefined) {
+        return call;
+    }
+    const args = { ...call.arguments };
+    delete args.binding;
+    return { ...call, arguments: args };
 }
 
 function normalizePromptText(value: string): string {
@@ -251,15 +584,13 @@ function isExplicitClipDeletionScope({ context, text, clipId }: ExplicitClipDele
 }
 
 function isExplicitCommandClause(maskedText: string, catalog: GroundingCatalog): boolean {
-    if (/["“”]/u.test(maskedText)) {
+    let commandSource = maskedText.trim();
+    commandSource = commandSource.replace(/^(?:please\s+)?(?:can|could|would)\s+you(?:\s+please)?\s+/iu, '');
+    commandSource = commandSource.replace(/^please\s+/iu, '');
+    if (/^["'“”‘’]/u.test(commandSource)) {
         return false;
     }
-    let commandText = normalizePromptText(maskedText);
-    if (/\b(?:if|unless|maybe|perhaps)\b/u.test(commandText)) {
-        return false;
-    }
-    commandText = commandText.replace(/^(?:please\s+)?(?:can|could|would)\s+you(?:\s+please)?\s+/u, '');
-    commandText = commandText.replace(/^please\s+/u, '');
+    const commandText = normalizePromptText(commandSource);
     if (commandText.startsWith('make ')) {
         return true;
     }
@@ -421,13 +752,302 @@ function getPromptClauses(prompt: string, maskedPrompt: string): PromptClause[] 
     return clauses;
 }
 
+function resolveDirectionalIntentPhrase(
+    maskedText: string,
+    directionalIntent: NonNullable<GroundingRules['directionalIntent']>
+): string | null {
+    const normalizedText = normalizePromptText(maskedText);
+    const paddedText = ` ${normalizedText} `;
+    const polarityPhrases = [...directionalIntent.truePhrases, ...directionalIntent.falsePhrases];
+
+    for (const carrierPhrase of directionalIntent.carrierPhrases) {
+        const normalizedCarrier = normalizePromptText(carrierPhrase);
+        const carrierNeedle = ` ${normalizedCarrier} `;
+        const carrierIndex = paddedText.indexOf(carrierNeedle);
+        if (carrierIndex < 0) {
+            continue;
+        }
+
+        const afterCarrier = paddedText.slice(carrierIndex + carrierNeedle.length).trim();
+        if (hasMaskedLocativeOwner(maskedText)) {
+            const trailingTruePolarity = directionalIntent.truePhrases.find((truePhrase) => {
+                const normalizedTruePhrase = normalizePromptText(truePhrase);
+                return afterCarrier === normalizedTruePhrase || afterCarrier.endsWith(` ${normalizedTruePhrase}`);
+            });
+            if (trailingTruePolarity) {
+                return `${normalizedCarrier} ${normalizePromptText(trailingTruePolarity)}`;
+            }
+        }
+        for (const polarityPhrase of polarityPhrases) {
+            const normalizedPolarity = normalizePromptText(polarityPhrase);
+            if (afterCarrier === normalizedPolarity || afterCarrier.startsWith(`${normalizedPolarity} `)) {
+                return `${normalizedCarrier} ${normalizedPolarity}`;
+            }
+        }
+        for (const polarityPhrase of polarityPhrases) {
+            const normalizedPolarity = normalizePromptText(polarityPhrase);
+            if (afterCarrier === normalizedPolarity || afterCarrier.endsWith(` ${normalizedPolarity}`)) {
+                if (normalizedPolarity === 'on' && hasMaskedLocativeOwner(maskedText)) {
+                    const earlierTruePolarity = directionalIntent.truePhrases.find(
+                        (truePhrase) => getIntentPhraseIndex(afterCarrier, truePhrase) >= 0
+                    );
+                    if (earlierTruePolarity) {
+                        return `${normalizedCarrier} ${normalizePromptText(earlierTruePolarity)}`;
+                    }
+                }
+                return `${normalizedCarrier} ${normalizedPolarity}`;
+            }
+        }
+    }
+
+    return null;
+}
+
+function hasMaskedLocativeOwner(maskedText: string): boolean {
+    return (
+        /\bon\s+(?:(?:the|my|our|this|that)\s+)?["'“”‘’]?□/iu.test(maskedText) ||
+        /\bon\s+(?:the\s+)?(?:selected|current)\s+(?:track|device)\b/iu.test(maskedText)
+    );
+}
+
+function isExplicitDirectionalCommandClause(
+    text: string,
+    directionalIntent: NonNullable<GroundingRules['directionalIntent']>,
+    targetReferences: DirectionalTargetReferences
+): boolean {
+    let commandSource = text.trim();
+    commandSource = commandSource.replace(/^(?:please\s+)?(?:can|could|would)\s+you(?:\s+please)?\s+/iu, '');
+    commandSource = commandSource.replace(/^please\s+/iu, '');
+    if (/^["'“”‘’]/u.test(commandSource)) {
+        return false;
+    }
+    const commandText = normalizePromptText(commandSource);
+    if (hasUnsafeControlCue(commandSource, directionalIntent.carrierPhrases, targetReferences)) {
+        return false;
+    }
+    if (/\b(?:without|not)\b.*\b(?:off|on)\b/u.test(commandText)) {
+        return false;
+    }
+
+    return directionalIntent.carrierPhrases.some((carrierPhrase) => {
+        const normalizedCarrier = normalizePromptText(carrierPhrase);
+        return commandText === normalizedCarrier || commandText.startsWith(`${normalizedCarrier} `);
+    });
+}
+
+type ReferenceRange = {
+    end: number;
+    start: number;
+};
+
+function getReferenceRanges(commandSource: string, reference: string): ReferenceRange[] {
+    const referenceTokens = normalizePromptText(reference).split(' ').filter(Boolean);
+    if (referenceTokens.length === 0) {
+        return [];
+    }
+    const normalizedReferencePattern = referenceTokens.map(escapeRegExp).join('[^\\p{L}\\p{N}]+');
+    const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${normalizedReferencePattern}(?![\\p{L}\\p{N}])`, 'giu');
+    return [...commandSource.matchAll(pattern)].map((match) => ({
+        start: match.index,
+        end: match.index + match[0].length,
+    }));
+}
+
+function getControlCarrierEnd(commandSource: string, carrierPhrases: readonly string[]): number | null {
+    let carrierEnd: number | null = null;
+    for (const carrierPhrase of carrierPhrases) {
+        const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(carrierPhrase)}(?![\\p{L}\\p{N}])`, 'iu');
+        const match = pattern.exec(commandSource);
+        if (match && (carrierEnd === null || match.index < carrierEnd)) {
+            carrierEnd = match.index + match[0].length;
+        }
+    }
+    return carrierEnd;
+}
+
+function isCueWithinDirectionalTargetReference(
+    commandSource: string,
+    cueIndex: number,
+    carrierEnd: number,
+    targetReferences: DirectionalTargetReferences
+): boolean {
+    for (const reference of targetReferences.direct) {
+        const containsCue = getReferenceRanges(commandSource, reference).some(
+            (range) => range.start >= carrierEnd && cueIndex >= range.start && cueIndex < range.end
+        );
+        if (containsCue) {
+            return true;
+        }
+    }
+    for (const reference of targetReferences.owners) {
+        const containsCue = getReferenceRanges(commandSource, reference).some((range) => {
+            if (range.start < carrierEnd || cueIndex < range.start || cueIndex >= range.end) {
+                return false;
+            }
+            const hasOwnerPrefix = /\bon\s+(?:(?:the|my|our|this|that)\s+)?["'“‘]?\s*$/iu.test(
+                commandSource.slice(carrierEnd, range.start)
+            );
+            const normalizedOwnerSuffix = normalizePromptText(commandSource.slice(range.end));
+            const hasOwnerSuffix = /^(?:(?:track|device)(?: (?:off|on))?|(?:off|on))?$/u.test(normalizedOwnerSuffix);
+            return hasOwnerPrefix && hasOwnerSuffix;
+        });
+        if (containsCue) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function hasUnsafeControlCue(
+    commandSource: string,
+    carrierPhrases: readonly string[],
+    targetReferences: DirectionalTargetReferences
+): boolean {
+    const carrierEnd = getControlCarrierEnd(commandSource, carrierPhrases);
+    for (const match of commandSource.matchAll(
+        /\b(?:do\s+not|don(?:['’]t|t)|don\s+t|if|unless|maybe|never|not|perhaps)\b/giu
+    )) {
+        if (
+            carrierEnd === null ||
+            !isCueWithinDirectionalTargetReference(commandSource, match.index, carrierEnd, targetReferences)
+        ) {
+            return true;
+        }
+    }
+    for (const match of commandSource.matchAll(/\bwithout\b/giu)) {
+        if (
+            carrierEnd !== null &&
+            isCueWithinDirectionalTargetReference(commandSource, match.index, carrierEnd, targetReferences)
+        ) {
+            continue;
+        }
+        const followingWords = normalizePromptText(commandSource.slice(match.index + match[0].length))
+            .split(' ')
+            .slice(0, 4);
+        const repeatsCarrierVerb = carrierPhrases.some((carrierPhrase) => {
+            const carrierVerb = normalizePromptText(carrierPhrase).split(' ')[0];
+            if (!carrierVerb) {
+                return false;
+            }
+            const carrierStem = carrierVerb.endsWith('e') ? carrierVerb.slice(0, -1) : carrierVerb;
+            return followingWords.some((word) => word.startsWith(carrierVerb) || word.startsWith(carrierStem));
+        });
+        if (repeatsCarrierVerb) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function hasGroundedControlValueEvidence(
+    valueRule: GroundingRules['valueRules'][number],
+    assertedValue: string,
+    promptText: string
+): boolean {
+    const referenceRanges = getReferenceRanges(promptText, assertedValue);
+    if (referenceRanges.length === 0) {
+        return false;
+    }
+    if (valueRule.kind === 'string-literal' || valueRule.kind === 'enum-if-present') {
+        return true;
+    }
+    if (valueRule.kind === 'text-after-keyword-if-present') {
+        return referenceRanges.some((range) => {
+            const prefix = normalizePromptText(promptText.slice(0, range.start));
+            return valueRule.keywords.some((keyword) => prefix.endsWith(normalizePromptText(keyword)));
+        });
+    }
+    if (valueRule.kind === 'text-after-connector') {
+        return referenceRanges.some((range) => {
+            const prefix = normalizePromptText(promptText.slice(0, range.start));
+            return prefix.endsWith(normalizePromptText(valueRule.connector));
+        });
+    }
+    return false;
+}
+
+function getAssertedControlTargetReferences(
+    groundingRules: GroundingRules,
+    assertedArgumentSets: readonly Readonly<Record<string, unknown>>[],
+    context: ProjectContext,
+    promptText: string
+): DirectionalTargetReferences {
+    const direct = new Set<string>();
+    const owners = new Set<string>();
+    for (const assertedArguments of assertedArgumentSets) {
+        for (const targetRule of groundingRules.targetRules) {
+            const value = assertedArguments[targetRule.argument];
+            if (typeof value === 'string') {
+                direct.add(value);
+            }
+        }
+        for (const valueRule of groundingRules.valueRules) {
+            const value = assertedArguments[valueRule.argument];
+            if (typeof value === 'string' && hasGroundedControlValueEvidence(valueRule, value, promptText)) {
+                direct.add(value);
+            }
+        }
+    }
+    for (const targetRule of groundingRules.targetRules) {
+        for (const assertedArguments of assertedArgumentSets) {
+            const assertedId = assertedArguments[targetRule.argument];
+            if (typeof assertedId !== 'string') {
+                continue;
+            }
+            for (const track of context.tracks) {
+                if (track.id === assertedId) {
+                    direct.add(track.id);
+                    direct.add(track.name);
+                }
+                const device = track.devices.find((candidate) => candidate.id === assertedId);
+                if (device) {
+                    direct.add(device.id);
+                    direct.add(device.type);
+                    owners.add(track.id);
+                    owners.add(track.name);
+                }
+                const clip = track.clips.find((candidate) => candidate.id === assertedId);
+                if (clip) {
+                    direct.add(clip.id);
+                    direct.add(clip.name);
+                    owners.add(track.id);
+                    owners.add(track.name);
+                }
+                for (const owningDevice of track.devices) {
+                    const parameter = owningDevice.parameters?.find((candidate) => candidate.id === assertedId);
+                    if (!parameter) {
+                        continue;
+                    }
+                    direct.add(parameter.id);
+                    direct.add(parameter.name);
+                    owners.add(track.id);
+                    owners.add(track.name);
+                }
+            }
+            const automationLane = context.automationLanes?.find((candidate) => candidate.id === assertedId);
+            if (automationLane) {
+                direct.add(automationLane.id);
+                direct.add(automationLane.name);
+                const owner = context.tracks.find((track) => track.id === automationLane.trackId);
+                if (owner) {
+                    owners.add(owner.id);
+                    owners.add(owner.name);
+                }
+            }
+        }
+    }
+    return { direct: [...direct], owners: [...owners] };
+}
+
 function resolveActionPromptScope({
     actionName,
     actionOrdinal,
+    assertedArguments,
     catalog,
     context,
     prompt,
     plannedActionNames,
+    sameActionAssertedArguments,
     sameActionCallCount,
 }: ResolveActionPromptScopeInput): ActionPromptScope | null {
     const groundingRules = getExecutableAppActionGroundingRules(actionName);
@@ -437,15 +1057,58 @@ function resolveActionPromptScope({
     const maskedPrompt = groundingRules.targetRules.length === 0 ? prompt : maskProjectReferences(prompt, context);
     const matchingScopes: ActionPromptScope[] = [];
     for (const clause of getPromptClauses(prompt, maskedPrompt)) {
+        const controlTargetReferences = getAssertedControlTargetReferences(
+            groundingRules,
+            sameActionAssertedArguments,
+            context,
+            clause.text
+        );
         const intent = resolveClauseActionIntent(clause.masked, catalog, actionName);
-        if (intent?.actionType === actionName) {
-            matchingScopes.push({ ...clause, matchedIntentPhrase: intent.phrase });
+        if (intent) {
+            if (intent.actionType === actionName) {
+                if (hasUnsafeControlCue(clause.text, groundingRules.intentPhrases, controlTargetReferences)) {
+                    continue;
+                }
+                matchingScopes.push({ ...clause, directional: false, matchedIntentPhrase: intent.phrase });
+            }
+            continue;
+        }
+        const directionalIntentPhrase =
+            groundingRules.directionalIntent &&
+            isExplicitDirectionalCommandClause(clause.text, groundingRules.directionalIntent, controlTargetReferences)
+                ? resolveDirectionalIntentPhrase(clause.masked, groundingRules.directionalIntent)
+                : null;
+        if (directionalIntentPhrase) {
+            matchingScopes.push({ ...clause, directional: true, matchedIntentPhrase: directionalIntentPhrase });
         }
     }
     if (matchingScopes.length !== sameActionCallCount) {
         return null;
     }
-    return matchingScopes[actionOrdinal] ?? null;
+    const selectedScope = matchingScopes[actionOrdinal];
+    if (!selectedScope) {
+        return null;
+    }
+    const selectedTargetReferences = getAssertedControlTargetReferences(
+        groundingRules,
+        [assertedArguments],
+        context,
+        selectedScope.text
+    );
+    if (selectedScope.directional && groundingRules.directionalIntent) {
+        if (
+            !isExplicitDirectionalCommandClause(
+                selectedScope.text,
+                groundingRules.directionalIntent,
+                selectedTargetReferences
+            )
+        ) {
+            return null;
+        }
+    } else if (hasUnsafeControlCue(selectedScope.text, groundingRules.intentPhrases, selectedTargetReferences)) {
+        return null;
+    }
+    return selectedScope;
 }
 
 function getTargetPromptScope(actionScope: ActionPromptScope, promptRole?: 'source' | 'destination'): string {
@@ -616,6 +1279,14 @@ function getValueMismatchReason(argument: string): string {
     return `Provider value ${argument} does not match the user request`;
 }
 
+function hasSelectedNoteScope(text: string): boolean {
+    return (
+        /\b(?:selected|current|these)(?: midi)? notes?\b/iu.test(text) ||
+        /\b(?:midi )?notes? (?:that are |currently )?selected\b/iu.test(text) ||
+        /\b(?:note selection|selection of (?:midi )?notes?)\b/iu.test(text)
+    );
+}
+
 function validateBooleanIntentValue(
     valueRule: Extract<GroundingValueRule, { kind: 'boolean-intent' }>,
     assertedValue: unknown,
@@ -753,7 +1424,12 @@ function validateNumberValue(
     if (valueRule.requiredInPrompt === true && expectedNumbers.length === 0) {
         return getValueMismatchReason(valueRule.argument);
     }
-    const matchesExpectedValue = expectedNumbers.some((expected) => Math.abs(expected - assertedValue) < 0.000_001);
+    const matchesExpectedValue = expectedNumbers.some((expected) => {
+        if (valueRule.match === 'exact') {
+            return Object.is(expected, assertedValue);
+        }
+        return Math.abs(expected - assertedValue) < 0.000_001;
+    });
     if (expectedNumbers.length > 0 && !matchesExpectedValue) {
         return getValueMismatchReason(valueRule.argument);
     }
@@ -996,13 +1672,18 @@ function validateGroundedValues(
 
 function groundToolCall({
     actionOrdinal,
+    batchLocalBusBindings,
     call,
     catalog,
     context,
+    declaredBatchLocalBusBindings,
     index,
     prompt,
     plannedActionNames,
+    sameActionAssertedArguments,
     sameActionCallCount,
+    visibleGroundedCalls,
+    visiblePlannedTrackCreations,
 }: GroundToolCallInput): ToolCallResult | LlmActionRejection {
     const groundingRules = getExecutableAppActionGroundingRules(call.name);
     if (!groundingRules) {
@@ -1011,10 +1692,12 @@ function groundToolCall({
     const actionScope = resolveActionPromptScope({
         actionName: call.name,
         actionOrdinal,
+        assertedArguments: call.arguments,
         catalog,
         context,
         prompt,
         plannedActionNames,
+        sameActionAssertedArguments,
         sameActionCallCount,
     });
     if (!actionScope) {
@@ -1033,6 +1716,43 @@ function groundToolCall({
             );
         }
         const targetPrompt = getTargetPromptScope(actionScope, targetRule.promptRole);
+        const batchLocalReference = resolveBatchLocalBusReference(
+            assertedValue,
+            index,
+            batchLocalBusBindings,
+            declaredBatchLocalBusBindings
+        );
+        if (batchLocalReference.status === 'rejected') {
+            return rejection(index, call.name, batchLocalReference.reason);
+        }
+        if (batchLocalReference.status === 'resolved') {
+            if (!batchLocalBusCapabilities.has(targetRule.capability)) {
+                return rejection(
+                    index,
+                    call.name,
+                    `Batch-local bus cannot satisfy target capability ${targetRule.capability}`
+                );
+            }
+            if (
+                !containsBatchLocalBusEvidence(
+                    targetPrompt,
+                    batchLocalReference.binding,
+                    targetRule.capability,
+                    context,
+                    batchLocalBusBindings,
+                    visibleGroundedCalls,
+                    visiblePlannedTrackCreations
+                )
+            ) {
+                return rejection(
+                    index,
+                    call.name,
+                    `Batch-local target ${targetRule.argument} is not unambiguously grounded in the user request`
+                );
+            }
+            groundedArguments[targetRule.argument] = batchLocalReference.binding.busId;
+            continue;
+        }
         const result = resolveAgentReference({
             prompt: targetPrompt,
             assertedId: assertedValue,
@@ -1077,6 +1797,12 @@ function groundToolCall({
     ) {
         return rejection(index, call.name, 'Provider clip deletion is not explicit in the user request');
     }
+    if (
+        (call.name === 'quantizeNotes' || call.name === 'transposeNotes') &&
+        (hasSelectedNoteScope(actionScope.text) || (plannedActionNames.length === 1 && hasSelectedNoteScope(prompt)))
+    ) {
+        return rejection(index, call.name, 'Selected-note edits are not supported; target the whole MIDI clip');
+    }
     const valueRejection = validateGroundedValues(groundingRules, groundedArguments, actionScope, context);
     if (valueRejection) {
         return rejection(index, call.name, valueRejection);
@@ -1091,7 +1817,11 @@ function hasExplicitPromptIntent(prompt: string, catalog: GroundingCatalog, acti
     );
 }
 
-export function bridgeGroundedLlmToolCalls({ calls, context, prompt }: BridgeGroundedLlmToolCallsInput) {
+export function bridgeGroundedLlmToolCalls({
+    calls,
+    context,
+    prompt,
+}: BridgeGroundedLlmToolCallsInput): BridgeGroundedLlmToolCallsResult {
     if (calls.length > MAX_LLM_ACTIONS_PER_BATCH) {
         return bridgeLlmToolCalls({ calls, context });
     }
@@ -1111,33 +1841,71 @@ export function bridgeGroundedLlmToolCalls({ calls, context, prompt }: BridgeGro
             };
         }
     }
+    const collectedBindings = collectBatchLocalBusBindings(calls, context);
+    if (collectedBindings.status === 'rejected') {
+        return {
+            actions: [],
+            rejections: [collectedBindings.rejection],
+        };
+    }
     const groundingRejections = new Map<number, LlmActionRejection>();
-    const groundedCalls = calls.map((call, index) => {
+    const groundedCalls: ToolCallResult[] = [];
+    const acceptedGroundedCalls: ToolCallResult[] = [];
+    const visibleBindings = new Map<string, BatchLocalBusBinding>();
+    const visiblePlannedTrackCreations: ToolCallResult[] = [];
+    let prospectiveContext = context;
+    for (const [index, providerCall] of calls.entries()) {
+        const call = stripBatchLocalBinding(providerCall);
         const actionOrdinal = calls.slice(0, index).filter((candidate) => candidate.name === call.name).length;
-        const sameActionCallCount = calls.filter((candidate) => candidate.name === call.name).length;
+        const sameActionCalls = calls.filter((candidate) => candidate.name === call.name);
+        const sameActionCallCount = sameActionCalls.length;
         const grounded = groundToolCall({
             actionOrdinal,
+            batchLocalBusBindings: visibleBindings,
             call,
             catalog,
-            context,
+            context: prospectiveContext,
+            declaredBatchLocalBusBindings: collectedBindings.bindingsByName,
             index,
             prompt,
             plannedActionNames: calls.map((candidate) => candidate.name),
+            sameActionAssertedArguments: sameActionCalls.map((candidate) => candidate.arguments),
             sameActionCallCount,
+            visibleGroundedCalls: acceptedGroundedCalls,
+            visiblePlannedTrackCreations,
         });
         if ('reason' in grounded) {
             groundingRejections.set(index, grounded);
-            return { name: '<rejected-target-reference>', arguments: {} };
+            groundedCalls.push({ name: '<rejected-target-reference>', arguments: {} });
+            continue;
         }
-        return grounded;
-    });
-    const bridged = bridgeLlmToolCalls({ calls: groundedCalls, context });
+        groundedCalls.push(grounded);
+        acceptedGroundedCalls.push(grounded);
+        if (grounded.name === 'createBus' || grounded.name === 'addTrack') {
+            visiblePlannedTrackCreations.push(grounded);
+        }
+        const binding = collectedBindings.bindingsByCallIndex.get(index);
+        if (binding) {
+            visibleBindings.set(binding.binding, binding);
+            prospectiveContext = {
+                ...prospectiveContext,
+                tracks: [...prospectiveContext.tracks, createProjectedBus(prospectiveContext, binding)],
+            };
+        }
+    }
+    const bridged = bridgeLlmToolCalls({ calls: groundedCalls, context: prospectiveContext });
     const rejections = bridged.rejections.map((bridgeRejection) => {
         if (bridgeRejection.name === '<batch>') {
             return bridgeRejection;
         }
         return groundingRejections.get(bridgeRejection.index) ?? bridgeRejection;
     });
+    const usesBatchLocalReferences = calls.some((call) =>
+        Object.values(call.arguments).some((value) => typeof value === 'string' && value.startsWith('$'))
+    );
+    if (rejections.length > 0 && (usesBatchLocalReferences || collectedBindings.bindingsByName.size > 0)) {
+        return { actions: [], rejections };
+    }
     const hasGroundedLoopRegion = bridged.actions.some((action) => action.type === 'setLoopRegion');
     const hasGroundedLoopEnabled = bridged.actions.some((action) => action.type === 'setLoopEnabled');
     if (requiresCompoundLoop && (!hasGroundedLoopRegion || !hasGroundedLoopEnabled)) {
@@ -1146,5 +1914,11 @@ export function bridgeGroundedLlmToolCalls({ calls, context, prompt }: BridgeGro
         }
         return { actions: [], rejections };
     }
-    return { actions: bridged.actions, rejections };
+    if (rejections.length > 0 || collectedBindings.bindingsByName.size === 0) {
+        return { actions: bridged.actions, rejections };
+    }
+    const batchLocalActionIdentities = [...collectedBindings.bindingsByName.values()].map(
+        ({ actionOrdinal, actionType, busId }) => ({ actionOrdinal, actionType, busId })
+    );
+    return { actions: bridged.actions, batchLocalActionIdentities, rejections };
 }

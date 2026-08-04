@@ -1,8 +1,7 @@
 import { createStore } from '#/infra/store/createStore';
 
 import { type ChatActionConfirmationStatus } from '../models/Chat';
-import { type DsoConfirmationTarget, type EditPlan } from '../models/DsoTypes';
-import { type RuntimeAction } from '../models/RuntimeAction';
+import { type ExecutableRuntimeAction } from '../models/ExecutableRuntimeAction';
 
 export type PendingActionExecution = {
     actionType: string;
@@ -24,21 +23,12 @@ type PendingActionConfirmationBase = {
 export type PendingAppActionConfirmation = PendingActionConfirmationBase & {
     kind: 'app_actions';
     projectRevision: string;
-    actions: RuntimeAction[];
+    actions: ExecutableRuntimeAction[];
     executionMode: 'atomic' | undefined;
 };
 
-export type PendingDsoEditConfirmation = PendingActionConfirmationBase & {
-    kind: 'dso_edit';
-    plan: EditPlan;
-    confirmationTargets: DsoConfirmationTarget[];
-    reasoning: string | undefined;
-};
-
-export type PendingActionConfirmation = PendingAppActionConfirmation | PendingDsoEditConfirmation;
-
 export type PendingActionConfirmationState = {
-    confirmations: PendingActionConfirmation[];
+    confirmations: PendingAppActionConfirmation[];
 };
 
 export const pendingActionConfirmationStore = createStore<PendingActionConfirmationState>({
@@ -51,7 +41,7 @@ type ProposePendingActionConfirmationInput = {
     id: string;
     prompt: string;
     assistantMessageId: string;
-    actions: RuntimeAction[];
+    actions: ExecutableRuntimeAction[];
     actionLabels: string[];
     executionMode?: 'atomic';
     projectRevision: string;
@@ -59,7 +49,7 @@ type ProposePendingActionConfirmationInput = {
 
 export function proposePendingActionConfirmation(
     input: ProposePendingActionConfirmationInput
-): PendingActionConfirmation | null {
+): PendingAppActionConfirmation | null {
     const state = pendingActionConfirmationStore.value;
     if (!state) {
         return null;
@@ -88,48 +78,7 @@ export function proposePendingActionConfirmation(
     return confirmation;
 }
 
-type ProposePendingDsoConfirmationInput = {
-    id: string;
-    prompt: string;
-    assistantMessageId: string;
-    plan: EditPlan;
-    actionLabels: string[];
-    confirmationTargets: DsoConfirmationTarget[];
-    reasoning: string | undefined;
-};
-
-export function proposePendingDsoConfirmation(
-    input: ProposePendingDsoConfirmationInput
-): PendingDsoEditConfirmation | null {
-    const state = pendingActionConfirmationStore.value;
-    if (!state) {
-        return null;
-    }
-
-    const confirmation: PendingDsoEditConfirmation = {
-        kind: 'dso_edit',
-        id: input.id,
-        prompt: input.prompt,
-        assistantMessageId: input.assistantMessageId,
-        plan: input.plan,
-        confirmationTargets: [...input.confirmationTargets],
-        reasoning: input.reasoning,
-        actionLabels: [...input.actionLabels],
-        executedActions: [],
-        status: 'proposed',
-        error: null,
-        createdAt: Date.now(),
-        resolvedAt: null,
-    };
-
-    pendingActionConfirmationStore.set({
-        confirmations: [...state.confirmations, confirmation].slice(-MAX_CONFIRMATIONS),
-    });
-
-    return confirmation;
-}
-
-export function getPendingActionConfirmation(confirmationId: string): PendingActionConfirmation | null {
+export function getPendingActionConfirmation(confirmationId: string): PendingAppActionConfirmation | null {
     return (
         pendingActionConfirmationStore.value?.confirmations.find(
             (confirmation) => confirmation.id === confirmationId
@@ -144,7 +93,7 @@ type RecordPendingActionExecutionInput = {
 
 export function recordPendingActionExecution(
     input: RecordPendingActionExecutionInput
-): PendingActionConfirmation | null {
+): PendingAppActionConfirmation | null {
     const state = pendingActionConfirmationStore.value;
     if (!state) {
         return null;
@@ -155,7 +104,7 @@ export function recordPendingActionExecution(
         return null;
     }
 
-    const updated: PendingActionConfirmation = {
+    const updated: PendingAppActionConfirmation = {
         ...current,
         executedActions: [...current.executedActions, input.execution],
     };
@@ -179,7 +128,7 @@ type UpdatePendingActionConfirmationStatusInput = {
 
 export function updatePendingActionConfirmationStatus(
     input: UpdatePendingActionConfirmationStatusInput
-): PendingActionConfirmation | null {
+): PendingAppActionConfirmation | null {
     const state = pendingActionConfirmationStore.value;
     if (!state) {
         return null;
@@ -190,7 +139,7 @@ export function updatePendingActionConfirmationStatus(
         return null;
     }
 
-    const updated: PendingActionConfirmation = {
+    const updated: PendingAppActionConfirmation = {
         ...current,
         status: input.status,
         error: input.error ?? null,

@@ -34,7 +34,6 @@ export { cachePreviewAudioBuffer } from './cachePreviewAudioBuffer';
 export { playCachedAudioBufferPreview } from './playCachedAudioBufferPreview';
 export { releasePreviewAudioBuffer } from './releasePreviewAudioBuffer';
 export { restoreCachedAudioBuffersFromIdb } from './restoreCachedAudioBuffersFromIdb';
-export { serializeAudioBuffersForProject } from './serializeAudioBuffersForProject';
 
 export { scheduleFaustNote } from './faustScheduler/scheduleFaustNote';
 export { startFaustNote } from './faustScheduler/startFaustNote';
@@ -66,6 +65,9 @@ export { updateMidiFxParam } from './deviceControls/updateMidiFxParam';
 export { getAudioContext, audioEngine } from './engineAccess/getAudioContext';
 export { getEngineState } from './engineAccess/getEngineState';
 export { getEngineDiagnostics } from './engineAccess/getEngineDiagnostics';
+export { getEngineHealth } from './engineAccess/getEngineHealth';
+export { getDeviceReadinessDiagnostics } from './engineAccess/getDeviceReadinessDiagnostics';
+export { resetEnginePlaybackLatencyStats } from './engineAccess/resetEnginePlaybackLatencyStats';
 export { resumeEngine } from './engineAccess/resumeEngine';
 export { waitForDevices } from './engineAccess/waitForDevices';
 export { resetAudioGraph } from './engineAccess/resetAudioGraph';
@@ -105,6 +107,7 @@ export { getAutoDetectedTailSeconds } from './offlineRender/getAutoDetectedTailS
 export { getDeviceChainTailSeconds } from './offlineRender/getDeviceChainTailSeconds';
 export { renderOffline } from './renderOffline';
 export { exportStems } from './exportStems';
+export { configureOfflineDeviceParameterLaw } from './configureOfflineDeviceParameterLaw';
 export { configureOfflineMidiEventProjection } from './configureOfflineMidiEventProjection';
 export { configureOfflinePpqEndpointProjection } from './configureOfflinePpqEndpointProjection';
 export { configureOfflineYeastMidiProcessing } from './configureOfflineYeastMidiProcessing';

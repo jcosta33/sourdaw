@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { getAutomationHandlers } from '#/modules/Automation/useCases';
+import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
 
 import { getAppActionExecutionPolicy } from '../getAppActionExecutionPolicy';
@@ -34,7 +35,14 @@ const EXPECTED_COMMANDS = [
     expectedCommand(
         'createBus',
         'Create a new bus track in the session.',
-        { name: { type: 'string', description: 'Display name for the new bus track' } },
+        {
+            name: { type: 'string', description: 'Display name for the new bus track' },
+            binding: {
+                type: 'string',
+                pattern: '^[a-z][a-z0-9-]{0,63}$',
+                description: 'Optional plan-local name. Later calls may target this newly created bus as $<binding>.',
+            },
+        },
         ['name'],
         'bounded-reversible',
         false
@@ -116,6 +124,28 @@ const EXPECTED_COMMANDS = [
         ['clipId', 'gain'],
         'bounded-reversible',
         false
+    ),
+    expectedCommand(
+        'quantizeNotes',
+        'Snap every note in one MIDI clip to an explicit beat grid.',
+        {
+            clipId: { type: 'string', description: 'Existing unlocked non-empty MIDI clip ID' },
+            gridSize: { type: 'number', description: 'Beat grid greater than 0 and at most 64' },
+        },
+        ['clipId', 'gridSize'],
+        'destructive-reversible',
+        true
+    ),
+    expectedCommand(
+        'transposeNotes',
+        'Transpose every note in one MIDI clip by an explicit semitone delta.',
+        {
+            clipId: { type: 'string', description: 'Existing unlocked non-empty MIDI clip ID' },
+            semitones: { type: 'integer', description: 'Non-zero semitone delta from -127 through 127' },
+        },
+        ['clipId', 'semitones'],
+        'broad-reversible',
+        true
     ),
     expectedCommand(
         'renameTrack',
@@ -571,6 +601,18 @@ const EXPECTED_GROUNDING = [
         valueRules: [{ argument: 'gain', kind: 'number-if-present', requiredInPrompt: true, scale: 'percentage-only' }],
     },
     {
+        actionType: 'quantizeNotes',
+        intentPhrases: ['quantize notes', 'quantize midi', 'snap midi notes'],
+        targetRules: [{ argument: 'clipId', capability: 'editable-midi-clip' }],
+        valueRules: [{ argument: 'gridSize', kind: 'number-if-present', requiredInPrompt: true, match: 'exact' }],
+    },
+    {
+        actionType: 'transposeNotes',
+        intentPhrases: ['transpose notes', 'transpose midi', 'shift midi notes', 'shift notes'],
+        targetRules: [{ argument: 'clipId', capability: 'editable-midi-clip' }],
+        valueRules: [{ argument: 'semitones', kind: 'number-if-present', requiredInPrompt: true, match: 'exact' }],
+    },
+    {
         actionType: 'renameTrack',
         intentPhrases: ['rename'],
         targetRules: [{ argument: 'trackId', capability: 'track', promptRole: 'source' }],
@@ -751,13 +793,18 @@ const EXPECTED_GROUNDING = [
     {
         actionType: 'bypassDevice',
         intentPhrases: ['bypass', 'enable', 'disable', 're-enable'],
+        directionalIntent: {
+            carrierPhrases: ['turn', 'switch'],
+            truePhrases: ['off'],
+            falsePhrases: ['on'],
+        },
         targetRules: [{ argument: 'deviceId', capability: 'device' }],
         valueRules: [
             {
                 argument: 'bypassed',
                 kind: 'boolean-intent',
-                truePhrases: ['bypass', 'disable'],
-                falsePhrases: ['enable', 're-enable'],
+                truePhrases: ['bypass', 'disable', 'turn off', 'switch off'],
+                falsePhrases: ['enable', 're-enable', 'turn on', 'switch on'],
             },
         ],
     },
@@ -953,6 +1000,7 @@ describe('executable command registry', () => {
         const handlerMaps: readonly Record<string, unknown>[] = [
             getArrangementHandlers(),
             getAutomationHandlers(),
+            getMidiNoteTransformHandlers(),
             getTransportHandlers(),
         ];
 

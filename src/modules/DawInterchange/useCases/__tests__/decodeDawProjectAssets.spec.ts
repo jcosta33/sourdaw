@@ -3,12 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
     decode_audio_data: vi.fn(),
     get_audio_context: vi.fn(),
-    serialize_audio_buffers: vi.fn(),
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     getAudioContext: mocks.get_audio_context,
-    serializeAudioBuffersForProject: mocks.serialize_audio_buffers,
 }));
 
 function create_audio_buffer(): AudioBuffer {
@@ -31,13 +29,6 @@ function create_audio_buffer(): AudioBuffer {
 describe('decodeDawProjectAssets', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.serialize_audio_buffers.mockResolvedValue({
-            'audio-11111111-1111-4111-8111-111111111111': {
-                sampleRate: 48_000,
-                numberOfChannels: 1,
-                channelData: ['encoded'],
-            },
-        });
         vi.spyOn(crypto, 'randomUUID').mockReturnValue('11111111-1111-4111-8111-111111111111');
     });
 
@@ -45,30 +36,37 @@ describe('decodeDawProjectAssets', () => {
         vi.restoreAllMocks();
     });
 
-    it('serializes decoded audio without publishing it before project commit', async () => {
+    // AC-5, chain 2. The decoded AudioBuffer is handed on as-is. It used to be
+    // base64-encoded here and decoded again a few frames later inside
+    // replaceProjectData — an encode/decode round trip that never crossed JSON.
+    //
+    // Mutation: reinstating `serializeAudioBuffersForProject` on this path reds
+    // `expect(Array.from(decoded.getChannelData(0)))`, because the entry becomes
+    // a `{ channelData: string[] }` record with no `getChannelData`.
+    it('hands back the decoded audio buffer without serializing it', async () => {
         const { decodeDawProjectAssets } = await import('../decodeDawProjectAssets');
         const buffer = create_audio_buffer();
         mocks.get_audio_context.mockReturnValue({ decodeAudioData: mocks.decode_audio_data });
         mocks.decode_audio_data.mockResolvedValue(buffer);
+        const encoder = vi.fn((value: string) => value);
+        vi.stubGlobal('btoa', encoder);
 
         const result = await decodeDawProjectAssets({
             audioAssets: new Map([['audio/drum-loop.wav', new Uint8Array([1, 2, 3])]]),
         });
 
+        vi.unstubAllGlobals();
+
+        const decoded = result.audioBuffers['audio-11111111-1111-4111-8111-111111111111'];
         expect(result.failedPaths).toEqual([]);
-        expect(result.audioBuffers).toEqual({
-            'audio-11111111-1111-4111-8111-111111111111': {
-                sampleRate: 48_000,
-                numberOfChannels: 1,
-                channelData: ['encoded'],
-            },
-        });
+        expect(decoded).toBe(buffer);
+        expect(Array.from(decoded!.getChannelData(0))).toEqual([0, 0.25, -0.25, 0]);
+        expect(decoded!.sampleRate).toBe(48_000);
+        expect(decoded!.numberOfChannels).toBe(1);
+        expect(encoder).not.toHaveBeenCalled();
         expect(result.bufferIdsByPath).toEqual(
             new Map([['audio/drum-loop.wav', 'audio-11111111-1111-4111-8111-111111111111']])
         );
-        expect(mocks.serialize_audio_buffers).toHaveBeenCalledWith({
-            buffers: [{ buffer, id: 'audio-11111111-1111-4111-8111-111111111111' }],
-        });
     });
 
     it('should return empty maps without decoding or caching when input has no assets', async () => {
@@ -81,7 +79,6 @@ describe('decodeDawProjectAssets', () => {
         expect(result.failedPaths).toEqual([]);
         expect(result.audioBuffers).toEqual({});
         expect(mocks.decode_audio_data).not.toHaveBeenCalled();
-        expect(mocks.serialize_audio_buffers).not.toHaveBeenCalled();
     });
 
     it('should mark every asset as failed when no audio context exists', async () => {
@@ -99,7 +96,6 @@ describe('decodeDawProjectAssets', () => {
         expect(result.failedPaths).toEqual(['audio/drums.wav', 'audio/bass.wav']);
         expect(result.audioBuffers).toEqual({});
         expect(mocks.decode_audio_data).not.toHaveBeenCalled();
-        expect(mocks.serialize_audio_buffers).not.toHaveBeenCalled();
     });
 
     it('should report decode failures without caching failed buffers', async () => {
@@ -114,7 +110,6 @@ describe('decodeDawProjectAssets', () => {
         expect(result.bufferIdsByPath).toEqual(new Map());
         expect(result.failedPaths).toEqual(['audio/broken.wav']);
         expect(result.audioBuffers).toEqual({});
-        expect(mocks.serialize_audio_buffers).not.toHaveBeenCalled();
     });
 
     it('does not cache a decoded buffer after transition authority is revoked', async () => {
@@ -146,7 +141,6 @@ describe('decodeDawProjectAssets', () => {
 
         expect(result.bufferIdsByPath).toEqual(new Map());
         expect(result.audioBuffers).toEqual({});
-        expect(mocks.serialize_audio_buffers).not.toHaveBeenCalled();
     });
 
     it('does not partially cache assets when authority is revoked during a later decode', async () => {
@@ -175,6 +169,5 @@ describe('decodeDawProjectAssets', () => {
         finishSecondDecode?.(secondBuffer);
 
         await expect(decoding).resolves.toEqual({ audioBuffers: {}, bufferIdsByPath: new Map(), failedPaths: [] });
-        expect(mocks.serialize_audio_buffers).not.toHaveBeenCalled();
     });
 });

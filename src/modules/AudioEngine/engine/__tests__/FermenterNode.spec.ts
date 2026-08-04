@@ -1,6 +1,22 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { createFermenterNode, isFermenterDevice } from '../FermenterNode';
+import { FERMENTER_IDX, TELEMETRY_SEQ_IDX } from '../telemetryAllocator';
+
+function isInitSabMessage(value: unknown): value is { type: 'init-sab'; sab: SharedArrayBuffer; byteOffset: number } {
+    return (
+        typeof value === 'object' &&
+        value !== null &&
+        'type' in value &&
+        value.type === 'init-sab' &&
+        'sab' in value &&
+        value.sab instanceof SharedArrayBuffer &&
+        'byteOffset' in value &&
+        typeof value.byteOffset === 'number'
+    );
+}
+
+const createReadyHandshakeMock = vi.hoisted(() => vi.fn());
 
 describe('isFermenterDevice', () => {
     it('should return true only for the fermenter device type string', () => {
@@ -14,14 +30,23 @@ describe('isFermenterDevice', () => {
 // immediately so the factory completes.
 vi.mock('#/infra/audioWorklet/workletInitShared', () => ({
     ensureWorkletRegistered: vi.fn().mockResolvedValue(undefined),
-    fetchWasmBinary: vi.fn().mockResolvedValue(new ArrayBuffer(8)),
-    createReadyHandshake: vi.fn(() => ({
-        promise: Promise.resolve({}),
-        // vi.fn so callers can assert the port onmessage delegates here.
-        onMessage: vi.fn(() => 'ready' as const),
-        isSettled: () => true,
-    })),
+    fetchWasmModule: vi.fn().mockResolvedValue({
+        module: new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0])),
+        commit: vi.fn(),
+        release: vi.fn(),
+    }),
+    createReadyHandshake: createReadyHandshakeMock,
 }));
+
+beforeEach(() => {
+    createReadyHandshakeMock.mockImplementation(() => ({
+        promise: Promise.resolve({}),
+        // Most surface tests start from an already-ready runtime.
+        onMessage: vi.fn(() => 'late' as const),
+        reject: vi.fn(() => 'late' as const),
+        isSettled: () => true,
+    }));
+});
 
 vi.mock('../../services/fermenterProcessor.ts?worker&url', () => ({ default: 'fermenter-processor-url' }));
 
@@ -99,14 +124,18 @@ describe('createFermenterNode allNotesOff surface', () => {
 // and the suspended-AudioContext resume branch at factory entry.
 describe('createFermenterNode message surface & lifecycle', () => {
     let postMessage: ReturnType<typeof vi.fn>;
+    let closePort: ReturnType<typeof vi.fn>;
     let onmessageRef: { current: ((event: MessageEvent) => void) | null };
+    let onprocessorerrorRef: { current: (() => void) | null };
 
     beforeEach(() => {
         postMessage = vi.fn();
+        closePort = vi.fn();
         onmessageRef = { current: null };
+        onprocessorerrorRef = { current: null };
         const port = {
             postMessage,
-            close: vi.fn(),
+            close: closePort,
             set onmessage(fn: (event: MessageEvent) => void) {
                 onmessageRef.current = fn;
             },
@@ -118,6 +147,12 @@ describe('createFermenterNode message surface & lifecycle', () => {
             port = port;
             connect = vi.fn();
             disconnect = vi.fn();
+            set onprocessorerror(fn: (() => void) | null) {
+                onprocessorerrorRef.current = fn;
+            }
+            get onprocessorerror(): (() => void) | null {
+                return onprocessorerrorRef.current;
+            }
         }
         vi.stubGlobal('AudioWorkletNode', FakeWorkletNode);
     });
@@ -127,10 +162,97 @@ describe('createFermenterNode message surface & lifecycle', () => {
         vi.clearAllMocks();
     });
 
-    async function makeNode() {
+    async function makeNode(onFault?: (message: string) => void) {
         const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
-        return createFermenterNode(ctx);
+        return createFermenterNode(ctx, undefined, onFault);
     }
+
+    function usePendingReadyHandshake(): void {
+        createReadyHandshakeMock.mockImplementationOnce(() => {
+            let settled = false;
+            let resolveReady: (value: Record<string, unknown>) => void = () => {};
+            let rejectReady: (error: Error) => void = () => {};
+            const promise = new Promise<Record<string, unknown>>((resolve, reject) => {
+                resolveReady = resolve;
+                rejectReady = reject;
+            });
+            const reject = (error: Error): 'error' | 'late' => {
+                if (settled) {
+                    return 'late';
+                }
+                settled = true;
+                rejectReady(error);
+                return 'error';
+            };
+            return {
+                promise,
+                onMessage: (event: MessageEvent): 'ready' | 'error' | 'late' | 'other' => {
+                    const data: unknown = event.data;
+                    if (!data || typeof data !== 'object' || !('type' in data)) {
+                        return 'other';
+                    }
+                    if (data.type === 'ready') {
+                        if (settled) {
+                            return 'late';
+                        }
+                        settled = true;
+                        resolveReady({ type: data.type });
+                        return 'ready';
+                    }
+                    if (data.type === 'error') {
+                        const message = 'message' in data ? String(data.message) : 'FermenterNode init error';
+                        return reject(new Error(message));
+                    }
+                    return 'other';
+                },
+                reject,
+                isSettled: () => settled,
+            };
+        });
+    }
+
+    it('reports one post-ready runtime fault and closes the failed processor port', async () => {
+        const onFault = vi.fn();
+        usePendingReadyHandshake();
+        const result = await makeNode(onFault);
+        onmessageRef.current?.({ data: { type: 'ready' } } as MessageEvent);
+        await expect(result.ready).resolves.toMatchObject({ type: 'ready' });
+
+        onmessageRef.current?.({ data: { type: 'error', message: 'render failed' } } as MessageEvent);
+        onmessageRef.current?.({ data: { type: 'error', message: 'duplicate' } } as MessageEvent);
+
+        expect(onFault).toHaveBeenCalledOnce();
+        expect(onFault).toHaveBeenCalledWith('render failed');
+        expect(closePort).toHaveBeenCalledOnce();
+    });
+
+    it('rejects a pre-ready processor error without requesting graph recovery', async () => {
+        const onFault = vi.fn();
+        usePendingReadyHandshake();
+        const result = await makeNode(onFault);
+        const readyRejection = expect(result.ready).rejects.toThrow('init failed');
+
+        onmessageRef.current?.({ data: { type: 'error', message: 'init failed' } } as MessageEvent);
+
+        await readyRejection;
+        expect(onFault).not.toHaveBeenCalled();
+        expect(closePort).toHaveBeenCalledOnce();
+    });
+
+    it('reports one native processor error after ready and closes the failed port', async () => {
+        const onFault = vi.fn();
+        usePendingReadyHandshake();
+        const result = await makeNode(onFault);
+        onmessageRef.current?.({ data: { type: 'ready' } } as MessageEvent);
+        await expect(result.ready).resolves.toMatchObject({ type: 'ready' });
+
+        onprocessorerrorRef.current?.();
+        onprocessorerrorRef.current?.();
+
+        expect(onFault).toHaveBeenCalledOnce();
+        expect(onFault).toHaveBeenCalledWith('FermenterNode worklet processor failed');
+        expect(closePort).toHaveBeenCalledOnce();
+    });
 
     it('noteOn clamps velocity and forwards valid MIDI notes, including sampleFrame', async () => {
         const result = await makeNode();
@@ -223,6 +345,23 @@ describe('createFermenterNode message surface & lifecycle', () => {
         expect(handshakeResult.onMessage).toHaveBeenCalledTimes(1);
     });
 
+    it('projects the processor lifecycle from the shared telemetry snapshot', async () => {
+        const result = await makeNode();
+        const initMessage = (postMessage.mock.calls as unknown[][]).map(([message]) => message).find(isInitSabMessage);
+        if (initMessage === undefined) {
+            throw new Error('Expected Fermenter telemetry initialization');
+        }
+        const floats = new Float32Array(initMessage.sab, initMessage.byteOffset);
+        const ints = new Int32Array(initMessage.sab, initMessage.byteOffset);
+        floats[FERMENTER_IDX.lifecycle] = 3;
+        Atomics.store(ints, TELEMETRY_SEQ_IDX, 2);
+
+        expect(result.processorLifecycle()).toBe('sleep');
+
+        onmessageRef.current!({ data: { type: 'error', message: 'render trap' } } as MessageEvent);
+        expect(result.processorLifecycle()).toBeNull();
+    });
+
     it('connect/disconnect/destroy drive the underlying worklet node', async () => {
         const result = await makeNode();
         // connect delegates to node.connect
@@ -254,9 +393,44 @@ describe('createFermenterNode message surface & lifecycle', () => {
         expect(resume).toHaveBeenCalledTimes(1);
     });
 
+    it('declares live and offline scheduling modes in processor options', async () => {
+        const processorOptions: unknown[] = [];
+        const port = {
+            postMessage: vi.fn(),
+            close: vi.fn(),
+            onmessage: null,
+        };
+        class CapturingWorkletNode {
+            port = port;
+            connect = vi.fn();
+            disconnect = vi.fn();
+
+            constructor(_context: BaseAudioContext, _name: string, options: AudioWorkletNodeOptions) {
+                processorOptions.push(options.processorOptions);
+            }
+        }
+        class FakeOfflineAudioContext {}
+        vi.stubGlobal('AudioWorkletNode', CapturingWorkletNode);
+        vi.stubGlobal('OfflineAudioContext', FakeOfflineAudioContext);
+
+        const liveContext = { state: 'running' } as unknown as BaseAudioContext;
+        const offlineContext = { state: 'suspended' } as unknown as BaseAudioContext;
+        Object.setPrototypeOf(offlineContext, FakeOfflineAudioContext.prototype);
+
+        await createFermenterNode(liveContext);
+        await createFermenterNode(offlineContext);
+
+        expect(processorOptions).toEqual([
+            expect.objectContaining({ schedulingMode: 'live' }),
+            expect.objectContaining({ schedulingMode: 'offline' }),
+        ]);
+    });
+
     it('aborts WASM fetching before allocating an AudioWorkletNode', async () => {
         const workletInit = await import('#/infra/audioWorklet/workletInitShared');
-        vi.mocked(workletInit.fetchWasmBinary).mockImplementationOnce(() => new Promise<ArrayBuffer>(() => {}));
+        vi.mocked(workletInit.fetchWasmModule).mockImplementationOnce(
+            () => new Promise<Awaited<ReturnType<typeof workletInit.fetchWasmModule>>>(() => {})
+        );
         const allocation = vi.fn();
         class CountingWorkletNode {
             constructor() {
@@ -267,11 +441,77 @@ describe('createFermenterNode message surface & lifecycle', () => {
         const abortController = new AbortController();
         const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
 
-        const pending = createFermenterNode(ctx, undefined, abortController.signal);
+        const pending = createFermenterNode(ctx, undefined, undefined, abortController.signal);
         abortController.abort(new DOMException('Timed out', 'AbortError'));
 
         await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
         expect(allocation).not.toHaveBeenCalled();
+    });
+
+    it('observes a WASM rejection when cancellation lands after worklet registration', async () => {
+        const workletInit = await import('#/infra/audioWorklet/workletInitShared');
+        const abortController = new AbortController();
+        const abortReason = new DOMException('Cancelled after registration', 'AbortError');
+        const fetchFailure = new Error('late fetch failure');
+        const rejectedFetch = Promise.reject<Awaited<ReturnType<typeof workletInit.fetchWasmModule>>>(fetchFailure);
+        const observeFetchRejection = vi.spyOn(rejectedFetch, 'catch');
+        vi.mocked(workletInit.fetchWasmModule).mockImplementationOnce(() => {
+            abortController.abort(abortReason);
+            return rejectedFetch;
+        });
+        const allocation = vi.fn();
+        class CountingWorkletNode {
+            constructor() {
+                allocation();
+            }
+        }
+        vi.stubGlobal('AudioWorkletNode', CountingWorkletNode);
+        const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
+
+        const pending = createFermenterNode(ctx, undefined, undefined, abortController.signal);
+        await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+
+        expect(observeFetchRejection).toHaveBeenCalledOnce();
+        expect(allocation).not.toHaveBeenCalled();
+    });
+
+    it('releases an uncommitted module lease when AudioWorkletNode construction fails', async () => {
+        const workletInit = await import('#/infra/audioWorklet/workletInitShared');
+        const commit = vi.fn();
+        const release = vi.fn();
+        vi.mocked(workletInit.fetchWasmModule).mockResolvedValueOnce({
+            module: new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0])),
+            commit,
+            release,
+        });
+        class ThrowingWorkletNode {
+            constructor() {
+                throw new Error('processor construction failed');
+            }
+        }
+        vi.stubGlobal('AudioWorkletNode', ThrowingWorkletNode);
+        const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
+
+        await expect(createFermenterNode(ctx)).rejects.toThrow('processor construction failed');
+        expect(release).toHaveBeenCalledOnce();
+        expect(commit).not.toHaveBeenCalled();
+    });
+
+    it('commits the module lease after AudioWorkletNode construction succeeds', async () => {
+        const workletInit = await import('#/infra/audioWorklet/workletInitShared');
+        const commit = vi.fn();
+        const release = vi.fn();
+        vi.mocked(workletInit.fetchWasmModule).mockResolvedValueOnce({
+            module: new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0])),
+            commit,
+            release,
+        });
+        const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
+
+        await createFermenterNode(ctx);
+
+        expect(commit).toHaveBeenCalledOnce();
+        expect(release).not.toHaveBeenCalled();
     });
 
     it('rechecks cancellation at the resource-allocation boundary', async () => {
@@ -295,7 +535,7 @@ describe('createFermenterNode message surface & lifecycle', () => {
         } as unknown as AbortSignal;
         const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
 
-        await expect(createFermenterNode(ctx, undefined, signal)).rejects.toBe(boundaryAbort);
+        await expect(createFermenterNode(ctx, undefined, undefined, signal)).rejects.toBe(boundaryAbort);
         expect(throwIfAborted).toHaveBeenCalledTimes(1);
         expect(allocation).not.toHaveBeenCalled();
     });

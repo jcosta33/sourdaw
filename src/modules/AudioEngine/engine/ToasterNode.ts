@@ -1,14 +1,25 @@
 /**
  * ToasterNode — AudioWorkletNode wrapper for the Toaster drum machine.
  *
- * Same pattern as FermenterNode: caches WASM binary, resumes AudioContext,
+ * Same pattern as FermenterNode: caches the compiled WASM module, resumes AudioContext,
  * provides noteOn/noteOff/setParam/setPadParam via MessagePort.
  */
 
 import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
-import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from '#/infra/audioWorklet/workletInitShared';
+import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
+import { logger } from '#/infra/logger/appLogger';
 
 import toasterProcessorUrl from '../services/toasterProcessor.ts?worker&url';
+
+import {
+    createTelemetryReader,
+    telemetryAllocator,
+    TELEMETRY_SEQ_IDX,
+    TOASTER_IDX,
+    type TelemetrySlot,
+} from './telemetryAllocator';
+
+import type { AudioProcessorLifecycleState } from '../models/AudioEngineState';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 const TOASTER_PAD_COUNT = 16;
@@ -17,6 +28,23 @@ export const TOASTER_AUTOMATION_PARAM_IDS: Readonly<Record<string, number>> = {
     reverbMix: 1,
     delayMix: 2,
 };
+
+function projectToasterLifecycle(view: Float32Array): AudioProcessorLifecycleState | null {
+    switch (view[TOASTER_IDX.lifecycle]) {
+        case 0:
+            return 'continue';
+        case 1:
+            return 'continueIfNotQuiet';
+        case 2:
+            return 'tail';
+        case 3:
+            return 'sleep';
+        case undefined:
+            return null;
+        default:
+            return null;
+    }
+}
 
 type OfflineAutomationSegment = {
     startFrame: number;
@@ -67,6 +95,7 @@ export type ToasterNodeResult = {
     setPadParam: (pad: number, name: string, value: number) => void;
     setPadDryRouted: (pad: number, routed: boolean) => void;
     setBypass: (bypassed: boolean) => void;
+    processorLifecycle: () => AudioProcessorLifecycleState | null;
     connectPadOutput?: (pad: number, dest: AudioNode) => void;
     disconnectPadOutput?: (pad: number, dest: AudioNode) => void;
     connect: (dest: AudioNode) => void;
@@ -82,6 +111,7 @@ export function isToasterDevice(deviceType: string): boolean {
 export async function createToasterNode(
     ctx: BaseAudioContext,
     wasmUrl?: string,
+    onFault?: (message: string) => void,
     signal?: AbortSignal
 ): Promise<ToasterNodeResult> {
     if (ctx instanceof AudioContext && ctx.state === 'suspended') {
@@ -89,17 +119,28 @@ export async function createToasterNode(
     }
 
     await raceAbortSignal(ensureWorkletRegistered(ctx, toasterProcessorUrl), signal);
-    const wasmBytes = await raceAbortSignal(fetchWasmBinary(wasmUrl ?? DEFAULT_WASM_URL), signal);
+    const wasmLease = await raceAbortSignal(
+        fetchWasmModule({ ctx, bundleId: 'daw-dsp', url: wasmUrl ?? DEFAULT_WASM_URL, signal }),
+        signal
+    );
 
     signal?.throwIfAborted();
 
-    const node = new AudioWorkletNode(ctx, 'toaster-processor', {
-        numberOfInputs: 0,
-        numberOfOutputs: 1 + TOASTER_PAD_COUNT,
-        outputChannelCount: Array.from({ length: 1 + TOASTER_PAD_COUNT }, () => 2),
-        channelCount: 2,
-        channelCountMode: 'explicit',
-    });
+    let node: AudioWorkletNode;
+    try {
+        node = new AudioWorkletNode(ctx, 'toaster-processor', {
+            numberOfInputs: 0,
+            numberOfOutputs: 1 + TOASTER_PAD_COUNT,
+            outputChannelCount: Array.from({ length: 1 + TOASTER_PAD_COUNT }, () => 2),
+            channelCount: 2,
+            channelCountMode: 'explicit',
+            processorOptions: { wasmModule: wasmLease.module },
+        });
+        wasmLease.commit();
+    } catch (error) {
+        wasmLease.release();
+        throw error;
+    }
     const outputNode = ctx.createGain();
     outputNode.gain.value = 1;
     node.connect(outputNode, 0, 0);
@@ -111,15 +152,83 @@ export async function createToasterNode(
     });
 
     let bypassed = false;
+    let slot: TelemetrySlot | null =
+        typeof SharedArrayBuffer === 'undefined' ? null : telemetryAllocator.allocateSlot();
+    if (slot) {
+        node.port.postMessage({ type: 'init-sab', sab: slot.sab, byteOffset: slot.byteOffset });
+    }
+    const lifecycleReader = slot ? createTelemetryReader({ slot, project: projectToasterLifecycle }) : null;
+    let lastLifecycle: AudioProcessorLifecycleState | null = null;
+    let destroyRequested = false;
+    let runtimeFaulted = false;
+    let portClosed = false;
+
+    function releaseTelemetrySlot(): void {
+        if (!slot) {
+            return;
+        }
+        telemetryAllocator.releaseSlot(slot.byteOffset);
+        slot = null;
+    }
+
+    function closePort(): void {
+        if (portClosed) {
+            return;
+        }
+        portClosed = true;
+        ctx.removeEventListener('statechange', handleContextStateChange);
+        node.onprocessorerror = null;
+        node.port.close();
+    }
+
+    function handleContextStateChange(): void {
+        if (ctx.state !== 'closed') {
+            return;
+        }
+        runtimeFaulted = true;
+        releaseTelemetrySlot();
+        closePort();
+    }
+
+    function handleTerminalFault(message: string, reportToOwner: boolean): void {
+        if (runtimeFaulted) {
+            return;
+        }
+        runtimeFaulted = true;
+        releaseTelemetrySlot();
+        if (reportToOwner) {
+            logger.warn('ToasterNode runtime fault (processor terminated):', message);
+            try {
+                onFault?.(message);
+            } catch (callbackError) {
+                logger.error(new Error('ToasterNode runtime-failure callback failed', { cause: callbackError }));
+            }
+        }
+        closePort();
+    }
 
     const handshake = createReadyHandshake({ pluginName: 'ToasterNode' });
-    node.port.onmessage = (event: MessageEvent) => {
-        handshake.onMessage(event);
+    node.port.onmessage = (event: MessageEvent<unknown>) => {
+        if (event.data && typeof event.data === 'object' && 'type' in event.data && event.data.type === 'disposed') {
+            releaseTelemetrySlot();
+            closePort();
+            return;
+        }
+        const outcome = handshake.onMessage(event);
+        if (event.data && typeof event.data === 'object' && 'type' in event.data && event.data.type === 'error') {
+            const message = 'message' in event.data ? String(event.data.message) : 'Unknown error';
+            handleTerminalFault(message, outcome === 'late');
+        }
     };
+    node.onprocessorerror = () => {
+        const message = 'ToasterNode worklet processor failed';
+        const outcome = handshake.reject(new Error(message));
+        handleTerminalFault(message, outcome === 'late');
+    };
+    ctx.addEventListener('statechange', handleContextStateChange);
     const readyPromise = handshake.promise;
 
-    const copy = wasmBytes.slice(0);
-    node.port.postMessage({ type: 'init', wasmBytes: copy }, [copy]);
+    node.port.postMessage({ type: 'init' });
 
     return {
         workletNode: node,
@@ -193,6 +302,22 @@ export async function createToasterNode(
         setBypass(state: boolean) {
             bypassed = state;
         },
+        processorLifecycle() {
+            if (destroyRequested || runtimeFaulted || !slot || !lifecycleReader) {
+                return null;
+            }
+            const before = Atomics.load(slot.seqView, TELEMETRY_SEQ_IDX);
+            if (before === 0 || (before & 1) !== 0) {
+                return lastLifecycle;
+            }
+            const lifecycle = lifecycleReader();
+            const after = Atomics.load(slot.seqView, TELEMETRY_SEQ_IDX);
+            if (before !== after || (after & 1) !== 0) {
+                return lastLifecycle;
+            }
+            lastLifecycle = lifecycle;
+            return lifecycle;
+        },
         connectPadOutput(pad: number, dest: AudioNode) {
             if (Number.isInteger(pad) && pad >= 0 && pad < TOASTER_PAD_COUNT) {
                 padOutputGains[pad]?.connect(dest);
@@ -219,7 +344,13 @@ export async function createToasterNode(
             }
         },
         destroy() {
-            node.port.postMessage({ type: 'resetPadDryRouting' });
+            if (destroyRequested) {
+                return;
+            }
+            destroyRequested = true;
+            if (!portClosed && ctx.state !== 'closed') {
+                node.port.postMessage({ type: 'resetPadDryRouting' });
+            }
             for (const gainNode of padOutputGains) {
                 try {
                     gainNode.disconnect();
@@ -237,7 +368,13 @@ export async function createToasterNode(
             } catch {
                 // ignore
             }
-            node.port.close();
+            if (ctx.state === 'closed') {
+                runtimeFaulted = true;
+                releaseTelemetrySlot();
+                closePort();
+            } else if (!portClosed) {
+                node.port.postMessage({ type: 'dispose' });
+            }
         },
         ready: readyPromise,
     };

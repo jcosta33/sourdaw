@@ -2,7 +2,7 @@
  * FermenterNode — AudioWorkletNode wrapper for the Fermenter synthesizer.
  *
  * Creates and manages the WASM-powered worklet. Provides noteOn/noteOff/setParam
- * methods that forward via MessagePort. Caches WASM binary and worklet registration.
+ * methods that forward via MessagePort. Caches the compiled WASM module and worklet registration.
  *
  * Telemetry (peaks + oscilloscope) comes back through a SAB slot, not the port
  * (audit RT-3) — the worklet publishes under the shared seqlock and this node
@@ -10,7 +10,8 @@
  */
 
 import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
-import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from '#/infra/audioWorklet/workletInitShared';
+import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
+import { logger } from '#/infra/logger/appLogger';
 
 import fermenterProcessorUrl from '../services/fermenterProcessor.ts?worker&url';
 
@@ -23,6 +24,8 @@ import {
     TELEMETRY_SEQ_IDX,
     type TelemetrySlot,
 } from './telemetryAllocator';
+
+import type { AudioProcessorLifecycleState } from '../models/AudioEngineState';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 export const FERMENTER_AUTOMATION_PARAM_IDS: Readonly<Record<string, number>> = {
@@ -74,6 +77,24 @@ function projectFermenterTelemetry(view: Float32Array): FermenterTelemetryData {
         scopeBuffer,
     };
 }
+
+function projectFermenterLifecycle(view: Float32Array): AudioProcessorLifecycleState | null {
+    switch (view[FERMENTER_IDX.lifecycle]) {
+        case 0:
+            return 'continue';
+        case 1:
+            return 'continueIfNotQuiet';
+        case 2:
+            return 'tail';
+        case 3:
+            return 'sleep';
+        case undefined:
+            return null;
+        default:
+            return null;
+    }
+}
+
 export type FermenterNodeResult = {
     workletNode: AudioWorkletNode;
     noteOn: (note: number, velocity: number, sampleFrame?: number, channel?: number) => void;
@@ -92,6 +113,7 @@ export type FermenterNodeResult = {
     scheduleParam?: (name: string, segments: readonly OfflineAutomationSegment[]) => void;
     setPatch: (patch: Record<string, unknown>) => void;
     setBypass: (bypassed: boolean) => void;
+    processorLifecycle: () => AudioProcessorLifecycleState | null;
     onTelemetry: (callback: (data: FermenterTelemetryData) => void) => void;
     connect: (dest: AudioNode) => void;
     disconnect: () => void;
@@ -107,11 +129,12 @@ export function isFermenterDevice(deviceType: string): boolean {
  * Create a Fermenter AudioWorkletNode.
  *
  * Resumes the AudioContext if suspended (worklet processors only run when active).
- * Caches WASM binary across calls. Await `result.ready` before sending MIDI.
+ * Caches the compiled WASM module across calls. Await `result.ready` before sending MIDI.
  */
 export async function createFermenterNode(
     ctx: BaseAudioContext,
     wasmUrl?: string,
+    onFault?: (message: string) => void,
     signal?: AbortSignal
 ): Promise<FermenterNodeResult> {
     if (ctx instanceof AudioContext && ctx.state === 'suspended') {
@@ -119,17 +142,30 @@ export async function createFermenterNode(
     }
 
     await raceAbortSignal(ensureWorkletRegistered(ctx, fermenterProcessorUrl), signal);
-    const wasmBytes = await raceAbortSignal(fetchWasmBinary(wasmUrl ?? DEFAULT_WASM_URL), signal);
+    const wasmLease = await raceAbortSignal(
+        fetchWasmModule({ ctx, bundleId: 'daw-dsp', url: wasmUrl ?? DEFAULT_WASM_URL, signal }),
+        signal
+    );
 
     signal?.throwIfAborted();
 
-    const node = new AudioWorkletNode(ctx, 'fermenter-processor', {
-        numberOfInputs: 0,
-        numberOfOutputs: 1,
-        outputChannelCount: [2],
-        channelCount: 2,
-        channelCountMode: 'explicit',
-    });
+    const schedulingMode =
+        typeof OfflineAudioContext !== 'undefined' && ctx instanceof OfflineAudioContext ? 'offline' : 'live';
+    let node: AudioWorkletNode;
+    try {
+        node = new AudioWorkletNode(ctx, 'fermenter-processor', {
+            numberOfInputs: 0,
+            numberOfOutputs: 1,
+            outputChannelCount: [2],
+            channelCount: 2,
+            channelCountMode: 'explicit',
+            processorOptions: { wasmModule: wasmLease.module, schedulingMode },
+        });
+        wasmLease.commit();
+    } catch (error) {
+        wasmLease.release();
+        throw error;
+    }
 
     let bypassed = false;
 
@@ -144,19 +180,57 @@ export async function createFermenterNode(
         deviceName: 'Fermenter',
     });
     let telemetryRafId: number | null = null;
+    let runtimeFaulted = false;
+    let portClosed = false;
+
+    const closePort = (): void => {
+        if (portClosed) {
+            return;
+        }
+        portClosed = true;
+        node.onprocessorerror = null;
+        node.port.close();
+    };
+
+    const handleTerminalFault = (message: string, reportToOwner: boolean): void => {
+        if (runtimeFaulted) {
+            return;
+        }
+        runtimeFaulted = true;
+        if (reportToOwner) {
+            logger.warn('FermenterNode runtime fault (processor terminated):', message);
+            try {
+                onFault?.(message);
+            } catch (callbackError) {
+                logger.error(new Error('FermenterNode runtime-failure callback failed', { cause: callbackError }));
+            }
+        }
+        closePort();
+    };
 
     if (slot) {
         node.port.postMessage({ type: 'init-sab', sab: slot.sab, byteOffset: slot.byteOffset });
     }
+    const lifecycleReader = slot ? createTelemetryReader({ slot, project: projectFermenterLifecycle }) : null;
+    let lastLifecycle: AudioProcessorLifecycleState | null = null;
 
     const handshake = createReadyHandshake({ pluginName: 'FermenterNode' });
     node.port.onmessage = (event: MessageEvent) => {
-        handshake.onMessage(event);
+        const outcome = handshake.onMessage(event);
+        const data: unknown = event.data;
+        if (data && typeof data === 'object' && 'type' in data && data.type === 'error') {
+            const message = 'message' in data ? String(data.message) : 'Unknown error';
+            handleTerminalFault(message, outcome === 'late');
+        }
+    };
+    node.onprocessorerror = () => {
+        const message = 'FermenterNode worklet processor failed';
+        const outcome = handshake.reject(new Error(message));
+        handleTerminalFault(message, outcome === 'late');
     };
     const readyPromise = handshake.promise;
 
-    const copy = wasmBytes.slice(0);
-    node.port.postMessage({ type: 'init', wasmBytes: copy }, [copy]);
+    node.port.postMessage({ type: 'init' });
 
     return {
         workletNode: node,
@@ -246,6 +320,22 @@ export async function createFermenterNode(
             // entry is owned by TrackNode.updateBypass via controller.allNotesOff.
             bypassed = state;
         },
+        processorLifecycle() {
+            if (runtimeFaulted || !slot || !lifecycleReader) {
+                return null;
+            }
+            const before = Atomics.load(slot.seqView, TELEMETRY_SEQ_IDX);
+            if (before === 0 || (before & 1) !== 0) {
+                return lastLifecycle;
+            }
+            const lifecycle = lifecycleReader();
+            const after = Atomics.load(slot.seqView, TELEMETRY_SEQ_IDX);
+            if (before !== after || (after & 1) !== 0) {
+                return lastLifecycle;
+            }
+            lastLifecycle = lifecycle;
+            return lifecycle;
+        },
         onTelemetry(cb: (data: FermenterTelemetryData) => void) {
             if (telemetryRafId !== null) {
                 cancelAnimationFrame(telemetryRafId);
@@ -301,12 +391,13 @@ export async function createFermenterNode(
             // A wide slot owns its SharedArrayBuffer outright and has no index in
             // the pooled allocator — dropping the reference is the whole release.
             slot = null;
+            node.onprocessorerror = null;
             try {
                 node.disconnect();
             } catch {
                 // ignore
             }
-            node.port.close();
+            closePort();
         },
         ready: readyPromise,
     };

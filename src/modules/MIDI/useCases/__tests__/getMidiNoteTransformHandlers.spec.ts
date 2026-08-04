@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-    batchAddMidiNotes: vi.fn(),
+    batchAddMidiNotes: vi.fn<(clipId: string, notes: MidiNote[]) => void>(),
     humanizeNotes: vi.fn(),
     invertNotes: vi.fn(),
     quantizeNoteLengths: vi.fn(),
@@ -24,6 +24,7 @@ vi.mock('../midiNoteTransforms/scaleVelocities', () => ({ scaleVelocities: mocks
 vi.mock('../midiNoteTransforms/setAllVelocities', () => ({ setAllVelocities: mocks.setAllVelocities }));
 vi.mock('../midiNoteTransforms/transposeNotes', () => ({ transposeNotes: mocks.transposeNotes }));
 
+import { type MidiNote } from '../../models/MidiNote';
 import { getMidiNoteTransformHandlers } from '../getMidiNoteTransformHandlers';
 
 describe('getMidiNoteTransformHandlers', () => {
@@ -40,6 +41,7 @@ describe('getMidiNoteTransformHandlers', () => {
             'invertNotes',
             'quantizeNoteLengths',
             'quantizeNotes',
+            'restoreMidiClipNotes',
             'retrogradeNotes',
             'scaleAllVelocities',
             'scaleVelocities',
@@ -51,38 +53,45 @@ describe('getMidiNoteTransformHandlers', () => {
     it('should delegate note transform actions to MIDI use cases', () => {
         const handlers = getMidiNoteTransformHandlers();
 
-        handlers.addNotes.execute({
+        void handlers.addNotes.execute({
             type: 'addNotes',
             payload: { clipId: 'clip1', notes: [{ pitch: 60, startBeat: 0, duration: 1, velocity: 100 }] },
         });
-        handlers.transposeNotes.execute({ type: 'transposeNotes', payload: { clipId: 'clip1', semitones: 2 } });
-        handlers.humanizeNotes.execute({ type: 'humanizeNotes', payload: { clipId: 'clip1', amount: 0.25 } });
-        handlers.invertNotes.execute({ type: 'invertNotes', payload: { clipId: 'clip1' } });
-        handlers.retrogradeNotes.execute({ type: 'retrogradeNotes', payload: { clipId: 'clip1' } });
-        handlers.quantizeNoteLengths.execute({
+        void handlers.transposeNotes.execute({ type: 'transposeNotes', payload: { clipId: 'clip1', semitones: 2 } });
+        void handlers.humanizeNotes.execute({ type: 'humanizeNotes', payload: { clipId: 'clip1', amount: 0.25 } });
+        void handlers.invertNotes.execute({ type: 'invertNotes', payload: { clipId: 'clip1' } });
+        void handlers.retrogradeNotes.execute({ type: 'retrogradeNotes', payload: { clipId: 'clip1' } });
+        void handlers.quantizeNoteLengths.execute({
             type: 'quantizeNoteLengths',
             payload: { clipId: 'clip1', gridSize: 0.25 },
         });
-        handlers.quantizeNotes.execute({
+        void handlers.quantizeNotes.execute({
             type: 'quantizeNotes',
             payload: { clipId: 'clip1', gridSize: 0.25, strength: 0.5, swing: 0.1 },
         });
-        handlers.scaleVelocities.execute({
+        void handlers.scaleVelocities.execute({
             type: 'scaleVelocities',
             payload: { clipId: 'clip1', curve: 'linear', minVelocity: 10, maxVelocity: 100 },
         });
-        handlers.scaleAllVelocities.execute({
+        void handlers.scaleAllVelocities.execute({
             type: 'scaleAllVelocities',
             payload: { clipId: 'clip1', factor: 0.8 },
         });
-        handlers.setAllVelocities.execute({
+        void handlers.setAllVelocities.execute({
             type: 'setAllVelocities',
             payload: { clipId: 'clip1', velocity: 90 },
         });
 
-        expect(mocks.batchAddMidiNotes).toHaveBeenCalledWith('clip1', [
-            { pitch: 60, startBeat: 0, duration: 1, velocity: 100 },
-        ]);
+        const addedNote = mocks.batchAddMidiNotes.mock.calls[0]?.[1][0];
+        expect(mocks.batchAddMidiNotes.mock.calls[0]?.[0]).toBe('clip1');
+        expect(addedNote).toMatchObject({
+            pitch: 60,
+            startBeat: 0,
+            duration: 1,
+            velocity: 100,
+            probability: 100,
+        });
+        expect(addedNote?.id).toMatch(/^note-/);
         expect(mocks.transposeNotes).toHaveBeenCalledWith('clip1', 2);
         // The handler forwards optional velocityAmount + seed (both absent on a
         // first execute) so it can capture the returned seed for deterministic redo.

@@ -637,17 +637,40 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
     });
 
     describe('quantizeNotes', () => {
-        it('should require clipId string and gridSize number (the payload field, not `grid`)', () => {
+        it('should require an exact clipId and finite gridSize greater than zero and at most 64', () => {
             const guard = PAYLOAD_VALIDATORS.quantizeNotes;
             expect(guard).not.toBe('unchecked');
             if (guard === 'unchecked') {
                 return;
             }
-            // Payload type + fast path emit { clipId, gridSize }; the old validator
-            // checked `param.grid`, so every legitimate call was dropped.
+
             expect(guard({ clipId: 'clip-1', gridSize: 0.25 })).toBe(true);
+            expect(guard({ clipId: 'clip-1', gridSize: Number.MIN_VALUE })).toBe(true);
             expect(guard({ clipId: 'clip-1', grid: 0.25 })).toBe(false);
             expect(guard({ clipId: 'clip-1' })).toBe(false);
+            expect(guard({ clipId: '', gridSize: 0.25 })).toBe(false);
+            expect(guard({ clipId: 'clip-1', gridSize: 0 })).toBe(false);
+            expect(guard({ clipId: 'clip-1', gridSize: 65 })).toBe(false);
+            expect(guard({ clipId: 'clip-1', gridSize: Number.POSITIVE_INFINITY })).toBe(false);
+            expect(guard({ clipId: 'clip-1', gridSize: 0.25, strength: 0.5 })).toBe(false);
+        });
+    });
+
+    describe('transposeNotes', () => {
+        it('should require an exact non-zero integer semitone delta from -127 through 127', () => {
+            const guard = PAYLOAD_VALIDATORS.transposeNotes;
+            expect(guard).not.toBe('unchecked');
+            if (guard === 'unchecked') {
+                return;
+            }
+
+            expect(guard({ clipId: 'clip-1', semitones: -127 })).toBe(true);
+            expect(guard({ clipId: 'clip-1', semitones: 127 })).toBe(true);
+            expect(guard({ clipId: '', semitones: 7 })).toBe(false);
+            expect(guard({ clipId: 'clip-1', semitones: 0 })).toBe(false);
+            expect(guard({ clipId: 'clip-1', semitones: 1.5 })).toBe(false);
+            expect(guard({ clipId: 'clip-1', semitones: 128 })).toBe(false);
+            expect(guard({ clipId: 'clip-1', semitones: 7, notes: [] })).toBe(false);
         });
     });
 
@@ -687,12 +710,31 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
             }
 
             expect(guard({ clipId: 1, notes: [] })).toBe(false);
+            expect(guard({ clipId: 'clip-1', notes: [] })).toBe(false);
             expect(guard({ clipId: 'clip-1', notes: 'bad' })).toBe(false);
             expect(guard({ clipId: 'clip-1', notes: [{ pitch: -1, startBeat: 0, duration: 1 }] })).toBe(false);
             expect(guard({ clipId: 'clip-1', notes: [{ pitch: 128, startBeat: 0, duration: 1 }] })).toBe(false);
             expect(guard({ clipId: 'clip-1', notes: [{ pitch: 60, startBeat: -0.01, duration: 1 }] })).toBe(false);
             expect(guard({ clipId: 'clip-1', notes: [{ pitch: 60, startBeat: 0, duration: 0 }] })).toBe(false);
             expect(guard({ clipId: 'clip-1', notes: [{ pitch: 60, startBeat: 0, duration: Number.NaN }] })).toBe(false);
+            expect(guard({ clipId: '', notes: [] })).toBe(false);
+            expect(guard({ clipId: 'clip-1', notes: [{ pitch: 60, startBeat: 0 }] })).toBe(false);
+            expect(guard({ clipId: 'clip-1', notes: [{ pitch: 60, startBeat: 0, duration: 1, channel: 2 }] })).toBe(
+                false
+            );
+            expect(
+                guard({
+                    clipId: 'clip-1',
+                    notes: [{ id: 'command-owned', pitch: 60, startBeat: 0, duration: 1 }],
+                })
+            ).toBe(false);
+            expect(
+                guard({
+                    clipId: 'clip-1',
+                    notes: [{ pitch: 60, startBeat: 0, duration: 1 }],
+                    replace: true,
+                })
+            ).toBe(false);
             expect(guard({ clipId: 'clip-1', notes: [{ pitch: 60, startBeat: 0, duration: 1, velocity: 0 }] })).toBe(
                 false
             );
@@ -735,41 +777,11 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
                 return;
             }
             expect(guard({ trackId: 't-1', startBeat: 0, endBeat: 4, name: 'Clip' })).toBe(true);
+            expect(guard({ id: 'command-owned', trackId: 't-1', startBeat: 0, endBeat: 4, name: 'Clip' })).toBe(false);
+            expect(guard({ trackId: 't-1', startBeat: 0, endBeat: 4, name: 'Clip', muted: true })).toBe(false);
             // name is required by the payload type but was previously unchecked.
             expect(guard({ trackId: 't-1', startBeat: 0, endBeat: 4 })).toBe(false);
             expect(guard({ trackId: 't-1', startBeat: 0, endBeat: 4, name: 1 })).toBe(false);
-        });
-    });
-
-    describe('restoreDsoSnapshot', () => {
-        it('should accept present bytes and absent membership entries', () => {
-            const guard = PAYLOAD_VALIDATORS.restoreDsoSnapshot;
-            expect(guard).not.toBe('unchecked');
-            if (guard === 'unchecked') {
-                return;
-            }
-            const bundle = new Map([
-                ['root', { state: 'present' as const, bytes: new Uint8Array([1, 2, 3]) }],
-                ['removed', { state: 'absent' as const }],
-            ]);
-            expect(guard({ bundle })).toBe(true);
-            expect(guard({ bundle: new Map() })).toBe(true);
-        });
-
-        it('should reject a non-Map bundle or a Map with the wrong entry shapes', () => {
-            const guard = PAYLOAD_VALIDATORS.restoreDsoSnapshot;
-            expect(guard).not.toBe('unchecked');
-            if (guard === 'unchecked') {
-                return;
-            }
-            // A hallucinated JSON payload deserializes to a plain object, not a Map.
-            expect(guard({ bundle: { root: [1, 2, 3] } })).toBe(false);
-            expect(guard({})).toBe(false);
-            expect(guard({ bundle: new Map([['root', [1, 2, 3]]]) })).toBe(false);
-            expect(guard({ bundle: new Map([['root', { state: 'present', bytes: [1, 2, 3] }]]) })).toBe(false);
-            expect(guard({ bundle: new Map([['root', { state: 'unknown' }]]) })).toBe(false);
-            expect(guard({ bundle: new Map([['root', { state: 'absent', bytes: new Uint8Array() }]]) })).toBe(false);
-            expect(guard({ bundle: new Map([[1, { state: 'absent' }]]) })).toBe(false);
         });
     });
 

@@ -18,6 +18,7 @@ import { reportLatency } from '../useCases/latencyCompensation/compensation/repo
 import { getAudioDeviceRuntimeSink } from './audioDeviceRuntimeSink';
 import { isBacteriaDevice, createBacteriaNode, type BacteriaNodeResult } from './BacteriaNode';
 import { isCrumbsDevice, createCrumbsNode, type CrumbsNodeResult } from './CrumbsNode';
+import { isCrustDevice, createCrustNode, type CrustNodeResult } from './CrustNode';
 import { isFermenterDevice, createFermenterNode, type FermenterNodeResult } from './FermenterNode';
 import { isGlutenDevice, createGlutenNode, type GlutenNodeResult } from './GlutenNode';
 import { isGrandBouleDevice, createGrandBouleNode, type GrandBouleNodeResult } from './GrandBouleNode';
@@ -40,6 +41,10 @@ export type WasmDeviceCreateDeps = {
     signal?: AbortSignal;
     /** Returns false when the owner rejected and destroyed a stale loaded node. */
     onLoaded: (finalDn: BuiltinDeviceNode) => boolean | void;
+    /** Replace a terminally failed loaded node in the owning graph slot. */
+    onRuntimeFailure?: (failedDn: BuiltinDeviceNode, replacementDn: BuiltinDeviceNode) => boolean;
+    /** Request one fresh generation after the failed runtime has been retired. */
+    onRuntimeRecovery?: (replacementDn: BuiltinDeviceNode) => void;
 };
 
 export type WasmDeviceDescriptor = {
@@ -111,10 +116,62 @@ async function waitForDeviceReady(input: WaitForDeviceReadyInput): Promise<Recor
 
 const fermenterDescriptor: WasmDeviceDescriptor = {
     matches: isFermenterDevice,
-    create({ context, deviceId, deviceType, signal, onLoaded }) {
+    create({
+        context,
+        deviceId,
+        deviceType,
+        signal,
+        onLoaded,
+        onRuntimeFailure: replaceRuntimeFailure,
+        onRuntimeRecovery: requestRuntimeRecovery,
+    }) {
         const pendingParams: Array<[string, number | number[]]> = [];
         let pendingPatch: Record<string, unknown> | null = null;
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
+        let runtimeFailureMessage: string | null = null;
+        let publishedNode: BuiltinDeviceNode | null = null;
+        let publishedResult: FermenterNodeResult | null = null;
+        let runtimeFailureHandled = false;
+        const applyRuntimeFailure = (): void => {
+            if (
+                runtimeFailureHandled ||
+                runtimeFailureMessage === null ||
+                publishedNode === null ||
+                publishedResult === null
+            ) {
+                return;
+            }
+            runtimeFailureHandled = true;
+            if (publishedNode.controller) {
+                publishedNode.controller.ready = false;
+            }
+            if (publishedNode.fermenterControls) {
+                publishedNode.fermenterControls.ready = false;
+            }
+            pendingParams.length = 0;
+            pendingPatch = null;
+            if (placeholder.fermenterControls) {
+                placeholder.fermenterControls.setParam = () => {};
+                placeholder.fermenterControls.setPatch = () => {};
+            }
+            const replaced = replaceRuntimeFailure?.(publishedNode, placeholder) === true;
+            try {
+                publishedResult.destroy();
+            } catch (error) {
+                logger.warn(`[WebAudioEngine] ${deviceType} runtime cleanup failed: ${String(error)}`);
+            }
+            if (replaced) {
+                requestRuntimeRecovery?.(placeholder);
+            }
+        };
+        const onRuntimeFailure = (message: string): void => {
+            if (runtimeFailureMessage !== null) {
+                return;
+            }
+            runtimeFailureMessage = message;
+            logger.warn(`[WebAudioEngine] ${deviceType} runtime failure: ${message}`);
+            applyRuntimeFailure();
+        };
         placeholder.fermenterControls = {
             ready: false,
             noteOn: () => {},
@@ -130,9 +187,13 @@ const fermenterDescriptor: WasmDeviceDescriptor = {
             setBypass: () => {},
             destroy: () => {},
         };
-        const loadPromise = createFermenterNode(context, undefined, signal)
+        const loadPromise = createFermenterNode(context, undefined, onRuntimeFailure, signal)
             .then(async (result: FermenterNodeResult) => {
                 if ((await waitForDeviceReady({ deviceType, result, signal })) === null) {
+                    return;
+                }
+                if (runtimeFailureMessage !== null) {
+                    result.destroy();
                     return;
                 }
                 for (const [name, value] of pendingParams) {
@@ -144,13 +205,14 @@ const fermenterDescriptor: WasmDeviceDescriptor = {
                 result.onTelemetry((data) => {
                     getAudioDeviceRuntimeSink().setFermenterTelemetry(deviceId, data);
                 });
-                onLoaded({
+                const loadedNode: BuiltinDeviceNode = {
                     deviceId,
                     type: deviceType,
                     nodes: [result.workletNode],
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
                     dispose: result.destroy,
+                    processorLifecycle: result.processorLifecycle,
                     controller: {
                         ready: true,
                         noteOn: result.noteOn,
@@ -172,11 +234,18 @@ const fermenterDescriptor: WasmDeviceDescriptor = {
                         setBypass: result.setBypass,
                         destroy: result.destroy,
                     },
-                });
+                };
+                const accepted = onLoaded(loadedNode);
+                if (accepted === false) {
+                    return;
+                }
+                publishedNode = loadedNode;
+                publishedResult = result;
+                applyRuntimeFailure();
                 return;
             })
             .catch((error) => {
-                logger.warn(`[WebAudioEngine] ${deviceType} failed: ${error}`);
+                logger.warn(`[WebAudioEngine] ${deviceType} failed: ${String(error)}`);
                 return;
             });
         return { placeholder, loadPromise };
@@ -185,9 +254,59 @@ const fermenterDescriptor: WasmDeviceDescriptor = {
 
 const toasterDescriptor: WasmDeviceDescriptor = {
     matches: isToasterDevice,
-    create({ context, deviceId, deviceType, signal, onLoaded }) {
+    create({
+        context,
+        deviceId,
+        deviceType,
+        signal,
+        onLoaded,
+        onRuntimeFailure: replaceRuntimeFailure,
+        onRuntimeRecovery: requestRuntimeRecovery,
+    }) {
         const pendingParams: Array<[string, number]> = [];
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
+        let runtimeFailureMessage: string | null = null;
+        let publishedNode: BuiltinDeviceNode | null = null;
+        let publishedResult: ToasterNodeResult | null = null;
+        let runtimeFailureHandled = false;
+        const applyRuntimeFailure = (): void => {
+            if (
+                runtimeFailureHandled ||
+                runtimeFailureMessage === null ||
+                publishedNode === null ||
+                publishedResult === null
+            ) {
+                return;
+            }
+            runtimeFailureHandled = true;
+            if (publishedNode.controller) {
+                publishedNode.controller.ready = false;
+            }
+            if (publishedNode.toasterControls) {
+                publishedNode.toasterControls.ready = false;
+            }
+            pendingParams.length = 0;
+            if (placeholder.toasterControls) {
+                placeholder.toasterControls.setParam = () => {};
+            }
+            const replaced = replaceRuntimeFailure?.(publishedNode, placeholder) === true;
+            try {
+                publishedResult.destroy();
+            } catch (error) {
+                logger.warn(`[WebAudioEngine] ${deviceType} runtime cleanup failed: ${String(error)}`);
+            }
+            if (replaced) {
+                requestRuntimeRecovery?.(placeholder);
+            }
+        };
+        const onRuntimeFailure = (message: string): void => {
+            if (runtimeFailureMessage !== null) {
+                return;
+            }
+            runtimeFailureMessage = message;
+            logger.warn(`[WebAudioEngine] ${deviceType} runtime failure: ${message}`);
+            applyRuntimeFailure();
+        };
         placeholder.toasterControls = {
             ready: false,
             noteOn: () => {},
@@ -204,15 +323,19 @@ const toasterDescriptor: WasmDeviceDescriptor = {
             setBypass: () => {},
             destroy: () => {},
         };
-        const loadPromise = createToasterNode(context, undefined, signal)
+        const loadPromise = createToasterNode(context, undefined, onRuntimeFailure, signal)
             .then(async (result: ToasterNodeResult) => {
                 if ((await waitForDeviceReady({ deviceType, result, signal })) === null) {
+                    return;
+                }
+                if (runtimeFailureMessage !== null) {
+                    result.destroy();
                     return;
                 }
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
-                const accepted = onLoaded({
+                const loadedNode: BuiltinDeviceNode = {
                     deviceId,
                     type: deviceType,
                     // Keep the stable output proxy at the graph boundary, while
@@ -222,6 +345,7 @@ const toasterDescriptor: WasmDeviceDescriptor = {
                     inputNode: result.outputNode,
                     outputNode: result.outputNode,
                     isGenerator: true,
+                    processorLifecycle: result.processorLifecycle,
                     dispose: result.destroy,
                     controller: {
                         ready: true,
@@ -263,8 +387,15 @@ const toasterDescriptor: WasmDeviceDescriptor = {
                         disconnectPadOutput: result.disconnectPadOutput,
                         destroy: result.destroy,
                     },
-                });
+                };
+                const accepted = onLoaded(loadedNode);
                 if (accepted === false) {
+                    return;
+                }
+                publishedNode = loadedNode;
+                publishedResult = result;
+                applyRuntimeFailure();
+                if (runtimeFailureHandled) {
                     return;
                 }
                 getAudioDeviceRuntimeSink().emitDeviceLoaded({ deviceId, deviceType });
@@ -376,7 +507,7 @@ const levainDescriptor: WasmDeviceDescriptor = {
 
 const crumbsDescriptor: WasmDeviceDescriptor = {
     matches: isCrumbsDevice,
-    create({ context, deviceId, deviceType, onLoaded }) {
+    create({ context, deviceId, deviceType, signal, onLoaded }) {
         const pendingParams: Array<[string, number]> = [];
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.crumbsControls = {
@@ -391,9 +522,11 @@ const crumbsDescriptor: WasmDeviceDescriptor = {
             setBypass: () => {},
             destroy: () => {},
         };
-        const loadPromise = createCrumbsNode(context)
+        const loadPromise = createCrumbsNode(context, undefined, undefined, signal)
             .then(async (result: CrumbsNodeResult) => {
-                await result.ready;
+                if ((await waitForDeviceReady({ deviceType, result, signal })) === null) {
+                    return;
+                }
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
@@ -539,6 +672,71 @@ const glutenDescriptor: WasmDeviceDescriptor = {
                             result.destroy();
                             clearReportedLatency(deviceId);
                             getAudioDeviceRuntimeSink().deleteGlutenMeters(deviceId);
+                        },
+                    },
+                    nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
+                });
+                return;
+            })
+            .catch((error) => {
+                logger.warn(`[WebAudioEngine] ${deviceType} failed: ${error}`);
+                return;
+            });
+        return { placeholder, loadPromise };
+    },
+};
+
+const crustDescriptor: WasmDeviceDescriptor = {
+    matches: isCrustDevice,
+    create({ context, deviceId, deviceType, isCurrent, signal, onLoaded }) {
+        const pendingParams: Array<[string, number]> = [];
+        const placeholder = loadingBypassNode(context, deviceId, deviceType);
+        placeholder.nativeDspControls = {
+            setParam: (name, value) => {
+                pendingParams.push([name, value]);
+            },
+            setBypass: () => {},
+        };
+        const loadPromise = createCrustNode(context, undefined, signal)
+            .then(async (result: CrustNodeResult) => {
+                const readyData = await waitForDeviceReady({ deviceType, result, signal });
+                if (!readyData) {
+                    return;
+                }
+                if (isCurrent?.() === false) {
+                    result.destroy();
+                    return;
+                }
+                // Crust's look-ahead is latency, and an unreported look-ahead
+                // delay slides this device's track against every other one.
+                // Report the delay the engine starts with before any parameter
+                // lands, then again whenever a parameter moves it.
+                const initialLatency = typeof readyData.latency === 'number' ? readyData.latency : 0;
+                reportLatency(deviceId, (initialLatency / context.sampleRate) * 1000);
+
+                for (const [name, value] of pendingParams) {
+                    result.setParam(name, value);
+                }
+                result.onLatencyChanged((latency) => {
+                    reportLatency(deviceId, (latency / context.sampleRate) * 1000);
+                });
+                result.onMeterData((data) => {
+                    getAudioDeviceRuntimeSink().updateCrustMeters(deviceId, data);
+                });
+                onLoaded({
+                    deviceId,
+                    type: deviceType,
+                    nodes: [result.workletNode],
+                    inputNode: result.workletNode,
+                    outputNode: result.workletNode,
+                    dispose: result.destroy,
+                    controller: {
+                        setParam: result.setParam,
+                        setBypass: result.setBypass,
+                        destroy: () => {
+                            result.destroy();
+                            clearReportedLatency(deviceId);
+                            getAudioDeviceRuntimeSink().deleteCrustMeters(deviceId);
                         },
                     },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
@@ -847,8 +1045,46 @@ const scoringDescriptor: WasmDeviceDescriptor = {
 
 const grandBouleDescriptor: WasmDeviceDescriptor = {
     matches: isGrandBouleDevice,
-    create({ context, deviceId, deviceType, signal, onLoaded }) {
+    create({ context, deviceId, deviceType, signal, onLoaded, onRuntimeFailure: replaceRuntimeFailure }) {
         const pendingParams: Array<[string, number]> = [];
+        let runtimeFailureMessage: string | null = null;
+        let publishedNode: BuiltinDeviceNode | null = null;
+        let publishedResult: GrandBouleNodeResult | null = null;
+        let runtimeFailureHandled = false;
+        const applyRuntimeFailure = (): void => {
+            if (
+                runtimeFailureHandled ||
+                runtimeFailureMessage === null ||
+                publishedNode === null ||
+                publishedResult === null
+            ) {
+                return;
+            }
+
+            runtimeFailureHandled = true;
+            if (publishedNode.controller) {
+                publishedNode.controller.ready = false;
+            }
+            if (publishedNode.grandBouleControls) {
+                publishedNode.grandBouleControls.ready = false;
+            }
+            publishedNode.workerInstances = 0;
+            pendingParams.length = 0;
+            if (placeholder.grandBouleControls) {
+                placeholder.grandBouleControls.setParam = () => {};
+            }
+            replaceRuntimeFailure?.(publishedNode, placeholder);
+            publishedResult.destroy();
+            getAudioDeviceRuntimeSink().emitDeviceRemoved({ deviceId, deviceType });
+        };
+        const onRuntimeFailure = (message: string): void => {
+            if (runtimeFailureMessage !== null) {
+                return;
+            }
+            runtimeFailureMessage = message;
+            logger.warn(`[WebAudioEngine] ${deviceType} runtime failure: ${message}`);
+            applyRuntimeFailure();
+        };
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.grandBouleControls = {
             ready: false,
@@ -868,20 +1104,25 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
             setBypass: () => {},
             destroy: () => {},
         };
-        const loadPromise = createGrandBouleNode(context, undefined, signal)
+        const loadPromise = createGrandBouleNode(context, undefined, onRuntimeFailure, signal)
             .then(async (result: GrandBouleNodeResult) => {
                 if ((await waitForDeviceReady({ deviceType, result, signal })) === null) {
+                    return;
+                }
+                if (runtimeFailureMessage !== null) {
+                    result.destroy();
                     return;
                 }
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
-                const accepted = onLoaded({
+                const loadedNode: BuiltinDeviceNode = {
                     deviceId,
                     type: deviceType,
                     nodes: [result.workletNode],
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
+                    workerInstances: 1,
                     controller: {
                         ready: true,
                         noteOn: result.noteOn,
@@ -913,8 +1154,15 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
                         setBypass: result.setBypass,
                         destroy: result.destroy,
                     },
-                });
+                };
+                const accepted = onLoaded(loadedNode);
                 if (accepted === false) {
+                    return;
+                }
+                publishedNode = loadedNode;
+                publishedResult = result;
+                applyRuntimeFailure();
+                if (runtimeFailureHandled) {
                     return;
                 }
                 getAudioDeviceRuntimeSink().emitDeviceLoaded({ deviceId, deviceType });
@@ -1025,12 +1273,27 @@ const kneadDescriptor: WasmDeviceDescriptor = {
         };
         const loadPromise = createKneadNode(context, transportSAB, signal)
             .then(async (result: KneadNodeResult) => {
-                if ((await waitForDeviceReady({ deviceType, result, signal })) === null) {
+                const readyData = await waitForDeviceReady({ deviceType, result, signal });
+                if (readyData === null) {
                     return;
                 }
+                // Knead delays its track by a whole analysis frame even at zero
+                // shift. Report it so PDC offsets the track; without this the vocal
+                // sat ~43 ms behind the mix on three shipped templates.
+                const initialLatency = typeof readyData.latency === 'number' ? readyData.latency : 0;
+                reportLatency(deviceId, (initialLatency / context.sampleRate) * 1000);
+
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
+                // Removing the device must retract its PDC entry; a stale entry
+                // keeps compensating a delay that is no longer in the graph.
+                // TrackNode.removeDevice prefers controller.destroy over dispose,
+                // so this is the reachable teardown path.
+                const destroy = (): void => {
+                    result.destroy();
+                    clearReportedLatency(deviceId);
+                };
                 onLoaded({
                     deviceId,
                     type: deviceType,
@@ -1043,14 +1306,14 @@ const kneadDescriptor: WasmDeviceDescriptor = {
                         updateState: result.updateState,
                         setParam: result.setParam,
                         setBypass: result.setBypass,
-                        destroy: result.destroy,
+                        destroy,
                     },
                     kneadControls: {
                         ready: true,
                         updateState: result.updateState,
                         setParam: result.setParam,
                         setBypass: result.setBypass,
-                        destroy: result.destroy,
+                        destroy,
                     },
                 });
                 return;
@@ -1073,6 +1336,7 @@ const WASM_DEVICE_DESCRIPTORS: WasmDeviceDescriptor[] = [
     crumbsDescriptor,
     proofChamberDescriptor,
     glutenDescriptor,
+    crustDescriptor,
     bacteriaDescriptor,
     grinderDescriptor,
     proofDescriptor,

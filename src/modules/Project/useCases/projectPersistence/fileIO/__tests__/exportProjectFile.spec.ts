@@ -23,8 +23,14 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     markerStore: { value: { markers: [] } },
     takeLaneStore: { value: undefined },
     adjustmentLayerStore: { value: { layers: [] } },
+    vcaGroupStore: { value: { groups: [] } },
+    gainEnvelopeStore: { value: { envelopes: {} } },
 }));
-vi.mock('#/modules/Automation/stores', () => ({ automationStore: { value: { lanes: [] } } }));
+vi.mock('#/modules/Automation/stores', () => ({
+    automationStore: { value: { lanes: [] } },
+    modulationStore: { value: { modulators: [] } },
+}));
+vi.mock('#/modules/CvGate/stores', () => ({ cvGateStore: { value: undefined } }));
 vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/MIDI/stores')>()),
     midiStore: { value: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} } },

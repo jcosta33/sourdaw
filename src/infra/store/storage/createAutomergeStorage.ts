@@ -47,6 +47,23 @@ type AutomergeStoragePort = {
      * `JSON.stringify` compare entirely (audit CC-1).
      */
     getDocHeads?(docId: AutomergeStorageDocId): readonly string[] | undefined;
+    /**
+     * Apply `changeFn` to the document at `docId`.
+     *
+     * **Durability contract the flush path relies on.** `changeFn` must run
+     * inside an all-or-nothing document transaction: if it throws, the document
+     * is left exactly as it was. The only production port
+     * (`registerCrdtStorageRuntime` → `automergeRepository.changeDoc`) satisfies
+     * this because Automerge's `change()` rolls its transaction back and
+     * rethrows when the callback throws, and the repository publishes the
+     * returned document only once `change()` has returned.
+     *
+     * A throw raised *after* `changeFn` returns is therefore the one case where
+     * durability is genuinely unknown — by then the new document is published
+     * and whatever failed next (listener notification, sync fan-out) ran on
+     * committed truth. `flushMatchingAutomergeStorageWrites` treats exactly that
+     * case as committed.
+     */
     mutateDoc(input: AutomergeStoragePortMutationInput): void;
     waitForSnapshotTransaction?(snapshotTransaction?: object): Promise<void>;
 };
@@ -182,31 +199,67 @@ const pendingAutomergeStorageWrites = new Set<PendingAutomergeStorageWrite>();
 const openAutomergeStorageCommitOwners = new Set<object>();
 let activeAutomergeStorageTransaction: ActiveAutomergeStorageTransaction | undefined;
 
+/**
+ * How a coalesced document write ended, and what its failure says about the
+ * document.
+ *
+ * The boundary is the moment the coalesced `changeFn` returns — see the
+ * durability contract on `AutomergeStoragePort.mutateDoc`:
+ *
+ * - `rolled-back` — the mutation never reached the document. Either the port
+ *   threw before it ran `changeFn` at all, or `changeFn` threw and the change
+ *   transaction was rolled back. A slot validator that refuses an unsupported
+ *   schema lands here, and its own error is what the caller must see.
+ * - `ambiguous` — `changeFn` completed and something after it threw. The change
+ *   is published; the write is durable even though the flush failed.
+ */
+type AutomergeStorageCommitOutcome =
+    | { readonly status: 'committed' }
+    | { readonly status: 'rolled-back'; readonly error: unknown }
+    | { readonly status: 'ambiguous'; readonly error: unknown };
+
 /** One Automerge change is the atomic commit boundary for keys sharing a document and owner. */
-function commitAutomergeStorageMutations(mutations: readonly AutomergeStorageMutationInput[]): void {
+function commitAutomergeStorageMutations(
+    mutations: readonly AutomergeStorageMutationInput[]
+): AutomergeStorageCommitOutcome {
     const firstMutation = mutations[0];
     if (!firstMutation) {
-        return;
+        return { status: 'committed' };
     }
 
     const port = getAutomergeStoragePort();
     if (!port) {
-        return;
+        return { status: 'committed' };
     }
 
     const message = mutations.find((mutation) => mutation.message !== undefined)?.message;
     const changedKeys = [...new Set(mutations.map((mutation) => mutation.key))];
-    port.mutateDoc({
-        docId: firstMutation.docId,
-        changedKeys,
-        changeFn: (doc) => {
-            for (const mutation of mutations) {
-                mutation.changeFn(doc);
-            }
-        },
-        message,
-        snapshotTransaction: firstMutation.snapshotTransaction,
-    });
+    // Written by the callback `mutateDoc` invokes synchronously, and read after
+    // it throws. It is a property rather than a plain `let` because TypeScript's
+    // control-flow analysis does not model the write through the callback and
+    // narrows a local to `false` for the whole catch below.
+    const application = { appliedChangeFn: false };
+    try {
+        port.mutateDoc({
+            docId: firstMutation.docId,
+            changedKeys,
+            changeFn: (doc) => {
+                for (const mutation of mutations) {
+                    mutation.changeFn(doc);
+                }
+                application.appliedChangeFn = true;
+            },
+            message,
+            snapshotTransaction: firstMutation.snapshotTransaction,
+        });
+    } catch (error) {
+        if (application.appliedChangeFn) {
+            return { status: 'ambiguous', error };
+        }
+        return { status: 'rolled-back', error };
+    }
+
+    return { status: 'committed' };
 }
 
 /**
@@ -447,14 +500,30 @@ function flushMatchingAutomergeStorageWrites(matches: (pending: PendingAutomerge
                 continue;
             }
 
-            try {
-                commitAutomergeStorageMutations(mutations);
-                committedDocumentCount += 1;
-                for (const write of writes) {
-                    write.didCommit();
-                }
-            } catch (error) {
-                firstError ??= error;
+            const outcome = commitAutomergeStorageMutations(mutations);
+            if (outcome.status === 'rolled-back') {
+                // Nothing reached the document, so this group did not commit
+                // and must not make a later document's failure look like a
+                // partial commit. A slot validator that refuses before writing
+                // reaches the caller as its own error rather than as
+                // "transaction committed", which would say the opposite of
+                // what happened.
+                firstError ??= outcome.error;
+                continue;
+            }
+
+            // Both remaining outcomes moved the document.
+            committedDocumentCount += 1;
+            if (outcome.status === 'ambiguous') {
+                // `changeFn` completed before the failure, so the change is
+                // published and the durable terminal cannot be taken back —
+                // even for the first document.
+                firstError ??= outcome.error;
+                continue;
+            }
+
+            for (const write of writes) {
+                write.didCommit();
             }
         }
     }

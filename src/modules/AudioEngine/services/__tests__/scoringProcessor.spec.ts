@@ -78,7 +78,7 @@ vi.mock('../../wasm/scoring.js', () => ({
     ScoringInstance: ScoringInstanceMock,
 }));
 
-const MINIMAL_WASM = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
+const MINIMAL_WASM_MODULE = new WebAssembly.Module(new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]));
 
 async function loadProcessor(): Promise<ScoringProcessorLike> {
     await import('../scoringProcessor');
@@ -86,7 +86,7 @@ async function loadProcessor(): Promise<ScoringProcessorLike> {
     if (!Ctor) {
         throw new Error('scoring-processor was not registered');
     }
-    return new Ctor();
+    return new Ctor({ processorOptions: { wasmModule: MINIMAL_WASM_MODULE } });
 }
 
 function send(proc: ScoringProcessorLike, data: unknown): void {
@@ -112,26 +112,28 @@ describe('ScoringProcessor message handling', () => {
 
     it('posts ready on init and ignores a second init', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         const ready = proc.port.postMessage.mock.calls.filter((c) => (c[0] as { type: string }).type === 'ready');
         expect(ready).toHaveLength(1);
     });
 
-    it('reports an init error when wasm compilation throws', async () => {
+    it('reports an init error when WASM instantiation throws', async () => {
+        const { initSync } = await import('../../wasm/scoring.js');
+        vi.mocked(initSync).mockImplementationOnce(() => {
+            throw new Error('WASM instantiation failed');
+        });
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: new Uint8Array(0) });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         const errors = proc.port.postMessage.mock.calls.filter((c) => (c[0] as { type?: string }).type === 'error');
         expect(errors).toHaveLength(1);
     });
 
-    it('forwards param name/value and toggles bypass', async () => {
+    it('forwards param name/value to the instance', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         resetRecording();
         send(proc, { type: 'param', name: 'threshold', value: 0.5 });
-        send(proc, { type: 'bypass', bypassed: true });
-        send(proc, { type: 'bypass', bypassed: false });
         expect(paramCalls).toContainEqual({ name: 'threshold', value: 0.5 });
     });
 
@@ -160,7 +162,7 @@ describe('ScoringProcessor process & telemetry', () => {
 
     it('returns early when the left input is absent or output empty', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         resetRecording();
         proc.process([[]], [stereo(FRAMES, 0)]); // no left channel
         proc.process([stereo(FRAMES, 0.5)], [[]]); // empty output
@@ -169,7 +171,7 @@ describe('ScoringProcessor process & telemetry', () => {
 
     it('publishes the inactive telemetry slot when no pitch is detected', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         const sab = new SharedArrayBuffer(Float32Array.BYTES_PER_ELEMENT * 32);
         const view = new Float32Array(sab);
         send(proc, { type: 'init-sab', sab, byteOffset: 0 });
@@ -185,7 +187,7 @@ describe('ScoringProcessor process & telemetry', () => {
 
     it('publishes the full pitch telemetry when a note is active', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         const sab = new SharedArrayBuffer(Float32Array.BYTES_PER_ELEMENT * 32);
         const view = new Float32Array(sab);
         send(proc, { type: 'init-sab', sab, byteOffset: 0 });
@@ -206,7 +208,7 @@ describe('ScoringProcessor process & telemetry', () => {
 
     it('does not throw when telemetry fires without an SAB', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         resetRecording();
         isActive = true;
         for (let i = 0; i < 5; i++) {
@@ -217,7 +219,7 @@ describe('ScoringProcessor process & telemetry', () => {
 
     it('faults and passthrough-copies when instance.process throws, then stops processing', async () => {
         const proc = await loadProcessor();
-        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
         resetRecording();
         processShouldThrow = true;
 
@@ -233,5 +235,83 @@ describe('ScoringProcessor process & telemetry', () => {
         processShouldThrow = false;
         proc.process([stereo(FRAMES, 0.4)], [stereo(FRAMES, 0)]);
         expect(processCalls).toEqual([]);
+    });
+});
+
+/**
+ * Two distinct channels. The mock (like the real ScoringInstance) copies the
+ * LEFT input into both output windows, so a right channel that still carries
+ * its own samples proves the block never went through the wasm result path.
+ */
+function distinctStereoInput(): Float32Array[] {
+    const leftIn = new Float32Array(FRAMES);
+    const rightIn = new Float32Array(FRAMES);
+    for (let index = 0; index < FRAMES; index++) {
+        leftIn[index] = Math.sin(index * 0.11) * 0.5;
+        rightIn[index] = Math.cos(index * 0.07) * 0.25;
+    }
+    return [leftIn, rightIn];
+}
+
+describe('ScoringProcessor bypass', () => {
+    beforeEach(() => {
+        resetGrowableMemory(memory, HEAP_BYTES);
+        resetRecording();
+    });
+
+    it('copies the input to the output and runs no analysis while bypassed', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        const sab = new SharedArrayBuffer(Float32Array.BYTES_PER_ELEMENT * 32);
+        const view = new Float32Array(sab);
+        send(proc, { type: 'init-sab', sab, byteOffset: 0 });
+        resetRecording();
+        isActive = true;
+        send(proc, { type: 'bypass', bypassed: true });
+
+        const input = distinctStereoInput();
+        const output = [new Float32Array(FRAMES), new Float32Array(FRAMES)];
+        // Telemetry interval is 4 process calls — long enough to publish.
+        for (let quantum = 0; quantum < 4; quantum++) {
+            proc.process([input], [output]);
+        }
+
+        expect(Array.from(output[0]!)).toEqual(Array.from(input[0]!));
+        // The wasm path mirrors LEFT into the right window; the dry right
+        // channel surviving is what separates bypass from a passthrough engine.
+        expect(Array.from(output[1]!)).toEqual(Array.from(input[1]!));
+        expect(processCalls).toEqual([]);
+        // The tuner readout is the only thing this device produces. Bypassed, it
+        // must stop producing it rather than keep detecting off a live signal.
+        expect(view[0]).toBe(0);
+        expect(view[1]).toBe(0);
+    });
+
+    it('resumes analysis and telemetry once bypass is turned off', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        const sab = new SharedArrayBuffer(Float32Array.BYTES_PER_ELEMENT * 32);
+        const view = new Float32Array(sab);
+        send(proc, { type: 'init-sab', sab, byteOffset: 0 });
+        resetRecording();
+        isActive = true;
+
+        const input = distinctStereoInput();
+        const output = [new Float32Array(FRAMES), new Float32Array(FRAMES)];
+        send(proc, { type: 'bypass', bypassed: true });
+        for (let quantum = 0; quantum < 4; quantum++) {
+            proc.process([input], [output]);
+        }
+
+        send(proc, { type: 'bypass', bypassed: false });
+        for (let quantum = 0; quantum < 4; quantum++) {
+            proc.process([input], [output]);
+        }
+
+        expect(processCalls).toEqual([FRAMES, FRAMES, FRAMES, FRAMES]);
+        expect(view[0]).toBe(1);
+        expect(view[1]).toBe(440);
+        // Engine output again: the right channel now mirrors the left window.
+        expect(Array.from(output[1]!)).toEqual(Array.from(input[0]!));
     });
 });

@@ -2,6 +2,7 @@ import { type NativeDspDeviceType } from '#/utils/nativeDspDeviceTypes';
 
 import { isBacteriaDevice, createBacteriaNode } from '../../engine/BacteriaNode';
 import { isCrumbsDevice, createCrumbsNode } from '../../engine/CrumbsNode';
+import { isCrustDevice, createCrustNode } from '../../engine/CrustNode';
 import { isFermenterDevice, createFermenterNode } from '../../engine/FermenterNode';
 import { isGlutenDevice, createGlutenNode } from '../../engine/GlutenNode';
 import { isGrandBouleDevice, createGrandBouleNode } from '../../engine/GrandBouleNode';
@@ -32,6 +33,8 @@ export type NativeDspNode = {
     setPadDryRouted?: (pad: number, routed: boolean) => void;
     destroy?: () => void;
     ready: Promise<Record<string, unknown>>;
+    runtimeFailure?: Promise<never>;
+    runtimeHealthCheck?: () => Promise<void>;
 };
 
 /**
@@ -80,6 +83,37 @@ function bindPadNotes<TNode extends PadNoteNode>(node: TNode): NoteBoundNode<TNo
     };
 }
 
+async function createFermenterOfflineNode(ctx: BaseAudioContext): Promise<NativeDspNode> {
+    let rejectRuntimeFailure: ((error: Error) => void) | undefined;
+    const runtimeFailure = new Promise<never>((_resolve, reject) => {
+        rejectRuntimeFailure = reject;
+    });
+    // The render kernel adopts this signal only after every strip is prepared.
+    // Observe an earlier fault without consuming the rejection it will race.
+    void runtimeFailure.catch(() => undefined);
+
+    const node = await createFermenterNode(ctx, undefined, (message) => {
+        rejectRuntimeFailure?.(new Error(message));
+    });
+    return { ...bindMelodicNotes(node), runtimeFailure };
+}
+
+async function createGrandBouleOfflineNode(ctx: BaseAudioContext): Promise<NativeDspNode> {
+    let rejectRuntimeFailure: ((error: Error) => void) | undefined;
+    const runtimeFailure = new Promise<never>((_resolve, reject) => {
+        rejectRuntimeFailure = reject;
+    });
+    // Rendering attaches its race after all strips and events are prepared. Keep
+    // a failure during that preparation observed until the render kernel adopts
+    // the same promise, rather than producing an unhandled rejection.
+    void runtimeFailure.catch(() => undefined);
+
+    const node = await createGrandBouleNode(ctx, undefined, (message) => {
+        rejectRuntimeFailure?.(new Error(message));
+    });
+    return { ...bindMelodicNotes(node), runtimeFailure, runtimeHealthCheck: node.runtimeHealthCheck };
+}
+
 type NativeDspDeviceFactory = {
     /**
      * The canonical type this factory builds.
@@ -120,7 +154,7 @@ export const NATIVE_DSP_DEVICE_FACTORIES: readonly NativeDspDeviceFactory[] = [
     {
         type: 'fermenter',
         matches: isFermenterDevice,
-        create: async (ctx) => bindMelodicNotes(await createFermenterNode(ctx)),
+        create: createFermenterOfflineNode,
     },
     { type: 'toaster', matches: isToasterDevice, create: async (ctx) => bindPadNotes(await createToasterNode(ctx)) },
     { type: 'levain', matches: isLevainDevice, create: async (ctx) => bindMelodicNotes(await createLevainNode(ctx)) },
@@ -136,9 +170,10 @@ export const NATIVE_DSP_DEVICE_FACTORIES: readonly NativeDspDeviceFactory[] = [
     {
         type: 'grand-boule',
         matches: isGrandBouleDevice,
-        create: async (ctx) => bindMelodicNotes(await createGrandBouleNode(ctx)),
+        create: createGrandBouleOfflineNode,
     },
     { type: 'gluten', matches: isGlutenDevice, create: createGlutenNode },
+    { type: 'crust', matches: isCrustDevice, create: createCrustNode },
     { type: 'bacteria', matches: isBacteriaDevice, create: createBacteriaNode },
     { type: 'grinder', matches: isGrinderDevice, create: createGrinderNode },
     { type: 'proof', matches: isProofDevice, create: createProofNode },

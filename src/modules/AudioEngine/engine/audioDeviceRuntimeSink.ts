@@ -1,4 +1,5 @@
 import { type BacteriaMeterData } from './BacteriaNode';
+import { type CrustMeterData } from './CrustNode';
 import { type FermenterNodeResult } from './FermenterNode';
 import { type GlutenMeterData } from './GlutenNode';
 import { type GrinderMeterData } from './GrinderNode';
@@ -39,6 +40,8 @@ export type AudioDeviceRuntimeSink = {
     setFermenterTelemetry: (deviceId: string, telemetry: FermenterTelemetry) => void;
     updateGlutenMeters: (deviceId: string, meters: GlutenMeterData) => void;
     deleteGlutenMeters: (deviceId: string) => void;
+    updateCrustMeters: (deviceId: string, meters: CrustMeterData) => void;
+    deleteCrustMeters: (deviceId: string) => void;
     updateBacteriaMeters: (deviceId: string, meters: BacteriaMeterData) => void;
     updateGrinderTelemetry: (deviceId: string, telemetry: GrinderMeterData) => void;
     registerProofDevice: (input: { deviceId: string; bridge: ProofRuntimeBridge }) => void;
@@ -94,6 +97,8 @@ const defaultSink: AudioDeviceRuntimeSink = {
     setFermenterTelemetry: () => {},
     updateGlutenMeters: () => {},
     deleteGlutenMeters: () => {},
+    updateCrustMeters: () => {},
+    deleteCrustMeters: () => {},
     updateBacteriaMeters: () => {},
     updateGrinderTelemetry: () => {},
     registerProofDevice: () => {},

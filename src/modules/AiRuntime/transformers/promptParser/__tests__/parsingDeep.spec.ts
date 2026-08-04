@@ -86,28 +86,20 @@ describe('tryParameterizedPath', () => {
         expect(result[0]).toMatchObject({ type: 'renameClip', payload: { clipId: 'c1', name: 'Verse' } });
     });
 
-    it('parses transpose up', () => {
-        const result = tryParameterizedPath('transpose up 5 semitones', ctx);
-        expect(result).toHaveLength(1);
-        expect(result[0]).toMatchObject({ type: 'transposeNotes', payload: { clipId: 'c1', semitones: 5 } });
-    });
-
-    it('parses transpose down', () => {
-        const result = tryParameterizedPath('transpose down 3', ctx);
-        expect(result).toHaveLength(1);
-        expect(result[0]).toMatchObject({ type: 'transposeNotes', payload: { clipId: 'c1', semitones: -3 } });
-    });
-
-    it('parses quantize', () => {
-        const result = tryParameterizedPath('quantize', ctx);
-        expect(result).toHaveLength(1);
-        expect(result[0]).toMatchObject({ type: 'quantizeNotes', payload: { clipId: 'c1' } });
-    });
-
-    it('parses quantize with grid size', () => {
-        const result = tryParameterizedPath('quantize to 1/16', ctx);
-        expect(result).toHaveLength(1);
-        expect(result[0]).toMatchObject({ type: 'quantizeNotes' });
+    // `#954` retired the transpose and quantize fast paths so these prompts
+    // reach the grounded provider path instead, where the clip and the note set
+    // are resolved exactly rather than guessed from the prompt text. Its sibling
+    // `parsing.spec.ts` was updated to assert the same thing; this file was
+    // missed and asserted the retired behaviour, which is why `main` went red.
+    //
+    // The capability itself is still covered, on the path that now owns it:
+    // `llmActionBridge.spec.ts`, `bridgeGroundedLlmToolCalls.spec.ts`,
+    // `validateActionPayload.spec.ts` and `midiNoteTransformUndo.spec.ts`.
+    it('leaves quantize and transpose for the grounded provider path', () => {
+        expect(tryParameterizedPath('transpose up 5 semitones', ctx)).toEqual([]);
+        expect(tryParameterizedPath('transpose down 3', ctx)).toEqual([]);
+        expect(tryParameterizedPath('quantize', ctx)).toEqual([]);
+        expect(tryParameterizedPath('quantize to 1/16', ctx)).toEqual([]);
     });
 
     it('parses set velocity', () => {
