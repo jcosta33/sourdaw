@@ -57,12 +57,8 @@ export type ProjectData = {
      * master gain round-trips as {@link ProjectTransport.masterGain}, and buses are
      * ordinary `kind: 'bus'` rows in {@link ProjectArrangement.tracks}.
      *
-     * Deleting it is the correct fix and is blocked on one owner decision, not on
-     * code: `renderMyceliumAscendantDemo.spec.ts` pins a sha256 of the serialized
-     * demo blueprint against four hand-transcribed capture records under
-     * `docs/evidence/mycelium-ascendant/`. Dropping the field moves that digest from
-     * `1cea829d…` to `c9f7fa16…`, and refreshing the records by hand would date a
-     * render nobody performed. Re-record the Mycelium evidence, then remove this.
+     * Deleting it requires a project-format migration so older saved projects remain
+     * loadable; no current runtime path depends on the value.
      */
     mixer: ProjectMixer;
     vcaGroups?: ProjectVcaGroup[];
