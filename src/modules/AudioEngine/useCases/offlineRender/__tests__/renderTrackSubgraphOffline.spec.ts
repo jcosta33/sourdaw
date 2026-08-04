@@ -680,7 +680,12 @@ describe('renderTrackSubgraphOffline', () => {
             vi.stubGlobal('OfflineAudioContext', StalledRenderContext);
         }
 
-        it('rejects a wedged render once its wall-clock budget is spent instead of hanging forever', async () => {
+        // SPEC-offline-live-collapse AC-10: the freeze path's backstop is now
+        // the no-progress watchdog rather than a total-elapsed budget. This
+        // case previously advanced past the 60 s floor and asserted a "timed
+        // out" rejection — a wedged render is still rejected, but for making no
+        // progress, and after 10 s rather than 60.
+        it('rejects a wedged render once it stops making progress instead of hanging forever', async () => {
             vi.useFakeTimers();
             stubStalledContext();
             const track = TrackDummy.create({ id: 'track-1', kind: 'audio' });
@@ -691,11 +696,10 @@ describe('renderTrackSubgraphOffline', () => {
                 startBeat: 0,
                 endBeat: 4,
             });
-            const settled = expect(rendering).rejects.toThrow(/timed out/);
+            const settled = expect(rendering).rejects.toThrow(/made no progress/);
 
-            // Past the 60 s floor the export paths already apply. Without a
-            // backstop this promise never settles at all.
-            await vi.advanceTimersByTimeAsync(70_000);
+            // Without a backstop this promise never settles at all.
+            await vi.advanceTimersByTimeAsync(15_000);
             await settled;
 
             vi.useRealTimers();
@@ -1051,7 +1055,8 @@ describe('renderTrackSubgraphOffline', () => {
                         sourceTrackId: 'source-1',
                         targetTrackId: 'track-1',
                         targetDeviceId: 'sc-1',
-                        amount: 1,
+                        targetParameterId: 'threshold',
+                        gain: 1,
                     },
                 ],
             });

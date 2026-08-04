@@ -220,22 +220,99 @@ describe('renderInSegments', () => {
         expect(harness.scheduledCheckpoints().length).toBeGreaterThan(0);
     });
 
-    it('aborts at a checkpoint once the render has exceeded its timeout budget', async () => {
-        vi.useFakeTimers();
-        const harness = createSegmentedContext(4);
+    // ── SPEC-offline-live-collapse AC-10 ──────────────────────────────────
+    //
+    // The deadline used to be a *total elapsed* budget read from `Date.now()`,
+    // enforced at every checkpoint and again by a `setTimeout` racing the
+    // render promise. It aborted renders that were working, it could not abort
+    // the one case that matters (`OfflineAudioContext` has no abort API, so the
+    // racing timer rejected a promise while the work continued), and its clock
+    // was not monotonic.
+    //
+    // The two cases replaced here previously asserted that a render was aborted
+    // for elapsed time while it was still producing checkpoints. They pinned
+    // the defect; they are rewritten, not deleted.
+    describe('the render deadline measures progress, not elapsed time', () => {
+        it('never aborts a render whose checkpoints keep arriving, however long it has run', async () => {
+            vi.useFakeTimers();
+            const harness = createSegmentedContext(6);
 
-        const rendering = renderInSegments({
-            offlineCtx: harness.offlineCtx,
-            durationSeconds: 4,
-            timeoutMs: 5_000,
-            segmentSeconds: 1,
+            const rendering = renderInSegments({
+                offlineCtx: harness.offlineCtx,
+                durationSeconds: 6,
+                timeoutMs: 5_000,
+                segmentSeconds: 1,
+            });
+
+            // Five segments, each taking 8 s of wall clock — under the 10 s
+            // no-progress window but far past both the old 5 s `timeoutMs` and
+            // the 60 s floor the export paths apply. A total-elapsed budget
+            // aborts this at the first checkpoint past its number.
+            for (const checkpoint of [1, 2, 3, 4, 5]) {
+                await vi.advanceTimersByTimeAsync(8_000);
+                await harness.reachCheckpoint(checkpoint);
+            }
+            await harness.finishRendering();
+
+            await expect(rendering).resolves.toBe(harness.buffer);
+            expect(harness.resumeCount()).toBe(5);
         });
 
-        vi.advanceTimersByTime(6_000);
-        await harness.reachCheckpoint(1);
+        it('abandons a render whose checkpoints stop, and stops the work rather than only the promise', async () => {
+            vi.useFakeTimers();
+            const harness = createSegmentedContext(6);
 
-        await expect(rendering).rejects.toThrow(/timed out/);
-        expect(harness.resumeCount()).toBe(0);
+            const rendering = renderInSegments({
+                offlineCtx: harness.offlineCtx,
+                durationSeconds: 6,
+                timeoutMs: 5_000,
+                segmentSeconds: 1,
+            });
+            const settled = expect(rendering).rejects.toThrow(/made no progress/);
+
+            await vi.advanceTimersByTimeAsync(2_000);
+            await harness.reachCheckpoint(1);
+            // …and then nothing more arrives.
+            await vi.advanceTimersByTimeAsync(11_000);
+
+            await settled;
+            // The abort is expressed through the suspend loop: the context is
+            // left suspended (one resume, from the checkpoint that did arrive)
+            // and then closed, so the render is not running in the background.
+            // A `setTimeout` rejecting the promise would leave both untouched.
+            expect(harness.resumeCount()).toBe(1);
+            expect(harness.closeCount()).toBe(1);
+            expect(harness.pendingCheckpoints()).toEqual([]);
+        });
+
+        it('is unmoved by a system clock that jumps backwards and forwards mid-render', async () => {
+            vi.useFakeTimers();
+            const harness = createSegmentedContext(4);
+
+            const rendering = renderInSegments({
+                offlineCtx: harness.offlineCtx,
+                durationSeconds: 4,
+                timeoutMs: 5_000,
+                segmentSeconds: 1,
+            });
+
+            // `setSystemTime` moves `Date.now()` and leaves the monotonic clock
+            // alone — which is the whole distinction under test. An hour
+            // forward would blow any elapsed budget instantly; an hour back
+            // would make one unreachable.
+            await vi.advanceTimersByTimeAsync(1_000);
+            vi.setSystemTime(new Date(Date.now() + 3_600_000));
+            await harness.reachCheckpoint(1);
+            await vi.advanceTimersByTimeAsync(1_000);
+            vi.setSystemTime(new Date(Date.now() - 7_200_000));
+            await harness.reachCheckpoint(2);
+            await vi.advanceTimersByTimeAsync(1_000);
+            await harness.reachCheckpoint(3);
+            await harness.finishRendering();
+
+            await expect(rendering).resolves.toBe(harness.buffer);
+            expect(harness.resumeCount()).toBe(3);
+        });
     });
 
     it('falls back to an unsegmented render when the context cannot suspend', async () => {
@@ -307,7 +384,7 @@ describe('renderInSegments', () => {
         expect(harness.pendingCheckpoints()).toEqual([]);
     });
 
-    it('tears the context down when the time budget is blown', async () => {
+    it('tears the context down when a render wedges before its first checkpoint', async () => {
         vi.useFakeTimers();
         const harness = createSegmentedContext(4);
 
@@ -317,11 +394,16 @@ describe('renderInSegments', () => {
             timeoutMs: 5_000,
             segmentSeconds: 1,
         });
+        const settled = expect(rendering).rejects.toThrow(/made no progress/);
 
-        vi.advanceTimersByTime(6_000);
-        await harness.reachCheckpoint(1);
+        // No checkpoint ever arrives. A no-progress check evaluated only *at* a
+        // checkpoint would never run here — the case it exists for is exactly
+        // the one that produces no checkpoint — so the watchdog has to be an
+        // independent timer.
+        await vi.advanceTimersByTimeAsync(11_000);
 
-        await expect(rendering).rejects.toThrow(/timed out/);
+        await settled;
+        expect(harness.resumeCount()).toBe(0);
         expect(harness.closeCount()).toBe(1);
         expect(harness.pendingCheckpoints()).toEqual([]);
     });

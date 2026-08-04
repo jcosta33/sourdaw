@@ -74,8 +74,7 @@ function findStripBuildingRenderFiles(): string[] {
         .filter((path) => {
             const source = readFileSync(path, 'utf8');
             const constructsContext = source.includes('new OfflineAudioContext');
-            const buildsStrip =
-                source.includes('createOfflineTrackStrip') || source.includes('createOfflineBusStrip');
+            const buildsStrip = source.includes('createOfflineTrackStrip') || source.includes('createOfflineBusStrip');
             return constructsContext && buildsStrip;
         })
         .map((path) => path.slice(SRC_ROOT.length + 1));
@@ -161,7 +160,7 @@ describe('offline context preparation census', () => {
         // Both degrade paths report. Before AC-1 the freeze path had no
         // `prepared` record at all, so `createSidechainCompressorFallback` had
         // no `onWarning` to reach and the substitution was invisible.
-        expect(onWarning.mock.calls.map(([message]: [string]) => message)).toEqual([
+        expect(onWarning.mock.calls.map((call) => String(call[0]))).toEqual([
             expect.stringContaining('Sidechain processor unavailable'),
             expect.stringContaining('Bitcrusher rate reduction unavailable'),
         ]);

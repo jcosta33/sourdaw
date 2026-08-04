@@ -1,6 +1,11 @@
 import { createExportError } from '../../errors/ExportError';
 
-import { RENDER_QUANTUM_FRAMES, RENDER_SEGMENT_SECONDS } from './constants';
+import {
+    NO_PROGRESS_POLL_MS,
+    NO_PROGRESS_TIMEOUT_MS,
+    RENDER_QUANTUM_FRAMES,
+    RENDER_SEGMENT_SECONDS,
+} from './constants';
 import { isCancelRequested } from './isCancelRequested';
 import { renderWithTimeout } from './renderWithTimeout';
 
@@ -177,7 +182,10 @@ export function renderInSegments({
         return Promise.race([rendering, ...failures]);
     }
 
-    const startedAt = Date.now();
+    // `performance.now()` is monotonic; `Date.now()` is not. The old budget read
+    // the wall clock, so a system clock adjustment mid-render changed the
+    // verdict on a render that was behaving identically.
+    let lastProgressAt = performance.now();
     let stopped = false;
     let contextAbandoned = false;
     let abort: ((error: Error) => void) | null = null;
@@ -185,6 +193,35 @@ export function renderInSegments({
     const aborted = new Promise<never>((_resolve, reject) => {
         abort = reject;
     });
+
+    /**
+     * Abandon a render that has stopped making progress.
+     *
+     * An independent timer rather than a check at checkpoint arrival: a wedged
+     * render produces no checkpoint, so a check that only runs when one arrives
+     * never runs in the one case it exists for. The abort itself goes through
+     * the same path a cancel does — reject, close, and never resume — because
+     * `OfflineAudioContext` has no abort API and leaving it suspended is the
+     * only thing that actually stops the work.
+     */
+    const watchdog = setInterval(() => {
+        if (stopped) {
+            return;
+        }
+        const idleMs = performance.now() - lastProgressAt;
+        if (idleMs < NO_PROGRESS_TIMEOUT_MS) {
+            return;
+        }
+        stopped = true;
+        clearInterval(watchdog);
+        abort?.(
+            createExportError(
+                `Offline render made no progress for ${(idleMs / 1000).toFixed(1)}s ` +
+                    `(no-progress budget ${String(NO_PROGRESS_TIMEOUT_MS / 1000)}s)`
+            )
+        );
+        abandonContext();
+    }, NO_PROGRESS_POLL_MS);
 
     /**
      * Every way this render can end without producing a buffer converges here.
@@ -219,13 +256,10 @@ export function renderInSegments({
                     return null;
                 }
 
-                if (Date.now() - startedAt >= timeoutMs) {
-                    stopped = true;
-                    abort?.(createExportError(`Offline render timed out after ${timeoutMs / 1000}s`));
-                    abandonContext();
-                    return null;
-                }
-
+                // Reaching a checkpoint *is* the progress signal. A render that
+                // keeps arriving here is working, however long it has been
+                // running in total, and is never aborted for elapsed time.
+                lastProgressAt = performance.now();
                 onRenderProgress?.(checkpointSeconds / durationSeconds);
                 return offlineCtx.resume();
             },
@@ -237,7 +271,16 @@ export function renderInSegments({
         );
     }
 
-    const rendering = renderWithTimeout(offlineCtx, timeoutMs)
+    // No racing `setTimeout` here, deliberately. `OfflineAudioContext` exposes
+    // `startRendering()`, `suspend()` and `resume()` and no abort, so a timer
+    // that rejects this promise stops nothing — the render runs to completion in
+    // the background and its CPU is reclaimed only when it finishes. The
+    // watchdog above is the real stop: it leaves the context suspended, which is
+    // the only thing that halts the work. The unsegmented fallback still uses
+    // `renderWithTimeout`, because with no checkpoints it has no progress signal
+    // and freeing the caller is the most it can do.
+    const rendering = offlineCtx
+        .startRendering()
         .then(async (buffer) => {
             try {
                 await Promise.all(runtimeHealthChecks.map((check) => check()));
@@ -245,14 +288,14 @@ export function renderInSegments({
                 throw createOfflineRuntimeFailureError(error);
             }
             stopped = true;
+            clearInterval(watchdog);
             return buffer;
         })
         .catch((error: unknown) => {
             stopped = true;
-            // The wall-clock guard inside `renderWithTimeout` fires here when the
-            // budget runs out between two checkpoints, and that abandons the
-            // context exactly as a checkpoint abort does. Only the fulfilled
-            // branch above leaves the context alone — it produced a buffer.
+            clearInterval(watchdog);
+            // Only the fulfilled branch above leaves the context alone — it
+            // produced a buffer.
             abandonContext();
             throw error instanceof Error ? error : new Error(String(error));
         });
