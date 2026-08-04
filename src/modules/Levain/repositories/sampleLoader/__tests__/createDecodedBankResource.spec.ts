@@ -688,12 +688,17 @@ describe('createDecodedBankResource', () => {
             loadManifest: vi.fn().mockResolvedValue(createManifest({ files: ['violin-1.wav'] })),
             loadSample: vi.fn().mockResolvedValue(createSample(1)),
         });
-        const heldLease = await resource.acquire(DEFAULT_INPUT);
+        const [firstLease, secondLease] = await Promise.all([
+            resource.acquire(DEFAULT_INPUT),
+            resource.acquire(DEFAULT_INPUT),
+        ]);
 
         resource.clear();
 
+        expect(resource.getDiagnostics()).toMatchObject({ activeLeases: 2, decodedBytes: 4, resolvedBanks: 0 });
+        firstLease.release();
         expect(resource.getDiagnostics()).toMatchObject({ activeLeases: 1, decodedBytes: 4, resolvedBanks: 0 });
-        heldLease.release();
+        secondLease.release();
         expect(resource.getDiagnostics()).toMatchObject({ activeLeases: 0, decodedBytes: 0, resolvedBanks: 0 });
     });
 

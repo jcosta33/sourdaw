@@ -30,7 +30,9 @@ export type DecodedBank = {
 };
 
 export type DecodedBankLease = {
+    /** The bank remains physically accounted and non-evictable until `release` is called. */
     bank: DecodedBank;
+    /** Idempotently ends this consumer's ownership of the decoded PCM. */
     release: () => void;
 };
 
@@ -447,6 +449,7 @@ export function createDecodedBankResource({
                 if (
                     candidate === entry ||
                     candidate.activeLeases > 0 ||
+                    candidate.consumers.size > 0 ||
                     candidate.decodedBytes === 0 ||
                     candidate.lastAccess >= entry.lastAccess
                 ) {
