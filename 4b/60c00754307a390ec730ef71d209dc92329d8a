@@ -1,0 +1,83 @@
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_bc88af7d3b054c::t_a92df4cce976ad 294-295
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_bc88af7d3b054c::t_a92df4cce976ad 127
+src/modules/Arrangement/useCases/marker/markerOperations/__tests__/removeMarker.spec.ts
+  s_bc88af7d3b054c::t_88270b0e3cf55f 33,35,44,46-55
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_bc88af7d3b054c::t_b14fa0fd430884 58,871
+  s_bc88af7d3b054c::t_a92df4cce976ad 883-888,891-896
+  s_bc88af7d3b054c::t_7b51618f527e69 57,890
+  s_bc88af7d3b054c::t_6ca30527b96db3 889
+  s_bc88af7d3b054c::t_6e663491bf8e51 880-882
+  s_bc88af7d3b054c::t_dfccc71c5704e2 879
+src/modules/AiRuntime/useCases/__tests__/describePlannedAction.spec.ts
+  s_bc88af7d3b054c::t_e093043bad99ef 1-15,67-70,101-118
+  s_bc88af7d3b054c::t_dbd7b626bce210 119
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_bc88af7d3b054c::t_a92df4cce976ad 27,366-380,383-384,386-387,1511-1513
+  s_bc88af7d3b054c::t_4f54b7d86826bf 381-382,385
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_bc88af7d3b054c::t_b14fa0fd430884 1170
+  s_bc88af7d3b054c::t_cab9131dfdc2ea 1179
+  s_bc88af7d3b054c::t_7b51618f527e69 1180
+  s_bc88af7d3b054c::t_88270b0e3cf55f 440-449,1174-1178
+  s_bc88af7d3b054c::t_d8a2d168540f22 439
+  s_bc88af7d3b054c::t_1d1ba02a484805 1181-1182
+src/modules/Arrangement/handlers/marker/__tests__/markerHandlers.spec.ts
+  s_bc88af7d3b054c::t_968abd81074194 160-163,165-166
+  s_bc88af7d3b054c::t_80233b47289dfc 55,114,126
+  s_bc88af7d3b054c::t_88270b0e3cf55f 37,175-180
+  s_bc88af7d3b054c::t_e093043bad99ef 155
+  s_bc88af7d3b054c::t_d32aaeaffd20dc 41-45,49-53,100,107,117,124,130,137,147,164
+  s_bc88af7d3b054c::t_d71df65bee0ece 181-182
+src/modules/AiRuntime/useCases/describePlannedAction.ts
+  s_bc88af7d3b054c::t_e093043bad99ef 1,27-30
+  s_bc88af7d3b054c::t_27c23ca328602c 31-32
+src/modules/Arrangement/handlers/marker/handleRemoveMarker.ts
+  s_bc88af7d3b054c::t_a92df4cce976ad 5,8
+  s_bc88af7d3b054c::t_e093043bad99ef 12
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_bc88af7d3b054c::t_457a5740e6f086 315,320
+  s_bc88af7d3b054c::t_88270b0e3cf55f 303-314,316-319,321-324
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_bc88af7d3b054c::t_7b51618f527e69 320-335,354-376,404
+  s_bc88af7d3b054c::t_457a5740e6f086 312,381,387,393,397
+  s_bc88af7d3b054c::t_b14fa0fd430884 212-214,216-220,336-353
+  s_bc88af7d3b054c::t_138db8c9dad093 215
+  s_bc88af7d3b054c::t_88270b0e3cf55f 306-311,313-319,377-380,382-386,388-392,394-396,398-403
+  s_bc88af7d3b054c::t_06b15d5512737c 77
+  s_bc88af7d3b054c::t_348e1b95b811b0 405-406
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_bc88af7d3b054c::t_88270b0e3cf55f 343-348
+  s_bc88af7d3b054c::t_8a8a78bdb0e766 349-351
+src/modules/Arrangement/useCases/marker/markerOperations/removeMarker.ts
+  s_bc88af7d3b054c::t_a92df4cce976ad 3,6-9,12
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_bc88af7d3b054c::t_88270b0e3cf55f 457-510
+src/modules/Arrangement/handlers/marker/handleAddMarker.ts
+  s_bc88af7d3b054c::t_968abd81074194 7,23-25
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_bc88af7d3b054c::t_7b51618f527e69 1089-1092,1504-1513,1519-1521,1526-1534
+  s_bc88af7d3b054c::t_66edf6aa1ec825 1514-1515
+  s_bc88af7d3b054c::t_b14fa0fd430884 1516-1518,1522-1525,1536-1549,1945,1948,1977-1978
+  s_bc88af7d3b054c::t_042c3fc2ccaf21 1535
+  s_bc88af7d3b054c::t_ff4791667cb322 1946-1947
+  s_bc88af7d3b054c::t_3940836d33072a 1974-1976
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "4b60c00754307a390ec730ef71d209dc92329d8a",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
