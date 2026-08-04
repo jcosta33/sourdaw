@@ -1,0 +1,67 @@
+docs/evidence/mycelium-ascendant/note-event-report.json
+  s_ac9b259eab20ba::t_dc33a590e1f8ef 3
+src/modules/Project/useCases/demoProjects/myceliumAscendant/createMyceliumAscendantBlueprint.ts
+  s_ac9b259eab20ba::t_2d21585e553a0e 93,154-158
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/reloadMyceliumAscendantDemo.spec.ts
+  s_ac9b259eab20ba::t_d7142a2f640294 13,79,91,112
+docs/evidence/mycelium-ascendant/originality-review.md
+  s_ac9b259eab20ba::t_dc33a590e1f8ef 3,8-9,14,16
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/createMyceliumRhythmPerformance.spec.ts
+  s_ac9b259eab20ba::t_db423cffff1a07 134,151,158,163-165,173,184-185,199-200
+  s_ac9b259eab20ba::t_b7fec85c09e89b 88-93
+src/modules/Project/useCases/demoProjects/myceliumAscendant/createMyceliumVoicePerformance.ts
+  s_ac9b259eab20ba::t_2d21585e553a0e 88,302-306
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/renderMyceliumAscendantDemo.spec.ts
+  s_ac9b259eab20ba::t_8207422d43580e 15,38-39,60-61,85,95,101,103
+  s_ac9b259eab20ba::t_aa79df9f9c0137 20,23,29,33-34,44,70-72,81,92-94,96-100,102
+  s_ac9b259eab20ba::t_a3fd7f2df7d40d 35
+  s_ac9b259eab20ba::t_10e2c3b78bf2b5 64-65
+src/modules/Project/useCases/demoProjects/myceliumAscendant/createMyceliumAutomation.ts
+  s_ac9b259eab20ba::t_2d21585e553a0e 7,25-26,134,137,149,156,159-160,177,197-212,218-223
+  s_ac9b259eab20ba::t_4cf252cf77e913 299
+docs/evidence/mycelium-ascendant/listening-conformance.md
+  s_ac9b259eab20ba::t_aa79df9f9c0137 3,7
+  s_ac9b259eab20ba::t_dc33a590e1f8ef 11,13,26
+  s_ac9b259eab20ba::t_7b43795fc3414b 8
+docs/evidence/mycelium-ascendant/automation-audition.md
+  s_ac9b259eab20ba::t_dc33a590e1f8ef 3,7-8,11,13
+docs/evidence/mycelium-ascendant/automation-stem-evidence.json
+  s_ac9b259eab20ba::t_aa79df9f9c0137 3
+docs/evidence/mycelium-ascendant/desktop-runtime-evidence.json
+  s_ac9b259eab20ba::t_aa79df9f9c0137 3
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/createMyceliumAscendantDemo.spec.ts
+  s_ac9b259eab20ba::t_89284af54a7512 24,44-45
+docs/evidence/mycelium-ascendant/launch-integrity.md
+  s_ac9b259eab20ba::t_dc33a590e1f8ef 3,6-7,18
+docs/evidence/mycelium-ascendant/render-evidence.json
+  s_ac9b259eab20ba::t_aa79df9f9c0137 3
+docs/evidence/mycelium-ascendant/motif-event-report.json
+  s_ac9b259eab20ba::t_aa79df9f9c0137 3
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/createMyceliumAutomation.spec.ts
+  s_ac9b259eab20ba::t_db423cffff1a07 41,134,152-153,159,164-166,168-169,171,173-174,176-177,181-184
+  s_ac9b259eab20ba::t_5df4f38b804912 19
+  s_ac9b259eab20ba::t_4cf252cf77e913 4,18,20-31,155-156,167,170,172,175,178-180
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/createMyceliumAscendantBlueprint.spec.ts
+  s_ac9b259eab20ba::t_89284af54a7512 27
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/createMyceliumVoicePerformance.spec.ts
+  s_ac9b259eab20ba::t_b7fec85c09e89b 79-84
+  s_ac9b259eab20ba::t_db423cffff1a07 64-65,108,158,162,166,182-192
+src/modules/Project/useCases/demoProjects/myceliumAscendant/createMyceliumRhythmPerformance.ts
+  s_ac9b259eab20ba::t_2d21585e553a0e 44,172,214-216,287-291
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "704ebc12eb9815d72556c6bb2eaa8376fc54112b",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
