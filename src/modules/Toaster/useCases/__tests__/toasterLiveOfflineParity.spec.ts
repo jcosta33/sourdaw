@@ -24,8 +24,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 
 vi.mock('../getToasterControls', () => ({ getToasterControls: mocks.getToasterControls }));
 
-import { registerToasterDevice, toasterStore } from '../../stores/toasterStore';
 import { toToasterKitState } from '../../models/ToasterKitState';
+import { registerToasterDevice, toasterStore } from '../../stores/toasterStore';
 import { getToasterPresetKit } from '../getToasterPresetKit';
 import { prepareOfflineToaster } from '../prepareOfflineToaster';
 import { setPadParamImmediate } from '../setPadParamImmediate';
