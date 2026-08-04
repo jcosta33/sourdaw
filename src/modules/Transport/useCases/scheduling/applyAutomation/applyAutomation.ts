@@ -1,5 +1,9 @@
 import { getTrackEligibility, resolveEligibleDeviceWriteTarget, trackStore } from '#/modules/Arrangement/stores';
-import { clampDeviceParameterValue, isDeviceParameterAutomatable } from '#/modules/Arrangement/useCases';
+import {
+    clampDeviceParameterValue,
+    isDeviceParameterAutomatable,
+    quantiseDeviceParameterValue,
+} from '#/modules/Arrangement/useCases';
 import {
     getCompensationDelay,
     getCurrentTime,
@@ -251,27 +255,54 @@ export function applyAutomation(currentBeat: number): Set<string> {
                 // stored curve can ask for anything. The declared range binds
                 // here just as it does on a direct write.
                 const smoothed = clampDeviceParameterValue({ deviceType: device.type, paramId, value: slewed });
+                // The slew state stays in the *continuous* domain deliberately.
+                // A parameter the descriptor declares `int`/`bool`/`choice` may
+                // only be delivered as an integer, but rounding the value the
+                // filter feeds itself puts a dead zone in the recurrence — at
+                // α = 0.4, `slewStep(5, 6)` is 5.4, which rounds back to 5 for
+                // ever — so a ride to engine index 6 would stall at 5. Filter
+                // continuously, quantise once on the way out.
                 laneSlew.set(device.id, smoothed);
+                const delivered = quantiseDeviceParameterValue({
+                    deviceType: device.type,
+                    paramId,
+                    value: smoothed,
+                });
                 // Record the applied value even when the dispatch below
                 // is suppressed as sub-epsilon — the engine still holds this
                 // value (within epsilon), so it is the correct base for the
-                // modulation write that follows in this same tick.
+                // modulation write that follows in this same tick. It is the
+                // *delivered* value that is recorded: that is what the engine
+                // actually holds once the parameter is stepped.
                 let appliedByParameter = appliedAutomationBases.get(device.id);
                 if (!appliedByParameter) {
                     appliedByParameter = new Map<string, number>();
                     appliedAutomationBases.set(device.id, appliedByParameter);
                 }
-                appliedByParameter.set(paramId, smoothed);
-                if (isDiscontinuity || Math.abs(smoothed - prev) > SLEW_EPSILON) {
+                appliedByParameter.set(paramId, delivered);
+                // A stepped parameter's filter keeps moving long after the
+                // delivered integer has stopped changing, so the sub-epsilon
+                // gate alone would re-send an identical index to the worklet on
+                // every tick of the glide. Suppressing a repeat is the same rule
+                // the epsilon gate already states — do not write a value the
+                // engine is already holding — read on the delivered domain. For
+                // a `float` parameter `delivered === smoothed` and
+                // `previousDelivered === prev`, so this changes nothing there.
+                const previousDelivered = quantiseDeviceParameterValue({
+                    deviceType: device.type,
+                    paramId,
+                    value: prev,
+                });
+                if (isDiscontinuity || (Math.abs(smoothed - prev) > SLEW_EPSILON && delivered !== previousDelivered)) {
                     if (device.type === 'fermenter') {
                         // Fermenter params use camelCase ids that must be mapped to
                         // their snake_case DSP ids before reaching the WASM node —
                         // the same translation the UI bridge applies. Runtime
                         // automation bypasses UI state and persistence so the
                         // user's manual base and CRDT history remain unchanged.
-                        applyFermenterRuntimeParam({ deviceId: device.id, paramId, value: smoothed });
+                        applyFermenterRuntimeParam({ deviceId: device.id, paramId, value: delivered });
                     } else {
-                        updateDeviceParam(targetOwner.trackId, targetOwner.deviceId, paramId, smoothed);
+                        updateDeviceParam(targetOwner.trackId, targetOwner.deviceId, paramId, delivered);
                     }
                 }
                 continue;
@@ -312,8 +343,26 @@ export function applyAutomation(currentBeat: number): Set<string> {
                     value: slewedFxValue,
                 });
                 laneSlew.set(fx.id, smoothed);
-                if (isDiscontinuity || Math.abs(smoothed - prev) > SLEW_EPSILON) {
-                    updateMidiFxParam(lane.trackId, fx.id, lane.parameterId, smoothed);
+                // Same split as the device branch forty lines above: the filter
+                // state stays continuous, the delivery is quantised. No MIDI FX
+                // type carries a descriptor today, so both calls pass through
+                // untouched — which is the point, the branch is bound to the law
+                // now instead of quietly diverging from it the day one does.
+                const deliveredFxValue = quantiseDeviceParameterValue({
+                    deviceType: fx.type,
+                    paramId: lane.parameterId,
+                    value: smoothed,
+                });
+                const previousDeliveredFxValue = quantiseDeviceParameterValue({
+                    deviceType: fx.type,
+                    paramId: lane.parameterId,
+                    value: prev,
+                });
+                if (
+                    isDiscontinuity ||
+                    (Math.abs(smoothed - prev) > SLEW_EPSILON && deliveredFxValue !== previousDeliveredFxValue)
+                ) {
+                    updateMidiFxParam(lane.trackId, fx.id, lane.parameterId, deliveredFxValue);
                 }
                 break;
             }

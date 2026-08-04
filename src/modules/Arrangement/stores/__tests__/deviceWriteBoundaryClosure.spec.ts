@@ -53,6 +53,15 @@ const SINK_DEFINITIONS: Record<SinkFamily, SinkDefinition> = {
 const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
     'persistence-runtime': {
         'src/app/bootstrap.ts': 9,
+        // Count provenance: new file entry, measured 1 — a single doc-comment
+        // mention of `persistDeviceParam`, and no write. Measured with `grep -o`
+        // over the four sink identifiers: persistDeviceParam 1, the other three
+        // 0. `quantiseDeviceParameterValue` explains why quantisation is applied
+        // at delivery instead of inside `clampDeviceParameterValue`, and half
+        // that reason is which callers of the clamp persist: rounding on the
+        // persistence path would silently rewrite stored project data for every
+        // stepped parameter. The file is a pure model and reaches no sink.
+        'src/modules/Arrangement/models/DeviceParameterLaw.ts': 1,
         'src/modules/Arrangement/stores/index.ts': 2,
         // Count provenance: measured 3, all three doc-comment mentions — this
         // file holds no write at all. `clampDeviceParamWrite` resolves a device
@@ -280,6 +289,13 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
     'load-compile-hydration': {
         'src/app/bootstrap.ts': 1,
         'src/app/registerDependencies.ts': 1,
+        // Count provenance: new file entry, measured 1 — a doc-comment
+        // cross-reference to `compileAutomationEvents`, naming the second of the
+        // two callers that feed `clampDeviceParameterValue`'s result back in as
+        // the state of a one-pole IIR slew. That is why
+        // `quantiseDeviceParameterValue` is a separate function: rounding inside
+        // the clamp would dead-zone both recurrences. The model holds no write.
+        'src/modules/Arrangement/models/DeviceParameterLaw.ts': 1,
         // Count provenance: doc-comment cross-reference to `compileAutomationEvents`
         // in the editor-readout evaluator's AU-1 delegation note (#747) — the
         // transformer computes curve values only, holds no device writes.
