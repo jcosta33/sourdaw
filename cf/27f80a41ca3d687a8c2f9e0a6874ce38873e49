@@ -1,0 +1,19 @@
+src/components/daw/__tests__/DawListRowComponents.spec.tsx
+  s_bc88af7d3b054c::t_51042a74e61ac8 1-95
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "cf27f80a41ca3d687a8c2f9e0a6874ce38873e49",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
