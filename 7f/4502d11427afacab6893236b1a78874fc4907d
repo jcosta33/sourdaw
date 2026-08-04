@@ -1,0 +1,14 @@
+src/modules/Yeast/presentations/views/__tests__/GrooveDropTarget.spec.tsx
+  h_1228e573df1f42 1-184
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "7f4502d11427afacab6893236b1a78874fc4907d",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
