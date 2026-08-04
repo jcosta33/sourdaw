@@ -565,6 +565,8 @@ fn fermenter_scheduled_note_offsets_do_not_allocate() {
     instance.set_param("cutoff", 4_000.0);
     instance.set_param("resonance", 0.4);
     instance.set_param("noise_level", 0.1);
+    instance.set_param("layer_level", 0.75);
+    instance.set_param("layer_pan", 0.4);
 
     // Warm up outside the guard so wavetable/voice-pool lazy work, if any,
     // happens before the interceptor is armed.
@@ -574,21 +576,17 @@ fn fermenter_scheduled_note_offsets_do_not_allocate() {
 
     assert_no_alloc(|| {
         for block in 0..GUARDED_BLOCKS {
-            // Offsets that are not block multiples, several events per block,
-            // including offset 0 and the last frame.
             let note = 48 + (block % 12) as u8;
-            instance.push_note_off(note, 0);
-            instance.push_note_on(note, 100, 0, (block * 7 % BLOCK) as u32);
-            instance.push_note_expression(note, 0, 1.5, 0.5, 0.25, (BLOCK - 1) as u32);
-
-            // Drive one block past the list's capacity so the refusal branch
-            // runs under the interceptor too — a bounds-driven fallback is a
-            // plausible place to reach for a heap-backed overflow buffer.
-            if block == 0 {
-                for index in 0..512 {
-                    instance.push_note_on(60, 1, 0, (index % BLOCK) as u32);
+            for offset in 0..BLOCK {
+                if offset == 0 {
+                    assert!(instance.push_note_off(note, 0));
+                    assert!(instance.push_note_on(note, 100, 0, 0));
+                } else {
+                    assert!(instance.push_note_expression(note, 0, 1.5, 0.5, 0.25, offset as u32));
+                    assert!(instance.push_note_off(1, offset as u32));
                 }
             }
+            assert!(!instance.push_note_on(60, 1, 0, (BLOCK - 1) as u32));
 
             instance.process(BLOCK as u32);
         }

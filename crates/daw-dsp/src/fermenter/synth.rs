@@ -560,7 +560,9 @@ impl MasterSynth {
     }
 
     fn advance_layer_block_params(&mut self) {
-        let any_solo = self.layers[..self.num_active_layers].iter().any(|layer| layer.solo);
+        let any_solo = self.layers[..self.num_active_layers]
+            .iter()
+            .any(|layer| layer.solo);
 
         for layer in &mut self.layers[..self.num_active_layers] {
             if layer.muted {
