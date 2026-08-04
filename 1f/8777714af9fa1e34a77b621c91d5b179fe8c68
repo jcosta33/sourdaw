@@ -1,0 +1,227 @@
+crates/daw-dsp/src/toaster/engines/cr78.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 95-101,128-133,149-156,191-197,200-201,203-210
+crates/daw-dsp/benches/quantum.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 541-542,643-645,647-650,872-876,1047-1051,1069-1071,1109-1110,1199-1219,1253-1255,1285-1287,1390-1393,1428-1438,1492-1494,1542-1544,1555-1557
+crates/daw-dsp/src/levain/realism/body.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 36-42,79,82
+crates/daw-dsp/src/toaster/engines/clap_808.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 115-122,132-135,164-166,270-273
+crates/daw-dsp/src/toaster/engines/mod.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 237
+crates/daw-dsp/src/crust/engine.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 324-325,448-449,528-537,765-769,1116-1118,1144-1146
+crates/daw-dsp/src/grand_boule/coupled_strings.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 278-281
+src-tauri/src/commands/pitch_edit.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 2-3,25-27,31,46-50,53,56,64,69,75,77,81,83,85,92,104,112,119-121,133,137-139,143,160-164,167-168,178,180-182,186,190,199,204,235-236,239-241,243-245,248-250
+crates/daw-dsp/src/proof/mod.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 24
+crates/daw-dsp/src/crumbs/voice.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 509,514,520,523,527
+crates/proof-chamber/tests/reverse_engine_character.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 104-107,163-167
+crates/daw-dsp/src/crumbs/modes/drum.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 116-120
+crates/daw-dsp/src/toaster/mod.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 199-206,234-237
+crates/daw-dsp/src/grinder/neural.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 298-299,451-477,553-564,577-588
+crates/daw-dsp/src/grinder/triode.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 311-317,376,379-380,418-421,486,551,587,654-655
+crates/daw-dsp/src/crust/saturator.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 236
+crates/daw-dsp/src/grinder/pedals.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 59,68-69,374,417
+crates/scoring/src/mpm.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 92,164
+src-tauri/src/commands/plugins.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 11-12,970-973,1028-1029,1043-1044
+crates/daw-dsp/src/knead/mod.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 2,8,143-149,224-233,235-239
+crates/daw-dsp/tests/device_process_rt.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 77-80,371-374
+crates/daw-plugin-host/src/scanner.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 255-259
+crates/daw-dsp/src/toaster/engines/hihat_808.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 49-51
+crates/daw-dsp/src/toaster/mu_law.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 13-17,42
+crates/daw-dsp/src/proof/metering.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 946,996-999,1242-1245,1467-1468,1754,1826-1827
+crates/daw-dsp/src/proof/biquad.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 337-339,420-423,561-564,691-694,801-802,823-824,1005-1010,1098-1102
+crates/daw-dsp/src/crust/mod.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 77-80
+crates/daw-dsp/src/proof/dynamic_eq.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 71,152
+crates/daw-dsp/src/grinder/power_amp.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 202-204,220-221
+crates/daw-dsp/tests/engine_output_level.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 325-328,340-343,354-357,366-369,379-382
+crates/daw-dsp/src/gluten/mod.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 23
+crates/daw-dsp/src/toaster/engines/kick_808.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 68-69,139-141,197-198,230-231,350-352,356-357
+crates/daw-dsp/tests/quantum_bench_census.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 102-106
+crates/daw-dsp/src/primitives/denormal.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 198-202,245-248
+crates/daw-plugin-host/src/clap_host.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 47-50,287-290,322-326,328-332,343-347
+crates/daw-dsp/src/bacteria/crossover.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 235,238,327-334
+crates/daw-dsp/src/toaster/sp1200.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 72-73,172-174,178-180,223
+crates/daw-dsp/tests/bacteria_distortion_modes.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 358-362
+crates/daw-wasm-decoder/src/lib.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 140-143
+src-tauri/src/commands/tuning.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 16
+crates/daw-dsp/src/toaster/engines/kick_909.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 14,54-55,266-267
+crates/daw-dsp/src/toaster/engines/hihat_909.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 228-229
+crates/scoring/src/lib.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 565-567,646-647
+src-tauri/src/commands/collab.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 27
+crates/daw-dsp/src/bacteria/stft.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 542,545-547,551-553
+crates/daw-dsp/src/grinder/engine.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 225-227,264-270,483-488,743-762
+crates/daw-dsp/src/toaster/poly_blep.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 94,127-130
+crates/daw-dsp/src/knead/engine.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 56,134,175,197,202-203,234,355-358,360-363,407-410,497-499
+crates/daw-dsp/src/proof/exciter.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 284-286
+crates/daw-dsp/src/crust/params.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 223-227
+crates/daw-dsp/src/grinder/oversample.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 89-93,113,202-205
+crates/proof-chamber/tests/quantum_cost.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 105-107
+crates/daw-dsp/src/bacteria/mod.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 25
+crates/daw-dsp/src/grinder/mod.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 21
+crates/daw-dsp/tests/crumbs_mode_triggering.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 174-178,248-252,292-301,312-316,330-334,346-348,353-355,359-368,390-392,424-428,464-467,474-478,585-588,631-635,654-658
+crates/daw-dsp/src/levain/voice.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 496,563-564,644
+crates/daw-dsp/src/toaster/engines/clap_909.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 225
+crates/daw-core/src/tuning/scala.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 18-22,26,30-32,36-38,43-45,49,53
+crates/daw-dsp/src/toaster/engines/tom_808.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 91,146-147,165-171
+src-tauri/src/commands/plugin_gui.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 279-283,380-385,433-438,736-739,802-805
+crates/daw-dsp/src/bacteria/spectral.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 51
+crates/daw-dsp/src/toaster/engine.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 173-174
+crates/daw-dsp/tests/crumbs_render_signal.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 157-160,163-167
+crates/proof-chamber/src/decay_curve.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 90-95
+crates/daw-dsp/src/primitives/sanitize.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 49-53
+crates/daw-dsp/src/toaster/engines/perc_808.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 96-102,207-208
+crates/daw-dsp/src/toaster/lofi.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 160-163
+crates/daw-dsp/src/fermenter/filter.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 352-354
+crates/scoring/tests/quantum_cost.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 94-96
+src-tauri/src/host/latency_watcher.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 132-135
+crates/daw-dsp/src/fermenter/voice.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 396-400
+crates/daw-dsp/src/lib.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 2
+crates/daw-dsp/tests/crumbs_voice_steal.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 84
+crates/daw-dsp/src/crumbs/engine.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 44-45,1022-1024
+crates/daw-dsp/src/fermenter/synth.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 902-905,1158-1161,1179-1186,1488
+crates/daw-dsp/src/knead/psola.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 107-108,154-156
+crates/daw-core/src/tuning.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 33,39,51,53,61,63,69,74,107,111,115,120
+crates/daw-dsp/src/toaster/engines/snare_808.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 96,146-149,265-268
+crates/daw-plugin-host/src/clap_wrapper.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 36,357,1249-1252,1276-1278,1310-1312,1329-1333
+crates/daw-dsp/src/grand_boule/soundboard.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 138-139,153-154
+crates/daw-dsp/src/fermenter/mod.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 29
+crates/daw-dsp/src/grinder/transformer.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 103-104
+crates/daw-dsp/src/crust/limiter.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 351
+crates/daw-dsp/src/proof/limiter.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 273-274,719-721,883-885
+src-tauri/build.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 2-8
+crates/daw-dsp/src/knead/pitch_edit.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 69-74,81,109-110,116,124,129,135,137,141,143,145,153,172-178,180,188-191,213,329
+src-tauri/src/commands/mod.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 6,12
+src-tauri/src/host/native_bridge.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 1-2,12-14,100,137,182,201,319-321,838-841,1124-1125
+crates/daw-dsp/src/toaster/engines/lfsr.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 93
+crates/daw-dsp/src/grinder/cabinet.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 23,82,88,170,203-204,206-211,215,387-388
+crates/daw-dsp/src/knead/utils.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 24-26
+crates/daw-dsp/src/levain/engine.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 908-912
+crates/daw-dsp/src/grand_boule/hammer.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 132
+crates/daw-dsp/src/toaster/adaa.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 17,162
+crates/daw-dsp/src/grinder/input.rs
+  s_66d4924c65dcd2::t_fe35a22b23ac08 266-270,330-335
+clippy.out
+  s_66d4924c65dcd2::t_23b022e02e3c61 1-285
+clippy2.out
+  s_66d4924c65dcd2::t_a81b6375a9b634 1-272
+cw.txt
+  s_66d4924c65dcd2::t_be2495716a40b3 1-239
+fmt-files.txt
+  s_66d4924c65dcd2::t_9e455db32ece3c 1-310
+fmt.out
+  s_66d4924c65dcd2::t_d0b73824a9e3ef 1-3787
+gate-cold.out
+  s_66d4924c65dcd2::t_21cf6b1e3ad609 1-5055
+gate-green.out
+  s_66d4924c65dcd2::t_bfad17c186f616 1-4257
+gate-red.out
+  s_66d4924c65dcd2::t_fdfa44993bfed9 1-3922
+hgtrace.out
+  s_66d4924c65dcd2::t_b1ba6d1ecc2cfb 1-2
+test.out
+  s_66d4924c65dcd2::t_38bb8cf3e3159b 1-1397
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "1f8777714af9fa1e34a77b621c91d5b179fe8c68",
+  "prompts": {},
+  "sessions": {
+    "s_66d4924c65dcd2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dad7ceb6-cb31-44b9-91db-bb71a71cbc38",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
