@@ -1,0 +1,108 @@
+src/modules/Transport/useCases/index.ts
+  s_bc88af7d3b054c::t_ff45f329c6520e 6
+src/modules/Arrangement/handlers/vca/__tests__/vcaGainHandlerContract.spec.ts
+  s_bc88af7d3b054c::t_b8faa985a85a95 70-72,75-80
+  s_bc88af7d3b054c::t_08b66ddab540b6 1-69,73-74,81-83
+src/modules/AiRuntime/useCases/getProjectContext.ts
+  s_bc88af7d3b054c::t_28dbf23f23526d 1,22,38,48,62,73-74,119-125,137,208
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_bc88af7d3b054c::t_28dbf23f23526d 1853-1859,1875
+  s_bc88af7d3b054c::t_b8faa985a85a95 326,328-332
+  s_bc88af7d3b054c::t_10f64cfcd52175 178-184,318-325,327,333-336,1295-1297
+src/modules/Arrangement/handlers/vca/toVcaGainExecutionResult.ts
+  s_bc88af7d3b054c::t_271d2c6b43497d 3-4,16
+  s_bc88af7d3b054c::t_b84a02a971b41d 1-2,5-9,11-15,17-24
+  s_bc88af7d3b054c::t_ff45f329c6520e 10
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomation.spec.ts
+  s_bc88af7d3b054c::t_cc6bd759bad161 3,26,142,308
+src/modules/AiRuntime/useCases/__tests__/getProjectContext.spec.ts
+  s_bc88af7d3b054c::t_fd5e8ddfcd5794 3-7,17,33-37,95,117,387-402
+  s_bc88af7d3b054c::t_cb286d754edeeb 141,256
+  s_bc88af7d3b054c::t_8db1a289d339bf 403
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/reconcileVcaGroupRuntimeGain.spec.ts
+  s_bc88af7d3b054c::t_ff45f329c6520e 1-3,44-47,80-85,88-91,95-97,100-101,109-116,118-119,123-124,126-127,131-133,136-137
+  s_bc88af7d3b054c::t_96ee84c0a52af8 4-40,42-43,48-79,86-87,92-94,98-99,102-108,117,120-122,125,128-130,134-135
+  s_bc88af7d3b054c::t_ac1015b6213e59 41
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_bc88af7d3b054c::t_5551701c257c3e 990-998,1009-1013,1031,1033-1034
+  s_bc88af7d3b054c::t_b8faa985a85a95 999-1008,1026,1032
+  s_bc88af7d3b054c::t_732e20d6d96567 969-989,1025,1027-1030
+  s_bc88af7d3b054c::t_feb5f050899d71 1020
+  s_bc88af7d3b054c::t_fd5e8ddfcd5794 51
+  s_bc88af7d3b054c::t_7c29a4d44a7752 1014-1019,1021-1024
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_bc88af7d3b054c::t_b2c03370f72fd4 673-674,676-678,680
+  s_bc88af7d3b054c::t_4373b0b21317c3 679,681-689,691
+src/modules/AiRuntime/models/ProjectContext.ts
+  s_bc88af7d3b054c::t_28dbf23f23526d 13,53-60,112
+src/modules/Arrangement/useCases/index.ts
+  s_bc88af7d3b054c::t_271d2c6b43497d 146
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_bc88af7d3b054c::t_fd5e8ddfcd5794 15,450-461,469-480,483-491,1730-1732
+  s_bc88af7d3b054c::t_b8faa985a85a95 462-468,481-482
+src/modules/Arrangement/handlers/vca/__tests__/legacyVcaActionHistory.spec.ts
+  s_bc88af7d3b054c::t_0fe97eb70f1915 257-270
+src/modules/Transport/useCases/scheduling/applyAutomation/reconcileVcaGroupRuntimeGain.ts
+  s_bc88af7d3b054c::t_ff45f329c6520e 9,11,13-14,17,19-20,22-23,70-71
+  s_bc88af7d3b054c::t_271d2c6b43497d 1-8,10,12,15-16,18,21,24-69
+src/modules/Arrangement/useCases/vca/vcaRuntimeProjectionDependencies.ts
+  s_bc88af7d3b054c::t_271d2c6b43497d 1-9
+src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts
+  s_bc88af7d3b054c::t_271d2c6b43497d 24,213-219
+  s_bc88af7d3b054c::t_68f2a46f9c7ffd 2
+src/modules/Arrangement/handlers/vca/__tests__/handleRestoreLegacyVcaState.spec.ts
+  s_bc88af7d3b054c::t_cc6bd759bad161 34-38
+src/modules/Arrangement/handlers/vca/handleSetVcaGain.ts
+  s_bc88af7d3b054c::t_b84a02a971b41d 3,7-8,12-24,26-27
+src/modules/AiRuntime/useCases/agentReference/resolveAgentReference.ts
+  s_bc88af7d3b054c::t_4373b0b21317c3 14,267-268
+  s_bc88af7d3b054c::t_5551701c257c3e 46,89-99,339-345
+  s_bc88af7d3b054c::t_b8faa985a85a95 330-334
+  s_ac9b259eab20ba::t_39190a80f37f17 269-270
+src/modules/Arrangement/handlers/vca/__tests__/toVcaGainExecutionResult.spec.ts
+  s_bc88af7d3b054c::t_4bb10175744731 1,14-17
+  s_bc88af7d3b054c::t_08b66ddab540b6 2,4-10,18-42
+  s_bc88af7d3b054c::t_271d2c6b43497d 3,11-13
+src/modules/Transport/useCases/scheduling/applyAutomation/scheduleComposedTrackGainAutomation.ts
+  s_bc88af7d3b054c::t_271d2c6b43497d 1-6,8-23
+  s_bc88af7d3b054c::t_0ac0dc474503ac 7
+src/modules/Arrangement/handlers/vca/handleRestoreLegacyVcaState.ts
+  s_bc88af7d3b054c::t_b84a02a971b41d 6-7,14-17
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_bc88af7d3b054c::t_4373b0b21317c3 17
+  s_bc88af7d3b054c::t_10f64cfcd52175 863-884
+src/app/__tests__/bootstrap.spec.ts
+  s_bc88af7d3b054c::t_406edad1010ff0 44-45,68-69,117,308,419-421
+  s_bc88af7d3b054c::t_44129b7e55c7c9 422-424
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_bc88af7d3b054c::t_e533c7379f0a56 432-441,1076-1086
+  s_bc88af7d3b054c::t_bc761763399c97 431
+  s_bc88af7d3b054c::t_462358d15d3bc7 1087-1088
+src/app/bootstrap.ts
+  s_bc88af7d3b054c::t_061c7111c435b3 196
+  s_bc88af7d3b054c::t_271d2c6b43497d 28,138
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "6ff759827e6bd8813a974061ffe058720f02dd4b",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
