@@ -107,4 +107,95 @@ describe('telemetryAllocator', () => {
         expect(telemetryAllocator.allocateSlot()).toBeNull();
         expect(console.warn).toHaveBeenCalled();
     });
+
+    // ── SPEC-offline-live-collapse AC-2 ───────────────────────────────────
+    //
+    // The pool is 64 slots, every metered native node takes one at
+    // construction, and the only reclaim is `releaseSlot` from `destroy()`.
+    // An `OfflineAudioContext` that is garbage-collected returns nothing, so
+    // an export that never destroys what it built leaks permanently for the
+    // page session — after which every meter added afterwards reads zero.
+    describe('occupancy', () => {
+        it('reports occupancy, so a render can be held to returning the pool to baseline', () => {
+            const baseline = telemetryAllocator.occupiedSlotCount();
+
+            const first = telemetryAllocator.allocateSlot();
+            const second = telemetryAllocator.allocateSlot();
+            if (!first || !second) {
+                throw new Error('expected two free slots');
+            }
+            expect(telemetryAllocator.occupiedSlotCount()).toBe(baseline + 2);
+
+            telemetryAllocator.releaseSlot(first.byteOffset);
+            telemetryAllocator.releaseSlot(second.byteOffset);
+
+            expect(telemetryAllocator.occupiedSlotCount()).toBe(baseline);
+        });
+
+        it('drains and refills without losing a slot', () => {
+            const taken: number[] = [];
+            for (;;) {
+                const slot = telemetryAllocator.allocateSlot();
+                if (!slot) {
+                    break;
+                }
+                taken.push(slot.byteOffset);
+            }
+            expect(telemetryAllocator.occupiedSlotCount()).toBe(64);
+
+            for (const byteOffset of taken) {
+                telemetryAllocator.releaseSlot(byteOffset);
+            }
+
+            expect(telemetryAllocator.occupiedSlotCount()).toBe(0);
+            const reallocated = telemetryAllocator.allocateSlot();
+            expect(reallocated).not.toBeNull();
+            if (reallocated) {
+                allocatedOffsets.push(reallocated.byteOffset);
+            }
+        });
+
+        /**
+         * `releaseSlot` pushed the index back with no membership check, so a
+         * double release put one index in the free list twice and the next two
+         * allocations handed two devices the same bytes — each overwriting the
+         * other's meters. It was unreachable while nothing called `destroy()`;
+         * adding the offline teardown is exactly what makes it reachable, so it
+         * is hardened in the same change rather than after the first report of
+         * two devices sharing a meter.
+         */
+        it('refuses a second release of a slot that is already free', () => {
+            const slot = telemetryAllocator.allocateSlot();
+            if (!slot) {
+                throw new Error('expected a free slot');
+            }
+            const occupiedBefore = telemetryAllocator.occupiedSlotCount();
+
+            telemetryAllocator.releaseSlot(slot.byteOffset);
+            telemetryAllocator.releaseSlot(slot.byteOffset);
+
+            expect(telemetryAllocator.occupiedSlotCount()).toBe(occupiedBefore - 1);
+
+            // The decisive half: two allocations after a double release must not
+            // collide. Occupancy alone would pass on an allocator that hands the
+            // same index out twice.
+            const first = telemetryAllocator.allocateSlot();
+            const second = telemetryAllocator.allocateSlot();
+            if (!first || !second) {
+                throw new Error('expected two free slots');
+            }
+            allocatedOffsets.push(first.byteOffset, second.byteOffset);
+            expect(first.byteOffset).not.toBe(second.byteOffset);
+        });
+
+        it('ignores a release of a byte offset that was never allocated', () => {
+            const occupied = telemetryAllocator.occupiedSlotCount();
+
+            telemetryAllocator.releaseSlot(-128);
+            telemetryAllocator.releaseSlot(64 * FLOATS_PER_SLOT * 4);
+            telemetryAllocator.releaseSlot(7);
+
+            expect(telemetryAllocator.occupiedSlotCount()).toBe(occupied);
+        });
+    });
 });

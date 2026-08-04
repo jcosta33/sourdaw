@@ -8,8 +8,11 @@ import { getSidechainKeyDelay } from '../latencyCompensation/compensation/getSid
 
 import { collectDeviceRuntimeFailures } from './collectDeviceRuntimeFailures';
 import { connectOfflineToasterPadRoutes } from './connectOfflineToasterPadRoutes';
-import { MAX_OFFLINE_FRAMES, MIN_RENDER_TIMEOUT_MS, RENDER_TIMEOUT_MULTIPLIER } from './constants';
+import { destroyOfflineDeviceStrategies } from './destroyOfflineDeviceStrategies';
+import { clampRenderFrameCount } from './clampRenderFrameCount';
+import { MIN_RENDER_TIMEOUT_MS, RENDER_TIMEOUT_MULTIPLIER } from './constants';
 import { createOfflineTrackStrip } from './createOfflineTrackStrip';
+import { prepareOfflineContext } from './prepareOfflineContext';
 import { projectStripTrack, type TargetMixerDisposition } from './projectStripTrack';
 import { renderInSegments } from './renderInSegments';
 import { resolveRenderContext } from './resolveRenderContext';
@@ -139,11 +142,41 @@ export async function renderTrackSubgraphOffline({
         throw new Error('Offline musical projection is not configured');
     }
 
-    const frameCount = Math.min(Math.ceil(durationSeconds * sampleRate), MAX_OFFLINE_FRAMES);
+    // Shared with the mixdown and the stem path so an over-long freeze is
+    // *reported* rather than silently producing a short buffer that looks like a
+    // success. This used to re-inline the `Math.min`, which is the same clamp
+    // with no warning channel — and `onWarning` was already in scope.
+    const frameCount = clampRenderFrameCount({ durationSeconds, sampleRate, onWarning });
     if (frameCount <= 0) {
         return null;
     }
     const offlineCtx = new OfflineAudioContext(2, frameCount, sampleRate);
+
+    const sidechainRoutes = sidechainStore.value?.routes ?? [];
+
+    // Before any strip exists. Both out-of-band devices build their worklet node
+    // synchronously inside `createOfflineTrackStrip`, so a module registered
+    // afterwards is registered too late and the device degrades silently.
+    const renderTrackIds = new Set(renderTracks.map((track) => track.id));
+    const keyedSidechainDevices = new Set<object>();
+    for (const route of sidechainRoutes) {
+        if (!renderTrackIds.has(route.sourceTrackId)) {
+            continue;
+        }
+        const targetTrack = renderTracks.find((track) => track.id === route.targetTrackId);
+        const targetDevice = targetTrack?.devices.find(
+            (device) => device.id === route.targetDeviceId && !device.bypassed
+        );
+        if (targetDevice?.type === 'builtin-sidechain-compressor') {
+            keyedSidechainDevices.add(targetDevice);
+        }
+    }
+    await prepareOfflineContext({
+        offlineCtx,
+        tracks: renderTracks,
+        sidechainTargetDevices: keyedSidechainDevices,
+        onWarning,
+    });
 
     // Snapshot once: every strip and every gain lane in this render must see the
     // same group levels, however long the render takes.
@@ -151,167 +184,175 @@ export async function renderTrackSubgraphOffline({
 
     const trackStripsById = new Map<string, OfflineTrackStrip>();
     const deviceEntriesByTrack = new Map<string, DeviceNodeEntry[]>();
-    for (const track of renderTracks) {
-        const strip = await createOfflineTrackStrip(
+    // Everything from the first strip on is inside the teardown's scope. Every
+    // metered native device takes a telemetry slot at construction and only
+    // `destroy()` gives it back, so a render that times out, faults or is
+    // cancelled has to release exactly what a successful one does — hence a
+    // `finally` rather than a line after the returned buffer.
+    try {
+        for (const track of renderTracks) {
+            const strip = await createOfflineTrackStrip(
+                offlineCtx,
+                projectStripTrack({
+                    track,
+                    isTarget: track.id === targetTrackId,
+                    includeInserts,
+                    includeAutomation,
+                    targetMixer,
+                }),
+                // Freeze and bounce produce deliverable audio, not a monitoring
+                // snapshot — the same reason exportStems opts out. Baking mute in
+                // would hand back a zeroed buffer, and bounce-to-new-track then
+                // shows that silent waveform on an unmuted track. The renderer this
+                // replaced never consulted `muted` at all.
+                //
+                // The VCA multiplier is per-track and asymmetric here; see
+                // `resolveContributorVcaMultiplier` for why the target is the one
+                // track that does not get it.
+                {
+                    honorMuted: false,
+                    vcaMultiplier: resolveContributorVcaMultiplier({
+                        track,
+                        isTarget: track.id === targetTrackId,
+                        groups: vcaGroups,
+                    }),
+                    onWarning,
+                }
+            );
+            trackStripsById.set(track.id, strip);
+            deviceEntriesByTrack.set(track.id, strip.deviceEntries);
+        }
+
+        connectOfflineToasterPadRoutes({ tracks: renderTracks, trackStripsById, deviceEntriesByTrack });
+
+        connectOfflineSidechainRoutes({
             offlineCtx,
-            projectStripTrack({
+            routes: sidechainRoutes,
+            trackStripsById,
+            deviceEntriesByTrack,
+            keyDelaySecFor: getSidechainKeyDelay,
+        });
+
+        for (const track of renderTracks) {
+            const strip = trackStripsById.get(track.id);
+            if (!strip) {
+                continue;
+            }
+
+            if (track.id === targetTrackId) {
+                strip.outputNode.connect(offlineCtx.destination);
+            } else {
+                const downstream = trackStripsById.get(track.outputId);
+                if (downstream) {
+                    strip.outputNode.connect(downstream.inputNode);
+                }
+            }
+
+            const sendsRendered = track.id === targetTrackId ? includeSends : true;
+            if (!sendsRendered) {
+                continue;
+            }
+            for (const send of track.sends) {
+                const busStrip = trackStripsById.get(send.busId);
+                if (!busStrip) {
+                    continue;
+                }
+                const sendGain = offlineCtx.createGain();
+                sendGain.gain.value = Math.max(0, Math.min(1, send.level));
+                const tapNode = send.preFader ? strip.preFaderTap : strip.outputNode;
+                tapNode.connect(sendGain);
+                sendGain.connect(busStrip.inputNode);
+            }
+        }
+
+        // An audio-only freeze can run before any MIDI has been loaded; the
+        // scheduler only reads note tables, so an empty one is the honest input.
+        const midiState = midi ?? EMPTY_MIDI_STATE;
+        const pendingWorkletEvents: PendingWorkletEvent[] = [];
+        const tally: OfflineScheduleTally = { scheduledNotes: 0, scheduledBuffers: [] };
+        for (const track of renderTracks) {
+            const strip = trackStripsById.get(track.id);
+            if (!strip) {
+                continue;
+            }
+
+            await scheduleTrackClips({
+                offlineCtx,
                 track,
-                isTarget: track.id === targetTrackId,
-                includeInserts,
-                includeAutomation,
-                targetMixer,
-            }),
-            // Freeze and bounce produce deliverable audio, not a monitoring
-            // snapshot — the same reason exportStems opts out. Baking mute in
-            // would hand back a zeroed buffer, and bounce-to-new-track then
-            // shows that silent waveform on an unmuted track. The renderer this
-            // replaced never consulted `muted` at all.
-            //
-            // The VCA multiplier is per-track and asymmetric here; see
-            // `resolveContributorVcaMultiplier` for why the target is the one
-            // track that does not get it.
-            {
+                midi: midiState,
+                trackInputNode: strip.inputNode,
+                trackGainNode: strip.faderNode,
+                trackPanNode: strip.panNode,
+                destination: offlineCtx.destination,
+                durationSeconds,
+                defaultTempo,
+                changes,
+                projections: {
+                    projectMidiEvents,
+                    projectPpqEndpoints,
+                    processYeastMidi: projections.processYeastMidi,
+                    selectMidiEventProbability,
+                    projectChordPitch,
+                    evaluateAutomationValue: projections.evaluateAutomationValue,
+                },
+                onWarning,
+                pendingWorkletEvents,
+                allTracks: renderTracks,
+                deviceEntriesByTrack,
                 honorMuted: false,
+                regionStartBeat: startBeat,
+                includeAutomation: track.id === targetTrackId ? includeAutomation : true,
+                // Same rule as the strip seed: a `gain` or `pan` lane drives the very
+                // nodes the frozen buffer is replayed through, and live
+                // `applyAutomation` keeps driving them after the freeze, so baking
+                // those lanes doubles them exactly as the static values were.
+                // Device lanes are untouched — the chain is bypassed at replay, so
+                // their moves exist only if they are in the samples.
+                includeMixerAutomation: !(track.id === targetTrackId && targetMixer === 'keepLive'),
+                // Same rule the strip was seeded with, so a gain lane on an upstream
+                // contributor rides its group instead of nullifying it.
                 vcaMultiplier: resolveContributorVcaMultiplier({
                     track,
                     isTarget: track.id === targetTrackId,
                     groups: vcaGroups,
                 }),
-                onWarning,
-            }
-        );
-        trackStripsById.set(track.id, strip);
-        deviceEntriesByTrack.set(track.id, strip.deviceEntries);
-    }
-
-    connectOfflineToasterPadRoutes({ tracks: renderTracks, trackStripsById, deviceEntriesByTrack });
-
-    const sidechainRoutes = sidechainStore.value?.routes ?? [];
-    connectOfflineSidechainRoutes({
-        offlineCtx,
-        routes: sidechainRoutes,
-        trackStripsById,
-        deviceEntriesByTrack,
-        keyDelaySecFor: getSidechainKeyDelay,
-    });
-
-    for (const track of renderTracks) {
-        const strip = trackStripsById.get(track.id);
-        if (!strip) {
-            continue;
+                tally,
+            });
         }
 
-        if (track.id === targetTrackId) {
-            strip.outputNode.connect(offlineCtx.destination);
-        } else {
-            const downstream = trackStripsById.get(track.outputId);
-            if (downstream) {
-                strip.outputNode.connect(downstream.inputNode);
-            }
+        onScheduled?.(tally);
+
+        schedulePendingSuspends(offlineCtx, pendingWorkletEvents, durationSeconds);
+
+        await yieldToMain();
+
+        if (abortSignal?.aborted) {
+            throw new Error('Render aborted');
         }
 
-        const sendsRendered = track.id === targetTrackId ? includeSends : true;
-        if (!sendsRendered) {
-            continue;
-        }
-        for (const send of track.sends) {
-            const busStrip = trackStripsById.get(send.busId);
-            if (!busStrip) {
-                continue;
-            }
-            const sendGain = offlineCtx.createGain();
-            sendGain.gain.value = Math.max(0, Math.min(1, send.level));
-            const tapNode = send.preFader ? strip.preFaderTap : strip.outputNode;
-            tapNode.connect(sendGain);
-            sendGain.connect(busStrip.inputNode);
-        }
-    }
-
-    // An audio-only freeze can run before any MIDI has been loaded; the
-    // scheduler only reads note tables, so an empty one is the honest input.
-    const midiState = midi ?? EMPTY_MIDI_STATE;
-    const pendingWorkletEvents: PendingWorkletEvent[] = [];
-    const tally: OfflineScheduleTally = { scheduledNotes: 0, scheduledBuffers: [] };
-    for (const track of renderTracks) {
-        const strip = trackStripsById.get(track.id);
-        if (!strip) {
-            continue;
-        }
-
-        await scheduleTrackClips({
+        // The same segmented kernel the mixdown and stem exports use, rather than a
+        // second copy of it. Two things this path did not have before: a wall-clock
+        // backstop, so a wedged freeze can no longer hang indefinitely, and teardown
+        // of the context it abandons.
+        //
+        // The stop signal is this render's own `AbortSignal`, deliberately not the
+        // global export cancel flag — cancelling an export must not kill a freeze.
+        const renderTimeoutMs = Math.max(MIN_RENDER_TIMEOUT_MS, durationSeconds * RENDER_TIMEOUT_MULTIPLIER * 1000);
+        const buffer = await renderInSegments({
             offlineCtx,
-            track,
-            midi: midiState,
-            trackInputNode: strip.inputNode,
-            trackGainNode: strip.faderNode,
-            trackPanNode: strip.panNode,
-            destination: offlineCtx.destination,
             durationSeconds,
-            defaultTempo,
-            changes,
-            projections: {
-                projectMidiEvents,
-                projectPpqEndpoints,
-                processYeastMidi: projections.processYeastMidi,
-                selectMidiEventProbability,
-                projectChordPitch,
-                evaluateAutomationValue: projections.evaluateAutomationValue,
+            timeoutMs: renderTimeoutMs,
+            ...collectDeviceRuntimeFailures(deviceEntriesByTrack),
+            onRenderProgress: onProgress,
+            cancelSource: {
+                isCancelled: () => abortSignal?.aborted ?? false,
+                createCancelError: () => new Error('Render aborted'),
             },
-            onWarning,
-            pendingWorkletEvents,
-            allTracks: renderTracks,
-            deviceEntriesByTrack,
-            honorMuted: false,
-            regionStartBeat: startBeat,
-            includeAutomation: track.id === targetTrackId ? includeAutomation : true,
-            // Same rule as the strip seed: a `gain` or `pan` lane drives the very
-            // nodes the frozen buffer is replayed through, and live
-            // `applyAutomation` keeps driving them after the freeze, so baking
-            // those lanes doubles them exactly as the static values were.
-            // Device lanes are untouched — the chain is bypassed at replay, so
-            // their moves exist only if they are in the samples.
-            includeMixerAutomation: !(track.id === targetTrackId && targetMixer === 'keepLive'),
-            // Same rule the strip was seeded with, so a gain lane on an upstream
-            // contributor rides its group instead of nullifying it.
-            vcaMultiplier: resolveContributorVcaMultiplier({
-                track,
-                isTarget: track.id === targetTrackId,
-                groups: vcaGroups,
-            }),
-            tally,
         });
+
+        onProgress?.(1);
+        return buffer;
+    } finally {
+        destroyOfflineDeviceStrategies(deviceEntriesByTrack);
     }
-
-    onScheduled?.(tally);
-
-    schedulePendingSuspends(offlineCtx, pendingWorkletEvents, durationSeconds);
-
-    await yieldToMain();
-
-    if (abortSignal?.aborted) {
-        throw new Error('Render aborted');
-    }
-
-    // The same segmented kernel the mixdown and stem exports use, rather than a
-    // second copy of it. Two things this path did not have before: a wall-clock
-    // backstop, so a wedged freeze can no longer hang indefinitely, and teardown
-    // of the context it abandons.
-    //
-    // The stop signal is this render's own `AbortSignal`, deliberately not the
-    // global export cancel flag — cancelling an export must not kill a freeze.
-    const renderTimeoutMs = Math.max(MIN_RENDER_TIMEOUT_MS, durationSeconds * RENDER_TIMEOUT_MULTIPLIER * 1000);
-    const buffer = await renderInSegments({
-        offlineCtx,
-        durationSeconds,
-        timeoutMs: renderTimeoutMs,
-        ...collectDeviceRuntimeFailures(deviceEntriesByTrack),
-        onRenderProgress: onProgress,
-        cancelSource: {
-            isCancelled: () => abortSignal?.aborted ?? false,
-            createCancelError: () => new Error('Render aborted'),
-        },
-    });
-
-    onProgress?.(1);
-    return buffer;
 }
