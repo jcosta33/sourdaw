@@ -245,6 +245,32 @@ describe('FermenterProcessor scheduled-note sample offsets', () => {
         ]);
     });
 
+    it('keeps older queued events ahead of messages arriving exactly at the block start', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'noteOff', note: 48, sampleFrame: 128 });
+
+        vi.stubGlobal('currentFrame', 128);
+        send(proc, { type: 'noteOn', note: 48, velocity: 70, sampleFrame: 128, channel: 3 });
+        send(proc, {
+            type: 'noteExpression',
+            note: 48,
+            channel: 3,
+            bendSemitones: 1.5,
+            pressure: 0.5,
+            slide: 0.25,
+            sampleFrame: 128,
+        });
+        expect(applied).toEqual([]);
+
+        proc.process([], [makeChannels(2, FRAMES)]);
+
+        expect(applied).toEqual([
+            { kind: 'off', note: 48, channel: null, offset: 0 },
+            { kind: 'on', note: 48, velocity: 70, channel: 3, offset: 0 },
+            { kind: 'expression', note: 48, channel: 3, offset: 0 },
+        ]);
+    });
+
     it('carries MPE expression at its own offset, behind the note-on it bends', async () => {
         const proc = await loadProcessor();
         send(proc, { type: 'noteOn', note: 72, velocity: 100, sampleFrame: 300, channel: 3 });

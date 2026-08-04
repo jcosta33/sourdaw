@@ -216,7 +216,7 @@ class FermenterProcessor extends AudioWorkletProcessor {
         if (
             (msg.type === 'noteOn' || msg.type === 'noteOff' || msg.type === 'noteExpression') &&
             msg.sampleFrame !== undefined &&
-            msg.sampleFrame > currentFrame
+            msg.sampleFrame >= currentFrame
         ) {
             this._enqueue({ ...msg, sampleFrame: msg.sampleFrame });
             return;
