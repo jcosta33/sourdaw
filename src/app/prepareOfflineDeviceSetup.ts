@@ -9,6 +9,8 @@ export type PrepareOfflineDeviceSetupInput = {
     deviceId: string;
     /** Device type, as the offline chain read it off the project. */
     deviceType: string;
+    /** Project snapshot state for the owning module to validate and decode. */
+    deviceState?: unknown;
     /** Worklet port of the offline instance the chain just built. */
     port: MessagePort;
     /** Aborts the setup on export cancellation or deadline. */
@@ -49,7 +51,7 @@ const OFFLINE_DEVICE_HYDRATION: Record<NativeDspDeviceType, HydrateOfflineDevice
     // Its per-pad kit — engine type, tuning, decay, tone, drive, filtering, sends
     // — is pushed after construction and is not in `parameterValues`, so an export
     // rendered the engine's built-in kit: right notes, wrong drums.
-    toaster: ({ deviceId, port }) => prepareOfflineToaster({ deviceId, port }),
+    toaster: ({ deviceId, deviceState, port }) => prepareOfflineToaster({ deviceId, deviceState, port }),
     // The only entry that fetches: its sample zones come over the network, so it
     // is also the only one that needs the abort signal.
     levain: ({ deviceId, port, signal }) => prepareOfflineLevain({ deviceId, port, signal }),

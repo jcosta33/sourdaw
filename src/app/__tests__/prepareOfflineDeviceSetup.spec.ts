@@ -224,12 +224,13 @@ describe('prepareOfflineDeviceSetup — hydration table routing', () => {
     // so the store record exists, which is what makes the two distinguishable.
     it('routes a toaster device to the Toaster module, passing its id and port', async () => {
         const { port } = makePort();
+        const deviceState = { version: 1, data: { kit: { name: 'snapshot kit' } } };
 
-        await prepareOfflineDeviceSetup({ deviceId: 'toaster-1', deviceType: 'toaster', port });
+        await prepareOfflineDeviceSetup({ deviceId: 'toaster-1', deviceType: 'toaster', deviceState, port });
 
         // No signal: the kit push is a bounded run of postMessage calls with
         // nothing to abort, unlike Levain's sample fetch.
-        expect(prepareOfflineToaster).toHaveBeenCalledExactlyOnceWith({ deviceId: 'toaster-1', port });
+        expect(prepareOfflineToaster).toHaveBeenCalledExactlyOnceWith({ deviceId: 'toaster-1', deviceState, port });
     });
 
     it('does nothing for a device type no native factory builds', async () => {

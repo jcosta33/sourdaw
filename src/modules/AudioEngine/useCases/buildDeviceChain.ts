@@ -125,6 +125,7 @@ async function runOfflineInstrumentSetup({ device, port, logger }: RunOfflineIns
         await getAudioDeviceRuntimeSink().prepareOfflineInstrument({
             deviceId: device.id,
             deviceType: device.type,
+            deviceState: device.deviceState,
             port,
             signal: controller.signal,
         });

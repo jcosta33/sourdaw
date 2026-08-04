@@ -91,6 +91,7 @@ class FakeAudioWorkletNode {
 type PrepareInput = {
     deviceId: string;
     deviceType: string;
+    deviceState?: unknown;
     port: MessagePort;
     signal?: AbortSignal;
 };
@@ -149,6 +150,27 @@ describe('buildDeviceChain offline instrument setup', () => {
         // The signal is what lets a stalled fetch be abandoned instead of holding
         // the render lock forever.
         expect(received[0]?.signal?.aborted).toBe(false);
+    });
+
+    it('passes the render snapshot device state to offline instrument setup', async () => {
+        const received: PrepareInput[] = [];
+        const deviceState = { version: 1, data: { kit: { name: 'snapshot kit' } } };
+        setAudioDeviceRuntimeSink({
+            prepareOfflineInstrument: (input) => {
+                received.push(input);
+                return Promise.resolve();
+            },
+        });
+        const { input, output } = makeChainEnds();
+
+        await buildDeviceChain(
+            {} as BaseAudioContext,
+            [{ ...makeDevice('toaster-1', 'toaster'), deviceState }],
+            input,
+            output
+        );
+
+        expect(received[0]?.deviceState).toEqual(deviceState);
     });
 
     it('forwards the device type rather than deciding itself, so a non-instrument is a no-op downstream', async () => {

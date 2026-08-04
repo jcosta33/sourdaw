@@ -1,3 +1,5 @@
+import { createDefaultKit, type ToasterKit } from '../models/ToasterKit';
+import { fromToasterKitState } from '../models/ToasterKitState';
 import { toasterStore } from '../stores/toasterStore';
 
 import { projectToasterKitToEngineMessages } from './projectToasterKitToEngineMessages';
@@ -5,6 +7,8 @@ import { projectToasterKitToEngineMessages } from './projectToasterKitToEngineMe
 export type PrepareOfflineToasterInput = {
     /** Id of the device being rendered; keys the kit this instance must play. */
     deviceId: string;
+    /** Project snapshot state; authoritative when present. */
+    deviceState?: unknown;
     /** Worklet port of the offline Toaster instance. */
     port: MessagePort;
 };
@@ -22,19 +26,19 @@ export type PrepareOfflineToasterInput = {
  * no await, only a bounded run of `postMessage` calls over sixteen pads. It cannot
  * stall the export deadline it would be cancelled against.
  *
- * **A device with no store record posts nothing, deliberately.** The live
- * subscriber bails the same way (`if (!kit) return`), so both paths leave such an
- * instance on the engine's constructor kit and therefore agree. Substituting the
- * application default here instead would post the 808/909 set against live's
- * generic set and make an export differ from the session — turning a shared,
- * invisible default into a real divergence. Matching live is the requirement;
- * being independently "nicer" is not. In practice the record exists, because
- * `registerToasterDevice` creates it on device load.
+ * Project state wins over the transient session store. That makes export consume
+ * the same immutable render snapshot as the rest of the chain, including headless
+ * renders and live-device load failures where no store record was ever registered.
+ * The store remains a compatibility fallback for callers without persisted state;
+ * if neither source exists, project the same application default kit that live
+ * device registration creates instead of leaving the Rust constructor kit active.
  */
-export function prepareOfflineToaster({ deviceId, port }: PrepareOfflineToasterInput): void {
-    const kit = toasterStore.value?.[deviceId]?.kit;
-    if (!kit) {
-        return;
+export function prepareOfflineToaster({ deviceId, deviceState, port }: PrepareOfflineToasterInput): void {
+    let kit: ToasterKit;
+    if (deviceState === undefined) {
+        kit = toasterStore.value?.[deviceId]?.kit ?? createDefaultKit();
+    } else {
+        kit = fromToasterKitState(deviceState);
     }
 
     for (const message of projectToasterKitToEngineMessages({ kit })) {
