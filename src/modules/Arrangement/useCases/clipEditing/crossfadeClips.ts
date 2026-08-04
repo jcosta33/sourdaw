@@ -44,7 +44,8 @@ export function crossfadeClips(clipAId: string, clipBId: string, durationBeats =
         !Number.isFinite(newClipAEnd) ||
         !Number.isFinite(unclampedClipBStart) ||
         !Number.isFinite(newClipBStart) ||
-        !Number.isFinite(actualOverlap)
+        !Number.isFinite(actualOverlap) ||
+        actualOverlap < 0
     ) {
         return false;
     }

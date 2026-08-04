@@ -115,6 +115,15 @@ describe('crossfadeClips', () => {
         expect(mocks.mapAllTracks).not.toHaveBeenCalled();
     });
 
+    it('rejects separated clips when the requested duration cannot create an overlap', () => {
+        const clips = [makeClip('a', 0, 2), makeClip('b', 6, 8)];
+        mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(clips)], selectedTrackId: 't1' });
+
+        expect(crossfadeClips('a', 'b', 1)).toBe(false);
+
+        expect(mocks.mapAllTracks).not.toHaveBeenCalled();
+    });
+
     it('returns no-write when the requested crossfade already matches project truth', () => {
         const clips = [makeClip('a', 0, 4), makeClip('b', 4, 8)];
         mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(clips)], selectedTrackId: 't1' });
