@@ -7,7 +7,9 @@ import { NativeDspDeviceStrategy, createNativeDspStrategy } from '../NativeDspDe
 const { creators } = vi.hoisted(() => {
     const nodeMock = { workletNode: {} as AudioWorkletNode, ready: Promise.resolve({}) };
     const creators = {
-        createFermenterNode: vi.fn(() => Promise.resolve(nodeMock)),
+        createFermenterNode: vi.fn((_ctx?: BaseAudioContext, _wasmUrl?: string, _onFault?: (message: string) => void) =>
+            Promise.resolve(nodeMock)
+        ),
         createToasterNode: vi.fn(() => Promise.resolve(nodeMock)),
         createLevainNode: vi.fn(() => Promise.resolve(nodeMock)),
         createGlutenNode: vi.fn(() => Promise.resolve(nodeMock)),
@@ -297,6 +299,23 @@ describe('createNativeDspStrategy factory dispatch', () => {
         const onFault = creators.createGrandBouleNode.mock.calls[0]?.[2];
         if (!onFault) {
             throw new Error('GrandBoule factory did not register a runtime-failure callback');
+        }
+
+        const rejected = expect(strategy.runtimeFailure).rejects.toThrow('offline processor crashed');
+        onFault('offline processor crashed');
+
+        await rejected;
+    });
+
+    it('turns a post-ready offline Fermenter fault into a rejected strategy signal', async () => {
+        creators.createFermenterNode.mockClear();
+        const strategy = await createNativeDspStrategy(ctx, {
+            type: 'fermenter',
+            parameterValues: {},
+        } as never);
+        const onFault = creators.createFermenterNode.mock.calls[0]?.[2];
+        if (!onFault) {
+            throw new Error('Fermenter factory did not register a runtime-failure callback');
         }
 
         const rejected = expect(strategy.runtimeFailure).rejects.toThrow('offline processor crashed');

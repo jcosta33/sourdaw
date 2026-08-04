@@ -83,6 +83,21 @@ function bindPadNotes<TNode extends PadNoteNode>(node: TNode): NoteBoundNode<TNo
     };
 }
 
+async function createFermenterOfflineNode(ctx: BaseAudioContext): Promise<NativeDspNode> {
+    let rejectRuntimeFailure: ((error: Error) => void) | undefined;
+    const runtimeFailure = new Promise<never>((_resolve, reject) => {
+        rejectRuntimeFailure = reject;
+    });
+    // The render kernel adopts this signal only after every strip is prepared.
+    // Observe an earlier fault without consuming the rejection it will race.
+    void runtimeFailure.catch(() => undefined);
+
+    const node = await createFermenterNode(ctx, undefined, (message) => {
+        rejectRuntimeFailure?.(new Error(message));
+    });
+    return { ...bindMelodicNotes(node), runtimeFailure };
+}
+
 async function createGrandBouleOfflineNode(ctx: BaseAudioContext): Promise<NativeDspNode> {
     let rejectRuntimeFailure: ((error: Error) => void) | undefined;
     const runtimeFailure = new Promise<never>((_resolve, reject) => {
@@ -139,7 +154,7 @@ export const NATIVE_DSP_DEVICE_FACTORIES: readonly NativeDspDeviceFactory[] = [
     {
         type: 'fermenter',
         matches: isFermenterDevice,
-        create: async (ctx) => bindMelodicNotes(await createFermenterNode(ctx)),
+        create: createFermenterOfflineNode,
     },
     { type: 'toaster', matches: isToasterDevice, create: async (ctx) => bindPadNotes(await createToasterNode(ctx)) },
     { type: 'levain', matches: isLevainDevice, create: async (ctx) => bindMelodicNotes(await createLevainNode(ctx)) },
