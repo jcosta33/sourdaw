@@ -34,6 +34,7 @@ const paramByIdCalls: Array<{ id: number; value: number }> = [];
 const processSizes: number[] = [];
 // Flip to simulate a Rust-side panic propagating through the bindgen glue.
 let processShouldThrow = false;
+let pushShouldThrow = false;
 
 class FermenterInstanceMock {
     note_on(note: number, velocity: number): void {
@@ -44,6 +45,25 @@ class FermenterInstanceMock {
     }
     note_off(note: number): void {
         noteEvents.push({ kind: 'off', note });
+    }
+    // Scheduled events reach the engine through the offset-carrying per-block
+    // list instead of the immediate setters. This spec asserts *which block* an
+    // event lands in, so the offset is dropped here; the offset within the
+    // block is asserted in fermenterProcessorEventOffsets.spec.ts.
+    push_note_on(note: number, velocity: number, _channel: number, _offset: number): boolean {
+        if (pushShouldThrow) {
+            throw new Error('wasm trap: queued event rejected by faulted runtime');
+        }
+        noteEvents.push({ kind: 'on', note, velocity });
+        return true;
+    }
+    push_note_off(note: number, _offset: number): boolean {
+        noteEvents.push({ kind: 'off', note });
+        return true;
+    }
+    push_note_off_on_channel(note: number, _channel: number, _offset: number): boolean {
+        noteEvents.push({ kind: 'off', note });
+        return true;
     }
     set_param(name: string, value: number): void {
         paramCalls.push({ name, value });
@@ -100,6 +120,7 @@ function resetRecording(): void {
     paramByIdCalls.length = 0;
     processSizes.length = 0;
     processShouldThrow = false;
+    pushShouldThrow = false;
 }
 
 describe('FermenterProcessor message handling', () => {
@@ -505,6 +526,27 @@ describe('FermenterProcessor message handling', () => {
             // After faulting, a subsequent process() short-circuits (no instance calls).
             processSizes.length = 0;
             processShouldThrow = false;
+            proc.process([], makeStereoBlock());
+            expect(processSizes).toEqual([]);
+        });
+
+        it('faults and posts an error when a scheduled-event push traps', async () => {
+            const proc = await loadProcessor();
+            send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+            resetRecording();
+            send(proc, { type: 'noteOn', note: 60, velocity: 100, sampleFrame: 64 });
+            pushShouldThrow = true;
+
+            const ok = proc.process([], makeStereoBlock());
+
+            const errorCalls = proc.port.postMessage.mock.calls.filter(
+                (call) => (call[0] as { type?: string }).type === 'error'
+            );
+            expect(errorCalls).toHaveLength(1);
+            expect((errorCalls[0]![0] as { message: string }).message).toContain('queued event');
+            expect(ok).toBe(true);
+
+            pushShouldThrow = false;
             proc.process([], makeStereoBlock());
             expect(processSizes).toEqual([]);
         });
