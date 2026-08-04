@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 
+import { handleReplayGeneratedMidi } from '../../handlers/aiMidi/handleReplayGeneratedMidi';
 import { handleStemSeparate } from '../../handlers/aiMidi/handleStemSeparate';
 import { getAiMidiHandlers } from '../getAiMidiHandlers';
 
@@ -13,6 +14,7 @@ describe('getAiMidiHandlers', () => {
         expect(handlers).not.toHaveProperty('addNotes');
         expect(midi_handlers).toHaveProperty('addNotes');
         expect(handlers).toHaveProperty('stemSeparate');
+        expect(handlers.replayGeneratedMidi).toBe(handleReplayGeneratedMidi);
 
         expect(handlers.stemSeparate).toBe(handleStemSeparate);
     });

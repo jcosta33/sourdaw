@@ -20,6 +20,7 @@ describe('RuntimeAction', () => {
 
         expect(RUNTIME_ACTION_TYPES).toHaveLength(237);
         expect(new Set(RUNTIME_ACTION_TYPES).size).toBe(RUNTIME_ACTION_TYPES.length);
+        expect(RUNTIME_ACTION_TYPES).not.toContain('replayGeneratedMidi');
         expect(digest >>> 0).toBe(2_617_455_263);
     });
 

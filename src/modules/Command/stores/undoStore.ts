@@ -34,7 +34,10 @@ function isSessionPersistableActionEntry(entry: UndoEntry): entry is ActionUndoE
     if (!isSessionPersistableAppAction(entry.action)) {
         return false;
     }
-    return entry.inverseAction === null || isSessionPersistableAppAction(entry.inverseAction);
+    if (entry.inverseAction !== null && !isSessionPersistableAppAction(entry.inverseAction)) {
+        return false;
+    }
+    return entry.redoAction === undefined || isSessionPersistableAppAction(entry.redoAction);
 }
 
 function getOptionalString(value: Record<string, unknown>, key: string): string | null | undefined {
@@ -72,6 +75,11 @@ function sanitizeStoredEntry(value: unknown): ActionUndoEntry | null {
         return null;
     }
 
+    const redoAction = value.redoAction;
+    if (redoAction !== undefined && !isSessionPersistableAppAction(redoAction)) {
+        return null;
+    }
+
     const source = value.source ?? 'manual';
     if (!isUndoSource(source)) {
         return null;
@@ -102,6 +110,9 @@ function sanitizeStoredEntry(value: unknown): ActionUndoEntry | null {
     }
     if (groupLabel !== undefined) {
         entry.groupLabel = groupLabel;
+    }
+    if (redoAction !== undefined) {
+        entry.redoAction = redoAction;
     }
 
     return entry;

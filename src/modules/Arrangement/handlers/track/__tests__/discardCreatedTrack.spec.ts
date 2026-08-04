@@ -74,6 +74,27 @@ describe('handleDiscardCreatedTrack', () => {
         expect(mocks.publishTrackRemoved).toHaveBeenCalledWith({ trackId: 'created' });
     });
 
+    it('rejects a guarded discard when the generated track was edited', async () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 'created', name: 'edited', clips: [] }],
+        });
+
+        const result = await handleDiscardCreatedTrack.execute({
+            type: 'discardCreatedTrack',
+            payload: {
+                trackId: 'created',
+                generatedMidiStateGuard: {
+                    entityJson: JSON.stringify({ id: 'created', name: 'original', clips: [] }),
+                    midiByClipIdJson: JSON.stringify({}),
+                },
+            },
+        });
+
+        expect(result).toEqual({ status: 'conflict' });
+        expect(mocks.removeTrack).not.toHaveBeenCalled();
+        expect(mocks.removeTrackModulationReferences).not.toHaveBeenCalled();
+    });
+
     it('rebuilds a created track that remains in durable truth after an ambiguous commit', async () => {
         mocks.removeTrack.mockReturnValue({
             removed: true,
