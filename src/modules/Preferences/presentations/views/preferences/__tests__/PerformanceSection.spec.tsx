@@ -5,48 +5,43 @@ import { defaultPreferences } from '../../../../models/Preferences';
 import { PerformanceSection } from '../PerformanceSection';
 
 describe('PerformanceSection', () => {
-    it('shows the current buffer size, sample rate and computed latency', () => {
+    it('shows the selected named audio profile and its restart boundary', () => {
         render(
             <PerformanceSection
-                prefs={{ ...defaultPreferences, bufferSize: 512, sampleRate: 44100 }}
+                prefs={{ ...defaultPreferences, audioLatencyProfile: 'highCapacity' }}
                 update={vi.fn()}
             />
         );
 
-        const bufferSelect = screen.getByRole('combobox', { name: 'Buffer size' }) as HTMLSelectElement;
-        const sampleRateSelect = screen.getByRole('combobox', { name: 'Sample rate' }) as HTMLSelectElement;
+        const profileSelect = screen.getByRole('combobox', { name: 'Audio processing profile' }) as HTMLSelectElement;
 
-        expect(bufferSelect.value).toBe('512');
-        expect(sampleRateSelect.value).toBe('44100');
-        expect(screen.getByText('~11.6ms latency')).toBeInTheDocument();
+        expect(profileSelect.value).toBe('highCapacity');
+        expect(screen.getByText(/Takes effect after reloading Sourdaw\.$/)).toBeInTheDocument();
+        expect(screen.queryByRole('combobox', { name: 'Buffer size' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('combobox', { name: 'Sample rate' })).not.toBeInTheDocument();
     });
 
-    it('recomputes latency when buffer size or sample rate prefs change', () => {
+    it('persists a high-capacity profile choice instead of a fictitious buffer size', () => {
+        const update = vi.fn();
         render(
-            <PerformanceSection
-                prefs={{ ...defaultPreferences, bufferSize: 1024, sampleRate: 48000 }}
-                update={vi.fn()}
-            />
+            <PerformanceSection prefs={{ ...defaultPreferences, audioLatencyProfile: 'lowLatency' }} update={update} />
         );
 
-        expect(screen.getByText('~21.3ms latency')).toBeInTheDocument();
+        fireEvent.change(screen.getByRole('combobox', { name: 'Audio processing profile' }), {
+            target: { value: 'highCapacity' },
+        });
+
+        expect(update).toHaveBeenCalledWith({ audioLatencyProfile: 'highCapacity' });
     });
 
-    it('calls update with the numeric buffer size when the buffer size select changes', () => {
+    it('does not persist an unknown select value', () => {
         const update = vi.fn();
-        render(<PerformanceSection prefs={{ ...defaultPreferences, bufferSize: 512 }} update={update} />);
+        render(<PerformanceSection prefs={defaultPreferences} update={update} />);
 
-        fireEvent.change(screen.getByRole('combobox', { name: 'Buffer size' }), { target: { value: '256' } });
+        fireEvent.change(screen.getByRole('combobox', { name: 'Audio processing profile' }), {
+            target: { value: 'turbo' },
+        });
 
-        expect(update).toHaveBeenCalledWith({ bufferSize: 256 });
-    });
-
-    it('calls update with the numeric sample rate when the sample rate select changes', () => {
-        const update = vi.fn();
-        render(<PerformanceSection prefs={{ ...defaultPreferences, sampleRate: 44100 }} update={update} />);
-
-        fireEvent.change(screen.getByRole('combobox', { name: 'Sample rate' }), { target: { value: '96000' } });
-
-        expect(update).toHaveBeenCalledWith({ sampleRate: 96000 });
+        expect(update).not.toHaveBeenCalled();
     });
 });

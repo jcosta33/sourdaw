@@ -94,11 +94,14 @@ describe('preferencesStore — empty persisted storage (first run)', () => {
         vi.resetModules();
         const fresh = (await import('../preferencesStore')).preferencesStore;
 
-        fresh.set({ ...defaultPreferences, theme: 'light', bufferSize: 1024 });
+        fresh.set({ ...defaultPreferences, theme: 'light', audioLatencyProfile: 'highCapacity' });
 
         const persisted = window.localStorage.getItem(STORAGE_KEY);
         expect(persisted).not.toBeNull();
-        expect(parse(persisted as string)).toMatchObject({ theme: 'light', bufferSize: 1024 });
+        expect(parse(persisted as string)).toMatchObject({
+            theme: 'light',
+            audioLatencyProfile: 'highCapacity',
+        });
     });
 
     it('seeds a visible 28px minimap under the current preferences schema', async () => {
@@ -106,7 +109,7 @@ describe('preferencesStore — empty persisted storage (first run)', () => {
         const fresh = (await import('../preferencesStore')).preferencesStore;
 
         expect(fresh.value).toMatchObject({
-            preferencesSchemaVersion: 1,
+            preferencesSchemaVersion: 2,
             showMinimap: true,
             timelineMinimapHeight: 28,
         });
@@ -130,7 +133,7 @@ describe('preferencesStore — legacy minimap visibility migration', () => {
         const fresh = (await import('../preferencesStore')).preferencesStore;
 
         expect(fresh.value).toMatchObject({
-            preferencesSchemaVersion: 1,
+            preferencesSchemaVersion: 2,
             showMinimap: true,
             timelineMinimapHeight: 28,
         });
@@ -140,6 +143,6 @@ describe('preferencesStore — legacy minimap visibility migration', () => {
         const reloaded = (await import('../preferencesStore')).preferencesStore;
 
         expect(reloaded.value?.showMinimap).toBe(false);
-        expect(reloaded.value?.preferencesSchemaVersion).toBe(1);
+        expect(reloaded.value?.preferencesSchemaVersion).toBe(2);
     });
 });

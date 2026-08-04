@@ -15,6 +15,11 @@ const serverRoot = configuredServerRoot === undefined ? harnessRoot : path.resol
 const cpuInfo = os.cpus();
 const headless = process.env.SOURDAW_PERF_HEADLESS === '1';
 const smoke = process.env.SOURDAW_PERF_SMOKE === '1';
+const audioLatencyProfile = process.env.SOURDAW_PERF_AUDIO_PROFILE ?? 'lowLatency';
+if (!['lowLatency', 'highCapacity'].includes(audioLatencyProfile)) {
+    throw new Error('SOURDAW_PERF_AUDIO_PROFILE must be lowLatency or highCapacity');
+}
+const evidenceOutputDir = `test-results/mycelium-performance-${audioLatencyProfile}`;
 if (reuseExistingServer && !smoke) {
     throw new Error('Campaign performance evidence must start its own measured server');
 }
@@ -31,6 +36,7 @@ const performanceMetadata = {
     harnessGitDirty,
     headless,
     smoke,
+    audioLatencyProfile,
     os: {
         platform: os.platform(),
         release: os.release(),
@@ -49,7 +55,8 @@ module.exports = defineConfig({
     expect: { timeout: 120_000 },
     fullyParallel: false,
     workers: 1,
-    reporter: [['line'], ['json', { outputFile: 'test-results/mycelium-performance-report.json' }]],
+    outputDir: evidenceOutputDir,
+    reporter: [['line'], ['json', { outputFile: `${evidenceOutputDir}-report.json` }]],
     use: {
         baseURL: `http://127.0.0.1:${port}`,
     },
