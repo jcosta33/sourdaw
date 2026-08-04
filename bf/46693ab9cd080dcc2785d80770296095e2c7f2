@@ -1,0 +1,35 @@
+crates/daw-dsp/src/toaster/engine.rs
+  s_ac9b259eab20ba::t_978efb8a10aae5 6,339,341,404,406
+crates/daw-dsp/src/toaster/engines/hihat_909.rs
+  s_ac9b259eab20ba::t_253d4bc1463efe 15-16,23-24,29-30,47-48,57-58,60,82-83,101
+crates/daw-dsp/src/toaster/engines/mod.rs
+  s_ac9b259eab20ba::t_a2dd9e7eb9f4e1 34,48,83-121,163-174,246-260,295-305
+crates/daw-dsp/src/toaster/engines/perc.rs
+  s_ac9b259eab20ba::t_5a058fe162ba71 9-10,75,209-212
+crates/daw-dsp/src/toaster/voice.rs
+  s_ac9b259eab20ba::t_25b4f056b987a3 9-12,103-104,113,119-122,135,137,147-164,166-169,173-174,182,195-196,216
+crates/daw-dsp/tests/toaster_pad_output.rs
+  s_ac9b259eab20ba::t_8ccd1ede80f929 22-90
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_ac9b259eab20ba::t_194f644351ebed 1,878-893,918-971
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_ac9b259eab20ba::t_3513c999bf3eb7 1,98-113,138-191
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_ac9b259eab20ba::t_15bdc79a10385d 1,878-893,918-971
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "bf46693ab9cd080dcc2785d80770296095e2c7f2",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
