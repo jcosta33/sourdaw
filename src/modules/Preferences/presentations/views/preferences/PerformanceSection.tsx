@@ -1,4 +1,4 @@
-import { type ReactElement } from 'react';
+import { type ChangeEvent, type ReactElement } from 'react';
 
 import { Cpu } from 'lucide-react';
 
@@ -6,10 +6,9 @@ import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 
 import {
     type Preferences,
-    BUFFER_SIZE_OPTIONS,
-    SAMPLE_RATE_OPTIONS,
-    type BufferSizeOption,
-    type SampleRateOption,
+    AUDIO_LATENCY_PROFILE_OPTIONS,
+    DEFAULT_AUDIO_LATENCY_PROFILE,
+    isAudioLatencyProfile,
 } from '../../../models/Preferences';
 import { SectionTitle, FieldGroup } from '../preferencesShared';
 
@@ -18,43 +17,43 @@ type SectionProps = {
     update: (partial: Partial<Preferences>) => void;
 };
 
-export const PerformanceSection = ({ prefs, update }: SectionProps): ReactElement => (
-    <>
-        <SectionTitle icon={<Cpu className="size-4" />} title="Performance" />
+export const PerformanceSection = ({ prefs, update }: SectionProps): ReactElement => {
+    const selectedProfile = isAudioLatencyProfile(prefs.audioLatencyProfile)
+        ? prefs.audioLatencyProfile
+        : DEFAULT_AUDIO_LATENCY_PROFILE;
+    const profileDescription =
+        selectedProfile === 'lowLatency'
+            ? 'Prioritizes response for live playing and recording.'
+            : 'Gives dense sessions more output headroom.';
+    const handleProfileChange = (event: ChangeEvent<HTMLSelectElement>): void => {
+        const profile = event.target.value;
+        if (!isAudioLatencyProfile(profile)) {
+            return;
+        }
+        update({ audioLatencyProfile: profile });
+    };
 
-        <FieldGroup label="Buffer Size">
-            <div className="flex items-center gap-2">
+    return (
+        <>
+            <SectionTitle icon={<Cpu className="size-4" />} title="Performance" />
+
+            <FieldGroup label="Audio Processing Profile">
                 <DawCompactSelect
-                    value={prefs.bufferSize}
-                    onChange={(event) => update({ bufferSize: Number(event.target.value) as BufferSizeOption })}
-                    className="flex-1"
-                    aria-label="Buffer size"
+                    value={selectedProfile}
+                    onChange={handleProfileChange}
+                    className="w-full"
+                    aria-label="Audio processing profile"
                 >
-                    {BUFFER_SIZE_OPTIONS.map((opt) => (
+                    {AUDIO_LATENCY_PROFILE_OPTIONS.map((opt) => (
                         <option key={opt.value} value={opt.value}>
                             {opt.label}
                         </option>
                     ))}
                 </DawCompactSelect>
-                <span className="text-[9px] text-muted-foreground whitespace-nowrap">
-                    ~{((prefs.bufferSize / prefs.sampleRate) * 1000).toFixed(1)}ms latency
-                </span>
-            </div>
-        </FieldGroup>
-
-        <FieldGroup label="Sample Rate">
-            <DawCompactSelect
-                value={prefs.sampleRate}
-                onChange={(event) => update({ sampleRate: Number(event.target.value) as SampleRateOption })}
-                className="w-full"
-                aria-label="Sample rate"
-            >
-                {SAMPLE_RATE_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                    </option>
-                ))}
-            </DawCompactSelect>
-        </FieldGroup>
-    </>
-);
+                <p className="text-[10px] leading-relaxed text-muted-foreground">
+                    {profileDescription} Chrome chooses the actual device latency. Takes effect after reloading Sourdaw.
+                </p>
+            </FieldGroup>
+        </>
+    );
+};

@@ -179,6 +179,7 @@ describe('AudioEngine', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        window.localStorage.clear();
         mockCtx = createMockAudioContext();
 
         vi.stubGlobal('AudioWorkletNode', FakeWorkletNode);
@@ -850,7 +851,14 @@ describe('AudioEngine', () => {
             expect(fbEngine.getState().isReady).toBe(false);
             expect(fbEngine.getState().state).toBe('closed');
             const actual = fbEngine.getDiagnostics();
-            expect(actual.context).toEqual({ state: 'closed', sampleRate: 44_100, baseLatency: 0, outputLatency: 0 });
+            expect(actual.context).toEqual({
+                state: 'closed',
+                sampleRate: 44_100,
+                baseLatency: 0,
+                outputLatency: 0,
+                latencyProfile: 'lowLatency',
+                latencyHint: 'interactive',
+            });
             expect(actual.playback).toBeNull();
         });
 
@@ -939,6 +947,33 @@ describe('AudioEngine', () => {
             expect(() => fbEngine.scheduleClick(0, true, 1)).not.toThrow();
             expect(() => fbEngine.stopAllScheduled()).not.toThrow();
             expect(() => fbEngine.syncKneadState('t1', {})).not.toThrow();
+        });
+    });
+
+    it('maps the high-capacity product profile to Chrome playback latency and reports the request', () => {
+        const constructorOptions = vi.fn();
+        class ProfiledAudioContext {
+            constructor(options: AudioContextOptions) {
+                constructorOptions(options);
+                return mockCtx;
+            }
+        }
+        vi.stubGlobal('AudioContext', ProfiledAudioContext);
+        window.localStorage.setItem(
+            'sourdaw-preferences',
+            JSON.stringify({ json: { preferencesSchemaVersion: 2, audioLatencyProfile: 'highCapacity' } })
+        );
+
+        const profiledEngine = createAudioEngine();
+
+        expect(constructorOptions).toHaveBeenCalledWith({ latencyHint: 'playback' });
+        expect(profiledEngine.getDiagnostics().context).toEqual({
+            state: 'running',
+            sampleRate: 48_000,
+            baseLatency: 0.01,
+            outputLatency: 0.01,
+            latencyProfile: 'highCapacity',
+            latencyHint: 'playback',
         });
     });
 

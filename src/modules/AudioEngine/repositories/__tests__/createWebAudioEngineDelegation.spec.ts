@@ -310,7 +310,14 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
     });
 
     it('reports the live graph and runtime load without touching the render path', async () => {
-        const expectedCtx = { state: 'running' as const, sampleRate: 48_000, baseLatency: 0.01, outputLatency: 0.01 };
+        const expectedCtx = {
+            state: 'running' as const,
+            sampleRate: 48_000,
+            baseLatency: 0.01,
+            outputLatency: 0.01,
+            latencyProfile: null,
+            latencyHint: null,
+        };
         const expectedPlayback = {
             underrunDuration: 0.002,
             underrunEvents: 2,

@@ -1,4 +1,5 @@
 import { chromium, expect, type Browser, type Page, type TestInfo } from '@playwright/test';
+import { stringify as superjsonStringify } from 'superjson';
 
 import { setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
 
@@ -85,6 +86,7 @@ type PerformanceMetadata = {
     harnessGitDirty: boolean;
     headless: boolean;
     smoke: boolean;
+    audioLatencyProfile: 'lowLatency' | 'highCapacity';
     os: MyceliumEvidenceEnvironment['os'];
 };
 
@@ -106,6 +108,14 @@ export type MyceliumEvidenceEnvironment = {
     viewport: { width: number; height: number };
     headless: boolean;
     smoke: boolean;
+    audioLatencyProfile: 'lowLatency' | 'highCapacity';
+    audioContext: {
+        latencyProfile: 'lowLatency' | 'highCapacity';
+        latencyHint: 'interactive' | 'playback';
+        sampleRate: number;
+        baseLatency: number;
+        outputLatency: number;
+    };
     repeatIndex: number;
     capabilities: RuntimeCapabilities;
 };
@@ -211,6 +221,7 @@ function readPerformanceMetadata(testInfo: TestInfo): PerformanceMetadata {
     const harnessGitDirty = performanceMetadata.harnessGitDirty;
     const headless = performanceMetadata.headless;
     const smoke = performanceMetadata.smoke;
+    const audioLatencyProfile = performanceMetadata.audioLatencyProfile;
     const osValues = {
         platform: os.platform,
         release: os.release,
@@ -227,6 +238,7 @@ function readPerformanceMetadata(testInfo: TestInfo): PerformanceMetadata {
         typeof harnessGitDirty !== 'boolean' ||
         typeof headless !== 'boolean' ||
         typeof smoke !== 'boolean' ||
+        (audioLatencyProfile !== 'lowLatency' && audioLatencyProfile !== 'highCapacity') ||
         typeof osValues.platform !== 'string' ||
         typeof osValues.release !== 'string' ||
         typeof osValues.architecture !== 'string' ||
@@ -244,6 +256,7 @@ function readPerformanceMetadata(testInfo: TestInfo): PerformanceMetadata {
         harnessGitDirty,
         headless,
         smoke,
+        audioLatencyProfile,
         os: osValues as MyceliumEvidenceEnvironment['os'],
     };
 }
@@ -309,7 +322,24 @@ export async function openMeasuredPage(testInfo: TestInfo): Promise<OpenMeasured
         const onPageError = (error: Error): void => rejectPageError(error);
         page.on('pageerror', onPageError);
         releasePageErrorMonitor = () => page?.off('pageerror', onPageError);
-        await settleWithin(Promise.race([setupWorkspace(page), pageError]), 60_000, 'Measured workspace setup');
+        await settleWithin(
+            Promise.race([
+                setupWorkspace(page, {
+                    localStorage: [
+                        {
+                            name: 'sourdaw-preferences',
+                            value: superjsonStringify({
+                                preferencesSchemaVersion: 2,
+                                audioLatencyProfile: metadata.audioLatencyProfile,
+                            }),
+                        },
+                    ],
+                }),
+                pageError,
+            ]),
+            60_000,
+            'Measured workspace setup'
+        );
 
         capabilities = await settleWithin(
             Promise.race([readCapabilities(page), pageError]),
@@ -318,6 +348,46 @@ export async function openMeasuredPage(testInfo: TestInfo): Promise<OpenMeasured
         );
         expect(capabilities.crossOriginIsolated).toBe(true);
         expect(capabilities.userAgent).toContain('Chrome/');
+        const startupSnapshot = await settleWithin(readRuntimeSnapshot(page), 30_000, 'Audio profile startup probe');
+        const startupAudio = getRecord(startupSnapshot.audio, 'Audio diagnostics');
+        const startupContext = getRecord(startupAudio.context, 'Audio context diagnostics');
+        const startupSampleRate = getNumber(startupContext, 'sampleRate', 'Audio context diagnostics');
+        const startupBaseLatency = getNumber(startupContext, 'baseLatency', 'Audio context diagnostics');
+        const startupOutputLatency = getNumber(startupContext, 'outputLatency', 'Audio context diagnostics');
+        if (startupSampleRate <= 0 || startupBaseLatency < 0 || startupOutputLatency < 0) {
+            throw new RangeError('Audio context diagnostics must expose positive sample rate and non-negative latency');
+        }
+        let expectedLatencyHint: 'interactive' | 'playback' = 'interactive';
+        if (metadata.audioLatencyProfile === 'highCapacity') {
+            expectedLatencyHint = 'playback';
+        }
+        const storedStartupProfile = await page.evaluate(() => {
+            const rawPreferences = window.localStorage.getItem('sourdaw-preferences');
+            if (rawPreferences === null) {
+                return null;
+            }
+            try {
+                const envelope = JSON.parse(rawPreferences) as { json?: { audioLatencyProfile?: unknown } };
+                return envelope.json?.audioLatencyProfile ?? null;
+            } catch {
+                return 'invalid-storage-payload';
+            }
+        });
+        if (
+            storedStartupProfile !== metadata.audioLatencyProfile ||
+            startupContext.latencyProfile !== metadata.audioLatencyProfile ||
+            startupContext.latencyHint !== expectedLatencyHint
+        ) {
+            throw new Error(
+                `Audio profile startup mismatch: ${JSON.stringify({
+                    requested: metadata.audioLatencyProfile,
+                    stored: storedStartupProfile,
+                    running: startupContext.latencyProfile,
+                    expectedLatencyHint,
+                    runningLatencyHint: startupContext.latencyHint,
+                })}`
+            );
+        }
 
         return {
             abort: cleanup,
@@ -334,6 +404,14 @@ export async function openMeasuredPage(testInfo: TestInfo): Promise<OpenMeasured
                 viewport: { width: 1920, height: 1080 },
                 headless: metadata.headless,
                 smoke: metadata.smoke,
+                audioLatencyProfile: metadata.audioLatencyProfile,
+                audioContext: {
+                    latencyProfile: metadata.audioLatencyProfile,
+                    latencyHint: expectedLatencyHint,
+                    sampleRate: startupSampleRate,
+                    baseLatency: startupBaseLatency,
+                    outputLatency: startupOutputLatency,
+                },
                 repeatIndex: testInfo.repeatEachIndex,
                 capabilities,
             },

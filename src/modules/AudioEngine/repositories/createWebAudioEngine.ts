@@ -1,3 +1,9 @@
+import {
+    DEFAULT_AUDIO_LATENCY_PROFILE,
+    getAudioContextLatencyHint,
+    readStoredAudioLatencyProfile,
+    type AudioLatencyProfile,
+} from '#/infra/audioContext/audioLatencyProfile';
 import { logger } from '#/infra/logger/appLogger';
 import { hasSharedArrayBuffer } from '#/utils/capabilities';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -285,6 +291,8 @@ class AudioEngineImpl implements AudioEngine {
     private lastResumeError: Error | null = null;
     private adjustmentRuntime: AdjustmentLayerRuntime;
     private readonly deviceReadinessDiagnostics = createDeviceReadinessDiagnostics();
+    private readonly latencyProfile: AudioLatencyProfile | null;
+    private readonly latencyHint: 'interactive' | 'playback' | null;
 
     constructor(providedContext?: AudioContext) {
         // Transport SAB layout: see TRANSPORT_F64 / TRANSPORT_SEQ_I32 above. The
@@ -309,8 +317,20 @@ class AudioEngineImpl implements AudioEngine {
             this.transportSeqView = null;
         }
 
+        if (providedContext) {
+            this.latencyProfile = null;
+            this.latencyHint = null;
+        } else {
+            this.latencyProfile = readStoredAudioLatencyProfile();
+            this.latencyHint = getAudioContextLatencyHint(this.latencyProfile);
+        }
+
         try {
-            this.context = providedContext ?? new AudioContext({ latencyHint: 'interactive' });
+            this.context =
+                providedContext ??
+                new AudioContext({
+                    latencyHint: this.latencyHint ?? getAudioContextLatencyHint(DEFAULT_AUDIO_LATENCY_PROFILE),
+                });
             this.masterGainNode = this.context.createGain();
             this.masterGainNode.gain.value = 0.8;
 
@@ -476,6 +496,8 @@ class AudioEngineImpl implements AudioEngine {
             sampleRate: engineState.sampleRate,
             baseLatency: engineState.baseLatency,
             outputLatency: this.fallbackMode ? 0 : this.context.outputLatency,
+            latencyProfile: this.latencyProfile,
+            latencyHint: this.latencyHint,
         };
         if (this.fallbackMode) {
             return {
