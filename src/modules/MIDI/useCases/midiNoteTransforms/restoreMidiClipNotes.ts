@@ -7,18 +7,25 @@ type RestoreMidiClipNotesInput = {
     clipId: string;
     notes: readonly MidiClipNoteSnapshot[];
     expectedNotes: readonly MidiClipNoteSnapshot[];
+    allowMissingExpectedEmpty?: boolean;
 };
 
 export function restoreMidiClipNotes({
     clipId,
     notes,
     expectedNotes,
+    allowMissingExpectedEmpty = false,
 }: RestoreMidiClipNotesInput): 'written' | 'no-write' | 'conflict' {
     const state = midiStore.value;
-    const currentNotes = state?.notesByClipId[clipId];
-    if (!state || !currentNotes) {
+    if (!state) {
         return 'conflict';
     }
+    const storedNotes = state.notesByClipId[clipId];
+    const canTreatMissingAsEmpty = storedNotes === undefined && allowMissingExpectedEmpty && expectedNotes.length === 0;
+    if (storedNotes === undefined && !canTreatMissingAsEmpty) {
+        return 'conflict';
+    }
+    const currentNotes = storedNotes ?? [];
     if (midiNotesEqual(currentNotes, notes)) {
         return 'no-write';
     }

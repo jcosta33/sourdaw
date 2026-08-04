@@ -391,12 +391,30 @@ export type AppAction =
     | {
           type: 'addClip';
           payload: {
+              /** Internal replay identity. AiRuntime payload validation rejects this field. */
+              id?: string;
               trackId: string;
               startBeat: number;
               endBeat: number;
               name: string;
               type?: 'audio' | 'midi';
               audioBufferId?: string;
+              /** Internal clip state. AiRuntime payload validation rejects these fields. */
+              assetHash?: string;
+              isGhost?: boolean;
+              audioOffsetBeats?: number;
+              midiOffsetBeats?: number;
+              fadeInBeats?: number;
+              fadeOutBeats?: number;
+              gain?: number;
+              color?: string;
+              locked?: boolean;
+              muted?: boolean;
+              stretchMode?: 'off' | 'repitch' | 'timestretch';
+              stretchRatio?: number;
+              loopEnabled?: boolean;
+              loopLength?: number;
+              followAction?: 'stop' | 'play_next' | 'play_previous' | 'play_random' | 'play_first' | 'play_last';
           };
       }
     | { type: 'moveClip'; payload: { clipId: string; trackId: string; startBeat: number } }
@@ -486,6 +504,8 @@ export type AppAction =
               clipId: string;
               notes: readonly MidiClipNoteSnapshot[];
               expectedNotes: readonly MidiClipNoteSnapshot[];
+              /** Internal redo allowance for a newly recreated clip whose MIDI bucket does not exist yet. */
+              allowMissingExpectedEmpty?: boolean;
           };
       }
     | { type: 'quantizeNoteLengths'; payload: { clipId: string; gridSize: number } }
@@ -768,7 +788,14 @@ export type AppAction =
           type: 'addNotes';
           payload: {
               clipId: string;
-              notes: Array<{ pitch: number; startBeat: number; duration: number; velocity?: number }>;
+              notes: Array<{
+                  /** Internal replay identity. Provider note validation rejects this field. */
+                  id?: string;
+                  pitch: number;
+                  startBeat: number;
+                  duration: number;
+                  velocity?: number;
+              }>;
           };
       }
     | {

@@ -53,9 +53,10 @@ describe('initEngine', () => {
         mocks.backendChain.value = ['native'];
         mocks.initNativeEngine.mockResolvedValue(undefined);
 
-        await initEngine();
+        const backend = await initEngine();
 
         expect(mocks.initNativeEngine).toHaveBeenCalledTimes(1);
+        expect(backend).toBe('native');
         expect(llmStatusStore.value).toEqual({ state: 'ready', backend: 'native', modelId: 'native' });
     });
 
@@ -65,18 +66,20 @@ describe('initEngine', () => {
         Object.defineProperty(globalThis, 'navigator', { value: { gpu: {} }, configurable: true, writable: true }); // simulate WebGPU
         mocks.initWebLlmEngine.mockResolvedValue(undefined);
 
-        await initEngine();
+        const backend = await initEngine();
 
         expect(mocks.warn).toHaveBeenCalledWith(expect.stringContaining('native backend failed'));
         expect(mocks.initWebLlmEngine).toHaveBeenCalledTimes(1);
+        expect(backend).toBe('webllm');
     });
 
     it('falls back to Cloud if native fails and cloud is available (no WebGPU)', async () => {
         mocks.backendChain.value = ['native', 'cloud'];
         mocks.initNativeEngine.mockRejectedValue(new Error('Native failed'));
 
-        await initEngine();
+        const backend = await initEngine();
 
+        expect(backend).toBe('cloud');
         expect(llmStatusStore.value).toEqual({ state: 'idle' });
     });
 
@@ -89,10 +92,11 @@ describe('initEngine', () => {
         Object.defineProperty(globalThis, 'navigator', { value: { gpu: {} }, configurable: true, writable: true });
         mocks.initWebLlmEngine.mockRejectedValue(new Error('WebLLM failed'));
 
-        await initEngine();
+        const backend = await initEngine();
 
         expect(mocks.initWebLlmEngine).toHaveBeenCalledTimes(1);
         expect(mocks.warn).toHaveBeenCalledWith(expect.stringContaining('webllm backend failed'));
+        expect(backend).toBe('cloud');
         expect(llmStatusStore.value).toEqual({ state: 'idle' });
     });
 

@@ -248,6 +248,8 @@ type AppActionPayload<ActionType extends AppActionType> =
 
 export const RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS = {
     armTrack: ['trackId', 'armed'],
+    addClip: ['trackId', 'startBeat', 'endBeat', 'name', 'type', 'audioBufferId'],
+    addNotes: ['clipId', 'notes'],
     addDevice: ['trackId', 'deviceType'],
     createBus: ['name'],
     createTrackAlternative: ['trackId', 'name', 'duplicateActive'],
@@ -281,6 +283,8 @@ export const RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS = {
 
 export const RUNTIME_ACTION_OVERRIDE_REQUIRED_PAYLOAD_KEYS = {
     armTrack: ['trackId', 'armed'],
+    addClip: ['trackId', 'startBeat', 'endBeat', 'name'],
+    addNotes: ['clipId', 'notes'],
     addDevice: ['trackId', 'deviceType'],
     createBus: ['name'],
     createTrackAlternative: ['trackId', 'name', 'duplicateActive'],
@@ -328,18 +332,21 @@ type RuntimePayloadOverride<ActionType extends RuntimePayloadOverrideType> =
               Extract<RuntimeAllowedPayloadKey<ActionType>, keyof AppActionPayload<ActionType>>
           >
         : never;
-type RuntimeActionWithPayload<ActionType extends RuntimePayloadOverrideType> = Omit<
-    AppActionOf<ActionType>,
-    'payload'
-> & {
-    payload: RuntimePayloadOverride<ActionType> &
-        Required<
-            Pick<
-                AppActionPayload<ActionType>,
-                Extract<RuntimeRequiredPayloadKey<ActionType>, keyof AppActionPayload<ActionType>>
-            >
-        >;
+type RuntimeAddNotesPayload = {
+    clipId: AppActionPayload<'addNotes'>['clipId'];
+    notes: Array<Omit<AppActionPayload<'addNotes'>['notes'][number], 'id'>>;
 };
+type RuntimeActionWithPayload<ActionType extends RuntimePayloadOverrideType> = ActionType extends 'addNotes'
+    ? Omit<AppActionOf<ActionType>, 'payload'> & { payload: RuntimeAddNotesPayload }
+    : Omit<AppActionOf<ActionType>, 'payload'> & {
+          payload: RuntimePayloadOverride<ActionType> &
+              Required<
+                  Pick<
+                      AppActionPayload<ActionType>,
+                      Extract<RuntimeRequiredPayloadKey<ActionType>, keyof AppActionPayload<ActionType>>
+                  >
+              >;
+      };
 
 type CanonicalRuntimeAction = Exclude<
     Extract<AppAction, { type: RuntimeActionType }>,
