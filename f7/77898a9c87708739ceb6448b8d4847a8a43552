@@ -1,0 +1,29 @@
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/ProjectTab.spec.tsx
+  s_bc88af7d3b054c::t_ca2e9e1c5cb6c7 1-93
+src/modules/Metering/presentations/views/__tests__/LUFSMeterBranches.spec.tsx
+  s_ef371911e5b971::t_a56cfee5efbb6b 1-87
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "f777898a9c87708739ceb6448b8d4847a8a43552",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ef371911e5b971": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fcc0f-6290-7282-89a6-980bc0ca2fe5",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
