@@ -1,0 +1,33 @@
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/createMyceliumAscendantDemo.spec.ts
+  s_ac9b259eab20ba::t_dc56d254a63bc7 45
+src/modules/Toaster/repositories/toasterPresets.ts
+  s_ac9b259eab20ba::t_84cbf3d18ef72b 299
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/createMyceliumVoicePerformance.spec.ts
+  s_ac9b259eab20ba::t_dc56d254a63bc7 65
+src/modules/Project/useCases/demoProjects/myceliumAscendant/createMyceliumRhythmPerformance.ts
+  s_ac9b259eab20ba::t_84cbf3d18ef72b 226
+  s_ac9b259eab20ba::t_923ce6d5a2d5f6 95
+  s_ac9b259eab20ba::t_67db1582a50d9e 152
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/createMyceliumRhythmPerformance.spec.ts
+  s_ac9b259eab20ba::t_923ce6d5a2d5f6 171
+  s_ac9b259eab20ba::t_d365d200d430a3 139,158-160
+  s_ac9b259eab20ba::t_6c8045a9f61437 161-162
+src/modules/Toaster/repositories/__tests__/toasterPresets.spec.ts
+  s_ac9b259eab20ba::t_d365d200d430a3 123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "a058787452bd9e98e54bb29474c9b4f4ec6e69db",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
