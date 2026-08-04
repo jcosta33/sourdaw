@@ -1404,7 +1404,13 @@ export async function demo5_NebulaDrift(): Promise<void> {
 
     const dim = 0.07;
     const hero = 0.84;
-    const levBed = 0.1;
+    // Intro bed. This was 0.1 — about −20 dB — and it was the *only* thing
+    // sounding for the first ten bars, because every texture lane holds flat
+    // zero before its staggered entry and Levain High does not reach `hero`
+    // until beat 44. The piece read as silent until bar 11. The staircase is
+    // the composition and is untouched; it just has to start from an audible
+    // floor rather than from nothing.
+    const levBed = 0.34;
 
     const padGainLanes = toasterPadTracks.map((pad, index) =>
         Object.assign(mkLane(pad.id, 'gain', `${pad.name} pad`, 0, 1), {
@@ -1427,8 +1433,13 @@ export async function demo5_NebulaDrift(): Promise<void> {
         }),
         Object.assign(mkLane(tDarkMist.id, 'gain', 'Mist level', 0, 1), {
             points: [
-                { beat: 0, value: 0, curve: 'linear', tension: 0 },
-                { beat: 10, value: 0.12, curve: 'smooth', tension: 0.35 },
+                // Dark Mist is the first texture to enter and carries the intro
+                // alone. It used to start at silence and reach only 0.12 by
+                // beat 10, so the opening had nothing in it. It now enters
+                // already sounding and rises into the same beat-44 value the
+                // rest of the arc is built on.
+                { beat: 0, value: 0.2, curve: 'linear', tension: 0 },
+                { beat: 10, value: 0.26, curve: 'smooth', tension: 0.35 },
                 { beat: 44, value: 0.35, curve: 'smooth', tension: 0.32 },
                 { beat: S.build1, value: 0.48, curve: 'linear', tension: 0 },
                 { beat: S.peak, value: 0.62, curve: 'smooth', tension: 0.28 },

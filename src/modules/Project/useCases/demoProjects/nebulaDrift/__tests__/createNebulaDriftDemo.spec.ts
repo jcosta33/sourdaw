@@ -49,6 +49,53 @@ describe('createNebulaDriftDemo', () => {
         expect(demoSource).not.toContain('randomUUID().slice(0, 8)');
     });
 
+    /**
+     * Intro audibility.
+     *
+     * Reported by the owner: "the automation is setting pretty much all tracks
+     * to be mute until like the 11th bar, so the track is completely mute for a
+     * long time."
+     *
+     * Measured cause: 18 of 23 gain lanes open at exactly 0 and hold flat zero
+     * through a staggered entry staircase (Grain 22, Halo 26, Veil 34, Sweep 40,
+     * Rising 48, Toaster bus 62, pads 70). Levain High does not reach `hero`
+     * until beat 44 — bar 11 at this project's 76 bpm, exactly where the owner
+     * said it opens up. So the only thing sounding before that was the Levain
+     * bed at 0.1, about −20 dB.
+     *
+     * The staircase is the composition and is deliberately untouched. What these
+     * guard is that it starts from an audible floor. Both read the numeric
+     * literal rather than the surrounding text, so they fail on a value change
+     * and not on a reformat.
+     *
+     * Limitation, stated rather than implied: this file asserts against source
+     * because `demo5_NebulaDrift()` wires real AudioEngine use-cases and worklet
+     * modules that need a live AudioContext, so it cannot run under jsdom (see
+     * the header). A signal-level assertion belongs to the render-parity
+     * instrumentation phase, not here.
+     */
+    const AUDIBLE_GAIN_FLOOR = 0.15;
+
+    it('opens on an audible Levain bed rather than a −20 dB whisper', () => {
+        const match = demoSource.match(/const levBed = ([\d.]+);/);
+        expect(match).not.toBeNull();
+
+        const levBed = Number(match![1]);
+        expect(levBed).toBeGreaterThanOrEqual(AUDIBLE_GAIN_FLOOR);
+    });
+
+    it('has Dark Mist already sounding at beat 0, since it carries the intro alone', () => {
+        // Dark Mist is the first texture to enter; every other texture lane is
+        // still holding flat zero. If it starts at silence the opening bars have
+        // only the Levain bed in them.
+        const laneStart = demoSource.indexOf("'Mist level'");
+        expect(laneStart).toBeGreaterThan(0);
+
+        const firstPoint = demoSource.slice(laneStart).match(/\{ beat: 0, value: ([\d.]+),/);
+        expect(firstPoint).not.toBeNull();
+        expect(Number(firstPoint![1])).toBeGreaterThan(0);
+    });
+
     it('commits project truth before yielding for device readiness', () => {
         const projectWriteOffset = demoSource.lastIndexOf('projectStore.set({');
         const readinessOffset = demoSource.indexOf('await waitForDevices();');
