@@ -73,7 +73,8 @@ export function projectTrackToLiveStrip({
     setTrackPan(track.id, track.pan);
     applySoloLogic({ trackId: track.id });
 
-    for (const [deviceIndex, device] of track.devices.entries()) {
+    const audioDevices = track.devices.filter((device) => device.type !== 'yeast');
+    for (const [deviceIndex, device] of audioDevices.entries()) {
         const target = resolveEligibleDeviceWriteTarget(device.id);
         if (target.status !== 'eligible' || target.trackId !== track.id) {
             continue;
@@ -82,7 +83,7 @@ export function projectTrackToLiveStrip({
         if (activateDormantExternalPlugins && device.type === 'external-plugin' && device.externalInstanceId) {
             instanceId = device.externalInstanceId;
         }
-        const precedingDeviceIds = track.devices.slice(0, deviceIndex).map((candidate) => candidate.id);
+        const precedingDeviceIds = audioDevices.slice(0, deviceIndex).map((candidate) => candidate.id);
         addDeviceToStrip(target.trackId, target.deviceId, device.type, instanceId, precedingDeviceIds);
         const pluginId = device.externalPluginId;
         if (instanceId && pluginId) {
