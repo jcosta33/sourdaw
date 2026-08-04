@@ -6,6 +6,8 @@
 
 use std::f32::consts::TAU;
 
+const DEFAULT_BASE_FREQ: f32 = 150.0;
+
 /// xorshift32 noise
 fn noise(state: &mut u32) -> f32 {
     let mut x = *state;
@@ -31,6 +33,7 @@ pub struct TomEngine {
     noise_env: f32,
     // Parameters
     base_freq: f32,
+    tune_ratio: f32,
     pitch_amount: f32,
     pitch_decay_coeff: f32,
     pitch_decay: f32,
@@ -50,7 +53,8 @@ impl TomEngine {
             pitch_env: 0.0,
             noise_state: 0xABCD1234,
             noise_env: 0.0,
-            base_freq: 150.0,
+            base_freq: DEFAULT_BASE_FREQ,
+            tune_ratio: 1.0,
             pitch_amount: 0.5,
             pitch_decay_coeff: 0.0,
             pitch_decay: 0.03,
@@ -88,7 +92,8 @@ impl TomEngine {
 
         // Pitch envelope: fast drop from up to +300% above base to base
         self.pitch_env *= self.pitch_decay_coeff;
-        let freq = self.base_freq * (1.0 + self.pitch_amount * self.pitch_env * 3.0);
+        let freq =
+            self.base_freq * self.tune_ratio * (1.0 + self.pitch_amount * self.pitch_env * 3.0);
 
         // Phase accumulator
         self.phase += freq / sample_rate;
@@ -129,6 +134,10 @@ impl TomEngine {
         self.amp_env > 1e-6
     }
 
+    pub fn reset_base_freq(&mut self) {
+        self.base_freq = DEFAULT_BASE_FREQ;
+    }
+
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
             "decay" => {
@@ -137,9 +146,7 @@ impl TomEngine {
                 self.amp_decay = 0.05 + v * 0.45;
             }
             "tune" => {
-                // Shift base frequency by semitones from default 150Hz
-                let ratio = 2.0f32.powf(value.clamp(-24.0, 24.0) / 12.0);
-                self.base_freq = (150.0 * ratio).clamp(80.0, 400.0);
+                self.tune_ratio = 2.0f32.powf(value.clamp(-24.0, 24.0) / 12.0);
             }
             "tone" => self.tone_cutoff = value.clamp(0.0, 1.0),
             "drive" => self.drive = value.clamp(0.0, 10.0),
