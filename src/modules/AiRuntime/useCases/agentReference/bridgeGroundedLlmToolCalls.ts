@@ -2021,10 +2021,19 @@ function validateEnumValue(
     if (mentionedValues.length > 1) {
         return getValueMismatchReason(valueRule.argument);
     }
-    if (valueRule.requiredInPrompt === true && mentionedValues.length !== 1) {
+    if (mentionedValues.length === 1) {
+        if (mentionedValues[0] === assertedValue) {
+            return null;
+        }
         return getValueMismatchReason(valueRule.argument);
     }
-    if (mentionedValues.length === 1 && mentionedValues[0] !== assertedValue) {
+    if (assertedValue === undefined && valueRule.mayOmitWhenUnmentioned === true) {
+        return null;
+    }
+    if (valueRule.defaultWhenUnmentioned !== undefined) {
+        return assertedValue === valueRule.defaultWhenUnmentioned ? null : getValueMismatchReason(valueRule.argument);
+    }
+    if (valueRule.requiredInPrompt === true) {
         return getValueMismatchReason(valueRule.argument);
     }
     return null;

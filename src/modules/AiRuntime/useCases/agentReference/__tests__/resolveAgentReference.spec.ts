@@ -91,6 +91,10 @@ function resolveMidiClip(prompt: string, assertedId: string, project = createCli
     return resolveAgentReference({ prompt, assertedId, capability: 'editable-midi-clip', context: project });
 }
 
+function resolveAudioClip(prompt: string, assertedId: string, project = createClipProjectState()) {
+    return resolveAgentReference({ prompt, assertedId, capability: 'editable-audio-clip', context: project });
+}
+
 function createAutomationProjectState(): ProjectContext {
     return {
         ...createProjectState(),
@@ -289,6 +293,37 @@ describe('resolveAgentReference', () => {
         expect(resolveMidiClip('quantize notes in Piano MIDI', 'clip-midi', ambiguousContext)).toMatchObject({
             status: 'rejected',
             reason: 'ambiguous-target',
+        });
+    });
+
+    it('resolves only unlocked audio clips for audio processing', () => {
+        expect(resolveAudioClip('normalize the Intro clip', 'clip-intro')).toEqual({
+            status: 'resolved',
+            id: 'clip-intro',
+            evidence: 'exact-name',
+        });
+        expect(resolveAudioClip('normalize the Piano MIDI clip', 'clip-midi')).toMatchObject({
+            status: 'rejected',
+            reason: 'ungrounded-target',
+        });
+        expect(resolveAudioClip('normalize the Locked clip', 'clip-locked')).toMatchObject({
+            status: 'rejected',
+            reason: 'ungrounded-target',
+        });
+
+        const project = createClipProjectState();
+        const modeCollision = {
+            ...project,
+            tracks: project.tracks.map((track, trackIndex) => ({
+                ...track,
+                clips: trackIndex === 0 ? [{ ...track.clips[0]!, id: 'clip-lufs', name: 'LUFS' }] : [],
+            })),
+            selectedClipId: null,
+            selectedClipIds: [],
+        };
+        expect(resolveAudioClip('normalize to -14 LUFS', 'clip-lufs', modeCollision)).toMatchObject({
+            status: 'rejected',
+            reason: 'ungrounded-target',
         });
     });
 

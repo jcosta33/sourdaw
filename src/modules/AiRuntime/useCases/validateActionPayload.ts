@@ -444,7 +444,26 @@ const validators = {
     setClipStretchRatio: 'unchecked',
     fitClipToBeats: 'unchecked',
     duplicateClipToNextBar: hasClipId,
-    normalizeClip: 'unchecked',
+    normalizeClip: (param): param is PayloadOf<'normalizeClip'> => {
+        if (
+            !isObj(param) ||
+            !hasOnlyKeys(param, ['clipId', 'mode', 'targetDb']) ||
+            !Object.hasOwn(param, 'clipId') ||
+            !isNonEmptyString(param.clipId)
+        ) {
+            return false;
+        }
+        const hasMode = Object.hasOwn(param, 'mode');
+        const mode = hasMode ? param.mode : 'peak';
+        if (mode !== 'peak' && mode !== 'rms' && mode !== 'lufs') {
+            return false;
+        }
+        const hasTargetDb = Object.hasOwn(param, 'targetDb');
+        if (mode === 'peak') {
+            return !hasTargetDb;
+        }
+        return !hasTargetDb || isInRange(param.targetDb, -60, 0);
+    },
     reverseClip: 'unchecked',
     glueClips: 'unchecked',
     nudgeClip: (param): param is PayloadOf<'nudgeClip'> =>

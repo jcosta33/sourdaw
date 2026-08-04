@@ -231,6 +231,19 @@ const guardedPayloadContractCases = [
         ],
     }),
     guardedPayloadCase({
+        actionType: 'normalizeClip',
+        validPayload: { clipId: 'clip-1', mode: 'lufs', targetDb: -14 },
+        invalidPayloads: [
+            { clipId: '' },
+            { clipId: 'clip-1', mode: 'momentary' },
+            { clipId: 'clip-1', mode: 'peak', targetDb: -14 },
+            { clipId: 'clip-1', mode: 'lufs', targetDb: -60.01 },
+            { clipId: 'clip-1', mode: 'rms', targetDb: 0.01 },
+            { clipId: 'clip-1', mode: 'lufs', targetDb: Number.NaN },
+            { clipId: 'clip-1', mode: 'lufs', targetDb: -14, extra: true },
+        ],
+    }),
+    guardedPayloadCase({
         actionType: 'splitClip',
         validPayload: { clipId: 'clip-1', beat: 4 },
         invalidPayloads: [
@@ -545,6 +558,18 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
             return;
         }
         expect(guard({ laneId: 'lane-1' })).toBe(true);
+    });
+
+    it('accepts canonical peak normalization and an omitted RMS/LUFS target', () => {
+        const guard = PAYLOAD_VALIDATORS.normalizeClip;
+        expect(guard).not.toBe('unchecked');
+        if (guard === 'unchecked') {
+            return;
+        }
+
+        expect(guard({ clipId: 'clip-1' })).toBe(true);
+        expect(guard({ clipId: 'clip-1', mode: 'rms' })).toBe(true);
+        expect(guard({ clipId: 'clip-1', mode: 'lufs' })).toBe(true);
     });
 
     it('excludes internal MIDI routing metadata from the RuntimeAction type', () => {

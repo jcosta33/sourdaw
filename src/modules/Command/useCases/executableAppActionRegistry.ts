@@ -20,6 +20,7 @@ export type ExecutableAppActionTargetCapability =
     | 'automation-lane'
     | 'clip'
     | 'editable-clip'
+    | 'editable-audio-clip'
     | 'editable-midi-clip';
 
 export type ExecutableAppActionTargetRule = {
@@ -63,7 +64,14 @@ export type ExecutableAppActionValueRule =
     | { argument: string; kind: 'section-name' }
     | { argument: string; kind: 'section-reference' }
     | { argument: string; kind: 'section-new-name' }
-    | { argument: string; kind: 'enum-if-present'; values: readonly string[]; requiredInPrompt?: boolean }
+    | {
+          argument: string;
+          kind: 'enum-if-present';
+          values: readonly string[];
+          requiredInPrompt?: boolean;
+          defaultWhenUnmentioned?: string;
+          mayOmitWhenUnmentioned?: boolean;
+      }
     | {
           argument: string;
           kind: 'text-after-keyword-if-present';
@@ -109,6 +117,10 @@ const clipTargetRules = [
 
 const editableClipTargetRules = [
     { argument: 'clipId', capability: 'editable-clip' },
+] as const satisfies readonly ExecutableAppActionTargetRule[];
+
+const editableAudioClipTargetRules = [
+    { argument: 'clipId', capability: 'editable-audio-clip' },
 ] as const satisfies readonly ExecutableAppActionTargetRule[];
 
 const editableMidiClipTargetRules = [
@@ -460,6 +472,48 @@ export const executableAppActionDescriptors = [
                 enabled: { type: 'boolean', description: 'true=enable looping, false=disable looping' },
             },
             required: ['clipId', 'enabled'],
+        },
+    },
+    {
+        actionType: 'normalizeClip',
+        risk: 'destructive-reversible',
+        description: 'Non-destructively normalize one unlocked audio clip.',
+        intentPhrases: ['normalize clip', 'normalise clip', 'normalize the clip', 'normalise the clip'],
+        targetRules: editableAudioClipTargetRules,
+        valueRules: [
+            {
+                argument: 'mode',
+                kind: 'enum-if-present',
+                values: ['peak', 'rms', 'lufs'],
+                defaultWhenUnmentioned: 'peak',
+                mayOmitWhenUnmentioned: true,
+            },
+            {
+                argument: 'targetDb',
+                kind: 'number-if-present',
+                defaultWhenUnmentioned: -14,
+                mayOmitWhenUnmentioned: true,
+                match: 'exact',
+                connector: 'to',
+                keywords: ['target', 'at'],
+            },
+        ],
+        parameters: {
+            properties: {
+                clipId: { type: 'string', description: 'Existing unlocked audio clip ID' },
+                mode: {
+                    type: 'string',
+                    enum: ['peak', 'rms', 'lufs'],
+                    description: 'Normalization measurement; defaults to peak',
+                },
+                targetDb: {
+                    type: 'number',
+                    minimum: -60,
+                    maximum: 0,
+                    description: 'Optional RMS or LUFS target from -60 through 0 dB; defaults to -14',
+                },
+            },
+            required: ['clipId'],
         },
     },
     {

@@ -3,6 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { handleNormalizeClip } from '../handleNormalizeClip';
 
 const mocks = vi.hoisted(() => ({
+    getClipNormalizationTargetGain: vi.fn(),
+    getTrackStoreState: vi.fn(),
     normalizeClip: vi.fn(),
 }));
 
@@ -10,9 +12,19 @@ vi.mock('../../../useCases/clipEditing/normalizeClip', () => ({
     normalizeClip: mocks.normalizeClip,
 }));
 
+vi.mock('../../../useCases/getTrackStoreState', () => ({
+    getTrackStoreState: mocks.getTrackStoreState,
+}));
+
+vi.mock('../../../useCases/clipEditing/getClipNormalizationTargetGain', () => ({
+    getClipNormalizationTargetGain: mocks.getClipNormalizationTargetGain,
+}));
+
 describe('handleNormalizeClip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.getClipNormalizationTargetGain.mockReturnValue(null);
+        mocks.getTrackStoreState.mockReturnValue(null);
         mocks.normalizeClip.mockReturnValue(true);
     });
 
@@ -42,13 +54,43 @@ describe('handleNormalizeClip', () => {
             type: 'normalizeClip',
             payload: { clipId: 'c1', mode: 'lufs' },
         });
-        expect(desc1.label).toBe('Normalize clip (lufs)');
+        expect(desc1.label).toBe('Normalize clip c1 to -14 LUFS');
 
         const desc2 = handleNormalizeClip.describe({
             type: 'normalizeClip',
             payload: { clipId: 'c1' },
         });
-        expect(desc2.label).toBe('Normalize clip (peak)');
+        expect(desc2.label).toBe('Normalize clip c1 using peak measurement');
+    });
+
+    it('captures the previous clip gain as its inverse action', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', clips: [{ id: 'c1', gain: 0.625 }] }],
+        });
+
+        const description = handleNormalizeClip.describe({
+            type: 'normalizeClip',
+            payload: { clipId: 'c1', mode: 'lufs', targetDb: -14 },
+        });
+
+        expect(description.inverseAction).toEqual({
+            type: 'setClipGain',
+            payload: { clipId: 'c1', gain: 0.625 },
+        });
+    });
+
+    it('recognizes an already-normalized clip as a no-op', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', clips: [{ id: 'c1', gain: 0.625 }] }],
+        });
+        mocks.getClipNormalizationTargetGain.mockReturnValue(0.625);
+        const action = {
+            type: 'normalizeClip' as const,
+            payload: { clipId: 'c1', mode: 'lufs' as const, targetDb: -14 },
+        };
+
+        expect(handleNormalizeClip.isNoop?.(action)).toBe(true);
+        expect(mocks.getClipNormalizationTargetGain).toHaveBeenCalledWith('c1', 'lufs', -14);
     });
 
     it('is undoable', () => {

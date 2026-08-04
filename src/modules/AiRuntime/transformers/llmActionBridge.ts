@@ -9,6 +9,7 @@ import { MAX_LLM_ACTIONS_PER_BATCH } from './llmActionLimits';
 import { type ToolCallResult } from './toolCallParser';
 
 type ExecutableTrackKind = 'audio' | 'midi' | 'folder';
+type NormalizationMode = 'peak' | 'rms' | 'lufs';
 const executableTrackKinds: ReadonlySet<string> = new Set(['audio', 'midi', 'folder']);
 const SUPPORTED_SIDECHAIN_DEVICE_TYPE = 'builtin-sidechain-compressor';
 
@@ -60,6 +61,10 @@ function isExecutableTrackKind(value: unknown): value is ExecutableTrackKind {
     return typeof value === 'string' && executableTrackKinds.has(value);
 }
 
+function isNormalizationMode(value: unknown): value is NormalizationMode {
+    return value === 'peak' || value === 'rms' || value === 'lufs';
+}
+
 function isValidParameterValue(
     parameter: NonNullable<ProjectContext['tracks'][number]['devices'][number]['parameters']>[number],
     value: number
@@ -109,6 +114,14 @@ function findClip(context: ProjectContext, clipId: unknown) {
 function findEditableMidiClip(context: ProjectContext, clipId: unknown) {
     const target = findClip(context, clipId);
     if (!target || target.clip.type !== 'midi' || target.clip.locked === true || target.clip.noteCount < 1) {
+        return undefined;
+    }
+    return target;
+}
+
+function findEditableAudioClip(context: ProjectContext, clipId: unknown) {
+    const target = findClip(context, clipId);
+    if (!target || target.clip.type !== 'audio' || target.clip.locked === true) {
         return undefined;
     }
     return target;
@@ -860,6 +873,55 @@ function bridgeToolCall({
         return { type: call.name, payload: { clipId: source.clip.id } };
     }
 
+    if (call.name === 'normalizeClip') {
+        const target = findEditableAudioClip(context, args.clipId);
+        const allowedKeys = ['clipId', 'mode', 'targetDb'];
+        const hasOnlyAllowedKeys = Object.keys(args).every((key) => allowedKeys.includes(key));
+        const hasMode = Object.hasOwn(args, 'mode');
+        const mode = hasMode ? args.mode : 'peak';
+        const hasTargetDb = Object.hasOwn(args, 'targetDb');
+        const targetDb = args.targetDb;
+        const invalidArguments = !target || !Object.hasOwn(args, 'clipId') || !hasOnlyAllowedKeys;
+        if (invalidArguments || !isNormalizationMode(mode)) {
+            return rejection(
+                index,
+                call.name,
+                'Expected one unlocked audio clip, peak/rms/lufs mode, and an optional RMS/LUFS target from -60 through 0 dB'
+            );
+        }
+
+        let normalizedTargetDb: number | undefined;
+        if (hasTargetDb) {
+            if (!isFiniteNumber(targetDb) || targetDb < -60 || targetDb > 0) {
+                return rejection(
+                    index,
+                    call.name,
+                    'Expected one unlocked audio clip, peak/rms/lufs mode, and an optional RMS/LUFS target from -60 through 0 dB'
+                );
+            }
+            normalizedTargetDb = targetDb;
+        }
+
+        if (mode === 'peak') {
+            if (normalizedTargetDb !== undefined) {
+                return rejection(
+                    index,
+                    call.name,
+                    'Expected one unlocked audio clip, peak/rms/lufs mode, and an optional RMS/LUFS target from -60 through 0 dB'
+                );
+            }
+            return { type: 'normalizeClip', payload: { clipId: target.clip.id } };
+        }
+        return {
+            type: 'normalizeClip',
+            payload: {
+                clipId: target.clip.id,
+                mode,
+                ...(normalizedTargetDb === undefined ? {} : { targetDb: normalizedTargetDb }),
+            },
+        };
+    }
+
     if (call.name === 'quantizeNotes') {
         const target = findEditableMidiClip(context, args.clipId);
         if (
@@ -1575,6 +1637,7 @@ function getClipTargetIds(action: RuntimeAction): string[] {
         action.type === 'setClipFade' ||
         action.type === 'lockClip' ||
         action.type === 'setClipLoop' ||
+        action.type === 'normalizeClip' ||
         action.type === 'quantizeNotes' ||
         action.type === 'transposeNotes' ||
         action.type === 'invertNotes' ||
@@ -1778,7 +1841,7 @@ function getMutationKeys(
     if (action.type === 'trimClipStart' || action.type === 'trimClipEnd' || action.type === 'nudgeClip') {
         return [`clip:${action.payload.clipId}:geometry`];
     }
-    if (action.type === 'setClipGain') {
+    if (action.type === 'setClipGain' || action.type === 'normalizeClip') {
         return [`clip:${action.payload.clipId}:gain`];
     }
     if (action.type === 'muteClip') {

@@ -375,6 +375,61 @@ describe('parsePromptToActions', () => {
         expect(mockBuildLlmActionUserMessage).toHaveBeenCalledWith({ prompt, context: baseContext });
     });
 
+    it('proposes grounded non-destructive clip normalization as one atomic action', async () => {
+        const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
+            '../agentReference/bridgeGroundedLlmToolCalls'
+        );
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        vi.mocked(generateToolCalls).mockResolvedValue(
+            completePlan([{ name: 'normalizeClip', arguments: { clipId: 'clip-intro', mode: 'lufs', targetDb: -14 } }])
+        );
+        const providerContext: ProjectContext = {
+            ...baseContext,
+            tracks: [
+                {
+                    id: 'track-vocals',
+                    name: 'Vocals',
+                    kind: 'audio',
+                    muted: false,
+                    soloed: false,
+                    soloSafe: false,
+                    armed: false,
+                    gain: 0.8,
+                    pan: 0,
+                    automationMode: 'read',
+                    outputId: 'master',
+                    clipCount: 1,
+                    deviceCount: 0,
+                    clips: [
+                        {
+                            id: 'clip-intro',
+                            name: 'Intro',
+                            type: 'audio',
+                            startBeat: 0,
+                            endBeat: 8,
+                            gain: 1,
+                            locked: false,
+                            noteCount: 0,
+                        },
+                    ],
+                    devices: [],
+                    sends: [],
+                },
+            ],
+            selectedTrackId: 'track-vocals',
+            selectedClipId: 'clip-intro',
+            selectedClipIds: ['clip-intro'],
+        };
+
+        const result = await parsePromptToActions('normalize the Intro clip to -14 LUFS', providerContext);
+
+        expect(result.actions).toEqual([
+            { type: 'normalizeClip', payload: { clipId: 'clip-intro', mode: 'lufs', targetDb: -14 } },
+        ]);
+        expect(result.requiresConfirmation).toBe(true);
+        expect(result.executionMode).toBe('atomic');
+    });
+
     it('proposes a grounded two-clip crossfade as one confirmable atomic action', async () => {
         const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
             '../agentReference/bridgeGroundedLlmToolCalls'

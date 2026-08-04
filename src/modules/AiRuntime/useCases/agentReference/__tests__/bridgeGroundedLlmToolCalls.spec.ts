@@ -892,6 +892,77 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(unsafe.every((result) => result.actions.length === 0)).toBe(true);
     });
 
+    it('grounds clip normalization mode and target without allowing provider-invented values', () => {
+        const context = createClipContext();
+        const defaultPeak = bridge(
+            [{ name: 'normalizeClip', arguments: { clipId: 'clip-intro' } }],
+            'normalize the Intro clip',
+            context
+        );
+        const explicitLufs = bridge(
+            [
+                {
+                    name: 'normalizeClip',
+                    arguments: { clipId: 'clip-intro', mode: 'lufs', targetDb: -14 },
+                },
+            ],
+            'normalize the Intro clip to -14 LUFS',
+            context
+        );
+        const defaultRmsTarget = bridge(
+            [{ name: 'normalizeClip', arguments: { clipId: 'clip-intro', mode: 'rms' } }],
+            'normalize the Intro clip using RMS',
+            context
+        );
+        const rejected = [
+            bridge(
+                [{ name: 'normalizeClip', arguments: { clipId: 'clip-intro', mode: 'lufs' } }],
+                'normalize the Intro clip',
+                context
+            ),
+            bridge(
+                [{ name: 'normalizeClip', arguments: { clipId: 'clip-intro' } }],
+                'normalize the Intro clip using LUFS',
+                context
+            ),
+            bridge(
+                [
+                    {
+                        name: 'normalizeClip',
+                        arguments: { clipId: 'clip-intro', mode: 'lufs', targetDb: -12 },
+                    },
+                ],
+                'normalize the Intro clip to -14 LUFS',
+                context
+            ),
+            bridge(
+                [
+                    {
+                        name: 'normalizeClip',
+                        arguments: { clipId: 'clip-intro', mode: 'rms', targetDb: -12 },
+                    },
+                ],
+                'normalize the Intro clip using RMS',
+                context
+            ),
+            bridge(
+                [{ name: 'normalizeClip', arguments: { clipId: 'clip-intro', mode: 'rms' } }],
+                'normalize the Intro clip using RMS or LUFS',
+                context
+            ),
+        ];
+
+        expect(defaultPeak.actions).toEqual([{ type: 'normalizeClip', payload: { clipId: 'clip-intro' } }]);
+        expect(explicitLufs.actions).toEqual([
+            { type: 'normalizeClip', payload: { clipId: 'clip-intro', mode: 'lufs', targetDb: -14 } },
+        ]);
+        expect(defaultRmsTarget.actions).toEqual([
+            { type: 'normalizeClip', payload: { clipId: 'clip-intro', mode: 'rms' } },
+        ]);
+        expect(rejected.every((result) => result.actions.length === 0)).toBe(true);
+        expect(rejected.every((result) => result.rejections[0]?.reason.includes('does not match'))).toBe(true);
+    });
+
     it('allows explicit clip unlock while rejecting edits to a locked clip', () => {
         const base = createClipContext();
         const context: ProjectContext = {
