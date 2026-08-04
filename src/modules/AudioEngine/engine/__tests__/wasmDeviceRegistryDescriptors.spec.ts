@@ -463,7 +463,13 @@ describe('wasmDeviceRegistry descriptors', () => {
             const unregisterLevainDevice = vi.fn();
             setAudioDeviceRuntimeSink({ setLevainEngineReady, unregisterLevainDevice });
             const onRuntimeFailure = vi.fn(() => true);
-            const deps = createDeps({ deviceType: 'levain', deviceId: 'lev-2', onRuntimeFailure });
+            const onRuntimeRecovery = vi.fn();
+            const deps = createDeps({
+                deviceType: 'levain',
+                deviceId: 'lev-2',
+                onRuntimeFailure,
+                onRuntimeRecovery,
+            });
 
             const { placeholder, loadPromise } = requireDescriptor('levain').create(deps);
             await loadPromise;
@@ -480,6 +486,41 @@ describe('wasmDeviceRegistry descriptors', () => {
             expect(onRuntimeFailure).toHaveBeenCalledWith(loaded, placeholder);
             expect(result.destroy).toHaveBeenCalledOnce();
             expect(unregisterLevainDevice).toHaveBeenCalledWith('lev-2');
+            expect(onRuntimeRecovery).toHaveBeenCalledOnce();
+            expect(onRuntimeRecovery).toHaveBeenCalledWith(placeholder);
+        });
+
+        it('does not recover or tear down newer Levain state when a stale fault is rejected', async () => {
+            const result = makeLevainResult();
+            factoryMocks.createLevainNode.mockResolvedValue(result);
+            const setLevainEngineReady = vi.fn();
+            const unregisterLevainDevice = vi.fn();
+            setAudioDeviceRuntimeSink({ setLevainEngineReady, unregisterLevainDevice });
+            const onRuntimeFailure = vi.fn(() => false);
+            const onRuntimeRecovery = vi.fn();
+            const deps = createDeps({
+                deviceType: 'levain',
+                deviceId: 'lev-stale',
+                onRuntimeFailure,
+                onRuntimeRecovery,
+            });
+
+            const { placeholder, loadPromise } = requireDescriptor('levain').create(deps);
+            await loadPromise;
+            const loaded = lastLoadedNode(deps.onLoaded);
+            const reportRuntimeFailure: unknown = factoryMocks.createLevainNode.mock.calls.at(-1)?.[2];
+            if (!isRuntimeFailureReporter(reportRuntimeFailure)) {
+                throw new TypeError('expected LevainNode to report post-ready runtime failures');
+            }
+            setLevainEngineReady.mockClear();
+
+            reportRuntimeFailure('stale Levain processor fault');
+
+            expect(onRuntimeFailure).toHaveBeenCalledWith(loaded, placeholder);
+            expect(onRuntimeRecovery).not.toHaveBeenCalled();
+            expect(setLevainEngineReady).not.toHaveBeenCalled();
+            expect(unregisterLevainDevice).not.toHaveBeenCalled();
+            expect(result.destroy).not.toHaveBeenCalled();
         });
 
         it('unregisters on controller destroy and survives an already-unregistered store', async () => {
@@ -565,12 +606,13 @@ describe('wasmDeviceRegistry descriptors', () => {
             factoryMocks.createCrumbsNode.mockResolvedValue(result);
             setAudioDeviceRuntimeSink({ prepareCrumbsDevice: vi.fn().mockResolvedValue('ready') });
             const onRuntimeFailure = vi.fn(() => true);
-            const deps = createDeps({ deviceType: 'builtin-crumbs', onRuntimeFailure });
+            const onRuntimeRecovery = vi.fn();
+            const deps = createDeps({ deviceType: 'builtin-crumbs', onRuntimeFailure, onRuntimeRecovery });
 
             const { placeholder, loadPromise } = requireDescriptor('builtin-crumbs').create(deps);
             await loadPromise;
             const loaded = lastLoadedNode(deps.onLoaded);
-            const reportRuntimeFailure = factoryMocks.createCrumbsNode.mock.calls.at(-1)?.[2];
+            const reportRuntimeFailure: unknown = factoryMocks.createCrumbsNode.mock.calls.at(-1)?.[2];
             if (!isRuntimeFailureReporter(reportRuntimeFailure)) {
                 throw new TypeError('expected CrumbsNode to report post-ready runtime failures');
             }
@@ -579,6 +621,31 @@ describe('wasmDeviceRegistry descriptors', () => {
 
             expect(onRuntimeFailure).toHaveBeenCalledWith(loaded, placeholder);
             expect(result.destroy).toHaveBeenCalledOnce();
+            expect(onRuntimeRecovery).toHaveBeenCalledOnce();
+            expect(onRuntimeRecovery).toHaveBeenCalledWith(placeholder);
+        });
+
+        it('does not recover or tear down newer Crumbs state when a stale fault is rejected', async () => {
+            const result = createResult();
+            factoryMocks.createCrumbsNode.mockResolvedValue(result);
+            setAudioDeviceRuntimeSink({ prepareCrumbsDevice: vi.fn().mockResolvedValue('ready') });
+            const onRuntimeFailure = vi.fn(() => false);
+            const onRuntimeRecovery = vi.fn();
+            const deps = createDeps({ deviceType: 'builtin-crumbs', onRuntimeFailure, onRuntimeRecovery });
+
+            const { placeholder, loadPromise } = requireDescriptor('builtin-crumbs').create(deps);
+            await loadPromise;
+            const loaded = lastLoadedNode(deps.onLoaded);
+            const reportRuntimeFailure: unknown = factoryMocks.createCrumbsNode.mock.calls.at(-1)?.[2];
+            if (!isRuntimeFailureReporter(reportRuntimeFailure)) {
+                throw new TypeError('expected CrumbsNode to report post-ready runtime failures');
+            }
+
+            reportRuntimeFailure('stale Crumbs processor fault');
+
+            expect(onRuntimeFailure).toHaveBeenCalledWith(loaded, placeholder);
+            expect(onRuntimeRecovery).not.toHaveBeenCalled();
+            expect(result.destroy).not.toHaveBeenCalled();
         });
 
         it('reports a non-throwing project sample preparation failure as content failure', async () => {

@@ -426,6 +426,7 @@ const levainDescriptor: WasmDeviceDescriptor = {
         onLoaded,
         onContentLoadSettled,
         onRuntimeFailure: replaceRuntimeFailure,
+        onRuntimeRecovery: requestRuntimeRecovery,
     }) {
         const pendingParams: Array<[string, number]> = [];
         let runtimeFailureMessage: string | null = null;
@@ -454,6 +455,9 @@ const levainDescriptor: WasmDeviceDescriptor = {
             }
             getAudioDeviceRuntimeSink().setLevainEngineReady({ deviceId, isReady: false });
             publishedNode.controller?.destroy?.();
+            if (replaced === true) {
+                requestRuntimeRecovery?.(placeholder);
+            }
         };
         const onRuntimeFailure = (message: string): void => {
             if (runtimeFailureMessage !== null) {
@@ -567,6 +571,7 @@ const crumbsDescriptor: WasmDeviceDescriptor = {
         onLoaded,
         onContentLoadSettled,
         onRuntimeFailure: replaceRuntimeFailure,
+        onRuntimeRecovery: requestRuntimeRecovery,
     }) {
         const pendingParams: Array<[string, number]> = [];
         let runtimeFailureMessage: string | null = null;
@@ -594,6 +599,9 @@ const crumbsDescriptor: WasmDeviceDescriptor = {
                 return;
             }
             publishedNode.controller?.destroy?.();
+            if (replaced === true) {
+                requestRuntimeRecovery?.(placeholder);
+            }
         };
         const onRuntimeFailure = (message: string): void => {
             if (runtimeFailureMessage !== null) {
