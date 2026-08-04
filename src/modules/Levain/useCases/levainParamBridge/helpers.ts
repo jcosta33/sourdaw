@@ -18,6 +18,14 @@ export type LevainDevice = {
     handleCc: (cc: number, value: number) => void;
 };
 
+export type LevainSampleLoadOutcome = 'ready' | 'failed' | 'cancelled';
+
+type SampleLoadOperation = {
+    controller: AbortController;
+    completion: Promise<LevainSampleLoadOutcome>;
+    successor?: SampleLoadOperation;
+};
+
 export type LevainBridgeDeps = {
     getAllTracks: () => Track[];
     persistDeviceParam: typeof persistDeviceParam;
@@ -31,7 +39,7 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
     // Per-device load cancellation. A new instrument load for a device aborts
     // the previous one so the last-started load — not the last-finishing one —
     // wins the worklet zone map and the UI progress.
-    const loadControllers = new Map<string, AbortController>();
+    const loadOperations = new Map<string, SampleLoadOperation>();
 
     // §33.2 — Shared rAF-batch primitive. Last-write-wins per rustKey,
     // coalesced into one flush per animation frame.
@@ -79,40 +87,75 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         return activeDevices.get(deviceId);
     }
 
-    function loadSamplesForInstrument(deviceId: string, instrumentId: string): void {
+    async function followCurrentSampleLoad(operation: SampleLoadOperation): Promise<LevainSampleLoadOutcome> {
+        let current = operation;
+        let outcome = await current.completion;
+        while (outcome === 'cancelled' && current.successor) {
+            current = current.successor;
+            outcome = await current.completion;
+        }
+        return outcome;
+    }
+
+    function loadSamplesForInstrument(deviceId: string, instrumentId: string): Promise<LevainSampleLoadOutcome> {
         const target = deps.resolveEligibleDeviceWriteTarget(deviceId);
         if (target.status !== 'eligible') {
-            return;
+            return Promise.resolve('cancelled');
         }
 
         const port = activePorts.get(deviceId);
         if (!port) {
-            return;
+            return Promise.resolve('failed');
         }
-        // Supersede any in-flight load for this device before starting a new one.
-        loadControllers.get(deviceId)?.abort();
+
         const controller = new AbortController();
-        loadControllers.set(deviceId, controller);
-        deps.autoLoadLevainSamples(deviceId, port, instrumentId, controller.signal)
-            .finally(() => {
-                // Only clear the slot if it's still ours — a newer load may have
-                // already replaced it.
-                if (loadControllers.get(deviceId) === controller) {
-                    loadControllers.delete(deviceId);
+        const sampleLoad = deps.autoLoadLevainSamples(deviceId, port, instrumentId, controller.signal);
+        const observedLoad = sampleLoad.then<LevainSampleLoadOutcome, LevainSampleLoadOutcome>(
+            () => (controller.signal.aborted ? 'cancelled' : 'ready'),
+            (error) => {
+                if (controller.signal.aborted) {
+                    return 'cancelled';
                 }
-            })
-            .catch((error) => {
                 logger.warn(`[LevainBridge] Sample load failed for device ${deviceId}:`, error);
-            });
+                return 'failed';
+            }
+        );
+        const { promise: aborted, resolve: resolveAborted } = Promise.withResolvers<LevainSampleLoadOutcome>();
+        function onAbort(): void {
+            resolveAborted('cancelled');
+        }
+        controller.signal.addEventListener('abort', onAbort, { once: true });
+        const completion = Promise.race([observedLoad, aborted]).finally(() => {
+            controller.signal.removeEventListener('abort', onAbort);
+        });
+        const operation: SampleLoadOperation = { controller, completion };
+        const previous = loadOperations.get(deviceId);
+        if (previous) {
+            previous.successor = operation;
+            previous.controller.abort();
+        }
+        loadOperations.set(deviceId, operation);
+        void completion.then(() => {
+            if (loadOperations.get(deviceId) === operation) {
+                loadOperations.delete(deviceId);
+            }
+            return undefined;
+        });
+        return followCurrentSampleLoad(operation);
     }
 
-    function registerLevainDevice(deviceId: string, device: LevainDevice, port?: MessagePort): void {
+    function registerLevainDevice(
+        deviceId: string,
+        device: LevainDevice,
+        port?: MessagePort
+    ): Promise<LevainSampleLoadOutcome> {
         const target = deps.resolveEligibleDeviceWriteTarget(deviceId);
         if (target.status !== 'eligible') {
-            return;
+            return Promise.resolve('cancelled');
         }
 
         activeDevices.set(deviceId, device);
+        let contentSettlement: Promise<LevainSampleLoadOutcome> = Promise.resolve('failed');
         if (port) {
             activePorts.set(deviceId, port);
             // Seed a store entry on first registration so newly-added devices get
@@ -130,7 +173,7 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
                 levainStore.set({ ...instances, [deviceId]: state });
             }
 
-            loadSamplesForInstrument(deviceId, state.patch.instrumentId);
+            contentSettlement = loadSamplesForInstrument(deviceId, state.patch.instrumentId);
             queueParam(deviceId, 'master_gain', state.patch.masterGain);
             setRuntimeParam(deviceId, 'current_articulation', getArticulationId(state.patch.currentArticulation));
             queueParam(deviceId, 'legato_enabled', state.patch.legato.enabled ? 1 : 0);
@@ -148,6 +191,7 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
                 queueParam(deviceId, `mic_${i}_enabled`, m.enabled ? 1 : 0);
             }
         }
+        return contentSettlement;
     }
 
     function unregisterLevainDevice(deviceId: string): void {
@@ -156,8 +200,8 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         // Cancel any in-flight sample load so it can't write back to a store
         // entry we're about to delete (the store mutators also no-op on a
         // missing device, but cancelling avoids the wasted decode work).
-        loadControllers.get(deviceId)?.abort();
-        loadControllers.delete(deviceId);
+        loadOperations.get(deviceId)?.controller.abort();
+        loadOperations.delete(deviceId);
 
         // Cancel this device's pending rAF batches by their deterministic keys.
         // The `activeDevices` miss already guards `device.setParam`, but

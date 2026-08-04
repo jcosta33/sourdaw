@@ -168,7 +168,7 @@ describe('Levain instrument persistence round trip', () => {
         expect(posted).toEqual([{ type: 'param', name: 'current_articulation', value: 0 }]);
     });
 
-    it('registers a reloaded device onto the saved instrument, not onto the default', () => {
+    it('registers a reloaded device onto the saved instrument, not onto the default', async () => {
         // Live playback, not the export: `registerLevainDevice` is what seeds the
         // session store and starts the sample load when the device chain is built,
         // and it ran before anything had told it which instrument this device is.
@@ -191,7 +191,7 @@ describe('Levain instrument persistence round trip', () => {
         levainStore.set({});
 
         const port = fakePort().port;
-        registerLevainDevice(DEVICE_ID, { setParam: vi.fn(), handleCc: vi.fn() }, port);
+        await registerLevainDevice(DEVICE_ID, { setParam: vi.fn(), handleCc: vi.fn() }, port);
 
         expect(levainStore.value?.[DEVICE_ID]?.patch.instrumentId).toBe('timpani');
         expect(autoLoadLevainSamples).toHaveBeenCalledWith(DEVICE_ID, port, 'timpani', expect.any(AbortSignal));

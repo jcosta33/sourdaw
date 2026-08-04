@@ -144,6 +144,15 @@ describe('createCrumbsNode', () => {
         expect(messagesOfType('init')).toEqual([{ type: 'init' }]);
     });
 
+    it('terminates the processor generation before closing its port', async () => {
+        const node = await createCrumbsNode(makeCtx());
+
+        node.destroy();
+
+        expect(messagesOfType('dispose')).toEqual([{ type: 'dispose' }]);
+        expect(node.workletNode.port.close).toHaveBeenCalledOnce();
+    });
+
     it('abandons registration without fetching or constructing after cancellation', async () => {
         let resolveRegistration: () => void = () => {};
         const registration = new Promise<void>((resolve) => {

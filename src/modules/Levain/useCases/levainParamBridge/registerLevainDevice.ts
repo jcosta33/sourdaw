@@ -1,7 +1,11 @@
 import { levainBridge } from './levainBridge';
 
-import type { LevainDevice } from './helpers';
+import type { LevainDevice, LevainSampleLoadOutcome } from './helpers';
 
-export const registerLevainDevice = (deviceId: string, device: LevainDevice, port?: MessagePort): void => {
-    levainBridge().registerLevainDevice(deviceId, device, port);
-};
+export function registerLevainDevice(
+    deviceId: string,
+    device: LevainDevice,
+    port?: MessagePort
+): Promise<LevainSampleLoadOutcome> {
+    return levainBridge().registerLevainDevice(deviceId, device, port);
+}

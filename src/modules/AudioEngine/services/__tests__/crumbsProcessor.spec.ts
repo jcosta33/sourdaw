@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
     RealFloat32Array,
@@ -27,8 +27,12 @@ const FRAMES = 128;
 const memory: GrowableMemory = createGrowableMemory(HEAP_BYTES);
 
 const calls: Array<{ method: string; args: unknown[] }> = [];
+let sampleLoadFailure: Error | null = null;
 
 class CrumbsInstanceMock {
+    free(): void {
+        calls.push({ method: 'free', args: [] });
+    }
     note_on(note: number, velocity: number): void {
         calls.push({ method: 'note_on', args: [note, velocity] });
     }
@@ -42,9 +46,15 @@ class CrumbsInstanceMock {
         calls.push({ method: 'all_sound_off', args: [] });
     }
     add_sample(_data: Float32Array, _channels: number, _sampleRate: number): number {
+        calls.push({ method: 'add_sample', args: [_data, _channels, _sampleRate] });
+        if (sampleLoadFailure) {
+            throw sampleLoadFailure;
+        }
         return 0;
     }
-    set_active_sample(_id: number): void {}
+    set_active_sample(id: number): void {
+        calls.push({ method: 'set_active_sample', args: [id] });
+    }
     set_param(name: string, value: number): void {
         calls.push({ method: 'set_param', args: [name, value] });
     }
@@ -93,7 +103,71 @@ describe('CrumbsProcessor scheduled note queue', () => {
     beforeEach(() => {
         resetGrowableMemory(memory, HEAP_BYTES);
         calls.length = 0;
+        sampleLoadFailure = null;
         vi.stubGlobal('currentFrame', 0);
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('acknowledges a sample only after adding and selecting it in the DSP', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init' });
+        proc.port.postMessage.mockClear();
+
+        send(proc, {
+            type: 'loadSample',
+            loadToken: 7,
+            data: new Float32Array([0.25, -0.25]),
+            channels: 1,
+            sampleRate: 48_000,
+        });
+
+        expect(calls.map((call) => call.method)).toEqual(['add_sample', 'set_active_sample']);
+        expect(proc.port.postMessage).toHaveBeenCalledWith({ type: 'sampleLoaded', loadToken: 7 });
+    });
+
+    it('correlates a DSP sample-commit failure with the requested load', async () => {
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const proc = await loadProcessor();
+        send(proc, { type: 'init' });
+        proc.port.postMessage.mockClear();
+        sampleLoadFailure = new Error('sample pool exhausted');
+
+        send(proc, {
+            type: 'loadSample',
+            loadToken: 11,
+            data: new Float32Array([0.5]),
+            channels: 1,
+            sampleRate: 48_000,
+        });
+
+        expect(proc.port.postMessage).toHaveBeenCalledWith({
+            type: 'sampleLoadError',
+            loadToken: 11,
+            message: 'sample pool exhausted',
+        });
+        expect(calls.map((call) => call.method)).toEqual(['add_sample']);
+        expect(errorSpy).toHaveBeenCalledWith('CrumbsProcessor error:', sampleLoadFailure);
+    });
+
+    it('frees its sample pool, ignores later messages, and terminates after disposal', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init' });
+        calls.length = 0;
+
+        send(proc, { type: 'dispose' });
+        send(proc, {
+            type: 'loadSample',
+            loadToken: 17,
+            data: new Float32Array([0.25]),
+            channels: 1,
+            sampleRate: 48_000,
+        });
+
+        expect(calls.map((call) => call.method)).toEqual(['free']);
+        expect(proc.process([], [makeChannels(2, FRAMES)])).toBe(false);
     });
 
     it('voices a note landing on a block boundary in that block, not the one before it', async () => {

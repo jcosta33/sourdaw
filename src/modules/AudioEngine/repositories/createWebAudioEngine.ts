@@ -791,6 +791,7 @@ class AudioEngineImpl implements AudioEngine {
                     getTrackGainNode: () => undefined,
                     getSendsForTrack: () => [],
                     pendingDevicePromises: new Set(),
+                    readinessDiagnostics: this.deviceReadinessDiagnostics,
                     getAdjustmentBusForTrack: (id) => this.adjustmentRuntime.getBusInputForTrack(id),
                 });
             } else {
@@ -802,6 +803,7 @@ class AudioEngineImpl implements AudioEngine {
                     getSendsForTrack: (tId) =>
                         Array.from(this.sendNodes.values()).filter((state) => state.sourceTrackId === tId),
                     pendingDevicePromises: this.pendingDevicePromises,
+                    readinessDiagnostics: this.deviceReadinessDiagnostics,
                     transportSAB: this.transportSAB ?? undefined,
                     getAdjustmentBusForTrack: (id) => this.adjustmentRuntime.getBusInputForTrack(id),
                     reconnectRoutingForTrack: (id) => this.reconnectRoutingForTrack(id),

@@ -304,7 +304,7 @@ configureAudioDeviceRuntimeSink({
         void eventBus.emit('audioDevice.removed', payload);
     },
     registerLevainDevice: ({ deviceId, device, port }) => {
-        registerLevainDevice(deviceId, device, port);
+        return registerLevainDevice(deviceId, device, port);
     },
     unregisterLevainDevice,
     setLevainEngineReady: ({ deviceId, isReady }) => {
@@ -319,7 +319,7 @@ configureAudioDeviceRuntimeSink({
     // reaches the same use case through the `builtin-crumbs` row of
     // `OFFLINE_DEVICE_HYDRATION`. One shared call is what stops the two
     // registries from configuring two differently loaded engines.
-    prepareCrumbsDevice: ({ deviceId, port }) => prepareCrumbsEngine({ deviceId, port }),
+    prepareCrumbsDevice: ({ deviceId, port, signal }) => prepareCrumbsEngine({ deviceId, port, signal }),
     setFermenterTelemetry: (deviceId, telemetry) => {
         setFermenterTelemetry(deviceId, telemetry.peakL, telemetry.peakR, telemetry.scopeBuffer);
     },

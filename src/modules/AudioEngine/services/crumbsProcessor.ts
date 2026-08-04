@@ -21,13 +21,14 @@
  *
  * Messages from main thread:
  *   { type: 'init' } with `processorOptions.wasmModule`
- *   { type: 'loadSample', data: Float32Array, channels, sampleRate }
+ *   { type: 'loadSample', loadToken, data: Float32Array, channels, sampleRate }
  *   { type: 'noteOn', note, velocity, sampleFrame? }
  *   { type: 'noteOff', note, sampleFrame? }
  *   { type: 'allNotesOff' } | { type: 'allSoundOff' }
  *   { type: 'param', name, value }
  *   { type: 'mode', mode }
  *   { type: 'bypass', bypassed }
+ *   { type: 'dispose' }
  */
 
 import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
@@ -37,14 +38,15 @@ import { WasmView } from './wasmView';
 
 type CrumbsMsg =
     | { type: 'init' }
-    | { type: 'loadSample'; data: Float32Array; channels: number; sampleRate: number }
+    | { type: 'loadSample'; loadToken: number; data: Float32Array; channels: number; sampleRate: number }
     | { type: 'noteOn'; note: number; velocity: number; sampleFrame?: number }
     | { type: 'noteOff'; note: number; sampleFrame?: number }
     | { type: 'allNotesOff' }
     | { type: 'allSoundOff' }
     | { type: 'param'; name: string; value: number }
     | { type: 'mode'; mode: string }
-    | { type: 'bypass'; bypassed: boolean };
+    | { type: 'bypass'; bypassed: boolean }
+    | { type: 'dispose' };
 
 type CrumbsQueued =
     | { type: 'noteOn'; note: number; velocity: number; sampleFrame: number }
@@ -55,6 +57,7 @@ class CrumbsProcessor extends AudioWorkletProcessor {
     _memory: WebAssembly.Memory | null = null;
     _ready = false;
     _faulted = false;
+    _disposed = false;
     _bypassed = false;
     _pendingMessages: CrumbsMsg[] = [];
     _queue: CrumbsQueued[] = [];
@@ -70,7 +73,12 @@ class CrumbsProcessor extends AudioWorkletProcessor {
         this.port.onmessage = (event: MessageEvent<CrumbsMsg>) => {
             const msg = event.data;
             try {
-                if (msg.type === 'init') {
+                if (msg.type === 'dispose') {
+                    wasmModule = null;
+                    this._dispose();
+                } else if (this._disposed) {
+                    return;
+                } else if (msg.type === 'init') {
                     if (this._ready) {
                         return;
                     }
@@ -98,6 +106,22 @@ class CrumbsProcessor extends AudioWorkletProcessor {
                 });
             }
         };
+    }
+
+    _dispose(): void {
+        if (this._disposed) {
+            return;
+        }
+        this._disposed = true;
+        this._ready = false;
+        this._pendingMessages.length = 0;
+        this._queue.length = 0;
+        this._queueHead = 0;
+        this._instance?.free();
+        this._instance = null;
+        this._memory = null;
+        this.port.onmessage = null;
+        this.port.postMessage({ type: 'disposed' });
     }
 
     _initWasm(wasmModule: WebAssembly.Module): void {
@@ -148,11 +172,24 @@ class CrumbsProcessor extends AudioWorkletProcessor {
             case 'init':
                 break;
             case 'loadSample': {
-                // Pool and select in one step. The pool assigns the id, so
-                // splitting these across two messages would force the sender
-                // to await a reply for an id it has no other use for.
-                const sampleId = inst.add_sample(msg.data, msg.channels, msg.sampleRate);
-                inst.set_active_sample(sampleId);
+                try {
+                    if (!Number.isSafeInteger(msg.loadToken) || msg.loadToken <= 0) {
+                        throw new Error('Crumbs sample load token must be a positive safe integer');
+                    }
+                    // Pool and select in one step. The pool assigns the id, so
+                    // splitting these across two messages would force the sender
+                    // to await a reply for an id it has no other use for.
+                    const sampleId = inst.add_sample(msg.data, msg.channels, msg.sampleRate);
+                    inst.set_active_sample(sampleId);
+                    this.port.postMessage({ type: 'sampleLoaded', loadToken: msg.loadToken });
+                } catch (error) {
+                    this.port.postMessage({
+                        type: 'sampleLoadError',
+                        loadToken: msg.loadToken,
+                        message: error instanceof Error ? error.message : String(error),
+                    });
+                    throw error;
+                }
                 break;
             }
             case 'noteOn':
@@ -176,6 +213,8 @@ class CrumbsProcessor extends AudioWorkletProcessor {
             case 'bypass':
                 this._bypassed = msg.bypassed;
                 break;
+            case 'dispose':
+                break;
         }
     }
 
@@ -195,6 +234,9 @@ class CrumbsProcessor extends AudioWorkletProcessor {
     }
 
     process(_inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
+        if (this._disposed) {
+            return false;
+        }
         if (!this._ready || !this._instance || this._faulted || this._bypassed) {
             return true;
         }

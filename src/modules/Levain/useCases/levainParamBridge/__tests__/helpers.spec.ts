@@ -87,7 +87,7 @@ describe('createLevainBridge', () => {
                 const bridge = createLevainBridge(deps);
                 const device = makeDevice();
 
-                bridge.registerLevainDevice('d1', device, {} as MessagePort);
+                void bridge.registerLevainDevice('d1', device, {} as MessagePort);
 
                 expect(levainStore.value).toEqual({});
                 expect(deps.autoLoadLevainSamples).not.toHaveBeenCalled();
@@ -114,12 +114,12 @@ describe('createLevainBridge', () => {
                 });
                 const bridge = createLevainBridge(deps);
                 const device = makeDevice();
-                bridge.registerLevainDevice('d1', device, {} as MessagePort);
+                void bridge.registerLevainDevice('d1', device, {} as MessagePort);
                 expect(signals).toHaveLength(1);
                 deps.autoLoadLevainSamples.mockClear();
                 deps.setResolutionStatus(status);
 
-                bridge.loadSamplesForInstrument('d1', 'cello');
+                void bridge.loadSamplesForInstrument('d1', 'cello');
 
                 expect(deps.autoLoadLevainSamples).not.toHaveBeenCalled();
                 expect(signals[0]?.aborted).toBe(false);
@@ -133,7 +133,7 @@ describe('createLevainBridge', () => {
                 const bridge = createLevainBridge(deps);
                 const device = makeDevice();
                 seedDevice('d1');
-                bridge.registerLevainDevice('d1', device);
+                void bridge.registerLevainDevice('d1', device);
                 const before = structuredClone(levainStore.value);
                 deps.setResolutionStatus(status);
 
@@ -153,7 +153,7 @@ describe('createLevainBridge', () => {
                 const bridge = createLevainBridge(deps);
                 const device = makeDevice();
                 seedDevice('d1');
-                bridge.registerLevainDevice('d1', device);
+                void bridge.registerLevainDevice('d1', device);
                 const before = structuredClone(levainStore.value);
                 deps.setResolutionStatus(status);
 
@@ -169,7 +169,7 @@ describe('createLevainBridge', () => {
             const deps = makeDeps();
             const bridge = createLevainBridge(deps);
             const device = makeDevice();
-            bridge.registerLevainDevice('d1', device);
+            void bridge.registerLevainDevice('d1', device);
             deps.setResolutionStatus(status);
 
             bridge.sendMicParamToEngine('d1', 2, 'volume', 0.5);
@@ -192,7 +192,7 @@ describe('createLevainBridge', () => {
                 const bridge = createLevainBridge(deps);
                 const device = makeDevice();
                 seedDevice('d1');
-                bridge.registerLevainDevice('d1', device, {} as MessagePort);
+                void bridge.registerLevainDevice('d1', device, {} as MessagePort);
                 flushRaf();
                 deps.persistDeviceParam.mockClear();
                 bridge.setLevainParamWithAudio('d1', 'masterGain', 0.42);
@@ -219,7 +219,7 @@ describe('createLevainBridge', () => {
             const bridge = createLevainBridge(deps);
             const port = {} as MessagePort;
 
-            bridge.registerLevainDevice('d1', makeDevice(), port);
+            void bridge.registerLevainDevice('d1', makeDevice(), port);
             flushRaf();
 
             const cents = createDefaultPatch('violin-1').expression.vibratoDepthMax;
@@ -234,7 +234,7 @@ describe('createLevainBridge', () => {
             const bridge = createLevainBridge(deps);
             const device = makeDevice();
             seedDevice('d1');
-            bridge.registerLevainDevice('d1', device, {} as MessagePort);
+            void bridge.registerLevainDevice('d1', device, {} as MessagePort);
             device.setParam.mockClear();
 
             // 'Space' is macro index 4 in the default labels.
@@ -252,7 +252,7 @@ describe('createLevainBridge', () => {
         const patch = { ...createDefaultPatch('violin-1'), currentArticulation: 'tremolo' as const };
         levainStore.set({ d1: { ...defaultLevainState, patch } });
 
-        bridge.registerLevainDevice('d1', device, {} as MessagePort);
+        void bridge.registerLevainDevice('d1', device, {} as MessagePort);
         flushRaf();
 
         expect(device.setParam).toHaveBeenCalledWith('current_articulation', 13);
@@ -278,7 +278,7 @@ describe('createLevainBridge', () => {
             const bridge = createLevainBridge(deps);
             const device = makeDevice();
             seedDevice('d1');
-            bridge.registerLevainDevice('d1', device);
+            void bridge.registerLevainDevice('d1', device);
 
             bridge.setLevainParamWithAudio('d1', 'currentArticulation', articulation);
             flushRaf();
@@ -293,7 +293,7 @@ describe('createLevainBridge', () => {
             const bridge = createLevainBridge(deps);
             const device = makeDevice();
             seedDevice('d1');
-            bridge.registerLevainDevice('d1', device, {} as MessagePort);
+            void bridge.registerLevainDevice('d1', device, {} as MessagePort);
             flushRaf();
             deps.persistDeviceParam.mockClear();
             device.setParam.mockClear();
@@ -335,10 +335,10 @@ describe('createLevainBridge', () => {
             const deps = makeDeps(autoLoad);
             const bridge = createLevainBridge(deps);
             const device = makeDevice();
-            bridge.registerLevainDevice('d1', device, {} as MessagePort);
+            void bridge.registerLevainDevice('d1', device, {} as MessagePort);
 
             // First load handed out by registration; start a second.
-            bridge.loadSamplesForInstrument('d1', 'cello');
+            void bridge.loadSamplesForInstrument('d1', 'cello');
 
             expect(signals.length).toBeGreaterThanOrEqual(2);
             const first = signals[0];
@@ -360,11 +360,28 @@ describe('createLevainBridge', () => {
             }
             const deps = makeDeps(autoLoad);
             const bridge = createLevainBridge(deps);
-            bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort);
+            void bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort);
 
             expect(signals[0]?.aborted).toBe(false);
             bridge.unregisterLevainDevice('d1');
             expect(signals[0]?.aborted).toBe(true);
+        });
+
+        it('settles registration from the successor when its initial bank load is superseded', async () => {
+            const loads: PromiseWithResolvers<void>[] = [];
+            const deps = makeDeps(() => {
+                const load = Promise.withResolvers<void>();
+                loads.push(load);
+                return load.promise;
+            });
+            const bridge = createLevainBridge(deps);
+            const registration = bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort);
+
+            const replacement = bridge.loadSamplesForInstrument('d1', 'cello');
+            loads[1]?.resolve();
+
+            await expect(registration).resolves.toBe('ready');
+            await expect(replacement).resolves.toBe('ready');
         });
     });
 
@@ -374,7 +391,7 @@ describe('createLevainBridge', () => {
             const bridge = createLevainBridge(deps);
             const device = makeDevice();
             seedDevice('d1');
-            bridge.registerLevainDevice('d1', device, {} as MessagePort);
+            void bridge.registerLevainDevice('d1', device, {} as MessagePort);
             // Drain the register-time batched params so the assertion below only
             // sees the post-register write we schedule next.
             flushRaf();

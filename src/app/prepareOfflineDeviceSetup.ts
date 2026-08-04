@@ -71,7 +71,14 @@ const OFFLINE_DEVICE_HYDRATION: Record<NativeDspDeviceType, HydrateOfflineDevice
     // so markers change no rendered sample in the session either. Hydrating them
     // here would make the export differ from live — the same trap as Toaster's
     // kit above. They belong here once the engine consumes them, not before.
-    'builtin-crumbs': ({ deviceId, port, signal }) => prepareCrumbsEngine({ deviceId, port, signal }),
+    'builtin-crumbs': async ({ deviceId, port, signal }) => {
+        const outcome = await prepareCrumbsEngine({ deviceId, port, signal });
+        if (outcome === 'ready') {
+            return;
+        }
+        signal?.throwIfAborted();
+        throw new Error(`Crumbs content preparation ${outcome} for ${deviceId}`);
+    },
     // **Deferred, not "nothing to do".** This row is a known-wrong answer kept as
     // `null` on purpose, pending a decision about state ownership rather than
     // about hydration.

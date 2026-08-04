@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { createMockAudioContext } from '../../../../helpers/__tests__/audioContext.mock';
+import { createDeviceReadinessDiagnostics } from '../deviceReadinessDiagnostics';
 import { TrackNode, type TrackNodeDeps } from '../TrackNode';
 
 // The external-plugin path loads its native bridge asynchronously. Mock the
@@ -38,6 +39,7 @@ describe('TrackNode', () => {
             getTrackGainNode: vi.fn(),
             getSendsForTrack: vi.fn().mockReturnValue([]),
             pendingDevicePromises: new Set(),
+            readinessDiagnostics: createDeviceReadinessDiagnostics(),
         };
         vi.clearAllMocks();
         resolveBridge = undefined;

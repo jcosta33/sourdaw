@@ -83,7 +83,12 @@ function bindPadNotes<TNode extends PadNoteNode>(node: TNode): NoteBoundNode<TNo
     };
 }
 
-async function createFermenterOfflineNode(ctx: BaseAudioContext): Promise<NativeDspNode> {
+type RuntimeFailureChannel = {
+    readonly promise: Promise<never>;
+    report: (message: string) => void;
+};
+
+function createRuntimeFailureChannel(): RuntimeFailureChannel {
     let rejectRuntimeFailure: ((error: Error) => void) | undefined;
     const runtimeFailure = new Promise<never>((_resolve, reject) => {
         rejectRuntimeFailure = reject;
@@ -92,26 +97,41 @@ async function createFermenterOfflineNode(ctx: BaseAudioContext): Promise<Native
     // Observe an earlier fault without consuming the rejection it will race.
     void runtimeFailure.catch(() => undefined);
 
-    const node = await createFermenterNode(ctx, undefined, (message) => {
-        rejectRuntimeFailure?.(new Error(message));
-    });
-    return { ...bindMelodicNotes(node), runtimeFailure };
+    return {
+        promise: runtimeFailure,
+        report: (message) => {
+            rejectRuntimeFailure?.(new Error(message));
+            rejectRuntimeFailure = undefined;
+        },
+    };
+}
+
+async function createFermenterOfflineNode(ctx: BaseAudioContext): Promise<NativeDspNode> {
+    const runtimeFailure = createRuntimeFailureChannel();
+    const node = await createFermenterNode(ctx, undefined, runtimeFailure.report);
+    return { ...bindMelodicNotes(node), runtimeFailure: runtimeFailure.promise };
+}
+
+async function createLevainOfflineNode(ctx: BaseAudioContext): Promise<NativeDspNode> {
+    const runtimeFailure = createRuntimeFailureChannel();
+    const node = await createLevainNode(ctx, undefined, runtimeFailure.report);
+    return { ...bindMelodicNotes(node), runtimeFailure: runtimeFailure.promise };
+}
+
+async function createCrumbsOfflineNode(ctx: BaseAudioContext): Promise<NativeDspNode> {
+    const runtimeFailure = createRuntimeFailureChannel();
+    const node = await createCrumbsNode(ctx, undefined, runtimeFailure.report);
+    return { ...bindMelodicNotes(node), runtimeFailure: runtimeFailure.promise };
 }
 
 async function createGrandBouleOfflineNode(ctx: BaseAudioContext): Promise<NativeDspNode> {
-    let rejectRuntimeFailure: ((error: Error) => void) | undefined;
-    const runtimeFailure = new Promise<never>((_resolve, reject) => {
-        rejectRuntimeFailure = reject;
-    });
-    // Rendering attaches its race after all strips and events are prepared. Keep
-    // a failure during that preparation observed until the render kernel adopts
-    // the same promise, rather than producing an unhandled rejection.
-    void runtimeFailure.catch(() => undefined);
-
-    const node = await createGrandBouleNode(ctx, undefined, (message) => {
-        rejectRuntimeFailure?.(new Error(message));
-    });
-    return { ...bindMelodicNotes(node), runtimeFailure, runtimeHealthCheck: node.runtimeHealthCheck };
+    const runtimeFailure = createRuntimeFailureChannel();
+    const node = await createGrandBouleNode(ctx, undefined, runtimeFailure.report);
+    return {
+        ...bindMelodicNotes(node),
+        runtimeFailure: runtimeFailure.promise,
+        runtimeHealthCheck: node.runtimeHealthCheck,
+    };
 }
 
 type NativeDspDeviceFactory = {
@@ -157,7 +177,7 @@ export const NATIVE_DSP_DEVICE_FACTORIES: readonly NativeDspDeviceFactory[] = [
         create: createFermenterOfflineNode,
     },
     { type: 'toaster', matches: isToasterDevice, create: async (ctx) => bindPadNotes(await createToasterNode(ctx)) },
-    { type: 'levain', matches: isLevainDevice, create: async (ctx) => bindMelodicNotes(await createLevainNode(ctx)) },
+    { type: 'levain', matches: isLevainDevice, create: createLevainOfflineNode },
     // Crumbs' catalog id carries the `builtin-` prefix, so `createDeviceRegistry`
     // has to let this table claim it ahead of the `builtin-` WebAudio arm — see
     // the exclusion there. Every other native id is unprefixed. Melodic, not pad:
@@ -165,7 +185,7 @@ export const NATIVE_DSP_DEVICE_FACTORIES: readonly NativeDspDeviceFactory[] = [
     {
         type: 'builtin-crumbs',
         matches: isCrumbsDevice,
-        create: async (ctx) => bindMelodicNotes(await createCrumbsNode(ctx)),
+        create: createCrumbsOfflineNode,
     },
     {
         type: 'grand-boule',

@@ -80,7 +80,7 @@ export type AudioEngineDeviceReadinessDiagnostics = {
         deviceId: string;
         deviceType: string;
         status: 'node-pending' | 'graph-pending' | 'content-pending' | 'ready' | 'failed';
-        failureStage: 'node' | 'graph' | 'content' | null;
+        failureStage: 'node' | 'graph' | 'content' | 'runtime' | null;
         requestToNodeReadyMs: number | null;
         requestToGraphReadyMs: number | null;
         graphToContentReadyMs: number | null;

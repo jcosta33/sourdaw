@@ -97,6 +97,7 @@ export async function createCrumbsNode(
     }
 
     let bypassed = false;
+    let destroyed = false;
 
     const handshake = createReadyHandshake({ pluginName: 'CrumbsNode' });
     node.port.onmessage = (event: MessageEvent<unknown>) => {
@@ -172,6 +173,11 @@ export async function createCrumbsNode(
     };
 
     const destroy = (): void => {
+        if (destroyed) {
+            return;
+        }
+        destroyed = true;
+        node.port.postMessage({ type: 'dispose' });
         disconnect();
         node.port.close();
     };

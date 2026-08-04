@@ -30,6 +30,8 @@ import { isProofDevice, createProofNode, type ProofNodeResult } from './ProofNod
 import { isScoringDevice, createScoringNode, type ScoringNodeResult } from './ScoringNode';
 import { isToasterDevice, createToasterNode, type ToasterNodeResult } from './ToasterNode';
 
+import type { DeviceContentLoadOutcome } from './deviceReadinessDiagnostics';
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export type WasmDeviceCreateDeps = {
@@ -41,6 +43,7 @@ export type WasmDeviceCreateDeps = {
     signal?: AbortSignal;
     /** Returns false when the owner rejected and destroyed a stale loaded node. */
     onLoaded: (finalDn: BuiltinDeviceNode) => boolean | void;
+    onContentLoadSettled?: (outcome: DeviceContentLoadOutcome) => void;
     /** Replace a terminally failed loaded node in the owning graph slot. */
     onRuntimeFailure?: (failedDn: BuiltinDeviceNode, replacementDn: BuiltinDeviceNode) => boolean;
     /** Request one fresh generation after the failed runtime has been retired. */
@@ -48,6 +51,7 @@ export type WasmDeviceCreateDeps = {
 };
 
 export type WasmDeviceDescriptor = {
+    requiresContent: boolean;
     matches(deviceType: string): boolean;
     create(deps: WasmDeviceCreateDeps): {
         placeholder: BuiltinDeviceNode;
@@ -115,6 +119,7 @@ async function waitForDeviceReady(input: WaitForDeviceReadyInput): Promise<Recor
 // ── Descriptors ──────────────────────────────────────────────────────────────
 
 const fermenterDescriptor: WasmDeviceDescriptor = {
+    requiresContent: false,
     matches: isFermenterDevice,
     create({
         context,
@@ -253,6 +258,7 @@ const fermenterDescriptor: WasmDeviceDescriptor = {
 };
 
 const toasterDescriptor: WasmDeviceDescriptor = {
+    requiresContent: false,
     matches: isToasterDevice,
     create({
         context,
@@ -410,9 +416,57 @@ const toasterDescriptor: WasmDeviceDescriptor = {
 };
 
 const levainDescriptor: WasmDeviceDescriptor = {
+    requiresContent: true,
     matches: isLevainDevice,
-    create({ context, deviceId, deviceType, signal, onLoaded }) {
+    create({
+        context,
+        deviceId,
+        deviceType,
+        signal,
+        onLoaded,
+        onContentLoadSettled,
+        onRuntimeFailure: replaceRuntimeFailure,
+        onRuntimeRecovery: requestRuntimeRecovery,
+    }) {
         const pendingParams: Array<[string, number]> = [];
+        let runtimeFailureMessage: string | null = null;
+        let publishedNode: BuiltinDeviceNode | null = null;
+        let publishedResult: LevainNodeResult | null = null;
+        let runtimeFailureHandled = false;
+        const applyRuntimeFailure = (): void => {
+            if (
+                runtimeFailureHandled ||
+                runtimeFailureMessage === null ||
+                publishedNode === null ||
+                publishedResult === null
+            ) {
+                return;
+            }
+            runtimeFailureHandled = true;
+            if (publishedNode.controller) {
+                publishedNode.controller.ready = false;
+            }
+            if (publishedNode.levainControls) {
+                publishedNode.levainControls.ready = false;
+            }
+            const replaced = replaceRuntimeFailure?.(publishedNode, placeholder);
+            if (replaced === false) {
+                return;
+            }
+            getAudioDeviceRuntimeSink().setLevainEngineReady({ deviceId, isReady: false });
+            publishedNode.controller?.destroy?.();
+            if (replaced === true) {
+                requestRuntimeRecovery?.(placeholder);
+            }
+        };
+        const onRuntimeFailure = (message: string): void => {
+            if (runtimeFailureMessage !== null) {
+                return;
+            }
+            runtimeFailureMessage = message;
+            logger.warn(`[WebAudioEngine] ${deviceType} runtime failure: ${message}`);
+            applyRuntimeFailure();
+        };
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.levainControls = {
             ready: false,
@@ -427,26 +481,19 @@ const levainDescriptor: WasmDeviceDescriptor = {
             setBypass: () => {},
             destroy: () => {},
         };
-        const loadPromise = createLevainNode(
-            context,
-            undefined,
-            () => {
-                // A post-ready worklet fault (WASM panic) silences the processor while
-                // the node stays alive. Reflect it into engineReady so the panel LED
-                // stops showing "Ready"; the Levain sink no-ops if the device was
-                // already torn down.
-                getAudioDeviceRuntimeSink().setLevainEngineReady({ deviceId, isReady: false });
-            },
-            signal
-        )
+        const loadPromise = createLevainNode(context, undefined, onRuntimeFailure, signal)
             .then(async (result: LevainNodeResult) => {
                 if ((await waitForDeviceReady({ deviceType, result, signal })) === null) {
+                    return;
+                }
+                if (runtimeFailureMessage !== null) {
+                    result.destroy();
                     return;
                 }
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
-                const accepted = onLoaded({
+                const loadedNode: BuiltinDeviceNode = {
                     deviceId,
                     type: deviceType,
                     nodes: [result.workletNode],
@@ -482,11 +529,18 @@ const levainDescriptor: WasmDeviceDescriptor = {
                         setBypass: result.setBypass,
                         destroy: result.destroy,
                     },
-                });
+                };
+                const accepted = onLoaded(loadedNode);
                 if (accepted === false) {
                     return;
                 }
-                getAudioDeviceRuntimeSink().registerLevainDevice({
+                publishedNode = loadedNode;
+                publishedResult = result;
+                applyRuntimeFailure();
+                if (runtimeFailureHandled) {
+                    return;
+                }
+                const contentOutcome = await getAudioDeviceRuntimeSink().registerLevainDevice({
                     deviceId,
                     device: {
                         setParam: result.setParam,
@@ -494,7 +548,8 @@ const levainDescriptor: WasmDeviceDescriptor = {
                     },
                     port: result.workletNode.port,
                 });
-                getAudioDeviceRuntimeSink().setLevainEngineReady({ deviceId, isReady: true });
+                onContentLoadSettled?.(contentOutcome);
+                getAudioDeviceRuntimeSink().setLevainEngineReady({ deviceId, isReady: contentOutcome === 'ready' });
                 return;
             })
             .catch((error) => {
@@ -506,9 +561,56 @@ const levainDescriptor: WasmDeviceDescriptor = {
 };
 
 const crumbsDescriptor: WasmDeviceDescriptor = {
+    requiresContent: true,
     matches: isCrumbsDevice,
-    create({ context, deviceId, deviceType, signal, onLoaded }) {
+    create({
+        context,
+        deviceId,
+        deviceType,
+        signal,
+        onLoaded,
+        onContentLoadSettled,
+        onRuntimeFailure: replaceRuntimeFailure,
+        onRuntimeRecovery: requestRuntimeRecovery,
+    }) {
         const pendingParams: Array<[string, number]> = [];
+        let runtimeFailureMessage: string | null = null;
+        let publishedNode: BuiltinDeviceNode | null = null;
+        let publishedResult: CrumbsNodeResult | null = null;
+        let runtimeFailureHandled = false;
+        const applyRuntimeFailure = (): void => {
+            if (
+                runtimeFailureHandled ||
+                runtimeFailureMessage === null ||
+                publishedNode === null ||
+                publishedResult === null
+            ) {
+                return;
+            }
+            runtimeFailureHandled = true;
+            if (publishedNode.controller) {
+                publishedNode.controller.ready = false;
+            }
+            if (publishedNode.crumbsControls) {
+                publishedNode.crumbsControls.ready = false;
+            }
+            const replaced = replaceRuntimeFailure?.(publishedNode, placeholder);
+            if (replaced === false) {
+                return;
+            }
+            publishedNode.controller?.destroy?.();
+            if (replaced === true) {
+                requestRuntimeRecovery?.(placeholder);
+            }
+        };
+        const onRuntimeFailure = (message: string): void => {
+            if (runtimeFailureMessage !== null) {
+                return;
+            }
+            runtimeFailureMessage = message;
+            logger.warn(`[WebAudioEngine] ${deviceType} runtime failure: ${message}`);
+            applyRuntimeFailure();
+        };
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.crumbsControls = {
             ready: false,
@@ -522,15 +624,19 @@ const crumbsDescriptor: WasmDeviceDescriptor = {
             setBypass: () => {},
             destroy: () => {},
         };
-        const loadPromise = createCrumbsNode(context, undefined, undefined, signal)
+        const loadPromise = createCrumbsNode(context, undefined, onRuntimeFailure, signal)
             .then(async (result: CrumbsNodeResult) => {
                 if ((await waitForDeviceReady({ deviceType, result, signal })) === null) {
+                    return;
+                }
+                if (runtimeFailureMessage !== null) {
+                    result.destroy();
                     return;
                 }
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
-                const accepted = onLoaded({
+                const loadedNode: BuiltinDeviceNode = {
                     deviceId,
                     type: deviceType,
                     nodes: [result.workletNode],
@@ -556,17 +662,33 @@ const crumbsDescriptor: WasmDeviceDescriptor = {
                         setBypass: result.setBypass,
                         destroy: result.destroy,
                     },
-                });
+                };
+                const accepted = onLoaded(loadedNode);
                 if (accepted === false) {
+                    onContentLoadSettled?.('cancelled');
+                    return;
+                }
+                publishedNode = loadedNode;
+                publishedResult = result;
+                applyRuntimeFailure();
+                if (runtimeFailureHandled) {
+                    onContentLoadSettled?.('failed');
                     return;
                 }
                 // Load the project's sample into the live instance through the
                 // same use case the offline chain awaits, so the two registries
                 // cannot configure two different engines.
-                await getAudioDeviceRuntimeSink().prepareCrumbsDevice({
-                    deviceId,
-                    port: result.workletNode.port,
-                });
+                try {
+                    const outcome = await getAudioDeviceRuntimeSink().prepareCrumbsDevice({
+                        deviceId,
+                        port: result.workletNode.port,
+                        signal,
+                    });
+                    onContentLoadSettled?.(outcome);
+                } catch (error) {
+                    onContentLoadSettled?.('failed');
+                    throw error;
+                }
                 return;
             })
             .catch((error) => {
@@ -578,6 +700,7 @@ const crumbsDescriptor: WasmDeviceDescriptor = {
 };
 
 const proofChamberDescriptor: WasmDeviceDescriptor = {
+    requiresContent: false,
     matches: isProofChamberDevice,
     create({ context, deviceId, deviceType, signal, onLoaded }) {
         const pendingParams: Array<[string, number]> = [];
@@ -629,6 +752,7 @@ const proofChamberDescriptor: WasmDeviceDescriptor = {
 };
 
 const glutenDescriptor: WasmDeviceDescriptor = {
+    requiresContent: false,
     matches: isGlutenDevice,
     create({ context, deviceId, deviceType, signal, onLoaded }) {
         const pendingParams: Array<[string, number]> = [];
@@ -687,6 +811,7 @@ const glutenDescriptor: WasmDeviceDescriptor = {
 };
 
 const crustDescriptor: WasmDeviceDescriptor = {
+    requiresContent: false,
     matches: isCrustDevice,
     create({ context, deviceId, deviceType, isCurrent, signal, onLoaded }) {
         const pendingParams: Array<[string, number]> = [];
@@ -752,6 +877,7 @@ const crustDescriptor: WasmDeviceDescriptor = {
 };
 
 const bacteriaDescriptor: WasmDeviceDescriptor = {
+    requiresContent: false,
     matches: isBacteriaDevice,
     create({ context, deviceId, deviceType, isCurrent, signal, onLoaded }) {
         const pendingParams: Array<[string, number]> = [];
@@ -812,6 +938,7 @@ const bacteriaDescriptor: WasmDeviceDescriptor = {
 };
 
 const grinderDescriptor: WasmDeviceDescriptor = {
+    requiresContent: false,
     matches: isGrinderDevice,
     create({ context, deviceId, deviceType, isCurrent, signal, onLoaded }) {
         const pendingParams: Array<[string, number]> = [];
@@ -905,6 +1032,7 @@ const grinderDescriptor: WasmDeviceDescriptor = {
 };
 
 const proofDescriptor: WasmDeviceDescriptor = {
+    requiresContent: false,
     matches: isProofDevice,
     create({ context, deviceId, deviceType, isCurrent, signal, onLoaded }) {
         const pendingParams: Array<[string, number]> = [];
@@ -1003,6 +1131,7 @@ const proofDescriptor: WasmDeviceDescriptor = {
 };
 
 const scoringDescriptor: WasmDeviceDescriptor = {
+    requiresContent: false,
     matches: isScoringDevice,
     create({ context, deviceId, deviceType, signal, onLoaded }) {
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
@@ -1044,6 +1173,7 @@ const scoringDescriptor: WasmDeviceDescriptor = {
 };
 
 const grandBouleDescriptor: WasmDeviceDescriptor = {
+    requiresContent: false,
     matches: isGrandBouleDevice,
     create({ context, deviceId, deviceType, signal, onLoaded, onRuntimeFailure: replaceRuntimeFailure }) {
         const pendingParams: Array<[string, number]> = [];
@@ -1177,6 +1307,7 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
 };
 
 const faustDescriptor: WasmDeviceDescriptor = {
+    requiresContent: false,
     matches: isFaustModule,
     create({ context, deviceId, deviceType, isCurrent, signal, onLoaded }) {
         type PendingParam = { kind: 'param'; name: string; value: number; time?: number };
@@ -1258,6 +1389,7 @@ const faustDescriptor: WasmDeviceDescriptor = {
 };
 
 const kneadDescriptor: WasmDeviceDescriptor = {
+    requiresContent: false,
     matches: isKneadDevice,
     create({ context, deviceId, deviceType, transportSAB, signal, onLoaded }) {
         const pendingParams: Array<[string, number | number[]]> = [];

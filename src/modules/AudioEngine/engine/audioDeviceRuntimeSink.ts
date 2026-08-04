@@ -1,5 +1,6 @@
 import { type BacteriaMeterData } from './BacteriaNode';
 import { type CrustMeterData } from './CrustNode';
+import { type DeviceContentLoadOutcome } from './deviceReadinessDiagnostics';
 import { type FermenterNodeResult } from './FermenterNode';
 import { type GlutenMeterData } from './GlutenNode';
 import { type GrinderMeterData } from './GrinderNode';
@@ -34,7 +35,11 @@ type ScoringTelemetry = Parameters<ScoringNodeResult['onTelemetry']>[0] extends 
 export type AudioDeviceRuntimeSink = {
     emitDeviceLoaded: (payload: DeviceLifecyclePayload) => void;
     emitDeviceRemoved: (payload: DeviceLifecyclePayload) => void;
-    registerLevainDevice: (input: { deviceId: string; device: LevainRuntimeDevice; port?: MessagePort }) => void;
+    registerLevainDevice: (input: {
+        deviceId: string;
+        device: LevainRuntimeDevice;
+        port?: MessagePort;
+    }) => Promise<DeviceContentLoadOutcome>;
     unregisterLevainDevice: (deviceId: string) => void;
     setLevainEngineReady: (input: { deviceId: string; isReady: boolean }) => void;
     setFermenterTelemetry: (deviceId: string, telemetry: FermenterTelemetry) => void;
@@ -81,17 +86,22 @@ export type AudioDeviceRuntimeSink = {
      * two differently-configured engines is the failure this device is being
      * dug out of, and one shared call is what stops it recurring.
      *
-     * Fire-and-forget here, matching live Levain registration — live playback
-     * runs in real time and can start silent, then sound once the load lands.
-     * The offline path must await; see `prepareOfflineInstrument`.
+     * The node may join the graph before its sample commits, but the descriptor
+     * awaits this outcome so readiness never claims the device is playable
+     * early. The ownership signal cancels that wait on removal, timeout, or
+     * teardown. The offline path also awaits; see `prepareOfflineInstrument`.
      */
-    prepareCrumbsDevice: (input: { deviceId: string; port: MessagePort }) => Promise<void>;
+    prepareCrumbsDevice: (input: {
+        deviceId: string;
+        port: MessagePort;
+        signal?: AbortSignal;
+    }) => Promise<DeviceContentLoadOutcome>;
 };
 
 const defaultSink: AudioDeviceRuntimeSink = {
     emitDeviceLoaded: () => {},
     emitDeviceRemoved: () => {},
-    registerLevainDevice: () => {},
+    registerLevainDevice: () => Promise.resolve('failed'),
     unregisterLevainDevice: () => {},
     setLevainEngineReady: () => {},
     setFermenterTelemetry: () => {},
@@ -107,7 +117,7 @@ const defaultSink: AudioDeviceRuntimeSink = {
     updateProofMeters: () => {},
     updateTunerTelemetry: () => {},
     prepareOfflineInstrument: async () => {},
-    prepareCrumbsDevice: async () => {},
+    prepareCrumbsDevice: () => Promise.resolve('failed'),
 };
 
 let runtimeSink = defaultSink;

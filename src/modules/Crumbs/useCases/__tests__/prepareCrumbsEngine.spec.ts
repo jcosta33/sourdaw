@@ -36,17 +36,42 @@ function sampleMeta(filePath: string): SampleMeta {
 }
 
 /** A port that records what was posted, standing in for the worklet's. */
-function recordingPort(): {
+function recordingPort(options?: { loadPostError?: Error }): {
     port: MessagePort;
     posts: Array<{ message: Record<string, unknown>; transfer?: unknown }>;
+    emit: (message: Record<string, unknown>) => void;
+    listenerCount: () => number;
 } {
     const posts: Array<{ message: Record<string, unknown>; transfer?: unknown }> = [];
+    const listeners = new Set<(event: MessageEvent<unknown>) => void>();
     const port = {
         postMessage: (message: Record<string, unknown>, transfer?: unknown) => {
+            if (message.type === 'loadSample' && options?.loadPostError) {
+                throw options.loadPostError;
+            }
             posts.push({ message, transfer });
         },
+        addEventListener: (type: string, listener: (event: MessageEvent<unknown>) => void) => {
+            if (type === 'message') {
+                listeners.add(listener);
+            }
+        },
+        removeEventListener: (type: string, listener: (event: MessageEvent<unknown>) => void) => {
+            if (type === 'message') {
+                listeners.delete(listener);
+            }
+        },
     } as unknown as MessagePort;
-    return { port, posts };
+    return {
+        port,
+        posts,
+        emit: (message) => {
+            for (const listener of listeners) {
+                listener({ data: message } as MessageEvent<unknown>);
+            }
+        },
+        listenerCount: () => listeners.size,
+    };
 }
 
 function messagesOfType(
@@ -66,18 +91,36 @@ describe('prepareCrumbsEngine', () => {
         crumbsStore.set({});
     });
 
-    it('sends the decoded sample to the worklet with the channel count and rate it was decoded at', async () => {
+    it('settles ready only after the worklet commits the decoded sample', async () => {
         ensureInstance(DEVICE);
         setActiveSample(DEVICE, sampleMeta('/samples/break.wav'));
         const data = new Float32Array([0.1, -0.1, 0.2, -0.2]);
         decodeMock.mockResolvedValue({ data, frameCount: 2, channels: 2, sampleRate: 44_100 });
-        const { port, posts } = recordingPort();
+        const { port, posts, emit, listenerCount } = recordingPort();
 
-        await prepareCrumbsEngine({ deviceId: DEVICE, port });
+        let settled = false;
+        const preparation = prepareCrumbsEngine({ deviceId: DEVICE, port }).then((outcome) => {
+            settled = true;
+            return outcome;
+        });
+        await vi.waitFor(() => expect(messagesOfType(posts, 'loadSample')).toHaveLength(1));
 
         expect(decodeMock).toHaveBeenCalledWith({ filePath: '/samples/break.wav' });
+        expect(settled).toBe(false);
         const [load] = messagesOfType(posts, 'loadSample');
-        expect(load).toEqual({ type: 'loadSample', data, channels: 2, sampleRate: 44_100 });
+        expect(load).toMatchObject({ type: 'loadSample', data, channels: 2, sampleRate: 44_100 });
+        const loadToken = load?.loadToken;
+        if (typeof loadToken !== 'number') {
+            throw new TypeError('sample load did not include a numeric token');
+        }
+        emit({ type: 'sampleLoaded', loadToken: loadToken + 1 });
+        await Promise.resolve();
+        expect(settled).toBe(false);
+        expect(listenerCount()).toBe(1);
+
+        emit({ type: 'sampleLoaded', loadToken });
+        await expect(preparation).resolves.toBe('ready');
+        expect(listenerCount()).toBe(0);
     });
 
     it('transfers the PCM buffer rather than copying it', async () => {
@@ -85,12 +128,85 @@ describe('prepareCrumbsEngine', () => {
         setActiveSample(DEVICE, sampleMeta('/samples/break.wav'));
         const data = new Float32Array([0.5, 0.25]);
         decodeMock.mockResolvedValue({ data, frameCount: 2, channels: 1, sampleRate: 48_000 });
-        const { port, posts } = recordingPort();
+        const { port, posts, emit } = recordingPort();
 
-        await prepareCrumbsEngine({ deviceId: DEVICE, port });
+        const preparation = prepareCrumbsEngine({ deviceId: DEVICE, port });
+        await vi.waitFor(() => expect(messagesOfType(posts, 'loadSample')).toHaveLength(1));
 
         const loadPost = posts.find((post) => post.message.type === 'loadSample');
         expect(loadPost?.transfer).toEqual([data.buffer]);
+        const loadToken = loadPost?.message.loadToken;
+        if (typeof loadToken !== 'number') {
+            throw new TypeError('sample load did not include a numeric token');
+        }
+        emit({ type: 'sampleLoaded', loadToken });
+        await expect(preparation).resolves.toBe('ready');
+    });
+
+    it('reports a worklet sample-commit failure without throwing', async () => {
+        ensureInstance(DEVICE);
+        setActiveSample(DEVICE, sampleMeta('/samples/break.wav'));
+        decodeMock.mockResolvedValue({
+            data: new Float32Array([0.5]),
+            frameCount: 1,
+            channels: 1,
+            sampleRate: 48_000,
+        });
+        const { port, posts, emit, listenerCount } = recordingPort();
+
+        const preparation = prepareCrumbsEngine({ deviceId: DEVICE, port });
+        await vi.waitFor(() => expect(messagesOfType(posts, 'loadSample')).toHaveLength(1));
+        const loadToken = messagesOfType(posts, 'loadSample')[0]?.loadToken;
+        if (typeof loadToken !== 'number') {
+            throw new TypeError('sample load did not include a numeric token');
+        }
+        emit({ type: 'sampleLoadError', loadToken, message: 'sample pool exhausted' });
+
+        await expect(preparation).resolves.toBe('failed');
+        expect(listenerCount()).toBe(0);
+    });
+
+    it('cancels a committed-sample wait when the owning device is removed', async () => {
+        ensureInstance(DEVICE);
+        setActiveSample(DEVICE, sampleMeta('/samples/break.wav'));
+        decodeMock.mockResolvedValue({
+            data: new Float32Array([0.5]),
+            frameCount: 1,
+            channels: 1,
+            sampleRate: 48_000,
+        });
+        const controller = new AbortController();
+        const { port, posts, emit, listenerCount } = recordingPort();
+
+        const preparation = prepareCrumbsEngine({ deviceId: DEVICE, port, signal: controller.signal });
+        await vi.waitFor(() => expect(messagesOfType(posts, 'loadSample')).toHaveLength(1));
+        const loadToken = messagesOfType(posts, 'loadSample')[0]?.loadToken;
+        if (typeof loadToken !== 'number') {
+            throw new TypeError('sample load did not include a numeric token');
+        }
+        controller.abort();
+        await expect(preparation).resolves.toBe('cancelled');
+        expect(listenerCount()).toBe(0);
+
+        emit({ type: 'sampleLoaded', loadToken });
+        expect(messagesOfType(posts, 'loadSample')).toHaveLength(1);
+    });
+
+    it('removes its listener when transferring the sample fails', async () => {
+        ensureInstance(DEVICE);
+        setActiveSample(DEVICE, sampleMeta('/samples/break.wav'));
+        decodeMock.mockResolvedValue({
+            data: new Float32Array([0.5]),
+            frameCount: 1,
+            channels: 1,
+            sampleRate: 48_000,
+        });
+        const { port, listenerCount } = recordingPort({ loadPostError: new Error('port closed') });
+
+        await expect(prepareCrumbsEngine({ deviceId: DEVICE, port })).resolves.toBe('failed');
+
+        expect(listenerCount()).toBe(0);
+        expect(String(warnMock.mock.calls[0]?.[0])).toContain('port closed');
     });
 
     it('sends the device mode the project holds, not the engine default', async () => {
@@ -107,18 +223,21 @@ describe('prepareCrumbsEngine', () => {
         ensureInstance(DEVICE);
         const { port, posts } = recordingPort();
 
-        await prepareCrumbsEngine({ deviceId: DEVICE, port });
+        const outcome = await prepareCrumbsEngine({ deviceId: DEVICE, port });
 
         expect(decodeMock).not.toHaveBeenCalled();
+        expect(outcome).toBe('ready');
         expect(messagesOfType(posts, 'loadSample')).toEqual([]);
     });
 
-    it('posts nothing at all for a device the store does not know', async () => {
+    it('does not create session state when neither the store nor project owns the device', async () => {
         const { port, posts } = recordingPort();
 
-        await prepareCrumbsEngine({ deviceId: 'never-created', port });
+        const outcome = await prepareCrumbsEngine({ deviceId: 'never-created', port });
 
+        expect(crumbsStore.value?.['never-created']).toBeUndefined();
         expect(posts).toEqual([]);
+        expect(outcome).toBe('failed');
     });
 
     // Throwing here would abort the caller's device setup, and `buildDeviceChain`
@@ -130,29 +249,29 @@ describe('prepareCrumbsEngine', () => {
         decodeMock.mockRejectedValue(new Error('ENOENT'));
         const { port, posts } = recordingPort();
 
-        await expect(prepareCrumbsEngine({ deviceId: DEVICE, port })).resolves.toBeUndefined();
+        await expect(prepareCrumbsEngine({ deviceId: DEVICE, port })).resolves.toBe('failed');
 
         expect(messagesOfType(posts, 'loadSample')).toEqual([]);
         expect(String(warnMock.mock.calls[0]?.[0])).toContain('/samples/missing.wav');
     });
 
-    it('drops a sample that finished decoding after the export was cancelled', async () => {
+    it('settles cancellation without waiting for a stalled decoder', async () => {
         ensureInstance(DEVICE);
         setActiveSample(DEVICE, sampleMeta('/samples/break.wav'));
         const controller = new AbortController();
-        decodeMock.mockImplementation(() => {
-            controller.abort();
-            return Promise.resolve({
-                data: new Float32Array([1]),
-                frameCount: 1,
-                channels: 1,
-                sampleRate: 48_000,
-            });
-        });
+        const decoding = Promise.withResolvers<never>();
+        decodeMock.mockReturnValue(decoding.promise);
         const { port, posts } = recordingPort();
 
-        await prepareCrumbsEngine({ deviceId: DEVICE, port, signal: controller.signal });
+        let outcome: string | undefined;
+        const preparation = prepareCrumbsEngine({ deviceId: DEVICE, port, signal: controller.signal }).then((value) => {
+            outcome = value;
+            return value;
+        });
+        controller.abort();
+        await vi.waitFor(() => expect(outcome).toBe('cancelled'));
 
         expect(messagesOfType(posts, 'loadSample')).toEqual([]);
+        await preparation;
     });
 });
