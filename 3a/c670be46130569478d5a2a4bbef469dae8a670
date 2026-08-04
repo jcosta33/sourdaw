@@ -1,0 +1,166 @@
+src/modules/Transport/useCases/transportControls/setPlayback.ts
+  s_bc88af7d3b054c::t_d4694775624cff 1-18
+src/modules/AiRuntime/useCases/__tests__/getProjectContext.spec.ts
+  s_bc88af7d3b054c::t_40d6aaa38d4341 108,197,232
+src/modules/Transport/useCases/__tests__/getTransportHandlers.spec.ts
+  s_bc88af7d3b054c::t_82ceee501a9173 7
+src/modules/Command/useCases/executeAppAction.ts
+  s_bc88af7d3b054c::t_8eebd18354e8b5 39-89
+src/modules/AiRuntime/useCases/aiHistoryActions.ts
+  s_bc88af7d3b054c::t_4da6bef4dfb901 6-8
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_bc88af7d3b054c::t_a320d40f4717fb 1939
+  s_bc88af7d3b054c::t_4597a4da7cf09a 270
+  s_bc88af7d3b054c::t_40d6aaa38d4341 9,232-269,271-273
+  s_bc88af7d3b054c::t_a6da112737d8bb 274-275
+src/modules/AiRuntime/useCases/__tests__/pendingChatActions.spec.ts
+  s_bc88af7d3b054c::t_38248236f8289e 65,407-432,434-437,439-446,512
+  s_bc88af7d3b054c::t_fbbc1448d9dd6c 503-504,508-509
+  s_bc88af7d3b054c::t_2aab85dd7b13bd 374,406,482-502,505-507,510-511
+  s_bc88af7d3b054c::t_a2e3b70d490647 127,139,394,399,433,438,536-537,553
+  s_bc88af7d3b054c::t_c52c3134d892e6 513
+src/modules/AiRuntime/useCases/__tests__/recordAiActionGroup.spec.ts
+  s_bc88af7d3b054c::t_954ceb7df6afec 16,48,65
+src/modules/AiRuntime/useCases/confirmPendingChatActions.ts
+  s_bc88af7d3b054c::t_28634049216c4d 112,133
+  s_bc88af7d3b054c::t_35f0ca09d50604 141-142,144-147,150-151
+  s_bc88af7d3b054c::t_2aab85dd7b13bd 143,155,162-165,169,173
+  s_bc88af7d3b054c::t_067a224268725d 105-108
+  s_bc88af7d3b054c::t_afc3ba7c772f40 99-104
+  s_bc88af7d3b054c::t_5a84f8ee983f60 114-117
+src/modules/AiRuntime/presentations/views/AiActionHistoryPanel.tsx
+  s_bc88af7d3b054c::t_4da6bef4dfb901 28,161-179,198-199
+src/modules/AiRuntime/useCases/__tests__/aiHistoryActions.spec.ts
+  s_bc88af7d3b054c::t_524a329e2cf225 34-51
+src/modules/AiRuntime/useCases/getProjectContext.ts
+  s_bc88af7d3b054c::t_19af3266843411 86
+src/modules/AiRuntime/transformers/promptParser/__tests__/parsing.spec.ts
+  s_c43dbfc78f9027::t_fe66f7673bbb5d 40
+  s_bc88af7d3b054c::t_a2258173bfc95d 115,214
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_bc88af7d3b054c::t_cf76ec1ec3d450 62
+src/modules/AiRuntime/models/Tools/__tests__/Transport.spec.ts
+  s_bc88af7d3b054c::t_82ceee501a9173 1-17
+src/modules/WorkspaceShell/presentations/hooks/__tests__/usePromptExecution.spec.ts
+  s_bc88af7d3b054c::t_d2517a2ddaa1e2 312-333
+  s_bc88af7d3b054c::t_cf76ec1ec3d450 361
+src/modules/Transport/useCases/getTransportHandlers.ts
+  s_bc88af7d3b054c::t_d4694775624cff 13,40,74
+src/modules/AiRuntime/models/Tools/Transport.ts
+  s_bc88af7d3b054c::t_d4694775624cff 5-10
+src/modules/AiRuntime/models/PresetActions/Presets/__tests__/Transport.spec.ts
+  s_bc88af7d3b054c::t_82ceee501a9173 1-38
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_bc88af7d3b054c::t_f616fd80f8db76 818-852
+  s_bc88af7d3b054c::t_cf76ec1ec3d450 156,195,263
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_bc88af7d3b054c::t_19af3266843411 306-315,1383-1385,1737-1745,1966
+src/utils/createHandler.ts
+  s_bc88af7d3b054c::t_0e23fce98ed29e 21,29
+src/modules/AiRuntime/presentations/views/__tests__/AiActionHistoryPanel.spec.tsx
+  s_bc88af7d3b054c::t_524a329e2cf225 15,135-152
+  s_bc88af7d3b054c::t_5eea6a95f187fa 153-154
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_bc88af7d3b054c::t_041433b7f727b9 36-37,89-90,92-95,100-120,129,131-148,310-314,336-345,347
+  s_bc88af7d3b054c::t_79d16256c730fd 299-302
+  s_bc88af7d3b054c::t_2780b71c261533 91,346
+  s_bc88af7d3b054c::t_434c1ff316862b 348
+  s_bc88af7d3b054c::t_da4073234641da 96-99
+  s_bc88af7d3b054c::t_b55103b1a4852d 121-128,130
+src/modules/AiRuntime/models/ProjectContext.ts
+  s_bc88af7d3b054c::t_19af3266843411 4
+src/utils/handlerContract.ts
+  s_bc88af7d3b054c::t_0e23fce98ed29e 429,1061-1062
+src/modules/Command/useCases/__tests__/executeAppAction.spec.ts
+  s_bc88af7d3b054c::t_d2517a2ddaa1e2 30,42,44,53,55,61-62,164-179
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_bc88af7d3b054c::t_19af3266843411 184-185
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_bc88af7d3b054c::t_19af3266843411 773-792
+  s_bc88af7d3b054c::t_50423c68cfafc7 772
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_bc88af7d3b054c::t_0459188a6b00f4 1067
+  s_bc88af7d3b054c::t_e269879f421dfd 388
+  s_bc88af7d3b054c::t_40d6aaa38d4341 389-395,1055-1066
+src/modules/AiRuntime/useCases/executePlannedActions.ts
+  s_bc88af7d3b054c::t_1aca6d0e30b5eb 32-37,82-84,90,110-116,127-134
+  s_bc88af7d3b054c::t_4da6bef4dfb901 97
+src/modules/AiRuntime/models/PresetActions/Presets/Transport.ts
+  s_bc88af7d3b054c::t_d4694775624cff 6-7,9-16
+src/modules/AiRuntime/stores/aiActionHistoryStore.ts
+  s_bc88af7d3b054c::t_4da6bef4dfb901 13,84-86,100,152-157
+src/modules/Command/useCases/__tests__/executeAppActionBatch.spec.ts
+  s_bc88af7d3b054c::t_da4073234641da 596-622
+  s_bc88af7d3b054c::t_58727421c0b10d 647
+  s_bc88af7d3b054c::t_d52ee7833f4fcb 16,49,52,57,60,535-595,623-645
+  s_bc88af7d3b054c::t_b55103b1a4852d 646,648-675
+src/modules/Command/useCases/actionLabels.ts
+  s_bc88af7d3b054c::t_0e23fce98ed29e 20
+src/modules/AiRuntime/useCases/recordAiActionGroup.ts
+  s_bc88af7d3b054c::t_4da6bef4dfb901 13,24
+src/modules/AiRuntime/useCases/__tests__/executePlannedActions.spec.ts
+  s_bc88af7d3b054c::t_020ca5354c9cd6 25,72-91,93-124
+  s_bc88af7d3b054c::t_524a329e2cf225 62,92
+  s_bc88af7d3b054c::t_20799a5852bbaf 125
+src/modules/Transport/useCases/index.ts
+  s_bc88af7d3b054c::t_d4694775624cff 42
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_bc88af7d3b054c::t_40d6aaa38d4341 45,81-109
+src/modules/Transport/handlers/transport/handleSetPlayback.ts
+  s_bc88af7d3b054c::t_d4694775624cff 1-14
+src/modules/WorkspaceShell/presentations/hooks/usePromptExecution.ts
+  s_bc88af7d3b054c::t_8eebd18354e8b5 240
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_bc88af7d3b054c::t_19af3266843411 1495-1502,2039-2040
+  s_bc88af7d3b054c::t_f6c2449806b483 2041
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_bc88af7d3b054c::t_f16ce55258e888 294
+  s_bc88af7d3b054c::t_40d6aaa38d4341 295-298
+src/modules/AiRuntime/useCases/agentReference/__tests__/resolveAgentReference.spec.ts
+  s_bc88af7d3b054c::t_cf76ec1ec3d450 32
+src/modules/Transport/handlers/transport/__tests__/handleSetPlayback.spec.ts
+  s_bc88af7d3b054c::t_b060c8da5daaef 3,12,27
+  s_bc88af7d3b054c::t_82ceee501a9173 1-2,4-11,13-26,28-32
+src/modules/Transport/useCases/transportControls/__tests__/setPlayback.spec.ts
+  s_bc88af7d3b054c::t_82ceee501a9173 1-55
+src/modules/AiRuntime/stores/__tests__/aiActionHistoryStore.spec.ts
+  s_bc88af7d3b054c::t_524a329e2cf225 72,226-238
+  s_bc88af7d3b054c::t_8be4e2062fdcdb 239-241
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_bc88af7d3b054c::t_0e23fce98ed29e 25
+src/modules/AiRuntime/transformers/promptParser/__tests__/parsingDeep.spec.ts
+  s_bc88af7d3b054c::t_cf76ec1ec3d450 10
+src/modules/AiRuntime/models/__tests__/RuntimeAction.spec.ts
+  s_bc88af7d3b054c::t_a7f232a5f841d6 21
+  s_bc88af7d3b054c::t_488409d742116c 24
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  s_bc88af7d3b054c::t_612c56e4e5b1ae 163-188
+src/modules/AiRuntime/useCases/__tests__/describePlannedAction.spec.ts
+  s_bc88af7d3b054c::t_cf76ec1ec3d450 9
+src/modules/AiRuntime/stores/pendingActionConfirmationStore.ts
+  s_bc88af7d3b054c::t_4da6bef4dfb901 9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "3ac670be46130569478d5a2a4bbef469dae8a670",
+  "prompts": {},
+  "sessions": {
+    "s_bc88af7d3b054c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9b4a-11a2-7f61-8dfb-76eed0eb2a9c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": null
+    },
+    "s_c43dbfc78f9027": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fb31a-1447-73a0-831e-4bba75325223",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
