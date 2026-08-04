@@ -8,7 +8,7 @@ export type OfflineDeviceNode = {
      * Avoids fragile positional indexing into `nodes[]`.
      */
     namedNodes?: Record<string, AudioNode>;
-    /** Stop oscillators and release resources when the device is removed. */
+    /** Stop sources and release non-node resources; the owning graph disconnects every node. */
     dispose?: () => void;
     wamControls?: {
         setParam: (name: string, value: number) => void;
