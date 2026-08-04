@@ -1,3 +1,4 @@
+import { createAddNotesToolSchema } from './CreateAddNotesToolSchema';
 import { tool, type ToolSchema } from './Types';
 
 export const generationTools: readonly ToolSchema[] = [
@@ -63,30 +64,7 @@ export const generationTools: readonly ToolSchema[] = [
         },
         ['clipId']
     ),
-    tool(
-        'addNotes',
-        'Write MIDI notes directly to a clip. Use this for any custom note content — melodies, chords, basslines, rhythms.',
-        {
-            clipId: { type: 'string', description: 'Target clip ID' },
-            notes: {
-                type: 'array',
-                items: {
-                    type: 'object',
-                    properties: {
-                        pitch: { type: 'number', description: 'MIDI note number (60=C4, 64=E4, 67=G4)' },
-                        startBeat: { type: 'number', description: 'Start position in beats within the clip' },
-                        duration: {
-                            type: 'number',
-                            description: 'Note length in beats (0.25=16th, 0.5=8th, 1=quarter)',
-                        },
-                        velocity: { type: 'number', description: '1-127, default 100' },
-                    },
-                },
-                description: 'Array of notes to write',
-            },
-        },
-        ['clipId', 'notes']
-    ),
+    createAddNotesToolSchema(),
     tool(
         'completeMidi',
         'AI-continue a MIDI phrase. Analyzes existing notes and generates a continuation in the same style.',
