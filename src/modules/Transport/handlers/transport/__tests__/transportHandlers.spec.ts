@@ -22,7 +22,7 @@ import { handleToggleRecording } from '../handleToggleRecording';
 const mocks = vi.hoisted(() => ({
     togglePlayback: vi.fn(),
     stopPlayback: vi.fn(),
-    seekPlayhead: vi.fn(),
+    executePlayheadSeek: vi.fn<() => Promise<void>>(),
     toggleLoop: vi.fn(),
     setLoopRegion: vi.fn(),
     addTimeSignatureChange: vi.fn(),
@@ -42,7 +42,9 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../../useCases/transportControls/togglePlayback', () => ({ togglePlayback: mocks.togglePlayback }));
 vi.mock('../../../useCases/transportControls/stopPlayback', () => ({ stopPlayback: mocks.stopPlayback }));
-vi.mock('../../../useCases/transportControls/seekPlayhead', () => ({ seekPlayhead: mocks.seekPlayhead }));
+vi.mock('../../../useCases/transportControls/executePlayheadSeek', () => ({
+    executePlayheadSeek: mocks.executePlayheadSeek,
+}));
 vi.mock('../../../useCases/transportControls/toggleLoop', () => ({ toggleLoop: mocks.toggleLoop }));
 vi.mock('../../../useCases/transportControls/setLoopRegion', () => ({ setLoopRegion: mocks.setLoopRegion }));
 vi.mock('../../../useCases/timeSignatureChanges/addTimeSignatureChange', () => ({
@@ -91,9 +93,17 @@ describe('Transport Handlers', () => {
         expect(mocks.stopPlayback).toHaveBeenCalledOnce();
     });
 
-    it('handleSeekPlayhead delegates to use case', () => {
-        void handleSeekPlayhead.execute({ type: 'seekPlayhead', payload: { beat: 16 } });
-        expect(mocks.seekPlayhead).toHaveBeenCalledWith(16);
+    it('handleSeekPlayhead delegates to the use case and exposes its runtime completion', async () => {
+        mocks.executePlayheadSeek.mockResolvedValueOnce();
+
+        const execution = handleSeekPlayhead.execute({ type: 'seekPlayhead', payload: { beat: 16 } });
+
+        expect(mocks.executePlayheadSeek).toHaveBeenCalledWith(16);
+        if (!execution || execution instanceof Promise || !execution.afterRuntimeExecution) {
+            throw new Error('Expected a written seek result with runtime completion');
+        }
+        expect(execution.status).toBe('written');
+        await execution.afterRuntimeExecution();
     });
 
     it('handleToggleLoop delegates to use case', () => {

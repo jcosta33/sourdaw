@@ -342,7 +342,8 @@ const validators = {
     setPunchOut: hasFinitePunchBeat,
     setCountInBars: 'unchecked',
     setPreRollBars: 'unchecked',
-    seekPlayhead: 'unchecked',
+    seekPlayhead: (param): param is PayloadOf<'seekPlayhead'> =>
+        isObj(param) && hasExactKeys(param, ['beat']) && isNonNegativeNumber(param.beat),
     setEditingTool: 'unchecked',
     setMarqueeSelection: 'unchecked',
     setWorkspaceMode: 'unchecked',

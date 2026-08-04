@@ -1,11 +1,21 @@
 import { createHandler } from '#/utils/createHandler';
 
-import { seekPlayhead } from '../../useCases/transportControls/seekPlayhead';
+import { transportStore } from '../../stores/transportStore';
+import { executePlayheadSeek } from '../../useCases/transportControls/executePlayheadSeek';
 
 export const handleSeekPlayhead = createHandler<'seekPlayhead'>({
-    execute: (alpha) => {
-        seekPlayhead(alpha.payload.beat);
+    execute: (action) => {
+        const completion = executePlayheadSeek(action.payload.beat);
+        return {
+            status: 'written',
+            afterRuntimeExecution: () => completion,
+        };
     },
-    describe: (alpha) => ({ label: `Seek to beat ${alpha.payload.beat}` }),
+    describe: (action) => ({ label: `Seek to beat ${action.payload.beat}` }),
+    executionKind: 'runtime',
+    isNoop: (action) => {
+        const state = transportStore.value;
+        return state === null || state.playheadPosition === action.payload.beat;
+    },
     undoable: false,
 });

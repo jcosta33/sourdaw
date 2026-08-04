@@ -320,6 +320,18 @@ function bridgeToolCall({
         return { type: 'stopPlayback' };
     }
 
+    if (call.name === 'seekPlayhead') {
+        if (
+            !hasExactKeys(args, ['beat']) ||
+            !isFiniteNumber(args.beat) ||
+            args.beat < 0 ||
+            args.beat === context.playheadPosition
+        ) {
+            return rejection(index, call.name, 'Expected only a changed finite beat greater than or equal to 0');
+        }
+        return { type: 'seekPlayhead', payload: { beat: args.beat } };
+    }
+
     if (call.name === 'setLoopEnabled') {
         if (
             !hasExactKeys(args, ['enabled']) ||
@@ -1815,6 +1827,15 @@ export function bridgeLlmToolCalls({ calls, context }: BridgeLlmToolCallsInput):
     }
 
     if (calls.length > 1 && calls.some((call) => call.name === 'stopPlayback')) {
+        return {
+            actions: [],
+            rejections: [
+                rejection(0, '<batch>', 'Provider runtime transport command must be the only action in its batch'),
+            ],
+        };
+    }
+
+    if (calls.length > 1 && calls.some((call) => call.name === 'seekPlayhead')) {
         return {
             actions: [],
             rejections: [

@@ -337,6 +337,50 @@ describe('bridgeLlmToolCalls', () => {
         });
     });
 
+    it('bridges only an exact changed nonnegative seekPlayhead beat', () => {
+        const seek = bridge({
+            calls: [{ name: 'seekPlayhead', arguments: { beat: 8.5 } }],
+            context: projectContext,
+        });
+        const rejected = [
+            bridge({
+                calls: [{ name: 'seekPlayhead', arguments: { beat: projectContext.playheadPosition } }],
+                context: projectContext,
+            }),
+            bridge({ calls: [{ name: 'seekPlayhead', arguments: { beat: -0.01 } }], context: projectContext }),
+            bridge({ calls: [{ name: 'seekPlayhead', arguments: { beat: Number.NaN } }], context: projectContext }),
+            bridge({ calls: [{ name: 'seekPlayhead', arguments: { beat: '8' } }], context: projectContext }),
+            bridge({
+                calls: [{ name: 'seekPlayhead', arguments: { beat: 8, extra: true } }],
+                context: projectContext,
+            }),
+        ];
+
+        expect(seek.actions).toEqual([{ type: 'seekPlayhead', payload: { beat: 8.5 } }]);
+        expect(rejected.every((result) => result.actions.length === 0)).toBe(true);
+    });
+
+    it('keeps seekPlayhead exclusive from every provider batch', () => {
+        const result = bridge({
+            calls: [
+                { name: 'seekPlayhead', arguments: { beat: 8 } },
+                { name: 'setTempo', arguments: { bpm: 128 } },
+            ],
+            context: projectContext,
+        });
+
+        expect(result).toEqual({
+            actions: [],
+            rejections: [
+                {
+                    index: 0,
+                    name: '<batch>',
+                    reason: 'Provider runtime transport command must be the only action in its batch',
+                },
+            ],
+        });
+    });
+
     it('converts allowlisted provider calls into typed runtime actions', () => {
         const result = bridge({
             calls: [
