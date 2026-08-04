@@ -13,6 +13,7 @@ import { llmGenerateNotes } from './llmNoteHelpers';
 import { populateGeneratedMidiStateGuard } from './populateGeneratedMidiStateGuard';
 
 type CompleteMidiAction = Extract<AppAction, { type: 'completeMidi' }>;
+type ReplayGeneratedMidiAction = Extract<AppAction, { type: 'replayGeneratedMidi' }>;
 type MidiGenerationSource = NonNullable<ReturnType<typeof createMidiGenerationSourceGuard>>;
 
 type CompleteMidiState = {
@@ -34,9 +35,59 @@ type CompleteMidiState = {
         endBeat: number;
         type: string;
     } | null;
+    redoAction: ReplayGeneratedMidiAction;
 };
 
 const completeMidiStates = new WeakMap<CompleteMidiAction, CompleteMidiState>();
+
+function createCompleteMidiRedoAction(input: {
+    action: CompleteMidiAction;
+    source: MidiGenerationSource;
+    sourceNotes: MidiClipNoteSnapshot[];
+    resultNotes: MidiClipNoteSnapshot[];
+    generatedClipId: string;
+}): ReplayGeneratedMidiAction {
+    const sourceClip = {
+        ...input.source.clip,
+        trackId: input.source.trackId,
+        type: 'midi' as const,
+    };
+    const direction = input.action.payload.direction ?? 'forward';
+    if (direction === 'backward') {
+        const bars = input.action.payload.bars ?? 4;
+        return {
+            type: 'replayGeneratedMidi',
+            payload: {
+                operation: {
+                    kind: 'create-clip',
+                    source: { trackId: input.source.trackId, clip: sourceClip, notes: input.sourceNotes },
+                    targetTrackId: input.source.trackId,
+                    clip: {
+                        id: input.generatedClipId,
+                        trackId: input.source.trackId,
+                        name: `${input.source.clip.name} (intro)`,
+                        startBeat: Math.max(0, input.source.clip.startBeat - bars * 4),
+                        endBeat: input.source.clip.startBeat,
+                        type: 'midi',
+                    },
+                    notes: input.resultNotes,
+                },
+            },
+        };
+    }
+    return {
+        type: 'replayGeneratedMidi',
+        payload: {
+            operation: {
+                kind: 'replace-notes',
+                trackId: input.source.trackId,
+                clip: sourceClip,
+                expectedNotes: input.sourceNotes,
+                replacementNotes: input.resultNotes,
+            },
+        },
+    };
+}
 
 function ensureCompleteMidiState(action: CompleteMidiAction, source: MidiGenerationSource): CompleteMidiState {
     const existing = completeMidiStates.get(action);
@@ -44,12 +95,21 @@ function ensureCompleteMidiState(action: CompleteMidiAction, source: MidiGenerat
         return existing;
     }
     const generatedClipId = `clip-ai-${crypto.randomUUID()}`;
+    const sourceNotes = source.notes.map((note) => ({ ...note }));
+    const resultNotes: MidiClipNoteSnapshot[] = [];
+    const redoAction = createCompleteMidiRedoAction({
+        action,
+        source,
+        sourceNotes,
+        resultNotes,
+        generatedClipId,
+    });
     const state: CompleteMidiState = {
         sourceTrackId: source.trackId,
         sourceClip: { ...source.clip },
-        sourceNotes: source.notes.map((note) => ({ ...note })),
+        sourceNotes,
         isOriginalSourceCurrent: source.isCurrent,
-        resultNotes: [],
+        resultNotes,
         materialized: false,
         generatedClipId,
         generatedClipInverse: {
@@ -57,6 +117,7 @@ function ensureCompleteMidiState(action: CompleteMidiAction, source: MidiGenerat
             generatedMidiStateGuard: { entityJson: '', midiByClipIdJson: '' },
         },
         generatedClip: null,
+        redoAction,
     };
     completeMidiStates.set(action, state);
     return state;
@@ -278,6 +339,18 @@ export const handleCompleteMidi = createHandler<'completeMidi'>({
             };
             const committedGeneratedClip = state.generatedClip;
             state.resultNotes.splice(0, state.resultNotes.length, ...writtenNotes.map((note) => ({ ...note })));
+            const replayOperation = state.redoAction.payload.operation;
+            if (replayOperation.kind === 'create-clip') {
+                replayOperation.targetTrackId = state.sourceTrackId;
+                replayOperation.clip = {
+                    id: completedClip.id,
+                    trackId: state.sourceTrackId,
+                    name: completedClip.name,
+                    startBeat: completedClip.startBeat,
+                    endBeat: completedClip.endBeat,
+                    type: 'midi',
+                };
+            }
             populateGeneratedMidiStateGuard({
                 guard: state.generatedClipInverse.generatedMidiStateGuard,
                 entity: completedClip,
@@ -330,6 +403,7 @@ export const handleCompleteMidi = createHandler<'completeMidi'>({
             return {
                 label: 'AI: complete MIDI phrase',
                 inverseAction: { type: 'discardDuplicatedClip', payload: state.generatedClipInverse },
+                redoAction: state.redoAction,
             };
         }
         return {
@@ -342,6 +416,7 @@ export const handleCompleteMidi = createHandler<'completeMidi'>({
                     expectedNotes: state.resultNotes,
                 },
             },
+            redoAction: state.redoAction,
         };
     },
     requiresAbortCompensation: false,

@@ -212,6 +212,34 @@ describe('handleVariationMidi', () => {
                 ],
             },
         });
+        expect(description.redoAction).toEqual({
+            type: 'replayGeneratedMidi',
+            payload: {
+                operation: {
+                    kind: 'replace-notes',
+                    trackId: 't1',
+                    clip: {
+                        id: 'c1',
+                        trackId: 't1',
+                        name: 'Lead',
+                        startBeat: 0,
+                        endBeat: 4,
+                        type: 'midi',
+                    },
+                    expectedNotes: existing,
+                    replacementNotes: [
+                        {
+                            id: 'generated-note',
+                            pitch: 64,
+                            startBeat: 0,
+                            duration: 1,
+                            velocity: 80,
+                            probability: 100,
+                        },
+                    ],
+                },
+            },
+        });
     });
 
     it('is undoable', () => {

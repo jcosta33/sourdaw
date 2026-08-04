@@ -14,6 +14,7 @@ import { llmGenerateNotes } from './llmNoteHelpers';
 import { populateGeneratedMidiStateGuard } from './populateGeneratedMidiStateGuard';
 
 type GenerateBasslineAction = Extract<AppAction, { type: 'generateBassline' }>;
+type ReplayGeneratedMidiAction = Extract<AppAction, { type: 'replayGeneratedMidi' }>;
 type MidiGenerationSource = NonNullable<ReturnType<typeof createMidiGenerationSourceGuard>>;
 
 type GeneratedClipSnapshot = {
@@ -40,6 +41,7 @@ type GenerateBasslineState = {
         generatedMidiStateGuard: { entityJson: string; midiByClipIdJson: string };
     };
     generatedClip: GeneratedClipSnapshot | null;
+    redoAction: ReplayGeneratedMidiAction;
 };
 
 const generateBasslineStates = new WeakMap<GenerateBasslineAction, GenerateBasslineState>();
@@ -54,10 +56,58 @@ function ensureGenerateBasslineState(
     }
     const targetTrackId = action.payload.trackId ?? `track-ai-${crypto.randomUUID()}`;
     const targetClipId = `clip-ai-${crypto.randomUUID()}`;
+    const sourceNotes = source.notes.map((note) => ({ ...note }));
+    const resultNotes: MidiClipNoteSnapshot[] = [];
+    const style = action.payload.style ?? 'root-fifth';
+    const sourceReplay = {
+        trackId: source.trackId,
+        clip: {
+            ...source.clip,
+            trackId: source.trackId,
+            type: 'midi' as const,
+        },
+        notes: sourceNotes,
+    };
+    const targetClip = {
+        id: targetClipId,
+        trackId: targetTrackId,
+        name: `Bassline (${style})`,
+        startBeat: source.clip.startBeat,
+        endBeat: source.clip.endBeat,
+        type: 'midi' as const,
+    };
+    let redoAction: ReplayGeneratedMidiAction;
+    if (action.payload.trackId) {
+        redoAction = {
+            type: 'replayGeneratedMidi',
+            payload: {
+                operation: {
+                    kind: 'create-clip',
+                    source: sourceReplay,
+                    targetTrackId,
+                    clip: targetClip,
+                    notes: resultNotes,
+                },
+            },
+        };
+    } else {
+        redoAction = {
+            type: 'replayGeneratedMidi',
+            payload: {
+                operation: {
+                    kind: 'create-track',
+                    source: sourceReplay,
+                    track: { id: targetTrackId, name: `Bass (${style})` },
+                    clip: targetClip,
+                    notes: resultNotes,
+                },
+            },
+        };
+    }
     const state: GenerateBasslineState = {
-        sourceNotes: source.notes.map((note) => ({ ...note })),
+        sourceNotes,
         isOriginalSourceCurrent: source.isCurrent,
-        resultNotes: [],
+        resultNotes,
         materialized: false,
         targetTrackId,
         targetClipId,
@@ -70,6 +120,7 @@ function ensureGenerateBasslineState(
             generatedMidiStateGuard: { entityJson: '', midiByClipIdJson: '' },
         },
         generatedClip: null,
+        redoAction,
     };
     generateBasslineStates.set(action, state);
     return state;
@@ -279,6 +330,21 @@ export const handleGenerateBassline = createHandler<'generateBassline'>({
             type: completedClip.type,
         };
         state.resultNotes.splice(0, state.resultNotes.length, ...writtenNotes.map((note) => ({ ...note })));
+        const replayOperation = state.redoAction.payload.operation;
+        replayOperation.clip = {
+            id: completedClip.id,
+            trackId: completedTrack.id,
+            name: completedClip.name,
+            startBeat: completedClip.startBeat,
+            endBeat: completedClip.endBeat,
+            type: 'midi',
+        };
+        if (replayOperation.kind === 'create-clip') {
+            replayOperation.targetTrackId = completedTrack.id;
+        }
+        if (replayOperation.kind === 'create-track') {
+            replayOperation.track = { id: completedTrack.id, name: completedTrack.name };
+        }
         if (alpha.payload.trackId) {
             populateGeneratedMidiStateGuard({
                 guard: state.clipInverse.generatedMidiStateGuard,
@@ -313,11 +379,13 @@ export const handleGenerateBassline = createHandler<'generateBassline'>({
             return {
                 label,
                 inverseAction: { type: 'discardDuplicatedClip', payload: state.clipInverse },
+                redoAction: state.redoAction,
             };
         }
         return {
             label,
             inverseAction: { type: 'discardCreatedTrack', payload: state.trackInverse },
+            redoAction: state.redoAction,
         };
     },
     requiresAbortCompensation: false,

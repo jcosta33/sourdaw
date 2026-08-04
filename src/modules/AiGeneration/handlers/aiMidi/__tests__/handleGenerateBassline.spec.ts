@@ -500,6 +500,24 @@ describe('handleGenerateBassline', () => {
                 },
             },
         });
+        if (description.redoAction?.type !== 'replayGeneratedMidi') {
+            throw new Error('Expected exact generated MIDI replay');
+        }
+        expect(description.redoAction.payload.operation).toMatchObject({
+            kind: 'create-track',
+            track: { id: firstTrackId, name: 'Bass (root-fifth)' },
+            clip: { id: firstClipId, trackId: firstTrackId },
+            notes: [
+                {
+                    id: `written-${String(firstClipId)}`,
+                    pitch: 36,
+                    startBeat: 0,
+                    duration: 1,
+                    velocity: 80,
+                    probability: 100,
+                },
+            ],
+        });
     });
 
     it('rejects replay when the generated clip id was reused on another track', async () => {

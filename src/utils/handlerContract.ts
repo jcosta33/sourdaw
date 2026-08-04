@@ -293,6 +293,44 @@ export type GeneratedMidiStateGuard = {
     midiByClipIdJson: string;
 };
 
+type MidiGenerationClipReplaySnapshot = {
+    id: string;
+    trackId: string;
+    name: string;
+    startBeat: number;
+    endBeat: number;
+    type: 'midi';
+};
+
+type MidiGenerationSourceReplaySnapshot = {
+    trackId: string;
+    clip: MidiGenerationClipReplaySnapshot;
+    notes: MidiClipNoteSnapshot[];
+};
+
+type GeneratedMidiReplayOperation =
+    | {
+          kind: 'replace-notes';
+          trackId: string;
+          clip: MidiGenerationClipReplaySnapshot;
+          expectedNotes: MidiClipNoteSnapshot[];
+          replacementNotes: MidiClipNoteSnapshot[];
+      }
+    | {
+          kind: 'create-clip';
+          source: MidiGenerationSourceReplaySnapshot;
+          targetTrackId: string;
+          clip: MidiGenerationClipReplaySnapshot;
+          notes: MidiClipNoteSnapshot[];
+      }
+    | {
+          kind: 'create-track';
+          source: MidiGenerationSourceReplaySnapshot;
+          track: { id: string; name: string };
+          clip: MidiGenerationClipReplaySnapshot;
+          notes: MidiClipNoteSnapshot[];
+      };
+
 export type AppAction =
     | { type: 'addTrack'; payload: { id?: string; name: string; kind: TrackKind; select?: boolean } }
     | { type: 'removeTrack'; payload: { trackId: string } }
@@ -812,6 +850,7 @@ export type AppAction =
       }
     | { type: 'variationMidi'; payload: { clipId: string; amount?: number } }
     | { type: 'generateBassline'; payload: { clipId: string; style?: string; trackId?: string } }
+    | { type: 'replayGeneratedMidi'; payload: { operation: GeneratedMidiReplayOperation } }
     | {
           type: 'generateAudio';
           payload: { prompt: string; durationSeconds?: number; trackId?: string };

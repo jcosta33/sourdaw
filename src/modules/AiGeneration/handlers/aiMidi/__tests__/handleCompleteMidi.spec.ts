@@ -208,6 +208,24 @@ describe('handleCompleteMidi', () => {
                 },
             }),
         });
+        if (description.redoAction?.type !== 'replayGeneratedMidi') {
+            throw new Error('Expected exact generated MIDI replay');
+        }
+        expect(description.redoAction.payload.operation).toMatchObject({
+            kind: 'create-clip',
+            targetTrackId: 't1',
+            clip: { id: 'new-clip-id', trackId: 't1' },
+            notes: [
+                {
+                    id: 'written-new-clip-id',
+                    pitch: 58,
+                    startBeat: 0,
+                    duration: 1,
+                    velocity: 80,
+                    probability: 100,
+                },
+            ],
+        });
     });
 
     it('clamps backward notes so they never overflow the prepended clip bounds', async () => {
@@ -376,6 +394,25 @@ describe('handleCompleteMidi', () => {
                     },
                 ],
             },
+        });
+        if (description.redoAction?.type !== 'replayGeneratedMidi') {
+            throw new Error('Expected exact generated MIDI replay');
+        }
+        expect(description.redoAction.payload.operation).toMatchObject({
+            kind: 'replace-notes',
+            trackId: 't1',
+            expectedNotes: existing,
+            replacementNotes: [
+                ...existing,
+                {
+                    id: 'written-c1',
+                    pitch: 62,
+                    startBeat: 1,
+                    duration: 1,
+                    velocity: 90,
+                    probability: 100,
+                },
+            ],
         });
     });
 

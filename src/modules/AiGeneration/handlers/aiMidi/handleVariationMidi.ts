@@ -11,6 +11,7 @@ import { hasDurableMidiGenerationResult } from './hasDurableMidiGenerationResult
 import { llmGenerateNotes } from './llmNoteHelpers';
 
 type VariationMidiAction = Extract<AppAction, { type: 'variationMidi' }>;
+type ReplayGeneratedMidiAction = Extract<AppAction, { type: 'replayGeneratedMidi' }>;
 type MidiGenerationSource = NonNullable<ReturnType<typeof createMidiGenerationSourceGuard>>;
 
 type VariationMidiState = {
@@ -20,6 +21,7 @@ type VariationMidiState = {
     isOriginalSourceCurrent: () => boolean;
     resultNotes: MidiClipNoteSnapshot[];
     materialized: boolean;
+    redoAction: ReplayGeneratedMidiAction;
 };
 
 const variationMidiStates = new WeakMap<VariationMidiAction, VariationMidiState>();
@@ -29,13 +31,31 @@ function ensureVariationMidiState(action: VariationMidiAction, source: MidiGener
     if (existing) {
         return existing;
     }
+    const sourceNotes = source.notes.map((note) => ({ ...note }));
+    const resultNotes: MidiClipNoteSnapshot[] = [];
     const state: VariationMidiState = {
         sourceTrackId: source.trackId,
         sourceClip: { ...source.clip },
-        sourceNotes: source.notes.map((note) => ({ ...note })),
+        sourceNotes,
         isOriginalSourceCurrent: source.isCurrent,
-        resultNotes: [],
+        resultNotes,
         materialized: false,
+        redoAction: {
+            type: 'replayGeneratedMidi',
+            payload: {
+                operation: {
+                    kind: 'replace-notes',
+                    trackId: source.trackId,
+                    clip: {
+                        ...source.clip,
+                        trackId: source.trackId,
+                        type: 'midi',
+                    },
+                    expectedNotes: sourceNotes,
+                    replacementNotes: resultNotes,
+                },
+            },
+        },
     };
     variationMidiStates.set(action, state);
     return state;
@@ -142,6 +162,7 @@ export const handleVariationMidi = createHandler<'variationMidi'>({
                     expectedNotes: state.resultNotes,
                 },
             },
+            redoAction: state.redoAction,
         };
     },
     requiresAbortCompensation: false,
