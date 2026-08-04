@@ -1,4 +1,8 @@
-import { getMidiNoteGenerationToolSchemas, type generateToolCalls } from '#/modules/AiRuntime/useCases';
+import {
+    getMidiNoteGenerationToolSchemas,
+    requireMidiNoteGenerationToolCall,
+    type generateToolCalls,
+} from '#/modules/AiRuntime/useCases';
 
 export function notePitchToName(pitch: number): string {
     const names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -31,7 +35,8 @@ export async function llmGenerateNotes(
     runToolCalls: ToolCallsFn,
     instruction: string,
     existingNotes: Array<{ pitch: number; startBeat: number; duration: number; velocity: number }>,
-    clipId: string
+    clipId: string,
+    options: { allowNegativeStartBeat?: boolean } = {}
 ): Promise<Array<{ pitch: number; startBeat: number; duration: number; velocity?: number }>> {
     const noteContext = formatNotesForLlm(existingNotes);
 
@@ -53,26 +58,17 @@ ${noteContext}
 
 Generate the MIDI notes now. Output ONLY the tool call.`;
 
-    const results = await runToolCalls(systemPrompt, userMessage, getMidiNoteGenerationToolSchemas());
-    const addNotesCall = results.find((r) => r.name === 'addNotes');
-    if (addNotesCall && Array.isArray(addNotesCall.arguments.notes)) {
-        const candidates = addNotesCall.arguments.notes as Array<{
-            pitch: number;
-            startBeat: number;
-            duration: number;
-            velocity?: number;
-        }>;
-        // Drop notes whose required numeric fields aren't finite. A bare typeof
-        // check passes for NaN, which the downstream handler clamps to itself
-        // (Math.round/min/max are NaN-fixed-points) and writes to the clip.
-        return candidates.filter(
-            (note) =>
-                Number.isFinite(note.pitch) &&
-                Number.isFinite(note.startBeat) &&
-                Number.isFinite(note.duration) &&
-                (note.velocity === undefined || Number.isFinite(note.velocity))
-        );
-    }
-
-    return [];
+    const results = await runToolCalls(
+        systemPrompt,
+        userMessage,
+        getMidiNoteGenerationToolSchemas({
+            expectedClipId: clipId,
+            allowNegativeStartBeat: options.allowNegativeStartBeat,
+        })
+    );
+    return requireMidiNoteGenerationToolCall({
+        toolCalls: results,
+        expectedClipId: clipId,
+        allowNegativeStartBeat: options.allowNegativeStartBeat,
+    });
 }

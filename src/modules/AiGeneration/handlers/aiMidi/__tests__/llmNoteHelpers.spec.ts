@@ -52,6 +52,7 @@ describe('llmNoteHelpers', () => {
                 {
                     name: 'addNotes',
                     arguments: {
+                        clipId: 'clip-1',
                         notes: [{ pitch: 60, startBeat: 0, duration: 1, velocity: 100 }],
                     },
                 },
@@ -82,12 +83,12 @@ describe('llmNoteHelpers', () => {
             expect(result).toEqual([{ pitch: 60, startBeat: 0, duration: 1, velocity: 100 }]);
         });
 
-        it('returns empty array if LLM tool call has no notes or is not addNotes', async () => {
+        it('rejects a tool batch that does not satisfy the MIDI generation contract', async () => {
             const mockRunToolCalls = vi.fn().mockResolvedValue([{ name: 'otherTool', arguments: {} }]);
 
-            const result = await llmGenerateNotes(asInjectable(mockRunToolCalls), 'instruction', [], 'c1');
-
-            expect(result).toEqual([]);
+            await expect(llmGenerateNotes(asInjectable(mockRunToolCalls), 'instruction', [], 'c1')).rejects.toThrow(
+                'exactly one addNotes tool call'
+            );
         });
     });
 });

@@ -710,12 +710,25 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
             }
 
             expect(guard({ clipId: 1, notes: [] })).toBe(false);
+            expect(guard({ clipId: 'clip-1', notes: [] })).toBe(false);
             expect(guard({ clipId: 'clip-1', notes: 'bad' })).toBe(false);
             expect(guard({ clipId: 'clip-1', notes: [{ pitch: -1, startBeat: 0, duration: 1 }] })).toBe(false);
             expect(guard({ clipId: 'clip-1', notes: [{ pitch: 128, startBeat: 0, duration: 1 }] })).toBe(false);
             expect(guard({ clipId: 'clip-1', notes: [{ pitch: 60, startBeat: -0.01, duration: 1 }] })).toBe(false);
             expect(guard({ clipId: 'clip-1', notes: [{ pitch: 60, startBeat: 0, duration: 0 }] })).toBe(false);
             expect(guard({ clipId: 'clip-1', notes: [{ pitch: 60, startBeat: 0, duration: Number.NaN }] })).toBe(false);
+            expect(guard({ clipId: '', notes: [] })).toBe(false);
+            expect(guard({ clipId: 'clip-1', notes: [{ pitch: 60, startBeat: 0 }] })).toBe(false);
+            expect(guard({ clipId: 'clip-1', notes: [{ pitch: 60, startBeat: 0, duration: 1, channel: 2 }] })).toBe(
+                false
+            );
+            expect(
+                guard({
+                    clipId: 'clip-1',
+                    notes: [{ pitch: 60, startBeat: 0, duration: 1 }],
+                    replace: true,
+                })
+            ).toBe(false);
             expect(guard({ clipId: 'clip-1', notes: [{ pitch: 60, startBeat: 0, duration: 1, velocity: 0 }] })).toBe(
                 false
             );
