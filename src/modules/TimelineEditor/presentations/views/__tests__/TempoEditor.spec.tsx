@@ -9,9 +9,16 @@ const mockState = {
         timeSignatureNumerator: 4,
         timeSignatureDenominator: 4,
     },
-    effectiveTempo: 120,
-    tempoGovernedByMap: false,
+    tempoField: {
+        tempo: 120,
+        governedByMap: false,
+        editable: true,
+        lockReason: null as 'tempo-ramp' | 'playback' | null,
+        minTempo: 20,
+        maxTempo: 300,
+    },
     setTempoValue: vi.fn(),
+    resetTempoValue: null as (() => void) | null,
     mapOpen: false,
     setMapOpen: vi.fn(),
     handleTapTempo: vi.fn(),
@@ -53,13 +60,29 @@ vi.mock('#/components/ui/tooltip', () => ({
     TooltipContent: ({ children }: any) => <div>{children}</div>,
 }));
 
+type MockValueFieldProps = {
+    value: number;
+    onChange: (value: number) => void;
+    onReset?: () => void;
+    readOnly?: boolean;
+    min?: number;
+    max?: number;
+    commitMode?: 'live' | 'release';
+};
+
 vi.mock('#/components/daw/ValueField', () => ({
-    ValueField: ({ value, onChange }: any) => (
+    ValueField: ({ value, onChange, onReset, readOnly, min, max, commitMode }: MockValueFieldProps) => (
         <input
             type="number"
             data-testid="tempo-input"
             value={value}
+            readOnly={readOnly}
+            min={min}
+            max={max}
+            data-commit-mode={commitMode}
+            data-has-reset={onReset === undefined ? 'no' : 'yes'}
             onChange={(event) => onChange(parseFloat(event.target.value))}
+            onDoubleClick={() => onReset?.()}
         />
     ),
 }));
@@ -78,9 +101,25 @@ describe('TempoEditor', () => {
         mockState.newCurve = 'instant';
         mockState.tempoMap = { changes: [] };
         mockState.transport.tempo = 120;
-        mockState.effectiveTempo = 120;
-        mockState.tempoGovernedByMap = false;
+        mockState.tempoField = {
+            tempo: 120,
+            governedByMap: false,
+            editable: true,
+            lockReason: null,
+            minTempo: 20,
+            maxTempo: 300,
+        };
+        mockState.resetTempoValue = null;
     });
+
+    const mapGovernedField = {
+        tempo: 90,
+        governedByMap: true,
+        editable: true,
+        lockReason: null as 'tempo-ramp' | 'playback' | null,
+        minTempo: 20,
+        maxTempo: 999,
+    };
 
     it('should render current tempo and time signature', () => {
         render(<TempoEditor />);
@@ -92,8 +131,7 @@ describe('TempoEditor', () => {
     it('should read out the map-governed tempo, not the inert base tempo', () => {
         mockState.tempoMap = { changes: [{ id: 'tc-0', beat: 0, tempo: 90, curve: 'instant' }] };
         mockState.transport.tempo = 120;
-        mockState.effectiveTempo = 90;
-        mockState.tempoGovernedByMap = true;
+        mockState.tempoField = mapGovernedField;
 
         render(<TempoEditor />);
 
@@ -107,13 +145,80 @@ describe('TempoEditor', () => {
 
     it('should still commit edits through setTempoValue while the map governs', () => {
         mockState.tempoMap = { changes: [{ id: 'tc-0', beat: 0, tempo: 90, curve: 'instant' }] };
-        mockState.effectiveTempo = 90;
-        mockState.tempoGovernedByMap = true;
+        mockState.tempoField = mapGovernedField;
 
         render(<TempoEditor />);
         fireEvent.change(screen.getByTestId('tempo-input'), { target: { value: '128' } });
 
         expect(mockState.setTempoValue).toHaveBeenCalledWith(128);
+    });
+
+    it('should clamp to the tempo-map range, not the base range, while a map governs', () => {
+        mockState.tempoField = mapGovernedField;
+
+        render(<TempoEditor />);
+
+        // A tempo-map change legally holds 400 BPM; a max of 300 would let one
+        // pixel of drag narrow it to 300 before onChange ever fired.
+        expect(screen.getByTestId('tempo-input')).toHaveAttribute('max', '999');
+        expect(screen.getByTestId('tempo-input')).toHaveAttribute('min', '20');
+    });
+
+    it('should commit on release so a drag is one history entry, not one per pixel', () => {
+        render(<TempoEditor />);
+
+        expect(screen.getByTestId('tempo-input')).toHaveAttribute('data-commit-mode', 'release');
+    });
+
+    it('should make the field read-only inside a tempo ramp and say why', () => {
+        mockState.tempoField = { ...mapGovernedField, tempo: 110, editable: false, lockReason: 'tempo-ramp' };
+
+        render(<TempoEditor />);
+
+        expect(screen.getByTestId('tempo-input')).toHaveValue(110);
+        expect(screen.getByTestId('tempo-input')).toHaveAttribute('readonly');
+        expect(screen.getByLabelText('Tempo BPM at playhead (tempo ramp, read-only)')).toBeInTheDocument();
+        expect(
+            screen.getByText('The playhead is inside a tempo ramp. Edit its end points in the tempo map.')
+        ).toBeInTheDocument();
+    });
+
+    it('should make the field read-only during playback while a map governs and say why', () => {
+        mockState.tempoField = { ...mapGovernedField, editable: false, lockReason: 'playback' };
+
+        render(<TempoEditor />);
+
+        expect(screen.getByTestId('tempo-input')).toHaveAttribute('readonly');
+        expect(
+            screen.getByLabelText('Tempo BPM at playhead (tempo map, read-only during playback)')
+        ).toBeInTheDocument();
+        expect(
+            screen.getByText('The tempo track governs playback. Stop to edit, or use the tempo map.')
+        ).toBeInTheDocument();
+    });
+
+    it('should wire no double-click reset when the hook withholds one', () => {
+        mockState.tempoField = mapGovernedField;
+        mockState.resetTempoValue = null;
+
+        render(<TempoEditor />);
+        fireEvent.doubleClick(screen.getByTestId('tempo-input'));
+
+        expect(screen.getByTestId('tempo-input')).toHaveAttribute('data-has-reset', 'no');
+        expect(mockState.setTempoValue).not.toHaveBeenCalled();
+    });
+
+    it('should route double-click reset through the hook when one is offered', () => {
+        const reset = vi.fn();
+        mockState.resetTempoValue = reset;
+
+        render(<TempoEditor />);
+        fireEvent.doubleClick(screen.getByTestId('tempo-input'));
+
+        expect(reset).toHaveBeenCalledTimes(1);
+        // The view must not invent its own 120 — that write bypassed the command
+        // layer and overwrote tempo-map events with no history entry.
+        expect(mockState.setTempoValue).not.toHaveBeenCalled();
     });
 
     it('should call handleTapTempo when TAP is clicked', () => {

@@ -17,19 +17,19 @@ describe('getGoverningTempoChange', () => {
     ];
 
     it('returns the change at beat 0 when the playhead is at the project start', () => {
-        expect(getGoverningTempoChange(beatZeroMap, 0)?.id).toBe('tc-0');
+        expect(getGoverningTempoChange(beatZeroMap, 0)?.change.id).toBe('tc-0');
     });
 
     it('returns the latest change at or before the beat', () => {
-        expect(getGoverningTempoChange(beatZeroMap, 3.99)?.id).toBe('tc-0');
-        expect(getGoverningTempoChange(beatZeroMap, 4)?.id).toBe('tc-4');
-        expect(getGoverningTempoChange(beatZeroMap, 400)?.id).toBe('tc-4');
+        expect(getGoverningTempoChange(beatZeroMap, 3.99)?.change.id).toBe('tc-0');
+        expect(getGoverningTempoChange(beatZeroMap, 4)?.change.id).toBe('tc-4');
+        expect(getGoverningTempoChange(beatZeroMap, 400)?.change.id).toBe('tc-4');
     });
 
     it('returns the first change when the beat precedes every change', () => {
         const lateMap: TempoChange[] = [{ id: 'tc-16', beat: 16, tempo: 100, curve: 'instant' }];
 
-        expect(getGoverningTempoChange(lateMap, 0)?.id).toBe('tc-16');
+        expect(getGoverningTempoChange(lateMap, 0)?.change.id).toBe('tc-16');
     });
 
     it('sorts before resolving so an unsorted map still picks the right change', () => {
@@ -38,11 +38,46 @@ describe('getGoverningTempoChange', () => {
             { id: 'tc-0', beat: 0, tempo: 90, curve: 'instant' },
         ];
 
-        expect(getGoverningTempoChange(unsorted, 2)?.id).toBe('tc-0');
+        expect(getGoverningTempoChange(unsorted, 2)?.change.id).toBe('tc-0');
     });
 
-    it('agrees with getTempoAtBeat about which change supplies the tempo', () => {
-        expect(getGoverningTempoChange(beatZeroMap, 2)?.tempo).toBe(getTempoAtBeat(beatZeroMap, 2, 240));
+    it('agrees with getTempoAtBeat about the tempo, not merely about the change', () => {
+        const governing = getGoverningTempoChange(beatZeroMap, 2);
+
+        expect(governing?.interpolated).toBe(false);
+        expect(governing?.change.tempo).toBe(getTempoAtBeat(beatZeroMap, 2, 240));
+    });
+
+    it('reports an interpolated segment rather than pretending the ramp start governs', () => {
+        // 90 at beat 0 ramping to 130 at beat 8: the tempo in force at beat 4 is
+        // 110, which is neither event's own value. A caller that assigned a typed
+        // BPM to `change.tempo` here would move the readout somewhere else again.
+        const rampMap: TempoChange[] = [
+            { id: 'tc-a', beat: 0, tempo: 90, curve: 'linear' },
+            { id: 'tc-b', beat: 8, tempo: 130, curve: 'instant' },
+        ];
+        const governing = getGoverningTempoChange(rampMap, 4);
+
+        expect(governing?.change.id).toBe('tc-a');
+        expect(governing?.interpolated).toBe(true);
+        expect(getTempoAtBeat(rampMap, 4, 240)).toBe(110);
+        expect(governing?.change.tempo).not.toBe(getTempoAtBeat(rampMap, 4, 240));
+    });
+
+    it('does not report a ramp on the last change, which has nothing to ramp toward', () => {
+        const trailingRamp: TempoChange[] = [{ id: 'tc-a', beat: 0, tempo: 90, curve: 'linear' }];
+
+        expect(getGoverningTempoChange(trailingRamp, 4)?.interpolated).toBe(false);
+        expect(getGoverningTempoChange(trailingRamp, 4)?.change.tempo).toBe(getTempoAtBeat(trailingRamp, 4, 240));
+    });
+
+    it('resolves a non-finite beat to the same change getTempoAtBeat reports', () => {
+        // `beat > NaN` is false for every change, so a scan looking for "the last
+        // change at or before the beat" walks off the end and answers with the
+        // *last* change while the reported tempo comes from the first.
+        expect(getTempoAtBeat(beatZeroMap, Number.NaN, 240)).toBe(90);
+        expect(getGoverningTempoChange(beatZeroMap, Number.NaN)?.change.id).toBe('tc-0');
+        expect(getGoverningTempoChange(beatZeroMap, Number.POSITIVE_INFINITY)?.change.id).toBe('tc-4');
     });
 
     it('returns undefined for an empty map, where the default tempo still governs', () => {

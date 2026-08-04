@@ -4,11 +4,10 @@ import { useStore } from '#/infra/store/useStore';
 import { executeAppAction } from '#/modules/Command/useCases';
 import { tempoMapStore } from '#/modules/Transport/stores';
 import {
-    setTempo,
     addTempoChange,
     removeTempoChange,
     updateTempoChange,
-    resolveTempoAtBeat,
+    resolveTempoFieldState,
 } from '#/modules/Transport/useCases';
 
 import { useTransportState } from './useTransportState';
@@ -28,6 +27,9 @@ type TempoMapViewState = {
 
 const defaultTempoMapState: TempoMapViewState = { changes: [] };
 
+/** What double-click reset restores the transport's *base* tempo to. */
+const DEFAULT_BASE_TEMPO = 120;
+
 const useTempoMapState = (): TempoMapViewState => {
     return useStore<TempoMapViewState>(tempoMapStore, defaultTempoMapState);
 };
@@ -37,13 +39,12 @@ export type TempoEditorState = {
     tempoMap: TempoMapViewState;
 
     /**
-     * Tempo actually in force at the playhead — the tempo map's value when a map
-     * exists, the transport base tempo when it does not. This, not
-     * `transport.tempo`, is what the tempo field reads out and writes back to.
+     * Readout, edit gate and clamp bounds for the transport tempo field. The
+     * tempo here — not `transport.tempo` — is what the field shows and what an
+     * edit writes back to, because with any non-empty tempo map the base tempo
+     * governs nothing the schedulers read.
      */
-    effectiveTempo: number;
-    /** True when a tempo-map event, not the base tempo, governs the playhead. */
-    tempoGovernedByMap: boolean;
+    tempoField: ReturnType<typeof resolveTempoFieldState>;
 
     // Time signature editing
     editingTimeSig: boolean;
@@ -79,6 +80,8 @@ export type TempoEditorState = {
     // Tap tempo
     handleTapTempo: () => void;
     setTempoValue: (bpm: number) => void;
+    /** Double-click reset. `null` while a tempo map governs — see the hook body. */
+    resetTempoValue: (() => void) | null;
 };
 
 /**
@@ -87,6 +90,13 @@ export type TempoEditorState = {
 export const useTempoEditorState = (): TempoEditorState => {
     const transport = useTransportState();
     const tempoMap = useTempoMapState();
+
+    const tempoField = resolveTempoFieldState({
+        changes: tempoMap.changes,
+        beat: transport.playheadPosition,
+        defaultTempo: transport.tempo,
+        isPlaying: transport.isPlaying,
+    });
 
     const [editingTimeSig, setEditingTimeSig] = useState(false);
     const [numValue, setNumValue] = useState('');
@@ -161,6 +171,34 @@ export const useTempoEditorState = (): TempoEditorState => {
         setEditingChangeId(null);
     };
 
+    /**
+     * Every tempo write from this surface goes through `executeAppAction`.
+     *
+     * Before the field became live, calling the raw use case here was harmless:
+     * it wrote `transportStore.tempo`, which no scheduler reads once a tempo map
+     * exists. The same call now rewrites a *project* tempo event, and a project
+     * mutation outside the command layer leaves no undo entry and no CRDT
+     * history — Ctrl+Z would silently undo whatever came before it instead.
+     */
+    const setTempoValue = (bpm: number): void => {
+        if (!tempoField.editable) {
+            return;
+        }
+        void executeAppAction({ type: 'setTempo', payload: { bpm } });
+    };
+
+    /**
+     * Double-click reset, suppressed while a tempo map governs: 120 is the
+     * default *base* tempo and means nothing to a tempo-map event, so resetting
+     * would silently overwrite a composed tempo change with an unrelated number.
+     */
+    let resetTempoValue: (() => void) | null = null;
+    if (!tempoField.governedByMap) {
+        resetTempoValue = (): void => {
+            setTempoValue(DEFAULT_BASE_TEMPO);
+        };
+    }
+
     const handleTapTempo = (): void => {
         const now = performance.now();
         const taps = tapTimesRef.current;
@@ -191,22 +229,14 @@ export const useTempoEditorState = (): TempoEditorState => {
         const bpm = Math.round((60000 / avgInterval) * 100) / 100;
 
         if (bpm >= 20 && bpm <= 300) {
-            setTempo(bpm);
+            setTempoValue(bpm);
         }
     };
-
-    const tempoGovernedByMap = tempoMap.changes.length > 0;
-    const effectiveTempo = resolveTempoAtBeat({
-        changes: tempoMap.changes,
-        beat: transport.playheadPosition,
-        defaultTempo: transport.tempo,
-    });
 
     return {
         transport,
         tempoMap,
-        effectiveTempo,
-        tempoGovernedByMap,
+        tempoField,
         editingTimeSig,
         numValue,
         denValue,
@@ -233,6 +263,7 @@ export const useTempoEditorState = (): TempoEditorState => {
         cancelEditChange,
         removeChange: removeTempoChange,
         handleTapTempo,
-        setTempoValue: setTempo,
+        setTempoValue,
+        resetTempoValue,
     };
 };

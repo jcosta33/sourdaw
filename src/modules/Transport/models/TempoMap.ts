@@ -14,14 +14,36 @@ function sortTempoChanges(changes: readonly TempoChange[]): TempoChange[] {
     return [...changes].sort((alpha, beta) => alpha.beat - beta.beat);
 }
 
-function getTempoAtBeatFromSorted(changes: readonly TempoChange[], beat: number, defaultTempo: number): number {
-    if (changes.length === 0) {
-        return defaultTempo;
+/**
+ * Which change supplies the tempo at a beat, and how.
+ *
+ * `getTempoAtBeatFromSorted` and `getGoverningTempoChange` are both built on the
+ * single scan below so they can never disagree — the review found them agreeing
+ * on `change` but not on the reported quantity, and disagreeing outright for a
+ * non-finite beat.
+ */
+type SortedGoverningTempo = {
+    /** The event whose `tempo` field an edit at this beat has to rewrite. */
+    change: TempoChange;
+    /** The following event, present only when the tempo is being ramped toward it. */
+    rampTarget: TempoChange | undefined;
+};
+
+function getGoverningTempoFromSorted(
+    sortedChanges: readonly TempoChange[],
+    beat: number
+): SortedGoverningTempo | undefined {
+    if (sortedChanges.length === 0) {
+        return undefined;
     }
 
     let previous: TempoChange | undefined;
     let next: TempoChange | undefined;
-    for (const change of changes) {
+    for (const change of sortedChanges) {
+        // A non-finite beat fails this comparison for every change, so `previous`
+        // stays undefined and the first change governs — the same answer the
+        // reported tempo gives. Scanning for "the last change at or before the
+        // beat" instead would silently pick the *last* change.
         if (change.beat <= beat) {
             previous = change;
         } else {
@@ -29,15 +51,27 @@ function getTempoAtBeatFromSorted(changes: readonly TempoChange[], beat: number,
             break;
         }
     }
+
     if (!previous) {
-        return changes[0]!.tempo;
+        return { change: sortedChanges[0]!, rampTarget: undefined };
     }
     if (!next || previous.curve === 'instant') {
-        return previous.tempo;
+        return { change: previous, rampTarget: undefined };
+    }
+    return { change: previous, rampTarget: next };
+}
+
+function getTempoAtBeatFromSorted(changes: readonly TempoChange[], beat: number, defaultTempo: number): number {
+    const governing = getGoverningTempoFromSorted(changes, beat);
+    if (!governing) {
+        return defaultTempo;
+    }
+    if (!governing.rampTarget) {
+        return governing.change.tempo;
     }
 
-    const time = (beat - previous.beat) / (next.beat - previous.beat);
-    return previous.tempo + (next.tempo - previous.tempo) * time;
+    const time = (beat - governing.change.beat) / (governing.rampTarget.beat - governing.change.beat);
+    return governing.change.tempo + (governing.rampTarget.tempo - governing.change.tempo) * time;
 }
 
 function getActiveTempoChange(changes: readonly TempoChange[], beat: number): TempoChange | undefined {
@@ -64,27 +98,37 @@ export function getTempoAtBeat(changes: readonly TempoChange[], beat: number, de
     return getTempoAtBeatFromSorted(sortTempoChanges(changes), beat, defaultTempo);
 }
 
+export type GoverningTempo = {
+    /** The event a transport-tempo edit at this beat has to rewrite. */
+    change: TempoChange;
+    /**
+     * True when `getTempoAtBeat` reports an interpolated value here rather than
+     * `change.tempo` itself — a `linear` change with a later change to ramp
+     * toward. On such a segment the tempo in force is not any event's `tempo`,
+     * so no single BPM written to one event can produce it: assigning the typed
+     * value to `change.tempo` moves the readout somewhere else again. Callers
+     * must refuse the write instead of silently editing the ramp's start point.
+     */
+    interpolated: boolean;
+};
+
 /**
- * The tempo change that supplies the tempo `getTempoAtBeat` reports at `beat` —
- * i.e. the event a transport-tempo edit at that playhead position must rewrite.
+ * The tempo change that supplies the tempo `getTempoAtBeat` reports at `beat`,
+ * together with whether that reported tempo is the change's own value.
  *
- * Mirrors `getTempoAtBeatFromSorted` exactly, including its fallback to the
- * first change when the playhead sits before every change: `defaultTempo` is
+ * Shares `getGoverningTempoFromSorted` with `getTempoAtBeat`, so the two can
+ * only ever name the same change — including the fallback to the first change
+ * when the beat precedes every change or is non-finite. `defaultTempo` is
  * consulted only for an empty map, so with any non-empty map some change always
- * governs. Returns `undefined` only when there is no map at all, which is the
- * case where the transport's base tempo is still the governing value.
- *
- * For a `linear` change the reported tempo is interpolated toward the next
- * change, so the governing event's own tempo is what an edit sets — the readout
- * then re-interpolates from the new value.
+ * governs; `undefined` therefore means "no map at all", the one case where the
+ * transport's base tempo is still the governing value.
  */
-export function getGoverningTempoChange(changes: readonly TempoChange[], beat: number): TempoChange | undefined {
-    if (changes.length === 0) {
+export function getGoverningTempoChange(changes: readonly TempoChange[], beat: number): GoverningTempo | undefined {
+    const governing = getGoverningTempoFromSorted(sortTempoChanges(changes), beat);
+    if (!governing) {
         return undefined;
     }
-
-    const sortedChanges = sortTempoChanges(changes);
-    return getActiveTempoChange(sortedChanges, beat) ?? sortedChanges[0];
+    return { change: governing.change, interpolated: governing.rampTarget !== undefined };
 }
 
 function secondsAcrossSortedTempoRange(

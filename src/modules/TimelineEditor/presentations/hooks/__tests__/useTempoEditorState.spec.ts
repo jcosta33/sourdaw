@@ -60,19 +60,33 @@ vi.mock('#/infra/store/useStore', () => ({
     useStore: (store: unknown, defaultState: unknown) => mockUseStore(store, defaultState),
 }));
 
-const mockSetTempo = vi.fn();
 const mockExecuteAppAction = vi.fn();
 const mockAddTempoChange = vi.fn();
 const mockRemoveTempoChange = vi.fn();
 const mockUpdateTempoChange = vi.fn();
-// Returns a value that matches neither the base tempo nor any fixture map
-// tempo, so `effectiveTempo` can only be right by routing through the resolver.
+
+type TempoFieldState = {
+    tempo: number;
+    governedByMap: boolean;
+    editable: boolean;
+    lockReason: 'tempo-ramp' | 'playback' | null;
+    minTempo: number;
+    maxTempo: number;
+};
+// The tempo matches neither the base tempo nor any fixture map tempo, so
+// `tempoField.tempo` can only be right by routing through the resolver.
 const RESOLVED_TEMPO_SENTINEL = 77;
-const mockResolveTempoAtBeat = vi.fn(() => RESOLVED_TEMPO_SENTINEL);
+const editableFieldState: TempoFieldState = {
+    tempo: RESOLVED_TEMPO_SENTINEL,
+    governedByMap: true,
+    editable: true,
+    lockReason: null,
+    minTempo: 20,
+    maxTempo: 999,
+};
+let mockTempoFieldState: TempoFieldState = editableFieldState;
+const mockResolveTempoFieldState = vi.fn((): TempoFieldState => mockTempoFieldState);
 vi.mock('#/modules/Transport/useCases', () => ({
-    setTempo: (...args: unknown[]): void => {
-        mockSetTempo(...args);
-    },
     addTempoChange: (...args: unknown[]): void => {
         mockAddTempoChange(...args);
     },
@@ -82,8 +96,8 @@ vi.mock('#/modules/Transport/useCases', () => ({
     updateTempoChange: (...args: unknown[]): void => {
         mockUpdateTempoChange(...args);
     },
-    resolveTempoAtBeat: (...args: unknown[]): number => {
-        return mockResolveTempoAtBeat(...(args as []));
+    resolveTempoFieldState: (...args: unknown[]): TempoFieldState => {
+        return mockResolveTempoFieldState(...(args as []));
     },
     // useTransportState reads this as the `useStore` default; our `useStore`
     // mock ignores it and always resolves via store identity, but the real
@@ -102,32 +116,78 @@ describe('useTempoEditorState', () => {
         vi.clearAllMocks();
         mockTransportState = baseTransportState;
         mockTempoMapState = { changes: [] };
+        mockTempoFieldState = editableFieldState;
     });
 
-    describe('effective tempo', () => {
+    describe('tempo field state', () => {
         it('resolves the readout from the tempo map at the playhead when a change sits at beat 0', () => {
             mockTempoMapState = { changes: [{ id: 'tc-0', beat: 0, tempo: 90, curve: 'instant' }] };
-            mockTransportState = { ...baseTransportState, tempo: 120, playheadPosition: 6 };
+            mockTransportState = { ...baseTransportState, tempo: 120, playheadPosition: 6, isPlaying: true };
 
             const { result } = renderHook(() => useTempoEditorState());
 
-            expect(mockResolveTempoAtBeat).toHaveBeenCalledWith({
+            expect(mockResolveTempoFieldState).toHaveBeenCalledWith({
                 changes: mockTempoMapState.changes,
                 beat: 6,
                 defaultTempo: 120,
+                isPlaying: true,
             });
-            expect(result.current.effectiveTempo).toBe(RESOLVED_TEMPO_SENTINEL);
-            expect(result.current.tempoGovernedByMap).toBe(true);
+            expect(result.current.tempoField.tempo).toBe(RESOLVED_TEMPO_SENTINEL);
+            expect(result.current.tempoField.governedByMap).toBe(true);
         });
 
-        it('reports the tempo as ungoverned when the map is empty', () => {
+        it('passes the empty map through so the resolver can report the base tempo', () => {
             mockTempoMapState = { changes: [] };
             mockTransportState = { ...baseTransportState, tempo: 120, playheadPosition: 0 };
 
+            renderHook(() => useTempoEditorState());
+
+            expect(mockResolveTempoFieldState).toHaveBeenCalledWith({
+                changes: [],
+                beat: 0,
+                defaultTempo: 120,
+                isPlaying: false,
+            });
+        });
+    });
+
+    describe('tempo writes', () => {
+        it('routes a typed tempo through executeAppAction rather than the raw use case', () => {
             const { result } = renderHook(() => useTempoEditorState());
 
-            expect(mockResolveTempoAtBeat).toHaveBeenCalledWith({ changes: [], beat: 0, defaultTempo: 120 });
-            expect(result.current.tempoGovernedByMap).toBe(false);
+            act(() => {
+                result.current.setTempoValue(133);
+            });
+
+            expect(mockExecuteAppAction).toHaveBeenCalledWith({ type: 'setTempo', payload: { bpm: 133 } });
+        });
+
+        it('drops the write when the field is locked instead of writing the wrong event', () => {
+            mockTempoFieldState = { ...editableFieldState, editable: false, lockReason: 'playback' };
+            const { result } = renderHook(() => useTempoEditorState());
+
+            act(() => {
+                result.current.setTempoValue(133);
+            });
+
+            expect(mockExecuteAppAction).not.toHaveBeenCalled();
+        });
+
+        it('offers no double-click reset while a tempo map governs', () => {
+            const { result } = renderHook(() => useTempoEditorState());
+
+            expect(result.current.resetTempoValue).toBeNull();
+        });
+
+        it('resets to the default base tempo through executeAppAction when no map governs', () => {
+            mockTempoFieldState = { ...editableFieldState, governedByMap: false, maxTempo: 300 };
+            const { result } = renderHook(() => useTempoEditorState());
+
+            act(() => {
+                result.current.resetTempoValue?.();
+            });
+
+            expect(mockExecuteAppAction).toHaveBeenCalledWith({ type: 'setTempo', payload: { bpm: 120 } });
         });
     });
 
@@ -290,16 +350,14 @@ describe('useTempoEditorState', () => {
             expect(result.current.editingChangeId).toBeNull();
         });
 
-        it('forwards removeChange/setTempoValue straight to the transport use cases', () => {
+        it('forwards removeChange straight to the transport use case', () => {
             const { result } = renderHook(() => useTempoEditorState());
 
             act(() => {
                 result.current.removeChange('tc-1');
-                result.current.setTempoValue(133);
             });
 
             expect(mockRemoveTempoChange).toHaveBeenCalledWith('tc-1');
-            expect(mockSetTempo).toHaveBeenCalledWith(133);
         });
     });
 
@@ -322,7 +380,7 @@ describe('useTempoEditorState', () => {
                 result.current.handleTapTempo();
             });
 
-            expect(mockSetTempo).not.toHaveBeenCalled();
+            expect(mockExecuteAppAction).not.toHaveBeenCalled();
         });
 
         it('derives bpm from the average interval between recent taps', () => {
@@ -338,7 +396,23 @@ describe('useTempoEditorState', () => {
             });
 
             // 500ms interval → 60000 / 500 = 120bpm.
-            expect(mockSetTempo).toHaveBeenCalledWith(120);
+            expect(mockExecuteAppAction).toHaveBeenCalledWith({ type: 'setTempo', payload: { bpm: 120 } });
+        });
+
+        it('does not tap a tempo into a locked field', () => {
+            mockTempoFieldState = { ...editableFieldState, editable: false, lockReason: 'tempo-ramp' };
+            const { result } = renderHook(() => useTempoEditorState());
+
+            currentNow = 0;
+            act(() => {
+                result.current.handleTapTempo();
+            });
+            currentNow = 500;
+            act(() => {
+                result.current.handleTapTempo();
+            });
+
+            expect(mockExecuteAppAction).not.toHaveBeenCalled();
         });
 
         it('ignores a tap pair too fast to be a plausible tempo', () => {
@@ -354,7 +428,7 @@ describe('useTempoEditorState', () => {
             });
 
             // 50ms interval → 1200bpm, above the 300bpm ceiling.
-            expect(mockSetTempo).not.toHaveBeenCalled();
+            expect(mockExecuteAppAction).not.toHaveBeenCalled();
         });
 
         it('drops stale taps outside the 4s window instead of averaging across them', () => {
@@ -371,7 +445,7 @@ describe('useTempoEditorState', () => {
 
             // The first tap ages out of the 4s window, leaving only one
             // recent tap — too few to derive a bpm from.
-            expect(mockSetTempo).not.toHaveBeenCalled();
+            expect(mockExecuteAppAction).not.toHaveBeenCalled();
         });
     });
 

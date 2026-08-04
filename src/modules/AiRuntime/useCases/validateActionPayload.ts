@@ -178,7 +178,11 @@ const validators = {
     loadExternalPlugin: (param): param is PayloadOf<'loadExternalPlugin'> => isObj(param) && isString(param.pluginPath),
 
     // Transport (pre-existing range checks from §91)
-    setTempo: (param): param is PayloadOf<'setTempo'> => isObj(param) && isInRange(param.bpm, 20, 300),
+    // `tempoChangeId` is internal undo/redo routing: it pins a tempo write to one
+    // tempo-map event. An AI-supplied id would let a prompt edit an arbitrary
+    // tempo event without naming a position, so the exact-keys check rejects it.
+    setTempo: (param): param is PayloadOf<'setTempo'> =>
+        isObj(param) && hasExactKeys(param, ['bpm']) && isInRange(param.bpm, 20, 300),
     setTimeSignature: (param): param is PayloadOf<'setTimeSignature'> =>
         isObj(param) &&
         isInRange(param.numerator, 1, 32) &&

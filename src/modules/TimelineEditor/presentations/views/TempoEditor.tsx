@@ -16,12 +16,22 @@ export const TempoEditor = (): ReactElement => {
 
     // With a tempo map the field reads out the map's value at the playhead and
     // edits the event governing it, so say so rather than let it look like a
-    // free-standing project tempo.
+    // free-standing project tempo. Where it cannot write that event, it says
+    // that too instead of leaving a control that writes somewhere else.
+    const tempoField = time.tempoField;
     let tempoFieldLabel = 'Tempo BPM';
     let tempoFieldHint = 'Drag up/down to adjust, double-click to reset, Shift for fine.';
-    if (time.tempoGovernedByMap) {
+    if (tempoField.governedByMap) {
         tempoFieldLabel = 'Tempo BPM at playhead (tempo map)';
         tempoFieldHint = 'Tempo at the playhead. Editing changes the tempo-map event that governs it.';
+    }
+    if (tempoField.lockReason === 'tempo-ramp') {
+        tempoFieldLabel = 'Tempo BPM at playhead (tempo ramp, read-only)';
+        tempoFieldHint = 'The playhead is inside a tempo ramp. Edit its end points in the tempo map.';
+    }
+    if (tempoField.lockReason === 'playback') {
+        tempoFieldLabel = 'Tempo BPM at playhead (tempo map, read-only during playback)';
+        tempoFieldHint = 'The tempo track governs playback. Stop to edit, or use the tempo map.';
     }
 
     return (
@@ -30,11 +40,13 @@ export const TempoEditor = (): ReactElement => {
                 <TooltipTrigger asChild>
                     <div aria-label={tempoFieldLabel}>
                         <ValueField
-                            value={time.effectiveTempo}
+                            value={tempoField.tempo}
                             onChange={time.setTempoValue}
-                            onReset={() => time.setTempoValue(120)}
-                            min={20}
-                            max={300}
+                            onReset={time.resetTempoValue ?? undefined}
+                            readOnly={!tempoField.editable}
+                            commitMode="release"
+                            min={tempoField.minTempo}
+                            max={tempoField.maxTempo}
                             step={1}
                             fineStep={0.01}
                             unit=" BPM"
